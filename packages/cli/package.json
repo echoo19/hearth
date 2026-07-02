@@ -1,0 +1,31 @@
+{
+  "name": "@hearth/cli",
+  "version": "0.1.0",
+  "description": "hearth — the Hearth engine command-line interface for humans and coding agents",
+  "license": "MIT",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "bin": {
+    "hearth": "./dist/main.js"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "dev": "tsx src/main.ts"
+  },
+  "dependencies": {
+    "@hearth/core": "*",
+    "@hearth/playtest": "*",
+    "commander": "^13.0.0"
+  }
+}

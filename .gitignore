@@ -1,0 +1,12 @@
+node_modules/
+dist/
+build/
+coverage/
+*.log
+.DS_Store
+.env
+.env.local
+apps/editor/src-tauri/target/
+.vite/
+*.tsbuildinfo
+.hearth-tmp/

@@ -1,0 +1,328 @@
+import { describe, it, expect, beforeEach } from 'vitest';
+import {
+  MemoryFileSystem,
+  createProject,
+  HearthSession,
+  ProjectStore,
+  generateSpriteSvg,
+  resolveColor,
+  createComponent,
+  COMPONENT_TYPES,
+} from '@hearth/core';
+
+async function makeSession(granted?: any) {
+  const fs = new MemoryFileSystem();
+  const { store } = await createProject(fs, '/proj', { name: 'Test Game' });
+  return {
+    fs,
+    session: HearthSession.fromStore(store, granted ? { granted } : {}),
+    store,
+  };
+}
+
+describe('project creation', () => {
+  it('creates a loadable project with starter scene and agent files', async () => {
+    const fs = new MemoryFileSystem();
+    const { store, files } = await createProject(fs, '/proj', { name: 'My Game' });
+    expect(files).toContain('hearth.json');
+    expect(files).toContain('AGENTS.md');
+    expect(files).toContain('CLAUDE.md');
+    expect(files).toContain('.hearth/agent-config.json');
+    expect(store.project.name).toBe('My Game');
+    expect(store.project.initialScene).not.toBeNull();
+    expect(store.scenes.size).toBe(1);
+
+    // Reload from disk
+    const reloaded = await ProjectStore.load(fs, '/proj');
+    expect(reloaded.project.id).toBe(store.project.id);
+    expect(reloaded.getScene('Main')?.entities.length).toBe(3);
+  });
+
+  it('refuses to create a project over an existing one', async () => {
+    const fs = new MemoryFileSystem();
+    await createProject(fs, '/proj', { name: 'A' });
+    await expect(createProject(fs, '/proj', { name: 'B' })).rejects.toThrow(/already exists/);
+  });
+});
+
+describe('command system', () => {
+  it('rejects unknown commands with the known-command list', async () => {
+    const { session } = await makeSession();
+    const result = await session.execute('notACommand');
+    expect(result.success).toBe(false);
+    expect(result.errors[0].code).toBe('UNKNOWN_COMMAND');
+    expect(result.errors[0].message).toContain('createScene');
+  });
+
+  it('validates params via zod', async () => {
+    const { session } = await makeSession();
+    const result = await session.execute('createScene', { name: 123 });
+    expect(result.success).toBe(false);
+    expect(result.errors[0].code).toBe('INVALID_PARAMS');
+  });
+
+  it('enforces permission modes', async () => {
+    const { session } = await makeSession(['read-only']);
+    const inspect = await session.execute('inspectProject');
+    expect(inspect.success).toBe(true);
+    const create = await session.execute('createScene', { name: 'Blocked' });
+    expect(create.success).toBe(false);
+    expect(create.errors[0].code).toBe('PERMISSION_DENIED');
+  });
+
+  it('creates scenes and entities end-to-end and persists them', async () => {
+    const { session, fs } = await makeSession();
+    const scene = await session.execute<any>('createScene', { name: 'Level 1' });
+    expect(scene.success).toBe(true);
+    const sceneId = scene.data.sceneId;
+
+    const entity = await session.execute<any>('createEntity', {
+      scene: 'Level 1',
+      name: 'Coin',
+      position: { x: 100, y: 200 },
+      components: { SpriteRenderer: { shape: 'circle', color: '#f1c40f' } },
+    });
+    expect(entity.success).toBe(true);
+    expect(entity.data.components).toContain('Transform');
+    expect(entity.data.components).toContain('SpriteRenderer');
+    expect(entity.changed.some((c: any) => c.kind === 'entity' && c.action === 'created')).toBe(true);
+
+    // Persisted?
+    const raw = JSON.parse(await fs.readFile('/proj/scenes/level_1.scene.json'));
+    expect(raw.entities.length).toBe(2); // camera + coin
+    expect(raw.id).toBe(sceneId);
+  });
+
+  it('sets component properties by dot path with schema validation', async () => {
+    const { session } = await makeSession();
+    const ok = await session.execute<any>('setComponentProperty', {
+      scene: 'Main',
+      entity: 'Player',
+      property: 'Transform.position.x',
+      value: 123,
+    });
+    expect(ok.success).toBe(true);
+    expect(ok.data.component.position.x).toBe(123);
+
+    const bad = await session.execute('setComponentProperty', {
+      scene: 'Main',
+      entity: 'Player',
+      property: 'SpriteRenderer.opacity',
+      value: 5, // out of range
+    });
+    expect(bad.success).toBe(false);
+    expect(bad.errors[0].code).toBe('SCHEMA_ERROR');
+  });
+
+  it('add/remove component round-trip', async () => {
+    const { session } = await makeSession();
+    const add = await session.execute<any>('addComponent', {
+      scene: 'Main',
+      entity: 'Player',
+      type: 'Text',
+      properties: { content: 'HP' },
+    });
+    expect(add.success).toBe(true);
+    const dup = await session.execute('addComponent', { scene: 'Main', entity: 'Player', type: 'Text' });
+    expect(dup.success).toBe(false);
+    expect(dup.errors[0].code).toBe('CONFLICT');
+    const rm = await session.execute('removeComponent', { scene: 'Main', entity: 'Player', type: 'Text' });
+    expect(rm.success).toBe(true);
+  });
+
+  it('reparenting refuses cycles', async () => {
+    const { session } = await makeSession();
+    await session.execute('createEntity', { scene: 'Main', name: 'A' });
+    await session.execute('createEntity', { scene: 'Main', name: 'B', parent: 'A' });
+    const bad = await session.execute('moveEntity', { scene: 'Main', entity: 'A', parent: 'B' });
+    expect(bad.success).toBe(false);
+    expect(bad.errors[0].message).toContain('cycle');
+  });
+});
+
+describe('scripts', () => {
+  it('createScript/attachScript/readScript flow', async () => {
+    const { session } = await makeSession();
+    const created = await session.execute<any>('createScript', { name: 'Player Move' });
+    expect(created.success).toBe(true);
+    expect(created.data.path).toBe('scripts/player-move.js');
+
+    const attach = await session.execute<any>('attachScript', {
+      scene: 'Main',
+      entity: 'Player',
+      script: 'scripts/player-move.js',
+      params: { speed: 200 },
+    });
+    expect(attach.success).toBe(true);
+
+    const read = await session.execute<any>('readScript', { path: 'scripts/player-move.js' });
+    expect(read.success).toBe(true);
+    expect(read.data.source).toContain('onUpdate');
+
+    const scripts = await session.execute<any>('inspectScripts');
+    expect(scripts.data.scripts[0].attachedTo[0].entityName).toBe('Player');
+  });
+
+  it('code-edit permission gates script commands', async () => {
+    const { session } = await makeSession(['read-only', 'safe-edit']);
+    const created = await session.execute('createScript', { name: 'x' });
+    expect(created.success).toBe(false);
+    expect(created.errors[0].code).toBe('PERMISSION_DENIED');
+  });
+
+  it('editScript rejects paths outside scripts/', async () => {
+    const { session } = await makeSession();
+    const result = await session.execute('editScript', { path: '../evil.js', source: '' });
+    expect(result.success).toBe(false);
+  });
+});
+
+describe('assets', () => {
+  it('creates procedural sprites and validates references', async () => {
+    const { session } = await makeSession();
+    const asset = await session.execute<any>('createSpriteAsset', {
+      name: 'coin',
+      shape: 'coin',
+      color: 'yellow',
+      width: 24,
+      height: 24,
+    });
+    expect(asset.success).toBe(true);
+    const assetId = asset.data.asset.id;
+
+    const set = await session.execute('setComponentProperty', {
+      scene: 'Main',
+      entity: 'Player',
+      property: 'SpriteRenderer.assetId',
+      value: assetId,
+    });
+    expect(set.success).toBe(true);
+
+    const validation = await session.execute<any>('validateProject');
+    expect(validation.data.errors).toEqual([]);
+
+    // Unknown asset reference should be a validation error
+    await session.execute('setComponentProperty', {
+      scene: 'Main',
+      entity: 'Player',
+      property: 'SpriteRenderer.assetId',
+      value: 'ast_doesnotexist',
+    });
+    const invalid = await session.execute<any>('validateProject');
+    expect(invalid.data.errors.some((e: any) => e.code === 'MISSING_SPRITE_ASSET')).toBe(true);
+  });
+
+  it('removeAsset refuses when referenced', async () => {
+    const { session } = await makeSession();
+    const asset = await session.execute<any>('createSpriteAsset', { name: 'p1', shape: 'character', color: 'blue' });
+    await session.execute('setComponentProperty', {
+      scene: 'Main',
+      entity: 'Player',
+      property: 'SpriteRenderer.assetId',
+      value: asset.data.asset.id,
+    });
+    const rm = await session.execute('removeAsset', { asset: 'p1' });
+    expect(rm.success).toBe(false);
+    expect(rm.errors[0].code).toBe('CONFLICT');
+  });
+
+  it('animation assets require existing frames', async () => {
+    const { session } = await makeSession();
+    await session.execute('createSpriteAsset', { name: 'f1', shape: 'circle', color: 'red' });
+    await session.execute('createSpriteAsset', { name: 'f2', shape: 'circle', color: 'orange' });
+    const anim = await session.execute<any>('createAnimationAsset', { name: 'blink', frames: ['f1', 'f2'] });
+    expect(anim.success).toBe(true);
+    expect(anim.data.frames.length).toBe(2);
+    const bad = await session.execute('createAnimationAsset', { name: 'bad', frames: ['nope'] });
+    expect(bad.success).toBe(false);
+  });
+});
+
+describe('diff & snapshot', () => {
+  it('snapshot -> change -> diff -> revert round-trip', async () => {
+    const { session, store } = await makeSession();
+    await session.execute('snapshotProject');
+
+    await session.execute('createEntity', { scene: 'Main', name: 'Enemy', tags: ['enemy'] });
+    await session.execute('setComponentProperty', {
+      scene: 'Main',
+      entity: 'Player',
+      property: 'Transform.position.x',
+      value: 999,
+    });
+    await session.execute('createScript', { name: 'enemy-ai' });
+
+    const diff = await session.execute<any>('diffProject');
+    expect(diff.success).toBe(true);
+    expect(diff.data.hasChanges).toBe(true);
+    expect(diff.data.stats.entitiesAdded).toBe(1);
+    expect(diff.data.stats.entitiesModified).toBe(1);
+    expect(diff.data.scripts.some((s: any) => s.path === 'scripts/enemy-ai.js' && s.status === 'added')).toBe(true);
+    const playerDiff = diff.data.scenes[0].entities.find((e: any) => e.name === 'Player');
+    expect(playerDiff.components[0].changes[0]).toMatchObject({
+      path: 'position.x',
+      before: 400,
+      after: 999,
+    });
+
+    const revert = await session.execute('revertProject', { confirm: true });
+    expect(revert.success).toBe(true);
+    const diff2 = await session.execute<any>('diffProject');
+    expect(diff2.data.hasChanges).toBe(false);
+    expect(store.getScene('Main')!.entities.find((e) => e.name === 'Enemy')).toBeUndefined();
+  });
+});
+
+describe('playtests & build', () => {
+  it('creates playtests and lists them', async () => {
+    const { session } = await makeSession();
+    const pt = await session.execute<any>('createPlaytest', {
+      name: 'smoke',
+      scene: 'Main',
+      steps: [
+        { type: 'wait', frames: 10 },
+        { type: 'assertEntityExists', entity: 'Player', exists: true },
+        { type: 'assertNoErrors' },
+      ],
+    });
+    expect(pt.success).toBe(true);
+    const list = await session.execute<any>('listPlaytests');
+    expect(list.data.playtests.length).toBe(1);
+  });
+
+  it('build requires the build permission and a valid project', async () => {
+    const { session } = await makeSession(['read-only', 'safe-edit']);
+    const denied = await session.execute('buildProject');
+    expect(denied.errors[0]?.code).toBe('PERMISSION_DENIED');
+
+    const { session: fullSession, fs } = await makeSession(['read-only', 'safe-edit', 'build']);
+    const built = await fullSession.execute<any>('buildProject');
+    expect(built.success).toBe(true);
+    expect(await fs.exists('/proj/build/test_game/build-manifest.json')).toBe(true);
+    expect(await fs.exists('/proj/build/test_game/hearth.json')).toBe(true);
+  });
+});
+
+describe('procedural sprites', () => {
+  it('generates deterministic SVG', () => {
+    const a = generateSpriteSvg({ shape: 'character', color: '#3498db', width: 32, height: 48 });
+    const b = generateSpriteSvg({ shape: 'character', color: '#3498db', width: 32, height: 48 });
+    expect(a).toBe(b);
+    expect(a).toContain('<svg');
+    expect(a).toContain('viewBox="0 0 32 48"');
+  });
+
+  it('resolves named colors', () => {
+    expect(resolveColor('red')).toBe('#e74c3c');
+    expect(resolveColor('#ABC')).toBe('#abc');
+    expect(() => resolveColor('not-a-color')).toThrow(/Unknown color/);
+  });
+});
+
+describe('component schemas', () => {
+  it('all component types produce valid defaults', () => {
+    for (const type of COMPONENT_TYPES) {
+      expect(() => createComponent(type)).not.toThrow();
+    }
+  });
+});

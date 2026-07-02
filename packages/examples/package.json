@@ -1,0 +1,11 @@
+{
+  "name": "@hearth/examples",
+  "version": "0.1.0",
+  "description": "Hearth sample projects: mini platformer, top-down room, visual novel scene",
+  "license": "MIT",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "typecheck": "echo 'examples: no typecheck (data-only package)'"
+  }
+}

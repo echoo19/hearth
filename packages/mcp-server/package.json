@@ -1,0 +1,32 @@
+{
+  "name": "@hearth/mcp-server",
+  "version": "0.1.0",
+  "description": "Hearth MCP server: structured engine operations for coding agents (Claude Code, Codex, any MCP client)",
+  "license": "MIT",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "bin": {
+    "hearth-mcp": "./dist/main.js"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "dev": "tsx src/main.ts"
+  },
+  "dependencies": {
+    "@hearth/core": "*",
+    "@hearth/playtest": "*",
+    "@modelcontextprotocol/sdk": "^1.6.0",
+    "zod": "^3.24.1"
+  }
+}

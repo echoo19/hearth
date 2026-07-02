@@ -1,0 +1,40 @@
+{
+  "name": "@hearth/runtime",
+  "version": "0.1.0",
+  "description": "Hearth 2D runtime: scene instantiation, game loop, input, collision, scripting, rendering",
+  "license": "MIT",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./pixi": {
+      "types": "./dist/pixi/index.d.ts",
+      "default": "./dist/pixi/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@hearth/core": "*"
+  },
+  "peerDependencies": {
+    "pixi.js": "^8.6.0"
+  },
+  "peerDependenciesMeta": {
+    "pixi.js": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "pixi.js": "^8.6.0"
+  }
+}
