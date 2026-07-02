@@ -10,7 +10,15 @@
     "declaration": false,
     "declarationMap": false,
     "sourceMap": false,
-    "allowImportingTsExtensions": false
+    "allowImportingTsExtensions": false,
+    "baseUrl": ".",
+    "paths": {
+      "@hearth/core": ["../../packages/core/src/index.ts"],
+      "@hearth/core/node": ["../../packages/core/src/node/index.ts"],
+      "@hearth/runtime": ["../../packages/runtime/src/index.ts"],
+      "@hearth/runtime/pixi": ["../../packages/runtime/src/pixi/index.ts"],
+      "@hearth/playtest": ["../../packages/playtest/src/index.ts"]
+    }
   },
-  "include": ["src", "vite.config.ts", "server"]
+  "include": ["src", "vite.config.ts", "server", "tests"]
 }
