@@ -17,8 +17,7 @@ import {
   type HearthSession,
 } from '@hearth/core';
 import { NodeFileSystem } from '@hearth/core/node';
-import { runPlaytest as runPlaytestRuntime } from '@hearth/playtest';
-import { CliError, findProjectRoot, openSession, resolveProjectRoot, type GlobalOpts } from './context.js';
+import { CliError, openSession, resolveProjectRoot, type GlobalOpts } from './context.js';
 import { emit, errorResult, makeResult, logStderr } from './output.js';
 import { parseJsonArray, parseJsonObject, parseList, parsePosition, parseValue, ParseError } from './parse.js';
 
