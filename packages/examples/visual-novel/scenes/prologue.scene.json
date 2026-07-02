@@ -1,0 +1,176 @@
+{
+  "formatVersion": 1,
+  "id": "scn_1ihoql9h",
+  "name": "Prologue",
+  "entities": [
+    {
+      "id": "ent_jmujjt5k",
+      "name": "Main Camera",
+      "parentId": null,
+      "enabled": true,
+      "tags": [],
+      "components": {
+        "Transform": {
+          "position": {
+            "x": 400,
+            "y": 300
+          },
+          "rotation": 0,
+          "scale": {
+            "x": 1,
+            "y": 1
+          }
+        },
+        "Camera": {
+          "zoom": 1,
+          "isMain": true,
+          "backgroundColor": "#0f0f1a"
+        }
+      }
+    },
+    {
+      "id": "ent_apmbe8x3",
+      "name": "Backdrop",
+      "parentId": null,
+      "enabled": true,
+      "tags": [
+        "background"
+      ],
+      "components": {
+        "Transform": {
+          "position": {
+            "x": 400,
+            "y": 260
+          },
+          "rotation": 0,
+          "scale": {
+            "x": 1,
+            "y": 1
+          }
+        },
+        "SpriteRenderer": {
+          "assetId": null,
+          "shape": "rectangle",
+          "color": "#2c3e50",
+          "width": 760,
+          "height": 420,
+          "opacity": 1,
+          "flipX": false,
+          "flipY": false,
+          "layer": -20,
+          "visible": true
+        }
+      }
+    },
+    {
+      "id": "ent_w1g1766c",
+      "name": "Aria",
+      "parentId": null,
+      "enabled": true,
+      "tags": [
+        "character"
+      ],
+      "components": {
+        "Transform": {
+          "position": {
+            "x": 400,
+            "y": 300
+          },
+          "rotation": 0,
+          "scale": {
+            "x": 1,
+            "y": 1
+          }
+        },
+        "SpriteRenderer": {
+          "assetId": "ast_ouierlah",
+          "shape": "rectangle",
+          "color": "#ffffff",
+          "width": 120,
+          "height": 180,
+          "opacity": 1,
+          "flipX": false,
+          "flipY": false,
+          "layer": 0,
+          "visible": true
+        }
+      }
+    },
+    {
+      "id": "ent_zehrp8fy",
+      "name": "TextBox",
+      "parentId": null,
+      "enabled": true,
+      "tags": [
+        "ui"
+      ],
+      "components": {
+        "Transform": {
+          "position": {
+            "x": 400,
+            "y": 520
+          },
+          "rotation": 0,
+          "scale": {
+            "x": 1,
+            "y": 1
+          }
+        },
+        "SpriteRenderer": {
+          "assetId": null,
+          "shape": "rectangle",
+          "color": "#16213e",
+          "width": 720,
+          "height": 120,
+          "opacity": 0.9,
+          "flipX": false,
+          "flipY": false,
+          "layer": 5,
+          "visible": true
+        }
+      }
+    },
+    {
+      "id": "ent_f72dnd42",
+      "name": "Dialogue",
+      "parentId": null,
+      "enabled": true,
+      "tags": [
+        "ui"
+      ],
+      "components": {
+        "Transform": {
+          "position": {
+            "x": 70,
+            "y": 490
+          },
+          "rotation": 0,
+          "scale": {
+            "x": 1,
+            "y": 1
+          }
+        },
+        "Text": {
+          "content": "",
+          "fontSize": 18,
+          "color": "#ecf0f1",
+          "align": "left",
+          "fontFamily": "monospace",
+          "layer": 10,
+          "visible": true
+        },
+        "Script": {
+          "scriptPath": "scripts/dialogue-runner.js",
+          "params": {
+            "lines": [
+              "Aria: You found the hearth. Not many make it this far.",
+              "Aria: The fire you see is a compiler, a canvas, and a door.",
+              "Aria: Humans shape it with their hands. Agents shape it with commands.",
+              "Aria: Together, then. Let us make something worth playing."
+            ]
+          }
+        }
+      }
+    }
+  ]
+}

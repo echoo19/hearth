@@ -1,0 +1,23 @@
+{
+  "formatVersion": 1,
+  "id": "ptt_v6xhipqd",
+  "name": "walls-block-player",
+  "scene": "scn_f66q1w9d",
+  "steps": [
+    {
+      "type": "press",
+      "action": "left",
+      "frames": 120
+    },
+    {
+      "type": "assertProperty",
+      "entity": "Player",
+      "property": "Transform.position.x",
+      "greaterThan": 40
+    },
+    {
+      "type": "assertNoErrors"
+    }
+  ],
+  "maxFrames": 400
+}

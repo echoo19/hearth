@@ -1,0 +1,28 @@
+{
+  "formatVersion": 1,
+  "id": "ptt_v86o1ic9",
+  "name": "player-lands-on-ground",
+  "scene": "scn_vpa4d146",
+  "steps": [
+    {
+      "type": "wait",
+      "frames": 90
+    },
+    {
+      "type": "assertProperty",
+      "entity": "Player",
+      "property": "Transform.position.y",
+      "lessThan": 560
+    },
+    {
+      "type": "assertProperty",
+      "entity": "Player",
+      "property": "Transform.position.y",
+      "greaterThan": 450
+    },
+    {
+      "type": "assertNoErrors"
+    }
+  ],
+  "maxFrames": 300
+}

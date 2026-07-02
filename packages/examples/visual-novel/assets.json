@@ -1,0 +1,18 @@
+{
+  "formatVersion": 1,
+  "assets": [
+    {
+      "id": "ast_ouierlah",
+      "name": "aria",
+      "type": "sprite",
+      "path": "assets/sprites/aria.svg",
+      "metadata": {
+        "procedural": true,
+        "shape": "character",
+        "color": "#1abc9c",
+        "width": 120,
+        "height": 180
+      }
+    }
+  ]
+}

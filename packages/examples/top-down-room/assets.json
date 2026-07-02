@@ -1,0 +1,53 @@
+{
+  "formatVersion": 1,
+  "assets": [
+    {
+      "id": "ast_g5xp4s7x",
+      "name": "hero",
+      "type": "sprite",
+      "path": "assets/sprites/hero.svg",
+      "metadata": {
+        "procedural": true,
+        "shape": "character",
+        "color": "#9b59b6",
+        "width": 30,
+        "height": 34
+      }
+    },
+    {
+      "id": "ast_y0htxj6r",
+      "name": "keeper",
+      "type": "sprite",
+      "path": "assets/sprites/keeper.svg",
+      "metadata": {
+        "procedural": true,
+        "shape": "character",
+        "color": "#e67e22",
+        "width": 30,
+        "height": 34
+      }
+    },
+    {
+      "id": "ast_y8aerfvg",
+      "name": "wall",
+      "type": "tile",
+      "path": "assets/tiles/wall.svg",
+      "metadata": {
+        "procedural": true,
+        "color": "#34495e",
+        "size": 32
+      }
+    },
+    {
+      "id": "ast_6hl7ex92",
+      "name": "floor",
+      "type": "tile",
+      "path": "assets/tiles/floor.svg",
+      "metadata": {
+        "procedural": true,
+        "color": "#7f8c8d",
+        "size": 32
+      }
+    }
+  ]
+}

@@ -1,0 +1,29 @@
+{
+  "hearthVersion": "0.1.0",
+  "project": "Top-Down Room",
+  "projectId": "prj_r54qi0d2",
+  "instructions": "AGENTS.md",
+  "cli": {
+    "binary": "hearth",
+    "jsonFlag": "--json",
+    "recommendedFirstCommands": [
+      "hearth inspect project --json",
+      "hearth inspect scenes --json",
+      "hearth validate --json"
+    ]
+  },
+  "mcp": {
+    "server": "hearth-mcp",
+    "transport": "stdio",
+    "note": "Start with: hearth-mcp --project <this directory> [--mode read-only|safe-edit|code-edit|asset-edit|build|all]"
+  },
+  "permissions": {
+    "defaultModes": [
+      "read-only",
+      "safe-edit",
+      "code-edit",
+      "asset-edit"
+    ],
+    "buildRequiresOptIn": true
+  }
+}

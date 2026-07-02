@@ -1,0 +1,21 @@
+{
+  "formatVersion": 1,
+  "id": "ptt_i9z3pf4v",
+  "name": "smoke",
+  "scene": "scn_f66q1w9d",
+  "steps": [
+    {
+      "type": "wait",
+      "frames": 60
+    },
+    {
+      "type": "assertEntityExists",
+      "entity": "Keeper",
+      "exists": true
+    },
+    {
+      "type": "assertNoErrors"
+    }
+  ],
+  "maxFrames": 200
+}

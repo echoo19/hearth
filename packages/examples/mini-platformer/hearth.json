@@ -1,0 +1,50 @@
+{
+  "formatVersion": 1,
+  "hearthVersion": "0.1.0",
+  "id": "prj_g6nbnpkc",
+  "name": "Mini Platformer",
+  "description": "Jump between platforms, collect coins, avoid the patrolling enemy.",
+  "initialScene": "scn_vpa4d146",
+  "scenes": [
+    {
+      "id": "scn_vpa4d146",
+      "name": "Level 1",
+      "path": "scenes/level_1.scene.json"
+    }
+  ],
+  "inputMappings": {
+    "actions": {
+      "left": [
+        "ArrowLeft",
+        "KeyA"
+      ],
+      "right": [
+        "ArrowRight",
+        "KeyD"
+      ],
+      "up": [
+        "ArrowUp",
+        "KeyW"
+      ],
+      "down": [
+        "ArrowDown",
+        "KeyS"
+      ],
+      "jump": [
+        "Space"
+      ],
+      "action": [
+        "KeyE",
+        "Enter"
+      ]
+    }
+  },
+  "buildSettings": {
+    "width": 800,
+    "height": 600,
+    "backgroundColor": "#1a1a2e",
+    "targetFps": 60,
+    "fixedTimestep": 60,
+    "title": "Mini Platformer"
+  }
+}

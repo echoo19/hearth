@@ -1,0 +1,66 @@
+{
+  "formatVersion": 1,
+  "assets": [
+    {
+      "id": "ast_gaj9g16a",
+      "name": "player",
+      "type": "sprite",
+      "path": "assets/sprites/player.svg",
+      "metadata": {
+        "procedural": true,
+        "shape": "character",
+        "color": "#3498db",
+        "width": 32,
+        "height": 48
+      }
+    },
+    {
+      "id": "ast_iqw8pxwh",
+      "name": "enemy",
+      "type": "sprite",
+      "path": "assets/sprites/enemy.svg",
+      "metadata": {
+        "procedural": true,
+        "shape": "enemy",
+        "color": "#e74c3c",
+        "width": 36,
+        "height": 36
+      }
+    },
+    {
+      "id": "ast_fkovc9px",
+      "name": "coin",
+      "type": "sprite",
+      "path": "assets/sprites/coin.svg",
+      "metadata": {
+        "procedural": true,
+        "shape": "coin",
+        "color": "#f1c40f",
+        "width": 22,
+        "height": 22
+      }
+    },
+    {
+      "id": "ast_sec2vqz7",
+      "name": "grass",
+      "type": "tile",
+      "path": "assets/tiles/grass.svg",
+      "metadata": {
+        "procedural": true,
+        "color": "#2ecc71",
+        "size": 32
+      }
+    },
+    {
+      "id": "ast_8eqzenwu",
+      "name": "stone",
+      "type": "tile",
+      "path": "assets/tiles/stone.svg",
+      "metadata": {
+        "procedural": true,
+        "color": "#95a5a6",
+        "size": 32
+      }
+    }
+  ]
+}

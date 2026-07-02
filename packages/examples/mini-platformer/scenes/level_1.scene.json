@@ -1,0 +1,524 @@
+{
+  "formatVersion": 1,
+  "id": "scn_vpa4d146",
+  "name": "Level 1",
+  "entities": [
+    {
+      "id": "ent_h76ek5kt",
+      "name": "Main Camera",
+      "parentId": null,
+      "enabled": true,
+      "tags": [],
+      "components": {
+        "Transform": {
+          "position": {
+            "x": 400,
+            "y": 300
+          },
+          "rotation": 0,
+          "scale": {
+            "x": 1,
+            "y": 1
+          }
+        },
+        "Camera": {
+          "zoom": 1,
+          "isMain": true,
+          "backgroundColor": "#16213e"
+        },
+        "Script": {
+          "scriptPath": "scripts/camera-follow.js",
+          "params": {}
+        }
+      }
+    },
+    {
+      "id": "ent_zbwenqzb",
+      "name": "Ground",
+      "parentId": null,
+      "enabled": true,
+      "tags": [
+        "ground"
+      ],
+      "components": {
+        "Transform": {
+          "position": {
+            "x": 0,
+            "y": 552
+          },
+          "rotation": 0,
+          "scale": {
+            "x": 1,
+            "y": 1
+          }
+        },
+        "Tilemap": {
+          "tileSize": 32,
+          "tileAssets": {
+            "G": "ast_sec2vqz7",
+            "S": "ast_8eqzenwu"
+          },
+          "grid": [
+            "GGGGGGGGGGGGGGGGGGGGGGGGG..GGGGGGGGGG",
+            "SSSSSSSSSSSSSSSSSSSSSSSSS..SSSSSSSSSS"
+          ],
+          "solid": true,
+          "layer": -10
+        }
+      }
+    },
+    {
+      "id": "ent_2ckfer87",
+      "name": "Platform A",
+      "parentId": null,
+      "enabled": true,
+      "tags": [
+        "ground"
+      ],
+      "components": {
+        "Transform": {
+          "position": {
+            "x": 320,
+            "y": 440
+          },
+          "rotation": 0,
+          "scale": {
+            "x": 1,
+            "y": 1
+          }
+        },
+        "SpriteRenderer": {
+          "assetId": null,
+          "shape": "rectangle",
+          "color": "#8d6e63",
+          "width": 128,
+          "height": 20,
+          "opacity": 1,
+          "flipX": false,
+          "flipY": false,
+          "layer": 0,
+          "visible": true
+        },
+        "Collider": {
+          "shape": "box",
+          "width": 128,
+          "height": 20,
+          "radius": 16,
+          "offset": {
+            "x": 0,
+            "y": 0
+          },
+          "isTrigger": false
+        },
+        "PhysicsBody": {
+          "bodyType": "static",
+          "velocity": {
+            "x": 0,
+            "y": 0
+          },
+          "gravityScale": 1,
+          "drag": 0
+        }
+      }
+    },
+    {
+      "id": "ent_bb6j5yib",
+      "name": "Platform B",
+      "parentId": null,
+      "enabled": true,
+      "tags": [
+        "ground"
+      ],
+      "components": {
+        "Transform": {
+          "position": {
+            "x": 520,
+            "y": 350
+          },
+          "rotation": 0,
+          "scale": {
+            "x": 1,
+            "y": 1
+          }
+        },
+        "SpriteRenderer": {
+          "assetId": null,
+          "shape": "rectangle",
+          "color": "#8d6e63",
+          "width": 96,
+          "height": 20,
+          "opacity": 1,
+          "flipX": false,
+          "flipY": false,
+          "layer": 0,
+          "visible": true
+        },
+        "Collider": {
+          "shape": "box",
+          "width": 96,
+          "height": 20,
+          "radius": 16,
+          "offset": {
+            "x": 0,
+            "y": 0
+          },
+          "isTrigger": false
+        },
+        "PhysicsBody": {
+          "bodyType": "static",
+          "velocity": {
+            "x": 0,
+            "y": 0
+          },
+          "gravityScale": 1,
+          "drag": 0
+        }
+      }
+    },
+    {
+      "id": "ent_czf8qhj1",
+      "name": "Platform C",
+      "parentId": null,
+      "enabled": true,
+      "tags": [
+        "ground"
+      ],
+      "components": {
+        "Transform": {
+          "position": {
+            "x": 720,
+            "y": 260
+          },
+          "rotation": 0,
+          "scale": {
+            "x": 1,
+            "y": 1
+          }
+        },
+        "SpriteRenderer": {
+          "assetId": null,
+          "shape": "rectangle",
+          "color": "#8d6e63",
+          "width": 96,
+          "height": 20,
+          "opacity": 1,
+          "flipX": false,
+          "flipY": false,
+          "layer": 0,
+          "visible": true
+        },
+        "Collider": {
+          "shape": "box",
+          "width": 96,
+          "height": 20,
+          "radius": 16,
+          "offset": {
+            "x": 0,
+            "y": 0
+          },
+          "isTrigger": false
+        },
+        "PhysicsBody": {
+          "bodyType": "static",
+          "velocity": {
+            "x": 0,
+            "y": 0
+          },
+          "gravityScale": 1,
+          "drag": 0
+        }
+      }
+    },
+    {
+      "id": "ent_885n9vun",
+      "name": "Player",
+      "parentId": null,
+      "enabled": true,
+      "tags": [
+        "player"
+      ],
+      "components": {
+        "Transform": {
+          "position": {
+            "x": 120,
+            "y": 380
+          },
+          "rotation": 0,
+          "scale": {
+            "x": 1,
+            "y": 1
+          }
+        },
+        "SpriteRenderer": {
+          "assetId": "ast_gaj9g16a",
+          "shape": "rectangle",
+          "color": "#ffffff",
+          "width": 32,
+          "height": 48,
+          "opacity": 1,
+          "flipX": false,
+          "flipY": false,
+          "layer": 0,
+          "visible": true
+        },
+        "Collider": {
+          "shape": "box",
+          "width": 28,
+          "height": 46,
+          "radius": 16,
+          "offset": {
+            "x": 0,
+            "y": 0
+          },
+          "isTrigger": false
+        },
+        "PhysicsBody": {
+          "bodyType": "dynamic",
+          "velocity": {
+            "x": 0,
+            "y": 0
+          },
+          "gravityScale": 1,
+          "drag": 0
+        },
+        "Script": {
+          "scriptPath": "scripts/player-controller.js",
+          "params": {
+            "speed": 220,
+            "jumpSpeed": 460
+          }
+        }
+      }
+    },
+    {
+      "id": "ent_cxy07xov",
+      "name": "Coin 1",
+      "parentId": null,
+      "enabled": true,
+      "tags": [
+        "coin"
+      ],
+      "components": {
+        "Transform": {
+          "position": {
+            "x": 320,
+            "y": 400
+          },
+          "rotation": 0,
+          "scale": {
+            "x": 1,
+            "y": 1
+          }
+        },
+        "SpriteRenderer": {
+          "assetId": "ast_fkovc9px",
+          "shape": "rectangle",
+          "color": "#ffffff",
+          "width": 22,
+          "height": 22,
+          "opacity": 1,
+          "flipX": false,
+          "flipY": false,
+          "layer": 0,
+          "visible": true
+        },
+        "Collider": {
+          "shape": "circle",
+          "width": 32,
+          "height": 32,
+          "radius": 12,
+          "offset": {
+            "x": 0,
+            "y": 0
+          },
+          "isTrigger": true
+        },
+        "Script": {
+          "scriptPath": "scripts/coin-pickup.js",
+          "params": {}
+        }
+      }
+    },
+    {
+      "id": "ent_cmrkk9o5",
+      "name": "Coin 2",
+      "parentId": null,
+      "enabled": true,
+      "tags": [
+        "coin"
+      ],
+      "components": {
+        "Transform": {
+          "position": {
+            "x": 520,
+            "y": 310
+          },
+          "rotation": 0,
+          "scale": {
+            "x": 1,
+            "y": 1
+          }
+        },
+        "SpriteRenderer": {
+          "assetId": "ast_fkovc9px",
+          "shape": "rectangle",
+          "color": "#ffffff",
+          "width": 22,
+          "height": 22,
+          "opacity": 1,
+          "flipX": false,
+          "flipY": false,
+          "layer": 0,
+          "visible": true
+        },
+        "Collider": {
+          "shape": "circle",
+          "width": 32,
+          "height": 32,
+          "radius": 12,
+          "offset": {
+            "x": 0,
+            "y": 0
+          },
+          "isTrigger": true
+        },
+        "Script": {
+          "scriptPath": "scripts/coin-pickup.js",
+          "params": {}
+        }
+      }
+    },
+    {
+      "id": "ent_eozv81rt",
+      "name": "Coin 3",
+      "parentId": null,
+      "enabled": true,
+      "tags": [
+        "coin"
+      ],
+      "components": {
+        "Transform": {
+          "position": {
+            "x": 720,
+            "y": 220
+          },
+          "rotation": 0,
+          "scale": {
+            "x": 1,
+            "y": 1
+          }
+        },
+        "SpriteRenderer": {
+          "assetId": "ast_fkovc9px",
+          "shape": "rectangle",
+          "color": "#ffffff",
+          "width": 22,
+          "height": 22,
+          "opacity": 1,
+          "flipX": false,
+          "flipY": false,
+          "layer": 0,
+          "visible": true
+        },
+        "Collider": {
+          "shape": "circle",
+          "width": 32,
+          "height": 32,
+          "radius": 12,
+          "offset": {
+            "x": 0,
+            "y": 0
+          },
+          "isTrigger": true
+        },
+        "Script": {
+          "scriptPath": "scripts/coin-pickup.js",
+          "params": {}
+        }
+      }
+    },
+    {
+      "id": "ent_gbj7vsrm",
+      "name": "Enemy",
+      "parentId": null,
+      "enabled": true,
+      "tags": [
+        "enemy"
+      ],
+      "components": {
+        "Transform": {
+          "position": {
+            "x": 560,
+            "y": 522
+          },
+          "rotation": 0,
+          "scale": {
+            "x": 1,
+            "y": 1
+          }
+        },
+        "SpriteRenderer": {
+          "assetId": "ast_iqw8pxwh",
+          "shape": "rectangle",
+          "color": "#ffffff",
+          "width": 36,
+          "height": 36,
+          "opacity": 1,
+          "flipX": false,
+          "flipY": false,
+          "layer": 0,
+          "visible": true
+        },
+        "Collider": {
+          "shape": "box",
+          "width": 34,
+          "height": 34,
+          "radius": 16,
+          "offset": {
+            "x": 0,
+            "y": 0
+          },
+          "isTrigger": true
+        },
+        "Script": {
+          "scriptPath": "scripts/enemy-patrol.js",
+          "params": {
+            "range": 120,
+            "speed": 70
+          }
+        }
+      }
+    },
+    {
+      "id": "ent_x0gtnkrs",
+      "name": "Score",
+      "parentId": null,
+      "enabled": true,
+      "tags": [
+        "ui"
+      ],
+      "components": {
+        "Transform": {
+          "position": {
+            "x": 24,
+            "y": 24
+          },
+          "rotation": 0,
+          "scale": {
+            "x": 1,
+            "y": 1
+          }
+        },
+        "Text": {
+          "content": "Score: 0",
+          "fontSize": 20,
+          "color": "#ffffff",
+          "align": "left",
+          "fontFamily": "monospace",
+          "layer": 10,
+          "visible": true
+        }
+      }
+    }
+  ]
+}

@@ -1,0 +1,37 @@
+{
+  "formatVersion": 1,
+  "id": "ptt_jjzq5tjm",
+  "name": "dialogue-advances",
+  "scene": "scn_1ihoql9h",
+  "steps": [
+    {
+      "type": "wait",
+      "frames": 10
+    },
+    {
+      "type": "assertProperty",
+      "entity": "Dialogue",
+      "property": "Text.content",
+      "equals": "Aria: You found the hearth. Not many make it this far.  [E to continue]"
+    },
+    {
+      "type": "press",
+      "action": "action",
+      "frames": 2
+    },
+    {
+      "type": "wait",
+      "frames": 5
+    },
+    {
+      "type": "assertProperty",
+      "entity": "Dialogue",
+      "property": "Text.content",
+      "equals": "Aria: The fire you see is a compiler, a canvas, and a door.  [E to continue]"
+    },
+    {
+      "type": "assertNoErrors"
+    }
+  ],
+  "maxFrames": 200
+}

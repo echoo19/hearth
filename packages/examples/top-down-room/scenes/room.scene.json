@@ -1,0 +1,451 @@
+{
+  "formatVersion": 1,
+  "id": "scn_f66q1w9d",
+  "name": "Room",
+  "entities": [
+    {
+      "id": "ent_27fyj04q",
+      "name": "Main Camera",
+      "parentId": null,
+      "enabled": true,
+      "tags": [],
+      "components": {
+        "Transform": {
+          "position": {
+            "x": 400,
+            "y": 300
+          },
+          "rotation": 0,
+          "scale": {
+            "x": 1,
+            "y": 1
+          }
+        },
+        "Camera": {
+          "zoom": 1,
+          "isMain": true,
+          "backgroundColor": "#101418"
+        }
+      }
+    },
+    {
+      "id": "ent_4956di5j",
+      "name": "Room",
+      "parentId": null,
+      "enabled": true,
+      "tags": [
+        "level"
+      ],
+      "components": {
+        "Transform": {
+          "position": {
+            "x": 0,
+            "y": 28
+          },
+          "rotation": 0,
+          "scale": {
+            "x": 1,
+            "y": 1
+          }
+        },
+        "Tilemap": {
+          "tileSize": 32,
+          "tileAssets": {
+            "W": "ast_y8aerfvg",
+            "F": "ast_6hl7ex92"
+          },
+          "grid": [
+            "WWWWWWWWWWWWWWWWWWWWWWWWW",
+            "WFFFFFFFFFFFFFFFFFFFFFFFW",
+            "WFFFFFFFFFFFFFFFFFFFFFFFW",
+            "WFFFFFFFFFFFFFFFFFFFFFFFW",
+            "WFFFFFFFFFFFFFFFFFFFFFFFW",
+            "WFFFFFFFFFFFFFFFFFFFFFFFW",
+            "WFFFFFFFFFFFFFFFFFFFFFFFW",
+            "WFFFFFFFFFFFFFFFFFFFFFFFW",
+            "WFFFFFFFFFFFFFFFFFFFFFFF.",
+            "WFFFFFFFFFFFFFFFFFFFFFFFW",
+            "WFFFFFFFFFFFFFFFFFFFFFFFW",
+            "WFFFFFFFFFFFFFFFFFFFFFFFW",
+            "WFFFFFFFFFFFFFFFFFFFFFFFW",
+            "WFFFFFFFFFFFFFFFFFFFFFFFW",
+            "WFFFFFFFFFFFFFFFFFFFFFFFW",
+            "WFFFFFFFFFFFFFFFFFFFFFFFW",
+            "WWWWWWWWWWWWWWWWWWWWWWWWW"
+          ],
+          "solid": false,
+          "layer": -10
+        }
+      }
+    },
+    {
+      "id": "ent_0ywpccz9",
+      "name": "Wall Top",
+      "parentId": null,
+      "enabled": true,
+      "tags": [
+        "wall"
+      ],
+      "components": {
+        "Transform": {
+          "position": {
+            "x": 400,
+            "y": 44
+          },
+          "rotation": 0,
+          "scale": {
+            "x": 1,
+            "y": 1
+          }
+        },
+        "Collider": {
+          "shape": "box",
+          "width": 800,
+          "height": 32,
+          "radius": 16,
+          "offset": {
+            "x": 0,
+            "y": 0
+          },
+          "isTrigger": false
+        },
+        "PhysicsBody": {
+          "bodyType": "static",
+          "velocity": {
+            "x": 0,
+            "y": 0
+          },
+          "gravityScale": 1,
+          "drag": 0
+        }
+      }
+    },
+    {
+      "id": "ent_8am09r3e",
+      "name": "Wall Bottom",
+      "parentId": null,
+      "enabled": true,
+      "tags": [
+        "wall"
+      ],
+      "components": {
+        "Transform": {
+          "position": {
+            "x": 400,
+            "y": 556
+          },
+          "rotation": 0,
+          "scale": {
+            "x": 1,
+            "y": 1
+          }
+        },
+        "Collider": {
+          "shape": "box",
+          "width": 800,
+          "height": 32,
+          "radius": 16,
+          "offset": {
+            "x": 0,
+            "y": 0
+          },
+          "isTrigger": false
+        },
+        "PhysicsBody": {
+          "bodyType": "static",
+          "velocity": {
+            "x": 0,
+            "y": 0
+          },
+          "gravityScale": 1,
+          "drag": 0
+        }
+      }
+    },
+    {
+      "id": "ent_i7npr434",
+      "name": "Wall Left",
+      "parentId": null,
+      "enabled": true,
+      "tags": [
+        "wall"
+      ],
+      "components": {
+        "Transform": {
+          "position": {
+            "x": 16,
+            "y": 300
+          },
+          "rotation": 0,
+          "scale": {
+            "x": 1,
+            "y": 1
+          }
+        },
+        "Collider": {
+          "shape": "box",
+          "width": 32,
+          "height": 544,
+          "radius": 16,
+          "offset": {
+            "x": 0,
+            "y": 0
+          },
+          "isTrigger": false
+        },
+        "PhysicsBody": {
+          "bodyType": "static",
+          "velocity": {
+            "x": 0,
+            "y": 0
+          },
+          "gravityScale": 1,
+          "drag": 0
+        }
+      }
+    },
+    {
+      "id": "ent_q561bfg0",
+      "name": "Wall Right",
+      "parentId": null,
+      "enabled": true,
+      "tags": [
+        "wall"
+      ],
+      "components": {
+        "Transform": {
+          "position": {
+            "x": 784,
+            "y": 300
+          },
+          "rotation": 0,
+          "scale": {
+            "x": 1,
+            "y": 1
+          }
+        },
+        "Collider": {
+          "shape": "box",
+          "width": 32,
+          "height": 544,
+          "radius": 16,
+          "offset": {
+            "x": 0,
+            "y": 0
+          },
+          "isTrigger": false
+        },
+        "PhysicsBody": {
+          "bodyType": "static",
+          "velocity": {
+            "x": 0,
+            "y": 0
+          },
+          "gravityScale": 1,
+          "drag": 0
+        }
+      }
+    },
+    {
+      "id": "ent_hxutsc7v",
+      "name": "Player",
+      "parentId": null,
+      "enabled": true,
+      "tags": [
+        "player"
+      ],
+      "components": {
+        "Transform": {
+          "position": {
+            "x": 200,
+            "y": 300
+          },
+          "rotation": 0,
+          "scale": {
+            "x": 1,
+            "y": 1
+          }
+        },
+        "SpriteRenderer": {
+          "assetId": "ast_g5xp4s7x",
+          "shape": "rectangle",
+          "color": "#ffffff",
+          "width": 30,
+          "height": 34,
+          "opacity": 1,
+          "flipX": false,
+          "flipY": false,
+          "layer": 0,
+          "visible": true
+        },
+        "Collider": {
+          "shape": "box",
+          "width": 26,
+          "height": 30,
+          "radius": 16,
+          "offset": {
+            "x": 0,
+            "y": 0
+          },
+          "isTrigger": false
+        },
+        "PhysicsBody": {
+          "bodyType": "dynamic",
+          "velocity": {
+            "x": 0,
+            "y": 0
+          },
+          "gravityScale": 0,
+          "drag": 0
+        },
+        "Script": {
+          "scriptPath": "scripts/top-down-move.js",
+          "params": {
+            "speed": 180
+          }
+        }
+      }
+    },
+    {
+      "id": "ent_43jnzvja",
+      "name": "Door",
+      "parentId": null,
+      "enabled": true,
+      "tags": [
+        "door"
+      ],
+      "components": {
+        "Transform": {
+          "position": {
+            "x": 768,
+            "y": 268
+          },
+          "rotation": 0,
+          "scale": {
+            "x": 1,
+            "y": 1
+          }
+        },
+        "SpriteRenderer": {
+          "assetId": null,
+          "shape": "rectangle",
+          "color": "#c0392b",
+          "width": 32,
+          "height": 64,
+          "opacity": 1,
+          "flipX": false,
+          "flipY": false,
+          "layer": 0,
+          "visible": true
+        },
+        "Collider": {
+          "shape": "box",
+          "width": 40,
+          "height": 70,
+          "radius": 16,
+          "offset": {
+            "x": 0,
+            "y": 0
+          },
+          "isTrigger": true
+        },
+        "Script": {
+          "scriptPath": "scripts/door-trigger.js",
+          "params": {}
+        }
+      }
+    },
+    {
+      "id": "ent_lyh5piri",
+      "name": "Keeper",
+      "parentId": null,
+      "enabled": true,
+      "tags": [
+        "npc"
+      ],
+      "components": {
+        "Transform": {
+          "position": {
+            "x": 560,
+            "y": 180
+          },
+          "rotation": 0,
+          "scale": {
+            "x": 1,
+            "y": 1
+          }
+        },
+        "SpriteRenderer": {
+          "assetId": "ast_y0htxj6r",
+          "shape": "rectangle",
+          "color": "#ffffff",
+          "width": 30,
+          "height": 34,
+          "opacity": 1,
+          "flipX": false,
+          "flipY": false,
+          "layer": 0,
+          "visible": true
+        },
+        "Collider": {
+          "shape": "box",
+          "width": 30,
+          "height": 34,
+          "radius": 16,
+          "offset": {
+            "x": 0,
+            "y": 0
+          },
+          "isTrigger": false
+        },
+        "PhysicsBody": {
+          "bodyType": "static",
+          "velocity": {
+            "x": 0,
+            "y": 0
+          },
+          "gravityScale": 1,
+          "drag": 0
+        },
+        "Script": {
+          "scriptPath": "scripts/npc-dialogue.js",
+          "params": {
+            "line": "The door on the east wall leads out. It opens at a touch.",
+            "radius": 70
+          }
+        }
+      }
+    },
+    {
+      "id": "ent_38xy60ii",
+      "name": "DialogueText",
+      "parentId": null,
+      "enabled": true,
+      "tags": [
+        "ui"
+      ],
+      "components": {
+        "Transform": {
+          "position": {
+            "x": 60,
+            "y": 570
+          },
+          "rotation": 0,
+          "scale": {
+            "x": 1,
+            "y": 1
+          }
+        },
+        "Text": {
+          "content": "Find the keeper. Press E to talk.",
+          "fontSize": 16,
+          "color": "#ecf0f1",
+          "align": "left",
+          "fontFamily": "monospace",
+          "layer": 10,
+          "visible": true
+        }
+      }
+    }
+  ]
+}

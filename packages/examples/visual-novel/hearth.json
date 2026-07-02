@@ -1,0 +1,50 @@
+{
+  "formatVersion": 1,
+  "hearthVersion": "0.1.0",
+  "id": "prj_sxh3031f",
+  "name": "Visual Novel Scene",
+  "description": "A dialogue scene: advance lines with the action key.",
+  "initialScene": "scn_1ihoql9h",
+  "scenes": [
+    {
+      "id": "scn_1ihoql9h",
+      "name": "Prologue",
+      "path": "scenes/prologue.scene.json"
+    }
+  ],
+  "inputMappings": {
+    "actions": {
+      "left": [
+        "ArrowLeft",
+        "KeyA"
+      ],
+      "right": [
+        "ArrowRight",
+        "KeyD"
+      ],
+      "up": [
+        "ArrowUp",
+        "KeyW"
+      ],
+      "down": [
+        "ArrowDown",
+        "KeyS"
+      ],
+      "jump": [
+        "Space"
+      ],
+      "action": [
+        "KeyE",
+        "Enter"
+      ]
+    }
+  },
+  "buildSettings": {
+    "width": 800,
+    "height": 600,
+    "backgroundColor": "#1a1a2e",
+    "targetFps": 60,
+    "fixedTimestep": 60,
+    "title": "Visual Novel Scene"
+  }
+}

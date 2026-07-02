@@ -1,0 +1,26 @@
+{
+  "formatVersion": 1,
+  "id": "ptt_va48w9j2",
+  "name": "smoke",
+  "scene": "scn_vpa4d146",
+  "steps": [
+    {
+      "type": "wait",
+      "frames": 120
+    },
+    {
+      "type": "assertEntityExists",
+      "entity": "Player",
+      "exists": true
+    },
+    {
+      "type": "assertEntityExists",
+      "entity": "Score",
+      "exists": true
+    },
+    {
+      "type": "assertNoErrors"
+    }
+  ],
+  "maxFrames": 300
+}

@@ -1,0 +1,50 @@
+{
+  "formatVersion": 1,
+  "hearthVersion": "0.1.0",
+  "id": "prj_r54qi0d2",
+  "name": "Top-Down Room",
+  "description": "Walk around a room, open the door, talk to the keeper.",
+  "initialScene": "scn_f66q1w9d",
+  "scenes": [
+    {
+      "id": "scn_f66q1w9d",
+      "name": "Room",
+      "path": "scenes/room.scene.json"
+    }
+  ],
+  "inputMappings": {
+    "actions": {
+      "left": [
+        "ArrowLeft",
+        "KeyA"
+      ],
+      "right": [
+        "ArrowRight",
+        "KeyD"
+      ],
+      "up": [
+        "ArrowUp",
+        "KeyW"
+      ],
+      "down": [
+        "ArrowDown",
+        "KeyS"
+      ],
+      "jump": [
+        "Space"
+      ],
+      "action": [
+        "KeyE",
+        "Enter"
+      ]
+    }
+  },
+  "buildSettings": {
+    "width": 800,
+    "height": 600,
+    "backgroundColor": "#1a1a2e",
+    "targetFps": 60,
+    "fixedTimestep": 60,
+    "title": "Top-Down Room"
+  }
+}

@@ -1,0 +1,52 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    name: Build & Test (Node ${{ matrix.node }})
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        node: [20, 22]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
+      - name: Install dependencies
+        run: npm ci
+      - name: Build packages
+        run: npm run build:packages
+      - name: Typecheck
+        run: npm run typecheck
+      - name: Run tests
+        run: npm test
+      - name: Regenerate examples (dogfoods the command system)
+        run: node packages/examples/generate.mjs
+      - name: CLI smoke test
+        run: |
+          node packages/cli/dist/main.js --help
+          node packages/cli/dist/main.js inspect project --json -p packages/examples/mini-platformer
+          node packages/cli/dist/main.js validate --json -p packages/examples/mini-platformer
+
+  build-editor:
+    name: Build editor
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Install dependencies
+        run: npm ci
+      - name: Build packages
+        run: npm run build:packages
+      - name: Build editor
+        run: npm run build:editor
