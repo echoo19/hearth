@@ -193,15 +193,23 @@ describe('hearth doctor', () => {
   });
 });
 
-describe('runtime-dependent commands surface a graceful not-implemented error', () => {
-  it('run: fails cleanly rather than crashing when the runtime package is a stub', async () => {
+describe('runtime-dependent commands', () => {
+  it('run: executes a headless scene smoke and reports a passing result', async () => {
     const result = await runCli(['run', 'Main', '--frames', '10', '--json'], projectDir);
-    // The playtest runtime stub throws "not implemented yet" — the CLI must
-    // catch that and surface a normal failing CommandResult, not a stack trace.
+    expect(result.code).toBe(0);
+    const envelope = parseJson(result.stdout);
+    expect(envelope.success).toBe(true);
+    expect(envelope.command).toBe('runScene');
+    expect(envelope.data.framesRun).toBe(10);
+    expect(envelope.data.passed).toBe(true);
+    expect(envelope.data.errors).toEqual([]);
+  });
+
+  it('run: unknown scene fails cleanly with a CommandResult, not a stack trace', async () => {
+    const result = await runCli(['run', 'NoSuchScene', '--json'], projectDir);
     expect(result.code).toBe(1);
     const envelope = parseJson(result.stdout);
     expect(envelope.success).toBe(false);
-    expect(envelope.command).toBe('runScene');
     expect(envelope.errors.length).toBeGreaterThan(0);
     expect(result.stdout).not.toContain('at Object.<anonymous>');
   });

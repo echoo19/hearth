@@ -133,12 +133,20 @@ describe('hearth-mcp server', () => {
     expect(envelope.errors[0].code).toBe('NOT_FOUND');
   });
 
-  it('run_playtest surfaces the stub "not implemented" runtime error gracefully', async () => {
+  it('run_playtest executes headlessly and returns a passing result', async () => {
     ctx = await connectClient();
     const sceneId = ctx.store.project.initialScene!;
     const createResult = await ctx.client.callTool({
       name: 'create_playtest',
-      arguments: { name: 'smoke', scene: sceneId },
+      arguments: {
+        name: 'smoke',
+        scene: sceneId,
+        steps: [
+          { type: 'wait', frames: 30 },
+          { type: 'assertEntityExists', entity: 'Player', exists: true },
+          { type: 'assertNoErrors' },
+        ],
+      },
     });
     expect(createResult.isError).toBeFalsy();
 
@@ -146,9 +154,11 @@ describe('hearth-mcp server', () => {
       name: 'run_playtest',
       arguments: { playtest: 'smoke' },
     });
-    expect(runResult.isError).toBe(true);
+    expect(runResult.isError).toBeFalsy();
     const envelope = toolJson(runResult);
-    expect(envelope.success).toBe(false);
-    expect(envelope.errors[0].message).toContain('not implemented');
+    expect(envelope.success).toBe(true);
+    expect(envelope.data.passed).toBe(true);
+    expect(envelope.data.framesRun).toBeGreaterThanOrEqual(30);
+    expect(envelope.data.steps.length).toBe(3);
   });
 });

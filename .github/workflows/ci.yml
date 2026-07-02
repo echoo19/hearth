@@ -34,6 +34,11 @@ jobs:
           node packages/cli/dist/main.js --help
           node packages/cli/dist/main.js inspect project --json -p packages/examples/mini-platformer
           node packages/cli/dist/main.js validate --json -p packages/examples/mini-platformer
+      - name: Example playtests (headless E2E)
+        run: |
+          node packages/cli/dist/main.js test -p packages/examples/mini-platformer
+          node packages/cli/dist/main.js test -p packages/examples/top-down-room
+          node packages/cli/dist/main.js test -p packages/examples/visual-novel
 
   build-editor:
     name: Build editor
