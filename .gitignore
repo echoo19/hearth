@@ -10,3 +10,4 @@ apps/editor/src-tauri/target/
 .vite/
 *.tsbuildinfo
 .hearth-tmp/
+.envrc
