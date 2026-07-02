@@ -43,6 +43,16 @@ npm run dev                # editor at http://localhost:5173
 In the editor's launcher, open an example (e.g. **Mini Platformer**), press
 **Play** in the Game tab — arrows/WASD to move, Space to jump.
 
+### Desktop app
+
+```bash
+npm run app          # launch Hearth as a desktop app (Electron)
+npm run app:dist     # package a real Hearth.app / installer
+```
+
+The desktop app opens projects straight from folders with native dialogs,
+Godot/Unity style — see [docs/desktop-app.md](docs/desktop-app.md).
+
 ### Try the agent loop yourself
 
 ```bash
@@ -77,8 +87,9 @@ see [docs/mcp.md](docs/mcp.md).
 - **Editor** (`apps/editor`) — project launcher, scene view with drag
   editing, hierarchy, schema-driven inspector, asset browser, console,
   live game preview (PixiJS), **diff/review panel**, and an agent-integration
-  panel with copy-paste setup. Runs in the browser via Vite; Tauri desktop
-  shell included (packaging documented, experimental).
+  panel with copy-paste setup. Runs in the browser via Vite or as a packaged
+  Electron desktop app with native folder dialogs (Tauri shell included as an
+  experimental alternative).
 - **Runtime** (`packages/runtime`) — fixed-timestep deterministic 2D runtime:
   transforms, sprites/primitives, text, tilemaps, input actions, AABB
   physics + triggers, cameras, and a sandboxed-ish JS script engine that runs
@@ -104,6 +115,7 @@ see [docs/mcp.md](docs/mcp.md).
 | | |
 | --- | --- |
 | [Quickstart](docs/quickstart.md) | Install → first game in 10 minutes |
+| [Desktop app](docs/desktop-app.md) | Electron packaging, native folder dialogs |
 | [CLI guide](docs/cli.md) | Every command + the JSON envelope |
 | [MCP guide](docs/mcp.md) | Connecting agents, permission modes |
 | [Agent workflow](docs/agents.md) | How agents should operate (and why) |

@@ -5,12 +5,49 @@
   "license": "MIT",
   "type": "module",
   "private": true,
+  "main": "dist-electron/main.cjs",
   "scripts": {
     "dev": "vite",
     "build": "tsc -p tsconfig.json --noEmit && vite build",
     "preview": "vite preview",
     "typecheck": "tsc -p tsconfig.json --noEmit",
+    "app:bundle": "node scripts/build-electron.mjs",
+    "app": "npm run build && npm run app:bundle && electron .",
+    "app:dev": "npm run app:bundle && ELECTRON_START_URL=http://localhost:5173 electron .",
+    "app:dist": "npm run build && npm run app:bundle && node scripts/assemble-app.mjs && electron-builder --dir",
+    "app:dist:installers": "npm run build && npm run app:bundle && node scripts/assemble-app.mjs && electron-builder",
     "tauri": "tauri"
+  },
+  "build": {
+    "appId": "dev.hearth.editor",
+    "productName": "Hearth",
+    "electronVersion": "33.4.11",
+    "directories": {
+      "app": "release-app",
+      "output": "release"
+    },
+    "asar": true,
+    "mac": {
+      "category": "public.app-category.developer-tools",
+      "identity": null,
+      "target": [
+        "dir",
+        "dmg"
+      ]
+    },
+    "win": {
+      "target": [
+        "nsis",
+        "zip"
+      ]
+    },
+    "linux": {
+      "target": [
+        "AppImage",
+        "deb"
+      ],
+      "category": "Development"
+    }
   },
   "dependencies": {
     "@hearth/core": "*",
@@ -24,6 +61,9 @@
     "@types/react": "^18.3.12",
     "@types/react-dom": "^18.3.1",
     "@vitejs/plugin-react": "^4.3.4",
+    "electron": "^33.4.11",
+    "electron-builder": "^25.1.8",
+    "esbuild": "^0.24.2",
     "vite": "^6.0.7"
   }
 }

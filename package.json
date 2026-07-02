@@ -18,6 +18,8 @@
     "build:editor": "npm run build -w @hearth/editor",
     "dev": "npm run dev -w @hearth/editor",
     "editor": "npm run dev -w @hearth/editor",
+    "app": "npm run app -w @hearth/editor",
+    "app:dist": "npm run app:dist -w @hearth/editor",
     "cli": "node packages/cli/dist/main.js",
     "mcp": "node packages/mcp-server/dist/main.js",
     "test": "vitest run",

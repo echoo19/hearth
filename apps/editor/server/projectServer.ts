@@ -426,6 +426,19 @@ async function readJsonBody(req: IncomingMessage): Promise<Record<string, unknow
   return JSON.parse(text);
 }
 
+/**
+ * Transport-agnostic API request handler: used by the Vite dev-server plugin
+ * below and by the Electron main process (which serves the same routes from
+ * a plain node:http server).
+ */
+export async function handleApiRequest(
+  ctx: ProjectServerContext,
+  req: IncomingMessage,
+  res: ServerResponse,
+): Promise<void> {
+  return route(ctx, req, res);
+}
+
 async function route(ctx: ProjectServerContext, req: IncomingMessage, res: ServerResponse): Promise<void> {
   const url = new URL(req.url ?? '/', 'http://localhost');
   const q = url.searchParams;

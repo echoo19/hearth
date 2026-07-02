@@ -20,5 +20,5 @@
       "@hearth/playtest": ["../../packages/playtest/src/index.ts"]
     }
   },
-  "include": ["src", "vite.config.ts", "server", "tests"]
+  "include": ["src", "vite.config.ts", "server", "tests", "electron"]
 }

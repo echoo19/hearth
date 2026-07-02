@@ -11,3 +11,6 @@ apps/editor/src-tauri/target/
 *.tsbuildinfo
 .hearth-tmp/
 .envrc
+apps/editor/dist-electron/
+apps/editor/release-app/
+apps/editor/release/

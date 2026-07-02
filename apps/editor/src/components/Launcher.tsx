@@ -3,6 +3,7 @@ import { useEditor } from '../store';
 import { apiRecentProjects, apiExampleProjects } from '../api';
 import type { ExampleProject, RecentProject } from '../types';
 import { Icon } from './ui';
+import { hearthNative } from '../native';
 
 export function Launcher() {
   const meta = useEditor((s) => s.meta);
@@ -25,6 +26,20 @@ export function Launcher() {
   }, []);
 
   const defaultDir = meta ? `${meta.home}/HearthProjects` : '';
+  const native = hearthNative();
+
+  async function browseCreateDir() {
+    const picked = await native?.pickDirectory();
+    if (picked) setDir(picked);
+  }
+
+  async function browseOpenProject() {
+    const picked = await native?.pickProjectFolder();
+    if (picked) {
+      setOpenPath(picked);
+      await handleOpen(picked, setOpenError);
+    }
+  }
 
   async function handleCreate(e: React.FormEvent) {
     e.preventDefault();
@@ -84,13 +99,20 @@ export function Launcher() {
               <label className="field-label" htmlFor="np-dir">
                 Location — the project is created in a subfolder here
               </label>
-              <input
-                id="np-dir"
-                className="input mono"
-                value={dir}
-                onChange={(e) => setDir(e.target.value)}
-                placeholder={defaultDir || '/path/to/projects'}
-              />
+              <div className="row">
+                <input
+                  id="np-dir"
+                  className="input mono"
+                  value={dir}
+                  onChange={(e) => setDir(e.target.value)}
+                  placeholder={defaultDir || '/path/to/projects'}
+                />
+                {native && (
+                  <button className="btn" type="button" disabled={busy} onClick={() => void browseCreateDir()}>
+                    Browse…
+                  </button>
+                )}
+              </div>
             </div>
             <div className="form-field">
               <label className="field-label" htmlFor="np-desc">
@@ -128,6 +150,11 @@ export function Launcher() {
             <button className="btn" disabled={busy} onClick={() => void handleOpen(openPath, setOpenError)}>
               Open
             </button>
+            {native && (
+              <button className="btn btn-primary" disabled={busy} onClick={() => void browseOpenProject()}>
+                Open Folder…
+              </button>
+            )}
           </div>
           {openError && <div className="launcher-error">{openError}</div>}
 

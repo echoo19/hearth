@@ -24,9 +24,10 @@ missing.
 
 - **Standalone web export** — bundle runtime + project into a static site
   (`buildProject` currently exports a validated portable project folder).
-- **Tauri-native packaging** — ship the project server as a sidecar so the
-  desktop app is fully self-contained (browser dev-mode is the supported
-  path today).
+- **Desktop polish** — signed/notarized builds, custom app icon, auto-update.
+  (Electron packaging works today — `npm run app:dist`; the Tauri shell
+  remains an experimental alternative pending a Rust sidecar for the
+  project server.)
 - **TypeScript scripts** with a compile step and typed `ctx`.
 - **Multi-instance components** (array form, `formatVersion: 2`).
 - **Asset pipeline v2** — spritesheets, imported image slicing, tile
