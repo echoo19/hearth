@@ -17,9 +17,12 @@
  *     circle). Polygon colliders honor scale and rotation.
  */
 import {
+  AnimationDataSchema,
   createComponent,
   generateId,
   isComponentType,
+  joinPath,
+  type AnimationData,
   type ComponentMap,
   type Entity,
   type ParticleEmitterComponent,
@@ -28,6 +31,7 @@ import {
   type TransformComponent,
   type Vec2,
 } from '@hearth/core';
+import { createAnimatorState, stepAnimator, type AnimatorState } from './animator.js';
 import { InputState } from './input.js';
 import {
   GRAVITY,
@@ -185,6 +189,8 @@ export class SceneRuntime {
   private cameraFollowId: string | null = null;
   private warnedNoCamera = false;
   private emitters = new Map<string, EmitterState>();
+  private animationAssets = new Map<string, AnimationData>();
+  private animatorStates = new Map<string, AnimatorState>();
 
   private constructor(
     private readonly store: ProjectStore,
@@ -216,6 +222,7 @@ export class SceneRuntime {
       throw new Error(`Scene not found: ${sceneIdOrName}`);
     }
     const runtime = new SceneRuntime(store, scene, options);
+    await runtime.loadAnimations();
     await runtime.loadScripts();
     return runtime;
   }
@@ -335,6 +342,11 @@ export class SceneRuntime {
       }
       this.callHook(entity, 'onUpdate', this.fixedDt);
     }
+
+    // 2c. SpriteAnimator playback, right after scripts so same-frame
+    // playing/assetId mutations (including ctx.animate) take effect the
+    // frame they're made.
+    this.stepAnimators();
 
     // 3. Physics integration + collision detection/resolution.
     const contacts = this.stepPhysics();
@@ -528,6 +540,52 @@ export class SceneRuntime {
     const pos = this.getWorldPosition(target);
     cam.transform.position.x = pos.x;
     cam.transform.position.y = pos.y;
+  }
+
+  // ---------------------------------------------------------------------------
+  // Sprite animation
+  // ---------------------------------------------------------------------------
+
+  /** Preload every animation asset in the project (they're tiny JSON). */
+  private async loadAnimations(): Promise<void> {
+    for (const asset of this.store.assets.assets) {
+      if (asset.type !== 'animation') continue;
+      try {
+        const raw = await this.store.fs.readFile(joinPath(this.store.root, asset.path));
+        this.animationAssets.set(asset.id, AnimationDataSchema.parse(JSON.parse(raw)));
+      } catch (err) {
+        this.recordError({
+          frame: this._frame,
+          message: `Failed to load animation asset "${asset.name}": ${(err as Error).message}`,
+          phase: 'load',
+        });
+      }
+    }
+  }
+
+  /** Advance every live enabled SpriteAnimator one fixed step; reap destroyed entities. */
+  private stepAnimators(): void {
+    const liveIds = new Set<string>();
+    for (const entity of this.getEntities()) {
+      const animator = entity.components.SpriteAnimator;
+      if (!animator) continue;
+      // Disabled entities keep their state (frozen); only destruction reaps it.
+      liveIds.add(entity.id);
+      if (!entity.enabled) continue;
+      const renderer = entity.components.SpriteRenderer;
+      if (!renderer) continue; // no renderer to write frames into: skip silently
+      let state = this.animatorStates.get(entity.id);
+      if (!state) {
+        state = createAnimatorState(animator.assetId);
+        this.animatorStates.set(entity.id, state);
+      }
+      const asset = animator.assetId ? this.animationAssets.get(animator.assetId) : undefined;
+      const frameAssetId = stepAnimator(state, animator, asset, this.fixedDt);
+      if (frameAssetId !== null) renderer.assetId = frameAssetId;
+    }
+    for (const id of [...this.animatorStates.keys()]) {
+      if (!liveIds.has(id)) this.animatorStates.delete(id);
+    }
   }
 
   // ---------------------------------------------------------------------------
@@ -785,6 +843,22 @@ export class SceneRuntime {
           state.burst(count, emitter, runtime.getWorldPosition(entity));
         },
         count: () => runtime.getParticleCount(entity.id),
+      },
+      animate: (assetRef) => {
+        const animator = entity.components.SpriteAnimator;
+        if (!animator) {
+          runtime.recordLog('warn', `ctx.animate: no SpriteAnimator on "${entity.name}"`);
+          return;
+        }
+        const asset = runtime.store.getAsset(assetRef);
+        if (!asset || asset.type !== 'animation' || !runtime.animationAssets.has(asset.id)) {
+          runtime.recordLog('warn', `ctx.animate: unknown animation asset "${assetRef}"`);
+          return;
+        }
+        animator.assetId = asset.id;
+        animator.playing = true;
+        // Stage 2c (right after scripts, same frame) sees the assetId
+        // change and resets AnimatorState to frame 0.
       },
       save: (key, value) => {
         runtime.storage.set(key, JSON.stringify(value) ?? 'null');

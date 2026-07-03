@@ -132,6 +132,12 @@ export interface ScriptContext {
     /** Live particle count for this entity's ParticleEmitter (0 if none). */
     count(): number;
   };
+  /**
+   * Switch this entity's SpriteAnimator to `assetRef` (animation asset id
+   * or name), set playing = true, and reset to frame 0. Warn + no-op when
+   * the entity has no SpriteAnimator or the asset is unknown.
+   */
+  animate(assetRef: string): void;
   /** Persistent save data (JSON values), survives scene switches; in the
    *  browser it persists across sessions via localStorage. */
   save(key: string, value: unknown): void;
