@@ -116,4 +116,25 @@ describe('Wave A validation rules', () => {
     const validation = await validateProject(store);
     expect(validation.errors.some((e) => e.code === 'MISSING_ANIMATION_ASSET')).toBe(true);
   });
+
+  it('SpriteAnimator with wrong asset type errors', async () => {
+    const { session, store } = await makeSession();
+    // Create a sprite asset (not animation type)
+    await session.execute('createSpriteAsset', {
+      name: 'Wrong Type Asset',
+    });
+    const wrongTypeAssetId = store.assets.assets[0]?.id;
+
+    await session.execute('createEntity', {
+      scene: 'Main',
+      name: 'Wrong Asset Type',
+      components: {
+        SpriteRenderer: { shape: 'rectangle' },
+        SpriteAnimator: { assetId: wrongTypeAssetId! },
+      },
+    });
+
+    const validation = await validateProject(store);
+    expect(validation.errors.some((e) => e.code === 'INVALID_ANIMATION_ASSET_TYPE')).toBe(true);
+  });
 });

@@ -172,6 +172,7 @@ export async function validateProject(store: ProjectStore): Promise<ValidationRe
 
   // --- assets ---
   const assetIds = new Set(store.assets.assets.map((a) => a.id));
+  const assetsById = new Map(store.assets.assets.map((a) => [a.id, a]));
   for (const asset of store.assets.assets) {
     if (!(await store.fs.exists(joinPath(store.root, asset.path)))) {
       push({
@@ -346,8 +347,7 @@ export async function validateProject(store: ProjectStore): Promise<ValidationRe
         });
       }
       if (c.SpriteAnimator?.assetId) {
-        const asset = store.assets.assets.find((a) => a.id === c.SpriteAnimator!.assetId);
-        if (!asset) {
+        if (!assetIds.has(c.SpriteAnimator.assetId)) {
           push({
             severity: 'error',
             code: 'MISSING_ANIMATION_ASSET',
@@ -355,14 +355,17 @@ export async function validateProject(store: ProjectStore): Promise<ValidationRe
             scene: sceneId,
             entity: entity.id,
           });
-        } else if (asset.type !== 'animation') {
-          push({
-            severity: 'error',
-            code: 'INVALID_ANIMATION_ASSET_TYPE',
-            message: `Entity "${entity.name}" SpriteAnimator references asset ${c.SpriteAnimator.assetId} which is type '${asset.type}', not 'animation'`,
-            scene: sceneId,
-            entity: entity.id,
-          });
+        } else {
+          const asset = assetsById.get(c.SpriteAnimator.assetId);
+          if (asset?.type !== 'animation') {
+            push({
+              severity: 'error',
+              code: 'INVALID_ANIMATION_ASSET_TYPE',
+              message: `Entity "${entity.name}" SpriteAnimator references asset ${c.SpriteAnimator.assetId} which is type '${asset?.type ?? 'unknown'}', not 'animation'`,
+              scene: sceneId,
+              entity: entity.id,
+            });
+          }
         }
       }
     }
