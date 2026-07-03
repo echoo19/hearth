@@ -1,16 +1,19 @@
 /**
- * Pure math for the Scene view's polygon collider editor.
+ * Pure math for the Scene view's point editor: shared by the polygon
+ * Collider vertex editor and the LineRenderer vertex editor (SceneView's
+ * `pointsSelection` picks whichever component the current selection has).
  *
- * The transform mirrors the runtime exactly (packages/runtime/src/physics.ts
- * colliderShape): polygon points are local space, scaled by Transform.scale,
- * rotated by Transform.rotation (degrees), then translated by the entity's
- * world position plus Collider.offset. The offset itself is NOT rotated or
- * scaled.
+ * The transform mirrors the runtime exactly: polygon points are local space,
+ * scaled by Transform.scale, rotated by Transform.rotation (degrees), then
+ * translated by the entity's world position plus an offset (Collider.offset
+ * for polygon colliders; {0,0} for LineRenderer, which has no offset field —
+ * see packages/runtime/src/physics.ts colliderShape and
+ * packages/runtime/src/pixi/index.ts's node transform + redrawLine).
  *
  *   world = worldPos + offset + R(rotation) · S(scale) · local
  *
  * For editing we also need the inverse. A scale component of 0 collapses the
- * polygon and has no inverse, so both directions substitute 1 for a zero
+ * shape and has no inverse, so both directions substitute 1 for a zero
  * scale — degenerate in the runtime, but it keeps handles editable.
  */
 import type { Vec2 } from './types';
@@ -73,9 +76,13 @@ export function insertVertexOnEdge(points: readonly Vec2[], edgeIndex: number): 
   return next;
 }
 
-/** New array without vertex `index`, or null when that would go below 3 points. */
-export function removeVertex(points: readonly Vec2[], index: number): Vec2[] | null {
-  if (points.length <= 3) return null;
+/**
+ * New array without vertex `index`, or null when that would go below `min`
+ * points. `min` is 3 for a polygon collider (a degenerate polygon isn't
+ * meaningful) and 2 for a LineRenderer (a line needs at least two points).
+ */
+export function removeVertex(points: readonly Vec2[], index: number, min = 3): Vec2[] | null {
+  if (points.length <= min) return null;
   return points.filter((_, i) => i !== index).map((p) => ({ ...p }));
 }
 

@@ -25,6 +25,8 @@ export interface MountedGameView {
   play(): void;
   pause(): void;
   destroy(): void;
+  /** Toggle the collider/velocity/light debug overlay (PixiSceneView.setDebugDraw, since Task 7). */
+  setDebugDraw?(on: boolean): void;
   runtime?: { errors?: unknown[] };
 }
 

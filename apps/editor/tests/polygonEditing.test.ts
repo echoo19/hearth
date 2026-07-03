@@ -113,11 +113,17 @@ describe('edge helpers', () => {
     expect(triangle).toHaveLength(3);
   });
 
-  it('removeVertex refuses to go below 3 points', () => {
+  it('removeVertex refuses to go below 3 points by default (polygon collider)', () => {
     expect(removeVertex(triangle, 0)).toBeNull();
     const square = [...triangle, { x: 0, y: 32 }];
     const next = removeVertex(square, 3);
     expect(next).toEqual(triangle);
+  });
+
+  it('removeVertex honors a custom min, e.g. 2 for a LineRenderer', () => {
+    const line = [{ x: 0, y: 0 }, { x: 10, y: 0 }, { x: 20, y: 0 }];
+    expect(removeVertex(line, 1, 2)).toEqual([{ x: 0, y: 0 }, { x: 20, y: 0 }]);
+    expect(removeVertex([{ x: 0, y: 0 }, { x: 10, y: 0 }], 0, 2)).toBeNull();
   });
 
   it('roundPoints keeps two decimals', () => {

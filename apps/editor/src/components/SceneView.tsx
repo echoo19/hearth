@@ -70,9 +70,10 @@ export function SceneView() {
   const panRef = useRef<PanState | null>(null);
   const fittedScene = useRef<string | null>(null);
 
-  // Polygon collider point editing ("Edit points" mode). Draft points live in
-  // a ref (pointer events outrun React state) and are mirrored into state to
-  // re-render the handles, like dragPos above.
+  // Point editing ("Edit points" mode), shared by the polygon Collider and
+  // LineRenderer vertex editors (see pointsSourceFor/pointsSelection below).
+  // Draft points live in a ref (pointer events outrun React state) and are
+  // mirrored into state to re-render the handles, like dragPos above.
   const [editingPoints, setEditingPoints] = useState(false);
   const vertexDragRef = useRef<VertexDragState | null>(null);
   const [draggingVertex, setDraggingVertex] = useState(false);
@@ -191,29 +192,54 @@ export function SceneView() {
     };
   }, []);
 
-  // ---- polygon point editing -----------------------------------------------
-  const selectedForRender = selection ? entityById.get(selection) : undefined;
-  const selectedColliderComp = selectedForRender?.components.Collider as
-    | { shape?: string; points?: Vec2[]; offset?: Vec2 }
-    | undefined;
-  const canEditPoints = selectedColliderComp?.shape === 'polygon';
+  // ---- point editing ("Edit points" mode) -----------------------------------
+  // Shared by the polygon Collider and LineRenderer vertex editors: the
+  // transform math (polygonLocalToWorld/WorldToLocal) and edge helpers are
+  // identical, only the source component/property and minimum point count
+  // differ. See polygonEditing.ts's module doc for the shared transform.
+  interface PointsSource {
+    component: 'Collider' | 'LineRenderer';
+    property: string;
+    /** LineRenderer needs 2 points to draw a line; a polygon collider needs 3. */
+    min: number;
+    /** Whether the last→first edge is real (polygon colliders always are; LineRenderer per its `closed` field). */
+    closed: boolean;
+  }
 
-  /** The selected entity + its polygon collider, or null when not editable. */
-  function polygonSelection(): { entity: SceneEntity; frame: PolygonFrame; points: Vec2[] } | null {
+  function pointsSourceFor(entity: SceneEntity | undefined): PointsSource | null {
+    if (!entity) return null;
+    const collider = entity.components.Collider as { shape?: string } | undefined;
+    if (collider?.shape === 'polygon') {
+      return { component: 'Collider', property: 'Collider.points', min: 3, closed: true };
+    }
+    const line = entity.components.LineRenderer as { closed?: boolean } | undefined;
+    if (line) return { component: 'LineRenderer', property: 'LineRenderer.points', min: 2, closed: line.closed === true };
+    return null;
+  }
+
+  const selectedForRender = selection ? entityById.get(selection) : undefined;
+  const canEditPoints = pointsSourceFor(selectedForRender) !== null;
+
+  /** The selected entity + its editable points (Collider polygon or LineRenderer), or null when not editable. */
+  function pointsSelection(): { entity: SceneEntity; source: PointsSource; frame: PolygonFrame; points: Vec2[] } | null {
     const entity = selection ? entityById.get(selection) : undefined;
-    const collider = entity?.components.Collider as
-      | { shape?: string; points?: Vec2[]; offset?: Vec2 }
-      | undefined;
-    if (!entity || collider?.shape !== 'polygon') return null;
+    const source = pointsSourceFor(entity);
+    if (!entity || !source) return null;
     const tf = entity.components.Transform as any;
+    // LineRenderer has no offset field; only Collider.offset applies.
+    const offset =
+      source.component === 'Collider'
+        ? ((entity.components.Collider as { offset?: Vec2 } | undefined)?.offset ?? { x: 0, y: 0 })
+        : { x: 0, y: 0 };
     const frame: PolygonFrame = {
       worldPos: worldPos(entity),
-      offset: { x: collider.offset?.x ?? 0, y: collider.offset?.y ?? 0 },
+      offset: { x: offset.x ?? 0, y: offset.y ?? 0 },
       rotation: tf?.rotation ?? 0,
       scale: { x: tf?.scale?.x ?? 1, y: tf?.scale?.y ?? 1 },
     };
-    const points = draftPointsRef.current ?? (Array.isArray(collider.points) ? collider.points : []);
-    return { entity, frame, points };
+    const raw = (entity.components[source.component] as { points?: Vec2[] } | undefined)?.points;
+    const points = draftPointsRef.current ?? (Array.isArray(raw) ? raw : []);
+    return { entity, source, frame, points };
   }
 
   function exitPointEditing() {
@@ -223,7 +249,7 @@ export function SceneView() {
     setEditingPoints(false);
   }
 
-  // The mode only makes sense while a polygon-collider entity is selected.
+  // The mode only makes sense while an editable-points entity is selected.
   useEffect(() => {
     if (editingPoints && !canEditPoints) exitPointEditing();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -240,7 +266,7 @@ export function SceneView() {
   }, [editingPoints]);
 
   function commitPoints(points: Vec2[]) {
-    const sel = polygonSelection();
+    const sel = pointsSelection();
     if (!sel || !sceneId) {
       setDraftPoints(null);
       return;
@@ -250,7 +276,7 @@ export function SceneView() {
       {
         scene: sceneId,
         entity: sel.entity.id,
-        property: 'Collider.points',
+        property: sel.source.property,
         value: roundPoints(points),
       },
       { quiet: true },
@@ -267,12 +293,18 @@ export function SceneView() {
   function onVertexPointerDown(e: React.PointerEvent, index: number) {
     if (spaceHeld) return; // pan wins
     e.stopPropagation();
-    const sel = polygonSelection();
+    const sel = pointsSelection();
     if (!sel) return;
     if (e.button === 2 || (e.button === 0 && e.altKey)) {
-      const next = removeVertex(sel.points, index);
+      const next = removeVertex(sel.points, index, sel.source.min);
       if (!next) {
-        log('warn', 'editor', 'A polygon collider needs at least 3 points.');
+        log(
+          'warn',
+          'editor',
+          sel.source.component === 'Collider'
+            ? 'A polygon collider needs at least 3 points.'
+            : 'A LineRenderer needs at least 2 points.',
+        );
         return;
       }
       commitPoints(next);
@@ -285,7 +317,7 @@ export function SceneView() {
   function onMidpointPointerDown(e: React.PointerEvent, edgeIndex: number) {
     if (e.button !== 0 || spaceHeld) return;
     e.stopPropagation();
-    const sel = polygonSelection();
+    const sel = pointsSelection();
     if (!sel) return;
     // Insert the new vertex and immediately start dragging it; a plain click
     // (no movement) commits it at the edge midpoint.
@@ -350,7 +382,7 @@ export function SceneView() {
     }
     const vDrag = vertexDragRef.current;
     if (vDrag && e.pointerId === vDrag.pointerId) {
-      const sel = polygonSelection();
+      const sel = pointsSelection();
       const draft = draftPointsRef.current;
       if (!sel || !draft) return;
       const local = polygonWorldToLocal(screenToWorld(screenOf(e)), sel.frame);
@@ -526,6 +558,100 @@ export function SceneView() {
     );
   }
 
+  /**
+   * LineRenderer: the real polyline/polygon (points/width/color/closed/
+   * opacity), at the entity transform like renderSprite/renderText. Vertex
+   * drag handles are drawn separately, only while selected and in point-edit
+   * mode (the same overlay the polygon Collider editor uses).
+   */
+  function renderLineRenderer(entity: SceneEntity): React.ReactNode {
+    const lr = entity.components.LineRenderer as any;
+    if (!lr || lr.visible === false) return null;
+    const points: Vec2[] = Array.isArray(lr.points) ? lr.points : [];
+    if (points.length < 2) return null;
+    const attr = points.map((p) => `${p.x},${p.y}`).join(' ');
+    // Width is world-space (matching the runtime's Pixi stroke), so it zooms
+    // with the rest of the scene — non-scaling-stroke is reserved for UI
+    // overlays like the selection outline.
+    const shared = {
+      fill: 'none',
+      stroke: lr.color ?? '#ffffff',
+      strokeWidth: lr.width ?? 2,
+      strokeLinecap: 'round' as const,
+      strokeLinejoin: 'round' as const,
+      opacity: lr.opacity ?? 1,
+    };
+    return lr.closed ? <polygon points={attr} {...shared} /> : <polyline points={attr} {...shared} />;
+  }
+
+  /**
+   * Light2D: dashed radius circle in the light's color + a small bulb glyph.
+   * Drawn at the entity's world position only (no rotation/scale) — the
+   * runtime's debug overlay draws the same radius circle unscaled, and a
+   * light's radius has no orientation.
+   */
+  function renderLightGizmo(entity: SceneEntity): React.ReactNode {
+    const light = entity.components.Light2D as any;
+    if (!light || light.enabled === false) return null;
+    const color = light.color ?? '#ffffff';
+    const radius = light.radius ?? 200;
+    const g = 5 / view.s; // fixed on-screen glyph size, like the polygon vertex handles
+    return (
+      <g pointerEvents="none">
+        <circle
+          cx={0}
+          cy={0}
+          r={radius}
+          fill="none"
+          stroke={color}
+          strokeOpacity={0.4}
+          strokeWidth={1.5}
+          strokeDasharray="6 4"
+          vectorEffect="non-scaling-stroke"
+        />
+        {/* vector-effect is per-shape (not inherited), hence on each element */}
+        <g stroke={color} strokeWidth={1.3} fill="none">
+          <circle cx={0} cy={0} r={g} vectorEffect="non-scaling-stroke" />
+          <path
+            d={`M ${-g * 0.4} ${g * 1.2} L ${g * 0.4} ${g * 1.2} M ${-g * 0.22} ${g * 1.7} L ${g * 0.22} ${g * 1.7}`}
+            vectorEffect="non-scaling-stroke"
+          />
+        </g>
+      </g>
+    );
+  }
+
+  /**
+   * ParticleEmitter: a small fountain glyph plus two lines showing the
+   * `direction ± spread` cone. Drawn unrotated/unscaled by the entity
+   * transform, matching how spawnOne() computes particle velocity from
+   * emitter.direction directly against world position (no transform.rotation
+   * applied) — see packages/runtime/src/particles.ts.
+   */
+  function renderParticleGizmo(entity: SceneEntity): React.ReactNode {
+    const pe = entity.components.ParticleEmitter as any;
+    if (!pe) return null;
+    const color = pe.startColor ?? '#ffffff';
+    const dir = ((pe.direction ?? 0) * Math.PI) / 180;
+    const spread = ((pe.spread ?? 0) * Math.PI) / 180;
+    const len = 48 / view.s; // fixed ~48 on-screen px, a glyph rather than a true travel distance
+    const a = (angle: number) => ({ x: Math.cos(angle) * len, y: Math.sin(angle) * len });
+    const p1 = a(dir - spread);
+    const p2 = a(dir + spread);
+    const r = 4 / view.s;
+    return (
+      <g pointerEvents="none" stroke={color} strokeOpacity={0.75} strokeWidth={1.3} fill="none">
+        <line x1={0} y1={0} x2={p1.x} y2={p1.y} vectorEffect="non-scaling-stroke" />
+        <line x1={0} y1={0} x2={p2.x} y2={p2.y} vectorEffect="non-scaling-stroke" />
+        {/* fountain glyph: basin + a jet splitting into two droplets */}
+        <path
+          d={`M ${-r} ${r * 1.4} L ${r} ${r * 1.4} M 0 ${r * 1.4} L 0 ${-r * 0.4} M 0 ${-r * 0.4} L ${-r * 0.7} ${r * 0.6} M 0 ${-r * 0.4} L ${r * 0.7} ${r * 0.6}`}
+          vectorEffect="non-scaling-stroke"
+        />
+      </g>
+    );
+  }
+
   /** Visual bounds in local space, for hit-testing and the selection outline. */
   function boundsOf(entity: SceneEntity): { x: number; y: number; w: number; h: number } {
     const sr = entity.components.SpriteRenderer as any;
@@ -551,6 +677,17 @@ export function SceneView() {
       const cols = rows.reduce((m: number, r: string) => Math.max(m, r.length), 1);
       return { x: 0, y: 0, w: Math.max(cols, 1) * size, h: Math.max(rows.length, 1) * size };
     }
+    const lr = entity.components.LineRenderer as any;
+    if (lr && Array.isArray(lr.points) && lr.points.length > 0) {
+      const pad = (lr.width ?? 2) / 2 + 4;
+      const xs = lr.points.map((p: Vec2) => p.x);
+      const ys = lr.points.map((p: Vec2) => p.y);
+      const minX = Math.min(...xs) - pad;
+      const maxX = Math.max(...xs) + pad;
+      const minY = Math.min(...ys) - pad;
+      const maxY = Math.max(...ys) + pad;
+      return { x: minX, y: minY, w: Math.max(maxX - minX, 1), h: Math.max(maxY - minY, 1) };
+    }
     const m = 24;
     return { x: -m / 2, y: -m / 2, w: m, h: m };
   }
@@ -559,7 +696,8 @@ export function SceneView() {
     const sr = entity.components.SpriteRenderer as any;
     const t = entity.components.Text as any;
     const tm = entity.components.Tilemap as any;
-    return (tm?.layer ?? sr?.layer ?? t?.layer ?? 0) as number;
+    const lr = entity.components.LineRenderer as any;
+    return (tm?.layer ?? sr?.layer ?? t?.layer ?? lr?.layer ?? 0) as number;
   }
 
   const sorted = useMemo(() => {
@@ -614,10 +752,15 @@ export function SceneView() {
                   {renderTilemap(entity)}
                   {renderSprite(entity)}
                   {renderText(entity)}
+                  {renderLineRenderer(entity)}
                   {renderCameraGizmo(entity)}
                   {/* hit area */}
                   <rect x={b.x} y={b.y} width={b.w} height={b.h} fill="transparent" stroke="none" />
                 </g>
+                {/* Light2D/ParticleEmitter gizmos: world position only, not the
+                    entity's own rotation/scale — see their render fns for why. */}
+                {renderLightGizmo(entity)}
+                {renderParticleGizmo(entity)}
               </g>
             );
           })}
@@ -647,29 +790,37 @@ export function SceneView() {
               );
             })()}
 
-          {/* polygon collider point editor */}
+          {/* point editor: polygon Collider or LineRenderer vertex handles */}
           {editingPoints &&
             (() => {
-              const sel = polygonSelection();
+              const sel = pointsSelection();
               if (!sel) return null;
               const localPts = draftPoints ?? sel.points;
               const worldPts = localPts.map((p) => polygonLocalToWorld(p, sel.frame));
               if (worldPts.length === 0) return null;
-              const mids = edgeMidpoints(worldPts);
+              // Only the real edges get a midpoint (add-vertex) handle: all of
+              // them for a polygon collider, but for an open LineRenderer the
+              // last→first "edge" edgeMidpoints reports doesn't actually exist.
+              const mids = edgeMidpoints(worldPts).slice(0, sel.source.closed ? worldPts.length : worldPts.length - 1);
               const r = 4 / view.s; // 8px vertex handles on screen
               const mr = 3 / view.s; // slightly smaller midpoint handles
               const hit = 9 / view.s; // comfortable hit area around both
+              const outlineProps = {
+                points: worldPts.map((p) => `${p.x},${p.y}`).join(' '),
+                fill: sel.source.component === 'Collider' ? 'var(--accent)' : 'none',
+                fillOpacity: 0.08,
+                stroke: 'var(--accent)',
+                strokeWidth: 1.5,
+                vectorEffect: 'non-scaling-stroke' as const,
+                pointerEvents: 'none' as const,
+              };
               return (
                 <g>
-                  <polygon
-                    points={worldPts.map((p) => `${p.x},${p.y}`).join(' ')}
-                    fill="var(--accent)"
-                    fillOpacity={0.08}
-                    stroke="var(--accent)"
-                    strokeWidth={1.5}
-                    vectorEffect="non-scaling-stroke"
-                    pointerEvents="none"
-                  />
+                  {sel.source.closed || worldPts.length < 2 ? (
+                    <polygon {...outlineProps} />
+                  ) : (
+                    <polyline {...outlineProps} />
+                  )}
                   {mids.map((m, i) => (
                     <g key={`mid-${i}`} className="poly-mid" onPointerDown={(e) => onMidpointPointerDown(e, i)}>
                       <circle cx={m.x} cy={m.y} r={hit} fill="transparent" stroke="none" />
@@ -705,7 +856,7 @@ export function SceneView() {
           ) : (
             <button
               className="btn btn-sm"
-              title="Edit the polygon collider's points in the scene"
+              title="Edit the polygon collider's or LineRenderer's points in the scene"
               onClick={() => setEditingPoints(true)}
             >
               Edit points

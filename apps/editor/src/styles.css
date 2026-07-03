@@ -988,6 +988,29 @@ label.field-label {
   font-size: 11px;
 }
 
+/* Vec2[] fields (LineRenderer.points, Collider polygon points): a row per
+   point, reusing .vec2-pair for each row so it matches Vec2Field exactly. */
+.vec2-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.vec2-list-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.vec2-list-row .vec2-pair {
+  flex: 1;
+}
+
+.vec2-list-empty {
+  color: var(--ink-faint);
+  font-size: 12px;
+}
+
 .add-component-row {
   padding: 10px;
 }

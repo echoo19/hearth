@@ -35,6 +35,13 @@ interface EditorState {
   playing: boolean;
   /** Bumped every time playback starts, so the preview restarts from the current scene state. */
   runNonce: number;
+  /**
+   * Game preview debug overlay (collider outlines, velocity vectors, light
+   * radii — wired to PixiSceneView.setDebugDraw). Off by default; resets to
+   * false whenever the preview remounts (new Play, scene switch, close), no
+   * persistence across sessions this wave.
+   */
+  debugDraw: boolean;
 
   loadMeta(): Promise<void>;
   openProject(path: string): Promise<{ ok: boolean; error?: string }>;
@@ -44,6 +51,7 @@ interface EditorState {
   select(entityId: string | null): void;
   setConsoleOpen(open: boolean): void;
   setPlaying(playing: boolean): void;
+  setDebugDraw(on: boolean): void;
   log(level: ConsoleLevel, source: ConsoleSource, message: string): void;
   clearConsole(): void;
   refresh(): Promise<void>;
@@ -98,6 +106,7 @@ export const useEditor = create<EditorState>((set, get) => {
       diff: null,
       assets: [],
       playing: false,
+      debugDraw: false,
     });
     get().log('info', 'editor', `Opened project "${info.name}" (${info.scenes.length} scene${info.scenes.length === 1 ? '' : 's'})`);
     const docs = await query<{ components: ComponentDoc[] }>('inspectComponents');
@@ -120,6 +129,7 @@ export const useEditor = create<EditorState>((set, get) => {
     diff: null,
     playing: false,
     runNonce: 0,
+    debugDraw: false,
 
     async loadMeta() {
       const meta = await apiMeta();
@@ -172,11 +182,12 @@ export const useEditor = create<EditorState>((set, get) => {
         selection: null,
         diff: null,
         playing: false,
+        debugDraw: false,
       });
     },
 
     async selectScene(sceneId) {
-      set({ sceneId, selection: null, playing: false });
+      set({ sceneId, selection: null, playing: false, debugDraw: false });
       await get().refresh();
     },
 
@@ -191,7 +202,17 @@ export const useEditor = create<EditorState>((set, get) => {
 
     setPlaying(playing) {
       // Play always runs the scene as it is now (Godot-style); Stop freezes it.
-      set((state) => ({ playing, runNonce: playing ? state.runNonce + 1 : state.runNonce }));
+      // Starting a run remounts the preview (see GamePreview's runNonce effect),
+      // so debugDraw resets to off along with it — no persistence across runs.
+      set((state) => ({
+        playing,
+        runNonce: playing ? state.runNonce + 1 : state.runNonce,
+        debugDraw: playing ? false : state.debugDraw,
+      }));
+    },
+
+    setDebugDraw(on) {
+      set({ debugDraw: on });
     },
 
     log(level, source, message) {

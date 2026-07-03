@@ -10,8 +10,10 @@ export function Toolbar({ dock, storageKey }: { dock: DockviewApi | null; storag
   const info = useEditor((s) => s.info);
   const sceneId = useEditor((s) => s.sceneId);
   const playing = useEditor((s) => s.playing);
+  const debugDraw = useEditor((s) => s.debugDraw);
   const selectScene = useEditor((s) => s.selectScene);
   const setPlaying = useEditor((s) => s.setPlaying);
+  const setDebugDraw = useEditor((s) => s.setDebugDraw);
   const refreshDiff = useEditor((s) => s.refreshDiff);
   const exec = useEditor((s) => s.exec);
   const closeProject = useEditor((s) => s.closeProject);
@@ -81,6 +83,14 @@ export function Toolbar({ dock, storageKey }: { dock: DockviewApi | null; storag
         title={playing ? 'Stop the preview' : 'Play the current scene in the Game tab'}
       >
         <Icon name={playing ? 'stop' : 'play'} /> {playing ? 'Stop' : 'Play'}
+      </button>
+      <button
+        className={debugDraw ? 'btn btn-primary btn-sm' : 'btn btn-sm'}
+        onClick={() => setDebugDraw(!debugDraw)}
+        title="Toggle the Game preview's debug overlay (collider outlines, velocity vectors, light radii)"
+        aria-pressed={debugDraw}
+      >
+        Debug
       </button>
 
       <span className="divider" />

@@ -57,6 +57,25 @@ const ICON_PATHS: Record<string, ReactNode> = {
   upload: <path d="M6 8V2.5M3.5 4.5L6 2l2.5 2.5M2.5 9.5h7" />,
   physics: <circle cx="6" cy="6" r="3.8" />,
   collider: <rect x="2.5" y="2.5" width="7" height="7" rx="2" strokeDasharray="2 1.6" />,
+  light: (
+    <>
+      <circle cx="6" cy="5" r="3" />
+      <path d="M4.5 9.3h3M5 10.5h2" />
+    </>
+  ),
+  line: <path d="M2 8.5L4.5 4.5 7 7.5 10 3" />,
+  particles: (
+    <>
+      <circle cx="6" cy="9.5" r="0.9" fill="currentColor" stroke="none" />
+      <path d="M6 7.5V3M6 3L4.3 4.7M6 3l1.7 1.7" />
+    </>
+  ),
+  animator: (
+    <>
+      <rect x="2" y="3" width="8" height="6" rx="1" />
+      <path d="M4.5 3v6M7.5 3v6" />
+    </>
+  ),
 };
 
 export function Icon({ name, size = 12 }: { name: string; size?: number }) {
@@ -95,6 +114,14 @@ export function componentIcon(type: string): string {
       return 'physics';
     case 'Collider':
       return 'collider';
+    case 'Light2D':
+      return 'light';
+    case 'LineRenderer':
+      return 'line';
+    case 'ParticleEmitter':
+      return 'particles';
+    case 'SpriteAnimator':
+      return 'animator';
     default:
       return 'entity';
   }

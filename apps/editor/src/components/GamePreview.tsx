@@ -19,6 +19,7 @@ export function GamePreview() {
   const sceneId = useEditor((s) => s.sceneId);
   const playing = useEditor((s) => s.playing);
   const runNonce = useEditor((s) => s.runNonce);
+  const debugDraw = useEditor((s) => s.debugDraw);
   const log = useEditor((s) => s.log);
 
   const hostRef = useRef<HTMLDivElement>(null);
@@ -103,6 +104,20 @@ export function GamePreview() {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [playing, status]);
+
+  // debugDraw resets to false in the store whenever the view remounts (new
+  // Play, scene switch); this effect just keeps the live view in sync with
+  // the Toolbar's toggle while mounted.
+  useEffect(() => {
+    const view = viewRef.current;
+    if (!view || status !== 'ready') return;
+    try {
+      view.setDebugDraw?.(debugDraw);
+    } catch (err) {
+      log('error', 'runtime', `debug draw toggle failed: ${(err as Error).message}`);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [debugDraw, status]);
 
   return (
     <div className="game-preview">

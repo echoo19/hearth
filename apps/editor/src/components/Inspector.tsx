@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useEditor } from '../store';
 import type { SceneEntity } from '../types';
+import { addPoint, removePoint, setPointAxis } from '../vec2List';
 import { ConfirmDialog, Icon, componentIcon } from './ui';
 
 // ---------------------------------------------------------------------------
@@ -95,6 +96,44 @@ function Vec2Field({
   );
 }
 
+/**
+ * Row-per-point editor for Vec2[] fields (LineRenderer.points, Collider
+ * polygon points): paired x/y NumberField inputs identical to Vec2Field, a
+ * remove button per row, and an add-point button. Jake's uniformity
+ * feedback: this replaces JsonField's raw JSON textarea for every Wave A
+ * Vec2[] field — the array-editing logic lives in ../vec2List so it stays
+ * unit-testable without a DOM.
+ */
+function Vec2ListField({
+  value,
+  onCommit,
+}: {
+  value: { x: number; y: number }[];
+  onCommit: (points: { x: number; y: number }[]) => void;
+}) {
+  return (
+    <div className="vec2-list">
+      {value.length === 0 && <span className="vec2-list-empty">No points</span>}
+      {value.map((p, i) => (
+        <div className="vec2-list-row" key={i}>
+          <Vec2Field value={p} onCommitAxis={(axis, v) => onCommit(setPointAxis(value, i, axis, v))} />
+          <button
+            type="button"
+            className="icon-btn danger"
+            title={`Remove point ${i + 1}`}
+            onClick={() => onCommit(removePoint(value, i))}
+          >
+            <Icon name="cross" size={10} />
+          </button>
+        </div>
+      ))}
+      <button type="button" className="btn btn-sm" onClick={() => onCommit(addPoint(value))}>
+        <Icon name="plus" size={10} /> Add point
+      </button>
+    </div>
+  );
+}
+
 function JsonField({ value, onCommit }: { value: unknown; onCommit: (v: unknown) => void }) {
   const formatted = useMemo(() => JSON.stringify(value, null, 2) ?? 'null', [value]);
   const [draft, setDraft] = useState(formatted);
@@ -168,6 +207,10 @@ function isVec2(v: unknown): v is { x: number; y: number } {
     typeof (v as any).x === 'number' &&
     typeof (v as any).y === 'number'
   );
+}
+
+function isVec2Array(v: unknown): v is { x: number; y: number }[] {
+  return Array.isArray(v) && v.every(isVec2);
 }
 
 export function Inspector() {
@@ -312,7 +355,26 @@ export function Inspector() {
                   const property = `${type}.${field}`;
                   const rowKey = `${entity.id}.${property}`;
                   let control: React.ReactNode;
-                  if (field === 'assetId' && (typeof value === 'string' || value === null)) {
+                  if (field === 'assetId' && type === 'SpriteAnimator' && typeof value === 'string') {
+                    // SpriteAnimator.assetId is a non-nullable string (default ''),
+                    // unlike SpriteRenderer/AudioSource's nullable assetId, and it
+                    // picks from animation assets specifically.
+                    const options = assets.filter((a) => a.type === 'animation');
+                    control = (
+                      <select
+                        className="select"
+                        value={value}
+                        onChange={(e) => setProperty(property, e.target.value)}
+                      >
+                        <option value="">(none)</option>
+                        {options.map((a) => (
+                          <option key={a.id} value={a.id}>
+                            {a.name}
+                          </option>
+                        ))}
+                      </select>
+                    );
+                  } else if (field === 'assetId' && (typeof value === 'string' || value === null)) {
                     // AudioSource picks from audio assets; SpriteRenderer (and
                     // anything else with an assetId) from sprites/tiles.
                     const isAudio = type === 'AudioSource';
@@ -365,6 +427,14 @@ export function Inspector() {
                         value={value}
                         onCommitAxis={(axis, v) => setProperty(`${property}.${axis}`, v)}
                       />
+                    );
+                  } else if (isVec2Array(value) && (value.length > 0 || field === 'points')) {
+                    // Any Vec2[] gets the row editor (Jake: never raw JSON for
+                    // these). An EMPTY array is shapeless, so only trust the
+                    // `points` field name for it — an emptied Tilemap.grid
+                    // (string[]) must not grow {x,y} entries via "Add point".
+                    control = (
+                      <Vec2ListField key={rowKey} value={value} onCommit={(points) => setProperty(property, points)} />
                     );
                   } else {
                     control = (
