@@ -282,6 +282,27 @@ export class PixiSceneView {
     this.syncCamera();
   }
 
+  /**
+   * Advance exactly one fixed frame, awaiting any pending/newly-triggered
+   * scene switch first (via `session.stepAsync`) so a `ctx.scenes.load`
+   * mid-frame never gets silently skipped the way it would with the
+   * fire-and-forget `stepOnce`/`session.step`. Used by manual-stepping hosts
+   * (screenshot/test harnesses driving `window.__hearth.step(n)`) that need
+   * deterministic frame counts across scene switches — mirrors how the
+   * headless playtest runner loops `await session.stepAsync()`.
+   */
+  async stepOnceAsync(): Promise<void> {
+    await this.session.stepAsync();
+    if (this.session.switching) return;
+    this.syncEntities();
+    this.syncCamera();
+  }
+
+  /** Force one render pass so the canvas reflects current state right now, without waiting for the next ticker/rAF tick (manual-stepping hosts call this before taking a screenshot). */
+  renderOnce(): void {
+    this.app.render();
+  }
+
   get debugDraw(): boolean {
     return this._debugDraw;
   }

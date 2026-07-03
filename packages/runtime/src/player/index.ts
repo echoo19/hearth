@@ -17,6 +17,7 @@
 import { MemoryFileSystem, ProjectStore, type Asset } from '@hearth/core';
 import { setLuaWasmUri } from '../lua.js';
 import { PixiSceneView, localStorageAdapter } from '../pixi/index.js';
+import { mergeBootOverrides, type BootOverrides } from './bootOverrides.js';
 import {
   loadingForegroundColor,
   normalizeLoadingSettings,
@@ -56,10 +57,54 @@ export interface BootOptions {
   /** Element (or selector) the player takes over. */
   mount: HTMLElement | string;
   bundle: PlayerBundle;
+  /**
+   * Manual-stepping mode: mounts with `autoplay: false` (no ticker-driven
+   * stepping) and exposes `window.__hearth` so a host can drive frames one
+   * at a time — see `window.__hearth` below. Off by default; normal
+   * (non-manual) boot behaves exactly as before this option existed.
+   */
+  manual?: boolean;
+  /** Seed for ctx.random / Lua math.random (default 0, same as before). */
+  seed?: number;
+  /** Enable the collider/velocity/light debug overlay right after mount. */
+  debug?: boolean;
+  /** Override the exported project's canvas resolution (default: buildSettings.width/height). */
+  width?: number;
+  height?: number;
+}
+
+// window.__HEARTH_BOOT__ (read by boot() below) is the seam a host — the
+// `hearth screenshot` CLI (Task 9) — uses to stage manual/seeded/debug mode
+// BEFORE this script runs, so an export's unmodified auto-boot call
+// (`window.HearthPlayer.boot({ mount, bundle })`, see exportCommands.ts's
+// index.html template) can still be driven into that mode without touching
+// the template: `<script>window.__HEARTH_BOOT__={manual:true,seed:5,debug:true}</script>`
+// ahead of the player script tag. See ./bootOverrides.js for the merge logic
+// (kept window-free so it's unit-testable without a DOM).
+declare global {
+  interface Window {
+    __HEARTH_BOOT__?: BootOverrides;
+    /**
+     * Manual-stepping control surface, present only after a `manual: true`
+     * boot. Task 9 (`hearth screenshot`) drives this from Playwright.
+     */
+    __hearth?: {
+      /** Step N fixed frames, awaiting any scene switch triggered mid-run. */
+      step: (n: number) => Promise<void>;
+      /** Force one render so the canvas reflects current state. */
+      render: () => void;
+      ready: true;
+      frame: () => number;
+    };
+  }
 }
 
 /** Boots the player; resolves with the running view once the game renders. */
-async function boot(opts: BootOptions): Promise<PixiSceneView> {
+async function boot(rawOpts: BootOptions): Promise<PixiSceneView> {
+  const opts = mergeBootOverrides(
+    rawOpts,
+    typeof window !== 'undefined' ? window.__HEARTH_BOOT__ : undefined,
+  );
   const mount =
     typeof opts.mount === 'string'
       ? document.querySelector<HTMLElement>(opts.mount)
@@ -80,6 +125,11 @@ async function boot(opts: BootOptions): Promise<PixiSceneView> {
       width?: number;
       height?: number;
     };
+    // width/height overrides only ever come from an explicit boot() call or
+    // __HEARTH_BOOT__ (e.g. the screenshot CLI pinning a canvas size); a
+    // normal export never sets them, so this is a no-op for today's boot.
+    if (opts.width) settings.width = opts.width;
+    if (opts.height) settings.height = opts.height;
     const baseW = settings.width ?? FALLBACK_WIDTH;
     const baseH = settings.height ?? FALLBACK_HEIGHT;
 
@@ -101,10 +151,25 @@ async function boot(opts: BootOptions): Promise<PixiSceneView> {
       container: host,
       store,
       // scene omitted: the session defaults to initialScene (then first scene)
-      seed: 0,
+      seed: opts.seed ?? 0,
       storage: localStorageAdapter(store.project.id),
       resolveAssetUrl: (asset: Asset) => dataUris.get(asset.id) ?? asset.path,
+      // manual mode: the host drives frames via window.__hearth.step, not the ticker.
+      autoplay: opts.manual ? false : undefined,
     });
+
+    if (opts.debug) view.setDebugDraw(true);
+
+    if (opts.manual) {
+      window.__hearth = {
+        step: async (n: number) => {
+          for (let i = 0; i < n; i++) await view.stepOnceAsync();
+        },
+        render: () => view.renderOnce(),
+        ready: true,
+        frame: () => view.session.frame,
+      };
+    }
 
     // Letterbox: scale the fixed-resolution canvas to fit, preserving aspect.
     const canvas = host.querySelector('canvas');
