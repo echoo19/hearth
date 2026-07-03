@@ -36,11 +36,21 @@ import {
   Texture,
   type Ticker,
 } from 'pixi.js';
-import type { Asset, ProjectStore, SpriteRendererComponent, TilemapComponent } from '@hearth/core';
+import {
+  AnimationDataSchema,
+  joinPath,
+  type Asset,
+  type LineRendererComponent,
+  type ParticleEmitterComponent,
+  type ProjectStore,
+  type SpriteRendererComponent,
+  type TilemapComponent,
+} from '@hearth/core';
 import type { RuntimeEntity, RuntimeError, RuntimeLog, SceneRuntime } from '../runtime.js';
 import { GameSession, type SceneEvent, type SessionStorage } from '../session.js';
 import { uiScreenPosition } from '../ui.js';
 import { WebAudioPlayer } from './audio.js';
+import { lerp, lerpColor } from './color.js';
 
 export { localStorageAdapter, type WebStorageLike } from './storage.js';
 
@@ -77,6 +87,16 @@ export class PixiSceneView {
   /** Screen-space UI overlay: always above the world, unaffected by camera. */
   private ui = new Container();
   private nodes = new Map<string, Container>();
+  /**
+   * Particle graphics live in their own world-space container, keyed by
+   * emitter entity id — NOT as children of the entity's own node — so
+   * particles (already simulated in world space by the runtime) never
+   * inherit the emitter entity's rotation/scale.
+   */
+  private particleLayer = new Container();
+  private particleNodes = new Map<string, Graphics>();
+  /** Last-drawn (points, width, color, closed, opacity) snapshot per entity, to skip redundant LineRenderer redraws. */
+  private lineSnapshots = new Map<string, string>();
   private textures = new Map<string, Texture>();
   private audio: WebAudioPlayer | null = null;
   private accumulator = 0;
@@ -97,7 +117,9 @@ export class PixiSceneView {
     this._paused = opts.autoplay === false;
     this.world.sortableChildren = true;
     this.ui.sortableChildren = true;
+    this.particleLayer.sortableChildren = true;
     this.app.stage.addChild(this.world);
+    this.world.addChild(this.particleLayer);
     this.app.stage.addChild(this.ui);
     this.tickerFn = (ticker) => this.onTick(ticker);
   }
@@ -194,6 +216,8 @@ export class PixiSceneView {
     this.audio?.destroy();
     this.session.destroy();
     this.nodes.clear();
+    this.particleNodes.clear();
+    this.lineSnapshots.clear();
     this.app.destroy(true, { children: true });
   }
 
@@ -204,6 +228,9 @@ export class PixiSceneView {
     if (this.destroyed) return;
     for (const [, node] of this.nodes) node.destroy({ children: true });
     this.nodes.clear();
+    for (const [, g] of this.particleNodes) g.destroy();
+    this.particleNodes.clear();
+    this.lineSnapshots.clear();
     this.accumulator = 0;
     this.syncEntities();
     this.syncCamera();
@@ -274,17 +301,24 @@ export class PixiSceneView {
   /**
    * Load every texture referenced by SpriteRenderers and Tilemaps in ANY
    * scene of the project up front, so scene switches never pop in assets.
+   * Also covers SpriteAnimator: animation assets are tiny JSON on disk
+   * listing frame sprite-asset ids, so those get read and their frames
+   * folded into the same preload set (the runtime does the same read to
+   * play animations; see SceneRuntime.loadAnimations).
    */
   private async preloadTextures(): Promise<void> {
     const assetIds = new Set<string>();
+    const animationAssetIds = new Set<string>();
     const collect = (components: {
       SpriteRenderer?: { assetId?: string | null };
       Tilemap?: { tileAssets: Record<string, string> };
+      SpriteAnimator?: { assetId?: string };
     }) => {
       if (components.SpriteRenderer?.assetId) assetIds.add(components.SpriteRenderer.assetId);
       if (components.Tilemap) {
         for (const id of Object.values(components.Tilemap.tileAssets)) assetIds.add(id);
       }
+      if (components.SpriteAnimator?.assetId) animationAssetIds.add(components.SpriteAnimator.assetId);
     };
     for (const ref of this.opts.store.project.scenes) {
       const scene = this.opts.store.scenes.get(ref.id);
@@ -293,6 +327,22 @@ export class PixiSceneView {
     }
     // Entities already live in the current runtime (covers spawned ones).
     for (const entity of this.runtime.getEntities()) collect(entity.components);
+
+    for (const id of animationAssetIds) {
+      const asset = this.opts.store.getAsset(id);
+      if (!asset || asset.type !== 'animation') continue;
+      try {
+        const raw = await this.opts.store.fs.readFile(joinPath(this.opts.store.root, asset.path));
+        const animation = AnimationDataSchema.parse(JSON.parse(raw));
+        for (const frameAssetId of animation.frames) assetIds.add(frameAssetId);
+      } catch (err) {
+        this.opts.onLog?.({
+          frame: this.session.frame,
+          level: 'warn',
+          message: `Failed to load animation asset ${asset.name}: ${(err as Error).message}`,
+        });
+      }
+    }
 
     for (const id of assetIds) {
       const asset = this.opts.store.getAsset(id);
@@ -323,13 +373,22 @@ export class PixiSceneView {
 
   private syncEntities(): void {
     const live = this.runtime.getEntities();
-    const liveIds = new Set(live.map((e) => e.id));
+    const liveById = new Map(live.map((e) => [e.id, e]));
 
     // Remove nodes for destroyed entities.
     for (const [id, node] of this.nodes) {
-      if (!liveIds.has(id)) {
+      if (!liveById.has(id)) {
         node.destroy({ children: true });
         this.nodes.delete(id);
+        this.lineSnapshots.delete(id);
+      }
+    }
+    // Remove particle graphics for destroyed entities (or ones that lost their emitter).
+    for (const [id, g] of this.particleNodes) {
+      const entity = liveById.get(id);
+      if (!entity || !entity.components.ParticleEmitter) {
+        g.destroy();
+        this.particleNodes.delete(id);
       }
     }
 
@@ -341,6 +400,18 @@ export class PixiSceneView {
         (entity.components.UIElement ? this.ui : this.world).addChild(node);
       }
       this.updateNode(entity, node);
+
+      const emitter = entity.components.ParticleEmitter;
+      if (emitter) {
+        let particles = this.particleNodes.get(entity.id);
+        if (!particles) {
+          particles = new Graphics();
+          particles.label = 'particles';
+          this.particleNodes.set(entity.id, particles);
+          this.particleLayer.addChild(particles);
+        }
+        this.updateParticles(entity, emitter, particles);
+      }
     }
   }
 
@@ -373,6 +444,11 @@ export class PixiSceneView {
     if (tilemap) {
       const child = this.buildTilemap(tilemap);
       child.label = 'tilemap';
+      node.addChild(child);
+    }
+    if (entity.components.LineRenderer) {
+      const child = new Graphics();
+      child.label = 'line';
       node.addChild(child);
     }
     return node;
@@ -453,7 +529,8 @@ export class PixiSceneView {
     const sprite = entity.components.SpriteRenderer;
     const text = entity.components.Text;
     const tilemap = entity.components.Tilemap;
-    node.zIndex = Math.max(sprite?.layer ?? 0, text?.layer ?? 0, tilemap?.layer ?? 0);
+    const line = entity.components.LineRenderer;
+    node.zIndex = Math.max(sprite?.layer ?? 0, text?.layer ?? 0, tilemap?.layer ?? 0, line?.layer ?? 0);
     node.visible = entity.enabled;
 
     const spriteNode = node.getChildByLabel?.('sprite') ?? null;
@@ -468,6 +545,60 @@ export class PixiSceneView {
     if (textNode && text) {
       textNode.visible = text.visible;
       if (textNode.text !== text.content) textNode.text = text.content;
+    }
+    const lineNode = node.getChildByLabel?.('line') as Graphics | null;
+    if (lineNode && line) {
+      lineNode.visible = line.visible;
+      this.redrawLine(entity.id, lineNode, line);
+    }
+  }
+
+  /**
+   * Redraws a LineRenderer's Graphics path only when its drawn shape
+   * changed since last tick (points/width/color/closed/opacity), since
+   * points arrays are tiny and JSON.stringify is cheap relative to a
+   * needless Graphics rebuild every frame.
+   */
+  private redrawLine(entityId: string, g: Graphics, line: LineRendererComponent): void {
+    const snapshot = JSON.stringify([line.points, line.width, line.color, line.closed, line.opacity]);
+    if (this.lineSnapshots.get(entityId) === snapshot) return;
+    this.lineSnapshots.set(entityId, snapshot);
+
+    g.clear();
+    if (line.points.length < 2) return;
+    if (line.closed) {
+      g.poly(
+        line.points.map((p) => ({ x: p.x, y: p.y })),
+        true,
+      );
+    } else {
+      g.moveTo(line.points[0].x, line.points[0].y);
+      for (let i = 1; i < line.points.length; i++) g.lineTo(line.points[i].x, line.points[i].y);
+    }
+    g.stroke({ width: line.width, color: line.color, alpha: line.opacity });
+  }
+
+  /**
+   * Redraws a ParticleEmitter's world-space Graphics every tick (particle
+   * positions/ages change continuously, so there's no cheap change check
+   * like LineRenderer's static geometry).
+   */
+  private updateParticles(
+    entity: RuntimeEntity,
+    emitter: ParticleEmitterComponent,
+    g: Graphics,
+  ): void {
+    g.zIndex = emitter.layer;
+    g.visible = entity.enabled;
+    g.clear();
+    if (!entity.enabled) return;
+
+    for (const p of this.runtime.getParticles(entity.id)) {
+      const t = p.lifetime > 0 ? p.age / p.lifetime : 1;
+      const size = lerp(emitter.startSize, emitter.endSize, t);
+      const color = lerpColor(emitter.startColor, emitter.endColor, t);
+      if (size <= 0) continue;
+      g.circle(p.x, p.y, size / 2).fill({ color, alpha: 1 - Math.min(1, Math.max(0, t)) * 0.25 });
     }
   }
 }
