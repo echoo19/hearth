@@ -15,7 +15,9 @@ const execFileAsync = promisify(execFile);
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(__dirname, '../../..');
-const TSX_BIN = path.join(REPO_ROOT, 'node_modules', '.bin', 'tsx');
+// Spawn node + tsx's JS entry directly (not the .bin shim) so it works on
+// Windows too, where the shim is a .cmd file execFile can't run.
+const TSX_CLI = path.join(REPO_ROOT, 'node_modules', 'tsx', 'dist', 'cli.mjs');
 const CLI_ENTRY = path.join(__dirname, '..', 'src', 'main.ts');
 
 interface CliRun {
@@ -26,7 +28,7 @@ interface CliRun {
 
 async function runCli(args: string[], cwd: string): Promise<CliRun> {
   try {
-    const { stdout, stderr } = await execFileAsync(TSX_BIN, [CLI_ENTRY, ...args], { cwd });
+    const { stdout, stderr } = await execFileAsync(process.execPath, [TSX_CLI, CLI_ENTRY, ...args], { cwd });
     return { code: 0, stdout, stderr };
   } catch (err) {
     const e = err as { code?: number; stdout?: string; stderr?: string };

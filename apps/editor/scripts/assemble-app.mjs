@@ -29,7 +29,11 @@ await writeFile(
       productName: 'Hearth',
       version: editorPkg.version,
       description: 'Hearth — an open-source, agent-native 2D game engine and editor',
-      author: 'Hearth Engine Contributors',
+      author: {
+        name: 'Hearth Engine Contributors',
+        email: 'hearth@users.noreply.github.com',
+      },
+      homepage: 'https://github.com/echoo19/hearth',
       license: 'MIT',
       main: 'dist-electron/main.cjs',
     },
