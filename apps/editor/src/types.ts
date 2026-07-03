@@ -97,6 +97,8 @@ export interface ServerMeta {
   home: string;
   hearthVersion: string;
   runtimeAvailable: boolean;
+  /** Where the agent tools live (bundled single files in the desktop app). */
+  toolPaths?: { cli: string; mcp: string; bundled: boolean };
 }
 
 export interface RecentProject {

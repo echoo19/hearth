@@ -7,8 +7,13 @@ export function AgentPanel() {
   const projectPath = useEditor((s) => s.projectPath) ?? '<project path>';
   const meta = useEditor((s) => s.meta);
   const repoRoot = meta?.repoRoot ?? '<hearth repo root>';
+  // In the packaged desktop app these are self-contained single-file bundles
+  // shipped with the app; from a repo checkout they're the built packages.
+  const cliPath = meta?.toolPaths?.cli ?? `${repoRoot}/packages/cli/dist/main.js`;
+  const mcpPath = meta?.toolPaths?.mcp ?? `${repoRoot}/packages/mcp-server/dist/main.js`;
 
   const cliBlock = [
+    `alias hearth="node ${cliPath}"`,
     `cd ${projectPath}`,
     `hearth inspect project --json      # learn the project`,
     `hearth snapshot                    # checkpoint before changes`,
@@ -17,14 +22,14 @@ export function AgentPanel() {
     `hearth diff                        # review what changed`,
   ].join('\n');
 
-  const mcpClaudeBlock = `claude mcp add hearth -- node ${repoRoot}/packages/mcp-server/dist/main.js --project ${projectPath}`;
+  const mcpClaudeBlock = `claude mcp add hearth -- node ${mcpPath} --project ${projectPath}`;
 
   const mcpJsonBlock = JSON.stringify(
     {
       mcpServers: {
         hearth: {
           command: 'node',
-          args: [`${repoRoot}/packages/mcp-server/dist/main.js`, '--project', projectPath],
+          args: [mcpPath, '--project', projectPath],
         },
       },
     },

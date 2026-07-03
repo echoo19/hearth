@@ -41,4 +41,40 @@ await copyFile(
   path.join(appRoot, 'dist-electron', 'preload.cjs'),
 );
 
-console.log('dist-electron/ ready');
+// ---------------------------------------------------------------------------
+// Standalone agent tools: single-file bundles of the CLI and MCP server that
+// ship inside the desktop app (and as release artifacts), so a user who only
+// downloads the app still gets the full agent tooling — runnable with any
+// Node ≥ 20: `node hearth-cli.cjs --help`, `node hearth-mcp.cjs --project …`.
+// ---------------------------------------------------------------------------
+const repoRoot = path.join(appRoot, '..', '..');
+const toolAliases = {
+  '@hearth/core/node': path.join(repoRoot, 'packages', 'core', 'src', 'node', 'index.ts'),
+  '@hearth/core': path.join(repoRoot, 'packages', 'core', 'src', 'index.ts'),
+  '@hearth/playtest': path.join(repoRoot, 'packages', 'playtest', 'src', 'index.ts'),
+  '@hearth/runtime': path.join(repoRoot, 'packages', 'runtime', 'src', 'index.ts'),
+};
+
+for (const [entry, outfile] of [
+  [path.join(repoRoot, 'packages', 'cli', 'src', 'main.ts'), 'hearth-cli.mjs'],
+  [path.join(repoRoot, 'packages', 'mcp-server', 'src', 'main.ts'), 'hearth-mcp.mjs'],
+]) {
+  await build({
+    entryPoints: [entry],
+    outfile: path.join(appRoot, 'dist-electron', outfile),
+    bundle: true,
+    platform: 'node',
+    format: 'esm', // the CLI uses top-level await
+    target: 'node20',
+    sourcemap: false,
+    logLevel: 'info',
+    banner: {
+      // createRequire shim: some bundled CJS deps call require() at runtime.
+      // (The entry files' own shebang is preserved above this by esbuild.)
+      js: 'import { createRequire as __hearthCreateRequire } from "node:module"; const require = __hearthCreateRequire(import.meta.url);',
+    },
+    alias: toolAliases,
+  });
+}
+
+console.log('dist-electron/ ready (main + preload + hearth-cli.mjs + hearth-mcp.mjs)');

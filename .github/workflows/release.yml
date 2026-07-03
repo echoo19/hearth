@@ -1,0 +1,95 @@
+name: Release
+
+# Tag a version (e.g. `git tag v0.1.0 && git push --tags`) to build the
+# desktop app for macOS/Windows/Linux and attach everything — including the
+# standalone hearth-cli.mjs / hearth-mcp.mjs agent tools — to a GitHub
+# Release.
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, windows-latest, ubuntu-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Install dependencies
+        run: npm ci
+      - name: Build packages
+        run: npm run build:packages
+      - name: Run tests
+        run: npm test
+      - name: Build editor UI
+        run: npm run build -w @hearth/editor
+      - name: Bundle Electron main + agent tools
+        run: npm run app:bundle -w @hearth/editor
+      - name: Assemble app directory
+        run: node apps/editor/scripts/assemble-app.mjs
+      - name: Package desktop app
+        run: npx electron-builder --publish never
+        working-directory: apps/editor
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: hearth-${{ matrix.os }}
+          path: |
+            apps/editor/release/*.dmg
+            apps/editor/release/*.zip
+            apps/editor/release/*.exe
+            apps/editor/release/*.AppImage
+            apps/editor/release/*.deb
+          if-no-files-found: warn
+
+  release:
+    name: Create GitHub Release
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Install dependencies
+        run: npm ci
+      - name: Build packages
+        run: npm run build:packages
+      - name: Bundle standalone agent tools
+        run: npm run app:bundle -w @hearth/editor
+      - name: Download app artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+      - name: Create release with all assets
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          cp apps/editor/dist-electron/hearth-cli.mjs artifacts/
+          cp apps/editor/dist-electron/hearth-mcp.mjs artifacts/
+          ls -la artifacts/
+          gh release create "${GITHUB_REF_NAME}" \
+            --title "Hearth ${GITHUB_REF_NAME}" \
+            --notes "Hearth ${GITHUB_REF_NAME} — the agent-native 2D game engine.
+
+          **Desktop app**: download the build for your OS below (macOS builds are unsigned in this preview — right-click → Open the first time).
+
+          **Agent tools (no install needed, any Node ≥ 20):**
+          - \`node hearth-cli.mjs --help\` — the full hearth CLI
+          - \`node hearth-mcp.mjs --project <your game> \` — MCP server for Claude Code / any MCP client
+
+          Docs: https://github.com/${GITHUB_REPOSITORY}#readme" \
+            artifacts/*

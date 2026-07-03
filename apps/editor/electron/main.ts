@@ -106,6 +106,16 @@ function registerDialogHandlers(getWindow: () => BrowserWindow | null): void {
 async function main(): Promise<void> {
   await app.whenReady();
 
+  // Tell the project server where the bundled agent tools live (the Agent
+  // panel shows these paths so users can wire up MCP/CLI without a repo
+  // checkout). __dirname is dist-electron/ both in dev and inside app.asar,
+  // but tools must be readable by external `node`, so prefer the unpacked
+  // path when packaged.
+  const toolsDir = __dirname.includes('app.asar')
+    ? __dirname.replace('app.asar', 'app.asar.unpacked')
+    : __dirname;
+  process.env.HEARTH_TOOLS_DIR = toolsDir;
+
   let win: BrowserWindow | null = null;
   registerDialogHandlers(() => win);
 

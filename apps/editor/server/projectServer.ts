@@ -385,6 +385,23 @@ export function createProjectServerContext(options: ProjectServerOptions = {}) {
       const runtimeAvailable =
         (await pathExists(path.join(repoRoot, 'packages', 'runtime', 'src', 'pixi', 'index.ts'))) ||
         (await pathExists(path.join(repoRoot, 'packages', 'runtime', 'dist', 'pixi', 'index.js')));
+
+      // Agent tool locations. In the packaged desktop app, single-file
+      // bundles ship next to the Electron main (HEARTH_TOOLS_DIR is set by
+      // electron/main.ts); from a repo checkout we point at the built
+      // packages instead.
+      const toolsDir = process.env.HEARTH_TOOLS_DIR;
+      const bundledCli = toolsDir ? path.join(toolsDir, 'hearth-cli.mjs') : null;
+      const bundledMcp = toolsDir ? path.join(toolsDir, 'hearth-mcp.mjs') : null;
+      const toolPaths =
+        bundledCli && bundledMcp && (await pathExists(bundledCli)) && (await pathExists(bundledMcp))
+          ? { cli: bundledCli, mcp: bundledMcp, bundled: true }
+          : {
+              cli: path.join(repoRoot, 'packages', 'cli', 'dist', 'main.js'),
+              mcp: path.join(repoRoot, 'packages', 'mcp-server', 'dist', 'main.js'),
+              bundled: false,
+            };
+
       return {
         status: 200,
         body: {
@@ -393,6 +410,7 @@ export function createProjectServerContext(options: ProjectServerOptions = {}) {
           home: os.homedir(),
           hearthVersion: HEARTH_VERSION,
           runtimeAvailable,
+          toolPaths,
         },
       };
     },
