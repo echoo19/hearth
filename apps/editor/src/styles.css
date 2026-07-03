@@ -5,6 +5,13 @@
    ember-tinted neutrals. One accent (ember) for actions and selection only.
    ========================================================================== */
 
+/* Type: Archivo for UI chrome, IBM Plex Mono for values/scripts/console.
+   Same two families as the website, so engine and site read as one product. */
+@import '@fontsource-variable/archivo/wdth.css';
+@import '@fontsource/ibm-plex-mono/400.css';
+@import '@fontsource/ibm-plex-mono/500.css';
+@import '@fontsource/ibm-plex-mono/600.css';
+
 :root {
   /* Surfaces: near-neutral darks, tinted a touch toward the brand's ember hue. */
   --bg-0: oklch(0.17 0.008 55);   /* window chrome, deepest */
@@ -55,8 +62,8 @@
   --t-fast: 100ms;
   --t: 150ms;
 
-  --font-ui: -apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, Roboto, sans-serif;
-  --font-mono: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+  --font-ui: 'Archivo Variable', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --font-mono: 'IBM Plex Mono', ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
 
   /* z scale */
   --z-dropdown: 100;

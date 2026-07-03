@@ -73,6 +73,8 @@
     }
   },
   "dependencies": {
+    "@fontsource-variable/archivo": "^5.2.8",
+    "@fontsource/ibm-plex-mono": "^5.2.7",
     "@hearth/core": "*",
     "@hearth/runtime": "*",
     "dockview-react": "^7.0.2",
