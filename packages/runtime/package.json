@@ -26,7 +26,8 @@
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
-    "@hearth/core": "*"
+    "@hearth/core": "*",
+    "wasmoon": "^1.16.0"
   },
   "peerDependencies": {
     "pixi.js": "^8.6.0"
