@@ -90,6 +90,7 @@ describe('camera', () => {
       position: { x: 100, y: 50 },
       zoom: 2,
       backgroundColor: '#123456',
+      ambientLight: 1,
     });
   });
 
@@ -100,7 +101,20 @@ describe('camera', () => {
       position: { x: 400, y: 300 },
       zoom: 1,
       backgroundColor: '#1a1a2e',
+      ambientLight: 1,
     });
+  });
+
+  it('exposes ambientLight from the main camera entity', async () => {
+    const { store } = await makeStore({
+      entities: [
+        ent('Cam', {
+          Camera: { zoom: 1, isMain: true, backgroundColor: '#123456', ambientLight: 0.2 },
+        }),
+      ],
+    });
+    const runtime = await SceneRuntime.create(store, 'Test');
+    expect(runtime.camera.ambientLight).toBe(0.2);
   });
 });
 

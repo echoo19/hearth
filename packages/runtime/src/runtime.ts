@@ -263,7 +263,7 @@ export class SceneRuntime {
   }
 
   /** Active camera view: main Camera entity, or build-settings defaults. */
-  get camera(): { position: Vec2; zoom: number; backgroundColor: string } {
+  get camera(): { position: Vec2; zoom: number; backgroundColor: string; ambientLight: number } {
     const settings = this.store.project.buildSettings;
     const cameras = this.getEntities().filter((e) => e.enabled && e.components.Camera);
     const cam = cameras.find((e) => e.components.Camera!.isMain) ?? cameras[0];
@@ -272,12 +272,14 @@ export class SceneRuntime {
         position: { x: settings.width / 2, y: settings.height / 2 },
         zoom: 1,
         backgroundColor: settings.backgroundColor,
+        ambientLight: 1,
       };
     }
     return {
       position: this.getWorldPosition(cam),
       zoom: cam.components.Camera!.zoom,
       backgroundColor: cam.components.Camera!.backgroundColor,
+      ambientLight: cam.components.Camera!.ambientLight,
     };
   }
 

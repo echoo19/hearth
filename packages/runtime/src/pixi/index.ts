@@ -31,6 +31,7 @@ import {
   Assets,
   Container,
   Graphics,
+  RenderTexture,
   Sprite,
   Text,
   Texture,
@@ -40,6 +41,7 @@ import {
   AnimationDataSchema,
   joinPath,
   type Asset,
+  type Light2DComponent,
   type LineRendererComponent,
   type ParticleEmitterComponent,
   type ProjectStore,
@@ -98,6 +100,20 @@ export class PixiSceneView {
   /** Last-drawn (points, width, color, closed, opacity) snapshot per entity, to skip redundant LineRenderer redraws. */
   private lineSnapshots = new Map<string, string>();
   private textures = new Map<string, Texture>();
+  /**
+   * 2D lighting: a multiply-blend sprite sitting above `world`, filled each
+   * tick from an offscreen `lightScene` (ambient gray rect + one additive
+   * radial sprite per enabled Light2D) rendered to `lightmapRT`. When
+   * ambientLight is fully bright and no light is enabled, `lightmapSprite`
+   * is hidden and none of this work runs (existing projects with no
+   * lighting must render byte-identical to before this feature existed).
+   */
+  private lightmapSprite: Sprite;
+  private lightmapRT: RenderTexture;
+  private lightGradientTexture: Texture;
+  private lightScene = new Container();
+  private ambientGraphics = new Graphics();
+  private lightSprites: Sprite[] = [];
   private audio: WebAudioPlayer | null = null;
   private accumulator = 0;
   private _paused: boolean;
@@ -118,10 +134,47 @@ export class PixiSceneView {
     this.world.sortableChildren = true;
     this.ui.sortableChildren = true;
     this.particleLayer.sortableChildren = true;
+
+    const settings = opts.store.project.buildSettings;
+    this.lightGradientTexture = PixiSceneView.buildLightGradientTexture();
+    this.lightmapRT = RenderTexture.create({ width: settings.width, height: settings.height });
+    this.lightmapSprite = new Sprite(this.lightmapRT);
+    this.lightmapSprite.blendMode = 'multiply';
+    this.lightmapSprite.visible = false;
+    this.lightScene.addChild(this.ambientGraphics);
+
+    // Stage order: world, lightmapSprite, (debugLayer lands here in a later
+    // task), ui — the lightmap darkens/tints the world but never the UI.
     this.app.stage.addChild(this.world);
     this.world.addChild(this.particleLayer);
+    this.app.stage.addChild(this.lightmapSprite);
     this.app.stage.addChild(this.ui);
     this.tickerFn = (ticker) => this.onTick(ticker);
+  }
+
+  /**
+   * One 256x256 offscreen-canvas radial gradient, white center to
+   * transparent edge with quadratic falloff (alpha = 1 - t^2). Generated
+   * once per view; light sprites reuse this texture, tinted and scaled per
+   * light.
+   */
+  private static buildLightGradientTexture(): Texture {
+    const size = 256;
+    const canvas = document.createElement('canvas');
+    canvas.width = size;
+    canvas.height = size;
+    const ctx = canvas.getContext('2d')!;
+    const r = size / 2;
+    const gradient = ctx.createRadialGradient(r, r, 0, r, r, r);
+    const steps = 8;
+    for (let i = 0; i <= steps; i++) {
+      const t = i / steps;
+      const alpha = Math.max(0, 1 - t * t);
+      gradient.addColorStop(t, `rgba(255,255,255,${alpha})`);
+    }
+    ctx.fillStyle = gradient;
+    ctx.fillRect(0, 0, size, size);
+    return Texture.from(canvas);
   }
 
   static async mount(opts: PixiViewOptions): Promise<PixiSceneView> {
@@ -218,6 +271,10 @@ export class PixiSceneView {
     this.nodes.clear();
     this.particleNodes.clear();
     this.lineSnapshots.clear();
+    // lightScene is never added to app.stage, so app.destroy's recursive
+    // child destruction doesn't reach it or its pooled light sprites.
+    this.lightScene.destroy({ children: true });
+    this.lightSprites = [];
     this.app.destroy(true, { children: true });
   }
 
@@ -369,6 +426,64 @@ export class PixiSceneView {
       settings.height / 2 - cam.position.y * cam.zoom,
     );
     this.app.renderer.background.color = cam.backgroundColor;
+    this.updateLightmap(cam, settings.width, settings.height);
+  }
+
+  /**
+   * Rebuilds and renders the lightmap for the current frame. When the scene
+   * has no lighting (ambientLight fully bright, no enabled Light2D), this
+   * does zero work beyond the two cheap checks below — existing projects
+   * with no lights must render byte-identical to before this feature
+   * existed.
+   */
+  private updateLightmap(
+    cam: { position: { x: number; y: number }; zoom: number; ambientLight: number },
+    width: number,
+    height: number,
+  ): void {
+    const lights = this.runtime
+      .getEntities()
+      .filter((e) => e.enabled && e.components.Light2D?.enabled);
+    if (cam.ambientLight >= 1 && lights.length === 0) {
+      this.lightmapSprite.visible = false;
+      return;
+    }
+
+    const channel = Math.round(cam.ambientLight * 255);
+    const ambientColor = (channel << 16) | (channel << 8) | channel;
+    this.ambientGraphics.clear();
+    this.ambientGraphics.rect(0, 0, width, height).fill(ambientColor);
+
+    while (this.lightSprites.length < lights.length) {
+      const sprite = new Sprite(this.lightGradientTexture);
+      sprite.anchor.set(0.5);
+      sprite.blendMode = 'add';
+      this.lightScene.addChild(sprite);
+      this.lightSprites.push(sprite);
+    }
+    for (let i = lights.length; i < this.lightSprites.length; i++) {
+      this.lightSprites[i].visible = false;
+    }
+
+    const halfW = width / 2;
+    const halfH = height / 2;
+    lights.forEach((entity, i) => {
+      const light = entity.components.Light2D as Light2DComponent;
+      const sprite = this.lightSprites[i];
+      sprite.visible = true;
+      const world = this.runtime.getWorldPosition(entity);
+      sprite.position.set(
+        halfW + (world.x - cam.position.x) * cam.zoom,
+        halfH + (world.y - cam.position.y) * cam.zoom,
+      );
+      const diameter = light.radius * 2 * cam.zoom;
+      sprite.scale.set(diameter / this.lightGradientTexture.width);
+      sprite.tint = light.color;
+      sprite.alpha = Math.min(light.intensity, 1);
+    });
+
+    this.app.renderer.render({ container: this.lightScene, target: this.lightmapRT, clear: true });
+    this.lightmapSprite.visible = true;
   }
 
   private syncEntities(): void {
