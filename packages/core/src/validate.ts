@@ -318,6 +318,53 @@ export async function validateProject(store: ProjectStore): Promise<ValidationRe
           entity: entity.id,
         });
       }
+      if (c.LineRenderer && c.LineRenderer.points.length < 2) {
+        push({
+          severity: 'warning',
+          code: 'LINERENDERER_TOO_FEW_POINTS',
+          message: `Entity "${entity.name}" has a LineRenderer with ${c.LineRenderer.points.length} point(s); LineRenderer needs at least 2 points to draw`,
+          scene: sceneId,
+          entity: entity.id,
+        });
+      }
+      if (c.ParticleEmitter && c.ParticleEmitter.rate === 0 && c.ParticleEmitter.burst === 0) {
+        push({
+          severity: 'warning',
+          code: 'PARTICLE_EMITTER_EMITS_NOTHING',
+          message: `Entity "${entity.name}" has a ParticleEmitter with rate=0 and burst=0; it emits nothing`,
+          scene: sceneId,
+          entity: entity.id,
+        });
+      }
+      if (c.SpriteAnimator && !c.SpriteRenderer) {
+        push({
+          severity: 'warning',
+          code: 'SPRITE_ANIMATOR_MISSING_RENDERER',
+          message: `Entity "${entity.name}" has a SpriteAnimator but no SpriteRenderer sibling; SpriteAnimator requires a SpriteRenderer`,
+          scene: sceneId,
+          entity: entity.id,
+        });
+      }
+      if (c.SpriteAnimator?.assetId) {
+        const asset = store.assets.assets.find((a) => a.id === c.SpriteAnimator!.assetId);
+        if (!asset) {
+          push({
+            severity: 'error',
+            code: 'MISSING_ANIMATION_ASSET',
+            message: `Entity "${entity.name}" SpriteAnimator references unknown asset ${c.SpriteAnimator.assetId}`,
+            scene: sceneId,
+            entity: entity.id,
+          });
+        } else if (asset.type !== 'animation') {
+          push({
+            severity: 'error',
+            code: 'INVALID_ANIMATION_ASSET_TYPE',
+            message: `Entity "${entity.name}" SpriteAnimator references asset ${c.SpriteAnimator.assetId} which is type '${asset.type}', not 'animation'`,
+            scene: sceneId,
+            entity: entity.id,
+          });
+        }
+      }
     }
 
     if (scene.entities.length > 0 && mainCameras === 0) {

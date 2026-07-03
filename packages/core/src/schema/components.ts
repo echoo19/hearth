@@ -81,6 +81,8 @@ export const CameraSchema = z.object({
   zoom: z.number().positive().default(1),
   isMain: z.boolean().default(true),
   backgroundColor: ColorSchema.default('#1a1a2e'),
+  /** Scene brightness with no lights: 1 = fully lit (lighting disabled), 0 = black. */
+  ambientLight: z.number().min(0).max(1).default(1),
 });
 
 export const TextSchema = z.object({
@@ -139,6 +141,63 @@ export const TilemapSchema = z.object({
   layer: z.number().int().default(-10),
 });
 
+export const Light2DSchema = z.object({
+  /** Light falloff radius in world pixels. */
+  radius: z.number().positive().default(200),
+  color: ColorSchema.default('#ffffff'),
+  /** Brightness multiplier at the light's center. */
+  intensity: z.number().min(0).default(1),
+  enabled: z.boolean().default(true),
+});
+
+export const LineRendererSchema = z.object({
+  /** Polyline vertices in local space (entity transform applies). */
+  points: z.array(Vec2Schema).default([]),
+  width: z.number().positive().default(2),
+  color: ColorSchema.default('#ffffff'),
+  /** Connect the last point back to the first. */
+  closed: z.boolean().default(false),
+  opacity: z.number().min(0).max(1).default(1),
+  layer: z.number().int().default(0),
+  visible: z.boolean().default(true),
+});
+
+export const ParticleEmitterSchema = z.object({
+  emitting: z.boolean().default(true),
+  /** Particles spawned per second while emitting. */
+  rate: z.number().min(0).default(10),
+  /** Particles spawned once on scene start (in addition to rate). */
+  burst: z.number().int().min(0).default(0),
+  /** Particle lifetime in seconds. */
+  lifetime: z.number().positive().default(1),
+  /** Initial speed in pixels/second. */
+  speed: z.number().min(0).default(100),
+  /** Emission cone half-angle in degrees around direction. */
+  spread: z.number().min(0).max(180).default(30),
+  /** Emission direction in degrees (0 = +x, 90 = +y/down). */
+  direction: z.number().default(0),
+  /** Constant acceleration in pixels/second². */
+  gravity: Vec2Schema.default({ x: 0, y: 0 }),
+  startColor: ColorSchema.default('#ffffff'),
+  endColor: ColorSchema.default('#ffffff'),
+  startSize: z.number().min(0).default(8),
+  endSize: z.number().min(0).default(0),
+  /** Hard cap; oldest particles die first when exceeded. */
+  maxParticles: z.number().int().positive().max(2048).default(256),
+  layer: z.number().int().default(0),
+  /** Per-emitter RNG seed — same seed, same particles, every run. */
+  seed: z.number().int().default(0),
+});
+
+export const SpriteAnimatorSchema = z.object({
+  /** Animation asset id (assets/animations/*.anim.json). */
+  assetId: z.string().default(''),
+  /** Frames per second; 0 = use the asset's frameDuration. */
+  fps: z.number().min(0).default(0),
+  playing: z.boolean().default(true),
+  loop: z.boolean().default(true),
+});
+
 export const COMPONENT_SCHEMAS = {
   Transform: TransformSchema,
   SpriteRenderer: SpriteRendererSchema,
@@ -149,6 +208,10 @@ export const COMPONENT_SCHEMAS = {
   Text: TextSchema,
   AudioSource: AudioSourceSchema,
   Tilemap: TilemapSchema,
+  Light2D: Light2DSchema,
+  LineRenderer: LineRendererSchema,
+  ParticleEmitter: ParticleEmitterSchema,
+  SpriteAnimator: SpriteAnimatorSchema,
   UIElement: UIElementSchema,
 } as const;
 
@@ -165,6 +228,10 @@ export type CameraComponent = z.infer<typeof CameraSchema>;
 export type TextComponent = z.infer<typeof TextSchema>;
 export type AudioSourceComponent = z.infer<typeof AudioSourceSchema>;
 export type TilemapComponent = z.infer<typeof TilemapSchema>;
+export type Light2DComponent = z.infer<typeof Light2DSchema>;
+export type LineRendererComponent = z.infer<typeof LineRendererSchema>;
+export type ParticleEmitterComponent = z.infer<typeof ParticleEmitterSchema>;
+export type SpriteAnimatorComponent = z.infer<typeof SpriteAnimatorSchema>;
 export type UIElementComponent = z.infer<typeof UIElementSchema>;
 export type UIAnchor = (typeof UI_ANCHORS)[number];
 
@@ -178,6 +245,10 @@ export interface ComponentMap {
   Text?: TextComponent;
   AudioSource?: AudioSourceComponent;
   Tilemap?: TilemapComponent;
+  Light2D?: Light2DComponent;
+  LineRenderer?: LineRendererComponent;
+  ParticleEmitter?: ParticleEmitterComponent;
+  SpriteAnimator?: SpriteAnimatorComponent;
   UIElement?: UIElementComponent;
 }
 
@@ -212,6 +283,10 @@ export const COMPONENT_DOCS: Record<ComponentType, string> = {
   AudioSource:
     'References an audio asset; autoplay plays on scene start with loop/volume. Scripts can also play any audio asset via ctx.audio.play(assetRef, { volume, loop }).',
   Tilemap: 'Character-grid tilemap: tileAssets maps grid characters to assets; solid=true auto-generates colliders.',
+  Light2D: 'Emits dynamic 2D light (radius, color, intensity) in the forward rendering pipeline.',
+  LineRenderer: 'Renders a polyline in local space; use for debug geometry or simple line effects.',
+  ParticleEmitter: 'Spawns and simulates particles deterministically; seed controls reproducibility.',
+  SpriteAnimator: 'Plays sprite animations; requires a sibling SpriteRenderer and animation asset.',
   UIElement:
     'Makes the entity screen-space UI: positioned by anchor+offset, unaffected by the camera. Visuals come from Text/SpriteRenderer. interactive=true sends pointer events to the Script hook onUiEvent(ctx, event).',
 };
