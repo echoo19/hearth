@@ -857,8 +857,12 @@ export class SceneRuntime {
         }
         animator.assetId = asset.id;
         animator.playing = true;
-        // Stage 2c (right after scripts, same frame) sees the assetId
-        // change and resets AnimatorState to frame 0.
+        // Reset playback unconditionally so re-triggering the current clip
+        // (replaying a finished non-loop animation, restarting a loop)
+        // starts over — the stage-2c assetId-diff check alone would not
+        // fire when the asset id is unchanged. Stage 2c recreates the
+        // state at frame 0 the same frame.
+        runtime.animatorStates.delete(entity.id);
       },
       save: (key, value) => {
         runtime.storage.set(key, JSON.stringify(value) ?? 'null');

@@ -158,6 +158,75 @@ describe('ctx.animate', () => {
     expect(spriteAssetId(runtime)).toBe('ast_jf1');
   });
 
+  it('re-triggering a finished non-loop clip replays it from frame 0', async () => {
+    const { store, fs } = await makeStore({
+      entities: [
+        ent('Animator', {
+          Transform: {},
+          SpriteRenderer: { assetId: 'ast_wf0' },
+          SpriteAnimator: { assetId: 'ast_walk', loop: false },
+          Script: { scriptPath: 'scripts/replay.js' },
+        }),
+      ],
+      assets: [
+        { id: 'ast_walk', name: 'walk', type: 'animation', path: 'assets/animations/walk.anim.json' },
+      ],
+      scripts: {
+        'replay.js': `export default {
+          onUpdate(ctx) {
+            if (ctx.time.frame === 30) ctx.animate('ast_walk');
+          },
+        };`,
+      },
+    });
+    await fs.writeFile('/proj/assets/animations/walk.anim.json', JSON.stringify(WALK));
+    const runtime = await SceneRuntime.create(store, 'Test');
+
+    runtime.run(20); // 3 frames x 6 steps = 18 steps to finish; clip clamped by now
+    const animator = runtime.find('Animator')!.components.SpriteAnimator!;
+    expect(spriteAssetId(runtime)).toBe('ast_wf2');
+    expect(animator.playing).toBe(false);
+
+    runtime.run(10); // steps 20..29
+    runtime.step(); // frame 30: ctx.animate same assetId -> restart at frame 0
+    expect(spriteAssetId(runtime)).toBe('ast_wf0');
+    expect(animator.playing).toBe(true);
+    runtime.run(6); // advances again from the top
+    expect(spriteAssetId(runtime)).toBe('ast_wf1');
+  });
+
+  it('re-triggering mid-loop restarts the clip at frame 0', async () => {
+    const { store, fs } = await makeStore({
+      entities: [
+        ent('Animator', {
+          Transform: {},
+          SpriteRenderer: { assetId: 'ast_wf0' },
+          SpriteAnimator: { assetId: 'ast_walk' },
+          Script: { scriptPath: 'scripts/restart.js' },
+        }),
+      ],
+      assets: [
+        { id: 'ast_walk', name: 'walk', type: 'animation', path: 'assets/animations/walk.anim.json' },
+      ],
+      scripts: {
+        'restart.js': `export default {
+          onUpdate(ctx) {
+            if (ctx.time.frame === 9) ctx.animate('ast_walk');
+          },
+        };`,
+      },
+    });
+    await fs.writeFile('/proj/assets/animations/walk.anim.json', JSON.stringify(WALK));
+    const runtime = await SceneRuntime.create(store, 'Test');
+
+    runtime.run(9); // mid-loop: 9 steps in, showing frame 1 (advanced at step 6)
+    expect(spriteAssetId(runtime)).toBe('ast_wf1');
+    runtime.step(); // frame 9: ctx.animate same assetId -> back to frame 0
+    expect(spriteAssetId(runtime)).toBe('ast_wf0');
+    runtime.run(6); // a full frameDuration from the restart, not the old elapsed
+    expect(spriteAssetId(runtime)).toBe('ast_wf1');
+  });
+
   it('warns and no-ops when the entity has no SpriteAnimator', async () => {
     const { store } = await makeStore({
       entities: [
