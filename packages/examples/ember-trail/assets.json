@@ -1,0 +1,53 @@
+{
+  "formatVersion": 1,
+  "assets": [
+    {
+      "id": "ast_s2mn0738",
+      "name": "wisp",
+      "type": "sprite",
+      "path": "assets/sprites/wisp.svg",
+      "metadata": {
+        "procedural": true,
+        "shape": "character",
+        "color": "#7ac6ff",
+        "width": 30,
+        "height": 36
+      }
+    },
+    {
+      "id": "ast_bi6v1xqr",
+      "name": "ember",
+      "type": "sprite",
+      "path": "assets/sprites/ember.svg",
+      "metadata": {
+        "procedural": true,
+        "shape": "star",
+        "color": "#ff9f43",
+        "width": 18,
+        "height": 18
+      }
+    },
+    {
+      "id": "ast_c3g8wh0a",
+      "name": "ember-sound",
+      "type": "audio",
+      "path": "assets/sounds/ember_sound.wav",
+      "metadata": {
+        "procedural": true,
+        "preset": "coin",
+        "seed": 0
+      }
+    },
+    {
+      "id": "ast_el2ixtag",
+      "name": "start-sound",
+      "type": "audio",
+      "path": "assets/sounds/start_sound.wav",
+      "metadata": {
+        "procedural": true,
+        "preset": "blip",
+        "seed": 0
+      }
+    }
+  ]
+}

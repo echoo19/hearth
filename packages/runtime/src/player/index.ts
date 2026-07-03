@@ -1,21 +1,34 @@
 /**
  * Hearth web player — the entry point bundled into player/hearth-player.js
  * (see scripts/build-player.mjs). Exposes `window.HearthPlayer.boot({ mount,
- * bundle })`: renders a themed click-to-start screen (the click doubles as
- * the user gesture browser audio autoplay policy requires), rebuilds a
+ * bundle })`: shows a neutral loading layer styled entirely from
+ * buildSettings.loading (background color, optional centered image, optional
+ * monochrome spinner — no text, no logo, zero engine branding), rebuilds a
  * ProjectStore from the exported project bundle in memory, then mounts the
  * pixi host on the initial scene, letterbox-scaled to fit the mount element.
+ * The loading layer is removed once the first frame has rendered. Audio
+ * unlocks silently on the first natural user input (see ../pixi/audio.js).
  *
- * Scripts in the bundle go through the normal ProjectStore.readScript →
- * compileScript path (the same Function wrapper every host uses). Assets
- * resolve to their relative `path` (fetched next to index.html) or to an
- * inline `dataUri`.
+ * Scripts in the bundle go through the normal ProjectStore.readScript path:
+ * .js via the Function wrapper, .lua via the wasmoon engine whose glue.wasm
+ * is inlined into this bundle as a data: URI (registered with setLuaWasmUri
+ * before anything else runs).
  */
 import { MemoryFileSystem, ProjectStore, type Asset } from '@hearth/core';
-import { PixiSceneView } from '../pixi/index.js';
+import { setLuaWasmUri } from '../lua.js';
+import { PixiSceneView, localStorageAdapter } from '../pixi/index.js';
+import {
+  loadingForegroundColor,
+  normalizeLoadingSettings,
+  resolveBundleAssetUrl,
+} from './loading.js';
+import { LUA_WASM_DATA_URI } from './luaWasm.js';
 
-const DARK = '#141019';
-const EMBER = '#F76B15';
+// Must happen before any boot: Lua projects need the inlined wasm. The
+// placeholder is empty only in unbundled (Node/tsc) builds, where wasmoon
+// resolves its own wasm file.
+if (LUA_WASM_DATA_URI) setLuaWasmUri(LUA_WASM_DATA_URI);
+
 const FALLBACK_WIDTH = 960;
 const FALLBACK_HEIGHT = 540;
 
@@ -45,7 +58,7 @@ export interface BootOptions {
   bundle: PlayerBundle;
 }
 
-/** Boots the player; resolves with the running view after the start click. */
+/** Boots the player; resolves with the running view once the game renders. */
 async function boot(opts: BootOptions): Promise<PixiSceneView> {
   const mount =
     typeof opts.mount === 'string'
@@ -53,54 +66,116 @@ async function boot(opts: BootOptions): Promise<PixiSceneView> {
       : opts.mount;
   if (!mount) throw new Error(`HearthPlayer.boot: mount element not found`);
 
-  const store = await loadStore(opts.bundle);
-  const settings = store.project.buildSettings as {
-    width?: number;
-    height?: number;
-    title?: string;
-  };
-  const baseW = settings.width ?? FALLBACK_WIDTH;
-  const baseH = settings.height ?? FALLBACK_HEIGHT;
-  const title = settings.title || store.project.name;
-
-  mount.style.background = DARK;
+  // Loading layer first, straight from the raw bundle JSON, so the user's
+  // chosen visuals appear before any store/scene work happens.
+  const loading = normalizeLoadingSettings(opts.bundle.project);
+  mount.style.background = loading.backgroundColor;
   mount.style.overflow = 'hidden';
   if (getComputedStyle(mount).position === 'static') mount.style.position = 'relative';
+  const loadingLayer = showLoadingLayer(mount, loading, opts.bundle.assets);
 
-  await showStartScreen(mount, title);
-
-  // Game host: fills the mount and centers the letterboxed canvas.
-  const host = document.createElement('div');
-  host.style.cssText =
-    'position:absolute;inset:0;display:flex;align-items:center;justify-content:center;';
-  mount.appendChild(host);
-
-  const dataUris = new Map<string, string>();
-  for (const asset of opts.bundle.assets) {
-    if (asset.dataUri) dataUris.set(asset.id, asset.dataUri);
-  }
-  const sceneId = store.project.initialScene ?? store.project.scenes[0]?.id;
-  if (!sceneId) throw new Error('HearthPlayer.boot: project has no scenes');
-
-  const view = await PixiSceneView.mount({
-    container: host,
-    store,
-    scene: sceneId,
-    resolveAssetUrl: (asset: Asset) => dataUris.get(asset.id) ?? asset.path,
-  });
-
-  // Letterbox: scale the fixed-resolution canvas to fit, preserving aspect.
-  const canvas = host.querySelector('canvas');
-  if (canvas) {
-    const fit = () => {
-      const scale = Math.min(mount.clientWidth / baseW, mount.clientHeight / baseH) || 1;
-      canvas.style.width = `${Math.floor(baseW * scale)}px`;
-      canvas.style.height = `${Math.floor(baseH * scale)}px`;
+  try {
+    const store = await loadStore(opts.bundle);
+    const settings = store.project.buildSettings as {
+      width?: number;
+      height?: number;
     };
-    fit();
-    window.addEventListener('resize', fit);
+    const baseW = settings.width ?? FALLBACK_WIDTH;
+    const baseH = settings.height ?? FALLBACK_HEIGHT;
+
+    // Game host: fills the mount and centers the letterboxed canvas.
+    const host = document.createElement('div');
+    host.style.cssText =
+      'position:absolute;inset:0;display:flex;align-items:center;justify-content:center;';
+    mount.appendChild(host);
+
+    const dataUris = new Map<string, string>();
+    for (const asset of opts.bundle.assets) {
+      if (asset.dataUri) dataUris.set(asset.id, asset.dataUri);
+    }
+    if (!(store.project.initialScene ?? store.project.scenes[0]?.id)) {
+      throw new Error('HearthPlayer.boot: project has no scenes');
+    }
+
+    const view = await PixiSceneView.mount({
+      container: host,
+      store,
+      // scene omitted: the session defaults to initialScene (then first scene)
+      seed: 0,
+      storage: localStorageAdapter(store.project.id),
+      resolveAssetUrl: (asset: Asset) => dataUris.get(asset.id) ?? asset.path,
+    });
+
+    // Letterbox: scale the fixed-resolution canvas to fit, preserving aspect.
+    const canvas = host.querySelector('canvas');
+    if (canvas) {
+      const fit = () => {
+        const scale = Math.min(mount.clientWidth / baseW, mount.clientHeight / baseH) || 1;
+        canvas.style.width = `${Math.floor(baseW * scale)}px`;
+        canvas.style.height = `${Math.floor(baseH * scale)}px`;
+      };
+      fit();
+      window.addEventListener('resize', fit);
+    }
+
+    // Drop the loading layer only after the first frame is actually up.
+    await nextFrames(2);
+    loadingLayer.remove();
+    return view;
+  } catch (err) {
+    loadingLayer.remove();
+    throw err;
   }
-  return view;
+}
+
+/** Neutral loading layer: background + optional centered image + spinner. */
+function showLoadingLayer(
+  mount: HTMLElement,
+  loading: { backgroundColor: string; image: string | null; spinner: boolean },
+  assets: PlayerBundleAsset[],
+): HTMLElement {
+  const layer = document.createElement('div');
+  layer.style.cssText =
+    `position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;` +
+    `justify-content:center;gap:20px;background:${loading.backgroundColor};z-index:10;`;
+
+  const imageUrl = resolveBundleAssetUrl(assets, loading.image);
+  if (imageUrl) {
+    const img = document.createElement('img');
+    img.src = imageUrl;
+    img.alt = '';
+    img.decoding = 'async';
+    img.style.cssText = 'max-width:60%;max-height:60%;object-fit:contain;';
+    layer.appendChild(img);
+  }
+
+  if (loading.spinner) {
+    const fg = loadingForegroundColor(loading.backgroundColor);
+    const ring = fg === '#ffffff' ? 'rgba(255,255,255,0.25)' : 'rgba(0,0,0,0.2)';
+    const head = fg === '#ffffff' ? 'rgba(255,255,255,0.9)' : 'rgba(0,0,0,0.75)';
+    const spinner = document.createElement('div');
+    spinner.style.cssText =
+      `width:24px;height:24px;border-radius:50%;border:3px solid ${ring};` +
+      `border-top-color:${head};animation:hearth-player-spin 0.9s linear infinite;`;
+    const style = document.createElement('style');
+    style.textContent =
+      '@keyframes hearth-player-spin{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}';
+    layer.append(style, spinner);
+  }
+
+  mount.appendChild(layer);
+  return layer;
+}
+
+/** Wait n animation frames (lets the first render reach the screen). */
+function nextFrames(n: number): Promise<void> {
+  return new Promise((resolve) => {
+    const tick = (left: number) => {
+      if (left <= 0) return resolve();
+      requestAnimationFrame(() => tick(left - 1));
+    };
+    tick(n);
+  });
 }
 
 /** Rebuild an in-memory ProjectStore from the exported bundle. */
@@ -132,35 +207,6 @@ async function loadStore(bundle: PlayerBundle): Promise<ProjectStore> {
     await fs.writeFile(`${root}/${path}`, source);
   }
   return ProjectStore.load(fs, root);
-}
-
-/** Themed click-to-start overlay; resolves on the first click. */
-function showStartScreen(mount: HTMLElement, title: string): Promise<void> {
-  return new Promise((resolve) => {
-    const overlay = document.createElement('div');
-    overlay.style.cssText =
-      `position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;` +
-      `justify-content:center;gap:16px;background:${DARK};cursor:pointer;user-select:none;` +
-      `font-family:system-ui,sans-serif;z-index:10;`;
-    const heading = document.createElement('div');
-    heading.textContent = title;
-    heading.style.cssText = 'color:#f5f0eb;font-size:32px;font-weight:600;text-align:center;';
-    const prompt = document.createElement('div');
-    prompt.textContent = 'Click to start';
-    prompt.style.cssText =
-      `color:${EMBER};font-size:16px;letter-spacing:0.08em;text-transform:uppercase;` +
-      `border:1px solid ${EMBER};border-radius:6px;padding:10px 24px;`;
-    overlay.append(heading, prompt);
-    mount.appendChild(overlay);
-    overlay.addEventListener(
-      'click',
-      () => {
-        overlay.remove();
-        resolve();
-      },
-      { once: true },
-    );
-  });
 }
 
 declare global {

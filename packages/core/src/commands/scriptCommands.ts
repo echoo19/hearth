@@ -21,9 +21,33 @@ export const SCRIPT_TEMPLATE = `/**
  *   ctx.scene.findByTag(tag)        - EntityHandle[]
  *   ctx.scene.spawn(def)            - create an entity at runtime
  *   ctx.scene.destroy(idOrHandle)   - remove an entity at runtime
+ *   ctx.scenes.current              - current scene { id, name }
+ *   ctx.scenes.list()               - all scenes as { id, name }
+ *   ctx.scenes.load(idOrName)       - switch scene at end of frame (false if unknown)
+ *   ctx.timers.after(seconds, fn)   - run fn once; returns a cancel id
+ *   ctx.timers.every(seconds, fn)   - run fn repeatedly; returns a cancel id
+ *   ctx.timers.cancel(id)           - cancel a timer
+ *   ctx.tweens.to(path, target, seconds, opts) - tween a numeric component
+ *       property, e.g. ctx.tweens.to('Transform.position.x', 400, 0.5,
+ *       { easing: 'easeOut' }); returns a cancel id
+ *   ctx.tweens.cancel(id)           - cancel a tween
+ *   ctx.random.next()               - seeded deterministic [0, 1)
+ *   ctx.random.range(min, max)      - seeded float in [min, max)
+ *   ctx.random.int(min, max)        - seeded integer, inclusive
+ *   ctx.save(key, value)            - persistent save data (JSON values)
+ *   ctx.load(key)                   - read saved data (null when absent)
+ *   ctx.clearSave(key?)             - clear one key (no key = clear all)
+ *   ctx.camera.getPosition() / .setPosition(x, y) - main camera position
+ *   ctx.camera.getZoom() / .setZoom(zoom)         - main camera zoom
+ *   ctx.camera.follow(idOrName)     - follow an entity each frame (null stops)
+ *   ctx.audio.play(assetRef, opts)  - play a sound; returns a handle id
+ *       (opts: { volume, loop }); ctx.audio.stop(handleOrAssetRef) stops it
  *   ctx.vars          - per-entity persistent state object
  *   ctx.time          - { elapsed, delta, frame }
  *   ctx.log(...args)  - log to the Hearth console
+ *   ctx.collisions    - this entity's current collisions
+ *   ctx.isGrounded()  - standing on something?
+ *   ctx.destroySelf() - remove this entity
  */
 export default {
   onStart(ctx) {
@@ -37,32 +61,105 @@ export default {
   onCollision(ctx, other) {
     // Runs when this entity's collider touches another ("other" is an EntityHandle).
   },
+
+  onUiEvent(ctx, event) {
+    // Pointer events on this entity's interactive UIElement
+    // (event.type: click|press|release|enter|exit).
+  },
 };
+`;
+
+export const LUA_SCRIPT_TEMPLATE = `-- {{NAME}} — a Hearth behavior script (Lua).
+--
+-- IMPORTANT: call ctx with a dot, not a colon: ctx.log("hi"), never ctx:log("hi").
+--
+-- Lifecycle hooks receive a context (ctx) with:
+--   ctx.entity                      - { id, name, tags }
+--   ctx.transform                   - live Transform { position, rotation, scale }
+--   ctx.getComponent(type)          - live component data (mutable)
+--   ctx.params                      - parameters from the Script component
+--   ctx.input.isDown(action)        - is an input action held?
+--   ctx.input.justPressed(action)   - pressed this frame?
+--   ctx.scene.find(name)            - EntityHandle or nil
+--   ctx.scene.findByTag(tag)        - list of EntityHandles
+--   ctx.scene.spawn(def)            - create an entity at runtime
+--   ctx.scene.destroy(idOrHandle)   - remove an entity at runtime
+--   ctx.scenes.current              - current scene { id, name }
+--   ctx.scenes.list()               - all scenes as { id, name }
+--   ctx.scenes.load(idOrName)       - switch scene at end of frame (false if unknown)
+--   ctx.timers.after(seconds, fn)   - run fn once; returns a cancel id
+--   ctx.timers.every(seconds, fn)   - run fn repeatedly; returns a cancel id
+--   ctx.timers.cancel(id)           - cancel a timer
+--   ctx.tweens.to(path, target, seconds, opts) - tween a numeric component
+--       property, e.g. ctx.tweens.to("Transform.position.x", 400, 0.5,
+--       { easing = "easeOut" }); returns a cancel id
+--   ctx.tweens.cancel(id)           - cancel a tween
+--   ctx.random.next()               - seeded deterministic [0, 1)
+--   ctx.random.range(min, max)      - seeded float in [min, max)
+--   ctx.random.int(min, max)        - seeded integer, inclusive
+--   ctx.save(key, value)            - persistent save data (JSON values)
+--   ctx.load(key)                   - read saved data (nil when absent)
+--   ctx.clearSave(key)              - clear one key (no key = clear all)
+--   ctx.camera.getPosition() / ctx.camera.setPosition(x, y) - main camera position
+--   ctx.camera.getZoom() / ctx.camera.setZoom(zoom)         - main camera zoom
+--   ctx.camera.follow(idOrName)     - follow an entity each frame (nil stops)
+--   ctx.audio.play(assetRef, opts)  - play a sound; returns a handle id
+--       (opts: { volume = ..., loop = ... }); ctx.audio.stop(handleOrAssetRef) stops it
+--   ctx.vars                        - per-entity persistent state table
+--   ctx.time                        - { elapsed, delta, frame }
+--   ctx.log(...)                    - log to the Hearth console
+--   ctx.collisions                  - this entity's current collisions
+--   ctx.isGrounded()                - standing on something?
+--   ctx.destroySelf()               - remove this entity
+
+local script = {}
+
+function script.onStart(ctx)
+  -- Runs once when the scene starts.
+end
+
+function script.onUpdate(ctx, dt)
+  -- Runs every frame. dt is seconds since last frame.
+end
+
+function script.onCollision(ctx, other)
+  -- Runs when this entity's collider touches another ("other" is an EntityHandle).
+end
+
+function script.onUiEvent(ctx, event)
+  -- Pointer events on this entity's interactive UIElement
+  -- (event.type: click|press|release|enter|exit).
+end
+
+return script
 `;
 
 export const createScript = defineCommand({
   name: 'createScript',
   description:
-    'Create a new script file in scripts/ from the standard template (or custom source). Returns its path.',
+    'Create a new script file in scripts/ from the standard template (or custom source). Lua by default; language "js" for JavaScript. Returns its path.',
   permission: 'code-edit',
   mutates: true,
   paramsSchema: z.object({
     name: z.string().min(1),
+    /** Scripting language; Lua is the Hearth default. */
+    language: z.enum(['lua', 'js']).default('lua'),
     /** Full source; omit to use the documented template. */
     source: z.string().optional(),
   }),
   async run(ctx, params) {
-    const filename = slugify(params.name).replace(/_/g, '-') + '.js';
+    const filename = slugify(params.name).replace(/_/g, '-') + '.' + params.language;
     const relPath = joinPath(SCRIPTS_DIR, filename);
     const absPath = joinPath(ctx.store.root, relPath);
     if (await ctx.fs.exists(absPath)) {
       throw new ProjectError(`Script already exists: ${relPath}. Use editScript to modify it.`, 'CONFLICT');
     }
-    const source = params.source ?? SCRIPT_TEMPLATE.replace('{{NAME}}', params.name);
+    const template = params.language === 'js' ? SCRIPT_TEMPLATE : LUA_SCRIPT_TEMPLATE;
+    const source = params.source ?? template.replace('{{NAME}}', params.name);
     await ctx.fs.writeFile(absPath, source);
     ctx.changed({ kind: 'script', path: relPath, name: params.name, action: 'created' });
     ctx.suggest(`attachScript --scene <scene> --entity <entity> --script ${relPath}`);
-    return { path: relPath, lines: source.split('\n').length };
+    return { path: relPath, language: params.language, lines: source.split('\n').length };
   },
 });
 

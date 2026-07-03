@@ -18,7 +18,7 @@ reviewable diffs.
 - **CLI**: `hearth <command> --json` (see [cli.md](./cli.md)). Best when the
   agent already lives in a shell (Claude Code, Codex CLI).
 - **MCP**: `hearth-mcp --project <path>` over stdio (see
-  [mcp.md](./mcp.md)). Best for MCP-native clients; ~39 tools mirroring the
+  [mcp.md](./mcp.md)). Best for MCP-native clients; ~45 tools mirroring the
   CLI 1:1.
 
 Both call the identical core command layer. Pick either; never mix in
@@ -58,8 +58,8 @@ everything except `build`.
 | Mode | Unlocks |
 | --- | --- |
 | `read-only` | inspect, validate, diff, run scenes/playtests (always implied) |
-| `safe-edit` | scene/entity/component CRUD, input mappings, snapshot/revert, playtest defs |
-| `code-edit` | create/edit/attach scripts |
+| `safe-edit` | scene/entity/component CRUD, project settings (`updateSettings`: buildSettings incl. loading visuals, initial scene, input mappings), snapshot/revert, playtest defs |
+| `code-edit` | create/edit/attach scripts (Lua by default, `--language js` for JavaScript) |
 | `asset-edit` | import + procedural asset creation (sprites, tiles, sounds), metadata |
 | `build` | web export (`exportWeb`) + portable project builds (`buildProject`) |
 
@@ -90,6 +90,8 @@ agent that connects cold can bootstrap itself.
   description, permission, mutates).
 - `hearth inspect components --json`: every component type with docs and
   default values.
+- `hearth inspect api --json`: the complete script `ctx` API — every
+  member with its signature, description, and a Lua + JS example.
 - MCP `tools/list`: same registry as typed tools.
 
 If a capability isn't in the registry, it doesn't exist. Ask the human

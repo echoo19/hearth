@@ -1,7 +1,7 @@
 {
-  "hearthVersion": "0.1.0",
+  "hearthVersion": "0.3.0",
   "project": "Mini Platformer",
-  "projectId": "prj_1rtk5pok",
+  "projectId": "prj_075nhzio",
   "instructions": "AGENTS.md",
   "cli": {
     "binary": "hearth",

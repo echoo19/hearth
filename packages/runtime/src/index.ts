@@ -19,6 +19,26 @@ export {
   type PointerKind,
 } from './runtime.js';
 export {
+  LuaScriptEngine,
+  isLuaPath,
+  setLuaWasmUri,
+  type LuaEngineOptions,
+} from './lua.js';
+export {
+  GameSession,
+  MemorySessionStorage,
+  type GameSessionOptions,
+  type SceneEvent,
+  type SessionStorage,
+} from './session.js';
+export {
+  createRng,
+  EASINGS,
+  EntityScheduler,
+  resolveNumericTarget,
+  type EasingName,
+} from './stdlib.js';
+export {
   compileScript,
   type ScriptHooks,
   type ScriptContext,

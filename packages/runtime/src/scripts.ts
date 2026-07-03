@@ -89,6 +89,56 @@ export interface ScriptContext {
   /** Any non-trigger contact pushing this entity up (normal.y < -0.5). */
   isGrounded(): boolean;
   destroySelf(): void;
+  scenes: {
+    /** Current scene {id, name}. */
+    current: { id: string; name: string };
+    list(): { id: string; name: string }[];
+    /** Request a scene switch at end of frame. False if unknown. */
+    load(idOrName: string): boolean;
+  };
+  timers: {
+    /** Run fn once after `seconds`. Returns a cancel id. */
+    after(seconds: number, fn: () => void): string;
+    /** Run fn every `seconds`. Returns a cancel id. */
+    every(seconds: number, fn: () => void): string;
+    cancel(id: string): void;
+  };
+  tweens: {
+    /**
+     * Tween a numeric component property on this entity, e.g.
+     * to('Transform.position.x', 400, 0.5, { easing: 'easeOut' }).
+     * Returns a cancel id. Unknown/non-numeric path → warn log + '' id.
+     */
+    to(
+      path: string,
+      target: number,
+      seconds: number,
+      opts?: {
+        easing?: 'linear' | 'easeIn' | 'easeOut' | 'easeInOut';
+        onComplete?: () => void;
+      },
+    ): string;
+    cancel(id: string): void;
+  };
+  random: {
+    /** Seeded, deterministic [0, 1). Same seed → same sequence. */
+    next(): number;
+    range(min: number, max: number): number; // float
+    int(min: number, max: number): number; // inclusive
+  };
+  /** Persistent save data (JSON values), survives scene switches; in the
+   *  browser it persists across sessions via localStorage. */
+  save(key: string, value: unknown): void;
+  load(key: string): unknown; // null when absent
+  clearSave(key?: string): void; // no key = clear all
+  camera: {
+    getPosition(): Vec2;
+    setPosition(x: number, y: number): void;
+    getZoom(): number;
+    setZoom(zoom: number): void;
+    /** Follow an entity each frame (null stops). Warn log if not found. */
+    follow(idOrName: string | null): void;
+  };
 }
 
 /**

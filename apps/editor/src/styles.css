@@ -871,6 +871,20 @@ label.field-label {
   justify-content: center;
 }
 
+/* Current-scene badge, shown once a script switches scenes at runtime. */
+.game-preview-scene {
+  position: absolute;
+  top: 8px;
+  left: 10px;
+  z-index: 2;
+  padding: 2px 8px;
+  border-radius: 4px;
+  background: rgba(0, 0, 0, 0.55);
+  color: var(--text-dim, #b9b4c4);
+  font-size: 11px;
+  pointer-events: none;
+}
+
 .game-canvas-host canvas {
   max-width: 100%;
   max-height: 100%;

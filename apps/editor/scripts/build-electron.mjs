@@ -16,6 +16,16 @@ const appRoot = path.join(here, '..');
 
 await mkdir(path.join(appRoot, 'dist-electron'), { recursive: true });
 
+// Lua support in single-file bundles: wasmoon resolves its glue.wasm next to
+// its own module via __filename/__dirname, which breaks once esbuild inlines
+// it (and __filename doesn't exist in ESM output at all). The inject shim
+// inlines the wasm as base64 (loader below) and calls setLuaWasmUri with a
+// data: URI before any entry code runs, so every bundle stays one file.
+const luaWasmInline = {
+  inject: [path.join(here, 'lua-wasm-inline.mjs')],
+  loader: { '.wasm': 'base64' },
+};
+
 await build({
   entryPoints: [path.join(appRoot, 'electron', 'main.ts')],
   outfile: path.join(appRoot, 'dist-electron', 'main.cjs'),
@@ -26,12 +36,14 @@ await build({
   external: ['electron'],
   sourcemap: false,
   logLevel: 'info',
+  ...luaWasmInline,
   // The server dynamically imports @hearth/playtest for runtime hooks; make
   // sure esbuild follows workspace symlinks and inlines it too.
   alias: {
     '@hearth/core/node': path.join(appRoot, '..', '..', 'packages', 'core', 'src', 'node', 'index.ts'),
     '@hearth/core': path.join(appRoot, '..', '..', 'packages', 'core', 'src', 'index.ts'),
     '@hearth/playtest': path.join(appRoot, '..', '..', 'packages', 'playtest', 'src', 'index.ts'),
+    '@hearth/runtime/lua': path.join(appRoot, '..', '..', 'packages', 'runtime', 'src', 'lua.ts'),
     '@hearth/runtime': path.join(appRoot, '..', '..', 'packages', 'runtime', 'src', 'index.ts'),
   },
 });
@@ -52,6 +64,7 @@ const toolAliases = {
   '@hearth/core/node': path.join(repoRoot, 'packages', 'core', 'src', 'node', 'index.ts'),
   '@hearth/core': path.join(repoRoot, 'packages', 'core', 'src', 'index.ts'),
   '@hearth/playtest': path.join(repoRoot, 'packages', 'playtest', 'src', 'index.ts'),
+  '@hearth/runtime/lua': path.join(repoRoot, 'packages', 'runtime', 'src', 'lua.ts'),
   '@hearth/runtime': path.join(repoRoot, 'packages', 'runtime', 'src', 'index.ts'),
 };
 
@@ -69,10 +82,20 @@ for (const [entry, outfile] of [
     sourcemap: false,
     logLevel: 'info',
     banner: {
-      // createRequire shim: some bundled CJS deps call require() at runtime.
-      // (The entry files' own shebang is preserved above this by esbuild.)
-      js: 'import { createRequire as __hearthCreateRequire } from "node:module"; const require = __hearthCreateRequire(import.meta.url);',
+      // createRequire + __filename/__dirname shims: bundled CJS deps
+      // (wasmoon among them) reference require()/__filename at runtime,
+      // which don't exist in ESM output. (The entry files' own shebang is
+      // preserved above this by esbuild.)
+      js: [
+        'import { createRequire as __hearthCreateRequire } from "node:module";',
+        'import { fileURLToPath as __hearthFileURLToPath } from "node:url";',
+        'import { dirname as __hearthDirname } from "node:path";',
+        'const require = __hearthCreateRequire(import.meta.url);',
+        'const __filename = __hearthFileURLToPath(import.meta.url);',
+        'const __dirname = __hearthDirname(__filename);',
+      ].join(' '),
     },
+    ...luaWasmInline,
     alias: toolAliases,
   });
 }

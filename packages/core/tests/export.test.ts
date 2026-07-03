@@ -36,8 +36,10 @@ describe('exportWeb (folder output)', () => {
 
     const html = await fs.readFile('/proj/export/web/index.html');
     expect(html).toContain('<title>Export Game</title>');
-    expect(html).toContain('#141019');
-    expect(html).toContain('#F76B15');
+    // No engine chrome: neutral loading background, no ember branding.
+    expect(html).toContain('#000000');
+    expect(html).not.toContain('#141019');
+    expect(html).not.toContain('#F76B15');
     expect(html).toContain("fetch('project.bundle.json')");
     expect(html).toContain('hearth-player.js');
     expect(html).toContain('hearth-fullscreen');
@@ -50,7 +52,8 @@ describe('exportWeb (folder output)', () => {
     expect((bundle.project as any).name).toBe('Export Game');
     expect(bundle.scenes.length).toBe(1);
     expect(bundle.scenes[0].entities.length).toBeGreaterThan(0);
-    expect(bundle.scripts['scripts/player-move.js']).toContain('onUpdate');
+    // createScript defaults to Lua; the bundle ships the .lua source.
+    expect(bundle.scripts['scripts/player-move.lua']).toContain('onUpdate');
     expect(bundle.assets.length).toBe(2);
     for (const asset of bundle.assets) {
       expect(asset.path).toBeTruthy();

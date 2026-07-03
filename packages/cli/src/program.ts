@@ -146,6 +146,11 @@ export function buildProgram(): Command {
       await guarded(cmd, 'inspectEntity', () => runAndEmit(cmd, 'inspectEntity', { scene, entity }));
     },
   );
+  addGlobalOptions(
+    inspect.command('api').description('the script ctx API reference (signatures, descriptions, Lua + JS examples)'),
+  ).action(async (opts, cmd) => {
+    await guarded(cmd, 'inspectApi', () => runAndEmit(cmd, 'inspectApi', {}));
+  });
 
   // ---------------------------------------------------------------------
   // validate
@@ -193,14 +198,15 @@ export function buildProgram(): Command {
   });
 
   addGlobalOptions(
-    create.command('script <name>').description('create a script from the standard template').option(
-      '--source-file <path>',
-      'read initial source from a file instead of the template',
-    ),
+    create
+      .command('script <name>')
+      .description('create a script from the standard template (Lua by default)')
+      .option('--language <language>', 'scripting language: lua (default) or js')
+      .option('--source-file <path>', 'read initial source from a file instead of the template'),
   ).action(async (name: string, opts, cmd) => {
     await guarded(cmd, 'createScript', async () => {
       const source = opts.sourceFile ? await fsp.readFile(path.resolve(opts.sourceFile), 'utf8') : undefined;
-      await runAndEmit(cmd, 'createScript', { name, source });
+      await runAndEmit(cmd, 'createScript', { name, language: opts.language, source });
     });
   });
 
@@ -348,6 +354,26 @@ export function buildProgram(): Command {
       .description('set (or, with no keys, remove) the key bindings for an input action'),
   ).action(async (action: string, keys: string[], opts, cmd) => {
     await guarded(cmd, 'setInputMapping', () => runAndEmit(cmd, 'setInputMapping', { action, keys: keys ?? [] }));
+  });
+
+  addGlobalOptions(
+    program
+      .command('set-settings')
+      .description('update project settings: partial buildSettings (deep-merged), initial scene, input mappings')
+      .option(
+        '--build-settings <json>',
+        'partial buildSettings JSON, deep-merged, e.g. \'{"title":"My Game","loading":{"spinner":true}}\'',
+      )
+      .option('--initial-scene <scene>', 'scene (id or name) that runs first')
+      .option('--input-actions <json>', 'action -> key list JSON, replaced per action, e.g. \'{"jump":["Space"]}\''),
+  ).action(async (opts, cmd) => {
+    await guarded(cmd, 'updateSettings', () => {
+      const params: Record<string, unknown> = {};
+      if (opts.buildSettings) params.buildSettings = parseJsonObject(opts.buildSettings, '--build-settings');
+      if (opts.initialScene) params.initialScene = opts.initialScene;
+      if (opts.inputActions) params.inputMappings = { actions: parseJsonObject(opts.inputActions, '--input-actions') };
+      return runAndEmit(cmd, 'updateSettings', params);
+    });
   });
 
   // ---------------------------------------------------------------------

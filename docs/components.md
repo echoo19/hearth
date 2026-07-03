@@ -93,7 +93,7 @@ Defaults:
 
 ## Script
 
-Attaches a JavaScript behavior from scripts/ (scriptPath). params are passed to the script as ctx.params.
+Attaches a behavior script from scripts/ (scriptPath) — Lua (`.lua`, the default) or JavaScript (`.js`). params are passed to the script as ctx.params.
 
 Defaults:
 

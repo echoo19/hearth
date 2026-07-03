@@ -1,17 +1,39 @@
 # Hearth Roadmap
 
-v0.2 is the current milestone: on top of v0.1's full human+agent loop
-(editor ⇄ command system ⇄ CLI/MCP ⇄ runtime ⇄ playtests ⇄ diff review), it
-adds a dockable editor workspace, screen-space game UI, polygon colliders,
-working audio with procedural sound effects, and production web export.
-This page is the honest list of what's next and what's deliberately
-missing.
+v0.3 is the current milestone. Its first wave (shipped, below) made Lua
+the first-class scripting language, added scene management and a script
+stdlib, and removed every trace of engine chrome from exported games.
+On top of v0.2's dockable editor workspace, screen-space game UI, polygon
+colliders, working audio with procedural sound effects, and production
+web export — and v0.1's full human+agent loop (editor ⇄ command system ⇄
+CLI/MCP ⇄ runtime ⇄ playtests ⇄ diff review). This page is the honest
+list of what's next and what's deliberately missing.
 
 The standing rule for everything below: **agent-native first**. Each system
 ships as schemas + commands (inspectable via `hearth … --json`, exposed as
 MCP tools, testable in headless playtests) before it gets editor UI. The
 full working notes live in
 [docs/superpowers/specs/2026-07-02-v0.3-engine-systems-backlog.md](./superpowers/specs/2026-07-02-v0.3-engine-systems-backlog.md).
+
+## Shipped in v0.3 — Wave 0
+
+- **Lua scripting, first-class**: `hearth create script` emits Lua by
+  default (`--language js` keeps JavaScript, which remains fully
+  supported); the same sandboxed Lua 5.4 VM (wasmoon) runs in the editor
+  preview, headless playtests, and exported games, with the identical
+  `ctx` API in both languages.
+- **Scene management + script stdlib v1**: `ctx.scenes.load` (user-built
+  menus/start screens), `ctx.timers`, `ctx.tweens`, seeded `ctx.random`,
+  persistent `ctx.save`/`ctx.load`, and `ctx.camera` control — one
+  deterministic surface, documented via `hearth inspect api`.
+- **No-chrome export**: shipped games boot straight into the initial
+  scene; loading visuals come from `buildSettings.loading` (reachable via
+  the new `updateSettings` command); audio unlocks silently on the first
+  natural input. Zero Hearth branding anywhere a player can see.
+- **Structured script diagnostics**: `hearth validate` reports script
+  syntax errors with file + line for both languages.
+- Playtests gained `seed`, `click`, and `assertScene` steps; the all-Lua
+  `ember-trail` example proves the whole stack headlessly.
 
 ## Shipped in v0.2
 
@@ -25,7 +47,7 @@ full working notes live in
 - Web export: `hearth export web [--single-file] [--zip]` — static
   self-contained builds, itch.io-ready zips.
 
-## Near term (v0.3)
+## Near term (v0.3, later waves)
 
 - **Rendering v2**: `Light2D` + ambient light, `LineRenderer` (polylines /
   beams), a toggleable debug-draw overlay (colliders, grids, velocities),
@@ -38,9 +60,10 @@ full working notes live in
   layers/masks; one-way platforms; circle-accurate resolution. The runtime
   stays deterministic (fixed timestep) — that's the playtest and
   future-multiplayer story.
-- **Script standard library**: `ctx.math` (vec2 ops, clamp, color helpers)
-  and `ctx.events` (global pub/sub with an `onEvent` hook; emitted events
-  recorded in run reports so playtests can assert them).
+- **Script standard library v2**: `ctx.math` (vec2 ops, clamp, color
+  helpers) and `ctx.events` (global pub/sub with an `onEvent` hook;
+  emitted events recorded in run reports so playtests can assert them),
+  building on the Wave 0 stdlib (scenes/timers/tweens/random/save/camera).
 - **Screenshot capture for agents**: `hearth screenshot <scene>` so agents
   can *see* their work (with `--debug` hitbox overlays once debug draw
   lands).

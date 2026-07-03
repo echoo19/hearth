@@ -1,24 +1,30 @@
 /**
- * @hearth/runtime/pixi — browser renderer for a running Hearth scene.
+ * @hearth/runtime/pixi — browser renderer for a running Hearth game.
  *
- * Mounts a PixiJS v8 Application into a host element and drives a headless
- * SceneRuntime at the project's fixed timestep, syncing display objects to
- * entity state after each render tick.
+ * Mounts a PixiJS v8 Application into a host element and drives a GameSession
+ * at the project's fixed timestep, syncing display objects to entity state
+ * after each render tick. Scene switches requested by scripts
+ * (ctx.scenes.load) are handled by the session; the view keeps its
+ * Application/canvas and rebuilds the display graph for the new runtime.
  *
- * v1 rendering notes:
+ * Rendering notes:
  *   - Each entity renders as one container whose zIndex is the max layer of
  *     its renderable components (per-component layering within one entity is
  *     not split out).
- *   - Sprite textures are resolved up front via `resolveAssetUrl`; entities
- *     spawned later fall back to primitives unless their texture was already
- *     loaded. Load failures also fall back to primitives.
+ *   - Sprite textures for EVERY scene in the project are resolved up front
+ *     via `resolveAssetUrl` (the bundle is local, so this is cheap and makes
+ *     scene switches pop-free); entities spawned later fall back to
+ *     primitives unless their texture was already loaded. Load failures also
+ *     fall back to primitives.
  *   - UIElement entities render into a screen-space overlay container above
  *     the world, positioned by anchor+offset and re-anchored every tick (so
  *     renderer resizes take effect). Real pointer events are translated to
  *     runtime.sendPointer, the same path playtests use.
  *   - Audio plays through Web Audio (see ./audio.js): decoded buffers are
- *     cached, each playback gets a gain node, and everything stops when the
- *     view is destroyed.
+ *     cached, each playback gets a gain node, the context unlocks silently
+ *     on the first user input, and everything stops when the view is
+ *     destroyed. Scene switches stop the old scene's playbacks via the
+ *     session's stop events.
  */
 import {
   Application,
@@ -31,14 +37,22 @@ import {
   type Ticker,
 } from 'pixi.js';
 import type { Asset, ProjectStore, SpriteRendererComponent, TilemapComponent } from '@hearth/core';
-import { SceneRuntime, type RuntimeEntity, type RuntimeError, type RuntimeLog } from '../runtime.js';
+import type { RuntimeEntity, RuntimeError, RuntimeLog, SceneRuntime } from '../runtime.js';
+import { GameSession, type SceneEvent, type SessionStorage } from '../session.js';
 import { uiScreenPosition } from '../ui.js';
 import { WebAudioPlayer } from './audio.js';
+
+export { localStorageAdapter, type WebStorageLike } from './storage.js';
 
 export interface PixiViewOptions {
   container: HTMLElement;
   store: ProjectStore;
-  scene: string;
+  /** Scene id or name to start in. Default: project initialScene (then first scene). */
+  scene?: string;
+  /** Seed for ctx.random / Lua math.random (default 0). */
+  seed?: number;
+  /** Persistence for ctx.save/load (default in-memory; player passes localStorageAdapter). */
+  storage?: SessionStorage;
   /** Host maps an asset record to a URL Pixi can load (file/blob/http). */
   resolveAssetUrl(asset: Asset): string;
   /** Start stepping immediately (default true). */
@@ -47,13 +61,16 @@ export interface PixiViewOptions {
   attachKeyboard?: boolean;
   onLog?(e: RuntimeLog): void;
   onError?(e: RuntimeError): void;
+  /** Fired after a script-requested scene switch completes. */
+  onSceneChange?(e: SceneEvent): void;
 }
 
 const DEG_TO_RAD = Math.PI / 180;
 const MAX_STEPS_PER_TICK = 5;
 
 export class PixiSceneView {
-  readonly runtime: SceneRuntime;
+  /** The cross-scene session driving this view. */
+  readonly session: GameSession;
 
   private app: Application;
   private world = new Container();
@@ -72,10 +89,10 @@ export class PixiSceneView {
 
   private constructor(
     private readonly opts: PixiViewOptions,
-    runtime: SceneRuntime,
+    session: GameSession,
     app: Application,
   ) {
-    this.runtime = runtime;
+    this.session = session;
     this.app = app;
     this._paused = opts.autoplay === false;
     this.world.sortableChildren = true;
@@ -86,7 +103,8 @@ export class PixiSceneView {
   }
 
   static async mount(opts: PixiViewOptions): Promise<PixiSceneView> {
-    let runtimeRef: SceneRuntime | null = null;
+    let sessionRef: GameSession | null = null;
+    let viewRef: PixiSceneView | null = null;
     const audio = WebAudioPlayer.supported()
       ? new WebAudioPlayer(
           (assetId) => {
@@ -94,10 +112,13 @@ export class PixiSceneView {
             return asset ? opts.resolveAssetUrl(asset) : null;
           },
           (message) =>
-            opts.onLog?.({ frame: runtimeRef?.frame ?? 0, level: 'warn', message }),
+            opts.onLog?.({ frame: sessionRef?.frame ?? 0, level: 'warn', message }),
         )
       : null;
-    const runtime = await SceneRuntime.create(opts.store, opts.scene, {
+    const session = await GameSession.create(opts.store, {
+      scene: opts.scene,
+      seed: opts.seed,
+      storage: opts.storage,
       onLog: opts.onLog,
       onError: opts.onError,
       onAudio: audio
@@ -106,19 +127,24 @@ export class PixiSceneView {
             else audio.stop(e.handleId);
           }
         : undefined,
+      onSceneChange: (e) => {
+        viewRef?.onSceneChanged();
+        opts.onSceneChange?.(e);
+      },
     });
-    runtimeRef = runtime;
+    sessionRef = session;
     const settings = opts.store.project.buildSettings;
     const app = new Application();
     await app.init({
       width: settings.width,
       height: settings.height,
-      background: runtime.camera.backgroundColor,
+      background: session.runtime.camera.backgroundColor,
       antialias: true,
     });
     opts.container.appendChild(app.canvas);
 
-    const view = new PixiSceneView(opts, runtime, app);
+    const view = new PixiSceneView(opts, session, app);
+    viewRef = view;
     view.audio = audio;
     await view.preloadTextures();
     view.syncEntities();
@@ -127,6 +153,11 @@ export class PixiSceneView {
     if (opts.attachKeyboard !== false) view.attachKeyboard();
     view.attachPointer();
     return view;
+  }
+
+  /** The live runtime for the current scene (replaced on scene switch). */
+  get runtime(): SceneRuntime {
+    return this.session.runtime;
   }
 
   get paused(): boolean {
@@ -144,7 +175,8 @@ export class PixiSceneView {
 
   /** Advance exactly one fixed frame while paused. */
   stepOnce(): void {
-    this.runtime.step();
+    this.session.step();
+    if (this.session.switching) return;
     this.syncEntities();
     this.syncCamera();
   }
@@ -160,14 +192,26 @@ export class PixiSceneView {
     }
     this.pointerFns = [];
     this.audio?.destroy();
-    this.runtime.destroy();
+    this.session.destroy();
     this.nodes.clear();
     this.app.destroy(true, { children: true });
   }
 
   // ---------------------------------------------------------------------------
 
+  /** After a scene switch: rebuild the display graph, keep app/canvas. */
+  private onSceneChanged(): void {
+    if (this.destroyed) return;
+    for (const [, node] of this.nodes) node.destroy({ children: true });
+    this.nodes.clear();
+    this.accumulator = 0;
+    this.syncEntities();
+    this.syncCamera();
+  }
+
   private attachKeyboard(): void {
+    // Handlers read this.runtime (the session's CURRENT runtime) at event
+    // time, so input keeps routing correctly across scene switches.
     this.keydownFn = (e) => {
       if (this.runtime.input.isMappedCode(e.code)) {
         e.preventDefault();
@@ -187,7 +231,7 @@ export class PixiSceneView {
   /**
    * Translate real pointer events on the canvas into runtime.sendPointer
    * (screen coordinates in the renderer's logical space), so browser clicks
-   * take exactly the path playtests exercise.
+   * take exactly the path playtests exercise. Targets the current runtime.
    */
   private attachPointer(): void {
     const canvas = this.app.canvas;
@@ -212,27 +256,44 @@ export class PixiSceneView {
     if (!this._paused) {
       this.accumulator += ticker.deltaMS / 1000;
       let steps = 0;
-      while (this.accumulator >= this.runtime.fixedDt && steps < MAX_STEPS_PER_TICK) {
-        this.runtime.step();
-        this.accumulator -= this.runtime.fixedDt;
+      const dt = this.runtime.fixedDt;
+      while (this.accumulator >= dt && steps < MAX_STEPS_PER_TICK) {
+        this.session.step(); // no-op while an async scene switch is in flight
+        this.accumulator -= dt;
         steps++;
       }
       // Do not let a long stall (tab hidden, breakpoint) build up a spiral.
       if (steps === MAX_STEPS_PER_TICK) this.accumulator = 0;
     }
+    // Mid-switch the old runtime is torn down; onSceneChanged resyncs.
+    if (this.session.switching) return;
     this.syncEntities();
     this.syncCamera();
   }
 
-  /** Load every texture referenced by SpriteRenderers and Tilemaps up front. */
+  /**
+   * Load every texture referenced by SpriteRenderers and Tilemaps in ANY
+   * scene of the project up front, so scene switches never pop in assets.
+   */
   private async preloadTextures(): Promise<void> {
     const assetIds = new Set<string>();
-    for (const entity of this.runtime.getEntities()) {
-      const sprite = entity.components.SpriteRenderer;
-      if (sprite?.assetId) assetIds.add(sprite.assetId);
-      const tilemap = entity.components.Tilemap;
-      if (tilemap) for (const id of Object.values(tilemap.tileAssets)) assetIds.add(id);
+    const collect = (components: {
+      SpriteRenderer?: { assetId?: string | null };
+      Tilemap?: { tileAssets: Record<string, string> };
+    }) => {
+      if (components.SpriteRenderer?.assetId) assetIds.add(components.SpriteRenderer.assetId);
+      if (components.Tilemap) {
+        for (const id of Object.values(components.Tilemap.tileAssets)) assetIds.add(id);
+      }
+    };
+    for (const ref of this.opts.store.project.scenes) {
+      const scene = this.opts.store.scenes.get(ref.id);
+      if (!scene) continue;
+      for (const entity of scene.entities) collect(entity.components);
     }
+    // Entities already live in the current runtime (covers spawned ones).
+    for (const entity of this.runtime.getEntities()) collect(entity.components);
+
     for (const id of assetIds) {
       const asset = this.opts.store.getAsset(id);
       if (!asset) continue;
@@ -241,7 +302,7 @@ export class PixiSceneView {
         this.textures.set(id, texture);
       } catch (err) {
         this.opts.onLog?.({
-          frame: this.runtime.frame,
+          frame: this.session.frame,
           level: 'warn',
           message: `Failed to load texture for asset ${asset.name}: ${(err as Error).message}`,
         });

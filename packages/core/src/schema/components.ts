@@ -206,7 +206,7 @@ export const COMPONENT_DOCS: Record<ComponentType, string> = {
     'Box, circle, or convex polygon collision shape (polygon uses points, local space, min 3 convex vertices). isTrigger=true reports overlaps without blocking movement.',
   PhysicsBody:
     'Simple physics: dynamic bodies fall with gravity and collide; kinematic bodies move by velocity only; static bodies never move.',
-  Script: 'Attaches a JavaScript behavior from scripts/ (scriptPath). params are passed to the script as ctx.params.',
+  Script: 'Attaches a behavior script from scripts/ (scriptPath; Lua by default, JavaScript also supported). params are passed to the script as ctx.params.',
   Camera: 'Viewpoint for the scene. One entity should have a Camera with isMain=true.',
   Text: 'Renders UI/world text (content, fontSize, color).',
   AudioSource:

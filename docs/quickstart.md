@@ -27,22 +27,28 @@ already falls and lands (dynamic physics body + static ground), plus
 
 ## 3. Make the player move
 
+Scripts are Lua by default (JavaScript works too: `--language js`); the
+same `ctx` API in either language, always called with a dot
+(`ctx.log("hi")`, never `ctx:log("hi")`).
+
 ```bash
 hearth create script player-move --source-file /dev/stdin <<'EOF'
-export default {
-  onUpdate(ctx) {
-    const body = ctx.getComponent('PhysicsBody');
-    let vx = 0;
-    if (ctx.input.isDown('left')) vx -= 220;
-    if (ctx.input.isDown('right')) vx += 220;
-    body.velocity.x = vx;
-    if (ctx.input.justPressed('jump') && ctx.isGrounded()) {
-      body.velocity.y = -420;
-    }
-  },
-};
+local script = {}
+
+function script.onUpdate(ctx, dt)
+  local body = ctx.getComponent("PhysicsBody")
+  local vx = 0
+  if ctx.input.isDown("left") then vx = vx - 220 end
+  if ctx.input.isDown("right") then vx = vx + 220 end
+  body.velocity.x = vx
+  if ctx.input.justPressed("jump") and ctx.isGrounded() then
+    body.velocity.y = -420
+  end
+end
+
+return script
 EOF
-hearth attach script Main Player scripts/player-move.js
+hearth attach script Main Player scripts/player-move.lua
 ```
 
 Default input mappings already bind `left/right` to arrows+AD and `jump` to
@@ -57,15 +63,17 @@ hearth create entity Main Star --position 500,480 --tags star --components \
   '{"SpriteRenderer":{"assetId":"<ast_id>","width":24,"height":24},"Collider":{"shape":"circle","radius":14,"isTrigger":true}}'
 
 hearth create script star-catch --source-file /dev/stdin <<'EOF'
-export default {
-  onCollision(ctx, other) {
-    if (!other.tags.includes('player')) return;
-    ctx.log('caught a star!');
-    ctx.destroySelf();
-  },
-};
+local script = {}
+
+function script.onCollision(ctx, other)
+  if other.name ~= "Player" then return end
+  ctx.log("caught a star!")
+  ctx.destroySelf()
+end
+
+return script
 EOF
-hearth attach script Main Star scripts/star-catch.js
+hearth attach script Main Star scripts/star-catch.lua
 ```
 
 ## 5. Validate, playtest, review

@@ -106,6 +106,8 @@ export const createPlaytest = defineCommand({
     scene: z.string().min(1),
     steps: z.array(PlaytestStepSchema).default([]),
     maxFrames: z.number().int().positive().default(600),
+    /** Seed for ctx.random / Lua math.random — same seed, same run. */
+    seed: z.number().int().nonnegative().default(0),
   }),
   async run(ctx, params) {
     const scene = ctx.store.getScene(params.scene);
@@ -120,6 +122,7 @@ export const createPlaytest = defineCommand({
       scene: scene.id,
       steps: params.steps,
       maxFrames: params.maxFrames,
+      seed: params.seed,
     });
     ctx.store.playtests.set(playtest.id, playtest);
     ctx.changed({

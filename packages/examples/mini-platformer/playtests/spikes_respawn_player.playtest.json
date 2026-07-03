@@ -1,8 +1,8 @@
 {
   "formatVersion": 1,
-  "id": "ptt_ls41we2r",
+  "id": "ptt_05c0llra",
   "name": "spikes-respawn-player",
-  "scene": "scn_egxng45d",
+  "scene": "scn_7mifthlh",
   "steps": [
     {
       "type": "press",
@@ -19,5 +19,6 @@
       "type": "assertNoErrors"
     }
   ],
-  "maxFrames": 300
+  "maxFrames": 300,
+  "seed": 0
 }

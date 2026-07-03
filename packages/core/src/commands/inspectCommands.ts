@@ -4,6 +4,7 @@ import { findEntity, childrenOf } from '../schema/scene.js';
 import { COMPONENT_DOCS, COMPONENT_SCHEMAS, COMPONENT_TYPES } from '../schema/components.js';
 import { validateProject } from '../validate.js';
 import { ProjectError } from '../project/store.js';
+import { CTX_API } from '../ctxApi.js';
 
 export const inspectProject = defineCommand({
   name: 'inspectProject',
@@ -185,6 +186,25 @@ export const readScript = defineCommand({
     }
     const source = await ctx.store.readScript(params.path);
     return { path: params.path, source, lines: source.split('\n').length };
+  },
+});
+
+export const inspectApi = defineCommand({
+  name: 'inspectApi',
+  description:
+    'Machine-readable reference for the script ctx API: every method and property, with signatures and Lua + JS examples.',
+  permission: 'read-only',
+  mutates: false,
+  paramsSchema: z.object({}),
+  async run() {
+    return {
+      api: CTX_API,
+      languages: ['lua', 'js'],
+      notes: [
+        'Lua scripts call ctx with a dot, not a colon: ctx.log("hi"), never ctx:log("hi").',
+        'ctx.random (and Lua math.random) is seeded and deterministic: the same seed produces the same sequence, so playtests are reproducible. Never use wall-clock time or Math.random for gameplay.',
+      ],
+    };
   },
 });
 

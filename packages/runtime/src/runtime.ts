@@ -46,6 +46,9 @@ import {
   type SpawnDef,
   type UiEvent,
 } from './scripts.js';
+import { LuaScriptEngine, isLuaPath } from './lua.js';
+import { MemorySessionStorage, type SessionStorage } from './session.js';
+import { EASINGS, EntityScheduler, createRng, resolveNumericTarget } from './stdlib.js';
 import { uiElementRect } from './ui.js';
 
 export interface RuntimeLog {
@@ -88,6 +91,16 @@ export interface RuntimeOptions {
   onAudio?(e: AudioPlaybackEvent): void;
   /** Cap on retained logs (oldest dropped first). Default 1000. */
   maxLogs?: number;
+  /** Seed for ctx.random when no `rng` is provided (standalone use). Default 0. */
+  seed?: number;
+  /** Session-provided RNG stream (wins over seed). */
+  rng?(): number;
+  /** Persistence behind ctx.save/load. Default MemorySessionStorage. */
+  storage?: SessionStorage;
+  /** Session-shared Lua engine; created on demand if absent and a .lua script is present. */
+  luaEngine?: LuaScriptEngine;
+  /** Session frame base so log/error/audio frames stay monotonic across scenes. */
+  frameOffset?: number;
 }
 
 /** A collision contact as seen from one entity. */
@@ -118,6 +131,8 @@ interface ScriptState {
   hooks: ScriptHooks | null;
   ctx: ScriptContext;
   vars: Record<string, unknown>;
+  /** Timers/tweens created via this entity's ctx; dies with the entity. */
+  scheduler: EntityScheduler;
   started: boolean;
   disabled: boolean;
   consecutiveErrors: number;
@@ -142,6 +157,9 @@ export class SceneRuntime {
   readonly audioEvents: AudioEvent[] = [];
   readonly input: InputState;
 
+  /** Scene id requested by ctx.scenes.load this frame (hosts react after step). */
+  pendingScene: string | null = null;
+
   private _frame = 0;
   private _elapsed = 0;
   private entities: RuntimeEntity[] = [];
@@ -157,6 +175,13 @@ export class SceneRuntime {
   private activePlaybacks = new Map<string, { assetId: string }>();
   private uiHoverId: string | null = null;
   private uiPressedId: string | null = null;
+  private readonly sceneId: string;
+  private readonly sceneName: string;
+  private readonly rng: () => number;
+  private readonly storage: SessionStorage;
+  private ownedLuaEngine: LuaScriptEngine | null = null;
+  private cameraFollowId: string | null = null;
+  private warnedNoCamera = false;
 
   private constructor(
     private readonly store: ProjectStore,
@@ -166,6 +191,12 @@ export class SceneRuntime {
     this.fixedDt = 1 / store.project.buildSettings.fixedTimestep;
     this.maxLogs = options.maxLogs ?? 1000;
     this.input = new InputState(store.project.inputMappings.actions);
+    this.sceneId = scene.id;
+    this.sceneName = scene.name;
+    this.rng = options.rng ?? createRng(options.seed ?? 0);
+    this.storage = options.storage ?? new MemorySessionStorage();
+    this._frame = options.frameOffset ?? 0;
+    this._elapsed = this._frame * this.fixedDt;
     for (const authored of scene.entities) {
       if (!authored.enabled) continue;
       this.entities.push(this.instantiate(authored));
@@ -272,9 +303,21 @@ export class SceneRuntime {
       }
     }
 
-    // 2. Script updates.
+    // 2. Timers fire and tweens advance right before each entity's onUpdate.
     for (const entity of this.getEntities()) {
       if (!entity.enabled) continue;
+      const state = this.scriptStates.get(entity.id);
+      if (state) {
+        state.scheduler.step(this.fixedDt, (phase, err) =>
+          this.recordError({
+            frame: this._frame,
+            message: (err as Error)?.message ?? String(err),
+            entity: entity.name,
+            script: state.path,
+            phase,
+          }),
+        );
+      }
       this.callHook(entity, 'onUpdate', this.fixedDt);
     }
 
@@ -283,6 +326,9 @@ export class SceneRuntime {
 
     // 4. Collision events for new contact pairs.
     this.dispatchCollisionEvents(contacts);
+
+    // 4b. Camera follow applies at end of frame, after physics.
+    this.applyCameraFollow();
 
     // 5. End of frame bookkeeping.
     this.flushDestroyed();
@@ -297,11 +343,15 @@ export class SceneRuntime {
 
   destroy(): void {
     this.stopped = true;
+    this.pendingScene = null;
+    this.cameraFollowId = null;
     this.entities = [];
     this.scriptStates.clear();
     this.handles.clear();
     this.destroyedIds.clear();
     this.activePlaybacks.clear();
+    this.ownedLuaEngine?.dispose();
+    this.ownedLuaEngine = null;
   }
 
   // ---------------------------------------------------------------------------
@@ -339,6 +389,14 @@ export class SceneRuntime {
         this.activePlaybacks.delete(handleId);
         this.recordAudio(asset.id, 'stop', handleId, 1, false);
       }
+    }
+  }
+
+  /** Stop every active playback (scene teardown); emits stop events. */
+  stopAllAudio(): void {
+    for (const [handleId, active] of [...this.activePlaybacks]) {
+      this.activePlaybacks.delete(handleId);
+      this.recordAudio(active.assetId, 'stop', handleId, 1, false);
     }
   }
 
@@ -417,6 +475,44 @@ export class SceneRuntime {
   }
 
   // ---------------------------------------------------------------------------
+  // Scenes & camera (ctx v2 backing)
+  // ---------------------------------------------------------------------------
+
+  /** Backing for ctx.scenes.load: validate, record pendingScene, never swap. */
+  private requestScene(idOrName: string): boolean {
+    const scene = this.store.getScene(idOrName);
+    if (!scene) {
+      this.recordLog('warn', `scenes.load: unknown scene "${idOrName}"`);
+      return false;
+    }
+    this.pendingScene = scene.id;
+    return true;
+  }
+
+  /** Main Camera entity (isMain wins, else first); optional warn-once. */
+  private mainCameraEntity(warn: boolean): RuntimeEntity | null {
+    const cameras = this.getEntities().filter((e) => e.enabled && e.components.Camera);
+    const cam = cameras.find((e) => e.components.Camera!.isMain) ?? cameras[0] ?? null;
+    if (!cam && warn && !this.warnedNoCamera) {
+      this.warnedNoCamera = true;
+      this.recordLog('warn', 'ctx.camera: no Camera entity in scene');
+    }
+    return cam;
+  }
+
+  /** ctx.camera.follow — copy followed entity's world position, post-physics. */
+  private applyCameraFollow(): void {
+    if (!this.cameraFollowId) return;
+    const target = this.find(this.cameraFollowId);
+    if (!target) return;
+    const cam = this.mainCameraEntity(false);
+    if (!cam) return;
+    const pos = this.getWorldPosition(target);
+    cam.transform.position.x = pos.x;
+    cam.transform.position.y = pos.y;
+  }
+
+  // ---------------------------------------------------------------------------
   // Instantiation & scripts
   // ---------------------------------------------------------------------------
 
@@ -444,10 +540,34 @@ export class SceneRuntime {
       const path = entity.components.Script?.scriptPath;
       if (path) paths.add(path);
     }
+    // Dispatch by extension: .lua → shared Lua engine, else JS compile.
+    // The engine is created on demand when the options did not provide one
+    // (standalone SceneRuntime use; GameSession shares one per session).
+    let luaEngine = this.options.luaEngine ?? null;
+    if (!luaEngine && [...paths].some(isLuaPath)) {
+      try {
+        luaEngine = await LuaScriptEngine.create({
+          random: () => this.rng(),
+          log: (level, message) => this.recordLog(level, message),
+        });
+        this.ownedLuaEngine = luaEngine;
+      } catch (err) {
+        this.recordError({
+          frame: this._frame,
+          message: `Failed to initialize Lua engine: ${(err as Error).message}`,
+          phase: 'load',
+        });
+      }
+    }
     for (const path of paths) {
       try {
         const source = await this.store.readScript(path);
-        this.scriptModules.set(path, compileScript(source));
+        if (isLuaPath(path)) {
+          if (!luaEngine) throw new Error('Lua engine unavailable');
+          this.scriptModules.set(path, luaEngine.compile(path, source));
+        } else {
+          this.scriptModules.set(path, compileScript(source));
+        }
       } catch (err) {
         this.scriptModules.set(path, null);
         this.recordError({
@@ -478,11 +598,13 @@ export class SceneRuntime {
       });
     }
     const vars: Record<string, unknown> = {};
+    const scheduler = new EntityScheduler();
     this.scriptStates.set(entity.id, {
       path: script.scriptPath,
       hooks,
       vars,
-      ctx: this.makeContext(entity, script.params, vars),
+      scheduler,
+      ctx: this.makeContext(entity, script.params, vars, scheduler),
       started: false,
       disabled: hooks === null,
       consecutiveErrors: 0,
@@ -493,6 +615,7 @@ export class SceneRuntime {
     entity: RuntimeEntity,
     params: Record<string, unknown>,
     vars: Record<string, unknown>,
+    scheduler: EntityScheduler,
   ): ScriptContext {
     // eslint-disable-next-line @typescript-eslint/no-this-alias
     const runtime = this;
@@ -543,6 +666,109 @@ export class SceneRuntime {
       },
       isGrounded: () => entity.collisions.some((c) => !c.trigger && c.normal.y < -0.5),
       destroySelf: () => this.destroyEntity(entity.id),
+      scenes: {
+        get current() {
+          return { id: runtime.sceneId, name: runtime.sceneName };
+        },
+        list: () => runtime.store.project.scenes.map((s) => ({ id: s.id, name: s.name })),
+        load: (idOrName) => runtime.requestScene(idOrName),
+      },
+      timers: {
+        after: (seconds, fn) => scheduler.after(seconds, fn),
+        every: (seconds, fn) => scheduler.every(seconds, fn),
+        cancel: (id) => scheduler.cancelTimer(id),
+      },
+      tweens: {
+        to: (path, target, seconds, opts) => {
+          const resolved = resolveNumericTarget(entity.components, path);
+          if (!resolved) {
+            runtime.recordLog(
+              'warn',
+              `tweens.to: unknown or non-numeric property path "${path}" on "${entity.name}"`,
+            );
+            return '';
+          }
+          const easing = EASINGS[opts?.easing ?? 'linear'] ?? EASINGS.linear;
+          return scheduler.tweenTo(
+            resolved.holder,
+            resolved.key,
+            target,
+            seconds,
+            easing,
+            opts?.onComplete,
+          );
+        },
+        cancel: (id) => scheduler.cancelTween(id),
+      },
+      random: {
+        next: () => runtime.rng(),
+        range: (min, max) => min + runtime.rng() * (max - min),
+        int: (min, max) => {
+          const lo = Math.ceil(Math.min(min, max));
+          const hi = Math.floor(Math.max(min, max));
+          if (hi < lo) return lo;
+          return lo + Math.floor(runtime.rng() * (hi - lo + 1));
+        },
+      },
+      save: (key, value) => {
+        runtime.storage.set(key, JSON.stringify(value) ?? 'null');
+      },
+      load: (key) => {
+        const raw = runtime.storage.get(key);
+        if (raw === null || raw === undefined) return null;
+        try {
+          return JSON.parse(raw);
+        } catch {
+          runtime.recordLog('warn', `load: could not parse saved value for "${key}"`);
+          return null;
+        }
+      },
+      clearSave: (key) => {
+        if (key !== undefined) {
+          runtime.storage.remove(key);
+          return;
+        }
+        const keys = runtime.storage.keys?.();
+        if (!keys) {
+          runtime.recordLog('warn', 'clearSave: storage cannot enumerate keys; pass a key');
+          return;
+        }
+        for (const k of keys) runtime.storage.remove(k);
+      },
+      camera: {
+        getPosition: () => {
+          runtime.mainCameraEntity(true);
+          return runtime.camera.position;
+        },
+        setPosition: (x, y) => {
+          const cam = runtime.mainCameraEntity(true);
+          if (!cam) return;
+          cam.transform.position.x = x;
+          cam.transform.position.y = y;
+        },
+        getZoom: () => {
+          runtime.mainCameraEntity(true);
+          return runtime.camera.zoom;
+        },
+        setZoom: (zoom) => {
+          const cam = runtime.mainCameraEntity(true);
+          if (!cam) return;
+          cam.components.Camera!.zoom = zoom;
+        },
+        follow: (idOrName) => {
+          if (idOrName === null) {
+            runtime.cameraFollowId = null;
+            return;
+          }
+          const target = runtime.find(idOrName);
+          if (!target) {
+            runtime.recordLog('warn', `camera.follow: entity not found: ${idOrName}`);
+            return;
+          }
+          runtime.mainCameraEntity(true);
+          runtime.cameraFollowId = target.id;
+        },
+      },
     };
   }
 

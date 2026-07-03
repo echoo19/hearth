@@ -1,8 +1,8 @@
 {
   "formatVersion": 1,
-  "id": "ptt_jkj3v5fx",
+  "id": "ptt_e2d9qwcq",
   "name": "walls-block-player",
-  "scene": "scn_upd29skg",
+  "scene": "scn_np7ioz9y",
   "steps": [
     {
       "type": "press",
@@ -19,5 +19,6 @@
       "type": "assertNoErrors"
     }
   ],
-  "maxFrames": 400
+  "maxFrames": 400,
+  "seed": 0
 }

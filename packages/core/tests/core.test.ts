@@ -145,17 +145,17 @@ describe('scripts', () => {
     const { session } = await makeSession();
     const created = await session.execute<any>('createScript', { name: 'Player Move' });
     expect(created.success).toBe(true);
-    expect(created.data.path).toBe('scripts/player-move.js');
+    expect(created.data.path).toBe('scripts/player-move.lua');
 
     const attach = await session.execute<any>('attachScript', {
       scene: 'Main',
       entity: 'Player',
-      script: 'scripts/player-move.js',
+      script: 'scripts/player-move.lua',
       params: { speed: 200 },
     });
     expect(attach.success).toBe(true);
 
-    const read = await session.execute<any>('readScript', { path: 'scripts/player-move.js' });
+    const read = await session.execute<any>('readScript', { path: 'scripts/player-move.lua' });
     expect(read.success).toBe(true);
     expect(read.data.source).toContain('onUpdate');
 
@@ -257,7 +257,7 @@ describe('diff & snapshot', () => {
     expect(diff.data.hasChanges).toBe(true);
     expect(diff.data.stats.entitiesAdded).toBe(1);
     expect(diff.data.stats.entitiesModified).toBe(1);
-    expect(diff.data.scripts.some((s: any) => s.path === 'scripts/enemy-ai.js' && s.status === 'added')).toBe(true);
+    expect(diff.data.scripts.some((s: any) => s.path === 'scripts/enemy-ai.lua' && s.status === 'added')).toBe(true);
     const playerDiff = diff.data.scenes[0].entities.find((e: any) => e.name === 'Player');
     expect(playerDiff.components[0].changes[0]).toMatchObject({
       path: 'position.x',

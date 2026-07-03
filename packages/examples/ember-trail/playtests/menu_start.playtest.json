@@ -1,0 +1,30 @@
+{
+  "formatVersion": 1,
+  "id": "ptt_revsd28u",
+  "name": "menu-start",
+  "scene": "scn_c1y310h9",
+  "steps": [
+    {
+      "type": "wait",
+      "frames": 5
+    },
+    {
+      "type": "click",
+      "x": 400,
+      "y": 340
+    },
+    {
+      "type": "assertScene",
+      "scene": "Level"
+    },
+    {
+      "type": "wait",
+      "frames": 10
+    },
+    {
+      "type": "assertNoErrors"
+    }
+  ],
+  "maxFrames": 200,
+  "seed": 0
+}

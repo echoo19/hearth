@@ -1,10 +1,10 @@
 {
   "formatVersion": 1,
-  "id": "scn_upd29skg",
+  "id": "scn_np7ioz9y",
   "name": "Room",
   "entities": [
     {
-      "id": "ent_64z8gz35",
+      "id": "ent_crrw3fl0",
       "name": "Main Camera",
       "parentId": null,
       "enabled": true,
@@ -29,7 +29,7 @@
       }
     },
     {
-      "id": "ent_9ssjnwph",
+      "id": "ent_l80fzcan",
       "name": "Room",
       "parentId": null,
       "enabled": true,
@@ -51,8 +51,8 @@
         "Tilemap": {
           "tileSize": 32,
           "tileAssets": {
-            "W": "ast_pr687wwc",
-            "F": "ast_3hjxv84j"
+            "W": "ast_xrkhoblg",
+            "F": "ast_saj80ier"
           },
           "grid": [
             "WWWWWWWWWWWWWWWWWWWWWWWWW",
@@ -79,7 +79,7 @@
       }
     },
     {
-      "id": "ent_q7k0ve5p",
+      "id": "ent_jrbqdltf",
       "name": "Wall Top",
       "parentId": null,
       "enabled": true,
@@ -135,7 +135,7 @@
       }
     },
     {
-      "id": "ent_t2hwsjyb",
+      "id": "ent_4hu88eky",
       "name": "Wall Bottom",
       "parentId": null,
       "enabled": true,
@@ -191,7 +191,7 @@
       }
     },
     {
-      "id": "ent_5xy98r0e",
+      "id": "ent_1m3c2265",
       "name": "Wall Left",
       "parentId": null,
       "enabled": true,
@@ -247,7 +247,7 @@
       }
     },
     {
-      "id": "ent_2q6k7sd3",
+      "id": "ent_fqsqw1gn",
       "name": "Wall Right",
       "parentId": null,
       "enabled": true,
@@ -303,7 +303,7 @@
       }
     },
     {
-      "id": "ent_jdsaqixv",
+      "id": "ent_jh6hc4pq",
       "name": "Player",
       "parentId": null,
       "enabled": true,
@@ -323,7 +323,7 @@
           }
         },
         "SpriteRenderer": {
-          "assetId": "ast_bn5tf840",
+          "assetId": "ast_0n5pls27",
           "shape": "rectangle",
           "color": "#ffffff",
           "width": 30,
@@ -377,7 +377,7 @@
       }
     },
     {
-      "id": "ent_o0ds4rk6",
+      "id": "ent_uslzwl0g",
       "name": "Door",
       "parentId": null,
       "enabled": true,
@@ -440,7 +440,7 @@
       }
     },
     {
-      "id": "ent_w6sycll5",
+      "id": "ent_9f4cws72",
       "name": "Keeper",
       "parentId": null,
       "enabled": true,
@@ -460,7 +460,7 @@
           }
         },
         "SpriteRenderer": {
-          "assetId": "ast_26zm0era",
+          "assetId": "ast_z9l1dhyy",
           "shape": "rectangle",
           "color": "#ffffff",
           "width": 30,
@@ -515,7 +515,7 @@
       }
     },
     {
-      "id": "ent_33z3q2ug",
+      "id": "ent_icn53gzk",
       "name": "DialogueText",
       "parentId": null,
       "enabled": true,

@@ -1,6 +1,6 @@
 {
   "name": "@hearth/editor",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Hearth desktop editor (Tauri + React). Also runs in the browser via `npm run dev`.",
   "license": "MIT",
   "type": "module",
@@ -79,6 +79,7 @@
     "pixi.js": "^8.6.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
+    "wasmoon": "^1.16.0",
     "zustand": "^5.0.2"
   },
   "devDependencies": {

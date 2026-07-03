@@ -19,6 +19,10 @@ export default defineConfig({
       { find: '@hearth/core/node', replacement: src('packages/core/src/node/index.ts') },
       { find: '@hearth/core', replacement: src('packages/core/src/index.ts') },
       { find: '@hearth/runtime/pixi', replacement: src('packages/runtime/src/pixi/index.ts') },
+      // Direct subpath to the Lua engine module so the editor can point
+      // wasmoon at its Vite-served glue.wasm (setLuaWasmUri) — same module
+      // instance the runtime dynamically imports for .lua scripts.
+      { find: '@hearth/runtime/lua', replacement: src('packages/runtime/src/lua.ts') },
       { find: '@hearth/runtime', replacement: src('packages/runtime/src/index.ts') },
       { find: '@hearth/playtest', replacement: src('packages/playtest/src/index.ts') },
     ],

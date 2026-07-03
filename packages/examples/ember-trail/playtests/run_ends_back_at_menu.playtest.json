@@ -1,0 +1,27 @@
+{
+  "formatVersion": 1,
+  "id": "ptt_6pp180ys",
+  "name": "run-ends-back-at-menu",
+  "scene": "scn_3lffzid0",
+  "steps": [
+    {
+      "type": "wait",
+      "frames": 1230
+    },
+    {
+      "type": "assertScene",
+      "scene": "Menu"
+    },
+    {
+      "type": "assertProperty",
+      "entity": "Best",
+      "property": "Text.content",
+      "equals": "Best: 0"
+    },
+    {
+      "type": "assertNoErrors"
+    }
+  ],
+  "maxFrames": 1400,
+  "seed": 0
+}

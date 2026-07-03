@@ -25,6 +25,8 @@ export function GamePreview() {
   const viewRef = useRef<MountedGameView | null>(null);
   const [status, setStatus] = useState<Status>('loading');
   const [detail, setDetail] = useState('');
+  // Set when a script switches scenes (ctx.scenes.load) during this run.
+  const [liveScene, setLiveScene] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -34,6 +36,7 @@ export function GamePreview() {
     if (!projectPath || !sceneId || !container) return;
 
     setStatus('loading');
+    setLiveScene(null);
     container.innerHTML = '';
 
     void (async () => {
@@ -55,6 +58,11 @@ export function GamePreview() {
           autoplay: useEditor.getState().playing,
           onLog: (event) => log('info', 'runtime', eventMessage(event)),
           onError: (event) => log('error', 'runtime', eventMessage(event)),
+          onSceneChange: (sceneName) => {
+            if (cancelled) return;
+            setLiveScene(sceneName);
+            log('info', 'runtime', `scene switched to "${sceneName}"`);
+          },
         });
         if (cancelled) {
           view.destroy();
@@ -98,6 +106,11 @@ export function GamePreview() {
 
   return (
     <div className="game-preview">
+      {liveScene && status === 'ready' && (
+        <div className="game-preview-scene" title="Current scene (switched by a script)">
+          {liveScene}
+        </div>
+      )}
       <div ref={hostRef} className="game-canvas-host" />
       {status !== 'ready' && (
         <div className="empty-state" style={{ position: 'absolute', inset: 0 }}>

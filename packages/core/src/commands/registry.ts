@@ -11,6 +11,7 @@ import * as componentCommands from './componentCommands.js';
 import * as inspectCommands from './inspectCommands.js';
 import * as scriptCommands from './scriptCommands.js';
 import * as assetCommands from './assetCommands.js';
+import * as settingsCommands from './settingsCommands.js';
 import * as diffCommands from './diffCommands.js';
 import * as exportCommands from './exportCommands.js';
 
@@ -24,6 +25,7 @@ const ALL_DEFINITIONS: CommandDefinition[] = [
   inspectCommands.inspectAssets,
   inspectCommands.inspectScripts,
   inspectCommands.readScript,
+  inspectCommands.inspectApi,
   inspectCommands.validateProjectCommand,
   // scenes
   sceneCommands.createScene,
@@ -55,6 +57,8 @@ const ALL_DEFINITIONS: CommandDefinition[] = [
   assetCommands.createSound,
   assetCommands.setAssetMetadata,
   assetCommands.removeAsset,
+  // settings
+  settingsCommands.updateSettings,
   // diff / playtest / build
   diffCommands.snapshotProject,
   diffCommands.diffProject,

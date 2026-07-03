@@ -1,8 +1,8 @@
 {
   "formatVersion": 1,
-  "id": "ptt_0sjfj1x3",
+  "id": "ptt_6wjupqdc",
   "name": "smoke",
-  "scene": "scn_upd29skg",
+  "scene": "scn_np7ioz9y",
   "steps": [
     {
       "type": "wait",
@@ -17,5 +17,6 @@
       "type": "assertNoErrors"
     }
   ],
-  "maxFrames": 200
+  "maxFrames": 200,
+  "seed": 0
 }

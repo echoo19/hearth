@@ -81,17 +81,43 @@ function escapeScriptContent(source: string): string {
 }
 
 /**
- * The exported page. Dark themed, no external requests: styles and boot logic
- * are inline; the player handles canvas letterbox scaling itself.
+ * Only allow CSS color-ish values into the inline stylesheet; anything that
+ * could break out of the declaration (";", "}", "<", quotes) falls back to
+ * the neutral default.
+ */
+function safeCssColor(color: string, fallback: string): string {
+  return /^[#(),.%a-zA-Z0-9\s-]+$/.test(color) ? color : fallback;
+}
+
+/** Legible neutral foreground for error text on the loading background. */
+function loadingForeground(backgroundColor: string): string {
+  const hex = /^#([0-9a-f]{6})$/i.exec(backgroundColor.trim())?.[1]
+    ?? /^#([0-9a-f]{3})$/i.exec(backgroundColor.trim())?.[1]?.replace(/(.)/g, '$1$1');
+  if (!hex) return '#ffffff';
+  const r = parseInt(hex.slice(0, 2), 16);
+  const g = parseInt(hex.slice(2, 4), 16);
+  const b = parseInt(hex.slice(4, 6), 16);
+  return 0.299 * r + 0.587 * g + 0.114 * b > 150 ? '#000000' : '#ffffff';
+}
+
+/**
+ * The exported page. Deliberately unbranded: the only visuals are the
+ * user-controlled loading background (buildSettings.loading) and, on
+ * failure, a plain error message. Boot logic is inline, no external
+ * requests; the player handles the loading layer and letterbox scaling.
  */
 function renderIndexHtml(opts: {
   title: string;
+  /** buildSettings.loading.backgroundColor — page + status background. */
+  background: string;
   /** When set, the player source is inlined instead of loaded from a file. */
   inlinePlayer?: string;
   /** When set, the bundle is inlined instead of fetched. */
   inlineBundleJson?: string;
 }): string {
   const title = escapeHtml(opts.title);
+  const bg = safeCssColor(opts.background, '#000000');
+  const fg = loadingForeground(bg);
   const boot = opts.inlinePlayer !== undefined && opts.inlineBundleJson !== undefined
     ? [
         `  <script>${escapeScriptContent(opts.inlinePlayer)}</script>`,
@@ -124,27 +150,21 @@ function renderIndexHtml(opts: {
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title>${title}</title>
   <style>
-    :root { --bg: #141019; --ember: #F76B15; --text: #e8e2ee; --dim: #8a8296; }
     * { margin: 0; padding: 0; box-sizing: border-box; }
     html, body { height: 100%; }
-    body { background: var(--bg); color: var(--text); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; overflow: hidden; }
+    body { background: ${bg}; font-family: system-ui, sans-serif; overflow: hidden; }
     #hearth-mount { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; }
-    #hearth-status { position: fixed; inset: 0; display: flex; flex-direction: column; gap: 14px; align-items: center; justify-content: center; text-align: center; background: var(--bg); z-index: 10; }
-    #hearth-status h1 { font-size: 18px; font-weight: 600; letter-spacing: 0.04em; }
-    #hearth-status p { font-size: 12px; color: var(--dim); }
-    #hearth-status p.error { color: var(--ember); max-width: 40em; padding: 0 16px; }
-    #hearth-status .flame { width: 10px; height: 10px; border-radius: 50%; background: var(--ember); animation: hearth-pulse 1.1s ease-in-out infinite; }
-    @keyframes hearth-pulse { 0%, 100% { opacity: 0.35; transform: scale(0.8); } 50% { opacity: 1; transform: scale(1.15); } }
-    #hearth-fullscreen { position: fixed; right: 14px; bottom: 14px; z-index: 20; background: rgba(20, 16, 25, 0.85); color: var(--dim); border: 1px solid #2c2436; border-radius: 6px; padding: 7px 12px; font: inherit; font-size: 12px; cursor: pointer; }
-    #hearth-fullscreen:hover { color: var(--text); border-color: var(--ember); }
+    #hearth-status { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; text-align: center; background: ${bg}; z-index: 10; }
+    #hearth-status-text { display: none; font-size: 13px; color: ${fg}; opacity: 0.85; max-width: 40em; padding: 0 16px; }
+    #hearth-status-text.error { display: block; }
+    #hearth-fullscreen { position: fixed; right: 14px; bottom: 14px; z-index: 20; background: transparent; color: ${fg}; opacity: 0.4; border: 1px solid ${fg}; border-radius: 6px; padding: 7px 12px; font: inherit; font-size: 12px; cursor: pointer; }
+    #hearth-fullscreen:hover { opacity: 0.9; }
   </style>
 </head>
 <body>
   <div id="hearth-mount"></div>
   <div id="hearth-status">
-    <div class="flame"></div>
-    <h1>${title}</h1>
-    <p id="hearth-status-text">Loading&hellip;</p>
+    <p id="hearth-status-text"></p>
   </div>
   <button id="hearth-fullscreen" type="button" title="Toggle fullscreen">Fullscreen</button>
   <script>
@@ -194,6 +214,9 @@ async function buildBundle(ctx: CommandContext, inlineAssets: boolean): Promise<
   for (const path of await store.listScripts()) {
     scripts[path] = await store.readScript(path);
   }
+  // Every project asset ships, whether or not a scene references it — this
+  // is what guarantees buildSettings.loading.image is present in the bundle
+  // for the player's loading layer (exportLoading.test.ts locks this in).
   const assets: WebExportBundle['assets'] = [];
   for (const asset of store.assets.assets) {
     if (inlineAssets) {
@@ -254,6 +277,7 @@ export const exportWeb = defineCommand({
 
     const playerSource = await loadPlayerSource(ctx);
     const title = ctx.store.project.buildSettings.title || ctx.store.project.name;
+    const background = ctx.store.project.buildSettings.loading.backgroundColor;
     const outRoot = joinPath(ctx.store.root, params.outDir);
     await ctx.fs.mkdir(outRoot);
 
@@ -267,13 +291,14 @@ export const exportWeb = defineCommand({
       const bundle = await buildBundle(ctx, true);
       const html = renderIndexHtml({
         title,
+        background,
         inlinePlayer: playerSource,
         inlineBundleJson: JSON.stringify(bundle),
       });
       await write('index.html', html);
     } else {
       const bundle = await buildBundle(ctx, false);
-      await write('index.html', renderIndexHtml({ title }));
+      await write('index.html', renderIndexHtml({ title, background }));
       await write('hearth-player.js', playerSource);
       await write('project.bundle.json', JSON.stringify(bundle, null, 2) + '\n');
       for (const asset of ctx.store.assets.assets) {

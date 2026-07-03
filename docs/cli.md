@@ -39,8 +39,8 @@ hearth create entity "Level 1" Coin \
   --position 320,400 --tags coin \
   --components '{"SpriteRenderer":{"shape":"circle","color":"#f1c40f"},"Collider":{"shape":"circle","radius":12,"isTrigger":true}}'
 hearth set "Level 1" Coin Transform.position.x 200
-hearth create script coin-pickup
-hearth attach script "Level 1" Coin scripts/coin-pickup.js
+hearth create script coin-pickup            # Lua by default; --language js for JS
+hearth attach script "Level 1" Coin scripts/coin-pickup.lua
 
 hearth validate --json                   # must pass
 hearth run "Level 1" --frames 120 --json # smoke: no script errors
@@ -56,7 +56,9 @@ discover every operation from this).
 
 **Inspect** (read-only): `inspect project|scenes|components|assets|scripts`,
 `inspect scene <scene> [--full]`, `inspect entity <scene> <entity>`,
-`validate`.
+`inspect api` (the full script `ctx` reference with Lua + JS examples),
+`validate` (includes per-script syntax checks with file + line, both
+languages).
 
 **Scenes & entities** (safe-edit): `create scene <name>`,
 `create entity <scene> <name> [--position x,y] [--parent ref] [--tags a,b]
@@ -65,9 +67,13 @@ discover every operation from this).
 `add component <scene> <entity> <Type> [--properties '<json>']`,
 `remove component`, `set <scene> <entity> <Type.path.to.prop> <value>`
 (value parses as JSON: `100` is a number, `true` a boolean, `#ff0000` a
-string), `set-input <action> [keys...]`.
+string), `set-input <action> [keys...]`,
+`set-settings [--build-settings '<json>'] [--initial-scene s]
+[--input-actions '<json>']` (partial, deep-merged — this is how you set
+`buildSettings.loading` for exported games and the initial scene).
 
-**Scripts** (code-edit): `create script <name> [--source-file f]`,
+**Scripts** (code-edit): `create script <name> [--language lua|js]
+[--source-file f]` (Lua is the default),
 `edit-script <path> --source-file f` (or pipe stdin),
 `attach script <scene> <entity> <path> [--params '<json>']`.
 

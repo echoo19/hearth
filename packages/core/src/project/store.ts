@@ -181,7 +181,7 @@ export class ProjectStore {
     if (!(await this.fs.exists(dir))) return [];
     const out: string[] = [];
     for (const f of await this.fs.readdir(dir)) {
-      if (f.endsWith('.js') || f.endsWith('.ts')) out.push(joinPath('scripts', f));
+      if (f.endsWith('.lua') || f.endsWith('.js') || f.endsWith('.ts')) out.push(joinPath('scripts', f));
     }
     return out.sort();
   }

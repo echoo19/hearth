@@ -7,7 +7,7 @@ import { SceneRuntime } from '@hearth/runtime';
 import { runPlaytest } from '@hearth/playtest';
 
 const examplesDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const EXAMPLES = ['mini-platformer', 'top-down-room', 'visual-novel'];
+const EXAMPLES = ['mini-platformer', 'top-down-room', 'visual-novel', 'ember-trail'];
 
 function loadStore(name: string) {
   return ProjectStore.load(new NodeFileSystem(), path.join(examplesDir, name));
@@ -93,5 +93,59 @@ describe('mini-platformer v0.2 showcase (audio + UI)', () => {
       runtime.audioEvents.some((e) => e.assetId === click.id && e.action === 'play'),
     ).toBe(true);
     expect(runtime.errors).toEqual([]);
+  });
+});
+
+// Ember Trail is the all-Lua showcase: every script runs through the wasmoon
+// Lua engine, the menu is a user-built start screen (interactive UIElement +
+// ctx.scenes.load), and the level exercises ctx.timers, seeded ctx.random,
+// ctx.camera.follow, and ctx.save/ctx.load — headlessly, end to end.
+describe('ember-trail v0.3 showcase (Lua + scenes + stdlib)', () => {
+  it('is scripted entirely in Lua', async () => {
+    const store = await loadStore('ember-trail');
+    const scripts = await store.listScripts();
+    expect(scripts.length).toBeGreaterThan(0);
+    expect(scripts.every((p) => p.endsWith('.lua'))).toBe(true);
+  });
+
+  it('clicking Start switches to the Level scene (Lua onUiEvent + ctx.scenes.load)', async () => {
+    const store = await loadStore('ember-trail');
+    const result = await runPlaytest(store, 'menu-start');
+    expect(result.passed).toBe(true);
+    const level = store.getScene('Level')!;
+    expect(result.finalScene).toBe(level.id);
+    expect(result.sceneEvents.length).toBe(1);
+    expect(result.sceneEvents[0].to).toBe(level.id);
+    const start = store.getAsset('start-sound')!;
+    expect(result.audioEvents.some((e) => e.assetId === start.id && e.action === 'play')).toBe(
+      true,
+    );
+  });
+
+  it('the level runs: timers spawn embers, the camera follows the player', async () => {
+    const store = await loadStore('ember-trail');
+    const result = await runPlaytest(store, 'level-runs');
+    expect(result.passed).toBe(true);
+    expect(result.logs.some((l) => l.message.includes('spawned Ember 1'))).toBe(true);
+  });
+
+  it('same seed, same run: two level-runs executions produce identical logs', async () => {
+    const store = await loadStore('ember-trail');
+    const first = await runPlaytest(store, 'level-runs');
+    const second = await runPlaytest(store, 'level-runs');
+    expect(first.passed).toBe(true);
+    // Spawn positions come from seeded ctx.random and are logged with full
+    // float precision — byte-identical logs prove the deterministic stream.
+    expect(second.logs.map((l) => [l.frame, l.message])).toEqual(
+      first.logs.map((l) => [l.frame, l.message]),
+    );
+  });
+
+  it('the run clock ends back at the menu with the best score saved', async () => {
+    const store = await loadStore('ember-trail');
+    const result = await runPlaytest(store, 'run-ends-back-at-menu');
+    expect(result.passed).toBe(true);
+    const menu = store.getScene('Menu')!;
+    expect(result.finalScene).toBe(menu.id);
   });
 });

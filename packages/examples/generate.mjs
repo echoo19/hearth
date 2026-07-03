@@ -68,6 +68,7 @@ async function generatePlatformer() {
   // --- scripts ---
   await run(session, 'createScript', {
     name: 'player-controller',
+    language: 'js',
     source: `/**
  * Platformer player: left/right movement, jump when grounded, respawn on fall.
  * params: speed (px/s), jumpSpeed (px/s)
@@ -106,6 +107,7 @@ export default {
 
   await run(session, 'createScript', {
     name: 'coin-pickup',
+    language: 'js',
     source: `/**
  * Coin: when the player touches it, bump the Score HUD text, play the
  * pickup sound, and disappear.
@@ -129,6 +131,7 @@ export default {
 
   await run(session, 'createScript', {
     name: 'enemy-patrol',
+    language: 'js',
     source: `/**
  * Enemy: patrols horizontally around its origin; touching it sends the
  * player back to spawn. params: range (px), speed (px/s)
@@ -161,6 +164,7 @@ export default {
 
   await run(session, 'createScript', {
     name: 'spike-hazard',
+    language: 'js',
     source: `/**
  * Spikes: touching them plays the hit sound and sends the player back to
  * the start. The collider is a convex polygon (a triangle).
@@ -182,6 +186,7 @@ export default {
 
   await run(session, 'createScript', {
     name: 'restart-button',
+    language: 'js',
     source: `/**
  * Restart button (screen-space UI): clicking it resets the score and puts
  * the player back at the start. Requires UIElement.interactive = true.
@@ -208,6 +213,7 @@ export default {
 
   await run(session, 'createScript', {
     name: 'camera-follow',
+    language: 'js',
     source: `/**
  * Camera: follow the player horizontally, clamped so the level start stays visible.
  */
@@ -426,6 +432,7 @@ async function generateTopDown() {
 
   await run(session, 'createScript', {
     name: 'top-down-move',
+    language: 'js',
     source: `/**
  * Four-direction movement (no gravity). params: speed (px/s)
  */
@@ -448,6 +455,7 @@ export default {
 
   await run(session, 'createScript', {
     name: 'door-trigger',
+    language: 'js',
     source: `/**
  * Door: opens (turns green, logs) the first time the player touches it.
  */
@@ -465,6 +473,7 @@ export default {
 
   await run(session, 'createScript', {
     name: 'npc-dialogue',
+    language: 'js',
     source: `/**
  * NPC: when the player is near and presses "action", show a line of
  * dialogue in the DialogueText entity. params: line, radius
@@ -614,6 +623,7 @@ async function generateVisualNovel() {
 
   await run(session, 'createScript', {
     name: 'dialogue-runner',
+    language: 'js',
     source: `/**
  * Dialogue: shows params.lines one at a time; "action" advances.
  * Attached to the entity that has the dialogue Text component.
@@ -696,7 +706,324 @@ export default {
 }
 
 // ---------------------------------------------------------------------------
+// Example 4: Ember Trail (all-Lua, two scenes)
+// ---------------------------------------------------------------------------
+// Showcases the ctx v2 stdlib from Lua: a user-built start screen (Text +
+// interactive UIElement whose onUiEvent calls ctx.scenes.load), and a level
+// loop using ctx.timers, ctx.random (seeded), ctx.camera.follow, and
+// ctx.save/ctx.load for a persistent best score. All ctx calls use DOT
+// syntax (ctx.log("hi"), never ctx:log("hi")).
+async function generateEmberTrail() {
+  const session = await freshProject('ember-trail', {
+    name: 'Ember Trail',
+    description: 'Collect drifting embers before they fade. Menu and level are plain scenes; the scripts are all Lua.',
+  });
+
+  const menu = (await run(session, 'createScene', { name: 'Menu', withCamera: false })).sceneId;
+  const level = (await run(session, 'createScene', { name: 'Level', withCamera: false })).sceneId;
+
+  // --- assets ---
+  const wisp = (await run(session, 'createSpriteAsset', {
+    name: 'wisp', shape: 'character', color: '#7ac6ff', width: 30, height: 36,
+  })).asset;
+  const ember = (await run(session, 'createSpriteAsset', {
+    name: 'ember', shape: 'star', color: '#ff9f43', width: 18, height: 18,
+  })).asset;
+  await run(session, 'createSound', { name: 'ember-sound', preset: 'coin' });
+  await run(session, 'createSound', { name: 'start-sound', preset: 'blip' });
+
+  // The exported game boots straight into the Menu scene (no engine chrome);
+  // the loading visuals below are all a player ever sees before it.
+  await run(session, 'updateSettings', {
+    initialScene: 'Menu',
+    buildSettings: {
+      title: 'Ember Trail',
+      loading: { backgroundColor: '#141019', spinner: true },
+    },
+  });
+
+  // --- scripts (all Lua) ---
+  await run(session, 'createScript', {
+    name: 'start-button',
+    language: 'lua',
+    source: `-- Start button: a "start screen" in Hearth is just a scene you build.
+-- Clicking this interactive UIElement loads the level via ctx.scenes.load.
+-- Reminder: ctx calls use DOT syntax (ctx.log("hi"), never ctx:log("hi")).
+local script = {}
+
+function script.onUiEvent(ctx, event)
+  if event.type ~= "click" then return end
+  ctx.audio.play("start-sound")
+  ctx.scenes.load("Level")
+end
+
+return script
+`,
+  });
+
+  await run(session, 'createScript', {
+    name: 'best-label',
+    language: 'lua',
+    source: `-- Best-score label: reads what the level saved with ctx.save. Save data
+-- survives scene switches; in the browser it persists via localStorage.
+local script = {}
+
+function script.onStart(ctx)
+  local best = ctx.load("best")
+  if type(best) ~= "number" then best = 0 end
+  ctx.getComponent("Text").content = string.format("Best: %d", best)
+end
+
+return script
+`,
+  });
+
+  await run(session, 'createScript', {
+    name: 'player-move',
+    language: 'lua',
+    source: `-- Player: four-direction movement (no gravity), collects embers on
+-- contact, and ends the run after params.duration seconds — saving the
+-- best score (ctx.save) and returning to the menu (ctx.scenes.load).
+local script = {}
+
+local function endRun(ctx)
+  local score = ctx.vars.score or 0
+  local best = ctx.load("best")
+  if type(best) ~= "number" then best = 0 end
+  if score > best then best = score end
+  ctx.save("best", best)
+  ctx.scenes.load("Menu")
+end
+
+function script.onStart(ctx)
+  ctx.vars.score = 0
+  ctx.camera.follow("Player")
+  ctx.timers.after(ctx.params.duration or 20, function()
+    endRun(ctx)
+  end)
+end
+
+function script.onUpdate(ctx, dt)
+  local body = ctx.getComponent("PhysicsBody")
+  local speed = ctx.params.speed or 220
+  local vx, vy = 0, 0
+  if ctx.input.isDown("left") then vx = vx - speed end
+  if ctx.input.isDown("right") then vx = vx + speed end
+  if ctx.input.isDown("up") then vy = vy - speed end
+  if ctx.input.isDown("down") then vy = vy + speed end
+  body.velocity.x = vx
+  body.velocity.y = vy
+end
+
+function script.onCollision(ctx, other)
+  if string.sub(other.name, 1, 6) ~= "Ember " then return end
+  ctx.scene.destroy(other)
+  ctx.vars.score = (ctx.vars.score or 0) + 1
+  ctx.audio.play("ember-sound", { volume = 0.8 })
+  local hud = ctx.scene.find("Score")
+  if hud then
+    hud.getComponent("Text").content = string.format("Embers: %d", ctx.vars.score)
+  end
+end
+
+return script
+`,
+  });
+
+  await run(session, 'createScript', {
+    name: 'ember-spawner',
+    language: 'lua',
+    source: `-- Spawner: every params.interval seconds, spawns an ember at a
+-- seeded-random spot (ctx.random is deterministic — a playtest seed
+-- reproduces the exact same run). Each ember despawns after
+-- params.lifetime seconds unless the player collects it first.
+local script = {}
+
+function script.onStart(ctx)
+  local count = 0
+  ctx.timers.every(ctx.params.interval or 1.2, function()
+    count = count + 1
+    local name = string.format("Ember %d", count)
+    local x = ctx.random.range(80, 720)
+    local y = ctx.random.range(80, 240)
+    ctx.log("spawned", name, "at", x, y)
+    ctx.scene.spawn({
+      name = name,
+      position = { x = x, y = y },
+      tags = { "ember" },
+      components = {
+        SpriteRenderer = { assetId = ctx.params.emberAsset, width = 18, height = 18 },
+        Collider = { shape = "circle", radius = 12, isTrigger = true },
+      },
+    })
+    ctx.timers.after(ctx.params.lifetime or 4, function()
+      local e = ctx.scene.find(name)
+      if e then ctx.scene.destroy(e) end
+    end)
+  end)
+end
+
+return script
+`,
+  });
+
+  // --- Menu scene: a user-built start screen (screen-space UI) ---
+  await run(session, 'createEntity', {
+    scene: menu, name: 'Main Camera', position: { x: 400, y: 300 },
+    components: { Camera: { backgroundColor: '#141019' } },
+  });
+  await run(session, 'createEntity', {
+    scene: menu, name: 'Title', tags: ['ui'],
+    components: {
+      UIElement: { anchor: 'top', offset: { x: 0, y: 160 } },
+      Text: { content: 'Ember Trail', fontSize: 44, color: '#ff9f43', align: 'center' },
+    },
+  });
+  await run(session, 'createEntity', {
+    scene: menu, name: 'Subtitle', tags: ['ui'],
+    components: {
+      UIElement: { anchor: 'top', offset: { x: 0, y: 214 } },
+      Text: { content: 'Collect the embers before they fade', fontSize: 15, color: '#b9b4c4', align: 'center' },
+    },
+  });
+  await run(session, 'createEntity', {
+    scene: menu, name: 'Start', tags: ['ui'],
+    components: {
+      // Screen center is (400, 300) in the 800×600 build space, so this
+      // button sits at (400, 340) — the coordinate the playtest clicks.
+      UIElement: { anchor: 'center', offset: { x: 0, y: 40 }, interactive: true },
+      SpriteRenderer: { shape: 'rectangle', color: '#e25822', width: 160, height: 48, layer: 20 },
+      Text: { content: 'Start', fontSize: 18, color: '#fff8f0', align: 'center', layer: 21 },
+    },
+  });
+  await run(session, 'attachScript', { scene: menu, entity: 'Start', script: 'scripts/start-button.lua' });
+  await run(session, 'createEntity', {
+    scene: menu, name: 'Best', tags: ['ui'],
+    components: {
+      UIElement: { anchor: 'center', offset: { x: 0, y: 110 } },
+      Text: { content: 'Best: 0', fontSize: 16, color: '#b9b4c4', align: 'center' },
+    },
+  });
+  await run(session, 'attachScript', { scene: menu, entity: 'Best', script: 'scripts/best-label.lua' });
+
+  // --- Level scene: arena, player, spawner, HUD ---
+  await run(session, 'createEntity', {
+    scene: level, name: 'Main Camera', position: { x: 400, y: 300 },
+    components: { Camera: { backgroundColor: '#1b1130' } },
+  });
+  await run(session, 'createEntity', {
+    scene: level, name: 'Arena', tags: ['level'], position: { x: 400, y: 300 },
+    components: {
+      SpriteRenderer: { shape: 'rectangle', color: '#241a38', width: 800, height: 600, layer: -20 },
+    },
+  });
+  const walls = [
+    { name: 'Wall Top', x: 400, y: 10, w: 800, h: 20 },
+    { name: 'Wall Bottom', x: 400, y: 590, w: 800, h: 20 },
+    { name: 'Wall Left', x: 10, y: 300, w: 20, h: 600 },
+    { name: 'Wall Right', x: 790, y: 300, w: 20, h: 600 },
+  ];
+  for (const w of walls) {
+    await run(session, 'createEntity', {
+      scene: level, name: w.name, tags: ['wall'], position: { x: w.x, y: w.y },
+      components: {
+        Collider: { shape: 'box', width: w.w, height: w.h },
+        PhysicsBody: { bodyType: 'static' },
+      },
+    });
+  }
+  await run(session, 'createEntity', {
+    scene: level, name: 'Player', tags: ['player'], position: { x: 400, y: 300 },
+    components: {
+      SpriteRenderer: { assetId: wisp.id, width: 30, height: 36 },
+      Collider: { shape: 'box', width: 26, height: 32 },
+      PhysicsBody: { bodyType: 'dynamic', gravityScale: 0 },
+    },
+  });
+  await run(session, 'attachScript', {
+    scene: level, entity: 'Player', script: 'scripts/player-move.lua',
+    params: { speed: 220, duration: 20 },
+  });
+  await run(session, 'createEntity', {
+    scene: level, name: 'Spawner', tags: ['system'], position: { x: 0, y: 0 },
+    components: {},
+  });
+  await run(session, 'attachScript', {
+    scene: level, entity: 'Spawner', script: 'scripts/ember-spawner.lua',
+    params: { interval: 1.2, lifetime: 4, emberAsset: ember.id },
+  });
+  await run(session, 'createEntity', {
+    scene: level, name: 'Score', tags: ['ui'],
+    components: {
+      UIElement: { anchor: 'top-left', offset: { x: 24, y: 28 } },
+      Text: { content: 'Embers: 0', fontSize: 20, color: '#ffffff' },
+    },
+  });
+  await run(session, 'createEntity', {
+    scene: level, name: 'Hint', tags: ['ui'],
+    components: {
+      UIElement: { anchor: 'bottom', offset: { x: 0, y: -24 } },
+      Text: { content: 'Arrows/WASD to move — grab embers before they fade', fontSize: 13, color: '#8f88a0', align: 'center' },
+    },
+  });
+
+  // --- playtests ---
+  // The menu really is just a scene: click the Start button's screen
+  // coordinates and assert the Lua onUiEvent switched scenes.
+  await run(session, 'createPlaytest', {
+    name: 'menu-start',
+    scene: menu,
+    steps: [
+      { type: 'wait', frames: 5 },
+      { type: 'click', x: 400, y: 340 },
+      { type: 'assertScene', scene: 'Level' },
+      { type: 'wait', frames: 10 },
+      { type: 'assertNoErrors' },
+    ],
+    maxFrames: 200,
+  });
+  // Timers + seeded RNG + camera follow, headless. Embers spawn in the top
+  // band (y ≤ 240) so the idle player at y=300 never collects by accident;
+  // seed 42 makes every spawn position reproducible.
+  await run(session, 'createPlaytest', {
+    name: 'level-runs',
+    scene: level,
+    seed: 42,
+    steps: [
+      { type: 'wait', frames: 200 },
+      { type: 'assertEntityExists', entity: 'Ember 1', exists: true },
+      { type: 'assertProperty', entity: 'Ember 1', property: 'Transform.position.x', greaterThan: 60 },
+      { type: 'assertProperty', entity: 'Ember 1', property: 'Transform.position.x', lessThan: 740 },
+      { type: 'press', action: 'right', frames: 60 },
+      { type: 'assertProperty', entity: 'Player', property: 'Transform.position.x', greaterThan: 520 },
+      { type: 'assertProperty', entity: 'Main Camera', property: 'Transform.position.x', greaterThan: 520 },
+      { type: 'assertNoErrors' },
+    ],
+    maxFrames: 400,
+  });
+  // The 20-second run clock (ctx.timers.after) saves the best score and
+  // returns to the menu, where the Lua onStart reads it back with ctx.load.
+  await run(session, 'createPlaytest', {
+    name: 'run-ends-back-at-menu',
+    scene: level,
+    steps: [
+      { type: 'wait', frames: 1230 },
+      { type: 'assertScene', scene: 'Menu' },
+      { type: 'assertProperty', entity: 'Best', property: 'Text.content', equals: 'Best: 0' },
+      { type: 'assertNoErrors' },
+    ],
+    maxFrames: 1400,
+  });
+
+  const report = await run(session, 'validateProject', {});
+  if (report.errors.length > 0) throw new Error('ember-trail validation failed: ' + JSON.stringify(report.errors));
+
+  console.log('✓ ember-trail generated');
+}
+
+// ---------------------------------------------------------------------------
 await generatePlatformer();
 await generateTopDown();
 await generateVisualNovel();
+await generateEmberTrail();
 console.log('All example projects generated.');

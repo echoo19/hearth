@@ -1,13 +1,13 @@
 {
   "formatVersion": 1,
-  "hearthVersion": "0.1.0",
-  "id": "prj_wayb4zqq",
+  "hearthVersion": "0.3.0",
+  "id": "prj_6wm8bo5h",
   "name": "Visual Novel Scene",
   "description": "A dialogue scene: advance lines with the action key.",
-  "initialScene": "scn_w8u6pzmi",
+  "initialScene": "scn_l0tnz7yx",
   "scenes": [
     {
-      "id": "scn_w8u6pzmi",
+      "id": "scn_l0tnz7yx",
       "name": "Prologue",
       "path": "scenes/prologue.scene.json"
     }
@@ -45,6 +45,11 @@
     "backgroundColor": "#1a1a2e",
     "targetFps": 60,
     "fixedTimestep": 60,
-    "title": "Visual Novel Scene"
+    "title": "Visual Novel Scene",
+    "loading": {
+      "backgroundColor": "#000000",
+      "image": null,
+      "spinner": false
+    }
   }
 }

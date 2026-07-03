@@ -4,7 +4,7 @@
 import { z } from 'zod';
 
 export const FORMAT_VERSION = 1;
-export const HEARTH_VERSION = '0.2.0';
+export const HEARTH_VERSION = '0.3.0';
 
 export const SceneRefSchema = z.object({
   id: z.string(),

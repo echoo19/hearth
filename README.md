@@ -17,7 +17,7 @@ and agents connect from outside.
    Agent ──▶ CLI / MCP ──┘      (validate · execute · diff)     scenes · scripts · assets
 ```
 
-Both audiences use the same ~40 engine commands (`createEntity`,
+Both audiences use the same ~45 engine commands (`createEntity`,
 `setComponentProperty`, `runPlaytest`, `getDiff`, …). That means an agent can
 build a level, wire input, write behavior scripts, generate placeholder art,
 run headless playtests, and hand the human a structural diff to review in the
@@ -25,12 +25,17 @@ editor, all without guessing at file formats.
 
 ## Status
 
-**v0.2, developer preview.** The full loop works end to end: project model →
-editor → runtime preview → CLI → MCP → headless playtests → diff review.
-v0.2 adds a dockable editor workspace, screen-space game UI (`UIElement` +
-`onUiEvent`), convex polygon colliders, audio playback with procedural
-sound effects, and static web export (`hearth export web`). See
-[docs/roadmap.md](docs/roadmap.md) for what's deliberately missing
+**v0.3 in progress, developer preview.** The full loop works end to end:
+project model → editor → runtime preview → CLI → MCP → headless playtests →
+diff review. The first v0.3 wave makes **Lua the default scripting
+language** (JS still fully supported, same `ctx` API), adds **scene
+management and a script stdlib** (`ctx.scenes.load`, timers, tweens,
+seeded RNG, save data, camera control), and removes all engine chrome
+from exported games — shipped builds boot straight into your first scene.
+On top of v0.2: dockable editor workspace, screen-space game UI
+(`UIElement` + `onUiEvent`), convex polygon colliders, audio with
+procedural sound effects, and static web export (`hearth export web`).
+See [docs/roadmap.md](docs/roadmap.md) for what's deliberately missing
 (screenshots for agents, 2D lighting, particles, sprite animation, undo…).
 
 ## Install
@@ -120,14 +125,17 @@ see [docs/mcp.md](docs/mcp.md).
 - **Runtime** (`packages/runtime`): fixed-timestep deterministic 2D runtime:
   transforms, sprites/primitives, text, tilemaps, screen-space UI with
   pointer events, input actions, box/circle/convex-polygon physics +
-  triggers, audio, cameras, and a sandboxed-ish JS script engine that runs
-  identically in the browser preview and headless in Node.
+  triggers, audio, cameras, multi-scene sessions (`ctx.scenes.load` for
+  user-built menus), and a script engine — **Lua (sandboxed, via wasmoon)
+  by default, JavaScript equally supported** — with timers, tweens, seeded
+  RNG, and persistent save data, running identically in the browser
+  preview, headless in Node, and in exported games.
 - **Web export**: `hearth export web` produces a static, self-contained
   playable build — one folder or one HTML file, `--zip` for itch.io. See
   [docs/export.md](docs/export.md).
 - **CLI** (`packages/cli`): `hearth` with `--json` envelopes for every
   operation, plus `doctor`, `test`, and `commands` (registry discovery).
-- **MCP server** (`packages/mcp-server`): 39 tools mirroring the CLI, with
+- **MCP server** (`packages/mcp-server`): ~45 tools mirroring the CLI, with
   per-session permission modes.
 - **Playtests** (`packages/playtest`): scripted input + assertions, run
   headlessly at a fixed timestep; deterministic and CI-friendly. Run
@@ -137,9 +145,11 @@ see [docs/mcp.md](docs/mcp.md).
   (`hearth create sound --preset coin`) so games are playable and audible
   before any real assets exist. No AI generation.
 - **Examples** (`packages/examples`): a mini platformer (with a score HUD,
-  restart button, sound effects, and polygon spikes), a top-down room, and
-  a visual novel, generated *through the command system itself* and covered
-  by playtests in CI.
+  restart button, sound effects, and polygon spikes), a top-down room, a
+  visual novel, and **Ember Trail** — an all-Lua two-scene game (menu →
+  level → menu) exercising scene switching, timers, seeded spawning,
+  camera follow, and a saved best score — all generated *through the
+  command system itself* and covered by playtests in CI.
 - **Agent onboarding**: every new project gets `AGENTS.md`, `CLAUDE.md`,
   and `.hearth/agent-config.json` teaching agents the safe workflow
   (snapshot → inspect → command → validate → playtest → diff).
@@ -156,7 +166,7 @@ see [docs/mcp.md](docs/mcp.md).
 | [Architecture](docs/architecture.md) | Packages, command system, data flow |
 | [Project format](docs/project-format.md) | Every file, every schema |
 | [Components](docs/components.md) | All 10 component types + defaults |
-| [Scripting](docs/scripting.md) | The `ctx` API, audio, game UI, physics |
+| [Scripting](docs/scripting.md) | Lua (default) & JS scripting, the full `ctx` API |
 | [Web export](docs/export.md) | Static builds, single-file, itch.io |
 | [Roadmap](docs/roadmap.md) | Honest list of what's next / missing |
 | [Contributing](CONTRIBUTING.md) | Dev setup + AI contribution policy |
@@ -171,9 +181,9 @@ see [docs/mcp.md](docs/mcp.md).
    snapshots + structural diffs make every agent session reviewable and
    revertible; playtests make "it works" checkable.
 4. **Local-first, readable files.** Projects are JSON you can diff, SVG you
-   can open in anything, and plain JavaScript scripts.
+   can open in anything, and plain Lua or JavaScript scripts.
 
 ## License
 
 [MIT](LICENSE). Dependencies are all open-source-friendly (zod, commander,
-PixiJS, React, MCP SDK).
+PixiJS, React, wasmoon, MCP SDK).

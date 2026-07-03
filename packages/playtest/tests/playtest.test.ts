@@ -3,7 +3,14 @@
  * createProject + HearthSession commands.
  */
 import { describe, it, expect } from 'vitest';
-import { MemoryFileSystem, createProject, HearthSession, type ProjectStore } from '@hearth/core';
+import {
+  MemoryFileSystem,
+  ProjectStore,
+  SceneSchema,
+  createProject,
+  HearthSession,
+} from '@hearth/core';
+import { createRng } from '@hearth/runtime';
 import { runPlaytest, runSceneSmoke, createRuntimeHooks } from '@hearth/playtest';
 
 const MOVE_SCRIPT = `
@@ -25,6 +32,7 @@ async function makeProject(): Promise<{ store: ProjectStore; session: HearthSess
   const created = await session.execute<{ path: string }>('createScript', {
     name: 'player move',
     source: MOVE_SCRIPT,
+    language: 'js',
   });
   expect(created.success).toBe(true);
   const attached = await session.execute('attachScript', {
@@ -157,6 +165,7 @@ describe('runSceneSmoke', () => {
     const broken = await session.execute<{ path: string }>('createScript', {
       name: 'broken',
       source: 'export default { onStart() { throw new Error("boom"); } };',
+      language: 'js',
     });
     await session.execute('attachScript', {
       scene: 'Main',
@@ -197,6 +206,7 @@ describe('audio events pass-through', () => {
     const created = await session.execute<{ path: string }>('createScript', {
       name: 'chime',
       source: `export default { onStart(ctx) { ctx.audio.play('coin'); } };`,
+      language: 'js',
     });
     await session.execute('attachScript', {
       scene: 'Main',
@@ -216,6 +226,164 @@ describe('audio events pass-through', () => {
     const result = await runPlaytest(store, 'audio check');
     expect(result.passed).toBe(true);
     expect(result.audioEvents).toEqual([{ frame: 0, assetId: 'ast_coin', action: 'play' }]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Scene switching: click steps, assertScene, seeded runs
+// ---------------------------------------------------------------------------
+
+const START_BUTTON_SCRIPT = `export default {
+  onUiEvent(ctx, event) { if (event.type === 'click') ctx.scenes.load('Level'); },
+};`;
+
+const HERO_RNG_SCRIPT = `export default {
+  onStart(ctx) { ctx.log('rng:' + ctx.random.next()); },
+};`;
+
+/**
+ * Two-scene project: a Menu scene with an interactive StartButton
+ * (50×50 sprite anchored top-left at offset 100,100 → hit rect 75..125)
+ * and a Level scene with a Hero that logs one seeded random draw.
+ */
+async function makeMenuGame(
+  menuScript: string = START_BUTTON_SCRIPT,
+): Promise<{ store: ProjectStore; session: HearthSession }> {
+  const fs = new MemoryFileSystem();
+  const { store } = await createProject(fs, '/menu', { name: 'Menu Game', starterScene: false });
+  store.project.scenes.push(
+    { id: 'scn_menu', name: 'Menu', path: 'scenes/menu.scene.json' },
+    { id: 'scn_level', name: 'Level', path: 'scenes/level.scene.json' },
+  );
+  store.project.initialScene = 'scn_menu';
+  store.scenes.set(
+    'scn_menu',
+    SceneSchema.parse({
+      formatVersion: 1,
+      id: 'scn_menu',
+      name: 'Menu',
+      entities: [
+        {
+          id: 'ent_btn',
+          name: 'StartButton',
+          parentId: null,
+          enabled: true,
+          tags: [],
+          components: {
+            Transform: {},
+            UIElement: { interactive: true, anchor: 'top-left', offset: { x: 100, y: 100 } },
+            SpriteRenderer: { width: 50, height: 50 },
+            Script: { scriptPath: 'scripts/menu.js' },
+          },
+        },
+      ],
+    }),
+  );
+  store.scenes.set(
+    'scn_level',
+    SceneSchema.parse({
+      formatVersion: 1,
+      id: 'scn_level',
+      name: 'Level',
+      entities: [
+        {
+          id: 'ent_hero',
+          name: 'Hero',
+          parentId: null,
+          enabled: true,
+          tags: [],
+          components: { Transform: {}, Script: { scriptPath: 'scripts/hero.js' } },
+        },
+      ],
+    }),
+  );
+  await fs.writeFile('/menu/scripts/menu.js', menuScript);
+  await fs.writeFile('/menu/scripts/hero.js', HERO_RNG_SCRIPT);
+  await store.save();
+  const loaded = await ProjectStore.load(fs, '/menu');
+  const session = HearthSession.fromStore(loaded, { runtime: createRuntimeHooks() });
+  return { store: loaded, session };
+}
+
+describe('click and assertScene steps', () => {
+  it('click drives a UIElement button that switches scenes; seed is plumbed', async () => {
+    const { store, session } = await makeMenuGame();
+    await session.execute('createPlaytest', {
+      name: 'start game',
+      scene: 'Menu',
+      steps: [
+        { type: 'click', x: 100, y: 100 },
+        { type: 'assertScene', scene: 'Level' },
+        { type: 'wait', frames: 5 },
+        { type: 'assertNoErrors' },
+      ],
+    });
+    store.getPlaytest('start game')!.seed = 5;
+
+    const result = await runPlaytest(store, 'start game');
+    expect(result.steps.map((s) => `${s.type}:${s.passed}`)).toEqual([
+      'click:true',
+      'assertScene:true',
+      'wait:true',
+      'assertNoErrors:true',
+    ]);
+    expect(result.passed).toBe(true);
+    expect(result.framesRun).toBe(6);
+    expect(result.finalScene).toBe('scn_level');
+    expect(result.sceneEvents).toEqual([{ frame: 1, from: 'scn_menu', to: 'scn_level' }]);
+    // Hero's ctx.random draws from the playtest's seeded stream.
+    expect(result.logs.map((l) => l.message)).toContain('rng:' + createRng(5)());
+  });
+
+  it('a click that misses the button does not switch scenes', async () => {
+    const { store, session } = await makeMenuGame();
+    await session.execute('createPlaytest', {
+      name: 'miss',
+      scene: 'Menu',
+      steps: [
+        { type: 'click', x: 400, y: 400 },
+        { type: 'assertScene', scene: 'Menu' },
+        { type: 'assertScene', scene: 'Level' },
+      ],
+    });
+    const result = await runPlaytest(store, 'miss');
+    expect(result.steps.map((s) => `${s.type}:${s.passed}`)).toEqual([
+      'click:true',
+      'assertScene:true',
+      'assertScene:false',
+    ]);
+    expect(result.passed).toBe(false);
+    expect(result.steps[2].message).toMatch(/expected scene "Level".*current scene is "Menu"/);
+    expect(result.finalScene).toBe('scn_menu');
+    expect(result.sceneEvents).toEqual([]);
+  });
+
+  it('assertScene accepts scene ids as well as names', async () => {
+    const { store, session } = await makeMenuGame();
+    await session.execute('createPlaytest', {
+      name: 'by id',
+      scene: 'Menu',
+      steps: [
+        { type: 'wait', frames: 2 },
+        { type: 'assertScene', scene: 'scn_menu' },
+      ],
+    });
+    const result = await runPlaytest(store, 'by id');
+    expect(result.passed).toBe(true);
+  });
+});
+
+describe('runSceneSmoke across scene switches', () => {
+  it('keeps running after ctx.scenes.load and reports the final scene', async () => {
+    const { store } = await makeMenuGame(
+      `export default { onStart(ctx) { ctx.scenes.load('Level'); } };`,
+    );
+    const result = await runSceneSmoke(store, 'Menu', 10);
+    expect(result.passed).toBe(true);
+    expect(result.framesRun).toBe(10);
+    expect(result.finalScene).toBe('scn_level');
+    expect(result.sceneEvents).toEqual([{ frame: 1, from: 'scn_menu', to: 'scn_level' }]);
+    expect(result.entityCount).toBe(1); // Hero, in the Level scene
   });
 });
 

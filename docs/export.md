@@ -22,8 +22,8 @@ before writing anything.
 
 | File | What it is |
 | --- | --- |
-| `index.html` | Themed loading page that fetches the bundle and boots the player |
-| `hearth-player.js` | The runtime + renderer as one IIFE (`window.HearthPlayer`) |
+| `index.html` | Boot page (titled from `buildSettings.title`) that fetches the bundle and starts the player |
+| `hearth-player.js` | The runtime + renderer (including the Lua engine) as one IIFE (`window.HearthPlayer`) |
 | `project.bundle.json` | Project manifest, all scenes, all script sources |
 | `assets/` | A copy of the project's asset files (SVGs, WAVs, imports) |
 
@@ -45,14 +45,41 @@ folder, with `index.html` at the zip root — exactly what itch.io's "HTML
 playable in browser" upload expects. Upload the zip, check "This file will
 be played in the browser", done.
 
-## The click-to-start screen
+## No engine chrome
 
-Every export shows a "Click to start" screen before the game runs. This is
-deliberate: browsers block audio until the page gets a user gesture, so
-the starting click is what lets `AudioSource` autoplay and
-`ctx.audio.play` actually make sound. The player then runs the project's
-initial scene, letterbox-scaled to the window, with a fullscreen button in
-the corner.
+Exported games boot **straight into the project's initial scene** —
+no Hearth start screen, no branding, nothing a player can see that you
+didn't put there. The game renders letterbox-scaled to the window.
+
+Want a start screen or menu? Build it as a scene: `Text`, an interactive
+`UIElement` button, and `ctx.scenes.load("Level")` in its `onUiEvent`
+hook. The `ember-trail` example ships exactly that pattern; see
+[scripting.md](./scripting.md#building-a-start-screen--menu).
+
+### Loading visuals (`buildSettings.loading`)
+
+While the bundle and assets load, the player shows only what you
+configure in `buildSettings.loading` — set it with the `updateSettings`
+command (no hand-editing of `hearth.json` needed):
+
+| Setting | Default | Meaning |
+| --- | --- | --- |
+| `backgroundColor` | `#000000` | Page + loading background color |
+| `image` | `null` | Sprite asset id shown centered while loading |
+| `spinner` | `false` | Minimal neutral spinner (a small monochrome ring — no text, no logo) |
+
+The `index.html` page background matches `backgroundColor`, and the
+loading image asset is always included in the bundle even if no scene
+references it.
+
+### Audio unlock
+
+Browsers block audio until the page receives a user gesture. The player
+handles this **silently**: the audio context is created up front and, if
+suspended, resumes on the first natural input (pointer, key, or touch).
+Music that started while suspended begins playing from the start on
+unlock; stale one-shot sound effects are dropped rather than burst all at
+once. No overlay, no "click to enable sound" UI.
 
 ## Troubleshooting: `MISSING_RESOURCE`
 

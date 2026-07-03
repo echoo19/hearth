@@ -11,6 +11,9 @@
  */
 import { ProjectStore, type FsLike } from '@hearth/core';
 import { fileUrl } from './api';
+// Vite emits wasmoon's Lua VM wasm as a static asset and hands back its URL;
+// the runtime's Lua engine is pointed at it once, lazily, in mountGameView.
+import luaWasmUrl from 'wasmoon/dist/glue.wasm?url';
 
 export interface RuntimeLogEvent {
   level?: 'info' | 'warn' | 'error';
@@ -32,6 +35,26 @@ export interface MountGameOptions {
   autoplay: boolean;
   onLog?: (event: RuntimeLogEvent | string) => void;
   onError?: (event: RuntimeLogEvent | string | Error) => void;
+  /** Fired after a script-requested scene switch completes (scene NAME). */
+  onSceneChange?: (sceneName: string) => void;
+}
+
+/**
+ * Point the runtime's Lua engine (wasmoon) at the Vite-served glue.wasm.
+ * Must happen before the first .lua script compiles; done lazily here so the
+ * editor still boots while @hearth/runtime is being built in parallel.
+ */
+let luaWasmConfigured = false;
+async function configureLuaWasm(): Promise<void> {
+  if (luaWasmConfigured) return;
+  try {
+    const lua = await import('@hearth/runtime/lua');
+    lua.setLuaWasmUri(luaWasmUrl);
+    luaWasmConfigured = true;
+  } catch {
+    // Runtime not built yet — JS-only previews still work; a .lua project
+    // will surface a script error from the runtime instead.
+  }
 }
 
 /** Read-only FsLike over the project server. Paths are project-relative. */
@@ -90,6 +113,7 @@ export async function mountGameView(options: MountGameOptions): Promise<MountedG
   if (!mod?.PixiSceneView?.mount) {
     throw new Error('@hearth/runtime/pixi does not export PixiSceneView.mount');
   }
+  await configureLuaWasm();
 
   const fs = new HttpFs(options.projectPath);
   const store = await ProjectStore.load(fs, '.');
@@ -102,6 +126,10 @@ export async function mountGameView(options: MountGameOptions): Promise<MountedG
     autoplay: options.autoplay,
     onLog: options.onLog,
     onError: options.onError,
+    onSceneChange: (e: { frame: number; from: string | null; to: string }) => {
+      const name = store.getScene(e.to)?.name ?? e.to;
+      options.onSceneChange?.(name);
+    },
   });
   return view as MountedGameView;
 }

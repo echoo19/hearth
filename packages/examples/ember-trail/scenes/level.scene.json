@@ -1,0 +1,473 @@
+{
+  "formatVersion": 1,
+  "id": "scn_3lffzid0",
+  "name": "Level",
+  "entities": [
+    {
+      "id": "ent_b0qksb1y",
+      "name": "Main Camera",
+      "parentId": null,
+      "enabled": true,
+      "tags": [],
+      "components": {
+        "Transform": {
+          "position": {
+            "x": 400,
+            "y": 300
+          },
+          "rotation": 0,
+          "scale": {
+            "x": 1,
+            "y": 1
+          }
+        },
+        "Camera": {
+          "zoom": 1,
+          "isMain": true,
+          "backgroundColor": "#1b1130"
+        }
+      }
+    },
+    {
+      "id": "ent_78058nvy",
+      "name": "Arena",
+      "parentId": null,
+      "enabled": true,
+      "tags": [
+        "level"
+      ],
+      "components": {
+        "Transform": {
+          "position": {
+            "x": 400,
+            "y": 300
+          },
+          "rotation": 0,
+          "scale": {
+            "x": 1,
+            "y": 1
+          }
+        },
+        "SpriteRenderer": {
+          "assetId": null,
+          "shape": "rectangle",
+          "color": "#241a38",
+          "width": 800,
+          "height": 600,
+          "opacity": 1,
+          "flipX": false,
+          "flipY": false,
+          "layer": -20,
+          "visible": true
+        }
+      }
+    },
+    {
+      "id": "ent_998tlmlr",
+      "name": "Wall Top",
+      "parentId": null,
+      "enabled": true,
+      "tags": [
+        "wall"
+      ],
+      "components": {
+        "Transform": {
+          "position": {
+            "x": 400,
+            "y": 10
+          },
+          "rotation": 0,
+          "scale": {
+            "x": 1,
+            "y": 1
+          }
+        },
+        "Collider": {
+          "shape": "box",
+          "width": 800,
+          "height": 20,
+          "radius": 16,
+          "points": [
+            {
+              "x": 0,
+              "y": -16
+            },
+            {
+              "x": 16,
+              "y": 16
+            },
+            {
+              "x": -16,
+              "y": 16
+            }
+          ],
+          "offset": {
+            "x": 0,
+            "y": 0
+          },
+          "isTrigger": false
+        },
+        "PhysicsBody": {
+          "bodyType": "static",
+          "velocity": {
+            "x": 0,
+            "y": 0
+          },
+          "gravityScale": 1,
+          "drag": 0
+        }
+      }
+    },
+    {
+      "id": "ent_uenbi1zv",
+      "name": "Wall Bottom",
+      "parentId": null,
+      "enabled": true,
+      "tags": [
+        "wall"
+      ],
+      "components": {
+        "Transform": {
+          "position": {
+            "x": 400,
+            "y": 590
+          },
+          "rotation": 0,
+          "scale": {
+            "x": 1,
+            "y": 1
+          }
+        },
+        "Collider": {
+          "shape": "box",
+          "width": 800,
+          "height": 20,
+          "radius": 16,
+          "points": [
+            {
+              "x": 0,
+              "y": -16
+            },
+            {
+              "x": 16,
+              "y": 16
+            },
+            {
+              "x": -16,
+              "y": 16
+            }
+          ],
+          "offset": {
+            "x": 0,
+            "y": 0
+          },
+          "isTrigger": false
+        },
+        "PhysicsBody": {
+          "bodyType": "static",
+          "velocity": {
+            "x": 0,
+            "y": 0
+          },
+          "gravityScale": 1,
+          "drag": 0
+        }
+      }
+    },
+    {
+      "id": "ent_2xfcf5yx",
+      "name": "Wall Left",
+      "parentId": null,
+      "enabled": true,
+      "tags": [
+        "wall"
+      ],
+      "components": {
+        "Transform": {
+          "position": {
+            "x": 10,
+            "y": 300
+          },
+          "rotation": 0,
+          "scale": {
+            "x": 1,
+            "y": 1
+          }
+        },
+        "Collider": {
+          "shape": "box",
+          "width": 20,
+          "height": 600,
+          "radius": 16,
+          "points": [
+            {
+              "x": 0,
+              "y": -16
+            },
+            {
+              "x": 16,
+              "y": 16
+            },
+            {
+              "x": -16,
+              "y": 16
+            }
+          ],
+          "offset": {
+            "x": 0,
+            "y": 0
+          },
+          "isTrigger": false
+        },
+        "PhysicsBody": {
+          "bodyType": "static",
+          "velocity": {
+            "x": 0,
+            "y": 0
+          },
+          "gravityScale": 1,
+          "drag": 0
+        }
+      }
+    },
+    {
+      "id": "ent_2eedrriw",
+      "name": "Wall Right",
+      "parentId": null,
+      "enabled": true,
+      "tags": [
+        "wall"
+      ],
+      "components": {
+        "Transform": {
+          "position": {
+            "x": 790,
+            "y": 300
+          },
+          "rotation": 0,
+          "scale": {
+            "x": 1,
+            "y": 1
+          }
+        },
+        "Collider": {
+          "shape": "box",
+          "width": 20,
+          "height": 600,
+          "radius": 16,
+          "points": [
+            {
+              "x": 0,
+              "y": -16
+            },
+            {
+              "x": 16,
+              "y": 16
+            },
+            {
+              "x": -16,
+              "y": 16
+            }
+          ],
+          "offset": {
+            "x": 0,
+            "y": 0
+          },
+          "isTrigger": false
+        },
+        "PhysicsBody": {
+          "bodyType": "static",
+          "velocity": {
+            "x": 0,
+            "y": 0
+          },
+          "gravityScale": 1,
+          "drag": 0
+        }
+      }
+    },
+    {
+      "id": "ent_f44g3lz6",
+      "name": "Player",
+      "parentId": null,
+      "enabled": true,
+      "tags": [
+        "player"
+      ],
+      "components": {
+        "Transform": {
+          "position": {
+            "x": 400,
+            "y": 300
+          },
+          "rotation": 0,
+          "scale": {
+            "x": 1,
+            "y": 1
+          }
+        },
+        "SpriteRenderer": {
+          "assetId": "ast_s2mn0738",
+          "shape": "rectangle",
+          "color": "#ffffff",
+          "width": 30,
+          "height": 36,
+          "opacity": 1,
+          "flipX": false,
+          "flipY": false,
+          "layer": 0,
+          "visible": true
+        },
+        "Collider": {
+          "shape": "box",
+          "width": 26,
+          "height": 32,
+          "radius": 16,
+          "points": [
+            {
+              "x": 0,
+              "y": -16
+            },
+            {
+              "x": 16,
+              "y": 16
+            },
+            {
+              "x": -16,
+              "y": 16
+            }
+          ],
+          "offset": {
+            "x": 0,
+            "y": 0
+          },
+          "isTrigger": false
+        },
+        "PhysicsBody": {
+          "bodyType": "dynamic",
+          "velocity": {
+            "x": 0,
+            "y": 0
+          },
+          "gravityScale": 0,
+          "drag": 0
+        },
+        "Script": {
+          "scriptPath": "scripts/player-move.lua",
+          "params": {
+            "speed": 220,
+            "duration": 20
+          }
+        }
+      }
+    },
+    {
+      "id": "ent_ihr2oaa4",
+      "name": "Spawner",
+      "parentId": null,
+      "enabled": true,
+      "tags": [
+        "system"
+      ],
+      "components": {
+        "Transform": {
+          "position": {
+            "x": 0,
+            "y": 0
+          },
+          "rotation": 0,
+          "scale": {
+            "x": 1,
+            "y": 1
+          }
+        },
+        "Script": {
+          "scriptPath": "scripts/ember-spawner.lua",
+          "params": {
+            "interval": 1.2,
+            "lifetime": 4,
+            "emberAsset": "ast_bi6v1xqr"
+          }
+        }
+      }
+    },
+    {
+      "id": "ent_tz1jrnph",
+      "name": "Score",
+      "parentId": null,
+      "enabled": true,
+      "tags": [
+        "ui"
+      ],
+      "components": {
+        "Transform": {
+          "position": {
+            "x": 0,
+            "y": 0
+          },
+          "rotation": 0,
+          "scale": {
+            "x": 1,
+            "y": 1
+          }
+        },
+        "UIElement": {
+          "anchor": "top-left",
+          "offset": {
+            "x": 24,
+            "y": 28
+          },
+          "interactive": false
+        },
+        "Text": {
+          "content": "Embers: 0",
+          "fontSize": 20,
+          "color": "#ffffff",
+          "align": "left",
+          "fontFamily": "monospace",
+          "layer": 10,
+          "visible": true
+        }
+      }
+    },
+    {
+      "id": "ent_0j8f1f9a",
+      "name": "Hint",
+      "parentId": null,
+      "enabled": true,
+      "tags": [
+        "ui"
+      ],
+      "components": {
+        "Transform": {
+          "position": {
+            "x": 0,
+            "y": 0
+          },
+          "rotation": 0,
+          "scale": {
+            "x": 1,
+            "y": 1
+          }
+        },
+        "UIElement": {
+          "anchor": "bottom",
+          "offset": {
+            "x": 0,
+            "y": -24
+          },
+          "interactive": false
+        },
+        "Text": {
+          "content": "Arrows/WASD to move — grab embers before they fade",
+          "fontSize": 13,
+          "color": "#8f88a0",
+          "align": "center",
+          "fontFamily": "monospace",
+          "layer": 10,
+          "visible": true
+        }
+      }
+    }
+  ]
+}

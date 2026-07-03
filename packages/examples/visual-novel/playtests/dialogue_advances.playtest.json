@@ -1,8 +1,8 @@
 {
   "formatVersion": 1,
-  "id": "ptt_nizhr297",
+  "id": "ptt_2rssev8h",
   "name": "dialogue-advances",
-  "scene": "scn_w8u6pzmi",
+  "scene": "scn_l0tnz7yx",
   "steps": [
     {
       "type": "wait",
@@ -33,5 +33,6 @@
       "type": "assertNoErrors"
     }
   ],
-  "maxFrames": 200
+  "maxFrames": 200,
+  "seed": 0
 }

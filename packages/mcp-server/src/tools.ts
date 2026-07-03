@@ -100,6 +100,14 @@ export const TOOL_SPECS: ToolSpec[] = [
     },
   },
   {
+    name: 'inspect_api',
+    command: 'inspectApi',
+    description:
+      'Machine-readable reference for the script ctx API: every method and property, with signatures and Lua + JS examples. (requires read-only)',
+    permission: 'read-only',
+    inputShape: {},
+  },
+  {
     name: 'validate_project',
     command: 'validateProject',
     description: 'Validate the whole project: schemas, references, cameras, scripts, assets, playtests. (requires read-only)',
@@ -247,15 +255,46 @@ export const TOOL_SPECS: ToolSpec[] = [
     },
   },
 
+  // ---- settings ---------------------------------------------------------------
+  {
+    name: 'update_settings',
+    command: 'updateSettings',
+    description:
+      'Update project settings: partial buildSettings (deep-merged, incl. the loading screen visuals), the initial scene, and input mappings (each listed action is replaced; empty keys removes it). (requires safe-edit)',
+    permission: 'safe-edit',
+    inputShape: {
+      buildSettings: z
+        .object({
+          width: z.number().int().positive().optional(),
+          height: z.number().int().positive().optional(),
+          backgroundColor: z.string().optional(),
+          targetFps: z.number().int().positive().optional(),
+          fixedTimestep: z.number().int().positive().optional(),
+          title: z.string().optional(),
+          loading: z
+            .object({
+              backgroundColor: z.string().optional(),
+              image: z.string().nullable().optional(),
+              spinner: z.boolean().optional(),
+            })
+            .optional(),
+        })
+        .optional(),
+      initialScene: z.string().min(1).optional(),
+      inputMappings: z.object({ actions: z.record(z.string(), z.array(z.string())) }).optional(),
+    },
+  },
+
   // ---- scripts ---------------------------------------------------------------
   {
     name: 'create_script',
     command: 'createScript',
     description:
-      'Create a new script file in scripts/ from the standard template (or custom source). Returns its path. (requires code-edit)',
+      'Create a new script file in scripts/ from the standard template (or custom source). Lua by default; language "js" for JavaScript. Returns its path. (requires code-edit)',
     permission: 'code-edit',
     inputShape: {
       name: z.string().min(1),
+      language: z.enum(['lua', 'js']).optional(),
       source: z.string().optional(),
     },
   },

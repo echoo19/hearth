@@ -32,7 +32,8 @@ export {
 } from './commands/types.js';
 export { type WebExportBundle } from './commands/exportCommands.js';
 export { HearthSession, type SessionOptions } from './session.js';
-export { SCRIPT_TEMPLATE } from './commands/scriptCommands.js';
+export { SCRIPT_TEMPLATE, LUA_SCRIPT_TEMPLATE } from './commands/scriptCommands.js';
+export { CTX_API, type CtxApiEntry } from './ctxApi.js';
 
 // Validation & diff
 export { validateProject, type ValidationReport, type ValidationIssue } from './validate.js';

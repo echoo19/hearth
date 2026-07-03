@@ -124,6 +124,67 @@ describe('hearth inspect / create / set / validate (end-to-end flow)', () => {
   });
 });
 
+describe('hearth create script / inspect api / set-settings', () => {
+  it('creates a Lua script by default', async () => {
+    const result = await runCli(['create', 'script', 'spin', '--json'], projectDir);
+    expect(result.code).toBe(0);
+    const envelope = parseJson(result.stdout);
+    expect(envelope.success).toBe(true);
+    expect(envelope.data.path).toBe('scripts/spin.lua');
+    const source = await fsp.readFile(path.join(projectDir, 'scripts', 'spin.lua'), 'utf8');
+    expect(source).toContain('local script = {}');
+    expect(source).toContain('ctx.scenes.load(idOrName)');
+    // Keep the shared test project free of stray scripts so the later
+    // smoke-run tests only exercise what they set up themselves.
+    await fsp.rm(path.join(projectDir, 'scripts', 'spin.lua'));
+  });
+
+  it('creates a JS script with --language js', async () => {
+    const result = await runCli(['create', 'script', 'spin-js', '--language', 'js', '--json'], projectDir);
+    expect(result.code).toBe(0);
+    const envelope = parseJson(result.stdout);
+    expect(envelope.data.path).toBe('scripts/spin-js.js');
+    const source = await fsp.readFile(path.join(projectDir, 'scripts', 'spin-js.js'), 'utf8');
+    expect(source).toContain('export default');
+    await fsp.rm(path.join(projectDir, 'scripts', 'spin-js.js'));
+  });
+
+  it('inspect api returns the machine-readable ctx reference', async () => {
+    const result = await runCli(['inspect', 'api', '--json'], projectDir);
+    expect(result.code).toBe(0);
+    const envelope = parseJson(result.stdout);
+    expect(envelope.success).toBe(true);
+    expect(envelope.command).toBe('inspectApi');
+    expect(envelope.data.languages).toEqual(['lua', 'js']);
+    const paths = envelope.data.api.map((e: { path: string }) => e.path);
+    expect(paths).toContain('scenes.load');
+    expect(paths).toContain('save');
+    expect(paths).toContain('random.next');
+  });
+
+  it('set-settings deep-merges buildSettings and sets the initial scene', async () => {
+    const result = await runCli(
+      ['set-settings', '--build-settings', '{"title":"CLI Game","loading":{"spinner":true}}', '--json'],
+      projectDir,
+    );
+    expect(result.code).toBe(0);
+    const envelope = parseJson(result.stdout);
+    expect(envelope.success).toBe(true);
+    expect(envelope.data.buildSettings.title).toBe('CLI Game');
+    expect(envelope.data.buildSettings.loading.spinner).toBe(true);
+    // Untouched loading fields keep their defaults (deep merge, not replace).
+    expect(envelope.data.buildSettings.loading.backgroundColor).toBe('#000000');
+
+    const scene = await runCli(['set-settings', '--initial-scene', 'Main', '--json'], projectDir);
+    expect(scene.code).toBe(0);
+    expect(parseJson(scene.stdout).success).toBe(true);
+
+    const bad = await runCli(['set-settings', '--initial-scene', 'NoSuchScene', '--json'], projectDir);
+    expect(bad.code).toBe(1);
+    expect(parseJson(bad.stdout).errors[0].code).toBe('NOT_FOUND');
+  });
+});
+
 describe('hearth snapshot / diff', () => {
   it('reports changes made after a snapshot', async () => {
     const snap = await runCli(['snapshot', '--json'], projectDir);

@@ -1,0 +1,208 @@
+{
+  "formatVersion": 1,
+  "id": "scn_c1y310h9",
+  "name": "Menu",
+  "entities": [
+    {
+      "id": "ent_f4elmnsl",
+      "name": "Main Camera",
+      "parentId": null,
+      "enabled": true,
+      "tags": [],
+      "components": {
+        "Transform": {
+          "position": {
+            "x": 400,
+            "y": 300
+          },
+          "rotation": 0,
+          "scale": {
+            "x": 1,
+            "y": 1
+          }
+        },
+        "Camera": {
+          "zoom": 1,
+          "isMain": true,
+          "backgroundColor": "#141019"
+        }
+      }
+    },
+    {
+      "id": "ent_uvrvtzjz",
+      "name": "Title",
+      "parentId": null,
+      "enabled": true,
+      "tags": [
+        "ui"
+      ],
+      "components": {
+        "Transform": {
+          "position": {
+            "x": 0,
+            "y": 0
+          },
+          "rotation": 0,
+          "scale": {
+            "x": 1,
+            "y": 1
+          }
+        },
+        "UIElement": {
+          "anchor": "top",
+          "offset": {
+            "x": 0,
+            "y": 160
+          },
+          "interactive": false
+        },
+        "Text": {
+          "content": "Ember Trail",
+          "fontSize": 44,
+          "color": "#ff9f43",
+          "align": "center",
+          "fontFamily": "monospace",
+          "layer": 10,
+          "visible": true
+        }
+      }
+    },
+    {
+      "id": "ent_wzzgcjbo",
+      "name": "Subtitle",
+      "parentId": null,
+      "enabled": true,
+      "tags": [
+        "ui"
+      ],
+      "components": {
+        "Transform": {
+          "position": {
+            "x": 0,
+            "y": 0
+          },
+          "rotation": 0,
+          "scale": {
+            "x": 1,
+            "y": 1
+          }
+        },
+        "UIElement": {
+          "anchor": "top",
+          "offset": {
+            "x": 0,
+            "y": 214
+          },
+          "interactive": false
+        },
+        "Text": {
+          "content": "Collect the embers before they fade",
+          "fontSize": 15,
+          "color": "#b9b4c4",
+          "align": "center",
+          "fontFamily": "monospace",
+          "layer": 10,
+          "visible": true
+        }
+      }
+    },
+    {
+      "id": "ent_7gnqeutf",
+      "name": "Start",
+      "parentId": null,
+      "enabled": true,
+      "tags": [
+        "ui"
+      ],
+      "components": {
+        "Transform": {
+          "position": {
+            "x": 0,
+            "y": 0
+          },
+          "rotation": 0,
+          "scale": {
+            "x": 1,
+            "y": 1
+          }
+        },
+        "UIElement": {
+          "anchor": "center",
+          "offset": {
+            "x": 0,
+            "y": 40
+          },
+          "interactive": true
+        },
+        "SpriteRenderer": {
+          "assetId": null,
+          "shape": "rectangle",
+          "color": "#e25822",
+          "width": 160,
+          "height": 48,
+          "opacity": 1,
+          "flipX": false,
+          "flipY": false,
+          "layer": 20,
+          "visible": true
+        },
+        "Text": {
+          "content": "Start",
+          "fontSize": 18,
+          "color": "#fff8f0",
+          "align": "center",
+          "fontFamily": "monospace",
+          "layer": 21,
+          "visible": true
+        },
+        "Script": {
+          "scriptPath": "scripts/start-button.lua",
+          "params": {}
+        }
+      }
+    },
+    {
+      "id": "ent_fh9ploy1",
+      "name": "Best",
+      "parentId": null,
+      "enabled": true,
+      "tags": [
+        "ui"
+      ],
+      "components": {
+        "Transform": {
+          "position": {
+            "x": 0,
+            "y": 0
+          },
+          "rotation": 0,
+          "scale": {
+            "x": 1,
+            "y": 1
+          }
+        },
+        "UIElement": {
+          "anchor": "center",
+          "offset": {
+            "x": 0,
+            "y": 110
+          },
+          "interactive": false
+        },
+        "Text": {
+          "content": "Best: 0",
+          "fontSize": 16,
+          "color": "#b9b4c4",
+          "align": "center",
+          "fontFamily": "monospace",
+          "layer": 10,
+          "visible": true
+        },
+        "Script": {
+          "scriptPath": "scripts/best-label.lua",
+          "params": {}
+        }
+      }
+    }
+  ]
+}

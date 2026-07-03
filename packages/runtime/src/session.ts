@@ -1,0 +1,247 @@
+/**
+ * GameSession — cross-scene orchestration on top of SceneRuntime.
+ *
+ * SceneRuntime stays single-scene; GameSession owns everything that must
+ * survive a scene switch: the seeded RNG stream, session storage
+ * (ctx.save/load), the shared Lua engine, the monotonic frame counter, and
+ * aggregated logs/errors/audio/scene events. All hosts (editor preview,
+ * playtests, exported player) drive a GameSession.
+ */
+import type { ProjectStore } from '@hearth/core';
+import { LuaScriptEngine, isLuaPath } from './lua.js';
+import {
+  SceneRuntime,
+  type AudioEvent,
+  type AudioPlaybackEvent,
+  type RuntimeError,
+  type RuntimeLog,
+} from './runtime.js';
+import { createRng } from './stdlib.js';
+
+/**
+ * Key/value persistence behind ctx.save/load. MemorySessionStorage for
+ * headless runs; browsers use a localStorage-backed adapter. `keys` is
+ * optional but required for ctx.clearSave() with no argument.
+ */
+export interface SessionStorage {
+  get(key: string): string | null;
+  set(key: string, value: string): void;
+  remove(key: string): void;
+  /** Enumerate stored keys (enables ctx.clearSave() with no key). */
+  keys?(): string[];
+}
+
+/** Map-backed SessionStorage (default; nothing persists past the session). */
+export class MemorySessionStorage implements SessionStorage {
+  private map = new Map<string, string>();
+
+  get(key: string): string | null {
+    return this.map.has(key) ? this.map.get(key)! : null;
+  }
+
+  set(key: string, value: string): void {
+    this.map.set(key, value);
+  }
+
+  remove(key: string): void {
+    this.map.delete(key);
+  }
+
+  keys(): string[] {
+    return [...this.map.keys()];
+  }
+}
+
+/** One completed scene switch, in session-monotonic frames. */
+export interface SceneEvent {
+  frame: number;
+  from: string | null;
+  to: string;
+}
+
+export interface GameSessionOptions {
+  /** Scene id or name to start in. Default: project.initialScene ?? first scene. */
+  scene?: string;
+  /** Seed for the single RNG stream shared across scenes. Default 0. */
+  seed?: number;
+  /** Persistence behind ctx.save/load. Default MemorySessionStorage. */
+  storage?: SessionStorage;
+  onLog?(e: RuntimeLog): void;
+  onError?(e: RuntimeError): void;
+  onAudio?(e: AudioPlaybackEvent): void;
+  /** Fired after a scene switch completes (new runtime is live). */
+  onSceneChange?(e: SceneEvent): void;
+  maxLogs?: number;
+}
+
+export class GameSession {
+  /** Aggregated across all scenes this session has run. */
+  readonly logs: RuntimeLog[] = [];
+  readonly errors: RuntimeError[] = [];
+  readonly audioEvents: AudioEvent[] = [];
+  readonly sceneEvents: SceneEvent[] = [];
+
+  private _runtime!: SceneRuntime;
+  private _currentSceneId = '';
+  private _switching = false;
+  private switchPromise: Promise<void> | null = null;
+  private destroyed = false;
+  private luaEngine: LuaScriptEngine | null = null;
+  private readonly rng: () => number;
+  private readonly storage: SessionStorage;
+  private readonly maxLogs: number;
+
+  private constructor(
+    private readonly store: ProjectStore,
+    private readonly opts: GameSessionOptions,
+  ) {
+    this.rng = createRng(opts.seed ?? 0);
+    this.storage = opts.storage ?? new MemorySessionStorage();
+    this.maxLogs = opts.maxLogs ?? 1000;
+  }
+
+  static async create(store: ProjectStore, opts: GameSessionOptions = {}): Promise<GameSession> {
+    const session = new GameSession(store, opts);
+    const requested = opts.scene ?? store.project.initialScene ?? store.project.scenes[0]?.id;
+    if (!requested) throw new Error('GameSession: project has no scenes');
+    const scene = store.getScene(requested);
+    if (!scene) throw new Error(`Scene not found: ${requested}`);
+    await session.startScene(scene.id, 0);
+    return session;
+  }
+
+  /** The live runtime for the current scene. Replaced on scene switch. */
+  get runtime(): SceneRuntime {
+    return this._runtime;
+  }
+
+  get currentSceneId(): string {
+    return this._currentSceneId;
+  }
+
+  /** Monotonic across scene switches. */
+  get frame(): number {
+    return this._runtime.frame;
+  }
+
+  get elapsed(): number {
+    return this._runtime.elapsed;
+  }
+
+  /** True while an async scene switch is in flight (hosts skip stepping). */
+  get switching(): boolean {
+    return this._switching;
+  }
+
+  /**
+   * Step one fixed frame. If scripts requested a scene change this frame,
+   * kicks off the async swap; while `switching` is true further step()
+   * calls are no-ops. Await stepAsync() instead when determinism matters.
+   */
+  step(): void {
+    if (this.destroyed || this._switching) return;
+    this._runtime.step();
+    void this.maybeBeginSwitch();
+  }
+
+  /** Step one frame and await any pending scene swap (deterministic). */
+  async stepAsync(): Promise<void> {
+    if (this.destroyed) return;
+    if (this.switchPromise) await this.switchPromise;
+    if (this.destroyed) return;
+    this._runtime.step();
+    const swap = this.maybeBeginSwitch();
+    if (swap) await swap;
+  }
+
+  destroy(): void {
+    if (this.destroyed) return;
+    this.destroyed = true;
+    this._runtime.destroy();
+    this.luaEngine?.dispose();
+    this.luaEngine = null;
+  }
+
+  // ---------------------------------------------------------------------------
+
+  private maybeBeginSwitch(): Promise<void> | null {
+    const to = this._runtime.pendingScene;
+    if (!to) return null;
+    this._switching = true;
+    const promise = this.performSwitch(to).finally(() => {
+      this._switching = false;
+      this.switchPromise = null;
+    });
+    this.switchPromise = promise;
+    return promise;
+  }
+
+  private async performSwitch(to: string): Promise<void> {
+    const old = this._runtime;
+    const from = this._currentSceneId;
+    const frame = old.frame;
+    old.stopAllAudio(); // emits stop AudioPlaybackEvents through onAudio
+    old.destroy();
+    try {
+      await this.startScene(to, frame);
+    } catch (err) {
+      this.recordError({
+        frame,
+        message: `Scene switch to "${to}" failed: ${(err as Error).message}`,
+        phase: 'sceneSwitch',
+      });
+      return;
+    }
+    const event: SceneEvent = { frame, from, to };
+    this.sceneEvents.push(event);
+    this.opts.onSceneChange?.(event);
+  }
+
+  private async startScene(sceneId: string, frameOffset: number): Promise<void> {
+    await this.ensureLuaEngine();
+    this._currentSceneId = sceneId;
+    this._runtime = await SceneRuntime.create(this.store, sceneId, {
+      rng: this.rng,
+      storage: this.storage,
+      luaEngine: this.luaEngine ?? undefined,
+      frameOffset,
+      maxLogs: this.opts.maxLogs,
+      onLog: (e) => this.recordLog(e),
+      onError: (e) => this.recordError(e),
+      onAudio: (e) => {
+        this.audioEvents.push({ frame: this._runtime?.frame ?? frameOffset, assetId: e.assetId, action: e.action });
+        this.opts.onAudio?.(e);
+      },
+    });
+  }
+
+  /**
+   * Create the shared Lua engine once per session, lazily, when the
+   * project contains any .lua script. Scenes recompile their own chunks
+   * but share this one VM (and its seeded math.random stream).
+   */
+  private async ensureLuaEngine(): Promise<void> {
+    if (this.luaEngine) return;
+    const scripts = await this.store.listScripts();
+    if (!scripts.some(isLuaPath)) return;
+    this.luaEngine = await LuaScriptEngine.create({
+      random: () => this.rng(),
+      log: (level, message) => this.recordLog({ frame: this.framesSoFar(), level, message }),
+    });
+  }
+
+  private framesSoFar(): number {
+    return this._runtime ? this._runtime.frame : 0;
+  }
+
+  private recordLog(e: RuntimeLog): void {
+    this.logs.push(e);
+    if (this.logs.length > this.maxLogs) this.logs.shift();
+    this.opts.onLog?.(e);
+  }
+
+  private recordError(e: RuntimeError): void {
+    this.errors.push(e);
+    this.opts.onError?.(e);
+  }
+}

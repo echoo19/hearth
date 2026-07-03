@@ -1,8 +1,8 @@
 {
   "formatVersion": 1,
-  "id": "ptt_016ed33h",
+  "id": "ptt_plhgmi4m",
   "name": "player-lands-on-ground",
-  "scene": "scn_egxng45d",
+  "scene": "scn_7mifthlh",
   "steps": [
     {
       "type": "wait",
@@ -24,5 +24,6 @@
       "type": "assertNoErrors"
     }
   ],
-  "maxFrames": 300
+  "maxFrames": 300,
+  "seed": 0
 }

@@ -1,12 +1,14 @@
 /**
  * @hearth/playtest — headless playtest execution.
  *
- * Runs playtest definitions (waits, scripted input presses, assertions)
- * against a SceneRuntime, and provides scene smoke runs. The exported
- * signatures are frozen — CLI and MCP server are built against them.
+ * Runs playtest definitions (waits, scripted input presses, pointer clicks,
+ * assertions) against a GameSession, and provides scene smoke runs. Frames
+ * advance via stepAsync so ctx.scenes.load switches complete
+ * deterministically between frames. The exported signatures are frozen —
+ * CLI and MCP server are built against them.
  */
 import type { PlaytestStep, ProjectStore, RuntimeHooks } from '@hearth/core';
-import { SceneRuntime, type RuntimeEntity } from '@hearth/runtime';
+import { GameSession, type RuntimeEntity } from '@hearth/runtime';
 
 export interface PlaytestStepResult {
   index: number;
@@ -36,6 +38,13 @@ export interface AudioEventEntry {
   action: 'play' | 'stop';
 }
 
+/** One completed scene switch (session-monotonic frame numbers). */
+export interface SceneEventEntry {
+  frame: number;
+  from: string | null;
+  to: string;
+}
+
 export interface PlaytestResult {
   passed: boolean;
   playtestId: string;
@@ -46,6 +55,9 @@ export interface PlaytestResult {
   errors: RuntimeErrorEntry[];
   logs: RuntimeLogEntry[];
   audioEvents: AudioEventEntry[];
+  sceneEvents: SceneEventEntry[];
+  /** Scene id the session ended in (after any ctx.scenes.load switches). */
+  finalScene: string;
 }
 
 export interface SmokeResult {
@@ -56,6 +68,9 @@ export interface SmokeResult {
   errors: RuntimeErrorEntry[];
   logs: RuntimeLogEntry[];
   audioEvents: AudioEventEntry[];
+  sceneEvents: SceneEventEntry[];
+  /** Scene id the session ended in (after any ctx.scenes.load switches). */
+  finalScene: string;
   /** True when the scene ran the requested frames with zero runtime errors. */
   passed: boolean;
 }
@@ -65,6 +80,7 @@ const ASSERT_TYPES = new Set([
   'assertProperty',
   'assertPositionNear',
   'assertNoErrors',
+  'assertScene',
 ]);
 
 export async function runPlaytest(
@@ -81,6 +97,8 @@ export async function runPlaytest(
     errors: [],
     logs: [],
     audioEvents: [],
+    sceneEvents: [],
+    finalScene: '',
   });
 
   const playtest = store.getPlaytest(playtestIdOrName);
@@ -88,9 +106,9 @@ export async function runPlaytest(
     return failEarly(`Playtest not found: ${playtestIdOrName}`);
   }
 
-  let runtime: SceneRuntime;
+  let session: GameSession;
   try {
-    runtime = await SceneRuntime.create(store, playtest.scene);
+    session = await GameSession.create(store, { scene: playtest.scene, seed: playtest.seed });
   } catch (err) {
     return {
       ...failEarly(`Failed to start scene "${playtest.scene}": ${(err as Error).message}`),
@@ -101,20 +119,20 @@ export async function runPlaytest(
   }
 
   /** Run up to `n` frames within the maxFrames cap; returns frames actually run. */
-  const runFrames = (n: number): number => {
-    const remaining = Math.max(0, playtest.maxFrames - runtime.frame);
+  const runFrames = async (n: number): Promise<number> => {
+    const remaining = Math.max(0, playtest.maxFrames - session.frame);
     const toRun = Math.min(n, remaining);
-    runtime.run(toRun);
+    for (let i = 0; i < toRun; i++) await session.stepAsync();
     return toRun;
   };
-  const atCap = () => runtime.frame >= playtest.maxFrames;
+  const atCap = () => session.frame >= playtest.maxFrames;
 
   const steps: PlaytestStepResult[] = [];
   for (let index = 0; index < playtest.steps.length; index++) {
     const step = playtest.steps[index];
     let result: PlaytestStepResult;
     try {
-      result = executeStep(runtime, step, index, runFrames, atCap());
+      result = await executeStep(session, store, step, index, runFrames, atCap());
     } catch (err) {
       result = {
         index,
@@ -129,31 +147,37 @@ export async function runPlaytest(
   // Non-assert steps only fail when they throw, so this is exactly
   // "all asserts passed and no step errored".
   const passed = steps.every((s) => s.passed);
-  return {
+  const result: PlaytestResult = {
     passed,
     playtestId: playtest.id,
     name: playtest.name,
     scene: playtest.scene,
-    framesRun: runtime.frame,
+    framesRun: session.frame,
     steps,
-    errors: [...runtime.errors],
-    logs: [...runtime.logs],
-    audioEvents: [...runtime.audioEvents],
+    errors: [...session.errors],
+    logs: [...session.logs],
+    audioEvents: [...session.audioEvents],
+    sceneEvents: [...session.sceneEvents],
+    finalScene: session.currentSceneId,
   };
+  session.destroy();
+  return result;
 }
 
-function executeStep(
-  runtime: SceneRuntime,
+async function executeStep(
+  session: GameSession,
+  store: ProjectStore,
   step: PlaytestStep,
   index: number,
-  runFrames: (n: number) => number,
+  runFrames: (n: number) => Promise<number>,
   wasAtCap: boolean,
-): PlaytestStepResult {
+): Promise<PlaytestStepResult> {
   const capNote = wasAtCap && ASSERT_TYPES.has(step.type) ? ' (evaluated at maxFrames cap)' : '';
+  const runtime = session.runtime;
 
   switch (step.type) {
     case 'wait': {
-      const ran = runFrames(step.frames);
+      const ran = await runFrames(step.frames);
       return {
         index,
         type: step.type,
@@ -165,9 +189,9 @@ function executeStep(
       };
     }
     case 'press': {
-      runtime.input.setActionDown(step.action);
-      const ran = runFrames(step.frames);
-      runtime.input.setActionUp(step.action);
+      session.runtime.input.setActionDown(step.action);
+      const ran = await runFrames(step.frames);
+      session.runtime.input.setActionUp(step.action);
       return {
         index,
         type: step.type,
@@ -179,8 +203,24 @@ function executeStep(
       };
     }
     case 'release': {
-      runtime.input.setActionUp(step.action);
+      session.runtime.input.setActionUp(step.action);
       return { index, type: step.type, passed: true, message: `released "${step.action}"` };
+    }
+    case 'click': {
+      const target = session.runtime;
+      target.sendPointer(step.x, step.y, 'move');
+      target.sendPointer(step.x, step.y, 'down');
+      target.sendPointer(step.x, step.y, 'up');
+      const ran = await runFrames(1);
+      return {
+        index,
+        type: step.type,
+        passed: true,
+        message:
+          ran < 1
+            ? `clicked (${step.x}, ${step.y}) (maxFrames cap reached before follow-up frame)`
+            : `clicked (${step.x}, ${step.y})`,
+      };
     }
     case 'assertEntityExists': {
       const found = runtime.find(step.entity) !== undefined;
@@ -273,14 +313,27 @@ function executeStep(
       };
     }
     case 'assertNoErrors': {
-      const passed = runtime.errors.length === 0;
+      const passed = session.errors.length === 0;
       return {
         index,
         type: step.type,
         passed,
         message: passed
           ? `no runtime errors${capNote}`
-          : `${runtime.errors.length} runtime error(s); first: ${runtime.errors[0].message}${capNote}`,
+          : `${session.errors.length} runtime error(s); first: ${session.errors[0].message}${capNote}`,
+      };
+    }
+    case 'assertScene': {
+      const currentId = session.currentSceneId;
+      const currentName = store.getScene(currentId)?.name;
+      const passed = currentId === step.scene || currentName === step.scene;
+      return {
+        index,
+        type: step.type,
+        passed,
+        message: passed
+          ? `current scene is "${step.scene}"${capNote}`
+          : `expected scene "${step.scene}", but current scene is "${currentName ?? currentId}" (${currentId})${capNote}`,
       };
     }
     default: {
@@ -310,21 +363,27 @@ export async function runSceneSmoke(
       errors: [{ frame: 0, message: `Scene not found: ${sceneIdOrName}` }],
       logs: [],
       audioEvents: [],
+      sceneEvents: [],
+      finalScene: '',
       passed: false,
     };
   }
-  const runtime = await SceneRuntime.create(store, scene.id);
-  runtime.run(frames);
-  return {
+  const session = await GameSession.create(store, { scene: scene.id });
+  for (let i = 0; i < frames; i++) await session.stepAsync();
+  const result: SmokeResult = {
     scene: scene.id,
     sceneName: scene.name,
-    framesRun: runtime.frame,
-    entityCount: runtime.getEntities().length,
-    errors: [...runtime.errors],
-    logs: [...runtime.logs],
-    audioEvents: [...runtime.audioEvents],
-    passed: runtime.errors.length === 0,
+    framesRun: session.frame,
+    entityCount: session.runtime.getEntities().length,
+    errors: [...session.errors],
+    logs: [...session.logs],
+    audioEvents: [...session.audioEvents],
+    sceneEvents: [...session.sceneEvents],
+    finalScene: session.currentSceneId,
+    passed: session.errors.length === 0,
   };
+  session.destroy();
+  return result;
 }
 
 /** Runtime hooks to inject into HearthSession so core commands can run playtests. */

@@ -4,6 +4,16 @@
  * on the project safely through structured engine operations.
  */
 import { HEARTH_VERSION } from './schema/project.js';
+import { CTX_API } from './ctxApi.js';
+
+/** Render the ctx API reference for AGENTS.md, generated from CTX_API. */
+function renderCtxReference(): string {
+  return CTX_API.map((e) => {
+    // Methods: full dot path + the signature's parameter/return part.
+    const shown = e.kind === 'method' ? `ctx.${e.path}${e.signature.slice(e.signature.indexOf('('))}` : `ctx.${e.path}`;
+    return `- \`${shown}\` — ${e.description}`;
+  }).join('\n');
+}
 
 export function generateAgentsMd(projectName: string): string {
   return `# Working on "${projectName}" (a Hearth project)
@@ -25,8 +35,10 @@ operations instead of hand-editing JSON.
 2. **Prefer structured commands over editing project JSON by hand.**
    The CLI validates every change against schemas. Direct edits to
    \`hearth.json\`, \`scenes/*.scene.json\`, or \`assets.json\` can corrupt the
-   project. Scripts in \`scripts/*.js\` are normal code: edit those freely
-   (or via \`hearth create script\` / \`hearth edit-script\`).
+   project (\`hearth set-settings\` updates build/loading settings, the
+   initial scene, and input mappings safely). Scripts are **Lua by default**
+   (\`.js\` also supported) and are normal code: edit \`scripts/*.lua\` /
+   \`scripts/*.js\` freely (or via \`hearth create script\` / \`hearth edit-script\`).
 3. **Snapshot before you change anything:** \`hearth snapshot\`.
    Then the human can review your work with \`hearth diff\` (or the editor's
    Diff panel), and \`hearth revert --confirm\` can undo it.
@@ -48,8 +60,8 @@ hearth inspect scene level_1 --json    # learn the scene
 hearth create entity level_1 Coin --components '{"SpriteRenderer":{"shape":"circle","color":"#f1c40f"}}'
 hearth set level_1 Coin Transform.position.x 200
 hearth create sound pickup --preset coin       # deterministic WAV (presets: coin, jump, hit, laser, powerup, explosion, blip)
-hearth create script coin-spin
-hearth attach script level_1 Coin scripts/coin-spin.js
+hearth create script coin-spin                 # Lua by default (--language js for JavaScript)
+hearth attach script level_1 Coin scripts/coin-spin.lua
 hearth validate --json                 # must pass
 hearth run level_1 --frames 120 --json # no script errors
 hearth diff                            # review what changed
@@ -61,20 +73,68 @@ hearth export web --zip                # playable static build (needs --allow bu
 - \`hearth.json\`: project manifest (scenes list, input mappings, build settings)
 - \`scenes/*.scene.json\`: scene files (entities + components)
 - \`assets.json\`: asset index; \`assets/\`: asset files
-- \`scripts/*.js\`: behavior scripts (see script template docs: \`hearth inspect components\`)
+- \`scripts/*.lua\` (and \`*.js\`): behavior scripts (Lua by default; \`hearth inspect api --json\` documents the ctx API)
 - \`playtests/*.playtest.json\`: headless playtest definitions
 - \`.hearth/\`: engine state (baseline snapshots, agent config); don't edit manually
 
 ## Scripting quick reference
 
-Scripts export default an object with \`onStart(ctx)\`, \`onUpdate(ctx, dt)\`,
-\`onCollision(ctx, other)\`, and \`onUiEvent(ctx, event)\` (pointer events on
-this entity's interactive \`UIElement\`; \`event.type\` is
-\`click|press|release|enter|exit\`). \`ctx\` gives you: \`entity\`, \`transform\`,
-\`getComponent(type)\`, \`params\`, \`input.isDown/justPressed(action)\`,
-\`scene.find(name)/findByTag(tag)/spawn(def)/destroy(ref)\`,
-\`audio.play(assetRef, { volume, loop })\` / \`audio.stop(handleOrAssetRef)\`,
-\`vars\` (persistent per-entity state), \`time\`, \`log(...)\`.
+Scripts are **Lua by default** (\`hearth create script <name>\`; add
+\`--language js\` for JavaScript). A Lua script returns a table of lifecycle
+hooks — \`onStart(ctx)\`, \`onUpdate(ctx, dt)\`, \`onCollision(ctx, other)\`, and
+\`onUiEvent(ctx, event)\` (pointer events on this entity's interactive
+\`UIElement\`; \`event.type\` is \`click|press|release|enter|exit\`):
+
+\`\`\`lua
+local script = {}
+
+function script.onStart(ctx)
+end
+
+function script.onUpdate(ctx, dt)
+  ctx.transform.position.x = ctx.transform.position.x + 100 * dt
+end
+
+return script
+\`\`\`
+
+**Call ctx with a dot, not a colon**: \`ctx.log("hi")\`, \`ctx.scenes.load("Level")\` —
+never \`ctx:log("hi")\`. JS scripts \`export default\` an object with the same
+hooks and receive the identical \`ctx\`.
+
+The full ctx API (\`hearth inspect api --json\` returns this machine-readable,
+with Lua and JS examples per entry):
+
+${renderCtxReference()}
+
+Scene switching makes user-built menus/start screens (e.g. a Start button —
+an interactive \`UIElement\` — whose script loads the level):
+
+\`\`\`lua
+local script = {}
+
+function script.onUiEvent(ctx, event)
+  if event.type == "click" then
+    ctx.scenes.load("Level")
+  end
+end
+
+return script
+\`\`\`
+
+Save data persists across scene switches (and across browser sessions in
+exported games):
+
+\`\`\`lua
+local best = ctx.load("bestScore") or 0
+if score > best then
+  ctx.save("bestScore", score)
+end
+\`\`\`
+
+\`ctx.random\` (and Lua's \`math.random\`) is seeded and deterministic — the
+same seed produces the same sequence, so playtests are reproducible. Never
+use wall-clock time or \`Math.random\` for gameplay.
 
 Input actions are defined in \`hearth.json\` under \`inputMappings.actions\`
 (\`hearth inspect project --json\` shows them; \`hearth set-input <action> <keys...>\` changes them).
@@ -105,7 +165,9 @@ Quick facts:
 - Use the \`hearth\` CLI (with \`--json\`) for all project operations; do not hand-edit
   \`hearth.json\`, \`scenes/*.scene.json\`, or \`assets.json\`.
 - \`hearth snapshot\` before changes; \`hearth validate --json\` and \`hearth diff\` after.
-- Behavior code lives in \`scripts/*.js\`: normal JavaScript, edit freely.
+- Behavior code lives in \`scripts/\`: **Lua by default** (\`.js\` also supported), edit freely.
+  Lua calls ctx with a dot, not a colon: \`ctx.log("hi")\`. \`hearth inspect api --json\`
+  documents the full ctx API.
 - Test with \`hearth playtest <name>\` and \`hearth run <scene> --frames 120 --json\`
   (run reports include \`audioEvents\` for checking sound behavior).
 - \`hearth create sound <name> --preset coin\` makes procedural sound effects;

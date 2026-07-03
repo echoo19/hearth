@@ -1,0 +1,51 @@
+{
+  "formatVersion": 1,
+  "id": "ptt_ras27pnn",
+  "name": "level-runs",
+  "scene": "scn_3lffzid0",
+  "steps": [
+    {
+      "type": "wait",
+      "frames": 200
+    },
+    {
+      "type": "assertEntityExists",
+      "entity": "Ember 1",
+      "exists": true
+    },
+    {
+      "type": "assertProperty",
+      "entity": "Ember 1",
+      "property": "Transform.position.x",
+      "greaterThan": 60
+    },
+    {
+      "type": "assertProperty",
+      "entity": "Ember 1",
+      "property": "Transform.position.x",
+      "lessThan": 740
+    },
+    {
+      "type": "press",
+      "action": "right",
+      "frames": 60
+    },
+    {
+      "type": "assertProperty",
+      "entity": "Player",
+      "property": "Transform.position.x",
+      "greaterThan": 520
+    },
+    {
+      "type": "assertProperty",
+      "entity": "Main Camera",
+      "property": "Transform.position.x",
+      "greaterThan": 520
+    },
+    {
+      "type": "assertNoErrors"
+    }
+  ],
+  "maxFrames": 400,
+  "seed": 42
+}

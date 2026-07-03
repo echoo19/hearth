@@ -37,6 +37,10 @@ export interface TestProjectOptions {
   actions?: Record<string, string[]>;
   /** Asset index entries, e.g. { id: 'ast_beep', name: 'beep', type: 'audio', path: '...' }. */
   assets?: { id: string; name: string; type: string; path: string }[];
+  /** Additional scenes beyond the default 'scn_test' Test scene. */
+  extraScenes?: { id: string; name: string; entities: Record<string, unknown>[] }[];
+  /** Scene id that runs first (default 'scn_test'). */
+  initialScene?: string;
 }
 
 export async function makeStore(
@@ -54,6 +58,17 @@ export async function makeStore(
     entities: opts.entities,
   }) as Scene;
   store.scenes.set(scene.id, scene);
+  for (const extra of opts.extraScenes ?? []) {
+    store.project.scenes.push({ id: extra.id, name: extra.name, path: `scenes/${extra.id}.scene.json` });
+    const parsed = SceneSchema.parse({
+      formatVersion: 1,
+      id: extra.id,
+      name: extra.name,
+      entities: extra.entities,
+    }) as Scene;
+    store.scenes.set(parsed.id, parsed);
+  }
+  if (opts.initialScene) store.project.initialScene = opts.initialScene;
   for (const [name, source] of Object.entries(opts.scripts ?? {})) {
     await fs.writeFile(`/proj/scripts/${name}`, source);
   }

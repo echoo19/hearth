@@ -133,6 +133,54 @@ describe('hearth-mcp server', () => {
     expect(envelope.errors[0].code).toBe('NOT_FOUND');
   });
 
+  it('create_script defaults to Lua and honors language "js"', async () => {
+    ctx = await connectClient();
+    const luaResult = await ctx.client.callTool({ name: 'create_script', arguments: { name: 'mover' } });
+    expect(luaResult.isError).toBeFalsy();
+    const lua = toolJson(luaResult);
+    expect(lua.data.path).toBe('scripts/mover.lua');
+
+    const jsResult = await ctx.client.callTool({
+      name: 'create_script',
+      arguments: { name: 'mover-js', language: 'js' },
+    });
+    const js = toolJson(jsResult);
+    expect(js.data.path).toBe('scripts/mover-js.js');
+  });
+
+  it('inspect_api returns the ctx reference', async () => {
+    ctx = await connectClient();
+    const result = await ctx.client.callTool({ name: 'inspect_api', arguments: {} });
+    expect(result.isError).toBeFalsy();
+    const envelope = toolJson(result);
+    expect(envelope.success).toBe(true);
+    expect(envelope.data.languages).toEqual(['lua', 'js']);
+    const paths = envelope.data.api.map((e: { path: string }) => e.path);
+    expect(paths).toContain('scenes.load');
+    expect(paths).toContain('save');
+    expect(paths).toContain('random.next');
+  });
+
+  it('update_settings deep-merges buildSettings and validates initialScene', async () => {
+    ctx = await connectClient();
+    const merge = await ctx.client.callTool({
+      name: 'update_settings',
+      arguments: { buildSettings: { title: 'MCP Game', loading: { spinner: true } } },
+    });
+    expect(merge.isError).toBeFalsy();
+    const envelope = toolJson(merge);
+    expect(envelope.data.buildSettings.title).toBe('MCP Game');
+    expect(envelope.data.buildSettings.loading.spinner).toBe(true);
+    expect(envelope.data.buildSettings.loading.backgroundColor).toBe('#000000');
+
+    const bad = await ctx.client.callTool({
+      name: 'update_settings',
+      arguments: { initialScene: 'NoSuchScene' },
+    });
+    expect(bad.isError).toBe(true);
+    expect(toolJson(bad).errors[0].code).toBe('NOT_FOUND');
+  });
+
   it('run_playtest executes headlessly and returns a passing result', async () => {
     ctx = await connectClient();
     const sceneId = ctx.store.project.initialScene!;

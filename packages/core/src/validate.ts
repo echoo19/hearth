@@ -2,6 +2,7 @@
  * Project validation: referential integrity and common mistakes, beyond the
  * per-file schema validation that happens at load time.
  */
+import luaparse from 'luaparse';
 import type { ProjectStore } from './project/store.js';
 import { joinPath } from './fs.js';
 
@@ -13,6 +14,8 @@ export interface ValidationIssue {
   entity?: string;
   asset?: string;
   script?: string;
+  /** 1-based source line, for script syntax errors (when extractable). */
+  line?: number;
 }
 
 export interface ValidationReport {
@@ -68,6 +71,68 @@ function validatePolygonPoints(points: { x: number; y: number }[]): { code: stri
   return issues;
 }
 
+/**
+ * Best-effort line extraction for a `new Function(...)` SyntaxError. V8
+ * reports the failing position in the error stack as `<anonymous>:LINE:COL`,
+ * where LINE counts from the synthesized `function anonymous(...) {` header —
+ * two lines above the script body.
+ */
+function extractJsErrorLine(err: unknown): number | undefined {
+  const stack = (err as Error | undefined)?.stack ?? '';
+  const match = stack.match(/<anonymous>:(\d+):\d+/);
+  if (!match) return undefined;
+  const line = parseInt(match[1], 10) - 2;
+  return line >= 1 ? line : undefined;
+}
+
+/**
+ * Per-script syntax check. JS scripts get the same `export default` rewrite
+ * the runtime's compileScript performs, then a compile-only `new Function`
+ * (never executed). Lua scripts are parsed with luaparse.
+ */
+async function validateScriptSyntax(store: ProjectStore, push: (issue: ValidationIssue) => void): Promise<void> {
+  for (const scriptPath of await store.listScripts()) {
+    const source = await store.readScript(scriptPath);
+    if (scriptPath.endsWith('.js')) {
+      try {
+        const body = source.replace(/export\s+default/, 'module.exports =');
+        // Compile-only syntax check; the factory is never invoked.
+        new Function('module', 'exports', body);
+      } catch (err) {
+        const line = extractJsErrorLine(err);
+        push({
+          severity: 'error',
+          code: 'SCRIPT_SYNTAX_ERROR',
+          message: `Script ${scriptPath}${line ? `:${line}` : ''}: ${(err as Error).message}`,
+          script: scriptPath,
+          ...(line !== undefined ? { line } : {}),
+        });
+      }
+    } else if (scriptPath.endsWith('.lua')) {
+      try {
+        luaparse.parse(source, { luaVersion: '5.3' });
+      } catch (err) {
+        const e = err as Error & { line?: number };
+        const line = typeof e.line === 'number' ? e.line : undefined;
+        push({
+          severity: 'error',
+          code: 'SCRIPT_SYNTAX_ERROR',
+          message: `Script ${scriptPath}${line ? `:${line}` : ''}: ${e.message}`,
+          script: scriptPath,
+          ...(line !== undefined ? { line } : {}),
+        });
+      }
+    } else {
+      push({
+        severity: 'warning',
+        code: 'SCRIPT_UNKNOWN_EXTENSION',
+        message: `Script ${scriptPath} has an unsupported extension; Hearth runs .lua and .js scripts`,
+        script: scriptPath,
+      });
+    }
+  }
+}
+
 export async function validateProject(store: ProjectStore): Promise<ValidationReport> {
   const issues: ValidationIssue[] = [];
   const push = (issue: ValidationIssue) => issues.push(issue);
@@ -117,6 +182,9 @@ export async function validateProject(store: ProjectStore): Promise<ValidationRe
       });
     }
   }
+
+  // --- scripts (syntax) ---
+  await validateScriptSyntax(store, push);
 
   // --- scenes / entities ---
   const scripts = new Set(await store.listScripts());

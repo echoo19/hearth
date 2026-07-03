@@ -19,7 +19,7 @@ my-game/
 │   ├── sounds/coin_sound.wav    # procedural sound effects (16-bit PCM WAV)
 │   └── animations/idle.anim.json
 ├── scripts/
-│   └── player-controller.js     # behavior scripts (plain JS)
+│   └── player-controller.lua    # behavior scripts (Lua by default; .js works too)
 ├── playtests/
 │   └── smoke.playtest.json      # headless scripted tests
 ├── .hearth/
@@ -55,10 +55,18 @@ normative; this page is descriptive. Every file carries `formatVersion: 1`.
     "width": 800, "height": 600,
     "backgroundColor": "#1a1a2e",
     "targetFps": 60, "fixedTimestep": 60, // physics/update Hz
-    "title": "My Game"
+    "title": "My Game",
+    "loading": {                 // what an exported game shows while loading
+      "backgroundColor": "#000000",
+      "image": null,             // sprite asset id, centered, or null
+      "spinner": false           // minimal neutral spinner
+    }
   }
 }
 ```
+
+Change settings with the `updateSettings` command (partial deep-merge)
+rather than hand-editing.
 
 ## Scene files (`scenes/*.scene.json`)
 
@@ -141,16 +149,19 @@ timestep.
 }
 ```
 
-Step types: `wait`, `press`, `release`, `assertEntityExists`,
-`assertProperty` (`equals` / `greaterThan` / `lessThan`),
-`assertPositionNear`, `assertNoErrors`.
+Step types: `wait`, `press`, `release`, `click` (screen coordinates),
+`assertEntityExists`, `assertProperty` (`equals` / `greaterThan` /
+`lessThan`), `assertPositionNear`, `assertScene`, `assertNoErrors`.
+Playtests also carry a `seed` (default `0`) for the script RNG
+(`ctx.random` / Lua `math.random`) — same seed, same run.
 
-## Scripts (`scripts/*.js`)
+## Scripts (`scripts/*.lua`, `scripts/*.js`)
 
-Plain JavaScript files exporting lifecycle hooks (see
-[scripting.md](./scripting.md)). Scripts are referenced by path from `Script`
-components and are the one part of the project agents are encouraged to edit
-as code (via `hearth create script` / `hearth edit-script`).
+Plain Lua (default) or JavaScript files defining lifecycle hooks (see
+[scripting.md](./scripting.md)); both languages get the identical `ctx`
+API. Scripts are referenced by path from `Script` components and are the
+one part of the project agents are encouraged to edit as code (via
+`hearth create script` / `hearth edit-script`).
 
 ## Versioning & compatibility
 

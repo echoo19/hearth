@@ -3,9 +3,15 @@
  *
  * Buffers are fetched + decoded once per asset and cached. Each playback
  * gets its own gain node (volume/loop) routed through a master gain, so
- * stopping the runtime can silence everything at once. The AudioContext is
- * created lazily and resumed on the first user gesture (pointerdown or
- * keydown) to satisfy browser autoplay policy.
+ * stopping the runtime can silence everything at once.
+ *
+ * Silent audio unlock: the AudioContext is created up front. Browsers start
+ * it suspended until a user gesture, so one-time window listeners
+ * (pointerdown / keydown / touchstart) resume it on the first natural input
+ * — no visible UI, ever. Plays issued while suspended are queued: on resume,
+ * loops (music) start from the beginning and one-shot SFX older than ~0.5s
+ * are dropped instead of bursting all at once. Queue age uses wall-clock
+ * time (performance.now); this is presentation-side only, never simulation.
  */
 
 export interface WebAudioPlayOptions {
@@ -19,19 +25,50 @@ interface ActivePlayback {
   stopped: boolean;
 }
 
+/** A play requested while the AudioContext was still suspended. */
+export interface PendingPlay {
+  handleId: string;
+  assetId: string;
+  volume: number;
+  loop: boolean;
+  /** performance.now() when the play was requested. */
+  issuedAt: number;
+}
+
+/** One-shot SFX queued longer than this before unlock are dropped. */
+export const PENDING_ONESHOT_MAX_AGE_MS = 500;
+
+/**
+ * Which queued plays should actually start once the context resumes:
+ * loops always (from position 0); one-shots only when still fresh.
+ * Pure — exported for headless tests.
+ */
+export function playsToStartOnResume(pending: readonly PendingPlay[], now: number): PendingPlay[] {
+  return pending.filter((p) => p.loop || now - p.issuedAt <= PENDING_ONESHOT_MAX_AGE_MS);
+}
+
+const UNLOCK_EVENTS = ['pointerdown', 'keydown', 'touchstart'] as const;
+
 export class WebAudioPlayer {
   private ctx: AudioContext | null = null;
   private master: GainNode | null = null;
   private buffers = new Map<string, Promise<AudioBuffer | null>>();
   private active = new Map<string, ActivePlayback>();
-  private resumeFn: (() => void) | null = null;
+  private pending: PendingPlay[] = [];
+  private unlockFn: (() => void) | null = null;
   private destroyed = false;
 
   constructor(
     /** Maps an asset id to a fetchable URL (or null when unknown). */
     private readonly resolveUrl: (assetId: string) => string | null,
     private readonly onWarn?: (message: string) => void,
-  ) {}
+  ) {
+    if (!WebAudioPlayer.supported()) return;
+    this.ctx = new AudioContext();
+    this.master = this.ctx.createGain();
+    this.master.connect(this.ctx.destination);
+    if (this.ctx.state === 'suspended') this.armUnlock();
+  }
 
   /** True when Web Audio is available in this environment. */
   static supported(): boolean {
@@ -39,8 +76,95 @@ export class WebAudioPlayer {
   }
 
   play(handleId: string, assetId: string, opts: WebAudioPlayOptions): void {
-    const ctx = this.ensureContext();
-    if (!ctx || !this.master) return;
+    const ctx = this.ctx;
+    if (!ctx || !this.master || this.destroyed) return;
+    if (ctx.state === 'suspended') {
+      // Queue for the unlock; start decoding now so resume is instant.
+      this.pending.push({
+        handleId,
+        assetId,
+        volume: opts.volume,
+        loop: opts.loop,
+        issuedAt: performance.now(),
+      });
+      void this.loadBuffer(ctx, assetId);
+      return;
+    }
+    this.startPlayback(handleId, assetId, opts);
+  }
+
+  stop(handleId: string): void {
+    const queued = this.pending.findIndex((p) => p.handleId === handleId);
+    if (queued !== -1) {
+      this.pending.splice(queued, 1);
+      return;
+    }
+    const playback = this.active.get(handleId);
+    if (!playback) return;
+    playback.stopped = true;
+    try {
+      playback.source?.stop();
+    } catch {
+      // already stopped
+    }
+    this.cleanup(handleId, playback);
+  }
+
+  /** Master stop: silence and drop every active and queued playback. */
+  stopAll(): void {
+    this.pending = [];
+    for (const handleId of [...this.active.keys()]) this.stop(handleId);
+  }
+
+  destroy(): void {
+    if (this.destroyed) return;
+    this.destroyed = true;
+    this.stopAll();
+    this.disarmUnlock();
+    void this.ctx?.close().catch(() => {});
+    this.ctx = null;
+    this.master = null;
+    this.buffers.clear();
+  }
+
+  // ---------------------------------------------------------------------------
+
+  /** One-time, invisible unlock on the first natural user input. */
+  private armUnlock(): void {
+    if (this.unlockFn || typeof window === 'undefined') return;
+    this.unlockFn = () => {
+      this.disarmUnlock();
+      void this.ctx
+        ?.resume()
+        .then(() => this.flushPending())
+        .catch(() => {});
+    };
+    for (const type of UNLOCK_EVENTS) window.addEventListener(type, this.unlockFn);
+    // Some browsers resume contexts on their own (e.g. after a same-page
+    // gesture elsewhere); flush the queue whenever the context comes alive.
+    this.ctx?.addEventListener('statechange', () => {
+      if (this.ctx?.state === 'running') this.flushPending();
+    });
+  }
+
+  private disarmUnlock(): void {
+    if (!this.unlockFn || typeof window === 'undefined') return;
+    for (const type of UNLOCK_EVENTS) window.removeEventListener(type, this.unlockFn);
+    this.unlockFn = null;
+  }
+
+  private flushPending(): void {
+    if (this.destroyed || this.pending.length === 0) return;
+    const queued = this.pending;
+    this.pending = [];
+    for (const p of playsToStartOnResume(queued, performance.now())) {
+      this.startPlayback(p.handleId, p.assetId, { volume: p.volume, loop: p.loop });
+    }
+  }
+
+  private startPlayback(handleId: string, assetId: string, opts: WebAudioPlayOptions): void {
+    const ctx = this.ctx;
+    if (!ctx || !this.master || this.destroyed) return;
     const playback: ActivePlayback = { gain: ctx.createGain(), source: null, stopped: false };
     playback.gain.gain.value = opts.volume;
     playback.gain.connect(this.master);
@@ -55,56 +179,6 @@ export class WebAudioPlayer {
       playback.source = source;
       source.start();
     });
-  }
-
-  stop(handleId: string): void {
-    const playback = this.active.get(handleId);
-    if (!playback) return;
-    playback.stopped = true;
-    try {
-      playback.source?.stop();
-    } catch {
-      // already stopped
-    }
-    this.cleanup(handleId, playback);
-  }
-
-  /** Master stop: silence and drop every active playback. */
-  stopAll(): void {
-    for (const handleId of [...this.active.keys()]) this.stop(handleId);
-  }
-
-  destroy(): void {
-    if (this.destroyed) return;
-    this.destroyed = true;
-    this.stopAll();
-    if (this.resumeFn) {
-      window.removeEventListener('pointerdown', this.resumeFn);
-      window.removeEventListener('keydown', this.resumeFn);
-      this.resumeFn = null;
-    }
-    void this.ctx?.close().catch(() => {});
-    this.ctx = null;
-    this.master = null;
-    this.buffers.clear();
-  }
-
-  // ---------------------------------------------------------------------------
-
-  private ensureContext(): AudioContext | null {
-    if (this.destroyed) return null;
-    if (this.ctx) return this.ctx;
-    if (!WebAudioPlayer.supported()) return null;
-    this.ctx = new AudioContext();
-    this.master = this.ctx.createGain();
-    this.master.connect(this.ctx.destination);
-    // Autoplay policy: contexts created without a gesture start suspended.
-    this.resumeFn = () => {
-      void this.ctx?.resume().catch(() => {});
-    };
-    window.addEventListener('pointerdown', this.resumeFn);
-    window.addEventListener('keydown', this.resumeFn);
-    return this.ctx;
   }
 
   private loadBuffer(ctx: AudioContext, assetId: string): Promise<AudioBuffer | null> {
