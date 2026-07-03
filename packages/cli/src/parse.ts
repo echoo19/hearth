@@ -57,6 +57,20 @@ export function parseJsonObject(raw: string | undefined, flagName: string): Reco
   return value as Record<string, unknown>;
 }
 
+/** Parse a "WIDTHxHEIGHT" size, e.g. --size 800x600. */
+export function parseSize(raw: string): { width: number; height: number } {
+  const match = /^(\d+)x(\d+)$/i.exec(raw.trim());
+  if (!match) {
+    throw new ParseError(`Invalid --size "${raw}": expected "WIDTHxHEIGHT", e.g. "800x600"`);
+  }
+  const width = Number(match[1]);
+  const height = Number(match[2]);
+  if (width <= 0 || height <= 0) {
+    throw new ParseError(`Invalid --size "${raw}": width and height must be positive`);
+  }
+  return { width, height };
+}
+
 /** Parse a JSON array option (e.g. --steps-file contents). */
 export function parseJsonArray(raw: string, sourceName: string): unknown[] {
   let value: unknown;

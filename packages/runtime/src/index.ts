@@ -67,3 +67,9 @@ export {
   measureText,
   type UiRect,
 } from './ui.js';
+// window-free (no DOM/browser globals), unlike the rest of ./player/ which
+// assigns window.HearthPlayer at module scope — safe to export from the
+// headless-safe entry point. This is the seam the `hearth screenshot`
+// harness (@hearth/playtest's screenshot.ts) uses to build the
+// window.__HEARTH_BOOT__ payload it injects into an export's HTML.
+export { mergeBootOverrides, type BootOverrides } from './player/bootOverrides.js';

@@ -15,12 +15,15 @@ import {
   DEFAULT_MODES,
   PERMISSION_MODES,
   SOUND_PRESETS,
+  PermissionError,
+  hasPermission,
   type HearthSession,
 } from '@hearth/core';
 import { NodeFileSystem } from '@hearth/core/node';
+import { captureScreenshot } from '@hearth/playtest';
 import { CliError, openSession, resolveProjectRoot, type GlobalOpts } from './context.js';
 import { emit, errorResult, makeResult, logStderr } from './output.js';
-import { parseJsonArray, parseJsonObject, parseList, parsePosition, parseValue, ParseError } from './parse.js';
+import { parseJsonArray, parseJsonObject, parseList, parsePosition, parseSize, parseValue, ParseError } from './parse.js';
 import { createZip } from './zip.js';
 
 const VERSION = '0.1.0';
@@ -578,6 +581,42 @@ export function buildProgram(): Command {
         result.files.push(zipRel);
       }
       process.exitCode = emit(result, g);
+    });
+  });
+
+  // ---------------------------------------------------------------------
+  // screenshot
+  // ---------------------------------------------------------------------
+  addGlobalOptions(
+    program
+      .command('screenshot [scene]')
+      .description(
+        'capture a deterministic PNG screenshot of a scene via headless Chrome/Chromium ' +
+          '(requires --allow build or all). Scene defaults to the project\'s initial scene.',
+      )
+      .option('--frame <n>', 'fixed frames to step before capture (default: 0)', (v) => parseInt(v, 10))
+      .option('--seed <n>', 'session seed (default: 0)', (v) => parseInt(v, 10))
+      .option('--size <WxH>', 'canvas size, e.g. 800x600 (default: buildSettings size)')
+      .option('--debug', 'enable the debug overlay (collider/velocity/light outlines)')
+      .option('--out <path>', 'output PNG path, project-relative unless absolute', 'screenshot.png'),
+  ).action(async (scene: string | undefined, opts, cmd) => {
+    await guarded(cmd, 'screenshot', async () => {
+      const g = globalOpts(cmd);
+      const session = await openSession(g);
+      if (!hasPermission(session.granted, 'build')) {
+        throw new CliError('PERMISSION_DENIED', new PermissionError('build', session.granted, 'screenshot').message);
+      }
+      const size = opts.size ? parseSize(opts.size) : undefined;
+      const meta = await captureScreenshot(session.store, {
+        scene,
+        frame: opts.frame,
+        seed: opts.seed,
+        width: size?.width,
+        height: size?.height,
+        debug: !!opts.debug,
+        out: opts.out,
+      });
+      process.exitCode = emit(makeResult('screenshot', true, meta, { files: [meta.path] }), g);
     });
   });
 

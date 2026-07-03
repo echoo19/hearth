@@ -45,4 +45,11 @@ describe('mergeBootOverrides', () => {
     mergeBootOverrides(opts, { manual: true });
     expect(opts).toEqual({ manual: false });
   });
+
+  it('merges scene the same way as the other override keys', () => {
+    const opts = {};
+    expect(mergeBootOverrides(opts, { scene: 'Level 2' })).toMatchObject({ scene: 'Level 2' });
+    const explicit = { scene: 'Level 1' };
+    expect(mergeBootOverrides(explicit, { scene: 'Level 2' }).scene).toBe('Level 1');
+  });
 });

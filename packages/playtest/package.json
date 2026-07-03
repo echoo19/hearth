@@ -22,5 +22,8 @@
   "dependencies": {
     "@hearth/core": "*",
     "@hearth/runtime": "*"
+  },
+  "optionalDependencies": {
+    "playwright-core": "^1.61.1"
   }
 }

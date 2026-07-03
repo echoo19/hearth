@@ -12,6 +12,8 @@ export interface BootOverrides {
   debug?: boolean;
   width?: number;
   height?: number;
+  /** Scene id or name to boot into (default: the project's initialScene). */
+  scene?: string;
 }
 
 /**
@@ -33,5 +35,6 @@ export function mergeBootOverrides<T extends BootOverrides>(
     debug: opts.debug ?? overrides.debug,
     width: opts.width ?? overrides.width,
     height: opts.height ?? overrides.height,
+    scene: opts.scene ?? overrides.scene,
   };
 }

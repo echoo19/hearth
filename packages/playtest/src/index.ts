@@ -434,6 +434,15 @@ export function createRuntimeHooks(): RuntimeHooks {
   };
 }
 
+export {
+  captureScreenshot,
+  canLaunchChromium,
+  injectBootScript,
+  CHROMIUM_MISSING_ERROR,
+  type ScreenshotOptions,
+  type ScreenshotResult,
+} from './screenshot.js';
+
 // ---------------------------------------------------------------------------
 
 /** Live particle count by entity name, for every live entity with a ParticleEmitter. */

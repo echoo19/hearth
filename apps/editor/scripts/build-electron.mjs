@@ -33,7 +33,12 @@ await build({
   platform: 'node',
   format: 'cjs',
   target: 'node20',
-  external: ['electron'],
+  // playwright-core stays external for the same reason as the standalone
+  // tool bundles below: @hearth/playtest's screenshot.ts only ever reaches
+  // it through a lazy `import('playwright-core')`, and playwright-core's own
+  // bundle pulls in optional native/CJS-only deps (chromium-bidi, fsevents)
+  // that esbuild can't statically resolve anyway.
+  external: ['electron', 'playwright-core'],
   sourcemap: false,
   logLevel: 'info',
   ...luaWasmInline,
@@ -81,6 +86,12 @@ for (const [entry, outfile] of [
     target: 'node20',
     sourcemap: false,
     logLevel: 'info',
+    // playwright-core (used lazily by @hearth/playtest's `hearth screenshot`
+    // support) must never be inlined: it's a large, optional, native-binary-
+    // adjacent package, only ever pulled in via a dynamic `import()` inside
+    // captureScreenshot so the tools still run without it installed. Bundling
+    // it would both bloat these single-file tools and defeat that fallback.
+    external: ['playwright-core'],
     banner: {
       // createRequire + __filename/__dirname shims: bundled CJS deps
       // (wasmoon among them) reference require()/__filename at runtime,

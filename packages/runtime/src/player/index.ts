@@ -71,6 +71,8 @@ export interface BootOptions {
   /** Override the exported project's canvas resolution (default: buildSettings.width/height). */
   width?: number;
   height?: number;
+  /** Scene id or name to boot into (default: the project's initialScene). */
+  scene?: string;
 }
 
 // window.__HEARTH_BOOT__ (read by boot() below) is the seam a host — the
@@ -150,7 +152,9 @@ async function boot(rawOpts: BootOptions): Promise<PixiSceneView> {
     const view = await PixiSceneView.mount({
       container: host,
       store,
-      // scene omitted: the session defaults to initialScene (then first scene)
+      // undefined unless a host (e.g. the screenshot CLI) set it; the
+      // session then defaults to initialScene (then the first scene).
+      scene: opts.scene,
       seed: opts.seed ?? 0,
       storage: localStorageAdapter(store.project.id),
       resolveAssetUrl: (asset: Asset) => dataUris.get(asset.id) ?? asset.path,

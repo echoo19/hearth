@@ -3,14 +3,18 @@
  * dispatched through the same `HearthSession.execute()` command layer used
  * by the CLI and the editor. One operation vocabulary, every surface.
  */
+import { z } from 'zod';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import {
   type HearthSession,
   type PermissionMode,
   generateAgentsMd,
+  hasPermission,
   joinPath,
+  PermissionError,
 } from '@hearth/core';
+import { captureScreenshot } from '@hearth/playtest';
 import { TOOL_SPECS } from './tools.js';
 
 const SERVER_NAME = 'hearth-mcp';
@@ -28,6 +32,16 @@ function jsonResult(value: unknown, isError = false): CallToolResult {
 
 function textResult(text: string): CallToolResult {
   return { content: [{ type: 'text', text }] };
+}
+
+/** CommandResult-shaped envelope for tools (like `screenshot`) that don't run through session.execute(). */
+function envelope(
+  command: string,
+  data: unknown,
+  errors: { code: string; message: string }[] = [],
+  files: string[] = [],
+) {
+  return { success: errors.length === 0, command, data, errors, warnings: [], changed: [], files, suggestions: [] };
 }
 
 /**
@@ -53,6 +67,50 @@ export function createHearthMcpServer(session: HearthSession, granted: Permissio
       },
     );
   }
+
+  // Not in TOOL_SPECS: unlike every other tool, screenshot does not dispatch
+  // to a core command via session.execute. Capturing a screenshot launches
+  // headless Chromium (Node/Playwright-only, not something @hearth/core can
+  // depend on since core must stay usable in the browser — see
+  // exportCommands.ts's "core cannot use node:Buffer" note), so
+  // captureScreenshot lives in @hearth/playtest and is called directly here,
+  // the same way get_agent_instructions below calls generateAgentsMd
+  // directly. It still requires the "build" permission mode, same as
+  // export_web, so that check is replicated by hand (session.execute would
+  // normally do this for a registry command).
+  server.registerTool(
+    'screenshot',
+    {
+      description:
+        'Capture a deterministic PNG screenshot of a scene via headless Chrome/Chromium. ' +
+        'Scene defaults to the project\'s initial scene. Returns screenshot metadata (path, width, ' +
+        'height, frame, scene) as JSON; read the PNG file yourself. (requires build)',
+      inputSchema: {
+        scene: z.string().min(1).optional(),
+        frame: z.number().int().min(0).optional(),
+        seed: z.number().int().min(0).optional(),
+        width: z.number().int().positive().optional(),
+        height: z.number().int().positive().optional(),
+        debug: z.boolean().optional(),
+        out: z.string().optional(),
+      },
+    },
+    async (args) => {
+      if (!hasPermission(granted, 'build')) {
+        const err = new PermissionError('build', granted, 'screenshot');
+        return jsonResult(envelope('screenshot', null, [{ code: 'PERMISSION_DENIED', message: err.message }]), true);
+      }
+      try {
+        const data = await captureScreenshot(session.store, args ?? {});
+        return jsonResult(envelope('screenshot', data, [], [data.path]));
+      } catch (err) {
+        return jsonResult(
+          envelope('screenshot', null, [{ code: 'INTERNAL_ERROR', message: (err as Error).message }]),
+          true,
+        );
+      }
+    },
+  );
 
   server.registerTool(
     'get_agent_instructions',
