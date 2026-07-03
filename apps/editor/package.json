@@ -31,12 +31,19 @@
       "dist-electron/hearth-cli.mjs",
       "dist-electron/hearth-mcp.mjs"
     ],
+    "artifactName": "Hearth-${os}-${arch}.${ext}",
     "mac": {
       "category": "public.app-category.developer-tools",
       "identity": null,
       "target": [
-        "dmg",
-        "zip"
+        {
+          "target": "dmg",
+          "arch": ["arm64", "x64"]
+        },
+        {
+          "target": "zip",
+          "arch": ["arm64", "x64"]
+        }
       ]
     },
     "win": {
