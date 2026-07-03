@@ -8,7 +8,7 @@
  * CLI and MCP server are built against them.
  */
 import type { PlaytestStep, ProjectStore, RuntimeHooks } from '@hearth/core';
-import { GameSession, type RuntimeEntity } from '@hearth/runtime';
+import { GameSession, type RuntimeEntity, type SceneRuntime } from '@hearth/runtime';
 
 export interface PlaytestStepResult {
   index: number;
@@ -58,6 +58,8 @@ export interface PlaytestResult {
   sceneEvents: SceneEventEntry[];
   /** Scene id the session ended in (after any ctx.scenes.load switches). */
   finalScene: string;
+  /** Live particle count at end of run, by entity name; only ParticleEmitter entities appear. */
+  particleCounts: Record<string, number>;
 }
 
 export interface SmokeResult {
@@ -73,6 +75,8 @@ export interface SmokeResult {
   finalScene: string;
   /** True when the scene ran the requested frames with zero runtime errors. */
   passed: boolean;
+  /** Live particle count at end of run, by entity name; only ParticleEmitter entities appear. */
+  particleCounts: Record<string, number>;
 }
 
 const ASSERT_TYPES = new Set([
@@ -81,6 +85,7 @@ const ASSERT_TYPES = new Set([
   'assertPositionNear',
   'assertNoErrors',
   'assertScene',
+  'assertParticleCount',
 ]);
 
 export async function runPlaytest(
@@ -99,6 +104,7 @@ export async function runPlaytest(
     audioEvents: [],
     sceneEvents: [],
     finalScene: '',
+    particleCounts: {},
   });
 
   const playtest = store.getPlaytest(playtestIdOrName);
@@ -159,6 +165,7 @@ export async function runPlaytest(
     audioEvents: [...session.audioEvents],
     sceneEvents: [...session.sceneEvents],
     finalScene: session.currentSceneId,
+    particleCounts: collectParticleCounts(session.runtime),
   };
   session.destroy();
   return result;
@@ -336,6 +343,37 @@ async function executeStep(
           : `expected scene "${step.scene}", but current scene is "${currentName ?? currentId}" (${currentId})${capNote}`,
       };
     }
+    case 'assertParticleCount': {
+      const entity = runtime.find(step.entity);
+      if (!entity) {
+        return {
+          index,
+          type: step.type,
+          passed: false,
+          message: `entity not found: ${step.entity}${capNote}`,
+        };
+      }
+      const count = runtime.getParticleCount(entity.id);
+      const failures: string[] = [];
+      if (step.equals !== undefined && count !== step.equals) {
+        failures.push(`expected ${step.equals}, got ${count}`);
+      }
+      if (step.min !== undefined && count < step.min) {
+        failures.push(`expected >= ${step.min}, got ${count}`);
+      }
+      if (step.max !== undefined && count > step.max) {
+        failures.push(`expected <= ${step.max}, got ${count}`);
+      }
+      const passed = failures.length === 0;
+      return {
+        index,
+        type: step.type,
+        passed,
+        message: passed
+          ? `${step.entity} particle count = ${count}${capNote}`
+          : `${step.entity} particle count: ${failures.join('; ')}${capNote}`,
+      };
+    }
     default: {
       const unknown = step as { type: string };
       return {
@@ -366,6 +404,7 @@ export async function runSceneSmoke(
       sceneEvents: [],
       finalScene: '',
       passed: false,
+      particleCounts: {},
     };
   }
   const session = await GameSession.create(store, { scene: scene.id });
@@ -381,6 +420,7 @@ export async function runSceneSmoke(
     sceneEvents: [...session.sceneEvents],
     finalScene: session.currentSceneId,
     passed: session.errors.length === 0,
+    particleCounts: collectParticleCounts(session.runtime),
   };
   session.destroy();
   return result;
@@ -395,6 +435,17 @@ export function createRuntimeHooks(): RuntimeHooks {
 }
 
 // ---------------------------------------------------------------------------
+
+/** Live particle count by entity name, for every live entity with a ParticleEmitter. */
+function collectParticleCounts(runtime: SceneRuntime): Record<string, number> {
+  const counts: Record<string, number> = {};
+  for (const entity of runtime.getEntities()) {
+    if (entity.components.ParticleEmitter) {
+      counts[entity.name] = runtime.getParticleCount(entity.id);
+    }
+  }
+  return counts;
+}
 
 /** Resolve dot paths like "Transform.position.x" against entity.components. */
 function resolvePropertyPath(

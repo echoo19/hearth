@@ -89,7 +89,7 @@ export type AnimationData = z.infer<typeof AnimationDataSchema>;
 // Playtests
 // ---------------------------------------------------------------------------
 
-export const PlaytestStepSchema = z.discriminatedUnion('type', [
+const PlaytestStepUnionSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('wait'), frames: z.number().int().positive() }),
   z.object({
     type: z.literal('press'),
@@ -131,7 +131,28 @@ export const PlaytestStepSchema = z.discriminatedUnion('type', [
     /** Expected current scene id or name (after any ctx.scenes.load switches). */
     scene: z.string(),
   }),
+  z.object({
+    type: z.literal('assertParticleCount'),
+    entity: z.string(), // id or name; must have a ParticleEmitter
+    equals: z.number().optional(),
+    min: z.number().optional(),
+    max: z.number().optional(),
+  }),
 ]);
+
+export const PlaytestStepSchema = PlaytestStepUnionSchema.superRefine((step, ctx) => {
+  if (
+    step.type === 'assertParticleCount' &&
+    step.equals === undefined &&
+    step.min === undefined &&
+    step.max === undefined
+  ) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: 'assertParticleCount requires at least one of equals, min, or max',
+    });
+  }
+});
 export type PlaytestStep = z.infer<typeof PlaytestStepSchema>;
 
 export const PlaytestSchema = z.object({
