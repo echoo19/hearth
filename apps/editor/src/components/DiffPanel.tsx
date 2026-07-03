@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useEditor } from '../store';
-import { ConfirmDialog } from './ui';
+import { ConfirmDialog, Icon } from './ui';
 import type { ProjectDiff } from '../types';
 
 function fmt(value: unknown): string {
@@ -50,6 +50,9 @@ export function DiffPanel() {
       <div className="panel-body">
         {!diff ? (
           <div className="empty-state">
+            <span className="empty-icon" aria-hidden="true">
+              <Icon name="duplicate" size={16} />
+            </span>
             <span>No baseline to compare against</span>
             <span className="hint">
               The review workflow: press Snapshot before edits (yours or an agent's), make changes, then
@@ -59,6 +62,9 @@ export function DiffPanel() {
           </div>
         ) : !diff.hasChanges ? (
           <div className="empty-state">
+            <span className="empty-icon" aria-hidden="true">
+              <Icon name="duplicate" size={16} />
+            </span>
             <span>No changes since the last snapshot</span>
             <span className="hint">Edit the scene (or let an agent work), then refresh.</span>
           </div>

@@ -70,8 +70,8 @@ export function Launcher() {
     <div className="launcher">
       <header className="launcher-brand">
         <h1>
-          <span style={{ color: 'var(--accent)', display: 'inline-flex' }}>
-            <Icon name="flame" size={28} />
+          <span className="flame">
+            <Icon name="flame" size={30} />
           </span>
           Hearth
         </h1>
@@ -158,7 +158,7 @@ export function Launcher() {
           </div>
           {openError && <div className="launcher-error">{openError}</div>}
 
-          <h2 style={{ marginTop: 8 }}>Recent</h2>
+          <h3 className="launcher-section">Recent</h3>
           <div className="launcher-list">
             {recents.length === 0 && (
               <div className="launcher-empty">Projects you open will show up here.</div>
@@ -171,13 +171,18 @@ export function Launcher() {
                 onClick={() => void handleOpen(r.path, setOpenError)}
                 title={r.exists ? r.path : `${r.path} (moved or deleted)`}
               >
-                <span className="item-name">{r.name}</span>
-                <span className="item-path">{r.exists ? r.path : 'moved or deleted'}</span>
+                <span className="item-text">
+                  <span className="item-name">{r.name}</span>
+                  <span className="item-path">{r.exists ? r.path : 'moved or deleted'}</span>
+                </span>
+                <span className="item-go" aria-hidden="true">
+                  <Icon name="chevron" />
+                </span>
               </button>
             ))}
           </div>
 
-          <h2 style={{ marginTop: 8 }}>Examples</h2>
+          <h3 className="launcher-section">Examples</h3>
           <div className="launcher-list">
             {examples.length === 0 && (
               <div className="launcher-empty">
@@ -192,8 +197,13 @@ export function Launcher() {
                 onClick={() => void handleOpen(ex.path, setOpenError)}
                 title={ex.path}
               >
-                <span className="item-name">{ex.name}</span>
-                <span className="item-desc">{ex.description}</span>
+                <span className="item-text">
+                  <span className="item-name">{ex.name}</span>
+                  <span className="item-desc">{ex.description}</span>
+                </span>
+                <span className="item-go" aria-hidden="true">
+                  <Icon name="chevron" />
+                </span>
               </button>
             ))}
           </div>

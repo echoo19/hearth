@@ -1,6 +1,7 @@
 import React, { useEffect, useRef } from 'react';
 import { useEditor } from '../store';
 import type { ValidationReport } from '../types';
+import { Icon } from './ui';
 
 export function ConsolePanel() {
   const entries = useEditor((s) => s.consoleEntries);
@@ -47,6 +48,9 @@ export function ConsolePanel() {
       <div className="panel-body" ref={bodyRef} style={{ padding: 0 }}>
         {entries.length === 0 ? (
           <div className="empty-state">
+            <span className="empty-icon" aria-hidden="true">
+              <Icon name="script" size={16} />
+            </span>
             <span>Console is quiet</span>
             <span className="hint">
               Command results, warnings, validation reports, and runtime logs from the Game preview show up

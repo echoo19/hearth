@@ -126,6 +126,9 @@ export function AssetsPanel() {
       <div className="panel-body">
         {assets.length === 0 ? (
           <div className="empty-state">
+            <span className="empty-icon" aria-hidden="true">
+              <Icon name="image" size={16} />
+            </span>
             <span>No assets yet</span>
             <span className="hint">
               Create a procedural placeholder sprite or tile above — deterministic SVGs that agents can also

@@ -81,7 +81,7 @@ export function Hierarchy() {
       <React.Fragment key={entity.id}>
         <div
           className={`tree-row${isSelected ? ' selected' : ''}${entity.enabled ? '' : ' disabled-entity'}`}
-          style={{ paddingLeft: 4 + depth * 14 }}
+          style={{ '--depth': depth } as React.CSSProperties}
           onClick={() => select(entity.id)}
           onDoubleClick={() => {
             setRenaming(entity.id);
@@ -152,7 +152,9 @@ export function Hierarchy() {
   return (
     <>
       <div className="panel-header">
-        <span>Hierarchy{scene ? ` — ${scene.name}` : ''}</span>
+        <span>
+          Hierarchy{scene ? <span className="panel-header-detail"> · {scene.name}</span> : null}
+        </span>
         <button className="icon-btn" title="New entity" onClick={() => void addEntity()} disabled={!sceneId}>
           <Icon name="plus" />
         </button>
@@ -160,6 +162,9 @@ export function Hierarchy() {
       <div className="panel-scroll">
         {roots.length === 0 ? (
           <div className="empty-state">
+            <span className="empty-icon" aria-hidden="true">
+              <Icon name="entity" size={16} />
+            </span>
             <span>{scene ? 'This scene is empty.' : 'No scene selected.'}</span>
             {scene && (
               <button className="btn btn-sm" onClick={() => void addEntity()}>

@@ -163,6 +163,9 @@ export function Inspector() {
           <span>Inspector</span>
         </div>
         <div className="empty-state">
+          <span className="empty-icon" aria-hidden="true">
+            <Icon name="entity" size={16} />
+          </span>
           <span>Nothing selected</span>
           <span className="hint">
             Click an entity in the Hierarchy or the Scene view to edit its components here.
@@ -182,9 +185,7 @@ export function Inspector() {
     <>
       <div className="panel-header">
         <span>Inspector</span>
-        <span className="mono" style={{ color: 'var(--ink-faint)', fontWeight: 400 }}>
-          {entity.id}
-        </span>
+        <span className="mono panel-header-detail">{entity.id}</span>
       </div>
       <div className="panel-scroll">
         {/* entity-level fields */}
@@ -261,7 +262,7 @@ export function Inspector() {
           return (
             <div className="component-card" key={type}>
               <div className="component-header" title={doc?.description}>
-                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                <span className="component-title">
                   <span className="entity-icon">
                     <Icon name={componentIcon(type)} />
                   </span>

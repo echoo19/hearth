@@ -78,7 +78,7 @@ function EditorShell() {
             ))}
           </nav>
 
-          <section className="bottom-panel">
+          <section className="bottom-panel" key={bottomTab}>
             {bottomTab === 'assets' && <AssetsPanel />}
             {bottomTab === 'console' && <ConsolePanel />}
             {bottomTab === 'diff' && <DiffPanel />}

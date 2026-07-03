@@ -38,7 +38,7 @@ export function Toolbar() {
   return (
     <header className="toolbar">
       <span className="wordmark">
-        <span style={{ color: 'var(--accent)', display: 'inline-flex' }}>
+        <span className="flame">
           <Icon name="flame" size={16} />
         </span>
         Hearth
@@ -49,51 +49,55 @@ export function Toolbar() {
 
       <span className="divider" />
 
-      <select
-        className="select"
-        value={sceneId ?? ''}
-        onChange={(e) => void selectScene(e.target.value)}
-        aria-label="Scene"
-        style={{ maxWidth: 200 }}
-      >
-        {(info?.scenes ?? []).map((s) => (
-          <option key={s.id} value={s.id}>
-            {s.name}
-            {info?.initialScene === s.id ? ' (initial)' : ''}
-          </option>
-        ))}
-      </select>
-      <button className="btn btn-sm" onClick={() => setNewSceneOpen(true)} title="New scene">
-        <Icon name="plus" /> Scene
-      </button>
+      <span className="toolbar-group">
+        <select
+          className="select"
+          value={sceneId ?? ''}
+          onChange={(e) => void selectScene(e.target.value)}
+          aria-label="Scene"
+          style={{ maxWidth: 200 }}
+        >
+          {(info?.scenes ?? []).map((s) => (
+            <option key={s.id} value={s.id}>
+              {s.name}
+              {info?.initialScene === s.id ? ' (initial)' : ''}
+            </option>
+          ))}
+        </select>
+        <button className="btn btn-sm" onClick={() => setNewSceneOpen(true)} title="New scene">
+          <Icon name="plus" /> Scene
+        </button>
+      </span>
 
       <span className="divider" />
 
       <button
-        className={playing ? 'btn btn-sm' : 'btn btn-primary btn-sm'}
+        className={playing ? 'btn btn-sm btn-stop' : 'btn btn-primary btn-sm btn-play'}
         onClick={() => setPlaying(!playing)}
         title={playing ? 'Stop the preview' : 'Play the current scene in the Game tab'}
       >
         <Icon name={playing ? 'stop' : 'play'} /> {playing ? 'Stop' : 'Play'}
       </button>
 
-      <span className="divider" />
-
-      <button className="btn btn-sm" onClick={() => void snapshot()} title="Save the diff baseline (snapshotProject)">
-        Snapshot
-      </button>
-      <button
-        className="btn btn-sm"
-        onClick={() => {
-          setBottomTab('diff');
-          void refreshDiff();
-        }}
-        title="Show changes since the last snapshot"
-      >
-        Diff
-      </button>
-
       <span className="spacer" />
+
+      <span className="toolbar-group">
+        <button className="btn btn-sm" onClick={() => void snapshot()} title="Save the diff baseline (snapshotProject)">
+          Snapshot
+        </button>
+        <button
+          className="btn btn-sm"
+          onClick={() => {
+            setBottomTab('diff');
+            void refreshDiff();
+          }}
+          title="Show changes since the last snapshot"
+        >
+          Diff
+        </button>
+      </span>
+
+      <span className="divider" />
 
       <span className="save-note">Every change saves automatically</span>
       <button className="btn btn-ghost btn-sm" onClick={closeProject}>
