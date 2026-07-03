@@ -1,0 +1,21 @@
+<svg viewBox="0 0 48 48" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Hearth">
+  <!--
+    Hearth mark, ember edition — banked-coal red rising to struck-match
+    orange. Use on dark surfaces; use hearth-mark.svg (currentColor)
+    everywhere else.
+  -->
+  <defs>
+    <linearGradient id="hearth-ember" x1="0" y1="1" x2="0" y2="0">
+      <stop offset="0" stop-color="#e5484d"/>
+      <stop offset="0.55" stop-color="#f76b15"/>
+      <stop offset="1" stop-color="#ffa057"/>
+    </linearGradient>
+  </defs>
+  <path fill="url(#hearth-ember)" fill-rule="evenodd" d="
+    M10 26 A14 14 0 0 1 38 26 L38 39 A3 3 0 0 1 35 42 L13 42 A3 3 0 0 1 10 39 Z
+    M23.9 38.6
+    C 19.8 38.6, 16.8 35.7, 16.8 31.8
+    C 16.8 26.9, 21.4 24.9, 24.4 16.0
+    C 27.5 19.7, 31.1 24.7, 31.1 30.1
+    C 31.1 35.2, 27.9 38.6, 23.9 38.6 Z"/>
+</svg>

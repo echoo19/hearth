@@ -24,7 +24,8 @@
     "electronVersion": "33.4.11",
     "directories": {
       "app": "release-app",
-      "output": "release"
+      "output": "release",
+      "buildResources": "buildResources"
     },
     "asar": true,
     "asarUnpack": [

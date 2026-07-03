@@ -8,10 +8,13 @@ import React, { useEffect, useRef, type ReactNode } from 'react';
 // ---------------------------------------------------------------------------
 
 const ICON_PATHS: Record<string, ReactNode> = {
+  // The Hearth mark ("Kept Flame") scaled to the 12px icon grid: arch with
+  // the flame as negative space. Source of truth: assets/brand/hearth-mark.svg.
   flame: (
     <path
-      d="M6 .8c.4 2-1.2 2.9-2 4.1C3.2 6 2.8 7 2.8 8.2a3.7 3.7 0 0 0 7.4 0c0-1.6-.8-2.8-1.6-3.8C7.9 3.5 6.8 2.4 6.9.6 6 1.3 5.7 2.4 5.9 3.4 5.3 2.6 6.2 1.6 6 .8Z"
+      d="M2.5 6.5 A3.5 3.5 0 0 1 9.5 6.5 L9.5 9.75 A0.75 0.75 0 0 1 8.75 10.5 L3.25 10.5 A0.75 0.75 0 0 1 2.5 9.75 Z M5.975 9.65 C4.95 9.65 4.2 8.925 4.2 7.95 C4.2 6.725 5.35 6.225 6.1 4 C6.875 4.925 7.775 6.175 7.775 7.525 C7.775 8.8 6.975 9.65 5.975 9.65 Z"
       fill="currentColor"
+      fillRule="evenodd"
       stroke="none"
     />
   ),
