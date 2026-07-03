@@ -326,3 +326,13 @@ describe('component schemas', () => {
     }
   });
 });
+
+describe('path helpers', () => {
+  it('basenamePath handles POSIX and Windows separators', async () => {
+    const { basenamePath } = await import('@hearth/core');
+    expect(basenamePath('assets/sprites/coin.svg')).toBe('coin.svg');
+    expect(basenamePath('C:\\Users\\runner\\proj\\assets\\imported\\pic.png')).toBe('pic.png');
+    expect(basenamePath('C:\\proj\\assets/imported/pic.png')).toBe('pic.png');
+    expect(basenamePath('pic.png')).toBe('pic.png');
+  });
+});

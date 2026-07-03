@@ -51,7 +51,9 @@ export function dirnamePath(path: string): string {
 }
 
 export function basenamePath(path: string): string {
-  const idx = path.lastIndexOf('/');
+  // Callers pass OS paths too (importAsset source files), so split on both
+  // separators — Windows absolute paths use backslashes.
+  const idx = Math.max(path.lastIndexOf('/'), path.lastIndexOf('\\'));
   return idx === -1 ? path : path.slice(idx + 1);
 }
 
