@@ -20,6 +20,20 @@ export const InputMappingsSchema = z.object({
 });
 export type InputMappings = z.infer<typeof InputMappingsSchema>;
 
+/**
+ * What the player shows while an exported game loads. Neutral by design:
+ * shipped games contain zero engine chrome — everything visible is either
+ * the user's own scene or these user-controlled loading settings.
+ */
+export const LoadingSettingsSchema = z.object({
+  backgroundColor: z.string().default('#000000'),
+  /** Sprite asset id shown centered while loading, or null for none. */
+  image: z.string().nullable().default(null),
+  /** Show a minimal neutral spinner while loading. */
+  spinner: z.boolean().default(false),
+});
+export type LoadingSettings = z.infer<typeof LoadingSettingsSchema>;
+
 export const BuildSettingsSchema = z.object({
   width: z.number().int().positive().default(800),
   height: z.number().int().positive().default(600),
@@ -28,6 +42,7 @@ export const BuildSettingsSchema = z.object({
   /** Fixed physics/update timestep in Hz. */
   fixedTimestep: z.number().int().positive().default(60),
   title: z.string().default(''),
+  loading: LoadingSettingsSchema.default({}),
 });
 export type BuildSettings = z.infer<typeof BuildSettingsSchema>;
 
@@ -84,6 +99,12 @@ export const PlaytestStepSchema = z.discriminatedUnion('type', [
   }),
   z.object({ type: z.literal('release'), action: z.string() }),
   z.object({
+    type: z.literal('click'),
+    /** Screen coordinates in the buildSettings width×height space. */
+    x: z.number(),
+    y: z.number(),
+  }),
+  z.object({
     type: z.literal('assertEntityExists'),
     entity: z.string(), // id or name
     exists: z.boolean().default(true),
@@ -105,6 +126,11 @@ export const PlaytestStepSchema = z.discriminatedUnion('type', [
     tolerance: z.number().positive().default(5),
   }),
   z.object({ type: z.literal('assertNoErrors') }),
+  z.object({
+    type: z.literal('assertScene'),
+    /** Expected current scene id or name (after any ctx.scenes.load switches). */
+    scene: z.string(),
+  }),
 ]);
 export type PlaytestStep = z.infer<typeof PlaytestStepSchema>;
 
@@ -117,6 +143,8 @@ export const PlaytestSchema = z.object({
   steps: z.array(PlaytestStepSchema).default([]),
   /** Hard stop so playtests always terminate. */
   maxFrames: z.number().int().positive().default(600),
+  /** Seed for ctx.random / Lua math.random — same seed, same run. */
+  seed: z.number().int().nonnegative().default(0),
 });
 export type Playtest = z.infer<typeof PlaytestSchema>;
 
