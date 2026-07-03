@@ -45,7 +45,7 @@ Defaults:
 
 ## Collider
 
-Box or circle collision shape. isTrigger=true reports overlaps without blocking movement.
+Box, circle, or convex polygon collision shape (polygon uses points, local space, min 3 convex vertices). isTrigger=true reports overlaps without blocking movement.
 
 Defaults:
 
@@ -55,6 +55,11 @@ Defaults:
   "width": 32,
   "height": 32,
   "radius": 16,
+  "points": [
+    { "x": 0, "y": -16 },
+    { "x": 16, "y": 16 },
+    { "x": -16, "y": 16 }
+  ],
   "offset": {
     "x": 0,
     "y": 0
@@ -62,6 +67,11 @@ Defaults:
   "isTrigger": false
 }
 ```
+
+Polygon colliders are **convex only**: at least 3 points, no duplicate
+consecutive points, convex winding (`validateProject` enforces all three).
+Split concave shapes across multiple entities. Points are local space and
+respect the entity's scale and rotation.
 
 ## PhysicsBody
 
@@ -128,7 +138,7 @@ Defaults:
 
 ## AudioSource
 
-References an audio asset; autoplay/loop/volume. Playback support is experimental.
+References an audio asset; autoplay plays on scene start with loop/volume. Scripts can also play any audio asset via `ctx.audio.play(assetRef, { volume, loop })`.
 
 Defaults:
 
@@ -140,6 +150,37 @@ Defaults:
   "volume": 1
 }
 ```
+
+Create sound assets with `hearth create sound <name> --preset coin`
+(deterministic procedural WAVs; presets: `coin`, `jump`, `hit`, `laser`,
+`powerup`, `explosion`, `blip`). Headless runs record every play/stop as
+`audioEvents` in the run report.
+
+## UIElement
+
+Makes the entity screen-space UI: positioned by anchor+offset, unaffected by the camera. Visuals come from Text/SpriteRenderer. interactive=true sends pointer events to the Script hook `onUiEvent(ctx, event)`.
+
+Defaults:
+
+```json
+{
+  "anchor": "top-left",
+  "offset": {
+    "x": 0,
+    "y": 0
+  },
+  "interactive": false
+}
+```
+
+Anchors: `top-left`, `top`, `top-right`, `left`, `center`, `right`,
+`bottom-left`, `bottom`, `bottom-right` — points in the game's
+`buildSettings` width×height space; `offset` is pixels from there.
+`Transform.position` is ignored (scale and rotation still apply). UI
+renders above all world layers; within UI, `layer` orders elements.
+Interactive elements are hit-tested against the SpriteRenderer's rect
+and/or the measured Text bounds; events are
+`click`, `press`, `release`, `enter`, `exit`.
 
 ## Tilemap
 

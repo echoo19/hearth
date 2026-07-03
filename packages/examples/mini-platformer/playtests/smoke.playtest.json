@@ -1,8 +1,8 @@
 {
   "formatVersion": 1,
-  "id": "ptt_oj5pz5jj",
+  "id": "ptt_t8ic7ks9",
   "name": "smoke",
-  "scene": "scn_ftjag1ts",
+  "scene": "scn_o6t2j0z7",
   "steps": [
     {
       "type": "wait",
@@ -16,6 +16,16 @@
     {
       "type": "assertEntityExists",
       "entity": "Score",
+      "exists": true
+    },
+    {
+      "type": "assertEntityExists",
+      "entity": "Restart",
+      "exists": true
+    },
+    {
+      "type": "assertEntityExists",
+      "entity": "Spikes",
       "exists": true
     },
     {

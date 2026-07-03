@@ -1,10 +1,10 @@
 {
   "formatVersion": 1,
-  "id": "scn_ftjag1ts",
+  "id": "scn_o6t2j0z7",
   "name": "Level 1",
   "entities": [
     {
-      "id": "ent_kylhjnyx",
+      "id": "ent_4xuoxd3z",
       "name": "Main Camera",
       "parentId": null,
       "enabled": true,
@@ -33,7 +33,7 @@
       }
     },
     {
-      "id": "ent_dtopg0mq",
+      "id": "ent_fh7axzp3",
       "name": "Ground",
       "parentId": null,
       "enabled": true,
@@ -55,8 +55,8 @@
         "Tilemap": {
           "tileSize": 32,
           "tileAssets": {
-            "G": "ast_l9rewwno",
-            "S": "ast_k89ut858"
+            "G": "ast_3o5xgfnr",
+            "S": "ast_p5vrygc3"
           },
           "grid": [
             "GGGGGGGGGGGGGGGGGGGGGGGGG..GGGGGGGGGG",
@@ -68,7 +68,7 @@
       }
     },
     {
-      "id": "ent_pfunsps9",
+      "id": "ent_kircdjyo",
       "name": "Platform A",
       "parentId": null,
       "enabled": true,
@@ -104,6 +104,20 @@
           "width": 128,
           "height": 20,
           "radius": 16,
+          "points": [
+            {
+              "x": 0,
+              "y": -16
+            },
+            {
+              "x": 16,
+              "y": 16
+            },
+            {
+              "x": -16,
+              "y": 16
+            }
+          ],
           "offset": {
             "x": 0,
             "y": 0
@@ -122,7 +136,7 @@
       }
     },
     {
-      "id": "ent_jpkn6jhf",
+      "id": "ent_71aa8yw4",
       "name": "Platform B",
       "parentId": null,
       "enabled": true,
@@ -158,6 +172,20 @@
           "width": 96,
           "height": 20,
           "radius": 16,
+          "points": [
+            {
+              "x": 0,
+              "y": -16
+            },
+            {
+              "x": 16,
+              "y": 16
+            },
+            {
+              "x": -16,
+              "y": 16
+            }
+          ],
           "offset": {
             "x": 0,
             "y": 0
@@ -176,7 +204,7 @@
       }
     },
     {
-      "id": "ent_5cnlgy0o",
+      "id": "ent_34jhaf9d",
       "name": "Platform C",
       "parentId": null,
       "enabled": true,
@@ -212,6 +240,20 @@
           "width": 96,
           "height": 20,
           "radius": 16,
+          "points": [
+            {
+              "x": 0,
+              "y": -16
+            },
+            {
+              "x": 16,
+              "y": 16
+            },
+            {
+              "x": -16,
+              "y": 16
+            }
+          ],
           "offset": {
             "x": 0,
             "y": 0
@@ -230,7 +272,7 @@
       }
     },
     {
-      "id": "ent_2i16nowh",
+      "id": "ent_smmahomz",
       "name": "Player",
       "parentId": null,
       "enabled": true,
@@ -250,7 +292,7 @@
           }
         },
         "SpriteRenderer": {
-          "assetId": "ast_j0ebcoo3",
+          "assetId": "ast_fjzgancz",
           "shape": "rectangle",
           "color": "#ffffff",
           "width": 32,
@@ -266,6 +308,20 @@
           "width": 28,
           "height": 46,
           "radius": 16,
+          "points": [
+            {
+              "x": 0,
+              "y": -16
+            },
+            {
+              "x": 16,
+              "y": 16
+            },
+            {
+              "x": -16,
+              "y": 16
+            }
+          ],
           "offset": {
             "x": 0,
             "y": 0
@@ -291,7 +347,7 @@
       }
     },
     {
-      "id": "ent_4rhotdrn",
+      "id": "ent_h8l34ncd",
       "name": "Coin 1",
       "parentId": null,
       "enabled": true,
@@ -311,7 +367,7 @@
           }
         },
         "SpriteRenderer": {
-          "assetId": "ast_0b1x1aks",
+          "assetId": "ast_1rchc4uf",
           "shape": "rectangle",
           "color": "#ffffff",
           "width": 22,
@@ -327,6 +383,20 @@
           "width": 32,
           "height": 32,
           "radius": 12,
+          "points": [
+            {
+              "x": 0,
+              "y": -16
+            },
+            {
+              "x": 16,
+              "y": 16
+            },
+            {
+              "x": -16,
+              "y": 16
+            }
+          ],
           "offset": {
             "x": 0,
             "y": 0
@@ -340,7 +410,7 @@
       }
     },
     {
-      "id": "ent_nc7e2b5n",
+      "id": "ent_d7bm7la7",
       "name": "Coin 2",
       "parentId": null,
       "enabled": true,
@@ -360,7 +430,7 @@
           }
         },
         "SpriteRenderer": {
-          "assetId": "ast_0b1x1aks",
+          "assetId": "ast_1rchc4uf",
           "shape": "rectangle",
           "color": "#ffffff",
           "width": 22,
@@ -376,6 +446,20 @@
           "width": 32,
           "height": 32,
           "radius": 12,
+          "points": [
+            {
+              "x": 0,
+              "y": -16
+            },
+            {
+              "x": 16,
+              "y": 16
+            },
+            {
+              "x": -16,
+              "y": 16
+            }
+          ],
           "offset": {
             "x": 0,
             "y": 0
@@ -389,7 +473,7 @@
       }
     },
     {
-      "id": "ent_0at3aj3e",
+      "id": "ent_t1h0c78x",
       "name": "Coin 3",
       "parentId": null,
       "enabled": true,
@@ -409,7 +493,7 @@
           }
         },
         "SpriteRenderer": {
-          "assetId": "ast_0b1x1aks",
+          "assetId": "ast_1rchc4uf",
           "shape": "rectangle",
           "color": "#ffffff",
           "width": 22,
@@ -425,6 +509,20 @@
           "width": 32,
           "height": 32,
           "radius": 12,
+          "points": [
+            {
+              "x": 0,
+              "y": -16
+            },
+            {
+              "x": 16,
+              "y": 16
+            },
+            {
+              "x": -16,
+              "y": 16
+            }
+          ],
           "offset": {
             "x": 0,
             "y": 0
@@ -438,7 +536,70 @@
       }
     },
     {
-      "id": "ent_nbadoifh",
+      "id": "ent_4w5qf11o",
+      "name": "Spikes",
+      "parentId": null,
+      "enabled": true,
+      "tags": [
+        "hazard"
+      ],
+      "components": {
+        "Transform": {
+          "position": {
+            "x": 380,
+            "y": 536
+          },
+          "rotation": 0,
+          "scale": {
+            "x": 1,
+            "y": 1
+          }
+        },
+        "SpriteRenderer": {
+          "assetId": null,
+          "shape": "triangle",
+          "color": "#e67e22",
+          "width": 32,
+          "height": 32,
+          "opacity": 1,
+          "flipX": false,
+          "flipY": false,
+          "layer": 0,
+          "visible": true
+        },
+        "Collider": {
+          "shape": "polygon",
+          "width": 32,
+          "height": 32,
+          "radius": 16,
+          "points": [
+            {
+              "x": 0,
+              "y": -16
+            },
+            {
+              "x": 16,
+              "y": 16
+            },
+            {
+              "x": -16,
+              "y": 16
+            }
+          ],
+          "offset": {
+            "x": 0,
+            "y": 0
+          },
+          "isTrigger": true
+        },
+        "Script": {
+          "scriptPath": "scripts/spike-hazard.js",
+          "params": {}
+        }
+      }
+    },
+    {
+      "id": "ent_wzv985ga",
       "name": "Enemy",
       "parentId": null,
       "enabled": true,
@@ -458,7 +619,7 @@
           }
         },
         "SpriteRenderer": {
-          "assetId": "ast_z1y4vw6b",
+          "assetId": "ast_dezbuhfp",
           "shape": "rectangle",
           "color": "#ffffff",
           "width": 36,
@@ -474,6 +635,20 @@
           "width": 34,
           "height": 34,
           "radius": 16,
+          "points": [
+            {
+              "x": 0,
+              "y": -16
+            },
+            {
+              "x": 16,
+              "y": 16
+            },
+            {
+              "x": -16,
+              "y": 16
+            }
+          ],
           "offset": {
             "x": 0,
             "y": 0
@@ -490,7 +665,7 @@
       }
     },
     {
-      "id": "ent_tj7d4m7g",
+      "id": "ent_77qxehbw",
       "name": "Score",
       "parentId": null,
       "enabled": true,
@@ -500,14 +675,22 @@
       "components": {
         "Transform": {
           "position": {
-            "x": 24,
-            "y": 24
+            "x": 0,
+            "y": 0
           },
           "rotation": 0,
           "scale": {
             "x": 1,
             "y": 1
           }
+        },
+        "UIElement": {
+          "anchor": "top-left",
+          "offset": {
+            "x": 24,
+            "y": 28
+          },
+          "interactive": false
         },
         "Text": {
           "content": "Score: 0",
@@ -517,6 +700,89 @@
           "fontFamily": "monospace",
           "layer": 10,
           "visible": true
+        }
+      }
+    },
+    {
+      "id": "ent_m1hyg9fi",
+      "name": "Restart",
+      "parentId": null,
+      "enabled": true,
+      "tags": [
+        "ui"
+      ],
+      "components": {
+        "Transform": {
+          "position": {
+            "x": 0,
+            "y": 0
+          },
+          "rotation": 0,
+          "scale": {
+            "x": 1,
+            "y": 1
+          }
+        },
+        "UIElement": {
+          "anchor": "top-right",
+          "offset": {
+            "x": -80,
+            "y": 32
+          },
+          "interactive": true
+        },
+        "SpriteRenderer": {
+          "assetId": null,
+          "shape": "rectangle",
+          "color": "#34495e",
+          "width": 110,
+          "height": 34,
+          "opacity": 1,
+          "flipX": false,
+          "flipY": false,
+          "layer": 20,
+          "visible": true
+        },
+        "Text": {
+          "content": "Restart",
+          "fontSize": 14,
+          "color": "#ecf0f1",
+          "align": "center",
+          "fontFamily": "monospace",
+          "layer": 21,
+          "visible": true
+        },
+        "Script": {
+          "scriptPath": "scripts/restart-button.js",
+          "params": {}
+        }
+      }
+    },
+    {
+      "id": "ent_x995ovr5",
+      "name": "Ambience",
+      "parentId": null,
+      "enabled": true,
+      "tags": [
+        "audio"
+      ],
+      "components": {
+        "Transform": {
+          "position": {
+            "x": 0,
+            "y": 0
+          },
+          "rotation": 0,
+          "scale": {
+            "x": 1,
+            "y": 1
+          }
+        },
+        "AudioSource": {
+          "assetId": "ast_xvegs47g",
+          "autoplay": true,
+          "loop": true,
+          "volume": 0.25
         }
       }
     }

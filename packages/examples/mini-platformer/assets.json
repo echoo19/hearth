@@ -2,7 +2,7 @@
   "formatVersion": 1,
   "assets": [
     {
-      "id": "ast_j0ebcoo3",
+      "id": "ast_fjzgancz",
       "name": "player",
       "type": "sprite",
       "path": "assets/sprites/player.svg",
@@ -15,7 +15,7 @@
       }
     },
     {
-      "id": "ast_z1y4vw6b",
+      "id": "ast_dezbuhfp",
       "name": "enemy",
       "type": "sprite",
       "path": "assets/sprites/enemy.svg",
@@ -28,7 +28,7 @@
       }
     },
     {
-      "id": "ast_0b1x1aks",
+      "id": "ast_1rchc4uf",
       "name": "coin",
       "type": "sprite",
       "path": "assets/sprites/coin.svg",
@@ -41,7 +41,7 @@
       }
     },
     {
-      "id": "ast_l9rewwno",
+      "id": "ast_3o5xgfnr",
       "name": "grass",
       "type": "tile",
       "path": "assets/tiles/grass.svg",
@@ -52,7 +52,7 @@
       }
     },
     {
-      "id": "ast_k89ut858",
+      "id": "ast_p5vrygc3",
       "name": "stone",
       "type": "tile",
       "path": "assets/tiles/stone.svg",
@@ -60,6 +60,61 @@
         "procedural": true,
         "color": "#95a5a6",
         "size": 32
+      }
+    },
+    {
+      "id": "ast_j9roxi0v",
+      "name": "coin-sound",
+      "type": "audio",
+      "path": "assets/sounds/coin_sound.wav",
+      "metadata": {
+        "procedural": true,
+        "preset": "coin",
+        "seed": 0
+      }
+    },
+    {
+      "id": "ast_3qfy7htg",
+      "name": "jump-sound",
+      "type": "audio",
+      "path": "assets/sounds/jump_sound.wav",
+      "metadata": {
+        "procedural": true,
+        "preset": "jump",
+        "seed": 0
+      }
+    },
+    {
+      "id": "ast_l4ydo4du",
+      "name": "hit-sound",
+      "type": "audio",
+      "path": "assets/sounds/hit_sound.wav",
+      "metadata": {
+        "procedural": true,
+        "preset": "hit",
+        "seed": 0
+      }
+    },
+    {
+      "id": "ast_tb45xpj0",
+      "name": "click-sound",
+      "type": "audio",
+      "path": "assets/sounds/click_sound.wav",
+      "metadata": {
+        "procedural": true,
+        "preset": "blip",
+        "seed": 0
+      }
+    },
+    {
+      "id": "ast_xvegs47g",
+      "name": "ambience",
+      "type": "audio",
+      "path": "assets/sounds/ambience.wav",
+      "metadata": {
+        "procedural": true,
+        "preset": "powerup",
+        "seed": 7
       }
     }
   ]

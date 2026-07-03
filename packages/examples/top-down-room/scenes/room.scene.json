@@ -1,10 +1,10 @@
 {
   "formatVersion": 1,
-  "id": "scn_s2w3kkgq",
+  "id": "scn_bztaqpab",
   "name": "Room",
   "entities": [
     {
-      "id": "ent_zl15acwp",
+      "id": "ent_jrw7cj2w",
       "name": "Main Camera",
       "parentId": null,
       "enabled": true,
@@ -29,7 +29,7 @@
       }
     },
     {
-      "id": "ent_tyxgxqba",
+      "id": "ent_eyo5687y",
       "name": "Room",
       "parentId": null,
       "enabled": true,
@@ -51,8 +51,8 @@
         "Tilemap": {
           "tileSize": 32,
           "tileAssets": {
-            "W": "ast_7nsyjhgp",
-            "F": "ast_boowc4pf"
+            "W": "ast_gdf7bsmd",
+            "F": "ast_oy83eaba"
           },
           "grid": [
             "WWWWWWWWWWWWWWWWWWWWWWWWW",
@@ -79,7 +79,7 @@
       }
     },
     {
-      "id": "ent_5pb5yk3u",
+      "id": "ent_2wg0drve",
       "name": "Wall Top",
       "parentId": null,
       "enabled": true,
@@ -103,6 +103,20 @@
           "width": 800,
           "height": 32,
           "radius": 16,
+          "points": [
+            {
+              "x": 0,
+              "y": -16
+            },
+            {
+              "x": 16,
+              "y": 16
+            },
+            {
+              "x": -16,
+              "y": 16
+            }
+          ],
           "offset": {
             "x": 0,
             "y": 0
@@ -121,7 +135,7 @@
       }
     },
     {
-      "id": "ent_5wqw1lb4",
+      "id": "ent_yebbhix5",
       "name": "Wall Bottom",
       "parentId": null,
       "enabled": true,
@@ -145,6 +159,20 @@
           "width": 800,
           "height": 32,
           "radius": 16,
+          "points": [
+            {
+              "x": 0,
+              "y": -16
+            },
+            {
+              "x": 16,
+              "y": 16
+            },
+            {
+              "x": -16,
+              "y": 16
+            }
+          ],
           "offset": {
             "x": 0,
             "y": 0
@@ -163,7 +191,7 @@
       }
     },
     {
-      "id": "ent_zbr41cw2",
+      "id": "ent_zvnz4gxo",
       "name": "Wall Left",
       "parentId": null,
       "enabled": true,
@@ -187,6 +215,20 @@
           "width": 32,
           "height": 544,
           "radius": 16,
+          "points": [
+            {
+              "x": 0,
+              "y": -16
+            },
+            {
+              "x": 16,
+              "y": 16
+            },
+            {
+              "x": -16,
+              "y": 16
+            }
+          ],
           "offset": {
             "x": 0,
             "y": 0
@@ -205,7 +247,7 @@
       }
     },
     {
-      "id": "ent_few7sggn",
+      "id": "ent_obwfytf0",
       "name": "Wall Right",
       "parentId": null,
       "enabled": true,
@@ -229,6 +271,20 @@
           "width": 32,
           "height": 544,
           "radius": 16,
+          "points": [
+            {
+              "x": 0,
+              "y": -16
+            },
+            {
+              "x": 16,
+              "y": 16
+            },
+            {
+              "x": -16,
+              "y": 16
+            }
+          ],
           "offset": {
             "x": 0,
             "y": 0
@@ -247,7 +303,7 @@
       }
     },
     {
-      "id": "ent_3b9f3f5h",
+      "id": "ent_z83qs44q",
       "name": "Player",
       "parentId": null,
       "enabled": true,
@@ -267,7 +323,7 @@
           }
         },
         "SpriteRenderer": {
-          "assetId": "ast_eqzd8b3k",
+          "assetId": "ast_irs8dord",
           "shape": "rectangle",
           "color": "#ffffff",
           "width": 30,
@@ -283,6 +339,20 @@
           "width": 26,
           "height": 30,
           "radius": 16,
+          "points": [
+            {
+              "x": 0,
+              "y": -16
+            },
+            {
+              "x": 16,
+              "y": 16
+            },
+            {
+              "x": -16,
+              "y": 16
+            }
+          ],
           "offset": {
             "x": 0,
             "y": 0
@@ -307,7 +377,7 @@
       }
     },
     {
-      "id": "ent_p0pseavx",
+      "id": "ent_pftkeyz8",
       "name": "Door",
       "parentId": null,
       "enabled": true,
@@ -343,6 +413,20 @@
           "width": 40,
           "height": 70,
           "radius": 16,
+          "points": [
+            {
+              "x": 0,
+              "y": -16
+            },
+            {
+              "x": 16,
+              "y": 16
+            },
+            {
+              "x": -16,
+              "y": 16
+            }
+          ],
           "offset": {
             "x": 0,
             "y": 0
@@ -356,7 +440,7 @@
       }
     },
     {
-      "id": "ent_6c9e5lix",
+      "id": "ent_7j1rwcok",
       "name": "Keeper",
       "parentId": null,
       "enabled": true,
@@ -376,7 +460,7 @@
           }
         },
         "SpriteRenderer": {
-          "assetId": "ast_yakz3o33",
+          "assetId": "ast_2vaxfw8h",
           "shape": "rectangle",
           "color": "#ffffff",
           "width": 30,
@@ -392,6 +476,20 @@
           "width": 30,
           "height": 34,
           "radius": 16,
+          "points": [
+            {
+              "x": 0,
+              "y": -16
+            },
+            {
+              "x": 16,
+              "y": 16
+            },
+            {
+              "x": -16,
+              "y": 16
+            }
+          ],
           "offset": {
             "x": 0,
             "y": 0
@@ -417,7 +515,7 @@
       }
     },
     {
-      "id": "ent_1fs8pcsp",
+      "id": "ent_h0bogvwa",
       "name": "DialogueText",
       "parentId": null,
       "enabled": true,

@@ -7,5 +7,8 @@ Quick facts:
   `hearth.json`, `scenes/*.scene.json`, or `assets.json`.
 - `hearth snapshot` before changes; `hearth validate --json` and `hearth diff` after.
 - Behavior code lives in `scripts/*.js`: normal JavaScript, edit freely.
-- Test with `hearth playtest <name>` and `hearth run <scene> --frames 120 --json`.
+- Test with `hearth playtest <name>` and `hearth run <scene> --frames 120 --json`
+  (run reports include `audioEvents` for checking sound behavior).
+- `hearth create sound <name> --preset coin` makes procedural sound effects;
+  `hearth export web [--single-file] [--zip]` makes a playable web build (needs build permission).
 - Never delete assets/scenes without being asked.

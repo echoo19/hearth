@@ -18,6 +18,7 @@ export default {
 
     if (ctx.input.justPressed('jump') && ctx.isGrounded()) {
       body.velocity.y = -(ctx.params.jumpSpeed ?? 460);
+      ctx.audio.play('jump-sound', { volume: 0.8 });
     }
 
     // Fell off the world: respawn at the starting point.

@@ -1,23 +1,23 @@
 {
   "formatVersion": 1,
-  "id": "ptt_vwmbrhr4",
-  "name": "walls-block-player",
-  "scene": "scn_bztaqpab",
+  "id": "ptt_zx8pqxfp",
+  "name": "spikes-respawn-player",
+  "scene": "scn_o6t2j0z7",
   "steps": [
     {
       "type": "press",
-      "action": "left",
-      "frames": 120
+      "action": "right",
+      "frames": 100
     },
     {
       "type": "assertProperty",
       "entity": "Player",
       "property": "Transform.position.x",
-      "greaterThan": 40
+      "lessThan": 300
     },
     {
       "type": "assertNoErrors"
     }
   ],
-  "maxFrames": 400
+  "maxFrames": 300
 }

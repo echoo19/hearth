@@ -1,7 +1,7 @@
 {
   "formatVersion": 1,
-  "id": "ptt_61r4su1k",
-  "name": "player-moves-right",
+  "id": "ptt_npkx7ni9",
+  "name": "jump-works",
   "scene": "scn_o6t2j0z7",
   "steps": [
     {
@@ -10,14 +10,18 @@
     },
     {
       "type": "press",
-      "action": "right",
-      "frames": 45
+      "action": "jump",
+      "frames": 3
+    },
+    {
+      "type": "wait",
+      "frames": 5
     },
     {
       "type": "assertProperty",
       "entity": "Player",
-      "property": "Transform.position.x",
-      "greaterThan": 180
+      "property": "PhysicsBody.velocity.y",
+      "lessThan": 0
     },
     {
       "type": "assertNoErrors"

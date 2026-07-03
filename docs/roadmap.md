@@ -1,37 +1,65 @@
 # Hearth Roadmap
 
-v0.1.0 is the first public developer preview: the full human+agent loop works
-end to end (editor ⇄ command system ⇄ CLI/MCP ⇄ runtime ⇄ playtests ⇄ diff
-review). This page is the honest list of what's next and what's deliberately
+v0.2 is the current milestone: on top of v0.1's full human+agent loop
+(editor ⇄ command system ⇄ CLI/MCP ⇄ runtime ⇄ playtests ⇄ diff review), it
+adds a dockable editor workspace, screen-space game UI, polygon colliders,
+working audio with procedural sound effects, and production web export.
+This page is the honest list of what's next and what's deliberately
 missing.
 
-## Near term (v0.2)
+The standing rule for everything below: **agent-native first**. Each system
+ships as schemas + commands (inspectable via `hearth … --json`, exposed as
+MCP tools, testable in headless playtests) before it gets editor UI. The
+full working notes live in
+[docs/superpowers/specs/2026-07-02-v0.3-engine-systems-backlog.md](./superpowers/specs/2026-07-02-v0.3-engine-systems-backlog.md).
 
-- **Screenshot capture for agents**: `hearth screenshot <scene>` rendering
-  via the Pixi renderer in a headless browser context, so agents can *see*
-  their work.
+## Shipped in v0.2
+
+- Dockable editor workspace (drag tabs, splits, persisted layouts).
+- Game UI: `UIElement` component (anchor + offset screen space,
+  `interactive` + `onUiEvent` pointer events).
+- Convex polygon colliders with SAT physics.
+- Audio: `ctx.audio.play/stop`, functional `AudioSource` autoplay,
+  `audioEvents` in headless run reports, and procedural sound effects
+  (`hearth create sound --preset coin`).
+- Web export: `hearth export web [--single-file] [--zip]` — static
+  self-contained builds, itch.io-ready zips.
+
+## Near term (v0.3)
+
+- **Rendering v2**: `Light2D` + ambient light, `LineRenderer` (polylines /
+  beams), a toggleable debug-draw overlay (colliders, grids, velocities),
+  and deterministic particle systems (`ParticleEmitter` with a seed, so
+  playtests can assert particle state).
+- **Sprite animation playback**: `SpriteAnimator` component cycling
+  `SpriteRenderer.assetId` through animation asset frames (the assets
+  already exist).
+- **Physics v2**: mass, restitution, friction on `PhysicsBody`; collision
+  layers/masks; one-way platforms; circle-accurate resolution. The runtime
+  stays deterministic (fixed timestep) — that's the playtest and
+  future-multiplayer story.
+- **Script standard library**: `ctx.math` (vec2 ops, clamp, color helpers)
+  and `ctx.events` (global pub/sub with an `onEvent` hook; emitted events
+  recorded in run reports so playtests can assert them).
+- **Screenshot capture for agents**: `hearth screenshot <scene>` so agents
+  can *see* their work (with `--debug` hitbox overlays once debug draw
+  lands).
 - **Undo/redo in the editor** (command journal; the diff baseline already
   proves the model).
-- **Sprite animation playback**: animation assets exist; the runtime needs
-  an Animator behavior + SpriteRenderer frame swapping.
-- **Audio playback**: `AudioSource` is schema-complete; wire Web Audio in
-  the Pixi host (marked experimental in the editor until then).
-- **Drag-to-reparent in the hierarchy panel**; multi-select.
-- **Better collision**: circle-accurate resolution, one-way platforms,
-  collision layers/masks.
 
 ## Medium term
 
-- **Standalone web export**: bundle runtime + project into a static site
-  (`buildProject` currently exports a validated portable project folder).
+- **Pathfinding**: grid A* over tilemap solids —
+  `ctx.scene.findPath(from, to)` plus a CLI/MCP inspect surface so agents
+  can reason about reachability without running a scene.
+- **Asset pipeline v2**: spritesheet import + slicing, streamed long-form
+  audio (music), font assets, editor thumbnails and bulk import.
+- **UI widgets v2**: layout containers (stacks/anchor groups), sliders,
+  toggles, focus + keyboard navigation — still composed from
+  Text/SpriteRenderer rather than a parallel widget tree.
 - **Desktop polish**: signed/notarized builds, custom app icon, auto-update.
-  (Electron packaging works today via `npm run app:dist`; the Tauri shell
-  remains an experimental alternative pending a Rust sidecar for the
-  project server.)
 - **TypeScript scripts** with a compile step and typed `ctx`.
 - **Multi-instance components** (array form, `formatVersion: 2`).
-- **Asset pipeline v2**: spritesheets, imported image slicing, tile
-  autotiling, font assets.
 - **MCP resources**: expose scenes/scripts as MCP resources (today:
   tools-only, which every client supports).
 - **Prefabs**: reusable entity templates with overrides.
@@ -40,10 +68,13 @@ missing.
 
 - Multiplayer-friendly deterministic core (already fixed-timestep; needs
   input serialization + rollback investigation).
-- Visual scripting that round-trips to the same command system.
+- Visual logic editor that round-trips to the same command system and
+  generated scripts, so agents and humans edit the same artifact.
 - Agent-facing "explain this scene" summaries (structured scene semantics
   rather than screenshots).
 - Plugin/component SDK for third-party components with schema registration.
+- Native executable export (per-platform player templates; web export
+  covers distribution today).
 
 ## Non-goals (for now)
 
@@ -51,3 +82,5 @@ missing.
 - Built-in AI/LLM API calls. Agents connect **from outside** via MCP/CLI;
   the engine stays model-agnostic and fully usable offline.
 - Cloud project storage. Projects are local files; use git.
+- Concave polygon decomposition (split concave colliders into convex
+  pieces yourself) and audio mixing buses.

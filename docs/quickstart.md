@@ -104,8 +104,18 @@ Ask the agent to *"add three more stars in an arc and a score counter, then
 prove it with a playtest."* It has instructions (`AGENTS.md`), tools, tests,
 and a diff you'll review. That's Hearth.
 
+## 8. Ship it
+
+```bash
+hearth export web --zip --allow build
+```
+
+A static playable build lands in `export/web/`, plus an itch.io-ready zip.
+See [export.md](./export.md).
+
 ## Where next
 
 - [Scripting guide](./scripting.md): the full `ctx` API
 - [CLI guide](./cli.md): everything `hearth` can do
+- [Web export](./export.md): folder vs single file, itch.io
 - [Examples](../packages/examples): platformer, top-down, visual novel

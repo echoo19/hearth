@@ -25,10 +25,13 @@ editor, all without guessing at file formats.
 
 ## Status
 
-**v0.1.0, the first developer preview.** The full loop works end to end:
-project model → editor → runtime preview → CLI → MCP → headless playtests →
-diff review. See [docs/roadmap.md](docs/roadmap.md) for what's deliberately
-missing (screenshots for agents, web export, audio playback, undo…).
+**v0.2, developer preview.** The full loop works end to end: project model →
+editor → runtime preview → CLI → MCP → headless playtests → diff review.
+v0.2 adds a dockable editor workspace, screen-space game UI (`UIElement` +
+`onUiEvent`), convex polygon colliders, audio playback with procedural
+sound effects, and static web export (`hearth export web`). See
+[docs/roadmap.md](docs/roadmap.md) for what's deliberately missing
+(screenshots for agents, 2D lighting, particles, sprite animation, undo…).
 
 ## Install
 
@@ -59,7 +62,7 @@ Requires Node ≥ 20.
 git clone https://github.com/echoo19/hearth.git && cd hearth
 npm install
 npm run build:packages     # core → runtime → playtest → cli → mcp-server
-npm test                   # 85+ tests
+npm test                   # the full suite, headless
 npm run dev                # editor at http://localhost:5173
 ```
 
@@ -107,28 +110,36 @@ see [docs/mcp.md](docs/mcp.md).
 
 ## What's in the box
 
-- **Editor** (`apps/editor`): project launcher, scene view with drag
-  editing, hierarchy, schema-driven inspector, asset browser, console,
-  live game preview (PixiJS), **diff/review panel**, and an agent-integration
-  panel with copy-paste setup. Runs in the browser via Vite or as a packaged
-  Electron desktop app with native folder dialogs (Tauri shell included as an
+- **Editor** (`apps/editor`): project launcher, dockable workspace (drag
+  tabs, splits, persisted layouts), scene view with drag editing, hierarchy,
+  schema-driven inspector, asset browser, console, live game preview
+  (PixiJS), **diff/review panel**, and an agent-integration panel with
+  copy-paste setup. Runs in the browser via Vite or as a packaged Electron
+  desktop app with native folder dialogs (Tauri shell included as an
   experimental alternative).
 - **Runtime** (`packages/runtime`): fixed-timestep deterministic 2D runtime:
-  transforms, sprites/primitives, text, tilemaps, input actions, AABB
-  physics + triggers, cameras, and a sandboxed-ish JS script engine that runs
+  transforms, sprites/primitives, text, tilemaps, screen-space UI with
+  pointer events, input actions, box/circle/convex-polygon physics +
+  triggers, audio, cameras, and a sandboxed-ish JS script engine that runs
   identically in the browser preview and headless in Node.
+- **Web export**: `hearth export web` produces a static, self-contained
+  playable build — one folder or one HTML file, `--zip` for itch.io. See
+  [docs/export.md](docs/export.md).
 - **CLI** (`packages/cli`): `hearth` with `--json` envelopes for every
   operation, plus `doctor`, `test`, and `commands` (registry discovery).
-- **MCP server** (`packages/mcp-server`): 37 tools mirroring the CLI, with
+- **MCP server** (`packages/mcp-server`): 39 tools mirroring the CLI, with
   per-session permission modes.
 - **Playtests** (`packages/playtest`): scripted input + assertions, run
-  headlessly at a fixed timestep; deterministic and CI-friendly.
+  headlessly at a fixed timestep; deterministic and CI-friendly. Run
+  reports record every audio play/stop, so sound behavior is testable too.
 - **Procedural assets**: agents create deterministic SVG sprites/tiles
-  (`character`, `enemy`, `coin`, `heart`, shapes…) so games are playable
-  before art exists. No AI image generation.
-- **Examples** (`packages/examples`): a mini platformer, a top-down room,
-  and a visual novel, generated *through the command system itself* and
-  covered by playtests in CI.
+  (`character`, `enemy`, `coin`, `heart`, shapes…) and WAV sound effects
+  (`hearth create sound --preset coin`) so games are playable and audible
+  before any real assets exist. No AI generation.
+- **Examples** (`packages/examples`): a mini platformer (with a score HUD,
+  restart button, sound effects, and polygon spikes), a top-down room, and
+  a visual novel, generated *through the command system itself* and covered
+  by playtests in CI.
 - **Agent onboarding**: every new project gets `AGENTS.md`, `CLAUDE.md`,
   and `.hearth/agent-config.json` teaching agents the safe workflow
   (snapshot → inspect → command → validate → playtest → diff).
@@ -144,8 +155,9 @@ see [docs/mcp.md](docs/mcp.md).
 | [Agent workflow](docs/agents.md) | How agents should operate (and why) |
 | [Architecture](docs/architecture.md) | Packages, command system, data flow |
 | [Project format](docs/project-format.md) | Every file, every schema |
-| [Components](docs/components.md) | All 9 component types + defaults |
-| [Scripting](docs/scripting.md) | The `ctx` API, physics interplay, limits |
+| [Components](docs/components.md) | All 10 component types + defaults |
+| [Scripting](docs/scripting.md) | The `ctx` API, audio, game UI, physics |
+| [Web export](docs/export.md) | Static builds, single-file, itch.io |
 | [Roadmap](docs/roadmap.md) | Honest list of what's next / missing |
 | [Contributing](CONTRIBUTING.md) | Dev setup + AI contribution policy |
 

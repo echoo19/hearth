@@ -18,7 +18,7 @@ reviewable diffs.
 - **CLI**: `hearth <command> --json` (see [cli.md](./cli.md)). Best when the
   agent already lives in a shell (Claude Code, Codex CLI).
 - **MCP**: `hearth-mcp --project <path>` over stdio (see
-  [mcp.md](./mcp.md)). Best for MCP-native clients; ~37 tools mirroring the
+  [mcp.md](./mcp.md)). Best for MCP-native clients; ~39 tools mirroring the
   CLI 1:1.
 
 Both call the identical core command layer. Pick either; never mix in
@@ -43,7 +43,9 @@ snapshot  →  inspect  →  change (commands)  →  validate  →  playtest  �
 5. **Playtest**: `hearth run <scene> --frames 120` catches script crashes;
    `hearth playtest --all` runs scripted assertions. Create playtests for
    behavior you add (`create playtest`): they're deterministic (fixed
-   timestep, scripted input), so they're trustworthy.
+   timestep, scripted input), so they're trustworthy. Run reports include
+   `audioEvents` (every play/stop with frame and asset id), so sound
+   behavior is checkable headlessly too.
 6. **Diff** (`hearth diff --json`) and summarize the changes for the human:
    scenes/entities/components/scripts/assets touched. The human sees the
    same diff in the editor's Diff panel and can revert.
@@ -58,8 +60,8 @@ everything except `build`.
 | `read-only` | inspect, validate, diff, run scenes/playtests (always implied) |
 | `safe-edit` | scene/entity/component CRUD, input mappings, snapshot/revert, playtest defs |
 | `code-edit` | create/edit/attach scripts |
-| `asset-edit` | import + procedural asset creation, metadata |
-| `build` | export builds |
+| `asset-edit` | import + procedural asset creation (sprites, tiles, sounds), metadata |
+| `build` | web export (`exportWeb`) + portable project builds (`buildProject`) |
 
 A human can run an agent read-only to get analysis with a guarantee of no
 mutation, or grant `safe-edit` only to keep the agent out of code.

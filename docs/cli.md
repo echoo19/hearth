@@ -74,14 +74,20 @@ string), `set-input <action> [keys...]`.
 **Assets** (asset-edit): `create asset sprite <name> --shape circle --color
 gold --width 24 --height 24` (shapes: rectangle, circle, triangle, diamond,
 star, capsule, polygon, character, enemy, coin, heart), `create asset tile
-<name> --color green`, `create animation <name> --frames f1 f2`,
-`import asset <path>`.
+<name> --color green`, `create sound <name> --preset coin [--seed n]`
+(deterministic WAV; presets: coin, jump, hit, laser, powerup, explosion,
+blip), `create animation <name> --frames f1 f2`, `import asset <path>`.
 
 **Testing & review**: `snapshot`, `diff`, `revert --confirm`,
-`run <scene> [--frames n]`, `playtest [name] [--all]`,
+`run <scene> [--frames n]` (the report includes `audioEvents`),
+`playtest [name] [--all]`,
 `create playtest <name> --scene s --steps-file steps.json`, `test`
-(validate + all playtests, the CI command), `build [--out dir]`
-(requires `--allow build`).
+(validate + all playtests, the CI command).
+
+**Export** (requires `--allow build`): `export web [--out dir]
+[--single-file] [--zip]` — a static playable web build; `--zip` writes an
+itch.io-ready `<project-slug>-web.zip` (see [export.md](./export.md)).
+`build [--out dir]` still exports a portable project folder.
 
 ## The `--json` envelope
 

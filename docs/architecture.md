@@ -30,8 +30,8 @@ results.
 
 | Package | Role |
 | --- | --- |
-| `packages/core` | Zod schemas for every file format; `ProjectStore` (load/save); the **command registry** (~40 operations); validation; structural diff; permission model; procedural SVG asset generation; AGENTS.md/CLAUDE.md generation. Browser-safe: Node fs access is isolated in `@hearth/core/node`. |
-| `packages/runtime` | 2D runtime: scene instantiation, fixed-timestep loop, input actions, AABB physics/collision, script engine, camera. The main entry is **headless** (runs in Node for playtests); the PixiJS renderer is the separate `@hearth/runtime/pixi` subpath used by the editor's game preview. |
+| `packages/core` | Zod schemas for every file format; `ProjectStore` (load/save); the **command registry** (~40 operations, including web export); validation; structural diff; permission model; procedural asset generation (SVG sprites/tiles, WAV sounds); AGENTS.md/CLAUDE.md generation. Browser-safe: Node fs access is isolated in `@hearth/core/node`. |
+| `packages/runtime` | 2D runtime: scene instantiation, fixed-timestep loop, input actions, box/circle/convex-polygon physics (SAT), screen-space UI with pointer hit-testing, audio (recorded headlessly, Web Audio in the browser), script engine, camera. The main entry is **headless** (runs in Node for playtests); the PixiJS renderer is the separate `@hearth/runtime/pixi` subpath used by the editor's game preview, and the web-export player bundle is built from the same code. |
 | `packages/playtest` | Headless playtest execution: scripted input + assertions over `SceneRuntime`, exposed as `RuntimeHooks` injected into core commands (`runPlaytest`, `runScene`). |
 | `packages/cli` | `hearth`, the command-line surface. Every subcommand dispatches into the core command system; `--json` emits the raw `CommandResult` envelope for agents. |
 | `packages/mcp-server` | `hearth-mcp`, a stdio MCP server exposing the same commands as typed MCP tools, with permission modes. |
@@ -107,8 +107,6 @@ shell execution are deliberately not exposed to agents in v0.1.
 ## Extension paths (documented, not built)
 
 - Multi-instance components per entity (array form behind a `formatVersion` bump).
-- Standalone web export (runtime bundle + project → static site). `buildProject`
-  currently validates and exports a portable project folder with a manifest.
 - Screenshot capture for agents (needs headless GPU or DOM snapshot strategy).
 - Tauri-native project server (sidecar) for the packaged desktop app.
 - TypeScript scripts (compile step in the script engine).

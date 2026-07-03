@@ -39,7 +39,7 @@ async function freshProject(dirName, options) {
 async function generatePlatformer() {
   const session = await freshProject('mini-platformer', {
     name: 'Mini Platformer',
-    description: 'Jump between platforms, collect coins, avoid the patrolling enemy.',
+    description: 'Jump between platforms, collect coins, avoid spikes and the patrolling enemy.',
   });
 
   const scene = (await run(session, 'createScene', { name: 'Level 1', withCamera: false })).sceneId;
@@ -56,6 +56,14 @@ async function generatePlatformer() {
   })).asset;
   const grass = (await run(session, 'createTileAsset', { name: 'grass', color: '#2ecc71', size: 32 })).asset;
   const stone = (await run(session, 'createTileAsset', { name: 'stone', color: '#95a5a6', size: 32 })).asset;
+
+  // Procedural sound effects (deterministic WAVs; names must not collide
+  // with sprite assets because ctx.audio.play resolves by id OR name).
+  await run(session, 'createSound', { name: 'coin-sound', preset: 'coin' });
+  await run(session, 'createSound', { name: 'jump-sound', preset: 'jump' });
+  await run(session, 'createSound', { name: 'hit-sound', preset: 'hit' });
+  await run(session, 'createSound', { name: 'click-sound', preset: 'blip' });
+  const ambience = (await run(session, 'createSound', { name: 'ambience', preset: 'powerup', seed: 7 })).asset;
 
   // --- scripts ---
   await run(session, 'createScript', {
@@ -80,6 +88,7 @@ export default {
 
     if (ctx.input.justPressed('jump') && ctx.isGrounded()) {
       body.velocity.y = -(ctx.params.jumpSpeed ?? 460);
+      ctx.audio.play('jump-sound', { volume: 0.8 });
     }
 
     // Fell off the world: respawn at the starting point.
@@ -98,7 +107,8 @@ export default {
   await run(session, 'createScript', {
     name: 'coin-pickup',
     source: `/**
- * Coin: when the player touches it, bump the Score text and disappear.
+ * Coin: when the player touches it, bump the Score HUD text, play the
+ * pickup sound, and disappear.
  */
 export default {
   onCollision(ctx, other) {
@@ -109,6 +119,7 @@ export default {
       const current = parseInt((text.content.match(/\\d+/) || ['0'])[0], 10);
       text.content = 'Score: ' + (current + 1);
     }
+    ctx.audio.play('coin-sound');
     ctx.log('coin collected');
     ctx.destroySelf();
   },
@@ -141,7 +152,55 @@ export default {
     if (!other.tags.includes('player')) return;
     other.transform.position.x = 120;
     other.transform.position.y = 380;
+    ctx.audio.play('hit-sound');
     ctx.log('player hit by enemy');
+  },
+};
+`,
+  });
+
+  await run(session, 'createScript', {
+    name: 'spike-hazard',
+    source: `/**
+ * Spikes: touching them plays the hit sound and sends the player back to
+ * the start. The collider is a convex polygon (a triangle).
+ */
+export default {
+  onCollision(ctx, other) {
+    if (!other.tags.includes('player')) return;
+    other.transform.position.x = 120;
+    other.transform.position.y = 380;
+    const body = other.getComponent('PhysicsBody');
+    body.velocity.x = 0;
+    body.velocity.y = 0;
+    ctx.audio.play('hit-sound');
+    ctx.log('player hit spikes');
+  },
+};
+`,
+  });
+
+  await run(session, 'createScript', {
+    name: 'restart-button',
+    source: `/**
+ * Restart button (screen-space UI): clicking it resets the score and puts
+ * the player back at the start. Requires UIElement.interactive = true.
+ */
+export default {
+  onUiEvent(ctx, event) {
+    if (event.type !== 'click') return;
+    const player = ctx.scene.find('Player');
+    if (player) {
+      player.transform.position.x = 120;
+      player.transform.position.y = 380;
+      const body = player.getComponent('PhysicsBody');
+      body.velocity.x = 0;
+      body.velocity.y = 0;
+    }
+    const score = ctx.scene.find('Score');
+    if (score) score.getComponent('Text').content = 'Score: 0';
+    ctx.audio.play('click-sound');
+    ctx.log('game restarted');
   },
 };
 `,
@@ -224,6 +283,21 @@ export default {
     await run(session, 'attachScript', { scene, entity: `Coin ${i + 1}`, script: 'scripts/coin-pickup.js' });
   }
 
+  // A polygon collider used as level geometry: spikes on the ground between
+  // the platforms. Triangle points are local space, convex, listed clockwise.
+  await run(session, 'createEntity', {
+    scene, name: 'Spikes', tags: ['hazard'], position: { x: 380, y: 536 },
+    components: {
+      SpriteRenderer: { shape: 'triangle', color: '#e67e22', width: 32, height: 32 },
+      Collider: {
+        shape: 'polygon',
+        points: [{ x: 0, y: -16 }, { x: 16, y: 16 }, { x: -16, y: 16 }],
+        isTrigger: true,
+      },
+    },
+  });
+  await run(session, 'attachScript', { scene, entity: 'Spikes', script: 'scripts/spike-hazard.js' });
+
   await run(session, 'createEntity', {
     scene, name: 'Enemy', tags: ['enemy'], position: { x: 560, y: 522 },
     components: {
@@ -236,9 +310,29 @@ export default {
     params: { range: 120, speed: 70 },
   });
 
+  // --- HUD (screen-space UI) + ambience ---
+  // UIElement entities ignore camera position/zoom; anchor + offset place them.
   await run(session, 'createEntity', {
-    scene, name: 'Score', tags: ['ui'], position: { x: 24, y: 24 },
-    components: { Text: { content: 'Score: 0', fontSize: 20, color: '#ffffff' } },
+    scene, name: 'Score', tags: ['ui'],
+    components: {
+      UIElement: { anchor: 'top-left', offset: { x: 24, y: 28 } },
+      Text: { content: 'Score: 0', fontSize: 20, color: '#ffffff' },
+    },
+  });
+  await run(session, 'createEntity', {
+    scene, name: 'Restart', tags: ['ui'],
+    components: {
+      UIElement: { anchor: 'top-right', offset: { x: -80, y: 32 }, interactive: true },
+      SpriteRenderer: { shape: 'rectangle', color: '#34495e', width: 110, height: 34, layer: 20 },
+      Text: { content: 'Restart', fontSize: 14, color: '#ecf0f1', align: 'center', layer: 21 },
+    },
+  });
+  await run(session, 'attachScript', { scene, entity: 'Restart', script: 'scripts/restart-button.js' });
+  await run(session, 'createEntity', {
+    scene, name: 'Ambience', tags: ['audio'],
+    components: {
+      AudioSource: { assetId: ambience.id, autoplay: true, loop: true, volume: 0.25 },
+    },
   });
 
   // --- playtests ---
@@ -264,6 +358,33 @@ export default {
     ],
     maxFrames: 300,
   });
+  // Walking right from spawn crosses the spikes at x=380; the spike script
+  // must send the player back toward the start (without it, 100 frames of
+  // running right would put the player past x=450). The hit sound this
+  // triggers shows up in the run report's audioEvents (asserted in
+  // packages/examples/tests, since playtest steps have no audio assertion).
+  await run(session, 'createPlaytest', {
+    name: 'spikes-respawn-player',
+    scene,
+    steps: [
+      { type: 'press', action: 'right', frames: 100 },
+      { type: 'assertProperty', entity: 'Player', property: 'Transform.position.x', lessThan: 300 },
+      { type: 'assertNoErrors' },
+    ],
+    maxFrames: 300,
+  });
+  await run(session, 'createPlaytest', {
+    name: 'jump-works',
+    scene,
+    steps: [
+      { type: 'wait', frames: 60 },
+      { type: 'press', action: 'jump', frames: 3 },
+      { type: 'wait', frames: 5 },
+      { type: 'assertProperty', entity: 'Player', property: 'PhysicsBody.velocity.y', lessThan: 0 },
+      { type: 'assertNoErrors' },
+    ],
+    maxFrames: 300,
+  });
   await run(session, 'createPlaytest', {
     name: 'smoke',
     scene,
@@ -271,6 +392,8 @@ export default {
       { type: 'wait', frames: 120 },
       { type: 'assertEntityExists', entity: 'Player', exists: true },
       { type: 'assertEntityExists', entity: 'Score', exists: true },
+      { type: 'assertEntityExists', entity: 'Restart', exists: true },
+      { type: 'assertEntityExists', entity: 'Spikes', exists: true },
       { type: 'assertNoErrors' },
     ],
     maxFrames: 300,

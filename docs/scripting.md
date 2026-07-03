@@ -31,6 +31,9 @@ export default {
 - `onUpdate(ctx, dt)`: every fixed frame; `dt` is seconds (1/`fixedTimestep`).
 - `onCollision(ctx, other)`: once per **new** contact pair per frame;
   `other` is an EntityHandle. Fires for trigger and solid contacts alike.
+- `onUiEvent(ctx, event)`: pointer events on this entity's interactive
+  `UIElement`; `event` is `{ type, x, y }` with `type` one of
+  `'click' | 'press' | 'release' | 'enter' | 'exit'` (screen coordinates).
 
 ## The `ctx` API
 
@@ -46,6 +49,8 @@ export default {
 | `ctx.scene.findByTag(tag)` | EntityHandle[] |
 | `ctx.scene.spawn(def)` | Create an entity at runtime: `{ name, position?, tags?, components? }` |
 | `ctx.scene.destroy(ref)` | Remove an entity (id, or handle) |
+| `ctx.audio.play(ref, opts?)` | Play an audio asset (id or name); `opts` is `{ volume?, loop? }`. Returns a handle id, or `null` if the asset doesn't exist |
+| `ctx.audio.stop(ref)` | Stop one playback by handle id, or every playback of an asset id/name |
 | `ctx.collisions` | This entity's current contacts: `{ other, normal, trigger }[]` |
 | `ctx.isGrounded()` | True when standing on something (a solid contact pushing up) |
 | `ctx.vars` | Persistent per-entity plain object, your state between frames |
@@ -71,7 +76,43 @@ For a platformer: set `velocity.x` from input each frame, set a negative
 and drive both axes. See `packages/examples/*/scripts/` for working
 reference scripts.
 
-## Rules & limitations (v0.1)
+## Audio
+
+`ctx.audio.play('coin-sound')` plays an audio asset by id or name; an
+`AudioSource` component with `autoplay: true` plays its asset on scene
+start. Make sound effects with `hearth create sound <name> --preset coin`
+(presets: `coin`, `jump`, `hit`, `laser`, `powerup`, `explosion`, `blip`;
+deterministic WAVs, same preset + seed → identical bytes).
+
+Headless runs make no sound, but every play/stop is recorded in the run
+report as `audioEvents: [{ frame, assetId, action }]`, so agents and tests
+can verify audio behavior without speakers. In the browser (editor preview
+and web exports) the same calls go through Web Audio.
+
+## Game UI (screen space)
+
+Give an entity a `UIElement` component and it renders in screen space:
+positioned by `anchor` (nine positions, `top-left` through `bottom-right`)
+plus a pixel `offset`, unaffected by camera position or zoom. Visuals come
+from the same `Text` / `SpriteRenderer` components as any other entity;
+`Transform.position` is ignored.
+
+Set `interactive: true` and the entity's script receives `onUiEvent`:
+
+```js
+export default {
+  onUiEvent(ctx, event) {
+    if (event.type !== 'click') return;
+    ctx.audio.play('click-sound');
+    ctx.log('button clicked');
+  },
+};
+```
+
+The mini-platformer example's score HUD and Restart button
+(`packages/examples/mini-platformer`) show both patterns.
+
+## Rules & limitations
 
 - **No `import`/`require`.** Scripts are single-file, evaluated in a function
   scope with `module.exports` semantics behind the scenes. Helpers are fine:

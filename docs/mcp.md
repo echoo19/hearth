@@ -1,7 +1,7 @@
 # MCP Guide
 
 Hearth ships `hearth-mcp` (`packages/mcp-server`), a stdio MCP server that
-exposes the whole engine command layer as ~37 typed tools. The full reference
+exposes the whole engine command layer as ~39 typed tools. The full reference
 (flags, registration snippets, permission table, complete tool list) lives in
 [`packages/mcp-server/README.md`](../packages/mcp-server/README.md).
 
@@ -23,10 +23,10 @@ MCP tools mirror core commands 1:1 in snake_case: `get_project_info`,
 `list_scenes`, `inspect_scene`, `inspect_entity`, `list_components`,
 `validate_project`, `create_scene`, `create_entity`, `add_component`,
 `set_component_property`, `create_script`, `edit_script`, `attach_script`,
-`import_asset`, `create_sprite_asset`, `create_tile_asset`,
+`import_asset`, `create_sprite_asset`, `create_tile_asset`, `create_sound`,
 `create_animation_asset`, `snapshot_project`, `get_diff`, `revert_project`,
 `create_playtest`, `run_playtest`, `run_scene`, `build_project`,
-`get_agent_instructions`, … Every result is the standard `CommandResult`
+`export_web`, `get_agent_instructions`, … Every result is the standard `CommandResult`
 JSON envelope in the tool output (with `isError` set on failure), so MCP
 agents and CLI agents read identical structures.
 
