@@ -49,6 +49,7 @@ import {
   type TilemapComponent,
 } from '@hearth/core';
 import type { RuntimeEntity, RuntimeError, RuntimeLog, SceneRuntime } from '../runtime.js';
+import { colliderShape, type CollisionShape } from '../physics.js';
 import { GameSession, type SceneEvent, type SessionStorage } from '../session.js';
 import { uiScreenPosition } from '../ui.js';
 import { WebAudioPlayer } from './audio.js';
@@ -75,10 +76,17 @@ export interface PixiViewOptions {
   onError?(e: RuntimeError): void;
   /** Fired after a script-requested scene switch completes. */
   onSceneChange?(e: SceneEvent): void;
+  /** Draw collider outlines, velocity vectors, and light radii (default false — never on in exports). */
+  debugDraw?: boolean;
 }
 
 const DEG_TO_RAD = Math.PI / 180;
 const MAX_STEPS_PER_TICK = 5;
+const DEBUG_COLLIDER_COLOR = 0x00ff88;
+const DEBUG_VELOCITY_COLOR = 0xffff00;
+const DEBUG_LIGHT_COLOR = 0x66aaff;
+/** Velocity vector length is velocity (px/s) scaled by this many seconds. */
+const DEBUG_VELOCITY_SCALE = 0.25;
 
 export class PixiSceneView {
   /** The cross-scene session driving this view. */
@@ -114,6 +122,18 @@ export class PixiSceneView {
   private lightScene = new Container();
   private ambientGraphics = new Graphics();
   private lightSprites: Sprite[] = [];
+  /**
+   * Debug overlay: colliders, PhysicsBody velocity vectors, Light2D radii.
+   * Sits above `lightmapSprite` (so debug lines aren't darkened/tinted by
+   * lighting) and below `ui`. Mirrors `world`'s position/scale every tick
+   * since it draws in world coordinates. One `Graphics`, redrawn per tick
+   * only while enabled; otherwise `debugLayer.visible = false` and zero
+   * per-tick work. Never on by default — callers opt in via
+   * `PixiViewOptions.debugDraw` or `setDebugDraw`.
+   */
+  private debugLayer = new Container();
+  private debugGraphics = new Graphics();
+  private _debugDraw: boolean;
   private audio: WebAudioPlayer | null = null;
   private accumulator = 0;
   private _paused: boolean;
@@ -143,11 +163,17 @@ export class PixiSceneView {
     this.lightmapSprite.visible = false;
     this.lightScene.addChild(this.ambientGraphics);
 
-    // Stage order: world, lightmapSprite, (debugLayer lands here in a later
-    // task), ui — the lightmap darkens/tints the world but never the UI.
+    this._debugDraw = opts.debugDraw ?? false;
+    this.debugLayer.addChild(this.debugGraphics);
+    this.debugLayer.visible = this._debugDraw;
+
+    // Stage order: world, lightmapSprite, debugLayer, ui — the lightmap
+    // darkens/tints the world but never the UI or debug overlay (debug
+    // lines sit above the lightmap so they stay full-brightness).
     this.app.stage.addChild(this.world);
     this.world.addChild(this.particleLayer);
     this.app.stage.addChild(this.lightmapSprite);
+    this.app.stage.addChild(this.debugLayer);
     this.app.stage.addChild(this.ui);
     this.tickerFn = (ticker) => this.onTick(ticker);
   }
@@ -256,6 +282,22 @@ export class PixiSceneView {
     this.syncCamera();
   }
 
+  get debugDraw(): boolean {
+    return this._debugDraw;
+  }
+
+  /**
+   * Toggle the debug overlay (collider outlines, velocity vectors, light
+   * radii). Never on by default — this is the only way to enable it, so a
+   * shipped export stays clean unless a host explicitly opts in (Task 8
+   * wires this into the player UI; this class does not enable it itself).
+   */
+  setDebugDraw(on: boolean): void {
+    this._debugDraw = on;
+    this.debugLayer.visible = on;
+    if (!on) this.debugGraphics.clear();
+  }
+
   destroy(): void {
     if (this.destroyed) return;
     this.destroyed = true;
@@ -275,6 +317,8 @@ export class PixiSceneView {
     // child destruction doesn't reach it or its pooled light sprites.
     this.lightScene.destroy({ children: true });
     this.lightSprites = [];
+    // debugLayer/debugGraphics ARE on app.stage, so app.destroy below
+    // recursively destroys them; no explicit cleanup needed here.
     // Free GPU textures: app.destroy doesn't destroy textures (texture/textureSource
     // default false), so we must explicitly destroy the uniquely-owned GPU resources.
     this.lightmapRT.destroy(true);
@@ -431,6 +475,79 @@ export class PixiSceneView {
     );
     this.app.renderer.background.color = cam.backgroundColor;
     this.updateLightmap(cam, settings.width, settings.height);
+
+    if (this._debugDraw) {
+      // Same camera transform as `world` — debug lines are drawn in world
+      // coordinates, so the layer must track pan/zoom identically.
+      this.debugLayer.scale.set(this.world.scale.x, this.world.scale.y);
+      this.debugLayer.position.set(this.world.position.x, this.world.position.y);
+      this.redrawDebug();
+    }
+  }
+
+  /**
+   * Redraws the debug overlay for every live enabled entity: collider
+   * outlines (green, trigger colliders at half alpha since Pixi strokes
+   * can't dash), PhysicsBody velocity vectors (yellow), and Light2D radius
+   * circles (soft blue). Reuses `colliderShape` — the exact geometry
+   * physics.ts collides with — so the overlay never drifts from real
+   * collision bounds.
+   */
+  private redrawDebug(): void {
+    const g = this.debugGraphics;
+    g.clear();
+    for (const entity of this.runtime.getEntities()) {
+      if (!entity.enabled) continue;
+      const worldPos = this.runtime.getWorldPosition(entity);
+
+      const collider = entity.components.Collider;
+      if (collider) {
+        const shape = colliderShape(collider, worldPos, entity.transform);
+        this.drawDebugCollider(g, shape, collider.isTrigger);
+      }
+
+      const body = entity.components.PhysicsBody;
+      if (body && (body.velocity.x !== 0 || body.velocity.y !== 0)) {
+        g.moveTo(worldPos.x, worldPos.y)
+          .lineTo(
+            worldPos.x + body.velocity.x * DEBUG_VELOCITY_SCALE,
+            worldPos.y + body.velocity.y * DEBUG_VELOCITY_SCALE,
+          )
+          .stroke({ width: 1, color: DEBUG_VELOCITY_COLOR });
+      }
+
+      const light = entity.components.Light2D;
+      if (light?.enabled) {
+        g.circle(worldPos.x, worldPos.y, light.radius).stroke({
+          width: 1,
+          color: DEBUG_LIGHT_COLOR,
+          alpha: 0.6,
+        });
+      }
+    }
+  }
+
+  private drawDebugCollider(g: Graphics, shape: CollisionShape, isTrigger: boolean): void {
+    const stroke = { width: 1, color: DEBUG_COLLIDER_COLOR, alpha: isTrigger ? 0.5 : 1 };
+    switch (shape.kind) {
+      case 'box':
+        g.rect(
+          shape.box.cx - shape.box.hw,
+          shape.box.cy - shape.box.hh,
+          shape.box.hw * 2,
+          shape.box.hh * 2,
+        ).stroke(stroke);
+        break;
+      case 'circle':
+        g.circle(shape.x, shape.y, shape.radius).stroke(stroke);
+        break;
+      case 'polygon':
+        g.poly(
+          shape.points.map((p) => ({ x: p.x, y: p.y })),
+          true,
+        ).stroke(stroke);
+        break;
+    }
   }
 
   /**
