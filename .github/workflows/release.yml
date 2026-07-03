@@ -85,7 +85,8 @@ jobs:
             --title "Hearth ${GITHUB_REF_NAME}" \
             --notes "Hearth ${GITHUB_REF_NAME} — the agent-native 2D game engine.
 
-          **Desktop app**: download the build for your OS below (macOS builds are unsigned in this preview — right-click → Open the first time).
+          **Desktop app**: download the build for your OS below.
+          macOS first launch: right-click Hearth.app → Open. If macOS says the app \"is damaged\", clear the quarantine flag: \`xattr -cr /Applications/Hearth.app\` (preview builds are ad-hoc signed, not notarized yet).
 
           **Agent tools (no install needed, any Node ≥ 20):**
           - \`node hearth-cli.mjs --help\` — the full hearth CLI

@@ -47,9 +47,15 @@ npm run app:dist:installers -w @hearth/editor   # dmg/nsis/AppImage installers
 ```
 
 Notes:
-- macOS builds are unsigned in v0.1 (`identity: null`) — Gatekeeper may
-  require right-click → Open the first time. Set up signing before
-  distributing.
+- macOS builds are **ad-hoc signed, not notarized** (no Apple Developer ID
+  yet; an afterPack hook re-signs with `codesign -s -` so the bundle's
+  signature is valid). First launch of a downloaded build: right-click →
+  Open. If macOS claims the app "is damaged and can't be opened" (Gatekeeper
+  quarantine + unidentified developer on some versions), clear the
+  quarantine flag and open normally:
+  `xattr -cr /Applications/Hearth.app`.
+  Real Developer ID signing + notarization is on the roadmap and removes
+  all of this.
 - The app icon is the stock Electron icon for now (custom icon on the
   roadmap — drop icons into `buildResources/` and remove `identity: null`
   when signing).

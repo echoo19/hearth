@@ -27,6 +27,7 @@
       "output": "release",
       "buildResources": "buildResources"
     },
+    "afterPack": "scripts/afterPack.cjs",
     "asar": true,
     "asarUnpack": [
       "dist-electron/hearth-cli.mjs",

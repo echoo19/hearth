@@ -35,8 +35,9 @@ missing (screenshots for agents, web export, audio playback, undo…).
 **Download the desktop app** — [Releases](https://github.com/echoo19/hearth/releases/latest):
 macOS (`Hearth-mac-arm64.dmg` / `Hearth-mac-x64.dmg`), Windows
 (`Hearth-win-x64.exe`), Linux (`Hearth-linux-x86_64.AppImage` /
-`Hearth-linux-amd64.deb`). macOS builds are unsigned in this preview —
-right-click → Open the first time.
+`Hearth-linux-amd64.deb`). macOS first launch: right-click → Open; if macOS
+says the app "is damaged" run `xattr -cr /Applications/Hearth.app` (preview
+builds are ad-hoc signed, not notarized yet).
 
 **Agent tools without any install** (single files, Node ≥ 20):
 
