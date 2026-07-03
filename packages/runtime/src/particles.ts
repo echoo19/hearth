@@ -23,6 +23,8 @@ export interface Particle {
 
 export class EmitterState {
   readonly particles: Particle[] = [];
+  /** Whether the one-time scene-start burst has fired (set by the runtime). */
+  autoBurstFired = false;
   private spawnAccumulator = 0;
   private readonly rng: () => number;
 

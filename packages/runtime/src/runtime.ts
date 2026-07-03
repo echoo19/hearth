@@ -185,8 +185,6 @@ export class SceneRuntime {
   private cameraFollowId: string | null = null;
   private warnedNoCamera = false;
   private emitters = new Map<string, EmitterState>();
-  /** Emitter entity ids whose one-time scene-start auto-burst has fired. */
-  private autoBurstFired = new Set<string>();
 
   private constructor(
     private readonly store: ProjectStore,
@@ -549,21 +547,23 @@ export class SceneRuntime {
     return state;
   }
 
-  /** Advance every live emitter one fixed step; reap emitters for dead entities. */
+  /** Advance every live enabled emitter one fixed step; reap destroyed entities. */
   private stepParticles(): void {
     const liveIds = new Set<string>();
     for (const entity of this.getEntities()) {
+      if (!entity.components.ParticleEmitter) continue;
+      // Disabled entities keep their state (frozen) so re-enabling neither
+      // re-bursts nor drops particles; only destruction reaps it.
+      liveIds.add(entity.id);
       if (!entity.enabled) continue;
       const emitter = entity.components.ParticleEmitter;
-      if (!emitter) continue;
-      liveIds.add(entity.id);
       const state = this.getOrCreateEmitterState(entity, emitter);
       const origin = this.getWorldPosition(entity);
-      // One-time scene-start burst, tracked separately from state-map
-      // presence: an early ctx.particles.burst() in onStart lazily creates
+      // One-time scene-start burst, tracked on the state itself (not on map
+      // presence): an early ctx.particles.burst() in onStart lazily creates
       // the EmitterState and must not swallow the emitter's own burst.
-      if (!this.autoBurstFired.has(entity.id)) {
-        this.autoBurstFired.add(entity.id);
+      if (!state.autoBurstFired) {
+        state.autoBurstFired = true;
         state.burst(emitter.burst, emitter, origin);
       }
       state.step(this.fixedDt, emitter, origin);

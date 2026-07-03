@@ -106,6 +106,26 @@ describe('EmitterState stepping', () => {
     expect(p.y).toBeCloseTo(100 * dt * dt, 6);
   });
 
+  it('disabling and re-enabling an emitter neither re-bursts nor drops particles', async () => {
+    const runtime = await makeRuntimeWithEmitter({
+      seed: 1,
+      rate: 0,
+      burst: 2,
+      lifetime: 10,
+    });
+    runtime.step(); // auto-burst fires, particles age to 1/60
+    const emitterEntity = runtime.find('Emitter')!;
+    emitterEntity.enabled = false;
+    runtime.step(); // frozen while disabled; state must not be reaped
+    emitterEntity.enabled = true;
+    runtime.step(); // resumes aging; must not re-burst
+    const particles = runtime.getParticles('Emitter');
+    expect(particles.length).toBe(2);
+    // Preserved particles have aged two enabled frames; a re-burst would
+    // show fresh ones at age 1/60.
+    expect(particles[0].age).toBeCloseTo(2 / 60, 6);
+  });
+
   it('emitting=false stops rate spawning but existing particles live on', async () => {
     const runtime = await makeRuntimeWithEmitter({
       seed: 1,
