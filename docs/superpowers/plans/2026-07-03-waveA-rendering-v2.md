@@ -502,6 +502,12 @@ it.skipIf(!hasChromium)('captures a deterministic frame', async () => {
 **Files:**
 - Modify: `apps/editor/src/components/SceneView.tsx` (gizmos; reuse the polygon-collider vertex-editor pattern for LineRenderer points)
 - Modify: `apps/editor/src/components/Inspector.tsx` (animation-asset dropdown for `SpriteAnimator.assetId` — mirror the existing `assetId` special case at ~line 315 but filter to `type === 'animation'`)
+
+**Direct feedback from Jake (2026-07-03, screenshot of LineRenderer points rendering as a raw JSON textarea): "stuff like this is not user friendly, should be more uniform."** This is now a hard requirement for this task:
+- `points` (and ANY Vec2[] field) must NOT fall through to the JsonField. Build a `Vec2ListField` control: one row per point with the same paired x/y NumberField inputs the existing Vec2Field uses, a remove button per row, and an "add point" button; styled identically to the other Inspector controls (same spacing, background, borders as NumberField/Vec2Field rows).
+- Audit every new-component field against the Inspector's control dispatch: nothing Wave A adds may render as raw JSON. `gravity` (Vec2) already hits Vec2Field — verify. Colors hit ColorField via `#` prefix — verify for startColor/endColor.
+- Reuse: `Collider.points` (polygon) currently also falls through to JsonField — apply the same Vec2ListField there; it's the identical data shape and Jake's complaint applies equally.
+- General uniformity: numbers→NumberField, booleans→checkbox, enums with known values (SpriteRenderer.shape etc. are already special-cased)→ their existing controls. No new one-off styles.
 - Modify: `apps/editor/src/components/ui.tsx` (`componentIcon` switch: four icons)
 - Modify: the game-preview panel component (grep `runtimeBridge` usage for where the preview toolbar lives) — add a debug-draw toggle button wired to `view.setDebugDraw`.
 
