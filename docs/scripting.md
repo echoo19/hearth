@@ -65,11 +65,12 @@ objects by value.
 
 Scripts run Lua 5.4 (via wasmoon) with `os`, `io`, `package`, `require`,
 `dofile`, `load`, `loadstring`, `debug`, and `collectgarbage` removed.
-`print(...)` routes to the Hearth console, and `math.random` /
-`math.randomseed` are backed by the engine's **seeded** stream (the
-integer forms `math.random(m)` and `math.random(m, n)` keep their Lua
-semantics) — no wall clock or unseeded randomness can leak into game
-logic. `string`, `table`, and `math` are otherwise all available.
+`print(...)` routes to the Hearth console, and `math.random` is backed
+by the engine's **seeded** stream (the integer forms `math.random(m)`
+and `math.random(m, n)` keep their Lua semantics); `math.randomseed` is
+a no-op that warns once — the seed comes from the session — so no wall
+clock or unseeded randomness can leak into game logic. `string`,
+`table`, and `math` are otherwise all available.
 
 ## The `ctx` API
 

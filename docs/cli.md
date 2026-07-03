@@ -87,7 +87,11 @@ blip), `create animation <name> --frames f1 f2`, `import asset <path>`.
 **Testing & review**: `snapshot`, `diff`, `revert --confirm`,
 `run <scene> [--frames n]` (the report includes `audioEvents`),
 `playtest [name] [--all]`,
-`create playtest <name> --scene s --steps-file steps.json`, `test`
+`create playtest <name> --scene s --steps-file steps.json [--max-frames n]
+[--seed n]` (`--seed` makes `ctx.random` / Lua `math.random` reproducible;
+steps cover input — `wait`, `press`, `release`, `click {x,y}` — and
+assertions — `assertEntityExists`, `assertProperty`, `assertPositionNear`,
+`assertScene`, `assertNoErrors`), `test`
 (validate + all playtests, the CI command).
 
 **Export** (requires `--allow build`): `export web [--out dir]

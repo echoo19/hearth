@@ -115,6 +115,7 @@ requires no permission (it's purely informational).
 | `list_assets` | `inspectAssets` | read-only |
 | `list_scripts` | `inspectScripts` | read-only |
 | `read_script` | `readScript` | read-only |
+| `inspect_api` | `inspectApi` | read-only |
 | `validate_project` | `validateProject` | read-only |
 | `create_scene` | `createScene` | safe-edit |
 | `delete_scene` | `deleteScene` | safe-edit |
@@ -128,12 +129,14 @@ requires no permission (it's purely informational).
 | `remove_component` | `removeComponent` | safe-edit |
 | `set_component_property` | `setComponentProperty` | safe-edit |
 | `set_input_mapping` | `setInputMapping` | safe-edit |
+| `update_settings` | `updateSettings` | safe-edit |
 | `create_script` | `createScript` | code-edit |
 | `edit_script` | `editScript` | code-edit |
 | `attach_script` | `attachScript` | code-edit |
 | `import_asset` | `importAsset` | asset-edit |
 | `create_sprite_asset` | `createSpriteAsset` | asset-edit |
 | `create_tile_asset` | `createTileAsset` | asset-edit |
+| `create_sound` | `createSound` | asset-edit |
 | `create_animation_asset` | `createAnimationAsset` | asset-edit |
 | `snapshot_project` | `snapshotProject` | safe-edit |
 | `get_diff` | `diffProject` | read-only |
@@ -143,6 +146,7 @@ requires no permission (it's purely informational).
 | `run_playtest` | `runPlaytest` | read-only |
 | `run_scene` | `runScene` | read-only |
 | `build_project` | `buildProject` | build |
+| `export_web` | `exportWeb` | build |
 | `get_agent_instructions` | — (reads project `AGENTS.md`, or generates the default) | — |
 
 All tools are registered regardless of the session's granted modes, so a client can always see the full

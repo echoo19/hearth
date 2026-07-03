@@ -17,7 +17,7 @@ and agents connect from outside.
    Agent ──▶ CLI / MCP ──┘      (validate · execute · diff)     scenes · scripts · assets
 ```
 
-Both audiences use the same ~45 engine commands (`createEntity`,
+Both audiences use the same 45 engine commands (`createEntity`,
 `setComponentProperty`, `runPlaytest`, `getDiff`, …). That means an agent can
 build a level, wire input, write behavior scripts, generate placeholder art,
 run headless playtests, and hand the human a structural diff to review in the
@@ -25,13 +25,13 @@ editor, all without guessing at file formats.
 
 ## Status
 
-**v0.3 in progress, developer preview.** The full loop works end to end:
+**v0.3.0, developer preview.** The full loop works end to end:
 project model → editor → runtime preview → CLI → MCP → headless playtests →
-diff review. The first v0.3 wave makes **Lua the default scripting
-language** (JS still fully supported, same `ctx` API), adds **scene
-management and a script stdlib** (`ctx.scenes.load`, timers, tweens,
-seeded RNG, save data, camera control), and removes all engine chrome
-from exported games — shipped builds boot straight into your first scene.
+diff review. v0.3 makes **Lua the default scripting language** (JS still
+fully supported, same `ctx` API), adds **scene management and a script
+stdlib** (`ctx.scenes.load`, timers, tweens, seeded RNG, save data,
+camera control), and removes all engine chrome from exported games —
+shipped builds boot straight into your first scene.
 On top of v0.2: dockable editor workspace, screen-space game UI
 (`UIElement` + `onUiEvent`), convex polygon colliders, audio with
 procedural sound effects, and static web export (`hearth export web`).
@@ -56,8 +56,8 @@ node hearth-cli.mjs --help
 claude mcp add hearth -- node $PWD/hearth-mcp.mjs --project <your game>
 ```
 
-The same two files also ship inside the desktop app (the Agent panel shows
-their exact paths, ready to copy).
+The same two files also ship inside the desktop app (the editor shows
+their exact paths in its agent setup instructions, ready to copy).
 
 ## Quick start (from source)
 
@@ -118,10 +118,10 @@ see [docs/mcp.md](docs/mcp.md).
 - **Editor** (`apps/editor`): project launcher, dockable workspace (drag
   tabs, splits, persisted layouts), scene view with drag editing, hierarchy,
   schema-driven inspector, asset browser, console, live game preview
-  (PixiJS), **diff/review panel**, and an agent-integration panel with
-  copy-paste setup. Runs in the browser via Vite or as a packaged Electron
-  desktop app with native folder dialogs (Tauri shell included as an
-  experimental alternative).
+  (PixiJS), **diff/review panel**, and copy-paste agent setup (CLI + MCP
+  snippets with exact tool paths). Runs in the browser via Vite or as a
+  packaged Electron desktop app with native folder dialogs (Tauri shell
+  included as an experimental alternative).
 - **Runtime** (`packages/runtime`): fixed-timestep deterministic 2D runtime:
   transforms, sprites/primitives, text, tilemaps, screen-space UI with
   pointer events, input actions, box/circle/convex-polygon physics +
@@ -135,7 +135,7 @@ see [docs/mcp.md](docs/mcp.md).
   [docs/export.md](docs/export.md).
 - **CLI** (`packages/cli`): `hearth` with `--json` envelopes for every
   operation, plus `doctor`, `test`, and `commands` (registry discovery).
-- **MCP server** (`packages/mcp-server`): ~45 tools mirroring the CLI, with
+- **MCP server** (`packages/mcp-server`): 41 typed tools wrapping the core commands, with
   per-session permission modes.
 - **Playtests** (`packages/playtest`): scripted input + assertions, run
   headlessly at a fixed timestep; deterministic and CI-friendly. Run

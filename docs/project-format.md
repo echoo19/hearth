@@ -37,7 +37,7 @@ normative; this page is descriptive. Every file carries `formatVersion: 1`.
 ```jsonc
 {
   "formatVersion": 1,
-  "hearthVersion": "0.1.0",
+  "hearthVersion": "0.3.0",
   "id": "prj_a1b2c3d4",
   "name": "My Game",
   "description": "",
@@ -95,7 +95,7 @@ parent's translation at runtime). IDs are stable and prefixed (`ent_`,
                             "offset": {"x":0,"y":0}, "isTrigger": false },
         "PhysicsBody":    { "bodyType": "dynamic", "velocity": {"x":0,"y":0},
                             "gravityScale": 1, "drag": 0 },
-        "Script":         { "scriptPath": "scripts/player-controller.js",
+        "Script":         { "scriptPath": "scripts/player-controller.lua",
                             "params": { "speed": 220 } }
       }
     }

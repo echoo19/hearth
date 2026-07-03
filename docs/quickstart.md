@@ -126,4 +126,5 @@ See [export.md](./export.md).
 - [Scripting guide](./scripting.md): the full `ctx` API
 - [CLI guide](./cli.md): everything `hearth` can do
 - [Web export](./export.md): folder vs single file, itch.io
-- [Examples](../packages/examples): platformer, top-down, visual novel
+- [Examples](../packages/examples): platformer, top-down, visual novel,
+  and Ember Trail (an all-Lua two-scene game)

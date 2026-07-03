@@ -58,11 +58,11 @@ held to the same standard as any other contribution:
 - Match the surrounding code: 2-space indent, single quotes, JSDoc header
   comment per file explaining the module's role.
 - No new runtime dependencies without discussion; the dependency budget is
-  deliberately tiny (zod, commander, pixi, react, MCP SDK).
+  deliberately tiny (zod, commander, pixi, react, wasmoon, MCP SDK).
 - Error messages should tell the reader what to do next, beyond what broke
   (see `ProjectError` usages for tone).
 
 ## Releases
 
-v0.1.x is a developer preview. Versioning is synchronized across packages;
+v0.3.x is a developer preview. Versioning is synchronized across packages;
 release automation is on the roadmap.

@@ -1,7 +1,8 @@
 # MCP Guide
 
 Hearth ships `hearth-mcp` (`packages/mcp-server`), a stdio MCP server that
-exposes the whole engine command layer as ~45 typed tools. The full reference
+exposes the engine command layer as 41 typed tools (40 command tools plus
+`get_agent_instructions`). The full reference
 (flags, registration snippets, permission table, complete tool list) lives in
 [`packages/mcp-server/README.md`](../packages/mcp-server/README.md).
 
@@ -19,7 +20,8 @@ project's AGENTS.md plus your active permission modes.
 
 ## Tool naming
 
-MCP tools mirror core commands 1:1 in snake_case: `get_project_info`,
+Each MCP tool wraps exactly one core command, named in snake_case (a handful
+of housekeeping commands are CLI-only): `get_project_info`,
 `list_scenes`, `inspect_scene`, `inspect_entity`, `list_components`,
 `validate_project`, `create_scene`, `create_entity`, `add_component`,
 `set_component_property`, `create_script`, `edit_script`, `attach_script`,

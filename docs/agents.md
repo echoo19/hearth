@@ -18,8 +18,8 @@ reviewable diffs.
 - **CLI**: `hearth <command> --json` (see [cli.md](./cli.md)). Best when the
   agent already lives in a shell (Claude Code, Codex CLI).
 - **MCP**: `hearth-mcp --project <path>` over stdio (see
-  [mcp.md](./mcp.md)). Best for MCP-native clients; ~45 tools mirroring the
-  CLI 1:1.
+  [mcp.md](./mcp.md)). Best for MCP-native clients; 41 tools wrapping the
+  same core commands (a handful of housekeeping commands are CLI-only).
 
 Both call the identical core command layer. Pick either; never mix in
 hand-edits of `hearth.json`/`*.scene.json`/`assets.json`.
@@ -42,10 +42,13 @@ snapshot  →  inspect  →  change (commands)  →  validate  →  playtest  �
    introduced. Warnings are advisory but read them.
 5. **Playtest**: `hearth run <scene> --frames 120` catches script crashes;
    `hearth playtest --all` runs scripted assertions. Create playtests for
-   behavior you add (`create playtest`): they're deterministic (fixed
-   timestep, scripted input), so they're trustworthy. Run reports include
-   `audioEvents` (every play/stop with frame and asset id), so sound
-   behavior is checkable headlessly too.
+   behavior you add (`create playtest`): steps cover waits, key presses,
+   pointer clicks, and assertions (including `assertScene`), and they're
+   deterministic (fixed timestep, scripted input, seeded RNG — a playtest
+   can set its own `seed`), so they're trustworthy. Run reports include
+   `audioEvents` (every play/stop with frame and asset id), `sceneEvents`,
+   and `finalScene`, so sound and scene switching are checkable headlessly
+   too.
 6. **Diff** (`hearth diff --json`) and summarize the changes for the human:
    scenes/entities/components/scripts/assets touched. The human sees the
    same diff in the editor's Diff panel and can revert.
@@ -78,7 +81,9 @@ mutation, or grant `safe-edit` only to keep the agent out of code.
 
 ## Project-embedded instructions
 
-`hearth init` generates **AGENTS.md** (full instructions), **CLAUDE.md**
+`hearth init` generates **AGENTS.md** (full instructions: golden rules, a
+Lua-first scripting quick reference, and a `ctx` API reference rendered from
+the same `CTX_API` table that powers `hearth inspect api`), **CLAUDE.md**
 (pointer), and `.hearth/agent-config.json` (machine-readable: binary names,
 recommended first commands, permission defaults) in every project. The MCP
 server serves the same content via the `get_agent_instructions` tool, so an

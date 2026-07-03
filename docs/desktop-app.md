@@ -49,10 +49,15 @@ npm run app:dist:installers -w @hearth/editor   # dmg/nsis/AppImage installers
 Notes:
 - macOS builds are **ad-hoc signed, not notarized** (no Apple Developer ID
   yet; an afterPack hook re-signs with `codesign -s -` so the bundle's
-  signature is valid). First launch of a downloaded build: right-click →
-  Open. If macOS claims the app "is damaged and can't be opened" (Gatekeeper
-  quarantine + unidentified developer on some versions), clear the
-  quarantine flag and open normally:
+  signature is valid). First launch of a downloaded build on **macOS 15
+  Sequoia or later**: Gatekeeper says "Apple could not verify 'Hearth' is
+  free of malware" and only offers Move to Trash / Done — the old
+  right-click → Open bypass no longer works there. Click **Done** (not
+  Move to Trash), open **System Settings → Privacy & Security**, scroll
+  down to the **"'Hearth' was blocked"** row, click **Open Anyway**, and
+  confirm once. On macOS 14 and earlier, right-click → Open still works.
+  If macOS instead claims the app "is damaged and can't be opened", clear
+  the quarantine flag and open normally:
   `xattr -cr /Applications/Hearth.app`.
   Real Developer ID signing + notarization is on the roadmap and removes
   all of this.
@@ -75,7 +80,7 @@ the workflow itself doesn't need to change:
 
 With the macOS secrets present the workflow signs with hardened runtime
 (entitlements in `buildResources/entitlements.mac.plist`) and notarizes.
-Downloads then open with **zero** warnings and none of the right-click or
+Downloads then open with **zero** warnings and none of the Open Anyway or
 xattr workarounds. Without them it falls back to the current ad-hoc signing.
 Linux needs nothing.
 

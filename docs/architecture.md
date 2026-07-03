@@ -30,13 +30,13 @@ results.
 
 | Package | Role |
 | --- | --- |
-| `packages/core` | Zod schemas for every file format; `ProjectStore` (load/save); the **command registry** (~45 operations, including web export and the `ctx` API reference); validation; structural diff; permission model; procedural asset generation (SVG sprites/tiles, WAV sounds); AGENTS.md/CLAUDE.md generation. Browser-safe: Node fs access is isolated in `@hearth/core/node`. |
+| `packages/core` | Zod schemas for every file format; `ProjectStore` (load/save); the **command registry** (45 operations, including web export and the `ctx` API reference); validation; structural diff; permission model; procedural asset generation (SVG sprites/tiles, WAV sounds); AGENTS.md/CLAUDE.md generation. Browser-safe: Node fs access is isolated in `@hearth/core/node`. |
 | `packages/runtime` | 2D runtime: scene instantiation, fixed-timestep loop, input actions, box/circle/convex-polygon physics (SAT), screen-space UI with pointer hit-testing, audio (recorded headlessly, Web Audio in the browser), camera, and the script engine — **Lua 5.4 (sandboxed wasmoon VM) by default, JavaScript equally supported, one identical `ctx` API** with scene switching, timers, tweens, seeded RNG, and persistent save data. `SceneRuntime` runs a single scene; `GameSession` wraps it for cross-scene games (`ctx.scenes.load` swaps runtimes while the RNG stream, save storage, frame counter, and logs carry across). The main entry is **headless** (runs in Node for playtests); the PixiJS renderer is the separate `@hearth/runtime/pixi` subpath used by the editor's game preview, and the web-export player bundle is built from the same code. |
 | `packages/playtest` | Headless playtest execution: scripted input + assertions over a `GameSession` (seeded, scene-switch aware), exposed as `RuntimeHooks` injected into core commands (`runPlaytest`, `runScene`). |
 | `packages/cli` | `hearth`, the command-line surface. Every subcommand dispatches into the core command system; `--json` emits the raw `CommandResult` envelope for agents. |
 | `packages/mcp-server` | `hearth-mcp`, a stdio MCP server exposing the same commands as typed MCP tools, with permission modes. |
 | `packages/examples` | Four sample projects **generated through the command system itself** (`generate.mjs`); they double as integration tests and agent references. Three are JavaScript-scripted; `ember-trail` is all-Lua and exercises the scene/stdlib surface end to end. |
-| `apps/editor` | Vite + React editor. A Vite-plugin project server (Node) opens `HearthSession`s and exposes `/api/command` etc.; the browser UI renders panels and dispatches commands. Tauri shell config included for desktop packaging. |
+| `apps/editor` | Vite + React editor. A Vite-plugin project server (Node) opens `HearthSession`s and exposes `/api/command` etc.; the browser UI renders panels and dispatches commands. An Electron shell packages the desktop app, running the same project server in-process; an experimental Tauri shell config is also included. |
 
 ## The command system (the load-bearing wall)
 
@@ -101,12 +101,13 @@ browser and makes the whole engine trivially testable in memory.
 Escalating grants checked at the command layer (see `permissions.ts`):
 `read-only` (always implied) → `safe-edit` (scene/entity/component CRUD) →
 `code-edit` (scripts) → `asset-edit` (assets) → `build`. The CLI takes
-`--allow`, the MCP server `--mode`. Deletion of asset files and any arbitrary
-shell execution are deliberately not exposed to agents in v0.1.
+`--allow`, the MCP server `--mode`. Arbitrary shell execution is deliberately
+not exposed to agents; asset removal (`removeAsset`) refuses while references
+exist and keeps the file on disk unless `deleteFile: true`.
 
 ## Extension paths (documented, not built)
 
 - Multi-instance components per entity (array form behind a `formatVersion` bump).
 - Screenshot capture for agents (needs headless GPU or DOM snapshot strategy).
-- Tauri-native project server (sidecar) for the packaged desktop app.
+- Tauri-native project server (sidecar) as an alternative to the Electron desktop shell.
 - TypeScript scripts (compile step in the script engine).
