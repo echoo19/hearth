@@ -18,6 +18,7 @@ export function GamePreview() {
   const projectPath = useEditor((s) => s.projectPath);
   const sceneId = useEditor((s) => s.sceneId);
   const playing = useEditor((s) => s.playing);
+  const runNonce = useEditor((s) => s.runNonce);
   const log = useEditor((s) => s.log);
 
   const hostRef = useRef<HTMLDivElement>(null);
@@ -78,8 +79,10 @@ export function GamePreview() {
       }
       viewRef.current = null;
     };
+    // runNonce remounts the view on every Play, so runs always start from the
+    // scene as it currently is rather than resuming a stale world.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [projectPath, sceneId]);
+  }, [projectPath, sceneId, runNonce]);
 
   useEffect(() => {
     const view = viewRef.current;

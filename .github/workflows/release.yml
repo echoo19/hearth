@@ -110,6 +110,7 @@ jobs:
         run: |
           cp apps/editor/dist-electron/hearth-cli.mjs artifacts/
           cp apps/editor/dist-electron/hearth-mcp.mjs artifacts/
+          cp apps/editor/dist-electron/hearth-player.js artifacts/
           ls -la artifacts/
           gh release create "${GITHUB_REF_NAME}" \
             --title "Hearth ${GITHUB_REF_NAME}" \
@@ -121,6 +122,7 @@ jobs:
           **Agent tools (no install needed, any Node ≥ 20):**
           - \`node hearth-cli.mjs --help\` — the full hearth CLI
           - \`node hearth-mcp.mjs --project <your game> \` — MCP server for Claude Code / any MCP client
+          - \`hearth-player.js\` — the web-export player; keep it next to the CLI (or set HEARTH_TOOLS_DIR) so \`export web\` works
 
           Docs: https://github.com/${GITHUB_REPOSITORY}#readme" \
             artifacts/*

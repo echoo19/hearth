@@ -57,6 +57,32 @@ export function apiCommand<T = unknown>(
   return postJson<CommandResult<T>>('/api/command', { project, name, params });
 }
 
+/** Upload a file (base64 bytes) to be registered as a project asset. */
+export function apiImportAsset(
+  project: string,
+  filename: string,
+  dataBase64: string,
+): Promise<CommandResult> {
+  return postJson<CommandResult>('/api/assets/import', { project, filename, dataBase64 });
+}
+
+export interface ExportWebData {
+  outDir: string;
+  singleFile: boolean;
+  files: string[];
+  title: string;
+  slug: string;
+}
+
+/** Run the exportWeb command (static playable web build). */
+export function apiExportWeb(
+  project: string,
+  outDir: string,
+  singleFile: boolean,
+): Promise<CommandResult<ExportWebData>> {
+  return postJson<CommandResult<ExportWebData>>('/api/export/web', { project, outDir, singleFile });
+}
+
 /** URL for a raw project file (sprites, scripts, scene JSON...). */
 export function fileUrl(project: string, relPath: string): string {
   return `/api/file?project=${encodeURIComponent(project)}&path=${encodeURIComponent(relPath)}`;

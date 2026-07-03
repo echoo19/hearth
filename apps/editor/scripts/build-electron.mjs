@@ -77,4 +77,10 @@ for (const [entry, outfile] of [
   });
 }
 
-console.log('dist-electron/ ready (main + preload + hearth-cli.mjs + hearth-mcp.mjs)');
+// The web-export player ships next to the tools so `hearth export web` (CLI,
+// MCP, or the editor's Export dialog) finds it via HEARTH_TOOLS_DIR in a
+// packaged install. Built by packages/runtime's build:player step.
+const playerSrc = path.join(repoRoot, 'packages', 'runtime', 'player', 'hearth-player.js');
+await copyFile(playerSrc, path.join(appRoot, 'dist-electron', 'hearth-player.js'));
+
+console.log('dist-electron/ ready (main + preload + hearth-cli.mjs + hearth-mcp.mjs + hearth-player.js)');

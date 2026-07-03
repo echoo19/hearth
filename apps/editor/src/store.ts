@@ -33,6 +33,8 @@ interface EditorState {
   consoleOpen: boolean;
   diff: ProjectDiff | null;
   playing: boolean;
+  /** Bumped every time playback starts, so the preview restarts from the current scene state. */
+  runNonce: number;
 
   loadMeta(): Promise<void>;
   openProject(path: string): Promise<{ ok: boolean; error?: string }>;
@@ -117,6 +119,7 @@ export const useEditor = create<EditorState>((set, get) => {
     consoleOpen: false,
     diff: null,
     playing: false,
+    runNonce: 0,
 
     async loadMeta() {
       const meta = await apiMeta();
@@ -187,7 +190,8 @@ export const useEditor = create<EditorState>((set, get) => {
     },
 
     setPlaying(playing) {
-      set({ playing });
+      // Play always runs the scene as it is now (Godot-style); Stop freezes it.
+      set((state) => ({ playing, runNonce: playing ? state.runNonce + 1 : state.runNonce }));
     },
 
     log(level, source, message) {

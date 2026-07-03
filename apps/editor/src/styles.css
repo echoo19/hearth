@@ -1560,6 +1560,249 @@ dialog.modal[open]::backdrop {
 }
 
 /* --------------------------------------------------------------------------
+   Assets panel: file import drop target & audio preview
+   -------------------------------------------------------------------------- */
+
+.assets-panel {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+}
+
+.assets-panel .drop-target {
+  position: absolute;
+  inset: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1.5px dashed var(--accent);
+  border-radius: var(--radius);
+  background: oklch(0.74 0.15 55 / 0.12);
+  color: var(--accent);
+  font-size: 13px;
+  font-weight: 600;
+  pointer-events: none;
+  z-index: 2;
+}
+
+.audio-preview-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border: 1px solid var(--border-strong);
+  border-radius: 50%;
+  background: var(--bg-1);
+  color: var(--ink);
+  cursor: pointer;
+  transition:
+    border-color 140ms var(--ease-out),
+    color 140ms var(--ease-out),
+    background 140ms var(--ease-out);
+}
+
+.audio-preview-btn:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.audio-preview-btn.playing {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+/* --------------------------------------------------------------------------
+   Scene view: polygon collider point editor
+   -------------------------------------------------------------------------- */
+
+.scene-edit-points {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+}
+
+.poly-vertex {
+  cursor: grab;
+}
+
+.scene-view.vertex-dragging,
+.scene-view.vertex-dragging .poly-vertex,
+.scene-view.vertex-dragging .poly-mid {
+  cursor: grabbing;
+}
+
+.poly-vertex-dot {
+  fill: var(--accent);
+  stroke: oklch(0.17 0.008 55);
+  stroke-width: 1.5;
+}
+
+.poly-vertex:hover .poly-vertex-dot {
+  fill: var(--accent-hover);
+}
+
+.poly-mid {
+  cursor: crosshair;
+}
+
+.poly-mid-dot {
+  fill: var(--bg-1);
+  stroke: var(--accent);
+  stroke-width: 1.5;
+}
+
+.poly-mid:hover .poly-mid-dot {
+  fill: var(--accent-soft);
+}
+
+/* --------------------------------------------------------------------------
+   Inspector: UIElement anchor picker
+   -------------------------------------------------------------------------- */
+
+.anchor-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 20px);
+  grid-auto-rows: 20px;
+  gap: 2px;
+  width: fit-content;
+  padding: 3px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg-2);
+}
+
+.anchor-cell {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid transparent;
+  border-radius: 3px;
+  background: transparent;
+  cursor: pointer;
+  transition:
+    background 140ms var(--ease-out),
+    border-color 140ms var(--ease-out);
+}
+
+.anchor-cell:hover {
+  background: var(--bg-3);
+}
+
+.anchor-cell .anchor-dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--ink-faint);
+  transition: background 140ms var(--ease-out);
+}
+
+.anchor-cell.selected {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.anchor-cell.selected .anchor-dot {
+  background: var(--accent);
+}
+
+/* --------------------------------------------------------------------------
+   Export dialog
+   -------------------------------------------------------------------------- */
+
+.radio-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 6px 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-2);
+  font-size: 12px;
+  cursor: pointer;
+  transition:
+    border-color 140ms var(--ease-out),
+    background 140ms var(--ease-out);
+}
+
+.radio-row:hover {
+  border-color: var(--border-strong);
+}
+
+.radio-row:has(input:checked) {
+  border-color: var(--accent);
+  background: var(--accent-faint);
+}
+
+.radio-row input[type='radio'] {
+  margin-top: 2px;
+  accent-color: var(--accent);
+}
+
+.radio-row .radio-detail {
+  display: block;
+  color: var(--ink-faint);
+  font-size: 11px;
+  margin-top: 1px;
+}
+
+.export-errors {
+  border: 1px solid var(--err);
+  border-radius: var(--radius);
+  background: var(--err-faint);
+  padding: 8px 10px;
+}
+
+.export-errors p {
+  margin: 0;
+  color: var(--err);
+  font-size: 12px;
+}
+
+.export-errors p + p {
+  margin-top: 4px;
+}
+
+.export-result {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-2);
+  padding: 10px;
+}
+
+.export-result p {
+  margin: 0;
+}
+
+.export-result .export-path {
+  font-size: 11px;
+  color: var(--ink-mute);
+  word-break: break-all;
+}
+
+.export-result .btn {
+  align-self: flex-start;
+}
+
+.export-result .export-hint {
+  color: var(--ink-faint);
+  font-size: 11px;
+}
+
+.export-result .export-hint code {
+  font-family: var(--font-mono);
+  background: var(--bg-3);
+  padding: 1px 4px;
+  border-radius: 3px;
+}
+
+/* --------------------------------------------------------------------------
    Scrollbars & motion preferences
    -------------------------------------------------------------------------- */
 

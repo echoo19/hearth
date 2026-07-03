@@ -1,6 +1,6 @@
 {
   "name": "@hearth/examples",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Hearth sample projects: mini platformer, top-down room, visual novel scene",
   "license": "MIT",
   "type": "module",

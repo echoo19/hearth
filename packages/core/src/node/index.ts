@@ -86,12 +86,14 @@ function findRepoRootFromModule(): string | null {
 /**
  * Candidate paths for the built web player, in resolution order:
  * 1. $HEARTH_TOOLS_DIR/hearth-player.js (packaged desktop app)
- * 2. packages/runtime/player/hearth-player.js (repo checkout)
+ * 2. next to the running script (standalone hearth-cli.mjs / hearth-mcp.mjs downloads)
+ * 3. packages/runtime/player/hearth-player.js (repo checkout)
  */
 export function playerBundleCandidates(repoRoot?: string): string[] {
   const candidates: string[] = [];
   const toolsDir = process.env.HEARTH_TOOLS_DIR;
   if (toolsDir) candidates.push(nodePath.join(toolsDir, 'hearth-player.js'));
+  if (process.argv[1]) candidates.push(nodePath.join(nodePath.dirname(process.argv[1]), 'hearth-player.js'));
   const root = repoRoot ?? findRepoRootFromModule();
   if (root) candidates.push(nodePath.join(root, 'packages', 'runtime', 'player', 'hearth-player.js'));
   return candidates;

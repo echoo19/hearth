@@ -6,6 +6,15 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useEditor } from '../store';
 import { fileUrl } from '../api';
+import {
+  edgeMidpoints,
+  insertVertexOnEdge,
+  polygonLocalToWorld,
+  polygonWorldToLocal,
+  removeVertex,
+  roundPoints,
+  type PolygonFrame,
+} from '../polygonEditing';
 import type { AssetItem, SceneEntity, Vec2 } from '../types';
 
 interface ViewTransform {
@@ -28,6 +37,11 @@ interface PanState {
   startView: ViewTransform;
 }
 
+interface VertexDragState {
+  pointerId: number;
+  index: number;
+}
+
 const MIN_ZOOM = 0.05;
 const MAX_ZOOM = 12;
 
@@ -40,6 +54,7 @@ export function SceneView() {
   const selection = useEditor((s) => s.selection);
   const select = useEditor((s) => s.select);
   const exec = useEditor((s) => s.exec);
+  const log = useEditor((s) => s.log);
 
   const hostRef = useRef<HTMLDivElement>(null);
   const svgRef = useRef<SVGSVGElement>(null);
@@ -55,9 +70,23 @@ export function SceneView() {
   const panRef = useRef<PanState | null>(null);
   const fittedScene = useRef<string | null>(null);
 
+  // Polygon collider point editing ("Edit points" mode). Draft points live in
+  // a ref (pointer events outrun React state) and are mirrored into state to
+  // re-render the handles, like dragPos above.
+  const [editingPoints, setEditingPoints] = useState(false);
+  const vertexDragRef = useRef<VertexDragState | null>(null);
+  const [draggingVertex, setDraggingVertex] = useState(false);
+  const draftPointsRef = useRef<Vec2[] | null>(null);
+  const [draftPoints, setDraftPointsState] = useState<Vec2[] | null>(null);
+
   function setDragPos(pos: Vec2 | null) {
     dragPosRef.current = pos;
     setDragPosState(pos);
+  }
+
+  function setDraftPoints(points: Vec2[] | null) {
+    draftPointsRef.current = points;
+    setDraftPointsState(points);
   }
 
   const assetById = useMemo(() => {
@@ -162,10 +191,120 @@ export function SceneView() {
     };
   }, []);
 
+  // ---- polygon point editing -----------------------------------------------
+  const selectedForRender = selection ? entityById.get(selection) : undefined;
+  const selectedColliderComp = selectedForRender?.components.Collider as
+    | { shape?: string; points?: Vec2[]; offset?: Vec2 }
+    | undefined;
+  const canEditPoints = selectedColliderComp?.shape === 'polygon';
+
+  /** The selected entity + its polygon collider, or null when not editable. */
+  function polygonSelection(): { entity: SceneEntity; frame: PolygonFrame; points: Vec2[] } | null {
+    const entity = selection ? entityById.get(selection) : undefined;
+    const collider = entity?.components.Collider as
+      | { shape?: string; points?: Vec2[]; offset?: Vec2 }
+      | undefined;
+    if (!entity || collider?.shape !== 'polygon') return null;
+    const tf = entity.components.Transform as any;
+    const frame: PolygonFrame = {
+      worldPos: worldPos(entity),
+      offset: { x: collider.offset?.x ?? 0, y: collider.offset?.y ?? 0 },
+      rotation: tf?.rotation ?? 0,
+      scale: { x: tf?.scale?.x ?? 1, y: tf?.scale?.y ?? 1 },
+    };
+    const points = draftPointsRef.current ?? (Array.isArray(collider.points) ? collider.points : []);
+    return { entity, frame, points };
+  }
+
+  function exitPointEditing() {
+    vertexDragRef.current = null;
+    setDraggingVertex(false);
+    setDraftPoints(null);
+    setEditingPoints(false);
+  }
+
+  // The mode only makes sense while a polygon-collider entity is selected.
+  useEffect(() => {
+    if (editingPoints && !canEditPoints) exitPointEditing();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editingPoints, canEditPoints]);
+
+  useEffect(() => {
+    if (!editingPoints) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') exitPointEditing();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editingPoints]);
+
+  function commitPoints(points: Vec2[]) {
+    const sel = polygonSelection();
+    if (!sel || !sceneId) {
+      setDraftPoints(null);
+      return;
+    }
+    void exec(
+      'setComponentProperty',
+      {
+        scene: sceneId,
+        entity: sel.entity.id,
+        property: 'Collider.points',
+        value: roundPoints(points),
+      },
+      { quiet: true },
+    ).finally(() => setDraftPoints(null));
+  }
+
+  function beginVertexDrag(e: React.PointerEvent, points: Vec2[], index: number) {
+    vertexDragRef.current = { pointerId: e.pointerId, index };
+    setDraftPoints(points.map((p) => ({ ...p })));
+    setDraggingVertex(true);
+    svgRef.current?.setPointerCapture(e.pointerId);
+  }
+
+  function onVertexPointerDown(e: React.PointerEvent, index: number) {
+    if (spaceHeld) return; // pan wins
+    e.stopPropagation();
+    const sel = polygonSelection();
+    if (!sel) return;
+    if (e.button === 2 || (e.button === 0 && e.altKey)) {
+      const next = removeVertex(sel.points, index);
+      if (!next) {
+        log('warn', 'editor', 'A polygon collider needs at least 3 points.');
+        return;
+      }
+      commitPoints(next);
+      return;
+    }
+    if (e.button !== 0) return;
+    beginVertexDrag(e, sel.points, index);
+  }
+
+  function onMidpointPointerDown(e: React.PointerEvent, edgeIndex: number) {
+    if (e.button !== 0 || spaceHeld) return;
+    e.stopPropagation();
+    const sel = polygonSelection();
+    if (!sel) return;
+    // Insert the new vertex and immediately start dragging it; a plain click
+    // (no movement) commits it at the edge midpoint.
+    const next = insertVertexOnEdge(sel.points, edgeIndex);
+    vertexDragRef.current = { pointerId: e.pointerId, index: edgeIndex + 1 };
+    setDraftPoints(next);
+    setDraggingVertex(true);
+    svgRef.current?.setPointerCapture(e.pointerId);
+  }
+
   // ---- pointer handlers ----------------------------------------------------
   function screenOf(e: React.PointerEvent): Vec2 {
     const rect = hostRef.current!.getBoundingClientRect();
     return { x: e.clientX - rect.left, y: e.clientY - rect.top };
+  }
+
+  function screenToWorld(p: Vec2): Vec2 {
+    const v = viewRef.current;
+    return { x: (p.x - v.tx) / v.s, y: (p.y - v.ty) / v.s };
   }
 
   function onBackgroundPointerDown(e: React.PointerEvent) {
@@ -173,12 +312,15 @@ export function SceneView() {
       panRef.current = { pointerId: e.pointerId, start: screenOf(e), startView: viewRef.current };
       svgRef.current?.setPointerCapture(e.pointerId);
       e.preventDefault();
-    } else if (e.button === 0) {
+    } else if (e.button === 0 && !editingPoints) {
+      // While editing points, a background click is not a deselect (Escape or
+      // Done leaves the mode).
       select(null);
     }
   }
 
   function onEntityPointerDown(e: React.PointerEvent, entity: SceneEntity) {
+    if (editingPoints) return; // point handles own the pointer in edit mode
     if (e.button === 1 || (e.button === 0 && spaceHeld)) return; // background handler pans
     if (e.button !== 0) return;
     e.stopPropagation();
@@ -206,6 +348,15 @@ export function SceneView() {
       });
       return;
     }
+    const vDrag = vertexDragRef.current;
+    if (vDrag && e.pointerId === vDrag.pointerId) {
+      const sel = polygonSelection();
+      const draft = draftPointsRef.current;
+      if (!sel || !draft) return;
+      const local = polygonWorldToLocal(screenToWorld(screenOf(e)), sel.frame);
+      setDraftPoints(draft.map((p, i) => (i === vDrag.index ? local : p)));
+      return;
+    }
     const drag = dragRef.current;
     if (drag && e.pointerId === drag.pointerId) {
       const now = screenOf(e);
@@ -220,6 +371,14 @@ export function SceneView() {
   function onPointerUp(e: React.PointerEvent) {
     if (panRef.current && e.pointerId === panRef.current.pointerId) {
       panRef.current = null;
+      return;
+    }
+    const vDrag = vertexDragRef.current;
+    if (vDrag && e.pointerId === vDrag.pointerId) {
+      vertexDragRef.current = null;
+      setDraggingVertex(false);
+      const draft = draftPointsRef.current;
+      if (draft) commitPoints(draft);
       return;
     }
     const drag = dragRef.current;
@@ -413,7 +572,10 @@ export function SceneView() {
   const selectedEntity = selection ? entityById.get(selection) : undefined;
 
   return (
-    <div ref={hostRef} className={`scene-view${spaceHeld ? ' panning' : ''}`}>
+    <div
+      ref={hostRef}
+      className={`scene-view${spaceHeld ? ' panning' : ''}${draggingVertex ? ' vertex-dragging' : ''}`}
+    >
       <svg
         ref={svgRef}
         onPointerDown={onBackgroundPointerDown}
@@ -445,7 +607,7 @@ export function SceneView() {
                 key={entity.id}
                 transform={`translate(${wp.x} ${wp.y})`}
                 opacity={entity.enabled ? 1 : 0.35}
-                style={{ cursor: spaceHeld ? undefined : 'move' }}
+                style={{ cursor: spaceHeld || editingPoints ? undefined : 'move' }}
                 onPointerDown={(e) => onEntityPointerDown(e, entity)}
               >
                 <g transform={`rotate(${rot}) scale(${sx} ${sy})`}>
@@ -484,8 +646,73 @@ export function SceneView() {
                 </g>
               );
             })()}
+
+          {/* polygon collider point editor */}
+          {editingPoints &&
+            (() => {
+              const sel = polygonSelection();
+              if (!sel) return null;
+              const localPts = draftPoints ?? sel.points;
+              const worldPts = localPts.map((p) => polygonLocalToWorld(p, sel.frame));
+              if (worldPts.length === 0) return null;
+              const mids = edgeMidpoints(worldPts);
+              const r = 4 / view.s; // 8px vertex handles on screen
+              const mr = 3 / view.s; // slightly smaller midpoint handles
+              const hit = 9 / view.s; // comfortable hit area around both
+              return (
+                <g>
+                  <polygon
+                    points={worldPts.map((p) => `${p.x},${p.y}`).join(' ')}
+                    fill="var(--accent)"
+                    fillOpacity={0.08}
+                    stroke="var(--accent)"
+                    strokeWidth={1.5}
+                    vectorEffect="non-scaling-stroke"
+                    pointerEvents="none"
+                  />
+                  {mids.map((m, i) => (
+                    <g key={`mid-${i}`} className="poly-mid" onPointerDown={(e) => onMidpointPointerDown(e, i)}>
+                      <circle cx={m.x} cy={m.y} r={hit} fill="transparent" stroke="none" />
+                      <rect
+                        x={m.x - mr}
+                        y={m.y - mr}
+                        width={mr * 2}
+                        height={mr * 2}
+                        transform={`rotate(45 ${m.x} ${m.y})`}
+                        className="poly-mid-dot"
+                        vectorEffect="non-scaling-stroke"
+                      />
+                    </g>
+                  ))}
+                  {worldPts.map((p, i) => (
+                    <g key={`vtx-${i}`} className="poly-vertex" onPointerDown={(e) => onVertexPointerDown(e, i)}>
+                      <circle cx={p.x} cy={p.y} r={hit} fill="transparent" stroke="none" />
+                      <circle cx={p.x} cy={p.y} r={r} className="poly-vertex-dot" vectorEffect="non-scaling-stroke" />
+                    </g>
+                  ))}
+                </g>
+              );
+            })()}
         </g>
       </svg>
+
+      {canEditPoints && (
+        <div className="scene-edit-points">
+          {editingPoints ? (
+            <button className="btn btn-primary btn-sm" onClick={exitPointEditing}>
+              Done
+            </button>
+          ) : (
+            <button
+              className="btn btn-sm"
+              title="Edit the polygon collider's points in the scene"
+              onClick={() => setEditingPoints(true)}
+            >
+              Edit points
+            </button>
+          )}
+        </div>
+      )}
 
       <div className="scene-hud">
         <span>{Math.round(view.s * 100)}%</span>
@@ -495,7 +722,11 @@ export function SceneView() {
           </span>
         )}
       </div>
-      <div className="scene-hint">scroll to zoom · space+drag or middle-drag to pan · drag an entity to move it</div>
+      <div className="scene-hint">
+        {editingPoints
+          ? 'drag a point · click an edge midpoint to add one · alt-click a point to delete · esc or Done to finish'
+          : 'scroll to zoom · space+drag or middle-drag to pan · drag an entity to move it'}
+      </div>
     </div>
   );
 }

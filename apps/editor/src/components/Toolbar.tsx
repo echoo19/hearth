@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import type { DockviewApi } from 'dockview-react';
 import { useEditor } from '../store';
 import { Icon, Modal } from './ui';
+import { ExportDialog } from './ExportDialog';
 import { ViewMenu } from '../workspace/ViewMenu';
 import { showPanel } from '../workspace/Workspace';
 
@@ -18,6 +19,7 @@ export function Toolbar({ dock, storageKey }: { dock: DockviewApi | null; storag
 
   const [newSceneOpen, setNewSceneOpen] = useState(false);
   const [newSceneName, setNewSceneName] = useState('');
+  const [exportOpen, setExportOpen] = useState(false);
 
   async function createScene() {
     const name = newSceneName.trim();
@@ -101,6 +103,13 @@ export function Toolbar({ dock, storageKey }: { dock: DockviewApi | null; storag
         >
           Diff
         </button>
+        <button
+          className="btn btn-sm"
+          onClick={() => setExportOpen(true)}
+          title="Export a playable web build (exportWeb)"
+        >
+          Export
+        </button>
       </span>
 
       <span className="divider" />
@@ -109,6 +118,8 @@ export function Toolbar({ dock, storageKey }: { dock: DockviewApi | null; storag
       <button className="btn btn-ghost btn-sm" onClick={closeProject}>
         Close project
       </button>
+
+      <ExportDialog open={exportOpen} onClose={() => setExportOpen(false)} />
 
       <Modal open={newSceneOpen} title="New scene" onClose={() => setNewSceneOpen(false)}>
         <div className="modal-body">

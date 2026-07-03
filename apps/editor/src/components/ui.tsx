@@ -54,6 +54,7 @@ const ICON_PATHS: Record<string, ReactNode> = {
   ),
   trash: <path d="M2.5 3.5h7M4 3.5V2.5h4v1M4.5 3.5l.4 6h2.2l.4-6" />,
   audio: <path d="M2.5 5v2h2L7 9.5v-7L4.5 5h-2zM8.5 4.5a2.5 2.5 0 0 1 0 3" />,
+  upload: <path d="M6 8V2.5M3.5 4.5L6 2l2.5 2.5M2.5 9.5h7" />,
   physics: <circle cx="6" cy="6" r="3.8" />,
   collider: <rect x="2.5" y="2.5" width="7" height="7" rx="2" strokeDasharray="2 1.6" />,
 };

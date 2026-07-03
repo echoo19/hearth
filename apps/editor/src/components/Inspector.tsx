@@ -127,6 +127,37 @@ function JsonField({ value, onCommit }: { value: unknown; onCommit: (v: unknown)
 }
 
 // ---------------------------------------------------------------------------
+// UIElement.anchor: a 3×3 grid picker instead of a raw enum dropdown.
+// ---------------------------------------------------------------------------
+
+const ANCHOR_ROWS = [
+  ['top-left', 'top', 'top-right'],
+  ['left', 'center', 'right'],
+  ['bottom-left', 'bottom', 'bottom-right'],
+] as const;
+
+function AnchorGrid({ value, onCommit }: { value: string; onCommit: (v: string) => void }) {
+  return (
+    <div className="anchor-grid" role="radiogroup" aria-label="Anchor">
+      {ANCHOR_ROWS.flat().map((anchor) => (
+        <button
+          key={anchor}
+          type="button"
+          className={`anchor-cell${value === anchor ? ' selected' : ''}`}
+          role="radio"
+          aria-checked={value === anchor}
+          aria-label={anchor}
+          title={anchor}
+          onClick={() => value !== anchor && onCommit(anchor)}
+        >
+          <span className="anchor-dot" aria-hidden="true" />
+        </button>
+      ))}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
 
 function isVec2(v: unknown): v is { x: number; y: number } {
   return (
@@ -282,21 +313,30 @@ export function Inspector() {
                   const rowKey = `${entity.id}.${property}`;
                   let control: React.ReactNode;
                   if (field === 'assetId' && (typeof value === 'string' || value === null)) {
+                    // AudioSource picks from audio assets; SpriteRenderer (and
+                    // anything else with an assetId) from sprites/tiles.
+                    const isAudio = type === 'AudioSource';
+                    const options = assets.filter((a) =>
+                      isAudio ? a.type === 'audio' : a.type === 'sprite' || a.type === 'tile',
+                    );
                     control = (
                       <select
                         className="select"
                         value={(value as string | null) ?? ''}
                         onChange={(e) => setProperty(property, e.target.value === '' ? null : e.target.value)}
                       >
-                        <option value="">(none: draw primitive)</option>
-                        {assets
-                          .filter((a) => a.type === 'sprite' || a.type === 'tile' || a.type === 'audio')
-                          .map((a) => (
-                            <option key={a.id} value={a.id}>
-                              {a.name} ({a.type})
-                            </option>
-                          ))}
+                        <option value="">{isAudio ? '(none)' : '(none: draw primitive)'}</option>
+                        {options.map((a) => (
+                          <option key={a.id} value={a.id}>
+                            {a.name}
+                            {isAudio ? '' : ` (${a.type})`}
+                          </option>
+                        ))}
                       </select>
+                    );
+                  } else if (type === 'UIElement' && field === 'anchor' && typeof value === 'string') {
+                    control = (
+                      <AnchorGrid key={rowKey} value={value} onCommit={(v) => setProperty(property, v)} />
                     );
                   } else if (typeof value === 'number') {
                     control = (

@@ -1,6 +1,6 @@
 {
   "name": "@hearth/editor",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "description": "Hearth desktop editor (Tauri + React). Also runs in the browser via `npm run dev`.",
   "license": "MIT",
   "type": "module",
@@ -31,7 +31,8 @@
     "asar": true,
     "asarUnpack": [
       "dist-electron/hearth-cli.mjs",
-      "dist-electron/hearth-mcp.mjs"
+      "dist-electron/hearth-mcp.mjs",
+      "dist-electron/hearth-player.js"
     ],
     "artifactName": "Hearth-${os}-${arch}.${ext}",
     "mac": {

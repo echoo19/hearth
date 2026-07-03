@@ -81,6 +81,44 @@ function contentTypeFor(filePath: string): string {
   return CONTENT_TYPES[ext] ?? 'application/octet-stream';
 }
 
+// ---------------------------------------------------------------------------
+// Asset import (POST /api/assets/import)
+// ---------------------------------------------------------------------------
+
+/** File types the editor's Import accepts: images and audio. */
+export const IMPORT_EXTENSIONS = new Set([
+  'png',
+  'jpg',
+  'jpeg',
+  'svg',
+  'webp',
+  'gif',
+  'wav',
+  'mp3',
+  'ogg',
+]);
+
+export const MAX_IMPORT_BYTES = 25 * 1024 * 1024;
+
+/** Uploads are staged here, then moved into assets/<type>/ by importAsset. */
+const IMPORT_STAGING_DIR = 'assets/imported';
+
+/**
+ * Reduce a client-supplied filename to a safe basename: strip any directory
+ * parts, collapse odd characters, refuse hidden/extension-less names.
+ * Returns null when nothing usable is left.
+ */
+export function sanitizeImportFilename(raw: string): string | null {
+  const base = raw.replace(/\\/g, '/').split('/').pop() ?? '';
+  const safe = base
+    .trim()
+    .replace(/[^a-zA-Z0-9._-]+/g, '-')
+    .replace(/^[.\s-]+/, '');
+  const dot = safe.lastIndexOf('.');
+  if (dot <= 0 || dot === safe.length - 1) return null;
+  return safe;
+}
+
 /** Walk upward from `start` to find the hearth monorepo root. */
 export function findRepoRoot(start: string): string {
   let dir = path.resolve(start);
@@ -326,6 +364,76 @@ export function createProjectServerContext(options: ProjectServerOptions = {}) {
       return runCommandImpl(project, 'exportWeb', params);
     },
 
+    /**
+     * Import an uploaded file (base64 body) as a project asset. The bytes are
+     * staged under assets/imported/, then registered through the importAsset
+     * command (which copies them to the canonical assets/<type>/ folder), and
+     * the staging file is removed. Always 200; the CommandResult envelope
+     * carries success/errors, like /api/command.
+     */
+    async importAssetFile(project: unknown, filename: unknown, dataBase64: unknown): Promise<JsonResult> {
+      const fail = (code: string, message: string): JsonResult => ({
+        status: 200,
+        body: errorEnvelope('importAsset', code, message),
+      });
+      if (typeof project !== 'string' || project.trim() === '') {
+        return fail('NO_PROJECT', 'No project path supplied with the import.');
+      }
+      if (typeof filename !== 'string' || typeof dataBase64 !== 'string' || dataBase64 === '') {
+        return fail('INVALID_INPUT', 'Import requires "filename" and "dataBase64".');
+      }
+      const safeName = sanitizeImportFilename(filename);
+      if (!safeName) {
+        return fail('INVALID_INPUT', `Cannot import "${filename}": the filename has no usable name or extension.`);
+      }
+      const ext = safeName.split('.').pop()!.toLowerCase();
+      if (!IMPORT_EXTENSIONS.has(ext)) {
+        return fail(
+          'INVALID_INPUT',
+          `Cannot import .${ext} files. Supported: ${[...IMPORT_EXTENSIONS].map((e) => `.${e}`).join(', ')}.`,
+        );
+      }
+      let bytes: Buffer;
+      try {
+        bytes = Buffer.from(dataBase64, 'base64');
+      } catch {
+        return fail('INVALID_INPUT', 'dataBase64 is not valid base64.');
+      }
+      if (bytes.length === 0) {
+        return fail('INVALID_INPUT', `"${safeName}" decoded to zero bytes.`);
+      }
+      if (bytes.length > MAX_IMPORT_BYTES) {
+        const mb = (bytes.length / (1024 * 1024)).toFixed(1);
+        return fail('INVALID_INPUT', `"${safeName}" is ${mb} MB; imports are limited to 25 MB.`);
+      }
+
+      let session: HearthSession;
+      try {
+        session = await getSession(project);
+      } catch (err) {
+        return fail('NO_PROJECT', (err as Error).message);
+      }
+      const root = path.resolve(project);
+      const stagedAbs = resolveInside(root, path.join(IMPORT_STAGING_DIR, safeName));
+      if (!stagedAbs) {
+        return fail('INVALID_INPUT', 'Import path escapes the project root.');
+      }
+      try {
+        await fsp.mkdir(path.dirname(stagedAbs), { recursive: true });
+        await fsp.writeFile(stagedAbs, bytes);
+        const result = await session.execute('importAsset', { sourcePath: stagedAbs });
+        return { status: 200, body: result };
+      } catch (err) {
+        return fail('INTERNAL', (err as Error).message);
+      } finally {
+        // The staging copy is only a hand-off to importAsset; drop it whether
+        // or not the command succeeded so retries start clean.
+        await fsp.rm(stagedAbs, { force: true }).catch(() => {});
+        // Remove the staging dir when it ends up empty (rmdir refuses otherwise).
+        await fsp.rmdir(path.dirname(stagedAbs)).catch(() => {});
+      }
+    },
+
     async listProjectCommands(project: unknown): Promise<JsonResult> {
       try {
         if (typeof project !== 'string' || project.trim() === '') {
@@ -450,12 +558,15 @@ function sendJson(res: ServerResponse, status: number, body: unknown): void {
   res.end(JSON.stringify(body));
 }
 
-async function readJsonBody(req: IncomingMessage): Promise<Record<string, unknown>> {
+async function readJsonBody(
+  req: IncomingMessage,
+  maxBytes = 10 * 1024 * 1024,
+): Promise<Record<string, unknown>> {
   const chunks: Buffer[] = [];
   let size = 0;
   for await (const chunk of req) {
     size += (chunk as Buffer).length;
-    if (size > 10 * 1024 * 1024) throw new Error('Request body too large');
+    if (size > maxBytes) throw new Error('Request body too large');
     chunks.push(chunk as Buffer);
   }
   const text = Buffer.concat(chunks).toString('utf8');
@@ -504,6 +615,12 @@ async function route(ctx: ProjectServerContext, req: IncomingMessage, res: Serve
     case 'POST /api/command': {
       const body = await readJsonBody(req);
       const result = await ctx.runCommand(body.project, body.name, body.params);
+      return sendJson(res, result.status, result.body);
+    }
+    case 'POST /api/assets/import': {
+      // Base64 inflates the 25 MB file limit by ~4/3, plus JSON overhead.
+      const body = await readJsonBody(req, 36 * 1024 * 1024);
+      const result = await ctx.importAssetFile(body.project, body.filename, body.dataBase64);
       return sendJson(res, result.status, result.body);
     }
     case 'POST /api/export/web': {
