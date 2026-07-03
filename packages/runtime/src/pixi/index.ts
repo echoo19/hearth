@@ -275,6 +275,10 @@ export class PixiSceneView {
     // child destruction doesn't reach it or its pooled light sprites.
     this.lightScene.destroy({ children: true });
     this.lightSprites = [];
+    // Free GPU textures: app.destroy doesn't destroy textures (texture/textureSource
+    // default false), so we must explicitly destroy the uniquely-owned GPU resources.
+    this.lightmapRT.destroy(true);
+    this.lightGradientTexture.destroy(true);
     this.app.destroy(true, { children: true });
   }
 
