@@ -2,6 +2,8 @@
 
 **An open-source 2D game engine and editor built for human + coding-agent collaboration.**
 
+**Website & downloads: [hearth-engine.vercel.app](https://hearth-engine.vercel.app)**
+
 Hearth is **not** an AI game generator. It's a real engine: humans get a
 normal visual editor; coding agents (Claude Code, Codex, any MCP client) get
 the *entire* editor surface as structured, validated, permission-checked
