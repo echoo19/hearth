@@ -598,7 +598,7 @@ export function buildProgram(): Command {
       .option('--seed <n>', 'session seed (default: 0)', (v) => parseInt(v, 10))
       .option('--size <WxH>', 'canvas size, e.g. 800x600 (default: buildSettings size)')
       .option('--debug', 'enable the debug overlay (collider/velocity/light outlines)')
-      .option('--out <path>', 'output PNG path, project-relative unless absolute', 'screenshot.png'),
+      .option('--out <path>', 'output PNG path, project-relative (absolute paths and ".." are rejected)', 'screenshot.png'),
   ).action(async (scene: string | undefined, opts, cmd) => {
     await guarded(cmd, 'screenshot', async () => {
       const g = globalOpts(cmd);

@@ -50,6 +50,19 @@ export function dirnamePath(path: string): string {
   return path.slice(0, idx);
 }
 
+/**
+ * True when an output path is safely project-relative: no absolute paths
+ * (POSIX or Windows drive-letter) and no `..` traversal, so writes through
+ * it can never escape the project root. Shared by every command/tool that
+ * accepts a user- or agent-supplied output path (buildProject, exportWeb,
+ * hearth screenshot's --out). Stricter than isSafeRelativePath below: any
+ * `..` segment is rejected outright, even one that would normalize away —
+ * output paths have no legitimate use for traversal.
+ */
+export function isSafeOut(p: string): boolean {
+  return !p.startsWith('/') && !p.includes('..') && !/^[a-zA-Z]:/.test(p);
+}
+
 export function basenamePath(path: string): string {
   // Callers pass OS paths too (importAsset source files), so split on both
   // separators — Windows absolute paths use backslashes.

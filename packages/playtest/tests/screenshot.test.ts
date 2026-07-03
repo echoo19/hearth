@@ -112,10 +112,58 @@ async function makeRealStore(): Promise<{ store: ProjectStore; cleanup: () => Pr
   return { store, cleanup: () => rm(root, { recursive: true, force: true }) };
 }
 
+/** True when a real path exists on disk. */
+async function pathExists(p: string): Promise<boolean> {
+  try {
+    await stat(p);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 describe('captureScreenshot option validation', () => {
   it('rejects an unknown scene before ever touching Chromium', async () => {
     const store = await makeStore();
     await expect(captureScreenshot(store, { scene: 'NoSuchScene' })).rejects.toThrow(/scene not found/i);
+  });
+
+  // `out` is agent-facing (CLI --out, MCP tool field): it must stay inside
+  // the project root, same sandbox rule as buildProject/exportWeb's outDir.
+  // Enforced at the captureScreenshot level so the CLI and the MCP tool
+  // both inherit the guarantee. Nested relative paths staying allowed is
+  // covered by the real-capture test below (out: 'shots/frame5.png').
+  it('rejects an absolute out path', async () => {
+    const store = await makeStore();
+    await expect(captureScreenshot(store, { out: '/tmp/evil.png' })).rejects.toThrow(
+      /out must be a project-relative path/,
+    );
+  });
+
+  it('rejects an out path with .. traversal', async () => {
+    const store = await makeStore();
+    await expect(captureScreenshot(store, { out: '../escape.png' })).rejects.toThrow(
+      /out must be a project-relative path/,
+    );
+    await expect(captureScreenshot(store, { out: 'shots/../../escape.png' })).rejects.toThrow(
+      /out must be a project-relative path/,
+    );
+  });
+
+  it('cleans up the .hearth-tmp scratch dir even when the export itself fails', async () => {
+    const { store, cleanup } = await makeRealStore();
+    try {
+      // A syntactically-broken JS script makes validateProject fail, which
+      // makes exportWeb fail — the failure path that used to escape the
+      // cleanup try/finally because the export ran before it.
+      await store.fs.writeFile(path.join(store.root, 'scripts', 'broken.js'), 'this is not js(((');
+      await expect(captureScreenshot(store, { out: 'shot.png' })).rejects.toThrow(
+        /could not export a build/,
+      );
+      await expect(pathExists(path.join(store.root, '.hearth-tmp'))).resolves.toBe(false);
+    } finally {
+      await cleanup();
+    }
   });
 });
 
@@ -147,6 +195,9 @@ describe('captureScreenshot (real Chromium)', () => {
 
         const info = await stat(meta.path);
         expect(info.size).toBeGreaterThan(500); // a real PNG, not an empty/near-empty file
+
+        // The in-project export scratch dir is fully cleaned up after success.
+        await expect(pathExists(path.join(store.root, '.hearth-tmp'))).resolves.toBe(false);
       } finally {
         await cleanup();
       }

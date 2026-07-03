@@ -8,7 +8,7 @@
 import { z } from 'zod';
 import { defineCommand, type CommandContext } from './types.js';
 import { ProjectError } from '../project/store.js';
-import { joinPath, dirnamePath } from '../fs.js';
+import { joinPath, dirnamePath, isSafeOut } from '../fs.js';
 import { slugify } from '../ids.js';
 import { validateProject } from '../validate.js';
 import type { Scene } from '../schema/scene.js';
@@ -320,7 +320,3 @@ export const exportWeb = defineCommand({
     };
   },
 });
-
-function isSafeOut(p: string): boolean {
-  return !p.startsWith('/') && !p.includes('..') && !/^[a-zA-Z]:/.test(p);
-}

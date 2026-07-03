@@ -29,7 +29,7 @@ import { mkdtemp, rm, writeFile, mkdir } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { HearthSession, joinPath, type ProjectStore } from '@hearth/core';
+import { HearthSession, isSafeOut, joinPath, type ProjectStore } from '@hearth/core';
 import { loadPlayerBundle } from '@hearth/core/node';
 import { type BootOverrides } from '@hearth/runtime';
 
@@ -46,7 +46,11 @@ export interface ScreenshotOptions {
   height?: number;
   /** Enable the debug overlay (collider/velocity/light outlines). */
   debug?: boolean;
-  /** Output PNG path. Relative paths resolve against the project root. Default: 'screenshot.png'. */
+  /**
+   * Output PNG path, project-relative — absolute paths and `..` traversal
+   * are rejected (same sandbox rule as buildProject/exportWeb's outDir).
+   * Default: 'screenshot.png'.
+   */
   out?: string;
 }
 
@@ -160,6 +164,16 @@ export async function captureScreenshot(
   store: ProjectStore,
   opts: ScreenshotOptions = {},
 ): Promise<ScreenshotResult> {
+  const out = opts.out ?? 'screenshot.png';
+  // Same sandbox rule as buildProject/exportWeb's outDir: the CLI and the
+  // MCP tool are agent-facing surfaces, so an unchecked absolute or
+  // traversing --out would let a caller overwrite arbitrary writable files.
+  if (!isSafeOut(out)) {
+    throw new Error(
+      `hearth screenshot: out must be a project-relative path (no absolute paths or "..") (got: ${out})`,
+    );
+  }
+
   const resolvedScene = opts.scene
     ? store.getScene(opts.scene)
     : store.getScene(store.project.initialScene ?? store.project.scenes[0]?.id ?? '');
@@ -181,17 +195,20 @@ export async function captureScreenshot(
   });
 
   const outDir = `.hearth-tmp/screenshot-${randomSuffix()}`;
-  const exportResult = await session.execute<{ outDir: string }>('exportWeb', {
-    outDir,
-    singleFile: true,
-  });
-  if (!exportResult.success) {
-    const message = exportResult.errors.map((e) => e.message).join('; ') || 'export failed';
-    throw new Error(`hearth screenshot: could not export a build to capture: ${message}`);
-  }
-
   let osTmpDir: string | undefined;
+  // The scratch dir cleanup in the finally below must cover EVERY failure
+  // path that could leave export output behind — including exportWeb itself
+  // failing partway — so the export runs inside this try, not before it.
   try {
+    const exportResult = await session.execute<{ outDir: string }>('exportWeb', {
+      outDir,
+      singleFile: true,
+    });
+    if (!exportResult.success) {
+      const message = exportResult.errors.map((e) => e.message).join('; ') || 'export failed';
+      throw new Error(`hearth screenshot: could not export a build to capture: ${message}`);
+    }
+
     const htmlPath = joinPath(store.root, outDir, 'index.html');
     const html = await store.fs.readFile(htmlPath);
     const injected = injectBootScript(html, {
@@ -231,7 +248,7 @@ export async function captureScreenshot(
         () => (globalThis as unknown as { __hearth: { render(): void } }).__hearth.render(),
       );
 
-      const outPath = path.resolve(store.root, opts.out ?? 'screenshot.png');
+      const outPath = path.resolve(store.root, out);
       await mkdir(path.dirname(outPath), { recursive: true });
       await page.locator('canvas').screenshot({ path: outPath });
 
@@ -241,6 +258,16 @@ export async function captureScreenshot(
     }
   } finally {
     if (osTmpDir) await rm(osTmpDir, { recursive: true, force: true });
+    // Best-effort scratch cleanup: remove this call's export dir, then the
+    // shared .hearth-tmp/ parent if (and only if) it's now empty — a
+    // concurrent capture's dir must survive. Both steps tolerate the dirs
+    // never having been created (e.g. exportWeb failed validation).
     await store.fs.remove(joinPath(store.root, outDir)).catch(() => {});
+    const tmpParent = joinPath(store.root, '.hearth-tmp');
+    try {
+      if ((await store.fs.readdir(tmpParent)).length === 0) await store.fs.remove(tmpParent);
+    } catch {
+      // parent absent or non-empty-race — fine either way
+    }
   }
 }

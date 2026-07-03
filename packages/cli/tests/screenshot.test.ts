@@ -78,6 +78,19 @@ describe('hearth screenshot: permissions and input validation', () => {
     const envelope = JSON.parse(result.stdout);
     expect(envelope.success).toBe(false);
   });
+
+  it('rejects an absolute --out (project-relative sandbox, enforced in captureScreenshot)', async () => {
+    const evilOut = path.join(tmpRoot, 'evil.png');
+    const result = await runCli(
+      ['screenshot', '--allow', 'build', '--out', evilOut, '--json'],
+      projectDir,
+    );
+    expect(result.code).toBe(1);
+    const envelope = JSON.parse(result.stdout);
+    expect(envelope.success).toBe(false);
+    expect(envelope.errors[0].message).toMatch(/project-relative/);
+    await expect(fsp.access(evilOut)).rejects.toThrow();
+  });
 });
 
 const hasChromium = await canLaunchChromium();

@@ -148,7 +148,10 @@ export async function createProject(
   files.push(AGENT_CONFIG_FILE);
   await fs.writeFile(
     joinPath(root, '.gitignore'),
-    ['build/', '.hearth/baseline.json', '.DS_Store', ''].join('\n'),
+    // .hearth-tmp/: scratch dir for tools that need an ephemeral in-project
+    // export (hearth screenshot). Cleaned up after every run, but a crash
+    // mid-capture can leave residue — keep it out of the user's git status.
+    ['build/', '.hearth/baseline.json', '.hearth-tmp/', '.DS_Store', ''].join('\n'),
   );
   files.push('.gitignore');
 

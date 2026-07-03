@@ -2,7 +2,7 @@ import { z } from 'zod';
 import { defineCommand } from './types.js';
 import { ProjectError, readJson, writeJson, ProjectStore, type ProjectSnapshot } from '../project/store.js';
 import { diffSnapshots } from '../diff/diff.js';
-import { joinPath } from '../fs.js';
+import { joinPath, isSafeOut } from '../fs.js';
 import { BASELINE_FILE, PLAYTESTS_DIR, SCRIPTS_DIR } from '../schema/project.js';
 import { generateId, slugify } from '../ids.js';
 import { PlaytestSchema, PlaytestStepSchema } from '../schema/project.js';
@@ -259,7 +259,3 @@ export const buildProject = defineCommand({
     return { outDir: joinPath(params.outDir, slugify(ctx.store.project.name)), files: written.length + 1, manifest };
   },
 });
-
-function isSafeOut(p: string): boolean {
-  return !p.startsWith('/') && !p.includes('..') && !/^[a-zA-Z]:/.test(p);
-}

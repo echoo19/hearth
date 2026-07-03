@@ -43,6 +43,29 @@ describe('project creation', () => {
     await createProject(fs, '/proj', { name: 'A' });
     await expect(createProject(fs, '/proj', { name: 'B' })).rejects.toThrow(/already exists/);
   });
+
+  it('scaffolds a .gitignore covering build output and tool scratch dirs', async () => {
+    const fs = new MemoryFileSystem();
+    await createProject(fs, '/proj', { name: 'My Game' });
+    const gitignore = await fs.readFile('/proj/.gitignore');
+    expect(gitignore).toContain('build/');
+    // hearth screenshot's ephemeral in-project export scratch dir: cleaned
+    // up per run, but a crash mid-capture must not show up as untracked
+    // files in the user's project.
+    expect(gitignore).toContain('.hearth-tmp/');
+  });
+});
+
+describe('isSafeOut', () => {
+  it('accepts project-relative paths (including nested) and rejects absolute/traversal', async () => {
+    const { isSafeOut } = await import('@hearth/core');
+    expect(isSafeOut('screenshot.png')).toBe(true);
+    expect(isSafeOut('shots/frame5.png')).toBe(true);
+    expect(isSafeOut('/etc/passwd')).toBe(false);
+    expect(isSafeOut('../escape.png')).toBe(false);
+    expect(isSafeOut('shots/../../escape.png')).toBe(false);
+    expect(isSafeOut('C:\\Windows\\evil.png')).toBe(false);
+  });
 });
 
 describe('command system', () => {

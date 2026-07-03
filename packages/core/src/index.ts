@@ -89,4 +89,5 @@ export {
   dirnamePath,
   basenamePath,
   isSafeRelativePath,
+  isSafeOut,
 } from './fs.js';
