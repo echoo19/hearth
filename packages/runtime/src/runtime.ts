@@ -185,6 +185,8 @@ export class SceneRuntime {
   private cameraFollowId: string | null = null;
   private warnedNoCamera = false;
   private emitters = new Map<string, EmitterState>();
+  /** Emitter entity ids whose one-time scene-start auto-burst has fired. */
+  private autoBurstFired = new Set<string>();
 
   private constructor(
     private readonly store: ProjectStore,
@@ -555,10 +557,15 @@ export class SceneRuntime {
       const emitter = entity.components.ParticleEmitter;
       if (!emitter) continue;
       liveIds.add(entity.id);
-      const isNew = !this.emitters.has(entity.id);
       const state = this.getOrCreateEmitterState(entity, emitter);
       const origin = this.getWorldPosition(entity);
-      if (isNew) state.burst(emitter.burst, emitter, origin);
+      // One-time scene-start burst, tracked separately from state-map
+      // presence: an early ctx.particles.burst() in onStart lazily creates
+      // the EmitterState and must not swallow the emitter's own burst.
+      if (!this.autoBurstFired.has(entity.id)) {
+        this.autoBurstFired.add(entity.id);
+        state.burst(emitter.burst, emitter, origin);
+      }
       state.step(this.fixedDt, emitter, origin);
     }
     for (const id of [...this.emitters.keys()]) {

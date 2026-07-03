@@ -178,6 +178,57 @@ describe('ctx.particles', () => {
     expect(runtime.getParticleCount('NoEmitter')).toBe(0);
   });
 
+  it('scene-start auto-burst still fires when onStart calls ctx.particles.burst', async () => {
+    const { store } = await makeStore({
+      entities: [
+        ent('Emitter', {
+          Transform: {},
+          ParticleEmitter: { seed: 4, rate: 0, burst: 5, lifetime: 10 },
+          Script: { scriptPath: 'scripts/early.js' },
+        }),
+      ],
+      scripts: {
+        'early.js': `export default {
+          onStart(ctx) { ctx.particles.burst(3); },
+        };`,
+      },
+    });
+    const runtime = await SceneRuntime.create(store, 'Test');
+    runtime.step();
+    // The script burst (3) in onStart must not swallow the emitter's own
+    // scene-start burst (5): both land in frame 0.
+    expect(runtime.getParticleCount('Emitter')).toBe(8);
+  });
+
+  it('count works from a Lua script', async () => {
+    const { store } = await makeStore({
+      entities: [
+        ent('Emitter', {
+          Transform: {},
+          ParticleEmitter: { seed: 5, rate: 0, burst: 2, lifetime: 10 },
+          Script: { scriptPath: 'scripts/count.lua' },
+        }),
+      ],
+      scripts: {
+        'count.lua': [
+          'return {',
+          '  onUpdate = function(ctx)',
+          '    ctx.log("count:" .. ctx.particles.count())',
+          '  end,',
+          '}',
+        ].join('\n'),
+      },
+    });
+    const logs: string[] = [];
+    const runtime = await SceneRuntime.create(store, 'Test', {
+      onLog: (e) => logs.push(e.message),
+    });
+    runtime.run(2);
+    // onUpdate runs before the particle stage: frame 0 sees 0, frame 1 sees
+    // the frame-0 auto-burst.
+    expect(logs).toEqual(['count:0', 'count:2']);
+  });
+
   it('burst and count work from a Lua script (ctx crosses wholesale)', async () => {
     const { store } = await makeStore({
       entities: [
