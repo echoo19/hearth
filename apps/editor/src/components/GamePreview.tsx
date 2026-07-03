@@ -18,7 +18,6 @@ export function GamePreview() {
   const projectPath = useEditor((s) => s.projectPath);
   const sceneId = useEditor((s) => s.sceneId);
   const playing = useEditor((s) => s.playing);
-  const meta = useEditor((s) => s.meta);
   const log = useEditor((s) => s.log);
 
   const hostRef = useRef<HTMLDivElement>(null);
@@ -32,23 +31,22 @@ export function GamePreview() {
     viewRef.current = null;
 
     if (!projectPath || !sceneId || !container) return;
-    if (meta && !meta.runtimeAvailable) {
-      setStatus('unavailable');
-      return;
-    }
-    if (!meta) {
-      setStatus('loading');
-      return;
-    }
 
     setStatus('loading');
     container.innerHTML = '';
 
     void (async () => {
       try {
-        // The bridge module itself is imported lazily: it is the only module
-        // that references @hearth/runtime, which may not be built yet.
-        const bridge = await import('../runtimeBridge');
+        // The bridge module is imported lazily; it is the only module that
+        // references @hearth/runtime. Availability is decided by whether the
+        // import resolves (in a built app the runtime is always bundled in;
+        // the old server-side repo check was wrong for packaged installs
+        // where no repo checkout exists on disk).
+        const bridge = await import('../runtimeBridge').catch(() => null);
+        if (!bridge) {
+          if (!cancelled) setStatus('unavailable');
+          return;
+        }
         const view = await bridge.mountGameView({
           container,
           projectPath,
@@ -81,7 +79,7 @@ export function GamePreview() {
       viewRef.current = null;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [projectPath, sceneId, meta?.runtimeAvailable]);
+  }, [projectPath, sceneId]);
 
   useEffect(() => {
     const view = viewRef.current;
