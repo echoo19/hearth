@@ -41,10 +41,22 @@ export const SpriteRendererSchema = z.object({
 });
 
 export const ColliderSchema = z.object({
-  shape: z.enum(['box', 'circle']).default('box'),
+  shape: z.enum(['box', 'circle', 'polygon']).default('box'),
   width: z.number().positive().default(32),
   height: z.number().positive().default(32),
   radius: z.number().positive().default(16),
+  /**
+   * Local-space vertices, used when shape === 'polygon'. Must be convex
+   * with at least 3 points (validateProject enforces this); split concave
+   * shapes across multiple entities.
+   */
+  points: z
+    .array(Vec2Schema)
+    .default([
+      { x: 0, y: -16 },
+      { x: 16, y: 16 },
+      { x: -16, y: 16 },
+    ]),
   offset: Vec2Schema.default({ x: 0, y: 0 }),
   /** Triggers report overlaps but do not block movement. */
   isTrigger: z.boolean().default(false),
@@ -88,6 +100,31 @@ export const AudioSourceSchema = z.object({
   volume: z.number().min(0).max(1).default(1),
 });
 
+export const UI_ANCHORS = [
+  'top-left',
+  'top',
+  'top-right',
+  'left',
+  'center',
+  'right',
+  'bottom-left',
+  'bottom',
+  'bottom-right',
+] as const;
+
+export const UIElementSchema = z.object({
+  /** Screen corner/edge this element is positioned from. */
+  anchor: z.enum(UI_ANCHORS).default('top-left'),
+  /** Pixel offset from the anchor point. */
+  offset: Vec2Schema.default({ x: 0, y: 0 }),
+  /**
+   * When true, the element receives pointer events and its Script's
+   * onUiEvent(ctx, event) hook fires with
+   * { type: 'click'|'press'|'release'|'enter'|'exit' }.
+   */
+  interactive: z.boolean().default(false),
+});
+
 export const TilemapSchema = z.object({
   tileSize: z.number().positive().default(32),
   /**
@@ -112,6 +149,7 @@ export const COMPONENT_SCHEMAS = {
   Text: TextSchema,
   AudioSource: AudioSourceSchema,
   Tilemap: TilemapSchema,
+  UIElement: UIElementSchema,
 } as const;
 
 export type ComponentType = keyof typeof COMPONENT_SCHEMAS;
@@ -127,6 +165,8 @@ export type CameraComponent = z.infer<typeof CameraSchema>;
 export type TextComponent = z.infer<typeof TextSchema>;
 export type AudioSourceComponent = z.infer<typeof AudioSourceSchema>;
 export type TilemapComponent = z.infer<typeof TilemapSchema>;
+export type UIElementComponent = z.infer<typeof UIElementSchema>;
+export type UIAnchor = (typeof UI_ANCHORS)[number];
 
 export interface ComponentMap {
   Transform?: TransformComponent;
@@ -138,6 +178,7 @@ export interface ComponentMap {
   Text?: TextComponent;
   AudioSource?: AudioSourceComponent;
   Tilemap?: TilemapComponent;
+  UIElement?: UIElementComponent;
 }
 
 export function isComponentType(type: string): type is ComponentType {
@@ -161,12 +202,16 @@ export const COMPONENT_DOCS: Record<ComponentType, string> = {
   Transform: 'Position (pixels), rotation (degrees), and scale of an entity. Almost every entity needs one.',
   SpriteRenderer:
     'Renders a sprite asset (assetId) or a colored primitive (shape/color/width/height) when no asset is set.',
-  Collider: 'Box or circle collision shape. isTrigger=true reports overlaps without blocking movement.',
+  Collider:
+    'Box, circle, or convex polygon collision shape (polygon uses points, local space, min 3 convex vertices). isTrigger=true reports overlaps without blocking movement.',
   PhysicsBody:
     'Simple physics: dynamic bodies fall with gravity and collide; kinematic bodies move by velocity only; static bodies never move.',
   Script: 'Attaches a JavaScript behavior from scripts/ (scriptPath). params are passed to the script as ctx.params.',
   Camera: 'Viewpoint for the scene. One entity should have a Camera with isMain=true.',
   Text: 'Renders UI/world text (content, fontSize, color).',
-  AudioSource: 'References an audio asset; autoplay/loop/volume. Playback support is experimental.',
+  AudioSource:
+    'References an audio asset; autoplay plays on scene start with loop/volume. Scripts can also play any audio asset via ctx.audio.play(assetRef, { volume, loop }).',
   Tilemap: 'Character-grid tilemap: tileAssets maps grid characters to assets; solid=true auto-generates colliders.',
+  UIElement:
+    'Makes the entity screen-space UI: positioned by anchor+offset, unaffected by the camera. Visuals come from Text/SpriteRenderer. interactive=true sends pointer events to the Script hook onUiEvent(ctx, event).',
 };
