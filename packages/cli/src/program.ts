@@ -289,7 +289,10 @@ export function buildProgram(): Command {
       .description('create a playtest definition')
       .requiredOption('--scene <scene>', 'target scene')
       .option('--steps-file <path>', 'JSON file with an array of playtest steps')
-      .option('--max-frames <n>', 'max frames before timeout', (v) => parseInt(v, 10)),
+      .option('--max-frames <n>', 'max frames before timeout', (v) => parseInt(v, 10))
+      .option('--seed <n>', 'seed for ctx.random / Lua math.random (same seed, same run)', (v) =>
+        parseInt(v, 10),
+      ),
   ).action(async (name: string, opts, cmd) => {
     await guarded(cmd, 'createPlaytest', async () => {
       let steps: unknown[] = [];
@@ -302,6 +305,7 @@ export function buildProgram(): Command {
         scene: opts.scene,
         steps,
         maxFrames: opts.maxFrames,
+        seed: opts.seed,
       });
     });
   });
