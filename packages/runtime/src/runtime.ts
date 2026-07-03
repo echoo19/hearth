@@ -22,6 +22,7 @@ import {
   isComponentType,
   type ComponentMap,
   type Entity,
+  type ParticleEmitterComponent,
   type ProjectStore,
   type Scene,
   type TransformComponent,
@@ -47,6 +48,7 @@ import {
   type UiEvent,
 } from './scripts.js';
 import { LuaScriptEngine, isLuaPath } from './lua.js';
+import { EmitterState, type Particle } from './particles.js';
 import { MemorySessionStorage, type SessionStorage } from './session.js';
 import { EASINGS, EntityScheduler, createRng, resolveNumericTarget } from './stdlib.js';
 import { uiElementRect } from './ui.js';
@@ -182,6 +184,7 @@ export class SceneRuntime {
   private ownedLuaEngine: LuaScriptEngine | null = null;
   private cameraFollowId: string | null = null;
   private warnedNoCamera = false;
+  private emitters = new Map<string, EmitterState>();
 
   private constructor(
     private readonly store: ProjectStore,
@@ -238,6 +241,18 @@ export class SceneRuntime {
 
   findByTag(tag: string): RuntimeEntity[] {
     return this.getEntities().filter((e) => e.tags.includes(tag));
+  }
+
+  /** Live particles for an emitter entity (by id or name); [] when none. */
+  getParticles(entityIdOrName: string): ReadonlyArray<Particle> {
+    const entity = this.find(entityIdOrName);
+    if (!entity) return [];
+    return this.emitters.get(entity.id)?.particles ?? [];
+  }
+
+  /** Live particle count for an emitter entity (by id or name); 0 when none. */
+  getParticleCount(entityIdOrName: string): number {
+    return this.getParticles(entityIdOrName).length;
   }
 
   /** Active camera view: main Camera entity, or build-settings defaults. */
@@ -329,6 +344,9 @@ export class SceneRuntime {
 
     // 4b. Camera follow applies at end of frame, after physics.
     this.applyCameraFollow();
+
+    // 4c. Particle emitters step deterministically (per-emitter seeded RNG).
+    this.stepParticles();
 
     // 5. End of frame bookkeeping.
     this.flushDestroyed();
@@ -510,6 +528,42 @@ export class SceneRuntime {
     const pos = this.getWorldPosition(target);
     cam.transform.position.x = pos.x;
     cam.transform.position.y = pos.y;
+  }
+
+  // ---------------------------------------------------------------------------
+  // Particles
+  // ---------------------------------------------------------------------------
+
+  /** Get or lazily create the EmitterState for an entity's ParticleEmitter. */
+  private getOrCreateEmitterState(
+    entity: RuntimeEntity,
+    emitter: ParticleEmitterComponent,
+  ): EmitterState {
+    let state = this.emitters.get(entity.id);
+    if (!state) {
+      state = new EmitterState(emitter.seed);
+      this.emitters.set(entity.id, state);
+    }
+    return state;
+  }
+
+  /** Advance every live emitter one fixed step; reap emitters for dead entities. */
+  private stepParticles(): void {
+    const liveIds = new Set<string>();
+    for (const entity of this.getEntities()) {
+      if (!entity.enabled) continue;
+      const emitter = entity.components.ParticleEmitter;
+      if (!emitter) continue;
+      liveIds.add(entity.id);
+      const isNew = !this.emitters.has(entity.id);
+      const state = this.getOrCreateEmitterState(entity, emitter);
+      const origin = this.getWorldPosition(entity);
+      if (isNew) state.burst(emitter.burst, emitter, origin);
+      state.step(this.fixedDt, emitter, origin);
+    }
+    for (const id of [...this.emitters.keys()]) {
+      if (!liveIds.has(id)) this.emitters.delete(id);
+    }
   }
 
   // ---------------------------------------------------------------------------
@@ -709,6 +763,21 @@ export class SceneRuntime {
           if (hi < lo) return lo;
           return lo + Math.floor(runtime.rng() * (hi - lo + 1));
         },
+      },
+      particles: {
+        burst: (count) => {
+          const emitter = entity.components.ParticleEmitter;
+          if (!emitter) {
+            runtime.recordLog(
+              'warn',
+              `ctx.particles.burst: no ParticleEmitter on "${entity.name}"`,
+            );
+            return;
+          }
+          const state = runtime.getOrCreateEmitterState(entity, emitter);
+          state.burst(count, emitter, runtime.getWorldPosition(entity));
+        },
+        count: () => runtime.getParticleCount(entity.id),
       },
       save: (key, value) => {
         runtime.storage.set(key, JSON.stringify(value) ?? 'null');

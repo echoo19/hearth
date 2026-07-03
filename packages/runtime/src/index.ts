@@ -24,6 +24,7 @@ export {
   setLuaWasmUri,
   type LuaEngineOptions,
 } from './lua.js';
+export { EmitterState, type Particle } from './particles.js';
 export {
   GameSession,
   MemorySessionStorage,

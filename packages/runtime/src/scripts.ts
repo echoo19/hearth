@@ -126,6 +126,12 @@ export interface ScriptContext {
     range(min: number, max: number): number; // float
     int(min: number, max: number): number; // inclusive
   };
+  particles: {
+    /** Spawn `count` particles immediately from this entity's ParticleEmitter. Warn if none. */
+    burst(count: number): void;
+    /** Live particle count for this entity's ParticleEmitter (0 if none). */
+    count(): number;
+  };
   /** Persistent save data (JSON values), survives scene switches; in the
    *  browser it persists across sessions via localStorage. */
   save(key: string, value: unknown): void;
