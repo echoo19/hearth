@@ -28,12 +28,32 @@ project model → editor → runtime preview → CLI → MCP → headless playte
 diff review. See [docs/roadmap.md](docs/roadmap.md) for what's deliberately
 missing (screenshots for agents, web export, audio playback, undo…).
 
-## Quick start
+## Install
+
+**Download the desktop app** — [Releases](https://github.com/echoo19/hearth/releases/latest):
+macOS (`Hearth-mac-arm64.dmg` / `Hearth-mac-x64.dmg`), Windows
+(`Hearth-win-x64.exe`), Linux (`Hearth-linux-x86_64.AppImage` /
+`Hearth-linux-amd64.deb`). macOS builds are unsigned in this preview —
+right-click → Open the first time.
+
+**Agent tools without any install** (single files, Node ≥ 20):
+
+```bash
+curl -LO https://github.com/echoo19/hearth/releases/latest/download/hearth-cli.mjs
+curl -LO https://github.com/echoo19/hearth/releases/latest/download/hearth-mcp.mjs
+node hearth-cli.mjs --help
+claude mcp add hearth -- node $PWD/hearth-mcp.mjs --project <your game>
+```
+
+The same two files also ship inside the desktop app (the Agent panel shows
+their exact paths, ready to copy).
+
+## Quick start (from source)
 
 Requires Node ≥ 20.
 
 ```bash
-git clone <this repo> hearth && cd hearth
+git clone https://github.com/echoo19/hearth.git && cd hearth
 npm install
 npm run build:packages     # core → runtime → playtest → cli → mcp-server
 npm test                   # 85+ tests
