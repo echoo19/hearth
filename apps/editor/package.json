@@ -14,8 +14,8 @@
     "app:bundle": "node scripts/build-electron.mjs",
     "app": "npm run build && npm run app:bundle && electron .",
     "app:dev": "npm run app:bundle && ELECTRON_START_URL=http://localhost:5173 electron .",
-    "app:dist": "npm run build && npm run app:bundle && node scripts/assemble-app.mjs && electron-builder --dir",
-    "app:dist:installers": "npm run build && npm run app:bundle && node scripts/assemble-app.mjs && electron-builder",
+    "app:dist": "npm run build && npm run app:bundle && node scripts/assemble-app.mjs && CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder --dir",
+    "app:dist:installers": "npm run build && npm run app:bundle && node scripts/assemble-app.mjs && CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder",
     "tauri": "tauri"
   },
   "build": {
@@ -36,7 +36,10 @@
     "artifactName": "Hearth-${os}-${arch}.${ext}",
     "mac": {
       "category": "public.app-category.developer-tools",
-      "identity": null,
+      "hardenedRuntime": true,
+      "gatekeeperAssess": false,
+      "entitlements": "buildResources/entitlements.mac.plist",
+      "entitlementsInherit": "buildResources/entitlements.mac.plist",
       "target": [
         {
           "target": "dmg",

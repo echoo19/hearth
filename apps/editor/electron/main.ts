@@ -101,6 +101,30 @@ function registerDialogHandlers(getWindow: () => BrowserWindow | null): void {
   ipcMain.handle('hearth:reveal-in-folder', (_event, target: string) => {
     if (typeof target === 'string' && fs.existsSync(target)) shell.showItemInFolder(target);
   });
+
+  // Godot-style window modes: the app opens as a compact project manager;
+  // opening a project grows the same window into the full editor (same
+  // BrowserWindow, so no state is lost), closing the project shrinks it back.
+  ipcMain.handle('hearth:window-mode', (_event, mode: string, title?: string) => {
+    const win = getWindow();
+    if (!win) return;
+    if (mode === 'editor') {
+      win.setMinimumSize(1100, 700);
+      const { width, height } = win.getBounds();
+      if (width < 1440 || height < 900) {
+        win.setSize(1440, 900, true);
+        win.center();
+      }
+      if (!win.isMaximized()) win.maximize();
+      win.setTitle(title ? `${title} — Hearth` : 'Hearth');
+    } else {
+      if (win.isMaximized()) win.unmaximize();
+      win.setMinimumSize(880, 600);
+      win.setSize(980, 680, true);
+      win.center();
+      win.setTitle('Hearth — Projects');
+    }
+  });
 }
 
 async function main(): Promise<void> {
@@ -135,13 +159,16 @@ async function main(): Promise<void> {
     url = `http://127.0.0.1:${port}`;
   }
 
+  // Start as a compact project-manager window (Godot-style); the renderer
+  // asks for editor size via hearth:window-mode once a project opens.
   win = new BrowserWindow({
-    width: 1440,
-    height: 900,
-    minWidth: 960,
+    width: 980,
+    height: 680,
+    minWidth: 880,
     minHeight: 600,
-    title: 'Hearth',
+    title: 'Hearth — Projects',
     backgroundColor: '#141019',
+    center: true,
     webPreferences: {
       preload: path.join(__dirname, 'preload.cjs'),
       contextIsolation: true,

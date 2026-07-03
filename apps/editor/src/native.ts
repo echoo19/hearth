@@ -7,6 +7,8 @@ export interface HearthNative {
   pickProjectFolder(): Promise<string | null>;
   pickDirectory(): Promise<string | null>;
   revealInFolder(path: string): Promise<void>;
+  /** Godot-style window sizing: compact launcher vs full editor. */
+  setWindowMode(mode: 'launcher' | 'editor', title?: string): Promise<void>;
   platform: string;
 }
 

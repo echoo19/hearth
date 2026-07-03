@@ -63,6 +63,29 @@ Notes:
   configured in `apps/editor/package.json` → `build`; build them on the
   matching OS or in CI.
 
+## Real signing & notarization (removing the warnings entirely)
+
+Release builds sign automatically once these GitHub Actions secrets exist —
+no workflow changes needed:
+
+| Platform | What to get | Secrets to set |
+| --- | --- | --- |
+| macOS | Apple Developer Program ($99/yr) → create a **Developer ID Application** certificate in Xcode/developer.apple.com, export as .p12; generate an app-specific password at appleid.apple.com | `MAC_CSC_LINK` (the .p12, base64: `base64 -i cert.p12 \| pbcopy`), `MAC_CSC_KEY_PASSWORD`, `APPLE_ID`, `APPLE_APP_SPECIFIC_PASSWORD`, `APPLE_TEAM_ID` |
+| Windows | Any Authenticode cert. Cheapest modern route: **Azure Trusted Signing** (~$10/mo); classic route: an OV .pfx from a CA (SmartScreen trust builds with downloads) | `WIN_CSC_LINK` (base64 .pfx), `WIN_CSC_KEY_PASSWORD` |
+
+With the macOS secrets present the workflow signs with hardened runtime
+(entitlements in `buildResources/entitlements.mac.plist`) and notarizes —
+downloads then open with **zero** warnings, no right-click, no xattr. Without
+them it falls back to the current ad-hoc signing. Linux needs nothing.
+
+## Window model
+
+The desktop app behaves like Godot: it opens as a compact **project
+manager** window (create/open/recents/examples); opening a project grows the
+same window into the full editor (maximized) and titles it after the
+project; closing the project shrinks back to the manager. Browser mode is a
+single full-page app.
+
 ## Smoke-testing headlessly
 
 `HEARTH_SMOKE=1` makes the app boot, verify `/api/meta` through the real

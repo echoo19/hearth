@@ -38,9 +38,39 @@ jobs:
         run: npm run app:bundle -w @hearth/editor
       - name: Assemble app directory
         run: node apps/editor/scripts/assemble-app.mjs
+      # Signing is secret-gated: builds are ad-hoc signed (mac) / unsigned
+      # (win) until the repository has real credentials. To professionalize:
+      #   macOS  — Apple Developer Program; set secrets MAC_CSC_LINK
+      #            (base64 .p12 of a Developer ID Application cert),
+      #            MAC_CSC_KEY_PASSWORD, APPLE_ID, APPLE_APP_SPECIFIC_PASSWORD,
+      #            APPLE_TEAM_ID → apps are signed + notarized, zero warnings.
+      #   Windows — set WIN_CSC_LINK (base64 .pfx) + WIN_CSC_KEY_PASSWORD
+      #            (or wire Azure Trusted Signing) → SmartScreen-friendly.
+      # See docs/desktop-app.md → "Real signing & notarization".
       - name: Package desktop app
-        run: npx electron-builder --publish never
         working-directory: apps/editor
+        shell: bash
+        env:
+          MAC_CSC_LINK: ${{ secrets.MAC_CSC_LINK }}
+          MAC_CSC_KEY_PASSWORD: ${{ secrets.MAC_CSC_KEY_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          WIN_CSC_LINK: ${{ secrets.WIN_CSC_LINK }}
+          WIN_CSC_KEY_PASSWORD: ${{ secrets.WIN_CSC_KEY_PASSWORD }}
+        run: |
+          EXTRA=""
+          if [ "$RUNNER_OS" = "macOS" ] && [ -n "$MAC_CSC_LINK" ]; then
+            echo "Developer ID configured: signing + notarizing"
+            export CSC_LINK="$MAC_CSC_LINK" CSC_KEY_PASSWORD="$MAC_CSC_KEY_PASSWORD"
+            EXTRA="--config.mac.notarize=true"
+          elif [ "$RUNNER_OS" = "Windows" ] && [ -n "$WIN_CSC_LINK" ]; then
+            echo "Windows cert configured: signing"
+            export CSC_LINK="$WIN_CSC_LINK" CSC_KEY_PASSWORD="$WIN_CSC_KEY_PASSWORD"
+          else
+            export CSC_IDENTITY_AUTO_DISCOVERY=false
+          fi
+          npx electron-builder --publish never $EXTRA
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:

@@ -1,5 +1,6 @@
 import React, { useEffect } from 'react';
 import { useEditor } from './store';
+import { hearthNative } from './native';
 import { Launcher } from './components/Launcher';
 import { Toolbar } from './components/Toolbar';
 import { Hierarchy } from './components/Hierarchy';
@@ -13,10 +14,20 @@ import { AgentPanel } from './components/AgentPanel';
 
 export default function App() {
   const projectPath = useEditor((s) => s.projectPath);
+  const projectName = useEditor((s) => s.info?.name);
 
   useEffect(() => {
     void useEditor.getState().loadMeta();
   }, []);
+
+  // Desktop app: compact project-manager window when no project is open,
+  // full editor window once one is (Godot-style). No-op in the browser.
+  useEffect(() => {
+    void hearthNative()?.setWindowMode(
+      projectPath ? 'editor' : 'launcher',
+      projectPath ? projectName : undefined,
+    );
+  }, [projectPath, projectName]);
 
   return projectPath ? <EditorShell /> : <Launcher />;
 }

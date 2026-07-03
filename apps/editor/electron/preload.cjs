@@ -12,5 +12,7 @@ contextBridge.exposeInMainWorld('hearthNative', {
   pickDirectory: () => ipcRenderer.invoke('hearth:pick-directory'),
   /** Reveal a file/folder in Finder / Explorer. */
   revealInFolder: (path) => ipcRenderer.invoke('hearth:reveal-in-folder', path),
+  /** Godot-style window sizing: 'launcher' (compact) or 'editor' (full). */
+  setWindowMode: (mode, title) => ipcRenderer.invoke('hearth:window-mode', mode, title),
   platform: process.platform,
 });

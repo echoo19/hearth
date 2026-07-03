@@ -14,9 +14,16 @@ const path = require('node:path');
 
 module.exports = async function afterPack(context) {
   if (context.electronPlatformName !== 'darwin') return;
+  // When a real Developer ID certificate is configured (CSC_LINK), electron-
+  // builder signs + notarizes after this hook — skip the ad-hoc pass so we
+  // never race the real signature.
+  if (process.env.CSC_LINK || process.env.CSC_NAME) {
+    console.log('  • real signing configured; skipping ad-hoc fallback');
+    return;
+  }
   const appName = `${context.packager.appInfo.productFilename}.app`;
   const appPath = path.join(context.appOutDir, appName);
-  console.log(`  • ad-hoc signing ${appName} (no Developer ID yet)`);
+  console.log(`  • ad-hoc signing ${appName} (no Developer ID configured)`);
   execSync(`codesign --force --deep --sign - "${appPath}"`, { stdio: 'inherit' });
   execSync(`codesign --verify --deep --strict "${appPath}"`, { stdio: 'inherit' });
 };
