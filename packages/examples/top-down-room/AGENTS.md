@@ -17,7 +17,7 @@ operations instead of hand-editing JSON.
 2. **Prefer structured commands over editing project JSON by hand.**
    The CLI validates every change against schemas. Direct edits to
    `hearth.json`, `scenes/*.scene.json`, or `assets.json` can corrupt the
-   project. Scripts in `scripts/*.js` are normal code — edit those freely
+   project. Scripts in `scripts/*.js` are normal code: edit those freely
    (or via `hearth create script` / `hearth edit-script`).
 3. **Snapshot before you change anything:** `hearth snapshot`.
    Then the human can review your work with `hearth diff` (or the editor's
@@ -47,12 +47,12 @@ hearth diff                            # review what changed
 
 ## Project layout (do not restructure)
 
-- `hearth.json` — project manifest (scenes list, input mappings, build settings)
-- `scenes/*.scene.json` — scene files (entities + components)
-- `assets.json` — asset index; `assets/` — asset files
-- `scripts/*.js` — behavior scripts (see script template docs: `hearth inspect components`)
-- `playtests/*.playtest.json` — headless playtest definitions
-- `.hearth/` — engine state (baseline snapshots, agent config); don't edit manually
+- `hearth.json`: project manifest (scenes list, input mappings, build settings)
+- `scenes/*.scene.json`: scene files (entities + components)
+- `assets.json`: asset index; `assets/`: asset files
+- `scripts/*.js`: behavior scripts (see script template docs: `hearth inspect components`)
+- `playtests/*.playtest.json`: headless playtest definitions
+- `.hearth/`: engine state (baseline snapshots, agent config); don't edit manually
 
 ## Scripting quick reference
 

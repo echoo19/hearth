@@ -1,7 +1,7 @@
 # Quickstart: your first Hearth game
 
 Ten minutes from clone to a playable, playtested game. Everything below also
-works for a coding agent — that's the point.
+works for a coding agent. That's the point.
 
 ## 1. Install & build
 
@@ -106,6 +106,6 @@ and a diff you'll review. That's Hearth.
 
 ## Where next
 
-- [Scripting guide](./scripting.md) — the full `ctx` API
-- [CLI guide](./cli.md) — everything `hearth` can do
-- [Examples](../packages/examples) — platformer, top-down, visual novel
+- [Scripting guide](./scripting.md): the full `ctx` API
+- [CLI guide](./cli.md): everything `hearth` can do
+- [Examples](../packages/examples): platformer, top-down, visual novel

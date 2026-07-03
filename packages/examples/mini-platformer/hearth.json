@@ -1,13 +1,13 @@
 {
   "formatVersion": 1,
   "hearthVersion": "0.1.0",
-  "id": "prj_g6nbnpkc",
+  "id": "prj_x0ldycfz",
   "name": "Mini Platformer",
   "description": "Jump between platforms, collect coins, avoid the patrolling enemy.",
-  "initialScene": "scn_vpa4d146",
+  "initialScene": "scn_ftjag1ts",
   "scenes": [
     {
-      "id": "scn_vpa4d146",
+      "id": "scn_ftjag1ts",
       "name": "Level 1",
       "path": "scenes/level_1.scene.json"
     }

@@ -1,10 +1,10 @@
 {
   "formatVersion": 1,
-  "id": "scn_vpa4d146",
+  "id": "scn_ftjag1ts",
   "name": "Level 1",
   "entities": [
     {
-      "id": "ent_h76ek5kt",
+      "id": "ent_kylhjnyx",
       "name": "Main Camera",
       "parentId": null,
       "enabled": true,
@@ -33,7 +33,7 @@
       }
     },
     {
-      "id": "ent_zbwenqzb",
+      "id": "ent_dtopg0mq",
       "name": "Ground",
       "parentId": null,
       "enabled": true,
@@ -55,8 +55,8 @@
         "Tilemap": {
           "tileSize": 32,
           "tileAssets": {
-            "G": "ast_sec2vqz7",
-            "S": "ast_8eqzenwu"
+            "G": "ast_l9rewwno",
+            "S": "ast_k89ut858"
           },
           "grid": [
             "GGGGGGGGGGGGGGGGGGGGGGGGG..GGGGGGGGGG",
@@ -68,7 +68,7 @@
       }
     },
     {
-      "id": "ent_2ckfer87",
+      "id": "ent_pfunsps9",
       "name": "Platform A",
       "parentId": null,
       "enabled": true,
@@ -122,7 +122,7 @@
       }
     },
     {
-      "id": "ent_bb6j5yib",
+      "id": "ent_jpkn6jhf",
       "name": "Platform B",
       "parentId": null,
       "enabled": true,
@@ -176,7 +176,7 @@
       }
     },
     {
-      "id": "ent_czf8qhj1",
+      "id": "ent_5cnlgy0o",
       "name": "Platform C",
       "parentId": null,
       "enabled": true,
@@ -230,7 +230,7 @@
       }
     },
     {
-      "id": "ent_885n9vun",
+      "id": "ent_2i16nowh",
       "name": "Player",
       "parentId": null,
       "enabled": true,
@@ -250,7 +250,7 @@
           }
         },
         "SpriteRenderer": {
-          "assetId": "ast_gaj9g16a",
+          "assetId": "ast_j0ebcoo3",
           "shape": "rectangle",
           "color": "#ffffff",
           "width": 32,
@@ -291,7 +291,7 @@
       }
     },
     {
-      "id": "ent_cxy07xov",
+      "id": "ent_4rhotdrn",
       "name": "Coin 1",
       "parentId": null,
       "enabled": true,
@@ -311,7 +311,7 @@
           }
         },
         "SpriteRenderer": {
-          "assetId": "ast_fkovc9px",
+          "assetId": "ast_0b1x1aks",
           "shape": "rectangle",
           "color": "#ffffff",
           "width": 22,
@@ -340,7 +340,7 @@
       }
     },
     {
-      "id": "ent_cmrkk9o5",
+      "id": "ent_nc7e2b5n",
       "name": "Coin 2",
       "parentId": null,
       "enabled": true,
@@ -360,7 +360,7 @@
           }
         },
         "SpriteRenderer": {
-          "assetId": "ast_fkovc9px",
+          "assetId": "ast_0b1x1aks",
           "shape": "rectangle",
           "color": "#ffffff",
           "width": 22,
@@ -389,7 +389,7 @@
       }
     },
     {
-      "id": "ent_eozv81rt",
+      "id": "ent_0at3aj3e",
       "name": "Coin 3",
       "parentId": null,
       "enabled": true,
@@ -409,7 +409,7 @@
           }
         },
         "SpriteRenderer": {
-          "assetId": "ast_fkovc9px",
+          "assetId": "ast_0b1x1aks",
           "shape": "rectangle",
           "color": "#ffffff",
           "width": 22,
@@ -438,7 +438,7 @@
       }
     },
     {
-      "id": "ent_gbj7vsrm",
+      "id": "ent_nbadoifh",
       "name": "Enemy",
       "parentId": null,
       "enabled": true,
@@ -458,7 +458,7 @@
           }
         },
         "SpriteRenderer": {
-          "assetId": "ast_iqw8pxwh",
+          "assetId": "ast_z1y4vw6b",
           "shape": "rectangle",
           "color": "#ffffff",
           "width": 36,
@@ -490,7 +490,7 @@
       }
     },
     {
-      "id": "ent_x0gtnkrs",
+      "id": "ent_tj7d4m7g",
       "name": "Score",
       "parentId": null,
       "enabled": true,

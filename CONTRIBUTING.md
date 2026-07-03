@@ -25,8 +25,8 @@ npm run dev              # editor at http://localhost:5173
 
 - Node ≥ 20. TypeScript, ESM, NodeNext resolution (relative imports need
   `.js` extensions).
-- Tests run against package **sources** via vitest aliases — no rebuild
-  needed while iterating (`npm run test:watch`).
+- Tests run against package **sources** via vitest aliases, so you don't
+  need to rebuild while iterating (`npm run test:watch`).
 - Regenerate example projects after command-system changes:
   `node packages/examples/generate.mjs`.
 
@@ -39,15 +39,15 @@ schemas/commands/validation/diff; `runtime` simulates and renders;
 
 ## AI / agent contribution policy
 
-Hearth is an agent-native engine, and AI-assisted contributions are welcome —
-under the same standard as any contribution:
+Hearth is an agent-native engine, and AI-assisted contributions are welcome,
+held to the same standard as any other contribution:
 
 - **You must understand the change.** If a maintainer asks "why is this
   loop bounded here?", "explain it" is part of the contribution.
 - Include tests where appropriate, and run the suite before opening the PR.
 - Disclose substantial AI assistance in the PR description (a line like
   "drafted with Claude Code, reviewed and tested by me" is plenty).
-- **Autonomous drive-by AI PRs are not accepted** — mass-generated changes
+- **Autonomous drive-by AI PRs are not accepted.** Mass-generated changes
   with no human who can answer for them will be closed without review.
 - Agents contributing *to game projects built with Hearth* should follow the
   generated `AGENTS.md` in those projects; this policy is about the engine
@@ -57,9 +57,9 @@ under the same standard as any contribution:
 
 - Match the surrounding code: 2-space indent, single quotes, JSDoc header
   comment per file explaining the module's role.
-- No new runtime dependencies without discussion — the dependency budget is
+- No new runtime dependencies without discussion; the dependency budget is
   deliberately tiny (zod, commander, pixi, react, MCP SDK).
-- Error messages should tell the reader what to do next, not just what broke
+- Error messages should tell the reader what to do next, beyond what broke
   (see `ProjectError` usages for tone).
 
 ## Releases

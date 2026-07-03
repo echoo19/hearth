@@ -31,7 +31,7 @@ export function Toolbar() {
   async function snapshot() {
     const result = await exec<{ scenes: number }>('snapshotProject', {}, { quiet: true });
     if (result.success) {
-      log('info', 'command', 'Snapshot saved — the Diff panel now compares against this baseline.');
+      log('info', 'command', 'Snapshot saved. The Diff panel now compares against this baseline.');
     }
   }
 

@@ -2,7 +2,8 @@
 
 Hearth is a monorepo of small, focused packages sharing one core. The design
 goal: **every operation a human can do in the editor is a structured command
-an agent can call** — same code path, same validation, same results.
+an agent can call**, through the same code path, with the same validation and
+results.
 
 ```
                 ┌─────────────────────────────────────────────┐
@@ -29,12 +30,12 @@ an agent can call** — same code path, same validation, same results.
 
 | Package | Role |
 | --- | --- |
-| `packages/core` | Zod schemas for every file format; `ProjectStore` (load/save); the **command registry** (~40 operations); validation; structural diff; permission model; procedural SVG asset generation; AGENTS.md/CLAUDE.md generation. Browser-safe — Node fs access is isolated in `@hearth/core/node`. |
+| `packages/core` | Zod schemas for every file format; `ProjectStore` (load/save); the **command registry** (~40 operations); validation; structural diff; permission model; procedural SVG asset generation; AGENTS.md/CLAUDE.md generation. Browser-safe: Node fs access is isolated in `@hearth/core/node`. |
 | `packages/runtime` | 2D runtime: scene instantiation, fixed-timestep loop, input actions, AABB physics/collision, script engine, camera. The main entry is **headless** (runs in Node for playtests); the PixiJS renderer is the separate `@hearth/runtime/pixi` subpath used by the editor's game preview. |
 | `packages/playtest` | Headless playtest execution: scripted input + assertions over `SceneRuntime`, exposed as `RuntimeHooks` injected into core commands (`runPlaytest`, `runScene`). |
-| `packages/cli` | `hearth` — the command-line surface. Every subcommand dispatches into the core command system; `--json` emits the raw `CommandResult` envelope for agents. |
-| `packages/mcp-server` | `hearth-mcp` — stdio MCP server exposing the same commands as typed MCP tools, with permission modes. |
-| `packages/examples` | Three sample projects **generated through the command system itself** (`generate.mjs`) — they double as integration tests and agent references. |
+| `packages/cli` | `hearth`, the command-line surface. Every subcommand dispatches into the core command system; `--json` emits the raw `CommandResult` envelope for agents. |
+| `packages/mcp-server` | `hearth-mcp`, a stdio MCP server exposing the same commands as typed MCP tools, with permission modes. |
+| `packages/examples` | Three sample projects **generated through the command system itself** (`generate.mjs`); they double as integration tests and agent references. |
 | `apps/editor` | Vite + React editor. A Vite-plugin project server (Node) opens `HearthSession`s and exposes `/api/command` etc.; the browser UI renders panels and dispatches commands. Tauri shell config included for desktop packaging. |
 
 ## The command system (the load-bearing wall)
@@ -78,7 +79,7 @@ surface picks it up.
 1. **Load**: `ProjectStore.load(fs, root)` parses `hearth.json`, scenes,
    assets index, playtests through Zod schemas (fail fast, precise errors).
 2. **Mutate**: commands operate on the in-memory store; successful mutating
-   commands persist the whole model (`store.save()` — files are small JSON,
+   commands persist the whole model via `store.save()` (files are small JSON;
    simplicity beats partial writes at this scale).
 3. **Diff**: `snapshotProject` writes `.hearth/baseline.json`;
    `diffProject` structurally compares baseline vs current (scenes →
@@ -106,7 +107,7 @@ shell execution are deliberately not exposed to agents in v0.1.
 ## Extension paths (documented, not built)
 
 - Multi-instance components per entity (array form behind a `formatVersion` bump).
-- Standalone web export (runtime bundle + project → static site) — `buildProject`
+- Standalone web export (runtime bundle + project → static site). `buildProject`
   currently validates and exports a portable project folder with a manifest.
 - Screenshot capture for agents (needs headless GPU or DOM snapshot strategy).
 - Tauri-native project server (sidecar) for the packaged desktop app.

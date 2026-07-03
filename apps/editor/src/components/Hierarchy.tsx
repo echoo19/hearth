@@ -180,7 +180,7 @@ export function Hierarchy() {
       <ConfirmDialog
         open={deleting !== null}
         title={`Delete “${deleting?.name ?? ''}”?`}
-        body="Its children are kept and re-parented one level up. This mutation is recorded like any other command — snapshot first if you want an undo point."
+        body="Its children are kept and re-parented one level up. This mutation is recorded like any other command; snapshot first if you want an undo point."
         confirmLabel="Delete entity"
         danger
         onCancel={() => setDeleting(null)}

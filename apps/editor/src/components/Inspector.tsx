@@ -288,7 +288,7 @@ export function Inspector() {
                         value={(value as string | null) ?? ''}
                         onChange={(e) => setProperty(property, e.target.value === '' ? null : e.target.value)}
                       >
-                        <option value="">(none — draw primitive)</option>
+                        <option value="">(none: draw primitive)</option>
                         {assets
                           .filter((a) => a.type === 'sprite' || a.type === 'tile' || a.type === 'audio')
                           .map((a) => (

@@ -4,7 +4,7 @@ A Hearth project is a plain directory of human- and agent-readable JSON plus
 scripts and assets. Everything is local-first; nothing requires a server.
 
 > **Agents:** prefer `hearth` CLI commands / MCP tools over editing these
-> files directly — commands validate every change. This document is the
+> files directly; commands validate every change. This document is the
 > contract those tools maintain.
 
 ```
@@ -28,7 +28,7 @@ my-game/
 └── CLAUDE.md                    # pointer for Claude Code
 ```
 
-All schemas are Zod definitions in `packages/core/src/schema/` — that code is
+All schemas are Zod definitions in `packages/core/src/schema/`. That code is
 normative; this page is descriptive. Every file carries `formatVersion: 1`.
 
 ## hearth.json
@@ -94,7 +94,7 @@ parent's translation at runtime). IDs are stable and prefixed (`ent_`,
 }
 ```
 
-Components are a map keyed by type — **one component per type per entity** in
+Components are a map keyed by type: **one component per type per entity** in
 format v1 (multi-instance components are the documented extension path via a
 `formatVersion` bump). See [components.md](./components.md) for every type
 and property, or run `hearth inspect components --json`.
@@ -145,8 +145,8 @@ Step types: `wait`, `press`, `release`, `assertEntityExists`,
 
 ## Scripts (`scripts/*.js`)
 
-Plain JavaScript files exporting lifecycle hooks — see
-[scripting.md](./scripting.md). Scripts are referenced by path from `Script`
+Plain JavaScript files exporting lifecycle hooks (see
+[scripting.md](./scripting.md)). Scripts are referenced by path from `Script`
 components and are the one part of the project agents are encouraged to edit
 as code (via `hearth create script` / `hearth edit-script`).
 
@@ -154,6 +154,6 @@ as code (via `hearth create script` / `hearth edit-script`).
 
 - `formatVersion` is a strict literal (`1`); loaders reject unknown versions
   rather than guessing.
-- Unknown component types are rejected by the scene schema (strict map) —
-  this keeps agent-written files honest.
+- Unknown component types are rejected by the scene schema (strict map),
+  which keeps agent-written files honest.
 - IDs must match their prefix patterns (`^ent_[a-z0-9]+$` etc.).

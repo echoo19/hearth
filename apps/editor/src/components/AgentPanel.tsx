@@ -48,10 +48,10 @@ export function AgentPanel() {
       <h4>CLI (any agent with a shell)</h4>
       <CodeBlock code={cliBlock} />
 
-      <h4>MCP — Claude Code</h4>
+      <h4>MCP: Claude Code</h4>
       <CodeBlock code={mcpClaudeBlock} />
 
-      <h4>MCP — generic .mcp.json</h4>
+      <h4>MCP: generic .mcp.json</h4>
       <CodeBlock code={mcpJsonBlock} />
 
       <h4>Permission modes</h4>
@@ -82,7 +82,7 @@ export function AgentPanel() {
           <strong>Snapshot</strong> before changing anything, so the human can diff and revert.
         </li>
         <li>
-          <strong>Inspect, don't guess</strong> — read the project through structured commands instead of
+          <strong>Inspect, don't guess</strong>: read the project through structured commands instead of
           assuming its shape.
         </li>
         <li>

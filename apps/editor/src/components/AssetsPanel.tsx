@@ -131,8 +131,8 @@ export function AssetsPanel() {
             </span>
             <span>No assets yet</span>
             <span className="hint">
-              Create a procedural placeholder sprite or tile above — deterministic SVGs that agents can also
-              generate via createSpriteAsset — or import an existing image by path.
+              Create a procedural placeholder sprite or tile above (deterministic SVGs that agents can also
+              generate via createSpriteAsset), or import an existing image by path.
             </span>
           </div>
         ) : (

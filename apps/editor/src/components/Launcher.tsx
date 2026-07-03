@@ -97,7 +97,7 @@ export function Launcher() {
             </div>
             <div className="form-field">
               <label className="field-label" htmlFor="np-dir">
-                Location — the project is created in a subfolder here
+                Location (the project is created in a subfolder here)
               </label>
               <div className="row">
                 <input

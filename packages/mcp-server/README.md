@@ -19,15 +19,15 @@ node dist/main.js --project /path/to/my-game --mode read-only,safe-edit
 node dist/main.js --project /path/to/my-game --mode all
 ```
 
-The server communicates over **stdio** — it must be launched by an MCP client, not run interactively.
-All logging goes to `stderr`; `stdout` is reserved for the JSON-RPC transport.
+The server communicates over **stdio**, so an MCP client has to launch it; there's nothing to run
+interactively. All logging goes to `stderr`; `stdout` is reserved for the JSON-RPC transport.
 
 ### CLI flags
 
 | Flag | Required | Description |
 | --- | --- | --- |
 | `--project <path>` | Yes | Path to a Hearth project directory (must contain `hearth.json`). |
-| `--mode <modes>` | No | Comma-separated permission modes, or `all`. Defaults to `read-only,safe-edit,code-edit,asset-edit` (core's `DEFAULT_MODES` — `build` is opt-in). |
+| `--mode <modes>` | No | Comma-separated permission modes, or `all`. Defaults to `read-only,safe-edit,code-edit,asset-edit` (core's `DEFAULT_MODES`; `build` is opt-in). |
 
 If the project fails to load (missing `hearth.json`, invalid schema, etc.) the server prints a clear
 error to `stderr` and exits with a non-zero status instead of starting.
@@ -57,8 +57,8 @@ Or via a project's `.mcp.json`:
 }
 ```
 
-Use absolute paths for both the server script and `--project` — MCP clients typically launch servers
-with an unrelated working directory.
+Use absolute paths for both the server script and `--project`, since MCP clients typically launch
+servers with an unrelated working directory.
 
 ## Permission modes
 
@@ -145,7 +145,7 @@ requires no permission (it's purely informational).
 | `build_project` | `buildProject` | build |
 | `get_agent_instructions` | — (reads project `AGENTS.md`, or generates the default) | — |
 
-All tools are registered regardless of the session's granted modes — a client can always see the full
+All tools are registered regardless of the session's granted modes, so a client can always see the full
 tool catalog via `tools/list`. Calling a tool the session doesn't have permission for returns a
 `PERMISSION_DENIED` error envelope rather than hiding the tool, which gives agents (and humans watching
 the transcript) a clear, actionable message instead of a mysterious missing capability.

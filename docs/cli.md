@@ -1,6 +1,6 @@
 # `hearth` CLI Guide
 
-The CLI is the primary agent interface to Hearth — and a perfectly good human
+The CLI is the primary agent interface to Hearth, and a perfectly good human
 one. Every subcommand dispatches into the same core command system as the
 editor and the MCP server.
 
@@ -24,7 +24,7 @@ node packages/cli/dist/main.js --help
 | `--allow <modes>` | Permission grant: comma list of `read-only,safe-edit,code-edit,asset-edit,build`, or `all`. Default grants everything except `build`. |
 | `-q, --quiet` | Suppress stderr logging. |
 
-Exit code is `0` on success, `1` on any failure — including validation
+Exit code is `0` on success, `1` on any failure, including validation
 errors and failed playtests, so `hearth test` works in CI.
 
 ## The agent loop
@@ -51,7 +51,7 @@ hearth diff                              # what changed, for human review
 ## Command tour
 
 **Project**: `init <name>` (new project + agent files), `doctor` (health
-report), `commands` (dump the full engine command registry — agents can
+report), `commands` (dump the full engine command registry; agents can
 discover every operation from this).
 
 **Inspect** (read-only): `inspect project|scenes|components|assets|scripts`,
@@ -64,7 +64,7 @@ discover every operation from this).
 `move entity <scene> <entity> [--position x,y] [--parent ref | --to-root]`,
 `add component <scene> <entity> <Type> [--properties '<json>']`,
 `remove component`, `set <scene> <entity> <Type.path.to.prop> <value>`
-(value parses as JSON — `100` is a number, `true` a boolean, `#ff0000` a
+(value parses as JSON: `100` is a number, `true` a boolean, `#ff0000` a
 string), `set-input <action> [keys...]`.
 
 **Scripts** (code-edit): `create script <name> [--source-file f]`,
@@ -80,7 +80,7 @@ star, capsule, polygon, character, enemy, coin, heart), `create asset tile
 **Testing & review**: `snapshot`, `diff`, `revert --confirm`,
 `run <scene> [--frames n]`, `playtest [name] [--all]`,
 `create playtest <name> --scene s --steps-file steps.json`, `test`
-(validate + all playtests — the CI command), `build [--out dir]`
+(validate + all playtests, the CI command), `build [--out dir]`
 (requires `--allow build`).
 
 ## The `--json` envelope
@@ -101,5 +101,5 @@ Every command emits the same structure:
 ```
 
 Error codes are stable (`NOT_FOUND`, `CONFLICT`, `INVALID_PARAMS`,
-`SCHEMA_ERROR`, `PERMISSION_DENIED`, `UNKNOWN_COMMAND`, `INTERNAL_ERROR`) —
-branch on `success` and `errors[].code`, not message text.
+`SCHEMA_ERROR`, `PERMISSION_DENIED`, `UNKNOWN_COMMAND`, `INTERNAL_ERROR`).
+Branch on `success` and `errors[].code` rather than on message text.

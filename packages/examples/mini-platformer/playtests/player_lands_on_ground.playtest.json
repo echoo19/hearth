@@ -1,8 +1,8 @@
 {
   "formatVersion": 1,
-  "id": "ptt_v86o1ic9",
+  "id": "ptt_wpxqvdy2",
   "name": "player-lands-on-ground",
-  "scene": "scn_vpa4d146",
+  "scene": "scn_ftjag1ts",
   "steps": [
     {
       "type": "wait",

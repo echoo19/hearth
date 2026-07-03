@@ -15,10 +15,10 @@ reviewable diffs.
 
 ## Two transports, one engine
 
-- **CLI**: `hearth <command> --json` — see [cli.md](./cli.md). Best when the
+- **CLI**: `hearth <command> --json` (see [cli.md](./cli.md)). Best when the
   agent already lives in a shell (Claude Code, Codex CLI).
-- **MCP**: `hearth-mcp --project <path>` over stdio — see
-  [mcp.md](./mcp.md). Best for MCP-native clients; ~37 tools mirroring the
+- **MCP**: `hearth-mcp --project <path>` over stdio (see
+  [mcp.md](./mcp.md)). Best for MCP-native clients; ~37 tools mirroring the
   CLI 1:1.
 
 Both call the identical core command layer. Pick either; never mix in
@@ -32,7 +32,7 @@ snapshot  →  inspect  →  change (commands)  →  validate  →  playtest  �
 
 1. **Snapshot** (`hearth snapshot` / `snapshot_project`) so the human can
    diff and revert your entire session.
-2. **Inspect before editing** — `inspect project`, `inspect scene`,
+2. **Inspect before editing**: `inspect project`, `inspect scene`,
    `inspect components`. Do not assume entity names, ids, or component
    properties; read them.
 3. **Change through commands.** Create entities with components inline;
@@ -40,7 +40,7 @@ snapshot  →  inspect  →  change (commands)  →  validate  →  playtest  �
    placeholder sprites so the game is playable before art exists.
 4. **Validate** (`hearth validate --json`) and fix every error you
    introduced. Warnings are advisory but read them.
-5. **Playtest** — `hearth run <scene> --frames 120` catches script crashes;
+5. **Playtest**: `hearth run <scene> --frames 120` catches script crashes;
    `hearth playtest --all` runs scripted assertions. Create playtests for
    behavior you add (`create playtest`): they're deterministic (fixed
    timestep, scripted input), so they're trustworthy.
@@ -66,13 +66,13 @@ mutation, or grant `safe-edit` only to keep the agent out of code.
 
 ## What agents must not do
 
-- Don't hand-edit project JSON (schemas are strict; commands exist for
-  everything — and unknown component types are rejected).
+- Don't hand-edit project JSON. Schemas are strict, commands exist for
+  everything, and unknown component types are rejected.
 - Don't delete scenes/assets unless explicitly asked (asset removal refuses
   while references exist; file deletion is opt-in).
 - Don't restructure the project layout.
 - Don't leave validation failing.
-- Don't skip the snapshot — an unreviewable session is a failed session.
+- Don't skip the snapshot; an unreviewable session is a failed session.
 
 ## Project-embedded instructions
 
@@ -84,12 +84,12 @@ agent that connects cold can bootstrap itself.
 
 ## Discovering capabilities
 
-- `hearth commands --json` — the full engine command registry (name,
+- `hearth commands --json`: the full engine command registry (name,
   description, permission, mutates).
-- `hearth inspect components --json` — every component type with docs and
+- `hearth inspect components --json`: every component type with docs and
   default values.
-- MCP `tools/list` — same registry as typed tools.
+- MCP `tools/list`: same registry as typed tools.
 
-If a capability isn't in the registry, it doesn't exist — ask the human
+If a capability isn't in the registry, it doesn't exist. Ask the human
 instead of improvising (e.g. there is no screenshot command yet; it's on the
 [roadmap](./roadmap.md)).

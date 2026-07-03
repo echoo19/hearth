@@ -111,7 +111,7 @@ export const attachScript = defineCommand({
     const scripts = await ctx.store.listScripts();
     if (!scripts.includes(params.script)) {
       throw new ProjectError(
-        `Script not found: ${params.script}. Known scripts: ${scripts.join(', ') || '(none — use createScript)'}`,
+        `Script not found: ${params.script}. Known scripts: ${scripts.join(', ') || '(none; use createScript)'}`,
         'NOT_FOUND',
       );
     }

@@ -2,7 +2,7 @@
   "formatVersion": 1,
   "assets": [
     {
-      "id": "ast_gaj9g16a",
+      "id": "ast_j0ebcoo3",
       "name": "player",
       "type": "sprite",
       "path": "assets/sprites/player.svg",
@@ -15,7 +15,7 @@
       }
     },
     {
-      "id": "ast_iqw8pxwh",
+      "id": "ast_z1y4vw6b",
       "name": "enemy",
       "type": "sprite",
       "path": "assets/sprites/enemy.svg",
@@ -28,7 +28,7 @@
       }
     },
     {
-      "id": "ast_fkovc9px",
+      "id": "ast_0b1x1aks",
       "name": "coin",
       "type": "sprite",
       "path": "assets/sprites/coin.svg",
@@ -41,7 +41,7 @@
       }
     },
     {
-      "id": "ast_sec2vqz7",
+      "id": "ast_l9rewwno",
       "name": "grass",
       "type": "tile",
       "path": "assets/tiles/grass.svg",
@@ -52,7 +52,7 @@
       }
     },
     {
-      "id": "ast_8eqzenwu",
+      "id": "ast_k89ut858",
       "name": "stone",
       "type": "tile",
       "path": "assets/tiles/stone.svg",

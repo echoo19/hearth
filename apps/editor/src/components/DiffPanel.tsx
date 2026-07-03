@@ -22,7 +22,7 @@ export function DiffPanel() {
   async function snapshot() {
     const result = await exec('snapshotProject', {}, { quiet: true });
     if (result.success) {
-      log('info', 'command', 'Snapshot saved — future diffs compare against this baseline.');
+      log('info', 'command', 'Snapshot saved. Future diffs compare against this baseline.');
       await refreshDiff();
     }
   }
@@ -41,7 +41,7 @@ export function DiffPanel() {
           className="btn btn-danger btn-sm"
           onClick={() => setConfirmRevert(true)}
           disabled={!diff?.hasChanges}
-          title="revertProject — restore the last snapshot"
+          title="revertProject: restore the last snapshot"
         >
           Revert to snapshot
         </button>
@@ -56,7 +56,7 @@ export function DiffPanel() {
             <span>No baseline to compare against</span>
             <span className="hint">
               The review workflow: press Snapshot before edits (yours or an agent's), make changes, then
-              Refresh diff to see exactly what changed — scenes, entities, component properties, scripts, and
+              Refresh diff to see exactly what changed: scenes, entities, component properties, scripts, and
               assets. Revert restores the snapshot.
             </span>
           </div>

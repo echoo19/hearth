@@ -1,8 +1,8 @@
 # MCP Guide
 
 Hearth ships `hearth-mcp` (`packages/mcp-server`), a stdio MCP server that
-exposes the whole engine command layer as ~37 typed tools. Full reference —
-flags, registration snippets, permission table, complete tool list — lives in
+exposes the whole engine command layer as ~37 typed tools. The full reference
+(flags, registration snippets, permission table, complete tool list) lives in
 [`packages/mcp-server/README.md`](../packages/mcp-server/README.md).
 
 ## Quick start (Claude Code)
@@ -14,7 +14,7 @@ claude mcp add hearth -- node /abs/path/to/hearth/packages/mcp-server/dist/main.
   --project /abs/path/to/my-game
 ```
 
-Then in a session: call `get_agent_instructions` first — it returns the
+Then in a session: call `get_agent_instructions` first. It returns the
 project's AGENTS.md plus your active permission modes.
 
 ## Tool naming
@@ -38,7 +38,7 @@ agents and CLI agents read identical structures.
 - Release agent: `--mode all` (adds `build`)
 
 Denied calls return structured `PERMISSION_DENIED` errors that name the
-missing mode — an agent can relay that to the human rather than retrying.
+missing mode, so an agent can relay that to the human rather than retrying.
 
 ## One server, one project
 

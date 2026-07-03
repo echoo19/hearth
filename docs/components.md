@@ -1,6 +1,6 @@
 # Component Reference
 
-Generated from the Zod schemas in `packages/core/src/schema/components.ts` — run `hearth inspect components --json` for the machine-readable form.
+Generated from the Zod schemas in `packages/core/src/schema/components.ts`. Run `hearth inspect components --json` for the machine-readable form.
 
 ## Transform
 
@@ -162,4 +162,4 @@ Defaults:
 - One component of each type per entity (format v1).
 - Colors are hex strings (`#rgb`, `#rrggbb`, `#rrggbbaa`).
 - Positions/sizes are pixels; rotation is degrees; +y is down.
-- `SpriteRenderer` with `assetId: null` draws its primitive `shape`/`color` — you can build a whole game before any art exists.
+- `SpriteRenderer` with `assetId: null` draws its primitive `shape`/`color`, so you can build a whole game before any art exists.

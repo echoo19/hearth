@@ -26,7 +26,7 @@ export function ConsolePanel() {
       log('warn', 'validate', `[${issue.code}] ${issue.message}`);
     }
     if (report.valid && report.warnings.length === 0) {
-      log('info', 'validate', 'Project is valid — no errors, no warnings.');
+      log('info', 'validate', 'Project is valid, with no errors or warnings.');
     } else if (report.valid) {
       log('info', 'validate', `Project is valid with ${report.warnings.length} warning(s).`);
     } else {

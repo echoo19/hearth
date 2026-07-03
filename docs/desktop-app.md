@@ -12,15 +12,15 @@ Hearth runs three ways; all use the exact same UI and project server code:
 
 The original plan was Tauri, and a Tauri shell still lives in
 `apps/editor/src-tauri/` as an experimental alternative. The blocker: Hearth's
-project server is Node — it reuses `@hearth/core/node` and the whole command
-layer directly — and Tauri has no Node runtime, so it would need the server
+project server is Node (it reuses `@hearth/core/node` and the whole command
+layer directly) and Tauri has no Node runtime, so it would need the server
 rewritten in Rust or shipped as a sidecar. Electron's main process **is**
 Node, so the same `createProjectServerContext()` that powers the Vite dev
 server runs in-process, unchanged. One server implementation, three modes.
 
 How it works: the main process starts a loopback-only `node:http` server on a
 random port serving the built UI + the `/api` routes, and the window loads
-`http://127.0.0.1:<port>` — the renderer is byte-identical to browser mode.
+`http://127.0.0.1:<port>`. The renderer is byte-identical to browser mode.
 Everything is bundled by esbuild/vite (`dist-electron/main.cjs` is
 self-contained), so the packaged app ships **zero node_modules**.
 
@@ -29,7 +29,7 @@ self-contained), so the packaged app ships **zero node_modules**.
 A Hearth project is just a folder with `hearth.json` in it. In the desktop
 app the launcher has native pickers:
 
-- **Open Folder…** — a system dialog; choose any project folder on disk.
+- **Open Folder…**: a system dialog; choose any project folder on disk.
 - **Browse…** next to the new-project location field.
 - Recent projects are remembered in `~/.hearth/recent-projects.json`.
 
@@ -56,17 +56,17 @@ Notes:
   `xattr -cr /Applications/Hearth.app`.
   Real Developer ID signing + notarization is on the roadmap and removes
   all of this.
-- The app icon is the stock Electron icon for now (custom icon on the
-  roadmap — drop icons into `buildResources/` and remove `identity: null`
-  when signing).
+- The app icon is the stock Electron icon for now. A custom icon is on the
+  roadmap: drop icons into `buildResources/` and remove `identity: null`
+  when signing.
 - Windows (`nsis`, `zip`) and Linux (`AppImage`, `deb`) targets are
   configured in `apps/editor/package.json` → `build`; build them on the
   matching OS or in CI.
 
 ## Real signing & notarization (removing the warnings entirely)
 
-Release builds sign automatically once these GitHub Actions secrets exist —
-no workflow changes needed:
+Release builds sign automatically once these GitHub Actions secrets exist;
+the workflow itself doesn't need to change:
 
 | Platform | What to get | Secrets to set |
 | --- | --- | --- |
@@ -74,9 +74,10 @@ no workflow changes needed:
 | Windows | Any Authenticode cert. Cheapest modern route: **Azure Trusted Signing** (~$10/mo); classic route: an OV .pfx from a CA (SmartScreen trust builds with downloads) | `WIN_CSC_LINK` (base64 .pfx), `WIN_CSC_KEY_PASSWORD` |
 
 With the macOS secrets present the workflow signs with hardened runtime
-(entitlements in `buildResources/entitlements.mac.plist`) and notarizes —
-downloads then open with **zero** warnings, no right-click, no xattr. Without
-them it falls back to the current ad-hoc signing. Linux needs nothing.
+(entitlements in `buildResources/entitlements.mac.plist`) and notarizes.
+Downloads then open with **zero** warnings and none of the right-click or
+xattr workarounds. Without them it falls back to the current ad-hoc signing.
+Linux needs nothing.
 
 ## Window model
 
@@ -89,8 +90,8 @@ single full-page app.
 ## Smoke-testing headlessly
 
 `HEARTH_SMOKE=1` makes the app boot, verify `/api/meta` through the real
-in-process server, print what the window loaded, and exit 0 — used by CI and
-handy after packaging changes:
+in-process server, print what the window loaded, and exit 0. CI uses it, and
+it's handy after packaging changes:
 
 ```bash
 HEARTH_SMOKE=1 ./apps/editor/release/mac-arm64/Hearth.app/Contents/MacOS/Hearth
