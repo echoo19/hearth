@@ -12,8 +12,9 @@
  * v1 simplifications (documented, on purpose):
  *   - Children inherit only their parent's translation; parent rotation and
  *     scale are not applied to child world transforms.
- *   - Colliders ignore Transform.scale/rotation; circles collide as their
- *     bounding box.
+ *   - Box/circle colliders ignore Transform.scale/rotation; circles collide
+ *     as their bounding box except against polygons (SAT uses the true
+ *     circle). Polygon colliders honor scale and rotation.
  */
 import {
   createComponent,
@@ -30,10 +31,11 @@ import { InputState } from './input.js';
 import {
   GRAVITY,
   cancelVelocityAlong,
-  colliderBox,
-  computePush,
+  colliderShape,
+  computeShapePush,
   tilemapBoxes,
-  type Box,
+  translateShape,
+  type CollisionShape,
 } from './physics.js';
 import {
   compileScript,
@@ -42,7 +44,9 @@ import {
   type ScriptContext,
   type ScriptHooks,
   type SpawnDef,
+  type UiEvent,
 } from './scripts.js';
+import { uiElementRect } from './ui.js';
 
 export interface RuntimeLog {
   frame: number;
@@ -58,9 +62,30 @@ export interface RuntimeError {
   phase?: string;
 }
 
+/** One recorded audio play/stop, as it appears in run reports. */
+export interface AudioEvent {
+  frame: number;
+  assetId: string;
+  action: 'play' | 'stop';
+}
+
+/** Live audio notification for rendering hosts (Web Audio playback). */
+export interface AudioPlaybackEvent {
+  action: 'play' | 'stop';
+  handleId: string;
+  assetId: string;
+  volume: number;
+  loop: boolean;
+}
+
+/** Pointer event kinds accepted by SceneRuntime.sendPointer. */
+export type PointerKind = 'move' | 'down' | 'up';
+
 export interface RuntimeOptions {
   onLog?(e: RuntimeLog): void;
   onError?(e: RuntimeError): void;
+  /** Hosts with real audio output subscribe here (headless just records). */
+  onAudio?(e: AudioPlaybackEvent): void;
   /** Cap on retained logs (oldest dropped first). Default 1000. */
   maxLogs?: number;
 }
@@ -113,6 +138,8 @@ export class SceneRuntime {
   readonly fixedDt: number;
   readonly errors: RuntimeError[] = [];
   readonly logs: RuntimeLog[] = [];
+  /** Every audio play/stop, in order — surfaced by run reports and playtests. */
+  readonly audioEvents: AudioEvent[] = [];
   readonly input: InputState;
 
   private _frame = 0;
@@ -125,6 +152,11 @@ export class SceneRuntime {
   private prevContactPairs = new Set<string>();
   private maxLogs: number;
   private stopped = false;
+  private audioStarted = false;
+  private audioHandleSeq = 0;
+  private activePlaybacks = new Map<string, { assetId: string }>();
+  private uiHoverId: string | null = null;
+  private uiPressedId: string | null = null;
 
   private constructor(
     private readonly store: ProjectStore,
@@ -220,6 +252,17 @@ export class SceneRuntime {
   step(): void {
     if (this.stopped) return;
 
+    // 0. AudioSource autoplay on scene start (before any script runs).
+    if (!this.audioStarted) {
+      this.audioStarted = true;
+      for (const entity of this.getEntities()) {
+        const source = entity.components.AudioSource;
+        if (entity.enabled && source?.autoplay && source.assetId) {
+          this.playAudio(source.assetId, { volume: source.volume, loop: source.loop });
+        }
+      }
+    }
+
     // 1. onStart for entities that have not started yet (entity order).
     for (const entity of this.getEntities()) {
       const state = this.scriptStates.get(entity.id);
@@ -258,6 +301,119 @@ export class SceneRuntime {
     this.scriptStates.clear();
     this.handles.clear();
     this.destroyedIds.clear();
+    this.activePlaybacks.clear();
+  }
+
+  // ---------------------------------------------------------------------------
+  // Audio
+  // ---------------------------------------------------------------------------
+
+  /** Start a playback of an audio asset (by id or name). Null when unknown. */
+  playAudio(assetRef: string, opts: { volume?: number; loop?: boolean } = {}): string | null {
+    const asset = this.store.getAsset(assetRef);
+    if (!asset) {
+      this.recordLog('warn', `audio.play: asset not found: ${assetRef}`);
+      return null;
+    }
+    const handleId = `snd_${++this.audioHandleSeq}`;
+    this.activePlaybacks.set(handleId, { assetId: asset.id });
+    this.recordAudio(asset.id, 'play', handleId, opts.volume ?? 1, opts.loop ?? false);
+    return handleId;
+  }
+
+  /** Stop one playback by handle id, or every playback of an asset id/name. */
+  stopAudio(handleIdOrAssetRef: string): void {
+    const playback = this.activePlaybacks.get(handleIdOrAssetRef);
+    if (playback) {
+      this.activePlaybacks.delete(handleIdOrAssetRef);
+      this.recordAudio(playback.assetId, 'stop', handleIdOrAssetRef, 1, false);
+      return;
+    }
+    const asset = this.store.getAsset(handleIdOrAssetRef);
+    if (!asset) {
+      this.recordLog('warn', `audio.stop: unknown handle or asset: ${handleIdOrAssetRef}`);
+      return;
+    }
+    for (const [handleId, active] of [...this.activePlaybacks]) {
+      if (active.assetId === asset.id) {
+        this.activePlaybacks.delete(handleId);
+        this.recordAudio(asset.id, 'stop', handleId, 1, false);
+      }
+    }
+  }
+
+  private recordAudio(
+    assetId: string,
+    action: 'play' | 'stop',
+    handleId: string,
+    volume: number,
+    loop: boolean,
+  ): void {
+    this.audioEvents.push({ frame: this._frame, assetId, action });
+    this.options.onAudio?.({ action, handleId, assetId, volume, loop });
+  }
+
+  // ---------------------------------------------------------------------------
+  // UI pointer input
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Feed a pointer event in screen coordinates (the buildSettings
+   * width×height space). Interactive UIElement entities under the pointer
+   * receive onUiEvent: enter/exit on hover changes, press on down, release
+   * on up, and click when down and up landed on the same element. Used by
+   * playtests directly and by the pixi host for real pointer events.
+   */
+  sendPointer(x: number, y: number, kind: PointerKind): void {
+    if (this.stopped) return;
+    const target = this.hitTestUi(x, y);
+    const targetId = target?.id ?? null;
+
+    if (targetId !== this.uiHoverId) {
+      const prev = this.uiHoverId
+        ? this.getEntities().find((e) => e.id === this.uiHoverId)
+        : undefined;
+      this.uiHoverId = targetId;
+      if (prev) this.dispatchUiEvent(prev, 'exit', x, y);
+      if (target) this.dispatchUiEvent(target, 'enter', x, y);
+    }
+
+    if (kind === 'down') {
+      this.uiPressedId = targetId;
+      if (target) this.dispatchUiEvent(target, 'press', x, y);
+    } else if (kind === 'up') {
+      if (target) {
+        this.dispatchUiEvent(target, 'release', x, y);
+        if (this.uiPressedId === targetId) this.dispatchUiEvent(target, 'click', x, y);
+      }
+      this.uiPressedId = null;
+    }
+  }
+
+  /** Topmost interactive UI element under a screen point (layer, then order). */
+  private hitTestUi(x: number, y: number): RuntimeEntity | undefined {
+    const settings = this.store.project.buildSettings;
+    let best: RuntimeEntity | undefined;
+    let bestLayer = -Infinity;
+    for (const entity of this.getEntities()) {
+      if (!entity.enabled || !entity.components.UIElement?.interactive) continue;
+      const rect = uiElementRect(entity.components, settings.width, settings.height);
+      if (!rect) continue;
+      if (x < rect.minX || x > rect.maxX || y < rect.minY || y > rect.maxY) continue;
+      const layer = Math.max(
+        entity.components.SpriteRenderer?.layer ?? 0,
+        entity.components.Text?.layer ?? 0,
+      );
+      if (layer >= bestLayer) {
+        bestLayer = layer;
+        best = entity; // later entities win ties, matching render order
+      }
+    }
+    return best;
+  }
+
+  private dispatchUiEvent(entity: RuntimeEntity, type: UiEvent['type'], x: number, y: number): void {
+    this.callHook(entity, 'onUiEvent', { type, x, y });
   }
 
   // ---------------------------------------------------------------------------
@@ -361,6 +517,10 @@ export class SceneRuntime {
         destroy: (idOrHandle) =>
           runtime.destroyEntity(typeof idOrHandle === 'string' ? idOrHandle : idOrHandle.id),
       },
+      audio: {
+        play: (assetRef, opts) => runtime.playAudio(assetRef, opts),
+        stop: (handleIdOrAssetRef) => runtime.stopAudio(handleIdOrAssetRef),
+      },
       vars,
       time: {
         get elapsed() {
@@ -458,7 +618,7 @@ export class SceneRuntime {
 
   private callHook(
     entity: RuntimeEntity,
-    hook: 'onStart' | 'onUpdate' | 'onCollision',
+    hook: 'onStart' | 'onUpdate' | 'onCollision' | 'onUiEvent',
     arg?: unknown,
   ): void {
     const state = this.scriptStates.get(entity.id);
@@ -515,13 +675,13 @@ export class SceneRuntime {
     // Collect movers (dynamic/kinematic with colliders) and static obstacles.
     interface Mover {
       entity: RuntimeEntity;
-      box: Box;
+      shape: CollisionShape;
       isTrigger: boolean;
       dynamic: boolean;
     }
     interface Obstacle {
       entity: RuntimeEntity;
-      box: Box;
+      shape: CollisionShape;
       isTrigger: boolean;
     }
     const movers: Mover[] = [];
@@ -531,17 +691,17 @@ export class SceneRuntime {
       const bodyType = entity.components.PhysicsBody?.bodyType ?? 'static';
       const collider = entity.components.Collider;
       if (collider) {
-        const box = colliderBox(collider, this.getWorldPosition(entity));
+        const shape = colliderShape(collider, this.getWorldPosition(entity), entity.transform);
         if (bodyType === 'static') {
-          obstacles.push({ entity, box, isTrigger: collider.isTrigger });
+          obstacles.push({ entity, shape, isTrigger: collider.isTrigger });
         } else {
-          movers.push({ entity, box, isTrigger: collider.isTrigger, dynamic: bodyType === 'dynamic' });
+          movers.push({ entity, shape, isTrigger: collider.isTrigger, dynamic: bodyType === 'dynamic' });
         }
       }
       const tilemap = entity.components.Tilemap;
       if (tilemap && tilemap.solid) {
         for (const box of tilemapBoxes(tilemap, this.getWorldPosition(entity))) {
-          obstacles.push({ entity, box, isTrigger: false });
+          obstacles.push({ entity, shape: { kind: 'box', box }, isTrigger: false });
         }
       }
     }
@@ -562,8 +722,7 @@ export class SceneRuntime {
     const applyPush = (mover: Mover, nx: number, ny: number, amount: number) => {
       mover.entity.transform.position.x += nx * amount;
       mover.entity.transform.position.y += ny * amount;
-      mover.box.cx += nx * amount;
-      mover.box.cy += ny * amount;
+      translateShape(mover.shape, nx * amount, ny * amount);
       const body = mover.entity.components.PhysicsBody;
       if (body) cancelVelocityAlong(body.velocity, nx, ny);
     };
@@ -571,7 +730,7 @@ export class SceneRuntime {
     // Movers vs static obstacles (dynamic movers get pushed out).
     for (const mover of movers) {
       for (const obstacle of obstacles) {
-        const push = computePush(mover.box, obstacle.box);
+        const push = computeShapePush(mover.shape, obstacle.shape);
         if (!push) continue;
         const trigger = mover.isTrigger || obstacle.isTrigger;
         if (!trigger && mover.dynamic) {
@@ -586,7 +745,7 @@ export class SceneRuntime {
       for (let j = i + 1; j < movers.length; j++) {
         const a = movers[i];
         const b = movers[j];
-        const push = computePush(a.box, b.box);
+        const push = computeShapePush(a.shape, b.shape);
         if (!push) continue;
         const trigger = a.isTrigger || b.isTrigger;
         if (!trigger) {

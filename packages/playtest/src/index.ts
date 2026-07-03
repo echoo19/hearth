@@ -29,6 +29,13 @@ export interface RuntimeLogEntry {
   message: string;
 }
 
+/** One audio play/stop recorded by the headless runtime. */
+export interface AudioEventEntry {
+  frame: number;
+  assetId: string;
+  action: 'play' | 'stop';
+}
+
 export interface PlaytestResult {
   passed: boolean;
   playtestId: string;
@@ -38,6 +45,7 @@ export interface PlaytestResult {
   steps: PlaytestStepResult[];
   errors: RuntimeErrorEntry[];
   logs: RuntimeLogEntry[];
+  audioEvents: AudioEventEntry[];
 }
 
 export interface SmokeResult {
@@ -47,6 +55,7 @@ export interface SmokeResult {
   entityCount: number;
   errors: RuntimeErrorEntry[];
   logs: RuntimeLogEntry[];
+  audioEvents: AudioEventEntry[];
   /** True when the scene ran the requested frames with zero runtime errors. */
   passed: boolean;
 }
@@ -71,6 +80,7 @@ export async function runPlaytest(
     steps: [{ index: 0, type: 'load', passed: false, message }],
     errors: [],
     logs: [],
+    audioEvents: [],
   });
 
   const playtest = store.getPlaytest(playtestIdOrName);
@@ -128,6 +138,7 @@ export async function runPlaytest(
     steps,
     errors: [...runtime.errors],
     logs: [...runtime.logs],
+    audioEvents: [...runtime.audioEvents],
   };
 }
 
@@ -298,6 +309,7 @@ export async function runSceneSmoke(
       entityCount: 0,
       errors: [{ frame: 0, message: `Scene not found: ${sceneIdOrName}` }],
       logs: [],
+      audioEvents: [],
       passed: false,
     };
   }
@@ -310,6 +322,7 @@ export async function runSceneSmoke(
     entityCount: runtime.getEntities().length,
     errors: [...runtime.errors],
     logs: [...runtime.logs],
+    audioEvents: [...runtime.audioEvents],
     passed: runtime.errors.length === 0,
   };
 }

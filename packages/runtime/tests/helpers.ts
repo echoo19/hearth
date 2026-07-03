@@ -35,6 +35,8 @@ export interface TestProjectOptions {
   /** Filename under scripts/ → source. */
   scripts?: Record<string, string>;
   actions?: Record<string, string[]>;
+  /** Asset index entries, e.g. { id: 'ast_beep', name: 'beep', type: 'audio', path: '...' }. */
+  assets?: { id: string; name: string; type: string; path: string }[];
 }
 
 export async function makeStore(
@@ -54,6 +56,9 @@ export async function makeStore(
   store.scenes.set(scene.id, scene);
   for (const [name, source] of Object.entries(opts.scripts ?? {})) {
     await fs.writeFile(`/proj/scripts/${name}`, source);
+  }
+  for (const asset of opts.assets ?? []) {
+    store.assets.assets.push({ ...asset, metadata: {} } as (typeof store.assets.assets)[number]);
   }
   await store.save();
   return { store: await ProjectStore.load(fs, '/proj'), fs };

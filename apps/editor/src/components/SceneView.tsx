@@ -96,6 +96,18 @@ export function SceneView() {
   }
 
   // ---- fit view to the build viewport when a scene first shows up ----------
+  // The host lives in a dockview panel, so it can be zero-sized on first
+  // render (hidden tab, layout still settling). A ResizeObserver bumps
+  // viewportEpoch so the fit retries once the panel actually has a size.
+  const [viewportEpoch, setViewportEpoch] = useState(0);
+  useEffect(() => {
+    const host = hostRef.current;
+    if (!host || typeof ResizeObserver === 'undefined') return;
+    const observer = new ResizeObserver(() => setViewportEpoch((n) => n + 1));
+    observer.observe(host);
+    return () => observer.disconnect();
+  }, []);
+
   useEffect(() => {
     const host = hostRef.current;
     if (!host || !info || !sceneId) return;
@@ -106,7 +118,7 @@ export function SceneView() {
     const s = Math.min(cw / (W + 160), ch / (H + 120), 1.5);
     fittedScene.current = sceneId;
     setView({ s, tx: (cw - W * s) / 2, ty: (ch - H * s) / 2 });
-  }, [info, sceneId, scene]);
+  }, [info, sceneId, scene, viewportEpoch]);
 
   // ---- wheel zoom (non-passive so we can preventDefault) -------------------
   useEffect(() => {

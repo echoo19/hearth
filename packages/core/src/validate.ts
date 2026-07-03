@@ -21,6 +21,53 @@ export interface ValidationReport {
   warnings: ValidationIssue[];
 }
 
+/**
+ * Check a polygon Collider's local-space points. Hearth v0.2 supports convex
+ * polygons only: at least 3 points, no duplicate consecutive points, and a
+ * consistent cross-product sign around the ring (either winding).
+ */
+function validatePolygonPoints(points: { x: number; y: number }[]): { code: string; message: string }[] {
+  const issues: { code: string; message: string }[] = [];
+  const n = points.length;
+  if (n < 3) {
+    issues.push({
+      code: 'POLYGON_TOO_FEW_POINTS',
+      message: `polygon Collider has ${n} point(s); a polygon needs at least 3`,
+    });
+    return issues;
+  }
+  for (let i = 0; i < n; i++) {
+    const a = points[i];
+    const b = points[(i + 1) % n];
+    if (a.x === b.x && a.y === b.y) {
+      issues.push({
+        code: 'POLYGON_DUPLICATE_POINT',
+        message: `polygon Collider has duplicate consecutive points at index ${i} and ${(i + 1) % n} (${a.x}, ${a.y}); remove the duplicate`,
+      });
+      return issues; // duplicates make the convexity check meaningless
+    }
+  }
+  let positive = false;
+  let negative = false;
+  for (let i = 0; i < n; i++) {
+    const o = points[i];
+    const a = points[(i + 1) % n];
+    const b = points[(i + 2) % n];
+    const cross = (a.x - o.x) * (b.y - a.y) - (a.y - o.y) * (b.x - a.x);
+    if (cross > 0) positive = true;
+    else if (cross < 0) negative = true;
+  }
+  if (positive && negative) {
+    issues.push({
+      code: 'POLYGON_NOT_CONVEX',
+      message:
+        'polygon Collider is not convex. Hearth supports convex polygons only — ' +
+        'split concave shapes into multiple entities, each with its own convex polygon Collider',
+    });
+  }
+  return issues;
+}
+
 export async function validateProject(store: ProjectStore): Promise<ValidationReport> {
   const issues: ValidationIssue[] = [];
   const push = (issue: ValidationIssue) => issues.push(issue);
@@ -178,6 +225,17 @@ export async function validateProject(store: ProjectStore): Promise<ValidationRe
             severity: 'warning',
             code: 'RAGGED_TILEMAP',
             message: `Tilemap on "${entity.name}" has rows of different lengths`,
+            scene: sceneId,
+            entity: entity.id,
+          });
+        }
+      }
+      if (c.Collider?.shape === 'polygon') {
+        for (const issue of validatePolygonPoints(c.Collider.points)) {
+          push({
+            severity: 'error',
+            code: issue.code,
+            message: `Entity "${entity.name}" in scene "${scene.name}": ${issue.message}`,
             scene: sceneId,
             entity: entity.id,
           });

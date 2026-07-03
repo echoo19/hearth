@@ -11,6 +11,7 @@ import {
   SPRITE_SHAPES,
   type SpriteShape,
 } from '../assets/procedural.js';
+import { generateSoundWav, SOUND_PRESETS } from '../assets/sounds.js';
 
 function registerAsset(ctx: any, asset: Asset): Asset {
   if (ctx.store.getAsset(asset.name)) {
@@ -159,6 +160,39 @@ export const createTileAsset = defineCommand({
       path: relPath,
       metadata: { procedural: true, color: params.color, size: params.size },
     });
+    return { asset };
+  },
+});
+
+export const createSound = defineCommand({
+  name: 'createSound',
+  description:
+    `Create a procedural sound effect (deterministic 16-bit PCM WAV). Presets: ${SOUND_PRESETS.join(', ')}. ` +
+    'The same preset + seed always produces identical audio.',
+  permission: 'asset-edit',
+  mutates: true,
+  paramsSchema: z.object({
+    name: z.string().min(1),
+    preset: z.enum(SOUND_PRESETS),
+    seed: z.number().int().min(0).optional(),
+  }),
+  async run(ctx, params) {
+    const seed = params.seed ?? 0;
+    const wav = generateSoundWav(params.preset, seed);
+    const relPath = joinPath(ASSETS_DIR, 'sounds', `${slugify(params.name)}.wav`);
+    const absPath = joinPath(ctx.store.root, relPath);
+    if (await ctx.fs.exists(absPath)) {
+      throw new ProjectError(`Asset file already exists: ${relPath}`, 'CONFLICT');
+    }
+    await ctx.fs.writeFile(absPath, wav);
+    const asset = registerAsset(ctx, {
+      id: generateId('ast'),
+      name: params.name,
+      type: 'audio',
+      path: relPath,
+      metadata: { procedural: true, preset: params.preset, seed },
+    });
+    ctx.suggest(`setComponentProperty --property AudioSource.assetId --value ${asset.id}`);
     return { asset };
   },
 });

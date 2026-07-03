@@ -3,7 +3,9 @@
  * the main core entry stays browser-safe.
  */
 import { promises as fsp } from 'node:fs';
+import { accessSync } from 'node:fs';
 import nodePath from 'node:path';
+import { fileURLToPath } from 'node:url';
 import type { FsLike } from '../fs.js';
 
 export class NodeFileSystem implements FsLike {
@@ -59,3 +61,59 @@ export class NodeFileSystem implements FsLike {
 }
 
 export const nodeFs: FsLike = new NodeFileSystem();
+
+// ---------------------------------------------------------------------------
+// Web player bundle resolution (exportWeb)
+// ---------------------------------------------------------------------------
+
+/** Walk upward from this module looking for the hearth monorepo root. */
+function findRepoRootFromModule(): string | null {
+  let dir = nodePath.dirname(fileURLToPath(import.meta.url));
+  for (let i = 0; i < 12; i++) {
+    try {
+      accessSync(nodePath.join(dir, 'packages', 'core', 'package.json'));
+      return dir;
+    } catch {
+      /* keep walking */
+    }
+    const parent = nodePath.dirname(dir);
+    if (parent === dir) break;
+    dir = parent;
+  }
+  return null;
+}
+
+/**
+ * Candidate paths for the built web player, in resolution order:
+ * 1. $HEARTH_TOOLS_DIR/hearth-player.js (packaged desktop app)
+ * 2. packages/runtime/player/hearth-player.js (repo checkout)
+ */
+export function playerBundleCandidates(repoRoot?: string): string[] {
+  const candidates: string[] = [];
+  const toolsDir = process.env.HEARTH_TOOLS_DIR;
+  if (toolsDir) candidates.push(nodePath.join(toolsDir, 'hearth-player.js'));
+  const root = repoRoot ?? findRepoRootFromModule();
+  if (root) candidates.push(nodePath.join(root, 'packages', 'runtime', 'player', 'hearth-player.js'));
+  return candidates;
+}
+
+/**
+ * Load the built web player bundle (hearth-player.js) for exportWeb. Hosts
+ * pass this as `resources.getPlayerBundle`. Throws with the checked locations
+ * when no bundle is found.
+ */
+export async function loadPlayerBundle(repoRoot?: string): Promise<string> {
+  const candidates = playerBundleCandidates(repoRoot);
+  for (const candidate of candidates) {
+    try {
+      return await fsp.readFile(candidate, 'utf8');
+    } catch {
+      /* try the next location */
+    }
+  }
+  throw new Error(
+    `hearth-player.js not found. Looked in: ${candidates.join(', ') || '(no known locations)'}. ` +
+      'Set HEARTH_TOOLS_DIR to a directory containing hearth-player.js, or build the runtime player ' +
+      '(packages/runtime/player/hearth-player.js).',
+  );
+}

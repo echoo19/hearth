@@ -184,6 +184,41 @@ describe('runSceneSmoke', () => {
   });
 });
 
+describe('audio events pass-through', () => {
+  it('surfaces runtime audioEvents on smoke and playtest results', async () => {
+    const { store, session } = await makeProject();
+    store.assets.assets.push({
+      id: 'ast_coin',
+      name: 'coin',
+      type: 'audio',
+      path: 'assets/coin.wav',
+      metadata: {},
+    });
+    const created = await session.execute<{ path: string }>('createScript', {
+      name: 'chime',
+      source: `export default { onStart(ctx) { ctx.audio.play('coin'); } };`,
+    });
+    await session.execute('attachScript', {
+      scene: 'Main',
+      entity: 'Ground',
+      script: created.data!.path,
+    });
+
+    const smoke = await runSceneSmoke(store, 'Main', 10);
+    expect(smoke.passed).toBe(true);
+    expect(smoke.audioEvents).toEqual([{ frame: 0, assetId: 'ast_coin', action: 'play' }]);
+
+    await session.execute('createPlaytest', {
+      name: 'audio check',
+      scene: 'Main',
+      steps: [{ type: 'wait', frames: 5 }, { type: 'assertNoErrors' }],
+    });
+    const result = await runPlaytest(store, 'audio check');
+    expect(result.passed).toBe(true);
+    expect(result.audioEvents).toEqual([{ frame: 0, assetId: 'ast_coin', action: 'play' }]);
+  });
+});
+
 describe('createRuntimeHooks', () => {
   it('wires both hooks', () => {
     const hooks = createRuntimeHooks();

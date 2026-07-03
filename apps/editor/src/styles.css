@@ -305,28 +305,6 @@ label.field-label {
   height: 100%;
 }
 
-.shell-body {
-  display: grid;
-  grid-template-columns: 250px minmax(0, 1fr) 304px;
-  min-height: 0;
-}
-
-.side-panel {
-  background: var(--bg-1);
-  display: flex;
-  flex-direction: column;
-  min-height: 0;
-  overflow: hidden;
-}
-
-.side-panel.left {
-  border-right: 1px solid var(--border);
-}
-
-.side-panel.right {
-  border-left: 1px solid var(--border);
-}
-
 .panel-header {
   display: flex;
   align-items: center;
@@ -359,68 +337,7 @@ label.field-label {
   min-height: 0;
 }
 
-.center-column {
-  display: grid;
-  grid-template-rows: 33px minmax(0, 1fr) 32px 236px;
-  min-width: 0;
-  min-height: 0;
-  background: var(--bg-0);
-}
-
-/* Tab strips */
-.tab-strip {
-  display: flex;
-  align-items: stretch;
-  gap: 2px;
-  padding: 0 8px;
-  background: var(--bg-1);
-  border-bottom: 1px solid var(--border);
-}
-
-.tab-strip.bottom-tabs {
-  border-top: 1px solid var(--border);
-  border-bottom: 1px solid var(--border);
-}
-
-.tab {
-  position: relative;
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 0 12px;
-  border: none;
-  background: transparent;
-  color: var(--ink-mute);
-  font-weight: 500;
-  cursor: pointer;
-  transition: color var(--t) var(--ease-out);
-}
-
-.tab::after {
-  content: '';
-  position: absolute;
-  left: 8px;
-  right: 8px;
-  bottom: -1px;
-  height: 2px;
-  border-radius: 1px;
-  background: transparent;
-  transition: background var(--t) var(--ease-out);
-}
-
-.tab:hover {
-  color: var(--ink);
-}
-
-.tab.active {
-  color: var(--ink);
-}
-
-.tab.active::after {
-  background: var(--accent);
-}
-
-.tab .badge {
+.badge {
   background: var(--err);
   color: oklch(0.16 0.02 25);
   border-radius: 99px;
@@ -434,37 +351,250 @@ label.field-label {
   padding: 0 4px;
 }
 
-.center-view {
+/* --------------------------------------------------------------------------
+   Workspace (dockview)
+   -------------------------------------------------------------------------- */
+
+.workspace {
+  min-height: 0;
+  background: var(--bg-0);
+}
+
+.workspace > * {
+  width: 100%;
+  height: 100%;
+}
+
+/* Every panel's content root: the positioning context Scene/Game expect
+   (both render `position: absolute; inset: 0`) and the flex column the
+   Hierarchy/Inspector/bottom panels were built for. */
+.workspace-panel {
   position: relative;
-  min-height: 0;
-  overflow: hidden;
-}
-
-/* Tab switches remount the view: a fast crossfade conveys the change. */
-.center-view > * {
-  animation: view-in 120ms var(--ease-out);
-}
-
-@keyframes view-in {
-  from {
-    opacity: 0;
-  }
-}
-
-.bottom-panel {
-  min-height: 0;
-  background: var(--bg-1);
-  overflow: hidden;
   display: flex;
   flex-direction: column;
-  animation: panel-in 140ms var(--ease-out);
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+  background: var(--bg-1);
 }
 
-@keyframes panel-in {
-  from {
-    opacity: 0;
-    transform: translateY(3px);
-  }
+.workspace-panel-canvas {
+  background: var(--canvas-bg);
+}
+
+.workspace-watermark {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  height: 100%;
+  color: var(--ink-mute);
+  text-align: center;
+  padding: 16px;
+}
+
+.workspace-watermark .hint {
+  color: var(--ink-faint);
+  font-size: 12px;
+}
+
+/* ---- Hearth dockview theme ------------------------------------------------
+   Custom theme class: dockview's stock look must not show anywhere. Compact
+   30px tabs, muted inactive tabs, a 2px ember indicator under the selected
+   tab, hairline separators, ember-tinted drop targets and sash hover. */
+
+.dockview-theme-hearth {
+  /* Surfaces */
+  --dv-group-view-background-color: var(--bg-1);
+  --dv-tabs-and-actions-container-background-color: var(--bg-1);
+  --dv-activegroup-visiblepanel-tab-background-color: var(--bg-2);
+  --dv-activegroup-hiddenpanel-tab-background-color: transparent;
+  --dv-inactivegroup-visiblepanel-tab-background-color: var(--bg-2);
+  --dv-inactivegroup-hiddenpanel-tab-background-color: transparent;
+
+  /* Ink */
+  --dv-activegroup-visiblepanel-tab-color: var(--ink);
+  --dv-activegroup-hiddenpanel-tab-color: var(--ink-mute);
+  --dv-inactivegroup-visiblepanel-tab-color: var(--ink-mute);
+  --dv-inactivegroup-hiddenpanel-tab-color: var(--ink-faint);
+
+  /* Chrome metrics: compact tabs, hairline separators, square corners. */
+  --dv-tabs-and-actions-container-height: 30px;
+  --dv-tabs-and-actions-container-font-size: 12px;
+  --dv-tab-font-size: 12px;
+  --dv-tab-divider-color: transparent;
+  --dv-separator-border: var(--border);
+  --dv-paneview-header-border-color: var(--border);
+  --dv-paneview-active-outline-color: var(--accent);
+  --dv-border-radius: 0px;
+  --dv-tab-border-radius: 0px;
+  --dv-sash-border-radius: 0px;
+  --dv-dropdown-border-radius: var(--radius);
+  --dv-tab-margin: 0;
+  --dv-spacing-padding: 0px;
+  --dv-tab-close-icon-size: 9px;
+  --dv-tab-group-line-height: 0px;
+  --dv-tab-group-line-opacity: 0;
+
+  /* Sash: invisible at rest, soft ember when grabbed/hovered. */
+  --dv-sash-color: transparent;
+  --dv-active-sash-color: var(--accent-soft);
+  --dv-active-sash-transition-duration: 140ms;
+  --dv-active-sash-transition-delay: 150ms;
+
+  /* Drag & drop: ember accent at ~12% with a 1px accent border. */
+  --dv-drag-over-background-color: oklch(0.74 0.15 55 / 0.12);
+  --dv-drag-over-border-color: var(--accent);
+  --dv-drag-over-border: 1px solid var(--accent);
+
+  /* Misc chrome */
+  --dv-icon-hover-background-color: var(--bg-3);
+  --dv-scrollbar-background-color: var(--border-strong);
+  --dv-tabs-container-scrollbar-color: var(--border-strong);
+  --dv-context-menu-background-color: var(--bg-1);
+  --dv-context-menu-color: var(--ink);
+  --dv-overlay-z-index: 150;
+
+  /* Floating groups (drag-out): quiet, bordered, no heavy glow. */
+  --dv-floating-border: 1px solid var(--border-strong);
+  --dv-floating-group-border: 1px solid var(--border-strong);
+  --dv-floating-box-shadow: 0 10px 30px oklch(0 0 0 / 0.45);
+  --dv-floating-group-dragging-opacity: 0.6;
+  --dv-floating-titlebar-height: 22px;
+  --dv-floating-titlebar-background-color: var(--bg-2);
+  --dv-floating-titlebar-border-bottom: 1px solid var(--border);
+}
+
+/* Tab hover/active: color only — no size or layout change. */
+.dockview-theme-hearth .dv-tab {
+  padding: 0;
+  min-width: 0;
+  transition: color 140ms var(--ease-out), background 140ms var(--ease-out);
+}
+
+.dockview-theme-hearth .dv-tab:hover {
+  color: var(--ink);
+}
+
+.hearth-tab {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 100%;
+  padding: 0 10px;
+  font-size: 12px;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+/* Selected-tab indicator: subtle 2px ember bar, same idiom as the old strips. */
+.hearth-tab::after {
+  content: '';
+  position: absolute;
+  left: 8px;
+  right: 8px;
+  bottom: 0;
+  height: 2px;
+  border-radius: 1px;
+  background: transparent;
+  transition: background 140ms var(--ease-out);
+}
+
+.dv-tab.dv-active-tab .hearth-tab::after {
+  background: var(--accent);
+}
+
+.hearth-tab-close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--ink-faint);
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 140ms var(--ease-out), color 140ms var(--ease-out), background 140ms var(--ease-out);
+}
+
+.dv-tab:hover .hearth-tab-close,
+.dv-tab.dv-active-tab .hearth-tab-close,
+.hearth-tab-close:focus-visible {
+  opacity: 1;
+}
+
+.hearth-tab-close:hover {
+  background: var(--bg-3);
+  color: var(--ink);
+}
+
+/* Hairlines between the tab strip and panel content. */
+.dockview-theme-hearth .dv-tabs-and-actions-container {
+  border-bottom: 1px solid var(--border);
+}
+
+/* --------------------------------------------------------------------------
+   Toolbar menus (View)
+   -------------------------------------------------------------------------- */
+
+.menu-root {
+  position: relative;
+  display: inline-flex;
+}
+
+.menu-popover {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  z-index: var(--z-dropdown);
+  min-width: 170px;
+  padding: 4px;
+  background: var(--bg-1);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  box-shadow: 0 8px 24px oklch(0 0 0 / 0.4);
+  display: flex;
+  flex-direction: column;
+}
+
+.menu-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 26px;
+  padding: 0 10px 0 6px;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--ink);
+  font-size: 12px;
+  text-align: left;
+  cursor: pointer;
+  transition: background var(--t-fast) var(--ease-out);
+}
+
+.menu-item:hover {
+  background: var(--bg-3);
+}
+
+.menu-check {
+  width: 14px;
+  flex: none;
+  color: var(--accent);
+  font-size: 11px;
+  text-align: center;
+}
+
+.menu-separator {
+  height: 1px;
+  margin: 4px 6px;
+  background: var(--border);
 }
 
 /* --------------------------------------------------------------------------

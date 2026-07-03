@@ -201,7 +201,7 @@ export const buildProject = defineCommand({
   name: 'buildProject',
   description:
     'Validate then export the project to build/: a self-contained copy of all project files plus a build manifest. ' +
-    '(Standalone web/desktop export is on the roadmap; built projects run via the Hearth editor/runtime.)',
+    'For a playable game export (static web page), use exportWeb instead.',
   permission: 'build',
   mutates: false,
   paramsSchema: z.object({

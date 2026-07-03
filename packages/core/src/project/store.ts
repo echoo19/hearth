@@ -36,6 +36,7 @@ export class ProjectError extends Error {
       | 'PARSE_ERROR'
       | 'SCHEMA_ERROR'
       | 'CONFLICT'
+      | 'MISSING_RESOURCE'
       | 'INVALID_INPUT' = 'INVALID_INPUT',
   ) {
     super(message);

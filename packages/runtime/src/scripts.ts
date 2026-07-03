@@ -17,6 +17,15 @@ export interface ScriptHooks {
   onStart?(ctx: ScriptContext): void;
   onUpdate?(ctx: ScriptContext, dt: number): void;
   onCollision?(ctx: ScriptContext, other: EntityHandle): void;
+  /** Pointer events on this entity's interactive UIElement. */
+  onUiEvent?(ctx: ScriptContext, event: UiEvent): void;
+}
+
+/** Pointer event delivered to onUiEvent (screen coordinates). */
+export interface UiEvent {
+  type: 'click' | 'press' | 'release' | 'enter' | 'exit';
+  x: number;
+  y: number;
 }
 
 /** Lightweight wrapper handed to scripts instead of raw runtime entities. */
@@ -61,6 +70,15 @@ export interface ScriptContext {
     findByTag(tag: string): EntityHandle[];
     spawn(def: SpawnDef): EntityHandle;
     destroy(idOrHandle: string | EntityHandle): void;
+  };
+  audio: {
+    /**
+     * Play an audio asset (by asset id or name). Returns a handle id for
+     * ctx.audio.stop, or null when the asset does not exist.
+     */
+    play(assetRef: string, opts?: { volume?: number; loop?: boolean }): string | null;
+    /** Stop a playback by handle id, or every playback of an asset id/name. */
+    stop(handleIdOrAssetRef: string): void;
   };
   /** Persistent per-entity state, survives across frames. */
   vars: Record<string, unknown>;

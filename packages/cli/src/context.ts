@@ -11,7 +11,7 @@ import {
   PROJECT_FILE,
   type PermissionMode,
 } from '@hearth/core';
-import { NodeFileSystem } from '@hearth/core/node';
+import { NodeFileSystem, loadPlayerBundle } from '@hearth/core/node';
 import { createRuntimeHooks } from '@hearth/playtest';
 import { logStderr } from './output.js';
 
@@ -82,6 +82,7 @@ export async function openSession(opts: GlobalOpts): Promise<HearthSession> {
   return HearthSession.open(new NodeFileSystem(), root, {
     granted,
     runtime: createRuntimeHooks(),
+    resources: { getPlayerBundle: () => loadPlayerBundle() },
     onLog: (level, message) => logStderr(opts.quiet, `[${level}] ${message}`),
   });
 }

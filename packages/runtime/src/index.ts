@@ -14,6 +14,9 @@ export {
   type RuntimeOptions,
   type RuntimeEntity,
   type RuntimeCollision,
+  type AudioEvent,
+  type AudioPlaybackEvent,
+  type PointerKind,
 } from './runtime.js';
 export {
   compileScript,
@@ -22,5 +25,24 @@ export {
   type ScriptCollision,
   type EntityHandle,
   type SpawnDef,
+  type UiEvent,
 } from './scripts.js';
-export { GRAVITY, colliderBox, tilemapBoxes, computePush, type Box, type Push } from './physics.js';
+export {
+  GRAVITY,
+  colliderBox,
+  colliderShape,
+  tilemapBoxes,
+  computePush,
+  computeShapePush,
+  translateShape,
+  type Box,
+  type Push,
+  type CollisionShape,
+} from './physics.js';
+export {
+  anchorPoint,
+  uiScreenPosition,
+  uiElementRect,
+  measureText,
+  type UiRect,
+} from './ui.js';

@@ -12,7 +12,13 @@
  *   - Sprite textures are resolved up front via `resolveAssetUrl`; entities
  *     spawned later fall back to primitives unless their texture was already
  *     loaded. Load failures also fall back to primitives.
- *   - AudioSource is not played (playback is experimental engine-wide).
+ *   - UIElement entities render into a screen-space overlay container above
+ *     the world, positioned by anchor+offset and re-anchored every tick (so
+ *     renderer resizes take effect). Real pointer events are translated to
+ *     runtime.sendPointer, the same path playtests use.
+ *   - Audio plays through Web Audio (see ./audio.js): decoded buffers are
+ *     cached, each playback gets a gain node, and everything stops when the
+ *     view is destroyed.
  */
 import {
   Application,
@@ -26,6 +32,8 @@ import {
 } from 'pixi.js';
 import type { Asset, ProjectStore, SpriteRendererComponent, TilemapComponent } from '@hearth/core';
 import { SceneRuntime, type RuntimeEntity, type RuntimeError, type RuntimeLog } from '../runtime.js';
+import { uiScreenPosition } from '../ui.js';
+import { WebAudioPlayer } from './audio.js';
 
 export interface PixiViewOptions {
   container: HTMLElement;
@@ -49,13 +57,17 @@ export class PixiSceneView {
 
   private app: Application;
   private world = new Container();
+  /** Screen-space UI overlay: always above the world, unaffected by camera. */
+  private ui = new Container();
   private nodes = new Map<string, Container>();
   private textures = new Map<string, Texture>();
+  private audio: WebAudioPlayer | null = null;
   private accumulator = 0;
   private _paused: boolean;
   private tickerFn: (ticker: Ticker) => void;
   private keydownFn?: (e: KeyboardEvent) => void;
   private keyupFn?: (e: KeyboardEvent) => void;
+  private pointerFns: Array<[keyof HTMLElementEventMap, (e: PointerEvent) => void]> = [];
   private destroyed = false;
 
   private constructor(
@@ -67,15 +79,35 @@ export class PixiSceneView {
     this.app = app;
     this._paused = opts.autoplay === false;
     this.world.sortableChildren = true;
+    this.ui.sortableChildren = true;
     this.app.stage.addChild(this.world);
+    this.app.stage.addChild(this.ui);
     this.tickerFn = (ticker) => this.onTick(ticker);
   }
 
   static async mount(opts: PixiViewOptions): Promise<PixiSceneView> {
+    let runtimeRef: SceneRuntime | null = null;
+    const audio = WebAudioPlayer.supported()
+      ? new WebAudioPlayer(
+          (assetId) => {
+            const asset = opts.store.getAsset(assetId);
+            return asset ? opts.resolveAssetUrl(asset) : null;
+          },
+          (message) =>
+            opts.onLog?.({ frame: runtimeRef?.frame ?? 0, level: 'warn', message }),
+        )
+      : null;
     const runtime = await SceneRuntime.create(opts.store, opts.scene, {
       onLog: opts.onLog,
       onError: opts.onError,
+      onAudio: audio
+        ? (e) => {
+            if (e.action === 'play') audio.play(e.handleId, e.assetId, { volume: e.volume, loop: e.loop });
+            else audio.stop(e.handleId);
+          }
+        : undefined,
     });
+    runtimeRef = runtime;
     const settings = opts.store.project.buildSettings;
     const app = new Application();
     await app.init({
@@ -87,11 +119,13 @@ export class PixiSceneView {
     opts.container.appendChild(app.canvas);
 
     const view = new PixiSceneView(opts, runtime, app);
+    view.audio = audio;
     await view.preloadTextures();
     view.syncEntities();
     view.syncCamera();
     app.ticker.add(view.tickerFn);
     if (opts.attachKeyboard !== false) view.attachKeyboard();
+    view.attachPointer();
     return view;
   }
 
@@ -121,6 +155,11 @@ export class PixiSceneView {
     this.app.ticker.remove(this.tickerFn);
     if (this.keydownFn) window.removeEventListener('keydown', this.keydownFn);
     if (this.keyupFn) window.removeEventListener('keyup', this.keyupFn);
+    for (const [type, fn] of this.pointerFns) {
+      this.app.canvas.removeEventListener(type, fn as EventListener);
+    }
+    this.pointerFns = [];
+    this.audio?.destroy();
     this.runtime.destroy();
     this.nodes.clear();
     this.app.destroy(true, { children: true });
@@ -143,6 +182,29 @@ export class PixiSceneView {
     };
     window.addEventListener('keydown', this.keydownFn);
     window.addEventListener('keyup', this.keyupFn);
+  }
+
+  /**
+   * Translate real pointer events on the canvas into runtime.sendPointer
+   * (screen coordinates in the renderer's logical space), so browser clicks
+   * take exactly the path playtests exercise.
+   */
+  private attachPointer(): void {
+    const canvas = this.app.canvas;
+    const send = (e: PointerEvent, kind: 'move' | 'down' | 'up') => {
+      const rect = canvas.getBoundingClientRect();
+      const sx = rect.width > 0 ? this.app.screen.width / rect.width : 1;
+      const sy = rect.height > 0 ? this.app.screen.height / rect.height : 1;
+      this.runtime.sendPointer((e.clientX - rect.left) * sx, (e.clientY - rect.top) * sy, kind);
+    };
+    this.pointerFns = [
+      ['pointermove', (e) => send(e, 'move')],
+      ['pointerdown', (e) => send(e, 'down')],
+      ['pointerup', (e) => send(e, 'up')],
+    ];
+    for (const [type, fn] of this.pointerFns) {
+      canvas.addEventListener(type, fn as EventListener);
+    }
   }
 
   private onTick(ticker: Ticker): void {
@@ -215,7 +277,7 @@ export class PixiSceneView {
       if (!node) {
         node = this.buildNode(entity);
         this.nodes.set(entity.id, node);
-        this.world.addChild(node);
+        (entity.components.UIElement ? this.ui : this.world).addChild(node);
       }
       this.updateNode(entity, node);
     }
@@ -313,9 +375,17 @@ export class PixiSceneView {
   }
 
   private updateNode(entity: RuntimeEntity, node: Container): void {
-    const world = this.runtime.getWorldPosition(entity);
     const transform = entity.transform;
-    node.position.set(world.x, world.y);
+    const uiElement = entity.components.UIElement;
+    if (uiElement) {
+      // Screen space: anchor + offset position the node (Transform.position
+      // is ignored); recomputing per tick re-anchors on renderer resize.
+      const pos = uiScreenPosition(uiElement, this.app.screen.width, this.app.screen.height);
+      node.position.set(pos.x, pos.y);
+    } else {
+      const world = this.runtime.getWorldPosition(entity);
+      node.position.set(world.x, world.y);
+    }
     node.rotation = transform.rotation * DEG_TO_RAD;
     node.scale.set(transform.scale.x, transform.scale.y);
 

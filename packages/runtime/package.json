@@ -17,10 +17,12 @@
     }
   },
   "files": [
-    "dist"
+    "dist",
+    "player"
   ],
   "scripts": {
-    "build": "tsc -p tsconfig.json",
+    "build": "tsc -p tsconfig.json && npm run build:player",
+    "build:player": "node scripts/build-player.mjs",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
@@ -35,6 +37,7 @@
     }
   },
   "devDependencies": {
+    "esbuild": "^0.24.2",
     "pixi.js": "^8.6.0"
   }
 }

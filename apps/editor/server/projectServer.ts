@@ -26,7 +26,7 @@ import {
   type CommandResult,
   type RuntimeHooks,
 } from '@hearth/core';
-import { NodeFileSystem } from '@hearth/core/node';
+import { NodeFileSystem, loadPlayerBundle } from '@hearth/core/node';
 
 // ---------------------------------------------------------------------------
 // Result shapes
@@ -184,6 +184,9 @@ export function createProjectServerContext(options: ProjectServerOptions = {}) {
     const session = await HearthSession.open(nodeFs, root, {
       granted: [...PERMISSION_MODES], // the editor is the human surface: full grant
       runtime,
+      // exportWeb needs the built web player: HEARTH_TOOLS_DIR in the
+      // packaged app, packages/runtime/player/ from a repo checkout.
+      resources: { getPlayerBundle: () => loadPlayerBundle(repoRoot) },
     });
     sessions.set(root, session);
     return session;
@@ -194,6 +197,31 @@ export function createProjectServerContext(options: ProjectServerOptions = {}) {
     const abs = path.resolve(root, relPath);
     if (abs === root || abs.startsWith(root + path.sep)) return abs;
     return null;
+  }
+
+  /** Execute a core command. Always 200; the envelope carries errors. */
+  async function runCommandImpl(project: unknown, name: unknown, params: unknown): Promise<JsonResult> {
+    const commandName = typeof name === 'string' ? name : '(unknown)';
+    if (typeof project !== 'string' || project.trim() === '') {
+      return {
+        status: 200,
+        body: errorEnvelope(commandName, 'NO_PROJECT', 'No project path supplied with the command.'),
+      };
+    }
+    if (typeof name !== 'string' || name.trim() === '') {
+      return { status: 200, body: errorEnvelope('(unknown)', 'NO_COMMAND', 'Missing command name.') };
+    }
+    let session: HearthSession;
+    try {
+      session = await getSession(project);
+    } catch (err) {
+      return {
+        status: 200,
+        body: errorEnvelope(commandName, 'NO_PROJECT', (err as Error).message),
+      };
+    }
+    const result = await session.execute(name, params ?? {});
+    return { status: 200, body: result };
   }
 
   const ctx = {
@@ -284,27 +312,18 @@ export function createProjectServerContext(options: ProjectServerOptions = {}) {
 
     /** Execute a core command. Always 200; the envelope carries errors. */
     async runCommand(project: unknown, name: unknown, params: unknown): Promise<JsonResult> {
-      const commandName = typeof name === 'string' ? name : '(unknown)';
-      if (typeof project !== 'string' || project.trim() === '') {
-        return {
-          status: 200,
-          body: errorEnvelope(commandName, 'NO_PROJECT', 'No project path supplied with the command.'),
-        };
-      }
-      if (typeof name !== 'string' || name.trim() === '') {
-        return { status: 200, body: errorEnvelope('(unknown)', 'NO_COMMAND', 'Missing command name.') };
-      }
-      let session: HearthSession;
-      try {
-        session = await getSession(project);
-      } catch (err) {
-        return {
-          status: 200,
-          body: errorEnvelope(commandName, 'NO_PROJECT', (err as Error).message),
-        };
-      }
-      const result = await session.execute(name, params ?? {});
-      return { status: 200, body: result };
+      return runCommandImpl(project, name, params);
+    },
+
+    /**
+     * Run the exportWeb command (static playable web build). Always 200; the
+     * CommandResult envelope carries success/errors, like /api/command.
+     */
+    async exportWebBuild(project: unknown, outDir: unknown, singleFile: unknown): Promise<JsonResult> {
+      const params: Record<string, unknown> = {};
+      if (typeof outDir === 'string' && outDir.trim() !== '') params.outDir = outDir;
+      if (typeof singleFile === 'boolean') params.singleFile = singleFile;
+      return runCommandImpl(project, 'exportWeb', params);
     },
 
     async listProjectCommands(project: unknown): Promise<JsonResult> {
@@ -485,6 +504,11 @@ async function route(ctx: ProjectServerContext, req: IncomingMessage, res: Serve
     case 'POST /api/command': {
       const body = await readJsonBody(req);
       const result = await ctx.runCommand(body.project, body.name, body.params);
+      return sendJson(res, result.status, result.body);
+    }
+    case 'POST /api/export/web': {
+      const body = await readJsonBody(req);
+      const result = await ctx.exportWebBuild(body.project, body.outDir, body.singleFile);
       return sendJson(res, result.status, result.body);
     }
     case 'GET /api/commands': {

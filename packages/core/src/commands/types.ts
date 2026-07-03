@@ -46,6 +46,20 @@ export interface RuntimeHooks {
   runSceneSmoke?(store: ProjectStore, sceneIdOrName: string, frames: number): Promise<unknown>;
 }
 
+/**
+ * Host-provided resources that commands may need but core cannot locate
+ * itself (built artifacts shipped outside the project). Injected by
+ * CLI / MCP / editor.
+ */
+export interface CommandResources {
+  /**
+   * Source of the built web player (hearth-player.js) used by exportWeb.
+   * Hosts resolve it from HEARTH_TOOLS_DIR or the runtime package's player/
+   * directory; should reject when no bundle can be found.
+   */
+  getPlayerBundle(): Promise<string>;
+}
+
 export interface CommandContext {
   fs: FsLike;
   /** Absolute (or fs-root-relative) path of the open project. */
@@ -53,6 +67,7 @@ export interface CommandContext {
   store: ProjectStore;
   granted: PermissionMode[];
   runtime?: RuntimeHooks;
+  resources?: CommandResources;
   log(level: 'info' | 'warn' | 'error', message: string): void;
   /** Recorders used by command handlers. */
   changed(ref: ChangedRef): void;

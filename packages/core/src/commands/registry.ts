@@ -12,6 +12,7 @@ import * as inspectCommands from './inspectCommands.js';
 import * as scriptCommands from './scriptCommands.js';
 import * as assetCommands from './assetCommands.js';
 import * as diffCommands from './diffCommands.js';
+import * as exportCommands from './exportCommands.js';
 
 const ALL_DEFINITIONS: CommandDefinition[] = [
   // inspect (read-only)
@@ -51,6 +52,7 @@ const ALL_DEFINITIONS: CommandDefinition[] = [
   assetCommands.createSpriteAsset,
   assetCommands.createTileAsset,
   assetCommands.createAnimationAsset,
+  assetCommands.createSound,
   assetCommands.setAssetMetadata,
   assetCommands.removeAsset,
   // diff / playtest / build
@@ -62,6 +64,7 @@ const ALL_DEFINITIONS: CommandDefinition[] = [
   diffCommands.runPlaytest,
   diffCommands.runSceneSmoke,
   diffCommands.buildProject,
+  exportCommands.exportWeb,
 ];
 
 export const COMMANDS: ReadonlyMap<string, CommandDefinition> = new Map(

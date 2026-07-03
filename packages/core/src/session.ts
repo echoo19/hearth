@@ -7,12 +7,13 @@ import { ZodError } from 'zod';
 import type { FsLike } from './fs.js';
 import { ProjectStore, ProjectError } from './project/store.js';
 import { getCommand, listCommands } from './commands/registry.js';
-import type { ChangedRef, CommandIssue, CommandResult, RuntimeHooks } from './commands/types.js';
+import type { ChangedRef, CommandIssue, CommandResources, CommandResult, RuntimeHooks } from './commands/types.js';
 import { hasPermission, PermissionError, type PermissionMode, DEFAULT_MODES } from './permissions.js';
 
 export interface SessionOptions {
   granted?: PermissionMode[];
   runtime?: RuntimeHooks;
+  resources?: CommandResources;
   onLog?: (level: 'info' | 'warn' | 'error', message: string) => void;
 }
 
@@ -23,12 +24,21 @@ export class HearthSession {
     public readonly store: ProjectStore,
     public granted: PermissionMode[],
     private runtime: RuntimeHooks | undefined,
+    private resources: CommandResources | undefined,
     private onLog: SessionOptions['onLog'],
   ) {}
 
   static async open(fs: FsLike, root: string, options: SessionOptions = {}): Promise<HearthSession> {
     const store = await ProjectStore.load(fs, root);
-    return new HearthSession(fs, root, store, options.granted ?? [...DEFAULT_MODES], options.runtime, options.onLog);
+    return new HearthSession(
+      fs,
+      root,
+      store,
+      options.granted ?? [...DEFAULT_MODES],
+      options.runtime,
+      options.resources,
+      options.onLog,
+    );
   }
 
   static fromStore(store: ProjectStore, options: SessionOptions = {}): HearthSession {
@@ -38,6 +48,7 @@ export class HearthSession {
       store,
       options.granted ?? [...DEFAULT_MODES],
       options.runtime,
+      options.resources,
       options.onLog,
     );
   }
@@ -95,6 +106,7 @@ export class HearthSession {
       store: this.store,
       granted: this.granted,
       runtime: this.runtime,
+      resources: this.resources,
       log: (level: 'info' | 'warn' | 'error', message: string) => this.onLog?.(level, message),
       changed: (ref: ChangedRef) => changed.push(ref),
       warn: (code: string, message: string) => warnings.push({ code, message }),

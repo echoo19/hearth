@@ -18,9 +18,6 @@ import type {
   ServerMeta,
 } from './types';
 
-export type CenterTab = 'scene' | 'game';
-export type BottomTab = 'assets' | 'console' | 'diff' | 'agent';
-
 interface EditorState {
   meta: ServerMeta | null;
   projectPath: string | null;
@@ -32,9 +29,9 @@ interface EditorState {
   selection: string | null;
   consoleEntries: ConsoleEntry[];
   consoleUnread: number;
+  /** Whether the Console panel is currently visible in the workspace (its tab selected). */
+  consoleOpen: boolean;
   diff: ProjectDiff | null;
-  centerTab: CenterTab;
-  bottomTab: BottomTab;
   playing: boolean;
 
   loadMeta(): Promise<void>;
@@ -43,8 +40,7 @@ interface EditorState {
   closeProject(): void;
   selectScene(sceneId: string): Promise<void>;
   select(entityId: string | null): void;
-  setCenterTab(tab: CenterTab): void;
-  setBottomTab(tab: BottomTab): void;
+  setConsoleOpen(open: boolean): void;
   setPlaying(playing: boolean): void;
   log(level: ConsoleLevel, source: ConsoleSource, message: string): void;
   clearConsole(): void;
@@ -100,7 +96,6 @@ export const useEditor = create<EditorState>((set, get) => {
       diff: null,
       assets: [],
       playing: false,
-      centerTab: 'scene',
     });
     get().log('info', 'editor', `Opened project "${info.name}" (${info.scenes.length} scene${info.scenes.length === 1 ? '' : 's'})`);
     const docs = await query<{ components: ComponentDoc[] }>('inspectComponents');
@@ -119,9 +114,8 @@ export const useEditor = create<EditorState>((set, get) => {
     selection: null,
     consoleEntries: [],
     consoleUnread: 0,
+    consoleOpen: false,
     diff: null,
-    centerTab: 'scene',
-    bottomTab: 'assets',
     playing: false,
 
     async loadMeta() {
@@ -187,26 +181,20 @@ export const useEditor = create<EditorState>((set, get) => {
       set({ selection: entityId });
     },
 
-    setCenterTab(tab) {
-      set({ centerTab: tab });
-      if (tab !== 'game') set({ playing: false });
-    },
-
-    setBottomTab(tab) {
-      set({ bottomTab: tab });
-      if (tab === 'console') set({ consoleUnread: 0 });
+    setConsoleOpen(open) {
+      // Seeing the console clears the unread badge, as clicking the tab used to.
+      set(open ? { consoleOpen: true, consoleUnread: 0 } : { consoleOpen: false });
     },
 
     setPlaying(playing) {
       set({ playing });
-      if (playing) set({ centerTab: 'game' });
     },
 
     log(level, source, message) {
       set((state) => ({
         consoleEntries: [...state.consoleEntries.slice(-MAX_CONSOLE + 1), makeEntry(level, source, message)],
         consoleUnread:
-          level === 'error' && state.bottomTab !== 'console' ? state.consoleUnread + 1 : state.consoleUnread,
+          level === 'error' && !state.consoleOpen ? state.consoleUnread + 1 : state.consoleUnread,
       }));
     },
 

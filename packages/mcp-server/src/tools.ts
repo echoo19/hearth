@@ -8,6 +8,7 @@ import { z } from 'zod';
 import {
   ASSET_TYPES,
   SPRITE_SHAPES,
+  SOUND_PRESETS,
   PlaytestStepSchema,
   type PermissionMode,
   type SpriteShape,
@@ -325,6 +326,18 @@ export const TOOL_SPECS: ToolSpec[] = [
     },
   },
   {
+    name: 'create_sound',
+    command: 'createSound',
+    description:
+      `Create a procedural sound effect asset (deterministic 16-bit PCM WAV). Presets: ${SOUND_PRESETS.join(', ')}. Same preset + seed always produces identical audio. (requires asset-edit)`,
+    permission: 'asset-edit',
+    inputShape: {
+      name: z.string().min(1),
+      preset: z.enum(SOUND_PRESETS),
+      seed: z.number().int().min(0).optional(),
+    },
+  },
+  {
     name: 'create_animation_asset',
     command: 'createAnimationAsset',
     description: 'Create an animation asset from existing sprite assets (frame ids or names, in order). (requires asset-edit)',
@@ -412,6 +425,18 @@ export const TOOL_SPECS: ToolSpec[] = [
     permission: 'build',
     inputShape: {
       outDir: z.string().optional(),
+    },
+  },
+  {
+    name: 'export_web',
+    command: 'exportWeb',
+    description:
+      'Export a production web build: a static, self-contained playable page (index.html + player + bundle + assets). ' +
+      'singleFile=true inlines everything into one index.html. Validates first. (requires build)',
+    permission: 'build',
+    inputShape: {
+      outDir: z.string().optional(),
+      singleFile: z.boolean().optional(),
     },
   },
 ];

@@ -24,11 +24,13 @@ export {
   defineCommand,
   type CommandDefinition,
   type CommandContext,
+  type CommandResources,
   type CommandResult,
   type CommandIssue,
   type ChangedRef,
   type RuntimeHooks,
 } from './commands/types.js';
+export { type WebExportBundle } from './commands/exportCommands.js';
 export { HearthSession, type SessionOptions } from './session.js';
 export { SCRIPT_TEMPLATE } from './commands/scriptCommands.js';
 
@@ -67,6 +69,12 @@ export {
   type SpriteSpec,
   type SpriteShape,
 } from './assets/procedural.js';
+export {
+  generateSoundWav,
+  SOUND_PRESETS,
+  SOUND_SAMPLE_RATE,
+  type SoundPreset,
+} from './assets/sounds.js';
 
 // Agent integration files
 export { generateAgentsMd, generateClaudeMd, generateAgentConfig } from './agentFiles.js';

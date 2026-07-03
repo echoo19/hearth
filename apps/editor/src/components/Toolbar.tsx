@@ -1,14 +1,16 @@
 import React, { useState } from 'react';
+import type { DockviewApi } from 'dockview-react';
 import { useEditor } from '../store';
 import { Icon, Modal } from './ui';
+import { ViewMenu } from '../workspace/ViewMenu';
+import { showPanel } from '../workspace/Workspace';
 
-export function Toolbar() {
+export function Toolbar({ dock, storageKey }: { dock: DockviewApi | null; storageKey: string }) {
   const info = useEditor((s) => s.info);
   const sceneId = useEditor((s) => s.sceneId);
   const playing = useEditor((s) => s.playing);
   const selectScene = useEditor((s) => s.selectScene);
   const setPlaying = useEditor((s) => s.setPlaying);
-  const setBottomTab = useEditor((s) => s.setBottomTab);
   const refreshDiff = useEditor((s) => s.refreshDiff);
   const exec = useEditor((s) => s.exec);
   const closeProject = useEditor((s) => s.closeProject);
@@ -79,6 +81,10 @@ export function Toolbar() {
         <Icon name={playing ? 'stop' : 'play'} /> {playing ? 'Stop' : 'Play'}
       </button>
 
+      <span className="divider" />
+
+      <ViewMenu dock={dock} storageKey={storageKey} />
+
       <span className="spacer" />
 
       <span className="toolbar-group">
@@ -88,7 +94,7 @@ export function Toolbar() {
         <button
           className="btn btn-sm"
           onClick={() => {
-            setBottomTab('diff');
+            if (dock) showPanel(dock, 'diff');
             void refreshDiff();
           }}
           title="Show changes since the last snapshot"

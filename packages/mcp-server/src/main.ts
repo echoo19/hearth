@@ -16,7 +16,7 @@
 import { parseArgs } from 'node:util';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { HearthSession, DEFAULT_MODES, parseModes } from '@hearth/core';
-import { NodeFileSystem } from '@hearth/core/node';
+import { NodeFileSystem, loadPlayerBundle } from '@hearth/core/node';
 import { createRuntimeHooks } from '@hearth/playtest';
 import { createHearthMcpServer } from './server.js';
 
@@ -56,6 +56,7 @@ async function main(): Promise<void> {
     session = await HearthSession.open(new NodeFileSystem(), values.project, {
       granted,
       runtime: createRuntimeHooks(),
+      resources: { getPlayerBundle: () => loadPlayerBundle() },
       onLog: (level, message) => console.error(`[hearth-mcp] [${level}] ${message}`),
     });
   } catch (err) {
