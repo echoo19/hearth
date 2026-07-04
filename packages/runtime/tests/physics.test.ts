@@ -5,7 +5,11 @@
 import { describe, it, expect } from 'vitest';
 import { SceneRuntime } from '@hearth/runtime';
 import { makeStore, ent } from './helpers.js';
-import { resolveContactVelocity, RESTITUTION_MIN_SPEED } from '../src/physics.js';
+import { layersInteract, resolveContactVelocity, RESTITUTION_MIN_SPEED } from '../src/physics.js';
+
+function scripted(name: string, scriptPath: string, components: Record<string, unknown> = {}) {
+  return ent(name, { Transform: {}, Script: { scriptPath }, ...components });
+}
 
 describe('gravity and ground collision', () => {
   it('lands a dynamic body on a static ground and settles', async () => {
@@ -396,5 +400,256 @@ describe('contact response (restitution, friction, mass split)', () => {
     const lightMove = Math.abs(light.transform.position.x - -10);
     const heavyMove = Math.abs(heavy.transform.position.x - 10);
     expect(lightMove / heavyMove).toBeCloseTo(3, 5);
+  });
+});
+
+describe('layersInteract (unit)', () => {
+  it('defaults interact with defaults', () => {
+    const def = { layer: 'default', collidesWith: ['*'] };
+    expect(layersInteract(def, def)).toBe(true);
+  });
+
+  it('two named layers interact when each lists the other', () => {
+    const a = { layer: 'a', collidesWith: ['b'] };
+    const b = { layer: 'b', collidesWith: ['a'] };
+    expect(layersInteract(a, b)).toBe(true);
+  });
+
+  it('is false when only one side lists the other', () => {
+    const a = { layer: 'a', collidesWith: ['b'] };
+    const b = { layer: 'b', collidesWith: ['c'] };
+    expect(layersInteract(a, b)).toBe(false);
+  });
+
+  it("'*' matches any layer", () => {
+    const a = { layer: 'a', collidesWith: ['*'] };
+    const b = { layer: 'b', collidesWith: ['a'] };
+    expect(layersInteract(a, b)).toBe(true);
+  });
+
+  it('empty collidesWith excludes everything, including itself', () => {
+    const a = { layer: 'a', collidesWith: [] };
+    const b = { layer: 'b', collidesWith: ['*'] };
+    expect(layersInteract(a, b)).toBe(false);
+    expect(layersInteract(a, a)).toBe(false);
+  });
+});
+
+describe('collision layer filtering', () => {
+  it('passes overlapping dynamic bodies through on mutually-excluded layers', async () => {
+    const { store } = await makeStore({
+      entities: [
+        scripted('A', 'scripts/hit.js', {
+          Transform: { position: { x: -5, y: 0 } },
+          Collider: { shape: 'box', width: 32, height: 32, layer: 'a', collidesWith: ['a'] },
+          PhysicsBody: { bodyType: 'dynamic', gravityScale: 0 },
+        }),
+        scripted('B', 'scripts/hit.js', {
+          Transform: { position: { x: 5, y: 0 } },
+          Collider: { shape: 'box', width: 32, height: 32, layer: 'b', collidesWith: ['b'] },
+          PhysicsBody: { bodyType: 'dynamic', gravityScale: 0 },
+        }),
+      ],
+      scripts: {
+        'hit.js': `
+          export default {
+            onCollision(ctx, other) { ctx.log(ctx.entity.name + ' hit ' + other.name); },
+          };
+        `,
+      },
+    });
+    const runtime = await SceneRuntime.create(store, 'Test');
+    runtime.step();
+    const a = runtime.find('A')!;
+    const b = runtime.find('B')!;
+    // Filtered pair: no push, positions unchanged.
+    expect(a.transform.position.x).toBe(-5);
+    expect(b.transform.position.x).toBe(5);
+    expect(a.collisions.length).toBe(0);
+    expect(b.collisions.length).toBe(0);
+    expect(runtime.logs.length).toBe(0);
+  });
+
+  it('filters trigger pairs too — no trigger contact across excluded layers', async () => {
+    const { store } = await makeStore({
+      entities: [
+        ent('Mover', {
+          Transform: { position: { x: 0, y: 0 } },
+          Collider: { shape: 'box', width: 32, height: 32, layer: 'a', collidesWith: ['a'] },
+          PhysicsBody: { bodyType: 'dynamic', gravityScale: 0, velocity: { x: 0, y: 100 } },
+        }),
+        ent('Zone', {
+          Transform: { position: { x: 0, y: 50 } },
+          Collider: {
+            shape: 'box',
+            width: 32,
+            height: 32,
+            isTrigger: true,
+            layer: 'b',
+            collidesWith: ['b'],
+          },
+        }),
+      ],
+    });
+    const runtime = await SceneRuntime.create(store, 'Test');
+    runtime.run(30); // mover center at y≈50 — would be inside the zone if not filtered
+    expect(runtime.find('Mover')!.collisions.length).toBe(0);
+  });
+});
+
+describe('one-way platforms', () => {
+  it('lands on a one-way platform when falling from above', async () => {
+    const { store } = await makeStore({
+      entities: [
+        ent('Platform', {
+          Transform: { position: { x: 0, y: 100 } },
+          Collider: { shape: 'box', width: 64, height: 16, oneWay: true },
+          PhysicsBody: { bodyType: 'static' },
+        }),
+        ent('Faller', {
+          Transform: { position: { x: 0, y: 0 } },
+          Collider: { shape: 'box', width: 32, height: 32 },
+          PhysicsBody: { bodyType: 'dynamic' },
+        }),
+      ],
+    });
+    const runtime = await SceneRuntime.create(store, 'Test');
+    runtime.run(120);
+    const faller = runtime.find('Faller')!;
+    // Platform top = 100 - 8 = 92; faller half height 16 → rests at 76.
+    expect(faller.transform.position.y).toBeCloseTo(76, 3);
+    expect(faller.components.PhysicsBody!.velocity.y).toBe(0);
+    const contact = faller.collisions.find((c) => !c.trigger && c.normal.y < -0.5);
+    expect(contact).toBeDefined();
+  });
+
+  it('passes through when jumping up from below', async () => {
+    const { store } = await makeStore({
+      entities: [
+        ent('Platform', {
+          Transform: { position: { x: 0, y: 100 } },
+          Collider: { shape: 'box', width: 64, height: 16, oneWay: true },
+          PhysicsBody: { bodyType: 'static' },
+        }),
+        ent('Jumper', {
+          Transform: { position: { x: 0, y: 150 } },
+          Collider: { shape: 'box', width: 32, height: 32 },
+          PhysicsBody: {
+            bodyType: 'dynamic',
+            gravityScale: 0,
+            velocity: { x: 0, y: -200 },
+          },
+        }),
+      ],
+    });
+    const runtime = await SceneRuntime.create(store, 'Test');
+    // Run through the full pass — gate must never block it, and velocity
+    // must stay uncancelled (gravityScale 0, no drag).
+    for (let i = 0; i < 30; i++) {
+      runtime.step();
+      expect(runtime.find('Jumper')!.collisions.length).toBe(0);
+    }
+    const jumper = runtime.find('Jumper')!;
+    expect(jumper.components.PhysicsBody!.velocity.y).toBe(-200);
+    // Started at 150, moved by -200*30/60 = -100 → should now be above the platform.
+    expect(jumper.transform.position.y).toBeLessThan(92 - 16);
+  });
+
+  it('passes through a sideways approach (push axis fails the ny gate)', async () => {
+    const { store } = await makeStore({
+      entities: [
+        ent('Platform', {
+          Transform: { position: { x: 0, y: 100 } },
+          Collider: { shape: 'box', width: 64, height: 16, oneWay: true },
+          PhysicsBody: { bodyType: 'static' },
+        }),
+        ent('Slider', {
+          Transform: { position: { x: -100, y: 100 } },
+          Collider: { shape: 'box', width: 32, height: 32 },
+          PhysicsBody: { bodyType: 'dynamic', gravityScale: 0, velocity: { x: 200, y: 0 } },
+        }),
+      ],
+    });
+    const runtime = await SceneRuntime.create(store, 'Test');
+    runtime.run(60); // 1s at 200px/s → x: -100 -> 100, straight through
+    const slider = runtime.find('Slider')!;
+    expect(slider.transform.position.x).toBeCloseTo(100, 3);
+    expect(slider.collisions.length).toBe(0);
+  });
+
+  it('supports a body already resting on top with velocity.y = 0', async () => {
+    const { store } = await makeStore({
+      entities: [
+        ent('Platform', {
+          Transform: { position: { x: 0, y: 100 } },
+          Collider: { shape: 'box', width: 64, height: 16, oneWay: true },
+          PhysicsBody: { bodyType: 'static' },
+        }),
+        ent('Standee', {
+          // Slight overlap (rests at 76 exactly, penetrate by 2px) with no gravity.
+          Transform: { position: { x: 0, y: 78 } },
+          Collider: { shape: 'box', width: 32, height: 32 },
+          PhysicsBody: { bodyType: 'dynamic', gravityScale: 0, velocity: { x: 0, y: 0 } },
+        }),
+      ],
+    });
+    const runtime = await SceneRuntime.create(store, 'Test');
+    runtime.step();
+    const standee = runtime.find('Standee')!;
+    expect(standee.transform.position.y).toBeCloseTo(76, 3);
+    const contact = standee.collisions.find((c) => !c.trigger && c.normal.y < -0.5);
+    expect(contact).toBeDefined();
+  });
+
+  it('mover-vs-mover: one-way gate checks both directions', async () => {
+    const { store } = await makeStore({
+      entities: [
+        ent('OneWayMover', {
+          Transform: { position: { x: 0, y: 100 } },
+          Collider: { shape: 'box', width: 64, height: 16, oneWay: true },
+          PhysicsBody: { bodyType: 'kinematic', velocity: { x: 0, y: 0 } },
+        }),
+        ent('Jumper', {
+          Transform: { position: { x: 0, y: 150 } },
+          Collider: { shape: 'box', width: 32, height: 32 },
+          PhysicsBody: { bodyType: 'dynamic', gravityScale: 0, velocity: { x: 0, y: -200 } },
+        }),
+      ],
+    });
+    const runtime = await SceneRuntime.create(store, 'Test');
+    for (let i = 0; i < 30; i++) {
+      runtime.step();
+      expect(runtime.find('Jumper')!.collisions.length).toBe(0);
+    }
+    expect(runtime.find('Jumper')!.transform.position.y).toBeLessThan(92 - 16);
+  });
+
+  it('trigger + oneWay: trigger events still fire regardless of approach', async () => {
+    const { store } = await makeStore({
+      entities: [
+        ent('Zone', {
+          Transform: { position: { x: 0, y: 100 } },
+          Collider: { shape: 'box', width: 64, height: 16, oneWay: true, isTrigger: true },
+          PhysicsBody: { bodyType: 'static' },
+        }),
+        ent('Jumper', {
+          Transform: { position: { x: 0, y: 150 } },
+          Collider: { shape: 'box', width: 32, height: 32 },
+          PhysicsBody: {
+            bodyType: 'dynamic',
+            gravityScale: 0,
+            velocity: { x: 0, y: -200 },
+          },
+        }),
+      ],
+    });
+    const runtime = await SceneRuntime.create(store, 'Test');
+    let sawTrigger = false;
+    for (let i = 0; i < 30; i++) {
+      runtime.step();
+      const jumper = runtime.find('Jumper')!;
+      if (jumper.collisions.some((c) => c.trigger && c.other.name === 'Zone')) sawTrigger = true;
+    }
+    expect(sawTrigger).toBe(true);
   });
 });

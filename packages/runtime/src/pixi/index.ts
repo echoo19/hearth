@@ -49,7 +49,7 @@ import {
   type TilemapComponent,
 } from '@hearth/core';
 import type { RuntimeEntity, RuntimeError, RuntimeLog, SceneRuntime } from '../runtime.js';
-import { colliderShape, type CollisionShape } from '../physics.js';
+import { colliderShape, type Box, type CollisionShape } from '../physics.js';
 import { GameSession, type SceneEvent, type SessionStorage } from '../session.js';
 import { uiScreenPosition } from '../ui.js';
 import { WebAudioPlayer } from './audio.js';
@@ -536,6 +536,7 @@ export class PixiSceneView {
       if (collider) {
         const shape = colliderShape(collider, worldPos, entity.transform);
         this.drawDebugCollider(g, shape, collider.isTrigger);
+        if (collider.oneWay) this.drawOneWayArrow(g, shape.box);
       }
 
       const body = entity.components.PhysicsBody;
@@ -580,6 +581,21 @@ export class PixiSceneView {
         ).stroke(stroke);
         break;
     }
+  }
+
+  /** Up-arrow marking a one-way collider's top edge (allows through from below). */
+  private drawOneWayArrow(g: Graphics, box: Box): void {
+    const stroke = { width: 2, color: DEBUG_COLLIDER_COLOR };
+    const topY = box.cy - box.hh;
+    g.moveTo(box.cx, topY + 8)
+      .lineTo(box.cx, topY - 8)
+      .stroke(stroke);
+    g.moveTo(box.cx, topY - 8)
+      .lineTo(box.cx - 5, topY - 3)
+      .stroke(stroke);
+    g.moveTo(box.cx, topY - 8)
+      .lineTo(box.cx + 5, topY - 3)
+      .stroke(stroke);
   }
 
   /**

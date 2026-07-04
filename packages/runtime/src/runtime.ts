@@ -41,8 +41,10 @@ import { createAnimatorState, stepAnimator, type AnimatorState } from './animato
 import { InputState } from './input.js';
 import {
   GRAVITY,
+  TILEMAP_FILTER,
   colliderShape,
   computeShapePush,
+  layersInteract,
   resolveContactVelocity,
   tilemapBoxes,
   translateShape,
@@ -1213,12 +1215,16 @@ export class SceneRuntime {
       isTrigger: boolean;
       dynamic: boolean;
       body?: PhysicsBodyComponent;
+      filter: { layer: string; collidesWith: string[] };
+      oneWay: boolean;
     }
     interface Obstacle {
       entity: RuntimeEntity;
       shape: CollisionShape;
       isTrigger: boolean;
       body?: PhysicsBodyComponent;
+      filter: { layer: string; collidesWith: string[] };
+      oneWay: boolean;
     }
     const movers: Mover[] = [];
     const obstacles: Obstacle[] = [];
@@ -1229,8 +1235,16 @@ export class SceneRuntime {
       const collider = entity.components.Collider;
       if (collider) {
         const shape = colliderShape(collider, this.getWorldPosition(entity), entity.transform);
+        const filter = { layer: collider.layer, collidesWith: collider.collidesWith };
         if (bodyType === 'static') {
-          obstacles.push({ entity, shape, isTrigger: collider.isTrigger, body });
+          obstacles.push({
+            entity,
+            shape,
+            isTrigger: collider.isTrigger,
+            body,
+            filter,
+            oneWay: collider.oneWay,
+          });
         } else {
           movers.push({
             entity,
@@ -1238,16 +1252,33 @@ export class SceneRuntime {
             isTrigger: collider.isTrigger,
             dynamic: bodyType === 'dynamic',
             body,
+            filter,
+            oneWay: collider.oneWay,
           });
         }
       }
       const tilemap = entity.components.Tilemap;
       if (tilemap && tilemap.solid) {
         for (const box of tilemapBoxes(tilemap, this.getWorldPosition(entity))) {
-          obstacles.push({ entity, shape: { kind: 'box', box }, isTrigger: false });
+          obstacles.push({
+            entity,
+            shape: { kind: 'box', box },
+            isTrigger: false,
+            filter: TILEMAP_FILTER,
+            oneWay: false,
+          });
         }
       }
     }
+
+    // One-way platforms: the obstacle only blocks a mover being resolved
+    // upward (landing on top) while the mover is not moving up through it.
+    const passesOneWay = (mover: Mover, obstacleOneWay: boolean, ny: number): boolean => {
+      if (!obstacleOneWay) return true;
+      if (ny >= -0.707) return false;
+      const vy = mover.entity.components.PhysicsBody?.velocity.y ?? 0;
+      return vy >= 0;
+    };
 
     const contacts: Contact[] = [];
     const addContact = (
@@ -1283,9 +1314,11 @@ export class SceneRuntime {
     // Movers vs static obstacles (dynamic movers get pushed out).
     for (const mover of movers) {
       for (const obstacle of obstacles) {
+        if (!layersInteract(mover.filter, obstacle.filter)) continue;
         const push = computeShapePush(mover.shape, obstacle.shape);
         if (!push) continue;
         const trigger = mover.isTrigger || obstacle.isTrigger;
+        if (!trigger && !passesOneWay(mover, obstacle.oneWay, push.ny)) continue;
         if (!trigger && mover.dynamic) {
           const other = obstacle.body
             ? { restitution: obstacle.body.restitution, friction: obstacle.body.friction }
@@ -1301,9 +1334,16 @@ export class SceneRuntime {
       for (let j = i + 1; j < movers.length; j++) {
         const a = movers[i];
         const b = movers[j];
+        if (!layersInteract(a.filter, b.filter)) continue;
         const push = computeShapePush(a.shape, b.shape);
         if (!push) continue;
         const trigger = a.isTrigger || b.isTrigger;
+        if (
+          !trigger &&
+          (!passesOneWay(a, b.oneWay, push.ny) || !passesOneWay(b, a.oneWay, -push.ny))
+        ) {
+          continue;
+        }
         if (!trigger) {
           const aOther = b.body
             ? { restitution: b.body.restitution, friction: b.body.friction }

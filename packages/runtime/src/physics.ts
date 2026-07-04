@@ -183,6 +183,16 @@ export function computeShapePush(a: CollisionShape, b: CollisionShape): Push | n
   return polygonPolygonPush(shapePoints(a)!, shapePoints(b)!);
 }
 
+/** Both sides must list the other's layer ('*' matches any). */
+export function layersInteract(
+  a: { layer: string; collidesWith: string[] },
+  b: { layer: string; collidesWith: string[] },
+): boolean {
+  const match = (list: string[], layer: string) => list.includes('*') || list.includes(layer);
+  return match(a.collidesWith, b.layer) && match(b.collidesWith, a.layer);
+}
+export const TILEMAP_FILTER = { layer: 'default', collidesWith: ['*'] as string[] };
+
 /** Zero the velocity component that points against the push normal. */
 export function cancelVelocityAlong(velocity: Vec2, nx: number, ny: number): void {
   const along = velocity.x * nx + velocity.y * ny;
