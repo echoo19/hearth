@@ -1,6 +1,6 @@
 {
   "formatVersion": 1,
-  "hearthVersion": "0.3.0",
+  "hearthVersion": "0.4.0",
   "id": "prj_5f8aox8q",
   "name": "Ember Trail",
   "description": "Collect drifting embers before they fade. Menu and level are plain scenes; the scripts are all Lua.",

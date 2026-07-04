@@ -1,6 +1,6 @@
 {
   "formatVersion": 1,
-  "hearthVersion": "0.3.0",
+  "hearthVersion": "0.4.0",
   "id": "prj_gz3fzgm6",
   "name": "Visual Novel Scene",
   "description": "A dialogue scene: advance lines with the action key.",

@@ -1,17 +1,37 @@
 # Hearth Roadmap
 
-v0.3 is the current milestone. Its first release, v0.3.0 (shipped, below),
-made Lua the first-class scripting language, added scene management and a
-script stdlib, and removed every trace of engine chrome from exported games.
-On top of v0.2's dockable editor workspace, screen-space game UI, polygon
-colliders, working audio with procedural sound effects, and production
-web export — and v0.1's full human+agent loop (editor ⇄ command system ⇄
-CLI/MCP ⇄ runtime ⇄ playtests ⇄ diff review). This page is the honest
-list of what's next and what's deliberately missing.
+v0.4 is the current milestone. Its first release, v0.4.0 (shipped, below),
+added 2D lighting, line rendering, deterministic particles, sprite
+animation playback, a debug-draw overlay, and screenshot capture for
+agents. On top of v0.3's Lua-first scripting, scene management, and
+chrome-free exports — v0.2's dockable editor workspace, screen-space game
+UI, polygon colliders, working audio with procedural sound effects, and
+production web export — and v0.1's full human+agent loop (editor ⇄ command
+system ⇄ CLI/MCP ⇄ runtime ⇄ playtests ⇄ diff review). This page is the
+honest list of what's next and what's deliberately missing.
 
 The standing rule for everything below: **agent-native first**. Each system
 ships as schemas + commands (inspectable via `hearth … --json`, exposed as
 MCP tools, testable in headless playtests) before it gets editor UI.
+
+## Shipped in v0.4.0
+
+- **Rendering v2**: `Light2D` + `Camera.ambientLight` (a lightmap pass that
+  costs nothing when unused — existing projects with no lights render
+  byte-identical to before), `LineRenderer` polylines, deterministic
+  `ParticleEmitter`s (`ctx.particles.burst`/`count`, per-emitter `seed`, and
+  the `assertParticleCount` playtest step), a toggleable debug-draw overlay
+  (colliders, velocity vectors, light radii — off by default, never in
+  exports), and `SpriteAnimator` playback (`ctx.animate`, frames from
+  `createAnimationAsset`). The all-Lua `glow-caves` example exercises the
+  whole set headlessly.
+- **Screenshot capture for agents**: `hearth screenshot [scene] [--debug]`
+  (and the MCP `screenshot` tool) renders a deterministic PNG via headless
+  Chromium, so an agent can see its work.
+- Editor: gizmos for every new component (light radius, line points,
+  particle emitter bounds, animator frame preview), a uniform Vec2
+  point-list Inspector control (used by `LineRenderer` and colliders
+  alike, replacing raw JSON editing), and a preview debug-draw toggle.
 
 ## Shipped in v0.3.0
 
@@ -32,18 +52,6 @@ MCP tools, testable in headless playtests) before it gets editor UI.
   syntax errors with file + line for both languages.
 - Playtests gained `seed`, `click`, and `assertScene` steps; the all-Lua
   `ember-trail` example proves the whole stack headlessly.
-- **Rendering v2**: `Light2D` + `Camera.ambientLight` (a lightmap pass that
-  costs nothing when unused — existing projects with no lights render
-  byte-identical to before), `LineRenderer` polylines, deterministic
-  `ParticleEmitter`s (`ctx.particles.burst`/`count`, per-emitter `seed`, and
-  the `assertParticleCount` playtest step), a toggleable debug-draw overlay
-  (colliders, velocity vectors, light radii — off by default, never in
-  exports), and `SpriteAnimator` playback (`ctx.animate`, frames from
-  `createAnimationAsset`). The all-Lua `glow-caves` example exercises the
-  whole set headlessly.
-- **Screenshot capture for agents**: `hearth screenshot [scene] [--debug]`
-  (and the MCP `screenshot` tool) renders a deterministic PNG via headless
-  Chromium, so an agent can see its work.
 
 ## Shipped in v0.2
 
@@ -57,7 +65,7 @@ MCP tools, testable in headless playtests) before it gets editor UI.
 - Web export: `hearth export web [--single-file] [--zip]` — static
   self-contained builds, itch.io-ready zips.
 
-## Near term (later v0.3 releases)
+## Near term (later v0.4 releases)
 
 - **Physics v2**: mass, restitution, friction on `PhysicsBody`; collision
   layers/masks; one-way platforms; circle-accurate resolution. The runtime

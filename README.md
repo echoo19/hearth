@@ -25,17 +25,19 @@ editor, all without guessing at file formats.
 
 ## Status
 
-**v0.3.0, developer preview.** The full loop works end to end:
+**v0.4.0, developer preview.** The full loop works end to end:
 project model → editor → runtime preview → CLI → MCP → headless playtests →
-diff review. v0.3 makes **Lua the default scripting language** (JS still
-fully supported, same `ctx` API), adds **scene management and a script
-stdlib** (`ctx.scenes.load`, timers, tweens, seeded RNG, save data,
-camera control), removes all engine chrome from exported games — shipped
-builds boot straight into your first scene — and adds **rendering v2**:
-2D lighting (`Light2D` + `Camera.ambientLight`), polylines (`LineRenderer`),
-deterministic particles (`ParticleEmitter`, `ctx.particles`), sprite
-animation (`SpriteAnimator`, `ctx.animate`), a debug-draw overlay, and
-`hearth screenshot` so agents can see their work.
+diff review. v0.4 adds **rendering v2**: 2D lighting (`Light2D` +
+`Camera.ambientLight`), polylines (`LineRenderer`), deterministic particles
+(`ParticleEmitter`, `ctx.particles`), sprite animation (`SpriteAnimator`,
+`ctx.animate`), a debug-draw overlay (off by default, never in exports),
+and `hearth screenshot [--debug]` so agents can see their own work via
+headless Chromium.
+On top of v0.3: Lua as the default scripting language (JS still fully
+supported, same `ctx` API), scene management and a script stdlib
+(`ctx.scenes.load`, timers, tweens, seeded RNG, save data, camera
+control), and chrome-free exports — shipped builds boot straight into
+your first scene.
 On top of v0.2: dockable editor workspace, screen-space game UI
 (`UIElement` + `onUiEvent`), convex polygon colliders, audio with
 procedural sound effects, and static web export (`hearth export web`).
