@@ -151,6 +151,71 @@ describe('ctx.audio.playMusic / stopMusic / setMusicVolume (SceneRuntime)', () =
     expect(msgs).toContain('handle=null');
   });
 
+  it('playMusic with the same asset already playing does a full replace cycle (new handle)', async () => {
+    const received: AudioPlaybackEvent[] = [];
+    const { store } = await makeStore({
+      assets: MUSIC_ASSETS,
+      entities: [ent('Jukebox', { Transform: {}, Script: { scriptPath: 'scripts/jukebox.js' } })],
+      scripts: {
+        'jukebox.js': `
+          export default {
+            onStart(ctx) { ctx.audio.playMusic('bgm1'); },
+            onUpdate(ctx) {
+              if (ctx.time.frame === 1) ctx.vars.h2 = ctx.audio.playMusic('bgm1', { fadeIn: 3 });
+              if (ctx.time.frame === 2) ctx.log('h2=' + ctx.vars.h2);
+            },
+          };
+        `,
+      },
+    });
+    const runtime = await SceneRuntime.create(store, 'Test', { onAudio: (e) => received.push(e) });
+    runtime.run(3);
+    expect(runtime.logs.map((l) => l.message)).toContain('h2=mus_2');
+    expect(runtime.audioEvents).toEqual([
+      { frame: 0, assetId: 'ast_bgm1', action: 'play', music: true },
+      { frame: 1, assetId: 'ast_bgm1', action: 'stop', music: true },
+      { frame: 1, assetId: 'ast_bgm1', action: 'play', music: true },
+    ]);
+    expect(received).toEqual([
+      { action: 'play', handleId: 'mus_1', assetId: 'ast_bgm1', volume: 1, loop: true, music: true, fadeIn: 0 },
+      { action: 'stop', handleId: 'mus_1', assetId: 'ast_bgm1', volume: 1, loop: false, music: true, fadeOut: 3 },
+      { action: 'play', handleId: 'mus_2', assetId: 'ast_bgm1', volume: 1, loop: true, music: true, fadeIn: 3 },
+    ]);
+  });
+
+  it('stopAudio(assetRef) stops SFX playbacks of the asset but never the music channel', async () => {
+    const { store } = await makeStore({
+      assets: MUSIC_ASSETS,
+      entities: [ent('Jukebox', { Transform: {}, Script: { scriptPath: 'scripts/jukebox.js' } })],
+      scripts: {
+        'jukebox.js': `
+          export default {
+            onStart(ctx) {
+              ctx.audio.playMusic('bgm1');
+              ctx.audio.play('bgm1');
+              ctx.audio.play('bgm1');
+            },
+            onUpdate(ctx) {
+              if (ctx.time.frame === 1) ctx.audio.stop('bgm1'); // SFX only
+              if (ctx.time.frame === 2) ctx.audio.stopMusic();  // mus_1 still current
+            },
+          };
+        `,
+      },
+    });
+    const runtime = await SceneRuntime.create(store, 'Test');
+    runtime.run(4);
+    expect(runtime.audioEvents).toEqual([
+      { frame: 0, assetId: 'ast_bgm1', action: 'play', music: true },
+      { frame: 0, assetId: 'ast_bgm1', action: 'play' },
+      { frame: 0, assetId: 'ast_bgm1', action: 'play' },
+      { frame: 1, assetId: 'ast_bgm1', action: 'stop' },
+      { frame: 1, assetId: 'ast_bgm1', action: 'stop' },
+      { frame: 2, assetId: 'ast_bgm1', action: 'stop', music: true },
+    ]);
+    expect(runtime.errors).toEqual([]);
+  });
+
   it('stopAllAudio never touches the music channel', async () => {
     const { store } = await makeStore({
       assets: MUSIC_ASSETS,
@@ -231,6 +296,31 @@ describe('ctx.audio.playMusic exposed to Lua', () => {
     ]);
     runtime.destroy();
   });
+
+  it('playMusic for an unknown asset returns nil in Lua (null -> nil)', async () => {
+    const { store } = await makeStore({
+      assets: MUSIC_ASSETS,
+      entities: [ent('Jukebox', { Transform: {}, Script: { scriptPath: 'scripts/bad.lua' } })],
+      scripts: {
+        'bad.lua': [
+          'local script = {}',
+          'function script.onStart(ctx)',
+          '  local h = ctx.audio.playMusic("unknown")',
+          '  ctx.log("isnil=" .. tostring(h == nil))',
+          'end',
+          'return script',
+        ].join('\n'),
+      },
+    });
+    const runtime = await SceneRuntime.create(store, 'Test');
+    runtime.run(1);
+    expect(runtime.errors).toEqual([]);
+    const msgs = runtime.logs.map((l) => l.message);
+    expect(msgs).toContain('audio.playMusic: asset not found: unknown');
+    expect(msgs).toContain('isnil=true');
+    expect(runtime.audioEvents).toEqual([]);
+    runtime.destroy();
+  });
 });
 
 describe('music channel survives GameSession scene switches', () => {
@@ -268,6 +358,51 @@ describe('music channel survives GameSession scene switches', () => {
     expect(session.audioEvents).toEqual([
       { frame: 0, assetId: 'ast_bgm1', action: 'play', music: true },
       { frame: 3, assetId: 'ast_bgm1', action: 'stop', music: true },
+    ]);
+    session.destroy();
+  });
+
+  it('handle seq is monotonic across a scene switch (mus_2 in the new scene, never reset)', async () => {
+    const received: AudioPlaybackEvent[] = [];
+    const { store } = await makeStore({
+      assets: MUSIC_ASSETS,
+      entities: [ent('Menu', { Transform: {}, Script: { scriptPath: 'scripts/menu.js' } })],
+      scripts: {
+        'menu.js': `
+          export default {
+            onStart(ctx) { ctx.audio.playMusic('bgm1'); },
+            onUpdate(ctx) { if (ctx.time.frame === 1) ctx.scenes.load('Level'); },
+          };
+        `,
+        'hero.js': `
+          export default {
+            onUpdate(ctx) {
+              if (ctx.time.frame === 3) {
+                ctx.audio.stopMusic();
+                ctx.log('h=' + ctx.audio.playMusic('bgm2'));
+              }
+            },
+          };
+        `,
+      },
+      extraScenes: [
+        {
+          id: 'scn_level',
+          name: 'Level',
+          entities: [ent('Hero', { Transform: {}, Script: { scriptPath: 'scripts/hero.js' } })],
+        },
+      ],
+    });
+    const session = await GameSession.create(store, { onAudio: (e) => received.push(e) });
+    for (let i = 0; i < 5; i++) await session.stepAsync();
+
+    expect(session.currentSceneId).toBe('scn_level');
+    // The new scene's playMusic continues the session-wide handle sequence.
+    expect(session.logs.map((l) => l.message)).toContain('h=mus_2');
+    expect(received.map((e) => [e.action, e.handleId])).toEqual([
+      ['play', 'mus_1'],
+      ['stop', 'mus_1'],
+      ['play', 'mus_2'],
     ]);
     session.destroy();
   });
