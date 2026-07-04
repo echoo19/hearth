@@ -60,6 +60,10 @@ export interface PlaytestResult {
   finalScene: string;
   /** Live particle count at end of run, by entity name; only ParticleEmitter entities appear. */
   particleCounts: Record<string, number>;
+  /** Emitted events recorded during the run. */
+  events: { frame: number; name: string; data?: unknown }[];
+  /** Total count of emitted events by name. */
+  eventCounts: Record<string, number>;
 }
 
 export interface SmokeResult {
@@ -77,6 +81,10 @@ export interface SmokeResult {
   passed: boolean;
   /** Live particle count at end of run, by entity name; only ParticleEmitter entities appear. */
   particleCounts: Record<string, number>;
+  /** Emitted events recorded during the run. */
+  events: { frame: number; name: string; data?: unknown }[];
+  /** Total count of emitted events by name. */
+  eventCounts: Record<string, number>;
 }
 
 const ASSERT_TYPES = new Set([
@@ -86,6 +94,7 @@ const ASSERT_TYPES = new Set([
   'assertNoErrors',
   'assertScene',
   'assertParticleCount',
+  'assertEventCount',
 ]);
 
 export async function runPlaytest(
@@ -105,6 +114,8 @@ export async function runPlaytest(
     sceneEvents: [],
     finalScene: '',
     particleCounts: {},
+    events: [],
+    eventCounts: {},
   });
 
   const playtest = store.getPlaytest(playtestIdOrName);
@@ -166,6 +177,8 @@ export async function runPlaytest(
     sceneEvents: [...session.sceneEvents],
     finalScene: session.currentSceneId,
     particleCounts: collectParticleCounts(session.runtime),
+    events: [...session.events],
+    eventCounts: Object.fromEntries(session.eventCounts),
   };
   session.destroy();
   return result;
@@ -386,6 +399,20 @@ async function executeStep(
           : `${step.entity} particle count: ${failures.join('; ')}${capNote}`,
       };
     }
+    case 'assertEventCount': {
+      const count = session.eventCounts.get(step.event) ?? 0;
+      const failures: string[] = [];
+      if (step.equals !== undefined && count !== step.equals) failures.push(`expected exactly ${step.equals}`);
+      if (step.min !== undefined && count < step.min) failures.push(`expected at least ${step.min}`);
+      if (step.max !== undefined && count > step.max) failures.push(`expected at most ${step.max}`);
+      const passed = failures.length === 0;
+      return {
+        index, type: step.type, passed,
+        message: passed
+          ? `event "${step.event}" count ${count} OK`
+          : `event "${step.event}" count ${count}: ${failures.join(', ')}`,
+      };
+    }
     default: {
       const unknown = step as { type: string };
       return {
@@ -417,6 +444,8 @@ export async function runSceneSmoke(
       finalScene: '',
       passed: false,
       particleCounts: {},
+      events: [],
+      eventCounts: {},
     };
   }
   const session = await GameSession.create(store, { scene: scene.id });
@@ -433,6 +462,8 @@ export async function runSceneSmoke(
     finalScene: session.currentSceneId,
     passed: session.errors.length === 0,
     particleCounts: collectParticleCounts(session.runtime),
+    events: [...session.events],
+    eventCounts: Object.fromEntries(session.eventCounts),
   };
   session.destroy();
   return result;

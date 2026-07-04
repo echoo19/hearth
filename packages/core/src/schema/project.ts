@@ -138,6 +138,13 @@ const PlaytestStepUnionSchema = z.discriminatedUnion('type', [
     min: z.number().optional(),
     max: z.number().optional(),
   }),
+  z.object({
+    type: z.literal('assertEventCount'),
+    event: z.string().min(1),
+    equals: z.number().optional(),
+    min: z.number().optional(),
+    max: z.number().optional(),
+  }),
 ]);
 
 export const PlaytestStepSchema = PlaytestStepUnionSchema.superRefine((step, ctx) => {
@@ -150,6 +157,17 @@ export const PlaytestStepSchema = PlaytestStepUnionSchema.superRefine((step, ctx
     ctx.addIssue({
       code: z.ZodIssueCode.custom,
       message: 'assertParticleCount requires at least one of equals, min, or max',
+    });
+  }
+  if (
+    step.type === 'assertEventCount' &&
+    step.equals === undefined &&
+    step.min === undefined &&
+    step.max === undefined
+  ) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: 'assertEventCount requires at least one of equals, min, or max',
     });
   }
 });

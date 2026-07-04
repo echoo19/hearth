@@ -317,6 +317,27 @@ describe('playtests & build', () => {
     expect(list.data.playtests.length).toBe(1);
   });
 
+  it('assertEventCount schema rejects step with no equals/min/max', async () => {
+    const { session } = await makeSession();
+    const pt = await session.execute('createPlaytest', {
+      name: 'invalid',
+      scene: 'Main',
+      steps: [{ type: 'assertEventCount', event: 'coin' }],
+    });
+    expect(pt.success).toBe(false);
+    expect(pt.errors[0].message).toContain('assertEventCount requires at least one of equals, min, or max');
+  });
+
+  it('assertEventCount schema accepts step with min', async () => {
+    const { session } = await makeSession();
+    const pt = await session.execute<any>('createPlaytest', {
+      name: 'valid',
+      scene: 'Main',
+      steps: [{ type: 'assertEventCount', event: 'coin', min: 1 }],
+    });
+    expect(pt.success).toBe(true);
+  });
+
   it('build requires the build permission and a valid project', async () => {
     const { session } = await makeSession(['read-only', 'safe-edit']);
     const denied = await session.execute('buildProject');
