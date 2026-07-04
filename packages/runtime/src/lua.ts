@@ -215,7 +215,7 @@ export class LuaScriptEngine {
     if (exported === null || exported === undefined || typeof exported !== 'object') {
       throw new Error(
         `${path}: Lua script must \`return\` a table of lifecycle hooks ` +
-          `(onStart/onUpdate/onCollision/onUiEvent); got ${describeLuaValue(exported)}`
+          `(onStart/onUpdate/onCollision/onUiEvent/onEvent); got ${describeLuaValue(exported)}`
       );
     }
     const table = exported as Record<string, unknown>;
@@ -226,6 +226,7 @@ export class LuaScriptEngine {
     const onUpdate = pick('onUpdate');
     const onCollision = pick('onCollision');
     const onUiEvent = pick('onUiEvent');
+    const onEvent = pick('onEvent');
 
     const hooks: ScriptHooks = {};
     if (onStart) hooks.onStart = (ctx: ScriptContext): void => void onStart(ctx);
@@ -236,6 +237,10 @@ export class LuaScriptEngine {
     }
     if (onUiEvent) {
       hooks.onUiEvent = (ctx: ScriptContext, event: UiEvent): void => void onUiEvent(ctx, event);
+    }
+    if (onEvent) {
+      hooks.onEvent = (ctx: ScriptContext, name: string, data: unknown): void =>
+        void onEvent(ctx, name, data);
     }
     return hooks;
   }

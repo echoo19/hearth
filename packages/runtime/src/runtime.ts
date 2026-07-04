@@ -52,6 +52,7 @@ import {
   type UiEvent,
 } from './scripts.js';
 import { createCtxMath } from './ctxMath.js';
+import { EventBus, type GameEventRecord } from './events.js';
 import { LuaScriptEngine, isLuaPath } from './lua.js';
 import { EmitterState, type Particle } from './particles.js';
 import { MemorySessionStorage, type SessionStorage } from './session.js';
@@ -108,6 +109,8 @@ export interface RuntimeOptions {
   luaEngine?: LuaScriptEngine;
   /** Session frame base so log/error/audio frames stay monotonic across scenes. */
   frameOffset?: number;
+  /** Live notification for every recorded ctx.events.emit (hosts/session aggregation). */
+  onGameEvent?(record: GameEventRecord): void;
 }
 
 /** A collision contact as seen from one entity. */
@@ -155,6 +158,10 @@ interface Contact {
 }
 
 const MAX_CONSECUTIVE_SCRIPT_ERRORS = 3;
+/** ctx.events.emit re-entrancy guard: nested emits deeper than this are dropped. */
+const MAX_EVENT_DEPTH = 8;
+/** Cap on SceneRuntime.events (oldest kept, newest dropped once full). */
+const MAX_RECORDED_EVENTS = 200;
 
 export class SceneRuntime {
   readonly fixedDt: number;
@@ -162,6 +169,12 @@ export class SceneRuntime {
   readonly logs: RuntimeLog[] = [];
   /** Every audio play/stop, in order — surfaced by run reports and playtests. */
   readonly audioEvents: AudioEvent[] = [];
+  /** Recorded ctx.events.emit calls, in emission order, capped at MAX_RECORDED_EVENTS. */
+  readonly events: GameEventRecord[] = [];
+  /** True once `events` has dropped emits past the cap (eventCounts stays exact). */
+  eventsTruncated = false;
+  /** Exact per-name emit totals, unbounded — never truncated even once `events` caps. */
+  readonly eventCounts = new Map<string, number>();
   readonly input: InputState;
 
   /** Scene id requested by ctx.scenes.load this frame (hosts react after step). */
@@ -192,6 +205,8 @@ export class SceneRuntime {
   private emitters = new Map<string, EmitterState>();
   private animationAssets = new Map<string, AnimationData>();
   private animatorStates = new Map<string, AnimatorState>();
+  private eventBus = new EventBus();
+  private emitDepth = 0;
 
   private constructor(
     private readonly store: ProjectStore,
@@ -383,6 +398,7 @@ export class SceneRuntime {
     this.handles.clear();
     this.destroyedIds.clear();
     this.activePlaybacks.clear();
+    this.eventBus.clear();
     this.ownedLuaEngine?.dispose();
     this.ownedLuaEngine = null;
   }
@@ -927,6 +943,11 @@ export class SceneRuntime {
           runtime.cameraFollowId = target.id;
         },
       },
+      events: {
+        emit: (name, data) => runtime.emitEvent(name, data),
+        on: (name, fn) => runtime.eventBus.on(entity.id, name, fn),
+        off: (id) => runtime.eventBus.off(id),
+      },
     };
   }
 
@@ -996,38 +1017,97 @@ export class SceneRuntime {
     for (const id of this.destroyedIds) {
       this.scriptStates.delete(id);
       this.handles.delete(id);
+      this.eventBus.removeOwner(id);
     }
     this.destroyedIds.clear();
   }
 
   private callHook(
     entity: RuntimeEntity,
-    hook: 'onStart' | 'onUpdate' | 'onCollision' | 'onUiEvent',
-    arg?: unknown,
+    hook: 'onStart' | 'onUpdate' | 'onCollision' | 'onUiEvent' | 'onEvent',
+    ...args: unknown[]
   ): void {
     const state = this.scriptStates.get(entity.id);
     if (!state || state.disabled || !state.hooks) return;
     const fn = state.hooks[hook];
     if (typeof fn !== 'function') return;
     try {
-      (fn as (ctx: ScriptContext, arg?: unknown) => void).call(state.hooks, state.ctx, arg);
+      (fn as (ctx: ScriptContext, ...args: unknown[]) => void).call(state.hooks, state.ctx, ...args);
       state.consecutiveErrors = 0;
     } catch (err) {
-      state.consecutiveErrors++;
-      this.recordError({
-        frame: this._frame,
-        message: (err as Error)?.message ?? String(err),
-        entity: entity.name,
-        script: state.path,
-        phase: hook,
-      });
-      if (state.consecutiveErrors >= MAX_CONSECUTIVE_SCRIPT_ERRORS) {
-        state.disabled = true;
-        this.recordLog(
-          'warn',
-          `script ${state.path} on "${entity.name}" disabled after ${MAX_CONSECUTIVE_SCRIPT_ERRORS} consecutive errors`,
-        );
+      this.recordHookError(state, entity.name, hook, err);
+    }
+  }
+
+  /**
+   * Shared error bookkeeping for both callHook and emitEvent's subscription
+   * callbacks: records the error, increments consecutiveErrors, and disables
+   * the script after MAX_CONSECUTIVE_SCRIPT_ERRORS in a row.
+   */
+  private recordHookError(state: ScriptState, entityName: string, phase: string, err: unknown): void {
+    state.consecutiveErrors++;
+    this.recordError({
+      frame: this._frame,
+      message: (err as Error)?.message ?? String(err),
+      entity: entityName,
+      script: state.path,
+      phase,
+    });
+    if (state.consecutiveErrors >= MAX_CONSECUTIVE_SCRIPT_ERRORS) {
+      state.disabled = true;
+      this.recordLog(
+        'warn',
+        `script ${state.path} on "${entityName}" disabled after ${MAX_CONSECUTIVE_SCRIPT_ERRORS} consecutive errors`,
+      );
+    }
+  }
+
+  /** ctx.events.emit — synchronous, deterministic delivery. */
+  emitEvent(name: string, data?: unknown): void {
+    if (this.emitDepth >= MAX_EVENT_DEPTH) {
+      this.recordLog('warn', `event "${name}" dropped: event cascade too deep (max ${MAX_EVENT_DEPTH})`);
+      return;
+    }
+    this.eventCounts.set(name, (this.eventCounts.get(name) ?? 0) + 1);
+    if (this.events.length < MAX_RECORDED_EVENTS) {
+      const record: GameEventRecord = { frame: this._frame, name };
+      if (data !== undefined) {
+        try {
+          record.data = JSON.parse(JSON.stringify(data));
+        } catch {
+          record.data = String(data);
+        }
       }
+      this.events.push(record);
+      this.options.onGameEvent?.(record);
+    } else {
+      this.eventsTruncated = true;
+    }
+    this.emitDepth++;
+    try {
+      // 1. Explicit subscriptions, subscription order. Snapshot: handlers
+      //    subscribed during delivery wait for the next emit; handlers
+      //    unsubscribed (or whose entity died) mid-delivery are skipped.
+      const listeners = this.eventBus.listenersFor(name);
+      for (const sub of listeners) {
+        if (!this.eventBus.isLive(sub) || this.destroyedIds.has(sub.ownerId)) continue;
+        try {
+          sub.fn(data);
+        } catch (err) {
+          const ownerState = this.scriptStates.get(sub.ownerId);
+          if (ownerState) {
+            const ownerEntity = this.entities.find((e) => e.id === sub.ownerId);
+            this.recordHookError(ownerState, ownerEntity?.name ?? sub.ownerId, 'onEvent', err);
+          }
+        }
+      }
+      // 2. onEvent hooks, entity creation order (same order as onUpdate).
+      for (const entity of this.getEntities()) {
+        if (!entity.enabled || this.destroyedIds.has(entity.id)) continue;
+        this.callHook(entity, 'onEvent', name, data);
+      }
+    } finally {
+      this.emitDepth--;
     }
   }
 

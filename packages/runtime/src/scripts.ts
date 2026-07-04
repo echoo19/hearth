@@ -19,6 +19,8 @@ export interface ScriptHooks {
   onCollision?(ctx: ScriptContext, other: EntityHandle): void;
   /** Pointer events on this entity's interactive UIElement. */
   onUiEvent?(ctx: ScriptContext, event: UiEvent): void;
+  /** Fires for every ctx.events.emit in the scene: onEvent(ctx, name, data). */
+  onEvent?(ctx: ScriptContext, name: string, data: unknown): void;
 }
 
 /** Pointer event delivered to onUiEvent (screen coordinates). */
@@ -152,6 +154,12 @@ export interface ScriptContext {
     setZoom(zoom: number): void;
     /** Follow an entity each frame (null stops). Warn log if not found. */
     follow(idOrName: string | null): void;
+  };
+  /** Global pub/sub. emit delivers synchronously; on() subscriptions die with this entity. */
+  events: {
+    emit(name: string, data?: unknown): void;
+    on(name: string, fn: (data: unknown) => void): string;
+    off(id: string): void;
   };
 }
 

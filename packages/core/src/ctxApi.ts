@@ -462,4 +462,34 @@ export const CTX_API: readonly CtxApiEntry[] = [
     description: 'Remove this entity from the scene.',
     example: { js: 'ctx.destroySelf()', lua: 'ctx.destroySelf()' },
   },
+  // --- events (scene-wide pub/sub, wave B) --------------------------------
+  {
+    path: 'events.emit',
+    kind: 'method',
+    signature: 'emit(name: string, data?: unknown): void',
+    description:
+      "Broadcast an event to the whole scene, synchronously and deterministically: every ctx.events.on subscriber for `name` fires in subscription order, including this entity's own. Also triggers every script's onEvent(ctx, name, data) hook, in entity order. Nested emits (an onEvent handler emitting again) are allowed up to 8 levels deep; deeper emits are dropped with a warning.",
+    example: {
+      js: "ctx.events.emit('scoreChanged', { score: 100 })",
+      lua: 'ctx.events.emit("scoreChanged", { score = 100 })',
+    },
+  },
+  {
+    path: 'events.on',
+    kind: 'method',
+    signature: 'on(name: string, fn: (data: unknown) => void): string',
+    description:
+      'Subscribe to an event by name. Returns a subscription id for ctx.events.off. The subscription is automatically removed when this entity is destroyed.',
+    example: {
+      js: "const sub = ctx.events.on('scoreChanged', (data) => ctx.log(data.score))",
+      lua: 'local sub = ctx.events.on("scoreChanged", function(data) ctx.log(data.score) end)',
+    },
+  },
+  {
+    path: 'events.off',
+    kind: 'method',
+    signature: 'off(id: string): void',
+    description: 'Unsubscribe by id (as returned by ctx.events.on). Unknown ids are a no-op.',
+    example: { js: 'ctx.events.off(sub)', lua: 'ctx.events.off(sub)' },
+  },
 ];

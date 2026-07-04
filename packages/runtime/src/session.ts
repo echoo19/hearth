@@ -8,6 +8,7 @@
  * playtests, exported player) drive a GameSession.
  */
 import type { ProjectStore } from '@hearth/core';
+import type { GameEventRecord } from './events.js';
 import { LuaScriptEngine, isLuaPath } from './lua.js';
 import {
   SceneRuntime,
@@ -59,6 +60,9 @@ export interface SceneEvent {
   to: string;
 }
 
+/** Cap on GameSession.events (mirrors SceneRuntime's MAX_RECORDED_EVENTS). */
+const MAX_RECORDED_EVENTS = 200;
+
 export interface GameSessionOptions {
   /** Scene id or name to start in. Default: project.initialScene ?? first scene. */
   scene?: string;
@@ -71,6 +75,8 @@ export interface GameSessionOptions {
   onAudio?(e: AudioPlaybackEvent): void;
   /** Fired after a scene switch completes (new runtime is live). */
   onSceneChange?(e: SceneEvent): void;
+  /** Fired for every ctx.events.emit across every scene this session runs. */
+  onGameEvent?(record: GameEventRecord): void;
   maxLogs?: number;
 }
 
@@ -80,6 +86,11 @@ export class GameSession {
   readonly errors: RuntimeError[] = [];
   readonly audioEvents: AudioEvent[] = [];
   readonly sceneEvents: SceneEvent[] = [];
+  /** ctx.events.emit records across every scene, session-monotonic frames, capped at 200. */
+  readonly events: GameEventRecord[] = [];
+  eventsTruncated = false;
+  /** Exact per-name totals across every scene switch — never truncated. */
+  readonly eventCounts = new Map<string, number>();
 
   private _runtime!: SceneRuntime;
   private _currentSceneId = '';
@@ -181,6 +192,7 @@ export class GameSession {
     const from = this._currentSceneId;
     const frame = old.frame;
     old.stopAllAudio(); // emits stop AudioPlaybackEvents through onAudio
+    this.eventsTruncated ||= old.eventsTruncated;
     old.destroy();
     try {
       await this.startScene(to, frame);
@@ -211,6 +223,16 @@ export class GameSession {
       onAudio: (e) => {
         this.audioEvents.push({ frame: this._runtime?.frame ?? frameOffset, assetId: e.assetId, action: e.action });
         this.opts.onAudio?.(e);
+      },
+      onGameEvent: (record) => {
+        const merged: GameEventRecord = { ...record, frame: this._runtime?.frame ?? frameOffset };
+        if (this.events.length < MAX_RECORDED_EVENTS) {
+          this.events.push(merged);
+        } else {
+          this.eventsTruncated = true;
+        }
+        this.eventCounts.set(merged.name, (this.eventCounts.get(merged.name) ?? 0) + 1);
+        this.opts.onGameEvent?.(merged);
       },
     });
   }

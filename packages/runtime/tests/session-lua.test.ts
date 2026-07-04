@@ -112,4 +112,46 @@ describe('Lua through GameSession', () => {
     // tostring prints %.14g, so compare numerically).
     expect(Number(a!.slice('roll:'.length))).toBeCloseTo(createRng(9)(), 12);
   });
+
+  it('dispatches ctx.events through Lua scripts and aggregates eventCounts on the session', async () => {
+    const { store } = await makeStore({
+      entities: [
+        ent('Listener', { Transform: {}, Script: { scriptPath: 'scripts/listener.lua' } }),
+        ent('Hook', { Transform: {}, Script: { scriptPath: 'scripts/hook.lua' } }),
+        ent('Pinger', { Transform: {}, Script: { scriptPath: 'scripts/pinger.lua' } }),
+      ],
+      scripts: {
+        'listener.lua': [
+          'local script = {}',
+          'function script.onStart(ctx)',
+          '  ctx.events.on("ping", function(data) ctx.log("got " .. data.n) end)',
+          'end',
+          'return script',
+        ].join('\n'),
+        'hook.lua': [
+          'local script = {}',
+          'function script.onEvent(ctx, name, data)',
+          '  ctx.log(name)',
+          'end',
+          'return script',
+        ].join('\n'),
+        'pinger.lua': [
+          'local script = {}',
+          'function script.onUpdate(ctx, dt)',
+          '  if ctx.time.frame == 1 then',
+          '    ctx.events.emit("ping", { n = 7 })',
+          '  end',
+          'end',
+          'return script',
+        ].join('\n'),
+      },
+    });
+    const session = await GameSession.create(store);
+    for (let i = 0; i < 3; i++) await session.stepAsync();
+    expect(session.errors).toEqual([]);
+    expect(messages(session.logs)).toContain('got 7');
+    expect(messages(session.logs)).toContain('ping');
+    expect(session.eventCounts.get('ping')).toBe(1);
+    session.destroy();
+  });
 });
