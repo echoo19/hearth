@@ -134,6 +134,78 @@ describe('ctx.scene.findPath', () => {
     expect(warnLog!.message).toContain('nav grid too large');
   });
 
+  it('recovers within the same frame after a far-out query fails the grid cap', async () => {
+    const { store } = await makeStore({
+      entities: [
+        scripted('Seeker', 'scripts/seeker.js'),
+        ent('Wall', {
+          Transform: { position: { x: 0, y: 0 } },
+          Collider: { shape: 'box', width: 32, height: 32 },
+        }),
+      ],
+      scripts: {
+        'seeker.js': `
+          export default {
+            onStart(ctx) {
+              const far = ctx.scene.findPath({ x: 0, y: 0 }, { x: 100000, y: 0 });
+              ctx.log('far', far);
+              const near = ctx.scene.findPath({ x: 0, y: 64 }, { x: 100, y: 64 });
+              ctx.log('near', near && near.length);
+            },
+          };
+        `,
+      },
+    });
+    const runtime = await SceneRuntime.create(store, 'Test');
+    runtime.run(1);
+    expect(runtime.errors).toEqual([]);
+    const farLog = runtime.logs.find((l) => l.message.startsWith('far'));
+    const nearLog = runtime.logs.find((l) => l.message.startsWith('near'));
+    expect(farLog).toBeDefined();
+    expect(farLog!.message).toBe('far null');
+    const warnLog = runtime.logs.find((l) => l.level === 'warn');
+    expect(warnLog).toBeDefined();
+    expect(warnLog!.message).toContain('nav grid too large');
+    // The failed far-out build must not poison the rest of the frame: a
+    // second query with modest points rebuilds and succeeds.
+    expect(nearLog).toBeDefined();
+    const nearLen = Number(nearLog!.message.split(' ')[1]);
+    expect(Number.isFinite(nearLen)).toBe(true);
+    expect(nearLen).toBeGreaterThan(0);
+  });
+
+  it('rebuilds within the same frame when a later query falls outside the cached grid bounds', async () => {
+    const { store } = await makeStore({
+      entities: [scripted('Seeker', 'scripts/seeker.js')],
+      scripts: {
+        'seeker.js': `
+          export default {
+            onStart(ctx) {
+              const a = ctx.scene.findPath({ x: 0, y: 0 }, { x: 64, y: 0 });
+              const b = ctx.scene.findPath({ x: 5000, y: 0 }, { x: 5100, y: 0 });
+              ctx.log('a', a && a.length);
+              ctx.log('b', b && b.length);
+            },
+          };
+        `,
+      },
+    });
+    const runtime = await SceneRuntime.create(store, 'Test');
+    runtime.run(1);
+    expect(runtime.errors).toEqual([]);
+    const aLog = runtime.logs.find((l) => l.message.startsWith('a '));
+    const bLog = runtime.logs.find((l) => l.message.startsWith('b '));
+    expect(aLog).toBeDefined();
+    expect(bLog).toBeDefined();
+    // The first grid's bounds cover only the area around the origin; the
+    // second query's points lie well outside it, so the call must trigger a
+    // same-frame rebuild rather than returning null off the stale grid.
+    const aLen = Number(aLog!.message.split(' ')[1]);
+    const bLen = Number(bLog!.message.split(' ')[1]);
+    expect(aLen).toBeGreaterThan(0);
+    expect(bLen).toBeGreaterThan(0);
+  });
+
   it('memoization smoke check: two calls with the same points in the same frame both succeed', async () => {
     const { store } = await makeStore({
       entities: [scripted('Seeker', 'scripts/seeker.js')],

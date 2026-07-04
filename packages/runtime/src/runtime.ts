@@ -217,7 +217,6 @@ export class SceneRuntime {
   private emitDepth = 0;
   private navGrid: NavGrid | null = null;
   private navGridFrame = -1;
-  private navGridFailed = false;
 
   private constructor(
     private readonly store: ProjectStore,
@@ -341,19 +340,22 @@ export class SceneRuntime {
 
   /**
    * Nav grid over the live scene (solid tilemaps + static non-trigger
-   * colliders), rebuilt from current entity state once per frame. Reused
-   * within the same frame only when the cached grid's bounds cover both
-   * query points; a far-out query rebuilds (and re-caches) rather than
-   * silently missing. `include` widens the grid so both endpoints are
-   * always inside it.
+   * colliders). The cached grid is reused only when it was built this frame
+   * AND its bounds cover every query point; otherwise it is rebuilt with the
+   * current `include` points and re-cached (stamped with the current frame).
+   * A build failure (grid over the 512x512 cap) warns and returns null for
+   * that query only — a later same-frame query with different points gets a
+   * fresh rebuild attempt.
    */
   private getNavGrid(include: Vec2[]): NavGrid | null {
-    if (this.navGridFrame === this._frame) {
-      if (this.navGridFailed) return null;
-      if (this.navGrid && this.gridContains(this.navGrid, include)) return this.navGrid;
+    if (
+      this.navGridFrame === this._frame &&
+      this.navGrid &&
+      this.gridContains(this.navGrid, include)
+    ) {
+      return this.navGrid;
     }
     this.navGridFrame = this._frame;
-    this.navGridFailed = false;
     const inputs: NavEntityInput[] = [];
     for (const entity of this.getEntities()) {
       if (!entity.enabled) continue;
@@ -370,7 +372,6 @@ export class SceneRuntime {
       this.navGrid = buildNavGrid({ cellSize, solids, include });
     } catch (err) {
       this.navGrid = null;
-      this.navGridFailed = true;
       this.recordLog('warn', `ctx.scene.findPath: ${err instanceof Error ? err.message : String(err)}`);
     }
     return this.navGrid;
