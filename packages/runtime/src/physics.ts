@@ -14,6 +14,12 @@ import type { ColliderComponent, TilemapComponent, TransformComponent, Vec2 } fr
 /** Gravity in px/s² applied to dynamic bodies (scaled by gravityScale). */
 export const GRAVITY = 980;
 
+/** Tangential velocity damping rate multiplier for contact friction. */
+export const FRICTION_DAMPING = 10;
+
+/** Below this incoming normal speed (px/s), restitution is suppressed (no micro-bounce jitter). */
+export const RESTITUTION_MIN_SPEED = 20;
+
 /** An axis-aligned box described by center + half extents. */
 export interface Box {
   cx: number;
@@ -184,6 +190,35 @@ export function cancelVelocityAlong(velocity: Vec2, nx: number, ny: number): voi
     velocity.x -= along * nx;
     velocity.y -= along * ny;
   }
+}
+
+/** Velocity response on contact. At (restitution=0, friction=0) this is exactly cancelVelocityAlong. */
+export function resolveContactVelocity(
+  velocity: Vec2,
+  nx: number,
+  ny: number,
+  restitution: number,
+  friction: number,
+  dt: number,
+): void {
+  if (restitution === 0 && friction === 0) {
+    cancelVelocityAlong(velocity, nx, ny); // bit-identical v1 path
+    return;
+  }
+  const vn = velocity.x * nx + velocity.y * ny;
+  const tx = -ny;
+  const ty = nx;
+  let vt = velocity.x * tx + velocity.y * ty;
+  let outVn = vn;
+  if (vn < 0) {
+    const e = -vn < RESTITUTION_MIN_SPEED ? 0 : restitution;
+    outVn = -e * vn;
+  }
+  if (friction > 0) {
+    vt *= Math.max(0, 1 - friction * FRICTION_DAMPING * dt);
+  }
+  velocity.x = outVn * nx + vt * tx;
+  velocity.y = outVn * ny + vt * ty;
 }
 
 // ---------------------------------------------------------------------------

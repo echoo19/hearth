@@ -31,6 +31,7 @@ import {
   type NavEntityInput,
   type NavGrid,
   type ParticleEmitterComponent,
+  type PhysicsBodyComponent,
   type ProjectStore,
   type Scene,
   type TransformComponent,
@@ -40,9 +41,9 @@ import { createAnimatorState, stepAnimator, type AnimatorState } from './animato
 import { InputState } from './input.js';
 import {
   GRAVITY,
-  cancelVelocityAlong,
   colliderShape,
   computeShapePush,
+  resolveContactVelocity,
   tilemapBoxes,
   translateShape,
   type CollisionShape,
@@ -1211,24 +1212,33 @@ export class SceneRuntime {
       shape: CollisionShape;
       isTrigger: boolean;
       dynamic: boolean;
+      body?: PhysicsBodyComponent;
     }
     interface Obstacle {
       entity: RuntimeEntity;
       shape: CollisionShape;
       isTrigger: boolean;
+      body?: PhysicsBodyComponent;
     }
     const movers: Mover[] = [];
     const obstacles: Obstacle[] = [];
     for (const entity of live) {
       if (!entity.enabled) continue;
-      const bodyType = entity.components.PhysicsBody?.bodyType ?? 'static';
+      const body = entity.components.PhysicsBody;
+      const bodyType = body?.bodyType ?? 'static';
       const collider = entity.components.Collider;
       if (collider) {
         const shape = colliderShape(collider, this.getWorldPosition(entity), entity.transform);
         if (bodyType === 'static') {
-          obstacles.push({ entity, shape, isTrigger: collider.isTrigger });
+          obstacles.push({ entity, shape, isTrigger: collider.isTrigger, body });
         } else {
-          movers.push({ entity, shape, isTrigger: collider.isTrigger, dynamic: bodyType === 'dynamic' });
+          movers.push({
+            entity,
+            shape,
+            isTrigger: collider.isTrigger,
+            dynamic: bodyType === 'dynamic',
+            body,
+          });
         }
       }
       const tilemap = entity.components.Tilemap;
@@ -1252,12 +1262,22 @@ export class SceneRuntime {
       b.collisions.push({ other: a, normal: { x: -nx, y: -ny }, trigger });
     };
 
-    const applyPush = (mover: Mover, nx: number, ny: number, amount: number) => {
+    const applyPush = (
+      mover: Mover,
+      nx: number,
+      ny: number,
+      amount: number,
+      other: { restitution: number; friction: number },
+    ) => {
       mover.entity.transform.position.x += nx * amount;
       mover.entity.transform.position.y += ny * amount;
       translateShape(mover.shape, nx * amount, ny * amount);
       const body = mover.entity.components.PhysicsBody;
-      if (body) cancelVelocityAlong(body.velocity, nx, ny);
+      if (body) {
+        const e = Math.max(body.restitution, other.restitution);
+        const mu = Math.max(body.friction, other.friction);
+        resolveContactVelocity(body.velocity, nx, ny, e, mu, this.fixedDt);
+      }
     };
 
     // Movers vs static obstacles (dynamic movers get pushed out).
@@ -1267,7 +1287,10 @@ export class SceneRuntime {
         if (!push) continue;
         const trigger = mover.isTrigger || obstacle.isTrigger;
         if (!trigger && mover.dynamic) {
-          applyPush(mover, push.nx, push.ny, push.amount);
+          const other = obstacle.body
+            ? { restitution: obstacle.body.restitution, friction: obstacle.body.friction }
+            : { restitution: 0, friction: 0 };
+          applyPush(mover, push.nx, push.ny, push.amount, other);
         }
         addContact(mover.entity, obstacle.entity, push.nx, push.ny, trigger);
       }
@@ -1282,13 +1305,22 @@ export class SceneRuntime {
         if (!push) continue;
         const trigger = a.isTrigger || b.isTrigger;
         if (!trigger) {
+          const aOther = b.body
+            ? { restitution: b.body.restitution, friction: b.body.friction }
+            : { restitution: 0, friction: 0 };
+          const bOther = a.body
+            ? { restitution: a.body.restitution, friction: a.body.friction }
+            : { restitution: 0, friction: 0 };
           if (a.dynamic && b.dynamic) {
-            applyPush(a, push.nx, push.ny, push.amount / 2);
-            applyPush(b, -push.nx, -push.ny, push.amount / 2);
+            const ma = a.body?.mass ?? 1;
+            const mb = b.body?.mass ?? 1;
+            const total = ma + mb;
+            applyPush(a, push.nx, push.ny, (push.amount * mb) / total, aOther);
+            applyPush(b, -push.nx, -push.ny, (push.amount * ma) / total, bOther);
           } else if (a.dynamic) {
-            applyPush(a, push.nx, push.ny, push.amount);
+            applyPush(a, push.nx, push.ny, push.amount, aOther);
           } else if (b.dynamic) {
-            applyPush(b, -push.nx, -push.ny, push.amount);
+            applyPush(b, -push.nx, -push.ny, push.amount, bOther);
           }
         }
         addContact(a.entity, b.entity, push.nx, push.ny, trigger);

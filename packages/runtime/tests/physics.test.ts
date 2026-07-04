@@ -5,6 +5,7 @@
 import { describe, it, expect } from 'vitest';
 import { SceneRuntime } from '@hearth/runtime';
 import { makeStore, ent } from './helpers.js';
+import { resolveContactVelocity, RESTITUTION_MIN_SPEED } from '../src/physics.js';
 
 describe('gravity and ground collision', () => {
   it('lands a dynamic body on a static ground and settles', async () => {
@@ -187,5 +188,126 @@ describe('dynamic vs dynamic', () => {
     expect(b.transform.position.x).toBeCloseTo(16, 3);
     expect(a.collisions[0].normal.x).toBe(-1);
     expect(b.collisions[0].normal.x).toBe(1);
+  });
+});
+
+describe('resolveContactVelocity (unit)', () => {
+  it('reflects incoming normal velocity scaled by restitution', () => {
+    const v = { x: 0, y: 100 };
+    resolveContactVelocity(v, 0, -1, 0.5, 0, 1 / 60);
+    expect(v.x).toBeCloseTo(0, 10);
+    expect(v.y).toBeCloseTo(-50, 10);
+  });
+
+  it('fully cancels normal velocity with restitution 0 (v1 path)', () => {
+    const v = { x: 0, y: 100 };
+    resolveContactVelocity(v, 0, -1, 0, 0, 1 / 60);
+    expect(v.x).toBe(0);
+    expect(v.y).toBe(0);
+  });
+
+  it('suppresses bounce below RESTITUTION_MIN_SPEED', () => {
+    const incomingSpeed = 10;
+    expect(incomingSpeed).toBeLessThan(RESTITUTION_MIN_SPEED);
+    const v = { x: 0, y: incomingSpeed };
+    resolveContactVelocity(v, 0, -1, 0.9, 0, 1 / 60);
+    // Too slow to bounce: normal component zeroed instead of reflected.
+    expect(v.y).toBe(0);
+  });
+
+  it('applies friction damping to the tangential component', () => {
+    const v = { x: 100, y: 50 };
+    const dt = 1 / 60;
+    resolveContactVelocity(v, 0, -1, 0, 1, dt);
+    // tangent = (1, 0) for normal (0, -1); vt = 100 damped by (1 - friction*FRICTION_DAMPING*dt).
+    expect(v.x).toBeCloseTo(100 * (1 - 1 * 10 * dt), 10);
+    expect(v.y).toBe(0);
+  });
+
+  it('is bit-identical to the v1 default path for a separating velocity', () => {
+    const v = { x: 3, y: -50 };
+    // Already separating (v·n = 50 >= 0): defaults must leave it untouched.
+    resolveContactVelocity(v, 0, -1, 0, 0, 1 / 60);
+    expect(v.x).toBe(3);
+    expect(v.y).toBe(-50);
+  });
+});
+
+describe('contact response (restitution, friction, mass split)', () => {
+  it('bounces a restitutive dynamic body off a static floor', async () => {
+    const { store } = await makeStore({
+      entities: [
+        ent('Ground', {
+          Transform: { position: { x: 400, y: 550 } },
+          Collider: { shape: 'box', width: 800, height: 64 },
+          PhysicsBody: { bodyType: 'static' },
+        }),
+        ent('Ball', {
+          Transform: { position: { x: 400, y: 480 } },
+          Collider: { shape: 'box', width: 32, height: 32 },
+          PhysicsBody: { bodyType: 'dynamic', restitution: 0.8 },
+        }),
+      ],
+    });
+    const runtime = await SceneRuntime.create(store, 'Test');
+    const ball = runtime.find('Ball')!;
+    let bounced = false;
+    for (let i = 0; i < 120; i++) {
+      const before = ball.components.PhysicsBody!.velocity.y;
+      runtime.step();
+      const after = ball.components.PhysicsBody!.velocity.y;
+      if (before > 0 && after < 0) {
+        bounced = true;
+        break;
+      }
+    }
+    expect(bounced).toBe(true);
+    expect(runtime.errors).toEqual([]);
+  });
+
+  it('settles identically to v1 with default restitution and friction', async () => {
+    const { store } = await makeStore({
+      entities: [
+        ent('Ground', {
+          Transform: { position: { x: 400, y: 550 } },
+          Collider: { shape: 'box', width: 800, height: 64 },
+          PhysicsBody: { bodyType: 'static' },
+        }),
+        ent('Player', {
+          Transform: { position: { x: 400, y: 480 } },
+          Collider: { shape: 'box', width: 32, height: 48 },
+          PhysicsBody: { bodyType: 'dynamic' },
+        }),
+      ],
+    });
+    const runtime = await SceneRuntime.create(store, 'Test');
+    runtime.run(120);
+    const player = runtime.find('Player')!;
+    expect(player.transform.position.y).toBeCloseTo(494, 3);
+    expect(player.components.PhysicsBody!.velocity.y).toBe(0);
+  });
+
+  it('splits mover-vs-mover push by inverse mass', async () => {
+    const { store } = await makeStore({
+      entities: [
+        ent('Light', {
+          Transform: { position: { x: -10, y: 0 } },
+          Collider: { shape: 'box', width: 32, height: 32 },
+          PhysicsBody: { bodyType: 'dynamic', gravityScale: 0, mass: 1 },
+        }),
+        ent('Heavy', {
+          Transform: { position: { x: 10, y: 0 } },
+          Collider: { shape: 'box', width: 32, height: 32 },
+          PhysicsBody: { bodyType: 'dynamic', gravityScale: 0, mass: 3 },
+        }),
+      ],
+    });
+    const runtime = await SceneRuntime.create(store, 'Test');
+    runtime.step();
+    const light = runtime.find('Light')!;
+    const heavy = runtime.find('Heavy')!;
+    const lightMove = Math.abs(light.transform.position.x - -10);
+    const heavyMove = Math.abs(heavy.transform.position.x - 10);
+    expect(lightMove / heavyMove).toBeCloseTo(3, 5);
   });
 });
