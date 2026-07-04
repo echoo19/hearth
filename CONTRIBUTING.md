@@ -64,5 +64,5 @@ held to the same standard as any other contribution:
 
 ## Releases
 
-v0.3.x is a developer preview. Versioning is synchronized across packages;
+v0.4.x is a developer preview. Versioning is synchronized across packages;
 release automation is on the roadmap.
