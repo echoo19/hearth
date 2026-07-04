@@ -156,6 +156,26 @@ describe('assertParticleCount step', () => {
     expect(result.steps[0].message).toMatch(/entity not found: NoSuchEmitter/);
   });
 
+  it('fails with a clear message when the entity has no ParticleEmitter, even for a vacuously-true bound', async () => {
+    const { store, session } = await makeEmitterProject();
+    const created = await session.execute('createEntity', { scene: 'Main', name: 'NotAnEmitter' });
+    expect(created.success).toBe(true);
+    await session.execute('createPlaytest', {
+      name: 'no emitter',
+      scene: 'Main',
+      steps: [
+        // max: 5 is satisfied by getParticleCount's 0-for-no-emitter default,
+        // so without the fix this step passes even though "NotAnEmitter"
+        // was never an emitter at all.
+        { type: 'assertParticleCount', entity: 'NotAnEmitter', max: 5 },
+      ],
+    });
+    const result = await runPlaytest(store, 'no emitter');
+    expect(result.passed).toBe(false);
+    expect(result.steps[0].passed).toBe(false);
+    expect(result.steps[0].message).toMatch(/NotAnEmitter has no ParticleEmitter component/);
+  });
+
   it('rejects a step schema with none of equals/min/max set', async () => {
     const { session } = await makeEmitterProject();
     const createdPlaytest = await session.execute('createPlaytest', {

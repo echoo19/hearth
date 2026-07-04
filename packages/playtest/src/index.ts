@@ -353,6 +353,18 @@ async function executeStep(
           message: `entity not found: ${step.entity}${capNote}`,
         };
       }
+      if (!entity.components.ParticleEmitter) {
+        // Without this, an entity with no ParticleEmitter always reads
+        // getParticleCount() === 0, so e.g. `max: 5` (or any bound that 0
+        // satisfies) would pass vacuously — a typo'd entity name silently
+        // proving nothing instead of failing loudly.
+        return {
+          index,
+          type: step.type,
+          passed: false,
+          message: `${step.entity} has no ParticleEmitter component${capNote}`,
+        };
+      }
       const count = runtime.getParticleCount(entity.id);
       const failures: string[] = [];
       if (step.equals !== undefined && count !== step.equals) {
