@@ -36,12 +36,21 @@ function NumberField({ value, onCommit }: { value: number; onCommit: (v: number)
   );
 }
 
-function TextField({ value, onCommit }: { value: string; onCommit: (v: string) => void }) {
+function TextField({
+  value,
+  placeholder,
+  onCommit,
+}: {
+  value: string;
+  placeholder?: string;
+  onCommit: (v: string) => void;
+}) {
   const [draft, setDraft] = useState(value);
   useEffect(() => setDraft(value), [value]);
   return (
     <input
       className="input"
+      placeholder={placeholder}
       value={draft}
       onChange={(e) => setDraft(e.target.value)}
       onBlur={() => draft !== value && onCommit(draft)}
@@ -168,6 +177,7 @@ function StringListField({
         <div className="vec2-list-row" key={i}>
           <TextField
             value={s}
+            placeholder="*"
             onCommit={(newVal) => onCommit(setStringAt(value, i, newVal))}
           />
           <button
