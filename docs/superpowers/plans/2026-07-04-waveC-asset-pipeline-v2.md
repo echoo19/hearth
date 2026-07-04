@@ -198,7 +198,7 @@ export function probeImage(bytes: Uint8Array): ImageInfo | null {
 - [ ] **Step 1: Failing tests** in `packages/core/test/spritesheet.test.ts` (follow the harness style of an existing command test — temp project via the same helper other asset tests use):
   - Slice a 130×64 PNG (bytes built as in Task 1's fixture) imported as a sprite with frameWidth 32, frameHeight 32: expect columns 4, rows 2, frameCount 8, names `<prefix>_0`..`_7`, a `warning` mentioning unused pixels (130 = 4×32 + 2 leftover), and `metadata.grid = {frameWidth: 32, frameHeight: 32, margin: 0, spacing: 0}`.
   - Frame rects row-major: frame 5 (row 1, col 1) has `{x: 32, y: 32}`.
-  - margin 1, spacing 2 on a 69×35 sheet with 16×16 frames: columns = floor((69-2+2)/(16+2)) = 3, rows = 2; frame 4 (row 1, col 1) at `{x: 1+18, y: 1+18}`.
+  - margin 1, spacing 2 on a 69×53 sheet with 16×16 frames: columns = floor((69-2+2)/(16+2)) = 3, rows = floor((53-2+2)/18) = 2; frame 4 (row 1, col 1) at `{x: 1+18, y: 1+18}`. (Erratum: an earlier draft said 69×35, which cannot fit two rows — the formula governs.)
   - Default `namePrefix` = slug of asset name; explicit prefix respected.
   - Re-slicing replaces frames (slice twice with different sizes; old frames gone).
   - Errors: asset not found → NOT_FOUND; asset of type `audio` → INVALID_INPUT; frame larger than image (frameWidth 999) → INVALID_INPUT; dimensionless SVG asset → INVALID_INPUT.
