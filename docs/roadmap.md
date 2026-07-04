@@ -1,18 +1,49 @@
 # Hearth Roadmap
 
-v0.4 is the current milestone. Its first release, v0.4.0 (shipped, below),
-added 2D lighting, line rendering, deterministic particles, sprite
-animation playback, a debug-draw overlay, and screenshot capture for
-agents. On top of v0.3's Lua-first scripting, scene management, and
-chrome-free exports — v0.2's dockable editor workspace, screen-space game
-UI, polygon colliders, working audio with procedural sound effects, and
-production web export — and v0.1's full human+agent loop (editor ⇄ command
-system ⇄ CLI/MCP ⇄ runtime ⇄ playtests ⇄ diff review). This page is the
-honest list of what's next and what's deliberately missing.
+v0.5 is the current milestone. Its first release, v0.5.0 (shipped, below),
+added physics v2 (mass/restitution/friction, collision layers, one-way
+platforms, circle-accurate resolution), script stdlib v2 (`ctx.math`,
+`ctx.events`/`onEvent`), and pathfinding (`ctx.scene.findPath`, `hearth
+inspect path`/`inspect_path`). On top of v0.4's 2D lighting, line
+rendering, deterministic particles, sprite animation playback, a
+debug-draw overlay, and screenshot capture for agents — v0.3's Lua-first
+scripting, scene management, and chrome-free exports — v0.2's dockable
+editor workspace, screen-space game UI, polygon colliders, working audio
+with procedural sound effects, and production web export — and v0.1's
+full human+agent loop (editor ⇄ command system ⇄ CLI/MCP ⇄ runtime ⇄
+playtests ⇄ diff review). This page is the honest list of what's next and
+what's deliberately missing.
 
 The standing rule for everything below: **agent-native first**. Each system
 ships as schemas + commands (inspectable via `hearth … --json`, exposed as
 MCP tools, testable in headless playtests) before it gets editor UI.
+
+## Shipped in v0.5.0
+
+- **Physics v2**: `mass`/`restitution`/`friction` on `PhysicsBody`
+  (restitution/friction combine per contact pair by taking the max of both
+  sides; restitution is suppressed below a 20 px/s incoming speed to kill
+  micro-bounce jitter), named collision layers (`Collider.layer`/
+  `collidesWith`, both sides must list each other, `'*'` matches any),
+  one-way platforms (`Collider.oneWay`), and circle-accurate collision
+  resolution (true circle-circle/circle-box/circle-polygon MTV, not
+  bounding-box). Still a positional resolver deriving velocity response
+  from the MTV normal, not an impulse solver — see
+  [architecture.md](./architecture.md#physics-response).
+- **Script stdlib v2**: `ctx.math` (16 pure vec2/color helpers — add, sub,
+  scale, normalize, lerp, hex/RGB conversion, …) and `ctx.events`/`onEvent`
+  (synchronous, deterministic pub/sub; an 8-deep recursion guard;
+  subscriptions auto-removed when their owning entity is destroyed; the
+  `assertEventCount` playtest step plus `events`/`eventCounts` in run
+  reports).
+- **Pathfinding**: deterministic grid A\* — `ctx.scene.findPath(from, to,
+  opts?)` in scripts, `hearth inspect path` on the CLI, and the
+  `inspect_path` MCP tool, all resolving to the same core module so an
+  offline query matches what a running script gets.
+- The all-Lua `bounce-patrol` example exercises the whole set headlessly:
+  a bouncy ball, friction-contrasted floor strips, a one-way ledge, a
+  findPath-chasing kinematic patroller, and coin pickups driving a
+  `ctx.events`-based score UI.
 
 ## Shipped in v0.4.0
 
@@ -65,24 +96,13 @@ MCP tools, testable in headless playtests) before it gets editor UI.
 - Web export: `hearth export web [--single-file] [--zip]` — static
   self-contained builds, itch.io-ready zips.
 
-## Near term (later v0.4 releases)
+## Near term (later v0.5 releases)
 
-- **Physics v2**: mass, restitution, friction on `PhysicsBody`; collision
-  layers/masks; one-way platforms; circle-accurate resolution. The runtime
-  stays deterministic (fixed timestep) — that's the playtest and
-  future-multiplayer story.
-- **Script standard library v2**: `ctx.math` (vec2 ops, clamp, color
-  helpers) and `ctx.events` (global pub/sub with an `onEvent` hook;
-  emitted events recorded in run reports so playtests can assert them),
-  building on the v0.3.0 stdlib (scenes/timers/tweens/random/save/camera).
 - **Undo/redo in the editor** (command journal; the diff baseline already
   proves the model).
 
 ## Medium term
 
-- **Pathfinding**: grid A* over tilemap solids —
-  `ctx.scene.findPath(from, to)` plus a CLI/MCP inspect surface so agents
-  can reason about reachability without running a scene.
 - **Asset pipeline v2**: spritesheet import + slicing, streamed long-form
   audio (music), font assets, editor thumbnails and bulk import.
 - **UI widgets v2**: layout containers (stacks/anchor groups), sliders,

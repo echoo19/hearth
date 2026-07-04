@@ -1,10 +1,10 @@
 {
   "formatVersion": 1,
-  "id": "scn_wdxmgsg5",
+  "id": "scn_31eybs5m",
   "name": "Room",
   "entities": [
     {
-      "id": "ent_n2k195nb",
+      "id": "ent_374yg1qg",
       "name": "Main Camera",
       "parentId": null,
       "enabled": true,
@@ -30,7 +30,7 @@
       }
     },
     {
-      "id": "ent_9j1lp8hd",
+      "id": "ent_k3q46f71",
       "name": "Room",
       "parentId": null,
       "enabled": true,
@@ -52,8 +52,8 @@
         "Tilemap": {
           "tileSize": 32,
           "tileAssets": {
-            "W": "ast_pa5n9k1x",
-            "F": "ast_lvye7jp4"
+            "W": "ast_ill5w70y",
+            "F": "ast_bxi411fy"
           },
           "grid": [
             "WWWWWWWWWWWWWWWWWWWWWWWWW",
@@ -80,7 +80,7 @@
       }
     },
     {
-      "id": "ent_jmhq2xf7",
+      "id": "ent_foq06vhs",
       "name": "Wall Top",
       "parentId": null,
       "enabled": true,
@@ -122,7 +122,12 @@
             "x": 0,
             "y": 0
           },
-          "isTrigger": false
+          "isTrigger": false,
+          "layer": "default",
+          "collidesWith": [
+            "*"
+          ],
+          "oneWay": false
         },
         "PhysicsBody": {
           "bodyType": "static",
@@ -131,12 +136,15 @@
             "y": 0
           },
           "gravityScale": 1,
-          "drag": 0
+          "drag": 0,
+          "mass": 1,
+          "restitution": 0,
+          "friction": 0
         }
       }
     },
     {
-      "id": "ent_qklw5ey8",
+      "id": "ent_70kh1yc7",
       "name": "Wall Bottom",
       "parentId": null,
       "enabled": true,
@@ -178,7 +186,12 @@
             "x": 0,
             "y": 0
           },
-          "isTrigger": false
+          "isTrigger": false,
+          "layer": "default",
+          "collidesWith": [
+            "*"
+          ],
+          "oneWay": false
         },
         "PhysicsBody": {
           "bodyType": "static",
@@ -187,12 +200,15 @@
             "y": 0
           },
           "gravityScale": 1,
-          "drag": 0
+          "drag": 0,
+          "mass": 1,
+          "restitution": 0,
+          "friction": 0
         }
       }
     },
     {
-      "id": "ent_njkqpzzh",
+      "id": "ent_bi9179bi",
       "name": "Wall Left",
       "parentId": null,
       "enabled": true,
@@ -234,7 +250,12 @@
             "x": 0,
             "y": 0
           },
-          "isTrigger": false
+          "isTrigger": false,
+          "layer": "default",
+          "collidesWith": [
+            "*"
+          ],
+          "oneWay": false
         },
         "PhysicsBody": {
           "bodyType": "static",
@@ -243,12 +264,15 @@
             "y": 0
           },
           "gravityScale": 1,
-          "drag": 0
+          "drag": 0,
+          "mass": 1,
+          "restitution": 0,
+          "friction": 0
         }
       }
     },
     {
-      "id": "ent_ec5v4vua",
+      "id": "ent_pedzmzic",
       "name": "Wall Right",
       "parentId": null,
       "enabled": true,
@@ -290,7 +314,12 @@
             "x": 0,
             "y": 0
           },
-          "isTrigger": false
+          "isTrigger": false,
+          "layer": "default",
+          "collidesWith": [
+            "*"
+          ],
+          "oneWay": false
         },
         "PhysicsBody": {
           "bodyType": "static",
@@ -299,12 +328,15 @@
             "y": 0
           },
           "gravityScale": 1,
-          "drag": 0
+          "drag": 0,
+          "mass": 1,
+          "restitution": 0,
+          "friction": 0
         }
       }
     },
     {
-      "id": "ent_51bzzey6",
+      "id": "ent_alr7rd3d",
       "name": "Player",
       "parentId": null,
       "enabled": true,
@@ -324,7 +356,7 @@
           }
         },
         "SpriteRenderer": {
-          "assetId": "ast_apelyzgj",
+          "assetId": "ast_od4yfc8s",
           "shape": "rectangle",
           "color": "#ffffff",
           "width": 30,
@@ -358,7 +390,12 @@
             "x": 0,
             "y": 0
           },
-          "isTrigger": false
+          "isTrigger": false,
+          "layer": "default",
+          "collidesWith": [
+            "*"
+          ],
+          "oneWay": false
         },
         "PhysicsBody": {
           "bodyType": "dynamic",
@@ -367,7 +404,10 @@
             "y": 0
           },
           "gravityScale": 0,
-          "drag": 0
+          "drag": 0,
+          "mass": 1,
+          "restitution": 0,
+          "friction": 0
         },
         "Script": {
           "scriptPath": "scripts/top-down-move.js",
@@ -378,7 +418,7 @@
       }
     },
     {
-      "id": "ent_nwx8uvji",
+      "id": "ent_5ygkwqpg",
       "name": "Door",
       "parentId": null,
       "enabled": true,
@@ -432,7 +472,12 @@
             "x": 0,
             "y": 0
           },
-          "isTrigger": true
+          "isTrigger": true,
+          "layer": "default",
+          "collidesWith": [
+            "*"
+          ],
+          "oneWay": false
         },
         "Script": {
           "scriptPath": "scripts/door-trigger.js",
@@ -441,7 +486,7 @@
       }
     },
     {
-      "id": "ent_h7pmv2tf",
+      "id": "ent_p5q43ys8",
       "name": "Keeper",
       "parentId": null,
       "enabled": true,
@@ -461,7 +506,7 @@
           }
         },
         "SpriteRenderer": {
-          "assetId": "ast_1xzji7oi",
+          "assetId": "ast_2dzhued5",
           "shape": "rectangle",
           "color": "#ffffff",
           "width": 30,
@@ -495,7 +540,12 @@
             "x": 0,
             "y": 0
           },
-          "isTrigger": false
+          "isTrigger": false,
+          "layer": "default",
+          "collidesWith": [
+            "*"
+          ],
+          "oneWay": false
         },
         "PhysicsBody": {
           "bodyType": "static",
@@ -504,7 +554,10 @@
             "y": 0
           },
           "gravityScale": 1,
-          "drag": 0
+          "drag": 0,
+          "mass": 1,
+          "restitution": 0,
+          "friction": 0
         },
         "Script": {
           "scriptPath": "scripts/npc-dialogue.js",
@@ -516,7 +569,7 @@
       }
     },
     {
-      "id": "ent_9tkk7crm",
+      "id": "ent_7js8rki3",
       "name": "DialogueText",
       "parentId": null,
       "enabled": true,

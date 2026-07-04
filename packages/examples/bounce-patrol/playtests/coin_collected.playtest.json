@@ -1,0 +1,23 @@
+{
+  "formatVersion": 1,
+  "id": "ptt_hsu1igi7",
+  "name": "coin-collected",
+  "scene": "scn_zkc8bm2i",
+  "steps": [
+    {
+      "type": "press",
+      "action": "right",
+      "frames": 40
+    },
+    {
+      "type": "assertEventCount",
+      "event": "coin",
+      "min": 1
+    },
+    {
+      "type": "assertNoErrors"
+    }
+  ],
+  "maxFrames": 300,
+  "seed": 0
+}

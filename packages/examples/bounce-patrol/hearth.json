@@ -1,0 +1,55 @@
+{
+  "formatVersion": 1,
+  "hearthVersion": "0.5.0",
+  "id": "prj_b2ierw95",
+  "name": "Bounce Patrol",
+  "description": "A bouncy ball, a chasing patroller, and three coins in one physics-v2 arena.",
+  "initialScene": "scn_zkc8bm2i",
+  "scenes": [
+    {
+      "id": "scn_zkc8bm2i",
+      "name": "Arena",
+      "path": "scenes/arena.scene.json"
+    }
+  ],
+  "inputMappings": {
+    "actions": {
+      "left": [
+        "ArrowLeft",
+        "KeyA"
+      ],
+      "right": [
+        "ArrowRight",
+        "KeyD"
+      ],
+      "up": [
+        "ArrowUp",
+        "KeyW"
+      ],
+      "down": [
+        "ArrowDown",
+        "KeyS"
+      ],
+      "jump": [
+        "Space"
+      ],
+      "action": [
+        "KeyE",
+        "Enter"
+      ]
+    }
+  },
+  "buildSettings": {
+    "width": 800,
+    "height": 600,
+    "backgroundColor": "#1a1a2e",
+    "targetFps": 60,
+    "fixedTimestep": 60,
+    "title": "Bounce Patrol",
+    "loading": {
+      "backgroundColor": "#000000",
+      "image": null,
+      "spinner": false
+    }
+  }
+}

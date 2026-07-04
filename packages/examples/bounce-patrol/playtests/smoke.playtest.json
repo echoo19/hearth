@@ -1,0 +1,42 @@
+{
+  "formatVersion": 1,
+  "id": "ptt_d3btg0e5",
+  "name": "smoke",
+  "scene": "scn_zkc8bm2i",
+  "steps": [
+    {
+      "type": "wait",
+      "frames": 60
+    },
+    {
+      "type": "assertEntityExists",
+      "entity": "Player",
+      "exists": true
+    },
+    {
+      "type": "assertEntityExists",
+      "entity": "Ball",
+      "exists": true
+    },
+    {
+      "type": "assertEntityExists",
+      "entity": "Patroller",
+      "exists": true
+    },
+    {
+      "type": "assertEntityExists",
+      "entity": "Ledge",
+      "exists": true
+    },
+    {
+      "type": "assertEntityExists",
+      "entity": "Score",
+      "exists": true
+    },
+    {
+      "type": "assertNoErrors"
+    }
+  ],
+  "maxFrames": 300,
+  "seed": 0
+}

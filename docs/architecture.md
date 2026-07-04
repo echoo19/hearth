@@ -30,12 +30,12 @@ results.
 
 | Package | Role |
 | --- | --- |
-| `packages/core` | Zod schemas for every file format; `ProjectStore` (load/save); the **command registry** (45 operations, including web export and the `ctx` API reference); validation; structural diff; permission model; procedural asset generation (SVG sprites/tiles, WAV sounds); AGENTS.md/CLAUDE.md generation. Browser-safe: Node fs access is isolated in `@hearth/core/node`. |
-| `packages/runtime` | 2D runtime: scene instantiation, fixed-timestep loop, input actions, box/circle/convex-polygon physics (SAT), screen-space UI with pointer hit-testing, audio (recorded headlessly, Web Audio in the browser), camera, and the script engine — **Lua 5.4 (sandboxed wasmoon VM) by default, JavaScript equally supported, one identical `ctx` API** with scene switching, timers, tweens, seeded RNG, and persistent save data. `SceneRuntime` runs a single scene; `GameSession` wraps it for cross-scene games (`ctx.scenes.load` swaps runtimes while the RNG stream, save storage, frame counter, and logs carry across). The main entry is **headless** (runs in Node for playtests); the PixiJS renderer is the separate `@hearth/runtime/pixi` subpath used by the editor's game preview, and the web-export player bundle is built from the same code. |
+| `packages/core` | Zod schemas for every file format; `ProjectStore` (load/save); the **command registry** (46 operations, including web export, pathfinding, and the `ctx` API reference); validation; structural diff; permission model; procedural asset generation (SVG sprites/tiles, WAV sounds); AGENTS.md/CLAUDE.md generation; the deterministic grid A\* pathfinding module shared by the runtime and the CLI/MCP. Browser-safe: Node fs access is isolated in `@hearth/core/node`. |
+| `packages/runtime` | 2D runtime: scene instantiation, fixed-timestep loop, input actions, box/circle/convex-polygon physics (SAT, with mass/restitution/friction and named collision layers), a synchronous deterministic event bus, screen-space UI with pointer hit-testing, audio (recorded headlessly, Web Audio in the browser), camera, and the script engine — **Lua 5.4 (sandboxed wasmoon VM) by default, JavaScript equally supported, one identical `ctx` API** with scene switching, timers, tweens, seeded RNG, and persistent save data. `SceneRuntime` runs a single scene; `GameSession` wraps it for cross-scene games (`ctx.scenes.load` swaps runtimes while the RNG stream, save storage, frame counter, and logs carry across). The main entry is **headless** (runs in Node for playtests); the PixiJS renderer is the separate `@hearth/runtime/pixi` subpath used by the editor's game preview, and the web-export player bundle is built from the same code. |
 | `packages/playtest` | Headless playtest execution: scripted input + assertions over a `GameSession` (seeded, scene-switch aware), exposed as `RuntimeHooks` injected into core commands (`runPlaytest`, `runScene`). |
 | `packages/cli` | `hearth`, the command-line surface. Every subcommand dispatches into the core command system; `--json` emits the raw `CommandResult` envelope for agents. |
 | `packages/mcp-server` | `hearth-mcp`, a stdio MCP server exposing the same commands as typed MCP tools, with permission modes. |
-| `packages/examples` | Five sample projects **generated through the command system itself** (`generate.mjs`); they double as integration tests and agent references. Three are JavaScript-scripted; `ember-trail` and `glow-caves` are all-Lua — `ember-trail` exercises the scene/stdlib surface end to end, `glow-caves` exercises rendering v2 (lighting, particles, sprite animation). |
+| `packages/examples` | Six sample projects **generated through the command system itself** (`generate.mjs`); they double as integration tests and agent references. Three are JavaScript-scripted; `ember-trail`, `glow-caves`, and `bounce-patrol` are all-Lua — `ember-trail` exercises the scene/stdlib surface end to end, `glow-caves` exercises rendering v2 (lighting, particles, sprite animation), `bounce-patrol` exercises physics v2 (mass/restitution/friction, layered and one-way colliders), `ctx.events`/`onEvent`, and `ctx.scene.findPath`. |
 | `apps/editor` | Vite + React editor. A Vite-plugin project server (Node) opens `HearthSession`s and exposes `/api/command` etc.; the browser UI renders panels and dispatches commands. An Electron shell packages the desktop app, running the same project server in-process; an experimental Tauri shell config is also included. |
 
 ## The command system (the load-bearing wall)
@@ -115,6 +115,59 @@ PixiJS stage, bottom to top:
    [export.md](./export.md#debug-overlay).
 4. **`ui`** — screen-space `UIElement` entities, always on top, unaffected
    by camera position/zoom or the lightmap.
+
+## Physics response
+
+`packages/runtime/src/physics.ts` is a **positional resolver, not an
+impulse solver**: each contact pair produces a minimal-translation-vector
+(MTV) push — axis-of-least-penetration for box-vs-box, true closest-point/
+SAT math for anything touching a circle or convex polygon — and only then
+derives a velocity response from that push's normal, rather than
+integrating forces. Restitution reflects the inbound normal-velocity
+component (scaled by `restitution`, suppressed below a 20 px/s incoming
+speed to avoid endless micro-bounce jitter as a body settles); friction
+damps the tangential component proportionally to `dt`. Both are combined
+per pair by taking the **max** of each side's value, never an average or a
+material lookup table, and a solid `Tilemap`'s cells — having no
+`PhysicsBody` of their own — are always an effective `(restitution: 0,
+friction: 0)` contact partner. Mass only matters between two `dynamic`
+bodies pushing on each other (the correction splits proportionally);
+`static`/`kinematic` obstacles are effectively infinite mass regardless of
+a mover's own. See [components.md](./components.md#physicsbody) for the
+full field reference.
+
+## Events
+
+`ctx.events` is a synchronous, deterministic pub/sub bus scoped to one
+running scene (`SceneRuntime.emitEvent`, `packages/runtime/src/events.ts`
+for subscription bookkeeping): an `emit` delivers immediately and in a
+fixed order — every `ctx.events.on` subscriber for that name first
+(subscription order), then every entity's `onEvent(ctx, name, data)`
+script hook (creation order, unfiltered by name) — rather than queuing
+anything to a later frame, so event-driven logic stays exactly as
+deterministic as the rest of a fixed-timestep run. Recursion is bounded
+(an emit fired from inside another emit's delivery can nest up to 8 deep
+before being dropped with a console warning) and subscriptions are owned
+by the entity that created them, torn down automatically when that entity
+is destroyed. Playtests record every emit and a running count per name,
+asserted with the `assertEventCount` step — see
+[scripting.md](./scripting.md#events).
+
+## Pathfinding
+
+`ctx.scene.findPath`, `hearth inspect path`, and the `inspect_path` MCP
+tool all resolve to the same core module, `packages/core/src/pathfinding.ts`:
+a deterministic grid A\* with cardinal (default) or 8-directional
+movement, over a nav grid built from every solid `Tilemap` and every
+non-trigger `static`/`kinematic` `Collider`. The runtime and the offline
+command build that grid from different sources — the runtime scans the
+*live* running scene each frame (cached per frame, since geometry rarely
+changes mid-frame), the CLI/MCP command scans the *authored* scene file —
+but both funnel into the same `buildNavGrid`/`findPath` functions, so a
+route computed offline in an editor tool matches what a script would get
+at runtime. A path is an array of grid-cell centers, not the raw
+endpoints; a query that starts or ends in a solid cell, or whose grid
+exceeds 512×512 cells, returns no path rather than throwing.
 
 ## Filesystem abstraction
 

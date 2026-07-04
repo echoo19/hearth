@@ -57,6 +57,8 @@ discover every operation from this).
 **Inspect** (read-only): `inspect project|scenes|components|assets|scripts`,
 `inspect scene <scene> [--full]`, `inspect entity <scene> <entity>`,
 `inspect api` (the full script `ctx` reference with Lua + JS examples),
+`inspect path <scene> --from x,y --to x,y [--diagonals]` (grid A\* over
+the scene's solid geometry — see [Pathfinding](#pathfinding) below),
 `validate` (includes per-script syntax checks with file + line, both
 languages).
 
@@ -91,7 +93,7 @@ blip), `create animation <name> --frames f1 f2`, `import asset <path>`.
 [--seed n]` (`--seed` makes `ctx.random` / Lua `math.random` reproducible;
 steps cover input — `wait`, `press`, `release`, `click {x,y}` — and
 assertions — `assertEntityExists`, `assertProperty`, `assertPositionNear`,
-`assertScene`, `assertNoErrors`), `test`
+`assertScene`, `assertParticleCount`, `assertEventCount`, `assertNoErrors`), `test`
 (validate + all playtests, the CI command).
 
 **Export** (requires `--allow build`): `export web [--out dir]
@@ -110,6 +112,47 @@ Needs a real Chromium: Google Chrome or Microsoft Edge on the machine, a
 `CHROMIUM_PATH` environment variable pointing at one, or
 `npx playwright install chromium`; without any of those it fails with a
 message telling you exactly that.
+
+## Pathfinding
+
+`hearth inspect path` runs the same grid A\* used by `ctx.scene.findPath`
+(see [scripting.md](./scripting.md#entities-in-the-current-scene)) offline,
+against the scene's **authored** state (no need to boot a session).
+The grid is built from every solid `Tilemap` and every non-trigger
+`static`/`kinematic` `Collider` in the scene:
+
+```bash
+hearth inspect path Arena --from 680,500 --to 200,500 --json
+```
+
+```jsonc
+{
+  "success": true,
+  "command": "inspectPath",
+  "data": {
+    "found": true,
+    "path": [
+      { "x": 688, "y": 496 },
+      { "x": 656, "y": 496 },
+      // … one waypoint per grid cell crossed, each a cell center …
+      { "x": 208, "y": 496 }
+    ],
+    "cells": 667,
+    "cellSize": 32
+  },
+  "errors": [],
+  "warnings": [],
+  "changed": [],
+  "files": [],
+  "suggestions": []
+}
+```
+
+`data.path` is `null` (not an empty array) when `from`/`to` sits in a
+solid cell or no route exists; `--diagonals` allows 8-directional
+movement (off by default — four-directional only). `data.cells` is the
+grid's total cell count, useful for sanity-checking a level isn't
+accidentally enormous (grids over 512×512 are rejected).
 
 ## The `--json` envelope
 

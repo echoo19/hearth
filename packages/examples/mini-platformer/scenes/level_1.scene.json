@@ -1,10 +1,10 @@
 {
   "formatVersion": 1,
-  "id": "scn_776vntqi",
+  "id": "scn_2ln2xd78",
   "name": "Level 1",
   "entities": [
     {
-      "id": "ent_ecg7vpyb",
+      "id": "ent_7g0gk54v",
       "name": "Main Camera",
       "parentId": null,
       "enabled": true,
@@ -34,7 +34,7 @@
       }
     },
     {
-      "id": "ent_m8epjifp",
+      "id": "ent_4rhwu5ps",
       "name": "Ground",
       "parentId": null,
       "enabled": true,
@@ -56,8 +56,8 @@
         "Tilemap": {
           "tileSize": 32,
           "tileAssets": {
-            "G": "ast_oqif6jwp",
-            "S": "ast_mway8iue"
+            "G": "ast_3gdtyw0t",
+            "S": "ast_ifs90vw8"
           },
           "grid": [
             "GGGGGGGGGGGGGGGGGGGGGGGGG..GGGGGGGGGG",
@@ -69,7 +69,7 @@
       }
     },
     {
-      "id": "ent_5ufligg8",
+      "id": "ent_0mm8qi14",
       "name": "Platform A",
       "parentId": null,
       "enabled": true,
@@ -123,7 +123,12 @@
             "x": 0,
             "y": 0
           },
-          "isTrigger": false
+          "isTrigger": false,
+          "layer": "default",
+          "collidesWith": [
+            "*"
+          ],
+          "oneWay": false
         },
         "PhysicsBody": {
           "bodyType": "static",
@@ -132,12 +137,15 @@
             "y": 0
           },
           "gravityScale": 1,
-          "drag": 0
+          "drag": 0,
+          "mass": 1,
+          "restitution": 0,
+          "friction": 0
         }
       }
     },
     {
-      "id": "ent_p7qhwojb",
+      "id": "ent_teyrf2n0",
       "name": "Platform B",
       "parentId": null,
       "enabled": true,
@@ -191,7 +199,12 @@
             "x": 0,
             "y": 0
           },
-          "isTrigger": false
+          "isTrigger": false,
+          "layer": "default",
+          "collidesWith": [
+            "*"
+          ],
+          "oneWay": false
         },
         "PhysicsBody": {
           "bodyType": "static",
@@ -200,12 +213,15 @@
             "y": 0
           },
           "gravityScale": 1,
-          "drag": 0
+          "drag": 0,
+          "mass": 1,
+          "restitution": 0,
+          "friction": 0
         }
       }
     },
     {
-      "id": "ent_6q8sws9r",
+      "id": "ent_614j55dr",
       "name": "Platform C",
       "parentId": null,
       "enabled": true,
@@ -259,7 +275,12 @@
             "x": 0,
             "y": 0
           },
-          "isTrigger": false
+          "isTrigger": false,
+          "layer": "default",
+          "collidesWith": [
+            "*"
+          ],
+          "oneWay": false
         },
         "PhysicsBody": {
           "bodyType": "static",
@@ -268,12 +289,15 @@
             "y": 0
           },
           "gravityScale": 1,
-          "drag": 0
+          "drag": 0,
+          "mass": 1,
+          "restitution": 0,
+          "friction": 0
         }
       }
     },
     {
-      "id": "ent_m07fk43q",
+      "id": "ent_8bnql6ex",
       "name": "Player",
       "parentId": null,
       "enabled": true,
@@ -293,7 +317,7 @@
           }
         },
         "SpriteRenderer": {
-          "assetId": "ast_dpta19g1",
+          "assetId": "ast_p2c3ebbo",
           "shape": "rectangle",
           "color": "#ffffff",
           "width": 32,
@@ -327,7 +351,12 @@
             "x": 0,
             "y": 0
           },
-          "isTrigger": false
+          "isTrigger": false,
+          "layer": "default",
+          "collidesWith": [
+            "*"
+          ],
+          "oneWay": false
         },
         "PhysicsBody": {
           "bodyType": "dynamic",
@@ -336,7 +365,10 @@
             "y": 0
           },
           "gravityScale": 1,
-          "drag": 0
+          "drag": 0,
+          "mass": 1,
+          "restitution": 0,
+          "friction": 0
         },
         "Script": {
           "scriptPath": "scripts/player-controller.js",
@@ -348,7 +380,7 @@
       }
     },
     {
-      "id": "ent_s16epry9",
+      "id": "ent_ozysjfml",
       "name": "Coin 1",
       "parentId": null,
       "enabled": true,
@@ -368,7 +400,7 @@
           }
         },
         "SpriteRenderer": {
-          "assetId": "ast_wpps5nlt",
+          "assetId": "ast_wbwd8mos",
           "shape": "rectangle",
           "color": "#ffffff",
           "width": 22,
@@ -402,7 +434,12 @@
             "x": 0,
             "y": 0
           },
-          "isTrigger": true
+          "isTrigger": true,
+          "layer": "default",
+          "collidesWith": [
+            "*"
+          ],
+          "oneWay": false
         },
         "Script": {
           "scriptPath": "scripts/coin-pickup.js",
@@ -411,7 +448,7 @@
       }
     },
     {
-      "id": "ent_bxqgfxqs",
+      "id": "ent_4khrriyp",
       "name": "Coin 2",
       "parentId": null,
       "enabled": true,
@@ -431,7 +468,7 @@
           }
         },
         "SpriteRenderer": {
-          "assetId": "ast_wpps5nlt",
+          "assetId": "ast_wbwd8mos",
           "shape": "rectangle",
           "color": "#ffffff",
           "width": 22,
@@ -465,7 +502,12 @@
             "x": 0,
             "y": 0
           },
-          "isTrigger": true
+          "isTrigger": true,
+          "layer": "default",
+          "collidesWith": [
+            "*"
+          ],
+          "oneWay": false
         },
         "Script": {
           "scriptPath": "scripts/coin-pickup.js",
@@ -474,7 +516,7 @@
       }
     },
     {
-      "id": "ent_zno70mt5",
+      "id": "ent_95xdh7iy",
       "name": "Coin 3",
       "parentId": null,
       "enabled": true,
@@ -494,7 +536,7 @@
           }
         },
         "SpriteRenderer": {
-          "assetId": "ast_wpps5nlt",
+          "assetId": "ast_wbwd8mos",
           "shape": "rectangle",
           "color": "#ffffff",
           "width": 22,
@@ -528,7 +570,12 @@
             "x": 0,
             "y": 0
           },
-          "isTrigger": true
+          "isTrigger": true,
+          "layer": "default",
+          "collidesWith": [
+            "*"
+          ],
+          "oneWay": false
         },
         "Script": {
           "scriptPath": "scripts/coin-pickup.js",
@@ -537,7 +584,7 @@
       }
     },
     {
-      "id": "ent_la6pv1j6",
+      "id": "ent_9b2omyg0",
       "name": "Spikes",
       "parentId": null,
       "enabled": true,
@@ -591,7 +638,12 @@
             "x": 0,
             "y": 0
           },
-          "isTrigger": true
+          "isTrigger": true,
+          "layer": "default",
+          "collidesWith": [
+            "*"
+          ],
+          "oneWay": false
         },
         "Script": {
           "scriptPath": "scripts/spike-hazard.js",
@@ -600,7 +652,7 @@
       }
     },
     {
-      "id": "ent_epn4dru5",
+      "id": "ent_sfkaf699",
       "name": "Enemy",
       "parentId": null,
       "enabled": true,
@@ -620,7 +672,7 @@
           }
         },
         "SpriteRenderer": {
-          "assetId": "ast_ezv1bt5q",
+          "assetId": "ast_6u5nnr89",
           "shape": "rectangle",
           "color": "#ffffff",
           "width": 36,
@@ -654,7 +706,12 @@
             "x": 0,
             "y": 0
           },
-          "isTrigger": true
+          "isTrigger": true,
+          "layer": "default",
+          "collidesWith": [
+            "*"
+          ],
+          "oneWay": false
         },
         "Script": {
           "scriptPath": "scripts/enemy-patrol.js",
@@ -666,7 +723,7 @@
       }
     },
     {
-      "id": "ent_5nsnbtqq",
+      "id": "ent_3k1n3szq",
       "name": "Score",
       "parentId": null,
       "enabled": true,
@@ -705,7 +762,7 @@
       }
     },
     {
-      "id": "ent_0fsochik",
+      "id": "ent_vtspqa0c",
       "name": "Restart",
       "parentId": null,
       "enabled": true,
@@ -760,7 +817,7 @@
       }
     },
     {
-      "id": "ent_8yljda3r",
+      "id": "ent_7jxym6x8",
       "name": "Ambience",
       "parentId": null,
       "enabled": true,
@@ -780,7 +837,7 @@
           }
         },
         "AudioSource": {
-          "assetId": "ast_7ryzuk0z",
+          "assetId": "ast_ohky3hoa",
           "autoplay": true,
           "loop": true,
           "volume": 0.25

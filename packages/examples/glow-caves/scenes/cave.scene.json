@@ -1,10 +1,10 @@
 {
   "formatVersion": 1,
-  "id": "scn_qpi3cycr",
+  "id": "scn_xmjnkj46",
   "name": "Cave",
   "entities": [
     {
-      "id": "ent_05v0h21s",
+      "id": "ent_izq0j6f1",
       "name": "Main Camera",
       "parentId": null,
       "enabled": true,
@@ -30,7 +30,7 @@
       }
     },
     {
-      "id": "ent_r432aq02",
+      "id": "ent_dvlcljft",
       "name": "Cave Floor",
       "parentId": null,
       "enabled": true,
@@ -64,7 +64,7 @@
       }
     },
     {
-      "id": "ent_9ep5yb7g",
+      "id": "ent_66swekcs",
       "name": "Wall Top",
       "parentId": null,
       "enabled": true,
@@ -106,7 +106,12 @@
             "x": 0,
             "y": 0
           },
-          "isTrigger": false
+          "isTrigger": false,
+          "layer": "default",
+          "collidesWith": [
+            "*"
+          ],
+          "oneWay": false
         },
         "PhysicsBody": {
           "bodyType": "static",
@@ -115,12 +120,15 @@
             "y": 0
           },
           "gravityScale": 1,
-          "drag": 0
+          "drag": 0,
+          "mass": 1,
+          "restitution": 0,
+          "friction": 0
         }
       }
     },
     {
-      "id": "ent_es2l9x14",
+      "id": "ent_3d8k7wl7",
       "name": "Wall Bottom",
       "parentId": null,
       "enabled": true,
@@ -162,7 +170,12 @@
             "x": 0,
             "y": 0
           },
-          "isTrigger": false
+          "isTrigger": false,
+          "layer": "default",
+          "collidesWith": [
+            "*"
+          ],
+          "oneWay": false
         },
         "PhysicsBody": {
           "bodyType": "static",
@@ -171,12 +184,15 @@
             "y": 0
           },
           "gravityScale": 1,
-          "drag": 0
+          "drag": 0,
+          "mass": 1,
+          "restitution": 0,
+          "friction": 0
         }
       }
     },
     {
-      "id": "ent_duo2n98y",
+      "id": "ent_67dxcbpf",
       "name": "Wall Left",
       "parentId": null,
       "enabled": true,
@@ -218,7 +234,12 @@
             "x": 0,
             "y": 0
           },
-          "isTrigger": false
+          "isTrigger": false,
+          "layer": "default",
+          "collidesWith": [
+            "*"
+          ],
+          "oneWay": false
         },
         "PhysicsBody": {
           "bodyType": "static",
@@ -227,12 +248,15 @@
             "y": 0
           },
           "gravityScale": 1,
-          "drag": 0
+          "drag": 0,
+          "mass": 1,
+          "restitution": 0,
+          "friction": 0
         }
       }
     },
     {
-      "id": "ent_oc2h7elj",
+      "id": "ent_gzj62ido",
       "name": "Wall Right",
       "parentId": null,
       "enabled": true,
@@ -274,7 +298,12 @@
             "x": 0,
             "y": 0
           },
-          "isTrigger": false
+          "isTrigger": false,
+          "layer": "default",
+          "collidesWith": [
+            "*"
+          ],
+          "oneWay": false
         },
         "PhysicsBody": {
           "bodyType": "static",
@@ -283,12 +312,15 @@
             "y": 0
           },
           "gravityScale": 1,
-          "drag": 0
+          "drag": 0,
+          "mass": 1,
+          "restitution": 0,
+          "friction": 0
         }
       }
     },
     {
-      "id": "ent_2dnv8u9r",
+      "id": "ent_gpy5qqu1",
       "name": "Cave Wall Left",
       "parentId": null,
       "enabled": true,
@@ -348,7 +380,7 @@
       }
     },
     {
-      "id": "ent_ybwpbmhh",
+      "id": "ent_mllnvomu",
       "name": "Cave Wall Right",
       "parentId": null,
       "enabled": true,
@@ -408,7 +440,7 @@
       }
     },
     {
-      "id": "ent_f5da182i",
+      "id": "ent_57skx8yg",
       "name": "Player",
       "parentId": null,
       "enabled": true,
@@ -428,7 +460,7 @@
           }
         },
         "SpriteRenderer": {
-          "assetId": "ast_g1clyt0j",
+          "assetId": "ast_c95whdd8",
           "shape": "rectangle",
           "color": "#ffffff",
           "width": 28,
@@ -462,7 +494,12 @@
             "x": 0,
             "y": 0
           },
-          "isTrigger": false
+          "isTrigger": false,
+          "layer": "default",
+          "collidesWith": [
+            "*"
+          ],
+          "oneWay": false
         },
         "PhysicsBody": {
           "bodyType": "dynamic",
@@ -471,7 +508,10 @@
             "y": 0
           },
           "gravityScale": 0,
-          "drag": 0
+          "drag": 0,
+          "mass": 1,
+          "restitution": 0,
+          "friction": 0
         },
         "Script": {
           "scriptPath": "scripts/player-move.lua",
@@ -482,9 +522,9 @@
       }
     },
     {
-      "id": "ent_udrnlt2c",
+      "id": "ent_ruejik47",
       "name": "Torch",
-      "parentId": "ent_f5da182i",
+      "parentId": "ent_57skx8yg",
       "enabled": true,
       "tags": [
         "torch"
@@ -508,7 +548,7 @@
           "enabled": true
         },
         "SpriteRenderer": {
-          "assetId": "ast_4c01rzzg",
+          "assetId": "ast_ito7zlew",
           "shape": "rectangle",
           "color": "#ffffff",
           "width": 14,
@@ -520,7 +560,7 @@
           "visible": true
         },
         "SpriteAnimator": {
-          "assetId": "ast_2lwhijnk",
+          "assetId": "ast_ua57orhx",
           "fps": 0,
           "playing": true,
           "loop": true
@@ -552,7 +592,7 @@
       }
     },
     {
-      "id": "ent_rzk18kbe",
+      "id": "ent_fuzatvvh",
       "name": "Stalactite",
       "parentId": null,
       "enabled": true,
@@ -586,7 +626,7 @@
       }
     },
     {
-      "id": "ent_enbo4t3d",
+      "id": "ent_w5dilayl",
       "name": "Drip",
       "parentId": null,
       "enabled": true,

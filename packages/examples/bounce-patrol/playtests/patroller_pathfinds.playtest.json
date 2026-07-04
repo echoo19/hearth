@@ -1,0 +1,24 @@
+{
+  "formatVersion": 1,
+  "id": "ptt_6jtfhp88",
+  "name": "patroller-pathfinds",
+  "scene": "scn_zkc8bm2i",
+  "steps": [
+    {
+      "type": "wait",
+      "frames": 240
+    },
+    {
+      "type": "assertPositionNear",
+      "entity": "Patroller",
+      "x": 445.79054233249985,
+      "y": 496.0000027230807,
+      "tolerance": 5
+    },
+    {
+      "type": "assertNoErrors"
+    }
+  ],
+  "maxFrames": 400,
+  "seed": 0
+}

@@ -1259,9 +1259,442 @@ return script
 }
 
 // ---------------------------------------------------------------------------
+// Example 6: Bounce Patrol (all-Lua, physics v2 + ctx.math/ctx.events/findPath)
+// ---------------------------------------------------------------------------
+// Showcases wave B end to end: a solid Tilemap arena with an interior wall
+// and a gap (findPath routes the Patroller through it), a bouncy Ball
+// (circle collider, restitution), two friction-contrasted floor strips,
+// a one-way Ledge, a kinematic Patroller chasing the player via
+// ctx.scene.findPath + ctx.math steering, three layer-filtered coin
+// triggers, and a ScoreUI driven by ctx.events/onEvent. All scripts are
+// Lua. Every playtest expectation below is read back from a real probe
+// run of this exact scene (GameSession.create → stepAsync → read →
+// destroy, same pattern as generateGlowCaves above) — physics v2's
+// restitution/friction resolution and findPath's grid A* are fp-real, so
+// hand-computing expected positions/velocities would be a mistake.
+async function generateBouncePatrol() {
+  const session = await freshProject('bounce-patrol', {
+    name: 'Bounce Patrol',
+    description: 'A bouncy ball, a chasing patroller, and three coins in one physics-v2 arena.',
+  });
+
+  const scene = (await run(session, 'createScene', { name: 'Arena', withCamera: false })).sceneId;
+
+  // --- assets ---
+  const playerAsset = (await run(session, 'createSpriteAsset', {
+    name: 'player', shape: 'character', color: '#3498db', width: 28, height: 32,
+  })).asset;
+  const ballAsset = (await run(session, 'createSpriteAsset', {
+    name: 'ball', shape: 'circle', color: '#e67e22', width: 28, height: 28,
+  })).asset;
+  const patrollerAsset = (await run(session, 'createSpriteAsset', {
+    name: 'patroller', shape: 'enemy', color: '#c0392b', width: 32, height: 32,
+  })).asset;
+  const coinAsset = (await run(session, 'createSpriteAsset', {
+    name: 'coin', shape: 'coin', color: '#f1c40f', width: 20, height: 20,
+  })).asset;
+  const wallTile = (await run(session, 'createTileAsset', { name: 'wall', color: '#4a4036', size: 32 })).asset;
+
+  await run(session, 'updateSettings', { buildSettings: { title: 'Bounce Patrol' } });
+
+  // --- scripts (all Lua) ---
+  await run(session, 'createScript', {
+    name: 'player-move',
+    language: 'lua',
+    source: `-- Player: four-direction movement (no gravity — physics is reserved
+-- for the bouncing Ball and the kinematic Patroller). Friction 0.6 lives
+-- on this entity's PhysicsBody component, not in the script.
+-- Reminder: ctx calls use DOT syntax (ctx.log("hi"), never ctx:log("hi")).
+local script = {}
+
+function script.onUpdate(ctx, dt)
+  local body = ctx.getComponent("PhysicsBody")
+  local speed = ctx.params.speed or 180
+  local vx, vy = 0, 0
+  if ctx.input.isDown("left") then vx = vx - speed end
+  if ctx.input.isDown("right") then vx = vx + speed end
+  if ctx.input.isDown("up") then vy = vy - speed end
+  if ctx.input.isDown("down") then vy = vy + speed end
+  body.velocity.x = vx
+  body.velocity.y = vy
+end
+
+return script
+`,
+  });
+
+  await run(session, 'createScript', {
+    name: 'patroller-chase',
+    language: 'lua',
+    source: `-- Patroller: a kinematic body with no gravity/pushback of its own. Every
+-- REPATH_INTERVAL frames it asks ctx.scene.findPath for a fresh route to
+-- the player (grid A* over the arena's solid Tilemap + statics) and
+-- steers waypoint-to-waypoint with ctx.math (sub/normalize/scale) rather
+-- than hand-rolled trig. Its Collider is a trigger, so it detects the
+-- player without physically shoving anything; touching the player emits
+-- "caught". It also overlaps the Tilemap arena's own entity as it walks
+-- past walls (see docs/architecture.md) — that fires onCollision too, so
+-- the name check below ignores anything that isn't the Player.
+local script = {}
+
+local SPEED = 60
+local WAYPOINT_RADIUS = 6
+local REPATH_INTERVAL = 30
+
+local function repath(ctx)
+  local player = ctx.scene.find("Player")
+  if not player then return end
+  ctx.vars.path = ctx.scene.findPath(ctx.transform.position, player.transform.position)
+  ctx.vars.waypointIndex = 1
+end
+
+function script.onStart(ctx)
+  ctx.vars.path = nil
+  ctx.vars.waypointIndex = 1
+  repath(ctx)
+end
+
+function script.onUpdate(ctx, dt)
+  local body = ctx.getComponent("PhysicsBody")
+
+  if ctx.time.frame % REPATH_INTERVAL == 0 then
+    repath(ctx)
+  end
+
+  local path = ctx.vars.path
+  local target = path and path[ctx.vars.waypointIndex] or nil
+  if not target then
+    body.velocity.x = 0
+    body.velocity.y = 0
+    return
+  end
+
+  local toTarget = ctx.math.sub(target, ctx.transform.position)
+  if ctx.math.length(toTarget) < WAYPOINT_RADIUS then
+    ctx.vars.waypointIndex = ctx.vars.waypointIndex + 1
+    target = path[ctx.vars.waypointIndex]
+    if not target then
+      body.velocity.x = 0
+      body.velocity.y = 0
+      return
+    end
+    toTarget = ctx.math.sub(target, ctx.transform.position)
+  end
+
+  local steer = ctx.math.scale(ctx.math.normalize(toTarget), SPEED)
+  body.velocity.x = steer.x
+  body.velocity.y = steer.y
+end
+
+function script.onCollision(ctx, other)
+  if other.name ~= "Player" then return end
+  ctx.events.emit("caught")
+end
+
+return script
+`,
+  });
+
+  await run(session, 'createScript', {
+    name: 'coin-collect',
+    language: 'lua',
+    source: `-- Coin: layer "pickup" with collidesWith {"player"} already restricts
+-- contact to the Player entity (see the Collider on each Coin below and
+-- docs/components.md's layer rules), so onCollision needs no tag check —
+-- the Patroller walks straight through these on layer "default".
+local script = {}
+
+function script.onCollision(ctx, other)
+  ctx.events.emit("coin", { value = 1 })
+  ctx.destroySelf()
+end
+
+return script
+`,
+  });
+
+  await run(session, 'createScript', {
+    name: 'score-ui',
+    language: 'lua',
+    source: `-- ScoreUI: no ctx.events.on subscription needed — onEvent(ctx, name, data)
+-- fires for every emitted event scene-wide, so it just filters by name.
+local script = {}
+
+function script.onStart(ctx)
+  ctx.vars.score = 0
+end
+
+function script.onEvent(ctx, name, data)
+  if name ~= "coin" then return end
+  local amount = 1
+  if type(data) == "table" and type(data.value) == "number" then
+    amount = data.value
+  end
+  ctx.vars.score = ctx.vars.score + amount
+  ctx.getComponent("Text").content = string.format("Score: %d", ctx.vars.score)
+end
+
+return script
+`,
+  });
+
+  // --- entities ---
+  await run(session, 'createEntity', {
+    scene, name: 'Main Camera', position: { x: 400, y: 304 },
+    components: { Camera: { backgroundColor: '#12141c' } },
+  });
+  await run(session, 'createEntity', {
+    scene, name: 'Backdrop', tags: ['background'], position: { x: 400, y: 304 },
+    components: { SpriteRenderer: { shape: 'rectangle', color: '#20242c', width: 800, height: 608, layer: -20 } },
+  });
+
+  // Arena: a single solid Tilemap — the outer border plus an interior
+  // wall at col 12 with a one-row gap at row 9 — gives findPath something
+  // real to route the Patroller around (25 cols x 19 rows, tileSize 32 =
+  // 800x608). Every character but '.' is a solid wall tile.
+  const COLS = 25;
+  const ROWS = 19;
+  const WALL_COL = 12;
+  const GAP_ROW = 9;
+  const grid = [];
+  for (let r = 0; r < ROWS; r++) {
+    if (r === 0 || r === ROWS - 1) {
+      grid.push('X'.repeat(COLS));
+      continue;
+    }
+    let row = '';
+    for (let c = 0; c < COLS; c++) {
+      if (c === 0 || c === COLS - 1) row += 'X';
+      else if (c === WALL_COL && r !== GAP_ROW) row += 'X';
+      else row += '.';
+    }
+    grid.push(row);
+  }
+  await run(session, 'createEntity', {
+    scene, name: 'Arena', tags: ['wall'], position: { x: 0, y: 0 },
+    components: {
+      Tilemap: { tileSize: 32, tileAssets: { X: wallTile.id }, grid, solid: true },
+    },
+  });
+
+  await run(session, 'createEntity', {
+    scene, name: 'Player', tags: ['player'], position: { x: 200, y: 500 },
+    components: {
+      SpriteRenderer: { assetId: playerAsset.id, width: 28, height: 32 },
+      Collider: { shape: 'box', width: 26, height: 30, layer: 'player' },
+      PhysicsBody: { bodyType: 'dynamic', gravityScale: 0, friction: 0.6 },
+    },
+  });
+  await run(session, 'attachScript', {
+    scene, entity: 'Player', script: 'scripts/player-move.lua', params: { speed: 180 },
+  });
+
+  // Ball: spawned well above the arena floor, clear of the Ledge's
+  // horizontal footprint (x 152-248) so it falls and bounces straight off
+  // the floor rather than clipping the Ledge's corner on the way down —
+  // restitution 0.85 against the Tilemap's effective (0, 0) contact
+  // material still bounces, since the pair uses the max of each side's
+  // restitution/friction (see docs/components.md).
+  await run(session, 'createEntity', {
+    scene, name: 'Ball', tags: ['ball'], position: { x: 80, y: 100 },
+    components: {
+      SpriteRenderer: { assetId: ballAsset.id, width: 28, height: 28 },
+      Collider: { shape: 'circle', radius: 14 },
+      PhysicsBody: { bodyType: 'dynamic', restitution: 0.85 },
+    },
+  });
+
+  // Ice Patch / Grind Strip: two static floor strips with contrasting
+  // friction (0 vs 1). A Tilemap's solid tiles have no material fields of
+  // their own (always an effective (0, 0) contact partner), so a real
+  // friction surface has to be its own entity with a PhysicsBody.
+  await run(session, 'createEntity', {
+    scene, name: 'Ice Patch', tags: ['floor'], position: { x: 500, y: 560 },
+    components: {
+      SpriteRenderer: { shape: 'rectangle', color: '#9fd8ff', width: 160, height: 16 },
+      Collider: { shape: 'box', width: 160, height: 16 },
+      PhysicsBody: { bodyType: 'static', friction: 0 },
+    },
+  });
+  await run(session, 'createEntity', {
+    scene, name: 'Grind Strip', tags: ['floor'], position: { x: 680, y: 560 },
+    components: {
+      SpriteRenderer: { shape: 'rectangle', color: '#8d6e63', width: 160, height: 16 },
+      Collider: { shape: 'box', width: 160, height: 16 },
+      PhysicsBody: { bodyType: 'static', friction: 1 },
+    },
+  });
+
+  // Ledge: a one-way platform above the player's spawn. Approaching from
+  // below (or the side) always passes through; it only blocks a mover
+  // landing on top while moving downward (see docs/architecture.md).
+  await run(session, 'createEntity', {
+    scene, name: 'Ledge', tags: ['ledge'], position: { x: 200, y: 400 },
+    components: {
+      SpriteRenderer: { shape: 'rectangle', color: '#7f8c8d', width: 96, height: 16 },
+      Collider: { shape: 'box', width: 96, height: 16, oneWay: true },
+      PhysicsBody: { bodyType: 'static' },
+    },
+  });
+
+  await run(session, 'createEntity', {
+    scene, name: 'Patroller', tags: ['enemy'], position: { x: 680, y: 500 },
+    components: {
+      SpriteRenderer: { assetId: patrollerAsset.id, width: 32, height: 32 },
+      Collider: { shape: 'box', width: 30, height: 30, isTrigger: true },
+      PhysicsBody: { bodyType: 'kinematic' },
+    },
+  });
+  await run(session, 'attachScript', { scene, entity: 'Patroller', script: 'scripts/patroller-chase.lua' });
+
+  // Coins: layer "pickup", collidesWith ["player"] — the Patroller (layer
+  // "default") never touches these; only the Player does.
+  const coins = [{ x: 280, y: 500 }, { x: 120, y: 200 }, { x: 300, y: 150 }];
+  for (let i = 0; i < coins.length; i++) {
+    await run(session, 'createEntity', {
+      scene, name: `Coin ${i + 1}`, tags: ['coin'], position: coins[i],
+      components: {
+        SpriteRenderer: { assetId: coinAsset.id, width: 20, height: 20 },
+        Collider: { shape: 'circle', radius: 10, isTrigger: true, layer: 'pickup', collidesWith: ['player'] },
+      },
+    });
+    await run(session, 'attachScript', { scene, entity: `Coin ${i + 1}`, script: 'scripts/coin-collect.lua' });
+  }
+
+  await run(session, 'createEntity', {
+    scene, name: 'Score', tags: ['ui'],
+    components: {
+      UIElement: { anchor: 'top-left', offset: { x: 24, y: 28 } },
+      Text: { content: 'Score: 0', fontSize: 20, color: '#ffffff' },
+    },
+  });
+  await run(session, 'attachScript', { scene, entity: 'Score', script: 'scripts/score-ui.lua' });
+
+  // --- playtests ---
+  // Every expected value below is read back from an actual probe run of
+  // this exact scene (GameSession.stepAsync — the same engine path
+  // runPlaytest uses), never hand-computed.
+
+  // Probe 1: bounce/determinism — let the Ball fall and bounce off the
+  // arena floor, then read back its real velocity/position.
+  const BOUNCE_FRAMES = 90;
+  let probe = await GameSession.create(session.store, { scene, seed: 0 });
+  for (let i = 0; i < BOUNCE_FRAMES; i++) await probe.stepAsync();
+  const ballProbe = probe.runtime.find('Ball');
+  const expectedBallVX = ballProbe.components.PhysicsBody.velocity.x;
+  const expectedBallVY = ballProbe.components.PhysicsBody.velocity.y;
+  const expectedBallY = ballProbe.transform.position.y;
+  probe.destroy();
+
+  // Probe 2: one-way ledge — hold "up" from spawn (under the Ledge) and
+  // read back where the player actually ends up after passing through.
+  const LEDGE_FRAMES = 40;
+  probe = await GameSession.create(session.store, { scene, seed: 0 });
+  probe.runtime.input.setActionDown('up');
+  for (let i = 0; i < LEDGE_FRAMES; i++) await probe.stepAsync();
+  probe.runtime.input.setActionUp('up');
+  const playerProbe = probe.runtime.find('Player');
+  const expectedPlayerX = playerProbe.transform.position.x;
+  const expectedPlayerY = playerProbe.transform.position.y;
+  const ledgeTopY = 400 - 16 / 2;
+  if (expectedPlayerY >= ledgeTopY) {
+    throw new Error(`bounce-patrol: probed player y ${expectedPlayerY} is not above the Ledge top ${ledgeTopY}`);
+  }
+  probe.destroy();
+
+  // Probe 3: pathfinding — let the Patroller run its findPath-driven
+  // chase and read back where it actually ends up (proving it left its
+  // (680, 500) spawn).
+  const PATROL_FRAMES = 240;
+  probe = await GameSession.create(session.store, { scene, seed: 0 });
+  for (let i = 0; i < PATROL_FRAMES; i++) await probe.stepAsync();
+  const patrollerProbe = probe.runtime.find('Patroller');
+  const expectedPatrollerX = patrollerProbe.transform.position.x;
+  const expectedPatrollerY = patrollerProbe.transform.position.y;
+  if (Math.hypot(expectedPatrollerX - 680, expectedPatrollerY - 500) < 10) {
+    throw new Error('bounce-patrol: probed Patroller barely moved from spawn — findPath steering did not run');
+  }
+  probe.destroy();
+
+  // Probe 4 (sanity-check only, nothing baked): confirm the scripted-input
+  // walk in the events playtest actually reaches Coin 1 in COIN_WALK_FRAMES.
+  const COIN_WALK_FRAMES = 40;
+  probe = await GameSession.create(session.store, { scene, seed: 0 });
+  probe.runtime.input.setActionDown('right');
+  for (let i = 0; i < COIN_WALK_FRAMES; i++) await probe.stepAsync();
+  probe.runtime.input.setActionUp('right');
+  if ((probe.runtime.eventCounts.get('coin') ?? 0) < 1) {
+    throw new Error('bounce-patrol: probed walk-right never triggered a coin event — adjust COIN_WALK_FRAMES');
+  }
+  probe.destroy();
+
+  await run(session, 'createPlaytest', {
+    name: 'bounce-determinism',
+    scene,
+    steps: [
+      { type: 'wait', frames: BOUNCE_FRAMES },
+      { type: 'assertProperty', entity: 'Ball', property: 'Transform.position.y', equals: expectedBallY },
+      { type: 'assertProperty', entity: 'Ball', property: 'PhysicsBody.velocity.x', equals: expectedBallVX },
+      { type: 'assertProperty', entity: 'Ball', property: 'PhysicsBody.velocity.y', equals: expectedBallVY },
+      { type: 'assertNoErrors' },
+    ],
+    maxFrames: 300,
+  });
+  await run(session, 'createPlaytest', {
+    name: 'coin-collected',
+    scene,
+    steps: [
+      { type: 'press', action: 'right', frames: COIN_WALK_FRAMES },
+      { type: 'assertEventCount', event: 'coin', min: 1 },
+      { type: 'assertNoErrors' },
+    ],
+    maxFrames: 300,
+  });
+  await run(session, 'createPlaytest', {
+    name: 'one-way-ledge',
+    scene,
+    steps: [
+      { type: 'press', action: 'up', frames: LEDGE_FRAMES },
+      { type: 'assertPositionNear', entity: 'Player', x: expectedPlayerX, y: expectedPlayerY, tolerance: 5 },
+      { type: 'assertNoErrors' },
+    ],
+    maxFrames: 300,
+  });
+  await run(session, 'createPlaytest', {
+    name: 'patroller-pathfinds',
+    scene,
+    steps: [
+      { type: 'wait', frames: PATROL_FRAMES },
+      { type: 'assertPositionNear', entity: 'Patroller', x: expectedPatrollerX, y: expectedPatrollerY, tolerance: 5 },
+      { type: 'assertNoErrors' },
+    ],
+    maxFrames: 400,
+  });
+  await run(session, 'createPlaytest', {
+    name: 'smoke',
+    scene,
+    steps: [
+      { type: 'wait', frames: 60 },
+      { type: 'assertEntityExists', entity: 'Player', exists: true },
+      { type: 'assertEntityExists', entity: 'Ball', exists: true },
+      { type: 'assertEntityExists', entity: 'Patroller', exists: true },
+      { type: 'assertEntityExists', entity: 'Ledge', exists: true },
+      { type: 'assertEntityExists', entity: 'Score', exists: true },
+      { type: 'assertNoErrors' },
+    ],
+    maxFrames: 300,
+  });
+
+  const report = await run(session, 'validateProject', {});
+  if (report.errors.length > 0) throw new Error('bounce-patrol validation failed: ' + JSON.stringify(report.errors));
+  console.log('✓ bounce-patrol generated');
+}
+
+// ---------------------------------------------------------------------------
 await generatePlatformer();
 await generateTopDown();
 await generateVisualNovel();
 await generateEmberTrail();
 await generateGlowCaves();
+await generateBouncePatrol();
 console.log('All example projects generated.');

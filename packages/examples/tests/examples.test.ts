@@ -7,7 +7,14 @@ import { SceneRuntime } from '@hearth/runtime';
 import { runPlaytest, runSceneSmoke } from '@hearth/playtest';
 
 const examplesDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const EXAMPLES = ['mini-platformer', 'top-down-room', 'visual-novel', 'ember-trail', 'glow-caves'];
+const EXAMPLES = [
+  'mini-platformer',
+  'top-down-room',
+  'visual-novel',
+  'ember-trail',
+  'glow-caves',
+  'bounce-patrol',
+];
 
 function loadStore(name: string) {
   return ProjectStore.load(new NodeFileSystem(), path.join(examplesDir, name));
@@ -208,5 +215,108 @@ describe('glow-caves v0.3 showcase (rendering v2)', () => {
     const result = await runSceneSmoke(store, 'Cave', 130);
     expect(result.errors).toEqual([]);
     expect(result.logs.some((l) => l.message.includes('torch embers:'))).toBe(true);
+  });
+});
+
+// Bounce Patrol is the wave B showcase: physics v2 (mass/restitution/
+// friction, layered/one-way colliders), ctx.events + onEvent, and
+// ctx.scene.findPath driving a kinematic patroller — all scripted in Lua,
+// all asserted headlessly via probe-baked playtests.
+describe('bounce-patrol v0.5 showcase (physics v2 + events + findPath)', () => {
+  it('is scripted entirely in Lua', async () => {
+    const store = await loadStore('bounce-patrol');
+    const scripts = await store.listScripts();
+    expect(scripts.length).toBeGreaterThan(0);
+    expect(scripts.every((p) => p.endsWith('.lua'))).toBe(true);
+  });
+
+  it('has the expected cast', async () => {
+    const store = await loadStore('bounce-patrol');
+    const scene = store.getScene('Arena')!;
+    const names = scene.entities.map((e) => e.name);
+    expect(names).toContain('Player');
+    expect(names).toContain('Ball');
+    expect(names).toContain('Ice Patch');
+    expect(names).toContain('Grind Strip');
+    expect(names).toContain('Ledge');
+    expect(names).toContain('Patroller');
+    expect(names).toContain('Score');
+    expect(names.filter((n) => n.startsWith('Coin')).length).toBe(3);
+    expect(store.playtests.size).toBe(5);
+  });
+
+  it('the arena Tilemap has an interior wall with a gap', async () => {
+    const store = await loadStore('bounce-patrol');
+    const scene = store.getScene('Arena')!;
+    const arena = scene.entities.find((e) => e.name === 'Arena')!;
+    const grid = arena.components.Tilemap!.grid;
+    expect(grid.length).toBeGreaterThan(2);
+    // The interior wall column is solid on some rows and open ('.') on
+    // at least one row (the gap findPath routes the Patroller through).
+    const col = 12;
+    const chars = grid.slice(1, -1).map((row) => row[col]);
+    expect(chars.some((c) => c !== '.')).toBe(true);
+    expect(chars.some((c) => c === '.')).toBe(true);
+  });
+
+  it('physics v2 fields are set: Ball restitution, floor friction contrast, one-way Ledge, layered coins', async () => {
+    const store = await loadStore('bounce-patrol');
+    const scene = store.getScene('Arena')!;
+    const byName = (n: string) => scene.entities.find((e) => e.name === n)!;
+    expect(byName('Ball').components.PhysicsBody!.restitution).toBeCloseTo(0.85);
+    expect(byName('Ice Patch').components.PhysicsBody!.friction).toBe(0);
+    expect(byName('Grind Strip').components.PhysicsBody!.friction).toBe(1);
+    expect(byName('Ledge').components.Collider!.oneWay).toBe(true);
+    expect(byName('Player').components.Collider!.layer).toBe('player');
+    for (let i = 1; i <= 3; i++) {
+      const coin = byName(`Coin ${i}`);
+      expect(coin.components.Collider!.layer).toBe('pickup');
+      expect(coin.components.Collider!.collidesWith).toEqual(['player']);
+    }
+  });
+
+  it('the Ball bounces deterministically off the arena floor', async () => {
+    const store = await loadStore('bounce-patrol');
+    const first = await runPlaytest(store, 'bounce-determinism');
+    expect(first.passed).toBe(true);
+    const second = await runPlaytest(store, 'bounce-determinism');
+    expect(second.passed).toBe(true);
+  });
+
+  it('walking the player onto a coin emits the coin event', async () => {
+    const store = await loadStore('bounce-patrol');
+    const result = await runPlaytest(store, 'coin-collected');
+    expect(result.passed).toBe(true);
+    expect(result.eventCounts.coin).toBeGreaterThanOrEqual(1);
+    expect(result.events.some((e) => e.name === 'coin')).toBe(true);
+  });
+
+  it('the ScoreUI text updates when a coin is collected (ctx.events + onEvent)', async () => {
+    const store = await loadStore('bounce-patrol');
+    const runtime = await SceneRuntime.create(store, store.project.initialScene);
+    runtime.input.setActionDown('right');
+    runtime.run(40); // matches the coin-collected playtest's walk-right frame count
+    runtime.input.setActionUp('right');
+    expect(runtime.errors).toEqual([]);
+    const score = runtime.getEntities().find((e) => e.name === 'Score')!;
+    expect(score.components.Text!.content).toBe('Score: 1');
+  });
+
+  it('the player passes through the one-way Ledge from below and ends up above it', async () => {
+    const store = await loadStore('bounce-patrol');
+    const result = await runPlaytest(store, 'one-way-ledge');
+    expect(result.passed).toBe(true);
+  });
+
+  it('the Patroller finds a path around the interior wall and leaves its spawn', async () => {
+    const store = await loadStore('bounce-patrol');
+    const result = await runPlaytest(store, 'patroller-pathfinds');
+    expect(result.passed).toBe(true);
+  });
+
+  it('the smoke playtest passes with no script errors', async () => {
+    const store = await loadStore('bounce-patrol');
+    const result = await runPlaytest(store, 'smoke');
+    expect(result.passed).toBe(true);
   });
 });

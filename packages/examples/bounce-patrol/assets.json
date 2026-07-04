@@ -1,0 +1,68 @@
+{
+  "formatVersion": 1,
+  "assets": [
+    {
+      "id": "ast_vsemsfo8",
+      "name": "player",
+      "type": "sprite",
+      "path": "assets/sprites/player.svg",
+      "metadata": {
+        "procedural": true,
+        "shape": "character",
+        "color": "#3498db",
+        "width": 28,
+        "height": 32
+      }
+    },
+    {
+      "id": "ast_5qo7i00m",
+      "name": "ball",
+      "type": "sprite",
+      "path": "assets/sprites/ball.svg",
+      "metadata": {
+        "procedural": true,
+        "shape": "circle",
+        "color": "#e67e22",
+        "width": 28,
+        "height": 28
+      }
+    },
+    {
+      "id": "ast_gtpma7fy",
+      "name": "patroller",
+      "type": "sprite",
+      "path": "assets/sprites/patroller.svg",
+      "metadata": {
+        "procedural": true,
+        "shape": "enemy",
+        "color": "#c0392b",
+        "width": 32,
+        "height": 32
+      }
+    },
+    {
+      "id": "ast_x49smw7w",
+      "name": "coin",
+      "type": "sprite",
+      "path": "assets/sprites/coin.svg",
+      "metadata": {
+        "procedural": true,
+        "shape": "coin",
+        "color": "#f1c40f",
+        "width": 20,
+        "height": 20
+      }
+    },
+    {
+      "id": "ast_xey10gtg",
+      "name": "wall",
+      "type": "tile",
+      "path": "assets/tiles/wall.svg",
+      "metadata": {
+        "procedural": true,
+        "color": "#4a4036",
+        "size": 32
+      }
+    }
+  ]
+}

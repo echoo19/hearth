@@ -97,6 +97,7 @@ with Lua and JS examples per entry):
 - `ctx.scene.findByTag(tag: string): EntityHandle[]` — All entities in the current scene with the given tag.
 - `ctx.scene.spawn(def: SpawnDef): EntityHandle` — Create an entity at runtime ({ name, position?, tags?, components? }).
 - `ctx.scene.destroy(idOrHandle: string | EntityHandle): void` — Remove an entity from the current scene at runtime.
+- `ctx.scene.findPath(from: Vec2, to: Vec2, opts?: { diagonals?: boolean }): Vec2[] | null` — Grid A* path from `from` to `to` over solid tilemaps and static, non-trigger colliders currently in the scene. Waypoints are cell centers; null when unreachable or the grid is too large; set diagonals to allow 8-directional movement.
 - `ctx.scenes.current` — Current scene {id, name}.
 - `ctx.scenes.list(): { id: string; name: string }[]` — All scenes in the project as {id, name}.
 - `ctx.scenes.load(idOrName: string): boolean` — Request a scene switch at end of frame. False if unknown.
@@ -111,6 +112,22 @@ with Lua and JS examples per entry):
 - `ctx.particles.burst(count: number): void` — Spawn `count` particles immediately from this entity's ParticleEmitter (in addition to its normal rate/burst). Warns if the entity has no ParticleEmitter.
 - `ctx.particles.count(): number` — Live particle count for this entity's ParticleEmitter (0 if none).
 - `ctx.animate(assetRef: string): void` — Switch this entity's SpriteAnimator to `assetRef` (animation asset id or name), set playing = true, and restart at frame 0. Warns if the entity has no SpriteAnimator or the asset is unknown.
+- `ctx.math.vec2(x?: number, y?: number): Vec2` — Create a vector {x, y}. Missing args default to 0.
+- `ctx.math.add(a: Vec2, b: Vec2): Vec2` — Vector addition. Pure — returns a new value without mutating inputs.
+- `ctx.math.sub(a: Vec2, b: Vec2): Vec2` — Vector subtraction. Pure — returns a new value without mutating inputs.
+- `ctx.math.scale(v: Vec2, s: number): Vec2` — Scale a vector by a scalar. Pure — returns a new value.
+- `ctx.math.dot(a: Vec2, b: Vec2): number` — Dot product of two vectors.
+- `ctx.math.length(v: Vec2): number` — Length (magnitude) of a vector.
+- `ctx.math.distance(a: Vec2, b: Vec2): number` — Distance between two points.
+- `ctx.math.normalize(v: Vec2): Vec2` — Unit vector in the direction of v ({x:0,y:0} for the zero vector). Pure — returns a new value.
+- `ctx.math.angle(v: Vec2): number` — Angle of a vector in degrees (0 = +x, 90 = +y/down).
+- `ctx.math.fromAngle(degrees: number, length?: number): Vec2` — Unit vector from an angle in degrees (default length 1). 0 = +x, 90 = +y/down.
+- `ctx.math.lerp(a: number, b: number, t: number): number` — Linear interpolation between two scalars. Does not clamp t.
+- `ctx.math.lerpVec(a: Vec2, b: Vec2, t: number): Vec2` — Linear interpolation between two vectors. Does not clamp t. Pure — returns a new value.
+- `ctx.math.clamp(x: number, min: number, max: number): number` — Clamp a value to [min, max].
+- `ctx.math.hexToRgb(hex: string): { r: number; g: number; b: number }` — Parse a hex color string (#rgb, #rrggbb, or #rrggbbaa) to {r, g, b}. Returns white on invalid input (warns once per instance).
+- `ctx.math.rgbToHex(r: number, g: number, b: number): string` — Convert RGB channels (0–255) to a hex color string. Clamps and rounds channel values.
+- `ctx.math.colorLerp(hexA: string, hexB: string, t: number): string` — Interpolate between two hex colors. Clamps t to [0, 1].
 - `ctx.save(key: string, value: unknown): void` — Persistent save data (JSON values), survives scene switches; in the browser it persists across sessions via localStorage.
 - `ctx.load(key: string): unknown` — Read saved data; null when absent.
 - `ctx.clearSave(key?: string): void` — Clear one save key, or all save data when no key is given.
@@ -127,6 +144,9 @@ with Lua and JS examples per entry):
 - `ctx.collisions` — This entity's current collisions (refreshed each frame): { other, normal, trigger }.
 - `ctx.isGrounded(): boolean` — Any non-trigger contact pushing this entity up (normal.y < -0.5).
 - `ctx.destroySelf(): void` — Remove this entity from the scene.
+- `ctx.events.emit(name: string, data?: unknown): void` — Broadcast an event to the whole scene, synchronously and deterministically: every ctx.events.on subscriber for `name` fires in subscription order, including this entity's own. Also triggers every script's onEvent(ctx, name, data) hook, in entity order. Nested emits (an onEvent handler emitting again) are allowed up to 8 levels deep; deeper emits are dropped with a warning.
+- `ctx.events.on(name: string, fn: (data: unknown) => void): string` — Subscribe to an event by name. Returns a subscription id for ctx.events.off. The subscription is automatically removed when this entity is destroyed.
+- `ctx.events.off(id: string): void` — Unsubscribe by id (as returned by ctx.events.on). Unknown ids are a no-op.
 
 Scene switching makes user-built menus/start screens (e.g. a Start button —
 an interactive `UIElement` — whose script loads the level):
@@ -173,4 +193,4 @@ exposed as tools (`get_project_info`, `inspect_scene`, `create_entity`,
 `set_component_property`, `create_sound`, `run_playtest`, `get_diff`,
 `export_web`, ...). Call `get_agent_instructions` for this document.
 
-Generated by Hearth 0.4.0.
+Generated by Hearth 0.5.0.

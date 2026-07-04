@@ -1,0 +1,831 @@
+{
+  "formatVersion": 1,
+  "id": "scn_zkc8bm2i",
+  "name": "Arena",
+  "entities": [
+    {
+      "id": "ent_9bvdm0ya",
+      "name": "Main Camera",
+      "parentId": null,
+      "enabled": true,
+      "tags": [],
+      "components": {
+        "Transform": {
+          "position": {
+            "x": 400,
+            "y": 304
+          },
+          "rotation": 0,
+          "scale": {
+            "x": 1,
+            "y": 1
+          }
+        },
+        "Camera": {
+          "zoom": 1,
+          "isMain": true,
+          "backgroundColor": "#12141c",
+          "ambientLight": 1
+        }
+      }
+    },
+    {
+      "id": "ent_xoi0jlh0",
+      "name": "Backdrop",
+      "parentId": null,
+      "enabled": true,
+      "tags": [
+        "background"
+      ],
+      "components": {
+        "Transform": {
+          "position": {
+            "x": 400,
+            "y": 304
+          },
+          "rotation": 0,
+          "scale": {
+            "x": 1,
+            "y": 1
+          }
+        },
+        "SpriteRenderer": {
+          "assetId": null,
+          "shape": "rectangle",
+          "color": "#20242c",
+          "width": 800,
+          "height": 608,
+          "opacity": 1,
+          "flipX": false,
+          "flipY": false,
+          "layer": -20,
+          "visible": true
+        }
+      }
+    },
+    {
+      "id": "ent_nej72xuy",
+      "name": "Arena",
+      "parentId": null,
+      "enabled": true,
+      "tags": [
+        "wall"
+      ],
+      "components": {
+        "Transform": {
+          "position": {
+            "x": 0,
+            "y": 0
+          },
+          "rotation": 0,
+          "scale": {
+            "x": 1,
+            "y": 1
+          }
+        },
+        "Tilemap": {
+          "tileSize": 32,
+          "tileAssets": {
+            "X": "ast_xey10gtg"
+          },
+          "grid": [
+            "XXXXXXXXXXXXXXXXXXXXXXXXX",
+            "X...........X...........X",
+            "X...........X...........X",
+            "X...........X...........X",
+            "X...........X...........X",
+            "X...........X...........X",
+            "X...........X...........X",
+            "X...........X...........X",
+            "X...........X...........X",
+            "X.......................X",
+            "X...........X...........X",
+            "X...........X...........X",
+            "X...........X...........X",
+            "X...........X...........X",
+            "X...........X...........X",
+            "X...........X...........X",
+            "X...........X...........X",
+            "X...........X...........X",
+            "XXXXXXXXXXXXXXXXXXXXXXXXX"
+          ],
+          "solid": true,
+          "layer": -10
+        }
+      }
+    },
+    {
+      "id": "ent_vl9bkryb",
+      "name": "Player",
+      "parentId": null,
+      "enabled": true,
+      "tags": [
+        "player"
+      ],
+      "components": {
+        "Transform": {
+          "position": {
+            "x": 200,
+            "y": 500
+          },
+          "rotation": 0,
+          "scale": {
+            "x": 1,
+            "y": 1
+          }
+        },
+        "SpriteRenderer": {
+          "assetId": "ast_vsemsfo8",
+          "shape": "rectangle",
+          "color": "#ffffff",
+          "width": 28,
+          "height": 32,
+          "opacity": 1,
+          "flipX": false,
+          "flipY": false,
+          "layer": 0,
+          "visible": true
+        },
+        "Collider": {
+          "shape": "box",
+          "width": 26,
+          "height": 30,
+          "radius": 16,
+          "points": [
+            {
+              "x": 0,
+              "y": -16
+            },
+            {
+              "x": 16,
+              "y": 16
+            },
+            {
+              "x": -16,
+              "y": 16
+            }
+          ],
+          "offset": {
+            "x": 0,
+            "y": 0
+          },
+          "isTrigger": false,
+          "layer": "player",
+          "collidesWith": [
+            "*"
+          ],
+          "oneWay": false
+        },
+        "PhysicsBody": {
+          "bodyType": "dynamic",
+          "velocity": {
+            "x": 0,
+            "y": 0
+          },
+          "gravityScale": 0,
+          "drag": 0,
+          "mass": 1,
+          "restitution": 0,
+          "friction": 0.6
+        },
+        "Script": {
+          "scriptPath": "scripts/player-move.lua",
+          "params": {
+            "speed": 180
+          }
+        }
+      }
+    },
+    {
+      "id": "ent_9gfi47i8",
+      "name": "Ball",
+      "parentId": null,
+      "enabled": true,
+      "tags": [
+        "ball"
+      ],
+      "components": {
+        "Transform": {
+          "position": {
+            "x": 80,
+            "y": 100
+          },
+          "rotation": 0,
+          "scale": {
+            "x": 1,
+            "y": 1
+          }
+        },
+        "SpriteRenderer": {
+          "assetId": "ast_5qo7i00m",
+          "shape": "rectangle",
+          "color": "#ffffff",
+          "width": 28,
+          "height": 28,
+          "opacity": 1,
+          "flipX": false,
+          "flipY": false,
+          "layer": 0,
+          "visible": true
+        },
+        "Collider": {
+          "shape": "circle",
+          "width": 32,
+          "height": 32,
+          "radius": 14,
+          "points": [
+            {
+              "x": 0,
+              "y": -16
+            },
+            {
+              "x": 16,
+              "y": 16
+            },
+            {
+              "x": -16,
+              "y": 16
+            }
+          ],
+          "offset": {
+            "x": 0,
+            "y": 0
+          },
+          "isTrigger": false,
+          "layer": "default",
+          "collidesWith": [
+            "*"
+          ],
+          "oneWay": false
+        },
+        "PhysicsBody": {
+          "bodyType": "dynamic",
+          "velocity": {
+            "x": 0,
+            "y": 0
+          },
+          "gravityScale": 1,
+          "drag": 0,
+          "mass": 1,
+          "restitution": 0.85,
+          "friction": 0
+        }
+      }
+    },
+    {
+      "id": "ent_wum23epj",
+      "name": "Ice Patch",
+      "parentId": null,
+      "enabled": true,
+      "tags": [
+        "floor"
+      ],
+      "components": {
+        "Transform": {
+          "position": {
+            "x": 500,
+            "y": 560
+          },
+          "rotation": 0,
+          "scale": {
+            "x": 1,
+            "y": 1
+          }
+        },
+        "SpriteRenderer": {
+          "assetId": null,
+          "shape": "rectangle",
+          "color": "#9fd8ff",
+          "width": 160,
+          "height": 16,
+          "opacity": 1,
+          "flipX": false,
+          "flipY": false,
+          "layer": 0,
+          "visible": true
+        },
+        "Collider": {
+          "shape": "box",
+          "width": 160,
+          "height": 16,
+          "radius": 16,
+          "points": [
+            {
+              "x": 0,
+              "y": -16
+            },
+            {
+              "x": 16,
+              "y": 16
+            },
+            {
+              "x": -16,
+              "y": 16
+            }
+          ],
+          "offset": {
+            "x": 0,
+            "y": 0
+          },
+          "isTrigger": false,
+          "layer": "default",
+          "collidesWith": [
+            "*"
+          ],
+          "oneWay": false
+        },
+        "PhysicsBody": {
+          "bodyType": "static",
+          "velocity": {
+            "x": 0,
+            "y": 0
+          },
+          "gravityScale": 1,
+          "drag": 0,
+          "mass": 1,
+          "restitution": 0,
+          "friction": 0
+        }
+      }
+    },
+    {
+      "id": "ent_3dp40ajf",
+      "name": "Grind Strip",
+      "parentId": null,
+      "enabled": true,
+      "tags": [
+        "floor"
+      ],
+      "components": {
+        "Transform": {
+          "position": {
+            "x": 680,
+            "y": 560
+          },
+          "rotation": 0,
+          "scale": {
+            "x": 1,
+            "y": 1
+          }
+        },
+        "SpriteRenderer": {
+          "assetId": null,
+          "shape": "rectangle",
+          "color": "#8d6e63",
+          "width": 160,
+          "height": 16,
+          "opacity": 1,
+          "flipX": false,
+          "flipY": false,
+          "layer": 0,
+          "visible": true
+        },
+        "Collider": {
+          "shape": "box",
+          "width": 160,
+          "height": 16,
+          "radius": 16,
+          "points": [
+            {
+              "x": 0,
+              "y": -16
+            },
+            {
+              "x": 16,
+              "y": 16
+            },
+            {
+              "x": -16,
+              "y": 16
+            }
+          ],
+          "offset": {
+            "x": 0,
+            "y": 0
+          },
+          "isTrigger": false,
+          "layer": "default",
+          "collidesWith": [
+            "*"
+          ],
+          "oneWay": false
+        },
+        "PhysicsBody": {
+          "bodyType": "static",
+          "velocity": {
+            "x": 0,
+            "y": 0
+          },
+          "gravityScale": 1,
+          "drag": 0,
+          "mass": 1,
+          "restitution": 0,
+          "friction": 1
+        }
+      }
+    },
+    {
+      "id": "ent_olefso7l",
+      "name": "Ledge",
+      "parentId": null,
+      "enabled": true,
+      "tags": [
+        "ledge"
+      ],
+      "components": {
+        "Transform": {
+          "position": {
+            "x": 200,
+            "y": 400
+          },
+          "rotation": 0,
+          "scale": {
+            "x": 1,
+            "y": 1
+          }
+        },
+        "SpriteRenderer": {
+          "assetId": null,
+          "shape": "rectangle",
+          "color": "#7f8c8d",
+          "width": 96,
+          "height": 16,
+          "opacity": 1,
+          "flipX": false,
+          "flipY": false,
+          "layer": 0,
+          "visible": true
+        },
+        "Collider": {
+          "shape": "box",
+          "width": 96,
+          "height": 16,
+          "radius": 16,
+          "points": [
+            {
+              "x": 0,
+              "y": -16
+            },
+            {
+              "x": 16,
+              "y": 16
+            },
+            {
+              "x": -16,
+              "y": 16
+            }
+          ],
+          "offset": {
+            "x": 0,
+            "y": 0
+          },
+          "isTrigger": false,
+          "layer": "default",
+          "collidesWith": [
+            "*"
+          ],
+          "oneWay": true
+        },
+        "PhysicsBody": {
+          "bodyType": "static",
+          "velocity": {
+            "x": 0,
+            "y": 0
+          },
+          "gravityScale": 1,
+          "drag": 0,
+          "mass": 1,
+          "restitution": 0,
+          "friction": 0
+        }
+      }
+    },
+    {
+      "id": "ent_2s87lfrt",
+      "name": "Patroller",
+      "parentId": null,
+      "enabled": true,
+      "tags": [
+        "enemy"
+      ],
+      "components": {
+        "Transform": {
+          "position": {
+            "x": 680,
+            "y": 500
+          },
+          "rotation": 0,
+          "scale": {
+            "x": 1,
+            "y": 1
+          }
+        },
+        "SpriteRenderer": {
+          "assetId": "ast_gtpma7fy",
+          "shape": "rectangle",
+          "color": "#ffffff",
+          "width": 32,
+          "height": 32,
+          "opacity": 1,
+          "flipX": false,
+          "flipY": false,
+          "layer": 0,
+          "visible": true
+        },
+        "Collider": {
+          "shape": "box",
+          "width": 30,
+          "height": 30,
+          "radius": 16,
+          "points": [
+            {
+              "x": 0,
+              "y": -16
+            },
+            {
+              "x": 16,
+              "y": 16
+            },
+            {
+              "x": -16,
+              "y": 16
+            }
+          ],
+          "offset": {
+            "x": 0,
+            "y": 0
+          },
+          "isTrigger": true,
+          "layer": "default",
+          "collidesWith": [
+            "*"
+          ],
+          "oneWay": false
+        },
+        "PhysicsBody": {
+          "bodyType": "kinematic",
+          "velocity": {
+            "x": 0,
+            "y": 0
+          },
+          "gravityScale": 1,
+          "drag": 0,
+          "mass": 1,
+          "restitution": 0,
+          "friction": 0
+        },
+        "Script": {
+          "scriptPath": "scripts/patroller-chase.lua",
+          "params": {}
+        }
+      }
+    },
+    {
+      "id": "ent_8ccx6vfs",
+      "name": "Coin 1",
+      "parentId": null,
+      "enabled": true,
+      "tags": [
+        "coin"
+      ],
+      "components": {
+        "Transform": {
+          "position": {
+            "x": 280,
+            "y": 500
+          },
+          "rotation": 0,
+          "scale": {
+            "x": 1,
+            "y": 1
+          }
+        },
+        "SpriteRenderer": {
+          "assetId": "ast_x49smw7w",
+          "shape": "rectangle",
+          "color": "#ffffff",
+          "width": 20,
+          "height": 20,
+          "opacity": 1,
+          "flipX": false,
+          "flipY": false,
+          "layer": 0,
+          "visible": true
+        },
+        "Collider": {
+          "shape": "circle",
+          "width": 32,
+          "height": 32,
+          "radius": 10,
+          "points": [
+            {
+              "x": 0,
+              "y": -16
+            },
+            {
+              "x": 16,
+              "y": 16
+            },
+            {
+              "x": -16,
+              "y": 16
+            }
+          ],
+          "offset": {
+            "x": 0,
+            "y": 0
+          },
+          "isTrigger": true,
+          "layer": "pickup",
+          "collidesWith": [
+            "player"
+          ],
+          "oneWay": false
+        },
+        "Script": {
+          "scriptPath": "scripts/coin-collect.lua",
+          "params": {}
+        }
+      }
+    },
+    {
+      "id": "ent_4ojuo4k9",
+      "name": "Coin 2",
+      "parentId": null,
+      "enabled": true,
+      "tags": [
+        "coin"
+      ],
+      "components": {
+        "Transform": {
+          "position": {
+            "x": 120,
+            "y": 200
+          },
+          "rotation": 0,
+          "scale": {
+            "x": 1,
+            "y": 1
+          }
+        },
+        "SpriteRenderer": {
+          "assetId": "ast_x49smw7w",
+          "shape": "rectangle",
+          "color": "#ffffff",
+          "width": 20,
+          "height": 20,
+          "opacity": 1,
+          "flipX": false,
+          "flipY": false,
+          "layer": 0,
+          "visible": true
+        },
+        "Collider": {
+          "shape": "circle",
+          "width": 32,
+          "height": 32,
+          "radius": 10,
+          "points": [
+            {
+              "x": 0,
+              "y": -16
+            },
+            {
+              "x": 16,
+              "y": 16
+            },
+            {
+              "x": -16,
+              "y": 16
+            }
+          ],
+          "offset": {
+            "x": 0,
+            "y": 0
+          },
+          "isTrigger": true,
+          "layer": "pickup",
+          "collidesWith": [
+            "player"
+          ],
+          "oneWay": false
+        },
+        "Script": {
+          "scriptPath": "scripts/coin-collect.lua",
+          "params": {}
+        }
+      }
+    },
+    {
+      "id": "ent_6lapvb7v",
+      "name": "Coin 3",
+      "parentId": null,
+      "enabled": true,
+      "tags": [
+        "coin"
+      ],
+      "components": {
+        "Transform": {
+          "position": {
+            "x": 300,
+            "y": 150
+          },
+          "rotation": 0,
+          "scale": {
+            "x": 1,
+            "y": 1
+          }
+        },
+        "SpriteRenderer": {
+          "assetId": "ast_x49smw7w",
+          "shape": "rectangle",
+          "color": "#ffffff",
+          "width": 20,
+          "height": 20,
+          "opacity": 1,
+          "flipX": false,
+          "flipY": false,
+          "layer": 0,
+          "visible": true
+        },
+        "Collider": {
+          "shape": "circle",
+          "width": 32,
+          "height": 32,
+          "radius": 10,
+          "points": [
+            {
+              "x": 0,
+              "y": -16
+            },
+            {
+              "x": 16,
+              "y": 16
+            },
+            {
+              "x": -16,
+              "y": 16
+            }
+          ],
+          "offset": {
+            "x": 0,
+            "y": 0
+          },
+          "isTrigger": true,
+          "layer": "pickup",
+          "collidesWith": [
+            "player"
+          ],
+          "oneWay": false
+        },
+        "Script": {
+          "scriptPath": "scripts/coin-collect.lua",
+          "params": {}
+        }
+      }
+    },
+    {
+      "id": "ent_oysqxo07",
+      "name": "Score",
+      "parentId": null,
+      "enabled": true,
+      "tags": [
+        "ui"
+      ],
+      "components": {
+        "Transform": {
+          "position": {
+            "x": 0,
+            "y": 0
+          },
+          "rotation": 0,
+          "scale": {
+            "x": 1,
+            "y": 1
+          }
+        },
+        "UIElement": {
+          "anchor": "top-left",
+          "offset": {
+            "x": 24,
+            "y": 28
+          },
+          "interactive": false
+        },
+        "Text": {
+          "content": "Score: 0",
+          "fontSize": 20,
+          "color": "#ffffff",
+          "align": "left",
+          "fontFamily": "monospace",
+          "layer": 10,
+          "visible": true
+        },
+        "Script": {
+          "scriptPath": "scripts/score-ui.lua",
+          "params": {}
+        }
+      }
+    }
+  ]
+}

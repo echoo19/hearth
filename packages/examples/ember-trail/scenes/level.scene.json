@@ -1,10 +1,10 @@
 {
   "formatVersion": 1,
-  "id": "scn_7lekfwgw",
+  "id": "scn_ve1fvz1l",
   "name": "Level",
   "entities": [
     {
-      "id": "ent_dok0xt8h",
+      "id": "ent_9i3zudmt",
       "name": "Main Camera",
       "parentId": null,
       "enabled": true,
@@ -30,7 +30,7 @@
       }
     },
     {
-      "id": "ent_1upfoi5f",
+      "id": "ent_ql7a57gh",
       "name": "Arena",
       "parentId": null,
       "enabled": true,
@@ -64,7 +64,7 @@
       }
     },
     {
-      "id": "ent_xxcurkm7",
+      "id": "ent_npflpvob",
       "name": "Wall Top",
       "parentId": null,
       "enabled": true,
@@ -106,7 +106,12 @@
             "x": 0,
             "y": 0
           },
-          "isTrigger": false
+          "isTrigger": false,
+          "layer": "default",
+          "collidesWith": [
+            "*"
+          ],
+          "oneWay": false
         },
         "PhysicsBody": {
           "bodyType": "static",
@@ -115,12 +120,15 @@
             "y": 0
           },
           "gravityScale": 1,
-          "drag": 0
+          "drag": 0,
+          "mass": 1,
+          "restitution": 0,
+          "friction": 0
         }
       }
     },
     {
-      "id": "ent_782rirts",
+      "id": "ent_828fnseo",
       "name": "Wall Bottom",
       "parentId": null,
       "enabled": true,
@@ -162,7 +170,12 @@
             "x": 0,
             "y": 0
           },
-          "isTrigger": false
+          "isTrigger": false,
+          "layer": "default",
+          "collidesWith": [
+            "*"
+          ],
+          "oneWay": false
         },
         "PhysicsBody": {
           "bodyType": "static",
@@ -171,12 +184,15 @@
             "y": 0
           },
           "gravityScale": 1,
-          "drag": 0
+          "drag": 0,
+          "mass": 1,
+          "restitution": 0,
+          "friction": 0
         }
       }
     },
     {
-      "id": "ent_6g2f1pt6",
+      "id": "ent_2o757by1",
       "name": "Wall Left",
       "parentId": null,
       "enabled": true,
@@ -218,7 +234,12 @@
             "x": 0,
             "y": 0
           },
-          "isTrigger": false
+          "isTrigger": false,
+          "layer": "default",
+          "collidesWith": [
+            "*"
+          ],
+          "oneWay": false
         },
         "PhysicsBody": {
           "bodyType": "static",
@@ -227,12 +248,15 @@
             "y": 0
           },
           "gravityScale": 1,
-          "drag": 0
+          "drag": 0,
+          "mass": 1,
+          "restitution": 0,
+          "friction": 0
         }
       }
     },
     {
-      "id": "ent_wt2qs5a6",
+      "id": "ent_4o1jp58r",
       "name": "Wall Right",
       "parentId": null,
       "enabled": true,
@@ -274,7 +298,12 @@
             "x": 0,
             "y": 0
           },
-          "isTrigger": false
+          "isTrigger": false,
+          "layer": "default",
+          "collidesWith": [
+            "*"
+          ],
+          "oneWay": false
         },
         "PhysicsBody": {
           "bodyType": "static",
@@ -283,12 +312,15 @@
             "y": 0
           },
           "gravityScale": 1,
-          "drag": 0
+          "drag": 0,
+          "mass": 1,
+          "restitution": 0,
+          "friction": 0
         }
       }
     },
     {
-      "id": "ent_n5ym6n7w",
+      "id": "ent_b5hik23a",
       "name": "Player",
       "parentId": null,
       "enabled": true,
@@ -308,7 +340,7 @@
           }
         },
         "SpriteRenderer": {
-          "assetId": "ast_3fwxr0go",
+          "assetId": "ast_iwv9k2xr",
           "shape": "rectangle",
           "color": "#ffffff",
           "width": 30,
@@ -342,7 +374,12 @@
             "x": 0,
             "y": 0
           },
-          "isTrigger": false
+          "isTrigger": false,
+          "layer": "default",
+          "collidesWith": [
+            "*"
+          ],
+          "oneWay": false
         },
         "PhysicsBody": {
           "bodyType": "dynamic",
@@ -351,7 +388,10 @@
             "y": 0
           },
           "gravityScale": 0,
-          "drag": 0
+          "drag": 0,
+          "mass": 1,
+          "restitution": 0,
+          "friction": 0
         },
         "Script": {
           "scriptPath": "scripts/player-move.lua",
@@ -363,7 +403,7 @@
       }
     },
     {
-      "id": "ent_x45al2x7",
+      "id": "ent_caokyuit",
       "name": "Spawner",
       "parentId": null,
       "enabled": true,
@@ -387,13 +427,13 @@
           "params": {
             "interval": 1.2,
             "lifetime": 4,
-            "emberAsset": "ast_p9ndg5tq"
+            "emberAsset": "ast_k4x6ujyr"
           }
         }
       }
     },
     {
-      "id": "ent_7ltw6hlq",
+      "id": "ent_se4j7216",
       "name": "Score",
       "parentId": null,
       "enabled": true,
@@ -432,7 +472,7 @@
       }
     },
     {
-      "id": "ent_pe1kuqdz",
+      "id": "ent_6n2bh2ts",
       "name": "Hint",
       "parentId": null,
       "enabled": true,

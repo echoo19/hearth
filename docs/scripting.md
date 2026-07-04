@@ -44,6 +44,9 @@ A Lua script builds a table of lifecycle hooks and `return`s it:
 - `onUiEvent(ctx, event)`: pointer events on this entity's interactive
   `UIElement`; `event` is `{ type, x, y }` with `type` one of
   `click | press | release | enter | exit` (screen coordinates).
+- `onEvent(ctx, name, data)`: every event emitted anywhere in the scene via
+  `ctx.events.emit`, scene-wide — filter by `name` yourself. See
+  [Events](#events) below.
 
 ### The dot-call rule (important)
 
@@ -103,6 +106,41 @@ Lua sees `nil`; where JS takes an object literal Lua passes a table.
 | `ctx.scene.findByTag(tag)` | EntityHandle list |
 | `ctx.scene.spawn(def)` | Create an entity at runtime: `{ name, position?, tags?, components? }` |
 | `ctx.scene.destroy(ref)` | Remove an entity (id or handle) |
+| `ctx.scene.findPath(from, to, opts?)` | Grid A\* path over the scene's solid geometry — `Vec2[]` of cell centers, or `nil` if unreachable |
+
+`findPath` builds its grid from every solid `Tilemap` and every
+non-trigger `static`/`kinematic` `Collider` currently in the scene (the
+same geometry a `hearth inspect path` call or the `inspect_path` MCP tool
+would see, but read live off the running scene rather than the authored
+one). `from`/`to` are plain `{ x, y }` world positions; `opts` is
+`{ diagonals? }` (`false` by default — four-directional movement only).
+Each waypoint is the center of a grid cell, not the exact input point, so
+walk toward each waypoint and advance once you're within a few pixels
+rather than expecting an exact match:
+
+```lua
+-- Recompute a path to the player and steer toward its first waypoint.
+local path = ctx.scene.findPath(ctx.transform.position, player.transform.position)
+if path then
+  local toFirst = ctx.math.sub(path[1], ctx.transform.position)
+  local steer = ctx.math.scale(ctx.math.normalize(toFirst), 60)
+  local body = ctx.getComponent("PhysicsBody")
+  body.velocity.x = steer.x
+  body.velocity.y = steer.y
+end
+```
+
+```js
+const path = ctx.scene.findPath(ctx.transform.position, player.transform.position);
+if (path) {
+  ctx.log('path has', path.length, 'waypoints, next one at', path[0].x, path[0].y);
+}
+```
+
+Re-running `findPath` every frame is wasteful for most AI — the
+`bounce-patrol` example (`packages/examples/bounce-patrol`) only
+recomputes every 30 frames and walks the cached path waypoint-to-waypoint
+in between.
 
 ### Scene management
 
@@ -143,6 +181,43 @@ ctx.tweens.to("Transform.position.x", 400, 0.5, { easing = "easeOut" })
 `opts` is `{ easing?, onComplete? }` with easing one of
 `linear | easeIn | easeOut | easeInOut`. An unknown or non-numeric path
 logs a warning and returns an empty id.
+
+### Math helpers
+
+`ctx.math` is a table of small, pure vec2/color helpers — no mutation, no
+engine state, identical in Lua and JS. `Vec2` is always a plain `{x, y}`;
+angles are degrees (`0` = +x, `90` = +y/down).
+
+| Member | What it is |
+| --- | --- |
+| `ctx.math.vec2(x?, y?)` | `{x, y}`, defaults `0, 0` |
+| `ctx.math.add(a, b)` | `a + b` |
+| `ctx.math.sub(a, b)` | `a - b` |
+| `ctx.math.scale(v, s)` | `v * s` |
+| `ctx.math.dot(a, b)` | Dot product |
+| `ctx.math.length(v)` | Vector magnitude |
+| `ctx.math.distance(a, b)` | `length(sub(a, b))` |
+| `ctx.math.normalize(v)` | Unit vector (`{0,0}` for a zero-length input) |
+| `ctx.math.angle(v)` | Angle of `v`, in degrees |
+| `ctx.math.fromAngle(degrees, length?)` | Unit (or scaled) vector at an angle; `length` defaults `1` |
+| `ctx.math.lerp(a, b, t)` | Linear interpolation, does not clamp `t` |
+| `ctx.math.lerpVec(a, b, t)` | `lerp`, per component |
+| `ctx.math.clamp(x, min, max)` | Clamp a number to a range |
+| `ctx.math.hexToRgb(hex)` | `{r, g, b}` (0-255); accepts `#rgb`/`#rrggbb`/`#rrggbbaa` |
+| `ctx.math.rgbToHex(r, g, b)` | `#rrggbb` string, channels clamped/rounded to 0-255 |
+| `ctx.math.colorLerp(hexA, hexB, t)` | Interpolated hex color string, `t` clamped to `[0, 1]` |
+
+```lua
+-- Steer toward a target position at a fixed speed.
+local toTarget = ctx.math.sub(target, ctx.transform.position)
+local steer = ctx.math.scale(ctx.math.normalize(toTarget), 60)
+```
+
+```js
+// Same helpers, same shapes, from JS.
+const toTarget = ctx.math.sub(target, ctx.transform.position);
+const steer = ctx.math.scale(ctx.math.normalize(toTarget), 60);
+```
 
 ### Seeded random
 
@@ -218,6 +293,60 @@ use in-memory storage scoped to the run.
 | --- | --- |
 | `ctx.audio.play(ref, opts?)` | Play an audio asset (id or name); `opts` is `{ volume?, loop? }`. Returns a handle id, or nothing if the asset doesn't exist |
 | `ctx.audio.stop(ref)` | Stop one playback by handle id, or every playback of an asset id/name |
+
+### Events
+
+| Member | What it is |
+| --- | --- |
+| `ctx.events.emit(name, data?)` | Emit an event, synchronously and deterministically, to every listener in the scene |
+| `ctx.events.on(name, fn)` | Subscribe `fn(data)` to events named `name`; returns a subscription id |
+| `ctx.events.off(id)` | Unsubscribe (unknown ids are a no-op) |
+
+`ctx.events.emit` delivers in a fixed order: every `ctx.events.on`
+subscriber for that `name` first (in subscription order), then every
+entity's `onEvent(ctx, name, data)` hook (in creation order, unfiltered —
+it sees *every* event, not just ones it subscribed to). Both are plain
+synchronous function calls, so an emit inside a handler runs its
+listeners before the outer emit continues.
+
+```lua
+-- Emitter (e.g. a Coin's onCollision): tell the scene a coin was collected.
+ctx.events.emit("coin", { value = 1 })
+```
+
+```lua
+-- Listener via onEvent — fires for every event, so filter by name.
+function script.onEvent(ctx, name, data)
+  if name ~= "coin" then return end
+  ctx.vars.score = (ctx.vars.score or 0) + data.value
+end
+```
+
+```js
+// Same emit, subscribed instead via ctx.events.on.
+const subId = ctx.events.on('coin', (data) => {
+  ctx.vars.score = (ctx.vars.score ?? 0) + data.value;
+});
+```
+
+Two safety rules keep this from turning into a runaway or a leak:
+
+- **Depth limit**: an emit triggered from inside another emit's delivery
+  (an `onEvent`/subscriber calling `ctx.events.emit` again) is allowed to
+  nest up to **8 deep**; the 9th nested emit is dropped with a console
+  warning instead of recursing further. Top-level emits (one after
+  another, not nested) aren't affected.
+- **Auto-cleanup**: `ctx.events.on` subscriptions belong to the entity
+  that created them and are removed automatically when that entity is
+  destroyed — no manual `ctx.events.off` bookkeeping needed on teardown.
+  A script disabled after repeated errors (see
+  [Errors and validation](#errors-and-validation)) stops receiving events
+  too, both via `onEvent` and its own subscriptions.
+
+The `bounce-patrol` example's `ScoreUI` (`packages/examples/bounce-patrol`)
+is a complete, playtested emit/`onEvent` pair: coins emit `"coin"` on
+pickup, the score label increments purely from `onEvent`, no
+`ctx.events.on` subscription needed at all.
 
 ### Collisions, time, logging
 

@@ -64,7 +64,10 @@ Defaults:
     "x": 0,
     "y": 0
   },
-  "isTrigger": false
+  "isTrigger": false,
+  "layer": "default",
+  "collidesWith": ["*"],
+  "oneWay": false
 }
 ```
 
@@ -72,6 +75,17 @@ Polygon colliders are **convex only**: at least 3 points, no duplicate
 consecutive points, convex winding (`validateProject` enforces all three).
 Split concave shapes across multiple entities. Points are local space and
 respect the entity's scale and rotation.
+
+`layer` names this collider's own layer; `collidesWith` lists the layers
+it will contact (`"*"` matches any layer). **Both sides must list the
+other**: two colliders only interact when A's `collidesWith` includes B's
+`layer` (or `"*"`) *and* B's `collidesWith` includes A's `layer` (or
+`"*"`) — a one-sided list is a no-op. A solid `Tilemap`'s auto-generated
+colliders are always `layer: "default"`, `collidesWith: ["*"]`. `oneWay:
+true` makes a **non-trigger** collider only block movers landing on top
+of it while moving downward — approaching from below or the side always
+passes through; a `oneWay` **trigger** collider is unaffected by this
+(triggers already never block, and report contact from every side).
 
 ## PhysicsBody
 
@@ -87,9 +101,30 @@ Defaults:
     "y": 0
   },
   "gravityScale": 1,
-  "drag": 0
+  "drag": 0,
+  "mass": 1,
+  "restitution": 0,
+  "friction": 0
 }
 ```
+
+`mass` only matters between two `dynamic` bodies pushing on each other —
+the overlap resolution splits proportionally, so a heavier body shoves a
+lighter one further than it gets shoved back (a `static`/`kinematic`
+obstacle is treated as infinitely heavy regardless of `mass`).
+
+`restitution` (0-1, bounciness) and `friction` (0-1, tangential damping on
+contact) are **combined per contact pair by taking the max of both
+sides**: a bouncy `Ball` (`restitution: 0.85`) still bounces off a plain
+`static` floor with `restitution: 0` (`max(0.85, 0) = 0.85`); a floor with
+its own `friction: 1` slows anything that touches it regardless of that
+body's own `friction`. A `Tilemap`'s solid tiles have no material of their
+own — they're always an effective `(restitution: 0, friction: 0)` contact
+partner, so give a floor real friction by adding a separate `static`
+entity with its own `Collider` + `PhysicsBody{friction}`, not by editing
+the tilemap. Restitution is suppressed below a **20 px/s** incoming
+contact speed (no micro-bounce jitter as a body comes to rest) — below
+that, a bounce settles into a stop instead of jittering forever.
 
 ## Script
 
@@ -205,6 +240,12 @@ Defaults:
   "layer": -10
 }
 ```
+
+(This `layer` is the rendering z-order — the same numeric layer every
+other `SpriteRenderer`/`Text`/etc. uses — not a `Collider.layer` physics
+layer name. A solid Tilemap's generated colliders are always physics
+`layer: "default"`, `collidesWith: ["*"]`; see [Collider](#collider)
+above.)
 
 ## Light2D
 
