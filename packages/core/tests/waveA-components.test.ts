@@ -235,3 +235,102 @@ describe('Wave A validation rules', () => {
     expect(validation.warnings.some((w) => w.code === 'COLLIDES_WITH_UNKNOWN_LAYER')).toBe(false);
   });
 });
+
+describe('SpriteRenderer.frame FRAME_NOT_FOUND validation', () => {
+  function makePngBytes(width: number, height: number): Uint8Array {
+    return new Uint8Array([
+      0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, // PNG signature
+      0x00, 0x00, 0x00, 0x0d, 0x49, 0x48, 0x44, 0x52, // IHDR chunk
+      (width >>> 24) & 0xff, (width >>> 16) & 0xff, (width >>> 8) & 0xff, width & 0xff, // width
+      (height >>> 24) & 0xff, (height >>> 16) & 0xff, (height >>> 8) & 0xff, height & 0xff, // height
+      0x08, 0x02, 0x00, 0x00, 0x00, // color type, compression, filter
+      0x12, 0x34, 0x56, 0x78, // CRC
+    ]);
+  }
+
+  async function makeSlicedSheet(session: HearthSession, fs: MemoryFileSystem, name = 'Hero') {
+    const pngBytes = makePngBytes(130, 64);
+    await fs.writeFile(`/tmp/${name}.png`, pngBytes);
+    const importResult = await session.execute('importAsset', {
+      sourcePath: `/tmp/${name}.png`,
+      name,
+      type: 'sprite',
+    });
+    const assetId = importResult.data!.asset.id;
+    await session.execute('sliceSpritesheet', { asset: assetId, frameWidth: 32, frameHeight: 32 });
+    return assetId;
+  }
+
+  it('warns when the referenced frame name is not on the sheet', async () => {
+    const { session, store, fs } = await makeSession();
+    const sheetId = await makeSlicedSheet(session, fs, 'Hero');
+    await session.execute('createEntity', {
+      scene: 'Main',
+      name: 'Sprite',
+      components: { SpriteRenderer: { assetId: sheetId, frame: 'hero_999' } },
+    });
+
+    const validation = await validateProject(store);
+    const warning = validation.warnings.find((w) => w.code === 'FRAME_NOT_FOUND');
+    expect(warning).toBeTruthy();
+    expect(warning?.message).toContain('hero_999');
+  });
+
+  it('warns when assetId references an unsliced sprite', async () => {
+    const { session, store, fs } = await makeSession();
+    const pngBytes = makePngBytes(64, 64);
+    await fs.writeFile('/tmp/Unsliced.png', pngBytes);
+    const importResult = await session.execute('importAsset', {
+      sourcePath: '/tmp/Unsliced.png',
+      name: 'Unsliced',
+      type: 'sprite',
+    });
+    const assetId = importResult.data!.asset.id;
+    await session.execute('createEntity', {
+      scene: 'Main',
+      name: 'Sprite',
+      components: { SpriteRenderer: { assetId, frame: 'anything' } },
+    });
+
+    const validation = await validateProject(store);
+    expect(validation.warnings.some((w) => w.code === 'FRAME_NOT_FOUND')).toBe(true);
+  });
+
+  it('warns when assetId is missing/unknown', async () => {
+    const { session, store } = await makeSession();
+    await session.execute('createEntity', {
+      scene: 'Main',
+      name: 'Sprite',
+      components: { SpriteRenderer: { assetId: 'ast_does_not_exist', frame: 'anything' } },
+    });
+
+    const validation = await validateProject(store);
+    expect(validation.warnings.some((w) => w.code === 'FRAME_NOT_FOUND')).toBe(true);
+  });
+
+  it('does not warn when frame is null', async () => {
+    const { session, store, fs } = await makeSession();
+    const sheetId = await makeSlicedSheet(session, fs, 'Hero');
+    await session.execute('createEntity', {
+      scene: 'Main',
+      name: 'Sprite',
+      components: { SpriteRenderer: { assetId: sheetId, frame: null } },
+    });
+
+    const validation = await validateProject(store);
+    expect(validation.warnings.some((w) => w.code === 'FRAME_NOT_FOUND')).toBe(false);
+  });
+
+  it('does not warn when the frame exists on the sheet', async () => {
+    const { session, store, fs } = await makeSession();
+    const sheetId = await makeSlicedSheet(session, fs, 'Hero');
+    await session.execute('createEntity', {
+      scene: 'Main',
+      name: 'Sprite',
+      components: { SpriteRenderer: { assetId: sheetId, frame: 'hero_0' } },
+    });
+
+    const validation = await validateProject(store);
+    expect(validation.warnings.some((w) => w.code === 'FRAME_NOT_FOUND')).toBe(false);
+  });
+});

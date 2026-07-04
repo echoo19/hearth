@@ -290,6 +290,19 @@ export async function validateProject(store: ProjectStore): Promise<ValidationRe
           entity: entity.id,
         });
       }
+      if (c.SpriteRenderer?.frame != null) {
+        const sheet = c.SpriteRenderer.assetId ? assetsById.get(c.SpriteRenderer.assetId) : undefined;
+        const frame = sheet ? findSheetFrame(sheet, c.SpriteRenderer.frame) : null;
+        if (!frame) {
+          push({
+            severity: 'warning',
+            code: 'FRAME_NOT_FOUND',
+            message: `Entity "${entity.name}" SpriteRenderer references frame "${c.SpriteRenderer.frame}" which was not found on asset ${c.SpriteRenderer.assetId ?? '(none)'}`,
+            scene: sceneId,
+            entity: entity.id,
+          });
+        }
+      }
       if (c.AudioSource?.assetId && !assetIds.has(c.AudioSource.assetId)) {
         push({
           severity: 'error',

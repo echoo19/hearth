@@ -36,6 +36,10 @@ function spriteAssetId(rt: SceneRuntime): unknown {
   return rt.find('Animator')!.components.SpriteRenderer!.assetId;
 }
 
+function spriteFrame(rt: SceneRuntime): unknown {
+  return rt.find('Animator')!.components.SpriteRenderer!.frame;
+}
+
 describe('SpriteAnimator stepping', () => {
   it('advances SpriteRenderer.assetId through frames on the fixed timestep', async () => {
     const rt = await makeRuntimeWithAnimator();
@@ -46,6 +50,13 @@ describe('SpriteAnimator stepping', () => {
     expect(spriteAssetId(rt)).toBe('ast_wf2');
     rt.run(6); // loop wraps
     expect(spriteAssetId(rt)).toBe('ast_wf0');
+  });
+
+  it('plain (non-sheet) frame entries always write SpriteRenderer.frame = null', async () => {
+    const rt = await makeRuntimeWithAnimator();
+    expect(spriteFrame(rt)).toBeNull();
+    rt.run(6);
+    expect(spriteFrame(rt)).toBeNull();
   });
 
   it('fps override replaces the asset frameDuration', async () => {

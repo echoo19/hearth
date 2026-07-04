@@ -660,8 +660,11 @@ export class SceneRuntime {
         this.animatorStates.set(entity.id, state);
       }
       const asset = animator.assetId ? this.animationAssets.get(animator.assetId) : undefined;
-      const frameAssetId = stepAnimator(state, animator, asset, this.fixedDt);
-      if (frameAssetId !== null) renderer.assetId = frameAssetId;
+      const r = stepAnimator(state, animator, asset, this.fixedDt);
+      if (r !== null) {
+        renderer.assetId = r.assetId;
+        renderer.frame = r.frame;
+      }
     }
     for (const id of [...this.animatorStates.keys()]) {
       if (!liveIds.has(id)) this.animatorStates.delete(id);

@@ -27,6 +27,8 @@ export const TransformSchema = z.object({
 
 export const SpriteRendererSchema = z.object({
   assetId: z.string().nullable().default(null),
+  /** Name of a sliced sheet frame on `assetId` to draw; null draws the whole image. */
+  frame: z.string().nullable().default(null),
   /** Fallback when no asset is set: draw a primitive of this shape/color. */
   shape: z.enum(['rectangle', 'circle', 'triangle', 'none']).default('rectangle'),
   color: ColorSchema.default('#ffffff'),
@@ -284,7 +286,7 @@ export function createComponent<T extends ComponentType>(
 export const COMPONENT_DOCS: Record<ComponentType, string> = {
   Transform: 'Position (pixels), rotation (degrees), and scale of an entity. Almost every entity needs one.',
   SpriteRenderer:
-    'Renders a sprite asset (assetId) or a colored primitive (shape/color/width/height) when no asset is set.',
+    'Renders a sprite asset (assetId) or a colored primitive (shape/color/width/height) when no asset is set. frame: name of a sliced sheet frame to draw (null = whole image).',
   Collider:
     'Box, circle, or convex polygon collision shape (polygon uses points, local space, min 3 convex vertices). isTrigger=true reports overlaps without blocking movement. layer/collidesWith control which layers interact. oneWay=true makes one-way platforms.',
   PhysicsBody:

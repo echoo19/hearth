@@ -24,6 +24,17 @@ export function createAnimatorState(assetId: string): AnimatorState {
   return { assetId, elapsed: 0, frame: 0 };
 }
 
+/**
+ * What `stepAnimator` writes into SpriteRenderer for the current frame: the
+ * sprite asset id to draw, plus the sheet frame name when the current
+ * entry is a `<assetId>#<frameName>` sheet ref (null for a plain sprite
+ * asset ref).
+ */
+export interface AnimatorFrame {
+  assetId: string;
+  frame: string | null;
+}
+
 // Floating point tolerance for the elapsed >= frameDuration comparison:
 // accumulating fixedDt (e.g. 1/60) across several frames can land a hair
 // under the true threshold (6 * (1/60) = 0.09999999999999999 < 0.1), which
@@ -33,16 +44,18 @@ const EPSILON = 1e-9;
 /**
  * Advance one fixed step. Mutates `state` in place (and flips
  * `component.playing` to false when a non-looping animation finishes).
- * Returns the sprite asset id that should be written into
- * SpriteRenderer.assetId, or null when there's nothing to show (no asset
- * loaded yet, or the asset has no frames).
+ * Returns the `{ assetId, frame }` that should be written into
+ * SpriteRenderer.assetId/frame, or null when there's nothing to show (no
+ * asset loaded yet, or the asset has no frames). A plain sprite-asset-id
+ * entry (no '#') yields `frame: null`; a `<assetId>#<frameName>` sheet ref
+ * splits on the first '#'.
  */
 export function stepAnimator(
   state: AnimatorState,
   component: SpriteAnimatorComponent,
   asset: AnimationData | undefined,
   fixedDt: number,
-): string | null {
+): AnimatorFrame | null {
   if (component.assetId !== state.assetId) {
     state.assetId = component.assetId;
     state.elapsed = 0;
@@ -72,5 +85,7 @@ export function stepAnimator(
     }
   }
 
-  return asset.frames[state.frame];
+  const ref = asset.frames[state.frame];
+  const i = ref.indexOf('#');
+  return i === -1 ? { assetId: ref, frame: null } : { assetId: ref.slice(0, i), frame: ref.slice(i + 1) };
 }
