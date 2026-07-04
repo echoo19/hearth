@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { useEditor } from '../store';
 import type { SceneEntity } from '../types';
 import { addPoint, removePoint, setPointAxis, shouldHideField } from '../vec2List';
+import { addString, removeString, setStringAt } from '../stringList';
 import { ConfirmDialog, Icon, componentIcon } from './ui';
 
 // ---------------------------------------------------------------------------
@@ -142,6 +143,54 @@ function Vec2ListField({
   );
 }
 
+/**
+ * Row-per-string editor for string[] fields (Collider.collidesWith and
+ * similar): text input per row with a remove button, and an add-string
+ * button. Reuses Vec2ListField styling (.vec2-list, .vec2-list-row, etc)
+ * for visual consistency. The array-editing logic lives in ../stringList
+ * so it stays unit-testable without a DOM.
+ */
+function StringListField({
+  value,
+  min = 0,
+  onCommit,
+}: {
+  value: string[];
+  /** Minimum string count; removal disabled at or below this. */
+  min?: number;
+  onCommit: (list: string[]) => void;
+}) {
+  const atFloor = value.length <= min;
+  return (
+    <div className="vec2-list">
+      {value.length === 0 && <span className="vec2-list-empty">No items</span>}
+      {value.map((s, i) => (
+        <div className="vec2-list-row" key={i}>
+          <TextField
+            value={s}
+            onCommit={(newVal) => onCommit(setStringAt(value, i, newVal))}
+          />
+          <button
+            type="button"
+            className="icon-btn danger"
+            title={atFloor ? `Needs at least ${min} items` : `Remove item ${i + 1}`}
+            disabled={atFloor}
+            onClick={() => {
+              const next = removeString(value, i, min);
+              if (next) onCommit(next);
+            }}
+          >
+            <Icon name="cross" size={10} />
+          </button>
+        </div>
+      ))}
+      <button type="button" className="btn btn-sm" onClick={() => onCommit(addString(value))}>
+        <Icon name="plus" size={10} /> Add layer
+      </button>
+    </div>
+  );
+}
+
 function JsonField({ value, onCommit }: { value: unknown; onCommit: (v: unknown) => void }) {
   const formatted = useMemo(() => JSON.stringify(value, null, 2) ?? 'null', [value]);
   const [draft, setDraft] = useState(formatted);
@@ -219,6 +268,10 @@ function isVec2(v: unknown): v is { x: number; y: number } {
 
 function isVec2Array(v: unknown): v is { x: number; y: number }[] {
   return Array.isArray(v) && v.every(isVec2);
+}
+
+function isStringArray(v: unknown): v is string[] {
+  return Array.isArray(v) && v.every((s) => typeof s === 'string');
 }
 
 export function Inspector() {
@@ -458,6 +511,18 @@ export function Inspector() {
                         value={value}
                         min={min}
                         onCommit={(points) => setProperty(property, points)}
+                      />
+                    );
+                  } else if (isStringArray(value) && (value.length > 0 || field === 'collidesWith')) {
+                    // String arrays get the row editor (never raw JSON). An EMPTY
+                    // array is shapeless, so only trust the `collidesWith` field
+                    // name for it. Collider.collidesWith defaults to ['*']; empty
+                    // array is allowed (no collisions).
+                    control = (
+                      <StringListField
+                        key={rowKey}
+                        value={value}
+                        onCommit={(list) => setProperty(property, list)}
                       />
                     );
                   } else {
