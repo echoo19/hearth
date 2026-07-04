@@ -274,16 +274,13 @@ export const inspectPath = defineCommand({
 
     const { cellSize, solids } = collectNavSolids(navInputs);
 
-    // Build grid, catching size errors
+    // Build grid; buildNavGrid's only failure mode is an oversized grid, so
+    // convert any throw into a command error rather than an internal crash.
     let grid;
     try {
       grid = buildNavGrid({ cellSize, solids, include: [params.from, params.to] });
     } catch (err) {
-      const msg = (err as Error).message;
-      if (msg.includes('max 512x512')) {
-        throw new ProjectError(msg, 'INVALID');
-      }
-      throw err;
+      throw new ProjectError((err as Error).message, 'INVALID_INPUT');
     }
 
     const path = findPath(grid, params.from, params.to, { diagonals: params.diagonals });

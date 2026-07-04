@@ -220,6 +220,28 @@ describe('command system', () => {
     expect(result.errors[0].code).toBe('NOT_FOUND');
     expect(result.errors[0].message).toContain('Scene not found');
   });
+
+  it('inspectPath reports an oversized grid as a command error, not a crash', async () => {
+    const { session } = await makeSession();
+    // A 1px-tile solid tilemap makes cellSize 1, and a far-out --to point
+    // forces the grid past the 512x512 cell cap.
+    await session.execute('createEntity', {
+      scene: 'Main',
+      name: 'TinyWall',
+      position: { x: 0, y: 0 },
+      components: {
+        Tilemap: { tileSize: 1, tileAssets: {}, grid: ['#'], solid: true, layer: 0 },
+      },
+    });
+    const result = await session.execute('inspectPath', {
+      scene: 'Main',
+      from: { x: 0, y: 0 },
+      to: { x: 5000, y: 5000 },
+    });
+    expect(result.success).toBe(false);
+    expect(result.errors[0].code).toBe('INVALID_INPUT');
+    expect(result.errors[0].message).toMatch(/max 512x512/);
+  });
 });
 
 describe('scripts', () => {
