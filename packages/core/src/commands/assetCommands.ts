@@ -421,8 +421,8 @@ export const sliceSpritesheet = defineCommand({
       warning = `sheet is ${imgW}x${imgH}; ${parts.join(', ')}`;
     }
 
-    // Write metadata
-    asset.metadata.frames = frames;
+    // Write metadata (frames parsed through the schema so write-time validation is real)
+    asset.metadata.frames = frames.map((f) => SpritesheetFrameSchema.parse(f));
     asset.metadata.grid = {
       frameWidth: params.frameWidth,
       frameHeight: params.frameHeight,

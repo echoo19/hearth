@@ -132,6 +132,40 @@ describe('spritesheet slicing', () => {
     expect(frames[1].y).toBe(1);
   });
 
+  it('applies margin and spacing on both axes: 69×53 sheet with 16×16 frames, margin 1, spacing 2: 3 cols, 2 rows', async () => {
+    const pngBytes = makePngBytes(69, 53);
+    await fs.writeFile('/tmp/sprite.png', pngBytes);
+
+    const importResult = await session.execute('importAsset', {
+      sourcePath: '/tmp/sprite.png',
+      name: 'MarginBothAxes',
+      type: 'sprite',
+    });
+    const assetId = importResult.data!.asset.id;
+
+    const sliceResult = await session.execute('sliceSpritesheet', {
+      asset: assetId,
+      frameWidth: 16,
+      frameHeight: 16,
+      margin: 1,
+      spacing: 2,
+    });
+
+    expect(sliceResult.success).toBe(true);
+    const data = sliceResult.data!;
+    expect(data.columns).toBe(3);
+    expect(data.rows).toBe(2);
+    expect(data.frameCount).toBe(6);
+
+    const asset = session.store.getAsset(assetId);
+    const frames = getSheetFrames(asset!);
+    // Frame 4: row 1, col 1
+    // x = margin + col*(frameWidth+spacing) = 1 + 1*(16+2) = 19
+    // y = margin + row*(frameHeight+spacing) = 1 + 1*(16+2) = 19
+    expect(frames[4].x).toBe(19);
+    expect(frames[4].y).toBe(19);
+  });
+
   it('uses asset name slug as default namePrefix', async () => {
     const pngBytes = makePngBytes(130, 64);
     await fs.writeFile('/tmp/sprite.png', pngBytes);
