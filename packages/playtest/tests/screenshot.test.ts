@@ -267,9 +267,18 @@ function buildPng(
   );
 }
 
-/** 64x32 sheet: solid red left half, solid blue right half — two 32x32 frames. */
+/**
+ * 64x32 sheet: solid orange left half, solid blue right half — two 32x32
+ * frames. Orange (not a pure primary) is deliberate: the tint test below
+ * multiplies frame 0 by '#ff0000', and a pure-red source would be a
+ * degenerate fixture for that (red × red == red × white for every body
+ * pixel, leaving only GPU/browser-dependent bilinear edge bleed at the
+ * frame seam to differ). Orange × red = (255, 0, 0) — a full-body change —
+ * while staying visibly distinct from blue for the frame-difference
+ * assertions.
+ */
 function makeTwoFrameSheetPng(): Uint8Array {
-  return buildPng(64, 32, (x) => (x < 32 ? [255, 0, 0] : [0, 0, 255]));
+  return buildPng(64, 32, (x) => (x < 32 ? [255, 128, 64] : [0, 0, 255]));
 }
 
 /**
