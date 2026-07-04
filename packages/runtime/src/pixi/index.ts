@@ -24,7 +24,9 @@
  *     cached, each playback gets a gain node, the context unlocks silently
  *     on the first user input, and everything stops when the view is
  *     destroyed. Scene switches stop the old scene's playbacks via the
- *     session's stop events.
+ *     session's stop events. Music is a separate streamed channel (one
+ *     `<audio>` element at a time, crossfaded on replace) — `onAudio` events
+ *     are dispatched to the right WebAudioPlayer method by `routeAudioEvent`.
  */
 import {
   Application,
@@ -54,7 +56,7 @@ import type { RuntimeEntity, RuntimeError, RuntimeLog, SceneRuntime } from '../r
 import { colliderShape, type Box, type CollisionShape } from '../physics.js';
 import { GameSession, type SceneEvent, type SessionStorage } from '../session.js';
 import { uiScreenPosition } from '../ui.js';
-import { WebAudioPlayer } from './audio.js';
+import { WebAudioPlayer, routeAudioEvent } from './audio.js';
 import { lerp, lerpColor } from './color.js';
 
 export { localStorageAdapter, type WebStorageLike } from './storage.js';
@@ -243,12 +245,7 @@ export class PixiSceneView {
       storage: opts.storage,
       onLog: opts.onLog,
       onError: opts.onError,
-      onAudio: audio
-        ? (e) => {
-            if (e.action === 'play') audio.play(e.handleId, e.assetId, { volume: e.volume, loop: e.loop });
-            else audio.stop(e.handleId);
-          }
-        : undefined,
+      onAudio: audio ? (e) => routeAudioEvent(e, audio) : undefined,
       onSceneChange: (e) => {
         viewRef?.onSceneChanged();
         opts.onSceneChange?.(e);
