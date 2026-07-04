@@ -41,6 +41,8 @@ function parseHex(hex: string): { r: number; g: number; b: number } | null {
 const channel = (n: number) =>
   Math.round(Math.min(255, Math.max(0, n))).toString(16).padStart(2, '0');
 
+const toHex = (r: number, g: number, b: number) => `#${channel(r)}${channel(g)}${channel(b)}`;
+
 /** Build the ctx.math object. `warn` fires once per instance on invalid hex input. */
 export function createCtxMath(warn: (msg: string) => void): CtxMath {
   let warned = false;
@@ -63,7 +65,7 @@ export function createCtxMath(warn: (msg: string) => void): CtxMath {
       const len = Math.hypot(v.x, v.y);
       return len === 0 ? { x: 0, y: 0 } : { x: v.x / len, y: v.y / len };
     },
-    angle: (v) => (v.x === 0 && v.y === 0 ? 0 : Math.atan2(v.y, v.x) * DEG),
+    angle: (v) => Math.atan2(v.y, v.x) * DEG,
     fromAngle: (degrees, length = 1) => {
       const rad = degrees / DEG;
       return { x: Math.cos(rad) * length, y: Math.sin(rad) * length };
@@ -72,12 +74,12 @@ export function createCtxMath(warn: (msg: string) => void): CtxMath {
     lerpVec: (a, b, t) => ({ x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t }),
     clamp: (x, min, max) => Math.min(max, Math.max(min, x)),
     hexToRgb: (hex) => parseHex(hex) ?? badHex('hexToRgb', hex),
-    rgbToHex: (r, g, b) => `#${channel(r)}${channel(g)}${channel(b)}`,
-    colorLerp(hexA, hexB, t) {
+    rgbToHex: (r, g, b) => toHex(r, g, b),
+    colorLerp: (hexA, hexB, t) => {
       const a = parseHex(hexA) ?? badHex('colorLerp', hexA);
       const b = parseHex(hexB) ?? badHex('colorLerp', hexB);
       const tt = Math.min(1, Math.max(0, t));
-      return this.rgbToHex(a.r + (b.r - a.r) * tt, a.g + (b.g - a.g) * tt, a.b + (b.b - a.b) * tt);
+      return toHex(a.r + (b.r - a.r) * tt, a.g + (b.g - a.g) * tt, a.b + (b.b - a.b) * tt);
     },
   };
 }

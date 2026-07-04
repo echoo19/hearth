@@ -60,4 +60,10 @@ describe('ctx.math', () => {
     expect(m.colorLerp('#000000', '#ffffff', 0.5)).toBe('#808080');
     expect(m.colorLerp('#000000', '#ffffff', 2)).toBe('#ffffff');
   });
+  it('functions work when destructured off the object (no this dependence)', () => {
+    const { colorLerp, rgbToHex, normalize } = m;
+    expect(colorLerp('#000000', '#ffffff', 0.5)).toBe('#808080');
+    expect(rgbToHex(255, 136, 0)).toBe('#ff8800');
+    expect(normalize({ x: 3, y: 4 })).toEqual({ x: 0.6, y: 0.8 });
+  });
 });
