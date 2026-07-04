@@ -26,7 +26,14 @@ import { emit, errorResult, makeResult, logStderr } from './output.js';
 import { parseJsonArray, parseJsonObject, parseList, parsePosition, parseSize, parseValue, ParseError } from './parse.js';
 import { createZip } from './zip.js';
 
-const VERSION = '0.1.0';
+// Hardcoded rather than imported from package.json: this package builds
+// under NodeNext + esbuild-bundled single-file tool builds (see
+// apps/editor/scripts/build-electron.mjs), and a JSON import needs an
+// import-attribute syntax (`with { type: 'json' }`) that's a bigger change
+// than a version bump justifies here. Keep this in sync with package.json's
+// "version" on every release — see the version-bump checklist in
+// .superpowers/sdd/task-12-report.md.
+const VERSION = '0.4.0';
 
 /** Read a global-options snapshot off a commander Command. */
 function globalOpts(cmd: Command): GlobalOpts {

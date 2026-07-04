@@ -18,7 +18,10 @@ import { captureScreenshot } from '@hearth/playtest';
 import { TOOL_SPECS } from './tools.js';
 
 const SERVER_NAME = 'hearth-mcp';
-const SERVER_VERSION = '0.1.0';
+// Hardcoded for the same reason as @hearth/cli's VERSION constant (see that
+// file's comment) — keep in sync with package.json's "version" on every
+// release; see the version-bump checklist in .superpowers/sdd/task-12-report.md.
+const SERVER_VERSION = '0.4.0';
 
 /** Project-relative path to a project's own agent instructions, if present. */
 const AGENTS_MD_PATH = 'AGENTS.md';
