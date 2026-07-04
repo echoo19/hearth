@@ -80,6 +80,10 @@ export {
   probeImage,
   type ImageInfo,
 } from './assets/imageInfo.js';
+export {
+  getSheetFrames,
+  findSheetFrame,
+} from './assets/sheetFrames.js';
 
 // Agent integration files
 export { generateAgentsMd, generateClaudeMd, generateAgentConfig } from './agentFiles.js';

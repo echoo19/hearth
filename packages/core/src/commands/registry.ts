@@ -58,6 +58,7 @@ const ALL_DEFINITIONS: CommandDefinition[] = [
   assetCommands.createSound,
   assetCommands.setAssetMetadata,
   assetCommands.removeAsset,
+  assetCommands.sliceSpritesheet,
   // settings
   settingsCommands.updateSettings,
   // diff / playtest / build

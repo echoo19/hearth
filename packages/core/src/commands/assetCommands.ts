@@ -3,7 +3,7 @@ import { defineCommand } from './types.js';
 import { generateId, slugify } from '../ids.js';
 import { ProjectError, writeJson } from '../project/store.js';
 import { joinPath, basenamePath, isSafeRelativePath } from '../fs.js';
-import { ASSETS_DIR, AnimationDataSchema, ASSET_TYPES, type Asset } from '../schema/project.js';
+import { ASSETS_DIR, AnimationDataSchema, ASSET_TYPES, SpritesheetFrameSchema, type Asset } from '../schema/project.js';
 import {
   generateSpriteSvg,
   generateTileSvg,
@@ -322,5 +322,127 @@ export const removeAsset = defineCommand({
     }
     ctx.changed({ kind: 'asset', id: asset.id, name: asset.name, path: asset.path, action: 'deleted' });
     return { assetId: asset.id, fileDeleted: params.deleteFile };
+  },
+});
+
+export const sliceSpritesheet = defineCommand({
+  name: 'sliceSpritesheet',
+  description:
+    'Slice a spritesheet image into frames with configurable grid spacing. ' +
+    'Stores frame metadata in asset.metadata.frames and grid parameters.',
+  permission: 'asset-edit',
+  mutates: true,
+  paramsSchema: z.object({
+    asset: z.string().min(1),
+    frameWidth: z.number().int().positive(),
+    frameHeight: z.number().int().positive(),
+    margin: z.number().int().nonnegative().default(0),
+    spacing: z.number().int().nonnegative().default(0),
+    namePrefix: z.string().optional(),
+  }),
+  async run(ctx, params) {
+    const asset = ctx.store.getAsset(params.asset);
+    if (!asset) throw new ProjectError(`Asset not found: ${params.asset}`, 'NOT_FOUND');
+
+    if (asset.type !== 'sprite' && asset.type !== 'tile') {
+      throw new ProjectError(
+        `Asset "${params.asset}" is type ${asset.type}, expected sprite or tile`,
+        'INVALID_INPUT',
+      );
+    }
+
+    // Read image bytes and probe for dimensions
+    if (!ctx.fs.readFileBinary) {
+      throw new ProjectError('File system does not support binary read', 'INVALID_INPUT');
+    }
+
+    const absPath = joinPath(ctx.store.root, asset.path);
+    let bytes: Uint8Array;
+    try {
+      bytes = await ctx.fs.readFileBinary(absPath);
+    } catch {
+      throw new ProjectError(
+        `Cannot read asset file: ${asset.path}`,
+        'INVALID_INPUT',
+      );
+    }
+
+    const imageInfo = probeImage(bytes);
+    if (!imageInfo) {
+      throw new ProjectError(
+        `Cannot determine dimensions of ${asset.path} (dimensionless SVG?)`,
+        'INVALID_INPUT',
+      );
+    }
+
+    const imgW = imageInfo.width;
+    const imgH = imageInfo.height;
+
+    // Calculate grid dimensions
+    const columns = Math.floor((imgW - 2 * params.margin + params.spacing) / (params.frameWidth + params.spacing));
+    const rows = Math.floor((imgH - 2 * params.margin + params.spacing) / (params.frameHeight + params.spacing));
+
+    if (columns < 1 || rows < 1) {
+      throw new ProjectError(
+        `Frame size ${params.frameWidth}×${params.frameHeight} does not fit in image ${imgW}×${imgH} with margin ${params.margin} and spacing ${params.spacing}`,
+        'INVALID_INPUT',
+      );
+    }
+
+    const frameCount = columns * rows;
+    const prefix = params.namePrefix ?? slugify(asset.name);
+
+    // Generate frames row-major
+    const frames: z.infer<typeof SpritesheetFrameSchema>[] = [];
+    for (let row = 0; row < rows; row++) {
+      for (let col = 0; col < columns; col++) {
+        const index = row * columns + col;
+        const x = params.margin + col * (params.frameWidth + params.spacing);
+        const y = params.margin + row * (params.frameHeight + params.spacing);
+        frames.push({
+          name: `${prefix}_${index}`,
+          x,
+          y,
+          width: params.frameWidth,
+          height: params.frameHeight,
+        });
+      }
+    }
+
+    // Compute leftover pixels
+    const leftoverX = imgW - (2 * params.margin + columns * params.frameWidth + (columns - 1) * params.spacing);
+    const leftoverY = imgH - (2 * params.margin + rows * params.frameHeight + (rows - 1) * params.spacing);
+
+    let warning: string | undefined;
+    if (leftoverX > 0 || leftoverY > 0) {
+      const parts: string[] = [];
+      if (leftoverX > 0) parts.push(`${leftoverX}px unused on the right`);
+      if (leftoverY > 0) parts.push(`${leftoverY}px on the bottom`);
+      warning = `sheet is ${imgW}x${imgH}; ${parts.join(', ')}`;
+    }
+
+    // Write metadata
+    asset.metadata.frames = frames;
+    asset.metadata.grid = {
+      frameWidth: params.frameWidth,
+      frameHeight: params.frameHeight,
+      margin: params.margin,
+      spacing: params.spacing,
+    };
+    asset.metadata.width = imgW;
+    asset.metadata.height = imgH;
+    asset.metadata.format = imageInfo.format;
+
+    ctx.changed({ kind: 'asset', id: asset.id, name: asset.name, action: 'modified' });
+    ctx.suggest(`createAnimationFromSheet --sheet ${asset.name} --frames ${frames.map((f) => f.name).join(' ')}`);
+
+    return {
+      assetId: asset.id,
+      frameCount,
+      columns,
+      rows,
+      frames: frames.map((f) => f.name),
+      ...(warning ? { warning } : {}),
+    };
   },
 });

@@ -85,6 +85,16 @@ export const AnimationDataSchema = z.object({
 });
 export type AnimationData = z.infer<typeof AnimationDataSchema>;
 
+/** Spritesheet frame metadata. */
+export const SpritesheetFrameSchema = z.object({
+  name: z.string().min(1),
+  x: z.number().int().nonnegative(),
+  y: z.number().int().nonnegative(),
+  width: z.number().int().positive(),
+  height: z.number().int().positive(),
+});
+export type SpritesheetFrame = z.infer<typeof SpritesheetFrameSchema>;
+
 // ---------------------------------------------------------------------------
 // Playtests
 // ---------------------------------------------------------------------------
