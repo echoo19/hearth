@@ -17,7 +17,7 @@ and agents connect from outside.
    Agent ──▶ CLI / MCP ──┘      (validate · execute · diff)     scenes · scripts · assets
 ```
 
-Both audiences use the same 45 engine commands (`createEntity`,
+Both audiences use the same 46 engine commands (`createEntity`,
 `setComponentProperty`, `runPlaytest`, `getDiff`, …). That means an agent can
 build a level, wire input, write behavior scripts, generate placeholder art,
 run headless playtests, and hand the human a structural diff to review in the
@@ -25,9 +25,14 @@ editor, all without guessing at file formats.
 
 ## Status
 
-**v0.4.0, developer preview.** The full loop works end to end:
+**v0.5.0, developer preview.** The full loop works end to end:
 project model → editor → runtime preview → CLI → MCP → headless playtests →
-diff review. v0.4 adds **rendering v2**: 2D lighting (`Light2D` +
+diff review. v0.5 adds **physics v2** (mass/restitution/friction,
+named collision layers, one-way platforms, circle-accurate resolution),
+**script stdlib v2** (`ctx.math` vec2/color helpers, `ctx.events` +
+`onEvent` pub/sub), and **pathfinding** (`ctx.scene.findPath`, `hearth
+inspect path`, the `inspect_path` MCP tool).
+On top of v0.4: rendering v2 — 2D lighting (`Light2D` +
 `Camera.ambientLight`), polylines (`LineRenderer`), deterministic particles
 (`ParticleEmitter`, `ctx.particles`), sprite animation (`SpriteAnimator`,
 `ctx.animate`), a debug-draw overlay (off by default, never in exports),
@@ -42,7 +47,7 @@ On top of v0.2: dockable editor workspace, screen-space game UI
 (`UIElement` + `onUiEvent`), convex polygon colliders, audio with
 procedural sound effects, and static web export (`hearth export web`).
 See [docs/roadmap.md](docs/roadmap.md) for what's deliberately missing
-(physics v2, undo, pathfinding…).
+(undo, spritesheets, prefabs…).
 
 ## Install
 
