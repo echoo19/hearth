@@ -8,7 +8,7 @@ import { describe, it, expect } from 'vitest';
 import os from 'node:os';
 import path from 'node:path';
 import { mkdtemp, readFile, rm, stat } from 'node:fs/promises';
-import { MemoryFileSystem, createProject, type ProjectStore } from '@hearth/core';
+import { HearthSession, MemoryFileSystem, createProject, type ProjectStore } from '@hearth/core';
 import { NodeFileSystem } from '@hearth/core/node';
 import {
   captureScreenshot,
@@ -214,6 +214,87 @@ describe('captureScreenshot (real Chromium)', () => {
         const b = await captureScreenshot(store, { frame: 10, seed: 3, out: 'shots/b.png' });
         const [bytesA, bytesB] = await Promise.all([readFile(a.path), readFile(b.path)]);
         expect(Buffer.compare(bytesA, bytesB)).toBe(0);
+      } finally {
+        await cleanup();
+      }
+    },
+    30000,
+  );
+
+  // Regression for the "SpriteAnimator never renders" bug: buildNode built
+  // the sprite child's texture exactly once, so a SpriteAnimator swapping
+  // SpriteRenderer.assetId after entity creation never changed what was on
+  // screen. Two maximally-different frames (a red rectangle vs. a green
+  // circle) leave nothing to eyeball about — if the fix regresses, this
+  // asserts the two captured PNGs come back byte-identical instead of
+  // differing.
+  it.skipIf(!hasChromium)(
+    'redraws the sprite texture when a SpriteAnimator advances to a different frame',
+    async () => {
+      const { store, cleanup } = await makeRealStore();
+      try {
+        const session = HearthSession.fromStore(store, { granted: ['asset-edit', 'safe-edit'] });
+
+        const frameA = await session.execute<{ asset: { id: string } }>('createSpriteAsset', {
+          name: 'frameA',
+          shape: 'rectangle',
+          color: '#ff0000',
+          width: 64,
+          height: 64,
+        });
+        const frameB = await session.execute<{ asset: { id: string } }>('createSpriteAsset', {
+          name: 'frameB',
+          shape: 'circle',
+          color: '#00ff00',
+          width: 64,
+          height: 64,
+        });
+        expect(frameA.success).toBe(true);
+        expect(frameB.success).toBe(true);
+
+        const anim = await session.execute<{ asset: { id: string } }>('createAnimationAsset', {
+          name: 'blink',
+          frames: [frameA.data!.asset.id, frameB.data!.asset.id],
+          frameDuration: 0.1,
+          loop: true,
+        });
+        expect(anim.success).toBe(true);
+
+        // The starter scene's Player has a dynamic PhysicsBody (default
+        // gravityScale), so it falls a little every fixed step — disable it
+        // so it can't confound the comparison below. With Player out of the
+        // way, a fresh AnimTest entity with no PhysicsBody/Collider is the
+        // only thing on screen that can change frame to frame, so any pixel
+        // difference between the two captures below can only come from the
+        // sprite redraw.
+        const disabledPlayer = await session.execute('setEntityEnabled', {
+          scene: 'Main',
+          entity: 'Player',
+          enabled: false,
+        });
+        expect(disabledPlayer.success).toBe(true);
+
+        const entity = await session.execute<{ entityId: string }>('createEntity', {
+          scene: 'Main',
+          name: 'AnimTest',
+          position: { x: 400, y: 300 },
+          components: {
+            SpriteRenderer: { assetId: frameA.data!.asset.id, shape: 'rectangle', width: 64, height: 64 },
+            SpriteAnimator: { assetId: anim.data!.asset.id, fps: 0, playing: true, loop: true },
+          },
+        });
+        expect(entity.success).toBe(true);
+
+        // fixedTimestep defaults to 60 (dt = 1/60s); frameDuration 0.1s is
+        // exactly 6 steps, so frame 0 captures animator frame index 0 and
+        // frame 6 captures index 1 — the moment the fix must pick up.
+        const before = await captureScreenshot(store, { frame: 0, out: 'shots/anim-frame0.png' });
+        const after = await captureScreenshot(store, { frame: 6, out: 'shots/anim-frame6.png' });
+        const [bytesBefore, bytesAfter] = await Promise.all([
+          readFile(before.path),
+          readFile(after.path),
+        ]);
+        expect(Buffer.compare(bytesBefore, bytesAfter)).not.toBe(0);
       } finally {
         await cleanup();
       }

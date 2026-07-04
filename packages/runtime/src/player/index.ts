@@ -247,6 +247,18 @@ function nextFrames(n: number): Promise<void> {
   });
 }
 
+/**
+ * Decode a `data:<mime>;base64,<payload>` URI (as produced by
+ * exportCommands.ts's `toBase64`) back to raw bytes.
+ */
+function decodeDataUri(dataUri: string): Uint8Array {
+  const base64 = dataUri.slice(dataUri.indexOf(',') + 1);
+  const binary = atob(base64);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+  return bytes;
+}
+
 /** Rebuild an in-memory ProjectStore from the exported bundle. */
 async function loadStore(bundle: PlayerBundle): Promise<ProjectStore> {
   const fs = new MemoryFileSystem();
@@ -267,6 +279,26 @@ async function loadStore(bundle: PlayerBundle): Promise<ProjectStore> {
       })),
     }),
   );
+  // Beyond texture/audio loading (which goes through resolveAssetUrl's own
+  // dataUri map, not this fs), some runtime code reads an asset's raw
+  // content straight off the store — SceneRuntime.loadAnimations and
+  // PixiSceneView.preloadTextures both do `store.fs.readFile(asset.path)`
+  // to parse a SpriteAnimator's *.anim.json frame list. A singleFile export
+  // (what `hearth screenshot`/`hearth export web --single-file` produce)
+  // carries that content as a dataUri per asset, exactly like every other
+  // asset — decode it back into this in-memory fs at the same path so those
+  // reads resolve instead of throwing ENOENT (which loadAnimations swallows
+  // into a recorded load error, silently freezing every SpriteAnimator on
+  // its first frame). Non-inlined (multi-file) exports only carry a `path`
+  // here, not content — those assets are fetched by URL elsewhere (Assets.load
+  // via resolveAssetUrl); reading their raw bytes through this fs is a
+  // separate, pre-existing gap this doesn't attempt to close.
+  for (const asset of bundle.assets) {
+    if (asset.dataUri) {
+      const path = asset.path ?? `assets/${asset.id}`;
+      await fs.writeFile(`${root}/${path}`, decodeDataUri(asset.dataUri));
+    }
+  }
   const sceneRefs = project.scenes ?? [];
   for (const scene of bundle.scenes as { id: string }[]) {
     const ref = sceneRefs.find((r) => r.id === scene.id);

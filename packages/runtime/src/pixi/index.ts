@@ -98,15 +98,26 @@ export class PixiSceneView {
   private ui = new Container();
   private nodes = new Map<string, Container>();
   /**
-   * Particle graphics live in their own world-space container, keyed by
-   * emitter entity id — NOT as children of the entity's own node — so
-   * particles (already simulated in world space by the runtime) never
-   * inherit the emitter entity's rotation/scale.
+   * Particle graphics are direct children of `world`, keyed by emitter
+   * entity id — NOT children of the entity's own node — so particles
+   * (already simulated in world space by the runtime) never inherit the
+   * emitter entity's rotation/scale. A plain child of `world` has the
+   * identity transform by default, so this gives the same "world-space,
+   * untransformed" guarantee the old dedicated particleLayer container did,
+   * while letting `zIndex = emitter.layer` interleave particles with sprites/
+   * lines/tilemaps that share `world` (world.sortableChildren is already on).
    */
-  private particleLayer = new Container();
   private particleNodes = new Map<string, Graphics>();
   /** Last-drawn (points, width, color, closed, opacity) snapshot per entity, to skip redundant LineRenderer redraws. */
   private lineSnapshots = new Map<string, string>();
+  /**
+   * Last-drawn (assetId, shape, color, width, height) snapshot per entity for
+   * SpriteRenderer, to detect when the sprite child needs to be rebuilt
+   * (e.g. a SpriteAnimator or script swaps assetId to a different texture).
+   * buildNode's sprite child is only ever built once, so without this the
+   * canvas would never pick up a texture change after entity creation.
+   */
+  private spriteSnapshots = new Map<string, string>();
   private textures = new Map<string, Texture>();
   /**
    * 2D lighting: a multiply-blend sprite sitting above `world`, filled each
@@ -153,7 +164,6 @@ export class PixiSceneView {
     this._paused = opts.autoplay === false;
     this.world.sortableChildren = true;
     this.ui.sortableChildren = true;
-    this.particleLayer.sortableChildren = true;
 
     const settings = opts.store.project.buildSettings;
     this.lightGradientTexture = PixiSceneView.buildLightGradientTexture();
@@ -171,7 +181,6 @@ export class PixiSceneView {
     // darkens/tints the world but never the UI or debug overlay (debug
     // lines sit above the lightmap so they stay full-brightness).
     this.app.stage.addChild(this.world);
-    this.world.addChild(this.particleLayer);
     this.app.stage.addChild(this.lightmapSprite);
     this.app.stage.addChild(this.debugLayer);
     this.app.stage.addChild(this.ui);
@@ -334,6 +343,7 @@ export class PixiSceneView {
     this.nodes.clear();
     this.particleNodes.clear();
     this.lineSnapshots.clear();
+    this.spriteSnapshots.clear();
     // lightScene is never added to app.stage, so app.destroy's recursive
     // child destruction doesn't reach it or its pooled light sprites.
     this.lightScene.destroy({ children: true });
@@ -357,6 +367,7 @@ export class PixiSceneView {
     for (const [, g] of this.particleNodes) g.destroy();
     this.particleNodes.clear();
     this.lineSnapshots.clear();
+    this.spriteSnapshots.clear();
     this.accumulator = 0;
     this.syncEntities();
     this.syncCamera();
@@ -638,6 +649,7 @@ export class PixiSceneView {
         node.destroy({ children: true });
         this.nodes.delete(id);
         this.lineSnapshots.delete(id);
+        this.spriteSnapshots.delete(id);
       }
     }
     // Remove particle graphics for destroyed entities (or ones that lost their emitter).
@@ -665,7 +677,7 @@ export class PixiSceneView {
           particles = new Graphics();
           particles.label = 'particles';
           this.particleNodes.set(entity.id, particles);
-          this.particleLayer.addChild(particles);
+          this.world.addChild(particles);
         }
         this.updateParticles(entity, emitter, particles);
       }
@@ -681,6 +693,7 @@ export class PixiSceneView {
         child.label = 'sprite';
         node.addChild(child);
       }
+      this.spriteSnapshots.set(entity.id, this.spriteSnapshotKey(sprite));
     }
     const text = entity.components.Text;
     if (text) {
@@ -709,6 +722,11 @@ export class PixiSceneView {
       node.addChild(child);
     }
     return node;
+  }
+
+  /** Identity of a sprite's drawn visual: assetId (texture) plus the primitive fallback fields. */
+  private spriteSnapshotKey(sprite: SpriteRendererComponent): string {
+    return JSON.stringify([sprite.assetId, sprite.shape, sprite.color, sprite.width, sprite.height]);
   }
 
   private buildSpriteRenderable(sprite: SpriteRendererComponent): Container | null {
@@ -790,13 +808,34 @@ export class PixiSceneView {
     node.zIndex = Math.max(sprite?.layer ?? 0, text?.layer ?? 0, tilemap?.layer ?? 0, line?.layer ?? 0);
     node.visible = entity.enabled;
 
-    const spriteNode = node.getChildByLabel?.('sprite') ?? null;
-    if (spriteNode && sprite) {
-      spriteNode.visible = sprite.visible;
-      spriteNode.alpha = sprite.opacity;
-      const sx = Math.abs(spriteNode.scale.x) * (sprite.flipX ? -1 : 1);
-      const sy = Math.abs(spriteNode.scale.y) * (sprite.flipY ? -1 : 1);
-      spriteNode.scale.set(sx, sy);
+    let spriteNode = node.getChildByLabel?.('sprite') ?? null;
+    if (sprite) {
+      const snapshot = this.spriteSnapshotKey(sprite);
+      if (this.spriteSnapshots.get(entity.id) !== snapshot) {
+        this.spriteSnapshots.set(entity.id, snapshot);
+        // Visual identity changed (most commonly a SpriteAnimator or script
+        // swapping assetId) — rebuild the child from the new texture/shape.
+        // buildNode only builds this child once, so this is the only path
+        // that ever picks up a post-creation texture swap.
+        const index = spriteNode ? node.getChildIndex(spriteNode) : 0;
+        if (spriteNode) {
+          node.removeChild(spriteNode);
+          spriteNode.destroy();
+        }
+        const rebuilt = this.buildSpriteRenderable(sprite);
+        if (rebuilt) {
+          rebuilt.label = 'sprite';
+          node.addChildAt(rebuilt, Math.min(index, node.children.length));
+        }
+        spriteNode = rebuilt;
+      }
+      if (spriteNode) {
+        spriteNode.visible = sprite.visible;
+        spriteNode.alpha = sprite.opacity;
+        const sx = Math.abs(spriteNode.scale.x) * (sprite.flipX ? -1 : 1);
+        const sy = Math.abs(spriteNode.scale.y) * (sprite.flipY ? -1 : 1);
+        spriteNode.scale.set(sx, sy);
+      }
     }
     const textNode = node.getChildByLabel?.('text') as Text | null;
     if (textNode && text) {
