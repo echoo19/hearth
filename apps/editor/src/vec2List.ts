@@ -12,8 +12,13 @@ export function setPointAxis(points: readonly Vec2[], index: number, axis: 'x' |
   return points.map((p, i) => (i === index ? { ...p, [axis]: value } : p));
 }
 
-/** New array without the point at `index`. */
-export function removePoint(points: readonly Vec2[], index: number): Vec2[] {
+/**
+ * New array without the point at `index`, or null when that would go below
+ * `min`. Same floors as the canvas vertex editor: 3 for a polygon Collider,
+ * 2 for a LineRenderer, 0 when there is no floor.
+ */
+export function removePoint(points: readonly Vec2[], index: number, min = 0): Vec2[] | null {
+  if (points.length <= min) return null;
   return points.filter((_, i) => i !== index);
 }
 

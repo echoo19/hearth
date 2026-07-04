@@ -234,3 +234,62 @@ describe('rotated and scaled polygons (runtime)', () => {
     expect(runtime.find('Unscaled')!.collisions.length).toBe(0);
   });
 });
+
+describe('degenerate polygons (fewer than 3 points)', () => {
+  // The Zod schema accepts any Vec2[] and validateProject only *reports*
+  // short polygons, so agents can write them via setComponentProperty and
+  // scenes can load them. They must be inert, not NaN factories: before the
+  // computeShapePush guard, 0 points produced an Infinity bounding box and
+  // axis-less SAT fell through to a {nx:0, ny:0, amount:Infinity} push, so
+  // applyPush computed `0 * Infinity = NaN` into the transform.
+
+  it('computeShapePush treats degenerate polygons as non-colliding', () => {
+    const shape = (overrides: Record<string, unknown>, pos = { x: 0, y: 0 }) =>
+      colliderShape(createComponent('Collider', overrides), pos);
+    const circle = shape({ shape: 'circle', radius: 16 }, { x: 0, y: 0 });
+    const box = shape({ shape: 'box', width: 32, height: 32 }, { x: 0, y: 0 });
+    const square = shape({ shape: 'polygon', points: SQUARE_16 }, { x: 0, y: 0 });
+    for (const points of [[], [{ x: 0, y: 0 }], [{ x: -8, y: 0 }, { x: 8, y: 0 }]]) {
+      const degenerate = shape({ shape: 'polygon', points }, { x: 0, y: 0 });
+      expect(computeShapePush(circle, degenerate)).toBeNull();
+      expect(computeShapePush(degenerate, circle)).toBeNull();
+      expect(computeShapePush(box, degenerate)).toBeNull();
+      expect(computeShapePush(degenerate, square)).toBeNull();
+    }
+  });
+
+  it.each([
+    ['zero-point', [] as { x: number; y: number }[]],
+    ['one-point', [{ x: 0, y: 0 }]],
+  ])('a %s polygon near a dynamic circle causes no NaN, no contacts, no errors', async (_label, points) => {
+    const { store } = await makeStore({
+      entities: [
+        ent('Broken', {
+          Transform: { position: { x: 0, y: 0 } },
+          Collider: { shape: 'polygon', points },
+          PhysicsBody: { bodyType: 'static' },
+        }),
+        ent('Ball', {
+          // Overlapping the degenerate polygon's position: the exact spot
+          // that used to produce the Infinity-amount push.
+          Transform: { position: { x: 4, y: 4 } },
+          Collider: { shape: 'circle', radius: 16 },
+          PhysicsBody: { bodyType: 'dynamic', gravityScale: 0 },
+        }),
+      ],
+    });
+    const runtime = await SceneRuntime.create(store, 'Test');
+    runtime.run(30);
+    const ball = runtime.find('Ball')!;
+    const broken = runtime.find('Broken')!;
+    for (const e of [ball, broken]) {
+      expect(Number.isFinite(e.transform.position.x)).toBe(true);
+      expect(Number.isFinite(e.transform.position.y)).toBe(true);
+    }
+    // gravityScale 0 and nothing to collide with: the ball must not move.
+    expect(ball.transform.position).toEqual({ x: 4, y: 4 });
+    expect(ball.collisions).toEqual([]);
+    expect(broken.collisions).toEqual([]);
+    expect(runtime.errors).toEqual([]);
+  });
+});

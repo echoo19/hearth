@@ -106,11 +106,15 @@ function Vec2Field({
  */
 function Vec2ListField({
   value,
+  min = 0,
   onCommit,
 }: {
   value: { x: number; y: number }[];
+  /** Minimum point count — the same floor the canvas vertex editor enforces. */
+  min?: number;
   onCommit: (points: { x: number; y: number }[]) => void;
 }) {
+  const atFloor = value.length <= min;
   return (
     <div className="vec2-list">
       {value.length === 0 && <span className="vec2-list-empty">No points</span>}
@@ -120,8 +124,12 @@ function Vec2ListField({
           <button
             type="button"
             className="icon-btn danger"
-            title={`Remove point ${i + 1}`}
-            onClick={() => onCommit(removePoint(value, i))}
+            title={atFloor ? `Needs at least ${min} points` : `Remove point ${i + 1}`}
+            disabled={atFloor}
+            onClick={() => {
+              const next = removePoint(value, i, min);
+              if (next) onCommit(next);
+            }}
           >
             <Icon name="cross" size={10} />
           </button>
@@ -433,8 +441,16 @@ export function Inspector() {
                     // these). An EMPTY array is shapeless, so only trust the
                     // `points` field name for it — an emptied Tilemap.grid
                     // (string[]) must not grow {x,y} entries via "Add point".
+                    // Same floors as the canvas vertex editor: a polygon
+                    // Collider needs 3 points, a LineRenderer needs 2.
+                    const min = type === 'Collider' ? 3 : type === 'LineRenderer' ? 2 : 0;
                     control = (
-                      <Vec2ListField key={rowKey} value={value} onCommit={(points) => setProperty(property, points)} />
+                      <Vec2ListField
+                        key={rowKey}
+                        value={value}
+                        min={min}
+                        onCommit={(points) => setProperty(property, points)}
+                      />
                     );
                   } else {
                     control = (

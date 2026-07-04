@@ -16,13 +16,24 @@ describe('setPointAxis', () => {
 });
 
 describe('removePoint', () => {
-  it('removes the point at index, no minimum enforced here', () => {
+  it('removes the point at index', () => {
     const points = [{ x: 0, y: 0 }, { x: 1, y: 1 }, { x: 2, y: 2 }];
     expect(removePoint(points, 1)).toEqual([{ x: 0, y: 0 }, { x: 2, y: 2 }]);
   });
 
-  it('can empty the list — Vec2ListField, unlike the canvas editor, has no floor', () => {
+  it('can empty the list when no minimum is given', () => {
     expect(removePoint([{ x: 0, y: 0 }], 0)).toEqual([]);
+  });
+
+  it('clamps at the per-component floor, matching the canvas editor', () => {
+    const triangle = [{ x: 0, y: -16 }, { x: 16, y: 16 }, { x: -16, y: 16 }];
+    // Polygon collider floor (3): removal refused at exactly 3 points.
+    expect(removePoint(triangle, 0, 3)).toBeNull();
+    expect(removePoint([...triangle, { x: 0, y: 32 }], 3, 3)).toEqual(triangle);
+    // LineRenderer floor (2): removal refused at exactly 2 points.
+    const pair = [{ x: 0, y: 0 }, { x: 10, y: 0 }];
+    expect(removePoint(pair, 0, 2)).toBeNull();
+    expect(removePoint([...pair, { x: 20, y: 0 }], 2, 2)).toEqual(pair);
   });
 });
 

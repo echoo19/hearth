@@ -144,6 +144,19 @@ export function computePush(a: Box, b: Box): Push | null {
  * bounding-box behavior exactly; any pair involving a polygon runs SAT.
  */
 export function computeShapePush(a: CollisionShape, b: CollisionShape): Push | null {
+  // A polygon needs 3+ points to enclose area. Degenerate arrays can reach
+  // the runtime (the schema allows any Vec2[]; validateProject only reports
+  // them, and agents can write points directly via setComponentProperty).
+  // Without this guard, 0 points give an Infinity bounding box and SAT with
+  // no axes falls through to an Infinity-amount push, so applyPush computes
+  // `0 * Infinity = NaN` and permanently corrupts the transform. Treat such
+  // polygons as non-colliding: no push, no contact, no events.
+  if (
+    (a.kind === 'polygon' && a.points.length < 3) ||
+    (b.kind === 'polygon' && b.points.length < 3)
+  ) {
+    return null;
+  }
   if (a.kind !== 'polygon' && b.kind !== 'polygon') {
     return computePush(a.box, b.box);
   }
