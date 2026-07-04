@@ -72,6 +72,12 @@ export interface ScriptContext {
     findByTag(tag: string): EntityHandle[];
     spawn(def: SpawnDef): EntityHandle;
     destroy(idOrHandle: string | EntityHandle): void;
+    /**
+     * Grid A* path from `from` to `to` over solid tilemaps and static,
+     * non-trigger colliders currently in the scene. Waypoints are cell
+     * centers; null when unreachable or the scene's nav grid is too large.
+     */
+    findPath(from: Vec2, to: Vec2, opts?: { diagonals?: boolean }): Vec2[] | null;
   };
   audio: {
     /**

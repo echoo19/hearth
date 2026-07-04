@@ -105,6 +105,18 @@ export const CTX_API: readonly CtxApiEntry[] = [
     description: 'Remove an entity from the current scene at runtime.',
     example: { js: 'ctx.scene.destroy(other)', lua: 'ctx.scene.destroy(other)' },
   },
+  {
+    path: 'scene.findPath',
+    kind: 'method',
+    signature:
+      'findPath(from: Vec2, to: Vec2, opts?: { diagonals?: boolean }): Vec2[] | null',
+    description:
+      'Grid A* path from `from` to `to` over solid tilemaps and static, non-trigger colliders currently in the scene. Waypoints are cell centers; null when unreachable or the grid is too large; set diagonals to allow 8-directional movement.',
+    example: {
+      js: "const path = ctx.scene.findPath(ctx.transform.position, { x: 400, y: 200 })",
+      lua: 'local path = ctx.scene.findPath(ctx.transform.position, { x = 400, y = 200 })',
+    },
+  },
   // --- scene management (ctx v2) ----------------------------------------
   {
     path: 'scenes.current',

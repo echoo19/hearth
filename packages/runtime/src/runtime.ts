@@ -18,13 +18,18 @@
  */
 import {
   AnimationDataSchema,
+  buildNavGrid,
+  collectNavSolids,
   createComponent,
+  findPath,
   generateId,
   isComponentType,
   joinPath,
   type AnimationData,
   type ComponentMap,
   type Entity,
+  type NavEntityInput,
+  type NavGrid,
   type ParticleEmitterComponent,
   type ProjectStore,
   type Scene,
@@ -210,6 +215,9 @@ export class SceneRuntime {
   private animatorStates = new Map<string, AnimatorState>();
   private eventBus = new EventBus();
   private emitDepth = 0;
+  private navGrid: NavGrid | null = null;
+  private navGridFrame = -1;
+  private navGridFailed = false;
 
   private constructor(
     private readonly store: ProjectStore,
@@ -320,6 +328,52 @@ export class SceneRuntime {
       parentId = parent.parentId;
     }
     return { x, y };
+  }
+
+  /** Whether every point falls within a nav grid's cell bounds. */
+  private gridContains(grid: NavGrid, points: Vec2[]): boolean {
+    return points.every((p) => {
+      const col = Math.floor((p.x - grid.originX) / grid.cellSize);
+      const row = Math.floor((p.y - grid.originY) / grid.cellSize);
+      return col >= 0 && col < grid.cols && row >= 0 && row < grid.rows;
+    });
+  }
+
+  /**
+   * Nav grid over the live scene (solid tilemaps + static non-trigger
+   * colliders), rebuilt from current entity state once per frame. Reused
+   * within the same frame only when the cached grid's bounds cover both
+   * query points; a far-out query rebuilds (and re-caches) rather than
+   * silently missing. `include` widens the grid so both endpoints are
+   * always inside it.
+   */
+  private getNavGrid(include: Vec2[]): NavGrid | null {
+    if (this.navGridFrame === this._frame) {
+      if (this.navGridFailed) return null;
+      if (this.navGrid && this.gridContains(this.navGrid, include)) return this.navGrid;
+    }
+    this.navGridFrame = this._frame;
+    this.navGridFailed = false;
+    const inputs: NavEntityInput[] = [];
+    for (const entity of this.getEntities()) {
+      if (!entity.enabled) continue;
+      inputs.push({
+        position: this.getWorldPosition(entity),
+        transform: entity.transform,
+        collider: entity.components.Collider,
+        tilemap: entity.components.Tilemap,
+        bodyType: entity.components.PhysicsBody?.bodyType ?? 'static',
+      });
+    }
+    const { cellSize, solids } = collectNavSolids(inputs);
+    try {
+      this.navGrid = buildNavGrid({ cellSize, solids, include });
+    } catch (err) {
+      this.navGrid = null;
+      this.navGridFailed = true;
+      this.recordLog('warn', `ctx.scene.findPath: ${err instanceof Error ? err.message : String(err)}`);
+    }
+    return this.navGrid;
   }
 
   /** Advance exactly one fixed frame. */
@@ -780,6 +834,11 @@ export class SceneRuntime {
         spawn: (def) => runtime.spawn(def),
         destroy: (idOrHandle) =>
           runtime.destroyEntity(typeof idOrHandle === 'string' ? idOrHandle : idOrHandle.id),
+        findPath: (from, to, opts) => {
+          const grid = this.getNavGrid([from, to]);
+          if (!grid) return null;
+          return findPath(grid, from, to, { diagonals: Boolean(opts?.diagonals) });
+        },
       },
       audio: {
         play: (assetRef, opts) => runtime.playAudio(assetRef, opts),

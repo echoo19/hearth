@@ -513,6 +513,39 @@ describe('null marshaling', () => {
   });
 });
 
+describe('ctx.scene.findPath (Lua round-trip)', () => {
+  it('marshals a found path as a numeric-length array and an unreachable query as nil', async () => {
+    const { engine } = await makeEngine();
+    const hooks = engine.compile(
+      'scripts/pathfind.lua',
+      `
+      local script = {}
+      function script.onStart(ctx)
+        local path = ctx.scene.findPath({ x = 0, y = 0 }, { x = 100, y = 0 })
+        ctx.log(path == nil and "nil" or #path)
+      end
+      return script
+      `
+    );
+
+    const found = stubCtx({
+      scene: {
+        findPath: () => [
+          { x: 0, y: 0 },
+          { x: 50, y: 0 },
+          { x: 100, y: 0 },
+        ],
+      },
+    });
+    hooks.onStart!(found);
+    expect((found as unknown as { logArgs: unknown[][] }).logArgs).toEqual([[3]]);
+
+    const blocked = stubCtx({ scene: { findPath: () => null } });
+    hooks.onStart!(blocked);
+    expect((blocked as unknown as { logArgs: unknown[][] }).logArgs).toEqual([['nil']]);
+  });
+});
+
 describe('ctx.math (Lua round-trip)', () => {
   it('provides math helpers through ctx.math', async () => {
     const { engine } = await makeEngine();
