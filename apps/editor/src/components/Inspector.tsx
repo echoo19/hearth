@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useEditor } from '../store';
 import type { SceneEntity } from '../types';
-import { addPoint, removePoint, setPointAxis } from '../vec2List';
+import { addPoint, removePoint, setPointAxis, shouldHideField } from '../vec2List';
 import { ConfirmDialog, Icon, componentIcon } from './ui';
 
 // ---------------------------------------------------------------------------
@@ -360,6 +360,14 @@ export function Inspector() {
               </div>
               <div className="component-body">
                 {Object.entries(component as Record<string, unknown>).map(([field, value]) => {
+                  // Collider.points only means anything for a polygon shape
+                  // (box/circle ignore it entirely) — showing an editable
+                  // vertex list for a box/circle Collider is just noise, and
+                  // unlike an emptied Tilemap.grid there's no shapeless case
+                  // here that needs the row to stay editable.
+                  if (shouldHideField(type, field, component as Record<string, unknown>)) {
+                    return null;
+                  }
                   const property = `${type}.${field}`;
                   const rowKey = `${entity.id}.${property}`;
                   let control: React.ReactNode;

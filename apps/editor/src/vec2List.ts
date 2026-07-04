@@ -27,3 +27,17 @@ export function addPoint(points: readonly Vec2[]): Vec2[] {
   const last = points[points.length - 1];
   return [...points, last ? { ...last } : { x: 0, y: 0 }];
 }
+
+/**
+ * True when the Inspector should skip rendering a component field entirely
+ * — currently just Collider.points on a box/circle shape, where the field
+ * exists on the component but is meaningless (only a polygon Collider uses
+ * it), unlike LineRenderer.points which always applies.
+ */
+export function shouldHideField(
+  componentType: string,
+  field: string,
+  component: Record<string, unknown>,
+): boolean {
+  return componentType === 'Collider' && field === 'points' && component.shape !== 'polygon';
+}

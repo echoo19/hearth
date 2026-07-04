@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { setPointAxis, removePoint, addPoint } from '../src/vec2List';
+import { setPointAxis, removePoint, addPoint, shouldHideField } from '../src/vec2List';
 
 describe('setPointAxis', () => {
   it('updates one axis of one point, leaving the rest untouched', () => {
@@ -48,5 +48,24 @@ describe('addPoint', () => {
 
   it('appends the origin when the list is empty', () => {
     expect(addPoint([])).toEqual([{ x: 0, y: 0 }]);
+  });
+});
+
+describe('shouldHideField', () => {
+  it('hides Collider.points for box and circle shapes', () => {
+    expect(shouldHideField('Collider', 'points', { shape: 'box' })).toBe(true);
+    expect(shouldHideField('Collider', 'points', { shape: 'circle' })).toBe(true);
+  });
+
+  it('shows Collider.points for a polygon shape', () => {
+    expect(shouldHideField('Collider', 'points', { shape: 'polygon' })).toBe(false);
+  });
+
+  it('never hides other components points field, e.g. LineRenderer', () => {
+    expect(shouldHideField('LineRenderer', 'points', {})).toBe(false);
+  });
+
+  it('never hides other Collider fields', () => {
+    expect(shouldHideField('Collider', 'width', { shape: 'box' })).toBe(false);
   });
 });
