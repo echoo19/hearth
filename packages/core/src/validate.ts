@@ -189,6 +189,17 @@ export async function validateProject(store: ProjectStore): Promise<ValidationRe
 
   // --- scenes / entities ---
   const scripts = new Set(await store.listScripts());
+
+  // Pre-pass: collect all layers used by Colliders
+  const usedLayers = new Set<string>();
+  for (const scene of store.scenes.values()) {
+    for (const entity of scene.entities) {
+      if (entity.components.Collider?.layer) {
+        usedLayers.add(entity.components.Collider.layer);
+      }
+    }
+  }
+
   for (const [sceneId, scene] of store.scenes) {
     const ids = new Set<string>();
     let mainCameras = 0;
@@ -362,6 +373,28 @@ export async function validateProject(store: ProjectStore): Promise<ValidationRe
               severity: 'error',
               code: 'INVALID_ANIMATION_ASSET_TYPE',
               message: `Entity "${entity.name}" SpriteAnimator references asset ${c.SpriteAnimator.assetId} which is type '${asset?.type ?? 'unknown'}', not 'animation'`,
+              scene: sceneId,
+              entity: entity.id,
+            });
+          }
+        }
+      }
+      if (c.Collider?.collidesWith) {
+        if (c.Collider.collidesWith.length === 0) {
+          push({
+            severity: 'warning',
+            code: 'COLLIDER_COLLIDES_WITH_NOTHING',
+            message: `Entity "${entity.name}" Collider has collidesWith: [], so it collides with nothing`,
+            scene: sceneId,
+            entity: entity.id,
+          });
+        }
+        for (const layer of c.Collider.collidesWith) {
+          if (layer !== '*' && !usedLayers.has(layer)) {
+            push({
+              severity: 'warning',
+              code: 'COLLIDES_WITH_UNKNOWN_LAYER',
+              message: `Entity "${entity.name}" collidesWith "${layer}" but no Collider in the project uses layer "${layer}"`,
               scene: sceneId,
               entity: entity.id,
             });

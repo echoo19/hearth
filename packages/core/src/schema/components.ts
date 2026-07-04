@@ -60,6 +60,12 @@ export const ColliderSchema = z.object({
   offset: Vec2Schema.default({ x: 0, y: 0 }),
   /** Triggers report overlaps but do not block movement. */
   isTrigger: z.boolean().default(false),
+  /** Named collision layer this collider belongs to. */
+  layer: z.string().min(1).default('default'),
+  /** Layers this collider interacts with; '*' matches every layer. Both sides must match. */
+  collidesWith: z.array(z.string()).default(['*']),
+  /** One-way platform: only blocks movers landing from above. */
+  oneWay: z.boolean().default(false),
 });
 
 export const PhysicsBodySchema = z.object({
@@ -68,6 +74,12 @@ export const PhysicsBodySchema = z.object({
   gravityScale: z.number().default(1),
   /** Horizontal velocity damping per second (0 = none). */
   drag: z.number().min(0).default(0),
+  /** Relative mass for mover-vs-mover push splits (heavier moves less). */
+  mass: z.number().positive().default(1),
+  /** Bounciness on contact, 0 (stop) to 1 (full reflect). Pair uses the max. */
+  restitution: z.number().min(0).max(1).default(0),
+  /** Tangential velocity damping on contact, 0 (slick) to 1 (grippy). Pair uses the max. */
+  friction: z.number().min(0).max(1).default(0),
 });
 
 export const ScriptSchema = z.object({
@@ -274,9 +286,9 @@ export const COMPONENT_DOCS: Record<ComponentType, string> = {
   SpriteRenderer:
     'Renders a sprite asset (assetId) or a colored primitive (shape/color/width/height) when no asset is set.',
   Collider:
-    'Box, circle, or convex polygon collision shape (polygon uses points, local space, min 3 convex vertices). isTrigger=true reports overlaps without blocking movement.',
+    'Box, circle, or convex polygon collision shape (polygon uses points, local space, min 3 convex vertices). isTrigger=true reports overlaps without blocking movement. layer/collidesWith control which layers interact. oneWay=true makes one-way platforms.',
   PhysicsBody:
-    'Simple physics: dynamic bodies fall with gravity and collide; kinematic bodies move by velocity only; static bodies never move.',
+    'Simple physics: dynamic bodies fall with gravity and collide; kinematic bodies move by velocity only; static bodies never move. mass/restitution/friction fine-tune interactions.',
   Script: 'Attaches a behavior script from scripts/ (scriptPath; Lua by default, JavaScript also supported). params are passed to the script as ctx.params.',
   Camera: 'Viewpoint for the scene. One entity should have a Camera with isMain=true.',
   Text: 'Renders UI/world text (content, fontSize, color).',

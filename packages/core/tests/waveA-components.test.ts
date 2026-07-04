@@ -63,6 +63,44 @@ describe('Wave A component schemas', () => {
     expect(() => createComponent('Camera', { ambientLight: 2 })).toThrow();
     expect(() => createComponent('Light2D', { color: 'red' })).toThrow();
   });
+
+  it('PhysicsBody defaults include mass/restitution/friction', () => {
+    expect(createComponent('PhysicsBody')).toEqual({
+      bodyType: 'dynamic',
+      velocity: { x: 0, y: 0 },
+      gravityScale: 1,
+      drag: 0,
+      mass: 1,
+      restitution: 0,
+      friction: 0,
+    });
+  });
+
+  it('PhysicsBody mass must be positive', () => {
+    expect(() => createComponent('PhysicsBody', { mass: 0 })).toThrow();
+  });
+
+  it('PhysicsBody restitution clamped to 0-1', () => {
+    expect(() => createComponent('PhysicsBody', { restitution: 1.5 })).toThrow();
+    expect(() => createComponent('PhysicsBody', { restitution: -0.1 })).toThrow();
+  });
+
+  it('PhysicsBody friction clamped to 0-1', () => {
+    expect(() => createComponent('PhysicsBody', { friction: 1.5 })).toThrow();
+    expect(() => createComponent('PhysicsBody', { friction: -0.1 })).toThrow();
+  });
+
+  it('Collider defaults include layer/collidesWith/oneWay', () => {
+    expect(createComponent('Collider')).toMatchObject({
+      layer: 'default',
+      collidesWith: ['*'],
+      oneWay: false,
+    });
+  });
+
+  it('Collider layer must be non-empty string', () => {
+    expect(() => createComponent('Collider', { layer: '' })).toThrow();
+  });
 });
 
 describe('Wave A validation rules', () => {
@@ -136,5 +174,64 @@ describe('Wave A validation rules', () => {
 
     const validation = await validateProject(store);
     expect(validation.errors.some((e) => e.code === 'INVALID_ANIMATION_ASSET_TYPE')).toBe(true);
+  });
+
+  it('Collider with collidesWith: [] warns', async () => {
+    const { session, store } = await makeSession();
+    await session.execute('createEntity', {
+      scene: 'Main',
+      name: 'No Collisions',
+      components: { Collider: { collidesWith: [] } },
+    });
+
+    const validation = await validateProject(store);
+    expect(validation.warnings.some((w) => w.code === 'COLLIDER_COLLIDES_WITH_NOTHING')).toBe(true);
+  });
+
+  it('Collider with unknown collidesWith layer warns', async () => {
+    const { session, store } = await makeSession();
+    await session.execute('createEntity', {
+      scene: 'Main',
+      name: 'Unknown Layer',
+      components: { Collider: { collidesWith: ['ghosts'] } },
+    });
+
+    const validation = await validateProject(store);
+    const warning = validation.warnings.find((w) => w.code === 'COLLIDES_WITH_UNKNOWN_LAYER');
+    expect(warning).toBeTruthy();
+    expect(warning?.message).toContain('ghosts');
+  });
+
+  it('Collider with collidesWith: ["*"] never warns', async () => {
+    const { session, store } = await makeSession();
+    await session.execute('createEntity', {
+      scene: 'Main',
+      name: 'Default Collider',
+      components: { Collider: { collidesWith: ['*'] } },
+    });
+
+    const validation = await validateProject(store);
+    expect(validation.warnings.some((w) => w.code === 'COLLIDES_WITH_UNKNOWN_LAYER')).toBe(false);
+  });
+
+  it('Collider layer interaction is consistent across scenes', async () => {
+    const { session, store } = await makeSession();
+    // Create entity in Main scene with layer 'player'
+    await session.execute('createEntity', {
+      scene: 'Main',
+      name: 'Player',
+      components: { Collider: { layer: 'player' } },
+    });
+    // Create a second scene
+    await session.execute('createScene', { name: 'Level2' });
+    // Create entity in Level2 scene that references 'player' layer
+    await session.execute('createEntity', {
+      scene: 'Level2',
+      name: 'Enemy',
+      components: { Collider: { collidesWith: ['player'] } },
+    });
+
+    const validation = await validateProject(store);
+    expect(validation.warnings.some((w) => w.code === 'COLLIDES_WITH_UNKNOWN_LAYER')).toBe(false);
   });
 });
