@@ -87,6 +87,16 @@ export interface ScriptContext {
     play(assetRef: string, opts?: { volume?: number; loop?: boolean }): string | null;
     /** Stop a playback by handle id, or every playback of an asset id/name. */
     stop(handleIdOrAssetRef: string): void;
+    /**
+     * Play a track on the single music channel (by asset id or name).
+     * Replaces any current track (its stop is recorded first). Survives
+     * scene switches. Null when the asset does not exist.
+     */
+    playMusic(assetRef: string, opts?: { volume?: number; loop?: boolean; fadeIn?: number }): string | null;
+    /** Stop the current music track. No-op when nothing is playing. */
+    stopMusic(opts?: { fadeOut?: number }): void;
+    /** Change the current music track's volume. No-op when nothing is playing. */
+    setMusicVolume(volume: number, opts?: { fade?: number }): void;
   };
   /** Persistent per-entity state, survives across frames. */
   vars: Record<string, unknown>;

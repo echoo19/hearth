@@ -86,15 +86,36 @@ export interface AudioEvent {
   frame: number;
   assetId: string;
   action: 'play' | 'stop';
+  /** True only for records from the music channel (playMusic/stopMusic). */
+  music?: boolean;
 }
 
 /** Live audio notification for rendering hosts (Web Audio playback). */
 export interface AudioPlaybackEvent {
-  action: 'play' | 'stop';
+  action: 'play' | 'stop' | 'music-volume';
   handleId: string;
   assetId: string;
   volume: number;
   loop: boolean;
+  /** True only for the single music channel (playMusic/stopMusic/setMusicVolume). */
+  music?: boolean;
+  /** Fade-in seconds, set on music play records. */
+  fadeIn?: number;
+  /** Fade-out seconds, set on music stop records. */
+  fadeOut?: number;
+  /** Fade seconds for a music-volume change. */
+  fade?: number;
+}
+
+/**
+ * Shared state for the single music channel — owned by GameSession (so
+ * music survives scene switches) and passed into every SceneRuntime via
+ * `RuntimeOptions.musicChannel`. A standalone SceneRuntime (no session)
+ * creates its own when none is provided.
+ */
+export interface MusicChannelState {
+  current: { handleId: string; assetId: string } | null;
+  seq: number;
 }
 
 /** Pointer event kinds accepted by SceneRuntime.sendPointer. */
@@ -117,6 +138,8 @@ export interface RuntimeOptions {
   luaEngine?: LuaScriptEngine;
   /** Session frame base so log/error/audio frames stay monotonic across scenes. */
   frameOffset?: number;
+  /** Session-shared music channel; created on demand if absent (standalone use). */
+  musicChannel?: MusicChannelState;
   /**
    * Live notification for every ctx.events.emit — fires even after the
    * runtime's recorded-events list caps, so aggregators keep exact counts.
@@ -204,6 +227,7 @@ export class SceneRuntime {
   private audioStarted = false;
   private audioHandleSeq = 0;
   private activePlaybacks = new Map<string, { assetId: string }>();
+  private readonly musicChannel: MusicChannelState;
   private uiHoverId: string | null = null;
   private uiPressedId: string | null = null;
   private readonly sceneId: string;
@@ -233,6 +257,7 @@ export class SceneRuntime {
     this.sceneName = scene.name;
     this.rng = options.rng ?? createRng(options.seed ?? 0);
     this.storage = options.storage ?? new MemorySessionStorage();
+    this.musicChannel = options.musicChannel ?? { current: null, seq: 0 };
     this._frame = options.frameOffset ?? 0;
     this._elapsed = this._frame * this.fixedDt;
     for (const authored of scene.entities) {
@@ -390,7 +415,11 @@ export class SceneRuntime {
       for (const entity of this.getEntities()) {
         const source = entity.components.AudioSource;
         if (entity.enabled && source?.autoplay && source.assetId) {
-          this.playAudio(source.assetId, { volume: source.volume, loop: source.loop });
+          if (source.music) {
+            this.playMusic(source.assetId, { volume: source.volume, loop: source.loop });
+          } else {
+            this.playAudio(source.assetId, { volume: source.volume, loop: source.loop });
+          }
         }
       }
     }
@@ -519,6 +548,82 @@ export class SceneRuntime {
   ): void {
     this.audioEvents.push({ frame: this._frame, assetId, action });
     this.options.onAudio?.({ action, handleId, assetId, volume, loop });
+  }
+
+  // ---------------------------------------------------------------------------
+  // Music channel — one shared channel (session-scoped; see MusicChannelState)
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Play a track on the single music channel (by asset id or name). Replaces
+   * any current track: a stop is recorded for it first (fadeOut = this
+   * call's fadeIn). Never enters activePlaybacks, so stopAudio/stopAllAudio
+   * never touch it. Null when the asset does not exist.
+   */
+  playMusic(
+    assetRef: string,
+    opts: { volume?: number; loop?: boolean; fadeIn?: number } = {},
+  ): string | null {
+    const asset = this.store.getAsset(assetRef);
+    if (!asset) {
+      this.recordLog('warn', `audio.playMusic: asset not found: ${assetRef}`);
+      return null;
+    }
+    const fadeIn = opts.fadeIn ?? 0;
+    const current = this.musicChannel.current;
+    if (current) {
+      this.recordMusicEvent(current.assetId, 'stop', current.handleId, 1, false, {
+        fadeOut: fadeIn,
+      });
+    }
+    const handleId = `mus_${++this.musicChannel.seq}`;
+    this.musicChannel.current = { handleId, assetId: asset.id };
+    const volume = Math.min(1, Math.max(0, opts.volume ?? 1));
+    const loop = opts.loop ?? true;
+    this.recordMusicEvent(asset.id, 'play', handleId, volume, loop, { fadeIn });
+    return handleId;
+  }
+
+  /** Stop the current music track. No-op (no warn) when nothing is playing. */
+  stopMusic(opts: { fadeOut?: number } = {}): void {
+    const current = this.musicChannel.current;
+    if (!current) return;
+    this.musicChannel.current = null;
+    this.recordMusicEvent(current.assetId, 'stop', current.handleId, 1, false, {
+      fadeOut: opts.fadeOut ?? 0,
+    });
+  }
+
+  /**
+   * Change the current music track's volume. No-op when nothing is playing.
+   * Fires onAudio directly with action 'music-volume' — never recorded in
+   * audioEvents (it isn't a play/stop and shouldn't appear in run reports).
+   */
+  setMusicVolume(volume: number, opts: { fade?: number } = {}): void {
+    const current = this.musicChannel.current;
+    if (!current) return;
+    const clamped = Math.min(1, Math.max(0, volume));
+    this.options.onAudio?.({
+      action: 'music-volume',
+      handleId: current.handleId,
+      assetId: current.assetId,
+      volume: clamped,
+      loop: false,
+      music: true,
+      fade: opts.fade ?? 0,
+    });
+  }
+
+  private recordMusicEvent(
+    assetId: string,
+    action: 'play' | 'stop',
+    handleId: string,
+    volume: number,
+    loop: boolean,
+    fade: { fadeIn?: number } | { fadeOut?: number },
+  ): void {
+    this.audioEvents.push({ frame: this._frame, assetId, action, music: true });
+    this.options.onAudio?.({ action, handleId, assetId, volume, loop, music: true, ...fade });
   }
 
   // ---------------------------------------------------------------------------
@@ -850,6 +955,9 @@ export class SceneRuntime {
       audio: {
         play: (assetRef, opts) => runtime.playAudio(assetRef, opts),
         stop: (handleIdOrAssetRef) => runtime.stopAudio(handleIdOrAssetRef),
+        playMusic: (assetRef, opts) => runtime.playMusic(assetRef, opts),
+        stopMusic: (opts) => runtime.stopMusic(opts),
+        setMusicVolume: (volume, opts) => runtime.setMusicVolume(volume, opts),
       },
       vars,
       time: {

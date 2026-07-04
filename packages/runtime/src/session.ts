@@ -14,6 +14,7 @@ import {
   SceneRuntime,
   type AudioEvent,
   type AudioPlaybackEvent,
+  type MusicChannelState,
   type RuntimeError,
   type RuntimeLog,
 } from './runtime.js';
@@ -101,6 +102,8 @@ export class GameSession {
   private readonly rng: () => number;
   private readonly storage: SessionStorage;
   private readonly maxLogs: number;
+  /** One music channel per session, shared across every scene so playMusic survives switches. */
+  private readonly musicChannel: MusicChannelState = { current: null, seq: 0 };
 
   private constructor(
     private readonly store: ProjectStore,
@@ -218,10 +221,18 @@ export class GameSession {
       luaEngine: this.luaEngine ?? undefined,
       frameOffset,
       maxLogs: this.opts.maxLogs,
+      musicChannel: this.musicChannel,
       onLog: (e) => this.recordLog(e),
       onError: (e) => this.recordError(e),
       onAudio: (e) => {
-        this.audioEvents.push({ frame: this._runtime?.frame ?? frameOffset, assetId: e.assetId, action: e.action });
+        if (e.action !== 'music-volume') {
+          this.audioEvents.push({
+            frame: this._runtime?.frame ?? frameOffset,
+            assetId: e.assetId,
+            action: e.action,
+            ...(e.music ? { music: true } : {}),
+          });
+        }
         this.opts.onAudio?.(e);
       },
       onGameEvent: (record) => {

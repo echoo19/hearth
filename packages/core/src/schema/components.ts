@@ -114,6 +114,8 @@ export const AudioSourceSchema = z.object({
   autoplay: z.boolean().default(false),
   loop: z.boolean().default(false),
   volume: z.number().min(0).max(1).default(1),
+  /** Autoplay onto the single shared music channel (ctx.audio.playMusic) instead of a regular playback. */
+  music: z.boolean().default(false),
 });
 
 export const UI_ANCHORS = [
@@ -295,7 +297,7 @@ export const COMPONENT_DOCS: Record<ComponentType, string> = {
   Camera: 'Viewpoint for the scene. One entity should have a Camera with isMain=true.',
   Text: 'Renders UI/world text (content, fontSize, color).',
   AudioSource:
-    'References an audio asset; autoplay plays on scene start with loop/volume. Scripts can also play any audio asset via ctx.audio.play(assetRef, { volume, loop }).',
+    'References an audio asset; autoplay plays on scene start with loop/volume. music=true autoplays onto the single shared music channel instead (survives scene switches) rather than a regular playback. Scripts can also play any audio asset via ctx.audio.play(assetRef, { volume, loop }), or drive the music channel via ctx.audio.playMusic/stopMusic/setMusicVolume.',
   Tilemap: 'Character-grid tilemap: tileAssets maps grid characters to assets; solid=true auto-generates colliders.',
   Light2D: 'Emits dynamic 2D light (radius, color, intensity) in the forward rendering pipeline.',
   LineRenderer: 'Renders a polyline in local space; use for debug geometry or simple line effects.',

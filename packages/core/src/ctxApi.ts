@@ -424,6 +424,35 @@ export const CTX_API: readonly CtxApiEntry[] = [
     description: 'Stop a playback by handle id, or every playback of an asset id/name.',
     example: { js: "ctx.audio.stop('music')", lua: 'ctx.audio.stop("music")' },
   },
+  {
+    path: 'audio.playMusic',
+    kind: 'method',
+    signature:
+      'playMusic(assetRef: string, opts?: { volume?: number; loop?: boolean; fadeIn?: number }): string | null',
+    description:
+      'Play a track on the single shared music channel (by asset id or name); replaces any current track. Survives scene switches. Returns a handle id, or null when the asset does not exist.',
+    example: {
+      js: "ctx.audio.playMusic('theme', { loop: true, fadeIn: 1 })",
+      lua: 'ctx.audio.playMusic("theme", { loop = true, fadeIn = 1 })',
+    },
+  },
+  {
+    path: 'audio.stopMusic',
+    kind: 'method',
+    signature: 'stopMusic(opts?: { fadeOut?: number }): void',
+    description: 'Stop the current music track. No-op when nothing is playing.',
+    example: { js: 'ctx.audio.stopMusic({ fadeOut: 1 })', lua: 'ctx.audio.stopMusic({ fadeOut = 1 })' },
+  },
+  {
+    path: 'audio.setMusicVolume',
+    kind: 'method',
+    signature: 'setMusicVolume(volume: number, opts?: { fade?: number }): void',
+    description: "Change the current music track's volume. No-op when nothing is playing.",
+    example: {
+      js: 'ctx.audio.setMusicVolume(0.3, { fade: 0.5 })',
+      lua: 'ctx.audio.setMusicVolume(0.3, { fade = 0.5 })',
+    },
+  },
   // --- state / time / logging --------------------------------------------
   {
     path: 'vars',
