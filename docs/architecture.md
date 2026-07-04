@@ -166,8 +166,11 @@ changes mid-frame), the CLI/MCP command scans the *authored* scene file —
 but both funnel into the same `buildNavGrid`/`findPath` functions, so a
 route computed offline in an editor tool matches what a script would get
 at runtime. A path is an array of grid-cell centers, not the raw
-endpoints; a query that starts or ends in a solid cell, or whose grid
-exceeds 512×512 cells, returns no path rather than throwing.
+endpoints; a query that starts or ends in a solid cell finds no path on
+either surface. Oversized grids (over 512×512 cells) differ by surface:
+`ctx.scene.findPath` logs a warning and returns no path (a script keeps
+running), while the `hearth inspect path` / `inspect_path` command fails
+with an `INVALID_INPUT` error rather than reporting `found: false`.
 
 ## Filesystem abstraction
 
