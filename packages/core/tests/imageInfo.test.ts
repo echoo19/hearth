@@ -122,6 +122,27 @@ describe('probeImage', () => {
     });
   });
 
+  describe('WebP extended (VP8X)', () => {
+    it('probes WebP VP8X with 24-bit canvas dimensions', () => {
+      // RIFF....WEBPVP8X
+      // Canvas size: width-1 as 24-bit LE at byte 24, height-1 as 24-bit LE at byte 27
+      // For 1920×1080: width-1 = 1919 = 0x00077F, height-1 = 1079 = 0x000437
+      const webpBytes = new Uint8Array([
+        0x52, 0x49, 0x46, 0x46, // 'RIFF' at 0-3
+        0x22, 0x00, 0x00, 0x00, // file size - 8 at 4-7
+        0x57, 0x45, 0x42, 0x50, // 'WEBP' at 8-11
+        0x56, 0x50, 0x38, 0x58, // 'VP8X' at 12-15
+        0x0a, 0x00, 0x00, 0x00, // chunk size = 10 at 16-19
+        0x00, 0x00, 0x00, 0x00, // flags + reserved at 20-23
+        0x7f, 0x07, 0x00, // width-1 = 1919 as 24-bit LE at 24-26
+        0x37, 0x04, 0x00, // height-1 = 1079 as 24-bit LE at 27-29
+        0x00, 0x00, 0x00, 0x00, // padding
+      ]);
+      const info = probeImage(webpBytes);
+      expect(info).toEqual({ width: 1920, height: 1080, format: 'webp' });
+    });
+  });
+
   describe('SVG', () => {
     it('extracts dimensions from width and height attributes', () => {
       const svgText = '<svg width="64" height="32"><circle r="16"/></svg>';
