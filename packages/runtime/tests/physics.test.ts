@@ -287,6 +287,93 @@ describe('contact response (restitution, friction, mass split)', () => {
     expect(player.components.PhysicsBody!.velocity.y).toBe(0);
   });
 
+  it('pushes only the dynamic side, full amount, when the kinematic mover is first', async () => {
+    const { store } = await makeStore({
+      entities: [
+        ent('Wall', {
+          Transform: { position: { x: -10, y: 0 } },
+          Collider: { shape: 'box', width: 32, height: 32 },
+          PhysicsBody: { bodyType: 'kinematic', restitution: 0.8, friction: 1 },
+        }),
+        ent('Ball', {
+          Transform: { position: { x: 10, y: 0 } },
+          Collider: { shape: 'box', width: 32, height: 32 },
+          PhysicsBody: { bodyType: 'dynamic', gravityScale: 0, velocity: { x: -100, y: 60 } },
+        }),
+      ],
+    });
+    const runtime = await SceneRuntime.create(store, 'Test');
+    runtime.step();
+    const wall = runtime.find('Wall')!;
+    const ball = runtime.find('Ball')!;
+    // Kinematic side is never pushed.
+    expect(wall.transform.position.x).toBe(-10);
+    // Ball integrates to 10 - 100/60 = 25/3, then absorbs the full 41/3 push → 22.
+    expect(ball.transform.position.x).toBeCloseTo(22, 6);
+    const v = ball.components.PhysicsBody!.velocity;
+    // Kinematic partner's restitution 0.8 reflects the -100 normal velocity.
+    expect(v.x).toBeCloseTo(80, 6);
+    // Kinematic partner's friction 1 damps tangential 60 by (1 - 10/60).
+    expect(v.y).toBeCloseTo(60 * (1 - 10 / 60), 6);
+  });
+
+  it('pushes only the dynamic side, full amount, when the kinematic mover is second', async () => {
+    const { store } = await makeStore({
+      entities: [
+        ent('Ball', {
+          Transform: { position: { x: -10, y: 0 } },
+          Collider: { shape: 'box', width: 32, height: 32 },
+          PhysicsBody: { bodyType: 'dynamic', gravityScale: 0, velocity: { x: 100, y: 60 } },
+        }),
+        ent('Wall', {
+          Transform: { position: { x: 10, y: 0 } },
+          Collider: { shape: 'box', width: 32, height: 32 },
+          PhysicsBody: { bodyType: 'kinematic', restitution: 0.8, friction: 1 },
+        }),
+      ],
+    });
+    const runtime = await SceneRuntime.create(store, 'Test');
+    runtime.step();
+    const wall = runtime.find('Wall')!;
+    const ball = runtime.find('Ball')!;
+    expect(wall.transform.position.x).toBe(10);
+    // Mirror of the test above: -25/3 minus the full 41/3 push → -22.
+    expect(ball.transform.position.x).toBeCloseTo(-22, 6);
+    const v = ball.components.PhysicsBody!.velocity;
+    expect(v.x).toBeCloseTo(-80, 6);
+    expect(v.y).toBeCloseTo(60 * (1 - 10 / 60), 6);
+  });
+
+  it('falls back to a half split when scripts write non-positive masses', async () => {
+    const { store } = await makeStore({
+      entities: [
+        ent('A', {
+          Transform: { position: { x: -10, y: 0 } },
+          Collider: { shape: 'box', width: 32, height: 32 },
+          PhysicsBody: { bodyType: 'dynamic', gravityScale: 0 },
+        }),
+        ent('B', {
+          Transform: { position: { x: 10, y: 0 } },
+          Collider: { shape: 'box', width: 32, height: 32 },
+          PhysicsBody: { bodyType: 'dynamic', gravityScale: 0 },
+        }),
+      ],
+    });
+    const runtime = await SceneRuntime.create(store, 'Test');
+    // Schema forbids mass <= 0, but scripts can write component fields
+    // directly at runtime — must not produce NaN positions (0 + 0 total).
+    runtime.find('A')!.components.PhysicsBody!.mass = 0;
+    runtime.find('B')!.components.PhysicsBody!.mass = 0;
+    runtime.step();
+    const ax = runtime.find('A')!.transform.position.x;
+    const bx = runtime.find('B')!.transform.position.x;
+    expect(Number.isFinite(ax)).toBe(true);
+    expect(Number.isFinite(bx)).toBe(true);
+    // Both invalid → both treated as mass 1 → 12px overlap split 6px each.
+    expect(ax).toBeCloseTo(-16, 3);
+    expect(bx).toBeCloseTo(16, 3);
+  });
+
   it('splits mover-vs-mover push by inverse mass', async () => {
     const { store } = await makeStore({
       entities: [

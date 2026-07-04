@@ -1312,8 +1312,14 @@ export class SceneRuntime {
             ? { restitution: a.body.restitution, friction: a.body.friction }
             : { restitution: 0, friction: 0 };
           if (a.dynamic && b.dynamic) {
-            const ma = a.body?.mass ?? 1;
-            const mb = b.body?.mass ?? 1;
+            // The schema requires positive mass, but scripts can write it
+            // directly (same escape hatch as degenerate polygon points in
+            // physics.ts): non-positive/non-finite masses would make the
+            // split NaN or negative and corrupt transforms — treat them as 1.
+            const rawMa = a.body?.mass ?? 1;
+            const rawMb = b.body?.mass ?? 1;
+            const ma = Number.isFinite(rawMa) && rawMa > 0 ? rawMa : 1;
+            const mb = Number.isFinite(rawMb) && rawMb > 0 ? rawMb : 1;
             const total = ma + mb;
             applyPush(a, push.nx, push.ny, (push.amount * mb) / total, aOther);
             applyPush(b, -push.nx, -push.ny, (push.amount * ma) / total, bOther);
