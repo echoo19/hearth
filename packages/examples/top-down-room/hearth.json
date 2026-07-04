@@ -1,13 +1,13 @@
 {
   "formatVersion": 1,
   "hearthVersion": "0.3.0",
-  "id": "prj_788v85h6",
+  "id": "prj_h6fe4cnm",
   "name": "Top-Down Room",
   "description": "Walk around a room, open the door, talk to the keeper.",
-  "initialScene": "scn_b42z6ufx",
+  "initialScene": "scn_wdxmgsg5",
   "scenes": [
     {
-      "id": "scn_b42z6ufx",
+      "id": "scn_wdxmgsg5",
       "name": "Room",
       "path": "scenes/room.scene.json"
     }

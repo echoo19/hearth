@@ -1222,7 +1222,7 @@ return script
   // not hand-computed — particle spawn timing is fp-real (see
   // packages/playtest/tests/particles.test.ts), so trusting arithmetic here
   // would be a mistake.
-  const SHOWCASE_FRAMES = 90;
+  const SHOWCASE_FRAMES = 105;
   const probe = await GameSession.create(session.store, { scene, seed: 0 });
   for (let i = 0; i < SHOWCASE_FRAMES; i++) await probe.stepAsync();
   const expectedTorchFrame = probe.runtime.find('Torch').components.SpriteRenderer.assetId;
