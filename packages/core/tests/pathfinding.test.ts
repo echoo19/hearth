@@ -96,4 +96,13 @@ describe('collectNavSolids', () => {
   it('defaults cellSize to 32 with no solid tilemap', () => {
     expect(collectNavSolids([]).cellSize).toBe(32);
   });
+  it('collects solid tilemap cells even on non-static bodies', () => {
+    const { solids } = collectNavSolids([
+      { position: { x: 0, y: 0 }, bodyType: 'kinematic',
+        tilemap: { tileSize: 16, tileAssets: {}, grid: ['#.', '.#'], solid: true, layer: 0 } as any },
+    ]);
+    expect(solids).toHaveLength(2);
+    expect(solids).toContainEqual({ x: 0, y: 0, width: 16, height: 16 });
+    expect(solids).toContainEqual({ x: 16, y: 16, width: 16, height: 16 });
+  });
 });

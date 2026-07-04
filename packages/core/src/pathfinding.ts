@@ -93,9 +93,8 @@ export function collectNavSolids(entities: NavEntityInput[]): { cellSize: number
 
   const solids: NavRect[] = [];
   for (const e of entities) {
-    // Dynamic and kinematic bodies are never obstacles.
-    if (e.bodyType !== 'static') continue;
-
+    // Solid tilemaps are obstacles regardless of body type, matching the
+    // runtime's stepPhysics (tilemapBoxes are added unconditionally).
     if (e.tilemap?.solid) {
       const ts = e.tilemap.tileSize;
       for (let row = 0; row < e.tilemap.grid.length; row++) {
@@ -113,7 +112,8 @@ export function collectNavSolids(entities: NavEntityInput[]): { cellSize: number
       }
     }
 
-    if (e.collider && !e.collider.isTrigger) {
+    // Colliders on dynamic/kinematic bodies are movers, never obstacles.
+    if (e.bodyType === 'static' && e.collider && !e.collider.isTrigger) {
       const rect = colliderAabb(e.collider, e.position, e.transform);
       if (rect) solids.push(rect);
     }
