@@ -5,6 +5,28 @@ import { COMPONENT_DOCS, COMPONENT_SCHEMAS, COMPONENT_TYPES } from '../schema/co
 import { validateProject } from '../validate.js';
 import { ProjectError } from '../project/store.js';
 import { CTX_API } from '../ctxApi.js';
+import { collectNavSolids, buildNavGrid, findPath } from '../pathfinding.js';
+import type { Scene } from '../schema/scene.js';
+
+/** Helper: sum up Transform.position up the parent chain to get world position. */
+function getWorldPosition(scene: Scene, entityId: string): { x: number; y: number } {
+  let pos = { x: 0, y: 0 };
+  let currentId: string | null = entityId;
+  const visited = new Set<string>();
+  while (currentId) {
+    if (visited.has(currentId)) break; // cycle protection
+    visited.add(currentId);
+    const entity = scene.entities.find((e) => e.id === currentId);
+    if (!entity) break;
+    const transform = entity.components.Transform;
+    if (transform) {
+      pos.x += transform.position.x;
+      pos.y += transform.position.y;
+    }
+    currentId = entity.parentId;
+  }
+  return pos;
+}
 
 export const inspectProject = defineCommand({
   name: 'inspectProject',
@@ -220,5 +242,51 @@ export const validateProjectCommand = defineCommand({
       ctx.suggest('inspectScene <scene> to locate issues', 'fix issues then validateProject again');
     }
     return report;
+  },
+});
+
+export const inspectPath = defineCommand({
+  name: 'inspectPath',
+  description:
+    'Find a walkable grid path between two world points in a scene (A* over solid tilemaps and static colliders). Read-only; uses authored entity positions.',
+  permission: 'read-only',
+  mutates: false,
+  paramsSchema: z.object({
+    scene: z.string().min(1),
+    from: z.object({ x: z.number(), y: z.number() }),
+    to: z.object({ x: z.number(), y: z.number() }),
+    diagonals: z.boolean().default(false),
+  }),
+  async run(ctx, params) {
+    // Resolve scene by id or name (mirror inspectScene's lookup + unknown-scene error).
+    const scene = ctx.store.getScene(params.scene);
+    if (!scene) throw new ProjectError(`Scene not found: ${params.scene}`, 'NOT_FOUND');
+
+    // Map entities → NavEntityInput: bodyType from components.PhysicsBody?.bodyType ?? 'static'.
+    // World position per entity = sum of Transform.position up the parent chain.
+    const navInputs = scene.entities.map((e) => ({
+      position: getWorldPosition(scene, e.id),
+      transform: e.components.Transform,
+      collider: e.components.Collider,
+      tilemap: e.components.Tilemap,
+      bodyType: (e.components.PhysicsBody?.bodyType ?? 'static') as 'dynamic' | 'static' | 'kinematic',
+    }));
+
+    const { cellSize, solids } = collectNavSolids(navInputs);
+
+    // Build grid, catching size errors
+    let grid;
+    try {
+      grid = buildNavGrid({ cellSize, solids, include: [params.from, params.to] });
+    } catch (err) {
+      const msg = (err as Error).message;
+      if (msg.includes('max 512x512')) {
+        throw new ProjectError(msg, 'INVALID');
+      }
+      throw err;
+    }
+
+    const path = findPath(grid, params.from, params.to, { diagonals: params.diagonals });
+    return { found: path !== null, path, cells: grid.cols * grid.rows, cellSize };
   },
 });

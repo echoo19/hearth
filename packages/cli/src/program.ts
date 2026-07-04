@@ -161,6 +161,23 @@ export function buildProgram(): Command {
   ).action(async (opts, cmd) => {
     await guarded(cmd, 'inspectApi', () => runAndEmit(cmd, 'inspectApi', {}));
   });
+  addGlobalOptions(
+    inspect
+      .command('path <scene>')
+      .description('find a walkable path between two points (A* over solid geometry)')
+      .requiredOption('--from <x,y>', 'start position')
+      .requiredOption('--to <x,y>', 'goal position')
+      .option('--diagonals', 'allow 8-directional movement'),
+  ).action(async (scene: string, opts: { from: string; to: string; diagonals?: boolean }, cmd) => {
+    await guarded(cmd, 'inspectPath', () =>
+      runAndEmit(cmd, 'inspectPath', {
+        scene,
+        from: parsePosition(opts.from),
+        to: parsePosition(opts.to),
+        diagonals: Boolean(opts.diagonals),
+      }),
+    );
+  });
 
   // ---------------------------------------------------------------------
   // validate

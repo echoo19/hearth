@@ -114,6 +114,19 @@ export const TOOL_SPECS: ToolSpec[] = [
     permission: 'read-only',
     inputShape: {},
   },
+  {
+    name: 'inspect_path',
+    command: 'inspectPath',
+    description:
+      'Find a walkable grid path between two world points in a scene (A* over solid tilemaps and static colliders). Returns waypoints or found=false.',
+    permission: 'read-only',
+    inputShape: {
+      scene: z.string().min(1),
+      from: positionShape,
+      to: positionShape,
+      diagonals: z.boolean().optional(),
+    },
+  },
 
   // ---- scenes ---------------------------------------------------------------
   {

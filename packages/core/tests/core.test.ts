@@ -165,6 +165,61 @@ describe('command system', () => {
     expect(bad.success).toBe(false);
     expect(bad.errors[0].message).toContain('cycle');
   });
+
+  it('inspectPath finds walkable paths between two points', async () => {
+    const { session } = await makeSession();
+
+    // Create a scene with a wall (tilemap with solid cells)
+    await session.execute('createEntity', {
+      scene: 'Main',
+      name: 'Wall',
+      position: { x: 0, y: 0 },
+      components: {
+        Tilemap: {
+          tileSize: 32,
+          tileAssets: {},
+          grid: ['####', '####', '####', '####'],
+          solid: true,
+          layer: 0,
+        },
+      },
+    });
+
+    // Query path from left of wall to right of wall
+    const pathResult = await session.execute<any>('inspectPath', {
+      scene: 'Main',
+      from: { x: -100, y: 50 },
+      to: { x: 200, y: 50 },
+    });
+    expect(pathResult.success).toBe(true);
+    expect(pathResult.data.found).toBe(true);
+    expect(pathResult.data.path).not.toBeNull();
+    expect(Array.isArray(pathResult.data.path)).toBe(true);
+    expect(pathResult.data.cells).toBeGreaterThan(0);
+    expect(pathResult.data.cellSize).toBe(32);
+
+    // Query path that's blocked (inside/through wall)
+    const blockedResult = await session.execute<any>('inspectPath', {
+      scene: 'Main',
+      from: { x: 50, y: 50 },
+      to: { x: 200, y: 50 },
+    });
+    expect(blockedResult.success).toBe(true);
+    expect(blockedResult.data.found).toBe(false);
+    expect(blockedResult.data.path).toBeNull();
+  });
+
+  it('inspectPath unknown scene error', async () => {
+    const { session } = await makeSession();
+    const result = await session.execute('inspectPath', {
+      scene: 'NotAScene',
+      from: { x: 0, y: 0 },
+      to: { x: 100, y: 100 },
+    });
+    expect(result.success).toBe(false);
+    expect(result.errors[0].code).toBe('NOT_FOUND');
+    expect(result.errors[0].message).toContain('Scene not found');
+  });
 });
 
 describe('scripts', () => {

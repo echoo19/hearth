@@ -27,6 +27,7 @@ const ALL_DEFINITIONS: CommandDefinition[] = [
   inspectCommands.readScript,
   inspectCommands.inspectApi,
   inspectCommands.validateProjectCommand,
+  inspectCommands.inspectPath,
   // scenes
   sceneCommands.createScene,
   sceneCommands.deleteScene,
