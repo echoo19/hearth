@@ -109,7 +109,10 @@ export interface RuntimeOptions {
   luaEngine?: LuaScriptEngine;
   /** Session frame base so log/error/audio frames stay monotonic across scenes. */
   frameOffset?: number;
-  /** Live notification for every recorded ctx.events.emit (hosts/session aggregation). */
+  /**
+   * Live notification for every ctx.events.emit — fires even after the
+   * runtime's recorded-events list caps, so aggregators keep exact counts.
+   */
   onGameEvent?(record: GameEventRecord): void;
 }
 
@@ -1069,20 +1072,23 @@ export class SceneRuntime {
       return;
     }
     this.eventCounts.set(name, (this.eventCounts.get(name) ?? 0) + 1);
-    if (this.events.length < MAX_RECORDED_EVENTS) {
-      const record: GameEventRecord = { frame: this._frame, name };
-      if (data !== undefined) {
-        try {
-          record.data = JSON.parse(JSON.stringify(data));
-        } catch {
-          record.data = String(data);
-        }
+    const record: GameEventRecord = { frame: this._frame, name };
+    if (data !== undefined) {
+      try {
+        record.data = JSON.parse(JSON.stringify(data));
+      } catch {
+        record.data = String(data);
       }
+    }
+    // Only the recorded list is capped. onGameEvent fires for every emit so
+    // aggregators (GameSession) can keep exact counts past the cap; they
+    // apply their own list cap.
+    if (this.events.length < MAX_RECORDED_EVENTS) {
       this.events.push(record);
-      this.options.onGameEvent?.(record);
     } else {
       this.eventsTruncated = true;
     }
+    this.options.onGameEvent?.(record);
     this.emitDepth++;
     try {
       // 1. Explicit subscriptions, subscription order. Snapshot: handlers
@@ -1091,10 +1097,13 @@ export class SceneRuntime {
       const listeners = this.eventBus.listenersFor(name);
       for (const sub of listeners) {
         if (!this.eventBus.isLive(sub) || this.destroyedIds.has(sub.ownerId)) continue;
+        // Mirror callHook's disabled guard: once a script is disabled after
+        // repeated errors, its subscriptions stop firing too.
+        const ownerState = this.scriptStates.get(sub.ownerId);
+        if (ownerState?.disabled) continue;
         try {
           sub.fn(data);
         } catch (err) {
-          const ownerState = this.scriptStates.get(sub.ownerId);
           if (ownerState) {
             const ownerEntity = this.entities.find((e) => e.id === sub.ownerId);
             this.recordHookError(ownerState, ownerEntity?.name ?? sub.ownerId, 'onEvent', err);

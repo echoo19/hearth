@@ -6,7 +6,7 @@
  * events/eventCounts recording (with its 200-entry cap).
  */
 import { describe, it, expect } from 'vitest';
-import { SceneRuntime } from '@hearth/runtime';
+import { GameSession, SceneRuntime } from '@hearth/runtime';
 import { makeStore, ent } from './helpers.js';
 
 function scripted(name: string, scriptPath: string, components: Record<string, unknown> = {}) {
@@ -173,6 +173,68 @@ describe('ctx.events', () => {
     expect(runtime.eventCounts.get('spam')).toBe(250);
     expect(runtime.events.filter((e) => e.name === 'spam').length).toBe(200);
     expect(runtime.eventsTruncated).toBe(true);
+  });
+
+  it('session eventCounts stays exact past the 200-record cap', async () => {
+    const { store } = await makeStore({
+      entities: [scripted('Flood', 'scripts/flood.js')],
+      scripts: {
+        'flood.js': `export default {
+          onUpdate(ctx) {
+            if (ctx.time.frame === 0) {
+              for (let i = 0; i < 250; i++) ctx.events.emit('spam');
+            }
+          },
+        };`,
+      },
+    });
+    const session = await GameSession.create(store);
+    await session.stepAsync();
+    expect(session.errors).toEqual([]);
+    expect(session.eventCounts.get('spam')).toBe(250);
+    expect(session.events.length).toBe(200);
+    expect(session.eventsTruncated).toBe(true);
+    session.destroy();
+  });
+
+  it('a throwing subscription stops firing once its script is disabled, and errors stop growing', async () => {
+    const { store } = await makeStore({
+      entities: [
+        scripted('Faulty', 'scripts/faulty.js'),
+        scripted('Ticker', 'scripts/ticker.js'),
+      ],
+      scripts: {
+        'faulty.js': `export default {
+          onStart(ctx) {
+            ctx.events.on('tick', () => {
+              ctx.vars.calls = (ctx.vars.calls ?? 0) + 1;
+              ctx.log('call:' + ctx.vars.calls);
+              throw new Error('boom');
+            });
+          },
+        };`,
+        'ticker.js': `export default {
+          onUpdate(ctx) { ctx.events.emit('tick'); },
+        };`,
+      },
+    });
+    const runtime = await SceneRuntime.create(store, 'Test');
+    runtime.run(3); // three consecutive throws disable the script
+    expect(runtime.errors.length).toBe(3);
+    expect(
+      runtime.logs.some((l) => l.level === 'warn' && l.message.includes('disabled after')),
+    ).toBe(true);
+    const errorsAfterDisable = runtime.errors.length;
+    const logsAfterDisable = runtime.logs.length;
+    runtime.run(5); // five more emits; the disabled sub must not fire
+    expect(runtime.errors.length).toBe(errorsAfterDisable);
+    expect(runtime.logs.length).toBe(logsAfterDisable);
+    expect(messages(runtime.logs).filter((m) => m.startsWith('call:'))).toEqual([
+      'call:1',
+      'call:2',
+      'call:3',
+    ]);
+    expect(runtime.eventCounts.get('tick')).toBe(8); // emits keep counting
   });
 
   it('passes the data payload through to listeners and the recorded event', async () => {
