@@ -53,6 +53,10 @@ describe('project creation', () => {
     // up per run, but a crash mid-capture must not show up as untracked
     // files in the user's project.
     expect(gitignore).toContain('.hearth-tmp/');
+    // hearth screenshot's default --out (when a caller doesn't pass one)
+    // writes straight into the project root; keep that debug artifact out
+    // of git status too.
+    expect(gitignore).toContain('screenshot.png');
   });
 });
 

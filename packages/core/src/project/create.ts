@@ -151,7 +151,10 @@ export async function createProject(
     // .hearth-tmp/: scratch dir for tools that need an ephemeral in-project
     // export (hearth screenshot). Cleaned up after every run, but a crash
     // mid-capture can leave residue — keep it out of the user's git status.
-    ['build/', '.hearth/baseline.json', '.hearth-tmp/', '.DS_Store', ''].join('\n'),
+    // screenshot.png: `hearth screenshot`'s own default --out — an agent
+    // running it without an explicit --out would otherwise litter a
+    // throwaway debug capture straight into the project root.
+    ['build/', '.hearth/baseline.json', '.hearth-tmp/', 'screenshot.png', '.DS_Store', ''].join('\n'),
   );
   files.push('.gitignore');
 
