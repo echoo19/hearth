@@ -2,12 +2,13 @@
  * Physics helpers — collision shape construction and minimal-translation-
  * vector math.
  *
- * Box and circle colliders keep the v1 model: both become axis-aligned
- * bounding boxes (circles use their bounding box) resolved along the axis of
- * least penetration, and solid tilemaps contribute one static AABB per
- * non-empty grid cell. Polygon colliders (convex, validated by core) use SAT
- * against polygons, boxes, and true circles, with the MTV along the axis of
- * least overlap. Coordinates are pixels, +y is down.
+ * Box-vs-box pairs keep the v1 model: axis-aligned bounding boxes resolved
+ * along the axis of least penetration, and solid tilemaps contribute one
+ * static AABB per non-empty grid cell. Circle colliders resolve using their
+ * true center/radius against circles, boxes, and polygons (convex, validated
+ * by core) via closest-point/SAT math, with the MTV along the true
+ * penetration normal rather than an axis-aligned split. Coordinates are
+ * pixels, +y is down.
  */
 import type { ColliderComponent, TilemapComponent, TransformComponent, Vec2 } from '@hearth/core';
 
@@ -38,10 +39,10 @@ export interface Push {
 }
 
 /**
- * A collision shape with its bounding box. Box and circle colliders resolve
- * as AABBs (unchanged v1 behavior); polygons carry world-space convex points
- * for SAT, and circles keep their true center/radius for SAT against
- * polygons.
+ * A collision shape with its bounding box. Box-vs-box pairs resolve as AABBs
+ * (unchanged v1 behavior); circles keep their true center/radius and resolve
+ * against other circles, boxes, and polygons using their true geometry, not
+ * their bounding box; polygons carry world-space convex points for SAT.
  */
 export type CollisionShape =
   | { kind: 'box'; box: Box }
@@ -163,6 +164,12 @@ export function computeShapePush(a: CollisionShape, b: CollisionShape): Push | n
   ) {
     return null;
   }
+  if (a.kind === 'circle' && b.kind === 'circle') return circleCirclePush(a, b);
+  if (a.kind === 'circle' && b.kind === 'box') return circleBoxPush(a, b.box);
+  if (a.kind === 'box' && b.kind === 'circle') {
+    const push = circleBoxPush(b, a.box);
+    return push ? { nx: -push.nx, ny: -push.ny, amount: push.amount } : null;
+  }
   if (a.kind !== 'polygon' && b.kind !== 'polygon') {
     return computePush(a.box, b.box);
   }
@@ -234,6 +241,36 @@ export function resolveContactVelocity(
 // ---------------------------------------------------------------------------
 // SAT internals
 // ---------------------------------------------------------------------------
+
+/** True circle-vs-circle push (a out of b). Concentric circles push a toward +x. */
+function circleCirclePush(
+  a: { x: number; y: number; radius: number },
+  b: { x: number; y: number; radius: number },
+): Push | null {
+  const dx = a.x - b.x;
+  const dy = a.y - b.y;
+  const dist = Math.hypot(dx, dy);
+  const overlap = a.radius + b.radius - dist;
+  if (overlap <= 0) return null;
+  if (dist === 0) return { nx: 1, ny: 0, amount: a.radius + b.radius };
+  return { nx: dx / dist, ny: dy / dist, amount: overlap };
+}
+
+/** True circle-vs-box push (circle out of box) via closest point; center-inside falls back to AABB axes. */
+function circleBoxPush(
+  circle: { x: number; y: number; radius: number; box: Box },
+  box: Box,
+): Push | null {
+  const cx = Math.min(box.cx + box.hw, Math.max(box.cx - box.hw, circle.x));
+  const cy = Math.min(box.cy + box.hh, Math.max(box.cy - box.hh, circle.y));
+  const dx = circle.x - cx;
+  const dy = circle.y - cy;
+  if (dx === 0 && dy === 0) return computePush(circle.box, box); // center inside: axis push
+  const dist = Math.hypot(dx, dy);
+  const overlap = circle.radius - dist;
+  if (overlap <= 0) return null;
+  return { nx: dx / dist, ny: dy / dist, amount: overlap };
+}
 
 function polygonBounds(points: Vec2[]): Box {
   let minX = Infinity;

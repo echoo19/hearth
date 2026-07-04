@@ -4,8 +4,16 @@
  */
 import { describe, it, expect } from 'vitest';
 import { SceneRuntime } from '@hearth/runtime';
+import { createComponent } from '@hearth/core';
 import { makeStore, ent } from './helpers.js';
-import { layersInteract, resolveContactVelocity, RESTITUTION_MIN_SPEED } from '../src/physics.js';
+import {
+  layersInteract,
+  resolveContactVelocity,
+  RESTITUTION_MIN_SPEED,
+  computeShapePush,
+  computePush,
+  colliderShape,
+} from '../src/physics.js';
 
 function scripted(name: string, scriptPath: string, components: Record<string, unknown> = {}) {
   return ent(name, { Transform: {}, Script: { scriptPath }, ...components });
@@ -651,5 +659,109 @@ describe('one-way platforms', () => {
       if (jumper.collisions.some((c) => c.trigger && c.other.name === 'Zone')) sawTrigger = true;
     }
     expect(sawTrigger).toBe(true);
+  });
+});
+
+describe('computeShapePush (true circle resolution)', () => {
+  const shape = (overrides: Record<string, unknown>, pos = { x: 0, y: 0 }) =>
+    colliderShape(createComponent('Collider', overrides), pos);
+
+  it('resolves circle vs circle along the true center-to-center normal', () => {
+    const a = shape({ shape: 'circle', radius: 16 }, { x: 0, y: 0 });
+    const b = shape({ shape: 'circle', radius: 16 }, { x: 20, y: 0 });
+    const push = computeShapePush(a, b)!;
+    // a out of b: same y, so the true normal happens to match the AABB axis split here.
+    expect(push.nx).toBeCloseTo(-1, 6);
+    expect(push.ny).toBeCloseTo(0, 6);
+    expect(push.amount).toBeCloseTo(12, 6); // 32 - 20
+  });
+
+  it('resolves a diagonal circle-circle overlap along the true diagonal normal, not an axis split', () => {
+    const a = shape({ shape: 'circle', radius: 16 }, { x: 0, y: 0 });
+    const b = shape({ shape: 'circle', radius: 16 }, { x: 20, y: 20 });
+    const push = computeShapePush(a, b)!;
+    // True center distance is Math.hypot(20, 20) ≈ 28.28, not the old
+    // AABB-style axis split (which would have picked a pure ±x or ±y push).
+    expect(push.nx).toBeCloseTo(-Math.SQRT1_2, 6);
+    expect(push.ny).toBeCloseTo(-Math.SQRT1_2, 6);
+    expect(push.amount).toBeCloseTo(32 - Math.hypot(20, 20), 6);
+  });
+
+  it('pushes concentric circles toward +x deterministically (zero-distance edge case)', () => {
+    const a = shape({ shape: 'circle', radius: 16 }, { x: 0, y: 0 });
+    const b = shape({ shape: 'circle', radius: 16 }, { x: 0, y: 0 });
+    const push = computeShapePush(a, b)!;
+    expect(push.nx).toBe(1);
+    expect(push.ny).toBe(0);
+    expect(push.amount).toBe(32);
+  });
+
+  it('returns null for circles that do not overlap', () => {
+    const a = shape({ shape: 'circle', radius: 16 }, { x: 0, y: 0 });
+    const b = shape({ shape: 'circle', radius: 16 }, { x: 40, y: 0 });
+    expect(computeShapePush(a, b)).toBeNull();
+  });
+
+  it('resolves a circle overlapping a box corner along the true closest-point normal', () => {
+    // Circle center (40,40), box 64x64 centered at origin (half extents 32):
+    // closest box point is the corner (32,32).
+    const circle = shape({ shape: 'circle', radius: 16 }, { x: 40, y: 40 });
+    const box = shape({ shape: 'box', width: 64, height: 64 }, { x: 0, y: 0 });
+    const push = computeShapePush(circle, box)!;
+    const dist = Math.hypot(8, 8); // ≈ 11.31
+    expect(push.nx).toBeCloseTo(8 / dist, 6);
+    expect(push.ny).toBeCloseTo(8 / dist, 6);
+    expect(push.amount).toBeCloseTo(16 - dist, 6);
+  });
+
+  it('mirrors the box-vs-circle push as the negation of circle-vs-box', () => {
+    const circle = shape({ shape: 'circle', radius: 16 }, { x: 40, y: 40 });
+    const box = shape({ shape: 'box', width: 64, height: 64 }, { x: 0, y: 0 });
+    const circleOut = computeShapePush(circle, box)!;
+    const boxOut = computeShapePush(box, circle)!;
+    expect(boxOut.nx).toBeCloseTo(-circleOut.nx, 6);
+    expect(boxOut.ny).toBeCloseTo(-circleOut.ny, 6);
+    expect(boxOut.amount).toBeCloseTo(circleOut.amount, 6);
+  });
+
+  it('falls back to the AABB axis push when the circle center is inside the box', () => {
+    const circle = shape({ shape: 'circle', radius: 16 }, { x: 0, y: 0 });
+    const box = shape({ shape: 'box', width: 64, height: 64 }, { x: 0, y: 0 });
+    const push = computeShapePush(circle, box)!;
+    const expected = computePush(circle.box, box.box)!;
+    expect(push).toEqual(expected);
+  });
+});
+
+describe('circle vs box (runtime): rolling off a corner', () => {
+  it('a circle offset from a box edge slides past the corner instead of snagging on top', async () => {
+    const { store } = await makeStore({
+      entities: [
+        ent('Box', {
+          Transform: { position: { x: 0, y: 100 } },
+          Collider: { shape: 'box', width: 64, height: 64 },
+          PhysicsBody: { bodyType: 'static' },
+        }),
+        ent('Ball', {
+          // Box spans x -32..32, y 68..132. Ball center starts at x=40 — 8px
+          // right of the box's edge — falling straight down from above.
+          Transform: { position: { x: 40, y: 0 } },
+          Collider: { shape: 'circle', radius: 16 },
+          PhysicsBody: { bodyType: 'dynamic' },
+        }),
+      ],
+    });
+    const runtime = await SceneRuntime.create(store, 'Test');
+    const ball = runtime.find('Ball')!;
+    runtime.run(30);
+    // Old AABB-era circle-box resolution would have caught the ball's
+    // bounding box on the corner and rested it at x=40, y = 68 - 16 = 52
+    // forever. The true circle geometry only grazes the corner there, so
+    // gravity keeps pulling it past: it ends up beside the box (cleared the
+    // right edge by more than its own radius) and below the box's top edge.
+    expect(ball.transform.position.x).toBeGreaterThan(48);
+    expect(ball.transform.position.y).toBeGreaterThan(68);
+    // Still falling — not snagged at rest on top of the box.
+    expect(ball.components.PhysicsBody!.velocity.y).toBeGreaterThan(0);
   });
 });
