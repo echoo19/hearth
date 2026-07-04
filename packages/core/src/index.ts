@@ -80,6 +80,16 @@ export {
 // Agent integration files
 export { generateAgentsMd, generateClaudeMd, generateAgentConfig } from './agentFiles.js';
 
+// Pathfinding
+export {
+  collectNavSolids,
+  buildNavGrid,
+  findPath,
+  type NavRect,
+  type NavGrid,
+  type NavEntityInput,
+} from './pathfinding.js';
+
 // Utilities
 export { generateId, slugify, type IdPrefix } from './ids.js';
 export {
