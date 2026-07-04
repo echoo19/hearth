@@ -7,6 +7,7 @@
 import { describe, it, expect, afterEach } from 'vitest';
 import { createRequire } from 'node:module';
 import { isLuaPath, setLuaWasmUri, LuaScriptEngine } from '../src/lua.js';
+import { createCtxMath } from '../src/ctxMath.js';
 import type { ScriptContext, EntityHandle, UiEvent } from '../src/scripts.js';
 
 type LogEntry = { level: 'info' | 'warn'; message: string };
@@ -509,6 +510,30 @@ describe('null marshaling', () => {
       bestOrZero: 1,
       propIsNil: true,
     });
+  });
+});
+
+describe('ctx.math (Lua round-trip)', () => {
+  it('provides math helpers through ctx.math', async () => {
+    const { engine } = await makeEngine();
+    const ctx = stubCtx({ math: createCtxMath(() => {}) });
+    const hooks = engine.compile(
+      'scripts/math.lua',
+      `
+      local script = {}
+      function script.onStart(ctx)
+        local v = ctx.math.normalize(ctx.math.vec2(3, 4))
+        ctx.log(v.x, v.y, ctx.math.colorLerp("#000000", "#ffffff", 0.5))
+      end
+      return script
+      `
+    );
+    hooks.onStart!(ctx);
+    const logArgs = (ctx as unknown as { logArgs: unknown[][] }).logArgs;
+    expect(logArgs).toHaveLength(1);
+    expect(logArgs[0][0]).toBeCloseTo(0.6);
+    expect(logArgs[0][1]).toBeCloseTo(0.8);
+    expect(logArgs[0][2]).toBe('#808080');
   });
 });
 

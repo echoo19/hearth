@@ -51,6 +51,7 @@ import {
   type SpawnDef,
   type UiEvent,
 } from './scripts.js';
+import { createCtxMath } from './ctxMath.js';
 import { LuaScriptEngine, isLuaPath } from './lua.js';
 import { EmitterState, type Particle } from './particles.js';
 import { MemorySessionStorage, type SessionStorage } from './session.js';
@@ -846,6 +847,7 @@ export class SceneRuntime {
         },
         count: () => runtime.getParticleCount(entity.id),
       },
+      math: createCtxMath((msg) => this.recordLog('warn', msg)),
       animate: (assetRef) => {
         const animator = entity.components.SpriteAnimator;
         if (!animator) {

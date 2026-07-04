@@ -132,6 +132,8 @@ export interface ScriptContext {
     /** Live particle count for this entity's ParticleEmitter (0 if none). */
     count(): number;
   };
+  /** Pure math helpers: vec2 ops, lerp/clamp, color conversion. See ctx API docs. */
+  math: import('./ctxMath.js').CtxMath;
   /**
    * Switch this entity's SpriteAnimator to `assetRef` (animation asset id
    * or name), set playing = true, and reset to frame 0. Warn + no-op when
