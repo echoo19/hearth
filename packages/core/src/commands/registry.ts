@@ -59,6 +59,7 @@ const ALL_DEFINITIONS: CommandDefinition[] = [
   assetCommands.setAssetMetadata,
   assetCommands.removeAsset,
   assetCommands.sliceSpritesheet,
+  assetCommands.createAnimationFromSheet,
   // settings
   settingsCommands.updateSettings,
   // diff / playtest / build

@@ -13,6 +13,7 @@ import {
 } from '../assets/procedural.js';
 import { generateSoundWav, SOUND_PRESETS } from '../assets/sounds.js';
 import { probeImage } from '../assets/imageInfo.js';
+import { getSheetFrames, findSheetFrame } from '../assets/sheetFrames.js';
 
 function registerAsset(ctx: any, asset: Asset): Asset {
   if (ctx.store.getAsset(asset.name)) {
@@ -444,5 +445,74 @@ export const sliceSpritesheet = defineCommand({
       frames: frames.map((f) => f.name),
       ...(warning ? { warning } : {}),
     };
+  },
+});
+
+export const createAnimationFromSheet = defineCommand({
+  name: 'createAnimationFromSheet',
+  description:
+    'Create an animation asset from named frames on a sliced spritesheet. ' +
+    'Frame refs are written as "<sheetAssetId>#<frameName>".',
+  permission: 'asset-edit',
+  mutates: true,
+  paramsSchema: z.object({
+    name: z.string().min(1),
+    sheet: z.string().min(1),
+    frames: z.array(z.string()).min(1),
+    frameDuration: z.number().positive().default(0.15),
+    loop: z.boolean().default(true),
+  }),
+  async run(ctx, params) {
+    const sheet = ctx.store.getAsset(params.sheet);
+    if (!sheet) throw new ProjectError(`Asset not found: ${params.sheet}`, 'NOT_FOUND');
+
+    if (getSheetFrames(sheet).length === 0) {
+      throw new ProjectError(
+        `Sheet "${sheet.name}" has no frames — run sliceSpritesheet first`,
+        'INVALID_INPUT',
+      );
+    }
+
+    const refs: string[] = [];
+    const missing: string[] = [];
+    for (const frameName of params.frames) {
+      const frame = findSheetFrame(sheet, frameName);
+      if (!frame) {
+        missing.push(frameName);
+      } else {
+        refs.push(`${sheet.id}#${frameName}`);
+      }
+    }
+    if (missing.length > 0) {
+      throw new ProjectError(
+        `Frames not found on sheet "${sheet.name}": ${missing.join(', ')}`,
+        'INVALID_INPUT',
+      );
+    }
+
+    const data = AnimationDataSchema.parse({
+      frames: refs,
+      frameDuration: params.frameDuration,
+      loop: params.loop,
+    });
+    const relPath = joinPath(ASSETS_DIR, 'animations', `${slugify(params.name)}.anim.json`);
+    const absPath = joinPath(ctx.store.root, relPath);
+    if (await ctx.fs.exists(absPath)) {
+      throw new ProjectError(`Asset file already exists: ${relPath}`, 'CONFLICT');
+    }
+    await writeJson(ctx.fs, absPath, data);
+    const asset = registerAsset(ctx, {
+      id: generateId('anm').replace(/^anm/, 'ast'),
+      name: params.name,
+      type: 'animation',
+      path: relPath,
+      metadata: {
+        frameCount: refs.length,
+        frameDuration: params.frameDuration,
+        loop: params.loop,
+        sheet: sheet.id,
+      },
+    });
+    return { asset, frames: refs };
   },
 });

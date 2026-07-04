@@ -3,8 +3,10 @@
  * per-file schema validation that happens at load time.
  */
 import luaparse from 'luaparse';
-import type { ProjectStore } from './project/store.js';
+import { readJson, type ProjectStore } from './project/store.js';
 import { joinPath } from './fs.js';
+import { AnimationDataSchema } from './schema/project.js';
+import { findSheetFrame } from './assets/sheetFrames.js';
 
 export interface ValidationIssue {
   severity: 'error' | 'warning';
@@ -181,6 +183,36 @@ export async function validateProject(store: ProjectStore): Promise<ValidationRe
         message: `Asset "${asset.name}" (${asset.id}) points to missing file: ${asset.path}`,
         asset: asset.id,
       });
+    }
+  }
+
+  // Pre-pass: animation assets' frame refs ("<sheetAssetId>#<frameName>").
+  // Plain (no-'#') entries are sprite-asset ids, already covered above.
+  for (const asset of store.assets.assets) {
+    if (asset.type !== 'animation') continue;
+    let data: unknown;
+    try {
+      data = await readJson(store.fs, joinPath(store.root, asset.path));
+    } catch {
+      continue; // missing/unreadable file already flagged as MISSING_ASSET_FILE
+    }
+    const parsed = AnimationDataSchema.safeParse(data);
+    if (!parsed.success) continue;
+    for (const ref of parsed.data.frames) {
+      const hashIdx = ref.indexOf('#');
+      if (hashIdx === -1) continue;
+      const sheetId = ref.slice(0, hashIdx);
+      const frameName = ref.slice(hashIdx + 1);
+      const sheet = assetsById.get(sheetId);
+      const frame = sheet ? findSheetFrame(sheet, frameName) : null;
+      if (!frame) {
+        push({
+          severity: 'warning',
+          code: 'ANIMATION_FRAME_NOT_FOUND',
+          message: `Animation "${asset.name}" (${asset.id}) references frame "${ref}" which was not found`,
+          asset: asset.id,
+        });
+      }
     }
   }
 
