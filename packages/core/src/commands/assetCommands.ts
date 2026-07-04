@@ -12,6 +12,7 @@ import {
   type SpriteShape,
 } from '../assets/procedural.js';
 import { generateSoundWav, SOUND_PRESETS } from '../assets/sounds.js';
+import { probeImage } from '../assets/imageInfo.js';
 
 function registerAsset(ctx: any, asset: Asset): Asset {
   if (ctx.store.getAsset(asset.name)) {
@@ -38,6 +39,7 @@ const EXT_TO_TYPE: Record<string, Asset['type']> = {
   m4a: 'audio',
   ttf: 'font',
   otf: 'font',
+  woff: 'font',
   woff2: 'font',
   json: 'data',
 };
@@ -69,12 +71,30 @@ export const importAsset = defineCommand({
     }
     await ctx.fs.mkdir(joinPath(ctx.store.root, ASSETS_DIR, type === 'sprite' ? 'sprites' : type));
     await ctx.fs.copyFile(params.sourcePath, destPath);
+
+    const metadata: Record<string, any> = { importedFrom: filename };
+
+    // Probe image dimensions for sprites and tiles.
+    if ((type === 'sprite' || type === 'tile') && ctx.fs.readFileBinary) {
+      try {
+        const bytes = await ctx.fs.readFileBinary(destPath);
+        const info = probeImage(bytes);
+        if (info) {
+          metadata.width = info.width;
+          metadata.height = info.height;
+          metadata.format = info.format;
+        }
+      } catch {
+        // Silently ignore probe failures — asset import should not fail.
+      }
+    }
+
     const asset = registerAsset(ctx, {
       id: generateId('ast'),
       name,
       type,
       path: relPath,
-      metadata: { importedFrom: filename },
+      metadata,
     });
     return { asset };
   },

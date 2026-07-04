@@ -76,6 +76,10 @@ export {
   SOUND_SAMPLE_RATE,
   type SoundPreset,
 } from './assets/sounds.js';
+export {
+  probeImage,
+  type ImageInfo,
+} from './assets/imageInfo.js';
 
 // Agent integration files
 export { generateAgentsMd, generateClaudeMd, generateAgentConfig } from './agentFiles.js';
