@@ -116,6 +116,7 @@ requires no permission (it's purely informational).
 | `list_scripts` | `inspectScripts` | read-only |
 | `read_script` | `readScript` | read-only |
 | `inspect_api` | `inspectApi` | read-only |
+| `inspect_path` | `inspectPath` | read-only |
 | `validate_project` | `validateProject` | read-only |
 | `create_scene` | `createScene` | safe-edit |
 | `delete_scene` | `deleteScene` | safe-edit |

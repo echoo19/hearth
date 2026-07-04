@@ -159,7 +159,8 @@ asserted with the `assertEventCount` step — see
 tool all resolve to the same core module, `packages/core/src/pathfinding.ts`:
 a deterministic grid A\* with cardinal (default) or 8-directional
 movement, over a nav grid built from every solid `Tilemap` and every
-non-trigger `static`/`kinematic` `Collider`. The runtime and the offline
+non-trigger `static` `Collider` (a `dynamic`/`kinematic` body, or no
+`PhysicsBody`, is never an obstacle). The runtime and the offline
 command build that grid from different sources — the runtime scans the
 *live* running scene each frame (cached per frame, since geometry rarely
 changes mid-frame), the CLI/MCP command scans the *authored* scene file —

@@ -109,14 +109,18 @@ Lua sees `nil`; where JS takes an object literal Lua passes a table.
 | `ctx.scene.findPath(from, to, opts?)` | Grid A\* path over the scene's solid geometry — `Vec2[]` of cell centers, or `nil` if unreachable |
 
 `findPath` builds its grid from every solid `Tilemap` and every
-non-trigger `static`/`kinematic` `Collider` currently in the scene (the
-same geometry a `hearth inspect path` call or the `inspect_path` MCP tool
-would see, but read live off the running scene rather than the authored
-one). `from`/`to` are plain `{ x, y }` world positions; `opts` is
-`{ diagonals? }` (`false` by default — four-directional movement only).
-Each waypoint is the center of a grid cell, not the exact input point, so
-walk toward each waypoint and advance once you're within a few pixels
-rather than expecting an exact match:
+non-trigger `static` `Collider` currently in the scene (a `dynamic` or
+`kinematic` body, or no `PhysicsBody` at all, is never a nav obstacle —
+only `static` bodies are) — the same geometry a `hearth inspect path`
+call or the `inspect_path` MCP tool would see, but read live off the
+running scene rather than the authored one. `from`/`to` are plain
+`{ x, y }` world positions; `opts` is `{ diagonals? }` (`false` by
+default — four-directional movement only). Each waypoint is the center
+of a grid cell, not the exact input point, so walk toward each waypoint
+and advance once you're within a few pixels rather than expecting an
+exact match. The grid is conservative: one-way platforms and
+layer-filtered colliders (`oneWay`, `collidesWith`) still rasterize as
+solid obstacles, since the nav grid ignores both.
 
 ```lua
 -- Recompute a path to the player and steer toward its first waypoint.
@@ -347,6 +351,12 @@ The `bounce-patrol` example's `ScoreUI` (`packages/examples/bounce-patrol`)
 is a complete, playtested emit/`onEvent` pair: coins emit `"coin"` on
 pickup, the score label increments purely from `onEvent`, no
 `ctx.events.on` subscription needed at all.
+
+Event payloads (and other JS-side objects) reach Lua as proxies, not
+plain Lua tables: `data.value` field access works as expected, but
+`type(data)` reports `"userdata"` rather than `"table"`, and `pairs(data)`
+does not enumerate its fields — guard with `type(data.value) == "number"`
+(or similar direct field checks), never `type(data) == "table"`.
 
 ### Collisions, time, logging
 
