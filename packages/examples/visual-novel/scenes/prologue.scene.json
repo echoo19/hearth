@@ -1,10 +1,10 @@
 {
   "formatVersion": 1,
-  "id": "scn_gzl6vu2k",
+  "id": "scn_3vtxfjy0",
   "name": "Prologue",
   "entities": [
     {
-      "id": "ent_ylwve1dw",
+      "id": "ent_r72eso6i",
       "name": "Main Camera",
       "parentId": null,
       "enabled": true,
@@ -30,7 +30,7 @@
       }
     },
     {
-      "id": "ent_3lcx1edn",
+      "id": "ent_udsdobim",
       "name": "Backdrop",
       "parentId": null,
       "enabled": true,
@@ -64,7 +64,7 @@
       }
     },
     {
-      "id": "ent_nsu5hupj",
+      "id": "ent_61mztb8q",
       "name": "Aria",
       "parentId": null,
       "enabled": true,
@@ -84,7 +84,7 @@
           }
         },
         "SpriteRenderer": {
-          "assetId": "ast_cz1cla5n",
+          "assetId": "ast_ahb5rutz",
           "shape": "rectangle",
           "color": "#ffffff",
           "width": 120,
@@ -98,7 +98,7 @@
       }
     },
     {
-      "id": "ent_w9s6ewoj",
+      "id": "ent_id7v4akr",
       "name": "TextBox",
       "parentId": null,
       "enabled": true,
@@ -132,7 +132,7 @@
       }
     },
     {
-      "id": "ent_vtydaekc",
+      "id": "ent_xreo1zvo",
       "name": "Dialogue",
       "parentId": null,
       "enabled": true,

@@ -264,13 +264,18 @@ export const inspectPath = defineCommand({
 
     // Map entities → NavEntityInput: bodyType from components.PhysicsBody?.bodyType ?? 'static'.
     // World position per entity = sum of Transform.position up the parent chain.
-    const navInputs = scene.entities.map((e) => ({
-      position: getWorldPosition(scene, e.id),
-      transform: e.components.Transform,
-      collider: e.components.Collider,
-      tilemap: e.components.Tilemap,
-      bodyType: (e.components.PhysicsBody?.bodyType ?? 'static') as 'dynamic' | 'static' | 'kinematic',
-    }));
+    // Disabled entities are skipped entirely, mirroring SceneRuntime (which never
+    // spawns/considers `enabled: false` entities), so an authored-scene path query
+    // matches what a live script's ctx.scene.findPath would see.
+    const navInputs = scene.entities
+      .filter((e) => e.enabled ?? true)
+      .map((e) => ({
+        position: getWorldPosition(scene, e.id),
+        transform: e.components.Transform,
+        collider: e.components.Collider,
+        tilemap: e.components.Tilemap,
+        bodyType: (e.components.PhysicsBody?.bodyType ?? 'static') as 'dynamic' | 'static' | 'kinematic',
+      }));
 
     const { cellSize, solids } = collectNavSolids(navInputs);
 

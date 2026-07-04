@@ -127,6 +127,7 @@ describe('runPlaytest', () => {
         { type: 'wait', frames: 500 },
         { type: 'press', action: 'right', frames: 100 },
         { type: 'assertEntityExists', entity: 'Player', exists: true },
+        { type: 'assertEventCount', event: 'nonexistent', max: 0 },
       ],
     });
     const result = await runPlaytest(store, 'capped');
@@ -135,6 +136,9 @@ describe('runPlaytest', () => {
     expect(result.steps[1].message).toMatch(/0\/100 frames/);
     expect(result.steps[2].passed).toBe(true);
     expect(result.steps[2].message).toMatch(/evaluated at maxFrames cap/);
+    // assertEventCount must carry the same capNote as every other assert step.
+    expect(result.steps[3].passed).toBe(true);
+    expect(result.steps[3].message).toMatch(/evaluated at maxFrames cap/);
     expect(result.passed).toBe(true);
   });
 

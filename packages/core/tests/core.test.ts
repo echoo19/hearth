@@ -242,6 +242,38 @@ describe('command system', () => {
     expect(result.errors[0].code).toBe('INVALID_INPUT');
     expect(result.errors[0].message).toMatch(/max 512x512/);
   });
+
+  it('inspectPath ignores disabled entities as obstacles, matching runtime behavior', async () => {
+    const { session } = await makeSession();
+
+    // A disabled wall must not block the path — SceneRuntime never spawns
+    // (or considers) entities with enabled: false, so the authored-scene
+    // query has to agree.
+    await session.execute('createEntity', {
+      scene: 'Main',
+      name: 'Wall',
+      position: { x: 0, y: 0 },
+      components: {
+        Tilemap: {
+          tileSize: 32,
+          tileAssets: {},
+          grid: ['####', '####', '####', '####'],
+          solid: true,
+          layer: 0,
+        },
+      },
+    });
+    await session.execute('setEntityEnabled', { scene: 'Main', entity: 'Wall', enabled: false });
+
+    const pathResult = await session.execute<any>('inspectPath', {
+      scene: 'Main',
+      from: { x: 50, y: 50 },
+      to: { x: 200, y: 50 },
+    });
+    expect(pathResult.success).toBe(true);
+    expect(pathResult.data.found).toBe(true);
+    expect(pathResult.data.path).not.toBeNull();
+  });
 });
 
 describe('scripts', () => {

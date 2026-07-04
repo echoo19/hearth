@@ -1,10 +1,10 @@
 {
   "formatVersion": 1,
-  "id": "scn_gz2xxi4h",
+  "id": "scn_yufjmmom",
   "name": "Menu",
   "entities": [
     {
-      "id": "ent_arx3sq0w",
+      "id": "ent_ngdnyzul",
       "name": "Main Camera",
       "parentId": null,
       "enabled": true,
@@ -30,7 +30,7 @@
       }
     },
     {
-      "id": "ent_yzpti88z",
+      "id": "ent_zdl8sg5g",
       "name": "Title",
       "parentId": null,
       "enabled": true,
@@ -69,7 +69,7 @@
       }
     },
     {
-      "id": "ent_2nohx6wi",
+      "id": "ent_359dzozo",
       "name": "Subtitle",
       "parentId": null,
       "enabled": true,
@@ -108,7 +108,7 @@
       }
     },
     {
-      "id": "ent_zes0cz22",
+      "id": "ent_j30t5b2q",
       "name": "Start",
       "parentId": null,
       "enabled": true,
@@ -163,7 +163,7 @@
       }
     },
     {
-      "id": "ent_0wq37wfb",
+      "id": "ent_w6biw9bc",
       "name": "Best",
       "parentId": null,
       "enabled": true,

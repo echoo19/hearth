@@ -1273,6 +1273,14 @@ export class SceneRuntime {
 
     // One-way platforms: the obstacle only blocks a mover being resolved
     // upward (landing on top) while the mover is not moving up through it.
+    //
+    // `vy` is read at resolution time, i.e. after this frame's integration
+    // (and possibly after an earlier contact in this same pass has already
+    // adjusted it) — not the velocity the mover entered the frame with.
+    // That's fine: contact resolution is deterministic and per-pair, so
+    // "at resolution time" is a well-defined, reproducible instant, it's
+    // just not necessarily the pre-integration velocity a naive reading
+    // of this code might assume.
     const passesOneWay = (mover: Mover, obstacleOneWay: boolean, ny: number): boolean => {
       if (!obstacleOneWay) return true;
       if (ny >= -0.707) return false;

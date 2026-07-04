@@ -197,6 +197,44 @@ describe('ctx.events', () => {
     session.destroy();
   });
 
+  it('aggregates eventCounts and keeps recorded event frames session-monotonic across a ctx.scenes.load switch', async () => {
+    const { store } = await makeStore({
+      entities: [scripted('Emitter', 'scripts/emitter.js')],
+      scripts: {
+        'emitter.js': `export default {
+          onStart(ctx) { ctx.events.emit('ping'); },
+          onUpdate(ctx) { if (ctx.time.frame === 2) ctx.scenes.load('Level'); },
+        };`,
+        'receiver.js': `export default {
+          onStart(ctx) { ctx.events.emit('ping'); },
+        };`,
+      },
+      extraScenes: [
+        { id: 'scn_level', name: 'Level', entities: [scripted('Receiver', 'scripts/receiver.js')] },
+      ],
+    });
+
+    const session = await GameSession.create(store);
+    for (let i = 0; i < 6; i++) await session.stepAsync();
+
+    expect(session.currentSceneId).toBe('scn_level');
+    // One "ping" pre-switch (Emitter.onStart in scn_test), one post-switch
+    // (Receiver.onStart in scn_level) — eventCounts must sum across both
+    // scenes rather than resetting when the runtime is swapped.
+    expect(session.eventCounts.get('ping')).toBe(2);
+
+    const pingFrames = session.events.filter((e) => e.name === 'ping').map((e) => e.frame);
+    expect(pingFrames.length).toBe(2);
+    // The pre-switch emit lands at frame 0; the post-switch emit continues
+    // the session's monotonic frame counter (matching the scene-switch
+    // frame recorded elsewhere for this exact load-at-frame-2 pattern)
+    // rather than resetting to 0 for the new scene.
+    expect(pingFrames).toEqual([0, 3]);
+    const allFrames = session.events.map((e) => e.frame);
+    expect([...allFrames].sort((a, b) => a - b)).toEqual(allFrames);
+    session.destroy();
+  });
+
   it('a throwing subscription stops firing once its script is disabled, and errors stop growing', async () => {
     const { store } = await makeStore({
       entities: [

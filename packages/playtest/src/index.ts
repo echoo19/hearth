@@ -409,8 +409,8 @@ async function executeStep(
       return {
         index, type: step.type, passed,
         message: passed
-          ? `event "${step.event}" count ${count} OK`
-          : `event "${step.event}" count ${count}: ${failures.join(', ')}`,
+          ? `event "${step.event}" count ${count} OK${capNote}`
+          : `event "${step.event}" count ${count}: ${failures.join(', ')}${capNote}`,
       };
     }
     default: {
