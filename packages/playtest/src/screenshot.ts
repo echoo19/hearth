@@ -103,11 +103,14 @@ export function injectBootScript(html: string, overrides: BootOverrides): string
 }
 
 type PlaywrightBrowser = { newPage(opts?: unknown): Promise<PlaywrightPage>; close(): Promise<void> };
+type PlaywrightConsoleMessage = { type(): string; text(): string };
 type PlaywrightPage = {
   goto(url: string): Promise<unknown>;
   waitForFunction(fn: () => unknown): Promise<unknown>;
   evaluate<T>(fn: (arg: T) => unknown, arg?: T): Promise<unknown>;
   locator(selector: string): { screenshot(opts: { path: string }): Promise<unknown> };
+  on(event: 'pageerror', handler: (error: Error) => void): unknown;
+  on(event: 'console', handler: (message: PlaywrightConsoleMessage) => void): unknown;
 };
 type Chromium = { launch(opts: Record<string, unknown>): Promise<PlaywrightBrowser> };
 
@@ -152,6 +155,51 @@ export async function canLaunchChromium(): Promise<boolean> {
 
 function randomSuffix(): string {
   return randomBytes(6).toString('hex');
+}
+
+/**
+ * Wait for the manual-mode player to report ready (`window.__hearth.ready`),
+ * but fail fast — with the real in-page error — the moment the page throws
+ * or logs a console error, instead of silently waiting out
+ * `waitForFunction`'s own ~30s default timeout. Without this, a boot-time
+ * crash (bad script, bad asset, a bug in the player bundle itself) used to
+ * surface only as a generic timeout, with no hint of what actually broke.
+ *
+ * `navigate` is passed in (rather than this function calling page.goto
+ * itself) so the pageerror/console listeners are always registered strictly
+ * before navigation starts — nothing the page does on load can fire before
+ * we're listening.
+ */
+export async function waitForBootReady(page: PlaywrightPage, navigate: () => Promise<unknown>): Promise<void> {
+  let failBoot!: (err: Error) => void;
+  const bootFailure = new Promise<never>((_, reject) => {
+    failBoot = reject;
+  });
+  // If waitForFunction wins the race below, nothing ever awaits `bootFailure`
+  // again — without this no-op handler, a later pageerror/console-error
+  // would surface as an unhandled promise rejection.
+  bootFailure.catch(() => {});
+  page.on('pageerror', (err) => {
+    failBoot(new Error(`hearth screenshot: page threw during boot: ${err.message || String(err)}`));
+  });
+  page.on('console', (msg) => {
+    if (msg.type() === 'error') {
+      failBoot(new Error(`hearth screenshot: console error during boot: ${msg.text()}`));
+    }
+  });
+
+  await navigate();
+  // These functions are serialized by Playwright and run inside the page's
+  // browser context, not here in Node — `globalThis` (rather than `window`)
+  // keeps this file typecheckable under a Node-only (no-DOM-lib) tsconfig
+  // while still meaning "the page's window" once it actually runs in
+  // Chromium.
+  await Promise.race([
+    page.waitForFunction(
+      () => Boolean((globalThis as unknown as { __hearth?: { ready?: boolean } }).__hearth?.ready),
+    ),
+    bootFailure,
+  ]);
 }
 
 /**
@@ -230,15 +278,10 @@ export async function captureScreenshot(
     const browser = await launchChromium();
     try {
       const page = await browser.newPage({ viewport: { width, height } });
-      await page.goto(pathToFileURL(htmlFile).href);
-      // These functions are serialized by Playwright and run inside the
-      // page's browser context, not here in Node — `globalThis` (rather
-      // than `window`) keeps this file typecheckable under a Node-only
-      // (no-DOM-lib) tsconfig while still meaning "the page's window" once
-      // it actually runs in Chromium.
-      await page.waitForFunction(
-        () => Boolean((globalThis as unknown as { __hearth?: { ready?: boolean } }).__hearth?.ready),
-      );
+
+      // Listeners must be wired up before goto() so a boot-time crash can't
+      // fire before we're listening for it.
+      await waitForBootReady(page, () => page.goto(pathToFileURL(htmlFile).href));
       await page.evaluate(
         (n: number) =>
           (globalThis as unknown as { __hearth: { step(n: number): Promise<void> } }).__hearth.step(n),

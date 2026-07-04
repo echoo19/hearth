@@ -14,6 +14,7 @@ import {
   captureScreenshot,
   canLaunchChromium,
   injectBootScript,
+  waitForBootReady,
   CHROMIUM_MISSING_ERROR,
 } from '../src/screenshot.js';
 
@@ -89,6 +90,70 @@ describe('injectBootScript', () => {
     // if it ever passes a less-trusted string through.
     const injected = injectBootScript(SAMPLE_EXPORT_HTML, { manual: true, scene: '</script><script>evil()' });
     expect(injected).not.toContain('</script><script>evil()');
+  });
+});
+
+/**
+ * waitForBootReady's fail-fast path is exercised here against a fake
+ * Playwright page, not a real broken game project: the runtime is
+ * defensive by design (script compile errors, hook errors, and texture load
+ * failures are all caught and routed to onLog/onError rather than thrown),
+ * so getting a real project to produce a genuine uncaught page exception
+ * during boot — without directly sabotaging the runtime — isn't really
+ * feasible. A fake page lets these tests assert the exact fail-fast
+ * behavior (reject immediately with the real message, don't wait for
+ * waitForFunction) deterministically and without a 30s real timeout.
+ */
+describe('waitForBootReady', () => {
+  type FakeHandler = (arg: unknown) => void;
+
+  function makeFakePage(waitForFunction: () => Promise<unknown>) {
+    const handlers: Record<string, FakeHandler[]> = { pageerror: [], console: [] };
+    return {
+      on(event: string, handler: FakeHandler) {
+        handlers[event].push(handler);
+      },
+      waitForFunction,
+      emit(event: 'pageerror' | 'console', arg: unknown) {
+        for (const h of handlers[event]) h(arg);
+      },
+    };
+  }
+
+  it('resolves normally when the ready check resolves with no error', async () => {
+    const page = makeFakePage(() => Promise.resolve(true));
+    await expect(waitForBootReady(page as never, async () => {})).resolves.toBeUndefined();
+  });
+
+  it('ignores non-error console messages and still resolves via the ready check', async () => {
+    const page = makeFakePage(() => Promise.resolve(true));
+    const navigate = async () => {
+      page.emit('console', { type: () => 'log', text: () => 'starting up' });
+    };
+    await expect(waitForBootReady(page as never, navigate)).resolves.toBeUndefined();
+  });
+
+  it('fails fast with the real page error instead of waiting out the ready-check timeout', async () => {
+    // A ready check that never resolves stands in for the real hang this
+    // bug produced: without the fix, waitForBootReady would sit on this
+    // forever (in production, until waitForFunction's own ~30s timeout).
+    const page = makeFakePage(() => new Promise(() => {}));
+    const navigate = async () => {
+      page.emit('pageerror', new Error('HearthPlayer.boot: project has no scenes'));
+    };
+    await expect(waitForBootReady(page as never, navigate)).rejects.toThrow(
+      /page threw during boot: HearthPlayer\.boot: project has no scenes/,
+    );
+  });
+
+  it('fails fast on a console.error logged before ready, not just a thrown error', async () => {
+    const page = makeFakePage(() => new Promise(() => {}));
+    const navigate = async () => {
+      page.emit('console', { type: () => 'error', text: () => 'Uncaught TypeError: boom' });
+    };
+    await expect(waitForBootReady(page as never, navigate)).rejects.toThrow(
+      /console error during boot: Uncaught TypeError: boom/,
+    );
   });
 });
 
