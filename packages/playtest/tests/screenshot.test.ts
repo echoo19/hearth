@@ -7,7 +7,8 @@
 import { describe, it, expect } from 'vitest';
 import os from 'node:os';
 import path from 'node:path';
-import { mkdtemp, readFile, rm, stat } from 'node:fs/promises';
+import zlib from 'node:zlib';
+import { mkdtemp, readFile, rm, stat, writeFile as writeFileNode } from 'node:fs/promises';
 import { HearthSession, MemoryFileSystem, createProject, type ProjectStore } from '@hearth/core';
 import { NodeFileSystem } from '@hearth/core/node';
 import {
@@ -187,6 +188,136 @@ async function pathExists(p: string): Promise<boolean> {
   }
 }
 
+// ---------------------------------------------------------------------------
+// Real, browser-decodable PNG fixture builder.
+//
+// The header-only "PNG" bytes used elsewhere in this repo's tests (e.g.
+// packages/core/tests/spritesheet.test.ts, packages/runtime/tests/
+// spriteFrame.test.ts) only carry a valid IHDR chunk — no IDAT/IEND — so
+// they satisfy `probeImage`'s byte-level dimension sniffing but are not
+// images a real decoder can render. `singleFile` export inlines assets as
+// data URIs that Chromium decodes natively, so the frame/tint tests below
+// need a genuinely valid PNG with real, visibly distinct per-frame pixel
+// colors. Built with node:zlib (deflateSync) + a small CRC32 — no extra
+// dependency.
+// ---------------------------------------------------------------------------
+
+const CRC_TABLE = (() => {
+  const table = new Uint32Array(256);
+  for (let n = 0; n < 256; n++) {
+    let c = n;
+    for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1;
+    table[n] = c >>> 0;
+  }
+  return table;
+})();
+
+function crc32(bytes: Uint8Array): number {
+  let crc = 0xffffffff;
+  for (let i = 0; i < bytes.length; i++) crc = CRC_TABLE[(crc ^ bytes[i]) & 0xff] ^ (crc >>> 8);
+  return (crc ^ 0xffffffff) >>> 0;
+}
+
+function pngChunk(type: string, data: Buffer): Buffer {
+  const typeBytes = Buffer.from(type, 'ascii');
+  const len = Buffer.alloc(4);
+  len.writeUInt32BE(data.length, 0);
+  const crcInput = Buffer.concat([typeBytes, data]);
+  const crc = Buffer.alloc(4);
+  crc.writeUInt32BE(crc32(crcInput), 0);
+  return Buffer.concat([len, crcInput, crc]);
+}
+
+/** Build a real 8-bit RGB (no alpha) PNG from a per-pixel color function. */
+function buildPng(
+  width: number,
+  height: number,
+  colorAt: (x: number, y: number) => [number, number, number],
+): Uint8Array {
+  const stride = width * 3 + 1; // leading filter-type byte + 3 bytes/pixel
+  const raw = Buffer.alloc(stride * height);
+  for (let y = 0; y < height; y++) {
+    const rowStart = y * stride;
+    raw[rowStart] = 0; // filter: none
+    for (let x = 0; x < width; x++) {
+      const [r, g, b] = colorAt(x, y);
+      const o = rowStart + 1 + x * 3;
+      raw[o] = r;
+      raw[o + 1] = g;
+      raw[o + 2] = b;
+    }
+  }
+  const ihdr = Buffer.alloc(13);
+  ihdr.writeUInt32BE(width, 0);
+  ihdr.writeUInt32BE(height, 4);
+  ihdr[8] = 8; // bit depth
+  ihdr[9] = 2; // color type: truecolor RGB
+  ihdr[10] = 0;
+  ihdr[11] = 0;
+  ihdr[12] = 0;
+
+  const signature = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+  return new Uint8Array(
+    Buffer.concat([
+      signature,
+      pngChunk('IHDR', ihdr),
+      pngChunk('IDAT', zlib.deflateSync(raw)),
+      pngChunk('IEND', Buffer.alloc(0)),
+    ]),
+  );
+}
+
+/** 64x32 sheet: solid red left half, solid blue right half — two 32x32 frames. */
+function makeTwoFrameSheetPng(): Uint8Array {
+  return buildPng(64, 32, (x) => (x < 32 ? [255, 0, 0] : [0, 0, 255]));
+}
+
+/**
+ * A real, disk-backed project with a sliced two-frame sheet asset and the
+ * default Player disabled (mirrors the existing SpriteAnimator regression
+ * test below: Player has a dynamic PhysicsBody and falls every fixed step,
+ * which would otherwise confound byte-for-byte capture comparisons).
+ * Frame names come back from sliceSpritesheet itself rather than assumed,
+ * since they depend on the asset's slugified name.
+ */
+async function makeSheetStore(): Promise<{
+  store: ProjectStore;
+  cleanup: () => Promise<void>;
+  sheetId: string;
+  frames: [string, string];
+}> {
+  const { store, cleanup } = await makeRealStore();
+  const session = HearthSession.fromStore(store, { granted: ['asset-edit', 'safe-edit'] });
+
+  const pngPath = path.join(os.tmpdir(), `hearth-sheet-${Math.random().toString(36).slice(2)}.png`);
+  await writeFileNode(pngPath, makeTwoFrameSheetPng());
+
+  const imported = await session.execute<{ asset: { id: string } }>('importAsset', {
+    sourcePath: pngPath,
+    name: 'TwoFrameSheet',
+    type: 'sprite',
+  });
+  if (!imported.success) throw new Error(`importAsset failed: ${imported.errors.map((e) => e.message).join('; ')}`);
+  const sheetId = imported.data!.asset.id;
+
+  const sliced = await session.execute<{ frames: string[] }>('sliceSpritesheet', {
+    asset: sheetId,
+    frameWidth: 32,
+    frameHeight: 32,
+  });
+  if (!sliced.success) throw new Error(`sliceSpritesheet failed: ${sliced.errors.map((e) => e.message).join('; ')}`);
+  const [frameA, frameB] = sliced.data!.frames;
+
+  const disabledPlayer = await session.execute('setEntityEnabled', {
+    scene: 'Main',
+    entity: 'Player',
+    enabled: false,
+  });
+  if (!disabledPlayer.success) throw new Error('could not disable Player');
+
+  return { store, cleanup, sheetId, frames: [frameA, frameB] };
+}
+
 describe('captureScreenshot option validation', () => {
   it('rejects an unknown scene before ever touching Chromium', async () => {
     const store = await makeStore();
@@ -360,6 +491,156 @@ describe('captureScreenshot (real Chromium)', () => {
           readFile(after.path),
         ]);
         expect(Buffer.compare(bytesBefore, bytesAfter)).not.toBe(0);
+      } finally {
+        await cleanup();
+      }
+    },
+    30000,
+  );
+
+  // Task 5: renderer draws sliced-sheet sub-rects and applies SpriteRenderer.tint.
+  // Two entities at the SAME two screen positions, but with which frame is
+  // assigned to which position swapped between the two captures below. If
+  // the renderer actually crops to each entity's named frame, swapping the
+  // assignment must change what's on screen at those positions; if `frame`
+  // were silently ignored (drawing the whole sheet for both, as before this
+  // feature), the two captures would come back byte-identical regardless of
+  // the swap.
+  it.skipIf(!hasChromium)(
+    'draws different sub-rects for two entities showing different frames of the same sheet',
+    async () => {
+      const { store, cleanup, sheetId, frames } = await makeSheetStore();
+      try {
+        const [frameA, frameB] = frames;
+        const session = HearthSession.fromStore(store, { granted: ['asset-edit', 'safe-edit'] });
+
+        await session.execute('createEntity', {
+          scene: 'Main',
+          name: 'Left',
+          position: { x: 300, y: 300 },
+          components: { SpriteRenderer: { assetId: sheetId, frame: frameA, width: 64, height: 64 } },
+        });
+        await session.execute('createEntity', {
+          scene: 'Main',
+          name: 'Right',
+          position: { x: 700, y: 300 },
+          components: { SpriteRenderer: { assetId: sheetId, frame: frameB, width: 64, height: 64 } },
+        });
+
+        const original = await captureScreenshot(store, { out: 'shots/frames-original.png' });
+
+        const swapLeft = await session.execute('setComponentProperty', {
+          scene: 'Main',
+          entity: 'Left',
+          property: 'SpriteRenderer.frame',
+          value: frameB,
+        });
+        const swapRight = await session.execute('setComponentProperty', {
+          scene: 'Main',
+          entity: 'Right',
+          property: 'SpriteRenderer.frame',
+          value: frameA,
+        });
+        expect(swapLeft.success).toBe(true);
+        expect(swapRight.success).toBe(true);
+
+        const swapped = await captureScreenshot(store, { out: 'shots/frames-swapped.png' });
+
+        const [bytesOriginal, bytesSwapped] = await Promise.all([
+          readFile(original.path),
+          readFile(swapped.path),
+        ]);
+        expect(Buffer.compare(bytesOriginal, bytesSwapped)).not.toBe(0);
+      } finally {
+        await cleanup();
+      }
+    },
+    30000,
+  );
+
+  it.skipIf(!hasChromium)(
+    'changing SpriteRenderer.frame between renders changes the captured pixels',
+    async () => {
+      const { store, cleanup, sheetId, frames } = await makeSheetStore();
+      try {
+        const [frameA, frameB] = frames;
+        const session = HearthSession.fromStore(store, { granted: ['asset-edit', 'safe-edit'] });
+
+        await session.execute('createEntity', {
+          scene: 'Main',
+          name: 'FrameTest',
+          position: { x: 480, y: 270 },
+          components: { SpriteRenderer: { assetId: sheetId, frame: frameA, width: 64, height: 64 } },
+        });
+
+        const before = await captureScreenshot(store, { out: 'shots/frame-before.png' });
+
+        const changed = await session.execute('setComponentProperty', {
+          scene: 'Main',
+          entity: 'FrameTest',
+          property: 'SpriteRenderer.frame',
+          value: frameB,
+        });
+        expect(changed.success).toBe(true);
+
+        const after = await captureScreenshot(store, { out: 'shots/frame-after.png' });
+
+        const [bytesBefore, bytesAfter] = await Promise.all([readFile(before.path), readFile(after.path)]);
+        expect(Buffer.compare(bytesBefore, bytesAfter)).not.toBe(0);
+      } finally {
+        await cleanup();
+      }
+    },
+    30000,
+  );
+
+  it.skipIf(!hasChromium)(
+    'tints a textured sprite from SpriteRenderer.color, and the default #ffffff renders identically to omitting color',
+    async () => {
+      const { store, cleanup, sheetId, frames } = await makeSheetStore();
+      try {
+        const [frameA] = frames;
+        const session = HearthSession.fromStore(store, { granted: ['asset-edit', 'safe-edit'] });
+
+        await session.execute('createEntity', {
+          scene: 'Main',
+          name: 'TintTest',
+          position: { x: 480, y: 270 },
+          components: { SpriteRenderer: { assetId: sheetId, frame: frameA, width: 64, height: 64 } },
+        });
+
+        // Default color (schema default '#ffffff', not specified above).
+        const defaultCapture = await captureScreenshot(store, { out: 'shots/tint-default.png' });
+
+        const setWhite = await session.execute('setComponentProperty', {
+          scene: 'Main',
+          entity: 'TintTest',
+          property: 'SpriteRenderer.color',
+          value: '#ffffff',
+        });
+        expect(setWhite.success).toBe(true);
+        const explicitWhiteCapture = await captureScreenshot(store, { out: 'shots/tint-white.png' });
+
+        const setRed = await session.execute('setComponentProperty', {
+          scene: 'Main',
+          entity: 'TintTest',
+          property: 'SpriteRenderer.color',
+          value: '#ff0000',
+        });
+        expect(setRed.success).toBe(true);
+        const redCapture = await captureScreenshot(store, { out: 'shots/tint-red.png' });
+
+        const [defaultBytes, whiteBytes, redBytes] = await Promise.all([
+          readFile(defaultCapture.path),
+          readFile(explicitWhiteCapture.path),
+          readFile(redCapture.path),
+        ]);
+        // Default color must render pixel-identical to the pre-tint-support
+        // baseline: explicitly setting the default value must be indistinguishable
+        // from never having touched color at all.
+        expect(Buffer.compare(defaultBytes, whiteBytes)).toBe(0);
+        // A non-default tint must actually change the rendered pixels.
+        expect(Buffer.compare(whiteBytes, redBytes)).not.toBe(0);
       } finally {
         await cleanup();
       }

@@ -31,6 +31,7 @@ import {
   Assets,
   Container,
   Graphics,
+  Rectangle,
   RenderTexture,
   Sprite,
   Text,
@@ -39,6 +40,7 @@ import {
 } from 'pixi.js';
 import {
   AnimationDataSchema,
+  findSheetFrame,
   joinPath,
   type Asset,
   type Light2DComponent,
@@ -119,6 +121,16 @@ export class PixiSceneView {
    */
   private spriteSnapshots = new Map<string, string>();
   private textures = new Map<string, Texture>();
+  /**
+   * Sub-textures cropped to a sliced sheet's named frame, keyed
+   * `${assetId}#${frameName}`, built once from the base texture's `source`
+   * and reused across every entity/tick that draws that frame — mirrors
+   * `textures` itself being preloaded once per project rather than rebuilt
+   * per sprite.
+   */
+  private frameTextures = new Map<string, Texture>();
+  /** `${assetId}#${frame}` keys already warned about (missing/unsliced frame), so a bad ref only logs once, not every tick. */
+  private warnedFrames = new Set<string>();
   /**
    * 2D lighting: a multiply-blend sprite sitting above `world`, filled each
    * tick from an offscreen `lightScene` (ambient gray rect + one additive
@@ -344,6 +356,12 @@ export class PixiSceneView {
     this.particleNodes.clear();
     this.lineSnapshots.clear();
     this.spriteSnapshots.clear();
+    // `textures` (the base preloaded set) is never explicitly cleared/destroyed
+    // in this lifecycle either — see preloadTextures's doc comment: it's a
+    // once-per-project preload, not cleared on scene change. frameTextures
+    // mirrors that: only released when the view itself is destroyed.
+    this.frameTextures.clear();
+    this.warnedFrames.clear();
     // lightScene is never added to app.stage, so app.destroy's recursive
     // child destruction doesn't reach it or its pooled light sprites.
     this.lightScene.destroy({ children: true });
@@ -471,7 +489,13 @@ export class PixiSceneView {
       try {
         const raw = await this.opts.store.fs.readFile(joinPath(this.opts.store.root, asset.path));
         const animation = AnimationDataSchema.parse(JSON.parse(raw));
-        for (const frameAssetId of animation.frames) assetIds.add(frameAssetId);
+        // Entries may be a plain sprite-asset id or a sheet ref
+        // `<sheetAssetId>#<frameName>` (split on the FIRST '#') — either way
+        // the sheet's own asset id is what needs a texture loaded.
+        for (const frameAssetId of animation.frames) {
+          const hashIndex = frameAssetId.indexOf('#');
+          assetIds.add(hashIndex === -1 ? frameAssetId : frameAssetId.slice(0, hashIndex));
+        }
       } catch (err) {
         this.opts.onLog?.({
           frame: this.session.frame,
@@ -740,18 +764,30 @@ export class PixiSceneView {
     return node;
   }
 
-  /** Identity of a sprite's drawn visual: assetId (texture) plus the primitive fallback fields. */
+  /** Identity of a sprite's drawn visual: assetId+frame (texture/sub-rect) plus the primitive fallback fields. */
   private spriteSnapshotKey(sprite: SpriteRendererComponent): string {
-    return JSON.stringify([sprite.assetId, sprite.shape, sprite.color, sprite.width, sprite.height]);
+    return JSON.stringify([
+      sprite.assetId,
+      sprite.frame,
+      sprite.shape,
+      sprite.color,
+      sprite.width,
+      sprite.height,
+    ]);
   }
 
   private buildSpriteRenderable(sprite: SpriteRendererComponent): Container | null {
     const texture = sprite.assetId ? this.textures.get(sprite.assetId) : undefined;
     if (texture) {
-      const s = new Sprite(texture);
+      const s = new Sprite(this.resolveSpriteTexture(sprite, texture));
       s.anchor.set(0.5);
       s.width = sprite.width;
       s.height = sprite.height;
+      // Pixi v8 tint accepts '#rrggbb' strings directly (see updateLightmap's
+      // `sprite.tint = light.color` above) — default '#ffffff' is Pixi's own
+      // default tint, so untouched sprites render identically to before this
+      // was wired up.
+      s.tint = sprite.color;
       return s;
     }
     if (sprite.shape === 'none' && !sprite.assetId) return null;
@@ -774,6 +810,41 @@ export class PixiSceneView {
         break;
     }
     return g;
+  }
+
+  /**
+   * Resolves the texture to draw for a textured SpriteRenderer: the whole
+   * base texture when `frame` is null, or a cached sub-texture cropped to
+   * the named sheet frame (built once per `${assetId}#${frame}` and reused).
+   * Falls back to the whole texture — logging a warning exactly once per key
+   * via `onLog` — when the frame name isn't on the asset's sliced sheet
+   * metadata (asset was never sliced, or the name doesn't exist).
+   */
+  private resolveSpriteTexture(sprite: SpriteRendererComponent, base: Texture): Texture {
+    if (!sprite.frame) return base;
+    const key = `${sprite.assetId}#${sprite.frame}`;
+    const cached = this.frameTextures.get(key);
+    if (cached) return cached;
+
+    const asset = sprite.assetId ? this.opts.store.getAsset(sprite.assetId) : undefined;
+    const frame = asset ? findSheetFrame(asset, sprite.frame) : null;
+    if (!frame) {
+      if (!this.warnedFrames.has(key)) {
+        this.warnedFrames.add(key);
+        this.opts.onLog?.({
+          frame: this.session.frame,
+          level: 'warn',
+          message: `SpriteRenderer frame "${sprite.frame}" not found on asset "${asset?.name ?? sprite.assetId}" — drawing the whole texture`,
+        });
+      }
+      return base;
+    }
+    const sub = new Texture({
+      source: base.source,
+      frame: new Rectangle(frame.x, frame.y, frame.width, frame.height),
+    });
+    this.frameTextures.set(key, sub);
+    return sub;
   }
 
   private buildTilemap(tilemap: TilemapComponent): Container {

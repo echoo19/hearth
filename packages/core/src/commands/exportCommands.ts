@@ -18,7 +18,20 @@ export interface WebExportBundle {
   project: unknown;
   scenes: Scene[];
   scripts: Record<string, string>;
-  assets: { id: string; name: string; type: string; path?: string; dataUri?: string }[];
+  assets: {
+    id: string;
+    name: string;
+    type: string;
+    path?: string;
+    dataUri?: string;
+    /**
+     * Asset.metadata (e.g. sliceSpritesheet's frames/grid) — carried through
+     * so the played build can resolve SpriteRenderer.frame sheet refs; without
+     * this the player's reconstructed store always has metadata: {} and every
+     * sheet frame lookup fails.
+     */
+    metadata?: Record<string, unknown>;
+  }[];
 }
 
 const PLAYER_LOCATIONS_HINT =
@@ -226,9 +239,16 @@ async function buildBundle(ctx: CommandContext, inlineAssets: boolean): Promise<
         name: asset.name,
         type: asset.type,
         dataUri: `data:${mimeFor(asset.path)};base64,${toBase64(bytes)}`,
+        metadata: asset.metadata,
       });
     } else {
-      assets.push({ id: asset.id, name: asset.name, type: asset.type, path: asset.path });
+      assets.push({
+        id: asset.id,
+        name: asset.name,
+        type: asset.type,
+        path: asset.path,
+        metadata: asset.metadata,
+      });
     }
   }
   return { project: store.project, scenes, scripts, assets };

@@ -40,6 +40,8 @@ export interface PlayerBundleAsset {
   type: string;
   path?: string;
   dataUri?: string;
+  /** e.g. sliceSpritesheet's frames/grid — see WebExportBundle's field doc. */
+  metadata?: Record<string, unknown>;
 }
 
 /** Parsed project.bundle.json produced by `hearth export web`. */
@@ -275,7 +277,7 @@ async function loadStore(bundle: PlayerBundle): Promise<ProjectStore> {
         type: a.type,
         // dataUri-only assets still need an index path; it is never fetched.
         path: a.path ?? `assets/${a.id}`,
-        metadata: {},
+        metadata: a.metadata ?? {},
       })),
     }),
   );
