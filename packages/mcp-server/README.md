@@ -147,6 +147,7 @@ requires no permission (it's purely informational).
 | `run_scene` | `runScene` | read-only |
 | `build_project` | `buildProject` | build |
 | `export_web` | `exportWeb` | build |
+| `screenshot` | — (calls `@hearth/playtest`'s `captureScreenshot` directly; needs headless Chrome/Chromium) | build |
 | `get_agent_instructions` | — (reads project `AGENTS.md`, or generates the default) | — |
 
 All tools are registered regardless of the session's granted modes, so a client can always see the full

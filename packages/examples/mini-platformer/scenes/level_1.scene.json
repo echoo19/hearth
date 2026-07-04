@@ -1,10 +1,10 @@
 {
   "formatVersion": 1,
-  "id": "scn_7mifthlh",
+  "id": "scn_ienh8511",
   "name": "Level 1",
   "entities": [
     {
-      "id": "ent_xyuqv1jf",
+      "id": "ent_c7fw05wp",
       "name": "Main Camera",
       "parentId": null,
       "enabled": true,
@@ -24,7 +24,8 @@
         "Camera": {
           "zoom": 1,
           "isMain": true,
-          "backgroundColor": "#16213e"
+          "backgroundColor": "#16213e",
+          "ambientLight": 1
         },
         "Script": {
           "scriptPath": "scripts/camera-follow.js",
@@ -33,7 +34,7 @@
       }
     },
     {
-      "id": "ent_2eqqwzki",
+      "id": "ent_pje1yi24",
       "name": "Ground",
       "parentId": null,
       "enabled": true,
@@ -55,8 +56,8 @@
         "Tilemap": {
           "tileSize": 32,
           "tileAssets": {
-            "G": "ast_5rrb385s",
-            "S": "ast_7edhz5if"
+            "G": "ast_7w3t8wx5",
+            "S": "ast_xnt0wru9"
           },
           "grid": [
             "GGGGGGGGGGGGGGGGGGGGGGGGG..GGGGGGGGGG",
@@ -68,7 +69,7 @@
       }
     },
     {
-      "id": "ent_3crec7bw",
+      "id": "ent_w42y249j",
       "name": "Platform A",
       "parentId": null,
       "enabled": true,
@@ -136,7 +137,7 @@
       }
     },
     {
-      "id": "ent_0mu0li2j",
+      "id": "ent_ard9s03e",
       "name": "Platform B",
       "parentId": null,
       "enabled": true,
@@ -204,7 +205,7 @@
       }
     },
     {
-      "id": "ent_4qi8zpn8",
+      "id": "ent_nontyzmc",
       "name": "Platform C",
       "parentId": null,
       "enabled": true,
@@ -272,7 +273,7 @@
       }
     },
     {
-      "id": "ent_9uhm0luu",
+      "id": "ent_l6wjp1bs",
       "name": "Player",
       "parentId": null,
       "enabled": true,
@@ -292,7 +293,7 @@
           }
         },
         "SpriteRenderer": {
-          "assetId": "ast_kynqyeup",
+          "assetId": "ast_ui7e7g0k",
           "shape": "rectangle",
           "color": "#ffffff",
           "width": 32,
@@ -347,7 +348,7 @@
       }
     },
     {
-      "id": "ent_jik5tefc",
+      "id": "ent_6a5aegib",
       "name": "Coin 1",
       "parentId": null,
       "enabled": true,
@@ -367,7 +368,7 @@
           }
         },
         "SpriteRenderer": {
-          "assetId": "ast_kkvd7d23",
+          "assetId": "ast_hqlfj5cy",
           "shape": "rectangle",
           "color": "#ffffff",
           "width": 22,
@@ -410,7 +411,7 @@
       }
     },
     {
-      "id": "ent_cdvho1zp",
+      "id": "ent_7dbdv66z",
       "name": "Coin 2",
       "parentId": null,
       "enabled": true,
@@ -430,7 +431,7 @@
           }
         },
         "SpriteRenderer": {
-          "assetId": "ast_kkvd7d23",
+          "assetId": "ast_hqlfj5cy",
           "shape": "rectangle",
           "color": "#ffffff",
           "width": 22,
@@ -473,7 +474,7 @@
       }
     },
     {
-      "id": "ent_47tv0wcs",
+      "id": "ent_1iz4edy2",
       "name": "Coin 3",
       "parentId": null,
       "enabled": true,
@@ -493,7 +494,7 @@
           }
         },
         "SpriteRenderer": {
-          "assetId": "ast_kkvd7d23",
+          "assetId": "ast_hqlfj5cy",
           "shape": "rectangle",
           "color": "#ffffff",
           "width": 22,
@@ -536,7 +537,7 @@
       }
     },
     {
-      "id": "ent_xaw9ff68",
+      "id": "ent_dt6hzfen",
       "name": "Spikes",
       "parentId": null,
       "enabled": true,
@@ -599,7 +600,7 @@
       }
     },
     {
-      "id": "ent_5bhcqyhz",
+      "id": "ent_8e8uge5g",
       "name": "Enemy",
       "parentId": null,
       "enabled": true,
@@ -619,7 +620,7 @@
           }
         },
         "SpriteRenderer": {
-          "assetId": "ast_fl5w4t83",
+          "assetId": "ast_a4m9pivg",
           "shape": "rectangle",
           "color": "#ffffff",
           "width": 36,
@@ -665,7 +666,7 @@
       }
     },
     {
-      "id": "ent_uydwfvqy",
+      "id": "ent_2qokbqgz",
       "name": "Score",
       "parentId": null,
       "enabled": true,
@@ -704,7 +705,7 @@
       }
     },
     {
-      "id": "ent_7c4bzr2u",
+      "id": "ent_dk529o1t",
       "name": "Restart",
       "parentId": null,
       "enabled": true,
@@ -759,7 +760,7 @@
       }
     },
     {
-      "id": "ent_7jj0dszg",
+      "id": "ent_qqd06hvi",
       "name": "Ambience",
       "parentId": null,
       "enabled": true,
@@ -779,7 +780,7 @@
           }
         },
         "AudioSource": {
-          "assetId": "ast_onjzeo8i",
+          "assetId": "ast_vkli9q6b",
           "autoplay": true,
           "loop": true,
           "volume": 0.25

@@ -4,10 +4,10 @@ import { fileURLToPath } from 'node:url';
 import { ProjectStore, validateProject } from '@hearth/core';
 import { NodeFileSystem } from '@hearth/core/node';
 import { SceneRuntime } from '@hearth/runtime';
-import { runPlaytest } from '@hearth/playtest';
+import { runPlaytest, runSceneSmoke } from '@hearth/playtest';
 
 const examplesDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const EXAMPLES = ['mini-platformer', 'top-down-room', 'visual-novel', 'ember-trail'];
+const EXAMPLES = ['mini-platformer', 'top-down-room', 'visual-novel', 'ember-trail', 'glow-caves'];
 
 function loadStore(name: string) {
   return ProjectStore.load(new NodeFileSystem(), path.join(examplesDir, name));
@@ -147,5 +147,66 @@ describe('ember-trail v0.3 showcase (Lua + scenes + stdlib)', () => {
     expect(result.passed).toBe(true);
     const menu = store.getScene('Menu')!;
     expect(result.finalScene).toBe(menu.id);
+  });
+});
+
+// Glow Caves is the rendering-v2 showcase: a dark scene (Camera.ambientLight)
+// lit by a player-following Light2D torch, LineRenderer cave-wall outlines,
+// two ParticleEmitters (torch sparks + a drip trail), and a SpriteAnimator
+// driven flame — all scripted in Lua, all asserted headlessly.
+describe('glow-caves v0.3 showcase (rendering v2)', () => {
+  it('is scripted entirely in Lua', async () => {
+    const store = await loadStore('glow-caves');
+    const scripts = await store.listScripts();
+    expect(scripts.length).toBeGreaterThan(0);
+    expect(scripts.every((p) => p.endsWith('.lua'))).toBe(true);
+  });
+
+  it('the scene is dark, lit by a Light2D torch parented to the player', async () => {
+    const store = await loadStore('glow-caves');
+    const scene = store.getScene('Cave')!;
+    const camera = scene.entities.find((e) => e.name === 'Main Camera')!;
+    expect(camera.components.Camera!.ambientLight).toBeLessThan(0.5);
+
+    const player = scene.entities.find((e) => e.name === 'Player')!;
+    const torch = scene.entities.find((e) => e.name === 'Torch')!;
+    expect(torch.parentId).toBe(player.id);
+    expect(torch.components.Light2D).toBeDefined();
+    expect(torch.components.Light2D!.enabled).toBe(true);
+    expect(torch.components.SpriteAnimator).toBeDefined();
+    expect(torch.components.ParticleEmitter).toBeDefined();
+  });
+
+  it('has cave-wall LineRenderer geometry', async () => {
+    const store = await loadStore('glow-caves');
+    const scene = store.getScene('Cave')!;
+    const walls = scene.entities.filter((e) => e.components.LineRenderer);
+    expect(walls.length).toBeGreaterThanOrEqual(2);
+    for (const wall of walls) {
+      expect(wall.components.LineRenderer!.points.length).toBeGreaterThanOrEqual(2);
+    }
+  });
+
+  it('the showcase playtest asserts deterministic particle counts and the animator frame', async () => {
+    const store = await loadStore('glow-caves');
+    const result = await runPlaytest(store, 'glow-caves-showcase');
+    expect(result.passed).toBe(true);
+    expect(result.particleCounts.Drip).toBeGreaterThan(0);
+    expect(result.particleCounts.Torch).toBeGreaterThan(0);
+  });
+
+  it('produces the same particle counts and animator frame on a second run (deterministic)', async () => {
+    const store = await loadStore('glow-caves');
+    const first = await runPlaytest(store, 'glow-caves-showcase');
+    const second = await runPlaytest(store, 'glow-caves-showcase');
+    expect(first.passed).toBe(true);
+    expect(second.particleCounts).toEqual(first.particleCounts);
+  });
+
+  it('the torch script dogfoods ctx.particles.burst/count (extra embers logged)', async () => {
+    const store = await loadStore('glow-caves');
+    const result = await runSceneSmoke(store, 'Cave', 130);
+    expect(result.errors).toEqual([]);
+    expect(result.logs.some((l) => l.message.includes('torch embers:'))).toBe(true);
   });
 });

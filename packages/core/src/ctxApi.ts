@@ -197,6 +197,30 @@ export const CTX_API: readonly CtxApiEntry[] = [
     description: 'Seeded integer, min and max inclusive.',
     example: { js: 'const die = ctx.random.int(1, 6)', lua: 'local die = ctx.random.int(1, 6)' },
   },
+  // --- particles & sprite animation (rendering v2) ------------------------
+  {
+    path: 'particles.burst',
+    kind: 'method',
+    signature: 'burst(count: number): void',
+    description:
+      "Spawn `count` particles immediately from this entity's ParticleEmitter (in addition to its normal rate/burst). Warns if the entity has no ParticleEmitter.",
+    example: { js: 'ctx.particles.burst(20)', lua: 'ctx.particles.burst(20)' },
+  },
+  {
+    path: 'particles.count',
+    kind: 'method',
+    signature: 'count(): number',
+    description: "Live particle count for this entity's ParticleEmitter (0 if none).",
+    example: { js: 'const n = ctx.particles.count()', lua: 'local n = ctx.particles.count()' },
+  },
+  {
+    path: 'animate',
+    kind: 'method',
+    signature: 'animate(assetRef: string): void',
+    description:
+      "Switch this entity's SpriteAnimator to `assetRef` (animation asset id or name), set playing = true, and restart at frame 0. Warns if the entity has no SpriteAnimator or the asset is unknown.",
+    example: { js: "ctx.animate('torch-flare')", lua: 'ctx.animate("torch-flare")' },
+  },
   // --- persistence (ctx v2) --------------------------------------------------
   {
     path: 'save',

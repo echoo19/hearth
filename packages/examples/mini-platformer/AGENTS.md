@@ -108,6 +108,9 @@ with Lua and JS examples per entry):
 - `ctx.random.next(): number` — Seeded, deterministic [0, 1). Same seed → same sequence.
 - `ctx.random.range(min: number, max: number): number` — Seeded float in [min, max).
 - `ctx.random.int(min: number, max: number): number` — Seeded integer, min and max inclusive.
+- `ctx.particles.burst(count: number): void` — Spawn `count` particles immediately from this entity's ParticleEmitter (in addition to its normal rate/burst). Warns if the entity has no ParticleEmitter.
+- `ctx.particles.count(): number` — Live particle count for this entity's ParticleEmitter (0 if none).
+- `ctx.animate(assetRef: string): void` — Switch this entity's SpriteAnimator to `assetRef` (animation asset id or name), set playing = true, and restart at frame 0. Warns if the entity has no SpriteAnimator or the asset is unknown.
 - `ctx.save(key: string, value: unknown): void` — Persistent save data (JSON values), survives scene switches; in the browser it persists across sessions via localStorage.
 - `ctx.load(key: string): unknown` — Read saved data; null when absent.
 - `ctx.clearSave(key?: string): void` — Clear one save key, or all save data when no key is given.

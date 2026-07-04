@@ -32,6 +32,18 @@ MCP tools, testable in headless playtests) before it gets editor UI.
   syntax errors with file + line for both languages.
 - Playtests gained `seed`, `click`, and `assertScene` steps; the all-Lua
   `ember-trail` example proves the whole stack headlessly.
+- **Rendering v2**: `Light2D` + `Camera.ambientLight` (a lightmap pass that
+  costs nothing when unused — existing projects with no lights render
+  byte-identical to before), `LineRenderer` polylines, deterministic
+  `ParticleEmitter`s (`ctx.particles.burst`/`count`, per-emitter `seed`, and
+  the `assertParticleCount` playtest step), a toggleable debug-draw overlay
+  (colliders, velocity vectors, light radii — off by default, never in
+  exports), and `SpriteAnimator` playback (`ctx.animate`, frames from
+  `createAnimationAsset`). The all-Lua `glow-caves` example exercises the
+  whole set headlessly.
+- **Screenshot capture for agents**: `hearth screenshot [scene] [--debug]`
+  (and the MCP `screenshot` tool) renders a deterministic PNG via headless
+  Chromium, so an agent can see its work.
 
 ## Shipped in v0.2
 
@@ -47,13 +59,6 @@ MCP tools, testable in headless playtests) before it gets editor UI.
 
 ## Near term (later v0.3 releases)
 
-- **Rendering v2**: `Light2D` + ambient light, `LineRenderer` (polylines /
-  beams), a toggleable debug-draw overlay (colliders, grids, velocities),
-  and deterministic particle systems (`ParticleEmitter` with a seed, so
-  playtests can assert particle state).
-- **Sprite animation playback**: `SpriteAnimator` component cycling
-  `SpriteRenderer.assetId` through animation asset frames (the assets
-  already exist).
 - **Physics v2**: mass, restitution, friction on `PhysicsBody`; collision
   layers/masks; one-way platforms; circle-accurate resolution. The runtime
   stays deterministic (fixed timestep) — that's the playtest and
@@ -62,9 +67,6 @@ MCP tools, testable in headless playtests) before it gets editor UI.
   helpers) and `ctx.events` (global pub/sub with an `onEvent` hook;
   emitted events recorded in run reports so playtests can assert them),
   building on the v0.3.0 stdlib (scenes/timers/tweens/random/save/camera).
-- **Screenshot capture for agents**: `hearth screenshot <scene>` so agents
-  can *see* their work (with `--debug` hitbox overlays once debug draw
-  lands).
 - **Undo/redo in the editor** (command journal; the diff baseline already
   proves the model).
 

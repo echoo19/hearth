@@ -35,7 +35,7 @@ results.
 | `packages/playtest` | Headless playtest execution: scripted input + assertions over a `GameSession` (seeded, scene-switch aware), exposed as `RuntimeHooks` injected into core commands (`runPlaytest`, `runScene`). |
 | `packages/cli` | `hearth`, the command-line surface. Every subcommand dispatches into the core command system; `--json` emits the raw `CommandResult` envelope for agents. |
 | `packages/mcp-server` | `hearth-mcp`, a stdio MCP server exposing the same commands as typed MCP tools, with permission modes. |
-| `packages/examples` | Four sample projects **generated through the command system itself** (`generate.mjs`); they double as integration tests and agent references. Three are JavaScript-scripted; `ember-trail` is all-Lua and exercises the scene/stdlib surface end to end. |
+| `packages/examples` | Five sample projects **generated through the command system itself** (`generate.mjs`); they double as integration tests and agent references. Three are JavaScript-scripted; `ember-trail` and `glow-caves` are all-Lua — `ember-trail` exercises the scene/stdlib surface end to end, `glow-caves` exercises rendering v2 (lighting, particles, sprite animation). |
 | `apps/editor` | Vite + React editor. A Vite-plugin project server (Node) opens `HearthSession`s and exposes `/api/command` etc.; the browser UI renders panels and dispatches commands. An Electron shell packages the desktop app, running the same project server in-process; an experimental Tauri shell config is also included. |
 
 ## The command system (the load-bearing wall)
@@ -89,6 +89,33 @@ surface picks it up.
    mutates authored data. Playtests drive the runtime with scripted inputs
    at a fixed timestep, so results are deterministic.
 
+## Rendering
+
+`@hearth/runtime/pixi`'s `PixiSceneView` (used by the editor's game preview,
+the exported web player, and `hearth screenshot`) stacks four layers on the
+PixiJS stage, bottom to top:
+
+1. **`world`** — one container per entity (sprites, text, tilemaps,
+   `LineRenderer` polylines), plus a nested `particleLayer` holding one
+   `Graphics` per live `ParticleEmitter`, keyed by emitter entity id rather
+   than parented to the emitter's own node — particles are already
+   simulated in world space by the runtime, so they must not inherit the
+   emitter entity's rotation/scale.
+2. **`lightmapSprite`** — a multiply-blended sprite over the whole world,
+   filled each tick from an offscreen render target: an ambient-gray fill
+   from `Camera.ambientLight` plus one additive radial sprite per enabled
+   `Light2D`. When `ambientLight` is fully bright (`1`) and no lights are
+   enabled, the sprite stays hidden and none of this work runs — a project
+   with no lighting renders byte-identical to before this feature existed.
+3. **`debugLayer`** — collider outlines, `PhysicsBody` velocity vectors, and
+   `Light2D` radii, drawn in world coordinates above the lightmap (so debug
+   lines read at full brightness regardless of scene darkness). One
+   `Graphics`, redrawn only while `debugDraw` is on; `false` by default and
+   never set by the export template — see
+   [export.md](./export.md#debug-overlay).
+4. **`ui`** — screen-space `UIElement` entities, always on top, unaffected
+   by camera position/zoom or the lightmap.
+
 ## Filesystem abstraction
 
 Core never imports `node:fs`. Everything goes through the `FsLike` interface
@@ -108,6 +135,5 @@ exist and keeps the file on disk unless `deleteFile: true`.
 ## Extension paths (documented, not built)
 
 - Multi-instance components per entity (array form behind a `formatVersion` bump).
-- Screenshot capture for agents (needs headless GPU or DOM snapshot strategy).
 - Tauri-native project server (sidecar) as an alternative to the Electron desktop shell.
 - TypeScript scripts (compile step in the script engine).

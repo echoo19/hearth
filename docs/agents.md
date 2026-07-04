@@ -100,5 +100,8 @@ agent that connects cold can bootstrap itself.
 - MCP `tools/list`: same registry as typed tools.
 
 If a capability isn't in the registry, it doesn't exist. Ask the human
-instead of improvising (e.g. there is no screenshot command yet; it's on the
-[roadmap](./roadmap.md)).
+instead of improvising (e.g. there is no pathfinding command yet; it's on
+the [roadmap](./roadmap.md)). `screenshot` (CLI and MCP) is the one
+deliberate exception — it doesn't wrap a registry command since it needs
+headless Chromium, a Node-only dependency the browser-safe core can't take
+on — see [cli.md](./cli.md#command-tour).

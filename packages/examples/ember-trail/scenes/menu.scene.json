@@ -1,10 +1,10 @@
 {
   "formatVersion": 1,
-  "id": "scn_c1y310h9",
+  "id": "scn_rn5dlufb",
   "name": "Menu",
   "entities": [
     {
-      "id": "ent_f4elmnsl",
+      "id": "ent_rz7lr729",
       "name": "Main Camera",
       "parentId": null,
       "enabled": true,
@@ -24,12 +24,13 @@
         "Camera": {
           "zoom": 1,
           "isMain": true,
-          "backgroundColor": "#141019"
+          "backgroundColor": "#141019",
+          "ambientLight": 1
         }
       }
     },
     {
-      "id": "ent_uvrvtzjz",
+      "id": "ent_k9ftfmyd",
       "name": "Title",
       "parentId": null,
       "enabled": true,
@@ -68,7 +69,7 @@
       }
     },
     {
-      "id": "ent_wzzgcjbo",
+      "id": "ent_fe7rc3kn",
       "name": "Subtitle",
       "parentId": null,
       "enabled": true,
@@ -107,7 +108,7 @@
       }
     },
     {
-      "id": "ent_7gnqeutf",
+      "id": "ent_m54icilo",
       "name": "Start",
       "parentId": null,
       "enabled": true,
@@ -162,7 +163,7 @@
       }
     },
     {
-      "id": "ent_fh9ploy1",
+      "id": "ent_elkkvgi0",
       "name": "Best",
       "parentId": null,
       "enabled": true,

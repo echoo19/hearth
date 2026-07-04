@@ -34,6 +34,9 @@ export const SCRIPT_TEMPLATE = `/**
  *   ctx.random.next()               - seeded deterministic [0, 1)
  *   ctx.random.range(min, max)      - seeded float in [min, max)
  *   ctx.random.int(min, max)        - seeded integer, inclusive
+ *   ctx.particles.burst(count)      - spawn count particles now (needs ParticleEmitter)
+ *   ctx.particles.count()           - live particle count (needs ParticleEmitter)
+ *   ctx.animate(assetRef)           - switch SpriteAnimator to an animation asset, restart at frame 0
  *   ctx.save(key, value)            - persistent save data (JSON values)
  *   ctx.load(key)                   - read saved data (null when absent)
  *   ctx.clearSave(key?)             - clear one key (no key = clear all)
@@ -97,6 +100,9 @@ export const LUA_SCRIPT_TEMPLATE = `-- {{NAME}} — a Hearth behavior script (Lu
 --   ctx.random.next()               - seeded deterministic [0, 1)
 --   ctx.random.range(min, max)      - seeded float in [min, max)
 --   ctx.random.int(min, max)        - seeded integer, inclusive
+--   ctx.particles.burst(count)      - spawn count particles now (needs ParticleEmitter)
+--   ctx.particles.count()           - live particle count (needs ParticleEmitter)
+--   ctx.animate(assetRef)           - switch SpriteAnimator to an animation asset, restart at frame 0
 --   ctx.save(key, value)            - persistent save data (JSON values)
 --   ctx.load(key)                   - read saved data (nil when absent)
 --   ctx.clearSave(key)              - clear one key (no key = clear all)

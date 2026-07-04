@@ -157,6 +157,40 @@ Same seed → same sequence, every run, on every host. In Lua,
 their JSON (`"seed": 42`); the editor preview and exported player run
 seed 0. **Never** reach for `Date.now()` or wall-clock time in game logic.
 
+### Particles
+
+| Member | What it is |
+| --- | --- |
+| `ctx.particles.burst(count)` | Spawn `count` particles immediately from this entity's `ParticleEmitter` (on top of its normal `rate`/`burst`). Warns if the entity has none. |
+| `ctx.particles.count()` | Live particle count for this entity's `ParticleEmitter` (`0` if none). |
+
+```lua
+-- Every 2 seconds, a burst of extra sparks (needs a ParticleEmitter on this entity).
+ctx.timers.every(2, function()
+  ctx.particles.burst(6)
+  ctx.log("sparks:", ctx.particles.count())
+end)
+```
+
+`ParticleEmitter` has its own `seed` field, independent of both `ctx.random`
+and every other emitter in the scene — see [Determinism](#determinism)
+below for exactly how that makes particle counts assertable in playtests.
+
+### Sprite animation
+
+| Member | What it is |
+| --- | --- |
+| `ctx.animate(assetRef)` | Switch this entity's `SpriteAnimator` to an animation asset (id or name), set `playing = true`, and restart at frame 0. Warns if the entity has no `SpriteAnimator` or the asset is unknown. |
+
+```lua
+ctx.animate("torch-flare")
+```
+
+`SpriteAnimator` writes the current frame's asset id into the sibling
+`SpriteRenderer.assetId` every fixed frame on its own — most animations need
+no script at all. Reach for `ctx.animate` only to switch clips at runtime
+(a torch flaring up, a character starting to run).
+
 ### Save data
 
 | Member | What it is |
@@ -238,6 +272,21 @@ that's what makes playtests trustworthy. The runtime is fixed-timestep;
 timers, tweens, and RNG are all deterministic; and the Lua sandbox blocks
 every source of nondeterminism (wall clock, unseeded random). If you keep
 your logic inside `ctx`, determinism is free.
+
+`ParticleEmitter.seed` gives each emitter its own independent, deterministic
+RNG stream (separate from `ctx.random` and every other emitter), so the same
+project always spawns the same particles. Spawning itself lands on whole
+fixed frames via an accumulator (`rate` per second × `dt` added every fixed
+step, one particle spawned each time the accumulator crosses `1.0`) — and
+because most `rate`/`dt` products aren't exactly representable in binary
+floating point, the first crossing can land one frame later than the naive
+`60 / rate` arithmetic suggests. For example `rate: 10` at 60fps spawns on
+frames 7, 13, 19, 25, 31 — not 6, 12, 18, 24, 30 — because `10 * (1/60)`
+summed six times lands a hair under `1.0`. `assertParticleCount` playtest
+steps (and `ctx.particles.count()`) always read the true live count, so
+write expected numbers from a real run rather than hand arithmetic when it
+matters — see `packages/playtest/tests/particles.test.ts` for the fully
+worked example.
 
 ## Physics interplay
 

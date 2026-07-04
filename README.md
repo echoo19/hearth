@@ -30,13 +30,17 @@ project model → editor → runtime preview → CLI → MCP → headless playte
 diff review. v0.3 makes **Lua the default scripting language** (JS still
 fully supported, same `ctx` API), adds **scene management and a script
 stdlib** (`ctx.scenes.load`, timers, tweens, seeded RNG, save data,
-camera control), and removes all engine chrome from exported games —
-shipped builds boot straight into your first scene.
+camera control), removes all engine chrome from exported games — shipped
+builds boot straight into your first scene — and adds **rendering v2**:
+2D lighting (`Light2D` + `Camera.ambientLight`), polylines (`LineRenderer`),
+deterministic particles (`ParticleEmitter`, `ctx.particles`), sprite
+animation (`SpriteAnimator`, `ctx.animate`), a debug-draw overlay, and
+`hearth screenshot` so agents can see their work.
 On top of v0.2: dockable editor workspace, screen-space game UI
 (`UIElement` + `onUiEvent`), convex polygon colliders, audio with
 procedural sound effects, and static web export (`hearth export web`).
 See [docs/roadmap.md](docs/roadmap.md) for what's deliberately missing
-(screenshots for agents, 2D lighting, particles, sprite animation, undo…).
+(physics v2, undo, pathfinding…).
 
 ## Install
 
@@ -126,16 +130,20 @@ see [docs/mcp.md](docs/mcp.md).
   transforms, sprites/primitives, text, tilemaps, screen-space UI with
   pointer events, input actions, box/circle/convex-polygon physics +
   triggers, audio, cameras, multi-scene sessions (`ctx.scenes.load` for
-  user-built menus), and a script engine — **Lua (sandboxed, via wasmoon)
-  by default, JavaScript equally supported** — with timers, tweens, seeded
-  RNG, and persistent save data, running identically in the browser
-  preview, headless in Node, and in exported games.
+  user-built menus), 2D lighting (`Light2D` + ambient light), polylines
+  (`LineRenderer`), deterministic particles (`ParticleEmitter`), sprite
+  animation (`SpriteAnimator`), a toggleable debug-draw overlay, and a
+  script engine — **Lua (sandboxed, via wasmoon) by default, JavaScript
+  equally supported** — with timers, tweens, seeded RNG, and persistent
+  save data, running identically in the browser preview, headless in
+  Node, and in exported games.
 - **Web export**: `hearth export web` produces a static, self-contained
   playable build — one folder or one HTML file, `--zip` for itch.io. See
   [docs/export.md](docs/export.md).
 - **CLI** (`packages/cli`): `hearth` with `--json` envelopes for every
   operation, plus `doctor`, `test`, and `commands` (registry discovery).
-- **MCP server** (`packages/mcp-server`): 41 typed tools wrapping the core commands, with
+- **MCP server** (`packages/mcp-server`): 42 typed tools (40 wrapping core
+  commands, plus `screenshot` and `get_agent_instructions`), with
   per-session permission modes.
 - **Playtests** (`packages/playtest`): scripted input + assertions, run
   headlessly at a fixed timestep; deterministic and CI-friendly. Run
@@ -146,10 +154,13 @@ see [docs/mcp.md](docs/mcp.md).
   before any real assets exist. No AI generation.
 - **Examples** (`packages/examples`): a mini platformer (with a score HUD,
   restart button, sound effects, and polygon spikes), a top-down room, a
-  visual novel, and **Ember Trail** — an all-Lua two-scene game (menu →
+  visual novel, **Ember Trail** — an all-Lua two-scene game (menu →
   level → menu) exercising scene switching, timers, seeded spawning,
-  camera follow, and a saved best score — all generated *through the
-  command system itself* and covered by playtests in CI.
+  camera follow, and a saved best score — and **Glow Caves** — an all-Lua
+  rendering-v2 showcase (a dark cave lit only by a player-following torch,
+  cave-wall polylines, particle sparks and drips, a flickering animated
+  flame) — all generated *through the command system itself* and covered
+  by playtests in CI.
 - **Agent onboarding**: every new project gets `AGENTS.md`, `CLAUDE.md`,
   and `.hearth/agent-config.json` teaching agents the safe workflow
   (snapshot → inspect → command → validate → playtest → diff).
@@ -165,7 +176,7 @@ see [docs/mcp.md](docs/mcp.md).
 | [Agent workflow](docs/agents.md) | How agents should operate (and why) |
 | [Architecture](docs/architecture.md) | Packages, command system, data flow |
 | [Project format](docs/project-format.md) | Every file, every schema |
-| [Components](docs/components.md) | All 10 component types + defaults |
+| [Components](docs/components.md) | All 14 component types + defaults |
 | [Scripting](docs/scripting.md) | Lua (default) & JS scripting, the full `ctx` API |
 | [Web export](docs/export.md) | Static builds, single-file, itch.io |
 | [Roadmap](docs/roadmap.md) | Honest list of what's next / missing |

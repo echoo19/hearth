@@ -1,9 +1,10 @@
 # MCP Guide
 
 Hearth ships `hearth-mcp` (`packages/mcp-server`), a stdio MCP server that
-exposes the engine command layer as 41 typed tools (40 command tools plus
-`get_agent_instructions`). The full reference
-(flags, registration snippets, permission table, complete tool list) lives in
+exposes the engine command layer as 42 typed tools (40 command tools, plus
+`screenshot` and `get_agent_instructions`, neither of which wraps a core
+command). The full reference (flags, registration snippets, permission
+table, complete tool list) lives in
 [`packages/mcp-server/README.md`](../packages/mcp-server/README.md).
 
 ## Quick start (Claude Code)
@@ -32,6 +33,16 @@ of housekeeping commands are CLI-only): `get_project_info`,
 `export_web`, `get_agent_instructions`, … Every result is the standard `CommandResult`
 JSON envelope in the tool output (with `isError` set on failure), so MCP
 agents and CLI agents read identical structures.
+
+`screenshot` is the one exception: it doesn't wrap a core command (capturing
+requires headless Chromium, a Node/Playwright-only dependency core can't
+take on). It still requires the `build` permission mode exactly like
+`export_web`, takes the same options as the CLI's `hearth screenshot`
+(`scene`, `frame`, `seed`, `width`, `height`, `debug`, `out`), and returns
+screenshot metadata (path, width, height, frame, scene) as JSON — read the
+PNG file yourself to see it. It needs a real Chromium install on the host
+(Google Chrome, Microsoft Edge, `CHROMIUM_PATH`, or `npx playwright install
+chromium`); see [cli.md](./cli.md#command-tour) for the full requirement.
 
 ## Choosing modes per session
 

@@ -13,6 +13,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createProject, HearthSession } from '../core/dist/index.js';
 import { NodeFileSystem } from '../core/dist/node/index.js';
+import { GameSession } from '../runtime/dist/index.js';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const fs = new NodeFileSystem();
@@ -1022,8 +1023,245 @@ return script
 }
 
 // ---------------------------------------------------------------------------
+// Example 5: Glow Caves (all-Lua, rendering v2 showcase)
+// ---------------------------------------------------------------------------
+// Showcases the rendering-v2 components end to end: a dark scene
+// (Camera.ambientLight) lit only by a player-following Light2D torch
+// (parented to Player — children inherit only their parent's translation,
+// so a fixed local offset rides along), LineRenderer cave-wall outlines,
+// two ParticleEmitters (a torch-sparks recipe and a high-rate/zero-spread
+// "drip trail" recipe), and a SpriteAnimator (flickering torch flame) driven
+// by an animation asset. All scripts are Lua; the torch's script also
+// dogfoods ctx.particles.burst/count. The showcase playtest's expected
+// values (animator frame asset id, drip particle count) are read back from
+// an actual run of the generated scene below — never hand-computed — per
+// particles.ts's fp-real spawn-accumulator timing (see
+// packages/playtest/tests/particles.test.ts).
+async function generateGlowCaves() {
+  const session = await freshProject('glow-caves', {
+    name: 'Glow Caves',
+    description: 'Explore a dark cave by torchlight. A showcase of 2D lighting, particles, and sprite animation.',
+  });
+
+  const scene = (await run(session, 'createScene', { name: 'Cave', withCamera: false })).sceneId;
+
+  // --- assets ---
+  const explorer = (await run(session, 'createSpriteAsset', {
+    name: 'explorer', shape: 'character', color: '#8fa6bf', width: 28, height: 34,
+  })).asset;
+  const flameA = (await run(session, 'createSpriteAsset', {
+    name: 'torch-flame-a', shape: 'circle', color: '#ffb347', width: 14, height: 18,
+  })).asset;
+  const flameB = (await run(session, 'createSpriteAsset', {
+    name: 'torch-flame-b', shape: 'triangle', color: '#ff8c1a', width: 16, height: 20,
+  })).asset;
+  const flicker = (await run(session, 'createAnimationAsset', {
+    name: 'torch-flicker', frames: [flameA.id, flameB.id], frameDuration: 0.15, loop: true,
+  })).asset;
+
+  await run(session, 'updateSettings', {
+    buildSettings: { title: 'Glow Caves' },
+  });
+
+  // --- scripts (all Lua) ---
+  await run(session, 'createScript', {
+    name: 'player-move',
+    language: 'lua',
+    source: `-- Player: four-direction movement through the cave (no gravity).
+-- The camera follows so the torch's pool of light stays in view.
+local script = {}
+
+function script.onStart(ctx)
+  ctx.camera.follow("Player")
+end
+
+function script.onUpdate(ctx, dt)
+  local body = ctx.getComponent("PhysicsBody")
+  local speed = ctx.params.speed or 160
+  local vx, vy = 0, 0
+  if ctx.input.isDown("left") then vx = vx - speed end
+  if ctx.input.isDown("right") then vx = vx + speed end
+  if ctx.input.isDown("up") then vy = vy - speed end
+  if ctx.input.isDown("down") then vy = vy + speed end
+  body.velocity.x = vx
+  body.velocity.y = vy
+end
+
+return script
+`,
+  });
+
+  await run(session, 'createScript', {
+    name: 'torch-embers',
+    language: 'lua',
+    source: `-- Torch: on top of its steady rate, puff a handful of extra embers
+-- every couple of seconds and log the live count. Dogfoods
+-- ctx.particles.burst/count from a real Lua script.
+local script = {}
+
+function script.onStart(ctx)
+  ctx.timers.every(2, function()
+    ctx.particles.burst(4)
+    ctx.log("torch embers:", ctx.particles.count())
+  end)
+end
+
+return script
+`,
+  });
+
+  // --- entities ---
+  await run(session, 'createEntity', {
+    scene, name: 'Main Camera', position: { x: 400, y: 300 },
+    components: { Camera: { backgroundColor: '#0a0a0f', ambientLight: 0.15 } },
+  });
+
+  await run(session, 'createEntity', {
+    scene, name: 'Cave Floor', tags: ['background'], position: { x: 400, y: 300 },
+    components: {
+      SpriteRenderer: { shape: 'rectangle', color: '#241f1a', width: 800, height: 600, layer: -20 },
+    },
+  });
+
+  const boundaryWalls = [
+    { name: 'Wall Top', x: 400, y: 10, w: 800, h: 20 },
+    { name: 'Wall Bottom', x: 400, y: 590, w: 800, h: 20 },
+    { name: 'Wall Left', x: 10, y: 300, w: 20, h: 600 },
+    { name: 'Wall Right', x: 790, y: 300, w: 20, h: 600 },
+  ];
+  for (const w of boundaryWalls) {
+    await run(session, 'createEntity', {
+      scene, name: w.name, tags: ['wall'], position: { x: w.x, y: w.y },
+      components: {
+        Collider: { shape: 'box', width: w.w, height: w.h },
+        PhysicsBody: { bodyType: 'static' },
+      },
+    });
+  }
+
+  // Cave wall silhouettes: LineRenderer polylines in local space (points are
+  // relative to the entity's own Transform.position).
+  await run(session, 'createEntity', {
+    scene, name: 'Cave Wall Left', tags: ['scenery'], position: { x: 90, y: 300 },
+    components: {
+      LineRenderer: {
+        points: [
+          { x: 0, y: -260 }, { x: 34, y: -180 }, { x: -6, y: -90 },
+          { x: 26, y: 0 }, { x: -6, y: 90 }, { x: 34, y: 180 }, { x: 0, y: 260 },
+        ],
+        width: 6, color: '#4a4036', layer: 5,
+      },
+    },
+  });
+  await run(session, 'createEntity', {
+    scene, name: 'Cave Wall Right', tags: ['scenery'], position: { x: 710, y: 300 },
+    components: {
+      LineRenderer: {
+        points: [
+          { x: 0, y: -260 }, { x: -34, y: -180 }, { x: 6, y: -90 },
+          { x: -26, y: 0 }, { x: 6, y: 90 }, { x: -34, y: 180 }, { x: 0, y: 260 },
+        ],
+        width: 6, color: '#4a4036', layer: 5,
+      },
+    },
+  });
+
+  await run(session, 'createEntity', {
+    scene, name: 'Player', tags: ['player'], position: { x: 200, y: 450 },
+    components: {
+      SpriteRenderer: { assetId: explorer.id, width: 28, height: 34 },
+      Collider: { shape: 'box', width: 24, height: 30 },
+      PhysicsBody: { bodyType: 'dynamic', gravityScale: 0 },
+    },
+  });
+  await run(session, 'attachScript', {
+    scene, entity: 'Player', script: 'scripts/player-move.lua', params: { speed: 160 },
+  });
+
+  // Torch: parented to Player (a fixed local offset that rides along, since
+  // children inherit only their parent's translation), carrying the light,
+  // the flickering flame sprite/animator, and the torch-sparks emitter —
+  // this is what makes the light "player-following".
+  await run(session, 'createEntity', {
+    scene, name: 'Torch', tags: ['torch'], parent: 'Player', position: { x: 0, y: -22 },
+    components: {
+      Light2D: { radius: 200, color: '#ffcf6b', intensity: 1.1 },
+      SpriteRenderer: { assetId: flameA.id, width: 14, height: 18 },
+      SpriteAnimator: { assetId: flicker.id, fps: 0, playing: true, loop: true },
+      // Torch-sparks recipe: a gentle upward cone of warm embers.
+      ParticleEmitter: {
+        rate: 8, lifetime: 0.8, speed: 30, spread: 25, direction: -90,
+        startSize: 4, endSize: 1, startColor: '#ffcf6b', endColor: '#7a3b12',
+        gravity: { x: 0, y: -40 }, seed: 1,
+      },
+    },
+  });
+  await run(session, 'attachScript', { scene, entity: 'Torch', script: 'scripts/torch-embers.lua' });
+
+  // Drip: a fixed cave-ceiling drip, independent of the player. Trail
+  // recipe: high rate, zero spread, endSize 0, short lifetime (see
+  // components.md's ParticleEmitter section for the general recipe).
+  await run(session, 'createEntity', {
+    scene, name: 'Stalactite', tags: ['scenery'], position: { x: 600, y: 130 },
+    components: { SpriteRenderer: { shape: 'triangle', color: '#5a5148', width: 24, height: 28 } },
+  });
+  await run(session, 'createEntity', {
+    scene, name: 'Drip', tags: ['drip'], position: { x: 600, y: 150 },
+    components: {
+      ParticleEmitter: {
+        rate: 25, lifetime: 0.35, speed: 50, spread: 0, direction: 90,
+        startSize: 4, endSize: 0, startColor: '#bfe6f5', endColor: '#6fa8c9',
+        gravity: { x: 0, y: 180 }, seed: 2,
+      },
+    },
+  });
+
+  // --- playtest ---
+  // The expected values below are read back from an actual run of this
+  // exact scene (same engine path runPlaytest uses: GameSession.stepAsync),
+  // not hand-computed — particle spawn timing is fp-real (see
+  // packages/playtest/tests/particles.test.ts), so trusting arithmetic here
+  // would be a mistake.
+  const SHOWCASE_FRAMES = 90;
+  const probe = await GameSession.create(session.store, { scene, seed: 0 });
+  for (let i = 0; i < SHOWCASE_FRAMES; i++) await probe.stepAsync();
+  const expectedTorchFrame = probe.runtime.find('Torch').components.SpriteRenderer.assetId;
+  const expectedDripCount = probe.runtime.getParticleCount('Drip');
+  probe.destroy();
+
+  await run(session, 'createPlaytest', {
+    name: 'glow-caves-showcase',
+    scene,
+    steps: [
+      { type: 'wait', frames: SHOWCASE_FRAMES },
+      { type: 'assertParticleCount', entity: 'Drip', equals: expectedDripCount },
+      { type: 'assertProperty', entity: 'Torch', property: 'SpriteRenderer.assetId', equals: expectedTorchFrame },
+      { type: 'assertNoErrors' },
+    ],
+    maxFrames: 200,
+  });
+  await run(session, 'createPlaytest', {
+    name: 'smoke',
+    scene,
+    steps: [
+      { type: 'wait', frames: 60 },
+      { type: 'assertEntityExists', entity: 'Player', exists: true },
+      { type: 'assertEntityExists', entity: 'Torch', exists: true },
+      { type: 'assertEntityExists', entity: 'Drip', exists: true },
+      { type: 'assertNoErrors' },
+    ],
+    maxFrames: 200,
+  });
+
+  const report = await run(session, 'validateProject', {});
+  if (report.errors.length > 0) throw new Error('glow-caves validation failed: ' + JSON.stringify(report.errors));
+  console.log('✓ glow-caves generated');
+}
+
+// ---------------------------------------------------------------------------
 await generatePlatformer();
 await generateTopDown();
 await generateVisualNovel();
 await generateEmberTrail();
+await generateGlowCaves();
 console.log('All example projects generated.');

@@ -72,6 +72,17 @@ The `index.html` page background matches `backgroundColor`, and the
 loading image asset is always included in the bundle even if no scene
 references it.
 
+### Debug overlay
+
+Exported games never show the collider/velocity/light debug overlay,
+matching the no-chrome rule above: `PixiViewOptions.debugDraw` defaults to
+`false`, and the export template's own `HearthPlayer.boot({ mount, bundle })`
+call never sets it, so there is no flag to accidentally leave on in a
+shipped build. The overlay only exists for local iteration — the editor's
+preview toolbar (**Debug** button, off by default) and `hearth screenshot
+--debug` (see [cli.md](./cli.md#command-tour)) — both of which start a
+fresh session each time rather than mutating the exported artifact.
+
 ### Audio unlock
 
 Browsers block audio until the page receives a user gesture. The player

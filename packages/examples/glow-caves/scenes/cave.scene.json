@@ -1,0 +1,631 @@
+{
+  "formatVersion": 1,
+  "id": "scn_93f976o8",
+  "name": "Cave",
+  "entities": [
+    {
+      "id": "ent_l6q5dkqu",
+      "name": "Main Camera",
+      "parentId": null,
+      "enabled": true,
+      "tags": [],
+      "components": {
+        "Transform": {
+          "position": {
+            "x": 400,
+            "y": 300
+          },
+          "rotation": 0,
+          "scale": {
+            "x": 1,
+            "y": 1
+          }
+        },
+        "Camera": {
+          "zoom": 1,
+          "isMain": true,
+          "backgroundColor": "#0a0a0f",
+          "ambientLight": 0.15
+        }
+      }
+    },
+    {
+      "id": "ent_a6li71lv",
+      "name": "Cave Floor",
+      "parentId": null,
+      "enabled": true,
+      "tags": [
+        "background"
+      ],
+      "components": {
+        "Transform": {
+          "position": {
+            "x": 400,
+            "y": 300
+          },
+          "rotation": 0,
+          "scale": {
+            "x": 1,
+            "y": 1
+          }
+        },
+        "SpriteRenderer": {
+          "assetId": null,
+          "shape": "rectangle",
+          "color": "#241f1a",
+          "width": 800,
+          "height": 600,
+          "opacity": 1,
+          "flipX": false,
+          "flipY": false,
+          "layer": -20,
+          "visible": true
+        }
+      }
+    },
+    {
+      "id": "ent_mhqf19em",
+      "name": "Wall Top",
+      "parentId": null,
+      "enabled": true,
+      "tags": [
+        "wall"
+      ],
+      "components": {
+        "Transform": {
+          "position": {
+            "x": 400,
+            "y": 10
+          },
+          "rotation": 0,
+          "scale": {
+            "x": 1,
+            "y": 1
+          }
+        },
+        "Collider": {
+          "shape": "box",
+          "width": 800,
+          "height": 20,
+          "radius": 16,
+          "points": [
+            {
+              "x": 0,
+              "y": -16
+            },
+            {
+              "x": 16,
+              "y": 16
+            },
+            {
+              "x": -16,
+              "y": 16
+            }
+          ],
+          "offset": {
+            "x": 0,
+            "y": 0
+          },
+          "isTrigger": false
+        },
+        "PhysicsBody": {
+          "bodyType": "static",
+          "velocity": {
+            "x": 0,
+            "y": 0
+          },
+          "gravityScale": 1,
+          "drag": 0
+        }
+      }
+    },
+    {
+      "id": "ent_27itiyj3",
+      "name": "Wall Bottom",
+      "parentId": null,
+      "enabled": true,
+      "tags": [
+        "wall"
+      ],
+      "components": {
+        "Transform": {
+          "position": {
+            "x": 400,
+            "y": 590
+          },
+          "rotation": 0,
+          "scale": {
+            "x": 1,
+            "y": 1
+          }
+        },
+        "Collider": {
+          "shape": "box",
+          "width": 800,
+          "height": 20,
+          "radius": 16,
+          "points": [
+            {
+              "x": 0,
+              "y": -16
+            },
+            {
+              "x": 16,
+              "y": 16
+            },
+            {
+              "x": -16,
+              "y": 16
+            }
+          ],
+          "offset": {
+            "x": 0,
+            "y": 0
+          },
+          "isTrigger": false
+        },
+        "PhysicsBody": {
+          "bodyType": "static",
+          "velocity": {
+            "x": 0,
+            "y": 0
+          },
+          "gravityScale": 1,
+          "drag": 0
+        }
+      }
+    },
+    {
+      "id": "ent_5u34vr61",
+      "name": "Wall Left",
+      "parentId": null,
+      "enabled": true,
+      "tags": [
+        "wall"
+      ],
+      "components": {
+        "Transform": {
+          "position": {
+            "x": 10,
+            "y": 300
+          },
+          "rotation": 0,
+          "scale": {
+            "x": 1,
+            "y": 1
+          }
+        },
+        "Collider": {
+          "shape": "box",
+          "width": 20,
+          "height": 600,
+          "radius": 16,
+          "points": [
+            {
+              "x": 0,
+              "y": -16
+            },
+            {
+              "x": 16,
+              "y": 16
+            },
+            {
+              "x": -16,
+              "y": 16
+            }
+          ],
+          "offset": {
+            "x": 0,
+            "y": 0
+          },
+          "isTrigger": false
+        },
+        "PhysicsBody": {
+          "bodyType": "static",
+          "velocity": {
+            "x": 0,
+            "y": 0
+          },
+          "gravityScale": 1,
+          "drag": 0
+        }
+      }
+    },
+    {
+      "id": "ent_4ujod9c1",
+      "name": "Wall Right",
+      "parentId": null,
+      "enabled": true,
+      "tags": [
+        "wall"
+      ],
+      "components": {
+        "Transform": {
+          "position": {
+            "x": 790,
+            "y": 300
+          },
+          "rotation": 0,
+          "scale": {
+            "x": 1,
+            "y": 1
+          }
+        },
+        "Collider": {
+          "shape": "box",
+          "width": 20,
+          "height": 600,
+          "radius": 16,
+          "points": [
+            {
+              "x": 0,
+              "y": -16
+            },
+            {
+              "x": 16,
+              "y": 16
+            },
+            {
+              "x": -16,
+              "y": 16
+            }
+          ],
+          "offset": {
+            "x": 0,
+            "y": 0
+          },
+          "isTrigger": false
+        },
+        "PhysicsBody": {
+          "bodyType": "static",
+          "velocity": {
+            "x": 0,
+            "y": 0
+          },
+          "gravityScale": 1,
+          "drag": 0
+        }
+      }
+    },
+    {
+      "id": "ent_un1df2xn",
+      "name": "Cave Wall Left",
+      "parentId": null,
+      "enabled": true,
+      "tags": [
+        "scenery"
+      ],
+      "components": {
+        "Transform": {
+          "position": {
+            "x": 90,
+            "y": 300
+          },
+          "rotation": 0,
+          "scale": {
+            "x": 1,
+            "y": 1
+          }
+        },
+        "LineRenderer": {
+          "points": [
+            {
+              "x": 0,
+              "y": -260
+            },
+            {
+              "x": 34,
+              "y": -180
+            },
+            {
+              "x": -6,
+              "y": -90
+            },
+            {
+              "x": 26,
+              "y": 0
+            },
+            {
+              "x": -6,
+              "y": 90
+            },
+            {
+              "x": 34,
+              "y": 180
+            },
+            {
+              "x": 0,
+              "y": 260
+            }
+          ],
+          "width": 6,
+          "color": "#4a4036",
+          "closed": false,
+          "opacity": 1,
+          "layer": 5,
+          "visible": true
+        }
+      }
+    },
+    {
+      "id": "ent_76czcqa1",
+      "name": "Cave Wall Right",
+      "parentId": null,
+      "enabled": true,
+      "tags": [
+        "scenery"
+      ],
+      "components": {
+        "Transform": {
+          "position": {
+            "x": 710,
+            "y": 300
+          },
+          "rotation": 0,
+          "scale": {
+            "x": 1,
+            "y": 1
+          }
+        },
+        "LineRenderer": {
+          "points": [
+            {
+              "x": 0,
+              "y": -260
+            },
+            {
+              "x": -34,
+              "y": -180
+            },
+            {
+              "x": 6,
+              "y": -90
+            },
+            {
+              "x": -26,
+              "y": 0
+            },
+            {
+              "x": 6,
+              "y": 90
+            },
+            {
+              "x": -34,
+              "y": 180
+            },
+            {
+              "x": 0,
+              "y": 260
+            }
+          ],
+          "width": 6,
+          "color": "#4a4036",
+          "closed": false,
+          "opacity": 1,
+          "layer": 5,
+          "visible": true
+        }
+      }
+    },
+    {
+      "id": "ent_iv8pxlay",
+      "name": "Player",
+      "parentId": null,
+      "enabled": true,
+      "tags": [
+        "player"
+      ],
+      "components": {
+        "Transform": {
+          "position": {
+            "x": 200,
+            "y": 450
+          },
+          "rotation": 0,
+          "scale": {
+            "x": 1,
+            "y": 1
+          }
+        },
+        "SpriteRenderer": {
+          "assetId": "ast_2jhlp1yy",
+          "shape": "rectangle",
+          "color": "#ffffff",
+          "width": 28,
+          "height": 34,
+          "opacity": 1,
+          "flipX": false,
+          "flipY": false,
+          "layer": 0,
+          "visible": true
+        },
+        "Collider": {
+          "shape": "box",
+          "width": 24,
+          "height": 30,
+          "radius": 16,
+          "points": [
+            {
+              "x": 0,
+              "y": -16
+            },
+            {
+              "x": 16,
+              "y": 16
+            },
+            {
+              "x": -16,
+              "y": 16
+            }
+          ],
+          "offset": {
+            "x": 0,
+            "y": 0
+          },
+          "isTrigger": false
+        },
+        "PhysicsBody": {
+          "bodyType": "dynamic",
+          "velocity": {
+            "x": 0,
+            "y": 0
+          },
+          "gravityScale": 0,
+          "drag": 0
+        },
+        "Script": {
+          "scriptPath": "scripts/player-move.lua",
+          "params": {
+            "speed": 160
+          }
+        }
+      }
+    },
+    {
+      "id": "ent_bi7j4587",
+      "name": "Torch",
+      "parentId": "ent_iv8pxlay",
+      "enabled": true,
+      "tags": [
+        "torch"
+      ],
+      "components": {
+        "Transform": {
+          "position": {
+            "x": 0,
+            "y": -22
+          },
+          "rotation": 0,
+          "scale": {
+            "x": 1,
+            "y": 1
+          }
+        },
+        "Light2D": {
+          "radius": 200,
+          "color": "#ffcf6b",
+          "intensity": 1.1,
+          "enabled": true
+        },
+        "SpriteRenderer": {
+          "assetId": "ast_xwwotlpn",
+          "shape": "rectangle",
+          "color": "#ffffff",
+          "width": 14,
+          "height": 18,
+          "opacity": 1,
+          "flipX": false,
+          "flipY": false,
+          "layer": 0,
+          "visible": true
+        },
+        "SpriteAnimator": {
+          "assetId": "ast_q5gukjwe",
+          "fps": 0,
+          "playing": true,
+          "loop": true
+        },
+        "ParticleEmitter": {
+          "emitting": true,
+          "rate": 8,
+          "burst": 0,
+          "lifetime": 0.8,
+          "speed": 30,
+          "spread": 25,
+          "direction": -90,
+          "gravity": {
+            "x": 0,
+            "y": -40
+          },
+          "startColor": "#ffcf6b",
+          "endColor": "#7a3b12",
+          "startSize": 4,
+          "endSize": 1,
+          "maxParticles": 256,
+          "layer": 0,
+          "seed": 1
+        },
+        "Script": {
+          "scriptPath": "scripts/torch-embers.lua",
+          "params": {}
+        }
+      }
+    },
+    {
+      "id": "ent_eozyzvh7",
+      "name": "Stalactite",
+      "parentId": null,
+      "enabled": true,
+      "tags": [
+        "scenery"
+      ],
+      "components": {
+        "Transform": {
+          "position": {
+            "x": 600,
+            "y": 130
+          },
+          "rotation": 0,
+          "scale": {
+            "x": 1,
+            "y": 1
+          }
+        },
+        "SpriteRenderer": {
+          "assetId": null,
+          "shape": "triangle",
+          "color": "#5a5148",
+          "width": 24,
+          "height": 28,
+          "opacity": 1,
+          "flipX": false,
+          "flipY": false,
+          "layer": 0,
+          "visible": true
+        }
+      }
+    },
+    {
+      "id": "ent_pfr3esi8",
+      "name": "Drip",
+      "parentId": null,
+      "enabled": true,
+      "tags": [
+        "drip"
+      ],
+      "components": {
+        "Transform": {
+          "position": {
+            "x": 600,
+            "y": 150
+          },
+          "rotation": 0,
+          "scale": {
+            "x": 1,
+            "y": 1
+          }
+        },
+        "ParticleEmitter": {
+          "emitting": true,
+          "rate": 25,
+          "burst": 0,
+          "lifetime": 0.35,
+          "speed": 50,
+          "spread": 0,
+          "direction": 90,
+          "gravity": {
+            "x": 0,
+            "y": 180
+          },
+          "startColor": "#bfe6f5",
+          "endColor": "#6fa8c9",
+          "startSize": 4,
+          "endSize": 0,
+          "maxParticles": 256,
+          "layer": 0,
+          "seed": 2
+        }
+      }
+    }
+  ]
+}

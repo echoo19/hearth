@@ -99,6 +99,18 @@ assertions — `assertEntityExists`, `assertProperty`, `assertPositionNear`,
 itch.io-ready `<project-slug>-web.zip` (see [export.md](./export.md)).
 `build [--out dir]` still exports a portable project folder.
 
+**Screenshot** (requires `--allow build`): `screenshot [scene] [--frame n]
+[--seed n] [--size WxH] [--debug] [--out path]` — a deterministic PNG of a
+scene, so an agent can *see* its work instead of only reading state. Scene
+defaults to the project's initial scene; `--frame` steps that many fixed
+frames before capturing (default 0); `--debug` draws the same collider/
+velocity/light debug overlay the editor's preview toggle uses (never on by
+default, never in exports — see [export.md](./export.md#debug-overlay)).
+Needs a real Chromium: Google Chrome or Microsoft Edge on the machine, a
+`CHROMIUM_PATH` environment variable pointing at one, or
+`npx playwright install chromium`; without any of those it fails with a
+message telling you exactly that.
+
 ## The `--json` envelope
 
 Every command emits the same structure:

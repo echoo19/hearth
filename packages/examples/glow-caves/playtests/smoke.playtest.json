@@ -1,0 +1,32 @@
+{
+  "formatVersion": 1,
+  "id": "ptt_13exxgt4",
+  "name": "smoke",
+  "scene": "scn_93f976o8",
+  "steps": [
+    {
+      "type": "wait",
+      "frames": 60
+    },
+    {
+      "type": "assertEntityExists",
+      "entity": "Player",
+      "exists": true
+    },
+    {
+      "type": "assertEntityExists",
+      "entity": "Torch",
+      "exists": true
+    },
+    {
+      "type": "assertEntityExists",
+      "entity": "Drip",
+      "exists": true
+    },
+    {
+      "type": "assertNoErrors"
+    }
+  ],
+  "maxFrames": 200,
+  "seed": 0
+}

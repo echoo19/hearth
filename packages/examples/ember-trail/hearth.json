@@ -1,18 +1,18 @@
 {
   "formatVersion": 1,
   "hearthVersion": "0.3.0",
-  "id": "prj_bwhu6q5w",
+  "id": "prj_oskw64pz",
   "name": "Ember Trail",
   "description": "Collect drifting embers before they fade. Menu and level are plain scenes; the scripts are all Lua.",
-  "initialScene": "scn_c1y310h9",
+  "initialScene": "scn_rn5dlufb",
   "scenes": [
     {
-      "id": "scn_c1y310h9",
+      "id": "scn_rn5dlufb",
       "name": "Menu",
       "path": "scenes/menu.scene.json"
     },
     {
-      "id": "scn_3lffzid0",
+      "id": "scn_4zdonjcb",
       "name": "Level",
       "path": "scenes/level.scene.json"
     }

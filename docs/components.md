@@ -114,9 +114,17 @@ Defaults:
 {
   "zoom": 1,
   "isMain": true,
-  "backgroundColor": "#1a1a2e"
+  "backgroundColor": "#1a1a2e",
+  "ambientLight": 1
 }
 ```
+
+`ambientLight` sets scene brightness with no lights present: `1` is fully
+lit — lighting is disabled entirely and the renderer skips the lightmap pass,
+so existing projects with no `Light2D`s render exactly as before this
+feature existed — down to `0`, black except inside a `Light2D`'s radius.
+Lower it (e.g. `0.15`) for a dark scene lit by torches/lanterns placed as
+`Light2D` entities.
 
 ## Text
 
@@ -197,6 +205,146 @@ Defaults:
   "layer": -10
 }
 ```
+
+## Light2D
+
+Emits dynamic 2D light (radius, color, intensity) in the forward rendering pipeline.
+
+Defaults:
+
+```json
+{
+  "radius": 200,
+  "color": "#ffffff",
+  "intensity": 1,
+  "enabled": true
+}
+```
+
+`radius` is the light's falloff distance in world pixels (quadratic falloff,
+full brightness at the center); `intensity` multiplies brightness at the
+center (values above 1 blow out to white faster). `enabled: false` removes
+the light from the lightmap without deleting the entity. Every enabled
+`Light2D` in the scene is composited into one lightmap alongside `Camera.
+ambientLight`, so a dark `ambientLight` (e.g. `0.15`) plus a handful of
+lights reads as torches/lanterns punching pools of visibility out of the
+dark — see [architecture.md](./architecture.md#rendering) for how the
+lightmap is built. Lights ignore the entity's rotation/scale (only position
+matters); parent a light to a moving entity (e.g. the player) to make a
+"torch" that follows them — children inherit only their parent's
+translation, so a fixed local offset stays put relative to the parent.
+
+## LineRenderer
+
+Renders a polyline in local space; use for debug geometry or simple line effects.
+
+Defaults:
+
+```json
+{
+  "points": [],
+  "width": 2,
+  "color": "#ffffff",
+  "closed": false,
+  "opacity": 1,
+  "layer": 0,
+  "visible": true
+}
+```
+
+`points` are `Vec2`s in local space — the entity's `Transform`
+(position/rotation/scale) applies to the whole line, so you can move or
+rotate a line by moving its entity rather than rewriting every point.
+`closed: true` connects the last point back to the first, turning a
+polyline into a closed outline (a cave wall, a patrol path, a fenced-off
+area). Good for level geometry that doesn't need art: cave walls, beams,
+borders, debug paths.
+
+## ParticleEmitter
+
+Spawns and simulates particles deterministically; seed controls reproducibility.
+
+Defaults:
+
+```json
+{
+  "emitting": true,
+  "rate": 10,
+  "burst": 0,
+  "lifetime": 1,
+  "speed": 100,
+  "spread": 30,
+  "direction": 0,
+  "gravity": { "x": 0, "y": 0 },
+  "startColor": "#ffffff",
+  "endColor": "#ffffff",
+  "startSize": 8,
+  "endSize": 0,
+  "maxParticles": 256,
+  "layer": 0,
+  "seed": 0
+}
+```
+
+Particles spawn continuously at `rate` per second while `emitting` is true,
+plus a one-time `burst` count when the scene starts (scripts can trigger
+more at runtime with `ctx.particles.burst(count)` — see
+[scripting.md](./scripting.md#particles)). Each particle interpolates from
+`startColor`/`startSize` to `endColor`/`endSize` over its `lifetime`
+seconds, launched within `spread` degrees of `direction` (`0` = +x, `90` =
++y/down) at `speed` px/s, then accelerated by `gravity` px/s². `maxParticles`
+is a hard cap — the oldest particles die first when exceeded, so a runaway
+emitter can't grow unbounded. `seed` makes the emitter's RNG stream
+independent of every other emitter and of `ctx.random`: the same seed spawns
+the exact same particles (position jitter within the cone, per-particle
+timing) on every run, which is what makes `assertParticleCount` in playtests
+reliable — see [scripting.md](./scripting.md#determinism) for the exact
+spawn-timing rule (spawns land on whole fixed frames, not fractional ones).
+
+A **trail** recipe (a short-lived, tightly-focused stream — sparks off a
+grinder, water dripping from a ceiling) is a high `rate`, zero `spread`, and
+`endSize: 0` so each particle shrinks to nothing right at the end of its
+short `lifetime`:
+
+```json
+{
+  "rate": 30,
+  "lifetime": 0.3,
+  "speed": 60,
+  "spread": 0,
+  "direction": 90,
+  "startSize": 4,
+  "endSize": 0,
+  "startColor": "#9fd8ef",
+  "endColor": "#9fd8ef",
+  "gravity": { "x": 0, "y": 150 }
+}
+```
+
+## SpriteAnimator
+
+Plays sprite animations; requires a sibling SpriteRenderer and animation asset.
+
+Defaults:
+
+```json
+{
+  "assetId": "",
+  "fps": 0,
+  "playing": true,
+  "loop": true
+}
+```
+
+Create the animation asset first: `hearth create animation <name> --frames
+f1 f2 …` (frame args are existing sprite/tile asset ids or names, in
+playback order) — see [`hearth create animation`](./cli.md#command-tour).
+Each fixed frame, `SpriteAnimator` writes the current frame's asset id into
+the sibling `SpriteRenderer.assetId`; `fps: 0` uses the animation asset's
+own `frameDuration`, otherwise `fps` overrides it. `loop: false` stops on
+the last frame and flips `playing` to false. Scripts switch clips (and
+restart at frame 0) with `ctx.animate(assetRef)` — see
+[scripting.md](./scripting.md#sprite-animation).
 
 ## Notes
 

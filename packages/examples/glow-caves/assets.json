@@ -1,0 +1,55 @@
+{
+  "formatVersion": 1,
+  "assets": [
+    {
+      "id": "ast_2jhlp1yy",
+      "name": "explorer",
+      "type": "sprite",
+      "path": "assets/sprites/explorer.svg",
+      "metadata": {
+        "procedural": true,
+        "shape": "character",
+        "color": "#8fa6bf",
+        "width": 28,
+        "height": 34
+      }
+    },
+    {
+      "id": "ast_xwwotlpn",
+      "name": "torch-flame-a",
+      "type": "sprite",
+      "path": "assets/sprites/torch_flame_a.svg",
+      "metadata": {
+        "procedural": true,
+        "shape": "circle",
+        "color": "#ffb347",
+        "width": 14,
+        "height": 18
+      }
+    },
+    {
+      "id": "ast_wt4rr0wo",
+      "name": "torch-flame-b",
+      "type": "sprite",
+      "path": "assets/sprites/torch_flame_b.svg",
+      "metadata": {
+        "procedural": true,
+        "shape": "triangle",
+        "color": "#ff8c1a",
+        "width": 16,
+        "height": 20
+      }
+    },
+    {
+      "id": "ast_q5gukjwe",
+      "name": "torch-flicker",
+      "type": "animation",
+      "path": "assets/animations/torch_flicker.anim.json",
+      "metadata": {
+        "frameCount": 2,
+        "frameDuration": 0.15,
+        "loop": true
+      }
+    }
+  ]
+}

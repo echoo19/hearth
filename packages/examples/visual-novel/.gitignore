@@ -1,3 +1,4 @@
 build/
 .hearth/baseline.json
+.hearth-tmp/
 .DS_Store

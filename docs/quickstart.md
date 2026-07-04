@@ -127,4 +127,5 @@ See [export.md](./export.md).
 - [CLI guide](./cli.md): everything `hearth` can do
 - [Web export](./export.md): folder vs single file, itch.io
 - [Examples](../packages/examples): platformer, top-down, visual novel,
-  and Ember Trail (an all-Lua two-scene game)
+  Ember Trail (an all-Lua two-scene game), and Glow Caves (an all-Lua
+  lighting/particles/animation showcase)
