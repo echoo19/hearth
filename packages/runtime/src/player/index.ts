@@ -280,23 +280,34 @@ async function loadStore(bundle: PlayerBundle): Promise<ProjectStore> {
     }),
   );
   // Beyond texture/audio loading (which goes through resolveAssetUrl's own
-  // dataUri map, not this fs), some runtime code reads an asset's raw
-  // content straight off the store — SceneRuntime.loadAnimations and
-  // PixiSceneView.preloadTextures both do `store.fs.readFile(asset.path)`
-  // to parse a SpriteAnimator's *.anim.json frame list. A singleFile export
-  // (what `hearth screenshot`/`hearth export web --single-file` produce)
-  // carries that content as a dataUri per asset, exactly like every other
-  // asset — decode it back into this in-memory fs at the same path so those
-  // reads resolve instead of throwing ENOENT (which loadAnimations swallows
-  // into a recorded load error, silently freezing every SpriteAnimator on
-  // its first frame). Non-inlined (multi-file) exports only carry a `path`
-  // here, not content — those assets are fetched by URL elsewhere (Assets.load
-  // via resolveAssetUrl); reading their raw bytes through this fs is a
-  // separate, pre-existing gap this doesn't attempt to close.
+  // dataUri map / relative URLs, not this fs), some runtime code reads an
+  // asset's raw content straight off the store — SceneRuntime.loadAnimations
+  // and PixiSceneView.preloadTextures both do `store.fs.readFile(asset.path)`
+  // to parse a SpriteAnimator's *.anim.json frame list. Without the content
+  // in this fs those reads throw ENOENT, which loadAnimations swallows into
+  // a recorded load error — silently freezing every SpriteAnimator on its
+  // first frame. Both export modes need it materialized:
+  // - singleFile (what `hearth screenshot` / `--single-file` produce):
+  //   content ships inline as a dataUri per asset; decode it back in.
+  // - multi-file: content ships as real files next to index.html, so fetch
+  //   it over the same relative URL the rest of the page's assets use.
+  //   Only animation assets are fetched — they're the only type whose raw
+  //   content the runtime reads through this fs (everything else loads by
+  //   URL via resolveAssetUrl), and fetching all assets would double-download
+  //   every texture/audio file. A failed fetch just skips the write:
+  //   loadAnimations then surfaces the missing file as a load error, same
+  //   as before.
   for (const asset of bundle.assets) {
+    const assetPath = asset.path ?? `assets/${asset.id}`;
     if (asset.dataUri) {
-      const path = asset.path ?? `assets/${asset.id}`;
-      await fs.writeFile(`${root}/${path}`, decodeDataUri(asset.dataUri));
+      await fs.writeFile(`${root}/${assetPath}`, decodeDataUri(asset.dataUri));
+    } else if (asset.type === 'animation' && asset.path) {
+      try {
+        const res = await fetch(asset.path);
+        if (res.ok) await fs.writeFile(`${root}/${asset.path}`, await res.text());
+      } catch {
+        /* loadAnimations reports the missing file */
+      }
     }
   }
   const sceneRefs = project.scenes ?? [];
