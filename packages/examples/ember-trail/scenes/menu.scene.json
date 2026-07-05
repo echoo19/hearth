@@ -1,10 +1,10 @@
 {
   "formatVersion": 1,
-  "id": "scn_yufjmmom",
+  "id": "scn_tq0s6knr",
   "name": "Menu",
   "entities": [
     {
-      "id": "ent_ngdnyzul",
+      "id": "ent_srhxbngr",
       "name": "Main Camera",
       "parentId": null,
       "enabled": true,
@@ -30,7 +30,7 @@
       }
     },
     {
-      "id": "ent_zdl8sg5g",
+      "id": "ent_wv26u5ez",
       "name": "Title",
       "parentId": null,
       "enabled": true,
@@ -69,7 +69,7 @@
       }
     },
     {
-      "id": "ent_359dzozo",
+      "id": "ent_av1zwvzd",
       "name": "Subtitle",
       "parentId": null,
       "enabled": true,
@@ -108,7 +108,7 @@
       }
     },
     {
-      "id": "ent_j30t5b2q",
+      "id": "ent_f50ht145",
       "name": "Start",
       "parentId": null,
       "enabled": true,
@@ -137,6 +137,7 @@
         },
         "SpriteRenderer": {
           "assetId": null,
+          "frame": null,
           "shape": "rectangle",
           "color": "#e25822",
           "width": 160,
@@ -163,7 +164,7 @@
       }
     },
     {
-      "id": "ent_w6biw9bc",
+      "id": "ent_68qfdkyr",
       "name": "Best",
       "parentId": null,
       "enabled": true,

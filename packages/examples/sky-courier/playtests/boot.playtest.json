@@ -1,0 +1,28 @@
+{
+  "formatVersion": 1,
+  "id": "ptt_jxjux8sn",
+  "name": "boot",
+  "scene": "scn_vmh4hwwi",
+  "steps": [
+    {
+      "type": "wait",
+      "frames": 10
+    },
+    {
+      "type": "assertAudioCount",
+      "action": "play",
+      "music": true,
+      "equals": 1
+    },
+    {
+      "type": "assertEntityExists",
+      "entity": "Courier",
+      "exists": true
+    },
+    {
+      "type": "assertNoErrors"
+    }
+  ],
+  "maxFrames": 200,
+  "seed": 0
+}

@@ -1,10 +1,10 @@
 {
   "formatVersion": 1,
-  "id": "scn_mvi6408i",
+  "id": "scn_1je9i4r1",
   "name": "Arena",
   "entities": [
     {
-      "id": "ent_51vbcdq6",
+      "id": "ent_7p0tu2w1",
       "name": "Main Camera",
       "parentId": null,
       "enabled": true,
@@ -30,7 +30,7 @@
       }
     },
     {
-      "id": "ent_h01hn5hf",
+      "id": "ent_qseb46we",
       "name": "Backdrop",
       "parentId": null,
       "enabled": true,
@@ -51,6 +51,7 @@
         },
         "SpriteRenderer": {
           "assetId": null,
+          "frame": null,
           "shape": "rectangle",
           "color": "#20242c",
           "width": 800,
@@ -64,7 +65,7 @@
       }
     },
     {
-      "id": "ent_vp20dl33",
+      "id": "ent_siezysnt",
       "name": "Arena",
       "parentId": null,
       "enabled": true,
@@ -86,7 +87,7 @@
         "Tilemap": {
           "tileSize": 32,
           "tileAssets": {
-            "X": "ast_9anbht93"
+            "X": "ast_sb0numb4"
           },
           "grid": [
             "XXXXXXXXXXXXXXXXXXXXXXXXX",
@@ -115,7 +116,7 @@
       }
     },
     {
-      "id": "ent_tpgpr03p",
+      "id": "ent_jk39ml9o",
       "name": "Player",
       "parentId": null,
       "enabled": true,
@@ -135,7 +136,8 @@
           }
         },
         "SpriteRenderer": {
-          "assetId": "ast_fy6l19w1",
+          "assetId": "ast_aj74vhiu",
+          "frame": null,
           "shape": "rectangle",
           "color": "#ffffff",
           "width": 28,
@@ -197,7 +199,7 @@
       }
     },
     {
-      "id": "ent_dtckohjy",
+      "id": "ent_f9tx1evh",
       "name": "Ball",
       "parentId": null,
       "enabled": true,
@@ -217,7 +219,8 @@
           }
         },
         "SpriteRenderer": {
-          "assetId": "ast_777lvm5p",
+          "assetId": "ast_9tp46d9s",
+          "frame": null,
           "shape": "rectangle",
           "color": "#ffffff",
           "width": 28,
@@ -273,7 +276,7 @@
       }
     },
     {
-      "id": "ent_x5djmvrr",
+      "id": "ent_2oazi9ql",
       "name": "Ice Patch",
       "parentId": null,
       "enabled": true,
@@ -294,6 +297,7 @@
         },
         "SpriteRenderer": {
           "assetId": null,
+          "frame": null,
           "shape": "rectangle",
           "color": "#9fd8ff",
           "width": 160,
@@ -349,7 +353,7 @@
       }
     },
     {
-      "id": "ent_ci2le3pc",
+      "id": "ent_1loz7wzp",
       "name": "Grind Strip",
       "parentId": null,
       "enabled": true,
@@ -370,6 +374,7 @@
         },
         "SpriteRenderer": {
           "assetId": null,
+          "frame": null,
           "shape": "rectangle",
           "color": "#8d6e63",
           "width": 160,
@@ -425,7 +430,7 @@
       }
     },
     {
-      "id": "ent_lgzsdrl8",
+      "id": "ent_0cg030qs",
       "name": "Ledge",
       "parentId": null,
       "enabled": true,
@@ -446,6 +451,7 @@
         },
         "SpriteRenderer": {
           "assetId": null,
+          "frame": null,
           "shape": "rectangle",
           "color": "#7f8c8d",
           "width": 96,
@@ -501,7 +507,7 @@
       }
     },
     {
-      "id": "ent_1mi6fzhx",
+      "id": "ent_6p9mbbtz",
       "name": "Patroller",
       "parentId": null,
       "enabled": true,
@@ -521,7 +527,8 @@
           }
         },
         "SpriteRenderer": {
-          "assetId": "ast_d5vsin3l",
+          "assetId": "ast_463iesua",
+          "frame": null,
           "shape": "rectangle",
           "color": "#ffffff",
           "width": 32,
@@ -581,7 +588,7 @@
       }
     },
     {
-      "id": "ent_utvk8je8",
+      "id": "ent_cm7bitt6",
       "name": "Coin 1",
       "parentId": null,
       "enabled": true,
@@ -601,7 +608,8 @@
           }
         },
         "SpriteRenderer": {
-          "assetId": "ast_nfwhws7d",
+          "assetId": "ast_s8zl6eo4",
+          "frame": null,
           "shape": "rectangle",
           "color": "#ffffff",
           "width": 20,
@@ -649,7 +657,7 @@
       }
     },
     {
-      "id": "ent_wn6f3iga",
+      "id": "ent_ra24k7x0",
       "name": "Coin 2",
       "parentId": null,
       "enabled": true,
@@ -669,7 +677,8 @@
           }
         },
         "SpriteRenderer": {
-          "assetId": "ast_nfwhws7d",
+          "assetId": "ast_s8zl6eo4",
+          "frame": null,
           "shape": "rectangle",
           "color": "#ffffff",
           "width": 20,
@@ -717,7 +726,7 @@
       }
     },
     {
-      "id": "ent_b0jg9bom",
+      "id": "ent_3soqel30",
       "name": "Coin 3",
       "parentId": null,
       "enabled": true,
@@ -737,7 +746,8 @@
           }
         },
         "SpriteRenderer": {
-          "assetId": "ast_nfwhws7d",
+          "assetId": "ast_s8zl6eo4",
+          "frame": null,
           "shape": "rectangle",
           "color": "#ffffff",
           "width": 20,
@@ -785,7 +795,7 @@
       }
     },
     {
-      "id": "ent_hasdsetd",
+      "id": "ent_xo2on6yp",
       "name": "Score",
       "parentId": null,
       "enabled": true,

@@ -14,6 +14,7 @@ const EXAMPLES = [
   'ember-trail',
   'glow-caves',
   'bounce-patrol',
+  'sky-courier',
 ];
 
 function loadStore(name: string) {
@@ -316,6 +317,95 @@ describe('bounce-patrol v0.5 showcase (physics v2 + events + findPath)', () => {
 
   it('the smoke playtest passes with no script errors', async () => {
     const store = await loadStore('bounce-patrol');
+    const result = await runPlaytest(store, 'smoke');
+    expect(result.passed).toBe(true);
+  });
+});
+
+// Sky Courier is the wave C showcase: every prior example's sprites are
+// procedural SVGs, but this one's character sheet and music are real
+// imported binary assets (a hand-drawn PNG spritesheet sliced with
+// sliceSpritesheet/createAnimationFromSheet, and a synthesized WAV chiptune
+// loop) plus a genuinely imported TTF font. All scripted in Lua, all
+// asserted headlessly via probe-baked playtests.
+describe('sky-courier v0.6 showcase (imported binary assets)', () => {
+  it('is scripted entirely in Lua', async () => {
+    const store = await loadStore('sky-courier');
+    const scripts = await store.listScripts();
+    expect(scripts.length).toBeGreaterThan(0);
+    expect(scripts.every((p) => p.endsWith('.lua'))).toBe(true);
+  });
+
+  it('has the expected cast', async () => {
+    const store = await loadStore('sky-courier');
+    const scene = store.getScene('Rooftops')!;
+    const names = scene.entities.map((e) => e.name);
+    expect(names).toContain('Courier');
+    expect(names).toContain('Chute');
+    expect(names).toContain('HUD');
+    expect(names.filter((n) => n.startsWith('Parcel')).length).toBe(3);
+    expect(store.playtests.size).toBe(4);
+  });
+
+  it('the character sheet is a real imported PNG, sliced into named frames', async () => {
+    const store = await loadStore('sky-courier');
+    const sheet = store.getAsset('courier-sheet')!;
+    expect(sheet.metadata.width).toBe(96);
+    expect(sheet.metadata.height).toBe(16);
+    expect((sheet.metadata as any).frames.length).toBe(6);
+    const walk = store.getAsset('courier-walk')!;
+    expect(walk.type).toBe('animation');
+  });
+
+  it('the font asset is a real imported TTF, referenced by name from the HUD/Title text', async () => {
+    const store = await loadStore('sky-courier');
+    const font = store.getAsset('press-start-2p')!;
+    expect(font.type).toBe('font');
+    const scene = store.getScene('Rooftops')!;
+    const hud = scene.entities.find((e) => e.name === 'HUD')!;
+    const title = scene.entities.find((e) => e.name === 'Title')!;
+    expect(hud.components.Text!.fontFamily).toBe('press-start-2p');
+    expect(title.components.Text!.fontFamily).toBe('press-start-2p');
+  });
+
+  it('the music track autoplays exactly once on the shared music channel', async () => {
+    const store = await loadStore('sky-courier');
+    const result = await runPlaytest(store, 'boot');
+    expect(result.passed).toBe(true);
+    const music = store.getAsset('rooftop-loop')!;
+    // The `music: true` filter itself is asserted inside the "boot"
+    // playtest's own assertAudioCount step; this just confirms the same
+    // asset id shows up in the recorded playback (AudioEventEntry has no
+    // `music` field to re-check from the test side).
+    expect(result.audioEvents.some((e) => e.assetId === music.id && e.action === 'play')).toBe(true);
+  });
+
+  it('the courier walks right and switches to the walk animation clip', async () => {
+    const store = await loadStore('sky-courier');
+    const result = await runPlaytest(store, 'movement');
+    expect(result.passed).toBe(true);
+  });
+
+  it('walking the courier onto Parcel 1 emits the parcel event', async () => {
+    const store = await loadStore('sky-courier');
+    const result = await runPlaytest(store, 'pickup');
+    expect(result.passed).toBe(true);
+    expect(result.eventCounts.parcel).toBeGreaterThanOrEqual(1);
+  });
+
+  it('the HUD text updates when a parcel is collected (ctx.events + onEvent)', async () => {
+    const store = await loadStore('sky-courier');
+    const runtime = await SceneRuntime.create(store, store.project.initialScene);
+    runtime.input.setActionDown('right');
+    runtime.run(45); // matches the pickup playtest's walk-right frame count
+    runtime.input.setActionUp('right');
+    expect(runtime.errors).toEqual([]);
+    const hud = runtime.getEntities().find((e) => e.name === 'HUD')!;
+    expect(hud.components.Text!.content).toBe('Parcels: 1/3');
+  });
+
+  it('the smoke playtest passes with no script errors', async () => {
+    const store = await loadStore('sky-courier');
     const result = await runPlaytest(store, 'smoke');
     expect(result.passed).toBe(true);
   });

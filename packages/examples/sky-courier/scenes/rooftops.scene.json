@@ -1,0 +1,853 @@
+{
+  "formatVersion": 1,
+  "id": "scn_vmh4hwwi",
+  "name": "Rooftops",
+  "entities": [
+    {
+      "id": "ent_cqd37f1i",
+      "name": "Main Camera",
+      "parentId": null,
+      "enabled": true,
+      "tags": [],
+      "components": {
+        "Transform": {
+          "position": {
+            "x": 400,
+            "y": 300
+          },
+          "rotation": 0,
+          "scale": {
+            "x": 1,
+            "y": 1
+          }
+        },
+        "Camera": {
+          "zoom": 1,
+          "isMain": true,
+          "backgroundColor": "#5b7fa6",
+          "ambientLight": 1
+        }
+      }
+    },
+    {
+      "id": "ent_3npnvvwi",
+      "name": "Backdrop",
+      "parentId": null,
+      "enabled": true,
+      "tags": [
+        "background"
+      ],
+      "components": {
+        "Transform": {
+          "position": {
+            "x": 400,
+            "y": 300
+          },
+          "rotation": 0,
+          "scale": {
+            "x": 1,
+            "y": 1
+          }
+        },
+        "SpriteRenderer": {
+          "assetId": null,
+          "frame": null,
+          "shape": "rectangle",
+          "color": "#3f6b91",
+          "width": 800,
+          "height": 600,
+          "opacity": 1,
+          "flipX": false,
+          "flipY": false,
+          "layer": -20,
+          "visible": true
+        }
+      }
+    },
+    {
+      "id": "ent_x97pgjvq",
+      "name": "Rooftop A",
+      "parentId": null,
+      "enabled": true,
+      "tags": [
+        "ground"
+      ],
+      "components": {
+        "Transform": {
+          "position": {
+            "x": 110,
+            "y": 520
+          },
+          "rotation": 0,
+          "scale": {
+            "x": 1,
+            "y": 1
+          }
+        },
+        "SpriteRenderer": {
+          "assetId": null,
+          "frame": null,
+          "shape": "rectangle",
+          "color": "#7f8c8d",
+          "width": 200,
+          "height": 24,
+          "opacity": 1,
+          "flipX": false,
+          "flipY": false,
+          "layer": 0,
+          "visible": true
+        },
+        "Collider": {
+          "shape": "box",
+          "width": 200,
+          "height": 24,
+          "radius": 16,
+          "points": [
+            {
+              "x": 0,
+              "y": -16
+            },
+            {
+              "x": 16,
+              "y": 16
+            },
+            {
+              "x": -16,
+              "y": 16
+            }
+          ],
+          "offset": {
+            "x": 0,
+            "y": 0
+          },
+          "isTrigger": false,
+          "layer": "default",
+          "collidesWith": [
+            "*"
+          ],
+          "oneWay": false
+        },
+        "PhysicsBody": {
+          "bodyType": "static",
+          "velocity": {
+            "x": 0,
+            "y": 0
+          },
+          "gravityScale": 1,
+          "drag": 0,
+          "mass": 1,
+          "restitution": 0,
+          "friction": 0
+        }
+      }
+    },
+    {
+      "id": "ent_edgorl3b",
+      "name": "Rooftop B",
+      "parentId": null,
+      "enabled": true,
+      "tags": [
+        "ground"
+      ],
+      "components": {
+        "Transform": {
+          "position": {
+            "x": 350,
+            "y": 430
+          },
+          "rotation": 0,
+          "scale": {
+            "x": 1,
+            "y": 1
+          }
+        },
+        "SpriteRenderer": {
+          "assetId": null,
+          "frame": null,
+          "shape": "rectangle",
+          "color": "#7f8c8d",
+          "width": 150,
+          "height": 24,
+          "opacity": 1,
+          "flipX": false,
+          "flipY": false,
+          "layer": 0,
+          "visible": true
+        },
+        "Collider": {
+          "shape": "box",
+          "width": 150,
+          "height": 24,
+          "radius": 16,
+          "points": [
+            {
+              "x": 0,
+              "y": -16
+            },
+            {
+              "x": 16,
+              "y": 16
+            },
+            {
+              "x": -16,
+              "y": 16
+            }
+          ],
+          "offset": {
+            "x": 0,
+            "y": 0
+          },
+          "isTrigger": false,
+          "layer": "default",
+          "collidesWith": [
+            "*"
+          ],
+          "oneWay": false
+        },
+        "PhysicsBody": {
+          "bodyType": "static",
+          "velocity": {
+            "x": 0,
+            "y": 0
+          },
+          "gravityScale": 1,
+          "drag": 0,
+          "mass": 1,
+          "restitution": 0,
+          "friction": 0
+        }
+      }
+    },
+    {
+      "id": "ent_itdatp4i",
+      "name": "Rooftop C",
+      "parentId": null,
+      "enabled": true,
+      "tags": [
+        "ground"
+      ],
+      "components": {
+        "Transform": {
+          "position": {
+            "x": 560,
+            "y": 490
+          },
+          "rotation": 0,
+          "scale": {
+            "x": 1,
+            "y": 1
+          }
+        },
+        "SpriteRenderer": {
+          "assetId": null,
+          "frame": null,
+          "shape": "rectangle",
+          "color": "#7f8c8d",
+          "width": 150,
+          "height": 24,
+          "opacity": 1,
+          "flipX": false,
+          "flipY": false,
+          "layer": 0,
+          "visible": true
+        },
+        "Collider": {
+          "shape": "box",
+          "width": 150,
+          "height": 24,
+          "radius": 16,
+          "points": [
+            {
+              "x": 0,
+              "y": -16
+            },
+            {
+              "x": 16,
+              "y": 16
+            },
+            {
+              "x": -16,
+              "y": 16
+            }
+          ],
+          "offset": {
+            "x": 0,
+            "y": 0
+          },
+          "isTrigger": false,
+          "layer": "default",
+          "collidesWith": [
+            "*"
+          ],
+          "oneWay": false
+        },
+        "PhysicsBody": {
+          "bodyType": "static",
+          "velocity": {
+            "x": 0,
+            "y": 0
+          },
+          "gravityScale": 1,
+          "drag": 0,
+          "mass": 1,
+          "restitution": 0,
+          "friction": 0
+        }
+      }
+    },
+    {
+      "id": "ent_zrn0pfd5",
+      "name": "Rooftop D",
+      "parentId": null,
+      "enabled": true,
+      "tags": [
+        "ground"
+      ],
+      "components": {
+        "Transform": {
+          "position": {
+            "x": 730,
+            "y": 380
+          },
+          "rotation": 0,
+          "scale": {
+            "x": 1,
+            "y": 1
+          }
+        },
+        "SpriteRenderer": {
+          "assetId": null,
+          "frame": null,
+          "shape": "rectangle",
+          "color": "#7f8c8d",
+          "width": 140,
+          "height": 24,
+          "opacity": 1,
+          "flipX": false,
+          "flipY": false,
+          "layer": 0,
+          "visible": true
+        },
+        "Collider": {
+          "shape": "box",
+          "width": 140,
+          "height": 24,
+          "radius": 16,
+          "points": [
+            {
+              "x": 0,
+              "y": -16
+            },
+            {
+              "x": 16,
+              "y": 16
+            },
+            {
+              "x": -16,
+              "y": 16
+            }
+          ],
+          "offset": {
+            "x": 0,
+            "y": 0
+          },
+          "isTrigger": false,
+          "layer": "default",
+          "collidesWith": [
+            "*"
+          ],
+          "oneWay": false
+        },
+        "PhysicsBody": {
+          "bodyType": "static",
+          "velocity": {
+            "x": 0,
+            "y": 0
+          },
+          "gravityScale": 1,
+          "drag": 0,
+          "mass": 1,
+          "restitution": 0,
+          "friction": 0
+        }
+      }
+    },
+    {
+      "id": "ent_imy6jqiu",
+      "name": "Courier",
+      "parentId": null,
+      "enabled": true,
+      "tags": [
+        "player"
+      ],
+      "components": {
+        "Transform": {
+          "position": {
+            "x": 90,
+            "y": 480
+          },
+          "rotation": 0,
+          "scale": {
+            "x": 1,
+            "y": 1
+          }
+        },
+        "SpriteRenderer": {
+          "assetId": "ast_8twpiyds",
+          "frame": "courier_4",
+          "shape": "rectangle",
+          "color": "#ffffff",
+          "width": 48,
+          "height": 48,
+          "opacity": 1,
+          "flipX": false,
+          "flipY": false,
+          "layer": 0,
+          "visible": true
+        },
+        "SpriteAnimator": {
+          "assetId": "ast_acdpzsaw",
+          "fps": 0,
+          "playing": true,
+          "loop": true
+        },
+        "Collider": {
+          "shape": "box",
+          "width": 34,
+          "height": 44,
+          "radius": 16,
+          "points": [
+            {
+              "x": 0,
+              "y": -16
+            },
+            {
+              "x": 16,
+              "y": 16
+            },
+            {
+              "x": -16,
+              "y": 16
+            }
+          ],
+          "offset": {
+            "x": 0,
+            "y": 0
+          },
+          "isTrigger": false,
+          "layer": "default",
+          "collidesWith": [
+            "*"
+          ],
+          "oneWay": false
+        },
+        "PhysicsBody": {
+          "bodyType": "dynamic",
+          "velocity": {
+            "x": 0,
+            "y": 0
+          },
+          "gravityScale": 1,
+          "drag": 0,
+          "mass": 1,
+          "restitution": 0,
+          "friction": 0
+        },
+        "Script": {
+          "scriptPath": "scripts/courier-move.lua",
+          "params": {
+            "speed": 170,
+            "jumpSpeed": 480
+          }
+        }
+      }
+    },
+    {
+      "id": "ent_h1f486za",
+      "name": "Parcel 1",
+      "parentId": null,
+      "enabled": true,
+      "tags": [
+        "parcel"
+      ],
+      "components": {
+        "Transform": {
+          "position": {
+            "x": 170,
+            "y": 495
+          },
+          "rotation": 0,
+          "scale": {
+            "x": 1,
+            "y": 1
+          }
+        },
+        "SpriteRenderer": {
+          "assetId": "ast_erdwtpl9",
+          "frame": null,
+          "shape": "rectangle",
+          "color": "#ffffff",
+          "width": 18,
+          "height": 16,
+          "opacity": 1,
+          "flipX": false,
+          "flipY": false,
+          "layer": 0,
+          "visible": true
+        },
+        "Collider": {
+          "shape": "box",
+          "width": 18,
+          "height": 16,
+          "radius": 16,
+          "points": [
+            {
+              "x": 0,
+              "y": -16
+            },
+            {
+              "x": 16,
+              "y": 16
+            },
+            {
+              "x": -16,
+              "y": 16
+            }
+          ],
+          "offset": {
+            "x": 0,
+            "y": 0
+          },
+          "isTrigger": true,
+          "layer": "default",
+          "collidesWith": [
+            "*"
+          ],
+          "oneWay": false
+        },
+        "Script": {
+          "scriptPath": "scripts/parcel-pickup.lua",
+          "params": {}
+        }
+      }
+    },
+    {
+      "id": "ent_ltangtf9",
+      "name": "Parcel 2",
+      "parentId": null,
+      "enabled": true,
+      "tags": [
+        "parcel"
+      ],
+      "components": {
+        "Transform": {
+          "position": {
+            "x": 350,
+            "y": 405
+          },
+          "rotation": 0,
+          "scale": {
+            "x": 1,
+            "y": 1
+          }
+        },
+        "SpriteRenderer": {
+          "assetId": "ast_erdwtpl9",
+          "frame": null,
+          "shape": "rectangle",
+          "color": "#ffffff",
+          "width": 18,
+          "height": 16,
+          "opacity": 1,
+          "flipX": false,
+          "flipY": false,
+          "layer": 0,
+          "visible": true
+        },
+        "Collider": {
+          "shape": "box",
+          "width": 18,
+          "height": 16,
+          "radius": 16,
+          "points": [
+            {
+              "x": 0,
+              "y": -16
+            },
+            {
+              "x": 16,
+              "y": 16
+            },
+            {
+              "x": -16,
+              "y": 16
+            }
+          ],
+          "offset": {
+            "x": 0,
+            "y": 0
+          },
+          "isTrigger": true,
+          "layer": "default",
+          "collidesWith": [
+            "*"
+          ],
+          "oneWay": false
+        },
+        "Script": {
+          "scriptPath": "scripts/parcel-pickup.lua",
+          "params": {}
+        }
+      }
+    },
+    {
+      "id": "ent_o0qmlsbr",
+      "name": "Parcel 3",
+      "parentId": null,
+      "enabled": true,
+      "tags": [
+        "parcel"
+      ],
+      "components": {
+        "Transform": {
+          "position": {
+            "x": 560,
+            "y": 465
+          },
+          "rotation": 0,
+          "scale": {
+            "x": 1,
+            "y": 1
+          }
+        },
+        "SpriteRenderer": {
+          "assetId": "ast_erdwtpl9",
+          "frame": null,
+          "shape": "rectangle",
+          "color": "#ffffff",
+          "width": 18,
+          "height": 16,
+          "opacity": 1,
+          "flipX": false,
+          "flipY": false,
+          "layer": 0,
+          "visible": true
+        },
+        "Collider": {
+          "shape": "box",
+          "width": 18,
+          "height": 16,
+          "radius": 16,
+          "points": [
+            {
+              "x": 0,
+              "y": -16
+            },
+            {
+              "x": 16,
+              "y": 16
+            },
+            {
+              "x": -16,
+              "y": 16
+            }
+          ],
+          "offset": {
+            "x": 0,
+            "y": 0
+          },
+          "isTrigger": true,
+          "layer": "default",
+          "collidesWith": [
+            "*"
+          ],
+          "oneWay": false
+        },
+        "Script": {
+          "scriptPath": "scripts/parcel-pickup.lua",
+          "params": {}
+        }
+      }
+    },
+    {
+      "id": "ent_2njfpiio",
+      "name": "Chute",
+      "parentId": null,
+      "enabled": true,
+      "tags": [
+        "chute"
+      ],
+      "components": {
+        "Transform": {
+          "position": {
+            "x": 730,
+            "y": 350
+          },
+          "rotation": 0,
+          "scale": {
+            "x": 1,
+            "y": 1
+          }
+        },
+        "SpriteRenderer": {
+          "assetId": "ast_kdniz92x",
+          "frame": null,
+          "shape": "rectangle",
+          "color": "#ffffff",
+          "width": 40,
+          "height": 32,
+          "opacity": 1,
+          "flipX": false,
+          "flipY": false,
+          "layer": 0,
+          "visible": true
+        },
+        "Collider": {
+          "shape": "box",
+          "width": 40,
+          "height": 32,
+          "radius": 16,
+          "points": [
+            {
+              "x": 0,
+              "y": -16
+            },
+            {
+              "x": 16,
+              "y": 16
+            },
+            {
+              "x": -16,
+              "y": 16
+            }
+          ],
+          "offset": {
+            "x": 0,
+            "y": 0
+          },
+          "isTrigger": true,
+          "layer": "default",
+          "collidesWith": [
+            "*"
+          ],
+          "oneWay": false
+        },
+        "Script": {
+          "scriptPath": "scripts/delivery-chute.lua",
+          "params": {}
+        }
+      }
+    },
+    {
+      "id": "ent_duhcfmxw",
+      "name": "Title",
+      "parentId": null,
+      "enabled": true,
+      "tags": [
+        "ui"
+      ],
+      "components": {
+        "Transform": {
+          "position": {
+            "x": 0,
+            "y": 0
+          },
+          "rotation": 0,
+          "scale": {
+            "x": 1,
+            "y": 1
+          }
+        },
+        "UIElement": {
+          "anchor": "top",
+          "offset": {
+            "x": 0,
+            "y": 16
+          },
+          "interactive": false
+        },
+        "Text": {
+          "content": "SKY COURIER",
+          "fontSize": 20,
+          "color": "#ffd166",
+          "align": "center",
+          "fontFamily": "press-start-2p",
+          "layer": 10,
+          "visible": true
+        }
+      }
+    },
+    {
+      "id": "ent_i65s58jp",
+      "name": "HUD",
+      "parentId": null,
+      "enabled": true,
+      "tags": [
+        "ui"
+      ],
+      "components": {
+        "Transform": {
+          "position": {
+            "x": 0,
+            "y": 0
+          },
+          "rotation": 0,
+          "scale": {
+            "x": 1,
+            "y": 1
+          }
+        },
+        "UIElement": {
+          "anchor": "top-left",
+          "offset": {
+            "x": 20,
+            "y": 56
+          },
+          "interactive": false
+        },
+        "Text": {
+          "content": "Parcels: 0/3",
+          "fontSize": 12,
+          "color": "#ffffff",
+          "align": "left",
+          "fontFamily": "press-start-2p",
+          "layer": 10,
+          "visible": true
+        },
+        "Script": {
+          "scriptPath": "scripts/hud.lua",
+          "params": {}
+        }
+      }
+    },
+    {
+      "id": "ent_yuwpg2di",
+      "name": "Music",
+      "parentId": null,
+      "enabled": true,
+      "tags": [
+        "audio"
+      ],
+      "components": {
+        "Transform": {
+          "position": {
+            "x": 0,
+            "y": 0
+          },
+          "rotation": 0,
+          "scale": {
+            "x": 1,
+            "y": 1
+          }
+        },
+        "AudioSource": {
+          "assetId": "ast_ncssgy2o",
+          "autoplay": true,
+          "loop": true,
+          "volume": 0.6,
+          "music": true
+        }
+      }
+    }
+  ]
+}

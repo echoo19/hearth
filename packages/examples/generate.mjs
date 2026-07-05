@@ -8,12 +8,14 @@
  * The generated projects are committed to the repo so they work out of the
  * box; re-running this script recreates them from scratch (ids change).
  */
-import { rm } from 'node:fs/promises';
+import { rm, writeFile } from 'node:fs/promises';
+import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createProject, HearthSession } from '../core/dist/index.js';
 import { NodeFileSystem } from '../core/dist/node/index.js';
 import { GameSession } from '../runtime/dist/index.js';
+import { encodePng, renderChiptuneWav } from './pixelart.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const fs = new NodeFileSystem();
@@ -1695,10 +1697,482 @@ return script
 }
 
 // ---------------------------------------------------------------------------
+// Example 7: Sky Courier (imported BINARY assets — the wave C proof)
+// ---------------------------------------------------------------------------
+// Every other example's sprites/tiles are procedural SVGs created through
+// createSpriteAsset/createTileAsset. Sky Courier is the odd one out: its
+// character sheet and its music are real binary files (a PNG spritesheet, a
+// WAV chiptune loop) drawn/synthesized in code by pixelart.mjs, written to a
+// temp path, and brought into the project the same way an agent (or a human
+// dragging in game-jam art) would — via importAsset, sliceSpritesheet, and
+// createAnimationFromSheet. The font is a real imported TTF, too (the
+// fixture already committed at fixtures/fonts/press-start-2p.ttf).
+//
+// A rooftop courier hops across four platforms, picks up three parcels
+// (`ctx.events.emit("parcel", { left = 1 })` on contact), and delivers them
+// at a chute that tracks the running total via onEvent and emits
+// "delivered" once all three are in. All scripts are Lua, matching the
+// idiom generateBouncePatrol established (dot-syntax ctx calls, the
+// userdata-proxy-safe event guard, params-driven tuning).
+
+/** 16x16 RGBA pixel helper for the hand-authored courier sheet below. */
+function makeCourierSheetRgba() {
+  const FRAME_W = 16;
+  const FRAME_H = 16;
+  const FRAME_COUNT = 6;
+  const SHEET_W = FRAME_W * FRAME_COUNT; // 96
+  const SHEET_H = FRAME_H; // 16
+  const buf = new Uint8Array(SHEET_W * SHEET_H * 4); // starts fully transparent
+
+  function px(fx, x, y, color) {
+    if (x < 0 || x >= FRAME_W || y < 0 || y >= FRAME_H) return; // clip silently
+    const gx = fx * FRAME_W + x;
+    const idx = (y * SHEET_W + gx) * 4;
+    buf[idx] = color[0];
+    buf[idx + 1] = color[1];
+    buf[idx + 2] = color[2];
+    buf[idx + 3] = color[3];
+  }
+  function rect(fx, x0, y0, x1, y1, color) {
+    for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) px(fx, x, y, color);
+  }
+
+  const SKIN = [230, 180, 140, 255];
+  const CAP = [35, 55, 95, 255];
+  const UNIFORM = [70, 140, 220, 255];
+  const UNIFORM_DK = [50, 112, 190, 255];
+  const SATCHEL = [150, 100, 60, 255];
+  const SATCHEL_DK = [110, 72, 42, 255];
+  const BOOT = [40, 40, 55, 255];
+  const EYE = [20, 20, 25, 255];
+
+  // Cap + face + torso + satchel are the same for every frame except a 1px
+  // vertical settle (`bodyLift`) used by the idle frames; legs swing via
+  // per-leg horizontal offsets so all six frames read as distinct poses.
+  function drawFrame(fx, bodyLift, leftDX, rightDX) {
+    const dy = bodyLift;
+    rect(fx, 4, 0 + dy, 11, 0 + dy, CAP);
+    rect(fx, 3, 1 + dy, 12, 1 + dy, CAP);
+    rect(fx, 4, 2 + dy, 11, 2 + dy, CAP);
+    rect(fx, 5, 3 + dy, 10, 5 + dy, SKIN);
+    px(fx, 6, 4 + dy, EYE);
+    px(fx, 9, 4 + dy, EYE);
+    rect(fx, 4, 6 + dy, 11, 8 + dy, UNIFORM);
+    rect(fx, 4, 9 + dy, 11, 9 + dy, UNIFORM_DK);
+    rect(fx, 2, 6 + dy, 3, 9 + dy, SATCHEL_DK);
+    rect(fx, 1, 9 + dy, 4, 11 + dy, SATCHEL);
+    rect(fx, 5 + leftDX, 10 + dy, 6 + leftDX, 13, UNIFORM_DK);
+    rect(fx, 5 + leftDX, 14, 6 + leftDX, 15, BOOT);
+    rect(fx, 9 + rightDX, 10 + dy, 10 + rightDX, 13, UNIFORM_DK);
+    rect(fx, 9 + rightDX, 14, 10 + rightDX, 15, BOOT);
+  }
+
+  // Walk cycle (frames 0-3): each leg pair is unique across the cycle.
+  drawFrame(0, 0, -2, 1);
+  drawFrame(1, 0, -1, 0);
+  drawFrame(2, 0, 1, -2);
+  drawFrame(3, 0, 0, -1);
+  // Idle (frames 4-5): a gentle 1px settle, feet planted.
+  drawFrame(4, 0, 0, 0);
+  drawFrame(5, 1, 0, 0);
+
+  return { width: SHEET_W, height: SHEET_H, rgba: buf };
+}
+
+async function generateSkyCourier() {
+  const session = await freshProject('sky-courier', {
+    name: 'Sky Courier',
+    description: 'Hop across the rooftops, collect three parcels, and deliver them down the chute.',
+  });
+
+  const scene = (await run(session, 'createScene', { name: 'Rooftops', withCamera: false })).sceneId;
+  await run(session, 'updateSettings', { buildSettings: { title: 'Sky Courier' } });
+
+  // --- imported binary assets -----------------------------------------
+  // Character sheet: hand-drawn 96x16 PNG (6 frames), written to a temp
+  // file and imported exactly like a human dragging in game-jam art would.
+  const sheet = makeCourierSheetRgba();
+  const sheetPath = path.join(os.tmpdir(), 'courier-sheet.png');
+  await writeFile(sheetPath, encodePng(sheet.width, sheet.height, sheet.rgba));
+  const sheetAsset = (
+    await run(session, 'importAsset', { sourcePath: sheetPath, name: 'courier-sheet', type: 'sprite' })
+  ).asset;
+  if (sheetAsset.metadata.width !== 96 || sheetAsset.metadata.height !== 16) {
+    throw new Error(
+      `sky-courier: probed sheet metadata ${sheetAsset.metadata.width}x${sheetAsset.metadata.height}, expected 96x16`,
+    );
+  }
+  await run(session, 'sliceSpritesheet', {
+    asset: sheetAsset.id, frameWidth: 16, frameHeight: 16, namePrefix: 'courier',
+  });
+  const walkAnim = (
+    await run(session, 'createAnimationFromSheet', {
+      name: 'courier-walk', sheet: sheetAsset.id,
+      frames: ['courier_0', 'courier_1', 'courier_2', 'courier_3'],
+      frameDuration: 0.12, loop: true,
+    })
+  ).asset;
+  const idleAnim = (
+    await run(session, 'createAnimationFromSheet', {
+      name: 'courier-idle', sheet: sheetAsset.id,
+      frames: ['courier_4', 'courier_5'],
+      frameDuration: 0.4, loop: true,
+    })
+  ).asset;
+
+  // Music: an 8s two-voice chiptune loop, synthesized and imported the same
+  // way — no procedural createSound preset makes a full musical loop.
+  const musicPath = path.join(os.tmpdir(), 'rooftop-loop.wav');
+  await writeFile(musicPath, renderChiptuneWav());
+  const music = (
+    await run(session, 'importAsset', { sourcePath: musicPath, name: 'rooftop-loop', type: 'audio' })
+  ).asset;
+
+  // Font: the committed press-start-2p fixture, imported by real path.
+  const fontPath = fileURLToPath(new URL('./fixtures/fonts/press-start-2p.ttf', import.meta.url));
+  await run(session, 'importAsset', { sourcePath: fontPath, name: 'press-start-2p', type: 'font' });
+
+  // Procedural sound effects (deterministic WAVs, same as every other
+  // example — only the music needed the custom chiptune renderer).
+  await run(session, 'createSound', { name: 'jump-sound', preset: 'jump' });
+  await run(session, 'createSound', { name: 'parcel-sound', preset: 'coin' });
+  await run(session, 'createSound', { name: 'delivery-sound', preset: 'powerup' });
+
+  const parcelAsset = (await run(session, 'createSpriteAsset', {
+    name: 'parcel', shape: 'rectangle', color: '#c0895a', accentColor: '#7a5230', width: 18, height: 16,
+  })).asset;
+  const chuteAsset = (await run(session, 'createSpriteAsset', {
+    name: 'chute', shape: 'rectangle', color: '#2c3e50', accentColor: '#f1c40f', width: 40, height: 32,
+  })).asset;
+
+  // --- scripts (all Lua) ---
+  await run(session, 'createScript', {
+    name: 'courier-move',
+    language: 'lua',
+    source: `-- Courier: left/right walk + jump (isGrounded-gated), switching the
+-- SpriteAnimator between the walk and idle clips via ctx.animate based on
+-- horizontal speed. ctx.animate restarts the clip at frame 0, so it's only
+-- called when the desired clip actually changes -- calling it every frame
+-- while walking would restart the gait constantly instead of playing it.
+-- Reminder: ctx calls use DOT syntax (ctx.log("hi"), never ctx:log("hi")).
+local script = {}
+
+function script.onStart(ctx)
+  ctx.vars.clip = "idle"
+  ctx.vars.spawnX = ctx.transform.position.x
+  ctx.vars.spawnY = ctx.transform.position.y
+end
+
+function script.onUpdate(ctx, dt)
+  local body = ctx.getComponent("PhysicsBody")
+  local sprite = ctx.getComponent("SpriteRenderer")
+  local speed = ctx.params.speed or 170
+
+  local vx = 0
+  if ctx.input.isDown("left") then vx = vx - speed end
+  if ctx.input.isDown("right") then vx = vx + speed end
+  body.velocity.x = vx
+
+  if ctx.input.justPressed("jump") and ctx.isGrounded() then
+    body.velocity.y = -(ctx.params.jumpSpeed or 480)
+    ctx.audio.play("jump-sound", { volume = 0.7 })
+  end
+
+  if vx < 0 then
+    sprite.flipX = true
+  elseif vx > 0 then
+    sprite.flipX = false
+  end
+
+  local moving = math.abs(vx) > 1
+  local wantClip = moving and "walk" or "idle"
+  if ctx.vars.clip ~= wantClip then
+    ctx.vars.clip = wantClip
+    ctx.animate(wantClip == "walk" and "courier-walk" or "courier-idle")
+  end
+
+  -- Missed a jump and fell past the rooftops: back to the start.
+  if ctx.transform.position.y > 700 then
+    ctx.transform.position.x = ctx.vars.spawnX
+    ctx.transform.position.y = ctx.vars.spawnY
+    body.velocity.x = 0
+    body.velocity.y = 0
+  end
+end
+
+return script
+`,
+  });
+
+  await run(session, 'createScript', {
+    name: 'parcel-pickup',
+    language: 'lua',
+    source: `-- Parcel: on contact with the Courier, emits "parcel" (this pickup's
+-- contribution toward the delivered count -- the HUD and Chute scripts
+-- both listen via onEvent and add it up themselves), plays a pickup
+-- chime, and removes itself.
+local script = {}
+
+function script.onCollision(ctx, other)
+  if other.name ~= "Courier" then return end
+  ctx.events.emit("parcel", { left = 1 })
+  ctx.audio.play("parcel-sound", { volume = 0.8 })
+  ctx.destroySelf()
+end
+
+return script
+`,
+  });
+
+  await run(session, 'createScript', {
+    name: 'delivery-chute',
+    language: 'lua',
+    source: `-- Chute: tallies "parcel" events (onEvent fires scene-wide for every
+-- emit, unfiltered, so every entity sees every pickup). Once all three
+-- are in and the Courier touches the chute, it emits "delivered" exactly
+-- once. Event payloads cross the JS/Lua boundary as proxies, not plain
+-- Lua tables: type(data) reports "userdata" here, never "table", so the
+-- guard checks the field directly (see docs/scripting.md's proxy note).
+local script = {}
+
+local TOTAL_PARCELS = 3
+
+function script.onStart(ctx)
+  ctx.vars.collected = 0
+  ctx.vars.delivered = false
+end
+
+function script.onEvent(ctx, name, data)
+  if name ~= "parcel" then return end
+  local amount = 1
+  if data and type(data.left) == "number" then
+    amount = data.left
+  end
+  ctx.vars.collected = ctx.vars.collected + amount
+end
+
+function script.onCollision(ctx, other)
+  if other.name ~= "Courier" then return end
+  if ctx.vars.delivered or ctx.vars.collected < TOTAL_PARCELS then return end
+  ctx.vars.delivered = true
+  ctx.events.emit("delivered")
+  ctx.audio.play("delivery-sound", { volume = 0.9 })
+end
+
+return script
+`,
+  });
+
+  await run(session, 'createScript', {
+    name: 'hud',
+    language: 'lua',
+    source: `-- HUD: shows parcels collected (via "parcel" events, same proxy-safe
+-- guard as the Chute) and switches to a delivered message once the Chute
+-- confirms "delivered".
+local script = {}
+
+local TOTAL_PARCELS = 3
+
+function script.onStart(ctx)
+  ctx.vars.collected = 0
+  ctx.getComponent("Text").content = string.format("Parcels: %d/%d", ctx.vars.collected, TOTAL_PARCELS)
+end
+
+function script.onEvent(ctx, name, data)
+  if name == "parcel" then
+    local amount = 1
+    if data and type(data.left) == "number" then
+      amount = data.left
+    end
+    ctx.vars.collected = ctx.vars.collected + amount
+    ctx.getComponent("Text").content = string.format("Parcels: %d/%d", ctx.vars.collected, TOTAL_PARCELS)
+  elseif name == "delivered" then
+    ctx.getComponent("Text").content = "All delivered!"
+  end
+end
+
+return script
+`,
+  });
+
+  // --- entities ---
+  await run(session, 'createEntity', {
+    scene, name: 'Main Camera', position: { x: 400, y: 300 },
+    components: { Camera: { backgroundColor: '#5b7fa6' } },
+  });
+  await run(session, 'createEntity', {
+    scene, name: 'Backdrop', tags: ['background'], position: { x: 400, y: 300 },
+    components: { SpriteRenderer: { shape: 'rectangle', color: '#3f6b91', width: 800, height: 600, layer: -20 } },
+  });
+
+  // Four rooftops, one screen, no camera follow: A (start) -> B -> C -> D
+  // (the chute), each a modest hop from the last.
+  const rooftops = [
+    { name: 'Rooftop A', x: 110, y: 520, w: 200, h: 24 },
+    { name: 'Rooftop B', x: 350, y: 430, w: 150, h: 24 },
+    { name: 'Rooftop C', x: 560, y: 490, w: 150, h: 24 },
+    { name: 'Rooftop D', x: 730, y: 380, w: 140, h: 24 },
+  ];
+  for (const r of rooftops) {
+    await run(session, 'createEntity', {
+      scene, name: r.name, tags: ['ground'], position: { x: r.x, y: r.y },
+      components: {
+        SpriteRenderer: { shape: 'rectangle', color: '#7f8c8d', width: r.w, height: r.h },
+        Collider: { shape: 'box', width: r.w, height: r.h },
+        PhysicsBody: { bodyType: 'static' },
+      },
+    });
+  }
+
+  await run(session, 'createEntity', {
+    scene, name: 'Courier', tags: ['player'], position: { x: 90, y: 480 },
+    components: {
+      SpriteRenderer: { assetId: sheetAsset.id, frame: 'courier_4', width: 48, height: 48 },
+      SpriteAnimator: { assetId: idleAnim.id, playing: true, loop: true },
+      Collider: { shape: 'box', width: 34, height: 44 },
+      PhysicsBody: { bodyType: 'dynamic' },
+    },
+  });
+  await run(session, 'attachScript', {
+    scene, entity: 'Courier', script: 'scripts/courier-move.lua', params: { speed: 170, jumpSpeed: 480 },
+  });
+
+  const parcels = [
+    { name: 'Parcel 1', x: 170, y: 495 },
+    { name: 'Parcel 2', x: 350, y: 405 },
+    { name: 'Parcel 3', x: 560, y: 465 },
+  ];
+  for (const p of parcels) {
+    await run(session, 'createEntity', {
+      scene, name: p.name, tags: ['parcel'], position: { x: p.x, y: p.y },
+      components: {
+        SpriteRenderer: { assetId: parcelAsset.id, width: 18, height: 16 },
+        Collider: { shape: 'box', width: 18, height: 16, isTrigger: true },
+      },
+    });
+    await run(session, 'attachScript', { scene, entity: p.name, script: 'scripts/parcel-pickup.lua' });
+  }
+
+  await run(session, 'createEntity', {
+    scene, name: 'Chute', tags: ['chute'], position: { x: 730, y: 350 },
+    components: {
+      SpriteRenderer: { assetId: chuteAsset.id, width: 40, height: 32 },
+      Collider: { shape: 'box', width: 40, height: 32, isTrigger: true },
+    },
+  });
+  await run(session, 'attachScript', { scene, entity: 'Chute', script: 'scripts/delivery-chute.lua' });
+
+  await run(session, 'createEntity', {
+    scene, name: 'Title', tags: ['ui'],
+    components: {
+      UIElement: { anchor: 'top', offset: { x: 0, y: 16 } },
+      Text: { content: 'SKY COURIER', fontSize: 20, color: '#ffd166', align: 'center', fontFamily: 'press-start-2p' },
+    },
+  });
+  await run(session, 'createEntity', {
+    scene, name: 'HUD', tags: ['ui'],
+    components: {
+      UIElement: { anchor: 'top-left', offset: { x: 20, y: 56 } },
+      Text: { content: 'Parcels: 0/3', fontSize: 12, color: '#ffffff', fontFamily: 'press-start-2p' },
+    },
+  });
+  await run(session, 'attachScript', { scene, entity: 'HUD', script: 'scripts/hud.lua' });
+
+  await run(session, 'createEntity', {
+    scene, name: 'Music', tags: ['audio'],
+    components: { AudioSource: { assetId: music.id, autoplay: true, loop: true, music: true, volume: 0.6 } },
+  });
+
+  // --- playtests ---
+  // Every expected value below is read back from an actual probe run of
+  // this exact scene (GameSession.stepAsync — same engine path runPlaytest
+  // uses), never hand-computed, matching generateBouncePatrol's approach.
+
+  // Probe 1: movement — a short press-right, well short of Parcel 1, so
+  // this is a pure movement/animation read (no pickup in flight).
+  const MOVE_FRAMES = 15;
+  let probe = await GameSession.create(session.store, { scene, seed: 0 });
+  probe.runtime.input.setActionDown('right');
+  for (let i = 0; i < MOVE_FRAMES; i++) await probe.stepAsync();
+  probe.runtime.input.setActionUp('right');
+  const courierProbe = probe.runtime.find('Courier');
+  const expectedMoveX = courierProbe.transform.position.x;
+  const expectedMoveY = courierProbe.transform.position.y;
+  if (expectedMoveX <= 90) {
+    throw new Error('sky-courier: movement probe did not move right of spawn — adjust MOVE_FRAMES/speed');
+  }
+  probe.destroy();
+
+  // Probe 2: pickup — press-right long enough to reach Parcel 1.
+  const PICKUP_FRAMES = 45;
+  probe = await GameSession.create(session.store, { scene, seed: 0 });
+  probe.runtime.input.setActionDown('right');
+  for (let i = 0; i < PICKUP_FRAMES; i++) await probe.stepAsync();
+  probe.runtime.input.setActionUp('right');
+  const pickupEventCount = probe.runtime.eventCounts.get('parcel') ?? 0;
+  if (pickupEventCount < 1) {
+    throw new Error('sky-courier: pickup probe never reached Parcel 1 — adjust PICKUP_FRAMES/layout');
+  }
+  probe.destroy();
+
+  await run(session, 'createPlaytest', {
+    name: 'boot',
+    scene,
+    steps: [
+      { type: 'wait', frames: 10 },
+      { type: 'assertAudioCount', music: true, action: 'play', equals: 1 },
+      { type: 'assertEntityExists', entity: 'Courier', exists: true },
+      { type: 'assertNoErrors' },
+    ],
+    maxFrames: 200,
+  });
+  await run(session, 'createPlaytest', {
+    name: 'movement',
+    scene,
+    steps: [
+      { type: 'press', action: 'right', frames: MOVE_FRAMES },
+      { type: 'assertPositionNear', entity: 'Courier', x: expectedMoveX, y: expectedMoveY, tolerance: 3 },
+      { type: 'assertNoErrors' },
+    ],
+    maxFrames: 200,
+  });
+  await run(session, 'createPlaytest', {
+    name: 'pickup',
+    scene,
+    steps: [
+      { type: 'press', action: 'right', frames: PICKUP_FRAMES },
+      { type: 'assertEventCount', event: 'parcel', min: 1 },
+      { type: 'assertNoErrors' },
+    ],
+    maxFrames: 200,
+  });
+  await run(session, 'createPlaytest', {
+    name: 'smoke',
+    scene,
+    steps: [
+      { type: 'wait', frames: 60 },
+      { type: 'assertEntityExists', entity: 'Courier', exists: true },
+      { type: 'assertEntityExists', entity: 'Chute', exists: true },
+      { type: 'assertEntityExists', entity: 'Parcel 1', exists: true },
+      { type: 'assertEntityExists', entity: 'Parcel 2', exists: true },
+      { type: 'assertEntityExists', entity: 'Parcel 3', exists: true },
+      { type: 'assertEntityExists', entity: 'HUD', exists: true },
+      { type: 'assertNoErrors' },
+    ],
+    maxFrames: 200,
+  });
+
+  const report = await run(session, 'validateProject', {});
+  if (report.errors.length > 0) throw new Error('sky-courier validation failed: ' + JSON.stringify(report.errors));
+  console.log('✓ sky-courier generated');
+}
+
+// ---------------------------------------------------------------------------
 await generatePlatformer();
 await generateTopDown();
 await generateVisualNovel();
 await generateEmberTrail();
 await generateGlowCaves();
 await generateBouncePatrol();
+await generateSkyCourier();
 console.log('All example projects generated.');

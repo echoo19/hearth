@@ -1,0 +1,168 @@
+{
+  "formatVersion": 1,
+  "assets": [
+    {
+      "id": "ast_8twpiyds",
+      "name": "courier-sheet",
+      "type": "sprite",
+      "path": "assets/sprites/courier-sheet.png",
+      "metadata": {
+        "importedFrom": "courier-sheet.png",
+        "width": 96,
+        "height": 16,
+        "format": "png",
+        "frames": [
+          {
+            "name": "courier_0",
+            "x": 0,
+            "y": 0,
+            "width": 16,
+            "height": 16
+          },
+          {
+            "name": "courier_1",
+            "x": 16,
+            "y": 0,
+            "width": 16,
+            "height": 16
+          },
+          {
+            "name": "courier_2",
+            "x": 32,
+            "y": 0,
+            "width": 16,
+            "height": 16
+          },
+          {
+            "name": "courier_3",
+            "x": 48,
+            "y": 0,
+            "width": 16,
+            "height": 16
+          },
+          {
+            "name": "courier_4",
+            "x": 64,
+            "y": 0,
+            "width": 16,
+            "height": 16
+          },
+          {
+            "name": "courier_5",
+            "x": 80,
+            "y": 0,
+            "width": 16,
+            "height": 16
+          }
+        ],
+        "grid": {
+          "frameWidth": 16,
+          "frameHeight": 16,
+          "margin": 0,
+          "spacing": 0
+        }
+      }
+    },
+    {
+      "id": "ast_0hetrhln",
+      "name": "courier-walk",
+      "type": "animation",
+      "path": "assets/animations/courier_walk.anim.json",
+      "metadata": {
+        "frameCount": 4,
+        "frameDuration": 0.12,
+        "loop": true,
+        "sheet": "ast_8twpiyds"
+      }
+    },
+    {
+      "id": "ast_acdpzsaw",
+      "name": "courier-idle",
+      "type": "animation",
+      "path": "assets/animations/courier_idle.anim.json",
+      "metadata": {
+        "frameCount": 2,
+        "frameDuration": 0.4,
+        "loop": true,
+        "sheet": "ast_8twpiyds"
+      }
+    },
+    {
+      "id": "ast_ncssgy2o",
+      "name": "rooftop-loop",
+      "type": "audio",
+      "path": "assets/audio/rooftop-loop.wav",
+      "metadata": {
+        "importedFrom": "rooftop-loop.wav"
+      }
+    },
+    {
+      "id": "ast_yp4mkfed",
+      "name": "press-start-2p",
+      "type": "font",
+      "path": "assets/font/press-start-2p.ttf",
+      "metadata": {
+        "importedFrom": "press-start-2p.ttf"
+      }
+    },
+    {
+      "id": "ast_qumocixe",
+      "name": "jump-sound",
+      "type": "audio",
+      "path": "assets/sounds/jump_sound.wav",
+      "metadata": {
+        "procedural": true,
+        "preset": "jump",
+        "seed": 0
+      }
+    },
+    {
+      "id": "ast_wa7lelzc",
+      "name": "parcel-sound",
+      "type": "audio",
+      "path": "assets/sounds/parcel_sound.wav",
+      "metadata": {
+        "procedural": true,
+        "preset": "coin",
+        "seed": 0
+      }
+    },
+    {
+      "id": "ast_fsbai4kw",
+      "name": "delivery-sound",
+      "type": "audio",
+      "path": "assets/sounds/delivery_sound.wav",
+      "metadata": {
+        "procedural": true,
+        "preset": "powerup",
+        "seed": 0
+      }
+    },
+    {
+      "id": "ast_erdwtpl9",
+      "name": "parcel",
+      "type": "sprite",
+      "path": "assets/sprites/parcel.svg",
+      "metadata": {
+        "procedural": true,
+        "shape": "rectangle",
+        "color": "#c0895a",
+        "width": 18,
+        "height": 16
+      }
+    },
+    {
+      "id": "ast_kdniz92x",
+      "name": "chute",
+      "type": "sprite",
+      "path": "assets/sprites/chute.svg",
+      "metadata": {
+        "procedural": true,
+        "shape": "rectangle",
+        "color": "#2c3e50",
+        "width": 40,
+        "height": 32
+      }
+    }
+  ]
+}

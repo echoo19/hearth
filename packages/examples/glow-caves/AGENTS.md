@@ -138,6 +138,9 @@ with Lua and JS examples per entry):
 - `ctx.camera.follow(idOrName: string | null): void` — Follow an entity each frame (null stops). Warn log if not found.
 - `ctx.audio.play(assetRef: string, opts?: { volume?: number; loop?: boolean }): string | null` — Play an audio asset (by asset id or name). Returns a handle id for ctx.audio.stop, or null when the asset does not exist.
 - `ctx.audio.stop(handleIdOrAssetRef: string): void` — Stop a playback by handle id, or every playback of an asset id/name.
+- `ctx.audio.playMusic(assetRef: string, opts?: { volume?: number; loop?: boolean; fadeIn?: number }): string | null` — Play a track on the single shared music channel (by asset id or name); replaces any current track. Survives scene switches. Returns a handle id, or null when the asset does not exist.
+- `ctx.audio.stopMusic(opts?: { fadeOut?: number }): void` — Stop the current music track. No-op when nothing is playing.
+- `ctx.audio.setMusicVolume(volume: number, opts?: { fade?: number }): void` — Change the current music track's volume. No-op when nothing is playing.
 - `ctx.vars` — Persistent per-entity state, survives across frames (not across scene switches — use ctx.save).
 - `ctx.time` — Elapsed seconds, delta seconds, and frame count.
 - `ctx.log(...args: unknown[]): void` — Log to the Hearth console (shows up in playtest and smoke-run reports).

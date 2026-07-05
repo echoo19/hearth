@@ -1,10 +1,10 @@
 {
   "formatVersion": 1,
-  "id": "scn_398phnie",
+  "id": "scn_ialt4756",
   "name": "Level",
   "entities": [
     {
-      "id": "ent_xd06cnj8",
+      "id": "ent_m7qnxxb1",
       "name": "Main Camera",
       "parentId": null,
       "enabled": true,
@@ -30,7 +30,7 @@
       }
     },
     {
-      "id": "ent_kn96amwn",
+      "id": "ent_v6ypwq0l",
       "name": "Arena",
       "parentId": null,
       "enabled": true,
@@ -51,6 +51,7 @@
         },
         "SpriteRenderer": {
           "assetId": null,
+          "frame": null,
           "shape": "rectangle",
           "color": "#241a38",
           "width": 800,
@@ -64,7 +65,7 @@
       }
     },
     {
-      "id": "ent_nirdwmck",
+      "id": "ent_734icxrt",
       "name": "Wall Top",
       "parentId": null,
       "enabled": true,
@@ -128,7 +129,7 @@
       }
     },
     {
-      "id": "ent_kmqxh3oa",
+      "id": "ent_bqdn3c9u",
       "name": "Wall Bottom",
       "parentId": null,
       "enabled": true,
@@ -192,7 +193,7 @@
       }
     },
     {
-      "id": "ent_2s2ye5fs",
+      "id": "ent_7bhvn3ve",
       "name": "Wall Left",
       "parentId": null,
       "enabled": true,
@@ -256,7 +257,7 @@
       }
     },
     {
-      "id": "ent_zz5lmpls",
+      "id": "ent_4nk0agyn",
       "name": "Wall Right",
       "parentId": null,
       "enabled": true,
@@ -320,7 +321,7 @@
       }
     },
     {
-      "id": "ent_9yvzmxvr",
+      "id": "ent_6u6c0t7q",
       "name": "Player",
       "parentId": null,
       "enabled": true,
@@ -340,7 +341,8 @@
           }
         },
         "SpriteRenderer": {
-          "assetId": "ast_d85uissm",
+          "assetId": "ast_a7wisk83",
+          "frame": null,
           "shape": "rectangle",
           "color": "#ffffff",
           "width": 30,
@@ -403,7 +405,7 @@
       }
     },
     {
-      "id": "ent_bduaklwj",
+      "id": "ent_7m30ccqj",
       "name": "Spawner",
       "parentId": null,
       "enabled": true,
@@ -427,13 +429,13 @@
           "params": {
             "interval": 1.2,
             "lifetime": 4,
-            "emberAsset": "ast_olx5q0yy"
+            "emberAsset": "ast_w9075wli"
           }
         }
       }
     },
     {
-      "id": "ent_cypvoj5o",
+      "id": "ent_5lpckiqf",
       "name": "Score",
       "parentId": null,
       "enabled": true,
@@ -472,7 +474,7 @@
       }
     },
     {
-      "id": "ent_ogxth8w4",
+      "id": "ent_mxxrkabg",
       "name": "Hint",
       "parentId": null,
       "enabled": true,

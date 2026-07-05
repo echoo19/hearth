@@ -1,0 +1,23 @@
+{
+  "formatVersion": 1,
+  "id": "ptt_nrv32uvs",
+  "name": "pickup",
+  "scene": "scn_vmh4hwwi",
+  "steps": [
+    {
+      "type": "press",
+      "action": "right",
+      "frames": 45
+    },
+    {
+      "type": "assertEventCount",
+      "event": "parcel",
+      "min": 1
+    },
+    {
+      "type": "assertNoErrors"
+    }
+  ],
+  "maxFrames": 200,
+  "seed": 0
+}

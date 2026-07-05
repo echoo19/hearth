@@ -1,8 +1,8 @@
 {
   "formatVersion": 1,
-  "id": "ptt_sdyjubl2",
+  "id": "ptt_cd94uuj5",
   "name": "spikes-respawn-player",
-  "scene": "scn_gow01kyr",
+  "scene": "scn_d9hudga7",
   "steps": [
     {
       "type": "press",

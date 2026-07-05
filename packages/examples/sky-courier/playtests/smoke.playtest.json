@@ -1,0 +1,47 @@
+{
+  "formatVersion": 1,
+  "id": "ptt_9ivlygkg",
+  "name": "smoke",
+  "scene": "scn_vmh4hwwi",
+  "steps": [
+    {
+      "type": "wait",
+      "frames": 60
+    },
+    {
+      "type": "assertEntityExists",
+      "entity": "Courier",
+      "exists": true
+    },
+    {
+      "type": "assertEntityExists",
+      "entity": "Chute",
+      "exists": true
+    },
+    {
+      "type": "assertEntityExists",
+      "entity": "Parcel 1",
+      "exists": true
+    },
+    {
+      "type": "assertEntityExists",
+      "entity": "Parcel 2",
+      "exists": true
+    },
+    {
+      "type": "assertEntityExists",
+      "entity": "Parcel 3",
+      "exists": true
+    },
+    {
+      "type": "assertEntityExists",
+      "entity": "HUD",
+      "exists": true
+    },
+    {
+      "type": "assertNoErrors"
+    }
+  ],
+  "maxFrames": 200,
+  "seed": 0
+}

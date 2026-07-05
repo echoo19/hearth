@@ -1,0 +1,25 @@
+{
+  "formatVersion": 1,
+  "id": "ptt_zrbguyez",
+  "name": "movement",
+  "scene": "scn_vmh4hwwi",
+  "steps": [
+    {
+      "type": "press",
+      "action": "right",
+      "frames": 15
+    },
+    {
+      "type": "assertPositionNear",
+      "entity": "Courier",
+      "x": 132.49999999999994,
+      "y": 486,
+      "tolerance": 3
+    },
+    {
+      "type": "assertNoErrors"
+    }
+  ],
+  "maxFrames": 200,
+  "seed": 0
+}
