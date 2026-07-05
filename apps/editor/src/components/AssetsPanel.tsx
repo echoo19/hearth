@@ -30,7 +30,8 @@ const SPRITE_SHAPES = [
 
 const IMAGE_EXTENSIONS = ['png', 'jpg', 'jpeg', 'svg', 'webp', 'gif'];
 const AUDIO_EXTENSIONS = ['wav', 'mp3', 'ogg'];
-const IMPORT_EXTENSIONS = [...IMAGE_EXTENSIONS, ...AUDIO_EXTENSIONS];
+const FONT_EXTENSIONS = ['ttf', 'otf', 'woff', 'woff2'];
+const IMPORT_EXTENSIONS = [...IMAGE_EXTENSIONS, ...AUDIO_EXTENSIONS, ...FONT_EXTENSIONS];
 const IMPORT_ACCEPT = IMPORT_EXTENSIONS.map((e) => `.${e}`).join(',');
 const MAX_IMPORT_BYTES = 25 * 1024 * 1024;
 
@@ -264,7 +265,7 @@ export function AssetsPanel() {
       for (const file of fileList) {
         const ext = extensionOf(file.name);
         if (!IMPORT_EXTENSIONS.includes(ext)) {
-          const reason = `images (${IMAGE_EXTENSIONS.join(', ')}) and audio (${AUDIO_EXTENSIONS.join(', ')}) can be imported`;
+          const reason = `images (${IMAGE_EXTENSIONS.join(', ')}), audio (${AUDIO_EXTENSIONS.join(', ')}), and fonts (${FONT_EXTENSIONS.join(', ')}) can be imported`;
           log('warn', 'editor', `Skipped "${file.name}": ${reason}.`);
           failed.push({ name: file.name, reason });
           continue;
@@ -423,7 +424,7 @@ export function AssetsPanel() {
         <button
           className="btn btn-sm"
           disabled={importing}
-          title="Import images (png, jpg, svg, webp, gif) and audio (wav, mp3, ogg). You can also drop files onto this panel."
+          title="Import images (png, jpg, svg, webp, gif), audio (wav, mp3, ogg), and fonts (ttf, otf, woff, woff2). You can also drop files onto this panel."
           onClick={() => fileInputRef.current?.click()}
         >
           <Icon name="upload" /> {importing ? 'Importing…' : 'Import…'}
@@ -451,8 +452,8 @@ export function AssetsPanel() {
             <span>No assets yet</span>
             <span className="hint">
               Create a procedural placeholder sprite or tile above (deterministic SVGs that agents can also
-              generate via createSpriteAsset), or bring your own images and sounds with Import… — dropping
-              files onto this panel works too.
+              generate via createSpriteAsset), or bring your own images, sounds, and fonts with Import… —
+              dropping files onto this panel works too.
             </span>
           </div>
         ) : (
@@ -548,7 +549,7 @@ export function AssetsPanel() {
 
       {dropping && (
         <div className="drop-target" aria-hidden="true">
-          <span>Drop images or audio to import</span>
+          <span>Drop images, audio, or fonts to import</span>
         </div>
       )}
 

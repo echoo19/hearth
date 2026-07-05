@@ -85,7 +85,7 @@ function contentTypeFor(filePath: string): string {
 // Asset import (POST /api/assets/import)
 // ---------------------------------------------------------------------------
 
-/** File types the editor's Import accepts: images and audio. */
+/** File types the editor's Import accepts: images, audio, and fonts. */
 export const IMPORT_EXTENSIONS = new Set([
   'png',
   'jpg',
@@ -96,6 +96,10 @@ export const IMPORT_EXTENSIONS = new Set([
   'wav',
   'mp3',
   'ogg',
+  'ttf',
+  'otf',
+  'woff',
+  'woff2',
 ]);
 
 export const MAX_IMPORT_BYTES = 25 * 1024 * 1024;

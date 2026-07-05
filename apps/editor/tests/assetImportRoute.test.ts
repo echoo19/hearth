@@ -90,6 +90,18 @@ describe('POST /api/assets/import handler', () => {
     expect(body.data?.asset?.path).toContain('assets/audio/');
   });
 
+  it('classifies font uploads as font assets', async () => {
+    // Real TTF files open with an sfnt version tag (0x00010000); the rest of
+    // the bytes are irrelevant to import/classification, which only looks at
+    // the extension.
+    const ttf = Buffer.from([0x00, 0x01, 0x00, 0x00, 0, 0, 0, 0, 0, 0, 0, 0]).toString('base64');
+    const result = await ctx.importAssetFile(projectPath, 'Pixel.ttf', ttf);
+    const body = result.body as Envelope;
+    expect(body.success).toBe(true);
+    expect(body.data?.asset?.type).toBe('font');
+    expect(body.data?.asset?.path).toContain('assets/font/');
+  });
+
   it('reports a conflict when the same file is imported twice', async () => {
     const result = await ctx.importAssetFile(projectPath, 'hero.png', PNG_BYTES.toString('base64'));
     const body = result.body as Envelope;

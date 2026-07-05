@@ -380,6 +380,7 @@ export class WebAudioPlayer {
       this.musicEl = null;
       this.musicSource = null;
       this.musicGain = null;
+      el.src = '';
       source.disconnect();
       gain.disconnect();
     });
