@@ -59,7 +59,7 @@ describe('loadFontFaces: load/register/failure (stubbed FontFace + document)', (
     vi.unstubAllGlobals();
   });
 
-  it('constructs a FontFace named EXACTLY the asset name, from resolveAssetUrl(asset), and registers it', async () => {
+  it('constructs a FontFace named EXACTLY the asset name, from resolveAssetUrl(asset) as a QUOTED url(), and registers it', async () => {
     vi.stubGlobal('FontFace', FakeFontFace);
     vi.stubGlobal('document', fakeDocument);
 
@@ -72,9 +72,31 @@ describe('loadFontFaces: load/register/failure (stubbed FontFace + document)', (
     expect(resolveAssetUrl).toHaveBeenCalledWith(asset);
     expect(FakeFontFace.instances).toHaveLength(1);
     expect(FakeFontFace.instances[0].family).toBe('PressStart2P');
-    expect(FakeFontFace.instances[0].source).toBe('url(data:font/ttf;base64,AAAA)');
+    expect(FakeFontFace.instances[0].source).toBe('url("data:font/ttf;base64,AAAA")');
     expect(added).toEqual(FakeFontFace.instances);
     expect(onWarn).not.toHaveBeenCalled();
+  });
+
+  it('quotes a URL containing a space (multi-file exports keep the original filename verbatim)', async () => {
+    vi.stubGlobal('FontFace', FakeFontFace);
+    vi.stubGlobal('document', fakeDocument);
+
+    // importAsset keeps the source file's basename, so an asset imported
+    // from "My Font.ttf" resolves (in a multi-file export, where
+    // resolveAssetUrl returns asset.path as-is) to a URL with a space —
+    // invalid inside an UNQUOTED url() token, fine when quoted.
+    await loadFontFaces([fontAsset('MyFont')], () => 'assets/font/My Font.ttf');
+
+    expect(FakeFontFace.instances[0].source).toBe('url("assets/font/My Font.ttf")');
+  });
+
+  it('escapes double quotes and backslashes inside the quoted URL', async () => {
+    vi.stubGlobal('FontFace', FakeFontFace);
+    vi.stubGlobal('document', fakeDocument);
+
+    await loadFontFaces([fontAsset('Odd')], () => 'assets/font/say-"hi"\\now.ttf');
+
+    expect(FakeFontFace.instances[0].source).toBe('url("assets/font/say-\\"hi\\"\\\\now.ttf")');
   });
 
   it('warns and continues past a single font whose load() rejects, still loading the rest', async () => {

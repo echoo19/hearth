@@ -41,7 +41,14 @@ export async function loadFontFaces(
   if (typeof FontFace === 'undefined' || typeof document === 'undefined') return;
   for (const asset of fonts) {
     try {
-      const face = new FontFace(asset.name, `url(${resolveAssetUrl(asset)})`);
+      // The URL is wrapped as a quoted CSS <string>, never a raw url()
+      // token: multi-file exports resolve fonts to the asset's original
+      // path verbatim (e.g. `assets/font/My Font.ttf`), and an unquoted
+      // space/paren/quote makes the raw form an invalid CSS token that
+      // fails silently. Inside a double-quoted CSS string only backslashes
+      // and double quotes need escaping.
+      const url = resolveAssetUrl(asset);
+      const face = new FontFace(asset.name, `url("${url.replace(/[\\"]/g, '\\$&')}")`);
       await face.load();
       document.fonts.add(face);
     } catch (err) {
