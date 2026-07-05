@@ -1146,15 +1146,130 @@ label.field-label {
   border-top: 1px solid var(--border);
   padding: 8px 10px;
   display: flex;
+  flex-direction: column;
+  gap: 8px;
+  flex: none;
+  max-height: 240px;
+  overflow-y: auto;
+  background: var(--bg-2);
+}
+
+.asset-details-row {
+  display: flex;
   align-items: center;
   gap: 10px;
-  flex: none;
   flex-wrap: wrap;
-  background: var(--bg-2);
 }
 
 .asset-details .mono {
   color: var(--ink-mute);
+}
+
+/* Count badge on sliced-sheet cards ("8 frames") — a neutral pill, distinct
+   from .asset-type's selection-tinted one so it never reads as a status. */
+.asset-count-badge {
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--ink-mute);
+  background: var(--bg-1);
+  border: 1px solid var(--border);
+  padding: 1px 6px;
+  border-radius: 99px;
+  white-space: nowrap;
+}
+
+/* Same checkerboard as .asset-thumb, factored out so the Slice dialog's
+   preview and per-frame crops (sliced sheets, animation thumbnails) match
+   it exactly. */
+.checkerboard-bg {
+  background: repeating-conic-gradient(oklch(0.28 0.008 55) 0% 25%, oklch(0.23 0.008 55) 0% 50%) 0 0 / 16px 16px;
+}
+
+/* Sliced-sheet frame grid (asset details): one cropped swatch per frame,
+   name beneath — never a raw metadata.frames dump. */
+.frame-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.frame-cell-wrap {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  max-width: 72px;
+}
+
+.frame-cell {
+  position: relative;
+  overflow: hidden;
+  flex: none;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+
+.frame-cell-name {
+  font-size: 10px;
+  color: var(--ink-mute);
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.font-thumb-sample {
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--ink-mute);
+}
+
+.font-sample {
+  font-size: 20px;
+  color: var(--ink);
+}
+
+/* Slice dialog: live grid-overlay preview. */
+.slice-preview {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 96px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-0);
+}
+
+.slice-preview-status {
+  color: var(--ink-mute);
+  font-size: 12px;
+}
+
+.slice-preview-canvas {
+  position: relative;
+  flex: none;
+}
+
+.slice-preview-canvas img {
+  display: block;
+}
+
+.slice-grid-overlay {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.slice-grid-cell {
+  fill: var(--accent-soft);
+  stroke: var(--accent);
+  stroke-width: 1;
+}
+
+.slice-readout {
+  color: var(--ink-mute);
+  font-size: 12px;
 }
 
 /* Console */

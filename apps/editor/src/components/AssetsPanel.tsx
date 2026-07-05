@@ -1,8 +1,18 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { getSheetFrames } from '@hearth/core';
 import { useEditor } from '../store';
 import { apiImportAsset, fileUrl } from '../api';
 import type { AssetItem } from '../types';
 import { Icon, Modal } from './ui';
+import { SliceDialog } from './SliceDialog';
+import { frameCrop, parseFrameRef, readSheetSize } from '../assetPreview';
+
+/** One animation asset's resolved first-frame thumbnail (fetched from its
+ * .anim.json), or null once we've tried and found nothing showable. */
+type AnimThumb =
+  | { kind: 'sprite'; assetRef: string }
+  | { kind: 'crop'; sheetRef: string; frameName: string }
+  | null;
 
 const SPRITE_SHAPES = [
   'rectangle',
@@ -37,6 +47,39 @@ function fileToBase64(file: File): Promise<string> {
   });
 }
 
+/** Animation frame refs are asset ids from createAnimationAsset, but agents
+ * (and createAnimationFromSheet's suggestion text) may hand-write a name —
+ * accept either, id first. */
+function resolveAssetRef(assets: AssetItem[], ref: string): AssetItem | null {
+  return assets.find((a) => a.id === ref) ?? assets.find((a) => a.name === ref) ?? null;
+}
+
+/** Sliced-sheet detail view: every frame cropped to a small swatch with its
+ * name beneath, laid out as a wrapping grid (never raw JSON). */
+function FrameGrid({ projectPath, asset }: { projectPath: string; asset: AssetItem }) {
+  const frames = getSheetFrames(asset);
+  const sheetSize = readSheetSize(asset);
+  if (frames.length === 0 || !sheetSize) return null;
+  const imageUrl = fileUrl(projectPath, asset.path);
+  return (
+    <div className="frame-grid">
+      {frames.map((frame) => {
+        const crop = frameCrop(imageUrl, sheetSize, frame, 44);
+        return (
+          <div className="frame-cell-wrap" key={frame.name}>
+            <div className="frame-cell checkerboard-bg" style={{ width: crop.width, height: crop.height }}>
+              <div style={crop.style} />
+            </div>
+            <span className="frame-cell-name mono" title={frame.name}>
+              {frame.name}
+            </span>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 export function AssetsPanel() {
   const projectPath = useEditor((s) => s.projectPath);
   const assets = useEditor((s) => s.assets);
@@ -50,6 +93,19 @@ export function AssetsPanel() {
   const [selectedAssetId, setSelectedAssetId] = useState<string | null>(null);
   const [spriteDialog, setSpriteDialog] = useState(false);
   const [tileDialog, setTileDialog] = useState(false);
+  const [sliceDialog, setSliceDialog] = useState(false);
+
+  // animation card thumbnails: resolved lazily from each animation's
+  // .anim.json (first frame ref), cached per asset id so re-renders don't
+  // refetch.
+  const [animThumbs, setAnimThumbs] = useState<Record<string, AnimThumb>>({});
+  const animFetchedRef = useRef<Set<string>>(new Set());
+
+  // font previews: FontFace is loaded once per family (asset name) and
+  // cached — document.fonts keeps it registered for the panel's lifetime,
+  // this ref just stops us from re-issuing the same load.
+  const fontAttemptedRef = useRef<Set<string>>(new Set());
+  const [loadedFontNames, setLoadedFontNames] = useState<ReadonlySet<string>>(new Set());
 
   // sprite dialog state
   const [spName, setSpName] = useState('');
@@ -79,6 +135,55 @@ export function AssetsPanel() {
       audioRef.current = null;
     };
   }, []);
+
+  // Animation cards show a first-frame thumbnail: fetch each animation
+  // asset's .anim.json once and remember whether frame[0] is a plain
+  // sprite/tile ref or a "<sheetId>#<frameName>" sheet crop.
+  useEffect(() => {
+    if (!projectPath) return;
+    const pending = assets.filter((a) => a.type === 'animation' && !animFetchedRef.current.has(a.id));
+    if (pending.length === 0) return;
+    for (const asset of pending) animFetchedRef.current.add(asset.id);
+    void (async () => {
+      const resolved: Record<string, AnimThumb> = {};
+      for (const asset of pending) {
+        try {
+          const res = await fetch(fileUrl(projectPath, asset.path));
+          const data = (await res.json()) as { frames?: unknown };
+          const first = Array.isArray(data.frames) ? data.frames[0] : undefined;
+          if (typeof first !== 'string' || first.length === 0) {
+            resolved[asset.id] = null;
+            continue;
+          }
+          const { assetRef, frameName } = parseFrameRef(first);
+          resolved[asset.id] = frameName === null ? { kind: 'sprite', assetRef } : { kind: 'crop', sheetRef: assetRef, frameName };
+        } catch {
+          resolved[asset.id] = null;
+        }
+      }
+      setAnimThumbs((prev) => ({ ...prev, ...resolved }));
+    })();
+  }, [assets, projectPath]);
+
+  // Font cards/details render a live sample once the family is loaded.
+  useEffect(() => {
+    if (!projectPath || typeof FontFace === 'undefined') return;
+    const fonts = assets.filter((a) => a.type === 'font' && !fontAttemptedRef.current.has(a.name));
+    for (const asset of fonts) {
+      fontAttemptedRef.current.add(asset.name);
+      const url = fileUrl(projectPath, asset.path);
+      const face = new FontFace(asset.name, `url("${url.replace(/[\\"]/g, '\\$&')}")`);
+      void face
+        .load()
+        .then((loaded) => {
+          document.fonts.add(loaded);
+          setLoadedFontNames((prev) => new Set(prev).add(asset.name));
+        })
+        .catch((err: Error) => {
+          log('warn', 'editor', `Could not load font "${asset.name}": ${err.message}`);
+        });
+    }
+  }, [assets, projectPath, log]);
 
   function stopPreview() {
     audioRef.current?.pause();
@@ -150,21 +255,24 @@ export function AssetsPanel() {
 
   async function importFiles(files: Iterable<File>) {
     if (!projectPath) return;
+    const fileList = Array.from(files);
+    if (fileList.length === 0) return;
     setImporting(true);
     let imported = 0;
+    const failed: { name: string; reason: string }[] = [];
     try {
-      for (const file of files) {
+      for (const file of fileList) {
         const ext = extensionOf(file.name);
         if (!IMPORT_EXTENSIONS.includes(ext)) {
-          log(
-            'warn',
-            'editor',
-            `Skipped "${file.name}": images (${IMAGE_EXTENSIONS.join(', ')}) and audio (${AUDIO_EXTENSIONS.join(', ')}) can be imported.`,
-          );
+          const reason = `images (${IMAGE_EXTENSIONS.join(', ')}) and audio (${AUDIO_EXTENSIONS.join(', ')}) can be imported`;
+          log('warn', 'editor', `Skipped "${file.name}": ${reason}.`);
+          failed.push({ name: file.name, reason });
           continue;
         }
         if (file.size > MAX_IMPORT_BYTES) {
-          log('warn', 'editor', `Skipped "${file.name}": larger than the 25 MB import limit.`);
+          const reason = 'larger than the 25 MB import limit';
+          log('warn', 'editor', `Skipped "${file.name}": ${reason}.`);
+          failed.push({ name: file.name, reason });
           continue;
         }
         try {
@@ -174,10 +282,29 @@ export function AssetsPanel() {
             const asset = (result.data as { asset?: AssetItem } | null)?.asset;
             log('info', 'editor', `Imported "${asset?.name ?? file.name}"${asset ? ` → ${asset.path}` : ''}`);
           } else {
+            const reason = result.errors.map((e) => e.message).join('; ') || 'import failed';
             for (const err of result.errors) log('error', 'command', `importAsset: ${err.message}`);
+            failed.push({ name: file.name, reason });
           }
         } catch (err) {
-          log('error', 'editor', `Import of "${file.name}" failed: ${(err as Error).message}`);
+          const reason = (err as Error).message;
+          log('error', 'editor', `Import of "${file.name}" failed: ${reason}`);
+          failed.push({ name: file.name, reason });
+        }
+      }
+      // A per-file breakdown already went to the console above; for a
+      // multi-file batch also fold it into one summary line so a partial
+      // failure ("imported 3, failed 1: coin.exe (...)") reads at a glance
+      // instead of scrolling console history.
+      if (fileList.length > 1) {
+        if (failed.length === 0) {
+          log('info', 'editor', `Imported ${imported}/${fileList.length} files.`);
+        } else {
+          log(
+            'warn',
+            'editor',
+            `Imported ${imported}, failed ${failed.length}: ${failed.map((f) => `${f.name} (${f.reason})`).join(', ')}`,
+          );
         }
       }
     } finally {
@@ -210,10 +337,52 @@ export function AssetsPanel() {
     if (projectPath && (asset.type === 'sprite' || asset.type === 'tile')) {
       return <img src={fileUrl(projectPath, asset.path)} alt="" />;
     }
-    const icon = asset.type === 'animation' ? 'play' : 'entity';
+    if (projectPath && asset.type === 'animation') {
+      const thumb = animThumbs[asset.id];
+      if (thumb?.kind === 'sprite') {
+        const frameAsset = resolveAssetRef(assets, thumb.assetRef);
+        if (frameAsset && (frameAsset.type === 'sprite' || frameAsset.type === 'tile')) {
+          return <img src={fileUrl(projectPath, frameAsset.path)} alt="" />;
+        }
+      } else if (thumb?.kind === 'crop') {
+        const sheetAsset = resolveAssetRef(assets, thumb.sheetRef);
+        const sheetSize = sheetAsset ? readSheetSize(sheetAsset) : null;
+        const frame = sheetAsset ? getSheetFrames(sheetAsset).find((f) => f.name === thumb.frameName) : undefined;
+        if (sheetAsset && sheetSize && frame) {
+          const crop = frameCrop(fileUrl(projectPath, sheetAsset.path), sheetSize, frame, 40);
+          return (
+            <div
+              className="checkerboard-bg"
+              style={{ position: 'relative', width: crop.width, height: crop.height, borderRadius: 'var(--radius-sm)' }}
+            >
+              <div style={crop.style} />
+            </div>
+          );
+        }
+      }
+      return (
+        <span style={{ color: 'var(--ink-faint)' }}>
+          <Icon name="play" size={20} />
+        </span>
+      );
+    }
+    if (asset.type === 'font') {
+      if (loadedFontNames.has(asset.name)) {
+        return (
+          <span className="font-thumb-sample" style={{ fontFamily: `"${asset.name}"` }}>
+            Aa
+          </span>
+        );
+      }
+      return (
+        <span style={{ color: 'var(--ink-faint)' }}>
+          <Icon name="text" size={20} />
+        </span>
+      );
+    }
     return (
       <span style={{ color: 'var(--ink-faint)' }}>
-        <Icon name={icon} size={20} />
+        <Icon name="entity" size={20} />
       </span>
     );
   }
@@ -288,63 +457,92 @@ export function AssetsPanel() {
           </div>
         ) : (
           <div className="asset-grid">
-            {assets.map((asset) => (
-              <div
-                key={asset.id}
-                className={`asset-card${selectedAssetId === asset.id ? ' selected' : ''}`}
-                onClick={() => setSelectedAssetId(asset.id === selectedAssetId ? null : asset.id)}
-              >
-                <div className="asset-thumb">{preview(asset)}</div>
-                <span className="asset-name" title={asset.name}>
-                  {asset.name}
-                </span>
-                <span className="asset-type">{asset.type}</span>
-              </div>
-            ))}
+            {assets.map((asset) => {
+              const isSheet = asset.type === 'sprite' || asset.type === 'tile';
+              const frameCount = isSheet ? getSheetFrames(asset).length : 0;
+              return (
+                <div
+                  key={asset.id}
+                  className={`asset-card${selectedAssetId === asset.id ? ' selected' : ''}`}
+                  onClick={() => setSelectedAssetId(asset.id === selectedAssetId ? null : asset.id)}
+                >
+                  <div className="asset-thumb">{preview(asset)}</div>
+                  <span className="asset-name" title={asset.name}>
+                    {asset.name}
+                  </span>
+                  <span className="asset-type">{asset.type}</span>
+                  {frameCount > 0 && (
+                    <span className="asset-count-badge">
+                      {frameCount} frame{frameCount === 1 ? '' : 's'}
+                    </span>
+                  )}
+                </div>
+              );
+            })}
           </div>
         )}
       </div>
 
       {selectedAsset && (
         <div className="asset-details">
-          <strong>{selectedAsset.name}</strong>
-          <span className="mono">{selectedAsset.path}</span>
-          <span className="mono" style={{ color: 'var(--ink-faint)' }}>
-            {selectedAsset.id}
-          </span>
-          <button
-            className="btn btn-ghost btn-sm"
-            onClick={() => {
-              void navigator.clipboard.writeText(selectedAsset.id);
-              log('info', 'editor', `Copied asset id ${selectedAsset.id}`);
-            }}
-          >
-            <Icon name="copy" size={11} /> Copy id
-          </button>
-          <span style={{ flex: 1 }} />
-          <button
-            className="btn btn-sm"
-            disabled={!canAssign}
-            title={
-              canAssign
-                ? `Set ${selectedEntity?.name}'s ${assignProperty}`
-                : selectedAsset.type === 'audio'
-                  ? 'Select an entity with an AudioSource to assign'
-                  : 'Select an entity with a SpriteRenderer to assign'
-            }
-            onClick={() =>
-              selectedEntity &&
-              sceneId &&
-              void exec('setComponentProperty', {
-                scene: sceneId,
-                entity: selectedEntity.id,
-                property: assignProperty,
-                value: selectedAsset.id,
-              })
-            }
-          >
-            Assign to {selectedEntity ? `“${selectedEntity.name}”` : 'selection'}
-          </button>
+          <div className="asset-details-row">
+            <strong>{selectedAsset.name}</strong>
+            <span className="mono">{selectedAsset.path}</span>
+            <span className="mono" style={{ color: 'var(--ink-faint)' }}>
+              {selectedAsset.id}
+            </span>
+            <button
+              className="btn btn-ghost btn-sm"
+              onClick={() => {
+                void navigator.clipboard.writeText(selectedAsset.id);
+                log('info', 'editor', `Copied asset id ${selectedAsset.id}`);
+              }}
+            >
+              <Icon name="copy" size={11} /> Copy id
+            </button>
+            <span style={{ flex: 1 }} />
+            {(selectedAsset.type === 'sprite' || selectedAsset.type === 'tile') && (
+              <button className="btn btn-sm" onClick={() => setSliceDialog(true)}>
+                <Icon name="grid" size={11} /> Slice…
+              </button>
+            )}
+            <button
+              className="btn btn-sm"
+              disabled={!canAssign}
+              title={
+                canAssign
+                  ? `Set ${selectedEntity?.name}'s ${assignProperty}`
+                  : selectedAsset.type === 'audio'
+                    ? 'Select an entity with an AudioSource to assign'
+                    : 'Select an entity with a SpriteRenderer to assign'
+              }
+              onClick={() =>
+                selectedEntity &&
+                sceneId &&
+                void exec('setComponentProperty', {
+                  scene: sceneId,
+                  entity: selectedEntity.id,
+                  property: assignProperty,
+                  value: selectedAsset.id,
+                })
+              }
+            >
+              Assign to {selectedEntity ? `“${selectedEntity.name}”` : 'selection'}
+            </button>
+          </div>
+
+          {projectPath &&
+            (selectedAsset.type === 'sprite' || selectedAsset.type === 'tile') &&
+            getSheetFrames(selectedAsset).length > 0 && <FrameGrid projectPath={projectPath} asset={selectedAsset} />}
+
+          {selectedAsset.type === 'font' &&
+            (loadedFontNames.has(selectedAsset.name) ? (
+              <span className="font-sample" style={{ fontFamily: `"${selectedAsset.name}"` }}>
+                Aa Bb 0123 — Hearth
+              </span>
+            ) : (
+              <span style={{ color: 'var(--ink-faint)', fontSize: 12 }}>Loading font preview…</span>
+            ))}
         </div>
       )}
 
@@ -445,6 +643,8 @@ export function AssetsPanel() {
           </button>
         </div>
       </Modal>
+
+      <SliceDialog open={sliceDialog} asset={selectedAsset} onClose={() => setSliceDialog(false)} />
     </div>
   );
 }
