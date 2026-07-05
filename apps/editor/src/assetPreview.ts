@@ -9,11 +9,6 @@ import type { CSSProperties } from 'react';
 import type { SpritesheetFrame } from '@hearth/core';
 import type { AssetItem } from './types';
 
-/** Same checkerboard pattern used behind every transparent-image thumbnail
- * (asset-thumb in styles.css) so previews read as one consistent surface. */
-export const CHECKERBOARD_BG =
-  'repeating-conic-gradient(oklch(0.28 0.008 55) 0% 25%, oklch(0.23 0.008 55) 0% 50%) 0 0 / 16px 16px';
-
 export interface SheetGrid {
   frameWidth: number;
   frameHeight: number;

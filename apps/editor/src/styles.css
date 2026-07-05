@@ -1105,9 +1105,6 @@ label.field-label {
   display: flex;
   align-items: center;
   justify-content: center;
-  background:
-    repeating-conic-gradient(oklch(0.28 0.008 55) 0% 25%, oklch(0.23 0.008 55) 0% 50%)
-    0 0 / 16px 16px;
   border-radius: var(--radius-sm);
   overflow: hidden;
 }
@@ -1178,9 +1175,10 @@ label.field-label {
   white-space: nowrap;
 }
 
-/* Same checkerboard as .asset-thumb, factored out so the Slice dialog's
-   preview and per-frame crops (sliced sheets, animation thumbnails) match
-   it exactly. */
+/* The one checkerboard behind every transparent-image preview: asset-card
+   thumbnails, the Slice dialog's sheet preview, and per-frame crops (sliced
+   sheets, animation thumbnails) all share this rule. */
+.asset-thumb,
 .checkerboard-bg {
   background: repeating-conic-gradient(oklch(0.28 0.008 55) 0% 25%, oklch(0.23 0.008 55) 0% 50%) 0 0 / 16px 16px;
 }
@@ -1270,6 +1268,11 @@ label.field-label {
 .slice-readout {
   color: var(--ink-mute);
   font-size: 12px;
+}
+
+/* Quiet aside when the per-cell overlay is capped on huge atlases. */
+.slice-readout-note {
+  color: var(--ink-faint);
 }
 
 /* Console */

@@ -11,15 +11,23 @@ import { useEditor } from '../store';
 import { fileUrl } from '../api';
 import type { AssetItem } from '../types';
 import { Modal } from './ui';
-import { CHECKERBOARD_BG, readSheetGrid } from '../assetPreview';
+import { readSheetGrid } from '../assetPreview';
 
 const MAX_PREVIEW_PX = 360;
+
+/** Above this many frames the per-cell overlay is skipped (a 2048×2048 atlas
+ * at 8×8 would mean ~65k SVG rects rebuilt per keystroke) — the "N frames
+ * (C × R)" readout stays exact and the outer grid bounds are still drawn.
+ * Typical character sheets (≤ a few hundred frames) remain fully previewed. */
+const MAX_OVERLAY_CELLS = 512;
 
 interface GridComputation {
   columns: number;
   rows: number;
   frameCount: number;
+  /** Per-frame cell origins; left empty when frameCount > MAX_OVERLAY_CELLS. */
   cells: { x: number; y: number }[];
+  cellsOmitted: boolean;
   error: string | null;
 }
 
@@ -31,7 +39,14 @@ function computeGrid(
   margin: number,
   spacing: number,
 ): GridComputation {
-  const empty = (error: string): GridComputation => ({ columns: 0, rows: 0, frameCount: 0, cells: [], error });
+  const empty = (error: string): GridComputation => ({
+    columns: 0,
+    rows: 0,
+    frameCount: 0,
+    cells: [],
+    cellsOmitted: false,
+    error,
+  });
   if (!Number.isInteger(frameWidth) || frameWidth < 1) {
     return empty('Frame width must be a whole number of at least 1px.');
   }
@@ -48,17 +63,23 @@ function computeGrid(
   const columns = Math.floor((imgWidth - 2 * margin + spacing) / (frameWidth + spacing));
   const rows = Math.floor((imgHeight - 2 * margin + spacing) / (frameHeight + spacing));
   if (columns < 1 || rows < 1) {
+    // Same wording as the command's own INVALID_INPUT error (assetCommands.ts)
+    // so the inline message and a server-side rejection read identically.
     return empty(
-      `Frame ${frameWidth}×${frameHeight} doesn't fit in the ${imgWidth}×${imgHeight} image with margin ${margin} and spacing ${spacing}.`,
+      `Frame size ${frameWidth}×${frameHeight} does not fit in image ${imgWidth}×${imgHeight} with margin ${margin} and spacing ${spacing}`,
     );
   }
+  const frameCount = columns * rows;
+  const cellsOmitted = frameCount > MAX_OVERLAY_CELLS;
   const cells: { x: number; y: number }[] = [];
-  for (let row = 0; row < rows; row++) {
-    for (let col = 0; col < columns; col++) {
-      cells.push({ x: margin + col * (frameWidth + spacing), y: margin + row * (frameHeight + spacing) });
+  if (!cellsOmitted) {
+    for (let row = 0; row < rows; row++) {
+      for (let col = 0; col < columns; col++) {
+        cells.push({ x: margin + col * (frameWidth + spacing), y: margin + row * (frameHeight + spacing) });
+      }
     }
   }
-  return { columns, rows, frameCount: columns * rows, cells, error: null };
+  return { columns, rows, frameCount, cells, cellsOmitted, error: null };
 }
 
 type ImageProbe = 'loading' | 'error' | { width: number; height: number };
@@ -165,11 +186,10 @@ export function SliceDialog({
               </span>
             )}
             <div
-              className="slice-preview-canvas"
+              className="slice-preview-canvas checkerboard-bg"
               style={{
                 width: display?.width ?? 0,
                 height: display?.height ?? 0,
-                background: CHECKERBOARD_BG,
                 display: dimensionsKnown ? 'block' : 'none',
               }}
             >
@@ -199,16 +219,26 @@ export function SliceDialog({
                   viewBox={`0 0 ${display.width} ${display.height}`}
                   aria-hidden="true"
                 >
-                  {grid.cells.map((cell, i) => (
+                  {grid.cellsOmitted ? (
                     <rect
-                      key={i}
                       className="slice-grid-cell"
-                      x={cell.x * display.scale}
-                      y={cell.y * display.scale}
-                      width={frameWidth * display.scale}
-                      height={frameHeight * display.scale}
+                      x={margin * display.scale}
+                      y={margin * display.scale}
+                      width={(grid.columns * frameWidth + (grid.columns - 1) * spacing) * display.scale}
+                      height={(grid.rows * frameHeight + (grid.rows - 1) * spacing) * display.scale}
                     />
-                  ))}
+                  ) : (
+                    grid.cells.map((cell, i) => (
+                      <rect
+                        key={i}
+                        className="slice-grid-cell"
+                        x={cell.x * display.scale}
+                        y={cell.y * display.scale}
+                        width={frameWidth * display.scale}
+                        height={frameHeight * display.scale}
+                      />
+                    ))
+                  )}
                 </svg>
               )}
             </div>
@@ -219,6 +249,9 @@ export function SliceDialog({
               {grid.error
                 ? `Sheet is ${(imgProbe as { width: number }).width}×${(imgProbe as { height: number }).height}px`
                 : `${grid.frameCount} frame${grid.frameCount === 1 ? '' : 's'} (${grid.columns} × ${grid.rows})`}
+              {!grid.error && grid.cellsOmitted && (
+                <span className="slice-readout-note"> — grid preview hidden above {MAX_OVERLAY_CELLS} frames</span>
+              )}
             </div>
           )}
           {grid?.error && <div className="field-error">{grid.error}</div>}
