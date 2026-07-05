@@ -205,8 +205,9 @@ set it directly, or let `SpriteAnimator` drive it. `null` always means
 "draw the whole image," even on an asset that has been sliced.
 
 Every textured `SpriteRenderer` (an asset, not the shape/color
-primitive fallback) is now tinted by its own `color` field: Pixi's
-`sprite.tint` is set straight from `SpriteRenderer.color` every frame.
+primitive fallback) is now tinted by its own `color` field — a `color`
+edit takes effect immediately (it's part of the sprite's visual
+identity, so the renderer rebuilds the node with the new tint).
 The schema default is `#ffffff` (white), which is a **no-op tint** —
 every project that predates this feature renders identically, since an
 untouched `SpriteRenderer.color` is still `#ffffff`. Set `color` to
@@ -264,8 +265,9 @@ saves memory and startup time on long tracks.
 Run reports record every music play/stop in `audioEvents` with
 `music: true`, exactly like one-shot audio does with `music` omitted —
 see `assertAudioCount` below. Music never enters the same handle table
-`ctx.audio.stop`/`stopAll` (SFX) reaches into, so stopping SFX can never
-accidentally kill the soundtrack.
+`ctx.audio.stop` (SFX) reaches into, so stopping SFX — even every
+playback of an asset at once — can never accidentally kill the
+soundtrack.
 
 ## Fonts
 
@@ -285,12 +287,13 @@ hearth import asset ./fonts/press-start-2p.ttf --name press-start-2p --json
 hearth set "Title Scene" HUD Text.fontFamily press-start-2p
 ```
 
-Rename an already-imported font asset and existing `Text.fontFamily`
-values pointing at the old name silently stop matching (they fall back
-to whatever the browser resolves that family string to, typically a
-system font) — `setAssetMetadata`/rename doesn't rewrite references, the
-same as any other asset rename. Re-import under the original name to fix
-it, or update every `Text.fontFamily` that used it.
+A font asset's name is fixed at import — there is no asset-rename
+operation — so choose it deliberately (`--name`): it *is* the
+font-family string every `Text` will reference. Need a different name
+later? Remove the asset (`removeAsset`) and re-import the file under
+the new name, then update each `Text.fontFamily` to match (fontFamily
+matches by name, so the old value would otherwise silently fall back
+to a system font).
 
 In the editor, `Text.fontFamily` is a picker grouping your project's font
 assets with the built-in generic families, not a raw text field — pick a

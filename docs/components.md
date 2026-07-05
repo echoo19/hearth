@@ -54,11 +54,10 @@ warning once and falls back to the whole texture (also flagged by
 `hearth validate` as `FRAME_NOT_FOUND`).
 
 `color` doubles as a **tint** on textured sprites (an asset is set), not
-just the primitive fallback's fill: Pixi's `sprite.tint` is set from it
-directly every frame. The default `#ffffff` is a no-op tint, so existing
-projects render unchanged; set it to anything else to recolor real art
-(a damage flash, a grayed-out disabled state) without a second sprite
-asset.
+just the primitive fallback's fill — edits take effect immediately. The
+default `#ffffff` is a no-op tint, so existing projects render
+unchanged; set it to anything else to recolor real art (a damage flash,
+a grayed-out disabled state) without a second sprite asset.
 
 ## Collider
 

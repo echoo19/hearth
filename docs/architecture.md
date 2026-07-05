@@ -188,7 +188,7 @@ merging.
 **Accessor rule**: nothing reads `asset.metadata.frames` directly.
 Every consumer — the Pixi renderer's sub-texture cache, `SpriteAnimator`
 playback, `hearth validate`'s `FRAME_NOT_FOUND`/`ANIMATION_FRAME_NOT_FOUND`
-checks, and the export bundler — goes through
+checks, and the slice/anim-from-sheet commands themselves — goes through
 `getSheetFrames(asset)`/`findSheetFrame(asset, name)`
 (`packages/core/src/assets/sheetFrames.ts`), which parses the raw
 `unknown` value through `SpritesheetFrameSchema` and returns `[]`/`null`
