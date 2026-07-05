@@ -207,14 +207,22 @@ describe('exportWeb bundle asset metadata', () => {
     const html = await fs.readFile('/proj/export/web/index.html');
     expect(html).toContain('data:');
 
-    // Single-file embeds the bundle in the HTML, so extract and verify
-    const bundleMatch = html.match(/var bundle = (\{[\s\S]*?\});/);
+    // Single-file inlines the bundle as one line of JSON.stringify output
+    // (`var bundle = {...};`). Extract and parse it so the assertions cover
+    // the real structure, mirroring the multi-file metadata test above.
+    const bundleMatch = html.match(/^\s*var bundle = (\{.*\});$/m);
     expect(bundleMatch).toBeTruthy();
-    if (bundleMatch) {
-      // The embedded bundle is a JSON string that's been inlined in JS
-      // For this test, we just verify the structure is there
-      const bundleStr = bundleMatch[1];
-      expect(bundleStr).toContain('assets');
-    }
+    const bundle = JSON.parse(bundleMatch![1]) as WebExportBundle;
+
+    const sheetAsset = bundle.assets.find((a) => a.name === 'singlesheet');
+    expect(sheetAsset).toBeDefined();
+    expect(sheetAsset?.dataUri).toMatch(/^data:/);
+    expect(sheetAsset?.metadata).toBeDefined();
+    const frames = sheetAsset?.metadata?.frames as any[];
+    expect(Array.isArray(frames)).toBe(true);
+    expect(frames.length).toBeGreaterThan(0);
+    expect(frames[0]).toHaveProperty('name');
+    expect(frames[0]).toHaveProperty('x');
+    expect(frames[0]).toHaveProperty('y');
   });
 });
