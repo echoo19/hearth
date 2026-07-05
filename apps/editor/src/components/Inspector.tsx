@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import { getSheetFrames } from '@hearth/core';
 import { useEditor } from '../store';
-import type { SceneEntity } from '../types';
+import type { AssetItem, SceneEntity } from '../types';
 import { addPoint, removePoint, setPointAxis, shouldHideField } from '../vec2List';
 import { addString, removeString, setStringAt } from '../stringList';
 import { ConfirmDialog, Icon, componentIcon } from './ui';
@@ -232,6 +233,72 @@ function JsonField({ value, onCommit }: { value: unknown; onCommit: (v: unknown)
   );
 }
 
+const GENERIC_FONT_FAMILIES = ['monospace', 'sans-serif', 'serif', 'cursive', 'fantasy'] as const;
+const CUSTOM_FONT_OPTION = '__custom__';
+
+function isKnownFontValue(value: string, fontAssets: AssetItem[]): boolean {
+  return (
+    fontAssets.some((a) => a.name === value) ||
+    (GENERIC_FONT_FAMILIES as readonly string[]).includes(value)
+  );
+}
+
+/**
+ * Text.fontFamily: a select grouping project font assets and the five
+ * generic CSS families, plus a "Custom…" option that reveals a plain
+ * TextField. An arbitrary value already on the entity (set by a script, or
+ * from before a font asset existed) renders as the custom value rather than
+ * being silently overwritten — the select shows "Custom…" and the text
+ * field carries the real value.
+ */
+function FontFamilyField({
+  value,
+  fontAssets,
+  onCommit,
+}: {
+  value: string;
+  fontAssets: AssetItem[];
+  onCommit: (v: string) => void;
+}) {
+  const [forceCustom, setForceCustom] = useState(() => !isKnownFontValue(value, fontAssets));
+  const showCustom = forceCustom || !isKnownFontValue(value, fontAssets);
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+      <select
+        className="select"
+        value={showCustom ? CUSTOM_FONT_OPTION : value}
+        onChange={(e) => {
+          if (e.target.value === CUSTOM_FONT_OPTION) {
+            setForceCustom(true);
+          } else {
+            setForceCustom(false);
+            onCommit(e.target.value);
+          }
+        }}
+      >
+        {fontAssets.length > 0 && (
+          <optgroup label="Project fonts">
+            {fontAssets.map((a) => (
+              <option key={a.id} value={a.name}>
+                {a.name}
+              </option>
+            ))}
+          </optgroup>
+        )}
+        <optgroup label="Generic">
+          {GENERIC_FONT_FAMILIES.map((f) => (
+            <option key={f} value={f}>
+              {f}
+            </option>
+          ))}
+        </optgroup>
+        <option value={CUSTOM_FONT_OPTION}>Custom…</option>
+      </select>
+      {showCustom && <TextField value={value} onCommit={onCommit} />}
+    </div>
+  );
+}
+
 // ---------------------------------------------------------------------------
 // UIElement.anchor: a 3×3 grid picker instead of a raw enum dropdown.
 // ---------------------------------------------------------------------------
@@ -282,6 +349,11 @@ function isVec2Array(v: unknown): v is { x: number; y: number }[] {
 
 function isStringArray(v: unknown): v is string[] {
   return Array.isArray(v) && v.every((s) => typeof s === 'string');
+}
+
+/** Resolve a component's `assetId` field to its asset, if any. */
+function resolveAsset(assets: AssetItem[], assetId: unknown): AssetItem | undefined {
+  return typeof assetId === 'string' ? assets.find((a) => a.id === assetId) : undefined;
 }
 
 export function Inspector() {
@@ -431,6 +503,19 @@ export function Inspector() {
                   if (shouldHideField(type, field, component as Record<string, unknown>)) {
                     return null;
                   }
+                  // SpriteRenderer.frame only means anything when the assigned
+                  // asset is a sliced sheet (getSheetFrames > 0) — a plain
+                  // image or an unset assetId has no frames to pick, so the
+                  // field is hidden rather than showing a raw text input.
+                  if (type === 'SpriteRenderer' && field === 'frame') {
+                    const asset = resolveAsset(
+                      assets,
+                      (component as Record<string, unknown>).assetId,
+                    );
+                    if (!asset || getSheetFrames(asset).length === 0) {
+                      return null;
+                    }
+                  }
                   const property = `${type}.${field}`;
                   const rowKey = `${entity.id}.${property}`;
                   let control: React.ReactNode;
@@ -478,6 +563,42 @@ export function Inspector() {
                   } else if (type === 'UIElement' && field === 'anchor' && typeof value === 'string') {
                     control = (
                       <AnchorGrid key={rowKey} value={value} onCommit={(v) => setProperty(property, v)} />
+                    );
+                  } else if (
+                    type === 'SpriteRenderer' &&
+                    field === 'frame' &&
+                    (typeof value === 'string' || value === null)
+                  ) {
+                    // Reachable only when the hide-check above found frames.
+                    const asset = resolveAsset(
+                      assets,
+                      (component as Record<string, unknown>).assetId,
+                    );
+                    const frames = asset ? getSheetFrames(asset) : [];
+                    control = (
+                      <select
+                        key={rowKey}
+                        className="select"
+                        value={(value as string | null) ?? ''}
+                        onChange={(e) => setProperty(property, e.target.value === '' ? null : e.target.value)}
+                      >
+                        <option value="">(whole image)</option>
+                        {frames.map((f) => (
+                          <option key={f.name} value={f.name}>
+                            {f.name}
+                          </option>
+                        ))}
+                      </select>
+                    );
+                  } else if (type === 'Text' && field === 'fontFamily' && typeof value === 'string') {
+                    const fontAssets = assets.filter((a) => a.type === 'font');
+                    control = (
+                      <FontFamilyField
+                        key={rowKey}
+                        value={value}
+                        fontAssets={fontAssets}
+                        onCommit={(v) => setProperty(property, v)}
+                      />
                     );
                   } else if (typeof value === 'number') {
                     control = (
