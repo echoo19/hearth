@@ -1,7 +1,7 @@
 {
-  "hearthVersion": "0.5.0",
+  "hearthVersion": "0.6.0",
   "project": "Glow Caves",
-  "projectId": "prj_26ltbe71",
+  "projectId": "prj_c4e4phs1",
   "instructions": "AGENTS.md",
   "cli": {
     "binary": "hearth",

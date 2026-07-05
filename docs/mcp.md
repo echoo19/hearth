@@ -1,7 +1,7 @@
 # MCP Guide
 
 Hearth ships `hearth-mcp` (`packages/mcp-server`), a stdio MCP server that
-exposes the engine command layer as 43 typed tools (41 command tools, plus
+exposes the engine command layer as 45 typed tools (43 command tools, plus
 `screenshot` and `get_agent_instructions`, neither of which wraps a core
 command). The full reference (flags, registration snippets, permission
 table, complete tool list) lives in
@@ -27,7 +27,11 @@ of housekeeping commands are CLI-only): `get_project_info`,
 `validate_project`, `create_scene`, `create_entity`, `add_component`,
 `set_component_property`, `create_script`, `edit_script`, `attach_script`,
 `import_asset`, `create_sprite_asset`, `create_tile_asset`, `create_sound`,
-`create_animation_asset`, `snapshot_project`, `get_diff`, `revert_project`,
+`create_animation_asset`, `slice_spritesheet` (frame grid over an
+imported spritesheet — takes numeric `frameWidth`/`frameHeight` rather
+than the CLI's `--frame-size WxH` string), `create_animation_from_sheet`
+(an animation asset from named sheet frames — see
+[assets.md](./assets.md)), `snapshot_project`, `get_diff`, `revert_project`,
 `create_playtest`, `run_playtest`, `run_scene`, `update_settings`,
 `inspect_api` (the script `ctx` reference), `inspect_path` (grid A\*
 pathfinding over solid scene geometry — same query

@@ -1,7 +1,7 @@
 {
-  "hearthVersion": "0.5.0",
+  "hearthVersion": "0.6.0",
   "project": "Sky Courier",
-  "projectId": "prj_w3fs7tiv",
+  "projectId": "prj_koi4lfh7",
   "instructions": "AGENTS.md",
   "cli": {
     "binary": "hearth",

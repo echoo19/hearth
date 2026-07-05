@@ -265,10 +265,12 @@ below for exactly how that makes particle counts assertable in playtests.
 ctx.animate("torch-flare")
 ```
 
-`SpriteAnimator` writes the current frame's asset id into the sibling
-`SpriteRenderer.assetId` every fixed frame on its own — most animations need
-no script at all. Reach for `ctx.animate` only to switch clips at runtime
-(a torch flaring up, a character starting to run).
+`SpriteAnimator` writes the current frame's asset id (and, for a
+spritesheet-backed clip, the sheet frame name into `SpriteRenderer.frame`
+— see [assets.md](./assets.md#animations-from-a-sliced-sheet)) into the
+sibling `SpriteRenderer` every fixed frame on its own — most animations
+need no script at all. Reach for `ctx.animate` only to switch clips at
+runtime (a torch flaring up, a character starting to run).
 
 ### Save data
 
@@ -297,6 +299,23 @@ use in-memory storage scoped to the run.
 | --- | --- |
 | `ctx.audio.play(ref, opts?)` | Play an audio asset (id or name); `opts` is `{ volume?, loop? }`. Returns a handle id, or nothing if the asset doesn't exist |
 | `ctx.audio.stop(ref)` | Stop one playback by handle id, or every playback of an asset id/name |
+| `ctx.audio.playMusic(ref, opts?)` | Play a track on the single shared music channel; `opts` is `{ volume?, loop?, fadeIn? }` (`loop` defaults to `true`). Replaces whatever is currently playing (crossfades over `fadeIn`) and survives `ctx.scenes.load` scene switches. Returns a handle id, or nothing if the asset doesn't exist |
+| `ctx.audio.stopMusic(opts?)` | Stop the current music track; `opts` is `{ fadeOut? }`. No-op when nothing is playing |
+| `ctx.audio.setMusicVolume(volume, opts?)` | Change the current track's volume; `opts` is `{ fade? }`. No-op when nothing is playing |
+
+```lua
+ctx.audio.playMusic("theme", { loop = true, fadeIn = 1 })
+ctx.audio.setMusicVolume(0.3, { fade = 0.5 })
+ctx.audio.stopMusic({ fadeOut = 1 })
+```
+
+The music channel is separate from `ctx.audio.play`/`stop`: it's always
+exactly one track, not a pool of playbacks, and it lives on the session
+rather than the current scene, so switching scenes never interrupts it.
+An `AudioSource` with `autoplay: true, music: true` starts a track this
+way with no script at all. See
+[assets.md](./assets.md#music) for the full semantics (crossfade
+behavior, streaming vs. single-file exports).
 
 ### Events
 

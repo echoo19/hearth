@@ -1,7 +1,7 @@
 {
-  "hearthVersion": "0.5.0",
+  "hearthVersion": "0.6.0",
   "project": "Ember Trail",
-  "projectId": "prj_rbvwlqjc",
+  "projectId": "prj_towlsv0i",
   "instructions": "AGENTS.md",
   "cli": {
     "binary": "hearth",

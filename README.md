@@ -17,7 +17,7 @@ and agents connect from outside.
    Agent ──▶ CLI / MCP ──┘      (validate · execute · diff)     scenes · scripts · assets
 ```
 
-Both audiences use the same 46 engine commands (`createEntity`,
+Both audiences use the same 48 engine commands (`createEntity`,
 `setComponentProperty`, `runPlaytest`, `getDiff`, …). That means an agent can
 build a level, wire input, write behavior scripts, generate placeholder art,
 run headless playtests, and hand the human a structural diff to review in the
@@ -25,9 +25,17 @@ editor, all without guessing at file formats.
 
 ## Status
 
-**v0.5.0, developer preview.** The full loop works end to end:
+**v0.6.0, developer preview.** The full loop works end to end:
 project model → editor → runtime preview → CLI → MCP → headless playtests →
-diff review. v0.5 adds **physics v2** (mass/restitution/friction,
+diff review. v0.6 adds **asset pipeline v2**: import real art/audio/fonts
+(`importAsset` probes PNG/JPEG/GIF/WebP/SVG dimensions), spritesheet
+slicing (`sliceSpritesheet`, typed frame metadata) and
+sheet-backed animations (`createAnimationFromSheet`), a single
+crossfading music channel (`ctx.audio.playMusic`/`stopMusic`/
+`setMusicVolume`, surviving scene switches) with an `assertAudioCount`
+playtest step, and real font assets (`Text.fontFamily` = the imported
+asset's name, loaded via `FontFace`) — see [docs/assets.md](docs/assets.md).
+On top of v0.5: **physics v2** (mass/restitution/friction,
 named collision layers, one-way platforms, circle-accurate resolution),
 **script stdlib v2** (`ctx.math` vec2/color helpers, `ctx.events` +
 `onEvent` pub/sub), and **pathfinding** (`ctx.scene.findPath`, `hearth
@@ -47,7 +55,7 @@ On top of v0.2: dockable editor workspace, screen-space game UI
 (`UIElement` + `onUiEvent`), convex polygon colliders, audio with
 procedural sound effects, and static web export (`hearth export web`).
 See [docs/roadmap.md](docs/roadmap.md) for what's deliberately missing
-(undo, spritesheets, prefabs…).
+(undo, prefabs, TypeScript scripts…).
 
 ## Install
 
@@ -149,7 +157,7 @@ see [docs/mcp.md](docs/mcp.md).
   [docs/export.md](docs/export.md).
 - **CLI** (`packages/cli`): `hearth` with `--json` envelopes for every
   operation, plus `doctor`, `test`, and `commands` (registry discovery).
-- **MCP server** (`packages/mcp-server`): 42 typed tools (40 wrapping core
+- **MCP server** (`packages/mcp-server`): 45 typed tools (43 wrapping core
   commands, plus `screenshot` and `get_agent_instructions`), with
   per-session permission modes.
 - **Playtests** (`packages/playtest`): scripted input + assertions, run
@@ -159,15 +167,23 @@ see [docs/mcp.md](docs/mcp.md).
   (`character`, `enemy`, `coin`, `heart`, shapes…) and WAV sound effects
   (`hearth create sound --preset coin`) so games are playable and audible
   before any real assets exist. No AI generation.
-- **Examples** (`packages/examples`): a mini platformer (with a score HUD,
-  restart button, sound effects, and polygon spikes), a top-down room, a
-  visual novel, **Ember Trail** — an all-Lua two-scene game (menu →
-  level → menu) exercising scene switching, timers, seeded spawning,
-  camera follow, and a saved best score — and **Glow Caves** — an all-Lua
-  rendering-v2 showcase (a dark cave lit only by a player-following torch,
-  cave-wall polylines, particle sparks and drips, a flickering animated
-  flame) — all generated *through the command system itself* and covered
-  by playtests in CI.
+- **Examples** (`packages/examples`, seven projects): a mini platformer
+  (with a score HUD, restart button, sound effects, and polygon spikes),
+  a top-down room, a visual novel, **Ember Trail** — an all-Lua two-scene
+  game (menu → level → menu) exercising scene switching, timers, seeded
+  spawning, camera follow, and a saved best score — **Glow Caves** — an
+  all-Lua rendering-v2 showcase (a dark cave lit only by a
+  player-following torch, cave-wall polylines, particle sparks and
+  drips, a flickering animated flame) — **Bounce Patrol** — an all-Lua
+  physics-v2 showcase (bounciness, friction, named collision layers,
+  one-way platforms, `ctx.events`-driven scoring, and a
+  `ctx.scene.findPath`-chasing patroller) — and **Sky Courier** — an
+  all-Lua asset-pipeline showcase, the first example built from
+  *imported* binary assets rather than procedural SVGs: a sliced PNG
+  spritesheet driving walk/idle animations, a streamed WAV music loop on
+  a music-channel `AudioSource`, and an imported `.ttf` HUD font — all
+  generated *through the command system itself* and covered by playtests
+  in CI.
 - **Agent onboarding**: every new project gets `AGENTS.md`, `CLAUDE.md`,
   and `.hearth/agent-config.json` teaching agents the safe workflow
   (snapshot → inspect → command → validate → playtest → diff).
@@ -184,6 +200,7 @@ see [docs/mcp.md](docs/mcp.md).
 | [Architecture](docs/architecture.md) | Packages, command system, data flow |
 | [Project format](docs/project-format.md) | Every file, every schema |
 | [Components](docs/components.md) | All 14 component types + defaults |
+| [Assets](docs/assets.md) | Import, slice spritesheets, animations, music, fonts |
 | [Scripting](docs/scripting.md) | Lua (default) & JS scripting, the full `ctx` API |
 | [Web export](docs/export.md) | Static builds, single-file, itch.io |
 | [Roadmap](docs/roadmap.md) | Honest list of what's next / missing |

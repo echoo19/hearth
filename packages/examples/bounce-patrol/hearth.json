@@ -1,13 +1,13 @@
 {
   "formatVersion": 1,
-  "hearthVersion": "0.5.0",
-  "id": "prj_jo3ccdh0",
+  "hearthVersion": "0.6.0",
+  "id": "prj_dbg5y3yl",
   "name": "Bounce Patrol",
   "description": "A bouncy ball, a chasing patroller, and three coins in one physics-v2 arena.",
-  "initialScene": "scn_1je9i4r1",
+  "initialScene": "scn_s4dsyhp3",
   "scenes": [
     {
-      "id": "scn_1je9i4r1",
+      "id": "scn_s4dsyhp3",
       "name": "Arena",
       "path": "scenes/arena.scene.json"
     }

@@ -30,12 +30,12 @@ results.
 
 | Package | Role |
 | --- | --- |
-| `packages/core` | Zod schemas for every file format; `ProjectStore` (load/save); the **command registry** (46 operations, including web export, pathfinding, and the `ctx` API reference); validation; structural diff; permission model; procedural asset generation (SVG sprites/tiles, WAV sounds); AGENTS.md/CLAUDE.md generation; the deterministic grid A\* pathfinding module shared by the runtime and the CLI/MCP. Browser-safe: Node fs access is isolated in `@hearth/core/node`. |
+| `packages/core` | Zod schemas for every file format; `ProjectStore` (load/save); the **command registry** (48 operations, including web export, pathfinding, spritesheet slicing, and the `ctx` API reference); validation; structural diff; permission model; procedural asset generation (SVG sprites/tiles, WAV sounds); AGENTS.md/CLAUDE.md generation; the deterministic grid A\* pathfinding module shared by the runtime and the CLI/MCP. Browser-safe: Node fs access is isolated in `@hearth/core/node`. |
 | `packages/runtime` | 2D runtime: scene instantiation, fixed-timestep loop, input actions, box/circle/convex-polygon physics (SAT, with mass/restitution/friction and named collision layers), a synchronous deterministic event bus, screen-space UI with pointer hit-testing, audio (recorded headlessly, Web Audio in the browser), camera, and the script engine — **Lua 5.4 (sandboxed wasmoon VM) by default, JavaScript equally supported, one identical `ctx` API** with scene switching, timers, tweens, seeded RNG, and persistent save data. `SceneRuntime` runs a single scene; `GameSession` wraps it for cross-scene games (`ctx.scenes.load` swaps runtimes while the RNG stream, save storage, frame counter, and logs carry across). The main entry is **headless** (runs in Node for playtests); the PixiJS renderer is the separate `@hearth/runtime/pixi` subpath used by the editor's game preview, and the web-export player bundle is built from the same code. |
 | `packages/playtest` | Headless playtest execution: scripted input + assertions over a `GameSession` (seeded, scene-switch aware), exposed as `RuntimeHooks` injected into core commands (`runPlaytest`, `runScene`). |
 | `packages/cli` | `hearth`, the command-line surface. Every subcommand dispatches into the core command system; `--json` emits the raw `CommandResult` envelope for agents. |
 | `packages/mcp-server` | `hearth-mcp`, a stdio MCP server exposing the same commands as typed MCP tools, with permission modes. |
-| `packages/examples` | Six sample projects **generated through the command system itself** (`generate.mjs`); they double as integration tests and agent references. Three are JavaScript-scripted; `ember-trail`, `glow-caves`, and `bounce-patrol` are all-Lua — `ember-trail` exercises the scene/stdlib surface end to end, `glow-caves` exercises rendering v2 (lighting, particles, sprite animation), `bounce-patrol` exercises physics v2 (mass/restitution/friction, layered and one-way colliders), `ctx.events`/`onEvent`, and `ctx.scene.findPath`. |
+| `packages/examples` | Seven sample projects **generated through the command system itself** (`generate.mjs`); they double as integration tests and agent references. Three are JavaScript-scripted; `ember-trail`, `glow-caves`, `bounce-patrol`, and `sky-courier` are all-Lua — `ember-trail` exercises the scene/stdlib surface end to end, `glow-caves` exercises rendering v2 (lighting, particles, sprite animation), `bounce-patrol` exercises physics v2 (mass/restitution/friction, layered and one-way colliders), `ctx.events`/`onEvent`, and `ctx.scene.findPath`, and `sky-courier` exercises asset pipeline v2 — the first example built from **imported binary assets** (a sliced PNG spritesheet, a streamed WAV music loop, an imported font) rather than procedural SVGs. |
 | `apps/editor` | Vite + React editor. A Vite-plugin project server (Node) opens `HearthSession`s and exposes `/api/command` etc.; the browser UI renders panels and dispatches commands. An Electron shell packages the desktop app, running the same project server in-process; an experimental Tauri shell config is also included. |
 
 ## The command system (the load-bearing wall)
@@ -172,6 +172,46 @@ either surface. Oversized grids (over 512×512 cells) differ by surface:
 `ctx.scene.findPath` logs a warning and returns no path (a script keeps
 running), while the `hearth inspect path` / `inspect_path` command fails
 with an `INVALID_INPUT` error rather than reporting `found: false`.
+
+## Asset pipeline
+
+`Asset.metadata` (`z.record(z.string(), z.unknown())` — deliberately
+untyped at the schema level, since every asset kind stuffs different
+data into it) is where spritesheet slicing, image probing, and animation
+frame counts all live; nothing about an asset's *kind* changes, only what
+ends up in this bag. `sliceSpritesheet` writes a typed frame list
+(`metadata.frames: SpritesheetFrame[]`) plus the grid params that
+produced it (`metadata.grid`) straight onto the sheet asset — no new
+asset is created, and re-slicing replaces the list wholesale rather than
+merging.
+
+**Accessor rule**: nothing reads `asset.metadata.frames` directly.
+Every consumer — the Pixi renderer's sub-texture cache, `SpriteAnimator`
+playback, `hearth validate`'s `FRAME_NOT_FOUND`/`ANIMATION_FRAME_NOT_FOUND`
+checks, and the export bundler — goes through
+`getSheetFrames(asset)`/`findSheetFrame(asset, name)`
+(`packages/core/src/assets/sheetFrames.ts`), which parses the raw
+`unknown` value through `SpritesheetFrameSchema` and returns `[]`/`null`
+on anything malformed. A hand-edited or corrupt frame list degrades to
+"no frames" everywhere at once, rather than each surface needing its own
+defensive parsing (or, worse, throwing).
+
+Animation assets reuse the same `.anim.json` file shape
+(`AnimationDataSchema`) whether their `frames` are plain sprite-asset ids
+(`createAnimationAsset`) or sheet refs (`createAnimationFromSheet`,
+`"<sheetAssetId>#<frameName>"`) — the animator and the validator both
+split on the first `#` to tell the two apart, so nothing downstream
+needs a second animation asset type.
+
+**Bundle metadata**: `hearth export web`'s `WebExportBundle` carries each
+asset's `metadata` field through verbatim (`exportCommands.ts`), for both
+the multi-file build and the single-file (`data:` URI) build — a shipped
+game's player reconstructs an in-memory `ProjectStore` from the bundle
+(`packages/runtime/src/player/index.ts`), and that store's assets need
+real `metadata.frames`/`metadata.grid` for sliced sheets to render
+correctly, exactly as they do from the authored `assets.json`. See
+[assets.md](./assets.md) for the full import → slice → animate → play
+walkthrough.
 
 ## Filesystem abstraction
 

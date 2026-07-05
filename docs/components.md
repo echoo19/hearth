@@ -31,6 +31,7 @@ Defaults:
 ```json
 {
   "assetId": null,
+  "frame": null,
   "shape": "rectangle",
   "color": "#ffffff",
   "width": 32,
@@ -42,6 +43,22 @@ Defaults:
   "visible": true
 }
 ```
+
+`frame` names a frame on `assetId`'s sliced spritesheet (see
+[assets.md](./assets.md#slicing-a-spritesheet)) to draw as a
+sub-rectangle of the texture instead of the whole image; `null` (the
+default) always draws the whole image, sliced or not. `SpriteAnimator`
+sets this automatically for sheet-backed clips — see
+[SpriteAnimator](#spriteanimator) below. An unresolvable `frame` logs a
+warning once and falls back to the whole texture (also flagged by
+`hearth validate` as `FRAME_NOT_FOUND`).
+
+`color` doubles as a **tint** on textured sprites (an asset is set), not
+just the primitive fallback's fill: Pixi's `sprite.tint` is set from it
+directly every frame. The default `#ffffff` is a no-op tint, so existing
+projects render unchanged; set it to anything else to recolor real art
+(a damage flash, a grayed-out disabled state) without a second sprite
+asset.
 
 ## Collider
 
@@ -190,7 +207,8 @@ Defaults:
   "assetId": null,
   "autoplay": false,
   "loop": false,
-  "volume": 1
+  "volume": 1,
+  "music": false
 }
 ```
 
@@ -198,6 +216,14 @@ Create sound assets with `hearth create sound <name> --preset coin`
 (deterministic procedural WAVs; presets: `coin`, `jump`, `hit`, `laser`,
 `powerup`, `explosion`, `blip`). Headless runs record every play/stop as
 `audioEvents` in the run report.
+
+`music: true` routes scene-start `autoplay` onto the single shared music
+channel (`ctx.audio.playMusic`) instead of a regular one-shot/looping
+playback — use it for a soundtrack entity that should start on its own
+and survive `ctx.scenes.load` scene switches. See
+[assets.md](./assets.md#music) for the full `playMusic`/`stopMusic`/
+`setMusicVolume` semantics, including the streaming-vs-single-file-export
+caveat.
 
 ## UIElement
 
@@ -377,12 +403,17 @@ Defaults:
 }
 ```
 
-Create the animation asset first: `hearth create animation <name> --frames
-f1 f2 …` (frame args are existing sprite/tile asset ids or names, in
-playback order) — see [`hearth create animation`](./cli.md#command-tour).
-Each fixed frame, `SpriteAnimator` writes the current frame's asset id into
-the sibling `SpriteRenderer.assetId`; `fps: 0` uses the animation asset's
-own `frameDuration`, otherwise `fps` overrides it. `loop: false` stops on
+Create the animation asset first: either `hearth create animation <name>
+--frames f1 f2 …` (frame args are existing sprite/tile asset ids or
+names, in playback order — see [`hearth create
+animation`](./cli.md#command-tour)) or, for a sliced spritesheet, `hearth
+create asset anim-from-sheet <name> --sheet <asset> --frames a,b,c` (see
+[assets.md](./assets.md#animations-from-a-sliced-sheet)). Each fixed
+frame, `SpriteAnimator` writes the current frame's asset id into the
+sibling `SpriteRenderer.assetId` — and, for a sheet-backed clip, the
+frame name into `SpriteRenderer.frame` too (`null` for a plain
+sprite-asset clip); `fps: 0` uses the animation asset's own
+`frameDuration`, otherwise `fps` overrides it. `loop: false` stops on
 the last frame and flips `playing` to false. Scripts switch clips (and
 restart at frame 0) with `ctx.animate(assetRef)` — see
 [scripting.md](./scripting.md#sprite-animation).

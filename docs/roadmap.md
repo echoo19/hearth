@@ -1,10 +1,13 @@
 # Hearth Roadmap
 
-v0.5 is the current milestone. Its first release, v0.5.0 (shipped, below),
-added physics v2 (mass/restitution/friction, collision layers, one-way
-platforms, circle-accurate resolution), script stdlib v2 (`ctx.math`,
+v0.6 is the current milestone. Its first release, v0.6.0 (shipped,
+below), added asset pipeline v2 (imported spritesheets with typed
+frame slicing and sheet-backed animations, a single crossfading music
+channel, real font assets). On top of v0.5's physics v2
+(mass/restitution/friction, collision layers, one-way platforms,
+circle-accurate resolution), script stdlib v2 (`ctx.math`,
 `ctx.events`/`onEvent`), and pathfinding (`ctx.scene.findPath`, `hearth
-inspect path`/`inspect_path`). On top of v0.4's 2D lighting, line
+inspect path`/`inspect_path`) — v0.4's 2D lighting, line
 rendering, deterministic particles, sprite animation playback, a
 debug-draw overlay, and screenshot capture for agents — v0.3's Lua-first
 scripting, scene management, and chrome-free exports — v0.2's dockable
@@ -17,6 +20,38 @@ what's deliberately missing.
 The standing rule for everything below: **agent-native first**. Each system
 ships as schemas + commands (inspectable via `hearth … --json`, exposed as
 MCP tools, testable in headless playtests) before it gets editor UI.
+
+## Shipped in v0.6.0
+
+- **Asset pipeline v2**: `importAsset` probes real image dimensions
+  (PNG/JPEG/GIF/WebP/SVG) into `metadata`; `sliceSpritesheet` cuts an
+  imported spritesheet into a named, typed frame grid stored on the
+  asset itself (`metadata.frames`/`metadata.grid`), and
+  `createAnimationFromSheet` builds animation assets from those frames
+  (`<sheetAssetId>#<frameName>` refs); `SpriteRenderer.frame` draws a
+  sliced frame instead of the whole texture, and every textured sprite
+  is now tintable via its existing `color` field (default `#ffffff` is a
+  no-op, so nothing existing changes color). See
+  [architecture.md](./architecture.md#asset-pipeline) for the
+  metadata/accessor design and [assets.md](./assets.md) for the full
+  guide.
+- **Music**: a single shared, crossfading music channel —
+  `ctx.audio.playMusic`/`stopMusic`/`setMusicVolume`, `AudioSource.music`
+  for scene-start autoplay, survives `ctx.scenes.load` scene switches,
+  streamed through a real `<audio>` element in the browser host rather
+  than fully decoded up front — plus the `assertAudioCount` playtest step
+  (filter by asset/action/music, checked against equals/min/max).
+- **Fonts**: `.ttf`/`.otf`/`.woff`/`.woff2` import as `font` assets,
+  loaded via `FontFace` at mount and registered under exactly the
+  asset's name, so `Text.fontFamily` references an imported font like
+  any other asset name — no `@font-face` CSS to hand-write.
+- Editor: a spritesheet slicing dialog and asset-browser thumbnails
+  (frame grids, font samples, animation previews), plus `Text.fontFamily`
+  and `SpriteRenderer.frame` pickers in the Inspector.
+- The all-Lua `sky-courier` example is the first built from **imported
+  binary assets** rather than procedural SVGs: a sliced PNG walk/idle
+  spritesheet, a streamed WAV music loop, and an imported `.ttf` HUD
+  font.
 
 ## Shipped in v0.5.0
 
@@ -96,15 +131,15 @@ MCP tools, testable in headless playtests) before it gets editor UI.
 - Web export: `hearth export web [--single-file] [--zip]` — static
   self-contained builds, itch.io-ready zips.
 
-## Near term (later v0.5 releases)
+## Near term (later v0.6 releases)
 
 - **Undo/redo in the editor** (command journal; the diff baseline already
   proves the model).
+- **Bulk asset import**: `importAsset` is one file per call today;
+  a multi-file/folder import command is the natural follow-up.
 
 ## Medium term
 
-- **Asset pipeline v2**: spritesheet import + slicing, streamed long-form
-  audio (music), font assets, editor thumbnails and bulk import.
 - **UI widgets v2**: layout containers (stacks/anchor groups), sliders,
   toggles, focus + keyboard navigation — still composed from
   Text/SpriteRenderer rather than a parallel widget tree.

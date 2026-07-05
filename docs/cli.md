@@ -84,7 +84,16 @@ gold --width 24 --height 24` (shapes: rectangle, circle, triangle, diamond,
 star, capsule, polygon, character, enemy, coin, heart), `create asset tile
 <name> --color green`, `create sound <name> --preset coin [--seed n]`
 (deterministic WAV; presets: coin, jump, hit, laser, powerup, explosion,
-blip), `create animation <name> --frames f1 f2`, `import asset <path>`.
+blip), `create animation <name> --frames f1 f2`, `import asset <path>`
+(probes image dimensions for sprites/tiles into `metadata`; `.woff`/
+`.woff2`/`.ttf`/`.otf` import as `font` assets), `create asset slice
+<asset> --frame-size WxH [--margin N] [--spacing N] [--prefix NAME]`
+(cuts an imported spritesheet into named frames, stored in the asset's
+own `metadata`), `create asset anim-from-sheet <name> --sheet <asset>
+--frames a,b,c [--duration S] [--no-loop]` (an animation asset whose
+frames are `<sheetAssetId>#<frameName>` refs) — see
+[assets.md](./assets.md) for the full pipeline, worked examples, and
+the music/font/`assertAudioCount` side of things.
 
 **Testing & review**: `snapshot`, `diff`, `revert --confirm`,
 `run <scene> [--frames n]` (the report includes `audioEvents`),
@@ -93,7 +102,10 @@ blip), `create animation <name> --frames f1 f2`, `import asset <path>`.
 [--seed n]` (`--seed` makes `ctx.random` / Lua `math.random` reproducible;
 steps cover input — `wait`, `press`, `release`, `click {x,y}` — and
 assertions — `assertEntityExists`, `assertProperty`, `assertPositionNear`,
-`assertScene`, `assertParticleCount`, `assertEventCount`, `assertNoErrors`), `test`
+`assertScene`, `assertParticleCount`, `assertEventCount`,
+`assertAudioCount` (filter by `asset`/`action`/`music`, checked against
+`equals`/`min`/`max` — see [assets.md](./assets.md#testing-audio-assertaudiocount)),
+`assertNoErrors`), `test`
 (validate + all playtests, the CI command).
 
 **Export** (requires `--allow build`): `export web [--out dir]

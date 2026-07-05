@@ -37,7 +37,7 @@ normative; this page is descriptive. Every file carries `formatVersion: 1`.
 ```jsonc
 {
   "formatVersion": 1,
-  "hearthVersion": "0.5.0",
+  "hearthVersion": "0.6.0",
   "id": "prj_a1b2c3d4",
   "name": "My Game",
   "description": "",

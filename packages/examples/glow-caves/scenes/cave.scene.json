@@ -1,10 +1,10 @@
 {
   "formatVersion": 1,
-  "id": "scn_d08hnd36",
+  "id": "scn_7xfi16mn",
   "name": "Cave",
   "entities": [
     {
-      "id": "ent_s0edeexj",
+      "id": "ent_psh1tj8w",
       "name": "Main Camera",
       "parentId": null,
       "enabled": true,
@@ -30,7 +30,7 @@
       }
     },
     {
-      "id": "ent_yao3tnsk",
+      "id": "ent_pj0hr2xg",
       "name": "Cave Floor",
       "parentId": null,
       "enabled": true,
@@ -65,7 +65,7 @@
       }
     },
     {
-      "id": "ent_tx4u8jka",
+      "id": "ent_8wycja53",
       "name": "Wall Top",
       "parentId": null,
       "enabled": true,
@@ -129,7 +129,7 @@
       }
     },
     {
-      "id": "ent_t4epciau",
+      "id": "ent_61qvm2k5",
       "name": "Wall Bottom",
       "parentId": null,
       "enabled": true,
@@ -193,7 +193,7 @@
       }
     },
     {
-      "id": "ent_hffwkv0p",
+      "id": "ent_zdmu9jhk",
       "name": "Wall Left",
       "parentId": null,
       "enabled": true,
@@ -257,7 +257,7 @@
       }
     },
     {
-      "id": "ent_l47ae5w6",
+      "id": "ent_ri3q8bss",
       "name": "Wall Right",
       "parentId": null,
       "enabled": true,
@@ -321,7 +321,7 @@
       }
     },
     {
-      "id": "ent_87xjzu7s",
+      "id": "ent_73ecbtw7",
       "name": "Cave Wall Left",
       "parentId": null,
       "enabled": true,
@@ -381,7 +381,7 @@
       }
     },
     {
-      "id": "ent_uwgenx1c",
+      "id": "ent_lbcx9ctf",
       "name": "Cave Wall Right",
       "parentId": null,
       "enabled": true,
@@ -441,7 +441,7 @@
       }
     },
     {
-      "id": "ent_nmuv5ezk",
+      "id": "ent_ombzymmx",
       "name": "Player",
       "parentId": null,
       "enabled": true,
@@ -461,7 +461,7 @@
           }
         },
         "SpriteRenderer": {
-          "assetId": "ast_eceyu006",
+          "assetId": "ast_mik3gwf5",
           "frame": null,
           "shape": "rectangle",
           "color": "#ffffff",
@@ -524,9 +524,9 @@
       }
     },
     {
-      "id": "ent_9p2st9nr",
+      "id": "ent_qgxpsbtb",
       "name": "Torch",
-      "parentId": "ent_nmuv5ezk",
+      "parentId": "ent_ombzymmx",
       "enabled": true,
       "tags": [
         "torch"
@@ -550,7 +550,7 @@
           "enabled": true
         },
         "SpriteRenderer": {
-          "assetId": "ast_2yvxu02r",
+          "assetId": "ast_t8q4n1hv",
           "frame": null,
           "shape": "rectangle",
           "color": "#ffffff",
@@ -563,7 +563,7 @@
           "visible": true
         },
         "SpriteAnimator": {
-          "assetId": "ast_ocvbq4dq",
+          "assetId": "ast_fyva5em1",
           "fps": 0,
           "playing": true,
           "loop": true
@@ -595,7 +595,7 @@
       }
     },
     {
-      "id": "ent_kdgid7p5",
+      "id": "ent_babmkybb",
       "name": "Stalactite",
       "parentId": null,
       "enabled": true,
@@ -630,7 +630,7 @@
       }
     },
     {
-      "id": "ent_bfgs7xcd",
+      "id": "ent_dma3nmrb",
       "name": "Drip",
       "parentId": null,
       "enabled": true,
