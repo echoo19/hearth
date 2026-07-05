@@ -95,6 +95,7 @@ const ASSERT_TYPES = new Set([
   'assertScene',
   'assertParticleCount',
   'assertEventCount',
+  'assertAudioCount',
 ]);
 
 export async function runPlaytest(
@@ -411,6 +412,50 @@ async function executeStep(
         message: passed
           ? `event "${step.event}" count ${count} OK${capNote}`
           : `event "${step.event}" count ${count}: ${failures.join(', ')}${capNote}`,
+      };
+    }
+    case 'assertAudioCount': {
+      // Resolve asset if provided.
+      let resolvedAssetId: string | undefined;
+      if (step.asset !== undefined) {
+        const asset = store.getAsset(step.asset);
+        if (!asset) {
+          return {
+            index,
+            type: step.type,
+            passed: false,
+            message: `assertAudioCount: asset not found: ${step.asset}${capNote}`,
+          };
+        }
+        resolvedAssetId = asset.id;
+      }
+
+      // Count matching audioEvents.
+      const count = session.audioEvents.filter((ev) => {
+        if (resolvedAssetId !== undefined && ev.assetId !== resolvedAssetId) return false;
+        if (step.action !== undefined && ev.action !== step.action) return false;
+        if (step.music !== undefined && Boolean(ev.music) !== step.music) return false;
+        return true;
+      }).length;
+
+      const failures: string[] = [];
+      if (step.equals !== undefined && count !== step.equals) failures.push(`expected exactly ${step.equals}`);
+      if (step.min !== undefined && count < step.min) failures.push(`expected at least ${step.min}`);
+      if (step.max !== undefined && count > step.max) failures.push(`expected at most ${step.max}`);
+      const passed = failures.length === 0;
+
+      // Build the filter descriptor for the message.
+      const filters: string[] = [];
+      if (step.asset !== undefined) filters.push(`asset "${step.asset}"`);
+      if (step.action !== undefined) filters.push(`action "${step.action}"`);
+      if (step.music !== undefined) filters.push(`music ${step.music}`);
+      const filterDesc = filters.length > 0 ? filters.join(', ') : 'audio';
+
+      return {
+        index, type: step.type, passed,
+        message: passed
+          ? `${filterDesc} count ${count} OK${capNote}`
+          : `${filterDesc} count ${count}: ${failures.join(', ')}${capNote}`,
       };
     }
     default: {

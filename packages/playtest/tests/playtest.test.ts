@@ -234,6 +234,124 @@ describe('audio events pass-through', () => {
 });
 
 // ---------------------------------------------------------------------------
+// assertAudioCount playtest assertion
+// ---------------------------------------------------------------------------
+
+describe('assertAudioCount', () => {
+  /**
+   * Project with SFX and music assets.
+   * Script plays coin (sfx) twice and music once on start.
+   */
+  async function makeAudioProject(): Promise<{ store: ProjectStore; session: HearthSession }> {
+    const { store, session } = await makeProject();
+    store.assets.assets.push(
+      {
+        id: 'ast_coin',
+        name: 'coin',
+        type: 'audio',
+        path: 'assets/coin.wav',
+        metadata: {},
+      },
+      {
+        id: 'ast_bgm',
+        name: 'bgm',
+        type: 'audio',
+        path: 'assets/bgm.wav',
+        metadata: {},
+      },
+    );
+    const created = await session.execute<{ path: string }>('createScript', {
+      name: 'audio sfx',
+      source: `export default {
+  onStart(ctx) {
+    ctx.audio.play('coin');
+    ctx.audio.play('coin');
+    ctx.audio.playMusic('bgm');
+  }
+};`,
+      language: 'js',
+    });
+    await session.execute('attachScript', {
+      scene: 'Main',
+      entity: 'Ground',
+      script: created.data!.path,
+    });
+    return { store, session };
+  }
+
+  it('counts audio events filtered by action and music flag', async () => {
+    const { store, session } = await makeAudioProject();
+    await session.execute('createPlaytest', {
+      name: 'audio assertions',
+      scene: 'Main',
+      steps: [
+        { type: 'wait', frames: 5 },
+        { type: 'assertAudioCount', music: true, action: 'play', equals: 1 },
+        { type: 'assertAudioCount', action: 'play', equals: 3 },
+        { type: 'assertAudioCount', music: false, action: 'play', equals: 2 },
+      ],
+    });
+    const result = await runPlaytest(store, 'audio assertions');
+    expect(result.passed).toBe(true);
+    expect(result.steps[1].passed).toBe(true);
+    expect(result.steps[2].passed).toBe(true);
+    expect(result.steps[3].passed).toBe(true);
+  });
+
+  it('counts audio events filtered by asset name', async () => {
+    const { store, session } = await makeAudioProject();
+    await session.execute('createPlaytest', {
+      name: 'audio by asset',
+      scene: 'Main',
+      steps: [
+        { type: 'wait', frames: 5 },
+        { type: 'assertAudioCount', asset: 'coin', equals: 2 },
+        { type: 'assertAudioCount', asset: 'bgm', equals: 1 },
+        { type: 'assertAudioCount', asset: 'bgm', min: 1 },
+      ],
+    });
+    const result = await runPlaytest(store, 'audio by asset');
+    expect(result.passed).toBe(true);
+    expect(result.steps[1].passed).toBe(true);
+    expect(result.steps[2].passed).toBe(true);
+    expect(result.steps[3].passed).toBe(true);
+  });
+
+  it('fails when asset is not found', async () => {
+    const { store, session } = await makeAudioProject();
+    await session.execute('createPlaytest', {
+      name: 'unknown asset',
+      scene: 'Main',
+      steps: [
+        { type: 'wait', frames: 5 },
+        { type: 'assertAudioCount', asset: 'nope', min: 1 },
+      ],
+    });
+    const result = await runPlaytest(store, 'unknown asset');
+    expect(result.passed).toBe(false);
+    expect(result.steps[1].passed).toBe(false);
+    expect(result.steps[1].message).toContain('assertAudioCount: asset not found: nope');
+  });
+
+  it('fails when bounds are not met', async () => {
+    const { store, session } = await makeAudioProject();
+    await session.execute('createPlaytest', {
+      name: 'wrong bounds',
+      scene: 'Main',
+      steps: [
+        { type: 'wait', frames: 5 },
+        { type: 'assertAudioCount', action: 'stop', equals: 5 },
+      ],
+    });
+    const result = await runPlaytest(store, 'wrong bounds');
+    expect(result.passed).toBe(false);
+    expect(result.steps[1].passed).toBe(false);
+    expect(result.steps[1].message).toContain('action "stop" count 0');
+    expect(result.steps[1].message).toContain('expected exactly 5');
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Scene switching: click steps, assertScene, seeded runs
 // ---------------------------------------------------------------------------
 

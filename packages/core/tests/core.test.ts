@@ -447,6 +447,27 @@ describe('playtests & build', () => {
     expect(pt.success).toBe(true);
   });
 
+  it('assertAudioCount schema rejects step with no equals/min/max', async () => {
+    const { session } = await makeSession();
+    const pt = await session.execute('createPlaytest', {
+      name: 'invalid',
+      scene: 'Main',
+      steps: [{ type: 'assertAudioCount', action: 'play' }],
+    });
+    expect(pt.success).toBe(false);
+    expect(pt.errors[0].message).toContain('assertAudioCount requires at least one of equals, min, or max');
+  });
+
+  it('assertAudioCount schema accepts step with min', async () => {
+    const { session } = await makeSession();
+    const pt = await session.execute<any>('createPlaytest', {
+      name: 'valid',
+      scene: 'Main',
+      steps: [{ type: 'assertAudioCount', action: 'play', min: 1 }],
+    });
+    expect(pt.success).toBe(true);
+  });
+
   it('build requires the build permission and a valid project', async () => {
     const { session } = await makeSession(['read-only', 'safe-edit']);
     const denied = await session.execute('buildProject');

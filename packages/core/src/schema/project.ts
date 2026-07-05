@@ -155,6 +155,15 @@ const PlaytestStepUnionSchema = z.discriminatedUnion('type', [
     min: z.number().optional(),
     max: z.number().optional(),
   }),
+  z.object({
+    type: z.literal('assertAudioCount'),
+    asset: z.string().optional(),
+    action: z.enum(['play', 'stop']).optional(),
+    music: z.boolean().optional(),
+    equals: z.number().optional(),
+    min: z.number().optional(),
+    max: z.number().optional(),
+  }),
 ]);
 
 export const PlaytestStepSchema = PlaytestStepUnionSchema.superRefine((step, ctx) => {
@@ -178,6 +187,17 @@ export const PlaytestStepSchema = PlaytestStepUnionSchema.superRefine((step, ctx
     ctx.addIssue({
       code: z.ZodIssueCode.custom,
       message: 'assertEventCount requires at least one of equals, min, or max',
+    });
+  }
+  if (
+    step.type === 'assertAudioCount' &&
+    step.equals === undefined &&
+    step.min === undefined &&
+    step.max === undefined
+  ) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: 'assertAudioCount requires at least one of equals, min, or max',
     });
   }
 });
