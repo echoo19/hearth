@@ -401,6 +401,35 @@ export const TOOL_SPECS: ToolSpec[] = [
       loop: z.boolean().optional(),
     },
   },
+  {
+    name: 'slice_spritesheet',
+    command: 'sliceSpritesheet',
+    description:
+      'Slice a spritesheet image into frames with configurable grid spacing. Stores frame metadata in asset.metadata for the player to resolve sheet refs. (requires asset-edit)',
+    permission: 'asset-edit',
+    inputShape: {
+      asset: z.string().min(1),
+      frameWidth: z.number().int().positive(),
+      frameHeight: z.number().int().positive(),
+      margin: z.number().int().nonnegative().optional(),
+      spacing: z.number().int().nonnegative().optional(),
+      namePrefix: z.string().optional(),
+    },
+  },
+  {
+    name: 'create_animation_from_sheet',
+    command: 'createAnimationFromSheet',
+    description:
+      'Create an animation asset from named frames on a sliced spritesheet. Frame refs are written as "<sheetAssetId>#<frameName>". (requires asset-edit)',
+    permission: 'asset-edit',
+    inputShape: {
+      name: z.string().min(1),
+      sheet: z.string().min(1),
+      frames: z.array(z.string()).min(1),
+      frameDuration: z.number().positive().optional(),
+      loop: z.boolean().optional(),
+    },
+  },
 
   // ---- diff / playtest / build ---------------------------------------------------------------
   {

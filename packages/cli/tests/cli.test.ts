@@ -277,3 +277,90 @@ describe('runtime-dependent commands', () => {
     expect(result.stdout).not.toContain('at Object.<anonymous>');
   });
 });
+
+describe('hearth create asset slice (sliceSpritesheet)', () => {
+  it('slices a spritesheet with frame-size and optional parameters', async () => {
+    // First create a sprite asset large enough to slice
+    const createResult = await runCli(['create', 'asset', 'sprite', 'sheet', '--width', '128', '--height', '128', '--json'], projectDir);
+    expect(createResult.code).toBe(0);
+
+    // Slice it with frame size
+    const sliceResult = await runCli(
+      ['create', 'asset', 'slice', 'sheet', '--frame-size', '32x32', '--margin', '2', '--spacing', '1', '--prefix', 'frame', '--json'],
+      projectDir,
+    );
+    if (sliceResult.code !== 0) {
+      console.error('Slice stderr:', sliceResult.stderr);
+      console.error('Slice stdout:', sliceResult.stdout);
+    }
+    expect(sliceResult.code).toBe(0);
+    const envelope = parseJson(sliceResult.stdout);
+    expect(envelope.success).toBe(true);
+    expect(envelope.command).toBe('sliceSpritesheet');
+    expect(envelope.data.frameCount).toBeGreaterThan(0);
+    expect(envelope.data.frames).toBeInstanceOf(Array);
+  });
+
+  it('rejects invalid frame-size format', async () => {
+    const createResult = await runCli(['create', 'asset', 'sprite', 'sheet2', '--width', '128', '--height', '128', '--json'], projectDir);
+    expect(createResult.code).toBe(0);
+
+    const result = await runCli(
+      ['create', 'asset', 'slice', 'sheet2', '--frame-size', 'invalid', '--json'],
+      projectDir,
+    );
+    expect(result.code).toBe(1);
+    const envelope = parseJson(result.stdout);
+    expect(envelope.success).toBe(false);
+    expect(envelope.errors[0].code).toBe('INVALID_INPUT');
+  });
+});
+
+describe('hearth create asset anim-from-sheet (createAnimationFromSheet)', () => {
+  it('creates an animation from a sliced spritesheet with comma-separated frame list', async () => {
+    // Create and slice a spritesheet
+    const createResult = await runCli(['create', 'asset', 'sprite', 'anim_sheet', '--width', '128', '--height', '128', '--json'], projectDir);
+    expect(createResult.code).toBe(0);
+
+    const sliceResult = await runCli(
+      ['create', 'asset', 'slice', 'anim_sheet', '--frame-size', '32x32', '--prefix', 'frame', '--json'],
+      projectDir,
+    );
+    expect(sliceResult.code).toBe(0);
+    const sliceEnvelope = parseJson(sliceResult.stdout);
+    const frameList = sliceEnvelope.data.frames.slice(0, 2).join(',');
+
+    // Create animation from frames
+    const animResult = await runCli(
+      ['create', 'asset', 'anim-from-sheet', 'my-anim', '--sheet', 'anim_sheet', '--frames', frameList, '--duration', '0.1', '--json'],
+      projectDir,
+    );
+    expect(animResult.code).toBe(0);
+    const envelope = parseJson(animResult.stdout);
+    expect(envelope.success).toBe(true);
+    expect(envelope.command).toBe('createAnimationFromSheet');
+    expect(envelope.data.asset.id).toBeTruthy();
+  });
+
+  it('accepts --no-loop flag to disable looping', async () => {
+    // Setup
+    const createResult = await runCli(['create', 'asset', 'sprite', 'anim_sheet2', '--width', '128', '--height', '128', '--json'], projectDir);
+    expect(createResult.code).toBe(0);
+
+    const sliceResult = await runCli(
+      ['create', 'asset', 'slice', 'anim_sheet2', '--frame-size', '32x32', '--prefix', 'frame', '--json'],
+      projectDir,
+    );
+    expect(sliceResult.code).toBe(0);
+    const sliceEnvelope = parseJson(sliceResult.stdout);
+    const frameList = sliceEnvelope.data.frames.slice(0, 2).join(',');
+
+    const result = await runCli(
+      ['create', 'asset', 'anim-from-sheet', 'loop-test', '--sheet', 'anim_sheet2', '--frames', frameList, '--no-loop', '--json'],
+      projectDir,
+    );
+    expect(result.code).toBe(0);
+    const envelope = parseJson(result.stdout);
+    expect(envelope.success).toBe(true);
+  });
+});

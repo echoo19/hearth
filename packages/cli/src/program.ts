@@ -23,7 +23,7 @@ import { NodeFileSystem } from '@hearth/core/node';
 import { captureScreenshot } from '@hearth/playtest';
 import { CliError, openSession, resolveProjectRoot, type GlobalOpts } from './context.js';
 import { emit, errorResult, makeResult, logStderr } from './output.js';
-import { parseJsonArray, parseJsonObject, parseList, parsePosition, parseSize, parseValue, ParseError } from './parse.js';
+import { parseJsonArray, parseJsonObject, parseList, parsePosition, parseSize, parseFrameSize, parseValue, ParseError } from './parse.js';
 import { createZip } from './zip.js';
 
 // Hardcoded rather than imported from package.json: this package builds
@@ -308,6 +308,52 @@ export function buildProgram(): Command {
         loop: opts.loop !== false,
       }),
     );
+  });
+
+  addGlobalOptions(
+    createAsset
+      .command('slice <asset>')
+      .description('slice a spritesheet image into frames with configurable grid spacing')
+      .requiredOption('--frame-size <WxH>', 'frame size in pixels (e.g. 32x32)')
+      .option('--margin <n>', 'margin around spritesheet edges', (v) => parseInt(v, 10))
+      .option('--spacing <n>', 'spacing between frames', (v) => parseInt(v, 10))
+      .option('--prefix <name>', 'frame name prefix'),
+  ).action(async (asset: string, opts, cmd) => {
+    await guarded(cmd, 'sliceSpritesheet', () => {
+      const frameSize = parseFrameSize(opts.frameSize);
+      return runAndEmit(cmd, 'sliceSpritesheet', {
+        asset,
+        frameWidth: frameSize.width,
+        frameHeight: frameSize.height,
+        margin: opts.margin ?? 0,
+        spacing: opts.spacing ?? 0,
+        namePrefix: opts.prefix,
+      });
+    });
+  });
+
+  addGlobalOptions(
+    createAsset
+      .command('anim-from-sheet <name>')
+      .description('create an animation asset from named frames on a sliced spritesheet')
+      .requiredOption('--sheet <asset>', 'spritesheet asset id or name')
+      .requiredOption('--frames <list>', 'comma-separated frame names from the sheet')
+      .option('--duration <seconds>', 'seconds per frame', (v) => parseFloat(v))
+      .option('--no-loop', 'do not loop'),
+  ).action(async (name: string, opts, cmd) => {
+    await guarded(cmd, 'createAnimationFromSheet', () => {
+      const frames = parseList(opts.frames);
+      if (frames.length === 0) {
+        throw new ParseError('--frames must contain at least one frame name');
+      }
+      return runAndEmit(cmd, 'createAnimationFromSheet', {
+        name,
+        sheet: opts.sheet,
+        frames,
+        frameDuration: opts.duration,
+        loop: opts.loop !== false,
+      });
+    });
   });
 
   addGlobalOptions(

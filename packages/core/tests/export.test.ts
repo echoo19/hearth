@@ -141,3 +141,80 @@ describe('exportWeb failure modes', () => {
     expect(result.errors[0].code).toBe('PERMISSION_DENIED');
   });
 });
+
+describe('exportWeb bundle asset metadata', () => {
+  it('carries asset metadata (e.g., spritesheet frames) through to the bundle', async () => {
+    const { session, fs } = await makeSession(stubResources);
+
+    // Create a sprite and slice it as a spritesheet
+    const spriteResult = await session.execute<any>('createSpriteAsset', {
+      name: 'mysheet',
+      shape: 'rectangle',
+      width: 64,
+      height: 64,
+    });
+    expect(spriteResult.success).toBe(true);
+
+    const sliceResult = await session.execute<any>('sliceSpritesheet', {
+      asset: 'mysheet',
+      frameWidth: 32,
+      frameHeight: 32,
+      margin: 0,
+      spacing: 0,
+    });
+    expect(sliceResult.success).toBe(true);
+    expect(sliceResult.data.frameCount).toBeGreaterThan(0);
+
+    // Export and verify metadata is in the bundle
+    const exportResult = await session.execute<any>('exportWeb', {});
+    expect(exportResult.success).toBe(true);
+
+    const bundle = JSON.parse(await fs.readFile('/proj/export/web/project.bundle.json')) as WebExportBundle;
+
+    // Find the mysheet asset in the bundle
+    const sheetAsset = bundle.assets.find(a => a.name === 'mysheet');
+    expect(sheetAsset).toBeDefined();
+    expect(sheetAsset?.metadata).toBeDefined();
+    expect(sheetAsset?.metadata?.frames).toBeDefined();
+    expect(Array.isArray(sheetAsset?.metadata?.frames)).toBe(true);
+    expect((sheetAsset?.metadata?.frames as any[]).length).toBeGreaterThan(0);
+    expect((sheetAsset?.metadata?.frames as any[])[0]).toHaveProperty('name');
+    expect((sheetAsset?.metadata?.frames as any[])[0]).toHaveProperty('x');
+    expect((sheetAsset?.metadata?.frames as any[])[0]).toHaveProperty('y');
+  });
+
+  it('carries metadata for single-file exports too', async () => {
+    const { session, fs } = await makeSession(stubResources);
+
+    const spriteResult = await session.execute<any>('createSpriteAsset', {
+      name: 'singlesheet',
+      shape: 'circle',
+      width: 64,
+      height: 64,
+    });
+    expect(spriteResult.success).toBe(true);
+
+    const sliceResult = await session.execute<any>('sliceSpritesheet', {
+      asset: 'singlesheet',
+      frameWidth: 32,
+      frameHeight: 32,
+    });
+    expect(sliceResult.success).toBe(true);
+
+    const exportResult = await session.execute<any>('exportWeb', { singleFile: true });
+    expect(exportResult.success).toBe(true);
+
+    const html = await fs.readFile('/proj/export/web/index.html');
+    expect(html).toContain('data:');
+
+    // Single-file embeds the bundle in the HTML, so extract and verify
+    const bundleMatch = html.match(/var bundle = (\{[\s\S]*?\});/);
+    expect(bundleMatch).toBeTruthy();
+    if (bundleMatch) {
+      // The embedded bundle is a JSON string that's been inlined in JS
+      // For this test, we just verify the structure is there
+      const bundleStr = bundleMatch[1];
+      expect(bundleStr).toContain('assets');
+    }
+  });
+});

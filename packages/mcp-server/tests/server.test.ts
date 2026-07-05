@@ -209,4 +209,75 @@ describe('hearth-mcp server', () => {
     expect(envelope.data.framesRun).toBeGreaterThanOrEqual(30);
     expect(envelope.data.steps.length).toBe(3);
   });
+
+  it('slice_spritesheet slices a sprite asset into frames', async () => {
+    ctx = await connectClient(['read-only', 'safe-edit', 'asset-edit']);
+
+    // Create a sprite asset first
+    const createResult = await ctx.client.callTool({
+      name: 'create_sprite_asset',
+      arguments: { name: 'spritesheet', shape: 'rectangle', width: 64, height: 64 },
+    });
+    expect(createResult.isError).toBeFalsy();
+
+    // Slice it
+    const sliceResult = await ctx.client.callTool({
+      name: 'slice_spritesheet',
+      arguments: {
+        asset: 'spritesheet',
+        frameWidth: 32,
+        frameHeight: 32,
+        margin: 0,
+        spacing: 0,
+        namePrefix: 'sprite',
+      },
+    });
+    expect(sliceResult.isError).toBeFalsy();
+    const envelope = toolJson(sliceResult);
+    expect(envelope.success).toBe(true);
+    expect(envelope.command).toBe('sliceSpritesheet');
+    expect(envelope.data.frameCount).toBeGreaterThan(0);
+    expect(envelope.data.frames).toBeInstanceOf(Array);
+  });
+
+  it('create_animation_from_sheet creates an animation from sliced frames', async () => {
+    ctx = await connectClient(['read-only', 'safe-edit', 'asset-edit']);
+
+    // Create and slice a sprite
+    const createResult = await ctx.client.callTool({
+      name: 'create_sprite_asset',
+      arguments: { name: 'anim_source', shape: 'circle', width: 64, height: 64 },
+    });
+    expect(createResult.isError).toBeFalsy();
+
+    const sliceResult = await ctx.client.callTool({
+      name: 'slice_spritesheet',
+      arguments: {
+        asset: 'anim_source',
+        frameWidth: 32,
+        frameHeight: 32,
+        namePrefix: 'frame',
+      },
+    });
+    expect(sliceResult.isError).toBeFalsy();
+    const sliceEnvelope = toolJson(sliceResult);
+    const frames = (sliceEnvelope.data.frames as string[]).slice(0, 2);
+
+    // Create animation
+    const animResult = await ctx.client.callTool({
+      name: 'create_animation_from_sheet',
+      arguments: {
+        name: 'spin',
+        sheet: 'anim_source',
+        frames,
+        frameDuration: 0.1,
+        loop: true,
+      },
+    });
+    expect(animResult.isError).toBeFalsy();
+    const animEnvelope = toolJson(animResult);
+    expect(animEnvelope.success).toBe(true);
+    expect(animEnvelope.command).toBe('createAnimationFromSheet');
+    expect(animEnvelope.data.asset.id).toBeTruthy();
+  });
 });

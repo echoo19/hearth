@@ -71,6 +71,20 @@ export function parseSize(raw: string): { width: number; height: number } {
   return { width, height };
 }
 
+/** Parse frame size "WIDTHxHEIGHT", e.g. --frame-size 32x32. Alias for parseSize. */
+export function parseFrameSize(raw: string): { width: number; height: number } {
+  const match = /^(\d+)x(\d+)$/i.exec(raw.trim());
+  if (!match) {
+    throw new ParseError(`Invalid --frame-size "${raw}": expected "WIDTHxHEIGHT", e.g. "32x32"`);
+  }
+  const width = Number(match[1]);
+  const height = Number(match[2]);
+  if (width <= 0 || height <= 0) {
+    throw new ParseError(`Invalid --frame-size "${raw}": width and height must be positive`);
+  }
+  return { width, height };
+}
+
 /** Parse a JSON array option (e.g. --steps-file contents). */
 export function parseJsonArray(raw: string, sourceName: string): unknown[] {
   let value: unknown;

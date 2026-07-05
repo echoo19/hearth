@@ -52,6 +52,7 @@ const MIME_TYPES: Record<string, string> = {
   json: 'application/json',
   ttf: 'font/ttf',
   otf: 'font/otf',
+  woff: 'font/woff',
   woff2: 'font/woff2',
 };
 
