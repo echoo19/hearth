@@ -7,6 +7,7 @@
 import { describe, it, expect } from 'vitest';
 import os from 'node:os';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import zlib from 'node:zlib';
 import { mkdtemp, readFile, rm, stat, writeFile as writeFileNode } from 'node:fs/promises';
 import { HearthSession, MemoryFileSystem, createProject, type ProjectStore } from '@hearth/core';
@@ -18,6 +19,16 @@ import {
   waitForBootReady,
   CHROMIUM_MISSING_ERROR,
 } from '../src/screenshot.js';
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+
+// Committed real TTF fixture (see packages/examples/fixtures/fonts/OFL.txt
+// for license) — Task 9's font-loading tests need bytes a real FontFace can
+// actually parse, not the header-only stand-ins used elsewhere in this file.
+const FONT_FIXTURE_PATH = path.resolve(
+  __dirname,
+  '../../examples/fixtures/fonts/press-start-2p.ttf',
+);
 
 const SAMPLE_EXPORT_HTML = `<!DOCTYPE html>
 <html lang="en">
@@ -650,6 +661,120 @@ describe('captureScreenshot (real Chromium)', () => {
         expect(Buffer.compare(defaultBytes, whiteBytes)).toBe(0);
         // A non-default tint must actually change the rendered pixels.
         expect(Buffer.compare(whiteBytes, redBytes)).not.toBe(0);
+      } finally {
+        await cleanup();
+      }
+    },
+    30000,
+  );
+
+  // Task 9: font-type assets are loaded via FontFace at mount so
+  // Text.fontFamily can reference one by asset name. captureScreenshot
+  // doesn't expose the underlying Playwright page to callers (see Task 7's
+  // notes), so `document.fonts.check(...)` isn't reachable from here.
+  //
+  // A naive "custom font name vs. literal 'monospace'" pixel diff would be a
+  // false positive: Chromium falls back to some default font for ANY
+  // unrecognized font-family name, so those two captures would differ even
+  // if loadFonts were never wired up at all (the fontFamily string simply
+  // wouldn't resolve to anything real either way). To isolate the actual
+  // causal effect of the font asset being loaded, both captures below use
+  // the EXACT SAME fontFamily string ('PressStart2P') — the only thing that
+  // changes between them is whether that name is backed by a registered
+  // FontFace (the asset present vs. removed via `removeAsset`). If loadFonts
+  // is working, removing the asset must change what "PressStart2P" renders
+  // as; if it's a no-op (or never wired up), both captures render the same
+  // unresolved-name fallback and would be byte-identical.
+  it.skipIf(!hasChromium)(
+    'renders a Text entity differently once its named font asset is loaded vs. removed from the project',
+    async () => {
+      const { store, cleanup } = await makeRealStore();
+      try {
+        const session = HearthSession.fromStore(store, { granted: ['asset-edit', 'safe-edit'] });
+
+        const imported = await session.execute<{ asset: { id: string } }>('importAsset', {
+          sourcePath: FONT_FIXTURE_PATH,
+          name: 'PressStart2P',
+          type: 'font',
+        });
+        expect(imported.success).toBe(true);
+        const fontAssetId = imported.data!.asset.id;
+
+        // Player's dynamic PhysicsBody falls a little every fixed step —
+        // disable it so it can't confound the pixel comparison below (same
+        // rationale as the SpriteAnimator/sheet-frame tests above).
+        const disabledPlayer = await session.execute('setEntityEnabled', {
+          scene: 'Main',
+          entity: 'Player',
+          enabled: false,
+        });
+        expect(disabledPlayer.success).toBe(true);
+
+        const entity = await session.execute('createEntity', {
+          scene: 'Main',
+          name: 'FontTest',
+          position: { x: 480, y: 270 },
+          components: {
+            Text: { content: 'Hearth', fontSize: 64, fontFamily: 'PressStart2P', color: '#ffffff' },
+          },
+        });
+        expect(entity.success).toBe(true);
+
+        const withFontCapture = await captureScreenshot(store, { out: 'shots/font-loaded.png' });
+
+        // Text.fontFamily is left untouched ('PressStart2P') — only the
+        // backing asset goes away, so any pixel change can only come from
+        // the name no longer resolving to a loaded FontFace.
+        const removed = await session.execute('removeAsset', {
+          asset: fontAssetId,
+          deleteFile: true,
+        });
+        expect(removed.success).toBe(true);
+        const withoutFontCapture = await captureScreenshot(store, { out: 'shots/font-removed.png' });
+
+        const [withFontBytes, withoutFontBytes] = await Promise.all([
+          readFile(withFontCapture.path),
+          readFile(withoutFontCapture.path),
+        ]);
+        expect(Buffer.compare(withFontBytes, withoutFontBytes)).not.toBe(0);
+      } finally {
+        await cleanup();
+      }
+    },
+    30000,
+  );
+
+  // A font asset whose file isn't real font data (bogus/corrupt, as opposed
+  // to a MISSING file — importAsset always copies real bytes in, so "the
+  // referenced file is gone" isn't reachable through the public asset
+  // commands) must not take mount/render down with it: FontFace.load()
+  // rejects, loadFonts's per-font try/catch reports it via onLog and moves
+  // on. The exact onLog message and the "one bad font doesn't block the
+  // rest" behavior are unit-tested directly against loadFontFaces in
+  // packages/runtime/tests/fonts.test.ts; onLog isn't wired to the browser
+  // console anywhere in the exported player today (same pre-existing gap as
+  // every other onLog call site in pixi/index.ts, e.g. texture-load
+  // failures), so there's nothing for a Playwright console listener to
+  // observe here — this test's job is just "does not throw".
+  it.skipIf(!hasChromium)(
+    'mounts without throwing when a font asset points at invalid (non-font) file data',
+    async () => {
+      const { store, cleanup } = await makeRealStore();
+      try {
+        const session = HearthSession.fromStore(store, { granted: ['asset-edit', 'safe-edit'] });
+
+        const badFontPath = path.join(os.tmpdir(), `hearth-bad-font-${Math.random().toString(36).slice(2)}.ttf`);
+        await writeFileNode(badFontPath, 'this is definitely not TrueType/OpenType font data');
+        const imported = await session.execute<{ asset: { id: string } }>('importAsset', {
+          sourcePath: badFontPath,
+          name: 'BadFont',
+          type: 'font',
+        });
+        expect(imported.success).toBe(true);
+
+        await expect(captureScreenshot(store, { out: 'shots/bad-font.png' })).resolves.toMatchObject({
+          frame: 0,
+        });
       } finally {
         await cleanup();
       }

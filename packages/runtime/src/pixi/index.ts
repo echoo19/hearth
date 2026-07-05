@@ -27,6 +27,13 @@
  *     session's stop events. Music is a separate streamed channel (one
  *     `<audio>` element at a time, crossfaded on replace) — `onAudio` events
  *     are dispatched to the right WebAudioPlayer method by `routeAudioEvent`.
+ *   - Every font-type asset in the project (see ./fonts.js) is registered
+ *     with the document via FontFace up front, alongside texture preload,
+ *     so Text.fontFamily can name one by asset name from the first render.
+ *     A font that fails to load falls back to whatever the browser resolves
+ *     that family name to (system font, or the next font-family in a CSS
+ *     stack — Text itself only ever sets one fontFamily, so in practice a
+ *     failed load just renders in the platform default).
  */
 import {
   Application,
@@ -58,6 +65,7 @@ import { GameSession, type SceneEvent, type SessionStorage } from '../session.js
 import { uiScreenPosition } from '../ui.js';
 import { WebAudioPlayer, routeAudioEvent } from './audio.js';
 import { lerp, lerpColor } from './color.js';
+import { loadFontFaces } from './fonts.js';
 
 export { localStorageAdapter, type WebStorageLike } from './storage.js';
 
@@ -265,7 +273,7 @@ export class PixiSceneView {
     const view = new PixiSceneView(opts, session, app);
     viewRef = view;
     view.audio = audio;
-    await view.preloadTextures();
+    await Promise.all([view.preloadTextures(), view.loadFonts()]);
     view.syncEntities();
     view.syncCamera();
     app.ticker.add(view.tickerFn);
@@ -516,6 +524,23 @@ export class PixiSceneView {
         });
       }
     }
+  }
+
+  /**
+   * Loads every font-type asset in the project via FontFace (see
+   * ./fonts.js), so Text.fontFamily can reference one by asset name. Runs
+   * alongside preloadTextures — both are awaited before the first render —
+   * and, unlike preloadTextures, isn't scoped to referenced assets: fonts
+   * are looked up by name (a plain string on Text.fontFamily), not by
+   * asset id, so there's no component reference to scan for.
+   */
+  private async loadFonts(): Promise<void> {
+    const fonts = this.opts.store.assets.assets.filter((a) => a.type === 'font');
+    await loadFontFaces(
+      fonts,
+      (asset) => this.opts.resolveAssetUrl(asset),
+      (message) => this.opts.onLog?.({ frame: this.session.frame, level: 'warn', message }),
+    );
   }
 
   private syncCamera(): void {
