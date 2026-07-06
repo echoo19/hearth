@@ -8,16 +8,21 @@ import type { FsLike } from '../fs.js';
 import { joinPath } from '../fs.js';
 import type { ChangedRef } from '../commands/types.js';
 import type { ProjectStore, ProjectSnapshot } from './store.js';
+import { moveToTrash, restoreFromTrash } from './trash.js';
 
 export interface RestoreContext {
   store: ProjectStore;
   fs: FsLike;
   root: string;
   changed: (ref: ChangedRef) => void;
+  /** Optional: reconciliation reports a missing trash file this way, if provided. */
+  warn?: (code: string, message: string) => void;
 }
 
 /** Restore `ctx.store`'s model and script files to match `snapshot` exactly. */
 export async function applySnapshot(ctx: RestoreContext, snapshot: ProjectSnapshot): Promise<void> {
+  const previousAssets = ctx.store.assets;
+
   ctx.store.project = snapshot.project;
   ctx.store.scenes = new Map(Object.entries(snapshot.scenes));
   ctx.store.assets = snapshot.assets;
@@ -35,5 +40,49 @@ export async function applySnapshot(ctx: RestoreContext, snapshot: ProjectSnapsh
     await ctx.fs.writeFile(joinPath(ctx.root, path), source);
     ctx.changed({ kind: 'script', path, action: 'modified' });
   }
+
+  await reconcileAssetFiles(ctx, previousAssets.assets, snapshot.assets.assets);
+
   ctx.changed({ kind: 'project', id: ctx.store.project.id, action: 'modified' });
+}
+
+/**
+ * Binary asset files aren't part of a `ProjectSnapshot` (only the asset index
+ * is), so restoring the model alone leaves files out of sync. Diff the asset
+ * index before vs. after this restore: assets that disappeared get their file
+ * moved into `.hearth/trash/<id>/`; assets that reappeared get their file
+ * moved back out, if it's missing at its project path. Symmetric by
+ * construction, so it makes both deleteAsset and importAsset undo/redo
+ * correctly with no command-specific logic here.
+ */
+async function reconcileAssetFiles(
+  ctx: RestoreContext,
+  before: { id: string; path: string }[],
+  after: { id: string; path: string }[],
+): Promise<void> {
+  const beforeIds = new Set(before.map((a) => a.id));
+  const afterIds = new Set(after.map((a) => a.id));
+
+  for (const asset of before) {
+    if (afterIds.has(asset.id)) continue;
+    const moved = await moveToTrash(ctx.fs, ctx.root, asset.id, asset.path);
+    if (moved) {
+      ctx.changed({ kind: 'asset', id: asset.id, path: asset.path, action: 'deleted' });
+    }
+  }
+
+  for (const asset of after) {
+    if (beforeIds.has(asset.id)) continue;
+    const destPath = joinPath(ctx.root, asset.path);
+    if (await ctx.fs.exists(destPath)) continue;
+    const restored = await restoreFromTrash(ctx.fs, ctx.root, asset.id, asset.path);
+    if (restored) {
+      ctx.changed({ kind: 'asset', id: asset.id, path: asset.path, action: 'created' });
+    } else {
+      ctx.warn?.(
+        'ASSET_TRASH_MISSING',
+        `Asset "${asset.id}" was restored to the project but its file is not in trash (${asset.path}) — the model is back but the file is gone.`,
+      );
+    }
+  }
 }

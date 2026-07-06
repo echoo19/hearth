@@ -144,7 +144,8 @@ export class HearthSession {
         // a failed result — a retrying caller would duplicate the mutation.
         try {
           const history = new HistoryStore(this.fs, this.root);
-          await history.record(name, summarizeCommand(name, params2), before);
+          const currentAssetIds = this.store.assets.assets.map((a) => a.id);
+          await history.record(name, summarizeCommand(name, params2), before, currentAssetIds);
         } catch (historyErr) {
           warnings.push({
             code: 'HISTORY_RECORD_FAILED',

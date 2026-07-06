@@ -4,6 +4,7 @@ import { generateId, slugify } from '../ids.js';
 import { ProjectError, writeJson } from '../project/store.js';
 import { joinPath, basenamePath, isSafeRelativePath } from '../fs.js';
 import { ASSETS_DIR, AnimationDataSchema, ASSET_TYPES, SpritesheetFrameSchema, type Asset } from '../schema/project.js';
+import { moveToTrash } from '../project/trash.js';
 import {
   generateSpriteSvg,
   generateTileSvg,
@@ -319,7 +320,9 @@ export const removeAsset = defineCommand({
     }
     ctx.store.assets.assets = ctx.store.assets.assets.filter((a: Asset) => a.id !== asset.id);
     if (params.deleteFile && isSafeRelativePath(asset.path)) {
-      await ctx.fs.remove(joinPath(ctx.store.root, asset.path));
+      // Trashed, never unlinked outright — undo (reconciliation in
+      // restore.ts) needs the bytes to bring the asset back.
+      await moveToTrash(ctx.fs, ctx.store.root, asset.id, asset.path);
     }
     ctx.changed({ kind: 'asset', id: asset.id, name: asset.name, path: asset.path, action: 'deleted' });
     return { assetId: asset.id, fileDeleted: params.deleteFile };

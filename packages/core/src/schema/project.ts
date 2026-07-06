@@ -231,3 +231,5 @@ export const HEARTH_DIR = '.hearth';
 export const BASELINE_FILE = '.hearth/baseline.json';
 export const AGENT_CONFIG_FILE = '.hearth/agent-config.json';
 export const HISTORY_DIR = '.hearth/history';
+/** Trashed asset files, keyed by asset id: `.hearth/trash/<assetId>/<basename>`. */
+export const TRASH_DIR = '.hearth/trash';

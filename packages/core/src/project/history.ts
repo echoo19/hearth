@@ -12,6 +12,7 @@ import type { FsLike } from '../fs.js';
 import { joinPath } from '../fs.js';
 import { readJson, writeJson, type ProjectSnapshot } from './store.js';
 import { HISTORY_DIR } from '../schema/project.js';
+import { pruneTrash } from './trash.js';
 
 export interface HistoryEntryMeta {
   seq: number;
@@ -60,12 +61,23 @@ export class HistoryStore {
     await writeJson(this.fs, this.indexPath(), index);
   }
 
-  /** Record a mutation: `before` is the model snapshot captured just before it ran. */
-  async record(command: string, summary: string, before: ProjectSnapshot): Promise<void> {
+  /**
+   * Record a mutation: `before` is the model snapshot captured just before it
+   * ran. `currentAssetIds` is the live project's asset index (post-mutation)
+   * — needed alongside the retained snapshots to know which trash dirs are
+   * still reachable when the bound drops old entries.
+   */
+  async record(
+    command: string,
+    summary: string,
+    before: ProjectSnapshot,
+    currentAssetIds: readonly string[] = [],
+  ): Promise<void> {
     const index = await this.loadIndex();
 
     // A new mutation truncates any redo tail past the cursor.
-    for (const dropped of index.entries.slice(index.cursor)) {
+    const truncated = index.entries.slice(index.cursor);
+    for (const dropped of truncated) {
       await this.fs.remove(this.statePath(dropped.seq));
       await this.fs.remove(this.redoPath(dropped.seq));
     }
@@ -78,14 +90,36 @@ export class HistoryStore {
     index.cursor = index.entries.length;
 
     // Bound the history: drop the oldest entries beyond `limit`.
+    const boundDropped: HistoryEntryMeta[] = [];
     while (index.entries.length > this.limit) {
       const removed = index.entries.shift()!;
+      boundDropped.push(removed);
       await this.fs.remove(this.statePath(removed.seq));
       await this.fs.remove(this.redoPath(removed.seq));
     }
     index.cursor = index.entries.length;
 
     await this.saveIndex(index);
+
+    // Orphaned trash dirs (assets that no longer appear in any retained
+    // snapshot nor the live project) only need pruning when entries actually
+    // fell off — the truncated-redo-tail case above doesn't shrink retention.
+    if (truncated.length > 0 || boundDropped.length > 0) {
+      await this.pruneOrphanedTrash(index, currentAssetIds);
+    }
+  }
+
+  /** Remove `.hearth/trash/<id>` dirs for ids not in any retained snapshot or the live store. */
+  private async pruneOrphanedTrash(index: HistoryIndex, currentAssetIds: readonly string[]): Promise<void> {
+    const keep = new Set<string>(currentAssetIds);
+    for (const entry of index.entries) {
+      for (const path of [this.statePath(entry.seq), this.redoPath(entry.seq)]) {
+        if (!(await this.fs.exists(path))) continue;
+        const snapshot = (await readJson(this.fs, path)) as ProjectSnapshot;
+        for (const asset of snapshot.assets?.assets ?? []) keep.add(asset.id);
+      }
+    }
+    await pruneTrash(this.fs, this.root, keep);
   }
 
   /** Undo the entry at the cursor, returning it plus the snapshot to restore. */
