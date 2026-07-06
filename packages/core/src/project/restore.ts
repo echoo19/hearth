@@ -8,7 +8,9 @@ import type { FsLike } from '../fs.js';
 import { joinPath, isSafeRelativePath } from '../fs.js';
 import type { ChangedRef } from '../commands/types.js';
 import type { ProjectStore, ProjectSnapshot } from './store.js';
+import { playtestFilePath } from './store.js';
 import { moveToTrash, restoreFromTrash, isSafeTrashAssetId } from './trash.js';
+import { PLAYTESTS_DIR, SCENES_DIR } from '../schema/project.js';
 
 export interface RestoreContext {
   store: ProjectStore;
@@ -40,6 +42,27 @@ export async function applySnapshot(ctx: RestoreContext, snapshot: ProjectSnapsh
     await ctx.fs.writeFile(joinPath(ctx.root, path), source);
     ctx.changed({ kind: 'script', path, action: 'modified' });
   }
+
+  // Playtest and scene files aren't reconstructed from the snapshot (unlike
+  // scripts, whose content IS the snapshot) — they're written wholesale by
+  // store.save() from whatever's now in ctx.store.playtests/scenes. save()
+  // only ever writes, never removes, so a playtest/scene that existed before
+  // this restore but not after (the thing being undone) would otherwise be
+  // left on disk: inert as far as the live model is concerned, but a fresh
+  // ProjectStore.load slurps every *.playtest.json it finds regardless of
+  // the model, resurrecting it in the next session. Clean up both the same
+  // way the scripts loop above does: diff current on-disk files against the
+  // filename set the restored snapshot implies, remove anything stale.
+  const expectedPlaytestFiles = new Set(
+    Object.values(snapshot.playtests).map((pt) => playtestFilePath(pt.name)),
+  );
+  await removeStaleFiles(ctx, PLAYTESTS_DIR, '.playtest.json', expectedPlaytestFiles, 'playtest');
+
+  // Scenes are referenced from hearth.json, so an orphaned scene file is
+  // inert (nothing loads it) — but it silently shadows a later same-name
+  // createScene, which writes to the same slugified path. Clean it up too.
+  const expectedSceneFiles = new Set(snapshot.project.scenes.map((ref) => ref.path));
+  await removeStaleFiles(ctx, SCENES_DIR, '.scene.json', expectedSceneFiles, 'scene');
 
   await reconcileAssetFiles(ctx, previousAssets.assets, snapshot.assets.assets);
 
@@ -104,5 +127,39 @@ async function reconcileAssetFiles(
         `Asset "${asset.id}" was restored to the project but its file is not in trash (${asset.path}) — the model is back but the file is gone.`,
       );
     }
+  }
+}
+
+/**
+ * Remove on-disk files under `dir` matching `suffix` that aren't in
+ * `expected` (project-relative paths). Shared by the playtest and scene
+ * stale-file cleanup above — best-effort id/name extraction for the
+ * `changed` record, but an unparsable orphan still gets removed.
+ */
+async function removeStaleFiles(
+  ctx: RestoreContext,
+  dir: string,
+  suffix: string,
+  expected: ReadonlySet<string>,
+  kind: ChangedRef['kind'],
+): Promise<void> {
+  const dirPath = joinPath(ctx.root, dir);
+  if (!(await ctx.fs.exists(dirPath))) return;
+  for (const file of await ctx.fs.readdir(dirPath)) {
+    if (!file.endsWith(suffix)) continue;
+    const relPath = joinPath(dir, file);
+    if (expected.has(relPath)) continue;
+    const absPath = joinPath(ctx.root, relPath);
+    let id: string | undefined;
+    let name: string | undefined;
+    try {
+      const raw = JSON.parse(await ctx.fs.readFile(absPath)) as Record<string, unknown>;
+      if (typeof raw.id === 'string') id = raw.id;
+      if (typeof raw.name === 'string') name = raw.name;
+    } catch {
+      // Orphan file isn't valid JSON — still remove it, just without id/name.
+    }
+    await ctx.fs.remove(absPath);
+    ctx.changed({ kind, id, name, path: relPath, action: 'deleted' });
   }
 }

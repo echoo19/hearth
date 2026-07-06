@@ -18,6 +18,7 @@ import {
 } from '../schema/project.js';
 import { SceneSchema, type Scene } from '../schema/scene.js';
 import { joinPath, type FsLike } from '../fs.js';
+import { slugify } from '../ids.js';
 
 export interface ProjectSnapshot {
   project: ProjectFile;
@@ -37,7 +38,8 @@ export class ProjectError extends Error {
       | 'SCHEMA_ERROR'
       | 'CONFLICT'
       | 'MISSING_RESOURCE'
-      | 'INVALID_INPUT' = 'INVALID_INPUT',
+      | 'INVALID_INPUT'
+      | 'HISTORY_CORRUPT' = 'INVALID_INPUT',
   ) {
     super(message);
     this.name = 'ProjectError';
@@ -132,7 +134,7 @@ export class ProjectStore {
       }
     }
     for (const pt of this.playtests.values()) {
-      const path = joinPath(PLAYTESTS_DIR, `${slugFromName(pt.name)}.playtest.json`);
+      const path = playtestFilePath(pt.name);
       await writeJson(this.fs, joinPath(this.root, path), pt);
       written.push(path);
     }
@@ -217,12 +219,12 @@ export async function writeJson(fs: FsLike, path: string, value: unknown): Promi
   await fs.writeFile(path, JSON.stringify(value, null, 2) + '\n');
 }
 
-function slugFromName(name: string): string {
-  return (
-    name
-      .trim()
-      .toLowerCase()
-      .replace(/[^a-z0-9]+/g, '_')
-      .replace(/^_+|_+$/g, '') || 'unnamed'
-  );
+/**
+ * Project-relative path a playtest's file is saved/loaded at. The single
+ * source of truth for that filename — `save()` above and the stale-file
+ * cleanup in `restore.ts` (undo/redo/revertProject) both call this, so
+ * they can never disagree on what "this playtest's file" means on disk.
+ */
+export function playtestFilePath(name: string): string {
+  return joinPath(PLAYTESTS_DIR, `${slugify(name)}.playtest.json`);
 }
