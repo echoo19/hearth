@@ -14,6 +14,7 @@ import * as assetCommands from './assetCommands.js';
 import * as settingsCommands from './settingsCommands.js';
 import * as diffCommands from './diffCommands.js';
 import * as exportCommands from './exportCommands.js';
+import * as historyCommands from './historyCommands.js';
 
 const ALL_DEFINITIONS: CommandDefinition[] = [
   // inspect (read-only)
@@ -72,6 +73,10 @@ const ALL_DEFINITIONS: CommandDefinition[] = [
   diffCommands.runSceneSmoke,
   diffCommands.buildProject,
   exportCommands.exportWeb,
+  // history (undo/redo)
+  historyCommands.undo,
+  historyCommands.redo,
+  historyCommands.listHistory,
 ];
 
 export const COMMANDS: ReadonlyMap<string, CommandDefinition> = new Map(

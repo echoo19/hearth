@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { defineCommand } from './types.js';
 import { ProjectError, readJson, writeJson, ProjectStore, type ProjectSnapshot } from '../project/store.js';
+import { applySnapshot } from '../project/restore.js';
 import { diffSnapshots } from '../diff/diff.js';
 import { joinPath, isSafeOut } from '../fs.js';
 import { BASELINE_FILE, PLAYTESTS_DIR, SCRIPTS_DIR } from '../schema/project.js';
@@ -72,25 +73,7 @@ export const revertProject = defineCommand({
     const baseline = await loadBaseline(ctx);
     if (!baseline) throw new ProjectError('No baseline snapshot found.', 'NOT_FOUND');
 
-    // Restore in-memory model.
-    ctx.store.project = baseline.project;
-    ctx.store.scenes = new Map(Object.entries(baseline.scenes));
-    ctx.store.assets = baseline.assets;
-    ctx.store.playtests = new Map(Object.entries(baseline.playtests));
-
-    // Restore script files (including removing scripts created after the snapshot).
-    const currentScripts = await ctx.store.listScripts();
-    for (const path of currentScripts) {
-      if (!(path in baseline.scripts)) {
-        await ctx.fs.remove(joinPath(ctx.store.root, path));
-        ctx.changed({ kind: 'script', path, action: 'deleted' });
-      }
-    }
-    for (const [path, source] of Object.entries(baseline.scripts)) {
-      await ctx.fs.writeFile(joinPath(ctx.store.root, path), source);
-      ctx.changed({ kind: 'script', path, action: 'modified' });
-    }
-    ctx.changed({ kind: 'project', id: ctx.store.project.id, action: 'modified' });
+    await applySnapshot(ctx, baseline);
     return { reverted: true, baseline: BASELINE_FILE };
   },
 });

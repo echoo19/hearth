@@ -5,10 +5,24 @@
  */
 import { ZodError } from 'zod';
 import type { FsLike } from './fs.js';
-import { ProjectStore, ProjectError } from './project/store.js';
+import { ProjectStore, ProjectError, type ProjectSnapshot } from './project/store.js';
+import { HistoryStore } from './project/history.js';
+import { HISTORY_EXEMPT } from './commands/historyCommands.js';
 import { getCommand, listCommands } from './commands/registry.js';
 import type { ChangedRef, CommandIssue, CommandResources, CommandResult, RuntimeHooks } from './commands/types.js';
 import { hasPermission, PermissionError, type PermissionMode, DEFAULT_MODES } from './permissions.js';
+
+/**
+ * A short human-readable label for a history entry: the command name plus
+ * the most identifying string param present, if any (in that priority
+ * order — the first one that resolves to a non-empty string wins).
+ */
+function summarizeCommand(name: string, params: unknown): string {
+  const p = (params ?? {}) as Record<string, unknown>;
+  const candidate = p.name ?? p.id ?? p.scene ?? '';
+  const ident = typeof candidate === 'string' ? candidate.trim() : '';
+  return ident ? `${name} ${ident}` : name;
+}
 
 export interface SessionOptions {
   granted?: PermissionMode[];
@@ -113,10 +127,20 @@ export class HearthSession {
       suggest: (...cmds: string[]) => suggestions.push(...cmds),
     };
 
+    const capturesHistory = def.mutates && !HISTORY_EXEMPT.has(name);
+    let before: ProjectSnapshot | undefined;
+    if (capturesHistory) {
+      before = await this.store.toSnapshot();
+    }
+
     try {
       const data = (await def.run(ctx, params2 as any)) as T;
       if (def.mutates) {
         files = await this.store.save();
+      }
+      if (capturesHistory && before) {
+        const history = new HistoryStore(this.fs, this.root);
+        await history.record(name, summarizeCommand(name, params2), before);
       }
       return { success: true, command: name, data, errors, warnings, changed, files, suggestions };
     } catch (err) {

@@ -154,7 +154,9 @@ export async function createProject(
     // screenshot.png: `hearth screenshot`'s own default --out — an agent
     // running it without an explicit --out would otherwise litter a
     // throwaway debug capture straight into the project root.
-    ['build/', '.hearth/baseline.json', '.hearth-tmp/', 'screenshot.png', '.DS_Store', ''].join('\n'),
+    ['build/', '.hearth/baseline.json', '.hearth/history/', '.hearth-tmp/', 'screenshot.png', '.DS_Store', ''].join(
+      '\n',
+    ),
   );
   files.push('.gitignore');
 

@@ -17,6 +17,8 @@ export * from './schema/project.js';
 // Project model
 export { ProjectStore, ProjectError, readJson, writeJson, type ProjectSnapshot } from './project/store.js';
 export { createProject, DEFAULT_INPUT_ACTIONS, type CreateProjectOptions } from './project/create.js';
+export { HistoryStore, type HistoryEntryMeta, type HistoryIndex } from './project/history.js';
+export { applySnapshot, type RestoreContext } from './project/restore.js';
 
 // Command system
 export { COMMANDS, getCommand, listCommands } from './commands/registry.js';
@@ -33,6 +35,7 @@ export {
 export { type WebExportBundle } from './commands/exportCommands.js';
 export { HearthSession, type SessionOptions } from './session.js';
 export { SCRIPT_TEMPLATE, LUA_SCRIPT_TEMPLATE } from './commands/scriptCommands.js';
+export { HISTORY_EXEMPT } from './commands/historyCommands.js';
 export { CTX_API, type CtxApiEntry } from './ctxApi.js';
 
 // Validation & diff
