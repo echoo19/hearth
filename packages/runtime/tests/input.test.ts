@@ -115,6 +115,25 @@ describe('InputState.pollGamepads — axis-to-action bindings', () => {
     expect(input.isDown('left')).toBe(true);
   });
 
+  it('the global deadzone floors a lower per-binding threshold', () => {
+    const input = new InputState({
+      actions: {},
+      gamepadAxes: {
+        right: { axis: 0, direction: 1, threshold: 0.05 },
+      },
+      deadzone: 0.15,
+    });
+
+    // Below the global deadzone (0.10 < 0.15): must not fire even though it
+    // clears the binding's own low threshold (0.05).
+    input.pollGamepads([pad({ axes: [0.1] })]);
+    expect(input.isDown('right')).toBe(false);
+
+    // Past the global deadzone: fires.
+    input.pollGamepads([pad({ axes: [0.2] })]);
+    expect(input.isDown('right')).toBe(true);
+  });
+
   it('disconnecting one pad releases only its direction', () => {
     const input = new InputState({
       actions: {},

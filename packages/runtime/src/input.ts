@@ -192,9 +192,13 @@ export class InputState {
       // Evaluate each axis binding against THIS pad's own reading — never
       // the max-|value| merge, which would let a larger opposing input on
       // another pad swallow a genuinely-past-threshold one on this pad.
+      // The global deadzone is a floor under the binding's own threshold —
+      // a binding can demand more precision than the deadzone (a stricter
+      // threshold), but can never fire inside the deadzone band.
       for (const binding of Object.values(this.gamepadAxes)) {
         const raw = gp.axes[binding.axis] ?? 0;
-        const active = binding.direction === 1 ? raw >= binding.threshold : raw <= -binding.threshold;
+        const effectiveThreshold = Math.max(binding.threshold, this.deadzone);
+        const active = binding.direction === 1 ? raw >= effectiveThreshold : raw <= -effectiveThreshold;
         if (active) activeCodes.add(axisCode(binding.axis, binding.direction));
       }
     }
