@@ -70,6 +70,7 @@ export {
   anchorPoint,
   uiScreenPosition,
   uiElementRect,
+  resolveUiPositions,
   measureText,
   type UiRect,
 } from './ui.js';

@@ -141,6 +141,33 @@ export const UIElementSchema = z.object({
    * { type: 'click'|'press'|'release'|'enter'|'exit' }.
    */
   interactive: z.boolean().default(false),
+  /** When true, the element participates in keyboard/gamepad focus navigation. */
+  focusable: z.boolean().default(false),
+});
+
+export const UILayoutSchema = z.object({
+  direction: z.enum(['vertical', 'horizontal']).default('vertical'),
+  gap: z.number().default(8),
+  padding: z.number().default(0),
+  align: z.enum(['start', 'center', 'end']).default('start'),
+});
+
+export const UISliderSchema = z.object({
+  min: z.number().default(0),
+  max: z.number().default(1),
+  value: z.number().default(0.5),
+  step: z.number().min(0).default(0),
+  width: z.number().default(160),
+  trackColor: z.string().default('#3a3a3a'),
+  fillColor: z.string().default('#f76b15'),
+  handleColor: z.string().default('#ececec'),
+});
+
+export const UIToggleSchema = z.object({
+  value: z.boolean().default(false),
+  size: z.number().default(20),
+  color: z.string().default('#3a3a3a'),
+  checkColor: z.string().default('#f76b15'),
 });
 
 export const TilemapSchema = z.object({
@@ -229,6 +256,9 @@ export const COMPONENT_SCHEMAS = {
   ParticleEmitter: ParticleEmitterSchema,
   SpriteAnimator: SpriteAnimatorSchema,
   UIElement: UIElementSchema,
+  UILayout: UILayoutSchema,
+  UISlider: UISliderSchema,
+  UIToggle: UIToggleSchema,
 } as const;
 
 export type ComponentType = keyof typeof COMPONENT_SCHEMAS;
@@ -249,6 +279,9 @@ export type LineRendererComponent = z.infer<typeof LineRendererSchema>;
 export type ParticleEmitterComponent = z.infer<typeof ParticleEmitterSchema>;
 export type SpriteAnimatorComponent = z.infer<typeof SpriteAnimatorSchema>;
 export type UIElementComponent = z.infer<typeof UIElementSchema>;
+export type UILayoutComponent = z.infer<typeof UILayoutSchema>;
+export type UISliderComponent = z.infer<typeof UISliderSchema>;
+export type UIToggleComponent = z.infer<typeof UIToggleSchema>;
 export type UIAnchor = (typeof UI_ANCHORS)[number];
 
 export interface ComponentMap {
@@ -266,6 +299,9 @@ export interface ComponentMap {
   ParticleEmitter?: ParticleEmitterComponent;
   SpriteAnimator?: SpriteAnimatorComponent;
   UIElement?: UIElementComponent;
+  UILayout?: UILayoutComponent;
+  UISlider?: UISliderComponent;
+  UIToggle?: UIToggleComponent;
 }
 
 export function isComponentType(type: string): type is ComponentType {
@@ -304,5 +340,9 @@ export const COMPONENT_DOCS: Record<ComponentType, string> = {
   ParticleEmitter: 'Spawns and simulates particles deterministically; seed controls reproducibility.',
   SpriteAnimator: 'Plays sprite animations; requires a sibling SpriteRenderer and animation asset.',
   UIElement:
-    'Makes the entity screen-space UI: positioned by anchor+offset, unaffected by the camera. Visuals come from Text/SpriteRenderer. interactive=true sends pointer events to the Script hook onUiEvent(ctx, event).',
+    'Makes the entity screen-space UI: positioned by anchor+offset, unaffected by the camera. Visuals come from Text/SpriteRenderer. interactive=true sends pointer events to the Script hook onUiEvent(ctx, event). focusable=true lets it participate in keyboard/gamepad focus navigation.',
+  UILayout:
+    "Stacks child entities' UI elements vertically or horizontally; children's offsets become relative nudges",
+  UISlider: "Draggable value widget rendered by the runtime; fires onUiEvent {type:'change', value}",
+  UIToggle: "Boolean checkbox widget; click flips value and fires onUiEvent {type:'change', value}",
 };
