@@ -252,7 +252,7 @@ export class SceneRuntime {
   ) {
     this.fixedDt = 1 / store.project.buildSettings.fixedTimestep;
     this.maxLogs = options.maxLogs ?? 1000;
-    this.input = new InputState(store.project.inputMappings.actions);
+    this.input = new InputState(store.project.inputMappings);
     this.sceneId = scene.id;
     this.sceneName = scene.name;
     this.rng = options.rng ?? createRng(options.seed ?? 0);
@@ -936,6 +936,7 @@ export class SceneRuntime {
       input: {
         isDown: (action) => runtime.input.isDown(action),
         justPressed: (action) => runtime.input.justPressed(action),
+        axis: (name) => runtime.input.axisValue(name),
       },
       scene: {
         find: (idOrName) => {

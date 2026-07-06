@@ -128,6 +128,13 @@ const PlaytestStepUnionSchema = z.discriminatedUnion('type', [
   }),
   z.object({ type: z.literal('release'), action: z.string() }),
   z.object({
+    type: z.literal('setAxis'),
+    /** Virtual axis name from inputMappings.axes; sticky playtest override for ctx.input.axis(). */
+    axis: z.string(),
+    value: z.number().min(-1).max(1),
+    frames: z.number().int().min(0).optional(),
+  }),
+  z.object({
     type: z.literal('click'),
     /** Screen coordinates in the buildSettings width×height space. */
     x: z.number(),

@@ -440,6 +440,12 @@ export class PixiSceneView {
 
   private onTick(ticker: Ticker): void {
     if (this.destroyed) return;
+    // Poll gamepads once per render tick, before the fixed-step accumulator
+    // loop below — never inside session.step()/runtime.step(), which must
+    // stay a pure function of its inputs for headless/playtest determinism.
+    if (typeof navigator !== 'undefined' && navigator.getGamepads) {
+      this.runtime.input.pollGamepads(navigator.getGamepads());
+    }
     if (!this._paused) {
       this.accumulator += ticker.deltaMS / 1000;
       let steps = 0;

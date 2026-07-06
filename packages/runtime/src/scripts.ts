@@ -66,6 +66,8 @@ export interface ScriptContext {
   input: {
     isDown(action: string): boolean;
     justPressed(action: string): boolean;
+    /** Analog value in [-1, 1] for a virtual axis from inputMappings.axes. */
+    axis(name: string): number;
   };
   scene: {
     find(idOrName: string): EntityHandle | null;

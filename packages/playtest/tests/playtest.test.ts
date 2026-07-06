@@ -24,6 +24,14 @@ export default {
 };
 `;
 
+const AXIS_MOVE_SCRIPT = `
+export default {
+  onUpdate(ctx, dt) {
+    ctx.transform.position.x += ctx.input.axis('moveX') * 100 * dt;
+  },
+};
+`;
+
 /** Starter project (Main scene: Camera, Ground, Player) plus a movement script. */
 async function makeProject(): Promise<{ store: ProjectStore; session: HearthSession }> {
   const fs = new MemoryFileSystem();
@@ -32,6 +40,26 @@ async function makeProject(): Promise<{ store: ProjectStore; session: HearthSess
   const created = await session.execute<{ path: string }>('createScript', {
     name: 'player move',
     source: MOVE_SCRIPT,
+    language: 'js',
+  });
+  expect(created.success).toBe(true);
+  const attached = await session.execute('attachScript', {
+    scene: 'Main',
+    entity: 'Player',
+    script: created.data!.path,
+  });
+  expect(attached.success).toBe(true);
+  return { store, session };
+}
+
+/** Starter project (Main scene: Camera, Ground, Player) plus an axis-driven movement script. */
+async function makeAxisProject(): Promise<{ store: ProjectStore; session: HearthSession }> {
+  const fs = new MemoryFileSystem();
+  const { store } = await createProject(fs, '/proj', { name: 'Axis Playtest Game' });
+  const session = HearthSession.fromStore(store, { runtime: createRuntimeHooks() });
+  const created = await session.execute<{ path: string }>('createScript', {
+    name: 'axis move',
+    source: AXIS_MOVE_SCRIPT,
     language: 'js',
   });
   expect(created.success).toBe(true);
@@ -150,6 +178,59 @@ describe('runPlaytest', () => {
       { index: 0, type: 'load', passed: false, message: 'Playtest not found: does-not-exist' },
     ]);
     expect(result.framesRun).toBe(0);
+  });
+});
+
+describe('runPlaytest setAxis', () => {
+  it('drives ctx.input.axis via a setAxis playtest step', async () => {
+    const { store, session } = await makeAxisProject();
+    const created = await session.execute<{ playtestId: string }>('createPlaytest', {
+      name: 'axis move right',
+      scene: 'Main',
+      steps: [
+        { type: 'setAxis', axis: 'moveX', value: 1, frames: 30 },
+        { type: 'assertProperty', entity: 'Player', property: 'Transform.position.x', greaterThan: 400 },
+        { type: 'assertNoErrors' },
+      ],
+    });
+    expect(created.success).toBe(true);
+
+    const result = await runPlaytest(store, 'axis move right');
+    expect(result.steps.map((s) => `${s.type}:${s.passed}`)).toEqual([
+      'setAxis:true',
+      'assertProperty:true',
+      'assertNoErrors:true',
+    ]);
+    expect(result.passed).toBe(true);
+    expect(result.framesRun).toBe(30);
+  });
+
+  it('drives negative axis values, and the override stays sticky across frames', async () => {
+    const { store, session } = await makeAxisProject();
+    await session.execute('createPlaytest', {
+      name: 'axis move left',
+      scene: 'Main',
+      steps: [
+        { type: 'setAxis', axis: 'moveX', value: -1, frames: 30 },
+        { type: 'assertProperty', entity: 'Player', property: 'Transform.position.x', lessThan: 400 },
+        { type: 'wait', frames: 30 }, // override must still hold with no further setAxis step
+        { type: 'assertProperty', entity: 'Player', property: 'Transform.position.x', lessThan: 350 },
+      ],
+    });
+    const result = await runPlaytest(store, 'axis move left');
+    expect(result.passed).toBe(true);
+  });
+
+  it('defaults frames to 1 when omitted', async () => {
+    const { store, session } = await makeAxisProject();
+    await session.execute('createPlaytest', {
+      name: 'axis one frame',
+      scene: 'Main',
+      steps: [{ type: 'setAxis', axis: 'moveX', value: 1 }],
+    });
+    const result = await runPlaytest(store, 'axis one frame');
+    expect(result.framesRun).toBe(1);
+    expect(result.passed).toBe(true);
   });
 });
 

@@ -6,7 +6,7 @@
  * browser. Rendering (PixiJS) lives in the `@hearth/runtime/pixi` subpath
  * so importing this module never touches the DOM.
  */
-export { InputState } from './input.js';
+export { InputState, type GamepadLike } from './input.js';
 export {
   SceneRuntime,
   type RuntimeLog,

@@ -73,6 +73,19 @@ export const CTX_API: readonly CtxApiEntry[] = [
     description: 'Was the input action pressed this frame?',
     example: { js: "if (ctx.input.justPressed('jump')) { /* ... */ }", lua: 'if ctx.input.justPressed("jump") then end' },
   },
+  {
+    path: 'input.axis',
+    kind: 'method',
+    signature: 'axis(name: string): number',
+    description:
+      'Analog value in [-1, 1] for a virtual axis (inputMappings.axes). Precedence: a playtest setAxis override, ' +
+      'else the bound gamepad axis once it clears the deadzone, else the keyboard fallback (negativeCodes held → -1, ' +
+      'positiveCodes held → +1, both/neither → 0).',
+    example: {
+      js: "body.velocity.x = ctx.input.axis('moveX') * speed",
+      lua: 'body.velocity.x = ctx.input.axis("moveX") * speed',
+    },
+  },
   // --- current scene entities -------------------------------------------
   {
     path: 'scene.find',
