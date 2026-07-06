@@ -8,11 +8,74 @@
  *   state-<seq>.json - the before-snapshot for entry <seq> (undo target)
  *   redo-<seq>.json  - written on undo; the snapshot to restore on redo
  */
+import { ZodError } from 'zod';
 import type { FsLike } from '../fs.js';
 import { joinPath } from '../fs.js';
-import { readJson, writeJson, type ProjectSnapshot } from './store.js';
-import { HISTORY_DIR } from '../schema/project.js';
+import { readJson, writeJson, ProjectError, type ProjectSnapshot } from './store.js';
+import { HISTORY_DIR, ProjectFileSchema, AssetIndexSchema, PlaytestSchema } from '../schema/project.js';
+import { SceneSchema } from '../schema/scene.js';
 import { pruneTrash } from './trash.js';
+
+/**
+ * `HistoryStore.undo`/`redo` read a `state-<seq>.json`/`redo-<seq>.json`
+ * off disk and hand it straight to `applySnapshot`, which trusts its shape.
+ * A tampered or hand-edited file (bad JSON is already caught by `readJson`;
+ * this catches valid JSON with an invalid shape, e.g. a garbled asset entry)
+ * would otherwise get applied, writing an invalid model to disk and
+ * bricking every later command including redo. Parse every part with the
+ * real schemas before it's allowed anywhere near `applySnapshot`.
+ */
+function validateSnapshot(raw: unknown, sourceFile: string): ProjectSnapshot {
+  try {
+    if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) {
+      throw new Error('snapshot is not an object');
+    }
+    const snap = raw as Record<string, unknown>;
+
+    const project = ProjectFileSchema.parse(snap.project);
+
+    const scenesRaw = snap.scenes;
+    if (typeof scenesRaw !== 'object' || scenesRaw === null || Array.isArray(scenesRaw)) {
+      throw new Error('scenes must be an object keyed by scene id');
+    }
+    const scenes: ProjectSnapshot['scenes'] = {};
+    for (const [id, scene] of Object.entries(scenesRaw as Record<string, unknown>)) {
+      scenes[id] = SceneSchema.parse(scene);
+    }
+
+    const assets = AssetIndexSchema.parse(snap.assets);
+
+    const scriptsRaw = snap.scripts;
+    if (typeof scriptsRaw !== 'object' || scriptsRaw === null || Array.isArray(scriptsRaw)) {
+      throw new Error('scripts must be an object keyed by path');
+    }
+    const scripts: Record<string, string> = {};
+    for (const [path, source] of Object.entries(scriptsRaw as Record<string, unknown>)) {
+      if (typeof source !== 'string') throw new Error(`script "${path}" is not a string`);
+      scripts[path] = source;
+    }
+
+    const playtestsRaw = snap.playtests;
+    if (typeof playtestsRaw !== 'object' || playtestsRaw === null || Array.isArray(playtestsRaw)) {
+      throw new Error('playtests must be an object keyed by playtest id');
+    }
+    const playtests: ProjectSnapshot['playtests'] = {};
+    for (const [id, pt] of Object.entries(playtestsRaw as Record<string, unknown>)) {
+      playtests[id] = PlaytestSchema.parse(pt);
+    }
+
+    return { project, scenes, assets, scripts, playtests };
+  } catch (err) {
+    const detail =
+      err instanceof ZodError
+        ? err.issues.map((i) => `${i.path.join('.') || '(root)'}: ${i.message}`).join('; ')
+        : (err as Error).message;
+    throw new ProjectError(
+      `Corrupt history snapshot in ${sourceFile}: ${detail}. The project was not changed.`,
+      'HISTORY_CORRUPT',
+    );
+  }
+}
 
 export interface HistoryEntryMeta {
   seq: number;
@@ -122,28 +185,49 @@ export class HistoryStore {
     await pruneTrash(this.fs, this.root, keep);
   }
 
-  /** Undo the entry at the cursor, returning it plus the snapshot to restore. */
+  /**
+   * Undo the entry at the cursor: returns it plus the snapshot to restore.
+   * Two-phase with `commitUndo` so a corrupt/invalid snapshot fails clean —
+   * order is read -> validate -> write the redo file -> (caller applies the
+   * snapshot) -> `commitUndo` moves the cursor. Validation runs before any
+   * write, so on failure the index, cursor, and redo file are all untouched.
+   */
   async undo(current: ProjectSnapshot): Promise<{ entry: HistoryEntryMeta; snapshot: ProjectSnapshot }> {
     const index = await this.loadIndex();
     if (index.cursor === 0) throw new Error('Nothing to undo');
     const entry = index.entries[index.cursor - 1];
+    const raw = await readJson(this.fs, this.statePath(entry.seq));
+    const snapshot = validateSnapshot(raw, `state-${entry.seq}.json`);
     await this.fs.mkdir(joinPath(this.root, HISTORY_DIR));
     await writeJson(this.fs, this.redoPath(entry.seq), current);
-    const snapshot = (await readJson(this.fs, this.statePath(entry.seq))) as ProjectSnapshot;
-    index.cursor--;
-    await this.saveIndex(index);
     return { entry, snapshot };
   }
 
-  /** Redo the entry just past the cursor, returning it plus the snapshot to restore. */
+  /** Commit a successful `undo()`: moves the cursor back. Call only after the caller's `applySnapshot` succeeds. */
+  async commitUndo(): Promise<void> {
+    const index = await this.loadIndex();
+    index.cursor--;
+    await this.saveIndex(index);
+  }
+
+  /**
+   * Redo the entry just past the cursor: returns it plus the snapshot to
+   * restore. Two-phase with `commitRedo`, same reasoning as `undo`/`commitUndo`.
+   */
   async redo(): Promise<{ entry: HistoryEntryMeta; snapshot: ProjectSnapshot }> {
     const index = await this.loadIndex();
     if (index.cursor === index.entries.length) throw new Error('Nothing to redo');
     const entry = index.entries[index.cursor];
-    const snapshot = (await readJson(this.fs, this.redoPath(entry.seq))) as ProjectSnapshot;
+    const raw = await readJson(this.fs, this.redoPath(entry.seq));
+    const snapshot = validateSnapshot(raw, `redo-${entry.seq}.json`);
+    return { entry, snapshot };
+  }
+
+  /** Commit a successful `redo()`: moves the cursor forward. Call only after the caller's `applySnapshot` succeeds. */
+  async commitRedo(): Promise<void> {
+    const index = await this.loadIndex();
     index.cursor++;
     await this.saveIndex(index);
-    return { entry, snapshot };
   }
 
   async list(): Promise<{ entries: (HistoryEntryMeta & { undone: boolean })[]; cursor: number }> {

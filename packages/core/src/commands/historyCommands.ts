@@ -40,6 +40,7 @@ export const undo = defineCommand({
       rethrowHistoryError(err);
     }
     await applySnapshot(ctx, result.snapshot);
+    await history.commitUndo();
     return { undone: result.entry.command, seq: result.entry.seq };
   },
 });
@@ -59,6 +60,7 @@ export const redo = defineCommand({
       rethrowHistoryError(err);
     }
     await applySnapshot(ctx, result.snapshot);
+    await history.commitRedo();
     return { redone: result.entry.command, seq: result.entry.seq };
   },
 });

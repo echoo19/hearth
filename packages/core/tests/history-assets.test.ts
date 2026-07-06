@@ -143,16 +143,20 @@ describe('binary asset trash', () => {
     expect(store.getAsset(asset.id)).toBeTruthy();
   });
 
-  it('a corrupted snapshot with an unsafe asset id/path cannot read or write outside the trash', async () => {
+  it('a corrupted snapshot with an unsafe asset path cannot read or write outside the trash', async () => {
     const { session, fs } = await makeSession();
     await session.execute('createEntity', { scene: 'Main', name: 'Enemy' });
 
-    // Hand-corrupt the recorded before-snapshot: a traversal-crafted asset id
-    // and a path that points outside the project root.
+    // Hand-corrupt the recorded before-snapshot: a schema-valid asset id
+    // (a traversal-crafted id would fail AssetIndexSchema validation
+    // upfront and be rejected as HISTORY_CORRUPT before reaching this
+    // reconciliation code — see history-corrupt.test.ts) paired with a path
+    // that points outside the project root, which the schema doesn't
+    // constrain.
     const statePath = '/proj/.hearth/history/state-1.json';
     const snapshot = JSON.parse(await fs.readFile(statePath));
     snapshot.assets.assets.push({
-      id: '../../../etc',
+      id: 'ast_evil0traversal',
       name: 'evil',
       type: 'other',
       path: '../outside.bin',
