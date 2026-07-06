@@ -1079,6 +1079,12 @@ label.field-label {
   color: var(--accent);
 }
 
+/* One-line muted hint shown while capture is armed (Escape can't be bound). */
+.capture-hint {
+  color: var(--ink-faint);
+  font-size: 11px;
+}
+
 .input-axis-binding {
   margin-top: 2px;
   padding-top: 8px;
