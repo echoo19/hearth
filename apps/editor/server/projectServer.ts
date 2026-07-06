@@ -27,6 +27,9 @@ import {
   type RuntimeHooks,
 } from '@hearth/core';
 import { NodeFileSystem, loadPlayerBundle } from '@hearth/core/node';
+import { attachWebSocket } from './ws.js';
+
+export { attachWebSocket } from './ws.js';
 
 // ---------------------------------------------------------------------------
 // Result shapes
@@ -676,6 +679,14 @@ export function hearthProjectServer(options: ProjectServerOptions = {}): Plugin 
           sendJson(res, 500, { ok: false, error: (err as Error).message ?? 'Internal error' });
         });
       });
+      // Absent in middleware mode (Vite embedded in another server); the /api
+      // routes above still work there, just without the WS channel. Vite's
+      // httpServer type also covers http2's secure server (HTTPS dev
+      // certs), which this dev server never uses; attachWebSocket only
+      // needs the plain node:http surface (`.on('upgrade'/'close', ...)`).
+      if (server.httpServer) {
+        attachWebSocket(server.httpServer as import('node:http').Server, ctx);
+      }
     },
   };
 }

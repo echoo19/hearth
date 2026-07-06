@@ -12,11 +12,13 @@ import type {
   ConsoleEntry,
   ConsoleLevel,
   ConsoleSource,
+  JournalEntry,
   ProjectDiff,
   ProjectInfo,
   SceneData,
   ServerMeta,
 } from './types';
+import type { WsFrame } from '../server/ws';
 
 interface EditorState {
   meta: ServerMeta | null;
@@ -38,6 +40,14 @@ interface EditorState {
    * (e.g. the Diff panel's history list) without per-command wiring.
    */
   commandSeq: number;
+  /**
+   * Recent journal entries pushed over the WS channel (own commands too, so
+   * a future timeline UI can show everything) — newest last, capped so it
+   * never grows unbounded across a long session.
+   */
+  journalFeed: JournalEntry[];
+  /** Status of the /api/ws connection for the open project (or 'disconnected' when none is open). */
+  wsStatus: 'connected' | 'connecting' | 'disconnected';
   playing: boolean;
   /** Bumped every time playback starts, so the preview restarts from the current scene state. */
   runNonce: number;
@@ -80,7 +90,10 @@ function makeEntry(level: ConsoleLevel, source: ConsoleSource, message: string):
 }
 
 const MAX_CONSOLE = 500;
+const MAX_JOURNAL_FEED = 200;
 const LAST_PROJECT_KEY = 'hearth:lastProject';
+const WS_BACKOFF_INITIAL_MS = 1000;
+const WS_BACKOFF_MAX_MS = 5000;
 
 export const useEditor = create<EditorState>((set, get) => {
   /** Run a read-only command without console noise (errors still logged). */
@@ -97,6 +110,99 @@ export const useEditor = create<EditorState>((set, get) => {
     return result.data;
   }
 
+  // --- WebSocket channel (journal push + external-change awareness) -------
+  //
+  // Connects lazily once a project is open, reconnects on drop with capped
+  // exponential backoff, and tears itself down on project close. `wsEpoch`
+  // invalidates callbacks/timers from a superseded connection attempt (a
+  // project switch, or an explicit disconnect) so a stale reconnect never
+  // resurrects a socket for a project that's no longer open.
+  let ws: WebSocket | null = null;
+  let wsReconnectTimer: ReturnType<typeof setTimeout> | null = null;
+  let wsBackoffMs = WS_BACKOFF_INITIAL_MS;
+  let wsEpoch = 0;
+
+  function wsUrl(project: string): string {
+    const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+    return `${proto}//${location.host}/api/ws?project=${encodeURIComponent(project)}`;
+  }
+
+  function teardownSocket(): void {
+    if (wsReconnectTimer) {
+      clearTimeout(wsReconnectTimer);
+      wsReconnectTimer = null;
+    }
+    if (ws) {
+      const socket = ws;
+      ws = null;
+      socket.onopen = null;
+      socket.onmessage = null;
+      socket.onclose = null;
+      socket.onerror = null;
+      socket.close();
+    }
+  }
+
+  function pushJournalFeed(entries: JournalEntry[]): void {
+    set((state) => ({
+      journalFeed: [...state.journalFeed, ...entries].slice(-MAX_JOURNAL_FEED),
+    }));
+  }
+
+  function scheduleReconnect(project: string, epoch: number): void {
+    const delay = wsBackoffMs;
+    wsBackoffMs = Math.min(wsBackoffMs * 2, WS_BACKOFF_MAX_MS);
+    wsReconnectTimer = setTimeout(() => {
+      wsReconnectTimer = null;
+      if (epoch !== wsEpoch) return; // superseded by a project switch/close
+      connectWs(project);
+    }, delay);
+  }
+
+  function connectWs(project: string): void {
+    const epoch = ++wsEpoch;
+    teardownSocket();
+    set({ wsStatus: 'connecting' });
+    const socket = new WebSocket(wsUrl(project));
+    ws = socket;
+
+    socket.onopen = () => {
+      if (epoch !== wsEpoch) return;
+      wsBackoffMs = WS_BACKOFF_INITIAL_MS;
+      set({ wsStatus: 'connected' });
+    };
+    socket.onmessage = (event) => {
+      if (epoch !== wsEpoch) return;
+      let frame: WsFrame;
+      try {
+        frame = JSON.parse(event.data as string) as WsFrame;
+      } catch {
+        return;
+      }
+      // Only the journal side is implemented this task; pty-* frames are
+      // defined in WsFrame for a later task to consume.
+      if (frame.type !== 'journal') return;
+      pushJournalFeed(frame.entries);
+      if (frame.entries.some((entry) => entry.source !== 'editor')) {
+        set((state) => ({ commandSeq: state.commandSeq + 1 }));
+        void get().refresh();
+      }
+    };
+    socket.onclose = () => {
+      if (epoch !== wsEpoch) return;
+      ws = null;
+      set({ wsStatus: 'disconnected' });
+      scheduleReconnect(project, epoch);
+    };
+  }
+
+  function disconnectWs(): void {
+    wsEpoch++; // invalidate any in-flight handlers/reconnect timers
+    wsBackoffMs = WS_BACKOFF_INITIAL_MS;
+    teardownSocket();
+    set({ wsStatus: 'disconnected' });
+  }
+
   async function afterOpen(path: string, info: ProjectInfo): Promise<void> {
     try {
       localStorage.setItem(LAST_PROJECT_KEY, path);
@@ -111,10 +217,12 @@ export const useEditor = create<EditorState>((set, get) => {
       selection: null,
       diff: null,
       assets: [],
+      journalFeed: [],
       playing: false,
       debugDraw: false,
     });
     get().log('info', 'editor', `Opened project "${info.name}" (${info.scenes.length} scene${info.scenes.length === 1 ? '' : 's'})`);
+    connectWs(path);
     const docs = await query<{ components: ComponentDoc[] }>('inspectComponents');
     if (docs) set({ componentDocs: docs.components });
     await get().refresh();
@@ -134,6 +242,8 @@ export const useEditor = create<EditorState>((set, get) => {
     consoleOpen: false,
     diff: null,
     commandSeq: 0,
+    journalFeed: [],
+    wsStatus: 'disconnected',
     playing: false,
     runNonce: 0,
     debugDraw: false,
@@ -180,6 +290,7 @@ export const useEditor = create<EditorState>((set, get) => {
       } catch {
         /* ignore */
       }
+      disconnectWs();
       set({
         projectPath: null,
         info: null,
@@ -188,6 +299,7 @@ export const useEditor = create<EditorState>((set, get) => {
         assets: [],
         selection: null,
         diff: null,
+        journalFeed: [],
         playing: false,
         debugDraw: false,
       });

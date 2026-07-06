@@ -17,7 +17,7 @@ import { app, BrowserWindow, dialog, ipcMain, shell } from 'electron';
 import http from 'node:http';
 import path from 'node:path';
 import fs from 'node:fs';
-import { createProjectServerContext, handleApiRequest } from '../server/projectServer.js';
+import { createProjectServerContext, handleApiRequest, attachWebSocket } from '../server/projectServer.js';
 
 const SMOKE = process.env.HEARTH_SMOKE === '1';
 /** In dev, point the window at the Vite dev server instead of dist/. */
@@ -61,6 +61,7 @@ function startServer(uiRoot: string): Promise<{ port: number; close: () => void 
     res.setHeader('Content-Type', MIME[path.extname(finalPath)] ?? 'application/octet-stream');
     fs.createReadStream(finalPath).pipe(res);
   });
+  attachWebSocket(server, ctx);
   return new Promise((resolve, reject) => {
     server.on('error', reject);
     // Port 0 = pick any free port; loopback only.
