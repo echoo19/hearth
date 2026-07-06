@@ -73,6 +73,8 @@ export interface PlaytestResult {
   cameraEffects: CameraEffectRecord[];
   /** Final combined camera overlay alpha (flash pulse over persistent fade level) at end of run. */
   cameraOverlayAlpha: number;
+  /** ctx.ui focus at end of run: entity name if resolvable, else id, else null when nothing is focused. */
+  focusedEntity: string | null;
 }
 
 export interface SmokeResult {
@@ -110,6 +112,7 @@ const ASSERT_TYPES = new Set([
   'assertEventCount',
   'assertAudioCount',
   'assertCameraEffect',
+  'assertFocus',
 ]);
 
 export async function runPlaytest(
@@ -133,6 +136,7 @@ export async function runPlaytest(
     eventCounts: {},
     cameraEffects: [],
     cameraOverlayAlpha: 0,
+    focusedEntity: null,
   });
 
   const playtest = store.getPlaytest(playtestIdOrName);
@@ -198,6 +202,7 @@ export async function runPlaytest(
     eventCounts: Object.fromEntries(session.eventCounts),
     cameraEffects: [...session.cameraEffects],
     cameraOverlayAlpha: session.runtime.cameraEffects.overlay.alpha,
+    focusedEntity: resolveFocusedEntity(session.runtime),
   };
   session.destroy();
   return result;
@@ -273,6 +278,37 @@ async function executeStep(
           ran < 1
             ? `clicked (${step.x}, ${step.y}) (maxFrames cap reached before follow-up frame)`
             : `clicked (${step.x}, ${step.y})`,
+      };
+    }
+    case 'drag': {
+      const target = session.runtime;
+      const frames = step.frames ?? 5;
+      const totalRequested = frames + 2; // down + interpolated moves + up
+      let ranTotal = 0;
+
+      target.sendPointer(step.from.x, step.from.y, 'down');
+      ranTotal += await runFrames(1);
+
+      for (let i = 1; i <= frames; i++) {
+        const t = i / frames;
+        const x = step.from.x + (step.to.x - step.from.x) * t;
+        const y = step.from.y + (step.to.y - step.from.y) * t;
+        target.sendPointer(x, y, 'move');
+        ranTotal += await runFrames(1);
+      }
+
+      target.sendPointer(step.to.x, step.to.y, 'up');
+      ranTotal += await runFrames(1);
+
+      const desc = `dragged (${step.from.x}, ${step.from.y}) -> (${step.to.x}, ${step.to.y})`;
+      return {
+        index,
+        type: step.type,
+        passed: true,
+        message:
+          ranTotal < totalRequested
+            ? `${desc} for ${ranTotal}/${totalRequested} frames (maxFrames cap reached)`
+            : desc,
       };
     }
     case 'assertEntityExists': {
@@ -504,6 +540,25 @@ async function executeStep(
           : `camera effect "${step.effect}" count ${count}: ${failures.join(', ')}${capNote}`,
       };
     }
+    case 'assertFocus': {
+      const focusedId = runtime.getUiFocused();
+      const focusedName = focusedId
+        ? runtime.getEntities().find((e) => e.id === focusedId)?.name
+        : undefined;
+      const passed =
+        step.entity === null
+          ? focusedId === null
+          : focusedId !== null && (focusedId === step.entity || focusedName === step.entity);
+      const actualDesc = focusedId === null ? 'nothing' : `"${focusedName ?? focusedId}"`;
+      return {
+        index,
+        type: step.type,
+        passed,
+        message: passed
+          ? `${step.entity === null ? 'nothing' : `"${step.entity}"`} is focused${capNote}`
+          : `expected ${step.entity === null ? 'nothing' : `"${step.entity}"`} focused, but ${actualDesc} is${capNote}`,
+      };
+    }
     default: {
       const unknown = step as { type: string };
       return {
@@ -592,6 +647,14 @@ function collectParticleCounts(runtime: SceneRuntime): Record<string, number> {
     }
   }
   return counts;
+}
+
+/** ctx.ui focus at the end of a run: entity name if resolvable, else id, else null. */
+function resolveFocusedEntity(runtime: SceneRuntime): string | null {
+  const id = runtime.getUiFocused();
+  if (!id) return null;
+  const entity = runtime.getEntities().find((e) => e.id === id);
+  return entity ? entity.name : id;
 }
 
 /** Resolve dot paths like "Transform.position.x" against entity.components. */

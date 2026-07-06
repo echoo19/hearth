@@ -580,4 +580,44 @@ export const CTX_API: readonly CtxApiEntry[] = [
     description: 'Unsubscribe by id (as returned by ctx.events.on). Unknown ids are a no-op.',
     example: { js: 'ctx.events.off(sub)', lua: 'ctx.events.off(sub)' },
   },
+  // --- UI focus & spatial navigation (wave B) -----------------------------
+  {
+    path: 'ui.focus',
+    kind: 'method',
+    signature: 'focus(idOrName: string | null): void',
+    description:
+      "Set focus to an entity by id/name, or clear it with null. Fires onUiEvent {type:'blur'} on the previously focused entity and {type:'focus'} on the new one. Warns (no-op) when the target is unknown or its UIElement.focusable is not true. Focusing the already-focused entity is a no-op.",
+    example: { js: "ctx.ui.focus('Resume')", lua: 'ctx.ui.focus("Resume")' },
+  },
+  {
+    path: 'ui.getFocused',
+    kind: 'method',
+    signature: 'getFocused(): string | null',
+    description: 'The currently focused entity id, or null.',
+    example: { js: 'const focused = ctx.ui.getFocused()', lua: 'local focused = ctx.ui.getFocused()' },
+  },
+  {
+    path: 'ui.moveFocus',
+    kind: 'method',
+    signature: "moveFocus(direction: 'up' | 'down' | 'left' | 'right'): void",
+    description:
+      "Move focus among focusable UIElement entities: picks the nearest candidate strictly in `direction` from the current focus position (or the top-left-most candidate when nothing is focused). No wrap — a no-op when nothing lies further that way.",
+    example: { js: "ctx.ui.moveFocus('down')", lua: 'ctx.ui.moveFocus("down")' },
+  },
+  {
+    path: 'ui.activate',
+    kind: 'method',
+    signature: 'activate(): void',
+    description:
+      'Synthesizes a press+release (a click) at the focused element’s center, through the normal pointer path — so slider/toggle behavior fires exactly as a real click would. No-op when nothing is focused.',
+    example: { js: 'ctx.ui.activate()', lua: 'ctx.ui.activate()' },
+  },
+  {
+    path: 'ui.adjust',
+    kind: 'method',
+    signature: 'adjust(delta: number): void',
+    description:
+      "For a focused UISlider: value += delta * (step || (max-min)/10), clamped to [min, max], firing onUiEvent {type:'change', value}. No-op when nothing is focused or it has no UISlider.",
+    example: { js: 'ctx.ui.adjust(1)', lua: 'ctx.ui.adjust(1)' },
+  },
 ];

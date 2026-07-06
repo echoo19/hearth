@@ -2,6 +2,7 @@
  * Project-level schemas: hearth.json, assets.json, playtest files.
  */
 import { z } from 'zod';
+import { Vec2Schema } from './components.js';
 
 export const FORMAT_VERSION = 1;
 export const HEARTH_VERSION = '0.6.0';
@@ -141,6 +142,15 @@ const PlaytestStepUnionSchema = z.discriminatedUnion('type', [
     y: z.number(),
   }),
   z.object({
+    type: z.literal('drag'),
+    /** Screen coordinates (buildSettings width×height space) for pointer down. */
+    from: Vec2Schema,
+    /** Screen coordinates for pointer up. */
+    to: Vec2Schema,
+    /** Interpolated pointer moves between from and to (default 5), one frame each. */
+    frames: z.number().int().min(1).optional(),
+  }),
+  z.object({
     type: z.literal('assertEntityExists'),
     entity: z.string(), // id or name
     exists: z.boolean().default(true),
@@ -196,6 +206,11 @@ const PlaytestStepUnionSchema = z.discriminatedUnion('type', [
     equals: z.number().optional(),
     min: z.number().optional(),
     max: z.number().optional(),
+  }),
+  z.object({
+    type: z.literal('assertFocus'),
+    /** Expected focused entity id or name; null asserts nothing is focused. */
+    entity: z.string().nullable(),
   }),
 ]);
 

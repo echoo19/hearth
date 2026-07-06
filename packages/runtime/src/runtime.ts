@@ -205,6 +205,13 @@ const MAX_CONSECUTIVE_SCRIPT_ERRORS = 3;
 const MAX_EVENT_DEPTH = 8;
 /** Cap on SceneRuntime.events (oldest kept, newest dropped once full). */
 const MAX_RECORDED_EVENTS = 200;
+/** Unit vectors for moveUiFocus directions, in screen space (+x right, +y down). */
+const DIRECTION_VECTORS: Record<'up' | 'down' | 'left' | 'right', Vec2> = {
+  up: { x: 0, y: -1 },
+  down: { x: 0, y: 1 },
+  left: { x: -1, y: 0 },
+  right: { x: 1, y: 0 },
+};
 
 export class SceneRuntime {
   readonly fixedDt: number;
@@ -241,6 +248,7 @@ export class SceneRuntime {
   private readonly musicChannel: MusicChannelState;
   private uiHoverId: string | null = null;
   private uiPressedId: string | null = null;
+  private uiFocusId: string | null = null;
   private readonly sceneId: string;
   private readonly sceneName: string;
   private readonly rng: () => number;
@@ -773,10 +781,25 @@ export class SceneRuntime {
     const t = width > 0 ? Math.min(1, Math.max(0, (x - rectLeft) / width)) : 0;
     let value = slider.min + t * (slider.max - slider.min);
     if (slider.step > 0) value = Math.round(value / slider.step) * slider.step;
-    value = Math.min(slider.max, Math.max(slider.min, value));
-    if (value === slider.value) return;
-    slider.value = value;
-    this.dispatchUiEvent(entity, 'change', x, y, value);
+    this.writeSliderValue(entity, slider, value, x, y);
+  }
+
+  /**
+   * Clamps `value` to [slider.min, slider.max] and writes it, firing
+   * onUiEvent {type:'change', value, x, y} only when it actually changes.
+   * Shared by applySliderPointer (drag) and adjustUiFocus (keyboard/gamepad).
+   */
+  private writeSliderValue(
+    entity: RuntimeEntity,
+    slider: { min: number; max: number; value: number },
+    value: number,
+    x: number,
+    y: number,
+  ): void {
+    const clamped = Math.min(slider.max, Math.max(slider.min, value));
+    if (clamped === slider.value) return;
+    slider.value = clamped;
+    this.dispatchUiEvent(entity, 'change', x, y, clamped);
   }
 
   /** Flips a clicked UIToggle's value and fires onUiEvent {type:'change', value, x, y}. No-op for entities without a UIToggle. */
@@ -785,6 +808,152 @@ export class SceneRuntime {
     if (!toggle) return;
     toggle.value = !toggle.value;
     this.dispatchUiEvent(entity, 'change', x, y, toggle.value);
+  }
+
+  // ---------------------------------------------------------------------------
+  // UI focus & spatial navigation (ctx.ui backing)
+  // ---------------------------------------------------------------------------
+
+  /** Resolved screen position of a live entity, or {0,0} when it has none (no UIElement, or not yet placed). */
+  private resolvedUiPosition(entity: RuntimeEntity): Vec2 {
+    const settings = this.store.project.buildSettings;
+    const positions = resolveUiPositions(this.getEntities(), settings.width, settings.height);
+    return positions.get(entity.id) ?? { x: 0, y: 0 };
+  }
+
+  /** Every enabled, focusable UIElement entity with a resolved screen position, in scene entity order. */
+  private focusCandidates(): { entity: RuntimeEntity; pos: Vec2 }[] {
+    const settings = this.store.project.buildSettings;
+    const live = this.getEntities();
+    const positions = resolveUiPositions(live, settings.width, settings.height);
+    const out: { entity: RuntimeEntity; pos: Vec2 }[] = [];
+    for (const entity of live) {
+      if (!entity.enabled || !entity.components.UIElement?.focusable) continue;
+      const pos = positions.get(entity.id);
+      if (!pos) continue;
+      out.push({ entity, pos });
+    }
+    return out;
+  }
+
+  /** Fires onUiEvent {type:'blur'} on the currently focused entity (if any) and clears focus. */
+  private blurUiFocus(): void {
+    if (!this.uiFocusId) return;
+    const prev = this.getEntities().find((e) => e.id === this.uiFocusId);
+    this.uiFocusId = null;
+    if (prev) {
+      const pos = this.resolvedUiPosition(prev);
+      this.dispatchUiEvent(prev, 'blur', pos.x, pos.y);
+    }
+  }
+
+  /**
+   * ctx.ui.focus backing: set the UI focus to an entity by id/name (firing
+   * blur on the previous focus and focus on the new one), or clear it with
+   * null. Warns (no state change) when the target is unknown or its
+   * UIElement.focusable is not true. Focusing the already-focused entity
+   * is a no-op (no repeat events).
+   */
+  focusUi(idOrName: string | null): void {
+    if (idOrName === null) {
+      this.blurUiFocus();
+      return;
+    }
+    const target = this.find(idOrName);
+    if (!target || !target.components.UIElement?.focusable) {
+      this.recordLog('warn', `ui.focus: entity not found or not focusable: ${idOrName}`);
+      return;
+    }
+    if (this.uiFocusId === target.id) return;
+    this.blurUiFocus();
+    this.uiFocusId = target.id;
+    const pos = this.resolvedUiPosition(target);
+    this.dispatchUiEvent(target, 'focus', pos.x, pos.y);
+  }
+
+  /** ctx.ui.getFocused backing: the focused entity's id, or null. */
+  getUiFocused(): string | null {
+    return this.uiFocusId;
+  }
+
+  /**
+   * ctx.ui.moveFocus backing: among focusable UIElement entities with a
+   * resolved position, picks the nearest one strictly in `direction`'s
+   * half-plane (dot product of the offset with the direction unit vector
+   * > 0) from the current focus position — or from the top-left-most
+   * candidate's position (min y, then min x) when nothing is focused.
+   * Euclidean distance; ties broken by scene entity order (the earlier
+   * candidate is kept since only a strictly smaller distance replaces it).
+   * No wrap: no-op when nothing lies in that direction.
+   */
+  moveUiFocus(direction: 'up' | 'down' | 'left' | 'right'): void {
+    const candidates = this.focusCandidates();
+    if (candidates.length === 0) return;
+
+    let fromPos: Vec2;
+    const current = this.uiFocusId
+      ? candidates.find((c) => c.entity.id === this.uiFocusId)
+      : undefined;
+    if (current) {
+      fromPos = current.pos;
+    } else {
+      fromPos = candidates.reduce((best, c) =>
+        c.pos.y < best.pos.y || (c.pos.y === best.pos.y && c.pos.x < best.pos.x) ? c : best,
+      ).pos;
+    }
+
+    const dir = DIRECTION_VECTORS[direction];
+    let best: { entity: RuntimeEntity; pos: Vec2 } | null = null;
+    let bestDist = Infinity;
+    for (const c of candidates) {
+      const dx = c.pos.x - fromPos.x;
+      const dy = c.pos.y - fromPos.y;
+      const dot = dx * dir.x + dy * dir.y;
+      if (dot <= 0) continue;
+      const dist = Math.hypot(dx, dy);
+      if (dist < bestDist) {
+        bestDist = dist;
+        best = c;
+      }
+    }
+    if (!best) return;
+    this.focusUi(best.entity.id);
+  }
+
+  /**
+   * ctx.ui.activate backing: synthesizes a press+release (a click) at the
+   * focused element's center, through the normal sendPointer path — so
+   * slider/toggle behavior fires exactly as it would from a real click.
+   * No-op when nothing is focused or it has no resolved position.
+   */
+  activateUiFocus(): void {
+    if (!this.uiFocusId) return;
+    const target = this.getEntities().find((e) => e.id === this.uiFocusId);
+    if (!target) return;
+    const settings = this.store.project.buildSettings;
+    const positions = resolveUiPositions(this.getEntities(), settings.width, settings.height);
+    const pos = positions.get(target.id);
+    if (!pos) return;
+    this.sendPointer(pos.x, pos.y, 'down');
+    this.sendPointer(pos.x, pos.y, 'up');
+  }
+
+  /**
+   * ctx.ui.adjust backing: for a focused UISlider, value +=
+   * delta * (step || (max-min)/10), clamped to [min, max], firing
+   * onUiEvent {type:'change', value} only when it actually changes.
+   * No-op when nothing is focused or the focused entity has no UISlider.
+   */
+  adjustUiFocus(delta: number): void {
+    if (!this.uiFocusId) return;
+    const target = this.getEntities().find((e) => e.id === this.uiFocusId);
+    if (!target) return;
+    const slider = target.components.UISlider;
+    if (!slider) return;
+    const step = slider.step || (slider.max - slider.min) / 10;
+    const value = slider.value + delta * step;
+    const pos = this.resolvedUiPosition(target);
+    this.writeSliderValue(target, slider, value, pos.x, pos.y);
   }
 
   // ---------------------------------------------------------------------------
@@ -1228,6 +1397,13 @@ export class SceneRuntime {
         on: (name, fn) => runtime.eventBus.on(entity.id, name, fn),
         off: (id) => runtime.eventBus.off(id),
       },
+      ui: {
+        focus: (idOrName) => runtime.focusUi(idOrName),
+        getFocused: () => runtime.getUiFocused(),
+        moveFocus: (direction) => runtime.moveUiFocus(direction),
+        activate: () => runtime.activateUiFocus(),
+        adjust: (delta) => runtime.adjustUiFocus(delta),
+      },
     };
   }
 
@@ -1293,6 +1469,11 @@ export class SceneRuntime {
 
   private flushDestroyed(): void {
     if (this.destroyedIds.size === 0) return;
+    if (this.uiFocusId && this.destroyedIds.has(this.uiFocusId)) {
+      const focused = this.entities.find((e) => e.id === this.uiFocusId);
+      this.uiFocusId = null;
+      if (focused) this.dispatchUiEvent(focused, 'blur', 0, 0);
+    }
     this.entities = this.entities.filter((e) => !this.destroyedIds.has(e.id));
     for (const id of this.destroyedIds) {
       this.scriptStates.delete(id);

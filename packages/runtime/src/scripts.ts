@@ -194,6 +194,31 @@ export interface ScriptContext {
     on(name: string, fn: (data: unknown) => void): string;
     off(id: string): void;
   };
+  /** Keyboard/gamepad focus navigation among focusable UIElement entities. */
+  ui: {
+    /**
+     * Set focus to an entity by id/name, or clear it with null. Fires
+     * onUiEvent {type:'blur'} on the previous focus and {type:'focus'} on
+     * the new one. Warns (no-op) when the target is unknown or its
+     * UIElement.focusable is not true.
+     */
+    focus(idOrName: string | null): void;
+    /** The focused entity's id, or null. */
+    getFocused(): string | null;
+    /**
+     * Move focus to the nearest focusable UIElement entity strictly in
+     * `direction` from the current focus (or the top-left-most candidate
+     * when nothing is focused). No wrap: no-op if nothing lies that way.
+     */
+    moveFocus(direction: 'up' | 'down' | 'left' | 'right'): void;
+    /** Synthesizes a press+release (a click) at the focused element's center. */
+    activate(): void;
+    /**
+     * For a focused UISlider: value += delta * (step || (max-min)/10),
+     * clamped, firing onUiEvent {type:'change', value}. No-op otherwise.
+     */
+    adjust(delta: number): void;
+  };
 }
 
 /**
