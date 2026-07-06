@@ -25,9 +25,11 @@ export interface ScriptHooks {
 
 /** Pointer event delivered to onUiEvent (screen coordinates). */
 export interface UiEvent {
-  type: 'click' | 'press' | 'release' | 'enter' | 'exit';
+  type: 'click' | 'press' | 'release' | 'enter' | 'exit' | 'drag' | 'change' | 'focus' | 'blur';
   x: number;
   y: number;
+  /** Present for 'change' (UISlider/UIToggle's new value); unused otherwise. */
+  value?: number | boolean;
 }
 
 /** Lightweight wrapper handed to scripts instead of raw runtime entities. */

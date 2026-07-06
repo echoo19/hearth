@@ -17,9 +17,11 @@
  *     primitives unless their texture was already loaded. Load failures also
  *     fall back to primitives.
  *   - UIElement entities render into a screen-space overlay container above
- *     the world, positioned by anchor+offset and re-anchored every tick (so
- *     renderer resizes take effect). Real pointer events are translated to
- *     runtime.sendPointer, the same path playtests use.
+ *     the world, positioned via `resolveUiPositions` (anchor+offset, or a
+ *     stacked slot when the parent is a UILayout container) and re-resolved
+ *     every tick (so renderer resizes and layout changes take effect). Real
+ *     pointer events are translated to runtime.sendPointer, the same path
+ *     playtests use and the same position math it hit-tests against.
  *   - Audio plays through Web Audio (see ./audio.js): decoded buffers are
  *     cached, each playback gets a gain node, the context unlocks silently
  *     on the first user input, and everything stops when the view is
@@ -58,11 +60,14 @@ import {
   type ProjectStore,
   type SpriteRendererComponent,
   type TilemapComponent,
+  type UISliderComponent,
+  type UIToggleComponent,
+  type Vec2,
 } from '@hearth/core';
 import type { RuntimeEntity, RuntimeError, RuntimeLog, SceneRuntime } from '../runtime.js';
 import { colliderShape, type Box, type CollisionShape } from '../physics.js';
 import { GameSession, type SceneEvent, type SessionStorage } from '../session.js';
-import { uiScreenPosition } from '../ui.js';
+import { resolveUiPositions, uiScreenPosition } from '../ui.js';
 import { WebAudioPlayer, routeAudioEvent } from './audio.js';
 import { lerp, lerpColor } from './color.js';
 import { loadFontFaces } from './fonts.js';
@@ -130,6 +135,10 @@ export class PixiSceneView {
    * canvas would never pick up a texture change after entity creation.
    */
   private spriteSnapshots = new Map<string, string>();
+  /** Last-drawn (min,max,value,step,width,trackColor,fillColor,handleColor) snapshot per entity, to skip redundant UISlider redraws. */
+  private sliderSnapshots = new Map<string, string>();
+  /** Last-drawn (value,size,color,checkColor) snapshot per entity, to skip redundant UIToggle redraws. */
+  private toggleSnapshots = new Map<string, string>();
   private textures = new Map<string, Texture>();
   /**
    * Sub-textures cropped to a sliced sheet's named frame, keyed
@@ -370,6 +379,8 @@ export class PixiSceneView {
     this.particleNodes.clear();
     this.lineSnapshots.clear();
     this.spriteSnapshots.clear();
+    this.sliderSnapshots.clear();
+    this.toggleSnapshots.clear();
     // `textures` (the base preloaded set) is never explicitly cleared/destroyed
     // in this lifecycle either — see preloadTextures's doc comment: it's a
     // once-per-project preload, not cleared on scene change. frameTextures
@@ -400,6 +411,8 @@ export class PixiSceneView {
     this.particleNodes.clear();
     this.lineSnapshots.clear();
     this.spriteSnapshots.clear();
+    this.sliderSnapshots.clear();
+    this.toggleSnapshots.clear();
     this.accumulator = 0;
     this.syncEntities();
     this.syncCamera();
@@ -734,6 +747,10 @@ export class PixiSceneView {
   private syncEntities(): void {
     const live = this.runtime.getEntities();
     const liveById = new Map(live.map((e) => [e.id, e]));
+    // Computed once per tick (mirrors sendPointer) so every UIElement node
+    // — including UILayout children — positions from the same layout math
+    // the runtime hit-tests against.
+    const uiPositions = resolveUiPositions(live, this.app.screen.width, this.app.screen.height);
 
     // Remove nodes for destroyed entities.
     for (const [id, node] of this.nodes) {
@@ -742,6 +759,8 @@ export class PixiSceneView {
         this.nodes.delete(id);
         this.lineSnapshots.delete(id);
         this.spriteSnapshots.delete(id);
+        this.sliderSnapshots.delete(id);
+        this.toggleSnapshots.delete(id);
       }
     }
     // Remove particle graphics for destroyed entities (or ones that lost their emitter).
@@ -760,7 +779,7 @@ export class PixiSceneView {
         this.nodes.set(entity.id, node);
         (entity.components.UIElement ? this.ui : this.world).addChild(node);
       }
-      this.updateNode(entity, node);
+      this.updateNode(entity, node, uiPositions);
 
       const emitter = entity.components.ParticleEmitter;
       if (emitter) {
@@ -811,6 +830,18 @@ export class PixiSceneView {
     if (entity.components.LineRenderer) {
       const child = new Graphics();
       child.label = 'line';
+      node.addChild(child);
+    }
+    if (entity.components.UISlider) {
+      // Left empty: updateNode's redrawSlider draws it on the first tick
+      // (no snapshot recorded yet here), same as 'line' above.
+      const child = new Graphics();
+      child.label = 'slider';
+      node.addChild(child);
+    }
+    if (entity.components.UIToggle) {
+      const child = new Graphics();
+      child.label = 'toggle';
       node.addChild(child);
     }
     return node;
@@ -925,13 +956,18 @@ export class PixiSceneView {
     return container;
   }
 
-  private updateNode(entity: RuntimeEntity, node: Container): void {
+  private updateNode(entity: RuntimeEntity, node: Container, uiPositions: Map<string, Vec2>): void {
     const transform = entity.transform;
     const uiElement = entity.components.UIElement;
     if (uiElement) {
-      // Screen space: anchor + offset position the node (Transform.position
-      // is ignored); recomputing per tick re-anchors on renderer resize.
-      const pos = uiScreenPosition(uiElement, this.app.screen.width, this.app.screen.height);
+      // Screen space, layout-aware: `uiPositions` is resolveUiPositions'
+      // result for the whole live entity set (computed once per tick in
+      // syncEntities), so a UILayout child renders at its stacked slot
+      // instead of its own bare anchor+offset — the same positions
+      // runtime.sendPointer hit-tests against, so clicks and pixels agree.
+      // Transform.position is ignored; recomputing per tick re-anchors on
+      // renderer resize.
+      const pos = uiPositions.get(entity.id) ?? uiScreenPosition(uiElement, this.app.screen.width, this.app.screen.height);
       node.position.set(pos.x, pos.y);
     } else {
       const world = this.runtime.getWorldPosition(entity);
@@ -944,6 +980,12 @@ export class PixiSceneView {
     const text = entity.components.Text;
     const tilemap = entity.components.Tilemap;
     const line = entity.components.LineRenderer;
+    const slider = entity.components.UISlider;
+    const toggle = entity.components.UIToggle;
+    // UISlider/UIToggle have no `layer` field of their own (see
+    // components.ts) — they always draw at 0 unless the same entity also
+    // carries a layered Sprite/Text/Tilemap/LineRenderer, same as any other
+    // layer-less component would.
     node.zIndex = Math.max(sprite?.layer ?? 0, text?.layer ?? 0, tilemap?.layer ?? 0, line?.layer ?? 0);
     node.visible = entity.enabled;
 
@@ -986,6 +1028,14 @@ export class PixiSceneView {
       lineNode.visible = line.visible;
       this.redrawLine(entity.id, lineNode, line);
     }
+    const sliderNode = node.getChildByLabel?.('slider') as Graphics | null;
+    if (sliderNode && slider) {
+      this.redrawSlider(entity.id, sliderNode, slider);
+    }
+    const toggleNode = node.getChildByLabel?.('toggle') as Graphics | null;
+    if (toggleNode && toggle) {
+      this.redrawToggle(entity.id, toggleNode, toggle);
+    }
   }
 
   /**
@@ -1011,6 +1061,74 @@ export class PixiSceneView {
       for (let i = 1; i < line.points.length; i++) g.lineTo(line.points[i].x, line.points[i].y);
     }
     g.stroke({ width: line.width, color: line.color, alpha: line.opacity });
+  }
+
+  /** Identity of a UISlider's drawn visual, to skip redundant redraws. */
+  private sliderSnapshotKey(slider: UISliderComponent): string {
+    return JSON.stringify([
+      slider.min,
+      slider.max,
+      slider.value,
+      slider.step,
+      slider.width,
+      slider.trackColor,
+      slider.fillColor,
+      slider.handleColor,
+    ]);
+  }
+
+  /**
+   * Redraws a UISlider as a track (width x 6, `trackColor`) with a filled
+   * portion up to the current value (`fillColor`) and a circular handle
+   * (radius 8, `handleColor`) at the value position — centered on the
+   * node's own origin, since `updateNode` already positions the node at
+   * the slider's resolved screen position. Only redraws when the drawn
+   * state actually changed since last tick.
+   */
+  private redrawSlider(entityId: string, g: Graphics, slider: UISliderComponent): void {
+    const snapshot = this.sliderSnapshotKey(slider);
+    if (this.sliderSnapshots.get(entityId) === snapshot) return;
+    this.sliderSnapshots.set(entityId, snapshot);
+
+    g.clear();
+    const halfW = slider.width / 2;
+    const trackH = 6;
+    g.rect(-halfW, -trackH / 2, slider.width, trackH).fill(slider.trackColor);
+
+    const range = slider.max - slider.min;
+    const t = range !== 0 ? Math.min(1, Math.max(0, (slider.value - slider.min) / range)) : 0;
+    const fillW = slider.width * t;
+    if (fillW > 0) {
+      g.rect(-halfW, -trackH / 2, fillW, trackH).fill(slider.fillColor);
+    }
+    g.circle(-halfW + fillW, 0, 8).fill(slider.handleColor);
+  }
+
+  /** Identity of a UIToggle's drawn visual, to skip redundant redraws. */
+  private toggleSnapshotKey(toggle: UIToggleComponent): string {
+    return JSON.stringify([toggle.value, toggle.size, toggle.color, toggle.checkColor]);
+  }
+
+  /**
+   * Redraws a UIToggle as a rounded `size x size` box (`color`) with an
+   * inset check fill (`checkColor`) drawn only when `value` is true —
+   * centered on the node's own origin, like `redrawSlider`. Only redraws
+   * when the drawn state actually changed since last tick.
+   */
+  private redrawToggle(entityId: string, g: Graphics, toggle: UIToggleComponent): void {
+    const snapshot = this.toggleSnapshotKey(toggle);
+    if (this.toggleSnapshots.get(entityId) === snapshot) return;
+    this.toggleSnapshots.set(entityId, snapshot);
+
+    g.clear();
+    const half = toggle.size / 2;
+    const radius = Math.min(6, half);
+    g.roundRect(-half, -half, toggle.size, toggle.size, radius).fill(toggle.color);
+    if (toggle.value) {
+      const inset = toggle.size * 0.25;
+      const innerSize = toggle.size - inset * 2;
+      g.rect(-half + inset, -half + inset, innerSize, innerSize).fill(toggle.checkColor);
+    }
   }
 
   /**

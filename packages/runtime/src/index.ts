@@ -70,6 +70,7 @@ export {
   anchorPoint,
   uiScreenPosition,
   uiElementRect,
+  rectAtPosition,
   resolveUiPositions,
   measureText,
   type UiRect,

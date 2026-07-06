@@ -66,7 +66,7 @@ import { LuaScriptEngine, isLuaPath } from './lua.js';
 import { EmitterState, type Particle } from './particles.js';
 import { MemorySessionStorage, type SessionStorage } from './session.js';
 import { EASINGS, EntityScheduler, createRng, resolveNumericTarget } from './stdlib.js';
-import { uiElementRect } from './ui.js';
+import { rectAtPosition, resolveUiPositions } from './ui.js';
 
 export interface RuntimeLog {
   frame: number;
@@ -661,12 +661,21 @@ export class SceneRuntime {
    * Feed a pointer event in screen coordinates (the buildSettings
    * width×height space). Interactive UIElement entities under the pointer
    * receive onUiEvent: enter/exit on hover changes, press on down, release
-   * on up, and click when down and up landed on the same element. Used by
-   * playtests directly and by the pixi host for real pointer events.
+   * on up, and click when down and up landed on the same element. While a
+   * press is held, every 'move' also dispatches {type:'drag'} to the
+   * pressed entity (whether or not the pointer is still over it) — a
+   * pressed UISlider additionally maps pointer x onto its track on both
+   * 'down' and 'move', and a clicked UIToggle flips its value, each firing
+   * an additional {type:'change', value} event. Hit-testing uses
+   * `resolveUiPositions` so UILayout children are tested at their stacked
+   * position, not their own bare anchor+offset. Used by playtests directly
+   * and by the pixi host for real pointer events.
    */
   sendPointer(x: number, y: number, kind: PointerKind): void {
     if (this.stopped) return;
-    const target = this.hitTestUi(x, y);
+    const settings = this.store.project.buildSettings;
+    const positions = resolveUiPositions(this.getEntities(), settings.width, settings.height);
+    const target = this.hitTestUi(x, y, positions);
     const targetId = target?.id ?? null;
 
     if (targetId !== this.uiHoverId) {
@@ -680,24 +689,37 @@ export class SceneRuntime {
 
     if (kind === 'down') {
       this.uiPressedId = targetId;
-      if (target) this.dispatchUiEvent(target, 'press', x, y);
+      if (target) {
+        this.dispatchUiEvent(target, 'press', x, y);
+        this.applySliderPointer(target, x, y, positions);
+      }
     } else if (kind === 'up') {
       if (target) {
         this.dispatchUiEvent(target, 'release', x, y);
-        if (this.uiPressedId === targetId) this.dispatchUiEvent(target, 'click', x, y);
+        if (this.uiPressedId === targetId) {
+          this.dispatchUiEvent(target, 'click', x, y);
+          this.applyToggleClick(target, x, y);
+        }
       }
       this.uiPressedId = null;
+    } else if (kind === 'move' && this.uiPressedId) {
+      const pressed = this.getEntities().find((e) => e.id === this.uiPressedId);
+      if (pressed) {
+        this.dispatchUiEvent(pressed, 'drag', x, y);
+        this.applySliderPointer(pressed, x, y, positions);
+      }
     }
   }
 
-  /** Topmost interactive UI element under a screen point (layer, then order). */
-  private hitTestUi(x: number, y: number): RuntimeEntity | undefined {
-    const settings = this.store.project.buildSettings;
+  /** Topmost interactive UI element under a screen point (layer, then order), positioned via `resolveUiPositions`. */
+  private hitTestUi(x: number, y: number, positions: Map<string, Vec2>): RuntimeEntity | undefined {
     let best: RuntimeEntity | undefined;
     let bestLayer = -Infinity;
     for (const entity of this.getEntities()) {
       if (!entity.enabled || !entity.components.UIElement?.interactive) continue;
-      const rect = uiElementRect(entity.components, settings.width, settings.height);
+      const pos = positions.get(entity.id);
+      if (!pos) continue;
+      const rect = rectAtPosition(entity.components, pos);
       if (!rect) continue;
       if (x < rect.minX || x > rect.maxX || y < rect.minY || y > rect.maxY) continue;
       const layer = Math.max(
@@ -712,8 +734,57 @@ export class SceneRuntime {
     return best;
   }
 
-  private dispatchUiEvent(entity: RuntimeEntity, type: UiEvent['type'], x: number, y: number): void {
-    this.callHook(entity, 'onUiEvent', { type, x, y });
+  private dispatchUiEvent(
+    entity: RuntimeEntity,
+    type: UiEvent['type'],
+    x: number,
+    y: number,
+    value?: number | boolean,
+  ): void {
+    const event: UiEvent = { type, x, y };
+    if (value !== undefined) event.value = value;
+    this.callHook(entity, 'onUiEvent', event);
+  }
+
+  /**
+   * Maps pointer x onto a pressed UISlider's track (min at the track's left
+   * edge, max at its right edge), snapping to `step` when set and clamping
+   * to [min, max]. Writes the new value and fires onUiEvent
+   * {type:'change', value, x, y} only when the value actually changes —
+   * called on both 'down' and 'move' while the slider is the pressed
+   * entity. No-op for entities without a UISlider.
+   */
+  private applySliderPointer(
+    entity: RuntimeEntity,
+    x: number,
+    y: number,
+    positions: Map<string, Vec2>,
+  ): void {
+    const slider = entity.components.UISlider;
+    if (!slider) return;
+    const pos = positions.get(entity.id);
+    if (!pos) return;
+    // Matches rectAtPosition's slider branch: the track's drawn/hit width
+    // scales with Transform.scale.x, so the drag mapping must too, or a
+    // scaled slider's value would drift from where its handle is drawn.
+    const sx = Math.abs(entity.components.Transform?.scale.x ?? 1);
+    const width = slider.width * sx;
+    const rectLeft = pos.x - width / 2;
+    const t = width > 0 ? Math.min(1, Math.max(0, (x - rectLeft) / width)) : 0;
+    let value = slider.min + t * (slider.max - slider.min);
+    if (slider.step > 0) value = Math.round(value / slider.step) * slider.step;
+    value = Math.min(slider.max, Math.max(slider.min, value));
+    if (value === slider.value) return;
+    slider.value = value;
+    this.dispatchUiEvent(entity, 'change', x, y, value);
+  }
+
+  /** Flips a clicked UIToggle's value and fires onUiEvent {type:'change', value, x, y}. No-op for entities without a UIToggle. */
+  private applyToggleClick(entity: RuntimeEntity, x: number, y: number): void {
+    const toggle = entity.components.UIToggle;
+    if (!toggle) return;
+    toggle.value = !toggle.value;
+    this.dispatchUiEvent(entity, 'change', x, y, toggle.value);
   }
 
   // ---------------------------------------------------------------------------

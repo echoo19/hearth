@@ -1,13 +1,12 @@
 /**
  * Screen-space UI helpers — anchor math, hit rects, and layout resolution
- * for UIElement entities. The anchor and hit-rect helpers are shared by
- * the headless runtime (sendPointer hit-testing) and the pixi host
- * (overlay positioning) so pointer behavior is identical in playtests and
- * the browser. `resolveUiPositions` lives here so both consumers CAN
- * share the same layout math, but neither is wired to it yet: hit-testing
- * (runtime.ts) and rendering (pixi host) still position every element by
- * its own bare anchor+offset. Wiring lands in the next task; until then
- * UILayout children render and hit-test at their unstacked positions.
+ * for UIElement entities. `resolveUiPositions` is the single source of
+ * truth for where every UIElement entity sits on screen (plain anchor+
+ * offset, or a stacked slot when the parent is a UILayout container); both
+ * the headless runtime (sendPointer's hit-testing, via `rectAtPosition`)
+ * and the pixi host (`updateNode`'s positioning and widget drawing) call
+ * it once per tick/pointer-event and resolve every element the same way,
+ * so pointer behavior and pixels agree in playtests and the browser alike.
  *
  * Text bounds use a deterministic monospace approximation (the default
  * Text font is monospace) rather than real canvas measurement, so headless
@@ -67,7 +66,7 @@ function unionRect(a: UiRect | null, b: UiRect): UiRect {
  * centered), a UISlider's `width x 24`, and a UIToggle's `size x size` —
  * unioned together. Returns null when there is nothing visible to hit.
  */
-function rectAtPosition(components: ComponentMap, pos: Vec2): UiRect | null {
+export function rectAtPosition(components: ComponentMap, pos: Vec2): UiRect | null {
   const scale = components.Transform?.scale ?? { x: 1, y: 1 };
   const sx = Math.abs(scale.x);
   const sy = Math.abs(scale.y);
