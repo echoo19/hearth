@@ -251,7 +251,9 @@ describe('hearth undo / redo / history', () => {
 
     const humanHistory = await runCli(['history'], dir);
     expect(humanHistory.code).toBe(0);
-    expect(humanHistory.stdout).toContain('[1] createScene');
+    // Exact full line: two-space prefix for live entries, and the summary
+    // already leads with the command name (no "createScene createScene" dupe).
+    expect(humanHistory.stdout.split('\n')).toContain('  [1] createScene Level2');
     expect(humanHistory.stdout).not.toContain('~');
 
     const undo = await runCli(['undo', '--json'], dir);
@@ -267,7 +269,7 @@ describe('hearth undo / redo / history', () => {
 
     const humanAfterUndo = await runCli(['history'], dir);
     expect(humanAfterUndo.code).toBe(0);
-    expect(humanAfterUndo.stdout).toContain('~ [1] createScene');
+    expect(humanAfterUndo.stdout.split('\n')).toContain('~ [1] createScene Level2');
 
     const redo = await runCli(['redo', '--json'], dir);
     expect(redo.code).toBe(0);

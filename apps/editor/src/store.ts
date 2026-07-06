@@ -32,6 +32,12 @@ interface EditorState {
   /** Whether the Console panel is currently visible in the workspace (its tab selected). */
   consoleOpen: boolean;
   diff: ProjectDiff | null;
+  /**
+   * Bumped after every successful mutating exec(). A lightweight "something
+   * changed" signal for panels that re-query read-only commands on change
+   * (e.g. the Diff panel's history list) without per-command wiring.
+   */
+  commandSeq: number;
   playing: boolean;
   /** Bumped every time playback starts, so the preview restarts from the current scene state. */
   runNonce: number;
@@ -127,6 +133,7 @@ export const useEditor = create<EditorState>((set, get) => {
     consoleUnread: 0,
     consoleOpen: false,
     diff: null,
+    commandSeq: 0,
     playing: false,
     runNonce: 0,
     debugDraw: false,
@@ -285,7 +292,10 @@ export const useEditor = create<EditorState>((set, get) => {
       }
       const result = await apiCommand(project, name, params);
       for (const err of result.errors) {
-        get().log('error', 'command', `${name}: ${err.message}`);
+        // Empty history isn't an error worth a Console badge (same treatment
+        // as refreshDiff's NOT_FOUND for a missing baseline below).
+        const emptyHistory = (name === 'undo' || name === 'redo') && err.code === 'NOT_FOUND';
+        get().log(emptyHistory ? 'info' : 'error', 'command', `${name}: ${err.message}`);
       }
       for (const warning of result.warnings) {
         get().log('warn', 'command', `${name}: ${warning.message}`);
@@ -298,6 +308,7 @@ export const useEditor = create<EditorState>((set, get) => {
         get().log('info', 'command', `${name}: ${summary}${result.changed.length > 3 ? ', …' : ''}`);
       }
       if (result.success && (result.changed.length > 0 || result.files.length > 0)) {
+        set((state) => ({ commandSeq: state.commandSeq + 1 }));
         await get().refresh();
       }
       return result as CommandResult<never>;

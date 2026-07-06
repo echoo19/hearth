@@ -14,6 +14,7 @@ function statusClass(status: 'added' | 'removed' | 'modified'): string {
 
 export function DiffPanel() {
   const diff = useEditor((s) => s.diff);
+  const commandSeq = useEditor((s) => s.commandSeq);
   const refreshDiff = useEditor((s) => s.refreshDiff);
   const exec = useEditor((s) => s.exec);
   const log = useEditor((s) => s.log);
@@ -25,13 +26,14 @@ export function DiffPanel() {
     setHistory(result.success ? (result.data ?? null) : null);
   }
 
-  // Refetch whenever the diff is (re)loaded — the "Refresh diff" button and
-  // the panel-focus refresh in Workspace both bump `diff`, so this piggybacks
-  // on that instead of needing its own store wiring. Also covers first mount.
+  // Refetch on mount, after any successful mutating exec() anywhere in the
+  // editor (commandSeq — so Inspector/Hierarchy/SceneView edits show up while
+  // this panel stays focused), and whenever the diff is (re)loaded (the
+  // "Refresh diff" button and the panel-focus refresh in Workspace bump `diff`).
   useEffect(() => {
     void loadHistory();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [diff]);
+  }, [diff, commandSeq]);
 
   async function snapshot() {
     const result = await exec('snapshotProject', {}, { quiet: true });
@@ -46,20 +48,20 @@ export function DiffPanel() {
   const undoTarget = cursor > 0 ? entries[cursor - 1] : null;
   const redoTarget = cursor < entries.length ? entries[cursor] : null;
 
+  // quiet: the custom log lines below replace exec()'s generic changed-summary;
+  // history reloads via the commandSeq effect after the mutation lands.
   async function undo() {
-    const result = await exec<{ undone: string; seq: number }>('undo');
+    const result = await exec<{ undone: string; seq: number }>('undo', {}, { quiet: true });
     if (result.success && result.data) {
       log('info', 'command', `Undo: reverted "${result.data.undone}" (#${result.data.seq}).`);
     }
-    await loadHistory();
   }
 
   async function redo() {
-    const result = await exec<{ redone: string; seq: number }>('redo');
+    const result = await exec<{ redone: string; seq: number }>('redo', {}, { quiet: true });
     if (result.success && result.data) {
       log('info', 'command', `Redo: reapplied "${result.data.redone}" (#${result.data.seq}).`);
     }
-    await loadHistory();
   }
 
   return (
@@ -153,9 +155,9 @@ function HistorySection({ entries }: { entries: HistoryEntry[] }) {
         </div>
       ) : (
         entries.map((entry) => (
+          // `summary` already leads with the command name ("createScene Level2").
           <div className={`diff-row history-row${entry.undone ? ' history-row-undone' : ''}`} key={entry.seq}>
-            <span className="history-seq">#{entry.seq}</span> {entry.command}
-            {entry.summary ? <span style={{ color: 'var(--ink-faint)' }}> — {entry.summary}</span> : null}
+            <span className="history-seq">#{entry.seq}</span> {entry.summary}
           </div>
         ))
       )}

@@ -878,7 +878,9 @@ async function runHistoryCommand(cmd: Command): Promise<void> {
   } else {
     for (const entry of entries) {
       const marker = entry.undone ? '~' : ' ';
-      console.log(`${marker} [${entry.seq}] ${entry.command} ${entry.summary}`);
+      // `summary` already leads with the command name (see summarizeCommand in
+      // core's session.ts), e.g. "createScene Level2" — don't repeat it.
+      console.log(`${marker} [${entry.seq}] ${entry.summary}`);
     }
   }
   process.exitCode = 0;

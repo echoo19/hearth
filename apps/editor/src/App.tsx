@@ -36,6 +36,9 @@ function EditorShell({ projectPath }: { projectPath: string }) {
   // typing in a text field so the browser's native undo still works there.
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent) {
+      // Ignore key auto-repeat: a held Cmd+Z would otherwise fire a burst of
+      // overlapping mutating undo commands (the history store has no locking).
+      if (e.repeat) return;
       const t = e.target;
       if (t instanceof HTMLElement && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
       if (!(e.metaKey || e.ctrlKey)) return;
