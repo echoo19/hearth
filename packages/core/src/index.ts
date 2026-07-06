@@ -13,6 +13,7 @@
 export * from './schema/components.js';
 export * from './schema/scene.js';
 export * from './schema/project.js';
+export * from './input/gamepad.js';
 
 // Project model
 export { ProjectStore, ProjectError, readJson, writeJson, type ProjectSnapshot } from './project/store.js';

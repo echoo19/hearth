@@ -14,9 +14,28 @@ export const SceneRefSchema = z.object({
 });
 export type SceneRef = z.infer<typeof SceneRefSchema>;
 
+export const GamepadAxisBindingSchema = z.object({
+  axis: z.number().int().min(0),
+  direction: z.union([z.literal(1), z.literal(-1)]),
+  threshold: z.number().min(0).max(1).default(0.5),
+});
+export type GamepadAxisBinding = z.infer<typeof GamepadAxisBindingSchema>;
+
+export const VirtualAxisSchema = z.object({
+  gamepadAxis: z.number().int().min(0).optional(),
+  negativeCodes: z.array(z.string()).default([]),
+  positiveCodes: z.array(z.string()).default([]),
+  deadzone: z.number().min(0).max(1).optional(),
+});
+export type VirtualAxis = z.infer<typeof VirtualAxisSchema>;
+
 export const InputMappingsSchema = z.object({
   /** Action name -> list of KeyboardEvent.code values (e.g. "ArrowLeft", "KeyA", "Space"). */
   actions: z.record(z.string(), z.array(z.string())).default({}),
+  gamepadButtons: z.record(z.string(), z.array(z.string())).default({}),
+  gamepadAxes: z.record(z.string(), GamepadAxisBindingSchema).default({}),
+  axes: z.record(z.string(), VirtualAxisSchema).default({}),
+  deadzone: z.number().min(0).max(1).default(0.15),
 });
 export type InputMappings = z.infer<typeof InputMappingsSchema>;
 

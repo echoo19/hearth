@@ -6,7 +6,7 @@
 import { z } from 'zod';
 import { defineCommand } from './types.js';
 import { ProjectError } from '../project/store.js';
-import { BuildSettingsSchema } from '../schema/project.js';
+import { BuildSettingsSchema, InputMappingsSchema } from '../schema/project.js';
 
 const LoadingSettingsPatchSchema = z.object({
   backgroundColor: z.string().optional(),
@@ -47,12 +47,8 @@ export const updateSettings = defineCommand({
     buildSettings: BuildSettingsPatchSchema.optional(),
     /** Scene id or name that runs first (validated to exist). */
     initialScene: z.string().min(1).optional(),
-    inputMappings: z
-      .object({
-        /** Action name -> KeyboardEvent.code list. Replaced per action; [] removes the action. */
-        actions: z.record(z.string(), z.array(z.string())),
-      })
-      .optional(),
+    /** Partial inputMappings; each provided top-level key is replaced wholesale. */
+    inputMappings: InputMappingsSchema.partial().optional(),
   }),
   async run(ctx, params) {
     const project = ctx.store.project;
@@ -78,9 +74,25 @@ export const updateSettings = defineCommand({
     if (mergedBuildSettings) project.buildSettings = mergedBuildSettings;
     if (initialSceneId !== undefined) project.initialScene = initialSceneId;
     if (params.inputMappings) {
-      for (const [action, keys] of Object.entries(params.inputMappings.actions)) {
-        if (keys.length === 0) delete project.inputMappings.actions[action];
-        else project.inputMappings.actions[action] = keys;
+      // For actions: merge individual actions (deep-merge, [] removes action)
+      if (params.inputMappings.actions !== undefined) {
+        for (const [action, keys] of Object.entries(params.inputMappings.actions)) {
+          if (keys.length === 0) delete project.inputMappings.actions[action];
+          else project.inputMappings.actions[action] = keys;
+        }
+      }
+      // For other keys: replace top-level key wholesale
+      if (params.inputMappings.gamepadButtons !== undefined) {
+        project.inputMappings.gamepadButtons = params.inputMappings.gamepadButtons;
+      }
+      if (params.inputMappings.gamepadAxes !== undefined) {
+        project.inputMappings.gamepadAxes = params.inputMappings.gamepadAxes;
+      }
+      if (params.inputMappings.axes !== undefined) {
+        project.inputMappings.axes = params.inputMappings.axes;
+      }
+      if (params.inputMappings.deadzone !== undefined) {
+        project.inputMappings.deadzone = params.inputMappings.deadzone;
       }
     }
 
