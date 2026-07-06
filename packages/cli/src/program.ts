@@ -442,13 +442,36 @@ export function buildProgram(): Command {
         'partial buildSettings JSON, deep-merged, e.g. \'{"title":"My Game","loading":{"spinner":true}}\'',
       )
       .option('--initial-scene <scene>', 'scene (id or name) that runs first')
-      .option('--input-actions <json>', 'action -> key list JSON, replaced per action, e.g. \'{"jump":["Space"]}\''),
+      .option('--input-actions <json>', 'action -> key list JSON, replaced per action, e.g. \'{"jump":["Space"]}\'')
+      .option(
+        '--input-gamepad-buttons <json>',
+        'action -> gamepad button name list JSON, replaced wholesale, e.g. \'{"jump":["a"]}\'',
+      )
+      .option(
+        '--input-gamepad-axes <json>',
+        'action -> gamepad axis binding JSON, replaced wholesale, e.g. \'{"right":{"axis":0,"direction":1}}\'',
+      )
+      .option(
+        '--input-axes <json>',
+        'virtual axis name -> axis JSON, replaced wholesale, e.g. \'{"horizontal":{"gamepadAxis":0,"negativeCodes":["ArrowLeft"],"positiveCodes":["ArrowRight"]}}\'',
+      )
+      .option('--input-deadzone <number>', 'global gamepad stick deadzone (0-1)', (v) => parseFloat(v)),
   ).action(async (opts, cmd) => {
     await guarded(cmd, 'updateSettings', () => {
       const params: Record<string, unknown> = {};
       if (opts.buildSettings) params.buildSettings = parseJsonObject(opts.buildSettings, '--build-settings');
       if (opts.initialScene) params.initialScene = opts.initialScene;
-      if (opts.inputActions) params.inputMappings = { actions: parseJsonObject(opts.inputActions, '--input-actions') };
+      const inputMappings: Record<string, unknown> = {};
+      if (opts.inputActions) inputMappings.actions = parseJsonObject(opts.inputActions, '--input-actions');
+      if (opts.inputGamepadButtons) {
+        inputMappings.gamepadButtons = parseJsonObject(opts.inputGamepadButtons, '--input-gamepad-buttons');
+      }
+      if (opts.inputGamepadAxes) {
+        inputMappings.gamepadAxes = parseJsonObject(opts.inputGamepadAxes, '--input-gamepad-axes');
+      }
+      if (opts.inputAxes) inputMappings.axes = parseJsonObject(opts.inputAxes, '--input-axes');
+      if (opts.inputDeadzone !== undefined) inputMappings.deadzone = opts.inputDeadzone;
+      if (Object.keys(inputMappings).length > 0) params.inputMappings = inputMappings;
       return runAndEmit(cmd, 'updateSettings', params);
     });
   });

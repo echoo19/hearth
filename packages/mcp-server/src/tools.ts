@@ -273,7 +273,7 @@ export const TOOL_SPECS: ToolSpec[] = [
     name: 'update_settings',
     command: 'updateSettings',
     description:
-      'Update project settings: partial buildSettings (deep-merged, incl. the loading screen visuals), the initial scene, and input mappings (each listed action is replaced; empty keys removes it). (requires safe-edit)',
+      'Update project settings: partial buildSettings (deep-merged, incl. the loading screen visuals), the initial scene, and input mappings (actions are replaced per action, empty keys removes one; gamepadButtons/gamepadAxes/axes/deadzone each replace that key wholesale). (requires safe-edit)',
     permission: 'safe-edit',
     inputShape: {
       buildSettings: z
@@ -294,7 +294,34 @@ export const TOOL_SPECS: ToolSpec[] = [
         })
         .optional(),
       initialScene: z.string().min(1).optional(),
-      inputMappings: z.object({ actions: z.record(z.string(), z.array(z.string())) }).optional(),
+      inputMappings: z
+        .object({
+          actions: z.record(z.string(), z.array(z.string())).optional(),
+          gamepadButtons: z.record(z.string(), z.array(z.string())).optional(),
+          gamepadAxes: z
+            .record(
+              z.string(),
+              z.object({
+                axis: z.number().int().min(0),
+                direction: z.union([z.literal(1), z.literal(-1)]),
+                threshold: z.number().min(0).max(1).optional(),
+              }),
+            )
+            .optional(),
+          axes: z
+            .record(
+              z.string(),
+              z.object({
+                gamepadAxis: z.number().int().min(0).optional(),
+                negativeCodes: z.array(z.string()).optional(),
+                positiveCodes: z.array(z.string()).optional(),
+                deadzone: z.number().min(0).max(1).optional(),
+              }),
+            )
+            .optional(),
+          deadzone: z.number().min(0).max(1).optional(),
+        })
+        .optional(),
     },
   },
 

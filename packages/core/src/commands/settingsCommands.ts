@@ -39,7 +39,8 @@ export const updateSettings = defineCommand({
   name: 'updateSettings',
   description:
     'Update project settings: partial buildSettings (deep-merged, incl. the loading screen visuals), ' +
-    'the initial scene, and input mappings (each listed action is replaced; empty keys removes it).',
+    'the initial scene, and input mappings (actions are replaced per action, empty keys removes one; ' +
+    'gamepadButtons, gamepadAxes, axes, and deadzone each replace that top-level key wholesale).',
   permission: 'safe-edit',
   mutates: true,
   paramsSchema: z.object({
@@ -101,6 +102,7 @@ export const updateSettings = defineCommand({
       buildSettings: project.buildSettings,
       initialScene: project.initialScene,
       inputActions: project.inputMappings.actions,
+      inputMappings: project.inputMappings,
     };
   },
 });

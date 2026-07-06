@@ -181,6 +181,20 @@ describe('hearth-mcp server', () => {
     expect(toolJson(bad).errors[0].code).toBe('NOT_FOUND');
   });
 
+  it('update_settings accepts inputMappings with only gamepadButtons and applies it', async () => {
+    ctx = await connectClient();
+    const result = await ctx.client.callTool({
+      name: 'update_settings',
+      arguments: { inputMappings: { gamepadButtons: { jump: ['a'] } } },
+    });
+    expect(result.isError).toBeFalsy();
+    const envelope = toolJson(result);
+    expect(envelope.success).toBe(true);
+    // Visible in the tool response and on the live project.
+    expect(envelope.data.inputMappings.gamepadButtons).toEqual({ jump: ['a'] });
+    expect(ctx.store.project.inputMappings.gamepadButtons).toEqual({ jump: ['a'] });
+  });
+
   it('run_playtest executes headlessly and returns a passing result', async () => {
     ctx = await connectClient();
     const sceneId = ctx.store.project.initialScene!;

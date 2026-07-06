@@ -183,6 +183,21 @@ describe('hearth create script / inspect api / set-settings', () => {
     expect(bad.code).toBe(1);
     expect(parseJson(bad.stdout).errors[0].code).toBe('NOT_FOUND');
   });
+
+  it('set-settings sets a gamepad button binding end to end', async () => {
+    const result = await runCli(
+      ['set-settings', '--input-gamepad-buttons', '{"jump":["a"]}', '--json'],
+      projectDir,
+    );
+    expect(result.code).toBe(0);
+    const envelope = parseJson(result.stdout);
+    expect(envelope.success).toBe(true);
+    expect(envelope.data.inputMappings.gamepadButtons).toEqual({ jump: ['a'] });
+
+    // Persisted to hearth.json on disk.
+    const raw = JSON.parse(await fsp.readFile(path.join(projectDir, 'hearth.json'), 'utf8'));
+    expect(raw.inputMappings.gamepadButtons).toEqual({ jump: ['a'] });
+  });
 });
 
 describe('hearth snapshot / diff', () => {
