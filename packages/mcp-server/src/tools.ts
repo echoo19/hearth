@@ -481,6 +481,19 @@ export const TOOL_SPECS: ToolSpec[] = [
     permission: 'read-only',
     inputShape: {},
   },
+  {
+    name: 'list_journal',
+    command: 'listJournal',
+    description:
+      'List recorded command journal entries (.hearth/log/commands.jsonl): every mutation plus read-only playtest/validate ' +
+      'runs, successes and failures alike, never rewound by undo/redo. Without since, returns the newest `limit` entries; ' +
+      'with since, pages forward from that cursor. (requires read-only)',
+    permission: 'read-only',
+    inputShape: {
+      since: z.number().int().nonnegative().optional(),
+      limit: z.number().int().positive().max(500).optional(),
+    },
+  },
 
   // ---- diff / playtest / build ---------------------------------------------------------------
   {

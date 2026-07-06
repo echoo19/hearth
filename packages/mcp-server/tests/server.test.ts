@@ -296,6 +296,35 @@ describe('hearth-mcp server', () => {
     expect(redoEnvelope.data.redone).toBe('createScene');
   });
 
+  it('list_journal is registered and dispatches to listJournal, mirroring every param', async () => {
+    ctx = await connectClient();
+    const { tools } = await ctx.client.listTools();
+    const tool = tools.find((t) => t.name === 'list_journal');
+    expect(tool).toBeDefined();
+    // Mirror every field of listJournal's paramsSchema (Wave D lesson: a
+    // stripped inputShape silently drops a param the tool description still
+    // advertises) — both since and limit must round-trip through the schema.
+    const props = tool!.inputSchema.properties as Record<string, unknown>;
+    expect(Object.keys(props).sort()).toEqual(['limit', 'since']);
+
+    const createResult = await ctx.client.callTool({ name: 'create_scene', arguments: { name: 'Level 2' } });
+    expect(createResult.isError).toBeFalsy();
+
+    const result = await ctx.client.callTool({ name: 'list_journal', arguments: {} });
+    expect(result.isError).toBeFalsy();
+    const envelope = toolJson(result);
+    expect(envelope.command).toBe('listJournal');
+    expect(envelope.data.entries.length).toBe(1);
+    expect(envelope.data.entries[0].command).toBe('createScene');
+    expect(envelope.data.lastSeq).toBe(1);
+
+    const paged = await ctx.client.callTool({ name: 'list_journal', arguments: { since: 0, limit: 1 } });
+    expect(paged.isError).toBeFalsy();
+    const pagedEnvelope = toolJson(paged);
+    expect(pagedEnvelope.data.entries.length).toBe(1);
+    expect(pagedEnvelope.data.entries[0].seq).toBe(1);
+  });
+
   it('create_animation_from_sheet creates an animation from sliced frames', async () => {
     ctx = await connectClient(['read-only', 'safe-edit', 'asset-edit']);
 

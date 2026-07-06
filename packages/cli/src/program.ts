@@ -557,6 +557,16 @@ export function buildProgram(): Command {
       await guarded(cmd, 'deleteEntity', () => runAndEmit(cmd, 'deleteEntity', { scene, entity }));
     },
   );
+  addGlobalOptions(
+    del
+      .command('asset <asset>')
+      .description('unregister an asset from the index (deletes its file too unless --keep-file)')
+      .option('--keep-file', 'keep the asset file on disk (unregister only)'),
+  ).action(async (asset: string, opts, cmd) => {
+    await guarded(cmd, 'removeAsset', () =>
+      runAndEmit(cmd, 'removeAsset', { asset, deleteFile: !opts.keepFile }),
+    );
+  });
 
   const move = program.command('move').description('move (reposition/reparent) an entity');
   addGlobalOptions(move);
@@ -616,6 +626,22 @@ export function buildProgram(): Command {
     program.command('history').description('list recorded undo/redo history entries'),
   ).action(async (opts, cmd) => {
     await guarded(cmd, 'listHistory', () => runHistoryCommand(cmd));
+  });
+
+  // ---------------------------------------------------------------------
+  // log (command journal)
+  // ---------------------------------------------------------------------
+  addGlobalOptions(
+    program
+      .command('log')
+      .description(
+        'list recorded command journal entries (.hearth/log/commands.jsonl): every mutation, plus read-only ' +
+          'playtest/validate runs, successes and failures alike, never rewound by undo/redo',
+      )
+      .option('--since <seq>', 'only entries after this seq (forward page)', (v) => parseInt(v, 10))
+      .option('--limit <n>', 'max entries to return (default 50, max 500)', (v) => parseInt(v, 10)),
+  ).action(async (opts, cmd) => {
+    await guarded(cmd, 'listJournal', () => runLogCommand(cmd, opts.since, opts.limit));
   });
 
   // ---------------------------------------------------------------------
@@ -904,6 +930,44 @@ async function runHistoryCommand(cmd: Command): Promise<void> {
       // `summary` already leads with the command name (see summarizeCommand in
       // core's session.ts), e.g. "createScene Level2" — don't repeat it.
       console.log(`${marker} [${entry.seq}] ${entry.summary}`);
+    }
+  }
+  process.exitCode = 0;
+}
+
+// ---------------------------------------------------------------------------
+// log (command journal: custom human formatting, one compact line per entry)
+// ---------------------------------------------------------------------------
+
+interface JournalEntryView {
+  seq: number;
+  source: string;
+  summary: string;
+  ok: boolean;
+  error?: string;
+}
+
+async function runLogCommand(cmd: Command, since: number | undefined, limit: number | undefined): Promise<void> {
+  const opts = globalOpts(cmd);
+  const session = await openSession(opts);
+  const result = await session.execute<{ entries: JournalEntryView[]; lastSeq: number }>('listJournal', {
+    since,
+    limit,
+  });
+  if (opts.json || !result.success) {
+    process.exitCode = emit(result, opts);
+    return;
+  }
+  const entries = result.data?.entries ?? [];
+  console.log('✓ listJournal');
+  if (entries.length === 0) {
+    console.log('  (no recorded journal entries yet)');
+  } else {
+    for (const entry of entries) {
+      // `summary` already leads with the command name (see summarizeCommand in
+      // core's session.ts), e.g. "createScene Level2" — don't repeat it.
+      const suffix = entry.ok ? '' : ` (${entry.error})`;
+      console.log(`#${entry.seq} [${entry.source}] ${entry.summary}${suffix}`);
     }
   }
   process.exitCode = 0;

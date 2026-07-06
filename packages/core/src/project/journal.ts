@@ -114,11 +114,20 @@ export class JournalStore {
     await this.fs.writeFile(this.path(), text);
   }
 
-  /** Entries in ascending seq order. `since` (strictly greater) filters, `limit` caps the count returned starting from the oldest match. */
+  /**
+   * Entries in ascending seq order.
+   *
+   * With `since`, this is forward-cursor paging: entries with seq > since,
+   * oldest-first, capped at `limit`. Without `since` (no cursor position
+   * yet), callers want the tail of the log, not its head, so this returns
+   * the newest `limit` entries instead — still ascending within the result.
+   */
   async read(opts: { since?: number; limit?: number } = {}): Promise<JournalEntry[]> {
     const entries = await this.readAll();
-    const since = opts.since ?? 0;
-    const filtered = entries.filter((e) => e.seq > since);
-    return opts.limit !== undefined ? filtered.slice(0, opts.limit) : filtered;
+    if (opts.since !== undefined) {
+      const filtered = entries.filter((e) => e.seq > opts.since!);
+      return opts.limit !== undefined ? filtered.slice(0, opts.limit) : filtered;
+    }
+    return opts.limit !== undefined ? entries.slice(Math.max(0, entries.length - opts.limit)) : entries;
   }
 }

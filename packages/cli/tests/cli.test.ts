@@ -321,6 +321,118 @@ describe('unknown command', () => {
   });
 });
 
+describe('hearth log', () => {
+  it('--json lists journal entries after a mutation', async () => {
+    const dir = path.join(tmpRoot, 'log-json');
+    await fsp.mkdir(dir, { recursive: true });
+    const init = await runCli(['init', 'Log Json', '--dir', dir, '--json'], tmpRoot);
+    expect(init.code).toBe(0);
+
+    const create = await runCli(['create', 'scene', 'Level2', '--json'], dir);
+    expect(create.code).toBe(0);
+
+    const log = await runCli(['log', '--json'], dir);
+    expect(log.code).toBe(0);
+    const envelope = parseJson(log.stdout);
+    expect(envelope.success).toBe(true);
+    expect(envelope.command).toBe('listJournal');
+    expect(envelope.data.entries.length).toBe(1);
+    expect(envelope.data.entries[0].command).toBe('createScene');
+    expect(envelope.data.entries[0].source).toBe('cli');
+    expect(envelope.data.lastSeq).toBe(1);
+  });
+
+  it('human format renders one line per entry, oldest-first, without duplicating the command name', async () => {
+    const dir = path.join(tmpRoot, 'log-human');
+    await fsp.mkdir(dir, { recursive: true });
+    await runCli(['init', 'Log Human', '--dir', dir, '--json'], tmpRoot);
+    await runCli(['create', 'scene', 'Level2', '--json'], dir);
+
+    const log = await runCli(['log'], dir);
+    expect(log.code).toBe(0);
+    // summary already leads with the command name ("createScene Level2") —
+    // the line must not repeat it (Wave D T3 lesson).
+    expect(log.stdout.split('\n')).toContain('#1 [cli] createScene Level2');
+    expect(log.stdout).not.toContain('createScene createScene');
+  });
+
+  it('a failing command appends with an ok=false error-code suffix', async () => {
+    const dir = path.join(tmpRoot, 'log-fail');
+    await fsp.mkdir(dir, { recursive: true });
+    await runCli(['init', 'Log Fail', '--dir', dir, '--json'], tmpRoot);
+    await runCli(['create', 'scene', 'Level2', '--json'], dir);
+    const dup = await runCli(['create', 'scene', 'Level2', '--json'], dir);
+    expect(dup.code).toBe(1);
+
+    const log = await runCli(['log'], dir);
+    expect(log.code).toBe(0);
+    expect(log.stdout.split('\n')).toContain('#2 [cli] createScene Level2 (CONFLICT)');
+  });
+
+  it('--since and --limit page the journal', async () => {
+    const dir = path.join(tmpRoot, 'log-page');
+    await fsp.mkdir(dir, { recursive: true });
+    await runCli(['init', 'Log Page', '--dir', dir, '--json'], tmpRoot);
+    await runCli(['create', 'scene', 'Level2', '--json'], dir);
+    await runCli(['create', 'scene', 'Level3', '--json'], dir);
+    await runCli(['create', 'scene', 'Level4', '--json'], dir);
+
+    const page = await runCli(['log', '--since', '1', '--limit', '1', '--json'], dir);
+    expect(page.code).toBe(0);
+    const envelope = parseJson(page.stdout);
+    expect(envelope.data.entries.length).toBe(1);
+    expect(envelope.data.entries[0].seq).toBe(2);
+    expect(envelope.data.lastSeq).toBe(3);
+  });
+});
+
+describe('hearth delete asset', () => {
+  it('by default deletes the file too (deleteFile=true) and unregisters the asset', async () => {
+    const dir = path.join(tmpRoot, 'delete-asset-default');
+    await fsp.mkdir(dir, { recursive: true });
+    await runCli(['init', 'Delete Asset Default', '--dir', dir, '--json'], tmpRoot);
+
+    const create = await runCli(['create', 'asset', 'sprite', 'coin', '--json'], dir);
+    expect(create.code).toBe(0);
+    const created = parseJson(create.stdout);
+    const assetPath: string = created.data.asset.path;
+
+    const del = await runCli(['delete', 'asset', 'coin', '--json'], dir);
+    expect(del.code).toBe(0);
+    const deleted = parseJson(del.stdout);
+    expect(deleted.success).toBe(true);
+    expect(deleted.command).toBe('removeAsset');
+    expect(deleted.data.fileDeleted).toBe(true);
+
+    await expect(fsp.access(path.join(dir, assetPath))).rejects.toThrow();
+
+    const assets = parseJson((await runCli(['inspect', 'assets', '--json'], dir)).stdout);
+    expect(assets.data.assets.some((a: { name: string }) => a.name === 'coin')).toBe(false);
+  });
+
+  it('--keep-file unregisters the asset but leaves the file on disk (deleteFile=false)', async () => {
+    const dir = path.join(tmpRoot, 'delete-asset-keep');
+    await fsp.mkdir(dir, { recursive: true });
+    await runCli(['init', 'Delete Asset Keep', '--dir', dir, '--json'], tmpRoot);
+
+    const create = await runCli(['create', 'asset', 'sprite', 'coin', '--json'], dir);
+    expect(create.code).toBe(0);
+    const created = parseJson(create.stdout);
+    const assetPath: string = created.data.asset.path;
+
+    const del = await runCli(['delete', 'asset', 'coin', '--keep-file', '--json'], dir);
+    expect(del.code).toBe(0);
+    const deleted = parseJson(del.stdout);
+    expect(deleted.success).toBe(true);
+    expect(deleted.data.fileDeleted).toBe(false);
+
+    await fsp.access(path.join(dir, assetPath)); // still present, does not throw
+
+    const assets = parseJson((await runCli(['inspect', 'assets', '--json'], dir)).stdout);
+    expect(assets.data.assets.some((a: { name: string }) => a.name === 'coin')).toBe(false);
+  });
+});
+
 describe('hearth commands', () => {
   it('lists more than 30 registered engine commands', async () => {
     const result = await runCli(['commands', '--json'], projectDir);

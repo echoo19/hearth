@@ -131,23 +131,30 @@ describe('command journal', () => {
     }
   });
 
-  it('listJournal respects since/limit and reports lastSeq', async () => {
+  it('listJournal without since returns the newest `limit` entries (ascending), and reports lastSeq', async () => {
     const { session } = await makeSession();
 
     await session.execute('createScene', { name: 'Level 2' });
     await session.execute('createScene', { name: 'Level 3' });
     await session.execute('createScene', { name: 'Level 4' });
 
-    const page1 = await session.execute<any>('listJournal', { limit: 2 });
-    expect(page1.data.entries.length).toBe(2);
-    expect(page1.data.entries[0].seq).toBe(1);
-    expect(page1.data.entries[1].seq).toBe(2);
-    expect(page1.data.lastSeq).toBe(3);
+    const newest = await session.execute<any>('listJournal', { limit: 2 });
+    expect(newest.data.entries.length).toBe(2);
+    expect(newest.data.entries[0].seq).toBe(2);
+    expect(newest.data.entries[1].seq).toBe(3);
+    expect(newest.data.lastSeq).toBe(3);
 
     const page2 = await session.execute<any>('listJournal', { since: 2 });
     expect(page2.data.entries.length).toBe(1);
     expect(page2.data.entries[0].seq).toBe(3);
     expect(page2.data.lastSeq).toBe(3);
+
+    // since=0 is an explicit cursor at the start of the log (forward-paging
+    // semantics), distinct from omitting since entirely (tail semantics).
+    const fromStart = await session.execute<any>('listJournal', { since: 0, limit: 2 });
+    expect(fromStart.data.entries.length).toBe(2);
+    expect(fromStart.data.entries[0].seq).toBe(1);
+    expect(fromStart.data.entries[1].seq).toBe(2);
   });
 
   it('cross-session: a second HearthSession.open on the same root continues seq from disk', async () => {
