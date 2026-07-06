@@ -132,15 +132,20 @@ outright, so it's still recoverable).
 `playtest [name] [--all]`,
 `create playtest <name> --scene s --steps-file steps.json [--max-frames n]
 [--seed n]` (`--seed` makes `ctx.random` / Lua `math.random` reproducible;
-steps cover input — `wait`, `press`, `release`, `click {x,y}` — and
+steps cover input — `wait`, `press`, `release`, `click {x,y}`,
+`setAxis {axis, value, frames?}` (sticky virtual-axis override for
+`ctx.input.axis` — see [input.md](./input.md#playtest-input)),
+`drag {from, to, frames?}` (pointer down at `from`, interpolated moves,
+up at `to` — see [ui.md](./ui.md#playtests)) — and
 assertions — `assertEntityExists`, `assertProperty`, `assertPositionNear`,
 `assertScene`, `assertParticleCount`, `assertEventCount`,
 `assertAudioCount` (filter by `asset`/`action`/`music`, checked against
 `equals`/`min`/`max` — see [assets.md](./assets.md#testing-audio-assertaudiocount)),
 `assertCameraEffect` (`effect: shake|flash|fade|zoomPunch`, counted against
 `equals`/`min`/`max`; results also expose `cameraEffects` and
-`cameraOverlayAlpha`), `assertNoErrors`), `test`
-(validate + all playtests, the CI command).
+`cameraOverlayAlpha`), `assertFocus` (`entity` name/id, or `null` for
+nothing focused; results expose `focusedEntity`), `assertNoErrors`),
+`test` (validate + all playtests, the CI command).
 
 **Export** (requires `--allow build`): `export web [--out dir]
 [--single-file] [--zip]` — a static playable web build; `--zip` writes an

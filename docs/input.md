@@ -151,16 +151,17 @@ path.
 | Action keys | `hearth set-input <action> [keys...]` | `set_input_mapping({ action, keys })` |
 | Everything else (gamepad buttons/axes, virtual axes, deadzone, build settings, initial scene) | `hearth set-settings [--input-gamepad-buttons ...] [--input-gamepad-axes ...] [--input-axes ...] [--input-deadzone n]` | `update_settings({ inputMappings: { gamepadButtons?, gamepadAxes?, axes?, deadzone? } })` |
 
-`set-input`/`set_input_mapping` only ever touch one action's keyboard
-codes (empty keys removes the action). Every `set-settings`/
-`update_settings` `inputMappings` field is **replaced wholesale**, not
-merged: passing `gamepadButtons` replaces the entire map, so include every
-action you want bound, not just the one you're changing. `actions` is the
-one exception with per-key semantics on the CLI's own `set-input`, but
-through `set-settings --input-actions`/`update_settings`'s `actions`
-field it's also a wholesale replacement of the whole map. See
-[cli.md](./cli.md#command-tour) and [mcp.md](./mcp.md) for the full
-command/tool references.
+`actions` merges **per action**, on every surface: `set-input`/
+`set_input_mapping` touch exactly one action (empty keys removes it), and
+`set-settings --input-actions`/`update_settings`'s `actions` field does
+the same for each action you list — a listed action's key list is
+replaced (or, with `[]`, the action is deleted), and every unlisted
+action is left untouched. The other four `inputMappings` fields —
+`gamepadButtons`, `gamepadAxes`, `axes`, `deadzone` — are each **replaced
+wholesale** when provided: passing `gamepadButtons` replaces the entire
+map, so include every action you want bound, not just the one you're
+changing. See [cli.md](./cli.md#command-tour) and [mcp.md](./mcp.md) for
+the full command/tool references.
 
 ## Playtest input
 
