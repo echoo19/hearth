@@ -350,3 +350,28 @@ export const COMPONENT_DOCS: Record<ComponentType, string> = {
   UISlider: "Draggable value widget rendered by the runtime; fires onUiEvent {type:'change', value}",
   UIToggle: "Boolean checkbox widget; click flips value and fires onUiEvent {type:'change', value}",
 };
+
+/** Unwraps `.default(...)`/`.optional()` wrappers and returns a field's `z.enum([...])` options, or null. */
+function enumOptions(fieldSchema: z.ZodTypeAny): string[] | null {
+  let current: z.ZodTypeAny = fieldSchema;
+  while (current instanceof z.ZodDefault || current instanceof z.ZodOptional) {
+    current = current instanceof z.ZodDefault ? current._def.innerType : current.unwrap();
+  }
+  return current instanceof z.ZodEnum ? [...current.options] : null;
+}
+
+/**
+ * Enum options per component field, derived from each schema's `z.enum(...)`
+ * fields. Built once at module load by walking every `COMPONENT_SCHEMAS`
+ * shape; the Inspector uses this to render a `<select>` instead of a raw
+ * text input for any string field that has options here.
+ */
+export const COMPONENT_ENUMS: Record<string, Record<string, string[]>> = {};
+for (const [type, schema] of Object.entries(COMPONENT_SCHEMAS)) {
+  const fields: Record<string, string[]> = {};
+  for (const [field, fieldSchema] of Object.entries((schema as z.ZodObject<z.ZodRawShape>).shape)) {
+    const options = enumOptions(fieldSchema as z.ZodTypeAny);
+    if (options) fields[field] = options;
+  }
+  if (Object.keys(fields).length > 0) COMPONENT_ENUMS[type] = fields;
+}

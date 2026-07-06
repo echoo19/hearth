@@ -75,6 +75,8 @@ export interface ComponentDoc {
   type: string;
   description: string;
   defaults: Record<string, unknown>;
+  /** Enum options per field (e.g. `{ shape: ['rectangle', 'circle', ...] }`), empty when the component has none. */
+  enums: Record<string, string[]>;
 }
 
 export interface ValidationIssue {

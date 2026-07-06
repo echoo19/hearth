@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import { defineCommand } from './types.js';
 import { findEntity, childrenOf } from '../schema/scene.js';
-import { COMPONENT_DOCS, COMPONENT_SCHEMAS, COMPONENT_TYPES } from '../schema/components.js';
+import { COMPONENT_DOCS, COMPONENT_ENUMS, COMPONENT_SCHEMAS, COMPONENT_TYPES } from '../schema/components.js';
 import { validateProject } from '../validate.js';
 import { ProjectError } from '../project/store.js';
 import { CTX_API } from '../ctxApi.js';
@@ -153,6 +153,7 @@ export const inspectComponents = defineCommand({
         type,
         description: COMPONENT_DOCS[type],
         defaults: COMPONENT_SCHEMAS[type].parse({}),
+        enums: COMPONENT_ENUMS[type] ?? {},
       })),
     };
   },

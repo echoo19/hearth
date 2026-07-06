@@ -600,6 +600,26 @@ export function Inspector() {
                         onCommit={(v) => setProperty(property, v)}
                       />
                     );
+                  } else if (typeof value === 'string' && (doc?.enums[field]?.length ?? 0) > 0) {
+                    // Any string field with schema-declared enum options (see
+                    // COMPONENT_ENUMS) gets a dropdown instead of falling
+                    // through to a raw text input — e.g. SpriteRenderer.shape,
+                    // Text.align, UILayout.direction/align.
+                    const options = doc!.enums[field];
+                    control = (
+                      <select
+                        key={rowKey}
+                        className="select"
+                        value={value}
+                        onChange={(e) => setProperty(property, e.target.value)}
+                      >
+                        {options.map((opt) => (
+                          <option key={opt} value={opt}>
+                            {opt}
+                          </option>
+                        ))}
+                      </select>
+                    );
                   } else if (typeof value === 'number') {
                     control = (
                       <NumberField key={rowKey} value={value} onCommit={(v) => setProperty(property, v)} />
