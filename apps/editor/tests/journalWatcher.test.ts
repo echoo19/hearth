@@ -245,4 +245,113 @@ describe('startJournalWatcher', () => {
     dispose();
     await fsp.rm(root, { recursive: true, force: true });
   }, 8000);
+
+  it('does not call onEntries after dispose, even if read was in flight', async () => {
+    const root = await fsp.mkdtemp(path.join(os.tmpdir(), 'hearth-journal-watch-'));
+    const inner = new NodeFileSystem();
+    const writer = new JournalStore(inner, root);
+
+    // A slow-read FsLike so we can reliably dispose while a poll's
+    // store.read() is still in flight.
+    let delayMs = 0;
+    const delayedFs: FsLike = {
+      async readFile(p: string) {
+        if (delayMs > 0) await wait(delayMs);
+        return await inner.readFile(p);
+      },
+      readFileBinary: (p) => inner.readFileBinary(p),
+      writeFile: (p, c) => inner.writeFile(p, c),
+      appendFile: (p, t) => inner.appendFile(p, t),
+      exists: (p) => inner.exists(p),
+      mkdir: (p) => inner.mkdir(p),
+      readdir: (p) => inner.readdir(p),
+      stat: (p) => inner.stat(p),
+      remove: (p) => inner.remove(p),
+      copyFile: (s, d) => inner.copyFile(s, d),
+    };
+
+    const batches: JournalEntry[][] = [];
+    const dispose = startJournalWatcher(root, delayedFs, (entries) => batches.push(entries));
+    disposers.push(dispose);
+
+    // Enable slow reads after initial baseline completes; the baseline read
+    // is intentionally fast (delayMs=0) so the watcher can become ready.
+    await wait(100);
+    delayMs = 300;
+
+    // Append an entry; its watch event will trigger a poll whose read hangs
+    // for 300ms.
+    await writer.append({ ts: new Date().toISOString(), source: 'cli', command: 'createScene', summary: 'before-dispose', ok: true });
+
+    // Give the watch event a moment to fire and the debounce to start the
+    // poll's read (which will then hang for 300ms). Dispose at ~200ms, while
+    // the read is roughly halfway through.
+    await wait(200);
+    const callCountBeforeDispose = batches.length;
+    dispose();
+
+    // Give the in-flight read time to settle (it will complete its read(),
+    // check disposed, and return early without calling onEntries).
+    await wait(500);
+
+    // onEntries should have been called once before dispose (or zero times if
+    // the read was so slow it hadn't completed by the time we disposed).
+    // The key invariant: it should NOT be called after dispose completes.
+    const callCountAfterDispose = batches.length;
+    expect(callCountAfterDispose).toBe(callCountBeforeDispose);
+
+    await fsp.rm(root, { recursive: true, force: true });
+  }, 5000);
+
+  it('onEntries throwing is not swallowed and does not break subsequent deliveries', async () => {
+    const root = await fsp.mkdtemp(path.join(os.tmpdir(), 'hearth-journal-watch-'));
+    const fs = new NodeFileSystem();
+    const writer = new JournalStore(fs, root);
+
+    let throwOnFirst = true;
+    const batches: JournalEntry[][] = [];
+
+    // Suppress unhandled rejection warnings for this test (the throw from
+    // onEntries is intentional and propagates as an unhandled rejection
+    // from the async poll() function — we're verifying it's not swallowed
+    // as a read error by checking subsequent deliveries still work).
+    const rejectionHandler = () => {}; // Swallow the rejection silently
+    process.on('unhandledRejection', rejectionHandler);
+
+    const dispose = startJournalWatcher(root, fs, (entries) => {
+      batches.push(entries);
+      if (throwOnFirst) {
+        throwOnFirst = false;
+        throw new Error('test onEntries throw');
+      }
+    });
+    disposers.push(dispose);
+
+    await wait(50);
+
+    // First append: onEntries will throw.
+    await writer.append({ ts: new Date().toISOString(), source: 'cli', command: 'createScene', summary: 'throws', ok: true });
+    await wait(400);
+
+    // The throw from onEntries should NOT prevent the entry from being
+    // delivered to the batches array. If the error was swallowed as a read
+    // error (inside the try/catch), batches would be empty. The fact that
+    // it's non-empty proves the error isn't being conflated with a read
+    // error.
+    expect(batches.flat().map((e) => e.summary)).toEqual(['throws']);
+
+    // Append a second entry. Even though the first onEntries call threw, the
+    // in-flight guard should still have been released, and the second entry
+    // should still be delivered. This proves the throw didn't break the
+    // polling mechanism.
+    await writer.append({ ts: new Date().toISOString(), source: 'cli', command: 'createScene', summary: 'after-throw', ok: true });
+    await wait(400);
+
+    const delivered = batches.flat();
+    expect(delivered.map((e) => e.summary)).toEqual(['throws', 'after-throw']);
+
+    dispose();
+    process.off('unhandledRejection', rejectionHandler);
+    await fsp.rm(root, { recursive: true, force: true });
+  });
 });

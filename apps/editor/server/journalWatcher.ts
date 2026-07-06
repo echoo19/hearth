@@ -81,6 +81,12 @@ export function startJournalWatcher(
       // tick or watch event will retry from the same lastDelivered.
       readFailed = true;
     }
+    // Re-check disposed after the awaited read: if dispose() ran while the
+    // read was in flight, return early to avoid delivering after shutdown.
+    if (disposed) {
+      inFlight = false;
+      return;
+    }
     if (!readFailed && entries.length > 0) {
       lastDelivered = entries[entries.length - 1].seq;
     }
