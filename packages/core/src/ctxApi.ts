@@ -418,6 +418,40 @@ export const CTX_API: readonly CtxApiEntry[] = [
     description: 'Follow an entity each frame (null stops). Warn log if not found.',
     example: { js: "ctx.camera.follow('Player')", lua: 'ctx.camera.follow("Player")' },
   },
+  {
+    path: 'camera.shake',
+    kind: 'method',
+    signature: 'shake(intensity: number, seconds: number, opts?: { seed?: number }): void',
+    description:
+      "Screen shake: offset decays linearly from `intensity` (world units) to 0 over `seconds`. Deterministic — same seed (explicit or scene-derived) reproduces the same offsets.",
+    example: { js: 'ctx.camera.shake(8, 0.3)', lua: 'ctx.camera.shake(8, 0.3)' },
+  },
+  {
+    path: 'camera.flash',
+    kind: 'method',
+    signature: 'flash(color: string, seconds: number): void',
+    description: 'A color pulse over the screen that fades from full alpha to 0 over `seconds`.',
+    example: { js: "ctx.camera.flash('#ffffff', 0.2)", lua: 'ctx.camera.flash("#ffffff", 0.2)' },
+  },
+  {
+    path: 'camera.fade',
+    kind: 'method',
+    signature:
+      'fade(alpha: number, seconds: number, opts?: { color?: string; onComplete?: () => void }): void',
+    description:
+      'Ease the persistent screen overlay toward `alpha` over `seconds`, then hold at that level. Survives scene switches (ctx.scenes.load).',
+    example: {
+      js: "ctx.camera.fade(1, 0.5, { color: '#000000', onComplete: () => ctx.scenes.load('NextLevel') })",
+      lua: 'ctx.camera.fade(1, 0.5, { color = "#000000" })',
+    },
+  },
+  {
+    path: 'camera.zoomPunch',
+    kind: 'method',
+    signature: 'zoomPunch(scale: number, seconds: number): void',
+    description: 'A zoom kick that eases back to 1x over `seconds`.',
+    example: { js: 'ctx.camera.zoomPunch(1.2, 0.25)', lua: 'ctx.camera.zoomPunch(1.2, 0.25)' },
+  },
   // --- audio -----------------------------------------------------------
   {
     path: 'audio.play',

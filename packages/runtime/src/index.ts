@@ -25,6 +25,11 @@ export {
   type LuaEngineOptions,
 } from './lua.js';
 export { EmitterState, type Particle } from './particles.js';
+export {
+  CameraEffectsState,
+  type CameraEffectKind,
+  type CameraEffectRecord,
+} from './cameraEffects.js';
 export { EventBus, type GameEventRecord } from './events.js';
 export {
   GameSession,

@@ -167,6 +167,11 @@ export class PixiSceneView {
   private debugLayer = new Container();
   private debugGraphics = new Graphics();
   private _debugDraw: boolean;
+  /**
+   * Full-screen camera-effects overlay (ctx.camera.flash/fade), tinted and
+   * redrawn every syncCamera call. Sits above `ui` so a fade covers the HUD.
+   */
+  private fxOverlay = new Graphics();
   private audio: WebAudioPlayer | null = null;
   private accumulator = 0;
   private _paused: boolean;
@@ -198,14 +203,18 @@ export class PixiSceneView {
     this._debugDraw = opts.debugDraw ?? false;
     this.debugLayer.addChild(this.debugGraphics);
     this.debugLayer.visible = this._debugDraw;
+    this.fxOverlay.label = 'fx-overlay';
+    this.fxOverlay.eventMode = 'none';
 
-    // Stage order: world, lightmapSprite, debugLayer, ui — the lightmap
-    // darkens/tints the world but never the UI or debug overlay (debug
-    // lines sit above the lightmap so they stay full-brightness).
+    // Stage order: world, lightmapSprite, debugLayer, ui, fxOverlay — the
+    // lightmap darkens/tints the world but never the UI or debug overlay
+    // (debug lines sit above the lightmap so they stay full-brightness); the
+    // fx overlay sits above everything so a fade covers the HUD too.
     this.app.stage.addChild(this.world);
     this.app.stage.addChild(this.lightmapSprite);
     this.app.stage.addChild(this.debugLayer);
     this.app.stage.addChild(this.ui);
+    this.app.stage.addChild(this.fxOverlay);
     this.tickerFn = (ticker) => this.onTick(ticker);
   }
 
@@ -552,13 +561,16 @@ export class PixiSceneView {
   private syncCamera(): void {
     const settings = this.opts.store.project.buildSettings;
     const cam = this.runtime.camera;
-    this.world.scale.set(cam.zoom);
+    const fx = this.runtime.cameraEffects;
+    const zoom = cam.zoom * fx.zoomMul;
+    this.world.scale.set(zoom);
     this.world.position.set(
-      settings.width / 2 - cam.position.x * cam.zoom,
-      settings.height / 2 - cam.position.y * cam.zoom,
+      settings.width / 2 - (cam.position.x + fx.offset.x) * zoom,
+      settings.height / 2 - (cam.position.y + fx.offset.y) * zoom,
     );
     this.app.renderer.background.color = cam.backgroundColor;
     this.updateLightmap(cam, settings.width, settings.height);
+    this.syncFxOverlay(fx.overlay, settings.width, settings.height);
 
     if (this._debugDraw) {
       // Same camera transform as `world` — debug lines are drawn in world
@@ -705,6 +717,18 @@ export class PixiSceneView {
 
     this.app.renderer.render({ container: this.lightScene, target: this.lightmapRT, clear: true });
     this.lightmapSprite.visible = true;
+  }
+
+  /**
+   * Redraw the full-screen camera-effects overlay (ctx.camera.flash/fade) to
+   * the current screen size, tinted `overlay.color` at `overlay.alpha`.
+   * Cheap enough to redraw every tick (mirrors updateLightmap's ambient
+   * rect); skips the fill entirely at alpha 0 so idle scenes pay nothing.
+   */
+  private syncFxOverlay(overlay: { color: string; alpha: number }, width: number, height: number): void {
+    this.fxOverlay.clear();
+    if (overlay.alpha <= 0) return;
+    this.fxOverlay.rect(0, 0, width, height).fill({ color: overlay.color, alpha: overlay.alpha });
   }
 
   private syncEntities(): void {

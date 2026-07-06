@@ -59,6 +59,7 @@ import {
   type SpawnDef,
   type UiEvent,
 } from './scripts.js';
+import { CameraEffectsState, type CameraEffectRecord } from './cameraEffects.js';
 import { createCtxMath } from './ctxMath.js';
 import { EventBus, type GameEventRecord } from './events.js';
 import { LuaScriptEngine, isLuaPath } from './lua.js';
@@ -145,6 +146,14 @@ export interface RuntimeOptions {
    * runtime's recorded-events list caps, so aggregators keep exact counts.
    */
   onGameEvent?(record: GameEventRecord): void;
+  /**
+   * Persistent fade overlay level to start this runtime's CameraEffectsState
+   * with (carried across a GameSession scene switch). Transient shake/flash/
+   * zoomPunch never carry. Default: no overlay (alpha 0).
+   */
+  initialCameraOverlay?: { color: string; alpha: number };
+  /** Fired for every ctx.camera.shake/flash/fade/zoomPunch call, tagged with its frame. */
+  onCameraEffect?(rec: CameraEffectRecord): void;
 }
 
 /** A collision contact as seen from one entity. */
@@ -210,6 +219,8 @@ export class SceneRuntime {
   /** Exact per-name emit totals, unbounded — never truncated even once `events` caps. */
   readonly eventCounts = new Map<string, number>();
   readonly input: InputState;
+  /** Deterministic shake/flash/fade/zoomPunch — stepped right after camera follow. */
+  readonly cameraEffects: CameraEffectsState;
 
   /** Scene id requested by ctx.scenes.load this frame (hosts react after step). */
   pendingScene: string | null = null;
@@ -260,6 +271,13 @@ export class SceneRuntime {
     this.musicChannel = options.musicChannel ?? { current: null, seq: 0 };
     this._frame = options.frameOffset ?? 0;
     this._elapsed = this._frame * this.fixedDt;
+    this.cameraEffects = new CameraEffectsState({
+      // Reuses RuntimeOptions.seed (not the shared `rng` stream — consuming it
+      // here would shift ctx.random's first value out from under scripts).
+      seed: options.seed ?? 0,
+      initialOverlay: options.initialCameraOverlay,
+      onRecord: (rec) => this.options.onCameraEffect?.(rec),
+    });
     for (const authored of scene.entities) {
       if (!authored.enabled) continue;
       this.entities.push(this.instantiate(authored));
@@ -464,6 +482,15 @@ export class SceneRuntime {
 
     // 4b. Camera follow applies at end of frame, after physics.
     this.applyCameraFollow();
+
+    // 4b2. Camera effects (shake/flash/fade/zoomPunch) step deterministically.
+    this.cameraEffects.step(this.fixedDt, this._frame, (err) =>
+      this.recordError({
+        frame: this._frame,
+        message: (err as Error)?.message ?? String(err),
+        phase: 'cameraEffect',
+      }),
+    );
 
     // 4c. Particle emitters step deterministically (per-emitter seeded RNG).
     this.stepParticles();
@@ -1120,6 +1147,10 @@ export class SceneRuntime {
           runtime.mainCameraEntity(true);
           runtime.cameraFollowId = target.id;
         },
+        shake: (intensity, seconds, opts) => runtime.cameraEffects.shake(intensity, seconds, opts),
+        flash: (color, seconds) => runtime.cameraEffects.flash(color, seconds),
+        fade: (alpha, seconds, opts) => runtime.cameraEffects.fade(alpha, seconds, opts),
+        zoomPunch: (scale, seconds) => runtime.cameraEffects.zoomPunch(scale, seconds),
       },
       events: {
         emit: (name, data) => runtime.emitEvent(name, data),

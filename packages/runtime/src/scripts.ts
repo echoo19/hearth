@@ -172,6 +172,14 @@ export interface ScriptContext {
     setZoom(zoom: number): void;
     /** Follow an entity each frame (null stops). Warn log if not found. */
     follow(idOrName: string | null): void;
+    /** Screen shake: offset decays linearly from `intensity` (world units) to 0 over `seconds`. */
+    shake(intensity: number, seconds: number, opts?: { seed?: number }): void;
+    /** A color pulse that fades from full alpha to 0 over `seconds`. */
+    flash(color: string, seconds: number): void;
+    /** Ease the persistent screen overlay toward `alpha` over `seconds`, then hold (survives scene switches). */
+    fade(alpha: number, seconds: number, opts?: { color?: string; onComplete?: () => void }): void;
+    /** A zoom kick that eases back to 1x over `seconds`. */
+    zoomPunch(scale: number, seconds: number): void;
   };
   /** Global pub/sub. emit delivers synchronously; on() subscriptions die with this entity. */
   events: {

@@ -8,6 +8,7 @@
  * playtests, exported player) drive a GameSession.
  */
 import type { ProjectStore } from '@hearth/core';
+import type { CameraEffectRecord } from './cameraEffects.js';
 import type { GameEventRecord } from './events.js';
 import { LuaScriptEngine, isLuaPath } from './lua.js';
 import {
@@ -87,6 +88,8 @@ export class GameSession {
   readonly errors: RuntimeError[] = [];
   readonly audioEvents: AudioEvent[] = [];
   readonly sceneEvents: SceneEvent[] = [];
+  /** ctx.camera.shake/flash/fade/zoomPunch calls across every scene this session runs. */
+  readonly cameraEffects: CameraEffectRecord[] = [];
   /** ctx.events.emit records across every scene, session-monotonic frames, capped at 200. */
   readonly events: GameEventRecord[] = [];
   eventsTruncated = false;
@@ -194,11 +197,14 @@ export class GameSession {
     const old = this._runtime;
     const from = this._currentSceneId;
     const frame = old.frame;
+    // Persist only the fade overlay level across the switch — transient
+    // shake/flash/zoomPunch never carry to the new scene's runtime.
+    const carriedOverlay = { ...old.cameraEffects.overlay };
     old.stopAllAudio(); // emits stop AudioPlaybackEvents through onAudio
     this.eventsTruncated ||= old.eventsTruncated;
     old.destroy();
     try {
-      await this.startScene(to, frame);
+      await this.startScene(to, frame, carriedOverlay);
     } catch (err) {
       this.recordError({
         frame,
@@ -212,7 +218,11 @@ export class GameSession {
     this.opts.onSceneChange?.(event);
   }
 
-  private async startScene(sceneId: string, frameOffset: number): Promise<void> {
+  private async startScene(
+    sceneId: string,
+    frameOffset: number,
+    initialCameraOverlay?: { color: string; alpha: number },
+  ): Promise<void> {
     await this.ensureLuaEngine();
     this._currentSceneId = sceneId;
     this._runtime = await SceneRuntime.create(this.store, sceneId, {
@@ -222,6 +232,8 @@ export class GameSession {
       frameOffset,
       maxLogs: this.opts.maxLogs,
       musicChannel: this.musicChannel,
+      initialCameraOverlay,
+      onCameraEffect: (rec) => this.cameraEffects.push(rec),
       onLog: (e) => this.recordLog(e),
       onError: (e) => this.recordError(e),
       onAudio: (e) => {
