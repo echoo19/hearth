@@ -31,7 +31,7 @@ function summarizeCommand(name: string, params: unknown): string {
  * shape mismatch (missing/wrong-typed field) omits `detail` entirely rather
  * than recording a partial/garbled fact.
  */
-function extractJournalDetail(name: string, data: unknown): Record<string, unknown> | undefined {
+export function extractJournalDetail(name: string, data: unknown): Record<string, unknown> | undefined {
   if (typeof data !== 'object' || data === null) return undefined;
   const d = data as Record<string, unknown>;
   if (name === 'runPlaytest') {

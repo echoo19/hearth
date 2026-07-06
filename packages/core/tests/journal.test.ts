@@ -6,7 +6,7 @@
  * trust timeline and external-change detection (later tasks).
  */
 import { describe, it, expect } from 'vitest';
-import { MemoryFileSystem, createProject, HearthSession, JournalStore } from '@hearth/core';
+import { MemoryFileSystem, createProject, HearthSession, JournalStore, extractJournalDetail } from '@hearth/core';
 
 async function makeSession(options: Parameters<typeof HearthSession.fromStore>[1] = {}) {
   const fs = new MemoryFileSystem();
@@ -184,5 +184,47 @@ describe('command journal', () => {
     expect(result.success).toBe(true);
     expect(result.warnings.some((w: any) => w.code === 'JOURNAL_RECORD_FAILED')).toBe(true);
     expect(store.getScene('Level 2')).toBeDefined();
+  });
+
+  it('extractJournalDetail omits detail when fields are malformed or missing', () => {
+    // runPlaytest missing steps array
+    expect(extractJournalDetail('runPlaytest', { passed: true })).toBeUndefined();
+    // runPlaytest with wrong-typed passed field
+    expect(extractJournalDetail('runPlaytest', { passed: 'yes', steps: [] })).toBeUndefined();
+    // validateProject missing warnings array
+    expect(extractJournalDetail('validateProject', { errors: [] })).toBeUndefined();
+    // validateProject with wrong-typed errors field
+    expect(extractJournalDetail('validateProject', { errors: 'none', warnings: [] })).toBeUndefined();
+    // null data
+    expect(extractJournalDetail('runPlaytest', null)).toBeUndefined();
+    // non-object data
+    expect(extractJournalDetail('runPlaytest', 'not an object')).toBeUndefined();
+  });
+
+  it('a failing allowlisted command (runPlaytest with nonexistent playtest) appends ok=false with error code and no detail', async () => {
+    const runtimeStub = {
+      runPlaytest: async () => ({
+        passed: true,
+        playtestId: 'ptt_stub',
+        name: 'Test',
+        scene: 'Main',
+        framesRun: 0,
+        steps: [],
+        errors: [],
+      }),
+    };
+    const { session } = await makeSession({ runtime: runtimeStub as any });
+
+    const failed = await session.execute<any>('runPlaytest', { playtest: 'NonexistentPlaytest' });
+    expect(failed.success).toBe(false);
+    expect(failed.errors[0].code).toBe('NOT_FOUND');
+
+    const list = await session.execute<any>('listJournal');
+    expect(list.data.entries.length).toBe(1);
+    const entry = list.data.entries[0];
+    expect(entry.command).toBe('runPlaytest');
+    expect(entry.ok).toBe(false);
+    expect(entry.error).toBe('NOT_FOUND');
+    expect(entry.detail).toBeUndefined();
   });
 });

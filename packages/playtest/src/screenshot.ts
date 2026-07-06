@@ -239,6 +239,7 @@ export async function captureScreenshot(
   // module doc comment; the caller must have already checked permission.
   const session = HearthSession.fromStore(store, {
     granted: ['build'],
+    source: 'export',
     resources: { getPlayerBundle: () => loadPlayerBundle() },
   });
 

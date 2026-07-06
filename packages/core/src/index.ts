@@ -42,7 +42,7 @@ export {
   type RuntimeHooks,
 } from './commands/types.js';
 export { type WebExportBundle } from './commands/exportCommands.js';
-export { HearthSession, type SessionOptions } from './session.js';
+export { HearthSession, extractJournalDetail, type SessionOptions } from './session.js';
 export { SCRIPT_TEMPLATE, LUA_SCRIPT_TEMPLATE } from './commands/scriptCommands.js';
 export { HISTORY_EXEMPT } from './commands/historyCommands.js';
 export { CTX_API, type CtxApiEntry } from './ctxApi.js';
