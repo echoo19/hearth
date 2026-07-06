@@ -1,8 +1,13 @@
 /**
  * Screen-space UI helpers — anchor math, hit rects, and layout resolution
- * for UIElement entities. Shared by the headless runtime (sendPointer
- * hit-testing) and the pixi host (overlay positioning) so pointer behavior
- * is identical in playtests and the browser.
+ * for UIElement entities. The anchor and hit-rect helpers are shared by
+ * the headless runtime (sendPointer hit-testing) and the pixi host
+ * (overlay positioning) so pointer behavior is identical in playtests and
+ * the browser. `resolveUiPositions` lives here so both consumers CAN
+ * share the same layout math, but neither is wired to it yet: hit-testing
+ * (runtime.ts) and rendering (pixi host) still position every element by
+ * its own bare anchor+offset. Wiring lands in the next task; until then
+ * UILayout children render and hit-test at their unstacked positions.
  *
  * Text bounds use a deterministic monospace approximation (the default
  * Text font is monospace) rather than real canvas measurement, so headless

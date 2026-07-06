@@ -155,6 +155,27 @@ describe('resolveUiPositions', () => {
     expect(positions.get(entities[4].id)).toEqual({ x: 24, y: 38 }); // C2
   });
 
+  it('collapses a child with no measurable visuals to a zero-size slot that still consumes gap', () => {
+    const entities = buildEntities([
+      ent(
+        'Panel',
+        { UILayout: {}, UIElement: { anchor: 'top-left', offset: { x: 0, y: 0 } } },
+        { id: 'ent_panel' },
+      ),
+      ent('A', { UIElement: {}, SpriteRenderer: { width: 20, height: 20 } }, { parentId: 'ent_panel' }),
+      ent('Empty', { UIElement: {} }, { parentId: 'ent_panel' }), // no Sprite/Text/Slider/Toggle
+      ent('B', { UIElement: {}, SpriteRenderer: { width: 20, height: 20 } }, { parentId: 'ent_panel' }),
+    ]);
+
+    const positions = resolveUiPositions(entities, 800, 600);
+
+    expect(positions.get(entities[1].id)).toEqual({ x: 10, y: 10 }); // A
+    // Empty gets a {0,0}-extent slot at the cursor (20 + gap 8), aligned to the cross start.
+    expect(positions.get(entities[2].id)).toEqual({ x: 0, y: 28 });
+    // B sits one extra gap below where it would be without Empty (38 -> 46).
+    expect(positions.get(entities[3].id)).toEqual({ x: 10, y: 46 });
+  });
+
   it('resolves plain (non-layout) UIElement entities exactly like uiScreenPosition', () => {
     const entities = buildEntities([
       ent('Solo', { UIElement: { anchor: 'center', offset: { x: 5, y: -5 } } }),
