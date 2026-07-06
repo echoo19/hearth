@@ -1,13 +1,13 @@
 {
   "formatVersion": 1,
   "hearthVersion": "0.6.0",
-  "id": "prj_c4e4phs1",
+  "id": "prj_3iels5eh",
   "name": "Glow Caves",
   "description": "Explore a dark cave by torchlight. A showcase of 2D lighting, particles, and sprite animation.",
-  "initialScene": "scn_7xfi16mn",
+  "initialScene": "scn_agyn2w5m",
   "scenes": [
     {
-      "id": "scn_7xfi16mn",
+      "id": "scn_agyn2w5m",
       "name": "Cave",
       "path": "scenes/cave.scene.json"
     }
@@ -37,7 +37,11 @@
         "KeyE",
         "Enter"
       ]
-    }
+    },
+    "gamepadButtons": {},
+    "gamepadAxes": {},
+    "axes": {},
+    "deadzone": 0.15
   },
   "buildSettings": {
     "width": 800,

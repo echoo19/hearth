@@ -1,0 +1,29 @@
+{
+  "formatVersion": 1,
+  "id": "ptt_gldd90jc",
+  "name": "wall-bump-shake",
+  "scene": "scn_mjuam69q",
+  "steps": [
+    {
+      "type": "setAxis",
+      "axis": "moveX",
+      "value": -1,
+      "frames": 70
+    },
+    {
+      "type": "assertCameraEffect",
+      "effect": "shake",
+      "min": 1
+    },
+    {
+      "type": "assertCameraEffect",
+      "effect": "flash",
+      "min": 1
+    },
+    {
+      "type": "assertNoErrors"
+    }
+  ],
+  "maxFrames": 300,
+  "seed": 0
+}

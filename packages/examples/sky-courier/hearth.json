@@ -1,13 +1,13 @@
 {
   "formatVersion": 1,
   "hearthVersion": "0.6.0",
-  "id": "prj_koi4lfh7",
+  "id": "prj_hys76g7k",
   "name": "Sky Courier",
   "description": "Hop across the rooftops, collect three parcels, and deliver them down the chute.",
-  "initialScene": "scn_nvuu2jlu",
+  "initialScene": "scn_dhps44um",
   "scenes": [
     {
-      "id": "scn_nvuu2jlu",
+      "id": "scn_dhps44um",
       "name": "Rooftops",
       "path": "scenes/rooftops.scene.json"
     }
@@ -37,7 +37,11 @@
         "KeyE",
         "Enter"
       ]
-    }
+    },
+    "gamepadButtons": {},
+    "gamepadAxes": {},
+    "axes": {},
+    "deadzone": 0.15
   },
   "buildSettings": {
     "width": 800,

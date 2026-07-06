@@ -1,7 +1,7 @@
 {
   "hearthVersion": "0.6.0",
   "project": "Visual Novel Scene",
-  "projectId": "prj_5a3r7m11",
+  "projectId": "prj_9nziy1wg",
   "instructions": "AGENTS.md",
   "cli": {
     "binary": "hearth",

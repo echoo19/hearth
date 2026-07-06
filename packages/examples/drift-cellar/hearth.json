@@ -1,0 +1,107 @@
+{
+  "formatVersion": 1,
+  "hearthVersion": "0.6.0",
+  "id": "prj_wgir66yv",
+  "name": "Drift Cellar",
+  "description": "Drift through a dim cellar on analog axes, gather three gems, and slip into the vault. Pause with Esc or start.",
+  "initialScene": "scn_mjuam69q",
+  "scenes": [
+    {
+      "id": "scn_mjuam69q",
+      "name": "Cellar",
+      "path": "scenes/cellar.scene.json"
+    },
+    {
+      "id": "scn_d3f2l93k",
+      "name": "Vault",
+      "path": "scenes/vault.scene.json"
+    }
+  ],
+  "inputMappings": {
+    "actions": {
+      "dash": [
+        "Space"
+      ],
+      "pause": [
+        "Escape"
+      ],
+      "ui-up": [
+        "ArrowUp"
+      ],
+      "ui-down": [
+        "ArrowDown"
+      ],
+      "ui-left": [
+        "ArrowLeft"
+      ],
+      "ui-right": [
+        "ArrowRight"
+      ],
+      "ui-confirm": [
+        "Enter"
+      ]
+    },
+    "gamepadButtons": {
+      "dash": [
+        "a"
+      ],
+      "pause": [
+        "start"
+      ],
+      "ui-up": [
+        "dpad-up"
+      ],
+      "ui-down": [
+        "dpad-down"
+      ],
+      "ui-left": [
+        "dpad-left"
+      ],
+      "ui-right": [
+        "dpad-right"
+      ],
+      "ui-confirm": [
+        "a"
+      ]
+    },
+    "gamepadAxes": {},
+    "axes": {
+      "moveX": {
+        "gamepadAxis": 0,
+        "negativeCodes": [
+          "ArrowLeft",
+          "KeyA"
+        ],
+        "positiveCodes": [
+          "ArrowRight",
+          "KeyD"
+        ]
+      },
+      "moveY": {
+        "gamepadAxis": 1,
+        "negativeCodes": [
+          "ArrowUp",
+          "KeyW"
+        ],
+        "positiveCodes": [
+          "ArrowDown",
+          "KeyS"
+        ]
+      }
+    },
+    "deadzone": 0.15
+  },
+  "buildSettings": {
+    "width": 800,
+    "height": 600,
+    "backgroundColor": "#1a1a2e",
+    "targetFps": 60,
+    "fixedTimestep": 60,
+    "title": "Drift Cellar",
+    "loading": {
+      "backgroundColor": "#0d0a14",
+      "image": null,
+      "spinner": true
+    }
+  }
+}

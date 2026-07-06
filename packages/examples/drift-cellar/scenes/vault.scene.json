@@ -1,0 +1,196 @@
+{
+  "formatVersion": 1,
+  "id": "scn_d3f2l93k",
+  "name": "Vault",
+  "entities": [
+    {
+      "id": "ent_fkmhteps",
+      "name": "Main Camera",
+      "parentId": null,
+      "enabled": true,
+      "tags": [],
+      "components": {
+        "Transform": {
+          "position": {
+            "x": 400,
+            "y": 300
+          },
+          "rotation": 0,
+          "scale": {
+            "x": 1,
+            "y": 1
+          }
+        },
+        "Camera": {
+          "zoom": 1,
+          "isMain": true,
+          "backgroundColor": "#241d12",
+          "ambientLight": 1
+        }
+      }
+    },
+    {
+      "id": "ent_jwfo9a7y",
+      "name": "Backdrop",
+      "parentId": null,
+      "enabled": true,
+      "tags": [
+        "background"
+      ],
+      "components": {
+        "Transform": {
+          "position": {
+            "x": 400,
+            "y": 300
+          },
+          "rotation": 0,
+          "scale": {
+            "x": 1,
+            "y": 1
+          }
+        },
+        "SpriteRenderer": {
+          "assetId": null,
+          "frame": null,
+          "shape": "rectangle",
+          "color": "#2e2517",
+          "width": 800,
+          "height": 600,
+          "opacity": 1,
+          "flipX": false,
+          "flipY": false,
+          "layer": -20,
+          "visible": true
+        }
+      }
+    },
+    {
+      "id": "ent_cmc5wi4l",
+      "name": "Vault Title",
+      "parentId": null,
+      "enabled": true,
+      "tags": [
+        "ui"
+      ],
+      "components": {
+        "Transform": {
+          "position": {
+            "x": 0,
+            "y": 0
+          },
+          "rotation": 0,
+          "scale": {
+            "x": 1,
+            "y": 1
+          }
+        },
+        "UIElement": {
+          "anchor": "center",
+          "offset": {
+            "x": 0,
+            "y": -60
+          },
+          "interactive": false,
+          "focusable": false
+        },
+        "Text": {
+          "content": "THE VAULT",
+          "fontSize": 40,
+          "color": "#ffd166",
+          "align": "center",
+          "fontFamily": "monospace",
+          "layer": 10,
+          "visible": true
+        }
+      }
+    },
+    {
+      "id": "ent_3oldkljt",
+      "name": "Vault Label",
+      "parentId": null,
+      "enabled": true,
+      "tags": [
+        "ui"
+      ],
+      "components": {
+        "Transform": {
+          "position": {
+            "x": 0,
+            "y": 0
+          },
+          "rotation": 0,
+          "scale": {
+            "x": 1,
+            "y": 1
+          }
+        },
+        "UIElement": {
+          "anchor": "center",
+          "offset": {
+            "x": 0,
+            "y": 4
+          },
+          "interactive": false,
+          "focusable": false
+        },
+        "Text": {
+          "content": "Gems recovered: 0/3",
+          "fontSize": 18,
+          "color": "#f4ecff",
+          "align": "center",
+          "fontFamily": "monospace",
+          "layer": 10,
+          "visible": true
+        },
+        "Script": {
+          "scriptPath": "scripts/vault-greeter.lua",
+          "params": {
+            "fadeSeconds": 0.7
+          }
+        }
+      }
+    },
+    {
+      "id": "ent_fkxbov0s",
+      "name": "Sparkles",
+      "parentId": null,
+      "enabled": true,
+      "tags": [
+        "fx"
+      ],
+      "components": {
+        "Transform": {
+          "position": {
+            "x": 400,
+            "y": 420
+          },
+          "rotation": 0,
+          "scale": {
+            "x": 1,
+            "y": 1
+          }
+        },
+        "ParticleEmitter": {
+          "emitting": true,
+          "rate": 14,
+          "burst": 0,
+          "lifetime": 1.4,
+          "speed": 60,
+          "spread": 40,
+          "direction": -90,
+          "gravity": {
+            "x": 0,
+            "y": -20
+          },
+          "startColor": "#ffd166",
+          "endColor": "#8a5a1e",
+          "startSize": 4,
+          "endSize": 0,
+          "maxParticles": 256,
+          "layer": 0,
+          "seed": 3
+        }
+      }
+    }
+  ]
+}

@@ -1,10 +1,10 @@
 {
   "formatVersion": 1,
-  "id": "scn_8zeu7zz8",
+  "id": "scn_wrwsj4e8",
   "name": "Level 1",
   "entities": [
     {
-      "id": "ent_8sy4iwry",
+      "id": "ent_5chu0ka3",
       "name": "Main Camera",
       "parentId": null,
       "enabled": true,
@@ -34,7 +34,7 @@
       }
     },
     {
-      "id": "ent_lujgdzr0",
+      "id": "ent_zwz8jlnu",
       "name": "Ground",
       "parentId": null,
       "enabled": true,
@@ -56,8 +56,8 @@
         "Tilemap": {
           "tileSize": 32,
           "tileAssets": {
-            "G": "ast_e9iml27z",
-            "S": "ast_6daonlgj"
+            "G": "ast_4b4ovw8x",
+            "S": "ast_ar88es5s"
           },
           "grid": [
             "GGGGGGGGGGGGGGGGGGGGGGGGG..GGGGGGGGGG",
@@ -69,7 +69,7 @@
       }
     },
     {
-      "id": "ent_orutvaqn",
+      "id": "ent_m2rqvyc9",
       "name": "Platform A",
       "parentId": null,
       "enabled": true,
@@ -146,7 +146,7 @@
       }
     },
     {
-      "id": "ent_kerlgpif",
+      "id": "ent_gook6mrx",
       "name": "Platform B",
       "parentId": null,
       "enabled": true,
@@ -223,7 +223,7 @@
       }
     },
     {
-      "id": "ent_rztdq4bs",
+      "id": "ent_3z10wfys",
       "name": "Platform C",
       "parentId": null,
       "enabled": true,
@@ -300,7 +300,7 @@
       }
     },
     {
-      "id": "ent_y5jncraz",
+      "id": "ent_lcrzyfzj",
       "name": "Player",
       "parentId": null,
       "enabled": true,
@@ -320,7 +320,7 @@
           }
         },
         "SpriteRenderer": {
-          "assetId": "ast_m1qumk5m",
+          "assetId": "ast_qj4446b2",
           "frame": null,
           "shape": "rectangle",
           "color": "#ffffff",
@@ -384,7 +384,7 @@
       }
     },
     {
-      "id": "ent_atwsbgdx",
+      "id": "ent_0uissi4f",
       "name": "Coin 1",
       "parentId": null,
       "enabled": true,
@@ -404,7 +404,7 @@
           }
         },
         "SpriteRenderer": {
-          "assetId": "ast_bpl6xrxl",
+          "assetId": "ast_cgx8r0vc",
           "frame": null,
           "shape": "rectangle",
           "color": "#ffffff",
@@ -453,7 +453,7 @@
       }
     },
     {
-      "id": "ent_7dt7thwq",
+      "id": "ent_615666i1",
       "name": "Coin 2",
       "parentId": null,
       "enabled": true,
@@ -473,7 +473,7 @@
           }
         },
         "SpriteRenderer": {
-          "assetId": "ast_bpl6xrxl",
+          "assetId": "ast_cgx8r0vc",
           "frame": null,
           "shape": "rectangle",
           "color": "#ffffff",
@@ -522,7 +522,7 @@
       }
     },
     {
-      "id": "ent_cxmw4z7e",
+      "id": "ent_wx0b9xvn",
       "name": "Coin 3",
       "parentId": null,
       "enabled": true,
@@ -542,7 +542,7 @@
           }
         },
         "SpriteRenderer": {
-          "assetId": "ast_bpl6xrxl",
+          "assetId": "ast_cgx8r0vc",
           "frame": null,
           "shape": "rectangle",
           "color": "#ffffff",
@@ -591,7 +591,7 @@
       }
     },
     {
-      "id": "ent_2y8opvew",
+      "id": "ent_6spg60bh",
       "name": "Spikes",
       "parentId": null,
       "enabled": true,
@@ -660,7 +660,7 @@
       }
     },
     {
-      "id": "ent_nrk06lwl",
+      "id": "ent_sb20nut7",
       "name": "Enemy",
       "parentId": null,
       "enabled": true,
@@ -680,7 +680,7 @@
           }
         },
         "SpriteRenderer": {
-          "assetId": "ast_hti2slzu",
+          "assetId": "ast_7zomitpm",
           "frame": null,
           "shape": "rectangle",
           "color": "#ffffff",
@@ -732,7 +732,7 @@
       }
     },
     {
-      "id": "ent_rvjxti66",
+      "id": "ent_e58hjq09",
       "name": "Score",
       "parentId": null,
       "enabled": true,
@@ -757,7 +757,8 @@
             "x": 24,
             "y": 28
           },
-          "interactive": false
+          "interactive": false,
+          "focusable": false
         },
         "Text": {
           "content": "Score: 0",
@@ -771,7 +772,7 @@
       }
     },
     {
-      "id": "ent_atv6edyj",
+      "id": "ent_xwj08sxh",
       "name": "Restart",
       "parentId": null,
       "enabled": true,
@@ -796,7 +797,8 @@
             "x": -80,
             "y": 32
           },
-          "interactive": true
+          "interactive": true,
+          "focusable": false
         },
         "SpriteRenderer": {
           "assetId": null,
@@ -827,7 +829,7 @@
       }
     },
     {
-      "id": "ent_5n52esdl",
+      "id": "ent_45tv59sm",
       "name": "Ambience",
       "parentId": null,
       "enabled": true,
@@ -847,7 +849,7 @@
           }
         },
         "AudioSource": {
-          "assetId": "ast_wk37irwx",
+          "assetId": "ast_ri5uwy9w",
           "autoplay": true,
           "loop": true,
           "volume": 0.25,

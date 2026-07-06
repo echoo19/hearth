@@ -1,0 +1,52 @@
+{
+  "formatVersion": 1,
+  "id": "ptt_6sza1bbr",
+  "name": "gem-run-to-vault",
+  "scene": "scn_mjuam69q",
+  "steps": [
+    {
+      "type": "setAxis",
+      "axis": "moveX",
+      "value": 1,
+      "frames": 95
+    },
+    {
+      "type": "setAxis",
+      "axis": "moveX",
+      "value": 0,
+      "frames": 25
+    },
+    {
+      "type": "setAxis",
+      "axis": "moveY",
+      "value": 1,
+      "frames": 55
+    },
+    {
+      "type": "setAxis",
+      "axis": "moveY",
+      "value": 0,
+      "frames": 90
+    },
+    {
+      "type": "assertScene",
+      "scene": "Vault"
+    },
+    {
+      "type": "assertCameraEffect",
+      "effect": "fade",
+      "min": 2
+    },
+    {
+      "type": "assertProperty",
+      "entity": "Vault Label",
+      "property": "Text.content",
+      "equals": "Gems recovered: 3/3"
+    },
+    {
+      "type": "assertNoErrors"
+    }
+  ],
+  "maxFrames": 600,
+  "seed": 0
+}

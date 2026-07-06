@@ -93,6 +93,7 @@ with Lua and JS examples per entry):
 - `ctx.params` — Parameters from the Script component (set via attachScript).
 - `ctx.input.isDown(action: string): boolean` — Is an input action currently held?
 - `ctx.input.justPressed(action: string): boolean` — Was the input action pressed this frame?
+- `ctx.input.axis(name: string): number` — Analog value in [-1, 1] for a virtual axis (inputMappings.axes). Precedence: a playtest setAxis override, else the bound gamepad axis once it clears the deadzone, else the keyboard fallback (negativeCodes held → -1, positiveCodes held → +1, both/neither → 0).
 - `ctx.scene.find(idOrName: string): EntityHandle | null` — Find an entity in the current scene by id or name.
 - `ctx.scene.findByTag(tag: string): EntityHandle[]` — All entities in the current scene with the given tag.
 - `ctx.scene.spawn(def: SpawnDef): EntityHandle` — Create an entity at runtime ({ name, position?, tags?, components? }).
@@ -136,6 +137,10 @@ with Lua and JS examples per entry):
 - `ctx.camera.getZoom(): number` — The main camera's zoom factor.
 - `ctx.camera.setZoom(zoom: number): void` — Set the main camera's zoom factor.
 - `ctx.camera.follow(idOrName: string | null): void` — Follow an entity each frame (null stops). Warn log if not found.
+- `ctx.camera.shake(intensity: number, seconds: number, opts?: { seed?: number }): void` — Screen shake: offset decays linearly from `intensity` (world units) to 0 over `seconds`. Deterministic — same seed (explicit or scene-derived) reproduces the same offsets.
+- `ctx.camera.flash(color: string, seconds: number): void` — A color pulse over the screen that fades from full alpha to 0 over `seconds`.
+- `ctx.camera.fade(alpha: number, seconds: number, opts?: { color?: string; onComplete?: () => void }): void` — Ease the persistent screen overlay toward `alpha` over `seconds`, then hold at that level. Survives scene switches (ctx.scenes.load). Last call wins: a new fade replaces an in-flight one (starting from the current level), and the superseded fade's onComplete is dropped, never fired — only the winning fade's onComplete runs, once.
+- `ctx.camera.zoomPunch(scale: number, seconds: number): void` — A zoom kick that eases back to 1x over `seconds`.
 - `ctx.audio.play(assetRef: string, opts?: { volume?: number; loop?: boolean }): string | null` — Play an audio asset (by asset id or name). Returns a handle id for ctx.audio.stop, or null when the asset does not exist.
 - `ctx.audio.stop(handleIdOrAssetRef: string): void` — Stop a playback by handle id, or every playback of an asset id/name.
 - `ctx.audio.playMusic(assetRef: string, opts?: { volume?: number; loop?: boolean; fadeIn?: number }): string | null` — Play a track on the single shared music channel (by asset id or name); replaces any current track. Survives scene switches. Returns a handle id, or null when the asset does not exist.
@@ -150,6 +155,11 @@ with Lua and JS examples per entry):
 - `ctx.events.emit(name: string, data?: unknown): void` — Broadcast an event to the whole scene, synchronously and deterministically: every ctx.events.on subscriber for `name` fires in subscription order, including this entity's own. Also triggers every script's onEvent(ctx, name, data) hook, in entity order. Nested emits (an onEvent handler emitting again) are allowed up to 8 levels deep; deeper emits are dropped with a warning.
 - `ctx.events.on(name: string, fn: (data: unknown) => void): string` — Subscribe to an event by name. Returns a subscription id for ctx.events.off. The subscription is automatically removed when this entity is destroyed.
 - `ctx.events.off(id: string): void` — Unsubscribe by id (as returned by ctx.events.on). Unknown ids are a no-op.
+- `ctx.ui.focus(idOrName: string | null): void` — Set focus to an entity by id/name, or clear it with null. Fires onUiEvent {type:'blur'} on the previously focused entity and {type:'focus'} on the new one. Warns (no-op) when the target is unknown, disabled, or its UIElement.focusable is not true. Focusing the already-focused entity is a no-op.
+- `ctx.ui.getFocused(): string | null` — The currently focused entity id, or null.
+- `ctx.ui.moveFocus(direction: 'up' | 'down' | 'left' | 'right'): void` — Move focus among focusable UIElement entities: picks the nearest candidate strictly in `direction` from the current focus position (or the top-left-most candidate when nothing is focused). No wrap — a no-op when nothing lies further that way.
+- `ctx.ui.activate(): void` — Synthesizes a press+release (a click) at the focused element’s center, through the normal pointer path — so slider/toggle behavior fires exactly as a real click would. Warns (no-op) when the focused entity is not interactive; no-op when nothing is focused.
+- `ctx.ui.adjust(delta: number): void` — For a focused UISlider: value += delta * (step || (max-min)/10), clamped to [min, max], firing onUiEvent {type:'change', value}. No-op when nothing is focused or it has no UISlider.
 
 Scene switching makes user-built menus/start screens (e.g. a Start button —
 an interactive `UIElement` — whose script loads the level):

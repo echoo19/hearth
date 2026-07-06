@@ -1,0 +1,84 @@
+{
+  "formatVersion": 1,
+  "assets": [
+    {
+      "id": "ast_3na41afo",
+      "name": "drifter",
+      "type": "sprite",
+      "path": "assets/sprites/drifter.svg",
+      "metadata": {
+        "procedural": true,
+        "shape": "character",
+        "color": "#9ad1ff",
+        "width": 30,
+        "height": 34
+      }
+    },
+    {
+      "id": "ast_u37z5a1g",
+      "name": "gem",
+      "type": "sprite",
+      "path": "assets/sprites/gem.svg",
+      "metadata": {
+        "procedural": true,
+        "shape": "star",
+        "color": "#8be9b3",
+        "width": 20,
+        "height": 20
+      }
+    },
+    {
+      "id": "ast_qji965uc",
+      "name": "gem-sound",
+      "type": "audio",
+      "path": "assets/sounds/gem_sound.wav",
+      "metadata": {
+        "procedural": true,
+        "preset": "coin",
+        "seed": 0
+      }
+    },
+    {
+      "id": "ast_gyl1lj98",
+      "name": "bump-sound",
+      "type": "audio",
+      "path": "assets/sounds/bump_sound.wav",
+      "metadata": {
+        "procedural": true,
+        "preset": "hit",
+        "seed": 0
+      }
+    },
+    {
+      "id": "ast_z5309mzp",
+      "name": "dash-sound",
+      "type": "audio",
+      "path": "assets/sounds/dash_sound.wav",
+      "metadata": {
+        "procedural": true,
+        "preset": "jump",
+        "seed": 0
+      }
+    },
+    {
+      "id": "ast_xutfqcyi",
+      "name": "ui-sound",
+      "type": "audio",
+      "path": "assets/sounds/ui_sound.wav",
+      "metadata": {
+        "procedural": true,
+        "preset": "blip",
+        "seed": 0
+      }
+    },
+    {
+      "id": "ast_sthnhxuh",
+      "name": "cellar-loop",
+      "type": "audio",
+      "path": "assets/audio/cellar-loop.wav",
+      "metadata": {
+        "importedFrom": "cellar-loop.wav"
+      }
+    }
+  ]
+}

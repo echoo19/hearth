@@ -1,0 +1,33 @@
+{
+  "formatVersion": 1,
+  "id": "ptt_rkrg82zy",
+  "name": "dash-zoom-punch",
+  "scene": "scn_mjuam69q",
+  "steps": [
+    {
+      "type": "setAxis",
+      "axis": "moveX",
+      "value": 1,
+      "frames": 10
+    },
+    {
+      "type": "press",
+      "action": "dash",
+      "frames": 2
+    },
+    {
+      "type": "wait",
+      "frames": 5
+    },
+    {
+      "type": "assertCameraEffect",
+      "effect": "zoomPunch",
+      "min": 1
+    },
+    {
+      "type": "assertNoErrors"
+    }
+  ],
+  "maxFrames": 200,
+  "seed": 0
+}

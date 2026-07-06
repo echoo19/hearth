@@ -1,10 +1,10 @@
 {
   "formatVersion": 1,
-  "id": "scn_8cxjk45g",
+  "id": "scn_z3mtedyu",
   "name": "Level",
   "entities": [
     {
-      "id": "ent_qy823g30",
+      "id": "ent_47abpeq4",
       "name": "Main Camera",
       "parentId": null,
       "enabled": true,
@@ -30,7 +30,7 @@
       }
     },
     {
-      "id": "ent_b5r8ge04",
+      "id": "ent_8dtnsh37",
       "name": "Arena",
       "parentId": null,
       "enabled": true,
@@ -65,7 +65,7 @@
       }
     },
     {
-      "id": "ent_0dwfl44k",
+      "id": "ent_ku8hh2v5",
       "name": "Wall Top",
       "parentId": null,
       "enabled": true,
@@ -129,7 +129,7 @@
       }
     },
     {
-      "id": "ent_ivr13jd1",
+      "id": "ent_pucz9sm4",
       "name": "Wall Bottom",
       "parentId": null,
       "enabled": true,
@@ -193,7 +193,7 @@
       }
     },
     {
-      "id": "ent_kmpapn43",
+      "id": "ent_6k59m4o3",
       "name": "Wall Left",
       "parentId": null,
       "enabled": true,
@@ -257,7 +257,7 @@
       }
     },
     {
-      "id": "ent_cus8st99",
+      "id": "ent_hd2j9fq2",
       "name": "Wall Right",
       "parentId": null,
       "enabled": true,
@@ -321,7 +321,7 @@
       }
     },
     {
-      "id": "ent_umdtt6oa",
+      "id": "ent_xdns0xsr",
       "name": "Player",
       "parentId": null,
       "enabled": true,
@@ -341,7 +341,7 @@
           }
         },
         "SpriteRenderer": {
-          "assetId": "ast_ey7tacdq",
+          "assetId": "ast_59fyen2e",
           "frame": null,
           "shape": "rectangle",
           "color": "#ffffff",
@@ -405,7 +405,7 @@
       }
     },
     {
-      "id": "ent_ly82f2pp",
+      "id": "ent_2ylfw74z",
       "name": "Spawner",
       "parentId": null,
       "enabled": true,
@@ -429,13 +429,13 @@
           "params": {
             "interval": 1.2,
             "lifetime": 4,
-            "emberAsset": "ast_grd2th8d"
+            "emberAsset": "ast_uqyl69kd"
           }
         }
       }
     },
     {
-      "id": "ent_kxeknkif",
+      "id": "ent_d1xlb03j",
       "name": "Score",
       "parentId": null,
       "enabled": true,
@@ -460,7 +460,8 @@
             "x": 24,
             "y": 28
           },
-          "interactive": false
+          "interactive": false,
+          "focusable": false
         },
         "Text": {
           "content": "Embers: 0",
@@ -474,7 +475,7 @@
       }
     },
     {
-      "id": "ent_jo14c1y6",
+      "id": "ent_517ymoio",
       "name": "Hint",
       "parentId": null,
       "enabled": true,
@@ -499,7 +500,8 @@
             "x": 0,
             "y": -24
           },
-          "interactive": false
+          "interactive": false,
+          "focusable": false
         },
         "Text": {
           "content": "Arrows/WASD to move — grab embers before they fade",

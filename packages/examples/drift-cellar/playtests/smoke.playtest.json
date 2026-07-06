@@ -1,0 +1,68 @@
+{
+  "formatVersion": 1,
+  "id": "ptt_tc357xbn",
+  "name": "smoke",
+  "scene": "scn_mjuam69q",
+  "steps": [
+    {
+      "type": "wait",
+      "frames": 60
+    },
+    {
+      "type": "assertEntityExists",
+      "entity": "Player",
+      "exists": true
+    },
+    {
+      "type": "assertEntityExists",
+      "entity": "Gem 1",
+      "exists": true
+    },
+    {
+      "type": "assertEntityExists",
+      "entity": "Gem 2",
+      "exists": true
+    },
+    {
+      "type": "assertEntityExists",
+      "entity": "Gem 3",
+      "exists": true
+    },
+    {
+      "type": "assertEntityExists",
+      "entity": "Pause Menu",
+      "exists": true
+    },
+    {
+      "type": "assertEntityExists",
+      "entity": "Resume",
+      "exists": true
+    },
+    {
+      "type": "assertEntityExists",
+      "entity": "Music Volume",
+      "exists": true
+    },
+    {
+      "type": "assertEntityExists",
+      "entity": "Screen Shake",
+      "exists": true
+    },
+    {
+      "type": "assertEntityExists",
+      "entity": "Gems HUD",
+      "exists": true
+    },
+    {
+      "type": "assertAudioCount",
+      "action": "play",
+      "music": true,
+      "equals": 1
+    },
+    {
+      "type": "assertNoErrors"
+    }
+  ],
+  "maxFrames": 200,
+  "seed": 0
+}

@@ -1,0 +1,44 @@
+{
+  "formatVersion": 1,
+  "id": "ptt_82o2r4ao",
+  "name": "pause-menu-slider",
+  "scene": "scn_mjuam69q",
+  "steps": [
+    {
+      "type": "press",
+      "action": "pause",
+      "frames": 2
+    },
+    {
+      "type": "wait",
+      "frames": 2
+    },
+    {
+      "type": "assertFocus",
+      "entity": "Resume"
+    },
+    {
+      "type": "drag",
+      "from": {
+        "x": 396,
+        "y": 321
+      },
+      "to": {
+        "x": 353,
+        "y": 321
+      },
+      "frames": 5
+    },
+    {
+      "type": "assertProperty",
+      "entity": "Music Volume",
+      "property": "UISlider.value",
+      "equals": 0.2
+    },
+    {
+      "type": "assertNoErrors"
+    }
+  ],
+  "maxFrames": 200,
+  "seed": 0
+}

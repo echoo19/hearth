@@ -39,6 +39,7 @@ jobs:
           node packages/cli/dist/main.js test -p packages/examples/mini-platformer
           node packages/cli/dist/main.js test -p packages/examples/top-down-room
           node packages/cli/dist/main.js test -p packages/examples/visual-novel
+          node packages/cli/dist/main.js test -p packages/examples/drift-cellar
 
   build-editor:
     name: Build editor

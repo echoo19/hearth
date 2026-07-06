@@ -1,10 +1,10 @@
 {
   "formatVersion": 1,
-  "id": "scn_s4dsyhp3",
+  "id": "scn_u47qa46r",
   "name": "Arena",
   "entities": [
     {
-      "id": "ent_pvvbgbjp",
+      "id": "ent_bo0cunu5",
       "name": "Main Camera",
       "parentId": null,
       "enabled": true,
@@ -30,7 +30,7 @@
       }
     },
     {
-      "id": "ent_0lylhzxh",
+      "id": "ent_78tiu0b8",
       "name": "Backdrop",
       "parentId": null,
       "enabled": true,
@@ -65,7 +65,7 @@
       }
     },
     {
-      "id": "ent_0o3mk90z",
+      "id": "ent_momt3oub",
       "name": "Arena",
       "parentId": null,
       "enabled": true,
@@ -87,7 +87,7 @@
         "Tilemap": {
           "tileSize": 32,
           "tileAssets": {
-            "X": "ast_5tyuy7tj"
+            "X": "ast_6xldu88q"
           },
           "grid": [
             "XXXXXXXXXXXXXXXXXXXXXXXXX",
@@ -116,7 +116,7 @@
       }
     },
     {
-      "id": "ent_gpkp11rc",
+      "id": "ent_d3vkzh3e",
       "name": "Player",
       "parentId": null,
       "enabled": true,
@@ -136,7 +136,7 @@
           }
         },
         "SpriteRenderer": {
-          "assetId": "ast_s5jc1p0q",
+          "assetId": "ast_qtwzk95j",
           "frame": null,
           "shape": "rectangle",
           "color": "#ffffff",
@@ -199,7 +199,7 @@
       }
     },
     {
-      "id": "ent_5gvyvpr9",
+      "id": "ent_bmohckji",
       "name": "Ball",
       "parentId": null,
       "enabled": true,
@@ -219,7 +219,7 @@
           }
         },
         "SpriteRenderer": {
-          "assetId": "ast_dvx80l76",
+          "assetId": "ast_cyhttoot",
           "frame": null,
           "shape": "rectangle",
           "color": "#ffffff",
@@ -276,7 +276,7 @@
       }
     },
     {
-      "id": "ent_p5813eyg",
+      "id": "ent_urch25jf",
       "name": "Ice Patch",
       "parentId": null,
       "enabled": true,
@@ -353,7 +353,7 @@
       }
     },
     {
-      "id": "ent_yqqq9vy2",
+      "id": "ent_54p3fjg3",
       "name": "Grind Strip",
       "parentId": null,
       "enabled": true,
@@ -430,7 +430,7 @@
       }
     },
     {
-      "id": "ent_ht3yp1h7",
+      "id": "ent_126im7ib",
       "name": "Ledge",
       "parentId": null,
       "enabled": true,
@@ -507,7 +507,7 @@
       }
     },
     {
-      "id": "ent_lmqn5j0x",
+      "id": "ent_4zqa1xwz",
       "name": "Patroller",
       "parentId": null,
       "enabled": true,
@@ -527,7 +527,7 @@
           }
         },
         "SpriteRenderer": {
-          "assetId": "ast_x2dkfb1d",
+          "assetId": "ast_hk7g3lsj",
           "frame": null,
           "shape": "rectangle",
           "color": "#ffffff",
@@ -588,7 +588,7 @@
       }
     },
     {
-      "id": "ent_nw84noie",
+      "id": "ent_8be0yj60",
       "name": "Coin 1",
       "parentId": null,
       "enabled": true,
@@ -608,7 +608,7 @@
           }
         },
         "SpriteRenderer": {
-          "assetId": "ast_x7pcxaac",
+          "assetId": "ast_wzlzl0et",
           "frame": null,
           "shape": "rectangle",
           "color": "#ffffff",
@@ -657,7 +657,7 @@
       }
     },
     {
-      "id": "ent_qyiaaib4",
+      "id": "ent_xdjcshp1",
       "name": "Coin 2",
       "parentId": null,
       "enabled": true,
@@ -677,7 +677,7 @@
           }
         },
         "SpriteRenderer": {
-          "assetId": "ast_x7pcxaac",
+          "assetId": "ast_wzlzl0et",
           "frame": null,
           "shape": "rectangle",
           "color": "#ffffff",
@@ -726,7 +726,7 @@
       }
     },
     {
-      "id": "ent_ht01il0b",
+      "id": "ent_rasv38fg",
       "name": "Coin 3",
       "parentId": null,
       "enabled": true,
@@ -746,7 +746,7 @@
           }
         },
         "SpriteRenderer": {
-          "assetId": "ast_x7pcxaac",
+          "assetId": "ast_wzlzl0et",
           "frame": null,
           "shape": "rectangle",
           "color": "#ffffff",
@@ -795,7 +795,7 @@
       }
     },
     {
-      "id": "ent_1naank9a",
+      "id": "ent_spkk5jyt",
       "name": "Score",
       "parentId": null,
       "enabled": true,
@@ -820,7 +820,8 @@
             "x": 24,
             "y": 28
           },
-          "interactive": false
+          "interactive": false,
+          "focusable": false
         },
         "Text": {
           "content": "Score: 0",

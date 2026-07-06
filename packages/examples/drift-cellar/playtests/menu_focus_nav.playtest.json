@@ -1,0 +1,111 @@
+{
+  "formatVersion": 1,
+  "id": "ptt_wf7of7nb",
+  "name": "menu-focus-nav",
+  "scene": "scn_mjuam69q",
+  "steps": [
+    {
+      "type": "press",
+      "action": "pause",
+      "frames": 2
+    },
+    {
+      "type": "wait",
+      "frames": 2
+    },
+    {
+      "type": "assertFocus",
+      "entity": "Resume"
+    },
+    {
+      "type": "press",
+      "action": "ui-down",
+      "frames": 2
+    },
+    {
+      "type": "wait",
+      "frames": 2
+    },
+    {
+      "type": "assertFocus",
+      "entity": "Music Volume"
+    },
+    {
+      "type": "press",
+      "action": "ui-left",
+      "frames": 2
+    },
+    {
+      "type": "wait",
+      "frames": 2
+    },
+    {
+      "type": "assertProperty",
+      "entity": "Music Volume",
+      "property": "UISlider.value",
+      "equals": 0.7000000000000001
+    },
+    {
+      "type": "press",
+      "action": "ui-down",
+      "frames": 2
+    },
+    {
+      "type": "wait",
+      "frames": 2
+    },
+    {
+      "type": "assertFocus",
+      "entity": "Screen Shake"
+    },
+    {
+      "type": "press",
+      "action": "ui-confirm",
+      "frames": 2
+    },
+    {
+      "type": "wait",
+      "frames": 2
+    },
+    {
+      "type": "assertProperty",
+      "entity": "Screen Shake",
+      "property": "UIToggle.value",
+      "equals": false
+    },
+    {
+      "type": "press",
+      "action": "pause",
+      "frames": 2
+    },
+    {
+      "type": "wait",
+      "frames": 2
+    },
+    {
+      "type": "assertFocus",
+      "entity": null
+    },
+    {
+      "type": "setAxis",
+      "axis": "moveX",
+      "value": -1,
+      "frames": 70
+    },
+    {
+      "type": "assertCameraEffect",
+      "effect": "shake",
+      "equals": 0
+    },
+    {
+      "type": "assertCameraEffect",
+      "effect": "flash",
+      "min": 1
+    },
+    {
+      "type": "assertNoErrors"
+    }
+  ],
+  "maxFrames": 400,
+  "seed": 0
+}

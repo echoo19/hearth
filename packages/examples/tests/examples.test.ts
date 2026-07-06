@@ -15,6 +15,7 @@ const EXAMPLES = [
   'glow-caves',
   'bounce-patrol',
   'sky-courier',
+  'drift-cellar',
 ];
 
 function loadStore(name: string) {
@@ -406,6 +407,152 @@ describe('sky-courier v0.6 showcase (imported binary assets)', () => {
 
   it('the smoke playtest passes with no script errors', async () => {
     const store = await loadStore('sky-courier');
+    const result = await runPlaytest(store, 'smoke');
+    expect(result.passed).toBe(true);
+  });
+});
+
+// Drift Cellar is the wave D showcase: analog virtual axes (ctx.input.axis
+// with gamepad stick + keyboard fallback), gamepadButtons action bindings,
+// camera effects (shake/flash/fade/zoomPunch), the widget set (UILayout/
+// UISlider/UIToggle + focusable UIElements), and ctx.ui focus navigation —
+// all scripted in Lua, all asserted headlessly via probe-baked playtests.
+describe('drift-cellar v0.7 showcase (axes + gamepad + widgets + camera effects)', () => {
+  it('is scripted entirely in Lua', async () => {
+    const store = await loadStore('drift-cellar');
+    const scripts = await store.listScripts();
+    expect(scripts.length).toBeGreaterThan(0);
+    expect(scripts.every((p) => p.endsWith('.lua'))).toBe(true);
+  });
+
+  it('has the expected cast and playtests', async () => {
+    const store = await loadStore('drift-cellar');
+    const scene = store.getScene('Cellar')!;
+    const names = scene.entities.map((e) => e.name);
+    expect(names).toContain('Player');
+    expect(names).toContain('Pause Menu');
+    expect(names).toContain('Resume');
+    expect(names).toContain('Music Volume');
+    expect(names).toContain('Screen Shake');
+    expect(names).toContain('Gems HUD');
+    expect(names.filter((n) => n.startsWith('Gem ')).length).toBe(3);
+    expect(store.getScene('Vault')).toBeDefined();
+    expect(store.playtests.size).toBe(7);
+  });
+
+  it('declares virtual axes and gamepad button bindings in inputMappings', async () => {
+    const store = await loadStore('drift-cellar');
+    const mappings = store.project.inputMappings;
+    expect(mappings.axes.moveX.gamepadAxis).toBe(0);
+    expect(mappings.axes.moveX.negativeCodes).toContain('KeyA');
+    expect(mappings.axes.moveX.positiveCodes).toContain('KeyD');
+    expect(mappings.axes.moveY.gamepadAxis).toBe(1);
+    expect(mappings.actions.dash).toEqual(['Space']);
+    expect(mappings.gamepadButtons.dash).toEqual(['a']);
+    expect(mappings.gamepadButtons.pause).toEqual(['start']);
+  });
+
+  it('builds the pause menu from the widget set, every control focusable', async () => {
+    const store = await loadStore('drift-cellar');
+    const scene = store.getScene('Cellar')!;
+    const byName = (n: string) => scene.entities.find((e) => e.name === n)!;
+    const menu = byName('Pause Menu');
+    expect(menu.components.UILayout!.direction).toBe('vertical');
+    const slider = byName('Music Volume');
+    expect(slider.components.UISlider!.step).toBeCloseTo(0.1);
+    expect(slider.components.UIElement!.focusable).toBe(true);
+    const toggle = byName('Screen Shake');
+    expect(toggle.components.UIToggle!.value).toBe(true);
+    expect(toggle.components.UIElement!.focusable).toBe(true);
+    expect(byName('Resume').components.UIElement!.focusable).toBe(true);
+    // Menu children stack under the UILayout container.
+    expect(byName('Resume').parentId).toBe(menu.id);
+    expect(slider.parentId).toBe(menu.id);
+    expect(toggle.parentId).toBe(menu.id);
+  });
+
+  it('drifts deterministically on setAxis input (drift-movement playtest)', async () => {
+    const store = await loadStore('drift-cellar');
+    const result = await runPlaytest(store, 'drift-movement');
+    expect(result.passed).toBe(true);
+  });
+
+  it('dashing records a zoomPunch camera effect', async () => {
+    const store = await loadStore('drift-cellar');
+    const result = await runPlaytest(store, 'dash-zoom-punch');
+    expect(result.passed).toBe(true);
+    expect(result.cameraEffects.some((r) => r.effect === 'zoomPunch')).toBe(true);
+  });
+
+  it('slamming a wall records shake and flash', async () => {
+    const store = await loadStore('drift-cellar');
+    const result = await runPlaytest(store, 'wall-bump-shake');
+    expect(result.passed).toBe(true);
+    expect(result.cameraEffects.some((r) => r.effect === 'shake')).toBe(true);
+    expect(result.cameraEffects.some((r) => r.effect === 'flash')).toBe(true);
+  });
+
+  it('opening the menu focuses Resume and dragging the slider changes its value', async () => {
+    const store = await loadStore('drift-cellar');
+    const result = await runPlaytest(store, 'pause-menu-slider');
+    expect(result.passed).toBe(true);
+  });
+
+  it('the slider drives the real music channel (setMusicVolume via onAudio)', async () => {
+    const store = await loadStore('drift-cellar');
+    const scene = store.getScene('Cellar')!;
+    let musicVolumeEvents = 0;
+    const runtime = await SceneRuntime.create(store, scene.id, {
+      onAudio: (e) => {
+        if (e.action === 'music-volume') musicVolumeEvents++;
+      },
+    });
+    // Open the menu, then nudge the focused-slider path: focus it and adjust.
+    runtime.input.setActionDown('pause');
+    runtime.run(2);
+    runtime.input.setActionUp('pause');
+    runtime.focusUi('Music Volume');
+    runtime.adjustUiFocus(-1);
+    runtime.run(1);
+    expect(runtime.errors).toEqual([]);
+    expect(musicVolumeEvents).toBeGreaterThanOrEqual(1);
+    const slider = runtime.getEntities().find((e) => e.name === 'Music Volume')!;
+    expect(slider.components.UISlider!.value).toBeCloseTo(0.7);
+  });
+
+  it('keyboard/gamepad focus navigation flips the shake toggle and gates the shake', async () => {
+    const store = await loadStore('drift-cellar');
+    const result = await runPlaytest(store, 'menu-focus-nav');
+    expect(result.passed).toBe(true);
+    expect(result.logs.some((l) => l.message.includes('screen shake: off'))).toBe(true);
+    // The gated wall slam still flashed but never shook.
+    expect(result.cameraEffects.some((r) => r.effect === 'flash')).toBe(true);
+    expect(result.cameraEffects.some((r) => r.effect === 'shake')).toBe(false);
+  });
+
+  it('collecting all gems fades out, switches to the Vault, and fades back in', async () => {
+    const store = await loadStore('drift-cellar');
+    const result = await runPlaytest(store, 'gem-run-to-vault');
+    expect(result.passed).toBe(true);
+    const vault = store.getScene('Vault')!;
+    expect(result.finalScene).toBe(vault.id);
+    expect(result.sceneEvents.length).toBe(1);
+    expect(result.sceneEvents[0].to).toBe(vault.id);
+    expect(result.cameraEffects.filter((r) => r.effect === 'fade').length).toBeGreaterThanOrEqual(2);
+    expect(result.eventCounts.gem).toBe(3);
+  });
+
+  it('produces identical camera-effect and event records on a second run (deterministic)', async () => {
+    const store = await loadStore('drift-cellar');
+    const first = await runPlaytest(store, 'gem-run-to-vault');
+    const second = await runPlaytest(store, 'gem-run-to-vault');
+    expect(first.passed).toBe(true);
+    expect(second.cameraEffects).toEqual(first.cameraEffects);
+    expect(second.eventCounts).toEqual(first.eventCounts);
+  });
+
+  it('the smoke playtest passes with music autoplaying once', async () => {
+    const store = await loadStore('drift-cellar');
     const result = await runPlaytest(store, 'smoke');
     expect(result.passed).toBe(true);
   });

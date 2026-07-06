@@ -14,7 +14,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createProject, HearthSession } from '../core/dist/index.js';
 import { NodeFileSystem } from '../core/dist/node/index.js';
-import { GameSession } from '../runtime/dist/index.js';
+import { GameSession, resolveUiPositions } from '../runtime/dist/index.js';
 import { encodePng, renderChiptuneWav } from './pixelart.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -2168,6 +2168,855 @@ return script
 }
 
 // ---------------------------------------------------------------------------
+// Example 8: Drift Cellar (all-Lua, wave D: virtual axes/gamepad, widgets +
+// focus navigation, camera effects)
+// ---------------------------------------------------------------------------
+// The wave D proof piece. Movement reads the analog virtual axes moveX/moveY
+// (ctx.input.axis — gamepad stick with WASD/arrow keyboard fallback, all
+// declared in inputMappings.axes), dashing is one action bound to both Space
+// and gamepad "a" (inputMappings.gamepadButtons), wall bumps flash the screen
+// and — gated by a live UIToggle setting — shake the camera, and dashing
+// kicks ctx.camera.zoomPunch. Esc/start opens a pause menu built from the
+// widget set: a UILayout vertical stack holding a Resume button (the
+// ember-trail interactive-UIElement pattern), a music-volume UISlider wired
+// to ctx.audio.setMusicVolume, and the screen-shake UIToggle — every widget
+// focusable, with focus visuals from onUiEvent focus/blur and keyboard/
+// gamepad navigation driven through ctx.ui.moveFocus/activate/adjust.
+// Collecting all three gems fades to black (ctx.camera.fade), whose
+// onComplete switches to the Vault scene; the persistent fade level carries
+// across the switch and the Vault fades back in. All scripts are Lua; every
+// baked playtest expectation below is read back from a probe run of this
+// exact project (GameSession.stepAsync — the same engine path runPlaytest
+// uses), never hand-computed, matching generateBouncePatrol's approach.
+async function generateDriftCellar() {
+  const session = await freshProject('drift-cellar', {
+    name: 'Drift Cellar',
+    description: 'Drift through a dim cellar on analog axes, gather three gems, and slip into the vault. Pause with Esc or start.',
+  });
+
+  const cellar = (await run(session, 'createScene', { name: 'Cellar', withCamera: false })).sceneId;
+  const vault = (await run(session, 'createScene', { name: 'Vault', withCamera: false })).sceneId;
+
+  // Input: analog virtual axes (gamepad stick 0/1 with keyboard fallback
+  // codes) plus named actions. dash and ui-confirm share gamepad "a" —
+  // harmless, since dash is pause-gated and ui-confirm only matters while
+  // the menu is open. The default create-project actions (left/right/up/
+  // down/jump/action) are removed so everything listed here is actually
+  // used by this game; an empty key list deletes an action.
+  await run(session, 'updateSettings', {
+    initialScene: 'Cellar',
+    buildSettings: {
+      title: 'Drift Cellar',
+      loading: { backgroundColor: '#0d0a14', spinner: true },
+    },
+    inputMappings: {
+      actions: {
+        left: [], right: [], up: [], down: [], jump: [], action: [],
+        dash: ['Space'],
+        pause: ['Escape'],
+        'ui-up': ['ArrowUp'],
+        'ui-down': ['ArrowDown'],
+        'ui-left': ['ArrowLeft'],
+        'ui-right': ['ArrowRight'],
+        'ui-confirm': ['Enter'],
+      },
+      gamepadButtons: {
+        dash: ['a'],
+        pause: ['start'],
+        'ui-up': ['dpad-up'],
+        'ui-down': ['dpad-down'],
+        'ui-left': ['dpad-left'],
+        'ui-right': ['dpad-right'],
+        'ui-confirm': ['a'],
+      },
+      axes: {
+        moveX: { gamepadAxis: 0, negativeCodes: ['ArrowLeft', 'KeyA'], positiveCodes: ['ArrowRight', 'KeyD'] },
+        moveY: { gamepadAxis: 1, negativeCodes: ['ArrowUp', 'KeyW'], positiveCodes: ['ArrowDown', 'KeyS'] },
+      },
+    },
+  });
+
+  // --- assets ---
+  const drifter = (await run(session, 'createSpriteAsset', {
+    name: 'drifter', shape: 'character', color: '#9ad1ff', width: 30, height: 34,
+  })).asset;
+  const gem = (await run(session, 'createSpriteAsset', {
+    name: 'gem', shape: 'star', color: '#8be9b3', width: 20, height: 20,
+  })).asset;
+  await run(session, 'createSound', { name: 'gem-sound', preset: 'coin' });
+  await run(session, 'createSound', { name: 'bump-sound', preset: 'hit' });
+  await run(session, 'createSound', { name: 'dash-sound', preset: 'jump' });
+  await run(session, 'createSound', { name: 'ui-sound', preset: 'blip' });
+
+  // Music: the same chiptune-synthesis import path sky-courier established —
+  // a real WAV on the single music channel, so the pause menu's volume
+  // slider (ctx.audio.setMusicVolume) controls something genuinely playing.
+  const musicPath = path.join(os.tmpdir(), 'cellar-loop.wav');
+  await writeFile(musicPath, renderChiptuneWav());
+  const music = (
+    await run(session, 'importAsset', { sourcePath: musicPath, name: 'cellar-loop', type: 'audio' })
+  ).asset;
+
+  // --- scripts (all Lua) ---
+  await run(session, 'createScript', {
+    name: 'player-drift',
+    language: 'lua',
+    source: `-- Drifter: analog movement on the moveX/moveY virtual axes
+-- (ctx.input.axis reads the gamepad stick, or the WASD/arrow fallback
+-- codes, or a playtest setAxis override — all in [-1, 1]). Velocity eases
+-- toward the axis target each frame, so motion keeps momentum and slides:
+-- the "drift". Dash (Space / gamepad "a") kicks velocity along the current
+-- axis direction and punches the camera zoom. Wall bumps flash the screen
+-- and, only while the pause menu's Screen Shake toggle is on (its live
+-- UIToggle.value IS the setting — read directly, no mirror state), shake
+-- the camera. The pause/resume events from the menu controller gate
+-- everything. Reminder: ctx calls use DOT syntax (ctx.log("hi")).
+local script = {}
+
+function script.onStart(ctx)
+  ctx.vars.paused = false
+  ctx.vars.lastBump = -1
+  ctx.vars.speedInto = 0
+end
+
+function script.onUpdate(ctx, dt)
+  local body = ctx.getComponent("PhysicsBody")
+  if ctx.vars.paused then
+    body.velocity.x = 0
+    body.velocity.y = 0
+    return
+  end
+
+  local speed = ctx.params.speed or 240
+  local drift = ctx.params.drift or 0.12
+  local ax = ctx.input.axis("moveX")
+  local ay = ctx.input.axis("moveY")
+  body.velocity.x = ctx.math.lerp(body.velocity.x, ax * speed, drift)
+  body.velocity.y = ctx.math.lerp(body.velocity.y, ay * speed, drift)
+
+  if ctx.input.justPressed("dash") and (ax ~= 0 or ay ~= 0) then
+    local dir = ctx.math.normalize({ x = ax, y = ay })
+    local boost = ctx.params.dashBoost or 420
+    body.velocity.x = body.velocity.x + dir.x * boost
+    body.velocity.y = body.velocity.y + dir.y * boost
+    ctx.camera.zoomPunch(1.12, 0.25)
+    ctx.audio.play("dash-sound", { volume = 0.6 })
+  end
+
+  -- Remember this frame's speed: onCollision runs after physics has
+  -- already absorbed the impact, so the bump check below needs the
+  -- pre-impact speed to tell a slam from a slow graze.
+  ctx.vars.speedInto = ctx.math.length({ x = body.velocity.x, y = body.velocity.y })
+end
+
+function script.onCollision(ctx, other)
+  if string.sub(other.name, 1, 4) ~= "Wall" then return end
+  if ctx.vars.speedInto < 80 then return end
+  local now = ctx.time.elapsed
+  if now - ctx.vars.lastBump < 0.5 then return end
+  ctx.vars.lastBump = now
+  ctx.camera.flash("#b7f0ff", 0.15)
+  local toggle = ctx.scene.find("Screen Shake")
+  if toggle and toggle.getComponent("UIToggle").value then
+    ctx.camera.shake(7, 0.25)
+  end
+  ctx.audio.play("bump-sound", { volume = 0.5 })
+end
+
+function script.onEvent(ctx, name)
+  if name == "pause" then
+    ctx.vars.paused = true
+  elseif name == "resume" then
+    ctx.vars.paused = false
+  end
+end
+
+return script
+`,
+  });
+
+  await run(session, 'createScript', {
+    name: 'gem-pickup',
+    language: 'lua',
+    source: `-- Gem: on contact with the Player, emits "gem" (the director counts
+-- them scene-wide via onEvent), chimes, and removes itself.
+local script = {}
+
+function script.onCollision(ctx, other)
+  if other.name ~= "Player" then return end
+  ctx.events.emit("gem", { value = 1 })
+  ctx.audio.play("gem-sound", { volume = 0.8 })
+  ctx.destroySelf()
+end
+
+return script
+`,
+  });
+
+  await run(session, 'createScript', {
+    name: 'cellar-director',
+    language: 'lua',
+    source: `-- Director: tallies "gem" events (proxy-safe payload guard — see
+-- docs/scripting.md), keeps the HUD current, and once all three are in,
+-- saves the tally and fades to black. The fade's onComplete fires exactly
+-- once (a superseding fade would drop it) and switches to the Vault; the
+-- persistent fade level carries across the scene switch, so the Vault
+-- starts black and fades itself back in.
+local script = {}
+
+local TOTAL = 3
+
+function script.onStart(ctx)
+  ctx.vars.count = 0
+  ctx.vars.leaving = false
+end
+
+function script.onEvent(ctx, name, data)
+  if name ~= "gem" then return end
+  local amount = 1
+  if data and type(data.value) == "number" then
+    amount = data.value
+  end
+  ctx.vars.count = ctx.vars.count + amount
+  local hud = ctx.scene.find("Gems HUD")
+  if hud then
+    hud.getComponent("Text").content = string.format("Gems: %d/%d", ctx.vars.count, TOTAL)
+  end
+  if ctx.vars.count >= TOTAL and not ctx.vars.leaving then
+    ctx.vars.leaving = true
+    ctx.save("gems", ctx.vars.count)
+    ctx.camera.fade(1, ctx.params.fadeSeconds or 0.8, {
+      color = "#000000",
+      onComplete = function()
+        ctx.scenes.load("Vault")
+      end,
+    })
+  end
+end
+
+return script
+`,
+  });
+
+  await run(session, 'createScript', {
+    name: 'menu-controller',
+    language: 'lua',
+    source: `-- Pause menu controller (on the UILayout container): Esc / gamepad
+-- start toggles the menu by sliding the container's UIElement offset on/
+-- offscreen (children stack relative to the container, so one offset moves
+-- the whole menu). Opening emits "pause" (gameplay scripts freeze
+-- themselves) and focuses Resume; closing emits "resume" and clears focus
+-- with ctx.ui.focus(nil). While open, ui-up/ui-down move focus spatially,
+-- ui-confirm activates the focused widget (a synthesized real click), and
+-- ui-left/ui-right nudge the focused slider via ctx.ui.adjust.
+local script = {}
+
+local function openMenu(ctx)
+  ctx.vars.open = true
+  ctx.getComponent("UIElement").offset.x = ctx.params.openX or -105
+  ctx.events.emit("pause")
+  ctx.ui.focus("Resume")
+  ctx.audio.play("ui-sound", { volume = 0.6 })
+end
+
+local function closeMenu(ctx)
+  ctx.vars.open = false
+  ctx.getComponent("UIElement").offset.x = ctx.params.closedX or -3000
+  ctx.ui.focus(nil)
+  ctx.events.emit("resume")
+  ctx.audio.play("ui-sound", { volume = 0.6 })
+end
+
+function script.onStart(ctx)
+  ctx.vars.open = false
+end
+
+function script.onUpdate(ctx, dt)
+  if ctx.input.justPressed("pause") then
+    if ctx.vars.open then closeMenu(ctx) else openMenu(ctx) end
+    return
+  end
+  if not ctx.vars.open then return end
+  if ctx.input.justPressed("ui-up") then ctx.ui.moveFocus("up") end
+  if ctx.input.justPressed("ui-down") then ctx.ui.moveFocus("down") end
+  if ctx.input.justPressed("ui-left") then ctx.ui.adjust(-1) end
+  if ctx.input.justPressed("ui-right") then ctx.ui.adjust(1) end
+  if ctx.input.justPressed("ui-confirm") then ctx.ui.activate() end
+end
+
+function script.onEvent(ctx, name)
+  if name == "menu-close" and ctx.vars.open then
+    closeMenu(ctx)
+  end
+end
+
+return script
+`,
+  });
+
+  await run(session, 'createScript', {
+    name: 'resume-button',
+    language: 'lua',
+    source: `-- Resume: an interactive+focusable UIElement (the ember-trail start-
+-- button pattern). focus/blur swap the sprite color — the focus visual —
+-- and click (real pointer, or ctx.ui.activate from ui-confirm) asks the
+-- menu controller to close via the "menu-close" event.
+local script = {}
+
+function script.onUiEvent(ctx, event)
+  if event.type == "focus" then
+    ctx.getComponent("SpriteRenderer").color = "#e25822"
+  elseif event.type == "blur" then
+    ctx.getComponent("SpriteRenderer").color = "#3a2d52"
+  elseif event.type == "click" then
+    ctx.events.emit("menu-close")
+  end
+end
+
+return script
+`,
+  });
+
+  await run(session, 'createScript', {
+    name: 'volume-slider',
+    language: 'lua',
+    source: `-- Music volume: the change event fires from pointer drags, ui-left/
+-- ui-right (ctx.ui.adjust), and activate clicks alike; event.value is the
+-- slider's new value, piped straight into the live music channel.
+local script = {}
+
+function script.onUiEvent(ctx, event)
+  if event.type == "focus" then
+    ctx.getComponent("UISlider").handleColor = "#ffb454"
+  elseif event.type == "blur" then
+    ctx.getComponent("UISlider").handleColor = "#ececec"
+  elseif event.type == "change" then
+    ctx.audio.setMusicVolume(event.value)
+  end
+end
+
+return script
+`,
+  });
+
+  await run(session, 'createScript', {
+    name: 'shake-toggle',
+    language: 'lua',
+    source: `-- Screen shake setting: the player's wall-bump handler reads this
+-- entity's live UIToggle.value directly, so flipping the checkbox IS the
+-- setting — no mirror state to keep in sync.
+local script = {}
+
+function script.onUiEvent(ctx, event)
+  if event.type == "focus" then
+    ctx.getComponent("UIToggle").color = "#ffb454"
+  elseif event.type == "blur" then
+    ctx.getComponent("UIToggle").color = "#3a3a3a"
+  elseif event.type == "change" then
+    if event.value then
+      ctx.log("screen shake: on")
+    else
+      ctx.log("screen shake: off")
+    end
+  end
+end
+
+return script
+`,
+  });
+
+  await run(session, 'createScript', {
+    name: 'vault-greeter',
+    language: 'lua',
+    source: `-- Vault: the Cellar's fade-out leaves the persistent overlay at alpha 1
+-- across the scene switch, so this scene starts black — fading back to 0
+-- here is the fade-in. The label reads the tally the director saved.
+local script = {}
+
+function script.onStart(ctx)
+  ctx.camera.fade(0, ctx.params.fadeSeconds or 0.7)
+  local gems = ctx.load("gems")
+  if type(gems) ~= "number" then gems = 0 end
+  ctx.getComponent("Text").content = string.format("Gems recovered: %d/3", gems)
+end
+
+return script
+`,
+  });
+
+  // --- Cellar entities ---
+  await run(session, 'createEntity', {
+    scene: cellar, name: 'Main Camera', position: { x: 400, y: 300 },
+    components: { Camera: { backgroundColor: '#141021' } },
+  });
+  await run(session, 'createEntity', {
+    scene: cellar, name: 'Backdrop', tags: ['background'], position: { x: 400, y: 300 },
+    components: { SpriteRenderer: { shape: 'rectangle', color: '#1d1730', width: 800, height: 600, layer: -20 } },
+  });
+  const walls = [
+    { name: 'Wall Top', x: 400, y: 12, w: 800, h: 24 },
+    { name: 'Wall Bottom', x: 400, y: 588, w: 800, h: 24 },
+    { name: 'Wall Left', x: 12, y: 300, w: 24, h: 600 },
+    { name: 'Wall Right', x: 788, y: 300, w: 24, h: 600 },
+  ];
+  for (const w of walls) {
+    await run(session, 'createEntity', {
+      scene: cellar, name: w.name, tags: ['wall'], position: { x: w.x, y: w.y },
+      components: {
+        SpriteRenderer: { shape: 'rectangle', color: '#2b2140', width: w.w, height: w.h },
+        Collider: { shape: 'box', width: w.w, height: w.h },
+        PhysicsBody: { bodyType: 'static' },
+      },
+    });
+  }
+
+  await run(session, 'createEntity', {
+    scene: cellar, name: 'Player', tags: ['player'], position: { x: 200, y: 300 },
+    components: {
+      SpriteRenderer: { assetId: drifter.id, width: 30, height: 34 },
+      Collider: { shape: 'box', width: 26, height: 30 },
+      PhysicsBody: { bodyType: 'dynamic', gravityScale: 0 },
+    },
+  });
+  await run(session, 'attachScript', {
+    scene: cellar, entity: 'Player', script: 'scripts/player-drift.lua',
+    params: { speed: 240, drift: 0.12, dashBoost: 420 },
+  });
+
+  // Gems: an L-shaped run — two along the mid row, one below the second —
+  // so the gem-run playtest exercises both axes.
+  const gems = [
+    { name: 'Gem 1', x: 430, y: 300 },
+    { name: 'Gem 2', x: 600, y: 300 },
+    { name: 'Gem 3', x: 600, y: 440 },
+  ];
+  for (const g of gems) {
+    await run(session, 'createEntity', {
+      scene: cellar, name: g.name, tags: ['gem'], position: { x: g.x, y: g.y },
+      components: {
+        SpriteRenderer: { assetId: gem.id, width: 20, height: 20 },
+        Collider: { shape: 'circle', radius: 16, isTrigger: true },
+      },
+    });
+    await run(session, 'attachScript', { scene: cellar, entity: g.name, script: 'scripts/gem-pickup.lua' });
+  }
+
+  await run(session, 'createEntity', {
+    scene: cellar, name: 'Director', tags: ['system'], position: { x: 0, y: 0 },
+    components: {},
+  });
+  await run(session, 'attachScript', {
+    scene: cellar, entity: 'Director', script: 'scripts/cellar-director.lua', params: { fadeSeconds: 0.8 },
+  });
+
+  await run(session, 'createEntity', {
+    scene: cellar, name: 'Gems HUD', tags: ['ui'],
+    components: {
+      UIElement: { anchor: 'top-left', offset: { x: 24, y: 28 } },
+      Text: { content: 'Gems: 0/3', fontSize: 20, color: '#ffffff' },
+    },
+  });
+  await run(session, 'createEntity', {
+    scene: cellar, name: 'Hint', tags: ['ui'],
+    components: {
+      UIElement: { anchor: 'bottom', offset: { x: 0, y: -24 } },
+      Text: { content: 'Stick/WASD drifts — Space dashes — Esc pauses', fontSize: 13, color: '#8f88a0', align: 'center' },
+    },
+  });
+  await run(session, 'createEntity', {
+    scene: cellar, name: 'Music', tags: ['audio'],
+    components: { AudioSource: { assetId: music.id, autoplay: true, loop: true, music: true, volume: 0.8 } },
+  });
+
+  // Pause menu: a UILayout container parked offscreen (offset.x -3000);
+  // the controller slides it to openX when Esc/start is pressed. The
+  // container's resolved position is the top-left of its padding box, so
+  // openX/openY roughly center the ~210x250 stack in the 800x600 screen.
+  const MENU_CLOSED_X = -3000;
+  const MENU_OPEN_X = -105;
+  await run(session, 'createEntity', {
+    scene: cellar, name: 'Pause Menu', tags: ['ui'],
+    components: {
+      UIElement: { anchor: 'center', offset: { x: MENU_CLOSED_X, y: -125 } },
+      UILayout: { direction: 'vertical', gap: 12, padding: 16, align: 'center' },
+    },
+  });
+  await run(session, 'attachScript', {
+    scene: cellar, entity: 'Pause Menu', script: 'scripts/menu-controller.lua',
+    params: { openX: MENU_OPEN_X, closedX: MENU_CLOSED_X },
+  });
+  await run(session, 'createEntity', {
+    scene: cellar, name: 'Menu Title', tags: ['ui'], parent: 'Pause Menu',
+    components: {
+      UIElement: {},
+      Text: { content: 'Paused', fontSize: 22, color: '#f4ecff', align: 'center', layer: 31 },
+    },
+  });
+  await run(session, 'createEntity', {
+    scene: cellar, name: 'Resume', tags: ['ui'], parent: 'Pause Menu',
+    components: {
+      UIElement: { interactive: true, focusable: true },
+      SpriteRenderer: { shape: 'rectangle', color: '#3a2d52', width: 170, height: 40, layer: 30 },
+      Text: { content: 'Resume', fontSize: 16, color: '#f4ecff', align: 'center', layer: 31 },
+    },
+  });
+  await run(session, 'attachScript', { scene: cellar, entity: 'Resume', script: 'scripts/resume-button.lua' });
+  await run(session, 'createEntity', {
+    scene: cellar, name: 'Music Label', tags: ['ui'], parent: 'Pause Menu',
+    components: {
+      UIElement: {},
+      Text: { content: 'Music volume', fontSize: 13, color: '#b9b0cc', align: 'center', layer: 31 },
+    },
+  });
+  await run(session, 'createEntity', {
+    scene: cellar, name: 'Music Volume', tags: ['ui'], parent: 'Pause Menu',
+    components: {
+      UIElement: { interactive: true, focusable: true },
+      UISlider: { min: 0, max: 1, step: 0.1, value: 0.8, width: 170, layer: 30 },
+    },
+  });
+  await run(session, 'attachScript', { scene: cellar, entity: 'Music Volume', script: 'scripts/volume-slider.lua' });
+  await run(session, 'createEntity', {
+    scene: cellar, name: 'Shake Label', tags: ['ui'], parent: 'Pause Menu',
+    components: {
+      UIElement: {},
+      Text: { content: 'Screen shake', fontSize: 13, color: '#b9b0cc', align: 'center', layer: 31 },
+    },
+  });
+  await run(session, 'createEntity', {
+    scene: cellar, name: 'Screen Shake', tags: ['ui'], parent: 'Pause Menu',
+    components: {
+      UIElement: { interactive: true, focusable: true },
+      UIToggle: { value: true, size: 22, layer: 30 },
+    },
+  });
+  await run(session, 'attachScript', { scene: cellar, entity: 'Screen Shake', script: 'scripts/shake-toggle.lua' });
+
+  // --- Vault entities ---
+  await run(session, 'createEntity', {
+    scene: vault, name: 'Main Camera', position: { x: 400, y: 300 },
+    components: { Camera: { backgroundColor: '#241d12' } },
+  });
+  await run(session, 'createEntity', {
+    scene: vault, name: 'Backdrop', tags: ['background'], position: { x: 400, y: 300 },
+    components: { SpriteRenderer: { shape: 'rectangle', color: '#2e2517', width: 800, height: 600, layer: -20 } },
+  });
+  await run(session, 'createEntity', {
+    scene: vault, name: 'Vault Title', tags: ['ui'],
+    components: {
+      UIElement: { anchor: 'center', offset: { x: 0, y: -60 } },
+      Text: { content: 'THE VAULT', fontSize: 40, color: '#ffd166', align: 'center' },
+    },
+  });
+  await run(session, 'createEntity', {
+    scene: vault, name: 'Vault Label', tags: ['ui'],
+    components: {
+      UIElement: { anchor: 'center', offset: { x: 0, y: 4 } },
+      Text: { content: 'Gems recovered: 0/3', fontSize: 18, color: '#f4ecff', align: 'center' },
+    },
+  });
+  await run(session, 'attachScript', {
+    scene: vault, entity: 'Vault Label', script: 'scripts/vault-greeter.lua', params: { fadeSeconds: 0.7 },
+  });
+  // A celebratory upward sparkle column behind the title.
+  await run(session, 'createEntity', {
+    scene: vault, name: 'Sparkles', tags: ['fx'], position: { x: 400, y: 420 },
+    components: {
+      ParticleEmitter: {
+        rate: 14, lifetime: 1.4, speed: 60, spread: 40, direction: -90,
+        startSize: 4, endSize: 0, startColor: '#ffd166', endColor: '#8a5a1e',
+        gravity: { x: 0, y: -20 }, seed: 3,
+      },
+    },
+  });
+
+  // --- probes + playtests ---
+  // Every baked expectation below is read back from a probe run of this
+  // exact project (GameSession.stepAsync — the same engine path runPlaytest
+  // uses), never hand-computed. Axis-eased drift positions, slider drag
+  // values, and camera-effect counts are all fp-real.
+  const stepAxis = async (probe, axis, value, frames) => {
+    probe.runtime.input.setAxis(axis, value);
+    for (let i = 0; i < frames; i++) await probe.stepAsync();
+  };
+  const pressAction = async (probe, action, frames, settle) => {
+    probe.runtime.input.setActionDown(action);
+    for (let i = 0; i < frames; i++) await probe.stepAsync();
+    probe.runtime.input.setActionUp(action);
+    for (let i = 0; i < settle; i++) await probe.stepAsync();
+  };
+  const effectCount = (probe, effect) => probe.cameraEffects.filter((r) => r.effect === effect).length;
+
+  // Probe 1: drift movement — right, coast, up, settle (mirrors the
+  // drift-movement playtest's setAxis steps exactly).
+  const MOVE_RIGHT = 40;
+  const MOVE_COAST = 15;
+  const MOVE_UP = 30;
+  const MOVE_SETTLE = 15;
+  let probe = await GameSession.create(session.store, { scene: cellar, seed: 0 });
+  await stepAxis(probe, 'moveX', 1, MOVE_RIGHT);
+  await stepAxis(probe, 'moveX', 0, MOVE_COAST);
+  await stepAxis(probe, 'moveY', -1, MOVE_UP);
+  await stepAxis(probe, 'moveY', 0, MOVE_SETTLE);
+  const moved = probe.runtime.find('Player').transform.position;
+  const expectedMoveX = moved.x;
+  const expectedMoveY = moved.y;
+  if (expectedMoveX < 280 || expectedMoveY > 260) {
+    throw new Error(`drift-cellar: movement probe barely drifted (${expectedMoveX}, ${expectedMoveY}) — check axis wiring`);
+  }
+  probe.destroy();
+
+  // Probe 2: dash — a right-drift then dash must record a zoomPunch.
+  const DASH_LEAD = 10;
+  probe = await GameSession.create(session.store, { scene: cellar, seed: 0 });
+  await stepAxis(probe, 'moveX', 1, DASH_LEAD);
+  await pressAction(probe, 'dash', 2, 5);
+  if (effectCount(probe, 'zoomPunch') < 1) {
+    throw new Error('drift-cellar: dash probe recorded no zoomPunch');
+  }
+  probe.destroy();
+
+  // Probe 3: wall bump — drift hard left into the wall; shake (toggle
+  // defaults on) and flash must both record.
+  const WALL_FRAMES = 70;
+  probe = await GameSession.create(session.store, { scene: cellar, seed: 0 });
+  await stepAxis(probe, 'moveX', -1, WALL_FRAMES);
+  if (effectCount(probe, 'shake') < 1 || effectCount(probe, 'flash') < 1) {
+    throw new Error('drift-cellar: wall-bump probe recorded no shake/flash');
+  }
+  probe.destroy();
+
+  // Probe 4: pause menu + slider drag. Opening the menu must focus Resume;
+  // the slider's resolved stack position feeds the drag coordinates, and
+  // the post-drag UISlider.value is baked as the playtest's expectation.
+  // The drag replays runPlaytest's own semantics: down at `from` (1 frame),
+  // 5 interpolated moves (1 frame each), up at `to` (1 frame). A change
+  // event fires setMusicVolume on the live music channel — asserted here
+  // via the session's onAudio hook, since run reports exclude music-volume.
+  let musicVolumeEvents = 0;
+  probe = await GameSession.create(session.store, {
+    scene: cellar, seed: 0,
+    onAudio: (e) => { if (e.action === 'music-volume') musicVolumeEvents++; },
+  });
+  await pressAction(probe, 'pause', 2, 2);
+  const focusedId = probe.runtime.getUiFocused();
+  const resumeEnt = probe.runtime.find('Resume');
+  if (!focusedId || focusedId !== resumeEnt.id) {
+    throw new Error('drift-cellar: opening the menu did not focus Resume');
+  }
+  const settings = session.store.project.buildSettings;
+  const uiPos = resolveUiPositions(probe.runtime.getEntities(), settings.width, settings.height);
+  const sliderEnt = probe.runtime.find('Music Volume');
+  const sliderPos = uiPos.get(sliderEnt.id);
+  if (!sliderPos) throw new Error('drift-cellar: slider has no resolved UI position');
+  const dragFrom = { x: Math.round(sliderPos.x), y: Math.round(sliderPos.y) };
+  const dragTo = { x: dragFrom.x - 43, y: dragFrom.y };
+  const DRAG_MOVES = 5;
+  probe.runtime.sendPointer(dragFrom.x, dragFrom.y, 'down');
+  await probe.stepAsync();
+  for (let i = 1; i <= DRAG_MOVES; i++) {
+    const t = i / DRAG_MOVES;
+    probe.runtime.sendPointer(dragFrom.x + (dragTo.x - dragFrom.x) * t, dragFrom.y, 'move');
+    await probe.stepAsync();
+  }
+  probe.runtime.sendPointer(dragTo.x, dragTo.y, 'up');
+  await probe.stepAsync();
+  const expectedSliderValue = probe.runtime.find('Music Volume').components.UISlider.value;
+  if (expectedSliderValue >= 0.8) {
+    throw new Error(`drift-cellar: slider drag left value at ${expectedSliderValue} — drag missed the track`);
+  }
+  if (musicVolumeEvents < 1) {
+    throw new Error('drift-cellar: slider change never reached ctx.audio.setMusicVolume');
+  }
+  probe.destroy();
+
+  // Probe 5: focus navigation + shake gating. Mirrors the menu-focus-nav
+  // playtest: open, ui-down to the slider, ui-left nudges it one step,
+  // ui-down to the toggle, ui-confirm flips it off, close, slam the left
+  // wall — flash still fires but shake must not.
+  probe = await GameSession.create(session.store, { scene: cellar, seed: 0 });
+  await pressAction(probe, 'pause', 2, 2);
+  await pressAction(probe, 'ui-down', 2, 2);
+  const focusAfterDown = probe.runtime.getUiFocused();
+  if (focusAfterDown !== probe.runtime.find('Music Volume').id) {
+    throw new Error('drift-cellar: ui-down from Resume did not focus the slider');
+  }
+  await pressAction(probe, 'ui-left', 2, 2);
+  const expectedAdjustValue = probe.runtime.find('Music Volume').components.UISlider.value;
+  if (!(expectedAdjustValue < 0.8)) {
+    throw new Error('drift-cellar: ui-left did not lower the slider value');
+  }
+  await pressAction(probe, 'ui-down', 2, 2);
+  if (probe.runtime.getUiFocused() !== probe.runtime.find('Screen Shake').id) {
+    throw new Error('drift-cellar: second ui-down did not focus the toggle');
+  }
+  await pressAction(probe, 'ui-confirm', 2, 2);
+  if (probe.runtime.find('Screen Shake').components.UIToggle.value !== false) {
+    throw new Error('drift-cellar: ui-confirm did not flip the toggle off');
+  }
+  await pressAction(probe, 'pause', 2, 2);
+  if (probe.runtime.getUiFocused() !== null) {
+    throw new Error('drift-cellar: closing the menu did not clear focus');
+  }
+  await stepAxis(probe, 'moveX', -1, WALL_FRAMES);
+  if (effectCount(probe, 'shake') !== 0) {
+    throw new Error('drift-cellar: shake fired despite the toggle being off');
+  }
+  if (effectCount(probe, 'flash') < 1) {
+    throw new Error('drift-cellar: gated wall bump lost its flash too');
+  }
+  probe.destroy();
+
+  // Probe 6: the gem run — right through Gems 1+2, coast, down through
+  // Gem 3, then the director's fade-out completes and switches scenes; the
+  // Vault's own fade-in makes the second fade record.
+  const RUN_RIGHT = 95;
+  const RUN_COAST = 25;
+  const RUN_DOWN = 55;
+  const RUN_SETTLE = 90;
+  probe = await GameSession.create(session.store, { scene: cellar, seed: 0 });
+  await stepAxis(probe, 'moveX', 1, RUN_RIGHT);
+  await stepAxis(probe, 'moveX', 0, RUN_COAST);
+  if ((probe.eventCounts.get('gem') ?? 0) < 2) {
+    throw new Error('drift-cellar: gem-run probe missed the mid-row gems — adjust RUN_RIGHT/RUN_COAST');
+  }
+  await stepAxis(probe, 'moveY', 1, RUN_DOWN);
+  await stepAxis(probe, 'moveY', 0, RUN_SETTLE);
+  if ((probe.eventCounts.get('gem') ?? 0) !== 3) {
+    throw new Error('drift-cellar: gem-run probe did not collect all three gems — adjust RUN_DOWN');
+  }
+  if (probe.currentSceneId !== vault) {
+    throw new Error('drift-cellar: gem-run probe never reached the Vault — extend RUN_SETTLE');
+  }
+  const expectedFadeCount = effectCount(probe, 'fade');
+  if (expectedFadeCount < 2) {
+    throw new Error(`drift-cellar: expected fade-out + Vault fade-in records, got ${expectedFadeCount}`);
+  }
+  const vaultLabelText = probe.runtime.find('Vault Label').components.Text.content;
+  if (vaultLabelText !== 'Gems recovered: 3/3') {
+    throw new Error(`drift-cellar: Vault label reads "${vaultLabelText}" — save/load handoff broke`);
+  }
+  probe.destroy();
+
+  await run(session, 'createPlaytest', {
+    name: 'drift-movement',
+    scene: cellar,
+    steps: [
+      { type: 'setAxis', axis: 'moveX', value: 1, frames: MOVE_RIGHT },
+      { type: 'setAxis', axis: 'moveX', value: 0, frames: MOVE_COAST },
+      { type: 'setAxis', axis: 'moveY', value: -1, frames: MOVE_UP },
+      { type: 'setAxis', axis: 'moveY', value: 0, frames: MOVE_SETTLE },
+      { type: 'assertPositionNear', entity: 'Player', x: expectedMoveX, y: expectedMoveY, tolerance: 3 },
+      { type: 'assertNoErrors' },
+    ],
+    maxFrames: 300,
+  });
+  await run(session, 'createPlaytest', {
+    name: 'dash-zoom-punch',
+    scene: cellar,
+    steps: [
+      { type: 'setAxis', axis: 'moveX', value: 1, frames: DASH_LEAD },
+      { type: 'press', action: 'dash', frames: 2 },
+      { type: 'wait', frames: 5 },
+      { type: 'assertCameraEffect', effect: 'zoomPunch', min: 1 },
+      { type: 'assertNoErrors' },
+    ],
+    maxFrames: 200,
+  });
+  await run(session, 'createPlaytest', {
+    name: 'wall-bump-shake',
+    scene: cellar,
+    steps: [
+      { type: 'setAxis', axis: 'moveX', value: -1, frames: WALL_FRAMES },
+      { type: 'assertCameraEffect', effect: 'shake', min: 1 },
+      { type: 'assertCameraEffect', effect: 'flash', min: 1 },
+      { type: 'assertNoErrors' },
+    ],
+    maxFrames: 300,
+  });
+  await run(session, 'createPlaytest', {
+    name: 'pause-menu-slider',
+    scene: cellar,
+    steps: [
+      { type: 'press', action: 'pause', frames: 2 },
+      { type: 'wait', frames: 2 },
+      { type: 'assertFocus', entity: 'Resume' },
+      { type: 'drag', from: dragFrom, to: dragTo, frames: DRAG_MOVES },
+      { type: 'assertProperty', entity: 'Music Volume', property: 'UISlider.value', equals: expectedSliderValue },
+      { type: 'assertNoErrors' },
+    ],
+    maxFrames: 200,
+  });
+  await run(session, 'createPlaytest', {
+    name: 'menu-focus-nav',
+    scene: cellar,
+    steps: [
+      { type: 'press', action: 'pause', frames: 2 },
+      { type: 'wait', frames: 2 },
+      { type: 'assertFocus', entity: 'Resume' },
+      { type: 'press', action: 'ui-down', frames: 2 },
+      { type: 'wait', frames: 2 },
+      { type: 'assertFocus', entity: 'Music Volume' },
+      { type: 'press', action: 'ui-left', frames: 2 },
+      { type: 'wait', frames: 2 },
+      { type: 'assertProperty', entity: 'Music Volume', property: 'UISlider.value', equals: expectedAdjustValue },
+      { type: 'press', action: 'ui-down', frames: 2 },
+      { type: 'wait', frames: 2 },
+      { type: 'assertFocus', entity: 'Screen Shake' },
+      { type: 'press', action: 'ui-confirm', frames: 2 },
+      { type: 'wait', frames: 2 },
+      { type: 'assertProperty', entity: 'Screen Shake', property: 'UIToggle.value', equals: false },
+      { type: 'press', action: 'pause', frames: 2 },
+      { type: 'wait', frames: 2 },
+      { type: 'assertFocus', entity: null },
+      { type: 'setAxis', axis: 'moveX', value: -1, frames: WALL_FRAMES },
+      { type: 'assertCameraEffect', effect: 'shake', equals: 0 },
+      { type: 'assertCameraEffect', effect: 'flash', min: 1 },
+      { type: 'assertNoErrors' },
+    ],
+    maxFrames: 400,
+  });
+  await run(session, 'createPlaytest', {
+    name: 'gem-run-to-vault',
+    scene: cellar,
+    steps: [
+      { type: 'setAxis', axis: 'moveX', value: 1, frames: RUN_RIGHT },
+      { type: 'setAxis', axis: 'moveX', value: 0, frames: RUN_COAST },
+      { type: 'setAxis', axis: 'moveY', value: 1, frames: RUN_DOWN },
+      { type: 'setAxis', axis: 'moveY', value: 0, frames: RUN_SETTLE },
+      { type: 'assertScene', scene: 'Vault' },
+      { type: 'assertCameraEffect', effect: 'fade', min: 2 },
+      { type: 'assertProperty', entity: 'Vault Label', property: 'Text.content', equals: 'Gems recovered: 3/3' },
+      { type: 'assertNoErrors' },
+    ],
+    maxFrames: 600,
+  });
+  await run(session, 'createPlaytest', {
+    name: 'smoke',
+    scene: cellar,
+    steps: [
+      { type: 'wait', frames: 60 },
+      { type: 'assertEntityExists', entity: 'Player', exists: true },
+      { type: 'assertEntityExists', entity: 'Gem 1', exists: true },
+      { type: 'assertEntityExists', entity: 'Gem 2', exists: true },
+      { type: 'assertEntityExists', entity: 'Gem 3', exists: true },
+      { type: 'assertEntityExists', entity: 'Pause Menu', exists: true },
+      { type: 'assertEntityExists', entity: 'Resume', exists: true },
+      { type: 'assertEntityExists', entity: 'Music Volume', exists: true },
+      { type: 'assertEntityExists', entity: 'Screen Shake', exists: true },
+      { type: 'assertEntityExists', entity: 'Gems HUD', exists: true },
+      { type: 'assertAudioCount', music: true, action: 'play', equals: 1 },
+      { type: 'assertNoErrors' },
+    ],
+    maxFrames: 200,
+  });
+
+  const report = await run(session, 'validateProject', {});
+  if (report.errors.length > 0) throw new Error('drift-cellar validation failed: ' + JSON.stringify(report.errors));
+  console.log('✓ drift-cellar generated');
+}
+
+// ---------------------------------------------------------------------------
 await generatePlatformer();
 await generateTopDown();
 await generateVisualNovel();
@@ -2175,4 +3024,5 @@ await generateEmberTrail();
 await generateGlowCaves();
 await generateBouncePatrol();
 await generateSkyCourier();
+await generateDriftCellar();
 console.log('All example projects generated.');

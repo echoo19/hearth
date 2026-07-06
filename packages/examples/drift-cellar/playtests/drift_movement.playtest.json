@@ -1,0 +1,44 @@
+{
+  "formatVersion": 1,
+  "id": "ptt_6xwqe4gs",
+  "name": "drift-movement",
+  "scene": "scn_mjuam69q",
+  "steps": [
+    {
+      "type": "setAxis",
+      "axis": "moveX",
+      "value": 1,
+      "frames": 40
+    },
+    {
+      "type": "setAxis",
+      "axis": "moveX",
+      "value": 0,
+      "frames": 15
+    },
+    {
+      "type": "setAxis",
+      "axis": "moveY",
+      "value": -1,
+      "frames": 30
+    },
+    {
+      "type": "setAxis",
+      "axis": "moveY",
+      "value": 0,
+      "frames": 15
+    },
+    {
+      "type": "assertPositionNear",
+      "entity": "Player",
+      "x": 359.9863949185595,
+      "y": 184.21810475010815,
+      "tolerance": 3
+    },
+    {
+      "type": "assertNoErrors"
+    }
+  ],
+  "maxFrames": 300,
+  "seed": 0
+}

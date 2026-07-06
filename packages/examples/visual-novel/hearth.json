@@ -1,13 +1,13 @@
 {
   "formatVersion": 1,
   "hearthVersion": "0.6.0",
-  "id": "prj_5a3r7m11",
+  "id": "prj_9nziy1wg",
   "name": "Visual Novel Scene",
   "description": "A dialogue scene: advance lines with the action key.",
-  "initialScene": "scn_v3e0nca0",
+  "initialScene": "scn_nn6xi678",
   "scenes": [
     {
-      "id": "scn_v3e0nca0",
+      "id": "scn_nn6xi678",
       "name": "Prologue",
       "path": "scenes/prologue.scene.json"
     }
@@ -37,7 +37,11 @@
         "KeyE",
         "Enter"
       ]
-    }
+    },
+    "gamepadButtons": {},
+    "gamepadAxes": {},
+    "axes": {},
+    "deadzone": 0.15
   },
   "buildSettings": {
     "width": 800,

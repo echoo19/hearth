@@ -1,10 +1,10 @@
 {
   "formatVersion": 1,
-  "id": "scn_nvuu2jlu",
+  "id": "scn_dhps44um",
   "name": "Rooftops",
   "entities": [
     {
-      "id": "ent_0doexoaz",
+      "id": "ent_a70gq8l5",
       "name": "Main Camera",
       "parentId": null,
       "enabled": true,
@@ -30,7 +30,7 @@
       }
     },
     {
-      "id": "ent_cjm21mr8",
+      "id": "ent_w5dr7fr0",
       "name": "Backdrop",
       "parentId": null,
       "enabled": true,
@@ -65,7 +65,7 @@
       }
     },
     {
-      "id": "ent_4m1gkg5a",
+      "id": "ent_0fok03hs",
       "name": "Rooftop A",
       "parentId": null,
       "enabled": true,
@@ -142,7 +142,7 @@
       }
     },
     {
-      "id": "ent_1iwvvboo",
+      "id": "ent_ps2m9i32",
       "name": "Rooftop B",
       "parentId": null,
       "enabled": true,
@@ -219,7 +219,7 @@
       }
     },
     {
-      "id": "ent_aiemypjq",
+      "id": "ent_v3zovy2u",
       "name": "Rooftop C",
       "parentId": null,
       "enabled": true,
@@ -296,7 +296,7 @@
       }
     },
     {
-      "id": "ent_wdbe8gas",
+      "id": "ent_gmjykd6s",
       "name": "Rooftop D",
       "parentId": null,
       "enabled": true,
@@ -373,7 +373,7 @@
       }
     },
     {
-      "id": "ent_ir8u8d1n",
+      "id": "ent_h86aa6wz",
       "name": "Courier",
       "parentId": null,
       "enabled": true,
@@ -393,7 +393,7 @@
           }
         },
         "SpriteRenderer": {
-          "assetId": "ast_hgpw3tto",
+          "assetId": "ast_iykl3u9m",
           "frame": "courier_4",
           "shape": "rectangle",
           "color": "#ffffff",
@@ -406,7 +406,7 @@
           "visible": true
         },
         "SpriteAnimator": {
-          "assetId": "ast_9gb23pcj",
+          "assetId": "ast_kmp0ufh8",
           "fps": 0,
           "playing": true,
           "loop": true
@@ -463,7 +463,7 @@
       }
     },
     {
-      "id": "ent_0p48lg5a",
+      "id": "ent_2wcpqk3y",
       "name": "Parcel 1",
       "parentId": null,
       "enabled": true,
@@ -483,7 +483,7 @@
           }
         },
         "SpriteRenderer": {
-          "assetId": "ast_zrmucbi1",
+          "assetId": "ast_upzf84at",
           "frame": null,
           "shape": "rectangle",
           "color": "#ffffff",
@@ -532,7 +532,7 @@
       }
     },
     {
-      "id": "ent_0k92knwu",
+      "id": "ent_gv4muwzf",
       "name": "Parcel 2",
       "parentId": null,
       "enabled": true,
@@ -552,7 +552,7 @@
           }
         },
         "SpriteRenderer": {
-          "assetId": "ast_zrmucbi1",
+          "assetId": "ast_upzf84at",
           "frame": null,
           "shape": "rectangle",
           "color": "#ffffff",
@@ -601,7 +601,7 @@
       }
     },
     {
-      "id": "ent_hilj83ou",
+      "id": "ent_ufuxz8s4",
       "name": "Parcel 3",
       "parentId": null,
       "enabled": true,
@@ -621,7 +621,7 @@
           }
         },
         "SpriteRenderer": {
-          "assetId": "ast_zrmucbi1",
+          "assetId": "ast_upzf84at",
           "frame": null,
           "shape": "rectangle",
           "color": "#ffffff",
@@ -670,7 +670,7 @@
       }
     },
     {
-      "id": "ent_immvov59",
+      "id": "ent_eczqwojo",
       "name": "Chute",
       "parentId": null,
       "enabled": true,
@@ -690,7 +690,7 @@
           }
         },
         "SpriteRenderer": {
-          "assetId": "ast_0zmv0j2f",
+          "assetId": "ast_hgcsgypc",
           "frame": null,
           "shape": "rectangle",
           "color": "#ffffff",
@@ -739,7 +739,7 @@
       }
     },
     {
-      "id": "ent_1tnrlivo",
+      "id": "ent_zaqxd9t2",
       "name": "Title",
       "parentId": null,
       "enabled": true,
@@ -764,7 +764,8 @@
             "x": 0,
             "y": 16
           },
-          "interactive": false
+          "interactive": false,
+          "focusable": false
         },
         "Text": {
           "content": "SKY COURIER",
@@ -778,7 +779,7 @@
       }
     },
     {
-      "id": "ent_grkpykdc",
+      "id": "ent_dn8axudv",
       "name": "HUD",
       "parentId": null,
       "enabled": true,
@@ -803,7 +804,8 @@
             "x": 20,
             "y": 56
           },
-          "interactive": false
+          "interactive": false,
+          "focusable": false
         },
         "Text": {
           "content": "Parcels: 0/3",
@@ -821,7 +823,7 @@
       }
     },
     {
-      "id": "ent_gbbrb8mk",
+      "id": "ent_ww3a0kzq",
       "name": "Music",
       "parentId": null,
       "enabled": true,
@@ -841,7 +843,7 @@
           }
         },
         "AudioSource": {
-          "assetId": "ast_e8hxq10q",
+          "assetId": "ast_cj7te1oo",
           "autoplay": true,
           "loop": true,
           "volume": 0.6,

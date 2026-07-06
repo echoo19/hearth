@@ -1,0 +1,1114 @@
+{
+  "formatVersion": 1,
+  "id": "scn_mjuam69q",
+  "name": "Cellar",
+  "entities": [
+    {
+      "id": "ent_c9krh3dz",
+      "name": "Main Camera",
+      "parentId": null,
+      "enabled": true,
+      "tags": [],
+      "components": {
+        "Transform": {
+          "position": {
+            "x": 400,
+            "y": 300
+          },
+          "rotation": 0,
+          "scale": {
+            "x": 1,
+            "y": 1
+          }
+        },
+        "Camera": {
+          "zoom": 1,
+          "isMain": true,
+          "backgroundColor": "#141021",
+          "ambientLight": 1
+        }
+      }
+    },
+    {
+      "id": "ent_uir92m4o",
+      "name": "Backdrop",
+      "parentId": null,
+      "enabled": true,
+      "tags": [
+        "background"
+      ],
+      "components": {
+        "Transform": {
+          "position": {
+            "x": 400,
+            "y": 300
+          },
+          "rotation": 0,
+          "scale": {
+            "x": 1,
+            "y": 1
+          }
+        },
+        "SpriteRenderer": {
+          "assetId": null,
+          "frame": null,
+          "shape": "rectangle",
+          "color": "#1d1730",
+          "width": 800,
+          "height": 600,
+          "opacity": 1,
+          "flipX": false,
+          "flipY": false,
+          "layer": -20,
+          "visible": true
+        }
+      }
+    },
+    {
+      "id": "ent_23xpdh23",
+      "name": "Wall Top",
+      "parentId": null,
+      "enabled": true,
+      "tags": [
+        "wall"
+      ],
+      "components": {
+        "Transform": {
+          "position": {
+            "x": 400,
+            "y": 12
+          },
+          "rotation": 0,
+          "scale": {
+            "x": 1,
+            "y": 1
+          }
+        },
+        "SpriteRenderer": {
+          "assetId": null,
+          "frame": null,
+          "shape": "rectangle",
+          "color": "#2b2140",
+          "width": 800,
+          "height": 24,
+          "opacity": 1,
+          "flipX": false,
+          "flipY": false,
+          "layer": 0,
+          "visible": true
+        },
+        "Collider": {
+          "shape": "box",
+          "width": 800,
+          "height": 24,
+          "radius": 16,
+          "points": [
+            {
+              "x": 0,
+              "y": -16
+            },
+            {
+              "x": 16,
+              "y": 16
+            },
+            {
+              "x": -16,
+              "y": 16
+            }
+          ],
+          "offset": {
+            "x": 0,
+            "y": 0
+          },
+          "isTrigger": false,
+          "layer": "default",
+          "collidesWith": [
+            "*"
+          ],
+          "oneWay": false
+        },
+        "PhysicsBody": {
+          "bodyType": "static",
+          "velocity": {
+            "x": 0,
+            "y": 0
+          },
+          "gravityScale": 1,
+          "drag": 0,
+          "mass": 1,
+          "restitution": 0,
+          "friction": 0
+        }
+      }
+    },
+    {
+      "id": "ent_43qzeq5l",
+      "name": "Wall Bottom",
+      "parentId": null,
+      "enabled": true,
+      "tags": [
+        "wall"
+      ],
+      "components": {
+        "Transform": {
+          "position": {
+            "x": 400,
+            "y": 588
+          },
+          "rotation": 0,
+          "scale": {
+            "x": 1,
+            "y": 1
+          }
+        },
+        "SpriteRenderer": {
+          "assetId": null,
+          "frame": null,
+          "shape": "rectangle",
+          "color": "#2b2140",
+          "width": 800,
+          "height": 24,
+          "opacity": 1,
+          "flipX": false,
+          "flipY": false,
+          "layer": 0,
+          "visible": true
+        },
+        "Collider": {
+          "shape": "box",
+          "width": 800,
+          "height": 24,
+          "radius": 16,
+          "points": [
+            {
+              "x": 0,
+              "y": -16
+            },
+            {
+              "x": 16,
+              "y": 16
+            },
+            {
+              "x": -16,
+              "y": 16
+            }
+          ],
+          "offset": {
+            "x": 0,
+            "y": 0
+          },
+          "isTrigger": false,
+          "layer": "default",
+          "collidesWith": [
+            "*"
+          ],
+          "oneWay": false
+        },
+        "PhysicsBody": {
+          "bodyType": "static",
+          "velocity": {
+            "x": 0,
+            "y": 0
+          },
+          "gravityScale": 1,
+          "drag": 0,
+          "mass": 1,
+          "restitution": 0,
+          "friction": 0
+        }
+      }
+    },
+    {
+      "id": "ent_xvxf9qkw",
+      "name": "Wall Left",
+      "parentId": null,
+      "enabled": true,
+      "tags": [
+        "wall"
+      ],
+      "components": {
+        "Transform": {
+          "position": {
+            "x": 12,
+            "y": 300
+          },
+          "rotation": 0,
+          "scale": {
+            "x": 1,
+            "y": 1
+          }
+        },
+        "SpriteRenderer": {
+          "assetId": null,
+          "frame": null,
+          "shape": "rectangle",
+          "color": "#2b2140",
+          "width": 24,
+          "height": 600,
+          "opacity": 1,
+          "flipX": false,
+          "flipY": false,
+          "layer": 0,
+          "visible": true
+        },
+        "Collider": {
+          "shape": "box",
+          "width": 24,
+          "height": 600,
+          "radius": 16,
+          "points": [
+            {
+              "x": 0,
+              "y": -16
+            },
+            {
+              "x": 16,
+              "y": 16
+            },
+            {
+              "x": -16,
+              "y": 16
+            }
+          ],
+          "offset": {
+            "x": 0,
+            "y": 0
+          },
+          "isTrigger": false,
+          "layer": "default",
+          "collidesWith": [
+            "*"
+          ],
+          "oneWay": false
+        },
+        "PhysicsBody": {
+          "bodyType": "static",
+          "velocity": {
+            "x": 0,
+            "y": 0
+          },
+          "gravityScale": 1,
+          "drag": 0,
+          "mass": 1,
+          "restitution": 0,
+          "friction": 0
+        }
+      }
+    },
+    {
+      "id": "ent_z06mstdn",
+      "name": "Wall Right",
+      "parentId": null,
+      "enabled": true,
+      "tags": [
+        "wall"
+      ],
+      "components": {
+        "Transform": {
+          "position": {
+            "x": 788,
+            "y": 300
+          },
+          "rotation": 0,
+          "scale": {
+            "x": 1,
+            "y": 1
+          }
+        },
+        "SpriteRenderer": {
+          "assetId": null,
+          "frame": null,
+          "shape": "rectangle",
+          "color": "#2b2140",
+          "width": 24,
+          "height": 600,
+          "opacity": 1,
+          "flipX": false,
+          "flipY": false,
+          "layer": 0,
+          "visible": true
+        },
+        "Collider": {
+          "shape": "box",
+          "width": 24,
+          "height": 600,
+          "radius": 16,
+          "points": [
+            {
+              "x": 0,
+              "y": -16
+            },
+            {
+              "x": 16,
+              "y": 16
+            },
+            {
+              "x": -16,
+              "y": 16
+            }
+          ],
+          "offset": {
+            "x": 0,
+            "y": 0
+          },
+          "isTrigger": false,
+          "layer": "default",
+          "collidesWith": [
+            "*"
+          ],
+          "oneWay": false
+        },
+        "PhysicsBody": {
+          "bodyType": "static",
+          "velocity": {
+            "x": 0,
+            "y": 0
+          },
+          "gravityScale": 1,
+          "drag": 0,
+          "mass": 1,
+          "restitution": 0,
+          "friction": 0
+        }
+      }
+    },
+    {
+      "id": "ent_iqu5ydc6",
+      "name": "Player",
+      "parentId": null,
+      "enabled": true,
+      "tags": [
+        "player"
+      ],
+      "components": {
+        "Transform": {
+          "position": {
+            "x": 200,
+            "y": 300
+          },
+          "rotation": 0,
+          "scale": {
+            "x": 1,
+            "y": 1
+          }
+        },
+        "SpriteRenderer": {
+          "assetId": "ast_3na41afo",
+          "frame": null,
+          "shape": "rectangle",
+          "color": "#ffffff",
+          "width": 30,
+          "height": 34,
+          "opacity": 1,
+          "flipX": false,
+          "flipY": false,
+          "layer": 0,
+          "visible": true
+        },
+        "Collider": {
+          "shape": "box",
+          "width": 26,
+          "height": 30,
+          "radius": 16,
+          "points": [
+            {
+              "x": 0,
+              "y": -16
+            },
+            {
+              "x": 16,
+              "y": 16
+            },
+            {
+              "x": -16,
+              "y": 16
+            }
+          ],
+          "offset": {
+            "x": 0,
+            "y": 0
+          },
+          "isTrigger": false,
+          "layer": "default",
+          "collidesWith": [
+            "*"
+          ],
+          "oneWay": false
+        },
+        "PhysicsBody": {
+          "bodyType": "dynamic",
+          "velocity": {
+            "x": 0,
+            "y": 0
+          },
+          "gravityScale": 0,
+          "drag": 0,
+          "mass": 1,
+          "restitution": 0,
+          "friction": 0
+        },
+        "Script": {
+          "scriptPath": "scripts/player-drift.lua",
+          "params": {
+            "speed": 240,
+            "drift": 0.12,
+            "dashBoost": 420
+          }
+        }
+      }
+    },
+    {
+      "id": "ent_ytwtc0mv",
+      "name": "Gem 1",
+      "parentId": null,
+      "enabled": true,
+      "tags": [
+        "gem"
+      ],
+      "components": {
+        "Transform": {
+          "position": {
+            "x": 430,
+            "y": 300
+          },
+          "rotation": 0,
+          "scale": {
+            "x": 1,
+            "y": 1
+          }
+        },
+        "SpriteRenderer": {
+          "assetId": "ast_u37z5a1g",
+          "frame": null,
+          "shape": "rectangle",
+          "color": "#ffffff",
+          "width": 20,
+          "height": 20,
+          "opacity": 1,
+          "flipX": false,
+          "flipY": false,
+          "layer": 0,
+          "visible": true
+        },
+        "Collider": {
+          "shape": "circle",
+          "width": 32,
+          "height": 32,
+          "radius": 16,
+          "points": [
+            {
+              "x": 0,
+              "y": -16
+            },
+            {
+              "x": 16,
+              "y": 16
+            },
+            {
+              "x": -16,
+              "y": 16
+            }
+          ],
+          "offset": {
+            "x": 0,
+            "y": 0
+          },
+          "isTrigger": true,
+          "layer": "default",
+          "collidesWith": [
+            "*"
+          ],
+          "oneWay": false
+        },
+        "Script": {
+          "scriptPath": "scripts/gem-pickup.lua",
+          "params": {}
+        }
+      }
+    },
+    {
+      "id": "ent_dssxr0hf",
+      "name": "Gem 2",
+      "parentId": null,
+      "enabled": true,
+      "tags": [
+        "gem"
+      ],
+      "components": {
+        "Transform": {
+          "position": {
+            "x": 600,
+            "y": 300
+          },
+          "rotation": 0,
+          "scale": {
+            "x": 1,
+            "y": 1
+          }
+        },
+        "SpriteRenderer": {
+          "assetId": "ast_u37z5a1g",
+          "frame": null,
+          "shape": "rectangle",
+          "color": "#ffffff",
+          "width": 20,
+          "height": 20,
+          "opacity": 1,
+          "flipX": false,
+          "flipY": false,
+          "layer": 0,
+          "visible": true
+        },
+        "Collider": {
+          "shape": "circle",
+          "width": 32,
+          "height": 32,
+          "radius": 16,
+          "points": [
+            {
+              "x": 0,
+              "y": -16
+            },
+            {
+              "x": 16,
+              "y": 16
+            },
+            {
+              "x": -16,
+              "y": 16
+            }
+          ],
+          "offset": {
+            "x": 0,
+            "y": 0
+          },
+          "isTrigger": true,
+          "layer": "default",
+          "collidesWith": [
+            "*"
+          ],
+          "oneWay": false
+        },
+        "Script": {
+          "scriptPath": "scripts/gem-pickup.lua",
+          "params": {}
+        }
+      }
+    },
+    {
+      "id": "ent_7hhlhjs6",
+      "name": "Gem 3",
+      "parentId": null,
+      "enabled": true,
+      "tags": [
+        "gem"
+      ],
+      "components": {
+        "Transform": {
+          "position": {
+            "x": 600,
+            "y": 440
+          },
+          "rotation": 0,
+          "scale": {
+            "x": 1,
+            "y": 1
+          }
+        },
+        "SpriteRenderer": {
+          "assetId": "ast_u37z5a1g",
+          "frame": null,
+          "shape": "rectangle",
+          "color": "#ffffff",
+          "width": 20,
+          "height": 20,
+          "opacity": 1,
+          "flipX": false,
+          "flipY": false,
+          "layer": 0,
+          "visible": true
+        },
+        "Collider": {
+          "shape": "circle",
+          "width": 32,
+          "height": 32,
+          "radius": 16,
+          "points": [
+            {
+              "x": 0,
+              "y": -16
+            },
+            {
+              "x": 16,
+              "y": 16
+            },
+            {
+              "x": -16,
+              "y": 16
+            }
+          ],
+          "offset": {
+            "x": 0,
+            "y": 0
+          },
+          "isTrigger": true,
+          "layer": "default",
+          "collidesWith": [
+            "*"
+          ],
+          "oneWay": false
+        },
+        "Script": {
+          "scriptPath": "scripts/gem-pickup.lua",
+          "params": {}
+        }
+      }
+    },
+    {
+      "id": "ent_j3kfmhz2",
+      "name": "Director",
+      "parentId": null,
+      "enabled": true,
+      "tags": [
+        "system"
+      ],
+      "components": {
+        "Transform": {
+          "position": {
+            "x": 0,
+            "y": 0
+          },
+          "rotation": 0,
+          "scale": {
+            "x": 1,
+            "y": 1
+          }
+        },
+        "Script": {
+          "scriptPath": "scripts/cellar-director.lua",
+          "params": {
+            "fadeSeconds": 0.8
+          }
+        }
+      }
+    },
+    {
+      "id": "ent_kd6lf9du",
+      "name": "Gems HUD",
+      "parentId": null,
+      "enabled": true,
+      "tags": [
+        "ui"
+      ],
+      "components": {
+        "Transform": {
+          "position": {
+            "x": 0,
+            "y": 0
+          },
+          "rotation": 0,
+          "scale": {
+            "x": 1,
+            "y": 1
+          }
+        },
+        "UIElement": {
+          "anchor": "top-left",
+          "offset": {
+            "x": 24,
+            "y": 28
+          },
+          "interactive": false,
+          "focusable": false
+        },
+        "Text": {
+          "content": "Gems: 0/3",
+          "fontSize": 20,
+          "color": "#ffffff",
+          "align": "left",
+          "fontFamily": "monospace",
+          "layer": 10,
+          "visible": true
+        }
+      }
+    },
+    {
+      "id": "ent_jdv7m3hd",
+      "name": "Hint",
+      "parentId": null,
+      "enabled": true,
+      "tags": [
+        "ui"
+      ],
+      "components": {
+        "Transform": {
+          "position": {
+            "x": 0,
+            "y": 0
+          },
+          "rotation": 0,
+          "scale": {
+            "x": 1,
+            "y": 1
+          }
+        },
+        "UIElement": {
+          "anchor": "bottom",
+          "offset": {
+            "x": 0,
+            "y": -24
+          },
+          "interactive": false,
+          "focusable": false
+        },
+        "Text": {
+          "content": "Stick/WASD drifts — Space dashes — Esc pauses",
+          "fontSize": 13,
+          "color": "#8f88a0",
+          "align": "center",
+          "fontFamily": "monospace",
+          "layer": 10,
+          "visible": true
+        }
+      }
+    },
+    {
+      "id": "ent_1vnena7b",
+      "name": "Music",
+      "parentId": null,
+      "enabled": true,
+      "tags": [
+        "audio"
+      ],
+      "components": {
+        "Transform": {
+          "position": {
+            "x": 0,
+            "y": 0
+          },
+          "rotation": 0,
+          "scale": {
+            "x": 1,
+            "y": 1
+          }
+        },
+        "AudioSource": {
+          "assetId": "ast_sthnhxuh",
+          "autoplay": true,
+          "loop": true,
+          "volume": 0.8,
+          "music": true
+        }
+      }
+    },
+    {
+      "id": "ent_6epytdyd",
+      "name": "Pause Menu",
+      "parentId": null,
+      "enabled": true,
+      "tags": [
+        "ui"
+      ],
+      "components": {
+        "Transform": {
+          "position": {
+            "x": 0,
+            "y": 0
+          },
+          "rotation": 0,
+          "scale": {
+            "x": 1,
+            "y": 1
+          }
+        },
+        "UIElement": {
+          "anchor": "center",
+          "offset": {
+            "x": -3000,
+            "y": -125
+          },
+          "interactive": false,
+          "focusable": false
+        },
+        "UILayout": {
+          "direction": "vertical",
+          "gap": 12,
+          "padding": 16,
+          "align": "center"
+        },
+        "Script": {
+          "scriptPath": "scripts/menu-controller.lua",
+          "params": {
+            "openX": -105,
+            "closedX": -3000
+          }
+        }
+      }
+    },
+    {
+      "id": "ent_52v1ws1s",
+      "name": "Menu Title",
+      "parentId": "ent_6epytdyd",
+      "enabled": true,
+      "tags": [
+        "ui"
+      ],
+      "components": {
+        "Transform": {
+          "position": {
+            "x": 0,
+            "y": 0
+          },
+          "rotation": 0,
+          "scale": {
+            "x": 1,
+            "y": 1
+          }
+        },
+        "UIElement": {
+          "anchor": "top-left",
+          "offset": {
+            "x": 0,
+            "y": 0
+          },
+          "interactive": false,
+          "focusable": false
+        },
+        "Text": {
+          "content": "Paused",
+          "fontSize": 22,
+          "color": "#f4ecff",
+          "align": "center",
+          "fontFamily": "monospace",
+          "layer": 31,
+          "visible": true
+        }
+      }
+    },
+    {
+      "id": "ent_4oe3j0nv",
+      "name": "Resume",
+      "parentId": "ent_6epytdyd",
+      "enabled": true,
+      "tags": [
+        "ui"
+      ],
+      "components": {
+        "Transform": {
+          "position": {
+            "x": 0,
+            "y": 0
+          },
+          "rotation": 0,
+          "scale": {
+            "x": 1,
+            "y": 1
+          }
+        },
+        "UIElement": {
+          "anchor": "top-left",
+          "offset": {
+            "x": 0,
+            "y": 0
+          },
+          "interactive": true,
+          "focusable": true
+        },
+        "SpriteRenderer": {
+          "assetId": null,
+          "frame": null,
+          "shape": "rectangle",
+          "color": "#3a2d52",
+          "width": 170,
+          "height": 40,
+          "opacity": 1,
+          "flipX": false,
+          "flipY": false,
+          "layer": 30,
+          "visible": true
+        },
+        "Text": {
+          "content": "Resume",
+          "fontSize": 16,
+          "color": "#f4ecff",
+          "align": "center",
+          "fontFamily": "monospace",
+          "layer": 31,
+          "visible": true
+        },
+        "Script": {
+          "scriptPath": "scripts/resume-button.lua",
+          "params": {}
+        }
+      }
+    },
+    {
+      "id": "ent_9lhqpf89",
+      "name": "Music Label",
+      "parentId": "ent_6epytdyd",
+      "enabled": true,
+      "tags": [
+        "ui"
+      ],
+      "components": {
+        "Transform": {
+          "position": {
+            "x": 0,
+            "y": 0
+          },
+          "rotation": 0,
+          "scale": {
+            "x": 1,
+            "y": 1
+          }
+        },
+        "UIElement": {
+          "anchor": "top-left",
+          "offset": {
+            "x": 0,
+            "y": 0
+          },
+          "interactive": false,
+          "focusable": false
+        },
+        "Text": {
+          "content": "Music volume",
+          "fontSize": 13,
+          "color": "#b9b0cc",
+          "align": "center",
+          "fontFamily": "monospace",
+          "layer": 31,
+          "visible": true
+        }
+      }
+    },
+    {
+      "id": "ent_orddbkm5",
+      "name": "Music Volume",
+      "parentId": "ent_6epytdyd",
+      "enabled": true,
+      "tags": [
+        "ui"
+      ],
+      "components": {
+        "Transform": {
+          "position": {
+            "x": 0,
+            "y": 0
+          },
+          "rotation": 0,
+          "scale": {
+            "x": 1,
+            "y": 1
+          }
+        },
+        "UIElement": {
+          "anchor": "top-left",
+          "offset": {
+            "x": 0,
+            "y": 0
+          },
+          "interactive": true,
+          "focusable": true
+        },
+        "UISlider": {
+          "min": 0,
+          "max": 1,
+          "value": 0.8,
+          "step": 0.1,
+          "width": 170,
+          "trackColor": "#3a3a3a",
+          "fillColor": "#f76b15",
+          "handleColor": "#ececec",
+          "layer": 30
+        },
+        "Script": {
+          "scriptPath": "scripts/volume-slider.lua",
+          "params": {}
+        }
+      }
+    },
+    {
+      "id": "ent_ocxi74qu",
+      "name": "Shake Label",
+      "parentId": "ent_6epytdyd",
+      "enabled": true,
+      "tags": [
+        "ui"
+      ],
+      "components": {
+        "Transform": {
+          "position": {
+            "x": 0,
+            "y": 0
+          },
+          "rotation": 0,
+          "scale": {
+            "x": 1,
+            "y": 1
+          }
+        },
+        "UIElement": {
+          "anchor": "top-left",
+          "offset": {
+            "x": 0,
+            "y": 0
+          },
+          "interactive": false,
+          "focusable": false
+        },
+        "Text": {
+          "content": "Screen shake",
+          "fontSize": 13,
+          "color": "#b9b0cc",
+          "align": "center",
+          "fontFamily": "monospace",
+          "layer": 31,
+          "visible": true
+        }
+      }
+    },
+    {
+      "id": "ent_pgpmcnev",
+      "name": "Screen Shake",
+      "parentId": "ent_6epytdyd",
+      "enabled": true,
+      "tags": [
+        "ui"
+      ],
+      "components": {
+        "Transform": {
+          "position": {
+            "x": 0,
+            "y": 0
+          },
+          "rotation": 0,
+          "scale": {
+            "x": 1,
+            "y": 1
+          }
+        },
+        "UIElement": {
+          "anchor": "top-left",
+          "offset": {
+            "x": 0,
+            "y": 0
+          },
+          "interactive": true,
+          "focusable": true
+        },
+        "UIToggle": {
+          "value": true,
+          "size": 22,
+          "color": "#3a3a3a",
+          "checkColor": "#f76b15",
+          "layer": 30
+        },
+        "Script": {
+          "scriptPath": "scripts/shake-toggle.lua",
+          "params": {}
+        }
+      }
+    }
+  ]
+}

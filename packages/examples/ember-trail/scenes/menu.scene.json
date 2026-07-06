@@ -1,10 +1,10 @@
 {
   "formatVersion": 1,
-  "id": "scn_6cazzqbr",
+  "id": "scn_b181h1n1",
   "name": "Menu",
   "entities": [
     {
-      "id": "ent_8cu9den9",
+      "id": "ent_gr6xsqpw",
       "name": "Main Camera",
       "parentId": null,
       "enabled": true,
@@ -30,7 +30,7 @@
       }
     },
     {
-      "id": "ent_xo7hjysb",
+      "id": "ent_v2eztmwa",
       "name": "Title",
       "parentId": null,
       "enabled": true,
@@ -55,7 +55,8 @@
             "x": 0,
             "y": 160
           },
-          "interactive": false
+          "interactive": false,
+          "focusable": false
         },
         "Text": {
           "content": "Ember Trail",
@@ -69,7 +70,7 @@
       }
     },
     {
-      "id": "ent_m9m0kxpx",
+      "id": "ent_6adq9das",
       "name": "Subtitle",
       "parentId": null,
       "enabled": true,
@@ -94,7 +95,8 @@
             "x": 0,
             "y": 214
           },
-          "interactive": false
+          "interactive": false,
+          "focusable": false
         },
         "Text": {
           "content": "Collect the embers before they fade",
@@ -108,7 +110,7 @@
       }
     },
     {
-      "id": "ent_ln6sh6nv",
+      "id": "ent_e6v488zb",
       "name": "Start",
       "parentId": null,
       "enabled": true,
@@ -133,7 +135,8 @@
             "x": 0,
             "y": 40
           },
-          "interactive": true
+          "interactive": true,
+          "focusable": false
         },
         "SpriteRenderer": {
           "assetId": null,
@@ -164,7 +167,7 @@
       }
     },
     {
-      "id": "ent_hxn9s8kz",
+      "id": "ent_s71a9ht4",
       "name": "Best",
       "parentId": null,
       "enabled": true,
@@ -189,7 +192,8 @@
             "x": 0,
             "y": 110
           },
-          "interactive": false
+          "interactive": false,
+          "focusable": false
         },
         "Text": {
           "content": "Best: 0",

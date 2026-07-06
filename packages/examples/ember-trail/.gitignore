@@ -1,5 +1,6 @@
 build/
 .hearth/baseline.json
+.hearth/history/
 .hearth-tmp/
 screenshot.png
 .DS_Store

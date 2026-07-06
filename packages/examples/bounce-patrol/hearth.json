@@ -1,13 +1,13 @@
 {
   "formatVersion": 1,
   "hearthVersion": "0.6.0",
-  "id": "prj_dbg5y3yl",
+  "id": "prj_mvbdhgzy",
   "name": "Bounce Patrol",
   "description": "A bouncy ball, a chasing patroller, and three coins in one physics-v2 arena.",
-  "initialScene": "scn_s4dsyhp3",
+  "initialScene": "scn_u47qa46r",
   "scenes": [
     {
-      "id": "scn_s4dsyhp3",
+      "id": "scn_u47qa46r",
       "name": "Arena",
       "path": "scenes/arena.scene.json"
     }
@@ -37,7 +37,11 @@
         "KeyE",
         "Enter"
       ]
-    }
+    },
+    "gamepadButtons": {},
+    "gamepadAxes": {},
+    "axes": {},
+    "deadzone": 0.15
   },
   "buildSettings": {
     "width": 800,
