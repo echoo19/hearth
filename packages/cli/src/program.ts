@@ -577,6 +577,25 @@ export function buildProgram(): Command {
   });
 
   // ---------------------------------------------------------------------
+  // undo / redo / history
+  // ---------------------------------------------------------------------
+  addGlobalOptions(
+    program.command('undo').description('undo the most recent recorded change (see history)'),
+  ).action(async (opts, cmd) => {
+    await guarded(cmd, 'undo', () => runAndEmit(cmd, 'undo', {}));
+  });
+  addGlobalOptions(
+    program.command('redo').description('redo the most recently undone change (see history)'),
+  ).action(async (opts, cmd) => {
+    await guarded(cmd, 'redo', () => runAndEmit(cmd, 'redo', {}));
+  });
+  addGlobalOptions(
+    program.command('history').description('list recorded undo/redo history entries'),
+  ).action(async (opts, cmd) => {
+    await guarded(cmd, 'listHistory', () => runHistoryCommand(cmd));
+  });
+
+  // ---------------------------------------------------------------------
   // run / playtest / test
   // ---------------------------------------------------------------------
   addGlobalOptions(
@@ -831,6 +850,38 @@ async function runTestCommand(cmd: Command): Promise<void> {
     { errors, warnings },
   );
   process.exitCode = emit(result, opts);
+}
+
+// ---------------------------------------------------------------------------
+// history (custom human formatting: one compact line per entry)
+// ---------------------------------------------------------------------------
+
+interface HistoryEntryView {
+  seq: number;
+  command: string;
+  summary: string;
+  undone: boolean;
+}
+
+async function runHistoryCommand(cmd: Command): Promise<void> {
+  const opts = globalOpts(cmd);
+  const session = await openSession(opts);
+  const result = await session.execute<{ entries: HistoryEntryView[]; cursor: number }>('listHistory', {});
+  if (opts.json || !result.success) {
+    process.exitCode = emit(result, opts);
+    return;
+  }
+  const entries = result.data?.entries ?? [];
+  console.log('✓ listHistory');
+  if (entries.length === 0) {
+    console.log('  (no recorded history yet)');
+  } else {
+    for (const entry of entries) {
+      const marker = entry.undone ? '~' : ' ';
+      console.log(`${marker} [${entry.seq}] ${entry.command} ${entry.summary}`);
+    }
+  }
+  process.exitCode = 0;
 }
 
 // ---------------------------------------------------------------------------

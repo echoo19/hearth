@@ -431,6 +431,30 @@ export const TOOL_SPECS: ToolSpec[] = [
     },
   },
 
+  // ---- history (undo/redo) ---------------------------------------------------------------
+  {
+    name: 'undo',
+    command: 'undo',
+    description: 'Undo the most recent recorded change (see list_history). (requires safe-edit)',
+    permission: 'safe-edit',
+    inputShape: {},
+  },
+  {
+    name: 'redo',
+    command: 'redo',
+    description: 'Redo the most recently undone change (see list_history). (requires safe-edit)',
+    permission: 'safe-edit',
+    inputShape: {},
+  },
+  {
+    name: 'list_history',
+    command: 'listHistory',
+    description:
+      'List recorded undo/redo history entries, oldest first, marking which ones are currently undone (redoable). (requires read-only)',
+    permission: 'read-only',
+    inputShape: {},
+  },
+
   // ---- diff / playtest / build ---------------------------------------------------------------
   {
     name: 'snapshot_project',

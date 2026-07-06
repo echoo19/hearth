@@ -123,3 +123,17 @@ export interface ConsoleEntry {
   source: ConsoleSource;
   message: string;
 }
+
+/** One entry from the `listHistory` command. `undone` means it's ahead of the cursor (redoable). */
+export interface HistoryEntry {
+  seq: number;
+  command: string;
+  summary: string;
+  timestamp: string;
+  undone: boolean;
+}
+
+export interface HistoryList {
+  entries: HistoryEntry[];
+  cursor: number;
+}

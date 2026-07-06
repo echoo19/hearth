@@ -240,6 +240,48 @@ describe('hearth-mcp server', () => {
     expect(envelope.data.frames).toBeInstanceOf(Array);
   });
 
+  it('lists undo, redo, and list_history among the registered tools', async () => {
+    ctx = await connectClient();
+    const { tools } = await ctx.client.listTools();
+    const names = tools.map((t) => t.name);
+    expect(names).toContain('undo');
+    expect(names).toContain('redo');
+    expect(names).toContain('list_history');
+  });
+
+  it('undo, redo, and list_history dispatch to their core commands', async () => {
+    ctx = await connectClient();
+
+    const emptyUndo = await ctx.client.callTool({ name: 'undo', arguments: {} });
+    expect(emptyUndo.isError).toBe(true);
+    const emptyUndoEnvelope = toolJson(emptyUndo);
+    expect(emptyUndoEnvelope.command).toBe('undo');
+    expect(emptyUndoEnvelope.errors[0].code).toBe('NOT_FOUND');
+
+    const createResult = await ctx.client.callTool({ name: 'create_scene', arguments: { name: 'Level 2' } });
+    expect(createResult.isError).toBeFalsy();
+
+    const listResult = await ctx.client.callTool({ name: 'list_history', arguments: {} });
+    expect(listResult.isError).toBeFalsy();
+    const listEnvelope = toolJson(listResult);
+    expect(listEnvelope.command).toBe('listHistory');
+    expect(listEnvelope.data.entries.length).toBe(1);
+    expect(listEnvelope.data.entries[0].command).toBe('createScene');
+    expect(listEnvelope.data.entries[0].undone).toBe(false);
+
+    const undoResult = await ctx.client.callTool({ name: 'undo', arguments: {} });
+    expect(undoResult.isError).toBeFalsy();
+    const undoEnvelope = toolJson(undoResult);
+    expect(undoEnvelope.command).toBe('undo');
+    expect(undoEnvelope.data.undone).toBe('createScene');
+
+    const redoResult = await ctx.client.callTool({ name: 'redo', arguments: {} });
+    expect(redoResult.isError).toBeFalsy();
+    const redoEnvelope = toolJson(redoResult);
+    expect(redoEnvelope.command).toBe('redo');
+    expect(redoEnvelope.data.redone).toBe('createScene');
+  });
+
   it('create_animation_from_sheet creates an animation from sliced frames', async () => {
     ctx = await connectClient(['read-only', 'safe-edit', 'asset-edit']);
 

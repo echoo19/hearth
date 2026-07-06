@@ -32,6 +32,26 @@ function EditorShell({ projectPath }: { projectPath: string }) {
   const [dock, setDock] = useState<DockviewApi | null>(null);
   const storageKey = layoutStorageKey(projectId ?? projectPath);
 
+  // Cmd/Ctrl+Z -> undo, Shift+Cmd/Ctrl+Z or Cmd/Ctrl+Y -> redo. Skipped while
+  // typing in a text field so the browser's native undo still works there.
+  useEffect(() => {
+    function onKeyDown(e: KeyboardEvent) {
+      const t = e.target;
+      if (t instanceof HTMLElement && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
+      if (!(e.metaKey || e.ctrlKey)) return;
+      const key = e.key.toLowerCase();
+      if (key === 'z') {
+        e.preventDefault();
+        void useEditor.getState().exec(e.shiftKey ? 'redo' : 'undo');
+      } else if (key === 'y') {
+        e.preventDefault();
+        void useEditor.getState().exec('redo');
+      }
+    }
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, []);
+
   return (
     <div className="shell">
       <Toolbar dock={dock} storageKey={storageKey} />

@@ -202,6 +202,86 @@ describe('hearth snapshot / diff', () => {
   });
 });
 
+describe('hearth undo / redo / history', () => {
+  it('undo with nothing recorded returns a friendly NOT_FOUND error envelope', async () => {
+    const dir = path.join(tmpRoot, 'history-empty');
+    await fsp.mkdir(dir, { recursive: true });
+    const init = await runCli(['init', 'Empty History', '--dir', dir, '--json'], tmpRoot);
+    expect(init.code).toBe(0);
+
+    const result = await runCli(['undo', '--json'], dir);
+    expect(result.code).toBe(1);
+    const envelope = parseJson(result.stdout);
+    expect(envelope.success).toBe(false);
+    expect(envelope.command).toBe('undo');
+    expect(envelope.errors[0].code).toBe('NOT_FOUND');
+  });
+
+  it('redo with nothing recorded returns a friendly NOT_FOUND error envelope', async () => {
+    const dir = path.join(tmpRoot, 'history-redo-empty');
+    await fsp.mkdir(dir, { recursive: true });
+    await runCli(['init', 'Redo Empty', '--dir', dir, '--json'], tmpRoot);
+
+    const result = await runCli(['redo', '--json'], dir);
+    expect(result.code).toBe(1);
+    const envelope = parseJson(result.stdout);
+    expect(envelope.success).toBe(false);
+    expect(envelope.command).toBe('redo');
+    expect(envelope.errors[0].code).toBe('NOT_FOUND');
+  });
+
+  it('history --json lists a recorded mutation, and undo/redo navigate it', async () => {
+    const dir = path.join(tmpRoot, 'history-flow');
+    await fsp.mkdir(dir, { recursive: true });
+    const init = await runCli(['init', 'History Flow', '--dir', dir, '--json'], tmpRoot);
+    expect(init.code).toBe(0);
+
+    const create = await runCli(['create', 'scene', 'Level2', '--json'], dir);
+    expect(create.code).toBe(0);
+
+    const history = await runCli(['history', '--json'], dir);
+    expect(history.code).toBe(0);
+    const historyEnvelope = parseJson(history.stdout);
+    expect(historyEnvelope.success).toBe(true);
+    expect(historyEnvelope.command).toBe('listHistory');
+    expect(historyEnvelope.data.entries.length).toBe(1);
+    expect(historyEnvelope.data.entries[0].seq).toBe(1);
+    expect(historyEnvelope.data.entries[0].command).toBe('createScene');
+    expect(historyEnvelope.data.entries[0].undone).toBe(false);
+
+    const humanHistory = await runCli(['history'], dir);
+    expect(humanHistory.code).toBe(0);
+    expect(humanHistory.stdout).toContain('[1] createScene');
+    expect(humanHistory.stdout).not.toContain('~');
+
+    const undo = await runCli(['undo', '--json'], dir);
+    expect(undo.code).toBe(0);
+    const undoEnvelope = parseJson(undo.stdout);
+    expect(undoEnvelope.success).toBe(true);
+    expect(undoEnvelope.command).toBe('undo');
+    expect(undoEnvelope.data.undone).toBe('createScene');
+    expect(undoEnvelope.data.seq).toBe(1);
+
+    const scenesAfterUndo = parseJson((await runCli(['inspect', 'scenes', '--json'], dir)).stdout);
+    expect(scenesAfterUndo.data.scenes.some((s: { name: string }) => s.name === 'Level2')).toBe(false);
+
+    const humanAfterUndo = await runCli(['history'], dir);
+    expect(humanAfterUndo.code).toBe(0);
+    expect(humanAfterUndo.stdout).toContain('~ [1] createScene');
+
+    const redo = await runCli(['redo', '--json'], dir);
+    expect(redo.code).toBe(0);
+    const redoEnvelope = parseJson(redo.stdout);
+    expect(redoEnvelope.success).toBe(true);
+    expect(redoEnvelope.command).toBe('redo');
+    expect(redoEnvelope.data.redone).toBe('createScene');
+    expect(redoEnvelope.data.seq).toBe(1);
+
+    const scenesAfterRedo = parseJson((await runCli(['inspect', 'scenes', '--json'], dir)).stdout);
+    expect(scenesAfterRedo.data.scenes.some((s: { name: string }) => s.name === 'Level2')).toBe(true);
+  });
+});
+
 describe('permissions', () => {
   it('denies a mutating command when --allow is read-only', async () => {
     const result = await runCli(['--allow', 'read-only', 'create', 'scene', 'Blocked', '--json'], projectDir);

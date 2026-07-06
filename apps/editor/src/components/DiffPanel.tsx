@@ -1,7 +1,7 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useEditor } from '../store';
 import { ConfirmDialog, Icon } from './ui';
-import type { ProjectDiff } from '../types';
+import type { HistoryEntry, HistoryList, ProjectDiff } from '../types';
 
 function fmt(value: unknown): string {
   const s = JSON.stringify(value);
@@ -18,6 +18,20 @@ export function DiffPanel() {
   const exec = useEditor((s) => s.exec);
   const log = useEditor((s) => s.log);
   const [confirmRevert, setConfirmRevert] = useState(false);
+  const [history, setHistory] = useState<HistoryList | null>(null);
+
+  async function loadHistory() {
+    const result = await exec<HistoryList>('listHistory', {}, { quiet: true });
+    setHistory(result.success ? (result.data ?? null) : null);
+  }
+
+  // Refetch whenever the diff is (re)loaded — the "Refresh diff" button and
+  // the panel-focus refresh in Workspace both bump `diff`, so this piggybacks
+  // on that instead of needing its own store wiring. Also covers first mount.
+  useEffect(() => {
+    void loadHistory();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [diff]);
 
   async function snapshot() {
     const result = await exec('snapshotProject', {}, { quiet: true });
@@ -27,9 +41,47 @@ export function DiffPanel() {
     }
   }
 
+  const cursor = history?.cursor ?? 0;
+  const entries = history?.entries ?? [];
+  const undoTarget = cursor > 0 ? entries[cursor - 1] : null;
+  const redoTarget = cursor < entries.length ? entries[cursor] : null;
+
+  async function undo() {
+    const result = await exec<{ undone: string; seq: number }>('undo');
+    if (result.success && result.data) {
+      log('info', 'command', `Undo: reverted "${result.data.undone}" (#${result.data.seq}).`);
+    }
+    await loadHistory();
+  }
+
+  async function redo() {
+    const result = await exec<{ redone: string; seq: number }>('redo');
+    if (result.success && result.data) {
+      log('info', 'command', `Redo: reapplied "${result.data.redone}" (#${result.data.seq}).`);
+    }
+    await loadHistory();
+  }
+
   return (
     <>
       <div className="panel-toolbar">
+        <button
+          className="btn btn-sm"
+          onClick={() => void undo()}
+          disabled={!undoTarget}
+          title="undo"
+        >
+          {undoTarget ? `Undo ${undoTarget.command}` : 'Undo'}
+        </button>
+        <button
+          className="btn btn-sm"
+          onClick={() => void redo()}
+          disabled={!redoTarget}
+          title="redo"
+        >
+          {redoTarget ? `Redo ${redoTarget.command}` : 'Redo'}
+        </button>
+        <span className="panel-divider" />
         <button className="btn btn-sm" onClick={() => void snapshot()} title="snapshotProject">
           Snapshot
         </button>
@@ -48,6 +100,8 @@ export function DiffPanel() {
       </div>
 
       <div className="panel-body">
+        <HistorySection entries={entries} />
+
         {!diff ? (
           <div className="empty-state">
             <span className="empty-icon" aria-hidden="true">
@@ -76,7 +130,7 @@ export function DiffPanel() {
       <ConfirmDialog
         open={confirmRevert}
         title="Revert to snapshot?"
-        body="All scene, script, and asset-index changes since the last snapshot are discarded. This cannot be undone."
+        body="All scene, script, and asset-index changes since the last snapshot are discarded. A revert isn't recorded in the undo history, so it can't be reversed with Undo — unlike other edits."
         confirmLabel="Revert everything"
         danger
         onCancel={() => setConfirmRevert(false)}
@@ -86,6 +140,26 @@ export function DiffPanel() {
         }}
       />
     </>
+  );
+}
+
+function HistorySection({ entries }: { entries: HistoryEntry[] }) {
+  return (
+    <div className="diff-section history-section">
+      <h4>History</h4>
+      {entries.length === 0 ? (
+        <div className="diff-row" style={{ color: 'var(--ink-faint)' }}>
+          No recorded changes yet — this fills up as you edit the project.
+        </div>
+      ) : (
+        entries.map((entry) => (
+          <div className={`diff-row history-row${entry.undone ? ' history-row-undone' : ''}`} key={entry.seq}>
+            <span className="history-seq">#{entry.seq}</span> {entry.command}
+            {entry.summary ? <span style={{ color: 'var(--ink-faint)' }}> — {entry.summary}</span> : null}
+          </div>
+        ))
+      )}
+    </div>
   );
 }
 
