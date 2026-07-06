@@ -36,7 +36,8 @@ field. Full schema defaults for every component: [components.md](./components.md
 
 A `UILayout` entity has no visuals of its own — give it a `UIElement` for
 its own anchor/offset, then parent the widgets you want stacked to it.
-Every fixed frame the runtime reflows its `UIElement` children along
+The runtime reflows its `UIElement` children on demand — pointer events,
+focus navigation, and (in the pixi host) every render tick — along
 `direction` (`vertical`/`horizontal`), spaced by `gap`, inset by
 `padding`, cross-aligned by `align` (`start`/`center`/`end`). A stacked
 child's own `anchor`/`offset` are ignored — its position comes entirely

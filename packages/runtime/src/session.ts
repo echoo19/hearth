@@ -88,8 +88,12 @@ export class GameSession {
   readonly errors: RuntimeError[] = [];
   readonly audioEvents: AudioEvent[] = [];
   readonly sceneEvents: SceneEvent[] = [];
-  /** ctx.camera.shake/flash/fade/zoomPunch calls across every scene this session runs. */
+  /**
+   * ctx.camera.shake/flash/fade/zoomPunch calls across every scene this
+   * session runs, capped at MAX_RECORDED_EVENTS like `events`.
+   */
   readonly cameraEffects: CameraEffectRecord[] = [];
+  cameraEffectsTruncated = false;
   /** ctx.events.emit records across every scene, session-monotonic frames, capped at 200. */
   readonly events: GameEventRecord[] = [];
   eventsTruncated = false;
@@ -239,7 +243,13 @@ export class GameSession {
       maxLogs: this.opts.maxLogs,
       musicChannel: this.musicChannel,
       initialCameraOverlay,
-      onCameraEffect: (rec) => this.cameraEffects.push(rec),
+      onCameraEffect: (rec) => {
+        if (this.cameraEffects.length < MAX_RECORDED_EVENTS) {
+          this.cameraEffects.push(rec);
+        } else {
+          this.cameraEffectsTruncated = true;
+        }
+      },
       onLog: (e) => this.recordLog(e),
       onError: (e) => this.recordError(e),
       onAudio: (e) => {

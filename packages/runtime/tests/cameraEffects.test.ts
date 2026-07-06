@@ -272,4 +272,30 @@ describe('GameSession: camera effects across a scene switch', () => {
     expect(session.cameraEffects.every((r) => typeof r.frame === 'number')).toBe(true);
     session.destroy();
   });
+
+  it('session cameraEffects stays capped at 200 past the record cap, mirroring events', async () => {
+    const { store } = await makeStore({
+      entities: [
+        ent('Flood', {
+          Transform: {},
+          Script: { scriptPath: 'scripts/flood.js' },
+        }),
+      ],
+      scripts: {
+        'flood.js': `export default {
+          onUpdate(ctx) {
+            if (ctx.time.frame === 0) {
+              for (let i = 0; i < 250; i++) ctx.camera.flash('#ffffff', 0.01);
+            }
+          },
+        };`,
+      },
+    });
+    const session = await GameSession.create(store);
+    await session.stepAsync();
+    expect(session.errors).toEqual([]);
+    expect(session.cameraEffects.length).toBe(200);
+    expect(session.cameraEffectsTruncated).toBe(true);
+    session.destroy();
+  });
 });
