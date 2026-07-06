@@ -8,7 +8,12 @@
  * CLI and MCP server are built against them.
  */
 import type { PlaytestStep, ProjectStore, RuntimeHooks } from '@hearth/core';
-import { GameSession, type RuntimeEntity, type SceneRuntime } from '@hearth/runtime';
+import {
+  GameSession,
+  type CameraEffectRecord,
+  type RuntimeEntity,
+  type SceneRuntime,
+} from '@hearth/runtime';
 
 export interface PlaytestStepResult {
   index: number;
@@ -64,6 +69,10 @@ export interface PlaytestResult {
   events: { frame: number; name: string; data?: unknown }[];
   /** Total count of emitted events by name. */
   eventCounts: Record<string, number>;
+  /** ctx.camera.shake/flash/fade/zoomPunch calls recorded during the run. */
+  cameraEffects: CameraEffectRecord[];
+  /** Final combined camera overlay alpha (flash pulse over persistent fade level) at end of run. */
+  cameraOverlayAlpha: number;
 }
 
 export interface SmokeResult {
@@ -85,6 +94,10 @@ export interface SmokeResult {
   events: { frame: number; name: string; data?: unknown }[];
   /** Total count of emitted events by name. */
   eventCounts: Record<string, number>;
+  /** ctx.camera.shake/flash/fade/zoomPunch calls recorded during the run. */
+  cameraEffects: CameraEffectRecord[];
+  /** Final combined camera overlay alpha (flash pulse over persistent fade level) at end of run. */
+  cameraOverlayAlpha: number;
 }
 
 const ASSERT_TYPES = new Set([
@@ -96,6 +109,7 @@ const ASSERT_TYPES = new Set([
   'assertParticleCount',
   'assertEventCount',
   'assertAudioCount',
+  'assertCameraEffect',
 ]);
 
 export async function runPlaytest(
@@ -117,6 +131,8 @@ export async function runPlaytest(
     particleCounts: {},
     events: [],
     eventCounts: {},
+    cameraEffects: [],
+    cameraOverlayAlpha: 0,
   });
 
   const playtest = store.getPlaytest(playtestIdOrName);
@@ -180,6 +196,8 @@ export async function runPlaytest(
     particleCounts: collectParticleCounts(session.runtime),
     events: [...session.events],
     eventCounts: Object.fromEntries(session.eventCounts),
+    cameraEffects: [...session.cameraEffects],
+    cameraOverlayAlpha: session.runtime.cameraEffects.overlay.alpha,
   };
   session.destroy();
   return result;
@@ -472,6 +490,20 @@ async function executeStep(
           : `${filterDesc} count ${count}: ${failures.join(', ')}${capNote}`,
       };
     }
+    case 'assertCameraEffect': {
+      const count = session.cameraEffects.filter((rec) => rec.effect === step.effect).length;
+      const failures: string[] = [];
+      if (step.equals !== undefined && count !== step.equals) failures.push(`expected exactly ${step.equals}`);
+      if (step.min !== undefined && count < step.min) failures.push(`expected at least ${step.min}`);
+      if (step.max !== undefined && count > step.max) failures.push(`expected at most ${step.max}`);
+      const passed = failures.length === 0;
+      return {
+        index, type: step.type, passed,
+        message: passed
+          ? `camera effect "${step.effect}" count ${count} OK${capNote}`
+          : `camera effect "${step.effect}" count ${count}: ${failures.join(', ')}${capNote}`,
+      };
+    }
     default: {
       const unknown = step as { type: string };
       return {
@@ -505,6 +537,8 @@ export async function runSceneSmoke(
       particleCounts: {},
       events: [],
       eventCounts: {},
+      cameraEffects: [],
+      cameraOverlayAlpha: 0,
     };
   }
   const session = await GameSession.create(store, { scene: scene.id });
@@ -523,6 +557,8 @@ export async function runSceneSmoke(
     particleCounts: collectParticleCounts(session.runtime),
     events: [...session.events],
     eventCounts: Object.fromEntries(session.eventCounts),
+    cameraEffects: [...session.cameraEffects],
+    cameraOverlayAlpha: session.runtime.cameraEffects.overlay.alpha,
   };
   session.destroy();
   return result;

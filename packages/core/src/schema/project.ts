@@ -190,6 +190,13 @@ const PlaytestStepUnionSchema = z.discriminatedUnion('type', [
     min: z.number().optional(),
     max: z.number().optional(),
   }),
+  z.object({
+    type: z.literal('assertCameraEffect'),
+    effect: z.enum(['shake', 'flash', 'fade', 'zoomPunch']),
+    equals: z.number().optional(),
+    min: z.number().optional(),
+    max: z.number().optional(),
+  }),
 ]);
 
 export const PlaytestStepSchema = PlaytestStepUnionSchema.superRefine((step, ctx) => {
@@ -224,6 +231,17 @@ export const PlaytestStepSchema = PlaytestStepUnionSchema.superRefine((step, ctx
     ctx.addIssue({
       code: z.ZodIssueCode.custom,
       message: 'assertAudioCount requires at least one of equals, min, or max',
+    });
+  }
+  if (
+    step.type === 'assertCameraEffect' &&
+    step.equals === undefined &&
+    step.min === undefined &&
+    step.max === undefined
+  ) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: 'assertCameraEffect requires at least one of equals, min, or max',
     });
   }
 });

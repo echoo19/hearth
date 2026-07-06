@@ -468,6 +468,27 @@ describe('playtests & build', () => {
     expect(pt.success).toBe(true);
   });
 
+  it('assertCameraEffect schema rejects step with no equals/min/max', async () => {
+    const { session } = await makeSession();
+    const pt = await session.execute('createPlaytest', {
+      name: 'invalid',
+      scene: 'Main',
+      steps: [{ type: 'assertCameraEffect', effect: 'shake' }],
+    });
+    expect(pt.success).toBe(false);
+    expect(pt.errors[0].message).toContain('assertCameraEffect requires at least one of equals, min, or max');
+  });
+
+  it('assertCameraEffect schema accepts step with min', async () => {
+    const { session } = await makeSession();
+    const pt = await session.execute<any>('createPlaytest', {
+      name: 'valid',
+      scene: 'Main',
+      steps: [{ type: 'assertCameraEffect', effect: 'shake', min: 1 }],
+    });
+    expect(pt.success).toBe(true);
+  });
+
   it('build requires the build permission and a valid project', async () => {
     const { session } = await makeSession(['read-only', 'safe-edit']);
     const denied = await session.execute('buildProject');

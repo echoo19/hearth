@@ -105,7 +105,9 @@ assertions — `assertEntityExists`, `assertProperty`, `assertPositionNear`,
 `assertScene`, `assertParticleCount`, `assertEventCount`,
 `assertAudioCount` (filter by `asset`/`action`/`music`, checked against
 `equals`/`min`/`max` — see [assets.md](./assets.md#testing-audio-assertaudiocount)),
-`assertNoErrors`), `test`
+`assertCameraEffect` (`effect: shake|flash|fade|zoomPunch`, counted against
+`equals`/`min`/`max`; results also expose `cameraEffects` and
+`cameraOverlayAlpha`), `assertNoErrors`), `test`
 (validate + all playtests, the CI command).
 
 **Export** (requires `--allow build`): `export web [--out dir]

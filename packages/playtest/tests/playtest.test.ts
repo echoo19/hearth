@@ -433,6 +433,95 @@ describe('assertAudioCount', () => {
 });
 
 // ---------------------------------------------------------------------------
+// assertCameraEffect playtest assertion
+// ---------------------------------------------------------------------------
+
+describe('assertCameraEffect', () => {
+  /** Project whose Ground entity shakes the camera once on start. */
+  async function makeShakeProject(): Promise<{ store: ProjectStore; session: HearthSession }> {
+    const { store, session } = await makeProject();
+    const created = await session.execute<{ path: string }>('createScript', {
+      name: 'shake once',
+      source: `export default { onStart(ctx) { ctx.camera.shake(4, 0.2); } };`,
+      language: 'js',
+    });
+    await session.execute('attachScript', {
+      scene: 'Main',
+      entity: 'Ground',
+      script: created.data!.path,
+    });
+    return { store, session };
+  }
+
+  it('passes min:1 and reports the accumulated shake record', async () => {
+    const { store, session } = await makeShakeProject();
+    await session.execute('createPlaytest', {
+      name: 'shake min',
+      scene: 'Main',
+      steps: [
+        { type: 'wait', frames: 5 },
+        { type: 'assertCameraEffect', effect: 'shake', min: 1 },
+      ],
+    });
+    const result = await runPlaytest(store, 'shake min');
+    expect(result.passed).toBe(true);
+    expect(result.steps[1].passed).toBe(true);
+    expect(result.cameraEffects.length).toBe(1);
+    expect(result.cameraEffects[0]).toMatchObject({ effect: 'shake', frame: 0 });
+  });
+
+  it('fails equals:5 with a clear message when only one shake fired', async () => {
+    const { store, session } = await makeShakeProject();
+    await session.execute('createPlaytest', {
+      name: 'shake equals',
+      scene: 'Main',
+      steps: [
+        { type: 'wait', frames: 5 },
+        { type: 'assertCameraEffect', effect: 'shake', equals: 5 },
+      ],
+    });
+    const result = await runPlaytest(store, 'shake equals');
+    expect(result.passed).toBe(false);
+    expect(result.steps[1].passed).toBe(false);
+    expect(result.steps[1].message).toContain('shake');
+    expect(result.steps[1].message).toContain('expected exactly 5');
+  });
+
+  it('rejects a step with none of equals/min/max', async () => {
+    const { store, session } = await makeProject();
+    const result = await session.execute('createPlaytest', {
+      name: 'no bounds',
+      scene: 'Main',
+      steps: [{ type: 'assertCameraEffect', effect: 'shake' }],
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it('leaves cameraOverlayAlpha at 1 after a fade to 1 completes', async () => {
+    const { store, session } = await makeProject();
+    const created = await session.execute<{ path: string }>('createScript', {
+      name: 'fade out',
+      source: `export default { onStart(ctx) { ctx.camera.fade(1, 0.1); } };`,
+      language: 'js',
+    });
+    await session.execute('attachScript', {
+      scene: 'Main',
+      entity: 'Ground',
+      script: created.data!.path,
+    });
+    await session.execute('createPlaytest', {
+      name: 'fade to black',
+      scene: 'Main',
+      // fixedTimestep defaults to 60Hz, so 0.1s completes well within 30 frames.
+      steps: [{ type: 'wait', frames: 30 }],
+    });
+    const result = await runPlaytest(store, 'fade to black');
+    expect(result.passed).toBe(true);
+    expect(result.cameraOverlayAlpha).toBe(1);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Scene switching: click steps, assertScene, seeded runs
 // ---------------------------------------------------------------------------
 
