@@ -140,4 +140,31 @@ describe('undo/redo history', () => {
     expect(result.success).toBe(false);
     expect(result.errors[0].message).toContain('Nothing to redo');
   });
+
+  it('a history-write failure does not fail an already-persisted mutation', async () => {
+    const { session, store, fs } = await makeSession();
+
+    // Corrupt the history index so HistoryStore.record throws a PARSE_ERROR.
+    await fs.writeFile('/proj/.hearth/history/index.json', 'not json {{{');
+
+    const result = await session.execute<any>('createEntity', { scene: 'Main', name: 'Enemy' });
+    // The mutation ran and was saved; a broken history store must not turn
+    // that into a failure (a retrying caller would duplicate the mutation).
+    expect(result.success).toBe(true);
+    expect(result.warnings.some((w) => w.code === 'HISTORY_RECORD_FAILED')).toBe(true);
+
+    expect(store.getScene('Main')!.entities.some((e) => e.name === 'Enemy')).toBe(true);
+    const raw = JSON.parse(await fs.readFile('/proj/scenes/main.scene.json'));
+    expect(raw.entities.some((e: any) => e.name === 'Enemy')).toBe(true);
+  });
+
+  it('a corrupted history index surfaces as a parse error from undo, not "Nothing to undo"', async () => {
+    const { session, fs } = await makeSession();
+    await fs.writeFile('/proj/.hearth/history/index.json', 'not json {{{');
+
+    const result = await session.execute('undo');
+    expect(result.success).toBe(false);
+    expect(result.errors[0].code).toBe('PARSE_ERROR');
+    expect(result.errors[0].message).not.toContain('Nothing to undo');
+  });
 });

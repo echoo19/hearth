@@ -11,6 +11,19 @@ import { applySnapshot } from '../project/restore.js';
  */
 export const HISTORY_EXEMPT: Set<string> = new Set(['undo', 'redo', 'revertProject', 'snapshotProject']);
 
+/**
+ * Map only the expected empty-history signals ('Nothing to undo/redo') to a
+ * friendly NOT_FOUND error. Anything else (corrupt index.json, disk errors)
+ * propagates unchanged so a broken history store isn't misreported as empty.
+ */
+function rethrowHistoryError(err: unknown): never {
+  const message = (err as Error).message;
+  if (message === 'Nothing to undo' || message === 'Nothing to redo') {
+    throw new ProjectError(message, 'NOT_FOUND');
+  }
+  throw err;
+}
+
 export const undo = defineCommand({
   name: 'undo',
   description: 'Undo the most recent recorded change (see listHistory).',
@@ -24,7 +37,7 @@ export const undo = defineCommand({
     try {
       result = await history.undo(current);
     } catch (err) {
-      throw new ProjectError((err as Error).message, 'NOT_FOUND');
+      rethrowHistoryError(err);
     }
     await applySnapshot(ctx, result.snapshot);
     return { undone: result.entry.command, seq: result.entry.seq };
@@ -43,7 +56,7 @@ export const redo = defineCommand({
     try {
       result = await history.redo();
     } catch (err) {
-      throw new ProjectError((err as Error).message, 'NOT_FOUND');
+      rethrowHistoryError(err);
     }
     await applySnapshot(ctx, result.snapshot);
     return { redone: result.entry.command, seq: result.entry.seq };

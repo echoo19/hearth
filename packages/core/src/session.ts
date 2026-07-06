@@ -139,8 +139,18 @@ export class HearthSession {
         files = await this.store.save();
       }
       if (capturesHistory && before) {
-        const history = new HistoryStore(this.fs, this.root);
-        await history.record(name, summarizeCommand(name, params2), before);
+        // The mutation has already run and been persisted; a broken history
+        // store (corrupt index, disk-write failure) must not turn that into
+        // a failed result — a retrying caller would duplicate the mutation.
+        try {
+          const history = new HistoryStore(this.fs, this.root);
+          await history.record(name, summarizeCommand(name, params2), before);
+        } catch (historyErr) {
+          warnings.push({
+            code: 'HISTORY_RECORD_FAILED',
+            message: `Change applied, but recording it to undo history failed: ${(historyErr as Error).message}`,
+          });
+        }
       }
       return { success: true, command: name, data, errors, warnings, changed, files, suggestions };
     } catch (err) {
