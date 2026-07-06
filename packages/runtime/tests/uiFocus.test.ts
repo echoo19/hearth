@@ -99,18 +99,40 @@ describe('ctx.ui.focus / getFocused', () => {
 
   it('warns and makes no change when the target is unknown or not focusable', async () => {
     const runtime = await makeRuntime([
+      focusable('Valid', { offset: { x: 50, y: 50 } }),
       ent('NotFocusable', {
         Transform: {},
         UIElement: { interactive: true, focusable: false },
       }),
     ]);
+    const validId = runtime.getEntities().find((e) => e.name === 'Valid')!.id;
+    runtime.focusUi('Valid');
+    expect(runtime.getUiFocused()).toBe(validId);
 
     runtime.focusUi('DoesNotExist');
-    expect(runtime.getUiFocused()).toBeNull();
-    expect(runtime.logs.some((l) => l.level === 'warn')).toBe(true);
+    expect(runtime.getUiFocused()).toBe(validId); // unchanged
+    expect(runtime.logs.filter((l) => l.level === 'warn')).toHaveLength(1);
+    expect(runtime.logs.at(-1)!.message).toContain('DoesNotExist');
 
     runtime.focusUi('NotFocusable');
-    expect(runtime.getUiFocused()).toBeNull();
+    expect(runtime.getUiFocused()).toBe(validId); // unchanged
+    expect(runtime.logs.filter((l) => l.level === 'warn')).toHaveLength(2);
+    expect(runtime.logs.at(-1)!.message).toContain('NotFocusable');
+  });
+
+  it('warns and makes no change when the target entity is disabled', async () => {
+    const runtime = await makeRuntime([
+      focusable('Valid', { offset: { x: 50, y: 50 } }),
+      focusable('HiddenBtn', { offset: { x: 200, y: 50 } }),
+    ]);
+    const validId = runtime.getEntities().find((e) => e.name === 'Valid')!.id;
+    runtime.getEntities().find((e) => e.name === 'HiddenBtn')!.enabled = false;
+
+    runtime.focusUi('Valid');
+    runtime.focusUi('HiddenBtn'); // disabled: same treatment as not-focusable
+    expect(runtime.getUiFocused()).toBe(validId); // unchanged
+    expect(runtime.logs.filter((l) => l.level === 'warn')).toHaveLength(1);
+    expect(runtime.logs.at(-1)!.message).toContain('HiddenBtn');
   });
 });
 
@@ -173,6 +195,27 @@ describe('ctx.ui.activate', () => {
     expect(events(runtime)).toEqual(
       expect.arrayContaining([{ name: 'Mute', type: 'change', value: true }]),
     );
+  });
+
+  it('warns and skips the click when the focused entity is not interactive', async () => {
+    const runtime = await makeRuntime([
+      focusable(
+        'Mute',
+        { offset: { x: 100, y: 100 }, interactive: false },
+        { UIToggle: { value: false, size: 20 } },
+      ),
+    ]);
+    runtime.focusUi('Mute');
+    runtime.activateUiFocus();
+
+    // sendPointer's hit test requires interactive=true, so without the
+    // guard the click would silently do nothing — activate must warn.
+    const live = runtime.getEntities().find((e) => e.name === 'Mute')!;
+    expect(live.components.UIToggle!.value).toBe(false); // unchanged
+    expect(events(runtime).some((e) => e.type === 'change')).toBe(false);
+    expect(runtime.logs.filter((l) => l.level === 'warn')).toHaveLength(1);
+    expect(runtime.logs.at(-1)!.message).toContain('Mute');
+    expect(runtime.logs.at(-1)!.message).toContain('not interactive');
   });
 });
 

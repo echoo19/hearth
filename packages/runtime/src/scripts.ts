@@ -199,8 +199,8 @@ export interface ScriptContext {
     /**
      * Set focus to an entity by id/name, or clear it with null. Fires
      * onUiEvent {type:'blur'} on the previous focus and {type:'focus'} on
-     * the new one. Warns (no-op) when the target is unknown or its
-     * UIElement.focusable is not true.
+     * the new one. Warns (no-op) when the target is unknown, disabled, or
+     * its UIElement.focusable is not true.
      */
     focus(idOrName: string | null): void;
     /** The focused entity's id, or null. */
@@ -211,7 +211,10 @@ export interface ScriptContext {
      * when nothing is focused). No wrap: no-op if nothing lies that way.
      */
     moveFocus(direction: 'up' | 'down' | 'left' | 'right'): void;
-    /** Synthesizes a press+release (a click) at the focused element's center. */
+    /**
+     * Synthesizes a press+release (a click) at the focused element's
+     * center. Warns (no-op) when the focused entity is not interactive.
+     */
     activate(): void;
     /**
      * For a focused UISlider: value += delta * (step || (max-min)/10),

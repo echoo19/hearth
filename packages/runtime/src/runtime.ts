@@ -850,9 +850,11 @@ export class SceneRuntime {
   /**
    * ctx.ui.focus backing: set the UI focus to an entity by id/name (firing
    * blur on the previous focus and focus on the new one), or clear it with
-   * null. Warns (no state change) when the target is unknown or its
-   * UIElement.focusable is not true. Focusing the already-focused entity
-   * is a no-op (no repeat events).
+   * null. Warns (no state change) when the target is unknown, disabled, or
+   * its UIElement.focusable is not true — a disabled entity is treated
+   * exactly like a not-focusable one so ctx.ui.focus can never reach a
+   * widget that moveUiFocus's candidate set (focusCandidates) excludes.
+   * Focusing the already-focused entity is a no-op (no repeat events).
    */
   focusUi(idOrName: string | null): void {
     if (idOrName === null) {
@@ -860,7 +862,7 @@ export class SceneRuntime {
       return;
     }
     const target = this.find(idOrName);
-    if (!target || !target.components.UIElement?.focusable) {
+    if (!target || !target.enabled || !target.components.UIElement?.focusable) {
       this.recordLog('warn', `ui.focus: entity not found or not focusable: ${idOrName}`);
       return;
     }
@@ -924,12 +926,19 @@ export class SceneRuntime {
    * ctx.ui.activate backing: synthesizes a press+release (a click) at the
    * focused element's center, through the normal sendPointer path — so
    * slider/toggle behavior fires exactly as it would from a real click.
-   * No-op when nothing is focused or it has no resolved position.
+   * Warns and skips the click when the focused entity is not interactive
+   * (sendPointer's hit test requires interactive=true, so the click would
+   * otherwise silently dispatch nothing). No-op when nothing is focused
+   * or it has no resolved position.
    */
   activateUiFocus(): void {
     if (!this.uiFocusId) return;
     const target = this.getEntities().find((e) => e.id === this.uiFocusId);
     if (!target) return;
+    if (!target.components.UIElement?.interactive) {
+      this.recordLog('warn', `ui.activate: focused entity "${target.name}" is not interactive`);
+      return;
+    }
     const settings = this.store.project.buildSettings;
     const positions = resolveUiPositions(this.getEntities(), settings.width, settings.height);
     const pos = positions.get(target.id);
@@ -1472,6 +1481,9 @@ export class SceneRuntime {
     if (this.uiFocusId && this.destroyedIds.has(this.uiFocusId)) {
       const focused = this.entities.find((e) => e.id === this.uiFocusId);
       this.uiFocusId = null;
+      // Unlike a normal blur (which carries the entity's resolved screen
+      // position), this blur uses (0,0): the entity is already excluded
+      // from getEntities() here, so resolveUiPositions can't place it.
       if (focused) this.dispatchUiEvent(focused, 'blur', 0, 0);
     }
     this.entities = this.entities.filter((e) => !this.destroyedIds.has(e.id));

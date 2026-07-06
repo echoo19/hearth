@@ -586,7 +586,7 @@ export const CTX_API: readonly CtxApiEntry[] = [
     kind: 'method',
     signature: 'focus(idOrName: string | null): void',
     description:
-      "Set focus to an entity by id/name, or clear it with null. Fires onUiEvent {type:'blur'} on the previously focused entity and {type:'focus'} on the new one. Warns (no-op) when the target is unknown or its UIElement.focusable is not true. Focusing the already-focused entity is a no-op.",
+      "Set focus to an entity by id/name, or clear it with null. Fires onUiEvent {type:'blur'} on the previously focused entity and {type:'focus'} on the new one. Warns (no-op) when the target is unknown, disabled, or its UIElement.focusable is not true. Focusing the already-focused entity is a no-op.",
     example: { js: "ctx.ui.focus('Resume')", lua: 'ctx.ui.focus("Resume")' },
   },
   {
@@ -609,7 +609,7 @@ export const CTX_API: readonly CtxApiEntry[] = [
     kind: 'method',
     signature: 'activate(): void',
     description:
-      'Synthesizes a press+release (a click) at the focused element’s center, through the normal pointer path — so slider/toggle behavior fires exactly as a real click would. No-op when nothing is focused.',
+      'Synthesizes a press+release (a click) at the focused element’s center, through the normal pointer path — so slider/toggle behavior fires exactly as a real click would. Warns (no-op) when the focused entity is not interactive; no-op when nothing is focused.',
     example: { js: 'ctx.ui.activate()', lua: 'ctx.ui.activate()' },
   },
   {
