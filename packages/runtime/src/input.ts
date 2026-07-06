@@ -163,10 +163,13 @@ export class InputState {
 
   /**
    * Poll connected gamepads: compute the active synthetic-code set (button
-   * pressed; axis-to-action binding beyond its threshold), diff against the
-   * previous poll, and feed handleKeyDown/Up — so held-state, multi-binding,
-   * and justPressed are all reused from the keyboard path. Also records
-   * `lastAxes` (max over pads by |value|, respecting sign) for axisValue().
+   * pressed on any pad; axis-to-action binding beyond its threshold on any
+   * pad — per-pad OR, so two pads pushing one axis index in opposite
+   * directions both register), diff against the previous poll, and feed
+   * handleKeyDown/Up — so held-state, multi-binding, and justPressed are
+   * all reused from the keyboard path. Also records `lastAxes` (max over
+   * pads by |value|, respecting sign) for axisValue(), where a single
+   * combined reading is the right semantic.
    */
   pollGamepads(pads: ReadonlyArray<GamepadLike | null>): void {
     const activeCodes = new Set<string>();
@@ -186,14 +189,16 @@ export class InputState {
         const value = gp.axes[i];
         if (Math.abs(value) > Math.abs(combinedAxes[i])) combinedAxes[i] = value;
       }
+      // Evaluate each axis binding against THIS pad's own reading — never
+      // the max-|value| merge, which would let a larger opposing input on
+      // another pad swallow a genuinely-past-threshold one on this pad.
+      for (const binding of Object.values(this.gamepadAxes)) {
+        const raw = gp.axes[binding.axis] ?? 0;
+        const active = binding.direction === 1 ? raw >= binding.threshold : raw <= -binding.threshold;
+        if (active) activeCodes.add(axisCode(binding.axis, binding.direction));
+      }
     }
     this.lastAxes = combinedAxes;
-
-    for (const binding of Object.values(this.gamepadAxes)) {
-      const raw = combinedAxes[binding.axis] ?? 0;
-      const active = binding.direction === 1 ? raw >= binding.threshold : raw <= -binding.threshold;
-      if (active) activeCodes.add(axisCode(binding.axis, binding.direction));
-    }
 
     for (const code of activeCodes) {
       if (!this.prevGamepadCodes.has(code)) this.handleKeyDown(code);

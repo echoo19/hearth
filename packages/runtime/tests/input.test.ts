@@ -96,6 +96,47 @@ describe('InputState.pollGamepads — axis-to-action bindings', () => {
     expect(input.isDown('left')).toBe(true);
     expect(input.isDown('right')).toBe(false);
   });
+
+  it('two pads past threshold in opposite directions on one axis fire BOTH actions', () => {
+    const input = new InputState({
+      actions: {},
+      gamepadAxes: {
+        right: { axis: 0, direction: 1, threshold: 0.5 },
+        left: { axis: 0, direction: -1, threshold: 0.5 },
+      },
+    });
+
+    // Pad A axis0=0.55 (past 'right' threshold), pad B axis0=-0.6 (past
+    // 'left' threshold). Per-pad-OR semantics: both codes active — the
+    // smaller-magnitude pad's input must not be swallowed by a
+    // max-|value| merge before threshold evaluation.
+    input.pollGamepads([pad({ axes: [0.55] }), pad({ axes: [-0.6] })]);
+    expect(input.isDown('right')).toBe(true);
+    expect(input.isDown('left')).toBe(true);
+  });
+
+  it('disconnecting one pad releases only its direction', () => {
+    const input = new InputState({
+      actions: {},
+      gamepadAxes: {
+        right: { axis: 0, direction: 1, threshold: 0.5 },
+        left: { axis: 0, direction: -1, threshold: 0.5 },
+      },
+    });
+
+    input.pollGamepads([pad({ axes: [0.55] }), pad({ axes: [-0.6] })]);
+    expect(input.isDown('right')).toBe(true);
+    expect(input.isDown('left')).toBe(true);
+
+    // Pad A disconnects (its slot goes null, as the Gamepad API does).
+    input.pollGamepads([null, pad({ axes: [-0.6] })]);
+    expect(input.isDown('right')).toBe(false);
+    expect(input.isDown('left')).toBe(true);
+
+    // Pad B disconnects too.
+    input.pollGamepads([null, null]);
+    expect(input.isDown('left')).toBe(false);
+  });
 });
 
 describe('InputState.axisValue', () => {
