@@ -439,7 +439,7 @@ export const CTX_API: readonly CtxApiEntry[] = [
     signature:
       'fade(alpha: number, seconds: number, opts?: { color?: string; onComplete?: () => void }): void',
     description:
-      'Ease the persistent screen overlay toward `alpha` over `seconds`, then hold at that level. Survives scene switches (ctx.scenes.load).',
+      "Ease the persistent screen overlay toward `alpha` over `seconds`, then hold at that level. Survives scene switches (ctx.scenes.load). Last call wins: a new fade replaces an in-flight one (starting from the current level), and the superseded fade's onComplete is dropped, never fired — only the winning fade's onComplete runs, once.",
     example: {
       js: "ctx.camera.fade(1, 0.5, { color: '#000000', onComplete: () => ctx.scenes.load('NextLevel') })",
       lua: 'ctx.camera.fade(1, 0.5, { color = "#000000" })',

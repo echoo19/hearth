@@ -101,7 +101,21 @@ export class CameraEffectsState {
     return this._zoomMul;
   }
 
-  /** Screen shake: offset decays linearly from `intensity` to 0 over `seconds`. */
+  /**
+   * The pure persistent fade state (level + color), with any transient flash
+   * pulse excluded — unlike `overlay`, which is the combined rendered view.
+   * This is what a GameSession carries across a scene switch: a flash
+   * mid-flight at switch time must never leak into the next scene.
+   */
+  get persistentOverlay(): { color: string; alpha: number } {
+    return { color: this.fadeColor, alpha: this.fadeLevel };
+  }
+
+  /**
+   * Screen shake: offset decays linearly from `intensity` to 0 over
+   * `seconds`. Last call wins — a new shake replaces any in-flight one
+   * (one entry per effect kind).
+   */
   shake(intensity: number, seconds: number, opts: { seed?: number } = {}): void {
     const seed = opts.seed ?? Math.floor(this.sessionRng() * 2 ** 31);
     this.shakeEntry = {
@@ -113,13 +127,23 @@ export class CameraEffectsState {
     this.pending.push({ effect: 'shake', params: { intensity, seconds, seed } });
   }
 
-  /** A color pulse that fades from full alpha to 0 over `seconds`. */
+  /**
+   * A color pulse that fades from full alpha to 0 over `seconds`. Last call
+   * wins — a new flash replaces any in-flight one (one entry per effect kind).
+   */
   flash(color: string, seconds: number): void {
     this.flashEntry = { color, duration: Math.max(0, seconds), elapsed: 0 };
     this.pending.push({ effect: 'flash', params: { color, seconds } });
   }
 
-  /** Ease the persistent overlay level toward `alpha` over `seconds`, then hold. */
+  /**
+   * Ease the persistent overlay level toward `alpha` over `seconds`, then
+   * hold. Last call wins: calling fade() while a previous fade is still in
+   * flight replaces it, starting from the current level — and the superseded
+   * fade's `onComplete` is dropped, never fired (firing a stale completion
+   * could double-trigger scene transitions). Only the winning fade's
+   * `onComplete` runs, exactly once, when it finishes.
+   */
   fade(
     alpha: number,
     seconds: number,
@@ -139,7 +163,10 @@ export class CameraEffectsState {
     });
   }
 
-  /** A zoom kick that eases back to 1x over `seconds`. */
+  /**
+   * A zoom kick that eases back to 1x over `seconds`. Last call wins — a new
+   * punch replaces any in-flight one (one entry per effect kind).
+   */
   zoomPunch(scale: number, seconds: number): void {
     this.zoomEntry = { scale, duration: Math.max(0, seconds), elapsed: 0 };
     this.pending.push({ effect: 'zoomPunch', params: { scale, seconds } });

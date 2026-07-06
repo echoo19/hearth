@@ -199,7 +199,9 @@ export class GameSession {
     const frame = old.frame;
     // Persist only the fade overlay level across the switch — transient
     // shake/flash/zoomPunch never carry to the new scene's runtime.
-    const carriedOverlay = { ...old.cameraEffects.overlay };
+    // persistentOverlay (not .overlay, the combined rendered view) so a flash
+    // pulse mid-flight at switch time can't leak its color/alpha into the carry.
+    const carriedOverlay = old.cameraEffects.persistentOverlay;
     old.stopAllAudio(); // emits stop AudioPlaybackEvents through onAudio
     this.eventsTruncated ||= old.eventsTruncated;
     old.destroy();
@@ -227,6 +229,10 @@ export class GameSession {
     this._currentSceneId = sceneId;
     this._runtime = await SceneRuntime.create(this.store, sceneId, {
       rng: this.rng,
+      // `rng` wins for ctx.random, so the numeric seed only reaches things
+      // that need their own derived stream (CameraEffectsState's implicit
+      // shake seeds) — without it every session would fall back to seed 0.
+      seed: this.opts.seed ?? 0,
       storage: this.storage,
       luaEngine: this.luaEngine ?? undefined,
       frameOffset,

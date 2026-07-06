@@ -176,7 +176,12 @@ export interface ScriptContext {
     shake(intensity: number, seconds: number, opts?: { seed?: number }): void;
     /** A color pulse that fades from full alpha to 0 over `seconds`. */
     flash(color: string, seconds: number): void;
-    /** Ease the persistent screen overlay toward `alpha` over `seconds`, then hold (survives scene switches). */
+    /**
+     * Ease the persistent screen overlay toward `alpha` over `seconds`, then
+     * hold (survives scene switches). Last call wins: a new fade replaces an
+     * in-flight one and the superseded fade's onComplete is dropped, never
+     * fired — only the winning fade's onComplete runs, once.
+     */
     fade(alpha: number, seconds: number, opts?: { color?: string; onComplete?: () => void }): void;
     /** A zoom kick that eases back to 1x over `seconds`. */
     zoomPunch(scale: number, seconds: number): void;

@@ -99,6 +99,30 @@ describe('CameraEffectsState (standalone)', () => {
     expect(records[2]).toEqual({ effect: 'fade', frame: 8, params: { alpha: 1, seconds: 1 } });
   });
 
+  it('supersede: a new fade drops the old onComplete; only the winning one fires, once', () => {
+    let aFired = 0;
+    let bFired = 0;
+    const state = new CameraEffectsState({ seed: 0 });
+    state.fade(1, 0.5, { onComplete: () => aFired++ });
+    state.step(0.1, 0, noop); // A mid-flight
+    state.fade(0.2, 0.2, { onComplete: () => bFired++ }); // supersedes A
+    for (let i = 1; i < 10; i++) state.step(0.1, i, noop); // well past both durations
+    expect(aFired).toBe(0);
+    expect(bFired).toBe(1);
+    expect(state.overlay.alpha).toBeCloseTo(0.2, 10);
+  });
+
+  it('persistentOverlay excludes a transient flash; overlay is the combined view', () => {
+    const state = new CameraEffectsState({ seed: 0 });
+    state.fade(0.3, 0.05, { color: '#112233' });
+    for (let i = 0; i < 10; i++) state.step(1 / 60, i, noop); // fade completed
+    state.flash('#ff0000', 1);
+    state.step(1 / 60, 10, noop); // flash mid-flight
+    expect(state.overlay.color).toBe('#ff0000'); // combined view: flash color wins while flashing
+    expect(state.overlay.alpha).toBeGreaterThan(0.3);
+    expect(state.persistentOverlay).toEqual({ color: '#112233', alpha: 0.3 });
+  });
+
   it('starts with an initialOverlay and carries it as the persistent fade level', () => {
     const state = new CameraEffectsState({ seed: 0, initialOverlay: { color: '#112233', alpha: 0.4 } });
     expect(state.overlay).toEqual({ color: '#112233', alpha: 0.4 });
@@ -138,7 +162,15 @@ describe('ctx.camera effects wired through SceneRuntime', () => {
 });
 
 describe('GameSession: camera effects across a scene switch', () => {
-  async function makeTwoSceneStore(): Promise<ProjectStore> {
+  const DEFAULT_MENU_SCRIPT = `export default {
+    onStart(ctx) {
+      ctx.camera.fade(0.6, 0.001, { color: '#000000' });
+      ctx.camera.shake(20, 10);
+    },
+    onUpdate(ctx) { if (ctx.time.frame === 2) ctx.scenes.load('Level'); },
+  };`;
+
+  async function makeTwoSceneStore(menuScript = DEFAULT_MENU_SCRIPT): Promise<ProjectStore> {
     const { store } = await makeStore({
       entities: [
         ent('Menu', {
@@ -147,13 +179,7 @@ describe('GameSession: camera effects across a scene switch', () => {
         }),
       ],
       scripts: {
-        'menu.js': `export default {
-          onStart(ctx) {
-            ctx.camera.fade(0.6, 0.001, { color: '#000000' });
-            ctx.camera.shake(20, 10);
-          },
-          onUpdate(ctx) { if (ctx.time.frame === 2) ctx.scenes.load('Level'); },
-        };`,
+        'menu.js': menuScript,
         'hero.js': `export default { onStart(ctx) { ctx.log('hero-start'); } };`,
       },
       extraScenes: [
@@ -179,6 +205,60 @@ describe('GameSession: camera effects across a scene switch', () => {
     expect(session.runtime.cameraEffects.offset).toEqual({ x: 0, y: 0 });
     expect(session.runtime.cameraEffects.activeCount).toBe(0);
     session.destroy();
+  });
+
+  it('a flash mid-flight at switch time never leaks into the carried overlay', async () => {
+    const store = await makeTwoSceneStore(`export default {
+      onStart(ctx) {
+        ctx.camera.fade(0.6, 0.001, { color: '#000000' });
+        ctx.camera.flash('#ff0000', 10); // still at high alpha when the switch lands
+      },
+      onUpdate(ctx) { if (ctx.time.frame === 2) ctx.scenes.load('Level'); },
+    };`);
+    const session = await GameSession.create(store);
+    for (let i = 0; i < 5; i++) await session.stepAsync();
+
+    expect(session.currentSceneId).toBe('scn_level');
+    // Only the persistent fade carries — never the flash's color or alpha.
+    expect(session.runtime.cameraEffects.overlay).toEqual({ color: '#000000', alpha: 0.6 });
+    session.destroy();
+  });
+
+  it('flash with no fade at all: new scene starts with a zero overlay', async () => {
+    const store = await makeTwoSceneStore(`export default {
+      onStart(ctx) { ctx.camera.flash('#ff0000', 10); },
+      onUpdate(ctx) { if (ctx.time.frame === 2) ctx.scenes.load('Level'); },
+    };`);
+    const session = await GameSession.create(store);
+    for (let i = 0; i < 5; i++) await session.stepAsync();
+
+    expect(session.currentSceneId).toBe('scn_level');
+    expect(session.runtime.cameraEffects.overlay.alpha).toBe(0);
+    expect(session.runtime.cameraEffects.activeCount).toBe(0);
+    session.destroy();
+  });
+
+  it('implicit shake seeds derive from the session seed: same seed identical, different seeds diverge', async () => {
+    const SHAKE_SCRIPT = `export default {
+      onStart(ctx) { ctx.camera.shake(10, 5); },
+    };`;
+    const offsets = async (seed: number) => {
+      const session = await GameSession.create(await makeTwoSceneStore(SHAKE_SCRIPT), { seed });
+      const result: Array<{ x: number; y: number }> = [];
+      for (let i = 0; i < 10; i++) {
+        await session.stepAsync();
+        result.push({ ...session.runtime.cameraEffects.offset });
+      }
+      session.destroy();
+      return result;
+    };
+
+    const a = await offsets(42);
+    const b = await offsets(42);
+    const c = await offsets(43);
+    expect(a).toEqual(b);
+    expect(a).not.toEqual(c);
+    expect(a.some((o) => o.x !== 0 || o.y !== 0)).toBe(true);
   });
 
   it('accumulates cameraEffects records across scenes, exactly like audioEvents', async () => {
