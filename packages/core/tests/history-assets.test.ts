@@ -111,6 +111,75 @@ describe('binary asset trash', () => {
     expect(await fs.exists(`/proj/.hearth/trash/${asset.id}`)).toBe(false);
   });
 
+  it('redo of an unregister (deleteFile=false) trashes the file; undo restores it (pinned behavior)', async () => {
+    // removeAsset({deleteFile:false}) never touches the file, but the
+    // reconciliation pass in applySnapshot is a pure index diff: redoing the
+    // unregister makes the asset "disappear" from the target snapshot, so the
+    // still-present file is moved to trash to keep disk consistent with the
+    // index. Accepted as documented behavior — round-trip-safe by design.
+    const { session, fs, store } = await makeSession();
+    const asset = await importPng(session, fs, 'Coin');
+    const absPath = `/proj/${asset.path}`;
+
+    const rm = await session.execute<any>('removeAsset', { asset: asset.id, deleteFile: false });
+    expect(rm.success).toBe(true);
+    expect(await fs.exists(absPath)).toBe(true); // deleteFile:false leaves the file alone
+
+    const undo = await session.execute<any>('undo');
+    expect(undo.success).toBe(true);
+    expect(store.getAsset(asset.id)).toBeTruthy();
+    expect(await fs.exists(absPath)).toBe(true); // file was already in place; no move
+
+    const redo = await session.execute<any>('redo');
+    expect(redo.success).toBe(true);
+    expect(store.getAsset(asset.id)).toBeFalsy();
+    // The reconciliation trashed the file even though the forward command didn't.
+    expect(await fs.exists(absPath)).toBe(false);
+    expect(await fs.exists(`/proj/.hearth/trash/${asset.id}/sprite.png`)).toBe(true);
+
+    const undo2 = await session.execute<any>('undo');
+    expect(undo2.success).toBe(true);
+    expect(await fs.exists(absPath)).toBe(true); // round-trip-safe: file comes back
+    expect(store.getAsset(asset.id)).toBeTruthy();
+  });
+
+  it('a corrupted snapshot with an unsafe asset id/path cannot read or write outside the trash', async () => {
+    const { session, fs } = await makeSession();
+    await session.execute('createEntity', { scene: 'Main', name: 'Enemy' });
+
+    // Hand-corrupt the recorded before-snapshot: a traversal-crafted asset id
+    // and a path that points outside the project root.
+    const statePath = '/proj/.hearth/history/state-1.json';
+    const snapshot = JSON.parse(await fs.readFile(statePath));
+    snapshot.assets.assets.push({
+      id: '../../../etc',
+      name: 'evil',
+      type: 'other',
+      path: '../outside.bin',
+      metadata: {},
+    });
+    await fs.writeFile(statePath, JSON.stringify(snapshot));
+
+    // Undo restores that snapshot; the malicious asset "reappears".
+    const undo = await session.execute<any>('undo');
+    expect(undo.success).toBe(true);
+    expect(undo.warnings.some((w: any) => w.code === 'ASSET_TRASH_UNSAFE')).toBe(true);
+    // Nothing was written outside the project root.
+    expect(await fs.exists('/outside.bin')).toBe(false);
+    expect(await fs.exists('/etc')).toBe(false);
+
+    // Now the malicious entry is in the live index; redoing makes it
+    // "disappear", which without a guard would move a file from outside the
+    // project into a traversal-crafted trash path. Plant a sentinel there.
+    await fs.writeFile('/outside.bin', 'sentinel');
+    const redo = await session.execute<any>('redo');
+    expect(redo.success).toBe(true);
+    expect(redo.warnings.some((w: any) => w.code === 'ASSET_TRASH_UNSAFE')).toBe(true);
+    // The outside file was neither moved nor deleted.
+    expect(await fs.readFile('/outside.bin')).toBe('sentinel');
+    expect(await fs.exists('/etc')).toBe(false);
+  });
+
   it('does not prune trash for an asset still present in the live project', async () => {
     const { session, fs, store } = await makeSession();
     const kept = await importPng(session, fs, 'Kept', '/tmp/kept.png');

@@ -7,11 +7,26 @@
  * project-relative paths.
  */
 import type { FsLike } from '../fs.js';
-import { joinPath, dirnamePath, basenamePath } from '../fs.js';
+import { joinPath, dirnamePath, basenamePath, isSafeRelativePath } from '../fs.js';
+import { ProjectError } from './store.js';
 import { TRASH_DIR } from '../schema/project.js';
 
-/** Absolute path to an asset's trash directory. */
+/**
+ * Asset ids reach the trash from untrusted sources (history snapshot files
+ * are plain JSON on disk — see restore.ts's reconciliation), and they become
+ * a directory-name component under `.hearth/trash/`. Only ids matching the
+ * `AssetSchema` id shape are safe to use in a path; anything else (e.g. a
+ * hand-edited `../../../etc`) must be rejected before any path math.
+ */
+export function isSafeTrashAssetId(assetId: string): boolean {
+  return /^ast_[a-z0-9]+$/.test(assetId);
+}
+
+/** Absolute path to an asset's trash directory. Throws on an unsafe asset id. */
 export function assetTrashDir(root: string, assetId: string): string {
+  if (!isSafeTrashAssetId(assetId)) {
+    throw new ProjectError(`Unsafe asset id for trash path: ${assetId}`, 'INVALID_INPUT');
+  }
   return joinPath(root, TRASH_DIR, assetId);
 }
 
@@ -37,6 +52,9 @@ export async function moveToTrash(
   assetId: string,
   relPath: string,
 ): Promise<boolean> {
+  if (!isSafeRelativePath(relPath)) {
+    throw new ProjectError(`Unsafe asset path for trash move: ${relPath}`, 'INVALID_INPUT');
+  }
   const src = joinPath(root, relPath);
   if (!(await fs.exists(src))) return false;
   await moveFile(fs, src, assetTrashPath(root, assetId, relPath));
@@ -53,6 +71,9 @@ export async function restoreFromTrash(
   assetId: string,
   relPath: string,
 ): Promise<boolean> {
+  if (!isSafeRelativePath(relPath)) {
+    throw new ProjectError(`Unsafe asset path for trash restore: ${relPath}`, 'INVALID_INPUT');
+  }
   const src = assetTrashPath(root, assetId, relPath);
   if (!(await fs.exists(src))) return false;
   await moveFile(fs, src, joinPath(root, relPath));

@@ -5,10 +5,10 @@
  * entry).
  */
 import type { FsLike } from '../fs.js';
-import { joinPath } from '../fs.js';
+import { joinPath, isSafeRelativePath } from '../fs.js';
 import type { ChangedRef } from '../commands/types.js';
 import type { ProjectStore, ProjectSnapshot } from './store.js';
-import { moveToTrash, restoreFromTrash } from './trash.js';
+import { moveToTrash, restoreFromTrash, isSafeTrashAssetId } from './trash.js';
 
 export interface RestoreContext {
   store: ProjectStore;
@@ -63,8 +63,27 @@ async function reconcileAssetFiles(
   const beforeIds = new Set(before.map((a) => a.id));
   const afterIds = new Set(after.map((a) => a.id));
 
+  // Snapshots are plain JSON on disk, so ids/paths here are untrusted: a
+  // corrupted or hand-edited state-<seq>.json must not be able to move files
+  // outside the project or the trash. Unsafe entries are skipped with a
+  // warning; the model still restores.
+  const isSafe = (asset: { id: string; path: string }): boolean => {
+    if (isSafeTrashAssetId(asset.id) && isSafeRelativePath(asset.path)) return true;
+    ctx.warn?.(
+      'ASSET_TRASH_UNSAFE',
+      `Skipping asset file reconciliation for "${asset.id}" (${asset.path}): unsafe id or path in snapshot.`,
+    );
+    return false;
+  };
+
   for (const asset of before) {
     if (afterIds.has(asset.id)) continue;
+    if (!isSafe(asset)) continue;
+    // Deliberately a pure index diff: even if the command that removed this
+    // asset never touched its file (removeAsset with deleteFile:false),
+    // redoing that removal still moves the file to trash so disk stays
+    // consistent with the index. Round-trip-safe — the matching undo pulls
+    // it back out. Pinned by a regression test in history-assets.test.ts.
     const moved = await moveToTrash(ctx.fs, ctx.root, asset.id, asset.path);
     if (moved) {
       ctx.changed({ kind: 'asset', id: asset.id, path: asset.path, action: 'deleted' });
@@ -73,6 +92,7 @@ async function reconcileAssetFiles(
 
   for (const asset of after) {
     if (beforeIds.has(asset.id)) continue;
+    if (!isSafe(asset)) continue;
     const destPath = joinPath(ctx.root, asset.path);
     if (await ctx.fs.exists(destPath)) continue;
     const restored = await restoreFromTrash(ctx.fs, ctx.root, asset.id, asset.path);
