@@ -37,7 +37,7 @@ normative; this page is descriptive. Every file carries `formatVersion: 1`.
 ```jsonc
 {
   "formatVersion": 1,
-  "hearthVersion": "0.6.0",
+  "hearthVersion": "0.7.0",
   "id": "prj_a1b2c3d4",
   "name": "My Game",
   "description": "",
@@ -49,7 +49,17 @@ normative; this page is descriptive. Every file carries `formatVersion: 1`.
     "actions": {                          // action name → KeyboardEvent.code list
       "left": ["ArrowLeft", "KeyA"],
       "jump": ["Space"]
-    }
+    },
+    "gamepadButtons": { "jump": ["a"] },   // action name → named gamepad buttons
+    "gamepadAxes": {},                     // action name → digital axis-crossed-threshold binding
+    "axes": {                              // virtual analog axis name → ctx.input.axis(name) source
+      "horizontal": {
+        "gamepadAxis": 0,
+        "negativeCodes": ["ArrowLeft", "KeyA"],
+        "positiveCodes": ["ArrowRight", "KeyD"]
+      }
+    },
+    "deadzone": 0.15                       // default stick deadzone, 0-1
   },
   "buildSettings": {
     "width": 800, "height": 600,

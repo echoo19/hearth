@@ -1,9 +1,12 @@
 # Hearth Roadmap
 
-v0.6 is the current milestone. Its first release, v0.6.0 (shipped,
-below), added asset pipeline v2 (imported spritesheets with typed
-frame slicing and sheet-backed animations, a single crossfading music
-channel, real font assets). On top of v0.5's physics v2
+v0.7 is the current milestone. Its first release, v0.7.0 (shipped,
+below), added disk-backed undo/redo, gamepad input with virtual analog
+axes, deterministic camera effects (shake/flash/fade/zoom punch), and a
+second generation of UI widgets (`UILayout`/`UISlider`/`UIToggle`, focus
+navigation). On top of v0.6's asset pipeline v2 (imported spritesheets
+with typed frame slicing and sheet-backed animations, a single
+crossfading music channel, real font assets) — v0.5's physics v2
 (mass/restitution/friction, collision layers, one-way platforms,
 circle-accurate resolution), script stdlib v2 (`ctx.math`,
 `ctx.events`/`onEvent`), and pathfinding (`ctx.scene.findPath`, `hearth
@@ -20,6 +23,46 @@ what's deliberately missing.
 The standing rule for everything below: **agent-native first**. Each system
 ships as schemas + commands (inspectable via `hearth … --json`, exposed as
 MCP tools, testable in headless playtests) before it gets editor UI.
+
+## Shipped in v0.7.0
+
+- **Undo/redo**: every mutating command (except `undo`/`redo`/
+  `revertProject`/`snapshotProject` themselves) is captured into a
+  disk-backed, 25-entry history under `.hearth/history/` — `undo`/`redo`/
+  `listHistory` commands, `hearth undo|redo|history` on the CLI, `undo`/
+  `redo`/`list_history` MCP tools, and Cmd+Z / Shift+Cmd+Z / Cmd+Y plus a
+  History section in the editor's Diff panel. Independent of `snapshot`/
+  `revert`'s single diff baseline — this steps through individual
+  changes. Asset files removed with `deleteFile: false` are left alone by
+  `undo`, but a subsequent `redo` moves the still-on-disk file into
+  `.hearth/trash/` so disk stays consistent with the model (round-trip
+  safe — the matching undo pulls it back out).
+- **Gamepad input + virtual axes**: `inputMappings` gains named gamepad
+  buttons (`a`/`b`/`x`/`y`/`lb`/`rb`/`lt`/`rt`/`back`/`start`/`ls`/`rs`/
+  `dpad-*`), digital gamepad-axis-crossed-a-threshold bindings, and
+  virtual analog axes (`ctx.input.axis(name)`, `-1..1`, gamepad stick or
+  keyboard fallback, per-axis or global deadzone). Browser-only (the
+  Gamepad API doesn't exist headlessly); playtests drive axes directly
+  with the `setAxis` step. CLI `set-settings --input-gamepad-buttons/
+  --input-gamepad-axes/--input-axes/--input-deadzone`, matching MCP
+  `update_settings` fields, and an editor Input panel (key capture,
+  gamepad dropdowns, axis rows). See [input.md](./input.md).
+- **Camera effects**: `ctx.camera.shake/flash/fade/zoomPunch`, all
+  deterministic (seeded shake) and last-call-wins per kind; `fade` is
+  persistent and carries across scene switches. The `assertCameraEffect`
+  playtest step counts calls per effect kind; results expose
+  `cameraEffects` and `cameraOverlayAlpha`.
+- **UI widgets v2**: `UILayout` (stacking containers), `UISlider`,
+  `UIToggle`, `UIElement.focusable`, and a full keyboard/gamepad focus
+  system (`ctx.ui.focus/getFocused/moveFocus/activate/adjust`).
+  `onUiEvent`'s `type` union grows to `click|press|release|enter|exit|
+  drag|change|focus|blur` with an optional `value`. Playtest steps
+  `drag`/`assertFocus`. See [ui.md](./ui.md).
+- The all-Lua `drift-cellar` example (the 8th) exercises the whole set:
+  analog drift movement, wall-bump shake/flash, a gem run with a fade
+  transition, and a pause menu with a focus-navigable slider and toggle.
+- Editor: enum dropdowns everywhere a schema field is a fixed set of
+  string values, replacing free-text/raw-JSON entry in the Inspector.
 
 ## Shipped in v0.6.0
 
@@ -131,24 +174,27 @@ MCP tools, testable in headless playtests) before it gets editor UI.
 - Web export: `hearth export web [--single-file] [--zip]` — static
   self-contained builds, itch.io-ready zips.
 
-## Near term (later v0.6 releases)
+## Near term (later v0.7 releases)
 
-- **Undo/redo in the editor** (command journal; the diff baseline already
-  proves the model).
 - **Bulk asset import**: `importAsset` is one file per call today;
   a multi-file/folder import command is the natural follow-up.
+- **Finer-grained editor undo**: today's undo/redo is whole-command
+  (one entry per `execute()` call); an in-progress drag or text edit is
+  one undo step, which is the right granularity for most operations but
+  worth revisiting for continuous ones (Inspector number-drag, slider
+  scrubbing) if it turns out too coarse in practice.
 
 ## Medium term
 
-- **UI widgets v2**: layout containers (stacks/anchor groups), sliders,
-  toggles, focus + keyboard navigation — still composed from
-  Text/SpriteRenderer rather than a parallel widget tree.
 - **Desktop polish**: signed/notarized builds, custom app icon, auto-update.
 - **TypeScript scripts** with a compile step and typed `ctx`.
 - **Multi-instance components** (array form, `formatVersion: 2`).
 - **MCP resources**: expose scenes/scripts as MCP resources (today:
   tools-only, which every client supports).
 - **Prefabs**: reusable entity templates with overrides.
+- **Scale/performance**: no profiling or stress-testing has been done yet
+  on large scenes (hundreds of entities, big tilemaps) — the runtime is
+  correctness-first so far, not benchmarked.
 
 ## Long term / research
 

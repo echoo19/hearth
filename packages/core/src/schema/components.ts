@@ -138,7 +138,9 @@ export const UIElementSchema = z.object({
   /**
    * When true, the element receives pointer events and its Script's
    * onUiEvent(ctx, event) hook fires with
-   * { type: 'click'|'press'|'release'|'enter'|'exit' }.
+   * { type: 'click'|'press'|'release'|'enter'|'exit'|'drag'|'change'|'focus'|'blur' }
+   * ('change' and focus/blur come from UISlider/UIToggle drag and the
+   * ctx.ui focus system, not from this element's own pointer hit test).
    */
   interactive: z.boolean().default(false),
   /** When true, the element participates in keyboard/gamepad focus navigation. */

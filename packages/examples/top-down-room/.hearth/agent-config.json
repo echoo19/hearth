@@ -1,7 +1,7 @@
 {
-  "hearthVersion": "0.6.0",
+  "hearthVersion": "0.7.0",
   "project": "Top-Down Room",
-  "projectId": "prj_jvyi5hv2",
+  "projectId": "prj_037kny0v",
   "instructions": "AGENTS.md",
   "cli": {
     "binary": "hearth",

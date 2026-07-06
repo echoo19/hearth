@@ -1,7 +1,7 @@
 # MCP Guide
 
 Hearth ships `hearth-mcp` (`packages/mcp-server`), a stdio MCP server that
-exposes the engine command layer as 45 typed tools (43 command tools, plus
+exposes the engine command layer as 48 typed tools (46 command tools, plus
 `screenshot` and `get_agent_instructions`, neither of which wraps a core
 command). The full reference (flags, registration snippets, permission
 table, complete tool list) lives in
@@ -31,11 +31,15 @@ of housekeeping commands are CLI-only): `get_project_info`,
 imported spritesheet — takes numeric `frameWidth`/`frameHeight` rather
 than the CLI's `--frame-size WxH` string), `create_animation_from_sheet`
 (an animation asset from named sheet frames — see
-[assets.md](./assets.md)), `snapshot_project`, `get_diff`, `revert_project`,
-`create_playtest`, `run_playtest`, `run_scene`, `update_settings`,
-`inspect_api` (the script `ctx` reference), `inspect_path` (grid A\*
-pathfinding over solid scene geometry — same query
-`ctx.scene.findPath` and `hearth inspect path` run, see
+[assets.md](./assets.md)), `undo`, `redo`, `list_history` (disk-backed
+undo/redo, independent of `snapshot_project`/`revert_project`'s single
+diff baseline — see [cli.md](./cli.md#command-tour)), `snapshot_project`,
+`get_diff`, `revert_project`, `create_playtest`, `run_playtest`,
+`run_scene`, `update_settings` (build settings, initial scene, and every
+input mapping — actions, gamepad buttons/axes, virtual axes, deadzone;
+see [input.md](./input.md)), `inspect_api` (the script `ctx` reference),
+`inspect_path` (grid A\* pathfinding over solid scene geometry — same
+query `ctx.scene.findPath` and `hearth inspect path` run, see
 [cli.md](./cli.md#pathfinding)), `build_project`,
 `export_web`, `get_agent_instructions`, … Every result is the standard `CommandResult`
 JSON envelope in the tool output (with `isError` set on failure), so MCP

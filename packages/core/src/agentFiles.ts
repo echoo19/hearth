@@ -82,8 +82,10 @@ hearth export web --zip                # playable static build (needs --allow bu
 Scripts are **Lua by default** (\`hearth create script <name>\`; add
 \`--language js\` for JavaScript). A Lua script returns a table of lifecycle
 hooks — \`onStart(ctx)\`, \`onUpdate(ctx, dt)\`, \`onCollision(ctx, other)\`, and
-\`onUiEvent(ctx, event)\` (pointer events on this entity's interactive
-\`UIElement\`; \`event.type\` is \`click|press|release|enter|exit\`):
+\`onUiEvent(ctx, event)\` (pointer/focus events on this entity's interactive
+\`UIElement\`; \`event.type\` is
+\`click|press|release|enter|exit|drag|change|focus|blur\`, with a
+\`value\` field on \`change\` — the slider/toggle's new value):
 
 \`\`\`lua
 local script = {}

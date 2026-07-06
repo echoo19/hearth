@@ -141,6 +141,9 @@ requires no permission (it's purely informational).
 | `create_animation_asset` | `createAnimationAsset` | asset-edit |
 | `slice_spritesheet` | `sliceSpritesheet` | asset-edit |
 | `create_animation_from_sheet` | `createAnimationFromSheet` | asset-edit |
+| `undo` | `undo` | safe-edit |
+| `redo` | `redo` | safe-edit |
+| `list_history` | `listHistory` | read-only |
 | `snapshot_project` | `snapshotProject` | safe-edit |
 | `get_diff` | `diffProject` | read-only |
 | `revert_project` | `revertProject` | safe-edit |

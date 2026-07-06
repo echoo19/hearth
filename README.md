@@ -30,7 +30,7 @@ and assets on your own disk.
    Agent ──▶ CLI / MCP ──┘      (validate · execute · diff)     scenes · scripts · assets
 ```
 
-Both audiences use the same 48 engine commands: `createEntity`,
+Both audiences use the same 51 engine commands: `createEntity`,
 `setComponentProperty`, `runPlaytest`, `getDiff`, and so on. An agent can
 build a level, wire input, write behavior scripts, import and slice art, run
 headless playtests, and hand you a structural diff to review in the editor,
@@ -42,30 +42,36 @@ snapshotted, diffed, and reverted.
 
 **Runtime.** A fixed-timestep, deterministic 2D runtime: sprites and
 spritesheets, tilemaps with auto-generated colliders, text, 2D lighting,
-polylines, deterministic particles, sprite animation, and screen-space game
-UI. Physics covers mass, restitution, friction, named collision layers,
-one-way platforms, and box/circle/convex-polygon colliders. Audio includes
-sound effects, procedural synthesis, and a streamed music channel that
-survives scene switches. The same runtime runs in the editor preview,
+polylines, deterministic particles, sprite animation, gamepad input with
+analog virtual axes, camera effects (shake/flash/fade/zoom punch), and
+screen-space game UI with layout containers, sliders, toggles, and focus
+navigation. Physics covers mass, restitution, friction, named collision
+layers, one-way platforms, and box/circle/convex-polygon colliders. Audio
+includes sound effects, procedural synthesis, and a streamed music channel
+that survives scene switches. The same runtime runs in the editor preview,
 headlessly in Node, and in exported games.
 
 **Scripting.** Lua by default (sandboxed, seed-deterministic), JavaScript
 equally supported, both against the same `ctx` API: timers, tweens, seeded
-RNG, pub/sub events, math helpers, grid pathfinding, camera control, save
-data, and scene switching for building your own menus. `hearth inspect api`
-prints the whole surface.
+RNG, pub/sub events, math helpers, grid pathfinding, camera control and
+effects, UI focus, save data, and scene switching for building your own
+menus. `hearth inspect api` prints the whole surface.
 
 **Editor.** A dockable workspace with a scene view, hierarchy,
-schema-driven inspector, asset browser with spritesheet slicing and
-previews, live game preview, console, and a diff/review panel for agent
-sessions. Runs in the browser during development or as a packaged desktop
-app (Electron) with native folder dialogs.
+schema-driven inspector (enum dropdowns for every fixed-choice field),
+asset browser with spritesheet slicing and previews, live game preview,
+console, an Input settings panel (key capture, gamepad bindings), undo/
+redo with a history panel, and a diff/review panel for agent sessions.
+Runs in the browser during development or as a packaged desktop app
+(Electron) with native folder dialogs.
 
 **Agent tooling.** The `hearth` CLI wraps every command with `--json`
-envelopes. The MCP server exposes 45 typed tools with per-session permission
-modes. Playtests script input and assert on game state, events, particles,
-and audio, entirely headless and CI-friendly. `hearth screenshot` renders
-real frames through headless Chromium so agents can see their own work.
+envelopes, including `undo`/`redo`/`history`. The MCP server exposes 48
+typed tools with per-session permission modes. Playtests script input
+(including gamepad axes and pointer drags) and assert on game state,
+events, particles, audio, camera effects, and UI focus, entirely headless
+and CI-friendly. `hearth screenshot` renders real frames through headless
+Chromium so agents can see their own work.
 
 **Export.** `hearth export web` produces a static, self-contained build
 (one folder, one HTML file, or a zip for itch.io) that boots straight into
@@ -79,13 +85,15 @@ same asset pipeline: import, probe, slice, animate.
 
 ## Status
 
-Hearth is at **v0.6.0**, a developer preview. The full loop works end to
+Hearth is at **v0.7.0**, a developer preview. The full loop works end to
 end: project model, editor, runtime preview, CLI, MCP, headless playtests,
-diff review, web export. Recent releases added the asset pipeline (import
-real images, audio, and fonts; slice spritesheets; stream music), physics
+diff review, web export. This release added disk-backed undo/redo,
+gamepad input with analog virtual axes, deterministic camera effects, and
+a second generation of UI widgets (layout containers, sliders, toggles,
+focus navigation), on top of earlier releases' asset pipeline, physics
 v2, pathfinding, 2D lighting and particles, and Lua scripting. The
 [roadmap](docs/roadmap.md) keeps an honest list of what's still missing,
-including editor undo, prefabs, and gamepad input.
+including prefabs, bulk asset import, and notarized desktop builds.
 
 ## Install
 
@@ -160,13 +168,15 @@ Then ask it to call `get_agent_instructions`. Permission modes from
 
 ## Examples
 
-Seven example projects live in `packages/examples`, every one generated
+Eight example projects live in `packages/examples`, every one generated
 through the command system itself and covered by playtests in CI. They
 range from a mini platformer and a visual novel up to all-Lua showcases:
 **Ember Trail** (scene switching, timers, saved best score), **Glow Caves**
 (lighting and particles in a torch-lit cave), **Bounce Patrol** (physics
-layers and a pathfinding patroller), and **Sky Courier** (a sliced pixel-art
-spritesheet, streamed chiptune music, and an imported font). They double as
+layers and a pathfinding patroller), **Sky Courier** (a sliced pixel-art
+spritesheet, streamed chiptune music, and an imported font), and **Drift
+Cellar** (analog gamepad movement, camera shake/flash/fade, and a
+focus-navigable pause menu with a slider and toggle). They double as
 reference projects: everything the docs describe, one of them does.
 
 ## Documentation
@@ -180,9 +190,11 @@ reference projects: everything the docs describe, one of them does.
 | [Agent workflow](docs/agents.md) | How agents should operate, and why |
 | [Architecture](docs/architecture.md) | Packages, command system, data flow |
 | [Project format](docs/project-format.md) | Every file, every schema |
-| [Components](docs/components.md) | All 14 component types and their defaults |
+| [Components](docs/components.md) | All 17 component types and their defaults |
 | [Assets](docs/assets.md) | Import, spritesheets, animations, music, fonts |
 | [Scripting](docs/scripting.md) | Lua and JS, the full `ctx` API |
+| [Input](docs/input.md) | Actions, keyboard, gamepad, virtual axes |
+| [UI](docs/ui.md) | Widgets, layout, focus navigation |
 | [Web export](docs/export.md) | Static builds, single-file, itch.io |
 | [Roadmap](docs/roadmap.md) | What's next, and what's honestly missing |
 | [Contributing](CONTRIBUTING.md) | Dev setup and the AI contribution policy |

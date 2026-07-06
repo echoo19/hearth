@@ -2,7 +2,7 @@
   "formatVersion": 1,
   "assets": [
     {
-      "id": "ast_59fyen2e",
+      "id": "ast_601nhmr8",
       "name": "wisp",
       "type": "sprite",
       "path": "assets/sprites/wisp.svg",
@@ -15,7 +15,7 @@
       }
     },
     {
-      "id": "ast_uqyl69kd",
+      "id": "ast_mbldavnm",
       "name": "ember",
       "type": "sprite",
       "path": "assets/sprites/ember.svg",
@@ -28,7 +28,7 @@
       }
     },
     {
-      "id": "ast_60voaoey",
+      "id": "ast_7ngr8u7c",
       "name": "ember-sound",
       "type": "audio",
       "path": "assets/sounds/ember_sound.wav",
@@ -39,7 +39,7 @@
       }
     },
     {
-      "id": "ast_ayonhhtp",
+      "id": "ast_hz7yi2u7",
       "name": "start-sound",
       "type": "audio",
       "path": "assets/sounds/start_sound.wav",

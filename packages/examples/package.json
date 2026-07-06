@@ -1,7 +1,7 @@
 {
   "name": "@hearth/examples",
-  "version": "0.6.0",
-  "description": "Hearth sample projects: mini platformer, top-down room, visual novel scene",
+  "version": "0.7.0",
+  "description": "Hearth sample projects: eight games covering physics, lighting and particles, pathfinding, asset pipeline, gamepad input, camera effects, and UI widgets",
   "license": "MIT",
   "type": "module",
   "private": true,

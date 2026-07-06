@@ -41,9 +41,12 @@ A Lua script builds a table of lifecycle hooks and `return`s it:
 - `onUpdate(ctx, dt)`: every fixed frame; `dt` is seconds (1/`fixedTimestep`).
 - `onCollision(ctx, other)`: once per **new** contact pair per frame;
   `other` is an EntityHandle. Fires for trigger and solid contacts alike.
-- `onUiEvent(ctx, event)`: pointer events on this entity's interactive
-  `UIElement`; `event` is `{ type, x, y }` with `type` one of
-  `click | press | release | enter | exit` (screen coordinates).
+- `onUiEvent(ctx, event)`: pointer and focus events on this entity's
+  interactive/focusable `UIElement`; `event` is `{ type, x, y, value? }`
+  with `type` one of `click | press | release | enter | exit | drag |
+  change | focus | blur` (`x`/`y` are screen coordinates; see
+  [Game UI](#game-ui-screen-space) below for what each type means and when
+  `value` is set).
 - `onEvent(ctx, name, data)`: every event emitted anywhere in the scene via
   `ctx.events.emit`, scene-wide — filter by `name` yourself. See
   [Events](#events) below.
@@ -97,6 +100,17 @@ Lua sees `nil`; where JS takes an object literal Lua passes a table.
 | --- | --- |
 | `ctx.input.isDown(action)` | Is an input action held this frame? |
 | `ctx.input.justPressed(action)` | Did the action go down this frame? |
+| `ctx.input.axis(name)` | Analog value in `[-1, 1]` for a virtual axis defined in `inputMappings.axes` |
+
+`axis` reads, in order: a sticky `setAxis` playtest override if one is set
+(see [Playtests](./cli.md#command-tour)); else the bound gamepad stick
+axis, clamped to `[-1, 1]`, once its magnitude clears the deadzone (the
+axis's own `deadzone` if set, else the mapping-wide default `0.15`); else
+the bound `negativeCodes`/`positiveCodes` keys, `-1`/`+1` when exactly one
+side is held, `0` otherwise. An axis name with no entry in
+`inputMappings.axes` always reads `0`. See [input.md](./input.md) for how
+virtual axes are configured (CLI, MCP, and the editor's Input panel) and
+[Gamepad](./input.md#gamepad) for named buttons and axis indices.
 
 ### Entities in the current scene
 
@@ -292,6 +306,101 @@ use in-memory storage scoped to the run.
 | `ctx.camera.setPosition(x, y)` | Move the main camera |
 | `ctx.camera.getZoom()` / `setZoom(zoom)` | Camera zoom |
 | `ctx.camera.follow(idOrName)` | Follow an entity each frame (nil/null stops); applied at end of frame after physics |
+| `ctx.camera.shake(intensity, seconds, opts?)` | Screen shake: offset decays from `intensity` (world units) to 0 over `seconds` |
+| `ctx.camera.flash(color, seconds)` | A color pulse over the screen, fading from full alpha to 0 over `seconds` |
+| `ctx.camera.fade(alpha, seconds, opts?)` | Ease the persistent screen overlay to `alpha` over `seconds`, then hold |
+| `ctx.camera.zoomPunch(scale, seconds)` | A zoom kick that eases back to `1x` over `seconds` |
+
+All four effects are **last-call-wins per kind**: calling `shake` again
+while one is running replaces it outright (one live entry per kind — a
+shake in flight doesn't stop a flash, and vice versa). `shake`'s `opts` is
+`{ seed? }` — a seeded run (explicit `seed`, or one deterministically
+drawn from the session's own RNG stream when omitted) always produces the
+same offsets, so shakes are reproducible in playtests without passing a
+seed by hand.
+
+`fade`'s `opts` is `{ color?, onComplete? }`. Unlike the other three,
+`fade` is **persistent**: the overlay level and color it reaches outlive
+the fade itself and carry across a `ctx.scenes.load` scene switch (the new
+scene starts at whatever alpha/color the old one held — a fade in flight
+at switch time is cut short, its animation discarded, not continued).
+Calling `fade` again while one is still easing **supersedes** it: the new
+fade continues smoothly from the current level toward its own target, and
+the superseded fade's `onComplete` is dropped — never fired — so a stale
+completion can't double-trigger something like a scene transition. Only
+the fade that actually finishes runs its `onComplete`, exactly once.
+
+```lua
+ctx.camera.shake(8, 0.3)
+ctx.camera.flash("#ffffff", 0.2)
+ctx.camera.fade(1, 0.5, { color = "#000000" })
+ctx.camera.zoomPunch(1.2, 0.25)
+```
+
+```js
+// A death sequence: flash, then fade to black and load the menu.
+ctx.camera.flash('#ffffff', 0.15);
+ctx.camera.fade(1, 0.6, { color: '#000000', onComplete: () => ctx.scenes.load('Menu') });
+```
+
+There's no `ctx.camera.getShake()`/equivalent — effects are write-only
+from a script's point of view. Headless playtests can still see what
+happened: results expose `cameraEffects` (every shake/flash/fade/zoomPunch
+call made during the run, each tagged with the frame it was called on and
+its params) and `cameraOverlayAlpha` (the combined flash-over-fade alpha
+at the end of the run). The `assertCameraEffect` playtest step asserts
+against a **count** of calls to one effect kind, not a live intensity —
+see [cli.md](./cli.md#command-tour).
+
+### UI focus
+
+| Member | What it is |
+| --- | --- |
+| `ctx.ui.focus(idOrName)` | Focus a `focusable` `UIElement` by id or name; `nil`/`null` clears focus |
+| `ctx.ui.getFocused()` | Currently focused entity's id, or `nil`/`null` |
+| `ctx.ui.moveFocus(direction)` | Move focus toward the nearest focusable candidate in `"up"\|"down"\|"left"\|"right"` |
+| `ctx.ui.activate()` | Click the focused element (fires `press`/`release`/`click` exactly like a real pointer click) |
+| `ctx.ui.adjust(delta)` | Nudge a focused `UISlider`'s value by `delta` steps |
+
+`focusable` (a field on `UIElement`, default `false`) is independent of
+`interactive` (which gates pointer hit-testing): an element can be
+focusable without being interactive, or interactive without being
+focusable. `ctx.ui.focus` refuses (warns, no state change) to focus an
+entity that isn't focusable, disabled, or unknown.
+
+`moveFocus` picks the nearest focusable candidate strictly in that
+direction from the current focus's screen position (or, with nothing
+focused, the top-left-most candidate) — straight-line distance, no
+wraparound, so moving off an edge with nothing further that way is a
+no-op. This is what a controller or arrow-key-driven pause menu wires up:
+`moveFocus` on d-pad/arrow input, `activate` on a confirm button.
+
+`activate` re-runs the exact pointer-click path (`press` → `release` →
+`click` on `onUiEvent`) at the focused element's own position, so a
+focused button fires its click handler, a focused `UIToggle` flips, and a
+focused `UISlider`'s value is left alone (activating a slider isn't how
+you move it — use `adjust` for that). Warns and does nothing if the
+focused element isn't `interactive`.
+
+`adjust(delta)` only does something for a focused `UISlider`: it moves
+`value` by `delta * step` (falling back to a tenth of the slider's range
+when `step` is `0`), clamped to `[min, max]`, firing `onUiEvent
+{type:'change', value}` only when the clamped value actually changes. It
+no-ops for a focused `UIToggle` or anything else — use `activate` to flip
+a toggle instead.
+
+```lua
+-- A confirm/menu script driving focus from actions.
+if ctx.input.justPressed("menuDown") then ctx.ui.moveFocus("down") end
+if ctx.input.justPressed("menuUp") then ctx.ui.moveFocus("up") end
+if ctx.input.justPressed("confirm") then ctx.ui.activate() end
+if ctx.input.justPressed("left") then ctx.ui.adjust(-1) end
+if ctx.input.justPressed("right") then ctx.ui.adjust(1) end
+```
+
+See [ui.md](./ui.md) for the full widget set (`UILayout`/`UISlider`/
+`UIToggle`), the `onUiEvent` reference, and playtest coverage
+(`drag`/`assertFocus`).
 
 ### Audio
 
@@ -468,7 +577,11 @@ positioned by `anchor` (nine positions, `top-left` through `bottom-right`)
 plus a pixel `offset`, unaffected by camera position or zoom. Visuals come
 from the same `Text` / `SpriteRenderer` components as any other entity.
 Set `interactive: true` and the entity's script receives `onUiEvent` —
-that's all a menu button is.
+that's all a menu button is. Set `focusable: true` and the same entity can
+receive keyboard/gamepad focus via `ctx.ui` (see [UI focus](#ui-focus)
+above) — a menu button is typically both. `UILayout` (stack containers),
+`UISlider`, and `UIToggle` build real menus and settings screens out of
+the same component system; see [ui.md](./ui.md) for the full reference.
 
 ## JavaScript scripts
 

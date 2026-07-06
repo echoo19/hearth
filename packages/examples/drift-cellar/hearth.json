@@ -1,18 +1,18 @@
 {
   "formatVersion": 1,
-  "hearthVersion": "0.6.0",
-  "id": "prj_wgir66yv",
+  "hearthVersion": "0.7.0",
+  "id": "prj_8lpp6hzv",
   "name": "Drift Cellar",
   "description": "Drift through a dim cellar on analog axes, gather three gems, and slip into the vault. Pause with Esc or start.",
-  "initialScene": "scn_mjuam69q",
+  "initialScene": "scn_547bqd5t",
   "scenes": [
     {
-      "id": "scn_mjuam69q",
+      "id": "scn_547bqd5t",
       "name": "Cellar",
       "path": "scenes/cellar.scene.json"
     },
     {
-      "id": "scn_d3f2l93k",
+      "id": "scn_tly2qazs",
       "name": "Vault",
       "path": "scenes/vault.scene.json"
     }

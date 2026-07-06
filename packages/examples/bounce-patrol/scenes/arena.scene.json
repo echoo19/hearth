@@ -1,10 +1,10 @@
 {
   "formatVersion": 1,
-  "id": "scn_u47qa46r",
+  "id": "scn_5ekb6jwm",
   "name": "Arena",
   "entities": [
     {
-      "id": "ent_bo0cunu5",
+      "id": "ent_0zmwzbn8",
       "name": "Main Camera",
       "parentId": null,
       "enabled": true,
@@ -30,7 +30,7 @@
       }
     },
     {
-      "id": "ent_78tiu0b8",
+      "id": "ent_1rtauu0w",
       "name": "Backdrop",
       "parentId": null,
       "enabled": true,
@@ -65,7 +65,7 @@
       }
     },
     {
-      "id": "ent_momt3oub",
+      "id": "ent_dvwji9kq",
       "name": "Arena",
       "parentId": null,
       "enabled": true,
@@ -87,7 +87,7 @@
         "Tilemap": {
           "tileSize": 32,
           "tileAssets": {
-            "X": "ast_6xldu88q"
+            "X": "ast_1n0rf29w"
           },
           "grid": [
             "XXXXXXXXXXXXXXXXXXXXXXXXX",
@@ -116,7 +116,7 @@
       }
     },
     {
-      "id": "ent_d3vkzh3e",
+      "id": "ent_9h0otgd1",
       "name": "Player",
       "parentId": null,
       "enabled": true,
@@ -136,7 +136,7 @@
           }
         },
         "SpriteRenderer": {
-          "assetId": "ast_qtwzk95j",
+          "assetId": "ast_23tzga9n",
           "frame": null,
           "shape": "rectangle",
           "color": "#ffffff",
@@ -199,7 +199,7 @@
       }
     },
     {
-      "id": "ent_bmohckji",
+      "id": "ent_0pln8inb",
       "name": "Ball",
       "parentId": null,
       "enabled": true,
@@ -219,7 +219,7 @@
           }
         },
         "SpriteRenderer": {
-          "assetId": "ast_cyhttoot",
+          "assetId": "ast_kddylwf7",
           "frame": null,
           "shape": "rectangle",
           "color": "#ffffff",
@@ -276,7 +276,7 @@
       }
     },
     {
-      "id": "ent_urch25jf",
+      "id": "ent_pdk073gp",
       "name": "Ice Patch",
       "parentId": null,
       "enabled": true,
@@ -353,7 +353,7 @@
       }
     },
     {
-      "id": "ent_54p3fjg3",
+      "id": "ent_b0btqg3j",
       "name": "Grind Strip",
       "parentId": null,
       "enabled": true,
@@ -430,7 +430,7 @@
       }
     },
     {
-      "id": "ent_126im7ib",
+      "id": "ent_50bi8sg0",
       "name": "Ledge",
       "parentId": null,
       "enabled": true,
@@ -507,7 +507,7 @@
       }
     },
     {
-      "id": "ent_4zqa1xwz",
+      "id": "ent_y8ks0249",
       "name": "Patroller",
       "parentId": null,
       "enabled": true,
@@ -527,7 +527,7 @@
           }
         },
         "SpriteRenderer": {
-          "assetId": "ast_hk7g3lsj",
+          "assetId": "ast_mx0ugr8r",
           "frame": null,
           "shape": "rectangle",
           "color": "#ffffff",
@@ -588,7 +588,7 @@
       }
     },
     {
-      "id": "ent_8be0yj60",
+      "id": "ent_mmfpu30u",
       "name": "Coin 1",
       "parentId": null,
       "enabled": true,
@@ -608,7 +608,7 @@
           }
         },
         "SpriteRenderer": {
-          "assetId": "ast_wzlzl0et",
+          "assetId": "ast_rcy4ndn1",
           "frame": null,
           "shape": "rectangle",
           "color": "#ffffff",
@@ -657,7 +657,7 @@
       }
     },
     {
-      "id": "ent_xdjcshp1",
+      "id": "ent_z0uvuqck",
       "name": "Coin 2",
       "parentId": null,
       "enabled": true,
@@ -677,7 +677,7 @@
           }
         },
         "SpriteRenderer": {
-          "assetId": "ast_wzlzl0et",
+          "assetId": "ast_rcy4ndn1",
           "frame": null,
           "shape": "rectangle",
           "color": "#ffffff",
@@ -726,7 +726,7 @@
       }
     },
     {
-      "id": "ent_rasv38fg",
+      "id": "ent_b0nytz2t",
       "name": "Coin 3",
       "parentId": null,
       "enabled": true,
@@ -746,7 +746,7 @@
           }
         },
         "SpriteRenderer": {
-          "assetId": "ast_wzlzl0et",
+          "assetId": "ast_rcy4ndn1",
           "frame": null,
           "shape": "rectangle",
           "color": "#ffffff",
@@ -795,7 +795,7 @@
       }
     },
     {
-      "id": "ent_spkk5jyt",
+      "id": "ent_78dlmc9v",
       "name": "Score",
       "parentId": null,
       "enabled": true,

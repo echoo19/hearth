@@ -71,8 +71,23 @@ languages).
 (value parses as JSON: `100` is a number, `true` a boolean, `#ff0000` a
 string), `set-input <action> [keys...]`,
 `set-settings [--build-settings '<json>'] [--initial-scene s]
-[--input-actions '<json>']` (partial, deep-merged — this is how you set
-`buildSettings.loading` for exported games and the initial scene).
+[--input-actions '<json>'] [--input-gamepad-buttons '<json>']
+[--input-gamepad-axes '<json>'] [--input-axes '<json>']
+[--input-deadzone n]` (partial, deep-merged — this is how you set
+`buildSettings.loading` for exported games, the initial scene, and every
+input mapping). `--input-gamepad-buttons` maps action names to gamepad
+button name lists (e.g. `'{"jump":["a"]}'` — named buttons: `a`, `b`, `x`,
+`y`, `lb`, `rb`, `lt`, `rt`, `back`, `start`, `ls`, `rs`, `dpad-up`,
+`dpad-down`, `dpad-left`, `dpad-right`); `--input-gamepad-axes` maps
+actions to a digital axis-crossed-a-threshold binding (e.g.
+`'{"right":{"axis":0,"direction":1,"threshold":0.5}}'`); `--input-axes`
+defines **virtual analog axes** read via `ctx.input.axis(name)` (e.g.
+`'{"horizontal":{"gamepadAxis":0,"negativeCodes":["ArrowLeft"],"positiveCodes":["ArrowRight"]}}'`
+— see [input.md](./input.md) for the full field reference and how
+keyboard/gamepad reads combine); `--input-deadzone` sets the project-wide
+default stick deadzone (`0`-`1`, default `0.15`), overridable per axis. See
+[input.md](./input.md) for the whole input system, including the editor's
+Input panel.
 
 **Scripts** (code-edit): `create script <name> [--language lua|js]
 [--source-file f]` (Lua is the default),
@@ -94,6 +109,23 @@ own `metadata`), `create asset anim-from-sheet <name> --sheet <asset>
 frames are `<sheetAssetId>#<frameName>` refs) — see
 [assets.md](./assets.md) for the full pipeline, worked examples, and
 the music/font/`assertAudioCount` side of things.
+
+**Undo/redo** (safe-edit; read-only for `history`): `undo` (undo the most
+recent recorded change), `redo` (redo the most recently undone change),
+`history` (list recorded entries, oldest first, each with `seq`, `command`,
+`summary`, `timestamp`, and whether it's currently undone). History is a
+disk-backed, 25-entry bound stack under `.hearth/history/`, captured
+around every mutating command except `undo`/`redo`/`revertProject`/
+`snapshotProject` themselves (those operate on undo history or the
+separate diff-baseline, not as undoable entries of their own). This is
+independent of `snapshot`/`revert`'s single diff baseline — undo/redo
+steps through every individual change one at a time, `revert` jumps
+straight back to the last snapshot. See [architecture.md](./architecture.md)
+for the on-disk layout and the trash-backed asset-file semantics (undoing
+`removeAsset` never touches disk; **redoing** a `removeAsset` called with
+`deleteFile: false` — so the file was left on disk the first time — does
+delete the file, moving it into `.hearth/trash/` rather than erasing it
+outright, so it's still recoverable).
 
 **Testing & review**: `snapshot`, `diff`, `revert --confirm`,
 `run <scene> [--frames n]` (the report includes `audioEvents`),

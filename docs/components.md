@@ -226,7 +226,7 @@ caveat.
 
 ## UIElement
 
-Makes the entity screen-space UI: positioned by anchor+offset, unaffected by the camera. Visuals come from Text/SpriteRenderer. interactive=true sends pointer events to the Script hook `onUiEvent(ctx, event)`.
+Makes the entity screen-space UI: positioned by anchor+offset, unaffected by the camera. Visuals come from Text/SpriteRenderer. interactive=true sends pointer events to the Script hook `onUiEvent(ctx, event)`. focusable=true lets it join keyboard/gamepad focus navigation.
 
 Defaults:
 
@@ -237,7 +237,8 @@ Defaults:
     "x": 0,
     "y": 0
   },
-  "interactive": false
+  "interactive": false,
+  "focusable": false
 }
 ```
 
@@ -245,10 +246,92 @@ Anchors: `top-left`, `top`, `top-right`, `left`, `center`, `right`,
 `bottom-left`, `bottom`, `bottom-right` — points in the game's
 `buildSettings` width×height space; `offset` is pixels from there.
 `Transform.position` is ignored (scale and rotation still apply). UI
-renders above all world layers; within UI, `layer` orders elements.
-Interactive elements are hit-tested against the SpriteRenderer's rect
-and/or the measured Text bounds; events are
-`click`, `press`, `release`, `enter`, `exit`.
+renders above all world layers; within UI, `layer` (on `SpriteRenderer`,
+`Text`, `UISlider`, or `UIToggle` — `UIElement` has no `layer` of its own)
+orders elements, both for rendering and for which element wins a pointer
+hit under overlapping widgets. Interactive elements are hit-tested against
+the SpriteRenderer's rect and/or the measured Text bounds; pointer/focus
+events are `click`, `press`, `release`, `enter`, `exit`, `drag`, `change`,
+`focus`, `blur` — see [scripting.md](./scripting.md#the-ctx-api) for the
+`onUiEvent` payload shape and [ui.md](./ui.md) for the full reference,
+including `UILayout` (which reflows every `UIElement` child parented to
+it — an entity's own `anchor`/`offset` are ignored once it has a
+`UILayout` parent).
+
+## UILayout
+
+A layout container: stacks its `UIElement` children (vertical or horizontal), reflowing their positions each frame. Has no visuals of its own.
+
+Defaults:
+
+```json
+{
+  "direction": "vertical",
+  "gap": 8,
+  "padding": 0,
+  "align": "start"
+}
+```
+
+Give the container entity its own `UIElement` (for its `anchor`/`offset`)
+and parent the widgets you want stacked to it — a `UILayout` entity has no
+visuals, it only positions children. `direction` picks the stacking axis;
+`gap` is the pixel space between consecutive children; `padding` insets
+the whole stack from the container's anchor point; `align` positions
+children on the cross axis (`start`/`center`/`end` — e.g. for a vertical
+stack, left/center/right). Hit-testing and focus navigation both use the
+reflowed position, not each child's bare `anchor`/`offset`.
+
+## UISlider
+
+A draggable value widget the runtime renders and hit-tests directly (handle + fill track). Needs `UIElement{interactive: true}` on the same entity to receive pointer/keyboard input.
+
+Defaults:
+
+```json
+{
+  "min": 0,
+  "max": 1,
+  "value": 0.5,
+  "step": 0,
+  "width": 160,
+  "trackColor": "#3a3a3a",
+  "fillColor": "#f76b15",
+  "handleColor": "#ececec",
+  "layer": 0
+}
+```
+
+Dragging the handle (pointer down + move) maps the pointer position onto
+the track and writes `value`, snapped to `step` when it's above `0`
+(`step: 0` is the default — no snapping, any value in `[min, max]`).
+Every value change fires `onUiEvent {type: 'change', value}` on the same
+entity, in the slider's own `min`-`max` range (not normalized to `0..1`
+unless that happens to be the range). Focused via `UIElement.focusable`
+and nudged with `ctx.ui.adjust(delta)` — see
+[scripting.md](./scripting.md#ui-focus) — which uses `step` when set, or
+a tenth of `max - min` otherwise, so keyboard/gamepad control feels
+reasonable even with `step: 0`.
+
+## UIToggle
+
+A boolean checkbox widget the runtime renders and hit-tests directly. Needs `UIElement{interactive: true}` on the same entity to receive clicks.
+
+Defaults:
+
+```json
+{
+  "value": false,
+  "size": 20,
+  "color": "#3a3a3a",
+  "checkColor": "#f76b15",
+  "layer": 0
+}
+```
+
+A click flips `value` and fires `onUiEvent {type: 'change', value}` with
+the new boolean. Activating a focused toggle via `ctx.ui.activate()` goes
+through the same click path, so it flips too.
 
 ## Tilemap
 

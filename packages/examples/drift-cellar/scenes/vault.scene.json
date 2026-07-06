@@ -1,10 +1,10 @@
 {
   "formatVersion": 1,
-  "id": "scn_d3f2l93k",
+  "id": "scn_tly2qazs",
   "name": "Vault",
   "entities": [
     {
-      "id": "ent_fkmhteps",
+      "id": "ent_g8hglss9",
       "name": "Main Camera",
       "parentId": null,
       "enabled": true,
@@ -30,7 +30,7 @@
       }
     },
     {
-      "id": "ent_jwfo9a7y",
+      "id": "ent_h8en84ai",
       "name": "Backdrop",
       "parentId": null,
       "enabled": true,
@@ -65,7 +65,7 @@
       }
     },
     {
-      "id": "ent_cmc5wi4l",
+      "id": "ent_320e3dym",
       "name": "Vault Title",
       "parentId": null,
       "enabled": true,
@@ -105,7 +105,7 @@
       }
     },
     {
-      "id": "ent_3oldkljt",
+      "id": "ent_t90oafhp",
       "name": "Vault Label",
       "parentId": null,
       "enabled": true,
@@ -151,7 +151,7 @@
       }
     },
     {
-      "id": "ent_fkxbov0s",
+      "id": "ent_n4ck33h1",
       "name": "Sparkles",
       "parentId": null,
       "enabled": true,

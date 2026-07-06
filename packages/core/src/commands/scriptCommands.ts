@@ -66,8 +66,9 @@ export default {
   },
 
   onUiEvent(ctx, event) {
-    // Pointer events on this entity's interactive UIElement
-    // (event.type: click|press|release|enter|exit).
+    // Pointer/focus events on this entity's interactive UIElement
+    // (event.type: click|press|release|enter|exit|drag|change|focus|blur;
+    // event.value is set on "change" — the slider/toggle's new value).
   },
 };
 `;
@@ -133,8 +134,9 @@ function script.onCollision(ctx, other)
 end
 
 function script.onUiEvent(ctx, event)
-  -- Pointer events on this entity's interactive UIElement
-  -- (event.type: click|press|release|enter|exit).
+  -- Pointer/focus events on this entity's interactive UIElement
+  -- (event.type: click|press|release|enter|exit|drag|change|focus|blur;
+  -- event.value is set on "change" - the slider/toggle's new value).
 end
 
 return script
