@@ -161,6 +161,8 @@ export const UISliderSchema = z.object({
   trackColor: z.string().default('#3a3a3a'),
   fillColor: z.string().default('#f76b15'),
   handleColor: z.string().default('#ececec'),
+  /** Higher layers render on top. */
+  layer: z.number().int().default(0),
 });
 
 export const UIToggleSchema = z.object({
@@ -168,6 +170,8 @@ export const UIToggleSchema = z.object({
   size: z.number().default(20),
   color: z.string().default('#3a3a3a'),
   checkColor: z.string().default('#f76b15'),
+  /** Higher layers render on top. */
+  layer: z.number().int().default(0),
 });
 
 export const TilemapSchema = z.object({

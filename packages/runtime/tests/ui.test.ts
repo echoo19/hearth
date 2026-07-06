@@ -85,6 +85,16 @@ describe('sendPointer dispatch', () => {
     runtime.sendPointer(400, 300, 'up');
     expect(messages(runtime)).toEqual(['Above:enter', 'Above:press', 'Above:release', 'Above:click']);
   });
+
+  it('lets a UISlider layer out-rank an overlapping SpriteRenderer layer', async () => {
+    const runtime = await makeUiRuntime([
+      button('Below', { anchor: 'center' }, { SpriteRenderer: { width: 50, height: 50, layer: 1 } }),
+      button('Above', { anchor: 'center' }, { UISlider: { width: 50, layer: 5 } }),
+    ]);
+    runtime.sendPointer(400, 300, 'down');
+    runtime.sendPointer(400, 300, 'up');
+    expect(messages(runtime)).toEqual(['Above:enter', 'Above:press', 'Above:release', 'Above:click']);
+  });
 });
 
 describe('hit rects', () => {

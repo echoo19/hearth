@@ -733,6 +733,8 @@ export class SceneRuntime {
       const layer = Math.max(
         entity.components.SpriteRenderer?.layer ?? 0,
         entity.components.Text?.layer ?? 0,
+        entity.components.UISlider?.layer ?? 0,
+        entity.components.UIToggle?.layer ?? 0,
       );
       if (layer >= bestLayer) {
         bestLayer = layer;

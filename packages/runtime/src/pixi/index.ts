@@ -982,11 +982,14 @@ export class PixiSceneView {
     const line = entity.components.LineRenderer;
     const slider = entity.components.UISlider;
     const toggle = entity.components.UIToggle;
-    // UISlider/UIToggle have no `layer` field of their own (see
-    // components.ts) — they always draw at 0 unless the same entity also
-    // carries a layered Sprite/Text/Tilemap/LineRenderer, same as any other
-    // layer-less component would.
-    node.zIndex = Math.max(sprite?.layer ?? 0, text?.layer ?? 0, tilemap?.layer ?? 0, line?.layer ?? 0);
+    node.zIndex = Math.max(
+      sprite?.layer ?? 0,
+      text?.layer ?? 0,
+      tilemap?.layer ?? 0,
+      line?.layer ?? 0,
+      slider?.layer ?? 0,
+      toggle?.layer ?? 0,
+    );
     node.visible = entity.enabled;
 
     let spriteNode = node.getChildByLabel?.('sprite') ?? null;
@@ -1074,6 +1077,7 @@ export class PixiSceneView {
       slider.trackColor,
       slider.fillColor,
       slider.handleColor,
+      slider.layer,
     ]);
   }
 
@@ -1106,7 +1110,7 @@ export class PixiSceneView {
 
   /** Identity of a UIToggle's drawn visual, to skip redundant redraws. */
   private toggleSnapshotKey(toggle: UIToggleComponent): string {
-    return JSON.stringify([toggle.value, toggle.size, toggle.color, toggle.checkColor]);
+    return JSON.stringify([toggle.value, toggle.size, toggle.color, toggle.checkColor, toggle.layer]);
   }
 
   /**
