@@ -28,6 +28,7 @@ import {
 } from '@hearth/core';
 import { NodeFileSystem, loadPlayerBundle } from '@hearth/core/node';
 import { attachWebSocket } from './ws.js';
+import { detectAgents, prepareMcpConfig, McpConfigParseError, type AgentPermissionMode } from './agentSetup.js';
 
 export { attachWebSocket } from './ws.js';
 
@@ -153,6 +154,29 @@ async function pathExists(p: string): Promise<boolean> {
     return false;
   }
 }
+
+/**
+ * Agent tool locations. In the packaged desktop app, single-file bundles
+ * ship next to the Electron main (HEARTH_TOOLS_DIR is set by
+ * electron/main.ts); from a repo checkout we point at the built packages
+ * instead. Shared by `meta()` and the agent/prepare route, which both need
+ * to know where hearth-mcp lives.
+ */
+async function resolveToolPaths(repoRoot: string): Promise<{ cli: string; mcp: string; bundled: boolean }> {
+  const toolsDir = process.env.HEARTH_TOOLS_DIR;
+  const bundledCli = toolsDir ? path.join(toolsDir, 'hearth-cli.mjs') : null;
+  const bundledMcp = toolsDir ? path.join(toolsDir, 'hearth-mcp.mjs') : null;
+  if (bundledCli && bundledMcp && (await pathExists(bundledCli)) && (await pathExists(bundledMcp))) {
+    return { cli: bundledCli, mcp: bundledMcp, bundled: true };
+  }
+  return {
+    cli: path.join(repoRoot, 'packages', 'cli', 'dist', 'main.js'),
+    mcp: path.join(repoRoot, 'packages', 'mcp-server', 'dist', 'main.js'),
+    bundled: false,
+  };
+}
+
+const AGENT_PERMISSION_MODES = new Set(['read-only', 'safe-edit', 'full', 'all']);
 
 function errorEnvelope(command: string, code: string, message: string): CommandResult {
   return {
@@ -520,22 +544,7 @@ export function createProjectServerContext(options: ProjectServerOptions = {}) {
       const runtimeAvailable =
         (await pathExists(path.join(repoRoot, 'packages', 'runtime', 'src', 'pixi', 'index.ts'))) ||
         (await pathExists(path.join(repoRoot, 'packages', 'runtime', 'dist', 'pixi', 'index.js')));
-
-      // Agent tool locations. In the packaged desktop app, single-file
-      // bundles ship next to the Electron main (HEARTH_TOOLS_DIR is set by
-      // electron/main.ts); from a repo checkout we point at the built
-      // packages instead.
-      const toolsDir = process.env.HEARTH_TOOLS_DIR;
-      const bundledCli = toolsDir ? path.join(toolsDir, 'hearth-cli.mjs') : null;
-      const bundledMcp = toolsDir ? path.join(toolsDir, 'hearth-mcp.mjs') : null;
-      const toolPaths =
-        bundledCli && bundledMcp && (await pathExists(bundledCli)) && (await pathExists(bundledMcp))
-          ? { cli: bundledCli, mcp: bundledMcp, bundled: true }
-          : {
-              cli: path.join(repoRoot, 'packages', 'cli', 'dist', 'main.js'),
-              mcp: path.join(repoRoot, 'packages', 'mcp-server', 'dist', 'main.js'),
-              bundled: false,
-            };
+      const toolPaths = await resolveToolPaths(repoRoot);
 
       return {
         status: 200,
@@ -548,6 +557,45 @@ export function createProjectServerContext(options: ProjectServerOptions = {}) {
           toolPaths,
         },
       };
+    },
+
+    /** GET /api/agent/detect: is `claude` / `codex` on PATH, and what version? */
+    async detectAgents(): Promise<JsonResult> {
+      const result = await detectAgents();
+      return { status: 200, body: { ok: true, ...result } };
+    },
+
+    /**
+     * POST /api/agent/prepare: merge-write a `hearth` entry into the
+     * project's .mcp.json so a generic MCP-capable agent picks up this
+     * project's Hearth MCP server with the requested permission mode.
+     */
+    async prepareAgent(project: unknown, mode: unknown): Promise<JsonResult> {
+      if (typeof project !== 'string' || project.trim() === '') {
+        return { status: 400, body: { ok: false, error: 'Missing "project" (absolute project folder).' } };
+      }
+      const modeValue = typeof mode === 'string' ? mode : 'safe-edit';
+      if (!AGENT_PERMISSION_MODES.has(modeValue)) {
+        return {
+          status: 400,
+          body: {
+            ok: false,
+            error: `Unknown mode "${modeValue}". Valid modes: ${[...AGENT_PERMISSION_MODES].join(', ')}.`,
+          },
+        };
+      }
+      const root = path.resolve(project.trim());
+      if (!(await pathExists(path.join(root, 'hearth.json')))) {
+        return { status: 400, body: { ok: false, error: `Not a Hearth project: ${root} has no hearth.json.` } };
+      }
+      const toolPaths = await resolveToolPaths(repoRoot);
+      try {
+        const result = await prepareMcpConfig(root, toolPaths.mcp, modeValue as AgentPermissionMode);
+        return { status: 200, body: { ok: true, ...result } };
+      } catch (err) {
+        const status = err instanceof McpConfigParseError ? 409 : 500;
+        return { status, body: { ok: false, error: (err as Error).message } };
+      }
     },
   };
 
@@ -657,6 +705,15 @@ async function route(ctx: ProjectServerContext, req: IncomingMessage, res: Serve
     }
     case 'GET /api/meta': {
       const result = await ctx.meta();
+      return sendJson(res, result.status, result.body);
+    }
+    case 'GET /api/agent/detect': {
+      const result = await ctx.detectAgents();
+      return sendJson(res, result.status, result.body);
+    }
+    case 'POST /api/agent/prepare': {
+      const body = await readJsonBody(req);
+      const result = await ctx.prepareAgent(body.project, body.mode);
       return sendJson(res, result.status, result.body);
     }
     default:
