@@ -292,3 +292,6 @@ export const AGENT_CONFIG_FILE = '.hearth/agent-config.json';
 export const HISTORY_DIR = '.hearth/history';
 /** Trashed asset files, keyed by asset id: `.hearth/trash/<assetId>/<basename>`. */
 export const TRASH_DIR = '.hearth/trash';
+export const LOG_DIR = '.hearth/log';
+/** Append-only command journal: one JSON `JournalEntry` per line (see `project/journal.ts`). */
+export const JOURNAL_FILE = '.hearth/log/commands.jsonl';

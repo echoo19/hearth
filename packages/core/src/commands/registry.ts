@@ -15,6 +15,7 @@ import * as settingsCommands from './settingsCommands.js';
 import * as diffCommands from './diffCommands.js';
 import * as exportCommands from './exportCommands.js';
 import * as historyCommands from './historyCommands.js';
+import * as journalCommands from './journalCommands.js';
 
 const ALL_DEFINITIONS: CommandDefinition[] = [
   // inspect (read-only)
@@ -77,6 +78,8 @@ const ALL_DEFINITIONS: CommandDefinition[] = [
   historyCommands.undo,
   historyCommands.redo,
   historyCommands.listHistory,
+  // command journal
+  journalCommands.listJournal,
 ];
 
 export const COMMANDS: ReadonlyMap<string, CommandDefinition> = new Map(

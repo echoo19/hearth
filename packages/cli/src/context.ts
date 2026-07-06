@@ -84,5 +84,6 @@ export async function openSession(opts: GlobalOpts): Promise<HearthSession> {
     runtime: createRuntimeHooks(),
     resources: { getPlayerBundle: () => loadPlayerBundle() },
     onLog: (level, message) => logStderr(opts.quiet, `[${level}] ${message}`),
+    source: 'cli',
   });
 }

@@ -229,6 +229,7 @@ export function createProjectServerContext(options: ProjectServerOptions = {}) {
       // exportWeb needs the built web player: HEARTH_TOOLS_DIR in the
       // packaged app, packages/runtime/player/ from a repo checkout.
       resources: { getPlayerBundle: () => loadPlayerBundle(repoRoot) },
+      source: 'editor',
     });
     sessions.set(root, session);
     return session;

@@ -27,6 +27,12 @@ export class NodeFileSystem implements FsLike {
     await fsp.writeFile(abs, content);
   }
 
+  async appendFile(path: string, text: string): Promise<void> {
+    const abs = this.resolve(path);
+    await fsp.mkdir(nodePath.dirname(abs), { recursive: true });
+    await fsp.appendFile(abs, text, { flag: 'a' });
+  }
+
   async exists(path: string): Promise<boolean> {
     try {
       await fsp.access(this.resolve(path));

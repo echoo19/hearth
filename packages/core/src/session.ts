@@ -7,6 +7,7 @@ import { ZodError } from 'zod';
 import type { FsLike } from './fs.js';
 import { ProjectStore, ProjectError, type ProjectSnapshot } from './project/store.js';
 import { HistoryStore } from './project/history.js';
+import { JournalStore, shouldJournal } from './project/journal.js';
 import { HISTORY_EXEMPT } from './commands/historyCommands.js';
 import { getCommand, listCommands } from './commands/registry.js';
 import type { ChangedRef, CommandIssue, CommandResources, CommandResult, RuntimeHooks } from './commands/types.js';
@@ -24,11 +25,34 @@ function summarizeCommand(name: string, params: unknown): string {
   return ident ? `${name} ${ident}` : name;
 }
 
+/**
+ * `detail` for the journal entry of a small set of read-only-but-journaled
+ * commands: small, defensively-extracted facts, never the full result. Any
+ * shape mismatch (missing/wrong-typed field) omits `detail` entirely rather
+ * than recording a partial/garbled fact.
+ */
+function extractJournalDetail(name: string, data: unknown): Record<string, unknown> | undefined {
+  if (typeof data !== 'object' || data === null) return undefined;
+  const d = data as Record<string, unknown>;
+  if (name === 'runPlaytest') {
+    if (typeof d.passed !== 'boolean' || !Array.isArray(d.steps)) return undefined;
+    const failures = d.steps.filter((s) => s && typeof s === 'object' && (s as any).passed === false).length;
+    return { passed: d.passed, assertions: d.steps.length, failures };
+  }
+  if (name === 'validateProject') {
+    if (!Array.isArray(d.errors) || !Array.isArray(d.warnings)) return undefined;
+    return { errors: d.errors.length, warnings: d.warnings.length };
+  }
+  return undefined;
+}
+
 export interface SessionOptions {
   granted?: PermissionMode[];
   runtime?: RuntimeHooks;
   resources?: CommandResources;
   onLog?: (level: 'info' | 'warn' | 'error', message: string) => void;
+  /** Where commands executed through this session originate from, recorded on every journal entry. Defaults to 'unknown'. */
+  source?: string;
 }
 
 export class HearthSession {
@@ -40,6 +64,7 @@ export class HearthSession {
     private runtime: RuntimeHooks | undefined,
     private resources: CommandResources | undefined,
     private onLog: SessionOptions['onLog'],
+    private source: string,
   ) {}
 
   static async open(fs: FsLike, root: string, options: SessionOptions = {}): Promise<HearthSession> {
@@ -52,6 +77,7 @@ export class HearthSession {
       options.runtime,
       options.resources,
       options.onLog,
+      options.source ?? 'unknown',
     );
   }
 
@@ -64,6 +90,7 @@ export class HearthSession {
       options.runtime,
       options.resources,
       options.onLog,
+      options.source ?? 'unknown',
     );
   }
 
@@ -133,8 +160,11 @@ export class HearthSession {
       before = await this.store.toSnapshot();
     }
 
+    let data: T | undefined;
+    let failure: { code: string; message: string } | undefined;
+
     try {
-      const data = (await def.run(ctx, params2 as any)) as T;
+      data = (await def.run(ctx, params2 as any)) as T;
       if (def.mutates) {
         files = await this.store.save();
       }
@@ -153,16 +183,44 @@ export class HearthSession {
           });
         }
       }
-      return { success: true, command: name, data, errors, warnings, changed, files, suggestions };
     } catch (err) {
       if (err instanceof ProjectError) {
-        return fail(err.code, err.message);
-      }
-      if (err instanceof ZodError) {
+        failure = { code: err.code, message: err.message };
+      } else if (err instanceof ZodError) {
         const detail = err.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join('; ');
-        return fail('SCHEMA_ERROR', detail);
+        failure = { code: 'SCHEMA_ERROR', message: detail };
+      } else {
+        failure = { code: 'INTERNAL_ERROR', message: `${name} failed: ${(err as Error).message}` };
       }
-      return fail('INTERNAL_ERROR', `${name} failed: ${(err as Error).message}`);
     }
+
+    // Journal every mutating (or explicitly allowlisted) command, success or
+    // failure — never `listJournal` itself. Isolated the same way as history
+    // recording above: a broken journal must not turn an applied mutation
+    // into a failed result.
+    if (name !== 'listJournal' && shouldJournal(name, def.mutates)) {
+      try {
+        const journal = new JournalStore(this.fs, this.root);
+        await journal.append({
+          ts: new Date().toISOString(),
+          source: this.source,
+          command: name,
+          summary: summarizeCommand(name, params2),
+          ok: !failure,
+          error: failure?.code,
+          detail: extractJournalDetail(name, data),
+        });
+      } catch (journalErr) {
+        warnings.push({
+          code: 'JOURNAL_RECORD_FAILED',
+          message: `Command finished, but recording it to the command journal failed: ${(journalErr as Error).message}`,
+        });
+      }
+    }
+
+    if (failure) {
+      return fail(failure.code, failure.message);
+    }
+    return { success: true, command: name, data: data as T, errors, warnings, changed, files, suggestions };
   }
 }

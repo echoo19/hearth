@@ -96,6 +96,9 @@ export class HttpFs implements FsLike {
   async writeFile(): Promise<void> {
     throw new Error('HttpFs is read-only (preview runs against the saved project)');
   }
+  async appendFile(): Promise<void> {
+    throw new Error('HttpFs is read-only (preview runs against the saved project)');
+  }
   async mkdir(): Promise<void> {
     throw new Error('HttpFs is read-only');
   }

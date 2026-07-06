@@ -14,6 +14,8 @@ export interface FsLike {
   readFile(path: string): Promise<string>;
   readFileBinary(path: string): Promise<Uint8Array>;
   writeFile(path: string, content: string | Uint8Array): Promise<void>;
+  /** Append `text` to `path`, creating the file (and its parent dirs) if absent. Used by the append-only command journal. */
+  appendFile(path: string, text: string): Promise<void>;
   exists(path: string): Promise<boolean>;
   mkdir(path: string): Promise<void>;
   readdir(path: string): Promise<string[]>;
@@ -111,6 +113,13 @@ export class MemoryFileSystem implements FsLike {
       dir = dirnamePath(dir);
     }
     this.files.set(p, content);
+  }
+
+  async appendFile(path: string, text: string): Promise<void> {
+    const p = this.norm(path);
+    const existing = this.files.get(p);
+    const prior = existing === undefined ? '' : typeof existing === 'string' ? existing : new TextDecoder().decode(existing);
+    await this.writeFile(p, prior + text);
   }
 
   async exists(path: string): Promise<boolean> {

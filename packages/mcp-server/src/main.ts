@@ -58,6 +58,7 @@ async function main(): Promise<void> {
       runtime: createRuntimeHooks(),
       resources: { getPlayerBundle: () => loadPlayerBundle() },
       onLog: (level, message) => console.error(`[hearth-mcp] [${level}] ${message}`),
+      source: 'mcp',
     });
   } catch (err) {
     console.error(`hearth-mcp: failed to open project at "${values.project}": ${(err as Error).message}`);

@@ -20,6 +20,14 @@ export { ProjectStore, ProjectError, readJson, writeJson, type ProjectSnapshot }
 export { createProject, DEFAULT_INPUT_ACTIONS, type CreateProjectOptions } from './project/create.js';
 export { HistoryStore, type HistoryEntryMeta, type HistoryIndex } from './project/history.js';
 export { applySnapshot, type RestoreContext } from './project/restore.js';
+export {
+  JournalStore,
+  shouldJournal,
+  JOURNAL_ALLOWLIST,
+  JOURNAL_ROTATE_MAX,
+  JOURNAL_ROTATE_KEEP,
+  type JournalEntry,
+} from './project/journal.js';
 
 // Command system
 export { COMMANDS, getCommand, listCommands } from './commands/registry.js';
