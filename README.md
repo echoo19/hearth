@@ -1,15 +1,28 @@
-# Hearth 🔥
+<div align="center">
 
-**An open-source 2D game engine and editor built for human + coding-agent collaboration.**
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="assets/brand/readme-banner-dark.svg">
+  <img src="assets/brand/readme-banner-light.svg" alt="hearth" width="480">
+</picture>
 
-**Website & downloads: [hearth-engine.vercel.app](https://hearth-engine.vercel.app)**
+**A 2D game engine and editor built for humans and coding agents to make games together.**
 
-Hearth is **not** an AI game generator. It's a real engine: humans get a
-normal visual editor; coding agents (Claude Code, Codex, any MCP client) get
-the *entire* editor surface as structured, validated, permission-checked
-operations over a CLI and an MCP server. No AI runs inside the engine, and
-nothing needs an API key or a cloud account. Projects are local JSON files,
-and agents connect from outside.
+[Website](https://hearth-engine.vercel.app) · [Download](https://github.com/echoo19/hearth/releases/latest) · [Quickstart](docs/quickstart.md) · [Docs](#documentation)
+
+[![CI](https://img.shields.io/github/actions/workflow/status/echoo19/hearth/ci.yml?label=CI)](https://github.com/echoo19/hearth/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/echoo19/hearth)](https://github.com/echoo19/hearth/releases/latest)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
+
+</div>
+
+---
+
+Hearth is a real engine, not an AI game generator. Humans get a normal visual
+editor. Coding agents (Claude Code, Codex, any MCP client) get the entire
+editor surface as structured, validated, permission-checked operations over a
+CLI and an MCP server. No AI runs inside the engine, nothing needs an API key
+or a cloud account, and your project is a folder of readable JSON, scripts,
+and assets on your own disk.
 
 ```
    Human ──▶ Editor UI ──┐
@@ -17,56 +30,75 @@ and agents connect from outside.
    Agent ──▶ CLI / MCP ──┘      (validate · execute · diff)     scenes · scripts · assets
 ```
 
-Both audiences use the same 48 engine commands (`createEntity`,
-`setComponentProperty`, `runPlaytest`, `getDiff`, …). That means an agent can
-build a level, wire input, write behavior scripts, generate placeholder art,
-run headless playtests, and hand the human a structural diff to review in the
-editor, all without guessing at file formats.
+Both audiences use the same 48 engine commands: `createEntity`,
+`setComponentProperty`, `runPlaytest`, `getDiff`, and so on. An agent can
+build a level, wire input, write behavior scripts, import and slice art, run
+headless playtests, and hand you a structural diff to review in the editor,
+all without guessing at file formats. You stay in charge the whole way:
+permission modes gate what agents may touch, and every session can be
+snapshotted, diffed, and reverted.
+
+## What's in the engine
+
+**Runtime.** A fixed-timestep, deterministic 2D runtime: sprites and
+spritesheets, tilemaps with auto-generated colliders, text, 2D lighting,
+polylines, deterministic particles, sprite animation, and screen-space game
+UI. Physics covers mass, restitution, friction, named collision layers,
+one-way platforms, and box/circle/convex-polygon colliders. Audio includes
+sound effects, procedural synthesis, and a streamed music channel that
+survives scene switches. The same runtime runs in the editor preview,
+headlessly in Node, and in exported games.
+
+**Scripting.** Lua by default (sandboxed, seed-deterministic), JavaScript
+equally supported, both against the same `ctx` API: timers, tweens, seeded
+RNG, pub/sub events, math helpers, grid pathfinding, camera control, save
+data, and scene switching for building your own menus. `hearth inspect api`
+prints the whole surface.
+
+**Editor.** A dockable workspace with a scene view, hierarchy,
+schema-driven inspector, asset browser with spritesheet slicing and
+previews, live game preview, console, and a diff/review panel for agent
+sessions. Runs in the browser during development or as a packaged desktop
+app (Electron) with native folder dialogs.
+
+**Agent tooling.** The `hearth` CLI wraps every command with `--json`
+envelopes. The MCP server exposes 45 typed tools with per-session permission
+modes. Playtests script input and assert on game state, events, particles,
+and audio, entirely headless and CI-friendly. `hearth screenshot` renders
+real frames through headless Chromium so agents can see their own work.
+
+**Export.** `hearth export web` produces a static, self-contained build
+(one folder, one HTML file, or a zip for itch.io) that boots straight into
+your first scene. No engine splash screen, no branding, nothing of Hearth's
+chrome ships in your game.
+
+**Procedural placeholders.** Agents can create deterministic SVG sprites and
+WAV sound effects through commands, so a game is playable and audible before
+any real assets exist. Real art, sound, music, and fonts come in through the
+same asset pipeline: import, probe, slice, animate.
 
 ## Status
 
-**v0.6.0, developer preview.** The full loop works end to end:
-project model → editor → runtime preview → CLI → MCP → headless playtests →
-diff review. v0.6 adds **asset pipeline v2**: import real art/audio/fonts
-(`importAsset` probes PNG/JPEG/GIF/WebP/SVG dimensions), spritesheet
-slicing (`sliceSpritesheet`, typed frame metadata) and
-sheet-backed animations (`createAnimationFromSheet`), a single
-crossfading music channel (`ctx.audio.playMusic`/`stopMusic`/
-`setMusicVolume`, surviving scene switches) with an `assertAudioCount`
-playtest step, and real font assets (`Text.fontFamily` = the imported
-asset's name, loaded via `FontFace`) — see [docs/assets.md](docs/assets.md).
-On top of v0.5: **physics v2** (mass/restitution/friction,
-named collision layers, one-way platforms, circle-accurate resolution),
-**script stdlib v2** (`ctx.math` vec2/color helpers, `ctx.events` +
-`onEvent` pub/sub), and **pathfinding** (`ctx.scene.findPath`, `hearth
-inspect path`, the `inspect_path` MCP tool).
-On top of v0.4: rendering v2 — 2D lighting (`Light2D` +
-`Camera.ambientLight`), polylines (`LineRenderer`), deterministic particles
-(`ParticleEmitter`, `ctx.particles`), sprite animation (`SpriteAnimator`,
-`ctx.animate`), a debug-draw overlay (off by default, never in exports),
-and `hearth screenshot [--debug]` so agents can see their own work via
-headless Chromium.
-On top of v0.3: Lua as the default scripting language (JS still fully
-supported, same `ctx` API), scene management and a script stdlib
-(`ctx.scenes.load`, timers, tweens, seeded RNG, save data, camera
-control), and chrome-free exports — shipped builds boot straight into
-your first scene.
-On top of v0.2: dockable editor workspace, screen-space game UI
-(`UIElement` + `onUiEvent`), convex polygon colliders, audio with
-procedural sound effects, and static web export (`hearth export web`).
-See [docs/roadmap.md](docs/roadmap.md) for what's deliberately missing
-(undo, prefabs, TypeScript scripts…).
+Hearth is at **v0.6.0**, a developer preview. The full loop works end to
+end: project model, editor, runtime preview, CLI, MCP, headless playtests,
+diff review, web export. Recent releases added the asset pipeline (import
+real images, audio, and fonts; slice spritesheets; stream music), physics
+v2, pathfinding, 2D lighting and particles, and Lua scripting. The
+[roadmap](docs/roadmap.md) keeps an honest list of what's still missing,
+including editor undo, prefabs, and gamepad input.
 
 ## Install
 
-**Download the desktop app** from [Releases](https://github.com/echoo19/hearth/releases/latest):
-macOS (`Hearth-mac-arm64.dmg` / `Hearth-mac-x64.dmg`), Windows
+**Desktop app.** Grab it from the
+[latest release](https://github.com/echoo19/hearth/releases/latest): macOS
+(`Hearth-mac-arm64.dmg` / `Hearth-mac-x64.dmg`), Windows
 (`Hearth-win-x64.exe`), Linux (`Hearth-linux-x86_64.AppImage` /
-`Hearth-linux-amd64.deb`). macOS first launch: right-click → Open; if macOS
-says the app "is damaged" run `xattr -cr /Applications/Hearth.app` (preview
-builds are ad-hoc signed, not notarized yet).
+`Hearth-linux-amd64.deb`). On macOS, first launch is right-click → Open;
+if macOS claims the app is damaged, run `xattr -cr /Applications/Hearth.app`
+(preview builds are ad-hoc signed, not notarized yet).
 
-**Agent tools without any install** (single files, Node ≥ 20):
+**Agent tools, no install.** The CLI and MCP server also ship as single
+files that only need Node 20+:
 
 ```bash
 curl -LO https://github.com/echoo19/hearth/releases/latest/download/hearth-cli.mjs
@@ -75,35 +107,29 @@ node hearth-cli.mjs --help
 claude mcp add hearth -- node $PWD/hearth-mcp.mjs --project <your game>
 ```
 
-The same two files also ship inside the desktop app (the editor shows
-their exact paths in its agent setup instructions, ready to copy).
+The same two files are bundled inside the desktop app, and the editor's
+agent-setup panel shows their exact paths ready to copy.
 
-## Quick start (from source)
+## Quick start from source
 
-Requires Node ≥ 20.
+Requires Node 20+.
 
 ```bash
 git clone https://github.com/echoo19/hearth.git && cd hearth
 npm install
 npm run build:packages     # core → runtime → playtest → cli → mcp-server
-npm test                   # the full suite, headless
+npm test                   # full suite, headless
 npm run dev                # editor at http://localhost:5173
 ```
 
-In the editor's launcher, open an example (e.g. **Mini Platformer**) and press
-**Play** in the Game tab. Arrows/WASD move, Space jumps.
+Open an example from the launcher (try **Mini Platformer**) and press
+**Play**. Arrows or WASD to move, Space to jump. For the desktop app,
+`npm run app` launches it and `npm run app:dist` packages a real installer;
+see [docs/desktop-app.md](docs/desktop-app.md).
 
-### Desktop app
+## Try the agent loop
 
-```bash
-npm run app          # launch Hearth as a desktop app (Electron)
-npm run app:dist     # package a real Hearth.app / installer
-```
-
-The desktop app opens projects straight from folders with native dialogs,
-Godot/Unity style; see [docs/desktop-app.md](docs/desktop-app.md).
-
-### Try the agent loop yourself
+This is the workflow agents are taught, and it's pleasant by hand too:
 
 ```bash
 alias hearth="node $PWD/packages/cli/dist/main.js"
@@ -121,104 +147,59 @@ hearth diff                           # what changed, human-readable
 hearth revert --confirm               # undo the whole session
 ```
 
-### Connect Claude Code via MCP
+To hook up Claude Code instead:
 
 ```bash
 claude mcp add hearth -- node $PWD/packages/mcp-server/dist/main.js \
   --project $PWD/packages/examples/mini-platformer
 ```
 
-Then ask it to call `get_agent_instructions`. Permission modes
-(`--mode read-only` … `--mode all`) control what the agent may do;
-see [docs/mcp.md](docs/mcp.md).
+Then ask it to call `get_agent_instructions`. Permission modes from
+`--mode read-only` up to `--mode all` control what the agent may do; see
+[docs/mcp.md](docs/mcp.md).
 
-## What's in the box
+## Examples
 
-- **Editor** (`apps/editor`): project launcher, dockable workspace (drag
-  tabs, splits, persisted layouts), scene view with drag editing, hierarchy,
-  schema-driven inspector, asset browser, console, live game preview
-  (PixiJS), **diff/review panel**, and copy-paste agent setup (CLI + MCP
-  snippets with exact tool paths). Runs in the browser via Vite or as a
-  packaged Electron desktop app with native folder dialogs (Tauri shell
-  included as an experimental alternative).
-- **Runtime** (`packages/runtime`): fixed-timestep deterministic 2D runtime:
-  transforms, sprites/primitives, text, tilemaps, screen-space UI with
-  pointer events, input actions, box/circle/convex-polygon physics +
-  triggers, audio, cameras, multi-scene sessions (`ctx.scenes.load` for
-  user-built menus), 2D lighting (`Light2D` + ambient light), polylines
-  (`LineRenderer`), deterministic particles (`ParticleEmitter`), sprite
-  animation (`SpriteAnimator`), a toggleable debug-draw overlay, and a
-  script engine — **Lua (sandboxed, via wasmoon) by default, JavaScript
-  equally supported** — with timers, tweens, seeded RNG, and persistent
-  save data, running identically in the browser preview, headless in
-  Node, and in exported games.
-- **Web export**: `hearth export web` produces a static, self-contained
-  playable build — one folder or one HTML file, `--zip` for itch.io. See
-  [docs/export.md](docs/export.md).
-- **CLI** (`packages/cli`): `hearth` with `--json` envelopes for every
-  operation, plus `doctor`, `test`, and `commands` (registry discovery).
-- **MCP server** (`packages/mcp-server`): 45 typed tools (43 wrapping core
-  commands, plus `screenshot` and `get_agent_instructions`), with
-  per-session permission modes.
-- **Playtests** (`packages/playtest`): scripted input + assertions, run
-  headlessly at a fixed timestep; deterministic and CI-friendly. Run
-  reports record every audio play/stop, so sound behavior is testable too.
-- **Procedural assets**: agents create deterministic SVG sprites/tiles
-  (`character`, `enemy`, `coin`, `heart`, shapes…) and WAV sound effects
-  (`hearth create sound --preset coin`) so games are playable and audible
-  before any real assets exist. No AI generation.
-- **Examples** (`packages/examples`, seven projects): a mini platformer
-  (with a score HUD, restart button, sound effects, and polygon spikes),
-  a top-down room, a visual novel, **Ember Trail** — an all-Lua two-scene
-  game (menu → level → menu) exercising scene switching, timers, seeded
-  spawning, camera follow, and a saved best score — **Glow Caves** — an
-  all-Lua rendering-v2 showcase (a dark cave lit only by a
-  player-following torch, cave-wall polylines, particle sparks and
-  drips, a flickering animated flame) — **Bounce Patrol** — an all-Lua
-  physics-v2 showcase (bounciness, friction, named collision layers,
-  one-way platforms, `ctx.events`-driven scoring, and a
-  `ctx.scene.findPath`-chasing patroller) — and **Sky Courier** — an
-  all-Lua asset-pipeline showcase, the first example built from
-  *imported* binary assets rather than procedural SVGs: a sliced PNG
-  spritesheet driving walk/idle animations, a streamed WAV music loop on
-  a music-channel `AudioSource`, and an imported `.ttf` HUD font — all
-  generated *through the command system itself* and covered by playtests
-  in CI.
-- **Agent onboarding**: every new project gets `AGENTS.md`, `CLAUDE.md`,
-  and `.hearth/agent-config.json` teaching agents the safe workflow
-  (snapshot → inspect → command → validate → playtest → diff).
+Seven example projects live in `packages/examples`, every one generated
+through the command system itself and covered by playtests in CI. They
+range from a mini platformer and a visual novel up to all-Lua showcases:
+**Ember Trail** (scene switching, timers, saved best score), **Glow Caves**
+(lighting and particles in a torch-lit cave), **Bounce Patrol** (physics
+layers and a pathfinding patroller), and **Sky Courier** (a sliced pixel-art
+spritesheet, streamed chiptune music, and an imported font). They double as
+reference projects: everything the docs describe, one of them does.
 
 ## Documentation
 
 | | |
 | --- | --- |
-| [Quickstart](docs/quickstart.md) | Install → first game in 10 minutes |
+| [Quickstart](docs/quickstart.md) | Install → first game in ten minutes |
 | [Desktop app](docs/desktop-app.md) | Electron packaging, native folder dialogs |
-| [CLI guide](docs/cli.md) | Every command + the JSON envelope |
+| [CLI guide](docs/cli.md) | Every command, plus the JSON envelope |
 | [MCP guide](docs/mcp.md) | Connecting agents, permission modes |
-| [Agent workflow](docs/agents.md) | How agents should operate (and why) |
+| [Agent workflow](docs/agents.md) | How agents should operate, and why |
 | [Architecture](docs/architecture.md) | Packages, command system, data flow |
 | [Project format](docs/project-format.md) | Every file, every schema |
-| [Components](docs/components.md) | All 14 component types + defaults |
-| [Assets](docs/assets.md) | Import, slice spritesheets, animations, music, fonts |
-| [Scripting](docs/scripting.md) | Lua (default) & JS scripting, the full `ctx` API |
+| [Components](docs/components.md) | All 14 component types and their defaults |
+| [Assets](docs/assets.md) | Import, spritesheets, animations, music, fonts |
+| [Scripting](docs/scripting.md) | Lua and JS, the full `ctx` API |
 | [Web export](docs/export.md) | Static builds, single-file, itch.io |
-| [Roadmap](docs/roadmap.md) | Honest list of what's next / missing |
-| [Contributing](CONTRIBUTING.md) | Dev setup + AI contribution policy |
+| [Roadmap](docs/roadmap.md) | What's next, and what's honestly missing |
+| [Contributing](CONTRIBUTING.md) | Dev setup and the AI contribution policy |
 
 ## Design principles
 
-1. **The engine works without AI.** Agents are a first-class *client*;
+1. **The engine works without AI.** Agents are a first-class client, but
    nothing in the engine depends on them.
-2. **One command system.** If it's not a registered command, neither the UI
+2. **One command system.** If it isn't a registered command, neither the UI
    nor agents can do it, so capabilities stay legible and auditable.
-3. **Humans stay in charge.** Permission modes gate what agents may touch;
-   snapshots + structural diffs make every agent session reviewable and
-   revertible; playtests make "it works" checkable.
-4. **Local-first, readable files.** Projects are JSON you can diff, SVG you
+3. **Humans stay in charge.** Permission modes gate what agents may touch,
+   snapshots and structural diffs make every agent session reviewable and
+   revertible, and playtests make "it works" checkable.
+4. **Local-first, readable files.** Projects are JSON you can diff, art you
    can open in anything, and plain Lua or JavaScript scripts.
 
 ## License
 
-[MIT](LICENSE). Dependencies are all open-source-friendly (zod, commander,
-PixiJS, React, wasmoon, MCP SDK).
+[MIT](LICENSE). Dependencies are all open-source-friendly: zod, commander,
+PixiJS, React, wasmoon, and the MCP SDK.
