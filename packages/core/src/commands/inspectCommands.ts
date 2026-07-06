@@ -53,6 +53,10 @@ export const inspectProject = defineCommand({
       scriptCount: scripts.length,
       playtestCount: ctx.store.playtests.size,
       inputActions: ctx.store.project.inputMappings.actions,
+      // Full mappings (gamepadButtons/gamepadAxes/axes/deadzone) alongside the
+      // back-compat inputActions key above — the editor's Input settings
+      // panel needs the whole shape, not just the keyboard actions slice.
+      inputMappings: ctx.store.project.inputMappings,
       buildSettings: ctx.store.project.buildSettings,
     };
   },

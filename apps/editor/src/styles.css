@@ -1016,6 +1016,97 @@ label.field-label {
 }
 
 /* --------------------------------------------------------------------------
+   Input settings (chips, key capture, add rows) — shares .component-card /
+   .component-header / .component-body / .inspector-row with the Inspector so
+   an action or virtual-axis row reads as the same kind of thing as a
+   component.
+   -------------------------------------------------------------------------- */
+
+.chip-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: var(--ctl-h-sm);
+  padding: 0 4px 0 8px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--bg-2);
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.chip-remove {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 15px;
+  height: 15px;
+  padding: 0;
+  border: none;
+  border-radius: 3px;
+  background: transparent;
+  color: var(--ink-mute);
+  cursor: pointer;
+}
+
+.chip-remove:hover {
+  background: var(--bg-3);
+  color: var(--err);
+}
+
+.chip-list-empty {
+  color: var(--ink-faint);
+  font-size: 12px;
+}
+
+.input-binding-col {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+}
+
+/* Armed key-capture button: reads as "listening" until a key lands or Escape cancels. */
+.btn-capture-armed {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.input-axis-binding {
+  margin-top: 2px;
+  padding-top: 8px;
+  border-top: 1px dashed var(--border);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.input-checkbox-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--ink-mute);
+  font-size: 12px;
+}
+
+.settings-add-row {
+  display: flex;
+  gap: 6px;
+  padding: 10px;
+}
+
+.settings-add-row .input {
+  flex: 1;
+}
+
+/* --------------------------------------------------------------------------
    Bottom panels (Assets / Console / Diff / Agent)
    -------------------------------------------------------------------------- */
 

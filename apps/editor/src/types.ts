@@ -2,7 +2,7 @@
  * Client-side shapes for data crossing the /api boundary.
  * Command payload types mirror what the core inspect commands return.
  */
-import type { CommandResult, ProjectDiff } from '@hearth/core';
+import type { CommandResult, InputMappings, ProjectDiff } from '@hearth/core';
 
 export type { CommandResult, ProjectDiff };
 
@@ -39,6 +39,7 @@ export interface ProjectInfo {
   scriptCount: number;
   playtestCount: number;
   inputActions: Record<string, string[]>;
+  inputMappings: InputMappings;
   buildSettings: BuildSettings;
 }
 

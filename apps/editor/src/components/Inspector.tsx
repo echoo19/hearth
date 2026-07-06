@@ -10,7 +10,7 @@ import { ConfirmDialog, Icon, componentIcon } from './ui';
 // Field editors: value type decides the control. All commit on blur / Enter.
 // ---------------------------------------------------------------------------
 
-function NumberField({ value, onCommit }: { value: number; onCommit: (v: number) => void }) {
+export function NumberField({ value, onCommit }: { value: number; onCommit: (v: number) => void }) {
   const [draft, setDraft] = useState(String(value));
   useEffect(() => setDraft(String(value)), [value]);
   const commit = () => {
@@ -37,7 +37,7 @@ function NumberField({ value, onCommit }: { value: number; onCommit: (v: number)
   );
 }
 
-function TextField({
+export function TextField({
   value,
   placeholder,
   onCommit,

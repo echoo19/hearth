@@ -27,6 +27,7 @@ import { AssetsPanel } from '../components/AssetsPanel';
 import { ConsolePanel } from '../components/ConsolePanel';
 import { DiffPanel } from '../components/DiffPanel';
 import { AgentPanel } from '../components/AgentPanel';
+import { InputSettings } from '../components/InputSettings';
 import { restoreLayout, serializeLayout, type PanelId } from './layout';
 
 export const PANEL_TITLES: Record<PanelId, string> = {
@@ -38,6 +39,7 @@ export const PANEL_TITLES: Record<PanelId, string> = {
   console: 'Console',
   diff: 'Diff',
   agent: 'Agent',
+  input: 'Input',
 };
 
 /** Menu order for the View menu (matches the default layout, left to right). */
@@ -50,6 +52,7 @@ export const VIEW_MENU_PANELS: readonly PanelId[] = [
   'console',
   'diff',
   'agent',
+  'input',
 ];
 
 const HEARTH_THEME: DockviewTheme = {
@@ -123,6 +126,7 @@ const PANEL_COMPONENTS: Record<PanelId, React.FunctionComponent<IDockviewPanelPr
   console: ConsolePanelHost,
   diff: panelHost(DiffPanel),
   agent: panelHost(AgentPanel),
+  input: panelHost(InputSettings),
 };
 
 // ---------------------------------------------------------------------------
@@ -218,7 +222,7 @@ export function buildDefaultLayout(api: DockviewApi): void {
       inactive: true,
     }),
   );
-  for (const id of ['console', 'diff', 'agent'] as const) {
+  for (const id of ['console', 'diff', 'agent', 'input'] as const) {
     api.addPanel(addPanelOptions(id, { position: { referencePanel: 'assets', direction: 'within' }, inactive: true }));
   }
   scene.api.setActive();
@@ -233,7 +237,7 @@ function findReference(api: DockviewApi, preferred: readonly PanelId[]): PanelId
 }
 
 const CENTER_PANELS: readonly PanelId[] = ['scene', 'game'];
-const BOTTOM_PANELS: readonly PanelId[] = ['assets', 'console', 'diff', 'agent'];
+const BOTTOM_PANELS: readonly PanelId[] = ['assets', 'console', 'diff', 'agent', 'input'];
 
 /**
  * Show a panel: activate it when open, otherwise re-open it in a sensible
