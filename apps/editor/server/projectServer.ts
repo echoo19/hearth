@@ -23,6 +23,7 @@ import {
   slugify,
   PERMISSION_MODES,
   HEARTH_VERSION,
+  JournalStore,
   type CommandResult,
   type RuntimeHooks,
 } from '@hearth/core';
@@ -198,6 +199,9 @@ function errorEnvelope(command: string, code: string, message: string): CommandR
 export function createProjectServerContext(options: ProjectServerOptions = {}) {
   const nodeFs = new NodeFileSystem();
   const sessions = new Map<string, HearthSession>();
+  // The on-disk journal seq each cached session had seen, last time we
+  // checked or updated it — see getSession's self-healing reload below.
+  const seenSeq = new Map<string, number>();
   const recentsFile =
     options.recentsFile ?? path.join(os.homedir(), '.hearth', 'recent-projects.json');
   const repoRoot = options.repoRoot ?? findRepoRoot(process.cwd());
@@ -236,11 +240,22 @@ export function createProjectServerContext(options: ProjectServerOptions = {}) {
     await fsp.writeFile(recentsFile, JSON.stringify(entries.slice(0, 12), null, 2) + '\n');
   }
 
-  /** Open (or reuse) a session. Throws Error with .status on failure. */
-  async function getSession(projectPath: string): Promise<HearthSession> {
-    const root = path.resolve(projectPath);
-    const existing = sessions.get(root);
-    if (existing) return existing;
+  /**
+   * The on-disk journal's last seq, or null if it can't be read right now.
+   * A read error (transient fs hiccup, mid-rotation race) must not break
+   * getSession — callers fall back to trusting the cached session rather
+   * than treating "unreadable" as "disk is ahead".
+   */
+  async function diskJournalSeq(root: string): Promise<number | null> {
+    try {
+      return await new JournalStore(nodeFs, root).lastSeq();
+    } catch {
+      return null;
+    }
+  }
+
+  /** Open a fresh session from disk, cache it, and record the journal seq it starts from. */
+  async function openSessionFromDisk(root: string): Promise<HearthSession> {
     if (!(await pathExists(path.join(root, 'hearth.json')))) {
       const err = new Error(
         `Not a Hearth project: ${root} has no hearth.json. ` +
@@ -259,7 +274,44 @@ export function createProjectServerContext(options: ProjectServerOptions = {}) {
       source: 'editor',
     });
     sessions.set(root, session);
+    seenSeq.set(root, (await diskJournalSeq(root)) ?? 0);
     return session;
+  }
+
+  /**
+   * Open (or reuse) a session. Throws Error with .status on failure.
+   *
+   * Self-healing: the watcher-driven invalidation in ws.ts only fires while
+   * a WebSocket is connected (see attachWebSocket's getChannel), so it's
+   * blind to external agent/CLI edits made while the socket is closed, mid
+   * reconnect, or the watcher never started at all. Every call here instead
+   * does a cheap one-file read of the on-disk journal's last seq and
+   * compares it against what this cached session has seen; if disk is
+   * ahead, the cache is stale and gets dropped in favor of a fresh reopen —
+   * regardless of whether any watcher was ever running. The session's own
+   * mutations advance `seenSeq` right after they run (see the sync calls in
+   * runCommandImpl/importAssetFile below), so a session that has been
+   * exclusively driving its own edits never triggers a reload of itself.
+   */
+  async function getSession(projectPath: string): Promise<HearthSession> {
+    const root = path.resolve(projectPath);
+    const existing = sessions.get(root);
+    if (existing) {
+      const diskSeq = await diskJournalSeq(root);
+      const seen = seenSeq.get(root) ?? 0;
+      if (diskSeq === null || diskSeq <= seen) return existing;
+      // Disk moved ahead of what this session has seen: an external
+      // agent/CLI mutation landed with no watcher around to invalidate the
+      // cache. Fall through to reopen from disk instead of serializing
+      // stale memory over it on the next mutation.
+    }
+    return openSessionFromDisk(root);
+  }
+
+  /** Re-sync the tracked seq for `root` to current disk after running a command through its session, so the session's own journal appends don't look like an external change next time. Best-effort: an unreadable journal here just leaves the previous seen-seq in place. */
+  async function syncSeenSeq(root: string): Promise<void> {
+    const diskSeq = await diskJournalSeq(root);
+    if (diskSeq !== null) seenSeq.set(root, diskSeq);
   }
 
   /** Resolve a project-relative path, rejecting escapes. Returns null when unsafe. */
@@ -291,6 +343,7 @@ export function createProjectServerContext(options: ProjectServerOptions = {}) {
       };
     }
     const result = await session.execute(name, params ?? {});
+    await syncSeenSeq(path.resolve(project));
     return { status: 200, body: result };
   }
 
@@ -454,6 +507,7 @@ export function createProjectServerContext(options: ProjectServerOptions = {}) {
         await fsp.mkdir(path.dirname(stagedAbs), { recursive: true });
         await fsp.writeFile(stagedAbs, bytes);
         const result = await session.execute('importAsset', { sourcePath: stagedAbs });
+        await syncSeenSeq(root);
         return { status: 200, body: result };
       } catch (err) {
         return fail('INTERNAL', (err as Error).message);

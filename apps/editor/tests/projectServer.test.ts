@@ -7,6 +7,8 @@ import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { promises as fsp } from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
+import { HearthSession, PERMISSION_MODES, ProjectStore } from '@hearth/core';
+import { NodeFileSystem } from '@hearth/core/node';
 import { createProjectServerContext, type ProjectServerContext } from '../server/projectServer';
 
 let tmpDir: string;
@@ -186,6 +188,72 @@ describe('/api/fs for the browser ProjectStore', () => {
   it('rejects escapes', async () => {
     const result = await ctx.fsOperation(projectPath, 'read', '../../secret.txt');
     expect(result.status).toBe(403);
+  });
+});
+
+describe('getSession self-healing (no websocket/watcher involved)', () => {
+  // Regression test for the Wave E final-review Critical (C1): the
+  // project-server's cached HearthSession must not serialize stale memory
+  // over external agent/CLI disk edits. Previously the ONLY invalidation was
+  // the journal-watcher callback in ws.ts, which only fires while a socket is
+  // open. This reproduces the reviewer's clobber scenario with no WS/watcher
+  // at all, so it exercises getSession's own seq-compare self-healing.
+  let projectPath: string;
+  let sceneId: string;
+
+  beforeAll(async () => {
+    const created = await ctx.createNewProject(path.join(tmpDir, 'projects'), 'Heal Game');
+    projectPath = (created.body as { path: string }).path;
+    const info = await ctx.runCommand(projectPath, 'inspectProject', {});
+    sceneId = (info.body as { data: { scenes: { id: string }[] } }).data.scenes[0].id;
+  });
+
+  it('picks up an external CLI mutation on the next command, and a later editor mutation does not erase it from disk', async () => {
+    // (a) warm the editor's cached session, as /api/command would on the
+    // editor's first request for this project.
+    const warm = await ctx.runCommand(projectPath, 'inspectScene', { scene: sceneId, full: true });
+    expect((warm.body as { success: boolean }).success).toBe(true);
+    expect(ctx.sessions.has(path.resolve(projectPath))).toBe(true);
+
+    // (b) a SECOND, independent HearthSession on the same root — standing in
+    // for the CLI/an external agent — creates an entity the cached session's
+    // in-memory copy has no idea about.
+    const nodeFs = new NodeFileSystem();
+    const cliSession = await HearthSession.open(nodeFs, projectPath, {
+      granted: [...PERMISSION_MODES],
+      source: 'cli',
+    });
+    const cliCreate = await cliSession.execute('createEntity', {
+      scene: sceneId,
+      name: 'AgentMadeThis',
+      components: {},
+    });
+    expect(cliCreate.success).toBe(true);
+
+    // (c) the NEXT context command must see the external change — this is
+    // the self-healing reload, with no watcher/WS in the picture.
+    const afterExternal = await ctx.runCommand(projectPath, 'inspectScene', { scene: sceneId, full: true });
+    const entitiesAfterExternal = (afterExternal.body as { data: { entities: { name: string }[] } }).data.entities;
+    expect(entitiesAfterExternal.some((e) => e.name === 'AgentMadeThis')).toBe(true);
+
+    // (d) an editor mutation afterward must not clobber the externally
+    // created entity back off disk (the stale-memory-serialize bug: the
+    // cached session's save() rewrites every file it knows about from its
+    // own in-memory model).
+    const editorCreate = await ctx.runCommand(projectPath, 'createEntity', {
+      scene: sceneId,
+      name: 'EditorLater',
+      components: {},
+    });
+    expect((editorCreate.body as { success: boolean }).success).toBe(true);
+
+    // Assert against a completely fresh load from disk, independent of any
+    // cached session (editor's or the test's).
+    const fresh = await ProjectStore.load(nodeFs, path.resolve(projectPath));
+    const freshScene = fresh.getScene(sceneId)!;
+    const names = freshScene.entities.map((e) => e.name);
+    expect(names).toContain('AgentMadeThis');
+    expect(names).toContain('EditorLater');
   });
 });
 
