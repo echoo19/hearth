@@ -30,13 +30,15 @@ and assets on your own disk.
    Agent ──▶ CLI / MCP ──┘      (validate · execute · diff)     scenes · scripts · assets
 ```
 
-Both audiences use the same 51 engine commands: `createEntity`,
+Both audiences use the same 56 engine commands: `createEntity`,
 `setComponentProperty`, `runPlaytest`, `getDiff`, and so on. An agent can
 build a level, wire input, write behavior scripts, import and slice art, run
 headless playtests, and hand you a structural diff to review in the editor,
 all without guessing at file formats. You stay in charge the whole way:
-permission modes gate what agents may touch, and every session can be
-snapshotted, diffed, and reverted.
+permission modes gate what agents may touch, every session can be
+snapshotted, diffed, and reverted, and every command any agent runs — CLI,
+MCP, or the editor's own embedded terminal — lands in a disk-backed journal
+you can read as `hearth log` or watch live in the editor's Agent panel.
 
 ## What's in the engine
 
@@ -57,16 +59,25 @@ RNG, pub/sub events, math helpers, grid pathfinding, camera control and
 effects, UI focus, save data, and scene switching for building your own
 menus. `hearth inspect api` prints the whole surface.
 
-**Editor.** A dockable workspace with a scene view, hierarchy,
-schema-driven inspector (enum dropdowns for every fixed-choice field),
-asset browser with spritesheet slicing and previews, live game preview,
-console, an Input settings panel (key capture, gamepad bindings), undo/
-redo with a history panel, and a diff/review panel for agent sessions.
-Runs in the browser during development or as a packaged desktop app
-(Electron) with native folder dialogs.
+**Editor.** A dockable workspace with a scene view (with a tilemap paint
+tool: palette, click/drag paint, shift-drag rect-fill), hierarchy,
+schema-driven inspector (enum dropdowns and typed pickers for every
+fixed-choice or asset-reference field — no raw JSON textareas), asset
+browser with spritesheet slicing and previews, live game preview, console,
+an Input settings panel (key capture, gamepad bindings), undo/redo with a
+history panel, a scene menu (duplicate/rename/set-initial/delete), a
+diff/review panel for agent sessions, and an **Agent panel**: a real
+embedded terminal running your own `claude` CLI, wired to the project via
+MCP, with a live activity timeline and Snapshot/Review/Revert one click
+away (see [docs/agent-panel.md](docs/agent-panel.md)). The editor also
+live-follows changes from any *external* agent session — CLI, MCP, or
+another editor — reloading automatically instead of going stale. Runs in
+the browser during development or as a packaged desktop app (Electron)
+with native folder dialogs.
 
 **Agent tooling.** The `hearth` CLI wraps every command with `--json`
-envelopes, including `undo`/`redo`/`history`. The MCP server exposes 48
+envelopes, including `undo`/`redo`/`history` and `log` (a disk-backed
+journal of every command any session has run). The MCP server exposes 55
 typed tools with per-session permission modes. Playtests script input
 (including gamepad axes and pointer drags) and assert on game state,
 events, particles, audio, camera effects, and UI focus, entirely headless
@@ -85,15 +96,20 @@ same asset pipeline: import, probe, slice, animate.
 
 ## Status
 
-Hearth is at **v0.7.0**, a developer preview. The full loop works end to
+Hearth is at **v0.8.0**, a developer preview. The full loop works end to
 end: project model, editor, runtime preview, CLI, MCP, headless playtests,
-diff review, web export. This release added disk-backed undo/redo,
-gamepad input with analog virtual axes, deterministic camera effects, and
-a second generation of UI widgets (layout containers, sliders, toggles,
-focus navigation), on top of earlier releases' asset pipeline, physics
-v2, pathfinding, 2D lighting and particles, and Lua scripting. The
-[roadmap](docs/roadmap.md) keeps an honest list of what's still missing,
-including prefabs, bulk asset import, and notarized desktop builds.
+diff review, web export. This release added an embedded agent panel (a
+real terminal running the user's own `claude` CLI, a live activity
+timeline, Snapshot/Review/Revert), a disk-backed command journal that lets
+the editor live-follow any external agent session, published performance
+numbers backed by a spatial-hash broadphase and other bit-identical perf
+work, scene management and tilemap editing surfaced end to end (editor +
+CLI + MCP), and a 9th example (Ember Horde) proving the new scale ceiling —
+on top of earlier releases' undo/redo, gamepad input, camera effects, UI
+widgets, asset pipeline, physics v2, pathfinding, 2D lighting and
+particles, and Lua scripting. The [roadmap](docs/roadmap.md) keeps an
+honest list of what's still missing, including prefabs, bulk asset import,
+and notarized desktop builds.
 
 ## Install
 
@@ -168,15 +184,18 @@ Then ask it to call `get_agent_instructions`. Permission modes from
 
 ## Examples
 
-Eight example projects live in `packages/examples`, every one generated
+Nine example projects live in `packages/examples`, every one generated
 through the command system itself and covered by playtests in CI. They
 range from a mini platformer and a visual novel up to all-Lua showcases:
 **Ember Trail** (scene switching, timers, saved best score), **Glow Caves**
 (lighting and particles in a torch-lit cave), **Bounce Patrol** (physics
 layers and a pathfinding patroller), **Sky Courier** (a sliced pixel-art
-spritesheet, streamed chiptune music, and an imported font), and **Drift
+spritesheet, streamed chiptune music, and an imported font), **Drift
 Cellar** (analog gamepad movement, camera shake/flash/fade, and a
-focus-navigable pause menu with a slider and toggle). They double as
+focus-navigable pause menu with a slider and toggle), and **Ember Horde**
+(a survivors-like horde of hundreds of concurrent pathing enemies, pooled
+hit-spark particles, and camera shake — the playable proof behind
+[docs/performance.md](docs/performance.md)'s numbers). They double as
 reference projects: everything the docs describe, one of them does.
 
 ## Documentation
@@ -187,6 +206,7 @@ reference projects: everything the docs describe, one of them does.
 | [Desktop app](docs/desktop-app.md) | Electron packaging, native folder dialogs |
 | [CLI guide](docs/cli.md) | Every command, plus the JSON envelope |
 | [MCP guide](docs/mcp.md) | Connecting agents, permission modes |
+| [Agent panel](docs/agent-panel.md) | Embedded terminal, subscription safety, external-change model |
 | [Agent workflow](docs/agents.md) | How agents should operate, and why |
 | [Architecture](docs/architecture.md) | Packages, command system, data flow |
 | [Project format](docs/project-format.md) | Every file, every schema |
@@ -195,6 +215,7 @@ reference projects: everything the docs describe, one of them does.
 | [Scripting](docs/scripting.md) | Lua and JS, the full `ctx` API |
 | [Input](docs/input.md) | Actions, keyboard, gamepad, virtual axes |
 | [UI](docs/ui.md) | Widgets, layout, focus navigation |
+| [Performance](docs/performance.md) | Benchmark harness, published numbers, honest guidance |
 | [Web export](docs/export.md) | Static builds, single-file, itch.io |
 | [Roadmap](docs/roadmap.md) | What's next, and what's honestly missing |
 | [Contributing](CONTRIBUTING.md) | Dev setup and the AI contribution policy |

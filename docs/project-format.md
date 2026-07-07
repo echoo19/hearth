@@ -24,7 +24,10 @@ my-game/
 │   └── smoke.playtest.json      # headless scripted tests
 ├── .hearth/
 │   ├── agent-config.json        # machine-readable agent entry point
-│   └── baseline.json            # diff baseline (snapshot; gitignored)
+│   ├── baseline.json            # diff baseline (snapshot; gitignored)
+│   ├── history/                 # undo/redo entries (gitignored)
+│   └── log/
+│       └── commands.jsonl       # append-only command journal (gitignored)
 ├── AGENTS.md                    # generated agent instructions
 └── CLAUDE.md                    # pointer for Claude Code
 ```
@@ -37,7 +40,7 @@ normative; this page is descriptive. Every file carries `formatVersion: 1`.
 ```jsonc
 {
   "formatVersion": 1,
-  "hearthVersion": "0.7.0",
+  "hearthVersion": "0.8.0",
   "id": "prj_a1b2c3d4",
   "name": "My Game",
   "description": "",
@@ -172,6 +175,55 @@ Plain Lua (default) or JavaScript files defining lifecycle hooks (see
 API. Scripts are referenced by path from `Script` components and are the
 one part of the project agents are encouraged to edit as code (via
 `hearth create script` / `hearth edit-script`).
+
+## .hearth/log/commands.jsonl
+
+An append-only, newline-delimited JSON log of commands run through *any*
+session against this project (CLI, MCP, or the editor) — independent of
+`.hearth/history/`'s undo/redo stack. Unlike history, the journal also
+records read-only-but-meaningful runs (`runPlaytest`, `validateProject`)
+and failed commands, and it is never rewound by `undo`/`redo`. It's the
+data source for `hearth log` / `listJournal` / the MCP `list_journal` tool,
+and for the editor's Agent panel activity timeline and external-change
+detection (see [agent-panel.md](./agent-panel.md#the-external-change-model)).
+
+One JSON object per line, oldest first:
+
+```jsonc
+{
+  "seq": 42,                       // monotonic per project
+  "ts": "2026-07-06T20:14:05.108Z",// ISO timestamp
+  "source": "cli",                 // "editor" | "cli" | "mcp" | "unknown" (or a session's own label)
+  "command": "createEntity",
+  "summary": "createEntity Gem",   // human-readable, reuses the command's own summary
+  "ok": true,
+  "error": "NOT_FOUND",            // present only when ok is false; a stable error code
+  "detail": { "errors": 0, "warnings": 1 } // small command-specific facts only; present on a few commands
+}
+```
+
+Notes:
+
+- **What gets journaled**: every `mutates: true` command, plus a small
+  fixed allowlist of meaningful non-mutating ones (`runPlaytest`,
+  `validateProject`). Plain `inspect*`/`list*` reads are not journaled —
+  the editor calls those constantly and they carry no news.
+- **No params, no snapshots.** `detail` carries only a few small,
+  defensively-extracted facts (e.g. `runPlaytest`'s pass/fail and assertion
+  counts, `validateProject`'s error/warning counts) — the journal is a
+  feed, not a backup. Undo history and `snapshot`/`diff`/`revert` remain
+  the separate mechanisms for that.
+- **Rotation.** Once the file exceeds 4000 lines it's rewritten down to
+  the newest 2000, preserving `seq` continuity. A journal-write failure
+  never fails the command it's recording — it's isolated exactly like
+  history-record failures.
+- **`seq` is monotonic per project**, read from the last line on disk at
+  append time; exact cross-process collisions under concurrent writers are
+  tolerable (the journal is informational, never load-bearing for
+  correctness) and ties break by `ts`.
+- Joins the `.gitignore`-managed engine-state convention alongside
+  `.hearth/history/` and `.hearth/baseline.json` — this file is local
+  session state, not part of the project's tracked format.
 
 ## Versioning & compatibility
 

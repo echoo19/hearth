@@ -1,7 +1,7 @@
 # MCP Guide
 
 Hearth ships `hearth-mcp` (`packages/mcp-server`), a stdio MCP server that
-exposes the engine command layer as 48 typed tools (46 command tools, plus
+exposes the engine command layer as 55 typed tools (53 command tools, plus
 `screenshot` and `get_agent_instructions`, neither of which wraps a core
 command). The full reference (flags, registration snippets, permission
 table, complete tool list) lives in
@@ -24,16 +24,25 @@ project's AGENTS.md plus your active permission modes.
 Each MCP tool wraps exactly one core command, named in snake_case (a handful
 of housekeeping commands are CLI-only): `get_project_info`,
 `list_scenes`, `inspect_scene`, `inspect_entity`, `list_components`,
-`validate_project`, `create_scene`, `create_entity`, `add_component`,
-`set_component_property`, `create_script`, `edit_script`, `attach_script`,
-`import_asset`, `create_sprite_asset`, `create_tile_asset`, `create_sound`,
-`create_animation_asset`, `slice_spritesheet` (frame grid over an
+`validate_project`, `create_scene`, `duplicate_scene` (fresh entity ids;
+optionally clones playtests targeting the source scene, retargeted to the
+copy — see [cli.md](./cli.md#command-tour)), `create_entity`,
+`duplicate_entity` (deep-copies an entity and its full descendant subtree
+with fresh ids in one call, offset from the original), `add_component`,
+`set_component_property`, `paint_tiles`, `fill_tilemap_rect`,
+`resize_tilemap` (batched Tilemap edits — see
+[cli.md](./cli.md#tilemap-editing)), `create_script`, `edit_script`,
+`attach_script`, `import_asset`, `create_sprite_asset`, `create_tile_asset`,
+`create_sound`, `create_animation_asset`, `slice_spritesheet` (frame grid over an
 imported spritesheet — takes numeric `frameWidth`/`frameHeight` rather
-than the CLI's `--frame-size WxH` string), `create_animation_from_sheet`
+than the CLI's `--frame-size WxH` string), `remove_asset` (unregisters an
+asset; the CLI's `delete asset` wraps this same tool), `create_animation_from_sheet`
 (an animation asset from named sheet frames — see
 [assets.md](./assets.md)), `undo`, `redo`, `list_history` (disk-backed
 undo/redo, independent of `snapshot_project`/`revert_project`'s single
-diff baseline — see [cli.md](./cli.md#command-tour)), `snapshot_project`,
+diff baseline — see [cli.md](./cli.md#command-tour)), `list_journal`
+(the command journal backing `hearth log` and the editor's Agent panel
+timeline — see [cli.md](./cli.md#command-journal)), `snapshot_project`,
 `get_diff`, `revert_project`, `create_playtest`, `run_playtest`,
 `run_scene`, `update_settings` (build settings, initial scene, and every
 input mapping — actions, gamepad buttons/axes, virtual axes, deadzone;

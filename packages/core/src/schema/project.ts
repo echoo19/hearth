@@ -5,7 +5,7 @@ import { z } from 'zod';
 import { Vec2Schema } from './components.js';
 
 export const FORMAT_VERSION = 1;
-export const HEARTH_VERSION = '0.7.0';
+export const HEARTH_VERSION = '0.8.0';
 
 export const SceneRefSchema = z.object({
   id: z.string(),

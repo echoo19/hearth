@@ -212,10 +212,13 @@ Wave E removed every bottleneck identified in the original baseline below
 particles) — none of those costs exist in the current implementation. What's
 left, roughly in order of remaining cost:
 
-- **Per-frame spatial-hash rebuild.** `stepPhysics` builds a fresh
-  `SpatialHash` for obstacles and (separately) for movers every frame
-  (`packages/runtime/src/runtime.ts`, broadphase wiring) rather than
-  incrementally updating one across frames. This is why colliders-1500 and
+- **Per-frame spatial-hash rebuild.** `stepPhysics` resets and reinserts
+  into two persistent `SpatialHash` instances every frame — one for
+  obstacles, one for movers (`packages/runtime/src/runtime.ts`,
+  `obstacleBroadphase`/`moverBroadphase`) — rather than incrementally
+  updating one across frames. The instances themselves live for the whole
+  session (so their internal stamp/scratch buffers don't reallocate), but
+  every cell they hold is cleared and rebuilt from scratch each step. This is why colliders-1500 and
   mixed-horde still cost more than colliders-100/tilemap-arena per entity —
   building the hash and running every query is O(n) with a real constant,
   just no longer O(n²). An incremental/persistent hash (insert moved

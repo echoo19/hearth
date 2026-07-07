@@ -1,10 +1,18 @@
 # Hearth Roadmap
 
-v0.7 is the current milestone. Its first release, v0.7.0 (shipped,
-below), added disk-backed undo/redo, gamepad input with virtual analog
-axes, deterministic camera effects (shake/flash/fade/zoom punch), and a
-second generation of UI widgets (`UILayout`/`UISlider`/`UIToggle`, focus
-navigation). On top of v0.6's asset pipeline v2 (imported spritesheets
+v0.8 is the current milestone. Its first release, v0.8.0 (shipped,
+below), gave the editor an embedded agent panel (a real terminal running
+the user's own `claude`, pre-wired to the project via MCP, with a live
+trust timeline and Snapshot/Review/Revert), made the editor live-follow
+any external agent through a new disk-backed command journal, and used
+that journal to publish real performance numbers plus land the perf work
+(spatial-hash broadphase, entity/tilemap caching, particle pooling) that
+makes them look good, alongside scene-management and tilemap-editing
+ergonomics and a 9th example proving the new scale ceiling. On top of
+v0.7's disk-backed undo/redo, gamepad input with virtual analog axes,
+deterministic camera effects (shake/flash/fade/zoom punch), and a second
+generation of UI widgets (`UILayout`/`UISlider`/`UIToggle`, focus
+navigation) — v0.6's asset pipeline v2 (imported spritesheets
 with typed frame slicing and sheet-backed animations, a single
 crossfading music channel, real font assets) — v0.5's physics v2
 (mass/restitution/friction, collision layers, one-way platforms,
@@ -23,6 +31,64 @@ what's deliberately missing.
 The standing rule for everything below: **agent-native first**. Each system
 ships as schemas + commands (inspectable via `hearth … --json`, exposed as
 MCP tools, testable in headless playtests) before it gets editor UI.
+
+## Shipped in v0.8.0
+
+- **Embedded agent panel**: the editor hosts a real terminal
+  (`@lydell/node-pty` + `@xterm/xterm`) running the user's own `claude` CLI,
+  pre-wired to the project by merge-writing a `hearth` entry into
+  `.mcp.json`. A 4-tier permission-mode picker, install/detect for
+  `claude`/`codex`, an always-available plain-shell "Open Terminal" for
+  Codex or anything else, a live activity timeline fed by the command
+  journal, and Snapshot/Review changes/Revert session header actions. The
+  panel embeds a genuine, unmodified CLI in a real PTY and never touches
+  its stream, credentials, or flags beyond `cwd` and standard MCP config —
+  see [agent-panel.md](./agent-panel.md) for the full subscription-safety
+  position, permission-mode table, and troubleshooting.
+- **Command journal + external-change awareness**: `.hearth/log/
+  commands.jsonl` records every mutating command (plus `runPlaytest`/
+  `validateProject`) from any session — CLI, MCP, or editor — independent
+  of undo/redo history; `listJournal` command, `hearth log`, MCP
+  `list_journal`. The editor now watches this file over a WebSocket
+  channel and live-reloads/refreshes whenever an *external* agent session
+  changes the project, instead of going stale until a manual reload — this
+  benefits every agent workflow, not just the panel, and structurally
+  fixes the earlier drag-drop-import staleness gap. See
+  [project-format.md](./project-format.md#hearthlogcommandsjsonl).
+- **Content scale & published performance numbers**: a headless benchmark
+  harness (`npm run bench`) with results and honest guidance in
+  [performance.md](./performance.md); a spatial-hash broadphase, a
+  per-entity tilemap-collider cache, a frame-scoped entity-list cache, and
+  particle-object pooling — all bit-identical to prior behavior (golden
+  determinism tests pin full-run state hashes) — turned the worst
+  synthetic scenario (1500 colliders) from over 2x the 60Hz frame budget
+  to comfortably under it (13.5x mean speedup).
+  Also: pointermove reflow coalesced to once per rendered frame instead of
+  once per native event.
+- **Scene management surfaced end to end**: `duplicateScene` (fresh entity
+  ids, optional `--with-playtests` cloning) and a new `duplicateEntity`
+  (deep-copies an entity and its full descendant subtree with fresh ids in
+  one command) are now real CLI verbs, MCP tools, and an editor scene-menu
+  (⋯ next to the scene picker: Duplicate/Rename/Set as initial/Delete) —
+  closing the gap where several of these existed only as core commands.
+  `renameScene` also rejects collisions with an existing scene the way
+  `create`/`duplicate` already did.
+- **Tilemap editing ergonomics**: batched `paintTiles`/`fillTilemapRect`/
+  `resizeTilemap` core commands (one undo entry per stroke, not one per
+  cell), CLI `paint tiles`/`fill tiles`/`resize tilemap`, matching MCP
+  tools, an editor Scene View paint tool (palette + click/drag paint +
+  shift-drag rect-fill), and a typed `tileAssets` Inspector control (a
+  char → asset-picker row list) replacing the old raw-JSON textarea.
+- **Gamepad axis hysteresis**: digital gamepad-axis-crossed-threshold
+  bindings latch with ±0.05 hysteresis around the effective threshold so
+  stick noise can't flap synthetic key codes or `justPressed`. See
+  [input.md](./input.md).
+- **`hearth delete asset`** CLI verb for `removeAsset` (with
+  `--keep-file`), closing the last CLI delete-verb parity gap.
+- The all-Lua `ember-horde` example (the 9th) is a survivors-like proof of
+  the new ceiling: waves of enemies pathing toward the player up to
+  several hundred concurrent, pooled hit-spark particles, camera shake, a
+  HUD counter and pause menu, gamepad supported.
 
 ## Shipped in v0.7.0
 
@@ -174,8 +240,22 @@ MCP tools, testable in headless playtests) before it gets editor UI.
 - Web export: `hearth export web [--single-file] [--zip]` — static
   self-contained builds, itch.io-ready zips.
 
-## Near term (later v0.7 releases)
+## Near term (later v0.8 releases)
 
+- **Codex first-class MCP wiring**: the agent panel detects and launches
+  Codex today, but `.mcp.json` auto-preparation is Claude-Code-only in
+  v0.8.0 — Codex's config story is TOML-based and needs its own wiring
+  path.
+- **Custom chat UI over the agent**: out of scope until it can be built
+  API-key-only (the Claude Agent SDK) or Anthropic clarifies that
+  subscription use through a wrapped, non-terminal UI is fine — see
+  [agent-panel.md](./agent-panel.md#why-a-terminal-not-a-custom-chat-ui)
+  for the full reasoning. The embedded terminal is the answer for now.
+- **Incremental spatial hash**: `stepPhysics` still resets and reinserts
+  its broadphase every frame rather than updating one incrementally
+  across frames — the next lever if a scenario needs to shrink further
+  (see [performance.md](./performance.md#current-bottlenecks); nothing
+  benchmarked today is close to needing it).
 - **Bulk asset import**: `importAsset` is one file per call today;
   a multi-file/folder import command is the natural follow-up.
 - **Finer-grained editor undo**: today's undo/redo is whole-command
@@ -186,15 +266,21 @@ MCP tools, testable in headless playtests) before it gets editor UI.
 
 ## Medium term
 
-- **Desktop polish**: signed/notarized builds, custom app icon, auto-update.
+- **Desktop polish**: signed/notarized builds (still ad-hoc-signed
+  preview builds today), custom app icon, auto-update.
+- **Custom shaders (tier 2)**: still research-stage; no design committed
+  yet.
 - **TypeScript scripts** with a compile step and typed `ctx`.
 - **Multi-instance components** (array form, `formatVersion: 2`).
 - **MCP resources**: expose scenes/scripts as MCP resources (today:
   tools-only, which every client supports).
-- **Prefabs**: reusable entity templates with overrides.
-- **Scale/performance**: no profiling or stress-testing has been done yet
-  on large scenes (hundreds of entities, big tilemaps) — the runtime is
-  correctness-first so far, not benchmarked.
+- **Prefabs**: reusable entity templates with overrides —
+  `duplicateEntity`/`duplicateScene` (shipped in v0.8.0) are the stepping
+  stone, not the destination.
+- **Further scale headroom**: physics islands/sleeping, worker-thread
+  physics, and renderer culling are all deliberately not planned yet —
+  only worth it if a future bench run shows a real scenario needing more
+  than v0.8.0's broadphase/caching/pooling work already delivers.
 
 ## Long term / research
 
