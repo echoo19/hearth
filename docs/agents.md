@@ -18,7 +18,7 @@ reviewable diffs.
 - **CLI**: `hearth <command> --json` (see [cli.md](./cli.md)). Best when the
   agent already lives in a shell (Claude Code, Codex CLI).
 - **MCP**: `hearth-mcp --project <path>` over stdio (see
-  [mcp.md](./mcp.md)). Best for MCP-native clients; 41 tools wrapping the
+  [mcp.md](./mcp.md)). Best for MCP-native clients; 55 tools wrapping the
   same core commands (a handful of housekeeping commands are CLI-only).
 
 Both call the identical core command layer. Pick either; never mix in

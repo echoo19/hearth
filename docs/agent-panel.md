@@ -163,6 +163,8 @@ land on the `PATH` the editor's process sees (e.g. a shell-specific rc file
 change, or a version manager) `Re-detect` still won't see it until you
 restart the editor from a shell that has the updated `PATH`.
 
+**"Install Claude Code" hangs or doesn't respond.** Agent detection times out after 3 seconds per CLI. If your shell is slow to start, the detection may fail silently. Click **Re-detect** to try again, or check your shell startup files for expensive operations that might be slowing things down.
+
 **"Agent setup failed: ... exists but is not valid JSON" (409).** The
 project's `.mcp.json` already exists but doesn't parse as JSON. Hearth
 refuses to overwrite a file it can't safely merge into rather than

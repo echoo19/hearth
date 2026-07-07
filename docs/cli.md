@@ -256,10 +256,10 @@ hearth fill tiles Arena Ground --rect 0,0,4,2 --char G --json
 {
   "success": true,
   "command": "fillTilemapRect",
-  "data": { "cellsChanged": 8 },
+  "data": { "painted": 8 },
   "errors": [],
   "warnings": [],
-  "changed": [ { "kind": "entity", "id": "ent_…", "scene": "scn_…", "action": "modified" } ],
+  "changed": [ { "kind": "component", "id": "ent_…", "name": "Tilemap", "scene": "scn_…", "action": "modified" } ],
   "files": ["scenes/arena.scene.json"],
   "suggestions": []
 }
