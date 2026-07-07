@@ -39,6 +39,13 @@ import {
   type Vec2,
 } from '@hearth/core';
 import { createAnimatorState, stepAnimator, type AnimatorState } from './animator.js';
+import {
+  SpatialHash,
+  broadphaseTestHooks,
+  chooseCellSize,
+  shapeAabb,
+  type Aabb,
+} from './broadphase.js';
 import { InputState } from './input.js';
 import {
   GRAVITY,
@@ -270,6 +277,14 @@ export class SceneRuntime {
    * frame for tilemaps that never change.
    */
   private tilemapGridHashCache = new Map<string, { ref: readonly string[]; hash: string }>();
+  /**
+   * Per-frame spatial hashes for stepPhysics's pair loops (rebuilt via
+   * reset() each step; instances persist so their internal stamp/scratch
+   * buffers don't reallocate every frame). See broadphase.ts for the
+   * order-preservation and conservative-pruning contract.
+   */
+  private readonly obstacleBroadphase = new SpatialHash(32);
+  private readonly moverBroadphase = new SpatialHash(32);
   private scriptModules = new Map<string, ScriptHooks | null>();
   private scriptStates = new Map<string, ScriptState>();
   private handles = new Map<string, EntityHandle>();
@@ -1718,6 +1733,8 @@ export class SceneRuntime {
       body?: PhysicsBodyComponent;
       filter: { layer: string; collidesWith: string[] };
       oneWay: boolean;
+      /** Position in `movers` — indexes the broadphase displacement bookkeeping. */
+      index: number;
     }
     interface Obstacle {
       entity: RuntimeEntity;
@@ -1755,6 +1772,7 @@ export class SceneRuntime {
             body,
             filter,
             oneWay: collider.oneWay,
+            index: movers.length,
           });
         }
       }
@@ -1802,6 +1820,55 @@ export class SceneRuntime {
       b.collisions.push({ other: a, normal: { x: -nx, y: -ny }, trigger });
     };
 
+    // -----------------------------------------------------------------------
+    // Broadphase (Task 10): spatial hashes prune far-apart pairs; the pair
+    // loops below are otherwise byte-identical to the naive O(n²) loops.
+    // query() returns candidates ascending, so per mover the surviving
+    // obstacles run in collection-index order and mover×mover pairs run in
+    // ascending (i, j), j > i — the exact naive visit order.
+    //
+    // applyPush mutates mover positions MID-LOOP (later pairs see pushed
+    // positions), so a candidate list fetched at the top of a mover's sweep
+    // can go stale. Every query uses the mover's CURRENT AABB inflated by
+    // cellSize, and the loops maintain an exact invariant: before each pair
+    // test, if the mover's accumulated push displacement since its query
+    // (plus, for mover×mover, the largest displacement of any mover since
+    // the mover hash was built) could exceed that inflation, the candidates
+    // are refetched (and the mover hash rebuilt) at current positions,
+    // resuming at the next unprocessed index — candidate lists are
+    // ascending, so the visit order of surviving pairs is unchanged. A pair
+    // can only be missed if combined staleness exceeds the inflation, which
+    // the refresh rule makes impossible: pruning stays exact no matter how
+    // violent the mid-loop displacement is. Shape extents never change
+    // within a frame (translateShape only moves), so cellSize stays valid
+    // all step.
+    // -----------------------------------------------------------------------
+    const obstacleAabbs: Aabb[] = [];
+    for (const o of obstacles) obstacleAabbs.push(shapeAabb(o.shape));
+    const allAabbs: Aabb[] = [];
+    for (const m of movers) allAabbs.push(shapeAabb(m.shape));
+    for (const a of obstacleAabbs) allAabbs.push(a);
+    const cellSize = chooseCellSize(allAabbs);
+    const queryAabb: Aabb = { minX: 0, minY: 0, maxX: 0, maxY: 0 };
+    const setQueryFromBox = (b: Box): void => {
+      queryAabb.minX = b.cx - b.hw - cellSize;
+      queryAabb.minY = b.cy - b.hh - cellSize;
+      queryAabb.maxX = b.cx + b.hw + cellSize;
+      queryAabb.maxY = b.cy + b.hh + cellSize;
+    };
+    // TEST-ONLY fallback to the naive full-pair sweep (see broadphase.ts).
+    const forceNaive = broadphaseTestHooks.forceNaive;
+    const allObstacleIndices = forceNaive ? obstacles.map((_, i) => i) : null;
+    const allMoverIndices = forceNaive ? movers.map((_, i) => i) : null;
+
+    // Cumulative |dx|+|dy| applyPush displacement per mover this step (L1
+    // bounds L∞, so comparing it against the cellSize inflation is
+    // conservative), plus per-mover snapshots at mover-hash build time and
+    // the max staleness any mover has accumulated since that build.
+    const moverDisp: number[] = new Array<number>(movers.length).fill(0);
+    const moverDispAtHashBuild: number[] = new Array<number>(movers.length).fill(0);
+    let maxMoverStaleness = 0;
+
     const applyPush = (
       mover: Mover,
       nx: number,
@@ -1812,6 +1879,10 @@ export class SceneRuntime {
       mover.entity.transform.position.x += nx * amount;
       mover.entity.transform.position.y += ny * amount;
       translateShape(mover.shape, nx * amount, ny * amount);
+      const moved = Math.abs(nx * amount) + Math.abs(ny * amount);
+      moverDisp[mover.index] += moved;
+      const staleness = moverDisp[mover.index] - moverDispAtHashBuild[mover.index];
+      if (staleness > maxMoverStaleness) maxMoverStaleness = staleness;
       const body = mover.entity.components.PhysicsBody;
       if (body) {
         const e = Math.max(body.restitution, other.restitution);
@@ -1820,9 +1891,38 @@ export class SceneRuntime {
       }
     };
 
+    this.obstacleBroadphase.reset(cellSize);
+    for (let i = 0; i < obstacles.length; i++) {
+      this.obstacleBroadphase.insert(i, obstacleAabbs[i]);
+    }
+
     // Movers vs static obstacles (dynamic movers get pushed out).
     for (const mover of movers) {
-      for (const obstacle of obstacles) {
+      setQueryFromBox(mover.shape.box);
+      let candidates = allObstacleIndices ?? this.obstacleBroadphase.query(queryAabb);
+      let dispAtQuery = moverDisp[mover.index];
+      let lastProcessed = -1;
+      let p = 0;
+      // The staleness check runs before the bounds check on purpose: a push
+      // from the FINAL candidate can eject the mover toward obstacles past
+      // the end of the list, so exhaustion alone must not end the sweep.
+      for (;;) {
+        if (!allObstacleIndices && moverDisp[mover.index] - dispAtQuery > cellSize) {
+          // Pushes since the query may have moved this mover past the
+          // inflation slack — refetch at the current position and resume
+          // after the last processed index (obstacles never move, so the
+          // hash itself stays valid).
+          setQueryFromBox(mover.shape.box);
+          candidates = this.obstacleBroadphase.query(queryAabb);
+          dispAtQuery = moverDisp[mover.index];
+          p = 0;
+          while (p < candidates.length && candidates[p] <= lastProcessed) p++;
+        }
+        if (p >= candidates.length) break;
+        const obstacleIndex = candidates[p];
+        lastProcessed = obstacleIndex;
+        p++;
+        const obstacle = obstacles[obstacleIndex];
         if (!layersInteract(mover.filter, obstacle.filter)) continue;
         const push = computeShapePush(mover.shape, obstacle.shape);
         if (!push) continue;
@@ -1838,10 +1938,50 @@ export class SceneRuntime {
       }
     }
 
-    // Mover vs mover.
+    // Mover vs mover. The mover hash is built AFTER obstacle resolution so
+    // it indexes current (post-obstacle-push) positions. Unlike obstacles,
+    // BOTH sides of a pair move mid-loop: `a` drifts from its query position
+    // and any `j` may drift from its hash-insert position (pairs (k, j),
+    // k < i, push j too). A pair test is covered while a's
+    // displacement-since-query plus the largest any-mover
+    // displacement-since-hash-build stays within the cellSize inflation;
+    // past that, rebuild the hash and requery at current positions, resuming
+    // after the last processed j (ascending order preserved).
+    const rebuildMoverHash = (): void => {
+      this.moverBroadphase.reset(cellSize);
+      for (let i = 0; i < movers.length; i++) {
+        this.moverBroadphase.insert(i, shapeAabb(movers[i].shape));
+        moverDispAtHashBuild[i] = moverDisp[i];
+      }
+      maxMoverStaleness = 0;
+    };
+    rebuildMoverHash();
     for (let i = 0; i < movers.length; i++) {
-      for (let j = i + 1; j < movers.length; j++) {
-        const a = movers[i];
+      const a = movers[i];
+      setQueryFromBox(a.shape.box);
+      let candidates = allMoverIndices ?? this.moverBroadphase.query(queryAabb);
+      let dispAtQuery = moverDisp[i];
+      let lastJ = i; // only j > i pairs run, so i doubles as "last processed"
+      let p = 0;
+      // As above: check staleness before the bounds check so a push from
+      // the final candidate still triggers a rebuild + requery.
+      for (;;) {
+        if (
+          !allMoverIndices &&
+          moverDisp[i] - dispAtQuery + maxMoverStaleness > cellSize
+        ) {
+          rebuildMoverHash();
+          setQueryFromBox(a.shape.box);
+          candidates = this.moverBroadphase.query(queryAabb);
+          dispAtQuery = moverDisp[i];
+          p = 0;
+          while (p < candidates.length && candidates[p] <= lastJ) p++;
+        }
+        if (p >= candidates.length) break;
+        const j = candidates[p];
+        p++;
+        if (j <= lastJ) continue;
+        lastJ = j;
         const b = movers[j];
         if (!layersInteract(a.filter, b.filter)) continue;
         const push = computeShapePush(a.shape, b.shape);

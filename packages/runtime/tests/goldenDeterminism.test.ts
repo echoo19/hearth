@@ -221,11 +221,18 @@ async function buildFeatureMixStore(): Promise<ProjectStoreType> {
   return ProjectStore.load(fs, '/proj');
 }
 
-/** Recorded once against unmodified (pre-Task-9) code — see file header. */
+/**
+ * Recorded once against unmodified (pre-Task-9) code — see file header.
+ * 'colliders-1500' was added by Task 10 and recorded against post-Task-9 /
+ * pre-Task-10 code (Task 9 preserved the pre-Task-9 hashes, so this is the
+ * same behavior baseline): it pins the broadphase's highest-density
+ * mover-vs-mover scenario.
+ */
 const EXPECTED: Record<string, string> = {
   'tilemap-arena': 'f4ebf2c7f8495c17c464989df6a7abb46f2839d90e806233d76806eb36039abd',
   'mixed-horde': '3cc4f792945b6d559fac4da3bdd1dc198b76b598a7cff17380be710be98a5c3b',
   FeatureMix: '3748b50fb9f68a3e5d2536cbc6e86ffa040216418d9d12088ea92c6ec52354c2',
+  'colliders-1500': '2775e1a7d8d59d55e0e53628800a0ef3b59da2c1b49d58607d696f28bd6baa39',
 };
 
 describe('golden determinism', () => {
@@ -241,6 +248,13 @@ describe('golden determinism', () => {
     const store = await scenario.build();
     const hash = await runHash(store, 'Bench', FRAMES, SEED);
     expect(hash).toBe(EXPECTED['mixed-horde']);
+  });
+
+  it('colliders-1500 scenario hash is unchanged', { timeout: 120_000 }, async () => {
+    const scenario = SCENARIOS.find((s) => s.name === 'colliders-1500')!;
+    const store = await scenario.build();
+    const hash = await runHash(store, 'Bench', FRAMES, SEED);
+    expect(hash).toBe(EXPECTED['colliders-1500']);
   });
 
   it('FeatureMix scenario hash is unchanged', async () => {
