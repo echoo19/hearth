@@ -171,6 +171,18 @@ describe('getParticles / getParticleCount', () => {
  * EXPIRY: maxParticles(50) is well above the steady-state count (10), so
  * cap-eviction never triggers and every eviction here is an age>=lifetime
  * splice(), exercising pool reuse via that path instead.
+ *
+ * PLATFORM SCOPE: particles.ts seeds each particle's velocity with
+ * Math.cos/Math.sin (spread around `direction`), and trig is NOT bit-identical
+ * across V8/libm builds — an arm64-macOS run and an x64-Linux run differ by a
+ * floating-point ULP at spawn, which compounds through integration into the
+ * exact x/y/vx/vy recorded below. Hearth's determinism contract is same-seed
+ * SAME-PLATFORM reproducibility (docs/scripting.md → Determinism), never
+ * cross-platform bit-equality. So the pooling safety net is expressed
+ * platform-independently — two independently-seeded runs of the same emitter
+ * config must snapshot identically (pooling must not make a run diverge from
+ * itself) — and the absolute EXPECTED_* pin is additionally asserted only on
+ * the recording platform (arm64 macOS) where it was captured.
  */
 const EXPECTED_CAP: Record<number, unknown> = {
   30: [
@@ -254,37 +266,66 @@ async function snapshotFrames(
   return snapshotAt;
 }
 
+/**
+ * The platform on which EXPECTED_CAP/EXPECTED_EXPIRY were recorded (see the
+ * block comment above). The absolute pin is only meaningful here; everywhere
+ * else the run-twice determinism assert carries the pooling safety net.
+ */
+const IS_RECORDING_PLATFORM = process.platform === 'darwin' && process.arch === 'arm64';
+
+/**
+ * Runs the same emitter config twice (independent runtimes, independent
+ * particle pools) and asserts the two snapshots are identical — pooling must
+ * never make a run diverge from an equivalent run. On the recording platform,
+ * additionally pins the exact pre-pooling trajectory.
+ */
+async function assertPoolingTrajectory(
+  overrides: Record<string, unknown>,
+  expected: Record<number, unknown>,
+): Promise<void> {
+  const snapA = await snapshotFrames(await makeRuntimeWithEmitter(overrides), 'Emitter');
+  const snapB = await snapshotFrames(await makeRuntimeWithEmitter(overrides), 'Emitter');
+  expect(snapB, 'pooling made two identical-config runs diverge').toEqual(snapA);
+  if (IS_RECORDING_PLATFORM) {
+    expect(snapA, 'trajectory changed on the recording platform').toEqual(expected);
+  }
+}
+
 describe('seeded particle trajectory pin (Task 11 pooling safety net)', () => {
-  it('cap-eviction (shift) path: exact positions at frames 30/60/90 match pre-pooling code', async () => {
-    const runtime = await makeRuntimeWithEmitter({
-      seed: 11,
-      rate: 60,
-      burst: 0,
-      lifetime: 10 / 60,
-      speed: 50,
-      spread: 30,
-      direction: 0,
-      gravity: { x: 0, y: 80 },
-      maxParticles: 4,
-      emitting: true,
-    });
-    expect(await snapshotFrames(runtime, 'Emitter')).toEqual(EXPECTED_CAP);
+  it('cap-eviction (shift) path: pooling-stable, and matches pre-pooling positions on the recording platform', async () => {
+    await assertPoolingTrajectory(
+      {
+        seed: 11,
+        rate: 60,
+        burst: 0,
+        lifetime: 10 / 60,
+        speed: 50,
+        spread: 30,
+        direction: 0,
+        gravity: { x: 0, y: 80 },
+        maxParticles: 4,
+        emitting: true,
+      },
+      EXPECTED_CAP,
+    );
   });
 
-  it('lifetime-expiry (splice) path: exact positions at frames 30/60/90 match pre-pooling code', async () => {
-    const runtime = await makeRuntimeWithEmitter({
-      seed: 22,
-      rate: 60,
-      burst: 0,
-      lifetime: 10 / 60,
-      speed: 70,
-      spread: 60,
-      direction: 15,
-      gravity: { x: 5, y: 80 },
-      maxParticles: 50,
-      emitting: true,
-    });
-    expect(await snapshotFrames(runtime, 'Emitter')).toEqual(EXPECTED_EXPIRY);
+  it('lifetime-expiry (splice) path: pooling-stable, and matches pre-pooling positions on the recording platform', async () => {
+    await assertPoolingTrajectory(
+      {
+        seed: 22,
+        rate: 60,
+        burst: 0,
+        lifetime: 10 / 60,
+        speed: 70,
+        spread: 60,
+        direction: 15,
+        gravity: { x: 5, y: 80 },
+        maxParticles: 50,
+        emitting: true,
+      },
+      EXPECTED_EXPIRY,
+    );
   });
 });
 

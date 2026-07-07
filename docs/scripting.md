@@ -542,6 +542,14 @@ timers, tweens, and RNG are all deterministic; and the Lua sandbox blocks
 every source of nondeterminism (wall clock, unseeded random). If you keep
 your logic inside `ctx`, determinism is free.
 
+This guarantee is same-seed, same-machine: a given seed replays bit-for-bit
+on the same platform. It is not a cross-platform bit-equality claim — code
+that uses transcendental math (`Math.cos`, `Math.sin`, `Math.pow`, and the
+like, including the velocity spread of `ParticleEmitter`) can differ by a
+floating-point ULP between CPU architectures and JS-engine builds, because
+those functions are approximated rather than exactly specified by IEEE 754.
+Seeded RNG and ordinary `+ - * / sqrt` arithmetic are exact everywhere.
+
 `ParticleEmitter.seed` gives each emitter its own independent, deterministic
 RNG stream (separate from `ctx.random` and every other emitter), so the same
 project always spawns the same particles. Spawning itself lands on whole
