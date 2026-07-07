@@ -22,7 +22,11 @@
  * and the (deterministic) cell size. Non-finite AABBs (degenerate polygons,
  * script-corrupted values) can't be placed in cells, so they are treated as
  * candidates for every query — never pruned — matching whatever
- * computeShapePush would do with them.
+ * computeShapePush would do with them. The same always-candidate treatment
+ * applies to any *finite* AABB whose cell footprint is too large to
+ * enumerate cheaply (a giant collider, or extent/position corrupted to a
+ * merely-finite but enormous value) — see MAX_INSERT_CELL_SPAN in
+ * SpatialHash.insert.
  */
 
 import type { CollisionShape } from './physics.js';
@@ -64,8 +68,10 @@ export function shapeAabb(shape: CollisionShape): Aabb {
  * giant collider (bench arenas are enclosed by ~2000px wall boxes) makes
  * the cell as large as the whole world, so every query returns every
  * shape. A high percentile tracks the typical object size instead —
- * outlier giants simply span many cells (insert cost is a handful of list
- * pushes) and are found by exactly the queries that can reach them.
+ * outlier giants either span a bounded number of cells (still a handful of
+ * list pushes) or, past MAX_INSERT_CELL_SPAN, are routed to the
+ * always-candidate list instead of being enumerated — either way they are
+ * found by exactly the queries that can reach them, at bounded insert cost.
  *
  * Correctness does not depend on this choice: cell-overlap pruning is
  * conservative for ANY positive cell size, and stepPhysics covers mid-loop
@@ -105,6 +111,23 @@ function isFiniteAabb(a: Aabb): boolean {
  */
 const CELL_LIMIT = 1 << 20;
 const KEY_STRIDE = 2 * CELL_LIMIT + 1;
+
+/**
+ * Cap on the number of cells a single insert will enumerate
+ * ((x1-x0+1)*(y1-y0+1)). A finite AABB can still span an unbounded number of
+ * cells — either a genuinely huge collider or extent/position values a
+ * script corrupted to something merely finite but enormous (e.g. 1e8) — and
+ * enumerating every cell is O(span), not O(1), so an unbounded span is a
+ * single-shape freeze/OOM vector the naive O(n²) loops never had. Any shape
+ * whose span would exceed this goes through the always-candidate path
+ * instead (same treatment as non-finite AABBs): conservative, so behavior
+ * stays byte-identical to naive for the pairs it participates in, just
+ * without the per-cell bookkeeping cost. 4096 cells is generous headroom
+ * above any real scene (an outlier at the 90th-percentile cell size still
+ * enumerates a few dozen cells at most) while bounding worst case to a
+ * handful of array pushes.
+ */
+const MAX_INSERT_CELL_SPAN = 4096;
 
 /**
  * A per-frame spatial hash over indices into a collection array. Rebuilt
@@ -152,6 +175,13 @@ export class SpatialHash {
     const x1 = this.cellCoord(aabb.maxX);
     const y0 = this.cellCoord(aabb.minY);
     const y1 = this.cellCoord(aabb.maxY);
+    const span = (x1 - x0 + 1) * (y1 - y0 + 1);
+    if (span > MAX_INSERT_CELL_SPAN) {
+      // Cell footprint too large to enumerate cheaply — treat like a
+      // non-finite AABB: always a candidate, never pruned, no per-cell cost.
+      this.always.push(index);
+      return;
+    }
     for (let cx = x0; cx <= x1; cx++) {
       const rowKey = (cx + CELL_LIMIT) * KEY_STRIDE + CELL_LIMIT;
       for (let cy = y0; cy <= y1; cy++) {

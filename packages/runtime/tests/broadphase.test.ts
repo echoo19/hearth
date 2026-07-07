@@ -164,6 +164,37 @@ describe('SpatialHash', () => {
     expect([...hash.query(box(Number.NaN, 0, Number.NaN, 0))]).toEqual([0, 3]);
   });
 
+  it('routes a giant-span insert to the always-candidate list (found everywhere, both directions)', () => {
+    const hash = new SpatialHash(32);
+    // A 20000x20000 collider at cellSize 32 spans (20000/32)^2 ≈ 390k cells
+    // — well past MAX_INSERT_CELL_SPAN — so it must be treated like a
+    // non-finite AABB: always a candidate, for queries that overlap it AND
+    // for ones far away, never pruned.
+    hash.insert(0, box(-10_000, -10_000, 10_000, 10_000));
+    hash.insert(1, box(0, 0, 10, 10)); // overlapping the giant
+    expect([...hash.query(box(0, 0, 5, 5))]).toEqual([0, 1]);
+    // Query far outside the giant's own AABB — still found (always-list).
+    expect([...hash.query(box(1_000_000, 1_000_000, 1_000_010, 1_000_010))]).toEqual([0]);
+    // And the giant's own query still finds everything inserted so far.
+    expect([...hash.query(box(-10_000, -10_000, 10_000, 10_000))]).toEqual([0, 1]);
+  });
+
+  it('an insert with a 1e8 extent completes fast instead of enumerating ~1e12 cells', () => {
+    const hash = new SpatialHash(32);
+    const start = performance.now();
+    for (let i = 0; i < 1000; i++) {
+      // Extent is finite (passes isFiniteAabb) but enormous — a script
+      // setting position/extent to 1e8 must not enumerate its cell span.
+      hash.insert(i, box(-1e8, -1e8, 1e8, 1e8));
+    }
+    const elapsed = performance.now() - start;
+    expect(elapsed).toBeLessThan(200);
+    // Still findable — routed to the always-candidate list.
+    expect([...hash.query(box(0, 0, 1, 1))]).toEqual(
+      Array.from({ length: 1000 }, (_, i) => i),
+    );
+  });
+
   it('reset clears contents and adopts the new cell size', () => {
     const hash = new SpatialHash(32);
     hash.insert(0, box(0, 0, 10, 10));
