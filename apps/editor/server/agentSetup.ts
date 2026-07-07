@@ -33,8 +33,17 @@ function runWithTimeout(
   return new Promise((resolve) => {
     let child;
     try {
-      child = spawn(bin, args, { stdio: ['ignore', 'pipe', 'ignore'] });
+      // `bin` can be a `where`-resolved path ending in `.cmd` (e.g. a global
+      // `claude`/`codex` npm shim on Windows). Node's CVE-2024-27980
+      // hardening refuses to spawn a .cmd/.bat file directly without
+      // `shell: true` (throws/emits EINVAL) — opt in on win32. `bin`/`args`
+      // here are either hardcoded ('which'/'where'/'--version') or a path
+      // resolved from `where`/`which`'s own output, not attacker input.
+      child = spawn(bin, args, { stdio: ['ignore', 'pipe', 'ignore'], shell: process.platform === 'win32' });
     } catch {
+      // Belt-and-suspenders: some spawn failures (invalid options, ENOENT in
+      // certain Node/OS combos) throw synchronously instead of surfacing via
+      // the 'error' event below — treat either path as "not found".
       resolve({ code: null, stdout: '' });
       return;
     }

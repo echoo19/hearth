@@ -685,6 +685,13 @@ describe('captureScreenshot (real Chromium)', () => {
   // is working, removing the asset must change what "PressStart2P" renders
   // as; if it's a no-op (or never wired up), both captures render the same
   // unresolved-name fallback and would be byte-identical.
+  // Genuinely heavier than its sibling captures here: a real font file import
+  // + FontFace load through actual Chromium, plus two full captures. Fast
+  // locally but has timed out on slower shared macos-latest CI runners well
+  // under 30s of margin; give it the same 120s budget the other at-scale
+  // real-browser/determinism tests use (goldenDeterminism colliders-1500,
+  // broadphase, sustained-horde-scale). Load-time headroom, not a
+  // correctness change.
   it.skipIf(!hasChromium)(
     'renders a Text entity differently once its named font asset is loaded vs. removed from the project',
     async () => {
@@ -741,7 +748,7 @@ describe('captureScreenshot (real Chromium)', () => {
         await cleanup();
       }
     },
-    30000,
+    120_000,
   );
 
   // A font asset whose file isn't real font data (bogus/corrupt, as opposed

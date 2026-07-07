@@ -64,14 +64,19 @@ await writeFile(
 // runner (and a local packaging run) needs.
 const npmInstallArgs = ['install', '--omit=dev', '--no-audit', '--no-fund', '--no-package-lock'];
 console.log(`release-app/: npm install @lydell/node-pty@${nodePtyVersion}`);
+// Node's CVE-2024-27980 hardening refuses to spawn a .cmd/.bat file directly
+// on win32 (throws EINVAL) unless `shell: true` is set. `npmCmd()` resolves to
+// `npm.cmd` on Windows, so opt into the shell there; args are static strings
+// with no user input, so there's no injection surface.
+const execOpts = { cwd: out, stdio: 'inherit', shell: process.platform === 'win32' };
 try {
-  execFileSync(npmCmd(), npmInstallArgs, { cwd: out, stdio: 'inherit' });
+  execFileSync(npmCmd(), npmInstallArgs, execOpts);
 } catch (err) {
   // Some sandboxed/CI environments have an unwritable (or root-owned) global
   // npm cache; retry once against a scratch cache dir before giving up.
   console.warn(`npm install failed (${err.message}); retrying with a scratch --cache dir`);
   const scratchCache = path.join(os.tmpdir(), 'hearth-npm-cache');
-  execFileSync(npmCmd(), [...npmInstallArgs, '--cache', scratchCache], { cwd: out, stdio: 'inherit' });
+  execFileSync(npmCmd(), [...npmInstallArgs, '--cache', scratchCache], execOpts);
 }
 
 function npmCmd() {
