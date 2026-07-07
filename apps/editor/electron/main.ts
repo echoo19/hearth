@@ -17,6 +17,7 @@ import { app, BrowserWindow, dialog, ipcMain, shell } from 'electron';
 import http from 'node:http';
 import path from 'node:path';
 import fs from 'node:fs';
+import os from 'node:os';
 import { createProjectServerContext, handleApiRequest, attachWebSocket } from '../server/projectServer.js';
 
 const SMOKE = process.env.HEARTH_SMOKE === '1';
@@ -192,16 +193,75 @@ async function main(): Promise<void> {
   await win.loadURL(url);
 
   if (SMOKE) {
-    // Self-test mode: verify the API responds through the real server, then exit.
+    // Self-test mode: verify the API responds through the real server, then
+    // verify the packaged app can actually spawn a working PTY — the whole
+    // point of this file's asarUnpack/external plumbing — then exit. Any
+    // failure here must throw so the process exits non-zero: a silently
+    // broken native module in a packaged build is exactly what this test
+    // exists to catch.
     const meta = await fetch(`${url}/api/meta`).then((r) => r.json());
     console.log('[smoke] /api/meta ok:', JSON.stringify(meta).slice(0, 120));
     console.log('[smoke] window loaded:', win.webContents.getURL());
+    await smokeTestPty();
+    console.log('[smoke] all checks passed');
     app.quit();
   }
+}
+
+/**
+ * Loads @lydell/node-pty exactly the way ptyManager's default backend does
+ * (a dynamic import resolved at runtime, never bundled by esbuild — see
+ * scripts/build-electron.mjs's `external`), then spawns a real shell and
+ * confirms a round-tripped command's output actually arrives. In a packaged
+ * app this only succeeds if: the platform prebuild package was installed
+ * into release-app/node_modules (scripts/assemble-app.mjs), asarUnpack kept
+ * its .node binary a real file on disk (apps/editor/package.json's `build`
+ * config), and it's still executable after ad-hoc codesigning on macOS
+ * (scripts/afterPack.cjs).
+ */
+async function smokeTestPty(): Promise<void> {
+  const nodePty = await import('@lydell/node-pty');
+  console.log('[smoke] @lydell/node-pty module loaded');
+
+  const shell = process.env.SHELL || (process.platform === 'win32' ? 'powershell.exe' : '/bin/bash');
+  const marker = 'hearth-pty-ok';
+  const pty = nodePty.spawn(shell, [], {
+    cwd: os.homedir(),
+    cols: 80,
+    rows: 24,
+    env: process.env,
+  });
+
+  await new Promise<void>((resolve, reject) => {
+    let buffer = '';
+    const timer = setTimeout(() => {
+      pty.kill();
+      reject(new Error(`[smoke] pty did not echo marker within 3s (got: ${JSON.stringify(buffer.slice(-200))})`));
+    }, 3000);
+
+    pty.onData((data: string) => {
+      buffer += data;
+      if (buffer.includes(marker)) {
+        clearTimeout(timer);
+        pty.kill();
+        resolve();
+      }
+    });
+
+    pty.write(`echo ${marker}\r`);
+  });
+
+  console.log('[smoke] pty spawn + echo round-trip ok');
 }
 
 app.on('window-all-closed', () => {
   app.quit();
 });
 
-void main();
+main().catch((err: unknown) => {
+  // In smoke mode this is the whole point: a broken native module in a
+  // packaged build must fail the process loudly (non-zero exit) rather than
+  // vanish as an unhandled rejection while Electron keeps the window open.
+  console.error('[smoke] FAILED:', err instanceof Error ? err.stack ?? err.message : err);
+  app.exit(1);
+});

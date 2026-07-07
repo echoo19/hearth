@@ -38,7 +38,12 @@ await build({
   // it through a lazy `import('playwright-core')`, and playwright-core's own
   // bundle pulls in optional native/CJS-only deps (chromium-bidi, fsevents)
   // that esbuild can't statically resolve anyway.
-  external: ['electron', 'playwright-core'],
+  // @lydell/node-pty ships prebuilt native binaries only (no JS source to
+  // inline) and is dynamically imported lazily by server/ptyManager.ts;
+  // esbuild must leave the import alone so it resolves via real node_modules
+  // resolution at runtime against release-app/node_modules (see
+  // scripts/assemble-app.mjs), not get bundled/rewritten.
+  external: ['electron', 'playwright-core', '@lydell/node-pty'],
   sourcemap: false,
   logLevel: 'info',
   ...luaWasmInline,
