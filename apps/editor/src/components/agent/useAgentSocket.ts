@@ -20,6 +20,7 @@
 import { useCallback, useSyncExternalStore } from 'react';
 import { useEditor } from '../../store';
 import type { WsFrame } from '../../../server/ws';
+import type { PrepareAgentResult } from '../../api';
 
 export type PtyCommand = 'claude' | 'codex' | 'shell';
 export type PtyServerFrame = Extract<WsFrame, { type: 'pty-data' | 'pty-exit' | 'pty-error' }>;
@@ -249,6 +250,31 @@ subscribeAgentSocket(() => {
   const status = agentSessionSummary.status;
   if (useEditor.getState().agentStatus !== status) useEditor.setState({ agentStatus: status });
 });
+
+// ---------------------------------------------------------------------------
+// Start-Claude gate — pure decision, DOM/WS-free (AgentPanel.tsx's startClaude).
+// ---------------------------------------------------------------------------
+
+export interface ClaudeStartDecision {
+  /** False iff prepare failed — the caller must NOT spawn `claude` in this case. */
+  shouldStart: boolean;
+  /** Present iff shouldStart is false: why prepare failed, for display next to the header actions. */
+  errorMessage: string | null;
+}
+
+/**
+ * Prepare writes the hearth entry (with --mode) into .mcp.json; the bare
+ * interactive `claude` picks that up itself, so this gate is the only thing
+ * standing between a failed/corrupted prepare and actually spawning the
+ * process. A stale .mcp.json from a previous session can carry a MORE
+ * permissive mode than the one just selected — if prepare fails, that stale
+ * grant must never silently win, so the caller must not fall through to
+ * agent.start() on failure.
+ */
+export function planClaudeStart(prepareResult: Pick<PrepareAgentResult, 'ok' | 'error'>): ClaudeStartDecision {
+  if (prepareResult.ok) return { shouldStart: true, errorMessage: null };
+  return { shouldStart: false, errorMessage: prepareResult.error ?? 'failed to write .mcp.json' };
+}
 
 // ---------------------------------------------------------------------------
 // React seam

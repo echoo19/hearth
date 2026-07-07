@@ -24,6 +24,7 @@ class FakePtyHandle implements PtyHandle {
   dataCbs: Array<(d: string) => void> = [];
   exitCbs: Array<(e: { exitCode: number }) => void> = [];
   writes: string[] = [];
+  resizes: Array<{ cols: number; rows: number }> = [];
   killed = false;
 
   onData(cb: (d: string) => void): void {
@@ -35,7 +36,9 @@ class FakePtyHandle implements PtyHandle {
   write(d: string): void {
     this.writes.push(d);
   }
-  resize(): void {}
+  resize(cols: number, rows: number): void {
+    this.resizes.push({ cols, rows });
+  }
   kill(): void {
     this.killed = true;
   }
@@ -169,6 +172,36 @@ describe('pty-* frame routing over /api/ws', () => {
     expect(client.readyState).toBe(WebSocket.OPEN);
 
     client.close();
+    await wait(50);
+  });
+
+  it('pty-input and pty-resize from a non-owning socket on the same project are silent no-ops', async () => {
+    const owner = await connect();
+    owner.send(JSON.stringify({ type: 'pty-start', command: 'shell' }));
+    await wait(100);
+
+    const handle = backend.spawns[backend.spawns.length - 1].handle;
+
+    // A second socket on the SAME project root — e.g. another browser tab —
+    // must not be able to inject keystrokes into, resize, or (per the
+    // existing pty-stop guarantee) kill the owner's terminal session.
+    const intruder = await connect();
+    intruder.send(JSON.stringify({ type: 'pty-input', data: 'rm -rf /\r' }));
+    intruder.send(JSON.stringify({ type: 'pty-resize', cols: 999, rows: 999 }));
+    intruder.send(JSON.stringify({ type: 'pty-stop' }));
+    await wait(50);
+
+    expect(handle.writes).toEqual([]);
+    expect(handle.resizes).toEqual([]);
+    expect(handle.killed).toBe(false);
+
+    // The legitimate owner's input still reaches the same pty.
+    owner.send(JSON.stringify({ type: 'pty-input', data: 'echo hi\r' }));
+    await wait(50);
+    expect(handle.writes).toEqual(['echo hi\r']);
+
+    owner.close();
+    intruder.close();
     await wait(50);
   });
 

@@ -5,7 +5,7 @@ import { apiPrepareAgent } from '../api';
 import type { AgentPermissionMode } from '../../server/agentSetup';
 import { CodeBlock, Icon } from './ui';
 import { Terminal } from './agent/Terminal';
-import { useAgentSocket, type AgentSessionSummary } from './agent/useAgentSocket';
+import { planClaudeStart, useAgentSocket, type AgentSessionSummary } from './agent/useAgentSocket';
 
 // The editor's 4-tier picker onto the MCP server's real permission modes
 // (agentSetup.ts's AgentPermissionMode/MODE_ARGS). Labels + hints are built
@@ -56,6 +56,7 @@ export function AgentPanel() {
   const log = useEditor((s) => s.log);
   const agent = useAgentSocket();
   const [manualOpen, setManualOpen] = useState(false);
+  const [prepareError, setPrepareError] = useState<string | null>(null);
 
   useEffect(() => {
     void detectAgent();
@@ -73,9 +74,16 @@ export function AgentPanel() {
     // `claude` picks up itself. The mode rides along on pty-start only so
     // the server sees what was requested.
     const result = await apiPrepareAgent(projectPath, agentMode);
-    if (!result.ok) {
-      log('warn', 'command', `Agent setup: ${result.error ?? 'failed to write .mcp.json'}`);
+    const decision = planClaudeStart(result);
+    if (!decision.shouldStart) {
+      // Do NOT fall through to agent.start(): a corrupted/stale .mcp.json
+      // from a previous session could carry a MORE permissive mode than the
+      // one just selected, and that stale grant must never silently win.
+      setPrepareError(decision.errorMessage);
+      log('error', 'command', `Agent setup failed: ${decision.errorMessage}`);
+      return;
     }
+    setPrepareError(null);
     agent.start('claude', agentMode);
   }
 
@@ -175,6 +183,8 @@ export function AgentPanel() {
 
         <span className={`agent-status agent-status-${agent.session.status}`}>{statusLabel(agent.session)}</span>
       </div>
+
+      {prepareError && <div className="agent-prepare-error">Agent setup failed: {prepareError}</div>}
 
       <div className="agent-mode-hint">{AGENT_MODE_HINTS[agentMode]}</div>
 

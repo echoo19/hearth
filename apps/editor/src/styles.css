@@ -1628,6 +1628,14 @@ label.field-label {
   flex: none;
 }
 
+.agent-prepare-error {
+  padding: 4px 10px;
+  color: var(--err);
+  font-size: 12px;
+  white-space: pre-wrap;
+  flex: none;
+}
+
 .agent-status {
   font-size: 12px;
   color: var(--ink-faint);

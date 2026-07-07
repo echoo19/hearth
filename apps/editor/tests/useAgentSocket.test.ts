@@ -20,6 +20,7 @@ import {
   initialWriteCursor,
   markAgentStarted,
   markAgentStopped,
+  planClaudeStart,
   planTerminalWrite,
   reduceAgentSocket,
   resetAgentSocket,
@@ -154,6 +155,26 @@ describe('reduceAgentSocket', () => {
       droppedBytes: 0,
       exitCode: null,
       errorMessage: null,
+    });
+  });
+});
+
+describe('planClaudeStart', () => {
+  it('a successful prepare allows the start to proceed, with no error to surface', () => {
+    expect(planClaudeStart({ ok: true })).toEqual({ shouldStart: true, errorMessage: null });
+  });
+
+  it('a failed prepare blocks the start and surfaces the API-reported reason', () => {
+    expect(planClaudeStart({ ok: false, error: '.mcp.json is not valid JSON' })).toEqual({
+      shouldStart: false,
+      errorMessage: '.mcp.json is not valid JSON',
+    });
+  });
+
+  it('a failed prepare with no reason from the API still blocks the start, with a fallback message', () => {
+    expect(planClaudeStart({ ok: false })).toEqual({
+      shouldStart: false,
+      errorMessage: 'failed to write .mcp.json',
     });
   });
 });

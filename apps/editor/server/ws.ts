@@ -117,6 +117,15 @@ export function attachWebSocket(httpServer: HttpServer, ctx: ProjectServerContex
     ptyManager.kill(root);
   }
 
+  /** A terminal is per-client: only the socket whose pty-start (re)spawned
+   * the pty for `root` may feed it keystrokes/resizes or kill it. Every other
+   * socket sharing the project (journal frames are broadcast to all of them)
+   * gets a silent no-op instead of being able to inject input into, resize,
+   * or stop a session it doesn't own. */
+  function isPtyOwner(root: string, socket: WebSocket): boolean {
+    return ptyOwners.get(root) === socket;
+  }
+
   function getChannel(root: string): ProjectChannel {
     const existing = channels.get(root);
     if (existing) return existing;
@@ -180,10 +189,10 @@ export function attachWebSocket(httpServer: HttpServer, ctx: ProjectServerContex
             startPty(root, ws, frame.command);
             break;
           case 'pty-input':
-            ptyManager.write(root, frame.data);
+            if (isPtyOwner(root, ws)) ptyManager.write(root, frame.data);
             break;
           case 'pty-resize':
-            ptyManager.resize(root, frame.cols, frame.rows);
+            if (isPtyOwner(root, ws)) ptyManager.resize(root, frame.cols, frame.rows);
             break;
           case 'pty-stop':
             // Explicit kill from the panel's Stop button — the only other
