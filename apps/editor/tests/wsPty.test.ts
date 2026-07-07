@@ -154,6 +154,24 @@ describe('pty-* frame routing over /api/ws', () => {
     expect(handle.killed).toBe(true);
   });
 
+  it('pty-stop explicitly kills the pty without waiting for the socket to close', async () => {
+    const client = await connect();
+    client.send(JSON.stringify({ type: 'pty-start', command: 'shell' }));
+    await wait(100);
+
+    const handle = backend.spawns[backend.spawns.length - 1].handle;
+    expect(handle.killed).toBe(false);
+
+    client.send(JSON.stringify({ type: 'pty-stop' }));
+    await wait(50);
+
+    expect(handle.killed).toBe(true);
+    expect(client.readyState).toBe(WebSocket.OPEN);
+
+    client.close();
+    await wait(50);
+  });
+
   it('a second pty-start on the same root kills the previous pty before spawning a new one', async () => {
     const client = await connect();
     client.send(JSON.stringify({ type: 'pty-start', command: 'shell' }));
@@ -165,6 +183,41 @@ describe('pty-* frame routing over /api/ws', () => {
 
     expect(first.killed).toBe(true);
     expect(backend.spawns[backend.spawns.length - 1].file).toBe('claude');
+
+    client.close();
+    await wait(50);
+  });
+
+  it('a stale exit from a stopped pty does not disturb the replacement session', async () => {
+    const client = await connect();
+    const frames: WsFrame[] = [];
+    client.on('message', (raw) => frames.push(JSON.parse(raw.toString()) as WsFrame));
+
+    client.send(JSON.stringify({ type: 'pty-start', command: 'shell' }));
+    await wait(100);
+    const first = backend.spawns[backend.spawns.length - 1].handle;
+
+    client.send(JSON.stringify({ type: 'pty-stop' }));
+    await wait(50);
+    expect(first.killed).toBe(true);
+
+    client.send(JSON.stringify({ type: 'pty-start', command: 'claude' }));
+    await wait(100);
+    const second = backend.spawns[backend.spawns.length - 1].handle;
+
+    // The killed process exits asynchronously (real ptys always do): its
+    // late events must not reach the client as if the new session ended.
+    const exitsBefore = frames.filter((f) => f.type === 'pty-exit').length;
+    first.emitData('late output from the dead pty');
+    first.emitExit(0);
+    await wait(50);
+    expect(frames.filter((f) => f.type === 'pty-exit').length).toBe(exitsBefore);
+    expect(frames.some((f) => f.type === 'pty-data' && f.data.includes('dead pty'))).toBe(false);
+
+    // ...and ownership of the replacement stays intact: Stop still works.
+    client.send(JSON.stringify({ type: 'pty-stop' }));
+    await wait(50);
+    expect(second.killed).toBe(true);
 
     client.close();
     await wait(50);

@@ -33,6 +33,7 @@ export type WsFrame =
   | { type: 'pty-input'; data: string } // client -> server
   | { type: 'pty-resize'; cols: number; rows: number }
   | { type: 'pty-start'; command: 'claude' | 'codex' | 'shell'; mode?: string }
+  | { type: 'pty-stop' } // client -> server: explicit kill (the panel's Stop button)
   | { type: 'pty-error'; message: string };
 
 interface ProjectChannel {
@@ -60,6 +61,13 @@ export function attachWebSocket(httpServer: HttpServer, ctx: ProjectServerContex
   // back to that socket only — a terminal is per-client, not broadcast —
   // and so closing that specific socket tears the pty down.
   const ptyOwners = new Map<string, WebSocket>();
+  // The handle each root's *current* pty was spawned with. A killed pty's
+  // real process exits asynchronously, so its onData/onExit callbacks can
+  // still fire after a pty-stop or a superseding pty-start; comparing
+  // against this map lets those stale callbacks be dropped instead of
+  // sending a phantom pty-exit (or deleting ownership) for the session
+  // that replaced it.
+  const liveHandles = new Map<string, PtyHandle>();
 
   function send(socket: WebSocket, frame: WsFrame): void {
     if (socket.readyState === WebSocket.OPEN) socket.send(JSON.stringify(frame));
@@ -74,6 +82,10 @@ export function attachWebSocket(httpServer: HttpServer, ctx: ProjectServerContex
 
   /** Starts a pty for `root` and routes its output back to `socket` only. */
   function startPty(root: string, socket: WebSocket, command: 'claude' | 'codex' | 'shell'): void {
+    // Supersede the previous pty's callbacks BEFORE killing it (inside
+    // ptyManager.start), so an exit that fires during/after the kill can't
+    // masquerade as this new session's exit.
+    liveHandles.delete(root);
     let handle: PtyHandle;
     try {
       handle = ptyManager.start(root, command, { cols: DEFAULT_PTY_COLS, rows: DEFAULT_PTY_ROWS });
@@ -82,8 +94,14 @@ export function attachWebSocket(httpServer: HttpServer, ctx: ProjectServerContex
       return;
     }
     ptyOwners.set(root, socket);
-    handle.onData((data) => send(socket, { type: 'pty-data', data }));
+    liveHandles.set(root, handle);
+    handle.onData((data) => {
+      if (liveHandles.get(root) !== handle) return; // stale: this pty was stopped/superseded
+      send(socket, { type: 'pty-data', data });
+    });
     handle.onExit((e) => {
+      if (liveHandles.get(root) !== handle) return; // stale: don't report or unclaim for the replacement
+      liveHandles.delete(root);
       send(socket, { type: 'pty-exit', code: e.exitCode });
       if (ptyOwners.get(root) === socket) ptyOwners.delete(root);
     });
@@ -93,6 +111,9 @@ export function attachWebSocket(httpServer: HttpServer, ctx: ProjectServerContex
   function killOwnedPty(root: string, socket: WebSocket): void {
     if (ptyOwners.get(root) !== socket) return;
     ptyOwners.delete(root);
+    // Mark superseded first: the real process exits asynchronously, and its
+    // late exit event must not be delivered as if a live session ended.
+    liveHandles.delete(root);
     ptyManager.kill(root);
   }
 
@@ -125,6 +146,7 @@ export function attachWebSocket(httpServer: HttpServer, ctx: ProjectServerContex
       // Belt-and-suspenders: the project is fully closed (last socket gone),
       // so no pty for this root should survive it even if ownership
       // tracking above ever missed a case.
+      liveHandles.delete(root);
       ptyManager.kill(root);
     }
   }
@@ -163,6 +185,11 @@ export function attachWebSocket(httpServer: HttpServer, ctx: ProjectServerContex
           case 'pty-resize':
             ptyManager.resize(root, frame.cols, frame.rows);
             break;
+          case 'pty-stop':
+            // Explicit kill from the panel's Stop button — the only other
+            // way a pty dies client-side is a fresh pty-start superseding it.
+            killOwnedPty(root, ws);
+            break;
           default:
             break; // journal/pty-data/pty-exit/pty-error are server->client only
         }
@@ -177,6 +204,7 @@ export function attachWebSocket(httpServer: HttpServer, ctx: ProjectServerContex
     for (const channel of channels.values()) channel.dispose();
     channels.clear();
     ptyOwners.clear();
+    liveHandles.clear();
     ptyManager.killAll();
   });
 }

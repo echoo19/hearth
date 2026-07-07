@@ -2,6 +2,7 @@
  * Thin client over the project server's /api routes.
  */
 import type { CommandResult, ExampleProject, ProjectInfo, RecentProject, ServerMeta } from './types';
+import type { AgentPermissionMode, DetectAgentsResult } from '../server/agentSetup';
 
 async function postJson<T>(url: string, body: unknown): Promise<T> {
   const res = await fetch(url, {
@@ -86,4 +87,26 @@ export function apiExportWeb(
 /** URL for a raw project file (sprites, scripts, scene JSON...). */
 export function fileUrl(project: string, relPath: string): string {
   return `/api/file?project=${encodeURIComponent(project)}&path=${encodeURIComponent(relPath)}`;
+}
+
+/** Is `claude` / `codex` on PATH? Backs the Agent panel's launch flow. */
+export async function apiDetectAgents(): Promise<DetectAgentsResult | null> {
+  try {
+    const res = await fetch('/api/agent/detect');
+    const body = await res.json();
+    return body.ok ? (body as DetectAgentsResult) : null;
+  } catch {
+    return null;
+  }
+}
+
+export interface PrepareAgentResult {
+  ok: boolean;
+  written?: boolean;
+  error?: string;
+}
+
+/** Merge-writes the project's .mcp.json with a hearth MCP server entry for the given mode. */
+export function apiPrepareAgent(project: string, mode: AgentPermissionMode): Promise<PrepareAgentResult> {
+  return postJson<PrepareAgentResult>('/api/agent/prepare', { project, mode });
 }

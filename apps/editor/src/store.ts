@@ -4,7 +4,7 @@
  * a core command and refreshes the model from the source of truth.
  */
 import { create } from 'zustand';
-import { apiCommand, apiMeta, apiOpenProject, apiCreateProject } from './api';
+import { apiCommand, apiMeta, apiOpenProject, apiCreateProject, apiDetectAgents } from './api';
 import type {
   AssetItem,
   CommandResult,
@@ -19,6 +19,8 @@ import type {
   ServerMeta,
 } from './types';
 import type { WsFrame } from '../server/ws';
+import type { AgentPermissionMode, DetectAgentsResult } from '../server/agentSetup';
+import { ingestPtyFrame, resetAgentSocket, type AgentStatus } from './components/agent/useAgentSocket';
 
 interface EditorState {
   meta: ServerMeta | null;
@@ -58,6 +60,23 @@ interface EditorState {
    * persistence across sessions this wave.
    */
   debugDraw: boolean;
+
+  /** Embedded agent terminal (Agent panel): high-level status/mode/detect state.
+   * The pty session itself (scrollback and all) lives outside zustand (see
+   * components/agent/useAgentSocket.ts) so it survives that panel's own
+   * component tree unmounting; `agentStatus` is mirrored from that store by
+   * a single subscription registered there — never set by hand here — so
+   * other panels (and Task 6's activity timeline) can select it without a
+   * second source of truth. */
+  agentStatus: AgentStatus;
+  agentMode: AgentPermissionMode;
+  agentDetect: DetectAgentsResult | null;
+  agentDetecting: boolean;
+
+  setAgentMode(mode: AgentPermissionMode): void;
+  detectAgent(): Promise<void>;
+  /** Sends a pty-* frame over the shared WS socket; a no-op (returns false) when disconnected. */
+  sendAgentFrame(frame: WsFrame): boolean;
 
   loadMeta(): Promise<void>;
   openProject(path: string): Promise<{ ok: boolean; error?: string }>;
@@ -162,6 +181,10 @@ export const useEditor = create<EditorState>((set, get) => {
   function connectWs(project: string): void {
     const epoch = ++wsEpoch;
     teardownSocket();
+    // A fresh socket means a fresh pty on the server (a new project root, or
+    // a reconnect after a drop that already killed the old one) — never let
+    // a prior project's agent session bleed into this connection.
+    resetAgentSocket();
     set({ wsStatus: 'connecting' });
     const socket = new WebSocket(wsUrl(project));
     ws = socket;
@@ -179,19 +202,27 @@ export const useEditor = create<EditorState>((set, get) => {
       } catch {
         return;
       }
-      // Only the journal side is implemented this task; pty-* frames are
-      // defined in WsFrame for a later task to consume.
-      if (frame.type !== 'journal') return;
-      pushJournalFeed(frame.entries);
-      if (frame.entries.some((entry) => entry.source !== 'editor')) {
-        set((state) => ({ commandSeq: state.commandSeq + 1 }));
-        void get().refresh();
+      if (frame.type === 'journal') {
+        pushJournalFeed(frame.entries);
+        if (frame.entries.some((entry) => entry.source !== 'editor')) {
+          set((state) => ({ commandSeq: state.commandSeq + 1 }));
+          void get().refresh();
+        }
+        return;
       }
+      if (frame.type === 'pty-data' || frame.type === 'pty-exit' || frame.type === 'pty-error') {
+        ingestPtyFrame(frame);
+        return;
+      }
+      // pty-input/pty-resize/pty-start/pty-stop are client -> server only.
     };
     socket.onclose = () => {
       if (epoch !== wsEpoch) return;
       ws = null;
       set({ wsStatus: 'disconnected' });
+      // The server always kills the owning pty when its socket closes (see
+      // ws.ts releaseSocket), so any live agent session died with it.
+      resetAgentSocket();
       scheduleReconnect(project, epoch);
     };
   }
@@ -201,6 +232,7 @@ export const useEditor = create<EditorState>((set, get) => {
     wsBackoffMs = WS_BACKOFF_INITIAL_MS;
     teardownSocket();
     set({ wsStatus: 'disconnected' });
+    resetAgentSocket();
   }
 
   async function afterOpen(path: string, info: ProjectInfo): Promise<void> {
@@ -247,6 +279,27 @@ export const useEditor = create<EditorState>((set, get) => {
     playing: false,
     runNonce: 0,
     debugDraw: false,
+
+    agentStatus: 'idle',
+    agentMode: 'safe-edit',
+    agentDetect: null,
+    agentDetecting: false,
+
+    setAgentMode(mode) {
+      set({ agentMode: mode });
+    },
+
+    async detectAgent() {
+      set({ agentDetecting: true });
+      const result = await apiDetectAgents();
+      set({ agentDetect: result, agentDetecting: false });
+    },
+
+    sendAgentFrame(frame) {
+      if (!ws || ws.readyState !== WebSocket.OPEN) return false;
+      ws.send(JSON.stringify(frame));
+      return true;
+    },
 
     async loadMeta() {
       const meta = await apiMeta();
