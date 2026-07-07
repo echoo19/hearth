@@ -139,12 +139,48 @@ export const fillTilemapRect = defineCommand({
     entity: z.string().min(1),
     x: z.number().int(),
     y: z.number().int(),
-    width: z.number().int().positive(),
-    height: z.number().int().positive(),
+    width: z.number().int().positive().max(1024),
+    height: z.number().int().positive().max(1024),
     char: z.string(),
   }),
   async run(ctx, params) {
     const { scene, entity, tilemap } = resolveTilemap(ctx, params.scene, params.entity);
+
+    // Validate the rect against the grid's actual bounds BEFORE enumerating cells.
+    const rectRight = params.x + params.width;
+    const rectBottom = params.y + params.height;
+
+    if (params.y < 0 || params.y >= tilemap.grid.length) {
+      ctx.suggest('resizeTilemap');
+      throw new ProjectError(
+        `Rect starts at y=${params.y}, which is out of bounds for this tilemap (${tilemap.grid.length} rows). ` +
+          'Use resizeTilemap to grow the grid first.',
+        'TILE_OUT_OF_BOUNDS',
+      );
+    }
+
+    if (rectBottom > tilemap.grid.length) {
+      ctx.suggest('resizeTilemap');
+      throw new ProjectError(
+        `Rect extends to y=${rectBottom - 1} (bottom edge at y=${rectBottom}), which exceeds the tilemap's ` +
+          `${tilemap.grid.length} rows. Use resizeTilemap to grow the grid first.`,
+        'TILE_OUT_OF_BOUNDS',
+      );
+    }
+
+    // Check x bounds for every row the rect touches.
+    for (let row = params.y; row < rectBottom; row++) {
+      const rowLen = tilemap.grid[row].length;
+      if (params.x < 0 || params.x >= rowLen || rectRight > rowLen) {
+        ctx.suggest('resizeTilemap');
+        throw new ProjectError(
+          `Rect at row y=${row} extends from x=${params.x} to x=${rectRight - 1} (right edge at x=${rectRight}), ` +
+            `but that row is only ${rowLen} wide. Use resizeTilemap to grow the grid first.`,
+          'TILE_OUT_OF_BOUNDS',
+        );
+      }
+    }
+
     const cells: Cell[] = [];
     for (let row = params.y; row < params.y + params.height; row++) {
       for (let col = params.x; col < params.x + params.width; col++) {

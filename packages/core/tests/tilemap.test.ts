@@ -291,6 +291,39 @@ describe('fillTilemapRect', () => {
     expect(list.data.entries.length).toBe(2);
     expect(list.data.entries[1].command).toBe('fillTilemapRect');
   });
+
+  it('rejects width/height exceeding 1024 as invalid params', async () => {
+    const { session } = await makeSession();
+    await addTilemap(session);
+    const tooBig = await session.execute('fillTilemapRect', {
+      scene: 'Main',
+      entity: 'Player',
+      x: 0,
+      y: 0,
+      width: 2000,
+      height: 1,
+      char: '.',
+    });
+    expect(tooBig.success).toBe(false);
+    expect(tooBig.errors[0].code).toBe('INVALID_PARAMS');
+  });
+
+  it('fast-fails with TILE_OUT_OF_BOUNDS when oversized rect exceeds grid bounds (1000x1000 on 4x4)', async () => {
+    const { session } = await makeSession();
+    await addTilemap(session);
+    const result = await session.execute('fillTilemapRect', {
+      scene: 'Main',
+      entity: 'Player',
+      x: 0,
+      y: 0,
+      width: 1000,
+      height: 1000,
+      char: 'G',
+    });
+    expect(result.success).toBe(false);
+    expect(result.errors[0].code).toBe('TILE_OUT_OF_BOUNDS');
+    expect(result.suggestions.some((s: string) => s.includes('resizeTilemap'))).toBe(true);
+  });
 });
 
 describe('resizeTilemap', () => {
