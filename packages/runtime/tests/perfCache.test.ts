@@ -21,7 +21,10 @@ describe('getEntities() frame-scoped cache', () => {
     expect(second).toBe(first);
   });
 
-  it('invalidates the cache when step() runs (spawn/destroy/flush may have changed the set)', async () => {
+  it('keeps the same reference across a step() that neither spawns nor destroys anything', async () => {
+    // A step with no spawn/destroy touches nothing the cache depends on
+    // (flushDestroyed no-ops when destroyedIds is empty) — the whole point
+    // of caching is to NOT reallocate on frames where nothing changed.
     const { store } = await makeStore({
       entities: [ent('A', { Transform: { position: { x: 0, y: 0 } } })],
     });
@@ -29,9 +32,31 @@ describe('getEntities() frame-scoped cache', () => {
     const before = runtime.getEntities();
     runtime.step();
     const after = runtime.getEntities();
+    expect(after).toBe(before);
+    expect(after.map((e) => e.name)).toEqual(['A']);
+  });
+
+  it('changes reference (and never re-includes the old array) once a spawn happens', async () => {
+    const { store } = await makeStore({
+      entities: [
+        ent('Spawner', { Transform: { position: { x: 0, y: 0 } }, Script: { scriptPath: 'scripts/spawner.js' } }),
+      ],
+      scripts: {
+        'spawner.js': `export default {
+          onStart(ctx) { ctx.scene.spawn({ name: 'Spawned' }); },
+        };`,
+      },
+    });
+    const runtime = await SceneRuntime.create(store, 'Test');
+    const before = runtime.getEntities();
+    runtime.step(); // Spawner's onStart spawns 'Spawned'
+    const after = runtime.getEntities();
     expect(after).not.toBe(before);
-    // Content is unaffected by the identity change (no spawn/destroy happened).
-    expect(after.map((e) => e.name)).toEqual(before.map((e) => e.name));
+    expect(after.map((e) => e.name).sort()).toEqual(['Spawned', 'Spawner']);
+    // The pre-spawn snapshot is untouched — proves getEntities() never
+    // handed out `this.entities` itself (which the later spawn's push
+    // would otherwise have silently grown).
+    expect(before.map((e) => e.name)).toEqual(['Spawner']);
   });
 
   it('pins current spawn-mid-frame semantics: a same-frame spawn is invisible to the ' +

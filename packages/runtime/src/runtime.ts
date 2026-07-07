@@ -34,6 +34,7 @@ import {
   type PhysicsBodyComponent,
   type ProjectStore,
   type Scene,
+  type TilemapComponent,
   type TransformComponent,
   type Vec2,
 } from '@hearth/core';
@@ -48,6 +49,7 @@ import {
   resolveContactVelocity,
   tilemapBoxes,
   translateShape,
+  type Box,
   type CollisionShape,
 } from './physics.js';
 import {
@@ -236,6 +238,38 @@ export class SceneRuntime {
   private _elapsed = 0;
   private entities: RuntimeEntity[] = [];
   private destroyedIds = new Set<string>();
+  /**
+   * getEntities() cache — invalidated by invalidateEntitiesCache() on every
+   * spawn, destroy (destroyedIds mutation), and flushDestroyed(), the only
+   * things that change what getEntities() would compute. `enabled` toggles
+   * do NOT invalidate it: getEntities() has never filtered on `enabled`
+   * (every call site does that itself), and there is no runtime API that
+   * mutates `enabled` post-instantiate, so there is nothing to invalidate
+   * for. The returned array must never be mutated by callers (no push/
+   * splice/sort at any call site — audited for Task 9) since the same
+   * array is handed out to every call site for the rest of the frame.
+   */
+  private entitiesCache: RuntimeEntity[] | null = null;
+  /**
+   * Per-entity tilemap collider cache, keyed by entity id. `key` encodes
+   * everything tilemapBoxes()'s output can depend on: grid content, tile
+   * size, solid, and world position (a moving parent moves the tilemap —
+   * see getWorldPosition). Recomputed only when `key` changes; see
+   * `tilemapGridHashCache` for why the grid-content part of `key` is cheap
+   * to keep current every frame despite being an O(rows) join.
+   */
+  private tilemapBoxCache = new Map<string, { key: string; boxes: Box[] }>();
+  /**
+   * Memoizes `grid.join('\n')` per entity, recomputed only when the grid
+   * ARRAY REFERENCE changes (not on in-place content edits — nothing in
+   * this codebase mutates Tilemap.grid in place; setComponentProperty and
+   * ctx.getComponent('Tilemap').grid = [...] both assign a whole new
+   * array). This turns the join from "every physics step" into "only when
+   * a script/live-edit actually replaces the grid," which is the
+   * expensive part getTilemapBoxes's cache exists to avoid paying per
+   * frame for tilemaps that never change.
+   */
+  private tilemapGridHashCache = new Map<string, { ref: readonly string[]; hash: string }>();
   private scriptModules = new Map<string, ScriptHooks | null>();
   private scriptStates = new Map<string, ScriptState>();
   private handles = new Map<string, EntityHandle>();
@@ -315,9 +349,31 @@ export class SceneRuntime {
     return this._elapsed;
   }
 
-  /** Live, spawned and not destroyed entities, in stable order. */
+  /**
+   * Live, spawned and not destroyed entities, in stable order. Cached for
+   * the rest of the frame (or until the next spawn/destroy) — see
+   * `entitiesCache`'s doc comment for exactly what invalidates it.
+   */
   getEntities(): RuntimeEntity[] {
-    return this.entities.filter((e) => !this.destroyedIds.has(e.id));
+    if (!this.entitiesCache) {
+      // Always a fresh array distinct from `this.entities` (never the live
+      // array itself), even when nothing is destroyed: a spawn later this
+      // same frame pushes onto `this.entities`, and a `for...of` loop
+      // already iterating an aliased return value would pick up that push
+      // mid-iteration (array iterators track live length), silently
+      // changing which entities get onStart/onUpdate this frame. Slicing
+      // decouples the snapshot handed out from further mutation of
+      // `this.entities`, matching the pre-cache behavior exactly.
+      this.entitiesCache =
+        this.destroyedIds.size === 0
+          ? this.entities.slice()
+          : this.entities.filter((e) => !this.destroyedIds.has(e.id));
+    }
+    return this.entitiesCache;
+  }
+
+  private invalidateEntitiesCache(): void {
+    this.entitiesCache = null;
   }
 
   /** Find a live entity by id, then by exact name. */
@@ -519,9 +575,12 @@ export class SceneRuntime {
     this.pendingScene = null;
     this.cameraFollowId = null;
     this.entities = [];
+    this.invalidateEntitiesCache();
     this.scriptStates.clear();
     this.handles.clear();
     this.destroyedIds.clear();
+    this.tilemapBoxCache.clear();
+    this.tilemapGridHashCache.clear();
     this.activePlaybacks.clear();
     this.eventBus.clear();
     this.ownedLuaEngine?.dispose();
@@ -1468,6 +1527,7 @@ export class SceneRuntime {
       },
     };
     this.entities.push(entity);
+    this.invalidateEntitiesCache();
     this.registerScript(entity);
     return this.handleFor(entity);
   }
@@ -1475,6 +1535,7 @@ export class SceneRuntime {
   private destroyEntity(id: string): void {
     if (this.entities.some((e) => e.id === id)) {
       this.destroyedIds.add(id);
+      this.invalidateEntitiesCache();
     }
   }
 
@@ -1493,8 +1554,11 @@ export class SceneRuntime {
       this.scriptStates.delete(id);
       this.handles.delete(id);
       this.eventBus.removeOwner(id);
+      this.tilemapBoxCache.delete(id);
+      this.tilemapGridHashCache.delete(id);
     }
     this.destroyedIds.clear();
+    this.invalidateEntitiesCache();
   }
 
   private callHook(
@@ -1596,6 +1660,29 @@ export class SceneRuntime {
   // Physics
   // ---------------------------------------------------------------------------
 
+  /**
+   * Static boxes for a solid Tilemap entity, cached per entity and
+   * recomputed only when its cache key changes (grid content, tileSize,
+   * solid, or world position — see `tilemapBoxCache`'s doc comment).
+   * Obstacle shapes built from these boxes are never mutated by physics
+   * (translateShape only moves movers, never static obstacles), so sharing
+   * the same Box objects across frames is safe.
+   */
+  private getTilemapBoxes(entity: RuntimeEntity, tilemap: TilemapComponent): Box[] {
+    const worldPos = this.getWorldPosition(entity);
+    let gridHashEntry = this.tilemapGridHashCache.get(entity.id);
+    if (!gridHashEntry || gridHashEntry.ref !== tilemap.grid) {
+      gridHashEntry = { ref: tilemap.grid, hash: tilemap.grid.join('\n') };
+      this.tilemapGridHashCache.set(entity.id, gridHashEntry);
+    }
+    const key = `${gridHashEntry.hash}|${tilemap.tileSize}|${tilemap.solid}|${worldPos.x}|${worldPos.y}`;
+    const cached = this.tilemapBoxCache.get(entity.id);
+    if (cached && cached.key === key) return cached.boxes;
+    const boxes = tilemapBoxes(tilemap, worldPos);
+    this.tilemapBoxCache.set(entity.id, { key, boxes });
+    return boxes;
+  }
+
   private stepPhysics(): Contact[] {
     const live = this.getEntities();
     for (const entity of live) entity.collisions.length = 0;
@@ -1668,7 +1755,7 @@ export class SceneRuntime {
       }
       const tilemap = entity.components.Tilemap;
       if (tilemap && tilemap.solid) {
-        for (const box of tilemapBoxes(tilemap, this.getWorldPosition(entity))) {
+        for (const box of this.getTilemapBoxes(entity, tilemap)) {
           obstacles.push({
             entity,
             shape: { kind: 'box', box },
