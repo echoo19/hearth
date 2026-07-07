@@ -619,7 +619,14 @@ describe('ember-horde v0.7 showcase (Wave E spatial-hash horde scale)', () => {
     expect(result.passed).toBe(true);
   });
 
-  it('the horde actually reaches 300 concurrent enemies (sustained-horde-scale playtest)', async () => {
+  // Genuinely heavy: 650 fixed frames with 300 kinematic enemies all chasing
+  // the player. Fast locally (arm64) but well over vitest's 30s default on the
+  // slower shared CI runners, so it gets the same 120s budget the other
+  // at-scale determinism tests use (goldenDeterminism colliders-1500,
+  // broadphase). This is a performance headroom bump, not a correctness change
+  // — the enemy-spawned count is monotonic integer logic (enemies never die
+  // here), identical on every platform.
+  it('the horde actually reaches 300 concurrent enemies (sustained-horde-scale playtest)', { timeout: 120_000 }, async () => {
     const store = await loadStore('ember-horde');
     const result = await runPlaytest(store, 'sustained-horde-scale');
     expect(result.passed).toBe(true);

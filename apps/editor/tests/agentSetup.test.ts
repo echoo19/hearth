@@ -47,23 +47,34 @@ describe('detectAgents', () => {
     expect(result.codex.found).toBe(false);
   });
 
-  it('reports found=true with a version when the binary is on PATH', async () => {
-    const binDir = path.join(tmpDir, 'bin');
-    await fsp.mkdir(binDir, { recursive: true });
-    const script = path.join(binDir, 'claude');
-    await fsp.writeFile(
-      script,
-      '#!/bin/sh\nif [ "$1" = "--version" ]; then echo "claude-fake 1.2.3"; exit 0; fi\nexit 1\n',
-    );
-    await fsp.chmod(script, 0o755);
+  // The fake binary is a `#!/bin/sh` script made executable via chmod — that
+  // is a POSIX-only mechanism. On Windows `where` won't resolve an
+  // extension-less script, and even a `.cmd` shim would trip Node's post-CVE
+  // restriction on spawning batch files without `shell: true`, so the version
+  // never comes back. Faking that faithfully would mean changing production
+  // spawn behavior, which is out of scope here; the found=false path above
+  // still exercises detection on Windows, and this found=true+version path is
+  // covered on the Linux and macOS CI runners.
+  it.skipIf(process.platform === 'win32')(
+    'reports found=true with a version when the binary is on PATH',
+    async () => {
+      const binDir = path.join(tmpDir, 'bin');
+      await fsp.mkdir(binDir, { recursive: true });
+      const script = path.join(binDir, 'claude');
+      await fsp.writeFile(
+        script,
+        '#!/bin/sh\nif [ "$1" = "--version" ]; then echo "claude-fake 1.2.3"; exit 0; fi\nexit 1\n',
+      );
+      await fsp.chmod(script, 0o755);
 
-    process.env.PATH = [binDir, ...SYSTEM_DIRS].join(path.delimiter);
-    const result = await detectAgents();
-    expect(result.claude.found).toBe(true);
-    expect(result.claude.version).toBe('claude-fake 1.2.3');
-    // codex still absent.
-    expect(result.codex.found).toBe(false);
-  });
+      process.env.PATH = [binDir, ...SYSTEM_DIRS].join(path.delimiter);
+      const result = await detectAgents();
+      expect(result.claude.found).toBe(true);
+      expect(result.claude.version).toBe('claude-fake 1.2.3');
+      // codex still absent.
+      expect(result.codex.found).toBe(false);
+    },
+  );
 });
 
 describe('prepareMcpConfig', () => {
