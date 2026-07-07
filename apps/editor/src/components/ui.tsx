@@ -76,6 +76,13 @@ const ICON_PATHS: Record<string, ReactNode> = {
       <path d="M4.5 3v6M7.5 3v6" />
     </>
   ),
+  more: (
+    <>
+      <circle cx="6" cy="2.75" r="0.9" fill="currentColor" stroke="none" />
+      <circle cx="6" cy="6" r="0.9" fill="currentColor" stroke="none" />
+      <circle cx="6" cy="9.25" r="0.9" fill="currentColor" stroke="none" />
+    </>
+  ),
 };
 
 export function Icon({ name, size = 12 }: { name: string; size?: number }) {

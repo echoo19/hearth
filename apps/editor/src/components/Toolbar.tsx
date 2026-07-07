@@ -3,6 +3,7 @@ import type { DockviewApi } from 'dockview-react';
 import { useEditor } from '../store';
 import { Icon, Modal } from './ui';
 import { ExportDialog } from './ExportDialog';
+import { SceneMenu } from './SceneMenu';
 import { ViewMenu } from '../workspace/ViewMenu';
 import { showPanel } from '../workspace/Workspace';
 
@@ -70,6 +71,7 @@ export function Toolbar({ dock, storageKey }: { dock: DockviewApi | null; storag
             </option>
           ))}
         </select>
+        <SceneMenu />
         <button className="btn btn-sm" onClick={() => setNewSceneOpen(true)} title="New scene">
           <Icon name="plus" /> Scene
         </button>

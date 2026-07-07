@@ -586,8 +586,22 @@ label.field-label {
   transition: background var(--t-fast) var(--ease-out);
 }
 
-.menu-item:hover {
+.menu-item:hover:not(:disabled) {
   background: var(--bg-3);
+}
+
+.menu-item:disabled {
+  color: var(--ink-mute);
+  opacity: 0.5;
+  cursor: default;
+}
+
+.menu-item-danger {
+  color: var(--err);
+}
+
+.menu-item-danger:hover:not(:disabled) {
+  background: var(--err-soft);
 }
 
 .menu-check {

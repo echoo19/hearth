@@ -1,6 +1,7 @@
 import React, { useMemo, useState } from 'react';
 import { useEditor } from '../store';
 import type { SceneEntity } from '../types';
+import { uniqueName as computeUniqueName } from '../uniqueName';
 import { ConfirmDialog, Icon, entityIcon } from './ui';
 
 export function Hierarchy() {
@@ -28,11 +29,7 @@ export function Hierarchy() {
   const names = useMemo(() => new Set((scene?.entities ?? []).map((e) => e.name)), [scene]);
 
   function uniqueName(base: string): string {
-    if (!names.has(base)) return base;
-    for (let i = 2; ; i++) {
-      const candidate = `${base} ${i}`;
-      if (!names.has(candidate)) return candidate;
-    }
+    return computeUniqueName(names, base);
   }
 
   async function addEntity() {
@@ -46,12 +43,12 @@ export function Hierarchy() {
 
   async function duplicate(entity: SceneEntity) {
     if (!sceneId) return;
-    const result = await exec<{ entityId: string }>('createEntity', {
+    // duplicateEntity clones the full descendant subtree (fresh ids for every
+    // copy) and picks a default "<name> copy" + position offset on its own —
+    // no need to precompute a name or hand-copy components/children here.
+    const result = await exec<{ entityId: string }>('duplicateEntity', {
       scene: sceneId,
-      name: uniqueName(`${entity.name} copy`),
-      parent: entity.parentId ?? undefined,
-      tags: entity.tags,
-      components: entity.components,
+      entity: entity.id,
     });
     if (result.success && result.data) select(result.data.entityId);
   }
