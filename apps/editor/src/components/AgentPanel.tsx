@@ -5,6 +5,7 @@ import { apiPrepareAgent } from '../api';
 import type { AgentPermissionMode } from '../../server/agentSetup';
 import { CodeBlock, Icon } from './ui';
 import { Terminal } from './agent/Terminal';
+import { Timeline } from './agent/Timeline';
 import { planClaudeStart, useAgentSocket, type AgentSessionSummary } from './agent/useAgentSocket';
 
 // The editor's 4-tier picker onto the MCP server's real permission modes
@@ -193,7 +194,7 @@ export function AgentPanel() {
           <Terminal onData={agent.sendInput} onResize={agent.sendResize} />
         </div>
         <div className="agent-side-rail">
-          <span className="hint">Activity timeline — coming soon.</span>
+          <Timeline />
         </div>
       </div>
 

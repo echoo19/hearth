@@ -72,11 +72,23 @@ interface EditorState {
   agentMode: AgentPermissionMode;
   agentDetect: DetectAgentsResult | null;
   agentDetecting: boolean;
+  /** Whether `snapshotProject` has succeeded at least once this editor session
+   * (any panel — DiffPanel's Snapshot button and the Agent panel's Timeline
+   * both funnel through `exec()`, which is what flips this). Resets when the
+   * project changes; the flag is purely "have I seen a baseline get taken
+   * this session", not a read of what's on disk. */
+  snapshotTaken: boolean;
+  /** Bumped to ask the workspace shell to focus the Diff panel (Task 6's
+   * "Review changes"). A counter rather than a boolean so repeated requests
+   * while already on the Diff panel still register as a change; mirrors the
+   * `playing` -> "surface the Game panel" pattern in Workspace.tsx. */
+  diffFocusRequest: number;
 
   setAgentMode(mode: AgentPermissionMode): void;
   detectAgent(): Promise<void>;
   /** Sends a pty-* frame over the shared WS socket; a no-op (returns false) when disconnected. */
   sendAgentFrame(frame: WsFrame): boolean;
+  requestDiffFocus(): void;
 
   loadMeta(): Promise<void>;
   openProject(path: string): Promise<{ ok: boolean; error?: string }>;
@@ -252,6 +264,7 @@ export const useEditor = create<EditorState>((set, get) => {
       journalFeed: [],
       playing: false,
       debugDraw: false,
+      snapshotTaken: false,
     });
     get().log('info', 'editor', `Opened project "${info.name}" (${info.scenes.length} scene${info.scenes.length === 1 ? '' : 's'})`);
     connectWs(path);
@@ -284,9 +297,15 @@ export const useEditor = create<EditorState>((set, get) => {
     agentMode: 'safe-edit',
     agentDetect: null,
     agentDetecting: false,
+    snapshotTaken: false,
+    diffFocusRequest: 0,
 
     setAgentMode(mode) {
       set({ agentMode: mode });
+    },
+
+    requestDiffFocus() {
+      set((state) => ({ diffFocusRequest: state.diffFocusRequest + 1 }));
     },
 
     async detectAgent() {
@@ -355,6 +374,7 @@ export const useEditor = create<EditorState>((set, get) => {
         journalFeed: [],
         playing: false,
         debugDraw: false,
+        snapshotTaken: false,
       });
     },
 
@@ -475,6 +495,12 @@ export const useEditor = create<EditorState>((set, get) => {
       if (result.success && (result.changed.length > 0 || result.files.length > 0)) {
         set((state) => ({ commandSeq: state.commandSeq + 1 }));
         await get().refresh();
+      }
+      // Centralized here (rather than in each caller) so any surface that
+      // triggers a snapshot — DiffPanel's button or the Agent panel's
+      // Timeline — flips the same session-scoped "have I snapshotted" flag.
+      if (result.success && name === 'snapshotProject') {
+        set({ snapshotTaken: true });
       }
       return result as CommandResult<never>;
     },

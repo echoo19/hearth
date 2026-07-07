@@ -327,6 +327,7 @@ export function Workspace({
   onReady?: (api: DockviewApi | null) => void;
 }) {
   const playing = useEditor((s) => s.playing);
+  const diffFocusRequest = useEditor((s) => s.diffFocusRequest);
   const apiRef = useRef<DockviewApi | null>(null);
   const saveTimer = useRef<number | null>(null);
   const disposables = useRef<{ dispose(): void }[]>([]);
@@ -362,6 +363,20 @@ export function Workspace({
   useEffect(() => {
     if (playing && apiRef.current) showPanel(apiRef.current, 'game');
   }, [playing]);
+
+  // The Agent panel's "Review changes" action asks for the Diff panel the
+  // same way: bump a counter in the store, react here (diffFocusRequest
+  // starts at 0, so the initial mount is a no-op). refreshDiff() is called
+  // here rather than by the Timeline component itself, so it fires exactly
+  // once regardless of whether the Diff panel was already active (in which
+  // case `onDidActivePanelChange` above never fires, since setActive() is a
+  // no-op on an already-active panel).
+  useEffect(() => {
+    if (diffFocusRequest > 0 && apiRef.current) {
+      showPanel(apiRef.current, 'diff');
+      void useEditor.getState().refreshDiff();
+    }
+  }, [diffFocusRequest]);
 
   // Flush a pending save and release listeners when the workspace unmounts
   // (project switch or close).
