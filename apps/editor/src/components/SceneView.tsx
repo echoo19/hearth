@@ -4,6 +4,7 @@
  * This is deliberately not the game runtime — it draws the authored data.
  */
 import React, { useEffect, useMemo, useRef, useState } from 'react';
+import type { TilemapComponent } from '@hearth/core';
 import { useEditor } from '../store';
 import { fileUrl } from '../api';
 import {
@@ -15,6 +16,18 @@ import {
   roundPoints,
   type PolygonFrame,
 } from '../polygonEditing';
+import {
+  addStrokeCell,
+  clampRectToGrid,
+  filterInBounds,
+  isCellInBounds,
+  normalizeRect,
+  worldToCell,
+  type Cell,
+  type Rect,
+  type TileCell,
+} from '../tilemapPaint';
+import { ERASER_CHAR, TilemapPainter } from './TilemapPainter';
 import type { AssetItem, SceneEntity, Vec2 } from '../types';
 
 interface ViewTransform {
@@ -41,6 +54,24 @@ interface VertexDragState {
   pointerId: number;
   index: number;
 }
+
+interface PaintStrokeState {
+  pointerId: number;
+  entityId: string;
+  tileSize: number;
+  /** Entity world position at stroke start (the paint tool doesn't support rotated/scaled tilemaps). */
+  origin: Vec2;
+  grid: string[];
+  /** The palette char selected when the stroke began. */
+  char: string;
+  /** True when the stroke was started with shift held (rect-fill mode). */
+  rectMode: boolean;
+  startCell: Cell;
+  /** Accumulated unique cells for a freehand stroke; unused in rect mode. */
+  cells: TileCell[];
+}
+
+type PaintPreview = { rectMode: false; cells: TileCell[] } | { rectMode: true; rect: Rect };
 
 const MIN_ZOOM = 0.05;
 const MAX_ZOOM = 12;
@@ -80,6 +111,19 @@ export function SceneView() {
   const draftPointsRef = useRef<Vec2[] | null>(null);
   const [draftPoints, setDraftPointsState] = useState<Vec2[] | null>(null);
 
+  // Tilemap paint mode: click/drag paints the selected palette char (one
+  // `paintTiles` per stroke), shift-drag previews and fills a rect (one
+  // `fillTilemapRect` per stroke). Like dragPos/draftPoints above, the
+  // in-progress stroke lives in a ref (pointer events outrun React state)
+  // and is mirrored into state purely to re-render the preview overlay. The
+  // cell/stroke math itself is in ../tilemapPaint.ts — see TilemapPainter.tsx
+  // for the palette UI this mode drives.
+  const [paintMode, setPaintMode] = useState(false);
+  const [paintChar, setPaintChar] = useState<string>(ERASER_CHAR);
+  const paintRef = useRef<PaintStrokeState | null>(null);
+  const paintPreviewRef = useRef<PaintPreview | null>(null);
+  const [paintPreview, setPaintPreviewState] = useState<PaintPreview | null>(null);
+
   function setDragPos(pos: Vec2 | null) {
     dragPosRef.current = pos;
     setDragPosState(pos);
@@ -88,6 +132,11 @@ export function SceneView() {
   function setDraftPoints(points: Vec2[] | null) {
     draftPointsRef.current = points;
     setDraftPointsState(points);
+  }
+
+  function setPaintPreview(preview: PaintPreview | null) {
+    paintPreviewRef.current = preview;
+    setPaintPreviewState(preview);
   }
 
   const assetById = useMemo(() => {
@@ -265,6 +314,107 @@ export function SceneView() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [editingPoints]);
 
+  // ---- tilemap paint mode ----------------------------------------------
+  const selectedTilemap = selectedForRender?.components.Tilemap as TilemapComponent | undefined;
+  const canPaintTiles = selectedTilemap !== undefined;
+
+  function exitPaintMode() {
+    paintRef.current = null;
+    setPaintPreview(null);
+    setPaintMode(false);
+  }
+
+  function togglePaintMode() {
+    if (paintMode) {
+      exitPaintMode();
+      return;
+    }
+    if (editingPoints) exitPointEditing();
+    setPaintMode(true);
+  }
+
+  // The mode only makes sense while a Tilemap entity is selected (mirrors
+  // the editingPoints/canEditPoints guard above).
+  useEffect(() => {
+    if (paintMode && !canPaintTiles) exitPaintMode();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [paintMode, canPaintTiles]);
+
+  useEffect(() => {
+    if (!paintMode) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') exitPaintMode();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [paintMode]);
+
+  // Keeps the selected palette char valid when the selection switches to a
+  // different tilemap with a different char set (eraser is always valid).
+  useEffect(() => {
+    if (!paintMode || !selectedTilemap) return;
+    const keys = Object.keys(selectedTilemap.tileAssets);
+    if (paintChar !== ERASER_CHAR && !keys.includes(paintChar)) {
+      setPaintChar(keys[0] ?? ERASER_CHAR);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [paintMode, selectedTilemap]);
+
+  function startPaint(e: React.PointerEvent, entity: SceneEntity) {
+    const tm = entity.components.Tilemap as TilemapComponent | undefined;
+    if (!tm) return;
+    const tileSize = tm.tileSize > 0 ? tm.tileSize : 32;
+    const origin = worldPos(entity);
+    const cell = worldToCell(screenToWorld(screenOf(e)), origin, tileSize);
+    const rectMode = e.shiftKey;
+    const state: PaintStrokeState = {
+      pointerId: e.pointerId,
+      entityId: entity.id,
+      tileSize,
+      origin,
+      grid: tm.grid,
+      char: paintChar,
+      rectMode,
+      startCell: cell,
+      cells: rectMode ? [] : filterInBounds([{ ...cell, char: paintChar }], tm.grid),
+    };
+    paintRef.current = state;
+    setPaintPreview(
+      rectMode ? { rectMode: true, rect: normalizeRect(cell, cell) } : { rectMode: false, cells: state.cells },
+    );
+    svgRef.current?.setPointerCapture(e.pointerId);
+  }
+
+  function handleResizeTilemap(width: number, height: number) {
+    if (!sceneId || !selectedForRender) return;
+    void exec('resizeTilemap', { scene: sceneId, entity: selectedForRender.id, width, height });
+  }
+
+  function commitPaint() {
+    const paint = paintRef.current;
+    const preview = paintPreviewRef.current;
+    paintRef.current = null;
+    setPaintPreview(null);
+    if (!paint || !sceneId) return;
+    if (paint.rectMode) {
+      const rect = preview && preview.rectMode ? preview.rect : normalizeRect(paint.startCell, paint.startCell);
+      const clamped = clampRectToGrid(rect, paint.grid);
+      if (!clamped) return;
+      void exec('fillTilemapRect', {
+        scene: sceneId,
+        entity: paint.entityId,
+        x: clamped.x,
+        y: clamped.y,
+        width: clamped.width,
+        height: clamped.height,
+        char: paint.char,
+      });
+    } else if (paint.cells.length > 0) {
+      void exec('paintTiles', { scene: sceneId, entity: paint.entityId, cells: paint.cells });
+    }
+  }
+
   function commitPoints(points: Vec2[]) {
     const sel = pointsSelection();
     if (!sel || !sceneId) {
@@ -344,15 +494,24 @@ export function SceneView() {
       panRef.current = { pointerId: e.pointerId, start: screenOf(e), startView: viewRef.current };
       svgRef.current?.setPointerCapture(e.pointerId);
       e.preventDefault();
-    } else if (e.button === 0 && !editingPoints) {
-      // While editing points, a background click is not a deselect (Escape or
-      // Done leaves the mode).
+    } else if (e.button === 0 && !editingPoints && !paintMode) {
+      // While editing points or painting tiles, a background click is not a
+      // deselect (Escape or Done leaves the mode).
       select(null);
     }
   }
 
   function onEntityPointerDown(e: React.PointerEvent, entity: SceneEntity) {
     if (editingPoints) return; // point handles own the pointer in edit mode
+    if (paintMode) {
+      // Only the painted tilemap itself responds; other entities are inert
+      // while in paint mode, same as editingPoints above.
+      if (e.button === 0 && entity.id === selection) {
+        e.stopPropagation();
+        startPaint(e, entity);
+      }
+      return;
+    }
     if (e.button === 1 || (e.button === 0 && spaceHeld)) return; // background handler pans
     if (e.button !== 0) return;
     e.stopPropagation();
@@ -397,6 +556,17 @@ export function SceneView() {
       if (!drag.moved && Math.abs(dx) < 0.5 && Math.abs(dy) < 0.5) return;
       drag.moved = true;
       setDragPos({ x: drag.startLocal.x + dx, y: drag.startLocal.y + dy });
+      return;
+    }
+    const paint = paintRef.current;
+    if (paint && e.pointerId === paint.pointerId) {
+      const cell = worldToCell(screenToWorld(screenOf(e)), paint.origin, paint.tileSize);
+      if (paint.rectMode) {
+        setPaintPreview({ rectMode: true, rect: normalizeRect(paint.startCell, cell) });
+      } else if (isCellInBounds(cell, paint.grid)) {
+        paint.cells = addStrokeCell(paint.cells, { ...cell, char: paint.char });
+        setPaintPreview({ rectMode: false, cells: paint.cells });
+      }
     }
   }
 
@@ -411,6 +581,11 @@ export function SceneView() {
       setDraggingVertex(false);
       const draft = draftPointsRef.current;
       if (draft) commitPoints(draft);
+      return;
+    }
+    const paint = paintRef.current;
+    if (paint && e.pointerId === paint.pointerId) {
+      commitPaint();
       return;
     }
     const drag = dragRef.current;
@@ -524,6 +699,55 @@ export function SceneView() {
     return <g>{cells}</g>;
   }
 
+  /**
+   * Live feedback for an in-progress tilemap paint stroke: highlighted cells
+   * for a freehand stroke, or a translucent rect for a shift-drag fill.
+   * Drawn in the same local space as renderTilemap (cx*size / ry*size)
+   * inside the same entity group, only for the entity currently being
+   * painted.
+   */
+  function renderPaintPreview(entity: SceneEntity): React.ReactNode {
+    if (!paintPreview) return null;
+    const tm = entity.components.Tilemap as TilemapComponent | undefined;
+    if (!tm) return null;
+    const size = tm.tileSize > 0 ? tm.tileSize : 32;
+    if (paintPreview.rectMode) {
+      const r = paintPreview.rect;
+      return (
+        <rect
+          x={r.x * size}
+          y={r.y * size}
+          width={r.width * size}
+          height={r.height * size}
+          fill="var(--accent)"
+          fillOpacity={0.22}
+          stroke="var(--accent)"
+          strokeWidth={1.5}
+          vectorEffect="non-scaling-stroke"
+          pointerEvents="none"
+        />
+      );
+    }
+    return (
+      <g pointerEvents="none">
+        {paintPreview.cells.map((c) => (
+          <rect
+            key={`${c.x}-${c.y}`}
+            x={c.x * size}
+            y={c.y * size}
+            width={size}
+            height={size}
+            fill={c.char === ERASER_CHAR ? 'none' : 'var(--accent)'}
+            fillOpacity={c.char === ERASER_CHAR ? 0.06 : 0.32}
+            stroke="var(--accent)"
+            strokeWidth={1}
+            vectorEffect="non-scaling-stroke"
+          />
+        ))}
+      </g>
+    );
+  }
+
   function renderCameraGizmo(entity: SceneEntity): React.ReactNode {
     const cam = entity.components.Camera as any;
     if (!cam || !info) return null;
@@ -531,7 +755,12 @@ export function SceneView() {
     const w = info.buildSettings.width / zoom;
     const h = info.buildSettings.height / zoom;
     return (
-      <g>
+      // A debug overlay, like the Light2D/ParticleEmitter gizmos below — it
+      // must not steal clicks from whatever's actually inside the viewport
+      // (a Tilemap's default layer of -10 puts it behind the camera in
+      // z-order, so without this a click meant to select/paint the tilemap
+      // hit this rect's real fill instead).
+      <g pointerEvents="none">
         <rect
           x={-w / 2}
           y={-h / 2}
@@ -712,7 +941,7 @@ export function SceneView() {
   return (
     <div
       ref={hostRef}
-      className={`scene-view${spaceHeld ? ' panning' : ''}${draggingVertex ? ' vertex-dragging' : ''}`}
+      className={`scene-view${spaceHeld ? ' panning' : ''}${draggingVertex ? ' vertex-dragging' : ''}${paintMode ? ' painting-tiles' : ''}`}
     >
       <svg
         ref={svgRef}
@@ -745,11 +974,14 @@ export function SceneView() {
                 key={entity.id}
                 transform={`translate(${wp.x} ${wp.y})`}
                 opacity={entity.enabled ? 1 : 0.35}
-                style={{ cursor: spaceHeld || editingPoints ? undefined : 'move' }}
+                style={{
+                  cursor: spaceHeld || editingPoints || (paintMode && entity.id !== selection) ? undefined : paintMode ? 'crosshair' : 'move',
+                }}
                 onPointerDown={(e) => onEntityPointerDown(e, entity)}
               >
                 <g transform={`rotate(${rot}) scale(${sx} ${sy})`}>
                   {renderTilemap(entity)}
+                  {paintMode && entity.id === selection && renderPaintPreview(entity)}
                   {renderSprite(entity)}
                   {renderText(entity)}
                   {renderLineRenderer(entity)}
@@ -857,12 +1089,28 @@ export function SceneView() {
             <button
               className="btn btn-sm"
               title="Edit the polygon collider's or LineRenderer's points in the scene"
-              onClick={() => setEditingPoints(true)}
+              onClick={() => {
+                if (paintMode) exitPaintMode();
+                setEditingPoints(true);
+              }}
             >
               Edit points
             </button>
           )}
         </div>
+      )}
+
+      {canPaintTiles && selectedTilemap && (
+        <TilemapPainter
+          tilemap={selectedTilemap}
+          assets={assets}
+          projectPath={projectPath}
+          paintMode={paintMode}
+          onTogglePaintMode={togglePaintMode}
+          selectedChar={paintChar}
+          onSelectChar={setPaintChar}
+          onResize={handleResizeTilemap}
+        />
       )}
 
       <div className="scene-hud">
@@ -876,7 +1124,9 @@ export function SceneView() {
       <div className="scene-hint">
         {editingPoints
           ? 'drag a point · click an edge midpoint to add one · alt-click a point to delete · esc or Done to finish'
-          : 'scroll to zoom · space+drag or middle-drag to pan · drag an entity to move it'}
+          : paintMode
+            ? 'click or drag to paint · shift-drag to fill a rect · esc or Done painting to finish'
+            : 'scroll to zoom · space+drag or middle-drag to pan · drag an entity to move it'}
       </div>
     </div>
   );

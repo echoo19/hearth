@@ -2156,6 +2156,109 @@ dialog.modal[open]::backdrop {
 }
 
 /* --------------------------------------------------------------------------
+   Scene view: tilemap paint tool
+   -------------------------------------------------------------------------- */
+
+.scene-view.painting-tiles svg {
+  cursor: crosshair;
+}
+
+.tilemap-paint-toggle {
+  position: absolute;
+  top: 10px;
+  left: 10px;
+}
+
+.tilemap-palette {
+  position: absolute;
+  top: 48px;
+  left: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-width: 220px;
+  padding: 8px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  background: oklch(0.21 0.009 55 / 0.94);
+}
+
+.tilemap-palette-swatches {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.tilemap-swatch {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  width: 40px;
+  padding: 3px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  cursor: pointer;
+  transition:
+    border-color 140ms var(--ease-out),
+    background 140ms var(--ease-out);
+}
+
+.tilemap-swatch:hover {
+  background: var(--bg-3);
+}
+
+.tilemap-swatch.selected {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.tilemap-swatch-thumb {
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  color: var(--ink-mute);
+}
+
+.tilemap-swatch-thumb img {
+  max-width: 100%;
+  max-height: 100%;
+  image-rendering: pixelated;
+}
+
+.tilemap-swatch-eraser {
+  background: var(--bg-2);
+  border: 1px dashed var(--border-strong);
+  color: var(--ink-faint);
+}
+
+.tilemap-swatch-fallback {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--ink-mute);
+}
+
+.tilemap-swatch-label {
+  font-size: 10px;
+  color: var(--ink-faint);
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tilemap-palette-hint {
+  font-size: 11px;
+  color: var(--ink-faint);
+}
+
+/* --------------------------------------------------------------------------
    Inspector: UIElement anchor picker
    -------------------------------------------------------------------------- */
 

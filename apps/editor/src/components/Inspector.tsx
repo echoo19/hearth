@@ -4,6 +4,16 @@ import { useEditor } from '../store';
 import type { AssetItem, SceneEntity } from '../types';
 import { addPoint, removePoint, setPointAxis, shouldHideField } from '../vec2List';
 import { addString, removeString, setStringAt } from '../stringList';
+import {
+  addRow,
+  removeRow,
+  renameRowChar,
+  rowsToMap,
+  setRowAsset,
+  toRows,
+  validateChar,
+  type TileAssetRow,
+} from '../tileAssetsList';
 import { ConfirmDialog, Icon, componentIcon } from './ui';
 
 // ---------------------------------------------------------------------------
@@ -202,6 +212,130 @@ function StringListField({
   );
 }
 
+/**
+ * Single-char input for a TileAssetsField row: like TextField (draft state,
+ * commits on blur/Enter, Escape reverts), but validates via ../tileAssetsList
+ * and shows an inline hint instead of committing an invalid char — a
+ * multi-char/empty value, or '.'/' ' (reserved for empty cells), or a char
+ * already used by another row.
+ */
+function TileCharField({
+  value,
+  rows,
+  index,
+  onCommit,
+}: {
+  value: string;
+  rows: readonly TileAssetRow[];
+  index: number;
+  onCommit: (v: string) => void;
+}) {
+  const [draft, setDraft] = useState(value);
+  const [error, setError] = useState('');
+  useEffect(() => {
+    setDraft(value);
+    setError('');
+  }, [value]);
+  const commit = () => {
+    if (draft === value) {
+      setError('');
+      return;
+    }
+    const issue = validateChar(draft, rows, index);
+    if (issue) {
+      setError(issue);
+      return;
+    }
+    setError('');
+    onCommit(draft);
+  };
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+      <input
+        className={`input mono${error ? ' invalid' : ''}`}
+        style={{ width: 40, textAlign: 'center' }}
+        maxLength={4}
+        value={draft}
+        onChange={(e) => setDraft(e.target.value)}
+        onBlur={commit}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') (e.target as HTMLInputElement).blur();
+          if (e.key === 'Escape') {
+            setDraft(value);
+            setError('');
+          }
+        }}
+      />
+      {error && <span className="field-error">{error}</span>}
+    </div>
+  );
+}
+
+/**
+ * Row-per-char editor for Tilemap.tileAssets (Record<char, assetId>): a
+ * single-char input, an image-asset dropdown, and a remove button per row,
+ * plus an add-row button. Replaces JsonField's raw JSON textarea (Jake:
+ * never raw JSON for these) — the row-editing logic lives in
+ * ../tileAssetsList so it stays unit-testable without a DOM, matching
+ * Vec2ListField/StringListField.
+ */
+function TileAssetsField({
+  value,
+  assets,
+  onCommit,
+}: {
+  value: Record<string, string>;
+  assets: AssetItem[];
+  onCommit: (map: Record<string, string>) => void;
+}) {
+  const rows = toRows(value);
+  // tileAssets maps to sprite/tile assets, same pool SpriteRenderer.assetId
+  // picks from (renderTilemap resolves them the same way).
+  const imageAssets = assets.filter((a) => a.type === 'sprite' || a.type === 'tile');
+  return (
+    <div className="vec2-list">
+      {rows.length === 0 && <span className="vec2-list-empty">No tile chars mapped</span>}
+      {rows.map((row, i) => (
+        <div className="vec2-list-row" key={i}>
+          <TileCharField
+            value={row.char}
+            rows={rows}
+            index={i}
+            onCommit={(char) => onCommit(rowsToMap(renameRowChar(rows, i, char)))}
+          />
+          <select
+            className="select"
+            value={row.assetId}
+            onChange={(e) => onCommit(rowsToMap(setRowAsset(rows, i, e.target.value)))}
+          >
+            <option value="">(none)</option>
+            {imageAssets.map((a) => (
+              <option key={a.id} value={a.id}>
+                {a.name}
+              </option>
+            ))}
+          </select>
+          <button
+            type="button"
+            className="icon-btn danger"
+            title={`Remove "${row.char}"`}
+            onClick={() => onCommit(rowsToMap(removeRow(rows, i)))}
+          >
+            <Icon name="cross" size={10} />
+          </button>
+        </div>
+      ))}
+      <button
+        type="button"
+        className="btn btn-sm"
+        onClick={() => onCommit(rowsToMap(addRow(rows, imageAssets[0]?.id ?? '')))}
+      >
+        <Icon name="plus" size={10} /> Add tile char
+      </button>
+    </div>
+  );
+}
+
 function JsonField({ value, onCommit }: { value: unknown; onCommit: (v: unknown) => void }) {
   const formatted = useMemo(() => JSON.stringify(value, null, 2) ?? 'null', [value]);
   const [draft, setDraft] = useState(formatted);
@@ -349,6 +483,16 @@ function isVec2Array(v: unknown): v is { x: number; y: number }[] {
 
 function isStringArray(v: unknown): v is string[] {
   return Array.isArray(v) && v.every((s) => typeof s === 'string');
+}
+
+/** Tilemap.tileAssets shape: a plain object mapping chars to asset ids. */
+function isStringRecord(v: unknown): v is Record<string, string> {
+  return (
+    typeof v === 'object' &&
+    v !== null &&
+    !Array.isArray(v) &&
+    Object.values(v).every((x) => typeof x === 'string')
+  );
 }
 
 /** Resolve a component's `assetId` field to its asset, if any. */
@@ -674,6 +818,15 @@ export function Inspector() {
                         key={rowKey}
                         value={value}
                         onCommit={(list) => setProperty(property, list)}
+                      />
+                    );
+                  } else if (type === 'Tilemap' && field === 'tileAssets' && isStringRecord(value)) {
+                    control = (
+                      <TileAssetsField
+                        key={rowKey}
+                        value={value}
+                        assets={assets}
+                        onCommit={(map) => setProperty(property, map)}
                       />
                     );
                   } else {
