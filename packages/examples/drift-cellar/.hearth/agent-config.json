@@ -1,7 +1,7 @@
 {
   "hearthVersion": "0.7.0",
   "project": "Drift Cellar",
-  "projectId": "prj_8lpp6hzv",
+  "projectId": "prj_wvefjh0k",
   "instructions": "AGENTS.md",
   "cli": {
     "binary": "hearth",

@@ -1,8 +1,8 @@
 {
   "formatVersion": 1,
-  "id": "ptt_v5y0iv37",
+  "id": "ptt_1wrskmko",
   "name": "glow-caves-showcase",
-  "scene": "scn_c5id4ahh",
+  "scene": "scn_9hva6skz",
   "steps": [
     {
       "type": "wait",
@@ -17,7 +17,7 @@
       "type": "assertProperty",
       "entity": "Torch",
       "property": "SpriteRenderer.assetId",
-      "equals": "ast_kn087500"
+      "equals": "ast_dr5bcxyf"
     },
     {
       "type": "assertNoErrors"

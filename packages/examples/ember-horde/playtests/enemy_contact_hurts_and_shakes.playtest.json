@@ -1,0 +1,27 @@
+{
+  "formatVersion": 1,
+  "id": "ptt_ftwu7wkw",
+  "name": "enemy-contact-hurts-and-shakes",
+  "scene": "scn_d8mbnm4r",
+  "steps": [
+    {
+      "type": "wait",
+      "frames": 220
+    },
+    {
+      "type": "assertEventCount",
+      "event": "player-hit",
+      "min": 1
+    },
+    {
+      "type": "assertCameraEffect",
+      "effect": "shake",
+      "min": 1
+    },
+    {
+      "type": "assertNoErrors"
+    }
+  ],
+  "maxFrames": 300,
+  "seed": 0
+}

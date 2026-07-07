@@ -1,0 +1,84 @@
+{
+  "formatVersion": 1,
+  "hearthVersion": "0.7.0",
+  "id": "prj_brjzk5g7",
+  "name": "Ember Horde",
+  "description": "Hold the line against a growing horde of embers. Move with the stick/WASD, dodge, survive.",
+  "initialScene": "scn_d8mbnm4r",
+  "scenes": [
+    {
+      "id": "scn_d8mbnm4r",
+      "name": "Arena",
+      "path": "scenes/arena.scene.json"
+    }
+  ],
+  "inputMappings": {
+    "actions": {
+      "pause": [
+        "Escape"
+      ],
+      "ui-up": [
+        "ArrowUp"
+      ],
+      "ui-down": [
+        "ArrowDown"
+      ],
+      "ui-confirm": [
+        "Enter"
+      ]
+    },
+    "gamepadButtons": {
+      "pause": [
+        "start"
+      ],
+      "ui-up": [
+        "dpad-up"
+      ],
+      "ui-down": [
+        "dpad-down"
+      ],
+      "ui-confirm": [
+        "a"
+      ]
+    },
+    "gamepadAxes": {},
+    "axes": {
+      "moveX": {
+        "gamepadAxis": 0,
+        "negativeCodes": [
+          "ArrowLeft",
+          "KeyA"
+        ],
+        "positiveCodes": [
+          "ArrowRight",
+          "KeyD"
+        ]
+      },
+      "moveY": {
+        "gamepadAxis": 1,
+        "negativeCodes": [
+          "ArrowUp",
+          "KeyW"
+        ],
+        "positiveCodes": [
+          "ArrowDown",
+          "KeyS"
+        ]
+      }
+    },
+    "deadzone": 0.15
+  },
+  "buildSettings": {
+    "width": 800,
+    "height": 600,
+    "backgroundColor": "#1a1a2e",
+    "targetFps": 60,
+    "fixedTimestep": 60,
+    "title": "Ember Horde",
+    "loading": {
+      "backgroundColor": "#170a06",
+      "image": null,
+      "spinner": true
+    }
+  }
+}

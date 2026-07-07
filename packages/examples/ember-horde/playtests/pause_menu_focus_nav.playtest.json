@@ -1,0 +1,65 @@
+{
+  "formatVersion": 1,
+  "id": "ptt_2972p3vj",
+  "name": "pause-menu-focus-nav",
+  "scene": "scn_d8mbnm4r",
+  "steps": [
+    {
+      "type": "press",
+      "action": "pause",
+      "frames": 2
+    },
+    {
+      "type": "wait",
+      "frames": 2
+    },
+    {
+      "type": "assertFocus",
+      "entity": "Resume"
+    },
+    {
+      "type": "press",
+      "action": "ui-down",
+      "frames": 2
+    },
+    {
+      "type": "wait",
+      "frames": 2
+    },
+    {
+      "type": "assertFocus",
+      "entity": "Screen Shake"
+    },
+    {
+      "type": "press",
+      "action": "ui-up",
+      "frames": 2
+    },
+    {
+      "type": "wait",
+      "frames": 2
+    },
+    {
+      "type": "assertFocus",
+      "entity": "Resume"
+    },
+    {
+      "type": "press",
+      "action": "ui-confirm",
+      "frames": 2
+    },
+    {
+      "type": "wait",
+      "frames": 2
+    },
+    {
+      "type": "assertFocus",
+      "entity": null
+    },
+    {
+      "type": "assertNoErrors"
+    }
+  ],
+  "maxFrames": 300,
+  "seed": 0
+}

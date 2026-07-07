@@ -107,7 +107,11 @@ decaying average.
   this scenario keeps a genuinely dense, arena-contained horde live for the
   entire window (fix round 1 corrected a layer-filter bug that had let the
   horde disperse and thin out mid-run), so unlike colliders-1500 there's no
-  large spike: the cost is high but steady, not bursty.
+  large spike: the cost is high but steady, not bursty. `ember-horde`
+  (`packages/examples/ember-horde`) is this scenario's playable companion —
+  a real, scripted, all-Lua game that spawns waves of enemies up to 300
+  concurrent and stays well under budget on the "After Wave E" numbers
+  below.
 
 ## After Wave E (Tasks 9-11)
 

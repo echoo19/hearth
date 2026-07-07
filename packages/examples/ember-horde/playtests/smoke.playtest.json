@@ -1,0 +1,57 @@
+{
+  "formatVersion": 1,
+  "id": "ptt_isfa9rcx",
+  "name": "smoke",
+  "scene": "scn_d8mbnm4r",
+  "steps": [
+    {
+      "type": "wait",
+      "frames": 60
+    },
+    {
+      "type": "assertEntityExists",
+      "entity": "Player",
+      "exists": true
+    },
+    {
+      "type": "assertEntityExists",
+      "entity": "Director",
+      "exists": true
+    },
+    {
+      "type": "assertEntityExists",
+      "entity": "Enemy Template",
+      "exists": false
+    },
+    {
+      "type": "assertEntityExists",
+      "entity": "Timer HUD",
+      "exists": true
+    },
+    {
+      "type": "assertEntityExists",
+      "entity": "HP HUD",
+      "exists": true
+    },
+    {
+      "type": "assertEntityExists",
+      "entity": "Horde HUD",
+      "exists": true
+    },
+    {
+      "type": "assertEntityExists",
+      "entity": "Resume",
+      "exists": true
+    },
+    {
+      "type": "assertEntityExists",
+      "entity": "Screen Shake",
+      "exists": true
+    },
+    {
+      "type": "assertNoErrors"
+    }
+  ],
+  "maxFrames": 300,
+  "seed": 0
+}

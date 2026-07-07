@@ -2,7 +2,7 @@
   "formatVersion": 1,
   "assets": [
     {
-      "id": "ast_dotbu66j",
+      "id": "ast_xwnd5672",
       "name": "player",
       "type": "sprite",
       "path": "assets/sprites/player.svg",
@@ -15,7 +15,7 @@
       }
     },
     {
-      "id": "ast_wy9cnnbu",
+      "id": "ast_mhh1bg68",
       "name": "enemy",
       "type": "sprite",
       "path": "assets/sprites/enemy.svg",
@@ -28,7 +28,7 @@
       }
     },
     {
-      "id": "ast_n6axq8ye",
+      "id": "ast_gfyfwyyt",
       "name": "coin",
       "type": "sprite",
       "path": "assets/sprites/coin.svg",
@@ -41,7 +41,7 @@
       }
     },
     {
-      "id": "ast_rdpruvai",
+      "id": "ast_at5gvqmq",
       "name": "grass",
       "type": "tile",
       "path": "assets/tiles/grass.svg",
@@ -52,7 +52,7 @@
       }
     },
     {
-      "id": "ast_q6gpkdzn",
+      "id": "ast_2nb21eb9",
       "name": "stone",
       "type": "tile",
       "path": "assets/tiles/stone.svg",
@@ -63,7 +63,7 @@
       }
     },
     {
-      "id": "ast_y0etg8ux",
+      "id": "ast_to2g4w6y",
       "name": "coin-sound",
       "type": "audio",
       "path": "assets/sounds/coin_sound.wav",
@@ -74,7 +74,7 @@
       }
     },
     {
-      "id": "ast_sdny60kh",
+      "id": "ast_ihkzlc1d",
       "name": "jump-sound",
       "type": "audio",
       "path": "assets/sounds/jump_sound.wav",
@@ -85,7 +85,7 @@
       }
     },
     {
-      "id": "ast_mzgujr9b",
+      "id": "ast_62g9j4hw",
       "name": "hit-sound",
       "type": "audio",
       "path": "assets/sounds/hit_sound.wav",
@@ -96,7 +96,7 @@
       }
     },
     {
-      "id": "ast_pskl0awd",
+      "id": "ast_ig5qsnpo",
       "name": "click-sound",
       "type": "audio",
       "path": "assets/sounds/click_sound.wav",
@@ -107,7 +107,7 @@
       }
     },
     {
-      "id": "ast_i3aru8pn",
+      "id": "ast_i4q5vl9a",
       "name": "ambience",
       "type": "audio",
       "path": "assets/sounds/ambience.wav",

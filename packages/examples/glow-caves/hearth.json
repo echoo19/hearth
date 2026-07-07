@@ -1,13 +1,13 @@
 {
   "formatVersion": 1,
   "hearthVersion": "0.7.0",
-  "id": "prj_m1rmgn1m",
+  "id": "prj_u5n84dnj",
   "name": "Glow Caves",
   "description": "Explore a dark cave by torchlight. A showcase of 2D lighting, particles, and sprite animation.",
-  "initialScene": "scn_c5id4ahh",
+  "initialScene": "scn_9hva6skz",
   "scenes": [
     {
-      "id": "scn_c5id4ahh",
+      "id": "scn_9hva6skz",
       "name": "Cave",
       "path": "scenes/cave.scene.json"
     }

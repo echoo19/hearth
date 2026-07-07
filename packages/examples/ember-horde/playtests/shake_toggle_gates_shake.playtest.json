@@ -1,0 +1,71 @@
+{
+  "formatVersion": 1,
+  "id": "ptt_94am4v7v",
+  "name": "shake-toggle-gates-shake",
+  "scene": "scn_d8mbnm4r",
+  "steps": [
+    {
+      "type": "press",
+      "action": "pause",
+      "frames": 2
+    },
+    {
+      "type": "wait",
+      "frames": 2
+    },
+    {
+      "type": "assertFocus",
+      "entity": "Resume"
+    },
+    {
+      "type": "press",
+      "action": "ui-down",
+      "frames": 2
+    },
+    {
+      "type": "wait",
+      "frames": 2
+    },
+    {
+      "type": "assertFocus",
+      "entity": "Screen Shake"
+    },
+    {
+      "type": "press",
+      "action": "ui-confirm",
+      "frames": 2
+    },
+    {
+      "type": "press",
+      "action": "pause",
+      "frames": 2
+    },
+    {
+      "type": "wait",
+      "frames": 2
+    },
+    {
+      "type": "assertFocus",
+      "entity": null
+    },
+    {
+      "type": "wait",
+      "frames": 220
+    },
+    {
+      "type": "assertEventCount",
+      "event": "player-hit",
+      "min": 1
+    },
+    {
+      "type": "assertCameraEffect",
+      "effect": "shake",
+      "equals": 0
+    },
+    {
+      "type": "assertNoErrors"
+    }
+  ],
+  "maxFrames": 400,
+  "seed": 0
+}

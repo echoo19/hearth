@@ -16,6 +16,7 @@ const EXAMPLES = [
   'bounce-patrol',
   'sky-courier',
   'drift-cellar',
+  'ember-horde',
 ];
 
 function loadStore(name: string) {
@@ -553,6 +554,112 @@ describe('drift-cellar v0.7 showcase (axes + gamepad + widgets + camera effects)
 
   it('the smoke playtest passes with music autoplaying once', async () => {
     const store = await loadStore('drift-cellar');
+    const result = await runPlaytest(store, 'smoke');
+    expect(result.passed).toBe(true);
+  });
+});
+
+// Ember Horde is the Wave E spatial-hash horde-scale showcase: a Director
+// waves-spawns kinematic enemies at runtime via ctx.scene.spawn, capped at
+// 300 concurrent, each caching the Player EntityHandle once instead of
+// re-searching the scene every frame (see generate.mjs's file-header
+// comment on generateEmberHorde for the full O(n^2)-avoidance rationale).
+describe('ember-horde v0.7 showcase (Wave E spatial-hash horde scale)', () => {
+  it('is scripted entirely in Lua', async () => {
+    const store = await loadStore('ember-horde');
+    const scripts = await store.listScripts();
+    expect(scripts.length).toBeGreaterThan(0);
+    expect(scripts.every((p) => p.endsWith('.lua'))).toBe(true);
+  });
+
+  it('has the expected cast and playtests', async () => {
+    const store = await loadStore('ember-horde');
+    const scene = store.getScene('Arena')!;
+    const names = scene.entities.map((e) => e.name);
+    expect(names).toContain('Player');
+    expect(names).toContain('Director');
+    expect(names).toContain('Enemy Template');
+    expect(names).toContain('Timer HUD');
+    expect(names).toContain('HP HUD');
+    expect(names).toContain('Horde HUD');
+    expect(names).toContain('Resume');
+    expect(names).toContain('Screen Shake');
+    const template = scene.entities.find((e) => e.name === 'Enemy Template')!;
+    expect(template.enabled).toBe(false);
+    expect(store.playtests.size).toBe(6);
+  });
+
+  it('declares virtual axes and gamepad button bindings in inputMappings', async () => {
+    const store = await loadStore('ember-horde');
+    const mappings = store.project.inputMappings;
+    expect(mappings.axes.moveX.gamepadAxis).toBe(0);
+    expect(mappings.axes.moveX.negativeCodes).toContain('KeyA');
+    expect(mappings.axes.moveY.gamepadAxis).toBe(1);
+    expect(mappings.actions.pause).toEqual(['Escape']);
+    expect(mappings.gamepadButtons.pause).toEqual(['start']);
+  });
+
+  it('builds the pause menu from the widget set, every control focusable', async () => {
+    const store = await loadStore('ember-horde');
+    const scene = store.getScene('Arena')!;
+    const byName = (n: string) => scene.entities.find((e) => e.name === n)!;
+    const menu = byName('Pause Menu');
+    expect(menu.components.UILayout!.direction).toBe('vertical');
+    const toggle = byName('Screen Shake');
+    expect(toggle.components.UIToggle!.value).toBe(true);
+    expect(toggle.components.UIElement!.focusable).toBe(true);
+    expect(toggle.parentId).toBe(menu.id);
+    expect(byName('Resume').components.UIElement!.focusable).toBe(true);
+    expect(byName('Resume').parentId).toBe(menu.id);
+  });
+
+  it('moves deterministically on setAxis input (player-moves-on-axes playtest)', async () => {
+    const store = await loadStore('ember-horde');
+    const result = await runPlaytest(store, 'player-moves-on-axes');
+    expect(result.passed).toBe(true);
+  });
+
+  it('the horde actually reaches 300 concurrent enemies (sustained-horde-scale playtest)', async () => {
+    const store = await loadStore('ember-horde');
+    const result = await runPlaytest(store, 'sustained-horde-scale');
+    expect(result.passed).toBe(true);
+    expect(result.eventCounts['enemy-spawned']).toBe(300);
+  });
+
+  it('reaches 300 live enemy entities when run directly (independent of the playtest wrapper)', async () => {
+    const store = await loadStore('ember-horde');
+    const scene = store.getScene('Arena')!;
+    const runtime = await SceneRuntime.create(store, scene.id);
+    runtime.run(650);
+    const liveEnemies = runtime.getEntities().filter((e) => e.tags.includes('enemy'));
+    expect(liveEnemies.length).toBe(300);
+    expect(runtime.errors).toEqual([]);
+  });
+
+  it('an enemy reaching the player hurts and shakes the camera (enemy-contact-hurts-and-shakes playtest)', async () => {
+    const store = await loadStore('ember-horde');
+    const result = await runPlaytest(store, 'enemy-contact-hurts-and-shakes');
+    expect(result.passed).toBe(true);
+    expect(result.eventCounts['player-hit']).toBeGreaterThanOrEqual(1);
+    expect(result.cameraEffects.some((r) => r.effect === 'shake')).toBe(true);
+  });
+
+  it('turning off the Screen Shake toggle gates the shake but not the hit (shake-toggle-gates-shake playtest)', async () => {
+    const store = await loadStore('ember-horde');
+    const result = await runPlaytest(store, 'shake-toggle-gates-shake');
+    expect(result.passed).toBe(true);
+    expect(result.eventCounts['player-hit']).toBeGreaterThanOrEqual(1);
+    expect(result.cameraEffects.some((r) => r.effect === 'shake')).toBe(false);
+  });
+
+  it('keyboard/gamepad focus navigation moves between Resume and Screen Shake (pause-menu-focus-nav playtest)', async () => {
+    const store = await loadStore('ember-horde');
+    const result = await runPlaytest(store, 'pause-menu-focus-nav');
+    expect(result.passed).toBe(true);
+  });
+
+  it('the smoke playtest passes with no script errors', async () => {
+    const store = await loadStore('ember-horde');
     const result = await runPlaytest(store, 'smoke');
     expect(result.passed).toBe(true);
   });

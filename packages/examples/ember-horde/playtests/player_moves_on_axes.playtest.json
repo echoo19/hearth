@@ -1,0 +1,44 @@
+{
+  "formatVersion": 1,
+  "id": "ptt_oiaw0qxf",
+  "name": "player-moves-on-axes",
+  "scene": "scn_d8mbnm4r",
+  "steps": [
+    {
+      "type": "setAxis",
+      "axis": "moveX",
+      "value": 1,
+      "frames": 30
+    },
+    {
+      "type": "setAxis",
+      "axis": "moveX",
+      "value": 0,
+      "frames": 0
+    },
+    {
+      "type": "setAxis",
+      "axis": "moveY",
+      "value": -1,
+      "frames": 20
+    },
+    {
+      "type": "setAxis",
+      "axis": "moveY",
+      "value": 0,
+      "frames": 0
+    },
+    {
+      "type": "assertPositionNear",
+      "entity": "Player",
+      "x": 484.99999999999943,
+      "y": 247.3333333333336,
+      "tolerance": 3
+    },
+    {
+      "type": "assertNoErrors"
+    }
+  ],
+  "maxFrames": 200,
+  "seed": 0
+}

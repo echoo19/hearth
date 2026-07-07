@@ -1,0 +1,28 @@
+{
+  "formatVersion": 1,
+  "id": "ptt_jxydlp6h",
+  "name": "sustained-horde-scale",
+  "scene": "scn_d8mbnm4r",
+  "steps": [
+    {
+      "type": "wait",
+      "frames": 650
+    },
+    {
+      "type": "assertProperty",
+      "entity": "Horde HUD",
+      "property": "Text.content",
+      "equals": "Enemies: 300/300"
+    },
+    {
+      "type": "assertEventCount",
+      "event": "enemy-spawned",
+      "equals": 300
+    },
+    {
+      "type": "assertNoErrors"
+    }
+  ],
+  "maxFrames": 1000,
+  "seed": 0
+}

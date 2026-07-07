@@ -1,0 +1,726 @@
+{
+  "formatVersion": 1,
+  "id": "scn_d8mbnm4r",
+  "name": "Arena",
+  "entities": [
+    {
+      "id": "ent_nmzu3sxg",
+      "name": "Main Camera",
+      "parentId": null,
+      "enabled": true,
+      "tags": [],
+      "components": {
+        "Transform": {
+          "position": {
+            "x": 400,
+            "y": 304
+          },
+          "rotation": 0,
+          "scale": {
+            "x": 1,
+            "y": 1
+          }
+        },
+        "Camera": {
+          "zoom": 1,
+          "isMain": true,
+          "backgroundColor": "#170a06",
+          "ambientLight": 1
+        }
+      }
+    },
+    {
+      "id": "ent_elley05d",
+      "name": "Backdrop",
+      "parentId": null,
+      "enabled": true,
+      "tags": [
+        "background"
+      ],
+      "components": {
+        "Transform": {
+          "position": {
+            "x": 400,
+            "y": 304
+          },
+          "rotation": 0,
+          "scale": {
+            "x": 1,
+            "y": 1
+          }
+        },
+        "SpriteRenderer": {
+          "assetId": null,
+          "frame": null,
+          "shape": "rectangle",
+          "color": "#2a140a",
+          "width": 800,
+          "height": 608,
+          "opacity": 1,
+          "flipX": false,
+          "flipY": false,
+          "layer": -20,
+          "visible": true
+        }
+      }
+    },
+    {
+      "id": "ent_jlc6bdz3",
+      "name": "Arena",
+      "parentId": null,
+      "enabled": true,
+      "tags": [
+        "wall"
+      ],
+      "components": {
+        "Transform": {
+          "position": {
+            "x": 0,
+            "y": 0
+          },
+          "rotation": 0,
+          "scale": {
+            "x": 1,
+            "y": 1
+          }
+        },
+        "Tilemap": {
+          "tileSize": 32,
+          "tileAssets": {
+            "X": "ast_qg7lwz8t"
+          },
+          "grid": [
+            "XXXXXXXXXXXXXXXXXXXXXXXXX",
+            "X.......................X",
+            "X.......................X",
+            "X.......................X",
+            "X.......................X",
+            "X.......................X",
+            "X.......................X",
+            "X.......................X",
+            "X.......................X",
+            "X.......................X",
+            "X.......................X",
+            "X.......................X",
+            "X.......................X",
+            "X.......................X",
+            "X.......................X",
+            "X.......................X",
+            "X.......................X",
+            "X.......................X",
+            "XXXXXXXXXXXXXXXXXXXXXXXXX"
+          ],
+          "solid": true,
+          "layer": -10
+        }
+      }
+    },
+    {
+      "id": "ent_f7ubfc3i",
+      "name": "Player",
+      "parentId": null,
+      "enabled": true,
+      "tags": [
+        "player"
+      ],
+      "components": {
+        "Transform": {
+          "position": {
+            "x": 400,
+            "y": 304
+          },
+          "rotation": 0,
+          "scale": {
+            "x": 1,
+            "y": 1
+          }
+        },
+        "SpriteRenderer": {
+          "assetId": "ast_bd9xatns",
+          "frame": null,
+          "shape": "rectangle",
+          "color": "#ffffff",
+          "width": 28,
+          "height": 32,
+          "opacity": 1,
+          "flipX": false,
+          "flipY": false,
+          "layer": 0,
+          "visible": true
+        },
+        "Collider": {
+          "shape": "box",
+          "width": 24,
+          "height": 28,
+          "radius": 16,
+          "points": [
+            {
+              "x": 0,
+              "y": -16
+            },
+            {
+              "x": 16,
+              "y": 16
+            },
+            {
+              "x": -16,
+              "y": 16
+            }
+          ],
+          "offset": {
+            "x": 0,
+            "y": 0
+          },
+          "isTrigger": false,
+          "layer": "player",
+          "collidesWith": [
+            "default",
+            "enemy"
+          ],
+          "oneWay": false
+        },
+        "PhysicsBody": {
+          "bodyType": "dynamic",
+          "velocity": {
+            "x": 0,
+            "y": 0
+          },
+          "gravityScale": 0,
+          "drag": 0,
+          "mass": 1,
+          "restitution": 0,
+          "friction": 0
+        },
+        "ParticleEmitter": {
+          "emitting": false,
+          "rate": 0,
+          "burst": 0,
+          "lifetime": 0.4,
+          "speed": 140,
+          "spread": 180,
+          "direction": 0,
+          "gravity": {
+            "x": 0,
+            "y": 0
+          },
+          "startColor": "#ffcf5c",
+          "endColor": "#8a2a12",
+          "startSize": 5,
+          "endSize": 0,
+          "maxParticles": 64,
+          "layer": 0,
+          "seed": 7
+        },
+        "Script": {
+          "scriptPath": "scripts/player-move.lua",
+          "params": {
+            "speed": 170,
+            "maxHp": 100,
+            "contactDamage": 8,
+            "hitCooldown": 0.4
+          }
+        }
+      }
+    },
+    {
+      "id": "ent_zx4lnprj",
+      "name": "Enemy Template",
+      "parentId": null,
+      "enabled": false,
+      "tags": [
+        "enemy",
+        "template"
+      ],
+      "components": {
+        "Transform": {
+          "position": {
+            "x": 400,
+            "y": 304
+          },
+          "rotation": 0,
+          "scale": {
+            "x": 1,
+            "y": 1
+          }
+        },
+        "SpriteRenderer": {
+          "assetId": "ast_kim5uico",
+          "frame": null,
+          "shape": "rectangle",
+          "color": "#ffffff",
+          "width": 22,
+          "height": 22,
+          "opacity": 1,
+          "flipX": false,
+          "flipY": false,
+          "layer": 0,
+          "visible": true
+        },
+        "Collider": {
+          "shape": "circle",
+          "width": 32,
+          "height": 32,
+          "radius": 11,
+          "points": [
+            {
+              "x": 0,
+              "y": -16
+            },
+            {
+              "x": 16,
+              "y": 16
+            },
+            {
+              "x": -16,
+              "y": 16
+            }
+          ],
+          "offset": {
+            "x": 0,
+            "y": 0
+          },
+          "isTrigger": false,
+          "layer": "enemy",
+          "collidesWith": [
+            "default",
+            "player"
+          ],
+          "oneWay": false
+        },
+        "PhysicsBody": {
+          "bodyType": "kinematic",
+          "velocity": {
+            "x": 0,
+            "y": 0
+          },
+          "gravityScale": 1,
+          "drag": 0,
+          "mass": 1,
+          "restitution": 0,
+          "friction": 0
+        },
+        "Script": {
+          "scriptPath": "scripts/enemy-chase.lua",
+          "params": {
+            "speed": 90
+          }
+        }
+      }
+    },
+    {
+      "id": "ent_0npd659a",
+      "name": "Director",
+      "parentId": null,
+      "enabled": true,
+      "tags": [
+        "system"
+      ],
+      "components": {
+        "Transform": {
+          "position": {
+            "x": 0,
+            "y": 0
+          },
+          "rotation": 0,
+          "scale": {
+            "x": 1,
+            "y": 1
+          }
+        },
+        "Script": {
+          "scriptPath": "scripts/horde-director.lua",
+          "params": {
+            "enemyAsset": "ast_kim5uico",
+            "enemySpeed": 90,
+            "spawnRadius": 250,
+            "centerX": 400,
+            "centerY": 304
+          }
+        }
+      }
+    },
+    {
+      "id": "ent_qayjrjqk",
+      "name": "Timer HUD",
+      "parentId": null,
+      "enabled": true,
+      "tags": [
+        "ui"
+      ],
+      "components": {
+        "Transform": {
+          "position": {
+            "x": 0,
+            "y": 0
+          },
+          "rotation": 0,
+          "scale": {
+            "x": 1,
+            "y": 1
+          }
+        },
+        "UIElement": {
+          "anchor": "top-left",
+          "offset": {
+            "x": 24,
+            "y": 20
+          },
+          "interactive": false,
+          "focusable": false
+        },
+        "Text": {
+          "content": "Time: 0.0",
+          "fontSize": 18,
+          "color": "#ffe8d1",
+          "align": "left",
+          "fontFamily": "monospace",
+          "layer": 10,
+          "visible": true
+        }
+      }
+    },
+    {
+      "id": "ent_g3o0ndbl",
+      "name": "HP HUD",
+      "parentId": null,
+      "enabled": true,
+      "tags": [
+        "ui"
+      ],
+      "components": {
+        "Transform": {
+          "position": {
+            "x": 0,
+            "y": 0
+          },
+          "rotation": 0,
+          "scale": {
+            "x": 1,
+            "y": 1
+          }
+        },
+        "UIElement": {
+          "anchor": "top-right",
+          "offset": {
+            "x": -24,
+            "y": 20
+          },
+          "interactive": false,
+          "focusable": false
+        },
+        "Text": {
+          "content": "HP: 100",
+          "fontSize": 18,
+          "color": "#ffe8d1",
+          "align": "right",
+          "fontFamily": "monospace",
+          "layer": 10,
+          "visible": true
+        }
+      }
+    },
+    {
+      "id": "ent_kwxisbux",
+      "name": "Horde HUD",
+      "parentId": null,
+      "enabled": true,
+      "tags": [
+        "ui"
+      ],
+      "components": {
+        "Transform": {
+          "position": {
+            "x": 0,
+            "y": 0
+          },
+          "rotation": 0,
+          "scale": {
+            "x": 1,
+            "y": 1
+          }
+        },
+        "UIElement": {
+          "anchor": "top",
+          "offset": {
+            "x": 0,
+            "y": 20
+          },
+          "interactive": false,
+          "focusable": false
+        },
+        "Text": {
+          "content": "Enemies: 0/300",
+          "fontSize": 18,
+          "color": "#ffb385",
+          "align": "center",
+          "fontFamily": "monospace",
+          "layer": 10,
+          "visible": true
+        }
+      }
+    },
+    {
+      "id": "ent_7e2oirzv",
+      "name": "Hint",
+      "parentId": null,
+      "enabled": true,
+      "tags": [
+        "ui"
+      ],
+      "components": {
+        "Transform": {
+          "position": {
+            "x": 0,
+            "y": 0
+          },
+          "rotation": 0,
+          "scale": {
+            "x": 1,
+            "y": 1
+          }
+        },
+        "UIElement": {
+          "anchor": "bottom",
+          "offset": {
+            "x": 0,
+            "y": -24
+          },
+          "interactive": false,
+          "focusable": false
+        },
+        "Text": {
+          "content": "Stick/WASD dodges — Esc pauses",
+          "fontSize": 13,
+          "color": "#c9a08f",
+          "align": "center",
+          "fontFamily": "monospace",
+          "layer": 10,
+          "visible": true
+        }
+      }
+    },
+    {
+      "id": "ent_qyz39ppa",
+      "name": "Pause Menu",
+      "parentId": null,
+      "enabled": true,
+      "tags": [
+        "ui"
+      ],
+      "components": {
+        "Transform": {
+          "position": {
+            "x": 0,
+            "y": 0
+          },
+          "rotation": 0,
+          "scale": {
+            "x": 1,
+            "y": 1
+          }
+        },
+        "UIElement": {
+          "anchor": "center",
+          "offset": {
+            "x": -3000,
+            "y": -60
+          },
+          "interactive": false,
+          "focusable": false
+        },
+        "UILayout": {
+          "direction": "vertical",
+          "gap": 12,
+          "padding": 16,
+          "align": "center"
+        },
+        "Script": {
+          "scriptPath": "scripts/menu-controller.lua",
+          "params": {
+            "openX": -105,
+            "closedX": -3000
+          }
+        }
+      }
+    },
+    {
+      "id": "ent_2jsszt7h",
+      "name": "Menu Title",
+      "parentId": "ent_qyz39ppa",
+      "enabled": true,
+      "tags": [
+        "ui"
+      ],
+      "components": {
+        "Transform": {
+          "position": {
+            "x": 0,
+            "y": 0
+          },
+          "rotation": 0,
+          "scale": {
+            "x": 1,
+            "y": 1
+          }
+        },
+        "UIElement": {
+          "anchor": "top-left",
+          "offset": {
+            "x": 0,
+            "y": 0
+          },
+          "interactive": false,
+          "focusable": false
+        },
+        "Text": {
+          "content": "Paused",
+          "fontSize": 22,
+          "color": "#ffe8d1",
+          "align": "center",
+          "fontFamily": "monospace",
+          "layer": 31,
+          "visible": true
+        }
+      }
+    },
+    {
+      "id": "ent_82eagmpg",
+      "name": "Resume",
+      "parentId": "ent_qyz39ppa",
+      "enabled": true,
+      "tags": [
+        "ui"
+      ],
+      "components": {
+        "Transform": {
+          "position": {
+            "x": 0,
+            "y": 0
+          },
+          "rotation": 0,
+          "scale": {
+            "x": 1,
+            "y": 1
+          }
+        },
+        "UIElement": {
+          "anchor": "top-left",
+          "offset": {
+            "x": 0,
+            "y": 0
+          },
+          "interactive": true,
+          "focusable": true
+        },
+        "SpriteRenderer": {
+          "assetId": null,
+          "frame": null,
+          "shape": "rectangle",
+          "color": "#3a1f14",
+          "width": 170,
+          "height": 40,
+          "opacity": 1,
+          "flipX": false,
+          "flipY": false,
+          "layer": 30,
+          "visible": true
+        },
+        "Text": {
+          "content": "Resume",
+          "fontSize": 16,
+          "color": "#ffe8d1",
+          "align": "center",
+          "fontFamily": "monospace",
+          "layer": 31,
+          "visible": true
+        },
+        "Script": {
+          "scriptPath": "scripts/resume-button.lua",
+          "params": {}
+        }
+      }
+    },
+    {
+      "id": "ent_hiq0h3p3",
+      "name": "Shake Label",
+      "parentId": "ent_qyz39ppa",
+      "enabled": true,
+      "tags": [
+        "ui"
+      ],
+      "components": {
+        "Transform": {
+          "position": {
+            "x": 0,
+            "y": 0
+          },
+          "rotation": 0,
+          "scale": {
+            "x": 1,
+            "y": 1
+          }
+        },
+        "UIElement": {
+          "anchor": "top-left",
+          "offset": {
+            "x": 0,
+            "y": 0
+          },
+          "interactive": false,
+          "focusable": false
+        },
+        "Text": {
+          "content": "Screen shake",
+          "fontSize": 13,
+          "color": "#c9a08f",
+          "align": "center",
+          "fontFamily": "monospace",
+          "layer": 31,
+          "visible": true
+        }
+      }
+    },
+    {
+      "id": "ent_tdyzyaz0",
+      "name": "Screen Shake",
+      "parentId": "ent_qyz39ppa",
+      "enabled": true,
+      "tags": [
+        "ui"
+      ],
+      "components": {
+        "Transform": {
+          "position": {
+            "x": 0,
+            "y": 0
+          },
+          "rotation": 0,
+          "scale": {
+            "x": 1,
+            "y": 1
+          }
+        },
+        "UIElement": {
+          "anchor": "top-left",
+          "offset": {
+            "x": 0,
+            "y": 0
+          },
+          "interactive": true,
+          "focusable": true
+        },
+        "UIToggle": {
+          "value": true,
+          "size": 22,
+          "color": "#3a3a3a",
+          "checkColor": "#f76b15",
+          "layer": 30
+        },
+        "Script": {
+          "scriptPath": "scripts/shake-toggle.lua",
+          "params": {}
+        }
+      }
+    }
+  ]
+}

@@ -3017,6 +3017,667 @@ return script
 }
 
 // ---------------------------------------------------------------------------
+// Example 9: Ember Horde (the Wave E spatial-hash horde-scale proof)
+// ---------------------------------------------------------------------------
+// A survivors-like: virtual-axis movement + gamepad (matching drift-cellar),
+// one tilemap-bordered arena, and a Director that waves-spawns kinematic
+// enemies at runtime via ctx.scene.spawn, capped at 300 concurrent — well
+// inside the headroom Wave E's spatial-hash broadphase bought (see
+// docs/performance.md's "mixed-horde" scenario: 800 movers, ~2.7ms/frame
+// after Tasks 9-11, down from 14.3ms before). Every script is Lua.
+//
+// Steering-pattern decision (see docs/scripting.md's EntityHandle section):
+// each enemy's onStart calls ctx.scene.find("Player") exactly ONCE and
+// caches the returned handle in ctx.vars. EntityHandle.transform is a live
+// getter straight onto the real entity (packages/runtime/src/runtime.ts's
+// handleFor), so reading player.transform.position every onUpdate after
+// that costs a property read, not a lookup. The alternative the brief
+// floats — every enemy re-running ctx.scene.find("Player") every frame —
+// is the exact O(n) find-per-enemy-per-frame pattern (O(n^2) total across
+// the horde) docs/performance.md's "Script dispatch cost" section calls
+// out as the next cost center once broadphase stopped dominating; caching
+// the handle at spawn removes it entirely for a one-time O(n) spawn cost
+// instead. No event-broadcast or save/load channel is needed for this.
+//
+// Template note: the brief describes spawning "via ctx.scene.instantiate
+// from a disabled template entity". That method doesn't exist on ctx —
+// scripts only get ctx.scene.spawn(def) (see packages/runtime/src/scripts.ts)
+// — and a disabled entity is filtered out before the runtime ever
+// instantiates it (packages/runtime/src/runtime.ts's constructor skips
+// `!authored.enabled` entities outright), so there is nothing for a running
+// script to read off it anyway. The scene still authors a disabled "Enemy
+// Template" entity as the human-editable prefab reference (what an agent
+// or designer tweaks in the Scene panel); horde-director.lua's spawnEnemy
+// mirrors its component values directly in an inline ctx.scene.spawn def
+// (asset id passed through via ctx.params, same idiom ember-trail's
+// ember-spawner.lua already uses for its own runtime-spawned entities).
+async function generateEmberHorde() {
+  const session = await freshProject('ember-horde', {
+    name: 'Ember Horde',
+    description: 'Hold the line against a growing horde of embers. Move with the stick/WASD, dodge, survive.',
+  });
+
+  const scene = (await run(session, 'createScene', { name: 'Arena', withCamera: false })).sceneId;
+
+  await run(session, 'updateSettings', {
+    initialScene: 'Arena',
+    buildSettings: {
+      title: 'Ember Horde',
+      loading: { backgroundColor: '#170a06', spinner: true },
+    },
+    inputMappings: {
+      actions: {
+        left: [], right: [], up: [], down: [], jump: [], action: [],
+        pause: ['Escape'],
+        'ui-up': ['ArrowUp'],
+        'ui-down': ['ArrowDown'],
+        'ui-confirm': ['Enter'],
+      },
+      gamepadButtons: {
+        pause: ['start'],
+        'ui-up': ['dpad-up'],
+        'ui-down': ['dpad-down'],
+        'ui-confirm': ['a'],
+      },
+      axes: {
+        moveX: { gamepadAxis: 0, negativeCodes: ['ArrowLeft', 'KeyA'], positiveCodes: ['ArrowRight', 'KeyD'] },
+        moveY: { gamepadAxis: 1, negativeCodes: ['ArrowUp', 'KeyW'], positiveCodes: ['ArrowDown', 'KeyS'] },
+      },
+    },
+  });
+
+  // --- assets ---
+  const playerAsset = (await run(session, 'createSpriteAsset', {
+    name: 'ember-knight', shape: 'character', color: '#ffd166', width: 28, height: 32,
+  })).asset;
+  const enemyAsset = (await run(session, 'createSpriteAsset', {
+    name: 'ember-wisp', shape: 'enemy', color: '#e8462f', width: 22, height: 22,
+  })).asset;
+  const wallTile = (await run(session, 'createTileAsset', { name: 'ember-wall', color: '#5a3620', size: 32 })).asset;
+
+  // --- scripts (all Lua) ---
+  await run(session, 'createScript', {
+    name: 'player-move',
+    language: 'lua',
+    source: `-- Player: direct velocity-follows-axis movement (no drift/easing — a
+-- horde needs snappy, predictable dodging, not momentum). Contact with an
+-- Enemy costs HP on a cooldown (so a stack of enemies all touching at
+-- once doesn't drain it in one frame), updates the HP HUD, and — gated by
+-- the pause menu's live Screen Shake toggle value, read directly with no
+-- mirror state (same idiom as drift-cellar's wall-bump handler) — shakes
+-- the camera and bursts this entity's own pooled ParticleEmitter.
+-- Reminder: ctx calls use DOT syntax (ctx.log("hi"), never ctx:log("hi")).
+local script = {}
+
+function script.onStart(ctx)
+  ctx.vars.hp = ctx.params.maxHp or 100
+  ctx.vars.lastHit = -1
+  ctx.vars.paused = false
+  ctx.vars.hpHud = ctx.scene.find("HP HUD")
+end
+
+function script.onUpdate(ctx, dt)
+  local body = ctx.getComponent("PhysicsBody")
+  if ctx.vars.paused then
+    body.velocity.x = 0
+    body.velocity.y = 0
+    return
+  end
+  local speed = ctx.params.speed or 170
+  body.velocity.x = ctx.input.axis("moveX") * speed
+  body.velocity.y = ctx.input.axis("moveY") * speed
+end
+
+function script.onCollision(ctx, other)
+  if ctx.vars.paused then return end
+  if other.name ~= "Enemy" then return end
+  if ctx.vars.hp <= 0 then return end
+  local now = ctx.time.elapsed
+  local cooldown = ctx.params.hitCooldown or 0.4
+  if now - ctx.vars.lastHit < cooldown then return end
+  ctx.vars.lastHit = now
+  ctx.vars.hp = math.max(0, ctx.vars.hp - (ctx.params.contactDamage or 8))
+  if ctx.vars.hpHud then
+    ctx.vars.hpHud.getComponent("Text").content = string.format("HP: %d", ctx.vars.hp)
+  end
+  ctx.events.emit("player-hit", { hp = ctx.vars.hp })
+  local toggle = ctx.scene.find("Screen Shake")
+  if toggle and toggle.getComponent("UIToggle").value then
+    ctx.camera.shake(6, 0.2)
+  end
+  ctx.particles.burst(16)
+end
+
+function script.onEvent(ctx, name)
+  if name == "pause" then
+    ctx.vars.paused = true
+  elseif name == "resume" then
+    ctx.vars.paused = false
+  end
+end
+
+return script
+`,
+  });
+
+  await run(session, 'createScript', {
+    name: 'enemy-chase',
+    language: 'lua',
+    source: `-- Enemy: spawned at runtime by horde-director.lua's ctx.scene.spawn (see
+-- generate.mjs for why this mirrors the disabled "Enemy Template" entity's
+-- fields instead of instantiating it directly — nothing disabled ever
+-- reaches the runtime to instantiate). Every enemy caches the Player
+-- EntityHandle exactly once, in onStart — EntityHandle.transform is a
+-- live getter onto the real entity, so re-reading
+-- ctx.vars.player.transform.position every onUpdate afterward is a plain
+-- property read, not a scene search. Calling ctx.scene.find("Player") in
+-- onUpdate instead (once per enemy, per frame) is the O(n)-per-enemy
+-- pattern that turns into O(n^2) across a few hundred enemies — the exact
+-- cost docs/performance.md flags next once broadphase stopped dominating.
+local script = {}
+
+function script.onStart(ctx)
+  ctx.vars.player = ctx.scene.find("Player")
+  ctx.vars.paused = false
+end
+
+function script.onUpdate(ctx, dt)
+  local body = ctx.getComponent("PhysicsBody")
+  if ctx.vars.paused then
+    body.velocity.x = 0
+    body.velocity.y = 0
+    return
+  end
+  local player = ctx.vars.player
+  if not player then return end
+  local toPlayer = ctx.math.sub(player.transform.position, ctx.transform.position)
+  local steer = ctx.math.scale(ctx.math.normalize(toPlayer), ctx.params.speed or 90)
+  body.velocity.x = steer.x
+  body.velocity.y = steer.y
+end
+
+function script.onEvent(ctx, name)
+  if name == "pause" then
+    ctx.vars.paused = true
+  elseif name == "resume" then
+    ctx.vars.paused = false
+  end
+end
+
+return script
+`,
+  });
+
+  await run(session, 'createScript', {
+    name: 'horde-director',
+    language: 'lua',
+    source: `-- Director: spawns the horde in fixed-size waves on a frame interval,
+-- capped at ENEMY_CAP concurrent (none of these enemies ever die in this
+-- example, so "spawned so far" and "live right now" are the same number
+-- the whole run — that's what makes the sustained-horde playtest's exact
+-- counts stable once the cap is hit). Keeps the Timer/Horde HUDs current
+-- every frame from cached handles (found once in onStart, same live-handle
+-- idiom enemy-chase.lua uses, applied here too for consistency even though
+-- the director itself only ever does one find per HUD, not one per enemy).
+local script = {}
+
+local ENEMY_CAP = 300
+local WAVE_SIZE = 10
+local WAVE_INTERVAL = 20
+
+function script.onStart(ctx)
+  ctx.vars.count = 0
+  ctx.vars.paused = false
+  ctx.vars.timerHud = ctx.scene.find("Timer HUD")
+  ctx.vars.hordeHud = ctx.scene.find("Horde HUD")
+end
+
+local function spawnEnemy(ctx, x, y)
+  ctx.scene.spawn({
+    name = "Enemy",
+    position = { x = x, y = y },
+    tags = { "enemy" },
+    components = {
+      SpriteRenderer = { assetId = ctx.params.enemyAsset, width = 22, height = 22 },
+      Collider = { shape = "circle", radius = 11, layer = "enemy", collidesWith = { "default", "player" } },
+      PhysicsBody = { bodyType = "kinematic" },
+      Script = { scriptPath = "scripts/enemy-chase.lua", params = { speed = ctx.params.enemySpeed or 90 } },
+    },
+  })
+  ctx.events.emit("enemy-spawned")
+end
+
+function script.onUpdate(ctx, dt)
+  if not ctx.vars.paused and ctx.vars.count < ENEMY_CAP and ctx.time.frame % WAVE_INTERVAL == 0 then
+    local toSpawn = math.min(WAVE_SIZE, ENEMY_CAP - ctx.vars.count)
+    local radius = ctx.params.spawnRadius or 250
+    for i = 1, toSpawn do
+      local angle = ctx.random.range(0, 6.2831853)
+      local x = (ctx.params.centerX or 400) + math.cos(angle) * radius
+      local y = (ctx.params.centerY or 304) + math.sin(angle) * radius
+      spawnEnemy(ctx, x, y)
+      ctx.vars.count = ctx.vars.count + 1
+    end
+  end
+
+  if ctx.vars.timerHud then
+    ctx.vars.timerHud.getComponent("Text").content = string.format("Time: %.1f", ctx.time.elapsed)
+  end
+  if ctx.vars.hordeHud then
+    ctx.vars.hordeHud.getComponent("Text").content = string.format("Enemies: %d/%d", ctx.vars.count, ENEMY_CAP)
+  end
+end
+
+function script.onEvent(ctx, name)
+  if name == "pause" then
+    ctx.vars.paused = true
+  elseif name == "resume" then
+    ctx.vars.paused = false
+  end
+end
+
+return script
+`,
+  });
+
+  await run(session, 'createScript', {
+    name: 'menu-controller',
+    language: 'lua',
+    source: `-- Pause menu controller (on the UILayout container): Esc / gamepad start
+-- toggles the menu by sliding the container's UIElement offset on/offscreen
+-- (children stack relative to the container). Opening emits "pause"
+-- (every entity's onEvent hook sees it scene-wide — the Player, the
+-- Director, and every live Enemy all freeze) and focuses Resume; closing
+-- emits "resume" and clears focus. ui-up/ui-down move focus between the
+-- two widgets; ui-confirm activates the focused one (a synthesized real
+-- click, so a focused toggle flips exactly like a pointer click would).
+local script = {}
+
+local function openMenu(ctx)
+  ctx.vars.open = true
+  ctx.getComponent("UIElement").offset.x = ctx.params.openX or -105
+  ctx.events.emit("pause")
+  ctx.ui.focus("Resume")
+end
+
+local function closeMenu(ctx)
+  ctx.vars.open = false
+  ctx.getComponent("UIElement").offset.x = ctx.params.closedX or -3000
+  ctx.ui.focus(nil)
+  ctx.events.emit("resume")
+end
+
+function script.onStart(ctx)
+  ctx.vars.open = false
+end
+
+function script.onUpdate(ctx, dt)
+  if ctx.input.justPressed("pause") then
+    if ctx.vars.open then closeMenu(ctx) else openMenu(ctx) end
+    return
+  end
+  if not ctx.vars.open then return end
+  if ctx.input.justPressed("ui-up") then ctx.ui.moveFocus("up") end
+  if ctx.input.justPressed("ui-down") then ctx.ui.moveFocus("down") end
+  if ctx.input.justPressed("ui-confirm") then ctx.ui.activate() end
+end
+
+function script.onEvent(ctx, name)
+  if name == "menu-close" and ctx.vars.open then
+    closeMenu(ctx)
+  end
+end
+
+return script
+`,
+  });
+
+  await run(session, 'createScript', {
+    name: 'resume-button',
+    language: 'lua',
+    source: `-- Resume: an interactive+focusable UIElement (the drift-cellar pattern).
+-- focus/blur swap the sprite color; click (real pointer, or
+-- ctx.ui.activate from ui-confirm) asks the menu controller to close.
+local script = {}
+
+function script.onUiEvent(ctx, event)
+  if event.type == "focus" then
+    ctx.getComponent("SpriteRenderer").color = "#e8462f"
+  elseif event.type == "blur" then
+    ctx.getComponent("SpriteRenderer").color = "#3a1f14"
+  elseif event.type == "click" then
+    ctx.events.emit("menu-close")
+  end
+end
+
+return script
+`,
+  });
+
+  await run(session, 'createScript', {
+    name: 'shake-toggle',
+    language: 'lua',
+    source: `-- Screen shake setting: player-move.lua reads this entity's live
+-- UIToggle.value directly on every contact, so flipping the checkbox IS
+-- the setting — no mirror state to keep in sync.
+local script = {}
+
+function script.onUiEvent(ctx, event)
+  if event.type == "focus" then
+    ctx.getComponent("UIToggle").color = "#e8462f"
+  elseif event.type == "blur" then
+    ctx.getComponent("UIToggle").color = "#3a1f14"
+  end
+end
+
+return script
+`,
+  });
+
+  // --- entities ---
+  const CENTER_X = 400;
+  const CENTER_Y = 304;
+  await run(session, 'createEntity', {
+    scene, name: 'Main Camera', position: { x: CENTER_X, y: CENTER_Y },
+    components: { Camera: { backgroundColor: '#170a06' } },
+  });
+  await run(session, 'createEntity', {
+    scene, name: 'Backdrop', tags: ['background'], position: { x: CENTER_X, y: CENTER_Y },
+    components: { SpriteRenderer: { shape: 'rectangle', color: '#2a140a', width: 800, height: 608, layer: -20 } },
+  });
+
+  // Arena: a single solid Tilemap, border only (content contract calls for
+  // solid tilemap border walls, not an interior maze — the horde needs the
+  // interior open) — 25 cols x 19 rows, tileSize 32 = 800x608.
+  const COLS = 25;
+  const ROWS = 19;
+  const grid = [];
+  for (let r = 0; r < ROWS; r++) {
+    if (r === 0 || r === ROWS - 1) {
+      grid.push('X'.repeat(COLS));
+      continue;
+    }
+    let row = '';
+    for (let c = 0; c < COLS; c++) row += (c === 0 || c === COLS - 1) ? 'X' : '.';
+    grid.push(row);
+  }
+  await run(session, 'createEntity', {
+    scene, name: 'Arena', tags: ['wall'], position: { x: 0, y: 0 },
+    components: { Tilemap: { tileSize: 32, tileAssets: { X: wallTile.id }, grid, solid: true } },
+  });
+
+  await run(session, 'createEntity', {
+    scene, name: 'Player', tags: ['player'], position: { x: CENTER_X, y: CENTER_Y },
+    components: {
+      SpriteRenderer: { assetId: playerAsset.id, width: 28, height: 32 },
+      Collider: { shape: 'box', width: 24, height: 28, layer: 'player', collidesWith: ['default', 'enemy'] },
+      PhysicsBody: { bodyType: 'dynamic', gravityScale: 0 },
+      ParticleEmitter: {
+        emitting: false, rate: 0, burst: 0, lifetime: 0.4, speed: 140, spread: 180, direction: 0,
+        startSize: 5, endSize: 0, startColor: '#ffcf5c', endColor: '#8a2a12', maxParticles: 64, seed: 7,
+      },
+    },
+  });
+  await run(session, 'attachScript', {
+    scene, entity: 'Player', script: 'scripts/player-move.lua',
+    params: { speed: 170, maxHp: 100, contactDamage: 8, hitCooldown: 0.4 },
+  });
+
+  // Enemy Template: disabled, so the runtime never instantiates it (see the
+  // file-header comment for why that means horde-director.lua can't read it
+  // live) — a human-editable prefab reference only, mirrored by hand in
+  // horde-director.lua's spawnEnemy.
+  await run(session, 'createEntity', {
+    scene, name: 'Enemy Template', tags: ['enemy', 'template'], position: { x: CENTER_X, y: CENTER_Y },
+    components: {
+      SpriteRenderer: { assetId: enemyAsset.id, width: 22, height: 22 },
+      Collider: { shape: 'circle', radius: 11, layer: 'enemy', collidesWith: ['default', 'player'] },
+      PhysicsBody: { bodyType: 'kinematic' },
+      Script: { scriptPath: 'scripts/enemy-chase.lua', params: { speed: 90 } },
+    },
+  });
+  await run(session, 'setEntityEnabled', { scene, entity: 'Enemy Template', enabled: false });
+
+  await run(session, 'createEntity', {
+    scene, name: 'Director', tags: ['system'], position: { x: 0, y: 0 },
+    components: {},
+  });
+  await run(session, 'attachScript', {
+    scene, entity: 'Director', script: 'scripts/horde-director.lua',
+    params: { enemyAsset: enemyAsset.id, enemySpeed: 90, spawnRadius: 250, centerX: CENTER_X, centerY: CENTER_Y },
+  });
+
+  await run(session, 'createEntity', {
+    scene, name: 'Timer HUD', tags: ['ui'],
+    components: {
+      UIElement: { anchor: 'top-left', offset: { x: 24, y: 20 } },
+      Text: { content: 'Time: 0.0', fontSize: 18, color: '#ffe8d1' },
+    },
+  });
+  await run(session, 'createEntity', {
+    scene, name: 'HP HUD', tags: ['ui'],
+    components: {
+      UIElement: { anchor: 'top-right', offset: { x: -24, y: 20 } },
+      Text: { content: 'HP: 100', fontSize: 18, color: '#ffe8d1', align: 'right' },
+    },
+  });
+  await run(session, 'createEntity', {
+    scene, name: 'Horde HUD', tags: ['ui'],
+    components: {
+      UIElement: { anchor: 'top', offset: { x: 0, y: 20 } },
+      Text: { content: 'Enemies: 0/300', fontSize: 18, color: '#ffb385', align: 'center' },
+    },
+  });
+  await run(session, 'createEntity', {
+    scene, name: 'Hint', tags: ['ui'],
+    components: {
+      UIElement: { anchor: 'bottom', offset: { x: 0, y: -24 } },
+      Text: { content: 'Stick/WASD dodges — Esc pauses', fontSize: 13, color: '#c9a08f', align: 'center' },
+    },
+  });
+
+  // Pause menu: a UILayout container parked offscreen; the controller
+  // slides it to openX when Esc/start is pressed (drift-cellar pattern,
+  // trimmed to the two widgets this game actually needs).
+  const MENU_CLOSED_X = -3000;
+  const MENU_OPEN_X = -105;
+  await run(session, 'createEntity', {
+    scene, name: 'Pause Menu', tags: ['ui'],
+    components: {
+      UIElement: { anchor: 'center', offset: { x: MENU_CLOSED_X, y: -60 } },
+      UILayout: { direction: 'vertical', gap: 12, padding: 16, align: 'center' },
+    },
+  });
+  await run(session, 'attachScript', {
+    scene, entity: 'Pause Menu', script: 'scripts/menu-controller.lua',
+    params: { openX: MENU_OPEN_X, closedX: MENU_CLOSED_X },
+  });
+  await run(session, 'createEntity', {
+    scene, name: 'Menu Title', tags: ['ui'], parent: 'Pause Menu',
+    components: {
+      UIElement: {},
+      Text: { content: 'Paused', fontSize: 22, color: '#ffe8d1', align: 'center', layer: 31 },
+    },
+  });
+  await run(session, 'createEntity', {
+    scene, name: 'Resume', tags: ['ui'], parent: 'Pause Menu',
+    components: {
+      UIElement: { interactive: true, focusable: true },
+      SpriteRenderer: { shape: 'rectangle', color: '#3a1f14', width: 170, height: 40, layer: 30 },
+      Text: { content: 'Resume', fontSize: 16, color: '#ffe8d1', align: 'center', layer: 31 },
+    },
+  });
+  await run(session, 'attachScript', { scene, entity: 'Resume', script: 'scripts/resume-button.lua' });
+  await run(session, 'createEntity', {
+    scene, name: 'Shake Label', tags: ['ui'], parent: 'Pause Menu',
+    components: {
+      UIElement: {},
+      Text: { content: 'Screen shake', fontSize: 13, color: '#c9a08f', align: 'center', layer: 31 },
+    },
+  });
+  await run(session, 'createEntity', {
+    scene, name: 'Screen Shake', tags: ['ui'], parent: 'Pause Menu',
+    components: {
+      UIElement: { interactive: true, focusable: true },
+      UIToggle: { value: true, size: 22, layer: 30 },
+    },
+  });
+  await run(session, 'attachScript', { scene, entity: 'Screen Shake', script: 'scripts/shake-toggle.lua' });
+
+  // --- probes + playtests ---
+  // Every baked expectation below is read back from a probe run of this
+  // exact project (GameSession.stepAsync — the same engine path runPlaytest
+  // uses), never hand-computed.
+
+  // Probe 1: movement — a straightforward setAxis drive, no easing to work
+  // around (unlike drift-cellar's drifter, this player is direct-velocity).
+  const MOVE_RIGHT = 30;
+  const MOVE_UP = 20;
+  let probe = await GameSession.create(session.store, { scene, seed: 0 });
+  probe.runtime.input.setAxis('moveX', 1);
+  for (let i = 0; i < MOVE_RIGHT; i++) await probe.stepAsync();
+  probe.runtime.input.setAxis('moveX', 0);
+  probe.runtime.input.setAxis('moveY', -1);
+  for (let i = 0; i < MOVE_UP; i++) await probe.stepAsync();
+  probe.runtime.input.setAxis('moveY', 0);
+  const moved = probe.runtime.find('Player').transform.position;
+  const expectedMoveX = moved.x;
+  const expectedMoveY = moved.y;
+  if (expectedMoveX <= CENTER_X || expectedMoveY >= CENTER_Y) {
+    throw new Error(`ember-horde: movement probe barely moved (${expectedMoveX}, ${expectedMoveY}) — check axis wiring`);
+  }
+  probe.destroy();
+
+  // Probe 2: sustained horde scale — run well past the frame the wave math
+  // caps out at, then read back the true live/spawned counts.
+  const HORDE_FRAMES = 650;
+  probe = await GameSession.create(session.store, { scene, seed: 0 });
+  for (let i = 0; i < HORDE_FRAMES; i++) await probe.stepAsync();
+  const liveEnemyCount = probe.runtime.getEntities().filter((e) => e.tags.includes('enemy')).length;
+  const spawnedCount = probe.eventCounts.get('enemy-spawned') ?? 0;
+  const hordeHudText = probe.runtime.find('Horde HUD').components.Text.content;
+  if (liveEnemyCount !== 300 || spawnedCount !== 300) {
+    throw new Error(
+      `ember-horde: expected the horde to cap at 300 by frame ${HORDE_FRAMES} (live ${liveEnemyCount}, spawned ${spawnedCount}) — adjust HORDE_FRAMES or the wave constants`,
+    );
+  }
+  probe.destroy();
+
+  // Probe 3: contact — hold still and let the first wave reach the player;
+  // read back how long that actually takes.
+  const CONTACT_FRAMES = 220;
+  probe = await GameSession.create(session.store, { scene, seed: 0 });
+  for (let i = 0; i < CONTACT_FRAMES; i++) await probe.stepAsync();
+  const hitCount = probe.eventCounts.get('player-hit') ?? 0;
+  if (hitCount < 1) {
+    throw new Error(`ember-horde: probed ${CONTACT_FRAMES} frames with no player-hit event — enemies never reached the player`);
+  }
+  const shakeCount = probe.cameraEffects.filter((r) => r.effect === 'shake').length;
+  if (shakeCount < 1) {
+    throw new Error('ember-horde: contact probe recorded no camera shake');
+  }
+  probe.destroy();
+
+  await run(session, 'createPlaytest', {
+    name: 'smoke',
+    scene,
+    steps: [
+      { type: 'wait', frames: 60 },
+      { type: 'assertEntityExists', entity: 'Player', exists: true },
+      { type: 'assertEntityExists', entity: 'Director', exists: true },
+      { type: 'assertEntityExists', entity: 'Enemy Template', exists: false },
+      { type: 'assertEntityExists', entity: 'Timer HUD', exists: true },
+      { type: 'assertEntityExists', entity: 'HP HUD', exists: true },
+      { type: 'assertEntityExists', entity: 'Horde HUD', exists: true },
+      { type: 'assertEntityExists', entity: 'Resume', exists: true },
+      { type: 'assertEntityExists', entity: 'Screen Shake', exists: true },
+      { type: 'assertNoErrors' },
+    ],
+    maxFrames: 300,
+  });
+  await run(session, 'createPlaytest', {
+    name: 'player-moves-on-axes',
+    scene,
+    steps: [
+      { type: 'setAxis', axis: 'moveX', value: 1, frames: MOVE_RIGHT },
+      { type: 'setAxis', axis: 'moveX', value: 0, frames: 0 },
+      { type: 'setAxis', axis: 'moveY', value: -1, frames: MOVE_UP },
+      { type: 'setAxis', axis: 'moveY', value: 0, frames: 0 },
+      { type: 'assertPositionNear', entity: 'Player', x: expectedMoveX, y: expectedMoveY, tolerance: 3 },
+      { type: 'assertNoErrors' },
+    ],
+    maxFrames: 200,
+  });
+  await run(session, 'createPlaytest', {
+    name: 'sustained-horde-scale',
+    scene,
+    steps: [
+      { type: 'wait', frames: HORDE_FRAMES },
+      { type: 'assertProperty', entity: 'Horde HUD', property: 'Text.content', equals: hordeHudText },
+      { type: 'assertEventCount', event: 'enemy-spawned', equals: 300 },
+      { type: 'assertNoErrors' },
+    ],
+    maxFrames: 1000,
+  });
+  await run(session, 'createPlaytest', {
+    name: 'enemy-contact-hurts-and-shakes',
+    scene,
+    steps: [
+      { type: 'wait', frames: CONTACT_FRAMES },
+      { type: 'assertEventCount', event: 'player-hit', min: 1 },
+      { type: 'assertCameraEffect', effect: 'shake', min: 1 },
+      { type: 'assertNoErrors' },
+    ],
+    maxFrames: 300,
+  });
+  await run(session, 'createPlaytest', {
+    name: 'shake-toggle-gates-shake',
+    scene,
+    steps: [
+      { type: 'press', action: 'pause', frames: 2 },
+      { type: 'wait', frames: 2 },
+      { type: 'assertFocus', entity: 'Resume' },
+      { type: 'press', action: 'ui-down', frames: 2 },
+      { type: 'wait', frames: 2 },
+      { type: 'assertFocus', entity: 'Screen Shake' },
+      { type: 'press', action: 'ui-confirm', frames: 2 },
+      { type: 'press', action: 'pause', frames: 2 },
+      { type: 'wait', frames: 2 },
+      { type: 'assertFocus', entity: null },
+      { type: 'wait', frames: CONTACT_FRAMES },
+      { type: 'assertEventCount', event: 'player-hit', min: 1 },
+      { type: 'assertCameraEffect', effect: 'shake', equals: 0 },
+      { type: 'assertNoErrors' },
+    ],
+    maxFrames: 400,
+  });
+  await run(session, 'createPlaytest', {
+    name: 'pause-menu-focus-nav',
+    scene,
+    steps: [
+      { type: 'press', action: 'pause', frames: 2 },
+      { type: 'wait', frames: 2 },
+      { type: 'assertFocus', entity: 'Resume' },
+      { type: 'press', action: 'ui-down', frames: 2 },
+      { type: 'wait', frames: 2 },
+      { type: 'assertFocus', entity: 'Screen Shake' },
+      { type: 'press', action: 'ui-up', frames: 2 },
+      { type: 'wait', frames: 2 },
+      { type: 'assertFocus', entity: 'Resume' },
+      { type: 'press', action: 'ui-confirm', frames: 2 },
+      { type: 'wait', frames: 2 },
+      { type: 'assertFocus', entity: null },
+      { type: 'assertNoErrors' },
+    ],
+    maxFrames: 300,
+  });
+
+  const report = await run(session, 'validateProject', {});
+  if (report.errors.length > 0) throw new Error('ember-horde validation failed: ' + JSON.stringify(report.errors));
+  console.log('✓ ember-horde generated');
+}
+
+// ---------------------------------------------------------------------------
 await generatePlatformer();
 await generateTopDown();
 await generateVisualNovel();
@@ -3025,4 +3686,5 @@ await generateGlowCaves();
 await generateBouncePatrol();
 await generateSkyCourier();
 await generateDriftCellar();
+await generateEmberHorde();
 console.log('All example projects generated.');

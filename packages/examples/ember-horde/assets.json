@@ -1,0 +1,42 @@
+{
+  "formatVersion": 1,
+  "assets": [
+    {
+      "id": "ast_bd9xatns",
+      "name": "ember-knight",
+      "type": "sprite",
+      "path": "assets/sprites/ember_knight.svg",
+      "metadata": {
+        "procedural": true,
+        "shape": "character",
+        "color": "#ffd166",
+        "width": 28,
+        "height": 32
+      }
+    },
+    {
+      "id": "ast_kim5uico",
+      "name": "ember-wisp",
+      "type": "sprite",
+      "path": "assets/sprites/ember_wisp.svg",
+      "metadata": {
+        "procedural": true,
+        "shape": "enemy",
+        "color": "#e8462f",
+        "width": 22,
+        "height": 22
+      }
+    },
+    {
+      "id": "ast_qg7lwz8t",
+      "name": "ember-wall",
+      "type": "tile",
+      "path": "assets/tiles/ember_wall.svg",
+      "metadata": {
+        "procedural": true,
+        "color": "#5a3620",
+        "size": 32
+      }
+    }
+  ]
+}
