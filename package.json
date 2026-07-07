@@ -25,7 +25,8 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "typecheck": "npm run typecheck --workspaces --if-present",
-    "lint": "npm run typecheck"
+    "lint": "npm run typecheck",
+    "bench": "npm run build:packages && node packages/runtime/bench/bench.mjs"
   },
   "devDependencies": {
     "@types/node": "^22.20.0",

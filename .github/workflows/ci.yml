@@ -27,6 +27,8 @@ jobs:
         run: npm run typecheck
       - name: Run tests
         run: npm test
+      - name: Bench harness smoke test (catches harness rot, not perf regressions)
+        run: node packages/runtime/bench/bench.mjs --smoke
       - name: Regenerate examples (dogfoods the command system)
         run: node packages/examples/generate.mjs
       - name: CLI smoke test
