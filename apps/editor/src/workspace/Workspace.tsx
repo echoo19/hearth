@@ -366,15 +366,20 @@ export function Workspace({
 
   // The Agent panel's "Review changes" action asks for the Diff panel the
   // same way: bump a counter in the store, react here (diffFocusRequest
-  // starts at 0, so the initial mount is a no-op). refreshDiff() is called
-  // here rather than by the Timeline component itself, so it fires exactly
-  // once regardless of whether the Diff panel was already active (in which
-  // case `onDidActivePanelChange` above never fires, since setActive() is a
-  // no-op on an already-active panel).
+  // starts at 0, so the initial mount is a no-op). refreshDiff() fires
+  // exactly once in both cases: if the diff panel is already active, we call
+  // it directly (since onDidActivePanelChange won't fire for a no-op setActive());
+  // if not active, we show the panel, which triggers onDidActivePanelChange to call it.
   useEffect(() => {
     if (diffFocusRequest > 0 && apiRef.current) {
-      showPanel(apiRef.current, 'diff');
-      void useEditor.getState().refreshDiff();
+      const isDiffActive = apiRef.current.activePanel?.id === 'diff';
+      if (isDiffActive) {
+        // Diff panel already active; refreshDiff() directly since onDidActivePanelChange won't fire
+        void useEditor.getState().refreshDiff();
+      } else {
+        // Diff panel not active; show it and let onDidActivePanelChange trigger refreshDiff()
+        showPanel(apiRef.current, 'diff');
+      }
     }
   }, [diffFocusRequest]);
 
