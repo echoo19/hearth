@@ -27,6 +27,15 @@ export class EmitterState {
   autoBurstFired = false;
   private spawnAccumulator = 0;
   private readonly rng: () => number;
+  /**
+   * Free-list of detached Particle objects from expired/evicted slots,
+   * reused by spawnOne instead of allocating fresh objects every spawn.
+   * Capped at the emitter's maxParticles (see releaseToPool) so a burst of
+   * cap changes can't let this grow unbounded. Liveness/order is entirely
+   * owned by `particles` (splice/shift, unchanged) — this pool never
+   * participates in iteration order, only object reuse.
+   */
+  private readonly pool: Particle[] = [];
 
   constructor(seed: number) {
     this.rng = createRng(seed);
@@ -42,9 +51,15 @@ export class EmitterState {
       p.x += p.vx * dt;
       p.y += p.vy * dt;
     }
-    // 2. Expire.
+    // 2. Expire. splice() preserves the relative order of surviving
+    // particles exactly (iterating in reverse so earlier indices are
+    // unaffected by later removals) — pixi rendering and golden hashes
+    // depend on that order staying stable.
     for (let i = this.particles.length - 1; i >= 0; i--) {
-      if (this.particles[i].age >= this.particles[i].lifetime) this.particles.splice(i, 1);
+      if (this.particles[i].age >= this.particles[i].lifetime) {
+        const [expired] = this.particles.splice(i, 1);
+        this.releaseToPool(expired, emitter.maxParticles);
+      }
     }
     // 3. Spawn from rate.
     if (emitter.emitting && emitter.rate > 0) {
@@ -66,17 +81,39 @@ export class EmitterState {
   private spawnOne(emitter: ParticleEmitterComponent, origin: Vec2): void {
     const angle =
       (emitter.direction + (this.rng() * 2 - 1) * emitter.spread) * DEG_TO_RAD;
-    this.particles.push({
-      x: origin.x,
-      y: origin.y,
-      vx: Math.cos(angle) * emitter.speed,
-      vy: Math.sin(angle) * emitter.speed,
-      age: 0,
-      lifetime: emitter.lifetime,
-    });
+    const x = origin.x;
+    const y = origin.y;
+    const vx = Math.cos(angle) * emitter.speed;
+    const vy = Math.sin(angle) * emitter.speed;
+    const age = 0;
+    const lifetime = emitter.lifetime;
+    const reused = this.pool.pop();
+    if (reused) {
+      // Reusing a pooled object: every Particle field must be overwritten
+      // here (there are exactly six — x, y, vx, vy, age, lifetime) or a
+      // stale value from the object's previous life leaks into this
+      // particle, which would be a silent determinism bug.
+      reused.x = x;
+      reused.y = y;
+      reused.vx = vx;
+      reused.vy = vy;
+      reused.age = age;
+      reused.lifetime = lifetime;
+      this.particles.push(reused);
+    } else {
+      this.particles.push({ x, y, vx, vy, age, lifetime });
+    }
   }
 
   private enforceCap(max: number): void {
-    while (this.particles.length > max) this.particles.shift(); // oldest first
+    while (this.particles.length > max) {
+      const evicted = this.particles.shift(); // oldest first
+      if (evicted) this.releaseToPool(evicted, max);
+    }
+  }
+
+  /** Detach a particle object into the free-list, capped at maxParticles. */
+  private releaseToPool(p: Particle, maxParticles: number): void {
+    if (this.pool.length < maxParticles) this.pool.push(p);
   }
 }

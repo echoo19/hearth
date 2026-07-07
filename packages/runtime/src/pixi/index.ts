@@ -189,6 +189,19 @@ export class PixiSceneView {
   private keyupFn?: (e: KeyboardEvent) => void;
   private pointerFns: Array<[keyof HTMLElementEventMap, (e: PointerEvent) => void]> = [];
   private destroyed = false;
+  /**
+   * Latest pointermove position not yet dispatched to the runtime, coalesced
+   * to at most one `sendPointer(..., 'move')` call per pixi ticker frame
+   * (onTick) instead of one per native pointermove — the browser can fire
+   * dozens of these per rendered frame, each of which re-runs
+   * resolveUiPositions/hitTestUi across every entity. 'down'/'up' are
+   * discrete and stay dispatched immediately (they also flush any pending
+   * move first, so hover/press state never sees a stale position on
+   * click). Only this presentation-layer path throttles: runtime.ts's
+   * sendPointer/handleMove semantics and the headless playtest path are
+   * untouched, since playtests call sendPointer directly.
+   */
+  private pendingMove: { x: number; y: number } | null = null;
 
   private constructor(
     private readonly opts: PixiViewOptions,
@@ -444,20 +457,36 @@ export class PixiSceneView {
    */
   private attachPointer(): void {
     const canvas = this.app.canvas;
-    const send = (e: PointerEvent, kind: 'move' | 'down' | 'up') => {
+    const toLocal = (e: PointerEvent): { x: number; y: number } => {
       const rect = canvas.getBoundingClientRect();
       const sx = rect.width > 0 ? this.app.screen.width / rect.width : 1;
       const sy = rect.height > 0 ? this.app.screen.height / rect.height : 1;
-      this.runtime.sendPointer((e.clientX - rect.left) * sx, (e.clientY - rect.top) * sy, kind);
+      return { x: (e.clientX - rect.left) * sx, y: (e.clientY - rect.top) * sy };
+    };
+    // 'down'/'up' flush any queued move first so hover/press state reflects
+    // the pointer's true last-known position before the discrete event
+    // lands, then dispatch immediately (never throttled).
+    const sendNow = (e: PointerEvent, kind: 'down' | 'up') => {
+      this.flushPendingMove();
+      const { x, y } = toLocal(e);
+      this.runtime.sendPointer(x, y, kind);
     };
     this.pointerFns = [
-      ['pointermove', (e) => send(e, 'move')],
-      ['pointerdown', (e) => send(e, 'down')],
-      ['pointerup', (e) => send(e, 'up')],
+      ['pointermove', (e) => { this.pendingMove = toLocal(e); }],
+      ['pointerdown', (e) => sendNow(e, 'down')],
+      ['pointerup', (e) => sendNow(e, 'up')],
     ];
     for (const [type, fn] of this.pointerFns) {
       canvas.addEventListener(type, fn as EventListener);
     }
+  }
+
+  /** Dispatch the latest coalesced pointermove, if any, then clear it. */
+  private flushPendingMove(): void {
+    if (!this.pendingMove) return;
+    const { x, y } = this.pendingMove;
+    this.pendingMove = null;
+    this.runtime.sendPointer(x, y, 'move');
   }
 
   private onTick(ticker: Ticker): void {
@@ -468,6 +497,11 @@ export class PixiSceneView {
     if (typeof navigator !== 'undefined' && navigator.getGamepads) {
       this.runtime.input.pollGamepads(navigator.getGamepads());
     }
+    // Coalesced pointermove: dispatch at most once per tick, regardless of
+    // pause state (matches the pre-throttle behavior, where every native
+    // pointermove dispatched immediately whether or not the session was
+    // paused — only session.step() itself is gated by `_paused` below).
+    this.flushPendingMove();
     if (!this._paused) {
       this.accumulator += ticker.deltaMS / 1000;
       let steps = 0;

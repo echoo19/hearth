@@ -11,6 +11,10 @@ Tasks 9-11 re-run the harness and update the table below with **after**
 numbers — the "Current bottlenecks" section is expected to shrink or change
 as they land.
 
+**Status: Wave E (Tasks 9-11) complete.** See "After Wave E" below for the
+final numbers and what each task contributed; "Current bottlenecks" has been
+rewritten to reflect what's actually left.
+
 ## How to run
 
 ```sh
@@ -105,50 +109,129 @@ decaying average.
   horde disperse and thin out mid-run), so unlike colliders-1500 there's no
   large spike: the cost is high but steady, not bursty.
 
+## After Wave E (Tasks 9-11)
+
+**Machine:** same Apple M3 Pro dev machine. **Node:** v22.17.0. **Mode:**
+full (120 warmup / 1000 timed frames). Two consecutive runs at Task 11's
+HEAD agreed within noise; the table below is the second (representative).
+
+```
+scenario        mean ms  p95 ms  max ms  entities  errors
+--------------  -------  ------  ------  --------  ------
+colliders-100   0.156    0.222   0.639   104       0
+colliders-500   0.943    1.389   1.966   504       0
+colliders-1500  2.912    3.086   3.341   1504      0
+tilemap-arena   0.406    0.548   0.638   201       0
+particles       0.094    0.104   0.264   50        0
+mixed-horde     2.717    3.220   3.835   804       0
+```
+
+| scenario | before (mean ms) | after (mean ms) | speedup | before p95 | after p95 |
+|---|---|---|---|---|---|
+| colliders-100 | 0.224 | 0.156 | 1.4x | 0.300 | 0.222 |
+| colliders-500 | 4.702 | 0.943 | 5.0x | 5.092 | 1.389 |
+| **colliders-1500** | **39.207** | **2.912** | **13.5x** | 41.317 | 3.086 |
+| tilemap-arena | 4.126 | 0.406 | 10.2x | 4.396 | 0.548 |
+| particles | 0.109 | 0.094 | 1.2x | 0.144 | 0.104 |
+| **mixed-horde** | **14.317** | **2.717** | **5.3x** | 15.367 | 3.220 |
+
+colliders-1500's max also dropped from a 134ms spike to 3.3ms — the old
+number wasn't just slow, it was spiky (see the original "Interpretation"
+above); that spikiness is gone along with the O(n²) cost that caused it.
+particles and colliders-100 move the least in absolute terms because they
+were never the bottleneck — both stay comfortably under budget before and
+after, and their small deltas are within the ±10-20% run-to-run noise band
+called out above (still directionally consistent with pooling/caching
+removing *some* cost, just not a dominant one).
+
+**What each task contributed:**
+
+- **Task 9** (`packages/runtime/src/runtime.ts`): cached `getEntities()`
+  (invalidated only when entities/destroyedIds actually change, instead of
+  a fresh `.filter()` on every call) and a per-Tilemap collider cache
+  (`tilemapBoxes` computed once at load instead of rebuilt from scratch
+  every frame). This is most of tilemap-arena's win (4.1 -> ~0.4ms once
+  combined with Task 10) and a baseline improvement felt by every scenario.
+- **Task 10** (`packages/runtime/src/broadphase.ts`, new): replaced the
+  O(n²) mover-vs-obstacle and mover-vs-mover sweeps with a spatial-hash
+  broadphase (`SpatialHash.query()`), order-preserving so surviving pairs
+  are still visited in the exact naive order (ascending, deduped) — this is
+  the overwhelming majority of colliders-1500's and mixed-horde's win. Two
+  deliberate deviations from the original brief, both required and both
+  test-proven (see `.superpowers/sdd/task-10-report.md`):
+  - **Cell size from the 90th-percentile shape extent, not the max.** Using
+    the max degenerates when one giant collider (e.g. arena walls) is far
+    larger than everything else — it forces a cellSize so large the whole
+    scene falls into 1-2 cells, which is O(n²) again *plus* hash overhead
+    (measured: colliders-1500 got 2x *slower*, 38.5 -> 77.1ms, with
+    max-extent). p90 tracks the typical object size instead; outlier giants
+    just span more cells on insert (bounded, see below) and are still found
+    by any query that reaches them.
+  - **Exact, displacement-tracked requery instead of a fixed inflation
+    margin.** A mover can get shoved well past a single cellSize of slack
+    in one pair resolution (e.g. ejected out of a giant collider it spawned
+    inside). stepPhysics tracks cumulative per-mover push displacement and
+    forces a requery whenever accumulated displacement could have escaped
+    the original query's cell-inflation radius — checked both mid-loop and
+    at loop exit (a real bug during development: checking only mid-loop let
+    a push from the *final* candidate in a list escape re-checking). This
+    keeps pruning exact for arbitrarily violent same-frame displacement,
+    at the cost of two float compares per pair on the hot path.
+  - A follow-up fix bounded `SpatialHash.insert`'s per-shape cell count
+    (`MAX_INSERT_CELL_SPAN`), routing pathologically large finite AABBs to
+    the same always-candidate list non-finite AABBs already used — closing
+    a freeze/OOM the naive loops never had.
+- **Task 11** (this task): `EmitterState` (`packages/runtime/src/particles.ts`)
+  now keeps a per-emitter free-list (`pool: Particle[]`); `spawnOne` reuses
+  a detached object (overwriting every field) instead of allocating, and
+  both expiry (`splice`) and cap-eviction (`shift`) release the removed
+  object into the pool (capped at `maxParticles`) instead of discarding it.
+  Live-particle order is untouched (still splice/shift, unchanged), so
+  render order and the golden hashes are unaffected — pinned exactly by
+  `packages/runtime/tests/particles.test.ts`'s per-particle trajectory
+  snapshots. Also: the pixi presentation layer (`packages/runtime/src/pixi/index.ts`)
+  now coalesces native `pointermove` events to at most one
+  `sendPointer(..., 'move')` dispatch per ticker frame (latest position
+  wins; `pointerdown`/`pointerup` flush any pending move first, then stay
+  immediate/unthrottled) instead of dispatching every native move event
+  (which can fire many times per rendered frame, each re-running
+  `resolveUiPositions`/hit-testing over every entity). This doesn't show up
+  in the headless bench numbers above (bench never touches the pixi layer),
+  but removes redundant UI-position resolution work from real browser
+  input; the headless `sendPointer`/playtest path in `runtime.ts` is
+  untouched, so drag semantics (UISlider, Wave D playtests) are unaffected.
+
 ## Current bottlenecks
 
-These are real, verified costs in the current implementation (not
-speculative) — cited by file and function so Tasks 9-11 can point at exactly
-what they changed.
+Wave E removed every bottleneck identified in the original baseline below
+(O(n²) collision, per-frame tilemap rebuild, `getEntities()` churn, unpooled
+particles) — none of those costs exist in the current implementation. What's
+left, roughly in order of remaining cost:
 
-- **O(n²) all-pairs collision.** `SceneRuntime.stepPhysics()`
-  (`packages/runtime/src/runtime.ts:1599`) checks every mover against every
-  static obstacle (`packages/runtime/src/runtime.ts:1732`, one nested loop
-  over `movers x obstacles`) and then every mover against every *other*
-  mover (`packages/runtime/src/runtime.ts:1750`, `for (let i...) for (let
-  j = i+1...)`). There is no broadphase (spatial hash/grid/sweep) — every
-  pair gets a `computeShapePush` call regardless of distance. This is the
-  single largest cost in colliders-1500 and mixed-horde: mover count going
-  up 3x (500 -> 1500) costs ~8.3x the mean frame time.
-- **Per-frame `tilemapBoxes` rebuild.** Inside the same obstacle-collection
-  loop, `SceneRuntime.stepPhysics()` calls `tilemapBoxes(tilemap,
-  worldPos)` (`packages/runtime/src/runtime.ts:1671`, defined in
-  `packages/runtime/src/physics.ts:114`) for every enabled solid Tilemap
-  entity, *every single frame* — allocating one `Box` object per non-empty
-  grid cell from scratch, even though a Tilemap's grid never changes at
-  runtime (there's no API that mutates `Tilemap.grid` after scene load).
-  For tilemap-arena's ~5,700 non-empty cells (100x60 grid, ~4% scatter +
-  border) that's ~5,700 fresh object allocations per frame purely to
-  reconstruct data that was identical last frame.
-- **`getEntities()` allocation churn.** `SceneRuntime.getEntities()`
-  (`packages/runtime/src/runtime.ts:319`) is `this.entities.filter(...)` —
-  a fresh array on every call, not a cached view. It's called repeatedly
-  within a single frame (`stepPhysics` alone calls it once at
-  `runtime.ts:1600` plus indirectly via `getWorldPosition`/`find` calls
-  elsewhere in the same step), plus again from `sendPointer`,
-  `applyCameraFollow`'s `find`, focus handling, etc. None of these callers
-  mutate the destroyed-set mid-frame in a way that would require a fresh
-  filter every time — the array could be memoized and invalidated only when
-  `destroyedIds`/`entities` actually change.
-- **Unpooled particles.** `EmitterState.spawnOne`
-  (`packages/runtime/src/particles.ts:66`) does `this.particles.push({...})`
-  — a new object literal per particle, every spawn, with no reuse of
-  expired particle slots. `enforceCap`
-  (`packages/runtime/src/particles.ts:79`) evicts with
-  `this.particles.shift()`, an O(n) operation on a plain array (shifts
-  every remaining element down) called once per excess particle. At the
-  particles scenario's steady state (50 emitters x up to 256 particles,
-  rate 300/s) this is thousands of allocations and O(n) shifts per second;
-  it doesn't show up in the baseline numbers yet only because collision
-  dominates every other scenario's budget — this is exactly the kind of
-  cost pooling work (a later Wave E task) is expected to remove.
+- **Per-frame spatial-hash rebuild.** `stepPhysics` builds a fresh
+  `SpatialHash` for obstacles and (separately) for movers every frame
+  (`packages/runtime/src/runtime.ts`, broadphase wiring) rather than
+  incrementally updating one across frames. This is why colliders-1500 and
+  mixed-horde still cost more than colliders-100/tilemap-arena per entity —
+  building the hash and running every query is O(n) with a real constant,
+  just no longer O(n²). An incremental/persistent hash (insert moved
+  entities only) is the next lever if these scenarios need to shrink
+  further, but neither scenario is anywhere near the 16.6ms budget anymore
+  (2.9ms and 2.7ms respectively — both under 20% of budget).
+- **Script dispatch cost.** mixed-horde's 800 movers each run a real
+  `onCollision` handler; per-script call overhead (marshaling `ctx`,
+  running the JS/Lua VM) is now a proportionally larger slice of the frame
+  than it was when collision dominated. Not measured in isolation here —
+  the bench harness's own scripted scenario is exactly mixed-horde, so its
+  current 2.7ms mean already includes this cost; it just isn't broken out
+  from broadphase overhead.
+- **Rendering sync.** None of the numbers above touch pixi at all (the
+  bench harness is deliberately headless) — `PixiView.syncEntities` and
+  friends (`packages/runtime/src/pixi/index.ts`) still walk every live
+  entity every tick to keep display objects in sync, and were entirely out
+  of scope for this doc's measurements. If a future task wants an "after"
+  number for rendering, it needs its own (non-headless) harness.
+
+None of these are urgent: every bench scenario now finishes well under the
+16.6ms/frame (60Hz) budget, including colliders-1500 and mixed-horde, which
+were the only two scenarios over budget in the original baseline.
