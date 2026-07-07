@@ -39,35 +39,51 @@ what makes before/after comparisons meaningful rather than noise.
 ```
 scenario        mean ms  p95 ms  max ms   entities  errors
 --------------  -------  ------  -------  --------  ------
-colliders-100   0.218    0.283   0.502    104       0
-colliders-500   4.698    5.105   5.899    504       0
-colliders-1500  38.788   41.116  132.068  1504      0
-tilemap-arena   4.161    4.495   5.671    201       0
-particles       0.106    0.123   0.911    50        0
-mixed-horde     12.656   13.501  60.500   804       0
+colliders-100   0.224    0.300   0.501    104       0
+colliders-500   4.702    5.092   5.598    504       0
+colliders-1500  39.207   41.317  134.393  1504      0
+tilemap-arena   4.126    4.396   5.622    201       0
+particles       0.109    0.144   0.483    50        0
+mixed-horde     14.317   15.367  17.678   804       0
 ```
 
 (Numbers are one representative run; ±10-20% run-to-run variance is normal
 on a dev laptop under thermal/scheduler noise — treat single-digit-percent
 deltas between before/after runs as inconclusive, not a regression.)
 
+**Fix round 1** (see `.superpowers/sdd/task-8-report.md`): the first baseline
+had two scenario bugs that made its numbers untrustworthy — `mixed-horde`'s
+per-layer `collidesWith` lists never included the arena walls' `default`
+layer, so `layersInteract` (which requires both sides to match) never let
+the walls contain the horde and it silently dispersed over the run; and
+every mover/wall used `restitution: 0.9`, so kinetic energy drained on every
+contact instead of staying constant. Both are fixed (movers now include
+`'default'` in `collidesWith`, and all mover/wall bodies use
+`restitution: 1`), and the table above is the corrected re-run. The most
+visible effect is `mixed-horde`: mean rose (12.7 → 14.3 ms) because the
+horde now stays genuinely dense for the whole window instead of thinning
+out, but p95/max dropped sharply (13.5/60.5 → 15.4/17.7 ms) because that
+old max was a transient spike from the still-dense early frames before
+dispersal thinned things out — the new numbers are steady state, not a
+decaying average.
+
 ### Interpretation (60 Hz = 16.6 ms/frame budget)
 
 - **colliders-100** (104 entities: 100 movers + 4 walls) — 0.22 ms mean,
-  ~75x under budget. This is comfortably "any small game" territory; not a
+  ~74x under budget. This is comfortably "any small game" territory; not a
   useful stress case on its own, but the floor every other scenario is
   measured against.
 - **colliders-500** (504 entities) — 4.7 ms mean, still well under budget
   (~28% of the frame), but 5x colliders-100's mover count produced a ~21x
   slowdown (0.22 → 4.7 ms) — consistent with the mover-vs-mover pass being
   quadratic in mover count (see below): 5x the movers is ~25x the pairs.
-- **colliders-1500** (1504 entities) — 38.8 ms mean, **over 2x the 16.6 ms
-  budget** — this scenario cannot hit 60 Hz today. p95/max (41/132 ms) show
+- **colliders-1500** (1504 entities) — 39.2 ms mean, **over 2x the 16.6 ms
+  budget** — this scenario cannot hit 60 Hz today. p95/max (41/134 ms) show
   it's not just slow but spiky: a single frame can cost >3x the mean. This is
   the clearest evidence of the O(n²) collision cost below; nothing in the
   engine currently supports a 1500-collider scene at interactive framerates.
 - **tilemap-arena** (201 entities: 1 tilemap + 200 movers over a 100x60 solid
-  grid) — 4.2 ms mean, ~25% of budget. Entity count is low, but the tilemap
+  grid) — 4.1 ms mean, ~25% of budget. Entity count is low, but the tilemap
   contributes far more than 200 static colliders' worth of obstacle-list
   entries (every non-empty grid cell becomes one; see the tilemapBoxes cost
   below) — this scenario exists specifically to isolate that cost from
@@ -79,11 +95,15 @@ deltas between before/after runs as inconclusive, not a regression.)
   below for why this is expected to get *more* visible (not less) once
   collision is no longer the dominant cost.
 - **mixed-horde** (804 entities: 800 movers across 3 collision layers + 4
-  walls, every mover scripted with a real `onCollision` handler) — 12.7 ms
-  mean, ~76% of budget — a survivors-like horde of this size is *just*
-  inside budget today, with no headroom for anything else (rendering,
-  scripts beyond the one-line handler used here, audio, particles). p95/max
-  (13.5/60.5 ms) show occasional frames blow through budget alone.
+  walls, every mover scripted with a real `onCollision` handler) — 14.3 ms
+  mean, ~86% of budget — a survivors-like horde of this size is close to
+  saturating the frame budget today, with very little headroom left for
+  anything else (rendering, scripts beyond the one-line handler used here,
+  audio, particles). p95/max (15.4/17.7 ms) are tight around the mean —
+  this scenario keeps a genuinely dense, arena-contained horde live for the
+  entire window (fix round 1 corrected a layer-filter bug that had let the
+  horde disperse and thin out mid-run), so unlike colliders-1500 there's no
+  large spike: the cost is high but steady, not bursty.
 
 ## Current bottlenecks
 

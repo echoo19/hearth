@@ -62,19 +62,26 @@ function baseEntity(name, components) {
   };
 }
 
-/** Static box collider (arena walls, tilemap border is separate). */
+/**
+ * Static box collider (arena walls, tilemap border is separate).
+ * restitution: 1 so a wall never absorbs energy from a mover bounce — see
+ * mover() below for why the scenarios need energy-conserving contacts.
+ */
 function wall(cx, cy, w, h) {
   return baseEntity('Wall', {
     Transform: createComponent('Transform', { position: { x: cx, y: cy } }),
     Collider: createComponent('Collider', { shape: 'box', width: w, height: h }),
-    PhysicsBody: createComponent('PhysicsBody', { bodyType: 'static' }),
+    PhysicsBody: createComponent('PhysicsBody', { bodyType: 'static', restitution: 1 }),
   });
 }
 
 /**
  * A moving box/circle collider bouncing forever: gravityScale 0 (no
- * settling), restitution 0.9 and friction 0 so it keeps its kinetic energy
- * and stays live for the entire timed window instead of coming to rest.
+ * settling), restitution 1.0 and friction 0 so kinetic energy is conserved
+ * across contacts and the scenario stays live for the entire timed window
+ * instead of decaying toward rest (restitution 0.9 measurably drained speed
+ * frame-over-frame — see packages/runtime/bench/README or task-8-report.md
+ * fix round 1 for the before/after numbers).
  */
 function mover(x, y, vx, vy, shape, size, opts = {}) {
   const collider =
@@ -90,7 +97,7 @@ function mover(x, y, vx, vy, shape, size, opts = {}) {
       bodyType: 'dynamic',
       velocity: { x: vx, y: vy },
       gravityScale: 0,
-      restitution: 0.9,
+      restitution: 1,
       friction: 0,
     }),
   };
@@ -219,9 +226,12 @@ const MOVER_SCRIPT = `export default {
 
 /**
  * 800 movers split across 3 collision layers (a/b/c) with an asymmetric
- * collidesWith filter (a<->b, b<->c, but not a<->c) — a survivors-like
- * "horde" proxy: every mover carries a Script with onCollision so contact
- * events actually fire and get counted, not just resolved silently.
+ * collidesWith filter between movers (a<->b, b<->c, but not a<->c) — a
+ * survivors-like "horde" proxy: every mover carries a Script with
+ * onCollision so contact events actually fire and get counted, not just
+ * resolved silently. Every layer's collidesWith also includes 'default' so
+ * the arena walls (which use the Collider schema's default layer/filter)
+ * still contain the horde — only mover-vs-mover pairing is filtered.
  */
 function buildMixedHordeEntities(seed) {
   const rng = mulberry32(seed);
@@ -241,8 +251,16 @@ function buildMixedHordeEntities(seed) {
     wall(arenaW + wallT / 2, arenaH / 2, wallT, arenaH + wallT * 2),
   ];
 
+  // 'default' must be in every mover's collidesWith so the arena walls
+  // (layer 'default', collidesWith ['*']) actually contain them —
+  // layersInteract() requires BOTH sides to match layers, and '*' on the
+  // wall side alone isn't enough if the mover side doesn't list 'default'.
   const layers = ['a', 'b', 'c'];
-  const collidesWithByLayer = { a: ['a', 'b'], b: ['a', 'b', 'c'], c: ['b', 'c'] };
+  const collidesWithByLayer = {
+    a: ['a', 'b', 'default'],
+    b: ['a', 'b', 'c', 'default'],
+    c: ['b', 'c', 'default'],
+  };
 
   let n = 0;
   for (let r = 0; r < rows && n < count; r++) {

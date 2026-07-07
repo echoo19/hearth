@@ -15,8 +15,19 @@
  * Requires @hearth/core and @hearth/runtime's compiled `dist` output (run
  * `npm run build:packages` first — `npm run bench` does this for you).
  */
-import { GameSession } from '@hearth/runtime';
-import { SCENARIOS } from './scenarios.mjs';
+let GameSession, SCENARIOS;
+try {
+  ({ GameSession } = await import('@hearth/runtime'));
+  ({ SCENARIOS } = await import('./scenarios.mjs'));
+} catch (err) {
+  if (err?.code === 'ERR_MODULE_NOT_FOUND') {
+    console.error(
+      'bench: could not resolve @hearth/core or @hearth/runtime — run `npm run build:packages` first (or use `npm run bench`).',
+    );
+    process.exit(1);
+  }
+  throw err;
+}
 
 const args = process.argv.slice(2);
 const smoke = args.includes('--smoke');
