@@ -18,8 +18,17 @@ export interface TileAssetRow {
 /** '.' and ' ' always mean an empty cell (see TilemapSchema/paintTiles) — never assignable to an asset. */
 export const RESERVED_CHARS = ['.', ' '] as const;
 
+/**
+ * Row order can't follow insertion order — tileAssets is stored as a plain
+ * object, and JS reorders integer-like string keys (e.g. a digit char like
+ * "0") to the front of `Object.entries` regardless of insertion order. Sort
+ * by char code instead so the row order is deterministic and stable across a
+ * rowsToMap -> toRows round-trip, no matter how the engine enumerates keys.
+ */
 export function toRows(map: Record<string, string>): TileAssetRow[] {
-  return Object.entries(map).map(([char, assetId]) => ({ char, assetId }));
+  return Object.entries(map)
+    .map(([char, assetId]) => ({ char, assetId }))
+    .sort((a, b) => a.char.charCodeAt(0) - b.char.charCodeAt(0));
 }
 
 export function rowsToMap(rows: readonly TileAssetRow[]): Record<string, string> {

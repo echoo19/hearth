@@ -343,7 +343,12 @@ export function SceneView() {
   useEffect(() => {
     if (!paintMode) return;
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') exitPaintMode();
+      if (e.key !== 'Escape') return;
+      if (e.defaultPrevented) return;
+      // A native <dialog> (e.g. the tilemap Resize modal) handles its own
+      // Escape-to-close; don't also exit paint mode on the same keypress.
+      if (document.querySelector('dialog[open]')) return;
+      exitPaintMode();
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);

@@ -33,6 +33,37 @@ describe('toRows / rowsToMap', () => {
     ];
     expect(rowsToMap(rows)).toEqual({ G: 'b' });
   });
+
+  it('sorts digit and letter keys by char code, not JS integer-key enumeration order', () => {
+    // Plain objects hoist integer-like string keys (like '0') to the front
+    // of Object.entries regardless of insertion order. toRows must not leak
+    // that engine quirk into the Inspector's row order.
+    const map = { W: 'asset-wall', '0': 'asset-floor', G: 'asset-grass', '9': 'asset-lava' };
+    expect(toRows(map)).toEqual([
+      { char: '0', assetId: 'asset-floor' },
+      { char: '9', assetId: 'asset-lava' },
+      { char: 'G', assetId: 'asset-grass' },
+      { char: 'W', assetId: 'asset-wall' },
+    ]);
+  });
+
+  it('keeps a stable sorted row order across a rowsToMap -> toRows round-trip', () => {
+    const rows: TileAssetRow[] = [
+      { char: 'W', assetId: 'asset-wall' },
+      { char: '0', assetId: 'asset-floor' },
+      { char: 'G', assetId: 'asset-grass' },
+      { char: '9', assetId: 'asset-lava' },
+    ];
+    const roundTripped = toRows(rowsToMap(rows));
+    expect(roundTripped).toEqual([
+      { char: '0', assetId: 'asset-floor' },
+      { char: '9', assetId: 'asset-lava' },
+      { char: 'G', assetId: 'asset-grass' },
+      { char: 'W', assetId: 'asset-wall' },
+    ]);
+    // And re-running it again (simulating a second re-render) is a no-op.
+    expect(toRows(rowsToMap(roundTripped))).toEqual(roundTripped);
+  });
 });
 
 describe('validateChar', () => {
