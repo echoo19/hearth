@@ -39,6 +39,7 @@ const ALL_DEFINITIONS: CommandDefinition[] = [
   // entities
   entityCommands.createEntity,
   entityCommands.deleteEntity,
+  entityCommands.duplicateEntity,
   entityCommands.renameEntity,
   entityCommands.moveEntity,
   entityCommands.setEntityEnabled,

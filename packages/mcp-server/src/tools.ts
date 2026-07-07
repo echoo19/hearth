@@ -167,6 +167,19 @@ export const TOOL_SPECS: ToolSpec[] = [
       scene: z.string().min(1),
     },
   },
+  {
+    name: 'duplicate_scene',
+    command: 'duplicateScene',
+    description:
+      'Duplicate a scene (all entities get fresh ids). With withPlaytests, also clones every playtest ' +
+      'targeting the source scene, retargeted to the copy. (requires safe-edit)',
+    permission: 'safe-edit',
+    inputShape: {
+      scene: z.string().min(1),
+      newName: z.string().min(1),
+      withPlaytests: z.boolean().optional(),
+    },
+  },
 
   // ---- entities ---------------------------------------------------------------
   {
@@ -203,6 +216,20 @@ export const TOOL_SPECS: ToolSpec[] = [
       scene: z.string().min(1),
       entity: z.string().min(1),
       newName: z.string().min(1),
+    },
+  },
+  {
+    name: 'duplicate_entity',
+    command: 'duplicateEntity',
+    description:
+      "Duplicate an entity and its full descendant subtree (fresh ids). The root copy's position is " +
+      'offset from the original (default 16,16); descendants keep their relative position. (requires safe-edit)',
+    permission: 'safe-edit',
+    inputShape: {
+      scene: z.string().min(1),
+      entity: z.string().min(1),
+      newName: z.string().optional(),
+      offset: positionShape.optional(),
     },
   },
   {
@@ -441,6 +468,18 @@ export const TOOL_SPECS: ToolSpec[] = [
       margin: z.number().int().nonnegative().optional(),
       spacing: z.number().int().nonnegative().optional(),
       namePrefix: z.string().optional(),
+    },
+  },
+  {
+    name: 'remove_asset',
+    command: 'removeAsset',
+    description:
+      'Unregister an asset from the index. The file on disk is kept unless deleteFile=true. ' +
+      'Fails if any entity still references the asset. (requires asset-edit)',
+    permission: 'asset-edit',
+    inputShape: {
+      asset: z.string().min(1),
+      deleteFile: z.boolean().optional(),
     },
   },
   {

@@ -110,6 +110,66 @@ export const renameEntity = defineCommand({
   },
 });
 
+export const duplicateEntity = defineCommand({
+  name: 'duplicateEntity',
+  description:
+    'Duplicate an entity and its full descendant subtree (fresh ids for every copy). ' +
+    "The root copy's position is offset from the original (default 16,16); descendants keep their " +
+    'parent-relative Transform.position unchanged, so the whole subtree moves together.',
+  permission: 'safe-edit',
+  mutates: true,
+  paramsSchema: z.object({
+    scene: z.string().min(1),
+    entity: z.string().min(1),
+    newName: z.string().optional(),
+    offset: z.object({ x: z.number(), y: z.number() }).default({ x: 16, y: 16 }),
+  }),
+  async run(ctx, params) {
+    const scene = requireScene(ctx, params.scene);
+    const root = requireEntity(scene, params.entity);
+
+    // BFS the full subtree (root + every descendant), building the fresh-id
+    // map as we go so a re-visited id can never be queued twice.
+    const subtree: Entity[] = [];
+    const idMap = new Map<string, string>();
+    idMap.set(root.id, generateId('ent'));
+    const queue: Entity[] = [root];
+    while (queue.length) {
+      const current = queue.shift()!;
+      subtree.push(current);
+      for (const e of scene.entities) {
+        if (e.parentId === current.id && !idMap.has(e.id)) {
+          idMap.set(e.id, generateId('ent'));
+          queue.push(e);
+        }
+      }
+    }
+
+    const copies: Entity[] = structuredClone(subtree).map((e) => ({
+      ...e,
+      id: idMap.get(e.id)!,
+      // The root copy keeps the ORIGINAL root's parent unchanged; every
+      // other copy's parentId is remapped inside the subtree.
+      parentId: e.id === root.id ? root.parentId : (idMap.get(e.parentId!) ?? null),
+    }));
+
+    const rootCopy = copies[0];
+    rootCopy.name = params.newName ?? `${root.name} copy`;
+    if (rootCopy.components.Transform) {
+      const pos = rootCopy.components.Transform.position;
+      rootCopy.components.Transform = {
+        ...rootCopy.components.Transform,
+        position: { x: pos.x + params.offset.x, y: pos.y + params.offset.y },
+      };
+    }
+
+    scene.entities.push(...copies);
+    ctx.changed({ kind: 'entity', id: rootCopy.id, name: rootCopy.name, scene: scene.id, action: 'created' });
+    ctx.suggest(`inspectEntity --scene ${scene.id} ${rootCopy.id}`);
+    return { entityId: rootCopy.id, name: rootCopy.name, copiedCount: copies.length };
+  },
+});
+
 export const moveEntity = defineCommand({
   name: 'moveEntity',
   description:

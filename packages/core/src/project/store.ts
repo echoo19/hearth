@@ -39,7 +39,8 @@ export class ProjectError extends Error {
       | 'CONFLICT'
       | 'MISSING_RESOURCE'
       | 'INVALID_INPUT'
-      | 'HISTORY_CORRUPT' = 'INVALID_INPUT',
+      | 'HISTORY_CORRUPT'
+      | 'SCENE_NAME_TAKEN' = 'INVALID_INPUT',
   ) {
     super(message);
     this.name = 'ProjectError';

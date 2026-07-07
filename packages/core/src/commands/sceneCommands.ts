@@ -1,11 +1,35 @@
 import { z } from 'zod';
 import { defineCommand } from './types.js';
 import { generateId, slugify } from '../ids.js';
-import { SCENES_DIR } from '../schema/project.js';
+import { SCENES_DIR, PlaytestSchema, type Playtest, type PlaytestStep } from '../schema/project.js';
 import type { Scene, Entity } from '../schema/scene.js';
 import { ProjectError } from '../project/store.js';
 import { joinPath } from '../fs.js';
 import { createComponent } from '../schema/components.js';
+
+/**
+ * Remap a cloned playtest step's entity/scene refs for a scene duplication.
+ * Refs are id-OR-NAME strings; only values matching an OLD id (entity ids in
+ * `entityIdMap`, or the source scene's own id) are rewritten. Name-based refs
+ * are left untouched — the copy always gets a new scene name, so a name ref
+ * can never accidentally resolve to it.
+ */
+function remapPlaytestStep(
+  step: PlaytestStep,
+  entityIdMap: Map<string, string>,
+  sourceSceneId: string,
+  newSceneId: string,
+): PlaytestStep {
+  const out = { ...step } as Record<string, unknown>;
+  if (typeof out.entity === 'string') {
+    const mapped = entityIdMap.get(out.entity);
+    if (mapped) out.entity = mapped;
+  }
+  if (out.type === 'assertScene' && out.scene === sourceSceneId) {
+    out.scene = newSceneId;
+  }
+  return out as PlaytestStep;
+}
 
 export const createScene = defineCommand({
   name: 'createScene',
@@ -77,12 +101,16 @@ export const deleteScene = defineCommand({
 
 export const duplicateScene = defineCommand({
   name: 'duplicateScene',
-  description: 'Duplicate a scene (all entities get fresh ids).',
+  description:
+    'Duplicate a scene (all entities get fresh ids). With withPlaytests, also clones every playtest ' +
+    'targeting the source scene, retargeted to the copy.',
   permission: 'safe-edit',
   mutates: true,
   paramsSchema: z.object({
     scene: z.string().min(1),
     newName: z.string().min(1),
+    /** Also clone playtests targeting the source scene, retargeted to the copy (default false). */
+    withPlaytests: z.boolean().default(false),
   }),
   async run(ctx, params) {
     const source = ctx.store.getScene(params.scene);
@@ -103,7 +131,36 @@ export const duplicateScene = defineCommand({
     ctx.store.scenes.set(id, scene);
     ctx.store.project.scenes.push({ id, name: params.newName, path });
     ctx.changed({ kind: 'scene', id, name: params.newName, path, action: 'created' });
-    return { sceneId: id, name: params.newName, path, entityCount: entities.length };
+
+    let playtestsCloned = 0;
+    if (params.withPlaytests) {
+      const sourceSceneId = source.id;
+      for (const pt of [...ctx.store.playtests.values()]) {
+        if (ctx.store.getScene(pt.scene)?.id !== sourceSceneId) continue;
+        const baseName = `${pt.name} (${params.newName})`;
+        let name = baseName;
+        let suffix = 2;
+        while (ctx.store.getPlaytest(name)) {
+          name = `${baseName} ${suffix}`;
+          suffix += 1;
+        }
+        const steps = pt.steps.map((step) => remapPlaytestStep(structuredClone(step), idMap, sourceSceneId, id));
+        const clone: Playtest = PlaytestSchema.parse({
+          formatVersion: 1,
+          id: generateId('ptt'),
+          name,
+          scene: id,
+          steps,
+          maxFrames: pt.maxFrames,
+          seed: pt.seed,
+        });
+        ctx.store.playtests.set(clone.id, clone);
+        ctx.changed({ kind: 'playtest', id: clone.id, name: clone.name, action: 'created' });
+        playtestsCloned += 1;
+      }
+    }
+
+    return { sceneId: id, name: params.newName, path, entityCount: entities.length, playtestsCloned };
   },
 });
 
@@ -116,6 +173,13 @@ export const renameScene = defineCommand({
   async run(ctx, params) {
     const scene = ctx.store.getScene(params.scene);
     if (!scene) throw new ProjectError(`Scene not found: ${params.scene}`, 'NOT_FOUND');
+    const collision = ctx.store.getScene(params.newName);
+    if (collision && collision.id !== scene.id) {
+      throw new ProjectError(
+        `A scene named "${params.newName}" already exists. Try "${params.newName} 2" or another name.`,
+        'SCENE_NAME_TAKEN',
+      );
+    }
     const previous = scene.name;
     scene.name = params.newName;
     const ref = ctx.store.sceneRef(scene.id)!;

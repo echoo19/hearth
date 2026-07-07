@@ -568,6 +568,33 @@ export function buildProgram(): Command {
     );
   });
 
+  const duplicate = program.command('duplicate').description('duplicate a scene or entity');
+  addGlobalOptions(duplicate);
+  addGlobalOptions(
+    duplicate
+      .command('scene <scene> <new-name>')
+      .description('duplicate a scene (fresh entity ids); optionally clone playtests targeting it')
+      .option('--with-playtests', 'also clone playtests targeting the source scene, retargeted to the copy'),
+  ).action(async (scene: string, newName: string, opts, cmd) => {
+    await guarded(cmd, 'duplicateScene', () =>
+      runAndEmit(cmd, 'duplicateScene', { scene, newName, withPlaytests: !!opts.withPlaytests }),
+    );
+  });
+  addGlobalOptions(
+    duplicate
+      .command('entity <scene> <entity>')
+      .description('duplicate an entity and its full descendant subtree (fresh ids), offset from the original')
+      .option('--name <name>', 'name for the copy (default: "<name> copy")')
+      .option('--offset <x,y>', 'position offset for the copy (default: 16,16)'),
+  ).action(async (scene: string, entity: string, opts, cmd) => {
+    await guarded(cmd, 'duplicateEntity', () => {
+      const params: Record<string, unknown> = { scene, entity };
+      if (opts.name) params.newName = opts.name;
+      if (opts.offset) params.offset = parsePosition(opts.offset);
+      return runAndEmit(cmd, 'duplicateEntity', params);
+    });
+  });
+
   const move = program.command('move').description('move (reposition/reparent) an entity');
   addGlobalOptions(move);
   addGlobalOptions(

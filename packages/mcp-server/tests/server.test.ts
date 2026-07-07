@@ -365,4 +365,76 @@ describe('hearth-mcp server', () => {
     expect(animEnvelope.command).toBe('createAnimationFromSheet');
     expect(animEnvelope.data.asset.id).toBeTruthy();
   });
+
+  it('duplicate_scene is registered, mirrors every param, and clones playtests with --withPlaytests', async () => {
+    ctx = await connectClient();
+    const { tools } = await ctx.client.listTools();
+    const tool = tools.find((t) => t.name === 'duplicate_scene');
+    expect(tool).toBeDefined();
+    const props = tool!.inputSchema.properties as Record<string, unknown>;
+    expect(Object.keys(props).sort()).toEqual(['newName', 'scene', 'withPlaytests']);
+
+    const ptResult = await ctx.client.callTool({
+      name: 'create_playtest',
+      arguments: { name: 'smoke', scene: 'Main' },
+    });
+    expect(ptResult.isError).toBeFalsy();
+
+    const result = await ctx.client.callTool({
+      name: 'duplicate_scene',
+      arguments: { scene: 'Main', newName: 'Main Copy', withPlaytests: true },
+    });
+    expect(result.isError).toBeFalsy();
+    const envelope = toolJson(result);
+    expect(envelope.command).toBe('duplicateScene');
+    expect(envelope.data.name).toBe('Main Copy');
+    expect(envelope.data.playtestsCloned).toBe(1);
+  });
+
+  it('duplicate_entity is registered, mirrors every param, and deep-copies with a fresh id', async () => {
+    ctx = await connectClient();
+    const { tools } = await ctx.client.listTools();
+    const tool = tools.find((t) => t.name === 'duplicate_entity');
+    expect(tool).toBeDefined();
+    const props = tool!.inputSchema.properties as Record<string, unknown>;
+    expect(Object.keys(props).sort()).toEqual(['entity', 'newName', 'offset', 'scene']);
+
+    const sceneId = ctx.store.project.initialScene;
+    const player = ctx.store.getScene(sceneId!)!.entities.find((e) => e.name === 'Player')!;
+
+    const result = await ctx.client.callTool({
+      name: 'duplicate_entity',
+      arguments: { scene: sceneId, entity: player.id, newName: 'Player Two', offset: { x: 1, y: 1 } },
+    });
+    expect(result.isError).toBeFalsy();
+    const envelope = toolJson(result);
+    expect(envelope.command).toBe('duplicateEntity');
+    expect(envelope.data.name).toBe('Player Two');
+    expect(envelope.data.entityId).not.toBe(player.id);
+    expect(envelope.data.copiedCount).toBe(1);
+  });
+
+  it('remove_asset is registered, mirrors every param, and unregisters an asset', async () => {
+    ctx = await connectClient(['read-only', 'safe-edit', 'asset-edit']);
+    const { tools } = await ctx.client.listTools();
+    const tool = tools.find((t) => t.name === 'remove_asset');
+    expect(tool).toBeDefined();
+    const props = tool!.inputSchema.properties as Record<string, unknown>;
+    expect(Object.keys(props).sort()).toEqual(['asset', 'deleteFile']);
+
+    const create = await ctx.client.callTool({
+      name: 'create_sprite_asset',
+      arguments: { name: 'coin', shape: 'circle', color: 'yellow' },
+    });
+    expect(create.isError).toBeFalsy();
+
+    const result = await ctx.client.callTool({
+      name: 'remove_asset',
+      arguments: { asset: 'coin', deleteFile: true },
+    });
+    expect(result.isError).toBeFalsy();
+    const envelope = toolJson(result);
+    expect(envelope.command).toBe('removeAsset');
+    expect(envelope.data.fileDeleted).toBe(true);
+  });
 });

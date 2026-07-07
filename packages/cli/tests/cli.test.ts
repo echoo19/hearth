@@ -433,6 +433,61 @@ describe('hearth delete asset', () => {
   });
 });
 
+describe('hearth duplicate', () => {
+  it('duplicate scene creates a copy and, with --with-playtests, clones targeting playtests', async () => {
+    const dir = path.join(tmpRoot, 'duplicate-scene');
+    await fsp.mkdir(dir, { recursive: true });
+    await runCli(['init', 'Duplicate Scene', '--dir', dir, '--json'], tmpRoot);
+    const createPt = await runCli(['create', 'playtest', 'smoke', '--scene', 'Main', '--json'], dir);
+    expect(createPt.code).toBe(0);
+
+    const dup = await runCli(['duplicate', 'scene', 'Main', 'Main Copy', '--with-playtests', '--json'], dir);
+    expect(dup.code).toBe(0);
+    const envelope = parseJson(dup.stdout);
+    expect(envelope.success).toBe(true);
+    expect(envelope.command).toBe('duplicateScene');
+    expect(envelope.data.name).toBe('Main Copy');
+    expect(envelope.data.playtestsCloned).toBe(1);
+
+    const scenes = parseJson((await runCli(['inspect', 'scenes', '--json'], dir)).stdout);
+    expect(scenes.data.scenes.some((s: { name: string }) => s.name === 'Main Copy')).toBe(true);
+  });
+
+  it('duplicate entity supports --name and --offset', async () => {
+    const dir = path.join(tmpRoot, 'duplicate-entity');
+    await fsp.mkdir(dir, { recursive: true });
+    await runCli(['init', 'Duplicate Entity', '--dir', dir, '--json'], tmpRoot);
+
+    const dup = await runCli(
+      ['duplicate', 'entity', 'Main', 'Player', '--name', 'Player Two', '--offset', '5,10', '--json'],
+      dir,
+    );
+    expect(dup.code).toBe(0);
+    const envelope = parseJson(dup.stdout);
+    expect(envelope.success).toBe(true);
+    expect(envelope.command).toBe('duplicateEntity');
+    expect(envelope.data.name).toBe('Player Two');
+    expect(envelope.data.copiedCount).toBe(1);
+
+    const entity = parseJson(
+      (await runCli(['inspect', 'entity', 'Main', envelope.data.entityId, '--json'], dir)).stdout,
+    );
+    // Starter Player entity is created at (400, 480); offset is additive.
+    expect(entity.data.components.Transform.position).toEqual({ x: 405, y: 490 });
+  });
+
+  it('duplicate entity defaults --name to "<name> copy" and --offset to 16,16', async () => {
+    const dir = path.join(tmpRoot, 'duplicate-entity-defaults');
+    await fsp.mkdir(dir, { recursive: true });
+    await runCli(['init', 'Duplicate Entity Defaults', '--dir', dir, '--json'], tmpRoot);
+
+    const dup = await runCli(['duplicate', 'entity', 'Main', 'Player', '--json'], dir);
+    expect(dup.code).toBe(0);
+    const envelope = parseJson(dup.stdout);
+    expect(envelope.data.name).toBe('Player copy');
+  });
+});
+
 describe('hearth commands', () => {
   it('lists more than 30 registered engine commands', async () => {
     const result = await runCli(['commands', '--json'], projectDir);

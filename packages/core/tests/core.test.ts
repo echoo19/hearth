@@ -166,6 +166,94 @@ describe('command system', () => {
     expect(bad.errors[0].message).toContain('cycle');
   });
 
+  it('duplicateEntity deep-copies a 3-level parent chain, remapping ids and offsetting only the root', async () => {
+    const { session, store } = await makeSession();
+    // Container (unrelated sibling, must be untouched/uncopied) and a
+    // 3-level chain: Root -> Child -> Grandchild, plus a sibling of Root
+    // under Container that must NOT be part of the duplicated subtree.
+    await session.execute('createEntity', { scene: 'Main', name: 'Container' });
+    const root = await session.execute<any>('createEntity', {
+      scene: 'Main',
+      name: 'Root',
+      parent: 'Container',
+      position: { x: 10, y: 20 },
+    });
+    const child = await session.execute<any>('createEntity', {
+      scene: 'Main',
+      name: 'Child',
+      parent: 'Root',
+      position: { x: 1, y: 2 },
+    });
+    const grandchild = await session.execute<any>('createEntity', {
+      scene: 'Main',
+      name: 'Grandchild',
+      parent: 'Child',
+      position: { x: 3, y: 4 },
+    });
+    await session.execute('createEntity', { scene: 'Main', name: 'RootSibling', parent: 'Container' });
+
+    const before = store.getScene('Main')!.entities.length;
+    const dup = await session.execute<any>('duplicateEntity', { scene: 'Main', entity: 'Root' });
+    expect(dup.success).toBe(true);
+    expect(dup.data.copiedCount).toBe(3); // Root + Child + Grandchild
+    expect(dup.data.name).toBe('Root copy');
+
+    const scene = store.getScene('Main')!;
+    expect(scene.entities.length).toBe(before + 3);
+
+    const rootCopy = scene.entities.find((e) => e.id === dup.data.entityId)!;
+    expect(rootCopy).toBeDefined();
+    expect(rootCopy.id).not.toBe(root.data.entityId);
+    // Root copy keeps the ORIGINAL root's parent (Container), unchanged.
+    const containerId = scene.entities.find((e) => e.name === 'Container')!.id;
+    expect(rootCopy.parentId).toBe(containerId);
+    // Offset (default 16,16) applied to the root copy only.
+    expect(rootCopy.components.Transform!.position).toEqual({ x: 26, y: 36 });
+
+    const childCopy = scene.entities.find((e) => e.parentId === rootCopy.id && e.name === 'Child')!;
+    expect(childCopy).toBeDefined();
+    expect(childCopy.id).not.toBe(child.data.entityId);
+    // Child's own (parent-relative) position is untouched by the offset.
+    expect(childCopy.components.Transform!.position).toEqual({ x: 1, y: 2 });
+
+    const grandchildCopy = scene.entities.find((e) => e.parentId === childCopy.id && e.name === 'Grandchild')!;
+    expect(grandchildCopy).toBeDefined();
+    expect(grandchildCopy.id).not.toBe(grandchild.data.entityId);
+    expect(grandchildCopy.components.Transform!.position).toEqual({ x: 3, y: 4 });
+
+    // The unrelated sibling under Container was not duplicated.
+    expect(scene.entities.filter((e) => e.name === 'RootSibling').length).toBe(1);
+  });
+
+  it('duplicateEntity accepts a custom name and offset', async () => {
+    const { session, store } = await makeSession();
+    const entity = await session.execute<any>('createEntity', {
+      scene: 'Main',
+      name: 'Coin',
+      position: { x: 0, y: 0 },
+    });
+    const dup = await session.execute<any>('duplicateEntity', {
+      scene: 'Main',
+      entity: 'Coin',
+      newName: 'Coin Two',
+      offset: { x: 5, y: -5 },
+    });
+    expect(dup.success).toBe(true);
+    expect(dup.data.name).toBe('Coin Two');
+    expect(dup.data.copiedCount).toBe(1);
+    const scene = store.getScene('Main')!;
+    const copy = scene.entities.find((e) => e.id === dup.data.entityId)!;
+    expect(copy.components.Transform!.position).toEqual({ x: 5, y: -5 });
+    expect(copy.id).not.toBe(entity.data.entityId);
+  });
+
+  it('duplicateEntity 404s on an unknown entity', async () => {
+    const { session } = await makeSession();
+    const result = await session.execute('duplicateEntity', { scene: 'Main', entity: 'Nope' });
+    expect(result.success).toBe(false);
+    expect(result.errors[0].code).toBe('NOT_FOUND');
+  });
+
   it('inspectPath finds walkable paths between two points', async () => {
     const { session } = await makeSession();
 
