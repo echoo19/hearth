@@ -23,7 +23,19 @@ import { NodeFileSystem } from '@hearth/core/node';
 import { captureScreenshot } from '@hearth/playtest';
 import { CliError, openSession, resolveProjectRoot, type GlobalOpts } from './context.js';
 import { emit, errorResult, makeResult, logStderr } from './output.js';
-import { parseJsonArray, parseJsonObject, parseList, parsePosition, parseSize, parseFrameSize, parseValue, ParseError } from './parse.js';
+import {
+  parseJsonArray,
+  parseJsonObject,
+  parseList,
+  parsePosition,
+  parseSize,
+  parseFrameSize,
+  parseValue,
+  parseWidthHeight,
+  parseRect,
+  parseCells,
+  ParseError,
+} from './parse.js';
 import { createZip } from './zip.js';
 
 // Hardcoded rather than imported from package.json: this package builds
@@ -611,6 +623,60 @@ export function buildProgram(): Command {
       if (opts.toRoot) params.parent = null;
       else if (opts.parent) params.parent = opts.parent;
       return runAndEmit(cmd, 'moveEntity', params);
+    });
+  });
+
+  // ---------------------------------------------------------------------
+  // paint / fill / resize (tilemap editing)
+  // ---------------------------------------------------------------------
+  const paint = program.command('paint').description('paint tiles onto a Tilemap component');
+  addGlobalOptions(paint);
+  addGlobalOptions(
+    paint
+      .command('tiles <scene> <entity>')
+      .description(
+        'paint a batch of tile cells in one undo step, e.g. --cells "0,0,G;1,0,G". ' +
+          'A char is a single character: "." or a literal space (empty), or a tileAssets key. ' +
+          'To paint a space, quote it explicitly, e.g. --cells "0,0, " (a comma is not usable as a char).',
+      )
+      .requiredOption('--cells <spec>', '"x,y,c;x,y,c" — semicolon-separated cells, x/y are 0-based column/row'),
+  ).action(async (scene: string, entity: string, opts, cmd) => {
+    await guarded(cmd, 'paintTiles', () =>
+      runAndEmit(cmd, 'paintTiles', { scene, entity, cells: parseCells(opts.cells) }),
+    );
+  });
+
+  const fill = program.command('fill').description('fill a rectangular region of a Tilemap component');
+  addGlobalOptions(fill);
+  addGlobalOptions(
+    fill
+      .command('tiles <scene> <entity>')
+      .description('fill x,y,width,height with one char in one undo step, e.g. --rect 0,0,4,2 --char G')
+      .requiredOption('--rect <x,y,w,h>', 'top-left x,y plus width,height')
+      .requiredOption('--char <c>', 'tile char: "." / " " (empty) or a tileAssets key'),
+  ).action(async (scene: string, entity: string, opts, cmd) => {
+    await guarded(cmd, 'fillTilemapRect', () => {
+      const rect = parseRect(opts.rect);
+      return runAndEmit(cmd, 'fillTilemapRect', { scene, entity, ...rect, char: opts.char });
+    });
+  });
+
+  const resize = program.command('resize').description('resize a Tilemap component\'s grid');
+  addGlobalOptions(resize);
+  addGlobalOptions(
+    resize
+      .command('tilemap <scene> <entity>')
+      .description(
+        'resize the grid to width,height, e.g. --size 40,20. Growing pads with "."; shrinking crops the right/bottom edges.',
+      )
+      .requiredOption('--size <w,h>', 'new width,height')
+      .option('--anchor <anchor>', 'anchor point (only "top-left" is supported today)'),
+  ).action(async (scene: string, entity: string, opts, cmd) => {
+    await guarded(cmd, 'resizeTilemap', () => {
+      const { width, height } = parseWidthHeight(opts.size);
+      const params: Record<string, unknown> = { scene, entity, width, height };
+      if (opts.anchor) params.anchor = opts.anchor;
+      return runAndEmit(cmd, 'resizeTilemap', params);
     });
   });
 

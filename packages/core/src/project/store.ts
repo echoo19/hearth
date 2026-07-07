@@ -40,7 +40,10 @@ export class ProjectError extends Error {
       | 'MISSING_RESOURCE'
       | 'INVALID_INPUT'
       | 'HISTORY_CORRUPT'
-      | 'SCENE_NAME_TAKEN' = 'INVALID_INPUT',
+      | 'SCENE_NAME_TAKEN'
+      | 'NO_TILEMAP'
+      | 'INVALID_TILE_CHAR'
+      | 'TILE_OUT_OF_BOUNDS' = 'INVALID_INPUT',
   ) {
     super(message);
     this.name = 'ProjectError';

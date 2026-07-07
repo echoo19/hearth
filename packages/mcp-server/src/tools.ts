@@ -352,6 +352,53 @@ export const TOOL_SPECS: ToolSpec[] = [
     },
   },
 
+  // ---- tilemap ---------------------------------------------------------------
+  {
+    name: 'paint_tiles',
+    command: 'paintTiles',
+    description:
+      'Paint a batch of tile cells onto a Tilemap component in one undo step. x is the column, y is the row ' +
+      '(0-based, row 0 = the top of the grid). char must be "." / " " (empty) or a key of tileAssets. (requires safe-edit)',
+    permission: 'safe-edit',
+    inputShape: {
+      scene: z.string().min(1),
+      entity: z.string().min(1),
+      cells: z.array(z.object({ x: z.number().int(), y: z.number().int(), char: z.string() })).min(1),
+    },
+  },
+  {
+    name: 'fill_tilemap_rect',
+    command: 'fillTilemapRect',
+    description:
+      'Fill a rectangular region of a Tilemap with one tile char in one undo step. x/y is the top-left corner. ' +
+      'char must be "." / " " (empty) or a key of tileAssets. (requires safe-edit)',
+    permission: 'safe-edit',
+    inputShape: {
+      scene: z.string().min(1),
+      entity: z.string().min(1),
+      x: z.number().int(),
+      y: z.number().int(),
+      width: z.number().int().positive(),
+      height: z.number().int().positive(),
+      char: z.string(),
+    },
+  },
+  {
+    name: 'resize_tilemap',
+    command: 'resizeTilemap',
+    description:
+      'Resize a Tilemap\'s grid to width x height. Growing pads new cells/rows with "." (empty); shrinking crops ' +
+      'from the right and bottom edges. anchor is reserved for future anchor points; only "top-left" exists today. (requires safe-edit)',
+    permission: 'safe-edit',
+    inputShape: {
+      scene: z.string().min(1),
+      entity: z.string().min(1),
+      width: z.number().int().min(1).max(1024),
+      height: z.number().int().min(1).max(1024),
+      anchor: z.enum(['top-left']).optional(),
+    },
+  },
+
   // ---- scripts ---------------------------------------------------------------
   {
     name: 'create_script',

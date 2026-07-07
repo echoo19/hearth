@@ -85,6 +85,60 @@ export function parseFrameSize(raw: string): { width: number; height: number } {
   return { width, height };
 }
 
+/** Parse a "w,h" pair, e.g. --size 40,20 (used by resizeTilemap; distinct from --size WIDTHxHEIGHT elsewhere). */
+export function parseWidthHeight(raw: string, flagName = '--size'): { width: number; height: number } {
+  const parts = raw.split(',').map((s) => s.trim());
+  if (parts.length !== 2) {
+    throw new ParseError(`Invalid ${flagName} "${raw}": expected "width,height"`);
+  }
+  const [width, height] = parts.map(Number);
+  if (!Number.isInteger(width) || !Number.isInteger(height)) {
+    throw new ParseError(`Invalid ${flagName} "${raw}": expected integer "width,height"`);
+  }
+  return { width, height };
+}
+
+/** Parse an "x,y,width,height" rectangle, e.g. --rect 0,0,4,2. */
+export function parseRect(raw: string): { x: number; y: number; width: number; height: number } {
+  const parts = raw.split(',').map((s) => s.trim());
+  if (parts.length !== 4) {
+    throw new ParseError(`Invalid --rect "${raw}": expected "x,y,width,height"`);
+  }
+  const [x, y, width, height] = parts.map(Number);
+  if ([x, y, width, height].some((n) => !Number.isInteger(n))) {
+    throw new ParseError(`Invalid --rect "${raw}": expected integer "x,y,width,height"`);
+  }
+  return { x, y, width, height };
+}
+
+/**
+ * Parse "x,y,c;x,y,c" tile cells. Only the x/y fields are trimmed — the char
+ * field is taken verbatim so a literal space (the eraser convention) survives,
+ * e.g. --cells "0,0, " paints an empty cell at (0,0). A char containing a
+ * comma can't be expressed in this format; use '.' as the empty/eraser char.
+ */
+export function parseCells(raw: string): Array<{ x: number; y: number; char: string }> {
+  const cells: Array<{ x: number; y: number; char: string }> = [];
+  for (const entry of raw.split(';')) {
+    if (entry.length === 0) continue;
+    const parts = entry.split(',');
+    if (parts.length < 3) {
+      throw new ParseError(`Invalid --cells entry "${entry}": expected "x,y,char"`);
+    }
+    const x = Number(parts[0].trim());
+    const y = Number(parts[1].trim());
+    if (!Number.isInteger(x) || !Number.isInteger(y)) {
+      throw new ParseError(`Invalid --cells entry "${entry}": expected integer x,y`);
+    }
+    const char = parts.slice(2).join(',');
+    cells.push({ x, y, char });
+  }
+  if (cells.length === 0) {
+    throw new ParseError(`Invalid --cells "${raw}": expected at least one "x,y,char" entry`);
+  }
+  return cells;
+}
+
 /** Parse a JSON array option (e.g. --steps-file contents). */
 export function parseJsonArray(raw: string, sourceName: string): unknown[] {
   let value: unknown;

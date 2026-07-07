@@ -8,6 +8,7 @@ import type { CommandDefinition } from './types.js';
 import * as sceneCommands from './sceneCommands.js';
 import * as entityCommands from './entityCommands.js';
 import * as componentCommands from './componentCommands.js';
+import * as tilemapCommands from './tilemapCommands.js';
 import * as inspectCommands from './inspectCommands.js';
 import * as scriptCommands from './scriptCommands.js';
 import * as assetCommands from './assetCommands.js';
@@ -49,6 +50,10 @@ const ALL_DEFINITIONS: CommandDefinition[] = [
   componentCommands.removeComponent,
   componentCommands.setComponentProperty,
   componentCommands.setInputMapping,
+  // tilemap
+  tilemapCommands.paintTiles,
+  tilemapCommands.fillTilemapRect,
+  tilemapCommands.resizeTilemap,
   // scripts
   scriptCommands.createScript,
   scriptCommands.editScript,
