@@ -1,7 +1,7 @@
 {
-  "hearthVersion": "0.7.0",
+  "hearthVersion": "0.8.0",
   "project": "Ember Horde",
-  "projectId": "prj_brjzk5g7",
+  "projectId": "prj_g8kgn683",
   "instructions": "AGENTS.md",
   "cli": {
     "binary": "hearth",

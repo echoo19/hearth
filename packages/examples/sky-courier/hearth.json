@@ -1,13 +1,13 @@
 {
   "formatVersion": 1,
-  "hearthVersion": "0.7.0",
-  "id": "prj_d7wb1swb",
+  "hearthVersion": "0.8.0",
+  "id": "prj_i70zvl09",
   "name": "Sky Courier",
   "description": "Hop across the rooftops, collect three parcels, and deliver them down the chute.",
-  "initialScene": "scn_d8jnnf2k",
+  "initialScene": "scn_o8snrw26",
   "scenes": [
     {
-      "id": "scn_d8jnnf2k",
+      "id": "scn_o8snrw26",
       "name": "Rooftops",
       "path": "scenes/rooftops.scene.json"
     }

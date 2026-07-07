@@ -1,10 +1,10 @@
 {
   "formatVersion": 1,
-  "id": "scn_d8mbnm4r",
+  "id": "scn_4bgsmbbu",
   "name": "Arena",
   "entities": [
     {
-      "id": "ent_nmzu3sxg",
+      "id": "ent_pyogdtol",
       "name": "Main Camera",
       "parentId": null,
       "enabled": true,
@@ -30,7 +30,7 @@
       }
     },
     {
-      "id": "ent_elley05d",
+      "id": "ent_4j6iki7q",
       "name": "Backdrop",
       "parentId": null,
       "enabled": true,
@@ -65,7 +65,7 @@
       }
     },
     {
-      "id": "ent_jlc6bdz3",
+      "id": "ent_eneoemyo",
       "name": "Arena",
       "parentId": null,
       "enabled": true,
@@ -87,7 +87,7 @@
         "Tilemap": {
           "tileSize": 32,
           "tileAssets": {
-            "X": "ast_qg7lwz8t"
+            "X": "ast_jqp9krnm"
           },
           "grid": [
             "XXXXXXXXXXXXXXXXXXXXXXXXX",
@@ -116,7 +116,7 @@
       }
     },
     {
-      "id": "ent_f7ubfc3i",
+      "id": "ent_m4kmskyg",
       "name": "Player",
       "parentId": null,
       "enabled": true,
@@ -136,7 +136,7 @@
           }
         },
         "SpriteRenderer": {
-          "assetId": "ast_bd9xatns",
+          "assetId": "ast_pozygf9e",
           "frame": null,
           "shape": "rectangle",
           "color": "#ffffff",
@@ -223,7 +223,7 @@
       }
     },
     {
-      "id": "ent_zx4lnprj",
+      "id": "ent_e0vpfair",
       "name": "Enemy Template",
       "parentId": null,
       "enabled": false,
@@ -244,7 +244,7 @@
           }
         },
         "SpriteRenderer": {
-          "assetId": "ast_kim5uico",
+          "assetId": "ast_51038m07",
           "frame": null,
           "shape": "rectangle",
           "color": "#ffffff",
@@ -308,7 +308,7 @@
       }
     },
     {
-      "id": "ent_0npd659a",
+      "id": "ent_h331bon0",
       "name": "Director",
       "parentId": null,
       "enabled": true,
@@ -330,7 +330,7 @@
         "Script": {
           "scriptPath": "scripts/horde-director.lua",
           "params": {
-            "enemyAsset": "ast_kim5uico",
+            "enemyAsset": "ast_51038m07",
             "enemySpeed": 90,
             "spawnRadius": 250,
             "centerX": 400,
@@ -340,7 +340,7 @@
       }
     },
     {
-      "id": "ent_qayjrjqk",
+      "id": "ent_m6slcpab",
       "name": "Timer HUD",
       "parentId": null,
       "enabled": true,
@@ -380,7 +380,7 @@
       }
     },
     {
-      "id": "ent_g3o0ndbl",
+      "id": "ent_3wqvrmgm",
       "name": "HP HUD",
       "parentId": null,
       "enabled": true,
@@ -420,7 +420,7 @@
       }
     },
     {
-      "id": "ent_kwxisbux",
+      "id": "ent_iukc7v44",
       "name": "Horde HUD",
       "parentId": null,
       "enabled": true,
@@ -460,7 +460,7 @@
       }
     },
     {
-      "id": "ent_7e2oirzv",
+      "id": "ent_02p3b8l3",
       "name": "Hint",
       "parentId": null,
       "enabled": true,
@@ -500,7 +500,7 @@
       }
     },
     {
-      "id": "ent_qyz39ppa",
+      "id": "ent_0w7cebih",
       "name": "Pause Menu",
       "parentId": null,
       "enabled": true,
@@ -544,9 +544,9 @@
       }
     },
     {
-      "id": "ent_2jsszt7h",
+      "id": "ent_1iqmern9",
       "name": "Menu Title",
-      "parentId": "ent_qyz39ppa",
+      "parentId": "ent_0w7cebih",
       "enabled": true,
       "tags": [
         "ui"
@@ -584,9 +584,9 @@
       }
     },
     {
-      "id": "ent_82eagmpg",
+      "id": "ent_6mud7wwn",
       "name": "Resume",
-      "parentId": "ent_qyz39ppa",
+      "parentId": "ent_0w7cebih",
       "enabled": true,
       "tags": [
         "ui"
@@ -641,9 +641,9 @@
       }
     },
     {
-      "id": "ent_hiq0h3p3",
+      "id": "ent_nh84yuj6",
       "name": "Shake Label",
-      "parentId": "ent_qyz39ppa",
+      "parentId": "ent_0w7cebih",
       "enabled": true,
       "tags": [
         "ui"
@@ -681,9 +681,9 @@
       }
     },
     {
-      "id": "ent_tdyzyaz0",
+      "id": "ent_yvt8hnej",
       "name": "Screen Shake",
-      "parentId": "ent_qyz39ppa",
+      "parentId": "ent_0w7cebih",
       "enabled": true,
       "tags": [
         "ui"

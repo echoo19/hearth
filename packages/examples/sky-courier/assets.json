@@ -2,7 +2,7 @@
   "formatVersion": 1,
   "assets": [
     {
-      "id": "ast_zzmmxw9h",
+      "id": "ast_n7xlltcu",
       "name": "courier-sheet",
       "type": "sprite",
       "path": "assets/sprites/courier-sheet.png",
@@ -64,7 +64,7 @@
       }
     },
     {
-      "id": "ast_ocjylk9g",
+      "id": "ast_y3pnkztg",
       "name": "courier-walk",
       "type": "animation",
       "path": "assets/animations/courier_walk.anim.json",
@@ -72,11 +72,11 @@
         "frameCount": 4,
         "frameDuration": 0.12,
         "loop": true,
-        "sheet": "ast_zzmmxw9h"
+        "sheet": "ast_n7xlltcu"
       }
     },
     {
-      "id": "ast_ukgwmgwv",
+      "id": "ast_wubuu5fd",
       "name": "courier-idle",
       "type": "animation",
       "path": "assets/animations/courier_idle.anim.json",
@@ -84,11 +84,11 @@
         "frameCount": 2,
         "frameDuration": 0.4,
         "loop": true,
-        "sheet": "ast_zzmmxw9h"
+        "sheet": "ast_n7xlltcu"
       }
     },
     {
-      "id": "ast_snvv8s7v",
+      "id": "ast_j765dy27",
       "name": "rooftop-loop",
       "type": "audio",
       "path": "assets/audio/rooftop-loop.wav",
@@ -97,7 +97,7 @@
       }
     },
     {
-      "id": "ast_29sth8go",
+      "id": "ast_5gkue1f5",
       "name": "press-start-2p",
       "type": "font",
       "path": "assets/font/press-start-2p.ttf",
@@ -106,7 +106,7 @@
       }
     },
     {
-      "id": "ast_1b7cw5v5",
+      "id": "ast_51zm5y0s",
       "name": "jump-sound",
       "type": "audio",
       "path": "assets/sounds/jump_sound.wav",
@@ -117,7 +117,7 @@
       }
     },
     {
-      "id": "ast_b4zg7qmg",
+      "id": "ast_p7myuq1o",
       "name": "parcel-sound",
       "type": "audio",
       "path": "assets/sounds/parcel_sound.wav",
@@ -128,7 +128,7 @@
       }
     },
     {
-      "id": "ast_i4qc5f9l",
+      "id": "ast_qgvwkhwt",
       "name": "delivery-sound",
       "type": "audio",
       "path": "assets/sounds/delivery_sound.wav",
@@ -139,7 +139,7 @@
       }
     },
     {
-      "id": "ast_af8376fh",
+      "id": "ast_lnpi5tub",
       "name": "parcel",
       "type": "sprite",
       "path": "assets/sprites/parcel.svg",
@@ -152,7 +152,7 @@
       }
     },
     {
-      "id": "ast_jh0hu9dv",
+      "id": "ast_c3q81ney",
       "name": "chute",
       "type": "sprite",
       "path": "assets/sprites/chute.svg",

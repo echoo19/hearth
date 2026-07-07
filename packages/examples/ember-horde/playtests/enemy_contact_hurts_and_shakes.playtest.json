@@ -1,8 +1,8 @@
 {
   "formatVersion": 1,
-  "id": "ptt_ftwu7wkw",
+  "id": "ptt_v7fw2ul1",
   "name": "enemy-contact-hurts-and-shakes",
-  "scene": "scn_d8mbnm4r",
+  "scene": "scn_4bgsmbbu",
   "steps": [
     {
       "type": "wait",

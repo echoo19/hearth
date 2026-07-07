@@ -1,13 +1,13 @@
 {
   "formatVersion": 1,
-  "hearthVersion": "0.7.0",
-  "id": "prj_brjzk5g7",
+  "hearthVersion": "0.8.0",
+  "id": "prj_g8kgn683",
   "name": "Ember Horde",
   "description": "Hold the line against a growing horde of embers. Move with the stick/WASD, dodge, survive.",
-  "initialScene": "scn_d8mbnm4r",
+  "initialScene": "scn_4bgsmbbu",
   "scenes": [
     {
-      "id": "scn_d8mbnm4r",
+      "id": "scn_4bgsmbbu",
       "name": "Arena",
       "path": "scenes/arena.scene.json"
     }

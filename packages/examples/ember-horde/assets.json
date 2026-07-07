@@ -2,7 +2,7 @@
   "formatVersion": 1,
   "assets": [
     {
-      "id": "ast_bd9xatns",
+      "id": "ast_pozygf9e",
       "name": "ember-knight",
       "type": "sprite",
       "path": "assets/sprites/ember_knight.svg",
@@ -15,7 +15,7 @@
       }
     },
     {
-      "id": "ast_kim5uico",
+      "id": "ast_51038m07",
       "name": "ember-wisp",
       "type": "sprite",
       "path": "assets/sprites/ember_wisp.svg",
@@ -28,7 +28,7 @@
       }
     },
     {
-      "id": "ast_qg7lwz8t",
+      "id": "ast_jqp9krnm",
       "name": "ember-wall",
       "type": "tile",
       "path": "assets/tiles/ember_wall.svg",

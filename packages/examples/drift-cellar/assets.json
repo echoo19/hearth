@@ -2,7 +2,7 @@
   "formatVersion": 1,
   "assets": [
     {
-      "id": "ast_wnwi7bjr",
+      "id": "ast_rra1qhj2",
       "name": "drifter",
       "type": "sprite",
       "path": "assets/sprites/drifter.svg",
@@ -15,7 +15,7 @@
       }
     },
     {
-      "id": "ast_bkl34el6",
+      "id": "ast_5rjwyev4",
       "name": "gem",
       "type": "sprite",
       "path": "assets/sprites/gem.svg",
@@ -28,7 +28,7 @@
       }
     },
     {
-      "id": "ast_tgm8btts",
+      "id": "ast_4z7dndtx",
       "name": "gem-sound",
       "type": "audio",
       "path": "assets/sounds/gem_sound.wav",
@@ -39,7 +39,7 @@
       }
     },
     {
-      "id": "ast_hepyjrvf",
+      "id": "ast_vdclwdt1",
       "name": "bump-sound",
       "type": "audio",
       "path": "assets/sounds/bump_sound.wav",
@@ -50,7 +50,7 @@
       }
     },
     {
-      "id": "ast_5ye9kxvn",
+      "id": "ast_a8nl5nkv",
       "name": "dash-sound",
       "type": "audio",
       "path": "assets/sounds/dash_sound.wav",
@@ -61,7 +61,7 @@
       }
     },
     {
-      "id": "ast_lp880caf",
+      "id": "ast_0t0mdpwc",
       "name": "ui-sound",
       "type": "audio",
       "path": "assets/sounds/ui_sound.wav",
@@ -72,7 +72,7 @@
       }
     },
     {
-      "id": "ast_gbpiqj38",
+      "id": "ast_nwe04v6r",
       "name": "cellar-loop",
       "type": "audio",
       "path": "assets/audio/cellar-loop.wav",

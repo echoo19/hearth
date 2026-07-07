@@ -1,7 +1,7 @@
 {
-  "hearthVersion": "0.7.0",
+  "hearthVersion": "0.8.0",
   "project": "Bounce Patrol",
-  "projectId": "prj_w6owgjuw",
+  "projectId": "prj_wsv5d84p",
   "instructions": "AGENTS.md",
   "cli": {
     "binary": "hearth",
