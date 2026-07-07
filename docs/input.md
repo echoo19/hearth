@@ -79,6 +79,15 @@ to "fire"); for analog movement, use a virtual axis instead.
 hearth set-settings --input-gamepad-axes '{"right":{"axis":0,"direction":1,"threshold":0.5}}'
 ```
 
+Crossing is a latch with a little hysteresis, not a raw comparison: a
+binding engages once the axis clears the effective threshold (`threshold`,
+floored by the deadzone), but only releases once the axis drops at least
+`0.05` back below that same threshold. This keeps stick noise sitting
+right on the line from flapping the action on and off and re-firing
+`justPressed` every frame. Each connected pad tracks its own latch per
+binding, so the per-pad-OR behavior above still holds — one pad releasing
+doesn't affect another pad's hold on the same action.
+
 ### Virtual axes (analog)
 
 For continuous analog input (movement, aiming), define a **virtual axis**

@@ -40,6 +40,22 @@ function axisCode(axis: number, direction: 1 | -1): string {
   return `gp:axis${axis}${direction === 1 ? '+' : '-'}`;
 }
 
+/**
+ * Hysteresis band for gamepad axis→action threshold bindings: once a
+ * (pad, binding) latch engages at `effectiveThreshold`, it only releases
+ * once the axis value drops below `effectiveThreshold - HYSTERESIS`
+ * (strictly below), not merely back below the engage threshold. This
+ * absorbs stick noise near the threshold that would otherwise flap the
+ * synthetic gp: code and re-fire justPressed every frame.
+ *
+ * effectiveThreshold = max(binding.threshold, deadzone) is always >= the
+ * configured deadzone (0.15 by default, always > HYSTERESIS in any sane
+ * config), so `effectiveThreshold - HYSTERESIS` stays positive and the
+ * band never inverts. This is assumed, not defended against, at the call
+ * site below.
+ */
+const HYSTERESIS = 0.05;
+
 function clamp(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value));
 }
@@ -80,6 +96,15 @@ export class InputState {
   private lastAxes: number[] = [];
   /** Synthetic gamepad codes considered active as of the previous poll. */
   private prevGamepadCodes = new Set<string>();
+  /**
+   * Per (pad index, action) latch state for axis→action threshold bindings,
+   * keyed by `${padIndex}:${action}`. Tracks whether that specific pad's
+   * binding is currently engaged, so hysteresis is applied independently
+   * per pad — preserving the per-pad-OR semantics (the synthetic code is
+   * down iff ANY pad's latch is engaged) while each pad's own latch only
+   * releases per its own hysteresis band.
+   */
+  private axisLatch = new Map<string, boolean>();
   /** Sticky playtest overrides set via setAxis/cleared via clearAxis. */
   private readonly axisOverrides = new Map<string, number>();
 
@@ -180,8 +205,17 @@ export class InputState {
     }
     const combinedAxes: number[] = new Array(axisCount).fill(0);
 
-    for (const gp of pads) {
-      if (!gp) continue;
+    for (let padIndex = 0; padIndex < pads.length; padIndex++) {
+      const gp = pads[padIndex];
+      if (!gp) {
+        // Disconnected (or never-connected) slot: drop any latch state for
+        // it so a later reconnect (possibly a different physical pad)
+        // starts fresh rather than inheriting a stale engaged latch.
+        for (const action of Object.keys(this.gamepadAxes)) {
+          this.axisLatch.delete(`${padIndex}:${action}`);
+        }
+        continue;
+      }
       for (const [index, name] of BUTTON_NAME_BY_INDEX) {
         if (gp.buttons[index]?.pressed) activeCodes.add(`gp:${name}`);
       }
@@ -195,11 +229,26 @@ export class InputState {
       // The global deadzone is a floor under the binding's own threshold —
       // a binding can demand more precision than the deadzone (a stricter
       // threshold), but can never fire inside the deadzone band.
-      for (const binding of Object.values(this.gamepadAxes)) {
+      for (const [action, binding] of Object.entries(this.gamepadAxes)) {
         const raw = gp.axes[binding.axis] ?? 0;
         const effectiveThreshold = Math.max(binding.threshold, this.deadzone);
-        const active = binding.direction === 1 ? raw >= effectiveThreshold : raw <= -effectiveThreshold;
-        if (active) activeCodes.add(axisCode(binding.axis, binding.direction));
+        const latchKey = `${padIndex}:${action}`;
+        const wasEngaged = this.axisLatch.get(latchKey) ?? false;
+        // Engage at value >= effective (mirrored below zero for direction
+        // -1). Once engaged, only release once the value drops below
+        // effective - HYSTERESIS — hysteresis per pad+binding latch, so
+        // stick noise oscillating around the threshold doesn't flap the
+        // synthetic code or re-fire justPressed.
+        const engaged =
+          binding.direction === 1
+            ? wasEngaged
+              ? raw >= effectiveThreshold - HYSTERESIS
+              : raw >= effectiveThreshold
+            : wasEngaged
+              ? raw <= -(effectiveThreshold - HYSTERESIS)
+              : raw <= -effectiveThreshold;
+        this.axisLatch.set(latchKey, engaged);
+        if (engaged) activeCodes.add(axisCode(binding.axis, binding.direction));
       }
     }
     this.lastAxes = combinedAxes;

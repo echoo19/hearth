@@ -134,6 +134,111 @@ describe('InputState.pollGamepads — axis-to-action bindings', () => {
     expect(input.isDown('right')).toBe(true);
   });
 
+  it('hysteresis: stays down through a dip that does not clear the release band', () => {
+    const input = new InputState({
+      actions: {},
+      gamepadAxes: {
+        right: { axis: 0, direction: 1, threshold: 0.5 },
+      },
+    });
+
+    // Below threshold: not engaged.
+    input.pollGamepads([pad({ axes: [0.49] })]);
+    expect(input.isDown('right')).toBe(false);
+
+    // Crosses threshold: engages, justPressed fires once.
+    input.pollGamepads([pad({ axes: [0.51] })]);
+    expect(input.isDown('right')).toBe(true);
+    expect(input.justPressed('right')).toBe(true);
+
+    input.endFrame();
+
+    // Dips back under the raw threshold but stays within the hysteresis
+    // band (0.5 - 0.05 = 0.45): latch stays engaged, no re-fire.
+    input.pollGamepads([pad({ axes: [0.49] })]);
+    expect(input.isDown('right')).toBe(true);
+    expect(input.justPressed('right')).toBe(false);
+
+    // Drops below the release boundary: latch releases.
+    input.pollGamepads([pad({ axes: [0.44] })]);
+    expect(input.isDown('right')).toBe(false);
+  });
+
+  it('hysteresis: per-pad latch independence keeps the code down via whichever pad is still engaged', () => {
+    const input = new InputState({
+      actions: {},
+      gamepadAxes: {
+        right: { axis: 0, direction: 1, threshold: 0.5 },
+      },
+    });
+
+    // Pad A engages; pad B merely hovers in the band, never having crossed
+    // its own engage threshold, so B's latch stays unengaged.
+    input.pollGamepads([pad({ axes: [0.51] }), pad({ axes: [0.47] })]);
+    expect(input.isDown('right')).toBe(true);
+
+    // Pad A dips within its own hysteresis band (still >= 0.45): A stays
+    // engaged, B is still merely hovering unengaged. Code stays down via A.
+    input.pollGamepads([pad({ axes: [0.46] }), pad({ axes: [0.47] })]);
+    expect(input.isDown('right')).toBe(true);
+
+    // Pad A drops below its release boundary and releases. Pad B now
+    // crosses its own engage threshold independently and engages — the
+    // code stays down, but via B's latch, not A's.
+    input.pollGamepads([pad({ axes: [0.3] }), pad({ axes: [0.55] })]);
+    expect(input.isDown('right')).toBe(true);
+
+    // Both pads now below their release boundaries: code finally releases.
+    input.pollGamepads([pad({ axes: [0.3] }), pad({ axes: [0.3] })]);
+    expect(input.isDown('right')).toBe(false);
+  });
+
+  it('hysteresis interacts with the deadzone floor: effective threshold .15, release at .10', () => {
+    const input = new InputState({
+      actions: {},
+      gamepadAxes: {
+        right: { axis: 0, direction: 1, threshold: 0.1 },
+      },
+      deadzone: 0.15,
+    });
+
+    // Binding's own threshold (0.1) is floored by the deadzone (0.15), so
+    // the effective engage threshold is 0.15.
+    input.pollGamepads([pad({ axes: [0.16] })]);
+    expect(input.isDown('right')).toBe(true);
+
+    // Stays within the hysteresis band (0.15 - 0.05 = 0.10): stays down.
+    input.pollGamepads([pad({ axes: [0.12] })]);
+    expect(input.isDown('right')).toBe(true);
+
+    // Drops below the release boundary (0.10): releases.
+    input.pollGamepads([pad({ axes: [0.09] })]);
+    expect(input.isDown('right')).toBe(false);
+  });
+
+  it('hysteresis: disconnecting a pad clears its latch so a reconnect starts fresh', () => {
+    const input = new InputState({
+      actions: {},
+      gamepadAxes: {
+        right: { axis: 0, direction: 1, threshold: 0.5 },
+      },
+    });
+
+    input.pollGamepads([pad({ axes: [0.6] })]);
+    expect(input.isDown('right')).toBe(true);
+
+    // Pad disconnects: latch for slot 0 must be dropped, not merely paused.
+    input.pollGamepads([null]);
+    expect(input.isDown('right')).toBe(false);
+
+    // A different pad reconnects in the same slot sitting inside what
+    // would have been the old hysteresis band (0.47 is below 0.5 but above
+    // 0.45): if the old latch had lingered this would stay "down"; instead
+    // it must require a fresh crossing of the raw engage threshold.
+    input.pollGamepads([pad({ axes: [0.47] })]);
+    expect(input.isDown('right')).toBe(false);
+  });
+
   it('disconnecting one pad releases only its direction', () => {
     const input = new InputState({
       actions: {},
