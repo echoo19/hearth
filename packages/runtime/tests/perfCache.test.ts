@@ -219,4 +219,42 @@ describe('tilemap collider cache', () => {
     expect(detector.collisions.length).toBe(1);
     expect(detector.collisions[0]!.trigger).toBe(true);
   });
+
+  it('grid.length changes invalidate the cache (length-changing mutations push/splice/pop)', async () => {
+    const { store } = await makeStore({
+      entities: [
+        ent('Map', {
+          Transform: { position: { x: 0, y: 0 } },
+          Tilemap: { tileSize: 32, tileAssets: {}, grid: ['..'], solid: true },
+        }),
+        ent('Patcher', {
+          Transform: { position: { x: 0, y: 0 } },
+          Script: { scriptPath: 'scripts/patcher.js' },
+        }),
+        ent('Sitter', {
+          // Only overlaps when the grid has at least 2 rows. Positioned to hit (0,1) tile.
+          Transform: { position: { x: 16, y: 48 } },
+          Collider: { shape: 'box', width: 8, height: 8 },
+          PhysicsBody: { bodyType: 'kinematic', velocity: { x: 0, y: 0 } },
+        }),
+      ],
+      scripts: {
+        'patcher.js': `export default {
+          onUpdate(ctx) {
+            if (ctx.time.frame === 1) {
+              // Push a new row — grid.length changes from 2 to 3.
+              // Whole-array reassignment ensures cache invalidation.
+              const map = ctx.scene.find('Map').getComponent('Tilemap');
+              map.grid = [...map.grid, '##'];
+            }
+          },
+        };`,
+      },
+    });
+    const runtime = await SceneRuntime.create(store, 'Test');
+    runtime.step(); // frame 0: grid is 2 rows, no overlap at (0,1) — out of bounds
+    expect(runtime.find('Sitter')!.collisions.length).toBe(0);
+    runtime.step(); // frame 1: patcher expands grid to 3 rows, (0,1) now solid
+    expect(runtime.find('Sitter')!.collisions.length).toBe(1);
+  });
 });

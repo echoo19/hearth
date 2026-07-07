@@ -1675,7 +1675,12 @@ export class SceneRuntime {
       gridHashEntry = { ref: tilemap.grid, hash: tilemap.grid.join('\n') };
       this.tilemapGridHashCache.set(entity.id, gridHashEntry);
     }
-    const key = `${gridHashEntry.hash}|${tilemap.tileSize}|${tilemap.solid}|${worldPos.x}|${worldPos.y}`;
+    // Cache key includes grid.length to detect length-changing mutations (push/splice/pop).
+    // **Contract**: cached fields must be REPLACED (`tilemap.grid = [...]`), never mutated
+    // in place. In-place same-length writes (e.g. `grid[0] = '####'`) are not detected by
+    // this cache and will silently keep stale collider boxes. Use whole-array assignment to
+    // ensure changes take effect the same frame.
+    const key = `${gridHashEntry.hash}|${tilemap.grid.length}|${tilemap.tileSize}|${tilemap.solid}|${worldPos.x}|${worldPos.y}`;
     const cached = this.tilemapBoxCache.get(entity.id);
     if (cached && cached.key === key) return cached.boxes;
     const boxes = tilemapBoxes(tilemap, worldPos);

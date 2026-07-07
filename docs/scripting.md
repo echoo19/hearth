@@ -94,6 +94,8 @@ Lua sees `nil`; where JS takes an object literal Lua passes a table.
 | `ctx.vars` | Persistent per-entity state, survives across frames (not across scene switches — use `ctx.save`) |
 | `ctx.destroySelf()` | Remove this entity |
 
+**Component mutation contract:** Live component data (returned by `ctx.getComponent()` or accessed via `ctx.transform`) must be mutated by replacement, not in place, to take effect on the current frame. Specifically, `ctx.getComponent('Tilemap').grid` is cached for collider performance — reassign it to a new array (`tilemap.grid = [...]`) for changes to take effect this frame. In-place edits to the same array (e.g. `grid[0] = '####'`) are not detected and will silently use stale collision boxes until the next frame. Always use whole-array assignment for runtime grid changes.
+
 ### Input
 
 | Member | What it is |
