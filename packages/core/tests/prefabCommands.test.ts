@@ -365,11 +365,11 @@ describe('syncPrefabInstances', () => {
     expect(rebuiltSecondRoot.name).toBe('Renamed Two');
     expect(rebuiltSecondRoot.components.Transform.position).toEqual({ x: 77, y: 88 });
     expect(rebuiltSecondRoot.prefab).toEqual({ asset: asset.id });
+    // the second instance's root picked up the updated payload color via sync
+    expect(rebuiltSecondRoot.components.SpriteRenderer?.color).toBe('#abcdef');
     // second instance's children also rebuilt from the (now 3-entity) payload
     const secondRootChildren = sceneA.entities.filter((e) => e.parentId === secondRootId);
     expect(secondRootChildren).toHaveLength(2);
-    // children that have a SpriteRenderer must have the updated color from the payload
-    expect(secondRootChildren.every((c) => !c.components.SpriteRenderer || c.components.SpriteRenderer.color === '#abcdef')).toBe(true);
 
     const sceneB = store.getScene(sceneBId)!;
     const rebuiltThirdRoot = sceneB.entities.find((e) => e.id === thirdRootId)!;
