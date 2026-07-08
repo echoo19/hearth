@@ -1,10 +1,10 @@
 {
   "formatVersion": 1,
-  "id": "scn_ws4xhtw5",
+  "id": "scn_t55ygiz7",
   "name": "Level",
   "entities": [
     {
-      "id": "ent_fibav1fe",
+      "id": "ent_uj79mvff",
       "name": "Main Camera",
       "parentId": null,
       "enabled": true,
@@ -30,7 +30,7 @@
       }
     },
     {
-      "id": "ent_zea8fuk7",
+      "id": "ent_qpqehmls",
       "name": "Arena",
       "parentId": null,
       "enabled": true,
@@ -65,7 +65,7 @@
       }
     },
     {
-      "id": "ent_zrkrg5pc",
+      "id": "ent_q4xhrao4",
       "name": "Wall Top",
       "parentId": null,
       "enabled": true,
@@ -129,7 +129,7 @@
       }
     },
     {
-      "id": "ent_53x4rms7",
+      "id": "ent_qu21ykhm",
       "name": "Wall Bottom",
       "parentId": null,
       "enabled": true,
@@ -193,7 +193,7 @@
       }
     },
     {
-      "id": "ent_mk5tufyl",
+      "id": "ent_amgxrhkf",
       "name": "Wall Left",
       "parentId": null,
       "enabled": true,
@@ -257,7 +257,7 @@
       }
     },
     {
-      "id": "ent_2g4bq94f",
+      "id": "ent_l1tunua2",
       "name": "Wall Right",
       "parentId": null,
       "enabled": true,
@@ -321,7 +321,7 @@
       }
     },
     {
-      "id": "ent_htkyfdwf",
+      "id": "ent_0rm6k36k",
       "name": "Player",
       "parentId": null,
       "enabled": true,
@@ -341,7 +341,7 @@
           }
         },
         "SpriteRenderer": {
-          "assetId": "ast_tdgcmsso",
+          "assetId": "ast_0ihec0pl",
           "frame": null,
           "shape": "rectangle",
           "color": "#ffffff",
@@ -405,7 +405,7 @@
       }
     },
     {
-      "id": "ent_wzawvm7u",
+      "id": "ent_ax2kcg4p",
       "name": "Spawner",
       "parentId": null,
       "enabled": true,
@@ -429,13 +429,13 @@
           "params": {
             "interval": 1.2,
             "lifetime": 4,
-            "emberAsset": "ast_xus4tnjg"
+            "emberAsset": "ast_8mv735wo"
           }
         }
       }
     },
     {
-      "id": "ent_7vdodfgj",
+      "id": "ent_vhiqhiqa",
       "name": "Score",
       "parentId": null,
       "enabled": true,
@@ -475,7 +475,7 @@
       }
     },
     {
-      "id": "ent_msxi18ih",
+      "id": "ent_8ykcjha7",
       "name": "Hint",
       "parentId": null,
       "enabled": true,

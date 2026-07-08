@@ -6,7 +6,7 @@ import { Vec2Schema, type ComponentMap } from './components.js';
 import { EntitySchema } from './scene.js';
 
 export const FORMAT_VERSION = 1;
-export const HEARTH_VERSION = '0.8.0';
+export const HEARTH_VERSION = '0.9.0';
 
 export const SceneRefSchema = z.object({
   id: z.string(),

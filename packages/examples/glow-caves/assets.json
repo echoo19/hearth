@@ -2,7 +2,7 @@
   "formatVersion": 1,
   "assets": [
     {
-      "id": "ast_asjde1jr",
+      "id": "ast_teuvr828",
       "name": "explorer",
       "type": "sprite",
       "path": "assets/sprites/explorer.svg",
@@ -15,7 +15,7 @@
       }
     },
     {
-      "id": "ast_bhmd6x90",
+      "id": "ast_zv6o6mnk",
       "name": "torch-flame-a",
       "type": "sprite",
       "path": "assets/sprites/torch_flame_a.svg",
@@ -28,7 +28,7 @@
       }
     },
     {
-      "id": "ast_vduryfn5",
+      "id": "ast_uuzel2s7",
       "name": "torch-flame-b",
       "type": "sprite",
       "path": "assets/sprites/torch_flame_b.svg",
@@ -41,7 +41,7 @@
       }
     },
     {
-      "id": "ast_w8i9oert",
+      "id": "ast_9uwmswy2",
       "name": "torch-flicker",
       "type": "animation",
       "path": "assets/animations/torch_flicker.anim.json",

@@ -1,8 +1,8 @@
 {
   "formatVersion": 1,
-  "id": "ptt_wxtm5vnm",
+  "id": "ptt_hypxtpsg",
   "name": "wall-bump-shake",
-  "scene": "scn_nhhiu9jg",
+  "scene": "scn_9usav2q3",
   "steps": [
     {
       "type": "setAxis",

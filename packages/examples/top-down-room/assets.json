@@ -2,7 +2,7 @@
   "formatVersion": 1,
   "assets": [
     {
-      "id": "ast_kiqbitlp",
+      "id": "ast_9i7cdz5y",
       "name": "hero",
       "type": "sprite",
       "path": "assets/sprites/hero.svg",
@@ -15,7 +15,7 @@
       }
     },
     {
-      "id": "ast_krcxuhjs",
+      "id": "ast_lxys0lhz",
       "name": "keeper",
       "type": "sprite",
       "path": "assets/sprites/keeper.svg",
@@ -28,7 +28,7 @@
       }
     },
     {
-      "id": "ast_01kwy5yq",
+      "id": "ast_ufpj2q93",
       "name": "wall",
       "type": "tile",
       "path": "assets/tiles/wall.svg",
@@ -39,7 +39,7 @@
       }
     },
     {
-      "id": "ast_j1vljk8a",
+      "id": "ast_k9dc8ml9",
       "name": "floor",
       "type": "tile",
       "path": "assets/tiles/floor.svg",

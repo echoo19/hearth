@@ -1,10 +1,10 @@
 {
   "formatVersion": 1,
-  "id": "scn_nhhiu9jg",
+  "id": "scn_9usav2q3",
   "name": "Cellar",
   "entities": [
     {
-      "id": "ent_p87ofrjo",
+      "id": "ent_4m4psfjo",
       "name": "Main Camera",
       "parentId": null,
       "enabled": true,
@@ -30,7 +30,7 @@
       }
     },
     {
-      "id": "ent_2spfg7lt",
+      "id": "ent_42xak98h",
       "name": "Backdrop",
       "parentId": null,
       "enabled": true,
@@ -65,7 +65,7 @@
       }
     },
     {
-      "id": "ent_88z13xn2",
+      "id": "ent_c7kmr7pg",
       "name": "Wall Top",
       "parentId": null,
       "enabled": true,
@@ -142,7 +142,7 @@
       }
     },
     {
-      "id": "ent_6d41ooro",
+      "id": "ent_hz8hib7w",
       "name": "Wall Bottom",
       "parentId": null,
       "enabled": true,
@@ -219,7 +219,7 @@
       }
     },
     {
-      "id": "ent_4fzpv248",
+      "id": "ent_ccikm14g",
       "name": "Wall Left",
       "parentId": null,
       "enabled": true,
@@ -296,7 +296,7 @@
       }
     },
     {
-      "id": "ent_1gn0gmc6",
+      "id": "ent_5v0va9v0",
       "name": "Wall Right",
       "parentId": null,
       "enabled": true,
@@ -373,7 +373,7 @@
       }
     },
     {
-      "id": "ent_ifik84mv",
+      "id": "ent_ny1sqqaw",
       "name": "Player",
       "parentId": null,
       "enabled": true,
@@ -393,7 +393,7 @@
           }
         },
         "SpriteRenderer": {
-          "assetId": "ast_rra1qhj2",
+          "assetId": "ast_wbiuiniz",
           "frame": null,
           "shape": "rectangle",
           "color": "#ffffff",
@@ -458,7 +458,7 @@
       }
     },
     {
-      "id": "ent_5ey54g4c",
+      "id": "ent_86u014qn",
       "name": "Gem 1",
       "parentId": null,
       "enabled": true,
@@ -478,7 +478,7 @@
           }
         },
         "SpriteRenderer": {
-          "assetId": "ast_5rjwyev4",
+          "assetId": "ast_0c4jpnjc",
           "frame": null,
           "shape": "rectangle",
           "color": "#ffffff",
@@ -527,7 +527,7 @@
       }
     },
     {
-      "id": "ent_ue9uh71m",
+      "id": "ent_w7285fa8",
       "name": "Gem 2",
       "parentId": null,
       "enabled": true,
@@ -547,7 +547,7 @@
           }
         },
         "SpriteRenderer": {
-          "assetId": "ast_5rjwyev4",
+          "assetId": "ast_0c4jpnjc",
           "frame": null,
           "shape": "rectangle",
           "color": "#ffffff",
@@ -596,7 +596,7 @@
       }
     },
     {
-      "id": "ent_e0z0yns5",
+      "id": "ent_warnnowb",
       "name": "Gem 3",
       "parentId": null,
       "enabled": true,
@@ -616,7 +616,7 @@
           }
         },
         "SpriteRenderer": {
-          "assetId": "ast_5rjwyev4",
+          "assetId": "ast_0c4jpnjc",
           "frame": null,
           "shape": "rectangle",
           "color": "#ffffff",
@@ -665,7 +665,7 @@
       }
     },
     {
-      "id": "ent_ri4qb6nk",
+      "id": "ent_466uqek2",
       "name": "Director",
       "parentId": null,
       "enabled": true,
@@ -693,7 +693,7 @@
       }
     },
     {
-      "id": "ent_pu8lgx28",
+      "id": "ent_gpr0mg4i",
       "name": "Gems HUD",
       "parentId": null,
       "enabled": true,
@@ -733,7 +733,7 @@
       }
     },
     {
-      "id": "ent_d78a833w",
+      "id": "ent_x7qat3c8",
       "name": "Hint",
       "parentId": null,
       "enabled": true,
@@ -773,7 +773,7 @@
       }
     },
     {
-      "id": "ent_vdomulc1",
+      "id": "ent_5rn9uafq",
       "name": "Music",
       "parentId": null,
       "enabled": true,
@@ -793,7 +793,7 @@
           }
         },
         "AudioSource": {
-          "assetId": "ast_nwe04v6r",
+          "assetId": "ast_7jlplebh",
           "autoplay": true,
           "loop": true,
           "volume": 0.8,
@@ -802,7 +802,7 @@
       }
     },
     {
-      "id": "ent_tk88z4sc",
+      "id": "ent_sfazfbpc",
       "name": "Pause Menu",
       "parentId": null,
       "enabled": true,
@@ -846,9 +846,9 @@
       }
     },
     {
-      "id": "ent_zxg5fmrc",
+      "id": "ent_03njedba",
       "name": "Menu Title",
-      "parentId": "ent_tk88z4sc",
+      "parentId": "ent_sfazfbpc",
       "enabled": true,
       "tags": [
         "ui"
@@ -886,9 +886,9 @@
       }
     },
     {
-      "id": "ent_v6f5xtuj",
+      "id": "ent_0cscmd2q",
       "name": "Resume",
-      "parentId": "ent_tk88z4sc",
+      "parentId": "ent_sfazfbpc",
       "enabled": true,
       "tags": [
         "ui"
@@ -943,9 +943,9 @@
       }
     },
     {
-      "id": "ent_0d7wo8la",
+      "id": "ent_dhj7tjvi",
       "name": "Music Label",
-      "parentId": "ent_tk88z4sc",
+      "parentId": "ent_sfazfbpc",
       "enabled": true,
       "tags": [
         "ui"
@@ -983,9 +983,9 @@
       }
     },
     {
-      "id": "ent_qg98ja38",
+      "id": "ent_7vzwr3oa",
       "name": "Music Volume",
-      "parentId": "ent_tk88z4sc",
+      "parentId": "ent_sfazfbpc",
       "enabled": true,
       "tags": [
         "ui"
@@ -1029,9 +1029,9 @@
       }
     },
     {
-      "id": "ent_ztkrdzsg",
+      "id": "ent_1g2zg496",
       "name": "Shake Label",
-      "parentId": "ent_tk88z4sc",
+      "parentId": "ent_sfazfbpc",
       "enabled": true,
       "tags": [
         "ui"
@@ -1069,9 +1069,9 @@
       }
     },
     {
-      "id": "ent_7io7vloi",
+      "id": "ent_ucx3p019",
       "name": "Screen Shake",
-      "parentId": "ent_tk88z4sc",
+      "parentId": "ent_sfazfbpc",
       "enabled": true,
       "tags": [
         "ui"

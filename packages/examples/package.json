@@ -1,6 +1,6 @@
 {
   "name": "@hearth/examples",
-  "version": "0.8.0",
+  "version": "0.9.0",
   "description": "Hearth sample projects: nine games covering physics, lighting and particles, pathfinding, asset pipeline, gamepad input, camera effects, UI widgets, and horde-scale gameplay",
   "license": "MIT",
   "type": "module",
