@@ -570,6 +570,32 @@ export const TOOL_SPECS: ToolSpec[] = [
       name: z.string().optional(),
     },
   },
+  {
+    name: 'update_prefab',
+    command: 'updatePrefab',
+    description:
+      "Re-serialize a modified prefab instance's subtree back over the prefab asset's payload file (same path, " +
+      'same asset id). The entity must be a marked instance of that exact prefab. (requires asset-edit)',
+    permission: 'asset-edit',
+    inputShape: {
+      prefab: z.string().min(1),
+      scene: z.string().min(1),
+      entity: z.string().min(1),
+    },
+  },
+  {
+    name: 'sync_prefab_instances',
+    command: 'syncPrefabInstances',
+    description:
+      'Rebuild every marked instance of a prefab (all scenes, or one scene via `scene`) from the current prefab ' +
+      "asset payload: each instance root keeps its id, name, Transform.position, and enabled state; the root's " +
+      'descendants are deleted and rebuilt from the payload. (requires asset-edit)',
+    permission: 'asset-edit',
+    inputShape: {
+      prefab: z.string().min(1),
+      scene: z.string().optional(),
+    },
+  },
 
   // ---- history (undo/redo) ---------------------------------------------------------------
   {

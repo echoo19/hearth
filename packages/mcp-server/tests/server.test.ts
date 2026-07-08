@@ -481,4 +481,70 @@ describe('hearth-mcp server', () => {
     expect(placeEnvelope.data.entity.name).toBe('Player Clone');
     expect(placeEnvelope.data.entity.components.Transform.position).toEqual({ x: 1, y: 2 });
   });
+
+  it('update_prefab and sync_prefab_instances are registered, mirror every param, and round-trip instance edits', async () => {
+    ctx = await connectClient();
+    const { tools } = await ctx.client.listTools();
+
+    const updateTool = tools.find((t) => t.name === 'update_prefab');
+    expect(updateTool).toBeDefined();
+    expect(Object.keys(updateTool!.inputSchema.properties as Record<string, unknown>).sort()).toEqual([
+      'entity',
+      'prefab',
+      'scene',
+    ]);
+
+    const syncTool = tools.find((t) => t.name === 'sync_prefab_instances');
+    expect(syncTool).toBeDefined();
+    expect(Object.keys(syncTool!.inputSchema.properties as Record<string, unknown>).sort()).toEqual([
+      'prefab',
+      'scene',
+    ]);
+
+    const sceneId = ctx.store.project.initialScene!;
+    const player = ctx.store.getScene(sceneId)!.entities.find((e) => e.name === 'Player')!;
+
+    const create = await ctx.client.callTool({
+      name: 'create_prefab',
+      arguments: { scene: sceneId, entity: player.id, name: 'PlayerPrefab' },
+    });
+    expect(create.isError).toBeFalsy();
+    const createEnvelope = toolJson(create);
+    const assetId = createEnvelope.data.asset.id as string;
+
+    const place = await ctx.client.callTool({
+      name: 'instantiate_prefab',
+      arguments: { prefab: assetId, scene: sceneId, name: 'Player Two' },
+    });
+    expect(place.isError).toBeFalsy();
+    const placeEnvelope = toolJson(place);
+    const secondRootId = placeEnvelope.data.entity.id as string;
+
+    const setColor = await ctx.client.callTool({
+      name: 'set_component_property',
+      arguments: { scene: sceneId, entity: player.id, property: 'SpriteRenderer.color', value: '#123456' },
+    });
+    expect(setColor.isError).toBeFalsy();
+
+    const update = await ctx.client.callTool({
+      name: 'update_prefab',
+      arguments: { prefab: assetId, scene: sceneId, entity: player.id },
+    });
+    expect(update.isError).toBeFalsy();
+    const updateEnvelope = toolJson(update);
+    expect(updateEnvelope.command).toBe('updatePrefab');
+    expect(updateEnvelope.data.asset.id).toBe(assetId);
+
+    const sync = await ctx.client.callTool({
+      name: 'sync_prefab_instances',
+      arguments: { prefab: assetId, scene: sceneId },
+    });
+    expect(sync.isError).toBeFalsy();
+    const syncEnvelope = toolJson(sync);
+    expect(syncEnvelope.command).toBe('syncPrefabInstances');
+    expect(syncEnvelope.data.total).toBe(2);
+
+    const secondRoot = ctx.store.getScene(sceneId)!.entities.find((e) => e.id === secondRootId)!;
+    expect(secondRoot.components.SpriteRenderer!.color).toBe('#123456');
+  });
 });

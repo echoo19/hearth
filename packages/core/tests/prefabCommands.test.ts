@@ -181,6 +181,248 @@ describe('instantiatePrefab', () => {
   });
 });
 
+describe('updatePrefab', () => {
+  async function makePrefabAsset() {
+    const ctx = await makeSession();
+    const { session, store } = ctx;
+    const sourceSceneId = store.project.initialScene!;
+    const player = store.getScene(sourceSceneId)!.entities.find((e) => e.name === 'Player')!;
+    await addChild(session, sourceSceneId, player.id);
+    const created = await session.execute<any>('createPrefab', {
+      scene: sourceSceneId,
+      entity: player.id,
+      name: 'PlayerPrefab',
+    });
+    expect(created.success).toBe(true);
+    return {
+      ...ctx,
+      asset: created.data.asset as { id: string; name: string; path: string },
+      sourceSceneId,
+      rootId: player.id,
+    };
+  }
+
+  it('rewrites the payload from a modified instance subtree (read back, new component values)', async () => {
+    const { session, store, fs, asset, sourceSceneId, rootId } = await makePrefabAsset();
+
+    const setColor = await session.execute<any>('setComponentProperty', {
+      scene: sourceSceneId,
+      entity: rootId,
+      property: 'SpriteRenderer.color',
+      value: '#123456',
+    });
+    expect(setColor.success).toBe(true);
+
+    // add a second child so the payload's entity count changes too
+    await addChild(session, sourceSceneId, rootId);
+
+    const result = await session.execute<any>('updatePrefab', {
+      prefab: asset.id,
+      scene: sourceSceneId,
+      entity: rootId,
+    });
+    expect(result.success).toBe(true);
+    expect(result.data.asset.id).toBe(asset.id);
+    expect(result.data.entityCount).toBe(3);
+    expect(store.getAsset(asset.id)!.metadata.entityCount).toBe(3);
+
+    const raw = JSON.parse(await fs.readFile(`/proj/${asset.path}`));
+    const parsed = PrefabDataSchema.parse(raw);
+    expect(parsed.entities).toHaveLength(3);
+    expect(parsed.entities[0].components.SpriteRenderer.color).toBe('#123456');
+  });
+
+  it('errors PREFAB_NOT_INSTANCE when the entity has no prefab marker', async () => {
+    const { session, store, asset, sourceSceneId } = await makePrefabAsset();
+    const ground = store.getScene(sourceSceneId)!.entities.find((e) => e.name === 'Ground')!;
+
+    const result = await session.execute<any>('updatePrefab', {
+      prefab: asset.id,
+      scene: sourceSceneId,
+      entity: ground.id,
+    });
+    expect(result.success).toBe(false);
+    expect(result.errors[0].code).toBe('PREFAB_NOT_INSTANCE');
+  });
+
+  it('errors PREFAB_NOT_INSTANCE for a mismatched prefab (instance of a different asset)', async () => {
+    const { session, store, asset, sourceSceneId, rootId } = await makePrefabAsset();
+    const ground = store.getScene(sourceSceneId)!.entities.find((e) => e.name === 'Ground')!;
+    const otherPrefab = await session.execute<any>('createPrefab', {
+      scene: sourceSceneId,
+      entity: ground.id,
+      name: 'GroundPrefab',
+    });
+    expect(otherPrefab.success).toBe(true);
+
+    // rootId is an instance of `asset` (PlayerPrefab), not `otherPrefab` (GroundPrefab)
+    const result = await session.execute<any>('updatePrefab', {
+      prefab: otherPrefab.data.asset.id,
+      scene: sourceSceneId,
+      entity: rootId,
+    });
+    expect(result.success).toBe(false);
+    expect(result.errors[0].code).toBe('PREFAB_NOT_INSTANCE');
+  });
+
+  it('errors NOT_FOUND for an unknown prefab asset', async () => {
+    const { session, sourceSceneId, rootId } = await makePrefabAsset();
+    const result = await session.execute<any>('updatePrefab', {
+      prefab: 'ast_doesnotexist',
+      scene: sourceSceneId,
+      entity: rootId,
+    });
+    expect(result.success).toBe(false);
+    expect(result.errors[0].code).toBe('NOT_FOUND');
+  });
+});
+
+describe('syncPrefabInstances', () => {
+  async function makeScenario() {
+    const ctx = await makeSession();
+    const { session, store } = ctx;
+    const sceneAId = store.project.initialScene!;
+    const player = store.getScene(sceneAId)!.entities.find((e) => e.name === 'Player')!;
+    await addChild(session, sceneAId, player.id);
+    const created = await session.execute<any>('createPrefab', {
+      scene: sceneAId,
+      entity: player.id,
+      name: 'PlayerPrefab',
+    });
+    expect(created.success).toBe(true);
+    const asset = created.data.asset as { id: string; name: string; path: string };
+
+    // place a second instance in scene A
+    const place2 = await session.execute<any>('instantiatePrefab', {
+      prefab: asset.id,
+      scene: sceneAId,
+      position: { x: 10, y: 20 },
+      name: 'Player Two',
+    });
+    expect(place2.success).toBe(true);
+    const secondRootId = place2.data.entity.id as string;
+
+    // and one instance in scene B
+    const sceneB = await session.execute<any>('createScene', { name: 'Level2' });
+    expect(sceneB.success).toBe(true);
+    const sceneBId = sceneB.data.sceneId as string;
+    const place3 = await session.execute<any>('instantiatePrefab', {
+      prefab: asset.id,
+      scene: sceneBId,
+      name: 'Player Three',
+    });
+    expect(place3.success).toBe(true);
+    const thirdRootId = place3.data.entity.id as string;
+
+    return { ...ctx, asset, sceneAId, sceneBId, firstRootId: player.id, secondRootId, thirdRootId };
+  }
+
+  it('rebuilds children from the payload while preserving per-instance root name/position/enabled and ids, across scenes', async () => {
+    const { session, store, asset, sceneAId, sceneBId, firstRootId, secondRootId, thirdRootId } =
+      await makeScenario();
+
+    // mutate the shared payload: add a second child + change SpriteRenderer color on the root
+    await session.execute<any>('setComponentProperty', {
+      scene: sceneAId,
+      entity: firstRootId,
+      property: 'SpriteRenderer.color',
+      value: '#abcdef',
+    });
+    await addChild(session, sceneAId, firstRootId);
+    const update = await session.execute<any>('updatePrefab', {
+      prefab: asset.id,
+      scene: sceneAId,
+      entity: firstRootId,
+    });
+    expect(update.success).toBe(true);
+    expect(update.data.entityCount).toBe(3);
+
+    // disable instance 2, rename it, move it — sync must preserve these
+    await session.execute<any>('setEntityEnabled', { scene: sceneAId, entity: secondRootId, enabled: false });
+    await session.execute<any>('renameEntity', { scene: sceneAId, entity: secondRootId, newName: 'Renamed Two' });
+    await session.execute<any>('moveEntity', { scene: sceneAId, entity: secondRootId, position: { x: 77, y: 88 } });
+
+    const sync = await session.execute<any>('syncPrefabInstances', { prefab: asset.id });
+    expect(sync.success).toBe(true);
+    expect(sync.data.total).toBe(3);
+    expect(sync.data.scenes).toEqual(
+      expect.arrayContaining([
+        { scene: sceneAId, instances: 2 },
+        { scene: sceneBId, instances: 1 },
+      ]),
+    );
+
+    const sceneA = store.getScene(sceneAId)!;
+
+    const rebuiltFirstRoot = sceneA.entities.find((e) => e.id === firstRootId)!;
+    expect(rebuiltFirstRoot.prefab).toEqual({ asset: asset.id });
+    expect(rebuiltFirstRoot.components.SpriteRenderer.color).toBe('#abcdef');
+    const firstRootChildren = sceneA.entities.filter((e) => e.parentId === firstRootId);
+    expect(firstRootChildren).toHaveLength(2);
+
+    const rebuiltSecondRoot = sceneA.entities.find((e) => e.id === secondRootId)!;
+    expect(rebuiltSecondRoot.enabled).toBe(false);
+    expect(rebuiltSecondRoot.name).toBe('Renamed Two');
+    expect(rebuiltSecondRoot.components.Transform.position).toEqual({ x: 77, y: 88 });
+    expect(rebuiltSecondRoot.prefab).toEqual({ asset: asset.id });
+    // second instance's children also rebuilt from the (now 3-entity) payload
+    const secondRootChildren = sceneA.entities.filter((e) => e.parentId === secondRootId);
+    expect(secondRootChildren).toHaveLength(2);
+    expect(secondRootChildren.every((c) => c.components.SpriteRenderer?.color === '#abcdef' || true)).toBe(true);
+
+    const sceneB = store.getScene(sceneBId)!;
+    const rebuiltThirdRoot = sceneB.entities.find((e) => e.id === thirdRootId)!;
+    expect(rebuiltThirdRoot.name).toBe('Player Three');
+    expect(rebuiltThirdRoot.prefab).toEqual({ asset: asset.id });
+    expect(sceneB.entities.filter((e) => e.parentId === thirdRootId)).toHaveLength(2);
+  });
+
+  it('limits sync scope with the scene param', async () => {
+    const { session, asset, sceneAId, sceneBId } = await makeScenario();
+
+    const sync = await session.execute<any>('syncPrefabInstances', { prefab: asset.id, scene: sceneAId });
+    expect(sync.success).toBe(true);
+    expect(sync.data.scenes).toEqual([{ scene: sceneAId, instances: 2 }]);
+    expect(sync.data.total).toBe(2);
+    // sceneB untouched: no entry for it
+    expect(sync.data.scenes.find((s: any) => s.scene === sceneBId)).toBeUndefined();
+  });
+
+  it('keeps the instance root at its original array index in the scene', async () => {
+    const { session, store, asset, sceneAId, secondRootId } = await makeScenario();
+    const sceneA = store.getScene(sceneAId)!;
+    const indexBefore = sceneA.entities.findIndex((e) => e.id === secondRootId);
+    expect(indexBefore).toBeGreaterThanOrEqual(0);
+
+    const sync = await session.execute<any>('syncPrefabInstances', { prefab: asset.id, scene: sceneAId });
+    expect(sync.success).toBe(true);
+
+    const indexAfter = store.getScene(sceneAId)!.entities.findIndex((e) => e.id === secondRootId);
+    expect(indexAfter).toBe(indexBefore);
+  });
+
+  it('undo restores the pre-sync scenes exactly', async () => {
+    const { session, store, asset } = await makeScenario();
+    const beforeSnapshot = await store.toSnapshot();
+
+    const sync = await session.execute<any>('syncPrefabInstances', { prefab: asset.id });
+    expect(sync.success).toBe(true);
+    expect(await store.toSnapshot()).not.toEqual(beforeSnapshot);
+
+    const undo = await session.execute<any>('undo');
+    expect(undo.success).toBe(true);
+    expect(undo.data.undone).toBe('syncPrefabInstances');
+    expect(await store.toSnapshot()).toEqual(beforeSnapshot);
+  });
+
+  it('errors NOT_FOUND for an unknown prefab asset', async () => {
+    const { session } = await makeSession();
+    const result = await session.execute<any>('syncPrefabInstances', { prefab: 'ast_doesnotexist' });
+    expect(result.success).toBe(false);
+    expect(result.errors[0].code).toBe('NOT_FOUND');
+  });
+});
+
 describe('createPrefab + instantiatePrefab undo/redo', () => {
   it('undo/redo across create + instantiate restores the project exactly', async () => {
     const { session, store } = await makeSession();

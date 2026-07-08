@@ -538,6 +538,53 @@ describe('hearth prefab', () => {
     expect(envelope.success).toBe(false);
     expect(envelope.errors[0].code).toBe('NOT_FOUND');
   });
+
+  it('prefab update rewrites the payload from a modified instance, and prefab sync rebuilds instances', async () => {
+    const dir = path.join(tmpRoot, 'prefab-update-sync');
+    await fsp.mkdir(dir, { recursive: true });
+    await runCli(['init', 'Prefab Update Sync', '--dir', dir, '--json'], tmpRoot);
+    await runCli(['prefab', 'create', 'Main', 'Player', 'PlayerPrefab', '--json'], dir);
+    await runCli(
+      ['prefab', 'place', 'PlayerPrefab', 'Main', '--position', '10,20', '--name', 'Player Two', '--json'],
+      dir,
+    );
+
+    const setColor = await runCli(
+      ['set', 'Main', 'Player', 'SpriteRenderer.color', '#123456', '--json'],
+      dir,
+    );
+    expect(setColor.code).toBe(0);
+
+    const update = await runCli(['prefab', 'update', 'PlayerPrefab', 'Main', 'Player', '--json'], dir);
+    expect(update.code).toBe(0);
+    const updateEnvelope = parseJson(update.stdout);
+    expect(updateEnvelope.success).toBe(true);
+    expect(updateEnvelope.command).toBe('updatePrefab');
+    expect(updateEnvelope.data.asset.name).toBe('PlayerPrefab');
+
+    const sync = await runCli(['prefab', 'sync', 'PlayerPrefab', '--scene', 'Main', '--json'], dir);
+    expect(sync.code).toBe(0);
+    const syncEnvelope = parseJson(sync.stdout);
+    expect(syncEnvelope.success).toBe(true);
+    expect(syncEnvelope.command).toBe('syncPrefabInstances');
+    expect(syncEnvelope.data.total).toBe(2);
+
+    const clone = parseJson((await runCli(['inspect', 'entity', 'Main', 'Player Two', '--json'], dir)).stdout);
+    expect(clone.data.components.SpriteRenderer.color).toBe('#123456');
+  });
+
+  it('prefab update errors PREFAB_NOT_INSTANCE for an entity without a matching marker', async () => {
+    const dir = path.join(tmpRoot, 'prefab-update-not-instance');
+    await fsp.mkdir(dir, { recursive: true });
+    await runCli(['init', 'Prefab Update Not Instance', '--dir', dir, '--json'], tmpRoot);
+    await runCli(['prefab', 'create', 'Main', 'Player', 'PlayerPrefab', '--json'], dir);
+
+    const update = await runCli(['prefab', 'update', 'PlayerPrefab', 'Main', 'Ground', '--json'], dir);
+    expect(update.code).toBe(1);
+    const envelope = parseJson(update.stdout);
+    expect(envelope.success).toBe(false);
+    expect(envelope.errors[0].code).toBe('PREFAB_NOT_INSTANCE');
+  });
 });
 
 describe('hearth commands', () => {

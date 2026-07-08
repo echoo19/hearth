@@ -72,6 +72,8 @@ const ALL_DEFINITIONS: CommandDefinition[] = [
   // prefabs
   prefabCommands.createPrefab,
   prefabCommands.instantiatePrefab,
+  prefabCommands.updatePrefab,
+  prefabCommands.syncPrefabInstances,
   // settings
   settingsCommands.updateSettings,
   // diff / playtest / build

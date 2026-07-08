@@ -44,7 +44,8 @@ export class ProjectError extends Error {
       | 'NO_TILEMAP'
       | 'INVALID_TILE_CHAR'
       | 'TILE_OUT_OF_BOUNDS'
-      | 'PREFAB_DATA_INVALID' = 'INVALID_INPUT',
+      | 'PREFAB_DATA_INVALID'
+      | 'PREFAB_NOT_INSTANCE' = 'INVALID_INPUT',
   ) {
     super(message);
     this.name = 'ProjectError';

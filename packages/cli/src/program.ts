@@ -655,6 +655,32 @@ export function buildProgram(): Command {
       return runAndEmit(cmd, 'instantiatePrefab', params);
     });
   });
+  addGlobalOptions(
+    prefab
+      .command('update <prefab> <scene> <entity>')
+      .description(
+        "re-serialize a modified prefab instance's subtree back over the prefab asset's payload file; " +
+          'the entity must be a marked instance of that exact prefab',
+      ),
+  ).action(async (prefabRef: string, scene: string, entity: string, opts, cmd) => {
+    await guarded(cmd, 'updatePrefab', () =>
+      runAndEmit(cmd, 'updatePrefab', { prefab: prefabRef, scene, entity }),
+    );
+  });
+  addGlobalOptions(
+    prefab
+      .command('sync <prefab>')
+      .description(
+        'rebuild every marked instance of a prefab from its current asset payload (all scenes, or one via --scene)',
+      )
+      .option('--scene <scene>', 'limit sync to a single scene (default: all scenes)'),
+  ).action(async (prefabRef: string, opts, cmd) => {
+    await guarded(cmd, 'syncPrefabInstances', () => {
+      const params: Record<string, unknown> = { prefab: prefabRef };
+      if (opts.scene) params.scene = opts.scene;
+      return runAndEmit(cmd, 'syncPrefabInstances', params);
+    });
+  });
 
   // ---------------------------------------------------------------------
   // paint / fill / resize (tilemap editing)
