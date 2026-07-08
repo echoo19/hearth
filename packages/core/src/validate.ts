@@ -293,6 +293,18 @@ export async function validateProject(store: ProjectStore): Promise<ValidationRe
           asset: asset.id,
         });
       }
+      // Reuse PREFAB_ASSET_NOT_FOUND for type mismatches to keep the prefab validation code set closed.
+      if (c.SpriteAnimator?.assetId) {
+        const animAsset = assetsById.get(c.SpriteAnimator.assetId);
+        if (animAsset && animAsset.type !== 'animation') {
+          push({
+            severity: 'error',
+            code: 'PREFAB_ASSET_NOT_FOUND',
+            message: `Prefab "${asset.name}" (${asset.id}) entity "${entity.name}" SpriteAnimator references asset "${animAsset.name}" (${animAsset.id}) which is type '${animAsset.type}', not an animation`,
+            asset: asset.id,
+          });
+        }
+      }
       if (c.Tilemap) {
         for (const [ch, tileAssetId] of Object.entries(c.Tilemap.tileAssets)) {
           if (!assetIds.has(tileAssetId)) {

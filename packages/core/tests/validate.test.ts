@@ -141,4 +141,25 @@ describe('prefab validation', () => {
     const report = await validateProject(store);
     expect(report.warnings.some((w) => w.code === 'PREFAB_INSTANCE_ORPHANED')).toBe(false);
   });
+
+  it('PREFAB_ASSET_NOT_FOUND: payload entity SpriteAnimator references an asset with wrong type', async () => {
+    const { session, store, fs } = await makeSession();
+    const { asset } = await makePrefabAsset(session, store);
+
+    // Create a sprite asset (not an animation)
+    const sprite = await session.execute<any>('createSpriteAsset', { name: 'NotAnAnimation', shape: 'circle', color: 'red' });
+    expect(sprite.success).toBe(true);
+
+    const data: any = await readJson(fs, `/proj/${asset.path}`);
+    // Set SpriteAnimator to point to the sprite asset (wrong type)
+    data.entities[0].components.SpriteAnimator = { assetId: sprite.data.asset.id };
+    await fs.writeFile(`/proj/${asset.path}`, JSON.stringify(data));
+
+    const report = await validateProject(store);
+    const err = report.errors.find((e) => e.code === 'PREFAB_ASSET_NOT_FOUND');
+    expect(err).toBeTruthy();
+    expect(err?.asset).toBe(asset.id);
+    expect(err?.message).toContain('sprite');
+    expect(err?.message).toContain('not an animation');
+  });
 });
