@@ -131,7 +131,9 @@ export const PrefabDataSchema = z.object({
   name: z.string().min(1),
   entities: z.array(PrefabEntitySchema).min(1), // root first; ids `pfe_<n>`; root.parentId === null
 });
-export type PrefabData = z.infer<typeof PrefabDataSchema>;
+export type PrefabData = Omit<z.infer<typeof PrefabDataSchema>, 'entities'> & {
+  entities: PrefabEntity[];
+};
 
 export const PREFABS_DIR = 'assets/prefabs';
 

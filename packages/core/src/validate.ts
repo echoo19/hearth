@@ -5,8 +5,9 @@
 import luaparse from 'luaparse';
 import { readJson, type ProjectStore } from './project/store.js';
 import { joinPath } from './fs.js';
-import { AnimationDataSchema } from './schema/project.js';
+import { AnimationDataSchema, PrefabDataSchema, type PrefabData } from './schema/project.js';
 import { findSheetFrame } from './assets/sheetFrames.js';
+import { validatePrefabLocalIds } from './project/prefabData.js';
 
 export interface ValidationIssue {
   severity: 'error' | 'warning';
@@ -218,9 +219,105 @@ export async function validateProject(store: ProjectStore): Promise<ValidationRe
 
   // --- scripts (syntax) ---
   await validateScriptSyntax(store, push);
+  const scripts = new Set(await store.listScripts());
+
+  // --- prefabs ---
+  // Payload files are validated the same way instantiatePrefab/syncPrefabInstances
+  // load them (schema parse + local-id invariants), then their component refs are
+  // resolved against the same asset/script indexes scene entities use.
+  for (const asset of store.assets.assets) {
+    if (asset.type !== 'prefab') continue;
+
+    const absPath = joinPath(store.root, asset.path);
+    if (!(await store.fs.exists(absPath))) continue; // already flagged as MISSING_ASSET_FILE
+
+    let raw: unknown;
+    try {
+      raw = await readJson(store.fs, absPath);
+    } catch (err) {
+      push({
+        severity: 'error',
+        code: 'PREFAB_DATA_INVALID',
+        message: `Prefab "${asset.name}" (${asset.id}) payload (${asset.path}) could not be parsed: ${(err as Error).message}`,
+        asset: asset.id,
+      });
+      continue;
+    }
+
+    const parsed = PrefabDataSchema.safeParse(raw);
+    if (!parsed.success) {
+      push({
+        severity: 'error',
+        code: 'PREFAB_DATA_INVALID',
+        message: `Prefab "${asset.name}" (${asset.id}) payload does not match the prefab schema: ${parsed.error.message}`,
+        asset: asset.id,
+      });
+      continue;
+    }
+
+    const data: PrefabData = parsed.data;
+    const localIdProblems = validatePrefabLocalIds(data);
+    if (localIdProblems.length > 0) {
+      push({
+        severity: 'error',
+        code: 'PREFAB_DATA_INVALID',
+        message: `Prefab "${asset.name}" (${asset.id}) has invalid local ids: ${localIdProblems.join('; ')}`,
+        asset: asset.id,
+      });
+      continue;
+    }
+
+    for (const entity of data.entities) {
+      const c = entity.components;
+      if (c.SpriteRenderer?.assetId && !assetIds.has(c.SpriteRenderer.assetId)) {
+        push({
+          severity: 'error',
+          code: 'PREFAB_ASSET_NOT_FOUND',
+          message: `Prefab "${asset.name}" (${asset.id}) entity "${entity.name}" SpriteRenderer references unknown asset ${c.SpriteRenderer.assetId}`,
+          asset: asset.id,
+        });
+      }
+      if (c.AudioSource?.assetId && !assetIds.has(c.AudioSource.assetId)) {
+        push({
+          severity: 'error',
+          code: 'PREFAB_ASSET_NOT_FOUND',
+          message: `Prefab "${asset.name}" (${asset.id}) entity "${entity.name}" AudioSource references unknown asset ${c.AudioSource.assetId}`,
+          asset: asset.id,
+        });
+      }
+      if (c.SpriteAnimator?.assetId && !assetIds.has(c.SpriteAnimator.assetId)) {
+        push({
+          severity: 'error',
+          code: 'PREFAB_ASSET_NOT_FOUND',
+          message: `Prefab "${asset.name}" (${asset.id}) entity "${entity.name}" SpriteAnimator references unknown asset ${c.SpriteAnimator.assetId}`,
+          asset: asset.id,
+        });
+      }
+      if (c.Tilemap) {
+        for (const [ch, tileAssetId] of Object.entries(c.Tilemap.tileAssets)) {
+          if (!assetIds.has(tileAssetId)) {
+            push({
+              severity: 'error',
+              code: 'PREFAB_ASSET_NOT_FOUND',
+              message: `Prefab "${asset.name}" (${asset.id}) entity "${entity.name}" Tilemap maps '${ch}' to unknown asset ${tileAssetId}`,
+              asset: asset.id,
+            });
+          }
+        }
+      }
+      if (c.Script?.scriptPath && !scripts.has(c.Script.scriptPath)) {
+        push({
+          severity: 'error',
+          code: 'PREFAB_SCRIPT_NOT_FOUND',
+          message: `Prefab "${asset.name}" (${asset.id}) entity "${entity.name}" references missing script ${c.Script.scriptPath}`,
+          asset: asset.id,
+          script: c.Script.scriptPath,
+        });
+      }
+    }
+  }
 
   // --- scenes / entities ---
-  const scripts = new Set(await store.listScripts());
 
   // Pre-pass: collect all layers used by Colliders
   const usedLayers = new Set<string>();
@@ -329,6 +426,19 @@ export async function validateProject(store: ProjectStore): Promise<ValidationRe
             scene: sceneId,
             entity: entity.id,
             script: c.Script.scriptPath,
+          });
+        }
+      }
+      if (entity.prefab) {
+        const prefabAsset = assetsById.get(entity.prefab.asset);
+        if (!prefabAsset || prefabAsset.type !== 'prefab') {
+          push({
+            severity: 'warning',
+            code: 'PREFAB_INSTANCE_ORPHANED',
+            message: `Entity "${entity.name}" (${entity.id}) is marked as an instance of prefab ${entity.prefab.asset}, but that asset is missing or is not a prefab`,
+            scene: sceneId,
+            entity: entity.id,
+            asset: entity.prefab.asset,
           });
         }
       }

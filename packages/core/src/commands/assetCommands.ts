@@ -318,6 +318,21 @@ export const removeAsset = defineCommand({
         'CONFLICT',
       );
     }
+
+    // Prefab instances don't block removal the way hard component refs do —
+    // an orphaned marker is recoverable (validateProject flags it via
+    // PREFAB_INSTANCE_ORPHANED) — but the caller should still be told.
+    const prefabInstances: string[] = [];
+    if (asset.type === 'prefab') {
+      for (const [sceneId, scene] of ctx.store.scenes) {
+        for (const e of scene.entities) {
+          if (e.prefab?.asset === asset.id) {
+            prefabInstances.push(`${e.name} (${e.id}) in scene ${sceneId}`);
+          }
+        }
+      }
+    }
+
     ctx.store.assets.assets = ctx.store.assets.assets.filter((a: Asset) => a.id !== asset.id);
     if (params.deleteFile && isSafeRelativePath(asset.path)) {
       // Trashed, never unlinked outright — undo (reconciliation in
@@ -325,7 +340,15 @@ export const removeAsset = defineCommand({
       await moveToTrash(ctx.fs, ctx.store.root, asset.id, asset.path);
     }
     ctx.changed({ kind: 'asset', id: asset.id, name: asset.name, path: asset.path, action: 'deleted' });
-    return { assetId: asset.id, fileDeleted: params.deleteFile };
+    return {
+      assetId: asset.id,
+      fileDeleted: params.deleteFile,
+      ...(prefabInstances.length > 0
+        ? {
+            warning: `Prefab "${asset.name}" is still instantiated by: ${prefabInstances.join('; ')}. Those entities keep a dangling prefab marker (validateProject will flag them as PREFAB_INSTANCE_ORPHANED).`,
+          }
+        : {}),
+    };
   },
 });
 

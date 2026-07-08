@@ -445,6 +445,55 @@ describe('syncPrefabInstances', () => {
   });
 });
 
+describe('removeAsset prefab warning', () => {
+  it('warns (but does not block) when removing a prefab with live instances', async () => {
+    const { session, store } = await makeSession();
+    const sceneId = store.project.initialScene!;
+    const player = store.getScene(sceneId)!.entities.find((e) => e.name === 'Player')!;
+
+    const created = await session.execute<any>('createPrefab', { scene: sceneId, entity: player.id, name: 'PlayerPrefab' });
+    expect(created.success).toBe(true);
+    const asset = created.data.asset as { id: string };
+
+    // createPrefab itself marks the source root as a live instance.
+    const rm = await session.execute<any>('removeAsset', { asset: asset.id });
+    expect(rm.success).toBe(true);
+    expect(rm.data.warning).toBeTruthy();
+    expect(rm.data.warning).toContain(player.name);
+
+    // asset is actually gone
+    expect(store.getAsset(asset.id)).toBeUndefined();
+  });
+
+  it('does not warn when the prefab has no live instances', async () => {
+    const { session, store } = await makeSession();
+    const sceneId = store.project.initialScene!;
+    const player = store.getScene(sceneId)!.entities.find((e) => e.name === 'Player')!;
+
+    const created = await session.execute<any>('createPrefab', { scene: sceneId, entity: player.id, name: 'PlayerPrefab' });
+    expect(created.success).toBe(true);
+    const asset = created.data.asset as { id: string };
+
+    // remove the only marked instance so no live instances remain
+    const del = await session.execute<any>('deleteEntity', { scene: sceneId, entity: player.id });
+    expect(del.success).toBe(true);
+
+    const rm = await session.execute<any>('removeAsset', { asset: asset.id });
+    expect(rm.success).toBe(true);
+    expect(rm.data.warning).toBeUndefined();
+  });
+
+  it('does not warn when removing a non-prefab asset', async () => {
+    const { session, store } = await makeSession();
+    const sprite = await session.execute<any>('createSpriteAsset', { name: 'Plain', shape: 'circle', color: 'red' });
+    expect(sprite.success).toBe(true);
+
+    const rm = await session.execute<any>('removeAsset', { asset: sprite.data.asset.id });
+    expect(rm.success).toBe(true);
+    expect(rm.data.warning).toBeUndefined();
+  });
+});
+
 describe('createPrefab + instantiatePrefab undo/redo', () => {
   it('undo/redo across create + instantiate restores the project exactly', async () => {
     const { session, store } = await makeSession();

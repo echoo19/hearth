@@ -3,10 +3,37 @@ import { defineCommand } from './types.js';
 import { findEntity, childrenOf } from '../schema/scene.js';
 import { COMPONENT_DOCS, COMPONENT_ENUMS, COMPONENT_SCHEMAS, COMPONENT_TYPES } from '../schema/components.js';
 import { validateProject } from '../validate.js';
-import { ProjectError } from '../project/store.js';
+import { ProjectError, readJson } from '../project/store.js';
+import { joinPath } from '../fs.js';
+import { PrefabDataSchema, type Asset } from '../schema/project.js';
 import { CTX_API } from '../ctxApi.js';
 import { collectNavSolids, buildNavGrid, findPath } from '../pathfinding.js';
 import type { Scene } from '../schema/scene.js';
+import type { CommandContext } from './types.js';
+
+/**
+ * Best-effort prefab summary for inspectAssets: entity count and the root
+ * entity's component types, read fresh from the payload file. Returns
+ * `undefined` (rather than throwing) when the file is missing or invalid —
+ * validateProject is the source of truth for flagging that as an error.
+ */
+async function summarizePrefabAsset(
+  ctx: CommandContext,
+  asset: Asset,
+): Promise<{ entityCount: number; rootComponents: string[] } | undefined> {
+  try {
+    const raw = await readJson(ctx.fs, joinPath(ctx.store.root, asset.path));
+    const parsed = PrefabDataSchema.safeParse(raw);
+    if (!parsed.success) return undefined;
+    const root = parsed.data.entities[0];
+    return {
+      entityCount: parsed.data.entities.length,
+      rootComponents: root ? Object.keys(root.components) : [],
+    };
+  } catch {
+    return undefined;
+  }
+}
 
 /** Helper: sum up Transform.position up the parent chain to get world position. */
 function getWorldPosition(scene: Scene, entityId: string): { x: number; y: number } {
@@ -170,7 +197,14 @@ export const inspectAssets = defineCommand({
   async run(ctx, params) {
     let assets = ctx.store.assets.assets;
     if (params.type) assets = assets.filter((a) => a.type === params.type);
-    return { count: assets.length, assets };
+    const summarized = await Promise.all(
+      assets.map(async (asset) => {
+        if (asset.type !== 'prefab') return asset;
+        const prefab = await summarizePrefabAsset(ctx, asset);
+        return prefab ? { ...asset, prefab } : asset;
+      }),
+    );
+    return { count: assets.length, assets: summarized };
   },
 });
 
