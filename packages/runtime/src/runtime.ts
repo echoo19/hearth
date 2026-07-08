@@ -1138,8 +1138,8 @@ export class SceneRuntime {
    * or null (with a warn log) when the prefab is unknown — matching spawn()'s
    * tolerance for unknown inputs. No prefab marker is attached at runtime.
    *
-   * Deterministic: ids come from generateId (a global counter, never the
-   * seeded ctx.random stream), so spawning consumes nothing from the RNG.
+   * Deterministic: ids come from generateId (a Math.random-based id, never
+   * the seeded ctx.random stream), so spawning consumes nothing from the RNG.
    */
   private spawnPrefab(
     name: string,
