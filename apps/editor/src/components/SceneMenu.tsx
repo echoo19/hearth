@@ -258,7 +258,7 @@ export function SceneMenu() {
       <ConfirmDialog
         open={deleteOpen}
         title={`Delete “${scene?.name ?? ''}”?`}
-        body="This removes the scene file from the project. This mutation is recorded like any other command; snapshot first if you want an undo point."
+        body="This removes the scene file from the project. This mutation is recorded like any other command; checkpoint first if you want an undo point."
         confirmLabel="Delete scene"
         danger
         onCancel={() => setDeleteOpen(false)}

@@ -38,7 +38,7 @@ export function DiffPanel() {
   async function snapshot() {
     const result = await exec('snapshotProject', {}, { quiet: true });
     if (result.success) {
-      log('info', 'command', 'Snapshot saved. Future diffs compare against this baseline.');
+      log('info', 'command', 'Checkpoint saved. The Changes panel now compares against this checkpoint.');
       await refreshDiff();
     }
   }
@@ -85,19 +85,19 @@ export function DiffPanel() {
         </button>
         <span className="panel-divider" />
         <button className="btn btn-sm" onClick={() => void snapshot()} title="snapshotProject">
-          Snapshot
+          Checkpoint
         </button>
         <button className="btn btn-sm" onClick={() => void refreshDiff()} title="diffProject">
-          Refresh diff
+          Refresh changes
         </button>
         <span style={{ flex: 1 }} />
         <button
           className="btn btn-danger btn-sm"
           onClick={() => setConfirmRevert(true)}
           disabled={!diff?.hasChanges}
-          title="revertProject: restore the last snapshot"
+          title="revertProject: restore the last checkpoint"
         >
-          Revert to snapshot
+          Restore checkpoint
         </button>
       </div>
 
@@ -109,11 +109,11 @@ export function DiffPanel() {
             <span className="empty-icon" aria-hidden="true">
               <Icon name="duplicate" size={16} />
             </span>
-            <span>No baseline to compare against</span>
+            <span>No checkpoint to compare against</span>
             <span className="hint">
-              The review workflow: press Snapshot before edits (yours or an agent's), make changes, then
-              Refresh diff to see exactly what changed: scenes, entities, component properties, scripts, and
-              assets. Revert restores the snapshot.
+              The review workflow: press Checkpoint before edits (yours or an agent's), make changes, then
+              Refresh changes to see exactly what changed: scenes, entities, component properties, scripts, and
+              assets. Restore checkpoint undoes it all.
             </span>
           </div>
         ) : !diff.hasChanges ? (
@@ -121,7 +121,7 @@ export function DiffPanel() {
             <span className="empty-icon" aria-hidden="true">
               <Icon name="duplicate" size={16} />
             </span>
-            <span>No changes since the last snapshot</span>
+            <span>No changes since the last checkpoint</span>
             <span className="hint">Edit the scene (or let an agent work), then refresh.</span>
           </div>
         ) : (
@@ -131,8 +131,8 @@ export function DiffPanel() {
 
       <ConfirmDialog
         open={confirmRevert}
-        title="Revert to snapshot?"
-        body="All scene, script, and asset-index changes since the last snapshot are discarded. A revert isn't recorded in the undo history, so it can't be reversed with Undo — unlike other edits."
+        title="Restore checkpoint?"
+        body="All scene, script, and asset-index changes since the last checkpoint are discarded. A revert isn't recorded in the undo history, so it can't be reversed with Undo — unlike other edits."
         confirmLabel="Revert everything"
         danger
         onCancel={() => setConfirmRevert(false)}

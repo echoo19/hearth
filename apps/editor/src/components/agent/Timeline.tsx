@@ -3,7 +3,7 @@
  * (../../store.ts's `journalFeed` — every structured command run through
  * `HearthSession.execute`, from this editor, the CLI, or an MCP agent; see
  * @hearth/core's project/journal.ts) plus the session-level controls that
- * make that feed actionable (Snapshot / Review changes / Revert session).
+ * make that feed actionable (Checkpoint / Review changes / Revert session).
  *
  * Two layers, same split as useAgentSocket.ts next door:
  *  - Pure functions (`entryToRow`, `commandIcon`, `relativeTime`) mapping a
@@ -203,18 +203,18 @@ export function Timeline() {
         <button
           className="btn btn-sm"
           onClick={() => void snapshot()}
-          title="snapshotProject: save the diff baseline"
+          title="snapshotProject: save a checkpoint to compare against later"
         >
-          {snapshotTaken && <span className="timeline-check">✓</span>} Snapshot
+          {snapshotTaken && <span className="timeline-check">✓</span>} Checkpoint
         </button>
-        <button className="btn btn-sm" onClick={reviewChanges} title="Focus the Diff panel">
+        <button className="btn btn-sm" onClick={reviewChanges} title="Focus the Changes panel">
           Review changes
         </button>
         <button
           className="btn btn-danger btn-sm"
           onClick={() => setConfirmRevert(true)}
           disabled={!diff?.hasChanges}
-          title="revertProject: restore the last snapshot"
+          title="revertProject: restore the last checkpoint"
         >
           Revert session
         </button>
@@ -252,7 +252,7 @@ export function Timeline() {
       <ConfirmDialog
         open={confirmRevert}
         title="Revert session?"
-        body="All scene, script, and asset-index changes since the last snapshot are discarded — including anything the agent just did. A revert isn't recorded in the undo history, so it can't be reversed with Undo."
+        body="All scene, script, and asset-index changes since the last checkpoint are discarded — including anything the agent just did. A revert isn't recorded in the undo history, so it can't be reversed with Undo."
         confirmLabel="Revert everything"
         danger
         onCancel={() => setConfirmRevert(false)}

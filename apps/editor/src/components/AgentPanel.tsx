@@ -213,7 +213,7 @@ export function AgentPanel() {
             <p>
               Hearth is agent-native: everything this editor does goes through the same command system that the{' '}
               <code>hearth</code> CLI and the MCP server expose. Point a coding agent at this project and review its
-              work in the Diff panel. New projects also get AGENTS.md / CLAUDE.md with these instructions baked in.
+              work in the Changes panel. New projects also get AGENTS.md / CLAUDE.md with these instructions baked in.
             </p>
 
             <h4>CLI (any agent with a shell)</h4>

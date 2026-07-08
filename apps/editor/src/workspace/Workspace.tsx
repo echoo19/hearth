@@ -37,7 +37,7 @@ export const PANEL_TITLES: Record<PanelId, string> = {
   inspector: 'Inspector',
   assets: 'Assets',
   console: 'Console',
-  diff: 'Diff',
+  diff: 'Changes',
   agent: 'Agent',
   input: 'Input',
 };
