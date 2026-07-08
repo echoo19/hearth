@@ -7,8 +7,11 @@ import React, { useEffect, useRef, useState } from 'react';
 import type { DockviewApi } from 'dockview-react';
 import { PANEL_TITLES, VIEW_MENU_PANELS, resetLayout, showPanel } from './Workspace';
 import type { PanelId } from './layout';
+import { useEditor } from '../store';
+import { comboDisplay } from '../keybinds';
 
 export function ViewMenu({ dock, storageKey }: { dock: DockviewApi | null; storageKey: string }) {
+  const setShortcutSheet = useEditor((s) => s.setShortcutSheet);
   const [open, setOpen] = useState(false);
   const [openPanels, setOpenPanels] = useState<ReadonlySet<string>>(new Set());
   const rootRef = useRef<HTMLSpanElement>(null);
@@ -97,6 +100,21 @@ export function ViewMenu({ dock, storageKey }: { dock: DockviewApi | null; stora
           >
             <span className="menu-check" aria-hidden="true" />
             Reset layout
+          </button>
+          <div className="menu-separator" role="separator" />
+          <button
+            className="menu-item"
+            role="menuitem"
+            onClick={() => {
+              setShortcutSheet(true);
+              setOpen(false);
+            }}
+          >
+            <span className="menu-check" aria-hidden="true" />
+            Keyboard shortcuts
+            <span className="menu-shortcut" aria-hidden="true">
+              {comboDisplay('shift+/')}
+            </span>
           </button>
         </div>
       )}

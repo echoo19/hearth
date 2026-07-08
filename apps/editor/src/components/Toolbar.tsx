@@ -7,11 +7,7 @@ import { SceneMenu } from './SceneMenu';
 import { ViewMenu } from '../workspace/ViewMenu';
 import { showPanel } from '../workspace/Workspace';
 import { useHistoryList } from '../useHistoryList';
-
-// TODO(Task 8): this belongs in keybinds.ts once that module exists — inlined
-// here for now since this is the first place that needs a platform-aware
-// shortcut label.
-const isMac = typeof navigator !== 'undefined' && /Mac|iPhone|iPod|iPad/.test(navigator.platform);
+import { comboDisplay } from '../keybinds';
 
 export function Toolbar({ dock, storageKey }: { dock: DockviewApi | null; storageKey: string }) {
   const info = useEditor((s) => s.info);
@@ -116,7 +112,7 @@ export function Toolbar({ dock, storageKey }: { dock: DockviewApi | null; storag
           className="btn btn-sm"
           onClick={() => void undo()}
           disabled={!undoTarget}
-          title={`Undo (${isMac ? '⌘Z' : 'Ctrl+Z'})`}
+          title={`Undo (${comboDisplay('mod+z')})`}
         >
           Undo
         </button>
@@ -124,7 +120,7 @@ export function Toolbar({ dock, storageKey }: { dock: DockviewApi | null; storag
           className="btn btn-sm"
           onClick={() => void redo()}
           disabled={!redoTarget}
-          title={`Redo (${isMac ? '⇧⌘Z' : 'Ctrl+Shift+Z'})`}
+          title={`Redo (${comboDisplay('shift+mod+z')})`}
         >
           Redo
         </button>

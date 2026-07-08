@@ -23,7 +23,7 @@ import type { WsFrame } from '../server/ws';
 import type { AgentPermissionMode, DetectAgentsResult } from '../server/agentSetup';
 import { ingestPtyFrame, resetAgentSocket, type AgentStatus } from './components/agent/useAgentSocket';
 
-interface EditorState {
+export interface EditorState {
   meta: ServerMeta | null;
   projectPath: string | null;
   info: ProjectInfo | null;
@@ -92,6 +92,15 @@ interface EditorState {
    * host size, in which case callers fall back to (0,0).
    */
   sceneViewCenter: Vec2 | null;
+  /** Whether the keyboard-shortcut cheat sheet overlay is open (Task 8). */
+  shortcutSheetOpen: boolean;
+  /**
+   * Bumped to ask SceneView to center+fit the camera on the current
+   * selection (the `f` shortcut). A counter rather than a boolean so a
+   * repeat request re-focuses even when the selection hasn't changed —
+   * mirrors the `diffFocusRequest` seam above.
+   */
+  focusSelectionRequest: number;
 
   setAgentMode(mode: AgentPermissionMode): void;
   detectAgent(): Promise<void>;
@@ -99,6 +108,21 @@ interface EditorState {
   sendAgentFrame(frame: WsFrame): boolean;
   requestDiffFocus(): void;
   setSceneViewCenter(center: Vec2 | null): void;
+  setShortcutSheet(open: boolean): void;
+  toggleShortcutSheet(): void;
+  requestFocusSelection(): void;
+  /** Shortcut actions (Task 8), each backed by an exec() where it mutates. */
+  togglePlay(): void;
+  checkpoint(): Promise<void>;
+  duplicateSelection(): Promise<void>;
+  deleteSelection(): Promise<void>;
+  /**
+   * Move the selection by (dx, dy) scene pixels. Arrow-key presses accumulate
+   * and are debounced (~300ms) into ONE moveEntity exec per burst, so a run
+   * of nudges collapses to a single undo step. The scene is updated
+   * optimistically for immediate feedback; the debounced exec persists it.
+   */
+  nudgeSelection(dx: number, dy: number): void;
 
   loadMeta(): Promise<void>;
   openProject(path: string): Promise<{ ok: boolean; error?: string }>;
@@ -119,6 +143,9 @@ interface EditorState {
    */
   exec<T = unknown>(name: string, params?: unknown, opts?: { quiet?: boolean }): Promise<CommandResult<T>>;
 }
+
+/** The full editor store (state + actions) as returned by `useEditor.getState()`. */
+export type EditorStore = EditorState;
 
 let entryId = 0;
 
@@ -162,6 +189,46 @@ export const useEditor = create<EditorState>((set, get) => {
   let wsReconnectTimer: ReturnType<typeof setTimeout> | null = null;
   let wsBackoffMs = WS_BACKOFF_INITIAL_MS;
   let wsEpoch = 0;
+
+  // --- Arrow-key nudge: accumulate presses, debounce to one moveEntity ------
+  // The in-flight burst lives here (not in zustand): its base position and
+  // running delta are bookkeeping, not rendered state. `commitNudge` flushes
+  // it into a single `moveEntity` exec so the whole burst is one undo step.
+  interface PendingNudge {
+    scene: string;
+    entity: string;
+    base: Vec2;
+    accum: Vec2;
+  }
+  let pendingNudge: PendingNudge | null = null;
+  let nudgeTimer: ReturnType<typeof setTimeout> | null = null;
+
+  function commitNudge(): void {
+    if (nudgeTimer) {
+      clearTimeout(nudgeTimer);
+      nudgeTimer = null;
+    }
+    const p = pendingNudge;
+    pendingNudge = null;
+    if (!p) return;
+    const position = { x: p.base.x + p.accum.x, y: p.base.y + p.accum.y };
+    void get().exec('moveEntity', { scene: p.scene, entity: p.entity, position }, { quiet: true });
+  }
+
+  /** Return a copy of `scene` with `entityId`'s Transform.position set to `pos`. */
+  function withEntityPosition(scene: SceneData, entityId: string, pos: Vec2): SceneData {
+    return {
+      ...scene,
+      entities: scene.entities.map((e) => {
+        if (e.id !== entityId) return e;
+        const transform = (e.components.Transform ?? {}) as Record<string, unknown>;
+        return {
+          ...e,
+          components: { ...e.components, Transform: { ...transform, position: { x: pos.x, y: pos.y } } },
+        };
+      }),
+    };
+  }
 
   function wsUrl(project: string): string {
     const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
@@ -311,6 +378,8 @@ export const useEditor = create<EditorState>((set, get) => {
     snapshotTaken: false,
     diffFocusRequest: 0,
     sceneViewCenter: null,
+    shortcutSheetOpen: false,
+    focusSelectionRequest: 0,
 
     setAgentMode(mode) {
       set({ agentMode: mode });
@@ -322,6 +391,68 @@ export const useEditor = create<EditorState>((set, get) => {
 
     setSceneViewCenter(center) {
       set({ sceneViewCenter: center });
+    },
+
+    setShortcutSheet(open) {
+      set({ shortcutSheetOpen: open });
+    },
+
+    toggleShortcutSheet() {
+      set((state) => ({ shortcutSheetOpen: !state.shortcutSheetOpen }));
+    },
+
+    requestFocusSelection() {
+      if (!get().selection) return;
+      set((state) => ({ focusSelectionRequest: state.focusSelectionRequest + 1 }));
+    },
+
+    togglePlay() {
+      get().setPlaying(!get().playing);
+    },
+
+    async checkpoint() {
+      const result = await get().exec<{ scenes: number }>('snapshotProject', {}, { quiet: true });
+      if (result.success) {
+        get().log('info', 'command', 'Checkpoint saved. The Changes panel now compares against this checkpoint.');
+      }
+    },
+
+    async duplicateSelection() {
+      const { selection, sceneId } = get();
+      if (!selection || !sceneId) return;
+      const result = await get().exec<{ entityId: string }>('duplicateEntity', { scene: sceneId, entity: selection });
+      // Select the fresh copy so a follow-up nudge/duplicate acts on it.
+      if (result.success && result.data) get().select(result.data.entityId);
+    },
+
+    async deleteSelection() {
+      const { selection, sceneId } = get();
+      if (!selection || !sceneId) return;
+      await get().exec('deleteEntity', { scene: sceneId, entity: selection });
+    },
+
+    nudgeSelection(dx, dy) {
+      const { selection, sceneId, scene } = get();
+      if (!selection || !sceneId || !scene) return;
+      const entity = scene.entities.find((e) => e.id === selection);
+      if (!entity) return;
+      // A pending burst for a different entity/scene must land before we start
+      // a new one, so each entity's move stays its own undo step.
+      if (pendingNudge && (pendingNudge.entity !== selection || pendingNudge.scene !== sceneId)) {
+        commitNudge();
+      }
+      if (!pendingNudge) {
+        const transform = entity.components.Transform as { position?: Vec2 } | undefined;
+        const pos = transform?.position;
+        pendingNudge = { scene: sceneId, entity: selection, base: { x: pos?.x ?? 0, y: pos?.y ?? 0 }, accum: { x: 0, y: 0 } };
+      }
+      pendingNudge.accum = { x: pendingNudge.accum.x + dx, y: pendingNudge.accum.y + dy };
+      const next = { x: pendingNudge.base.x + pendingNudge.accum.x, y: pendingNudge.base.y + pendingNudge.accum.y };
+      // Optimistic: move it now for instant feedback; the debounced exec below
+      // persists it and refresh() reconciles against the source of truth.
+      set((state) => ({ scene: state.scene ? withEntityPosition(state.scene, selection, next) : state.scene }));
+      if (nudgeTimer) clearTimeout(nudgeTimer);
+      nudgeTimer = setTimeout(commitNudge, 300);
     },
 
     async detectAgent() {

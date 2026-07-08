@@ -618,6 +618,14 @@ label.field-label {
   background: var(--border);
 }
 
+.menu-shortcut {
+  margin-left: auto;
+  padding-left: 16px;
+  color: var(--ink-mute);
+  font-family: var(--font-mono);
+  font-size: 11px;
+}
+
 /* --------------------------------------------------------------------------
    Toolbar
    -------------------------------------------------------------------------- */
@@ -1924,6 +1932,127 @@ dialog.modal[open]::backdrop {
   display: flex;
   flex-direction: column;
   gap: 4px;
+}
+
+/* --------------------------------------------------------------------------
+   Keyboard-shortcut cheat sheet (ShortcutSheet.tsx)
+   -------------------------------------------------------------------------- */
+
+dialog.shortcut-sheet {
+  border: 1px solid var(--border-strong);
+  border-radius: 12px;
+  background: var(--bg-1);
+  color: var(--ink);
+  padding: 0;
+  width: min(640px, calc(100vw - 48px));
+  max-height: min(78vh, 720px);
+  box-shadow: 0 20px 56px oklch(0 0 0 / 0.55);
+}
+
+dialog.shortcut-sheet[open] {
+  animation: modal-in 160ms var(--ease-out);
+}
+
+dialog.shortcut-sheet::backdrop {
+  background: oklch(0.1 0.01 55 / 0.6);
+}
+
+dialog.shortcut-sheet[open]::backdrop {
+  animation: backdrop-in 160ms var(--ease-out);
+}
+
+.shortcut-sheet-inner {
+  display: flex;
+  flex-direction: column;
+  max-height: inherit;
+}
+
+.shortcut-sheet-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 18px;
+  border-bottom: 1px solid var(--border);
+}
+
+.shortcut-sheet-title {
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.shortcut-sheet-groups {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 8px 28px;
+  padding: 16px 18px;
+  overflow-y: auto;
+}
+
+.shortcut-group {
+  break-inside: avoid;
+}
+
+.shortcut-group-title {
+  margin: 0 0 6px;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--ink-mute);
+}
+
+.shortcut-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.shortcut-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 5px 0;
+  font-size: 12.5px;
+  border-bottom: 1px solid transparent;
+}
+
+.shortcut-row + .shortcut-row {
+  border-top: 1px solid oklch(1 0 0 / 0.04);
+}
+
+.shortcut-label {
+  color: var(--ink);
+}
+
+kbd.shortcut-keys {
+  flex: none;
+  min-width: 22px;
+  padding: 2px 7px;
+  border: 1px solid var(--border-strong);
+  border-bottom-width: 2px;
+  border-radius: var(--radius-sm);
+  background: var(--bg-2);
+  color: var(--ink);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  line-height: 1.4;
+  text-align: center;
+  white-space: nowrap;
+}
+
+.shortcut-sheet-foot {
+  margin: 0;
+  padding: 12px 18px;
+  border-top: 1px solid var(--border);
+  color: var(--ink-mute);
+  font-size: 12px;
+}
+
+.shortcut-sheet-foot kbd.shortcut-keys {
+  margin: 0 2px;
 }
 
 /* --------------------------------------------------------------------------

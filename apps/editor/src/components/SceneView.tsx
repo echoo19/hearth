@@ -87,6 +87,7 @@ export function SceneView() {
   const exec = useEditor((s) => s.exec);
   const log = useEditor((s) => s.log);
   const setSceneViewCenter = useEditor((s) => s.setSceneViewCenter);
+  const focusSelectionRequest = useEditor((s) => s.focusSelectionRequest);
 
   const hostRef = useRef<HTMLDivElement>(null);
   const svgRef = useRef<SVGSVGElement>(null);
@@ -213,6 +214,54 @@ export function SceneView() {
     setSceneViewCenter({ x: (cw / 2 - view.tx) / view.s, y: (ch / 2 - view.ty) / view.s });
   }, [view, viewportEpoch, setSceneViewCenter]);
   useEffect(() => () => setSceneViewCenter(null), [setSceneViewCenter]);
+
+  // ---- focus selection (the `f` shortcut) ----------------------------------
+  // Center + fit the camera on the selected entity's world bounds, clamped to
+  // the same zoom range as wheel zoom. Fires only when the store nonce bumps
+  // (not on mount / selection change), mirroring diffFocusRequest's seam.
+  const lastFocusReq = useRef(focusSelectionRequest);
+  useEffect(() => {
+    if (focusSelectionRequest === lastFocusReq.current) return;
+    lastFocusReq.current = focusSelectionRequest;
+    const host = hostRef.current;
+    const entity = selection ? entityById.get(selection) : undefined;
+    if (!host || !entity) return;
+    const { clientWidth: cw, clientHeight: ch } = host;
+    if (cw === 0 || ch === 0) return;
+    const b = boundsOf(entity);
+    const tf = entity.components.Transform as { scale?: Vec2 } | undefined;
+    const sx = tf?.scale?.x ?? 1;
+    const sy = tf?.scale?.y ?? 1;
+    const wp = worldPos(entity);
+    const w = Math.max(Math.abs(b.w * sx), 1);
+    const h = Math.max(Math.abs(b.h * sy), 1);
+    const cx = wp.x + (b.x + b.w / 2) * sx;
+    const cy = wp.y + (b.y + b.h / 2) * sy;
+    const pad = 80; // breathing room around the entity, in screen px
+    const s = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, Math.min(cw / (w + pad), ch / (h + pad))));
+    setView({ s, tx: cw / 2 - cx * s, ty: ch / 2 - cy * s });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [focusSelectionRequest]);
+
+  // ---- Escape to deselect --------------------------------------------------
+  // Only when no scene mode is active (point-edit / paint own their own
+  // Escape, below) and no <dialog> is open (it owns Escape natively). Modes
+  // still selected keep the selection until their own Escape exits them, so
+  // this never fights those handlers.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return;
+      if (editingPoints || paintMode) return;
+      if (typeof document !== 'undefined' && document.querySelector('dialog[open]')) return;
+      const t = e.target;
+      if (t instanceof HTMLElement && ['INPUT', 'TEXTAREA', 'SELECT'].includes(t.tagName)) return;
+      if (!selection) return;
+      select(null);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editingPoints, paintMode, selection]);
 
   // ---- wheel zoom (non-passive so we can preventDefault) -------------------
   useEffect(() => {

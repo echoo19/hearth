@@ -4,8 +4,10 @@ import { useEditor } from './store';
 import { hearthNative } from './native';
 import { Launcher } from './components/Launcher';
 import { Toolbar } from './components/Toolbar';
+import { ShortcutSheet } from './components/ShortcutSheet';
 import { Workspace } from './workspace/Workspace';
 import { layoutStorageKey } from './workspace/layout';
+import { installKeybinds } from './keybinds';
 
 export default function App() {
   const projectPath = useEditor((s) => s.projectPath);
@@ -32,34 +34,17 @@ function EditorShell({ projectPath }: { projectPath: string }) {
   const [dock, setDock] = useState<DockviewApi | null>(null);
   const storageKey = layoutStorageKey(projectId ?? projectPath);
 
-  // Cmd/Ctrl+Z -> undo, Shift+Cmd/Ctrl+Z or Cmd/Ctrl+Y -> redo. Skipped while
-  // typing in a text field so the browser's native undo still works there.
-  useEffect(() => {
-    function onKeyDown(e: KeyboardEvent) {
-      // Ignore key auto-repeat: a held Cmd+Z would otherwise fire a burst of
-      // overlapping mutating undo commands (the history store has no locking).
-      if (e.repeat) return;
-      const t = e.target;
-      if (t instanceof HTMLElement && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
-      if (!(e.metaKey || e.ctrlKey)) return;
-      const key = e.key.toLowerCase();
-      if (key === 'z') {
-        e.preventDefault();
-        void useEditor.getState().exec(e.shiftKey ? 'redo' : 'undo');
-      } else if (key === 'y') {
-        e.preventDefault();
-        void useEditor.getState().exec('redo');
-      }
-    }
-    window.addEventListener('keydown', onKeyDown);
-    return () => window.removeEventListener('keydown', onKeyDown);
-  }, []);
+  // All keyboard shortcuts run through the central registry (keybinds.ts):
+  // undo/redo, duplicate/delete/nudge, focus, play, checkpoint, and the `?`
+  // cheat sheet. One window listener, installed once for the editor session.
+  useEffect(() => installKeybinds(() => useEditor.getState()), []);
 
   return (
     <div className="shell">
       <Toolbar dock={dock} storageKey={storageKey} />
       {/* Keyed per project so each project restores its own saved layout. */}
       <Workspace key={storageKey} storageKey={storageKey} onReady={setDock} />
+      <ShortcutSheet />
     </div>
   );
 }
