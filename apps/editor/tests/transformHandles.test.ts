@@ -8,9 +8,12 @@ import {
   handlePositions,
   hitHandle,
   applyHandleDrag,
+  applyCenterHandleDrag,
+  resolveHandleTarget,
   cursorFor,
   type SelectionBox,
 } from '../src/transformHandles';
+import type { SceneEntity } from '../src/types';
 
 const BOX: SelectionBox = { center: { x: 0, y: 0 }, width: 100, height: 60, rotation: 0 };
 
@@ -189,6 +192,146 @@ describe('applyHandleDrag: rotate', () => {
     const p = { x: box.center.x + Math.cos(((40 - 90) * Math.PI) / 180) * 50, y: box.center.y + Math.sin(((40 - 90) * Math.PI) / 180) * 50 };
     const r = applyHandleDrag(box, 'rotate', p, p, { shift: true });
     expect(r.rotation).toBeCloseTo(45);
+  });
+});
+
+describe('resolveHandleTarget', () => {
+  function entity(components: Record<string, Record<string, unknown>>): SceneEntity {
+    return {
+      id: 'e1',
+      name: 'Test',
+      parentId: null,
+      enabled: true,
+      tags: [],
+      components,
+      position: null,
+      children: [],
+    };
+  }
+  const BASE = { w: 24, h: 24 };
+
+  it('prefers SpriteRenderer width/height over any collider', () => {
+    const t = resolveHandleTarget(
+      entity({
+        SpriteRenderer: { width: 48, height: 24 },
+        Collider: { shape: 'box', width: 100, height: 100 },
+      }),
+      BASE,
+    );
+    expect(t).toEqual({
+      kind: 'sprite-size',
+      component: 'SpriteRenderer',
+      property: 'SpriteRenderer.width',
+      width: 48,
+      height: 24,
+    });
+  });
+
+  it('applies the schema defaults (32x32) when a sprite omits width/height', () => {
+    const t = resolveHandleTarget(entity({ SpriteRenderer: {} }), BASE);
+    expect(t.width).toBe(32);
+    expect(t.height).toBe(32);
+  });
+
+  it('falls back to a box Collider width/height when there is no sprite', () => {
+    const t = resolveHandleTarget(entity({ Collider: { shape: 'box', width: 64, height: 40 } }), BASE);
+    expect(t).toEqual({
+      kind: 'collider-box',
+      component: 'Collider',
+      property: 'Collider.width',
+      width: 64,
+      height: 40,
+    });
+  });
+
+  it('treats a Collider without an explicit shape as a box (the schema default)', () => {
+    const t = resolveHandleTarget(entity({ Collider: { width: 10, height: 12 } }), BASE);
+    expect(t.kind).toBe('collider-box');
+  });
+
+  it('reports a circle Collider as radius*2 on both extents', () => {
+    const t = resolveHandleTarget(entity({ Collider: { shape: 'circle', radius: 20 } }), BASE);
+    expect(t).toEqual({
+      kind: 'collider-circle',
+      component: 'Collider',
+      property: 'Collider.radius',
+      width: 40,
+      height: 40,
+    });
+  });
+
+  it('applies the schema default radius (16) when a circle omits it', () => {
+    const t = resolveHandleTarget(entity({ Collider: { shape: 'circle' } }), BASE);
+    expect(t.width).toBe(32);
+  });
+
+  it('skips polygon colliders (the point editor owns their geometry) to the scale fallback', () => {
+    const t = resolveHandleTarget(entity({ Collider: { shape: 'polygon', points: [] }, Transform: {} }), BASE);
+    expect(t.kind).toBe('transform-scale');
+  });
+
+  it('resolves a UIElement-only entity to the scale fallback (UIElement has no size field)', () => {
+    // UIElementSchema is anchor/offset/interactive/focusable only; its visuals
+    // come from sibling Text/SpriteRenderer components, which the earlier
+    // tiers already catch. So the spec's ui-size tier can never match.
+    const t = resolveHandleTarget(entity({ UIElement: { anchor: 'top-left' }, Transform: {} }), BASE);
+    expect(t.kind).toBe('transform-scale');
+  });
+
+  it('falls back to Transform.scale with the provided base extents (rendered bounds at scale 1)', () => {
+    const t = resolveHandleTarget(entity({ Text: { content: 'hi' }, Transform: {} }), { w: 120, h: 30 });
+    expect(t).toEqual({
+      kind: 'transform-scale',
+      component: 'Transform',
+      property: 'Transform.scale',
+      width: 120,
+      height: 30,
+    });
+  });
+});
+
+describe('applyCenterHandleDrag', () => {
+  // The editor commits one history entry per command (session.ts snapshots
+  // before every mutating command), so an anchored resize (size command +
+  // moveEntity for centerShift) would undo in two steps. SceneView therefore
+  // resizes about the box center: centerShift is always zero, and the pointer
+  // delta is doubled so the grabbed handle still tracks the pointer.
+  it('keeps the center fixed (zero centerShift) and tracks the pointer with the grabbed edge', () => {
+    const r = applyCenterHandleDrag(BOX, 'e', { x: 50, y: 0 }, { x: 70, y: 0 }, { shift: false });
+    expect(r.centerShift).toEqual({ x: 0, y: 0 });
+    // width grows by 2x the drag so the east edge lands exactly under the pointer
+    expect(r.width).toBeCloseTo(140);
+    expect(BOX.center.x + r.width / 2).toBeCloseTo(70);
+    expect(r.height).toBe(60);
+  });
+
+  it('mirrors corner drags about the center, honoring shift aspect lock', () => {
+    const box: SelectionBox = { center: { x: 0, y: 0 }, width: 100, height: 50, rotation: 0 };
+    const r = applyCenterHandleDrag(box, 'se', { x: 50, y: 25 }, { x: 70, y: 28 }, { shift: true });
+    expect(r.centerShift).toEqual({ x: 0, y: 0 });
+    expect(r.width / r.height).toBeCloseTo(box.width / box.height);
+    expect(r.width).toBeCloseTo(140); // dominant axis doubled: 100 + 2*20
+  });
+
+  it('still clamps to the minimum extent', () => {
+    const r = applyCenterHandleDrag(BOX, 'e', { x: 50, y: 0 }, { x: -1000, y: 0 }, { shift: false });
+    expect(r.width).toBe(2);
+    expect(r.centerShift).toEqual({ x: 0, y: 0 });
+  });
+
+  it('unrotates the doubled delta like applyHandleDrag does', () => {
+    const rotated: SelectionBox = { center: { x: 0, y: 0 }, width: 100, height: 60, rotation: 90 };
+    const r = applyCenterHandleDrag(rotated, 'e', { x: 0, y: 50 }, { x: 0, y: 70 }, { shift: false });
+    expect(r.width).toBeCloseTo(140);
+    expect(r.height).toBeCloseTo(60);
+  });
+
+  it('passes rotate drags through to applyHandleDrag unchanged', () => {
+    const box: SelectionBox = { center: { x: 10, y: 20 }, width: 100, height: 60, rotation: 0 };
+    const r = applyCenterHandleDrag(box, 'rotate', { x: 10, y: -80 }, { x: 110, y: 20 }, { shift: false });
+    expect(r.rotation).toBeCloseTo(90);
+    expect(r.width).toBe(100);
+    expect(r.centerShift).toEqual({ x: 0, y: 0 });
   });
 });
 

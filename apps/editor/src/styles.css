@@ -2320,6 +2320,28 @@ kbd.shortcut-keys {
   fill: var(--accent-soft);
 }
 
+/* Transform-handle gizmo (resize squares + rotate knob on the selection);
+   dot styling mirrors the poly-vertex/poly-mid handles above. */
+.transform-handle-dot {
+  fill: var(--bg-1);
+  stroke: var(--accent);
+  stroke-width: 1.5;
+}
+
+.transform-handle:hover .transform-handle-dot {
+  fill: var(--accent-soft);
+}
+
+.transform-handle-rotate-dot {
+  fill: var(--accent);
+  stroke: oklch(0.17 0.008 55);
+  stroke-width: 1.5;
+}
+
+.transform-handle:hover .transform-handle-rotate-dot {
+  fill: var(--accent-hover);
+}
+
 /* --------------------------------------------------------------------------
    Scene view: tilemap paint tool
    -------------------------------------------------------------------------- */

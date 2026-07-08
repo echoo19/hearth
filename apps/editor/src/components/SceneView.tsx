@@ -17,6 +17,17 @@ import {
   type PolygonFrame,
 } from '../polygonEditing';
 import {
+  applyCenterHandleDrag,
+  cursorFor,
+  handlePositions,
+  hitHandle,
+  resolveHandleTarget,
+  type DragResult,
+  type HandleId,
+  type ResolvedHandleTarget,
+  type SelectionBox,
+} from '../transformHandles';
+import {
   addStrokeCell,
   clampRectToGrid,
   filterInBounds,
@@ -55,6 +66,19 @@ interface VertexDragState {
   index: number;
 }
 
+/** An in-progress transform-handle drag (resize or rotate gizmo). */
+interface HandleDragState {
+  pointerId: number;
+  entityId: string;
+  handleId: HandleId;
+  /** Which component/property the gesture edits, resolved at drag start. */
+  target: ResolvedHandleTarget;
+  /** The world-space selection box at drag start. */
+  startBox: SelectionBox;
+  startWorld: Vec2;
+  moved: boolean;
+}
+
 interface PaintStrokeState {
   pointerId: number;
   entityId: string;
@@ -83,6 +107,7 @@ export function SceneView() {
   const sceneId = useEditor((s) => s.sceneId);
   const assets = useEditor((s) => s.assets);
   const selection = useEditor((s) => s.selection);
+  const playing = useEditor((s) => s.playing);
   const select = useEditor((s) => s.select);
   const exec = useEditor((s) => s.exec);
   const log = useEditor((s) => s.log);
@@ -102,6 +127,13 @@ export function SceneView() {
   const [dragPos, setDragPosState] = useState<Vec2 | null>(null);
   const panRef = useRef<PanState | null>(null);
   const fittedScene = useRef<string | null>(null);
+
+  // Transform-handle gizmo drag (resize/rotate on the selection). Like the
+  // move drag above: the drag lives in a ref, and the live DragResult ghost
+  // is mirrored into state purely to re-render the preview.
+  const handleDragRef = useRef<HandleDragState | null>(null);
+  const handleGhostRef = useRef<DragResult | null>(null);
+  const [handleGhost, setHandleGhostState] = useState<DragResult | null>(null);
 
   // Point editing ("Edit points" mode), shared by the polygon Collider and
   // LineRenderer vertex editors (see pointsSourceFor/pointsSelection below).
@@ -129,6 +161,11 @@ export function SceneView() {
   function setDragPos(pos: Vec2 | null) {
     dragPosRef.current = pos;
     setDragPosState(pos);
+  }
+
+  function setHandleGhost(result: DragResult | null) {
+    handleGhostRef.current = result;
+    setHandleGhostState(result);
   }
 
   function setDraftPoints(points: Vec2[] | null) {
@@ -547,6 +584,198 @@ export function SceneView() {
     svgRef.current?.setPointerCapture(e.pointerId);
   }
 
+  // ---- transform handles (resize/rotate gizmo on the selection) -------------
+  // Geometry lives in ../transformHandles.ts; this section resolves what a
+  // drag edits (resolveHandleTarget), draws the gizmo, and commits ONE
+  // setComponentProperty per gesture on pointer-up (see commitHandleDrag for
+  // the one documented exception). Hidden while playing, editing points,
+  // painting tiles, or with nothing selected.
+  const showHandles = !playing && !editingPoints && !paintMode && selectedForRender !== undefined;
+
+  /**
+   * The selected entity's resolved drag target plus its world-space
+   * selection box. Box conventions per target kind:
+   * - collider-box / collider-circle: physics ignores Transform scale, and
+   *   centers on worldPos + Collider.offset (unscaled, unrotated) — see
+   *   packages/runtime/src/physics.ts colliderBox. Extents are the collider's
+   *   own width/height/radius*2. The box still carries Transform.rotation so
+   *   the rotate handle reads/ghosts consistently across targets (physics
+   *   ignores it for these shapes, as does the runtime).
+   * - sprite-size: centered on the entity origin, extents scaled by |scale|.
+   * - transform-scale: rendered bounds (which may be offset from the origin,
+   *   e.g. Tilemap/Text) scaled by |scale|, centered on the bounds center.
+   */
+  function handleSelection(): { entity: SceneEntity; target: ResolvedHandleTarget; box: SelectionBox } | null {
+    const entity = selection ? entityById.get(selection) : undefined;
+    if (!entity) return null;
+    const b = boundsOf(entity);
+    const target = resolveHandleTarget(entity, { w: b.w, h: b.h });
+    const tf = entity.components.Transform as { rotation?: number; scale?: Vec2 } | undefined;
+    const rotation = tf?.rotation ?? 0;
+    const sx = tf?.scale?.x ?? 1;
+    const sy = tf?.scale?.y ?? 1;
+    const asx = Math.abs(sx) || 1;
+    const asy = Math.abs(sy) || 1;
+    const wp = worldPos(entity);
+    let center: Vec2;
+    let width: number;
+    let height: number;
+    if (target.kind === 'collider-box' || target.kind === 'collider-circle') {
+      const off = (entity.components.Collider as { offset?: Vec2 } | undefined)?.offset;
+      center = { x: wp.x + (off?.x ?? 0), y: wp.y + (off?.y ?? 0) };
+      width = target.width;
+      height = target.height;
+    } else if (target.kind === 'sprite-size') {
+      center = wp;
+      width = target.width * asx;
+      height = target.height * asy;
+    } else {
+      // Entity groups render translate → rotate → scale, so the bounds
+      // center (a local point) lands at wp + R(rotation)·(scale·center).
+      const lx = (b.x + b.w / 2) * sx;
+      const ly = (b.y + b.h / 2) * sy;
+      const rad = (rotation * Math.PI) / 180;
+      const cos = Math.cos(rad);
+      const sin = Math.sin(rad);
+      center = { x: wp.x + lx * cos - ly * sin, y: wp.y + lx * sin + ly * cos };
+      width = b.w * asx;
+      height = b.h * asy;
+    }
+    return {
+      entity,
+      target,
+      box: { center, width: Math.max(width, 1), height: Math.max(height, 1), rotation },
+    };
+  }
+
+  function onHandlePointerDown(e: React.PointerEvent) {
+    if (e.button !== 0 || spaceHeld) return; // pan/context handlers win
+    const sel = handleSelection();
+    if (!sel) return;
+    const point = screenToWorld(screenOf(e));
+    // Geometric hit-test (nearest-wins for overlapping handles on tiny
+    // boxes); the transparent DOM hit circles only route the event here.
+    const id = hitHandle(sel.box, viewRef.current.s, point);
+    if (!id) return; // outside the slop: fall through to entity/background
+    // A handle grab must never start an entity drag-move or a deselect.
+    e.stopPropagation();
+    handleDragRef.current = {
+      pointerId: e.pointerId,
+      entityId: sel.entity.id,
+      handleId: id,
+      target: sel.target,
+      startBox: sel.box,
+      startWorld: point,
+      moved: false,
+    };
+    svgRef.current?.setPointerCapture(e.pointerId);
+  }
+
+  /**
+   * Commit a finished handle gesture. One setComponentProperty per gesture
+   * ({ quiet: true }, like commitPoints), values rounded like drag-move
+   * (integers; Transform.scale to 2 decimals like roundPoints, since integer
+   * scale is useless). Resizes are committed WITHOUT centerShift
+   * compensation — i.e. from the center: the history model records one undo
+   * entry per command (HearthSession.execute snapshots before every mutating
+   * command), so pairing the size command with a moveEntity would make one
+   * gesture undo in two steps. See applyCenterHandleDrag, which keeps the
+   * ghost consistent with that commit.
+   *
+   * The one exception: a CORNER drag on a sprite or box collider edits
+   * width AND height, which are two separate scalar schema leaves (there is
+   * no vec-shaped size property and no batch command), so it unavoidably
+   * commits two setComponentProperty commands = two undo steps. Edge drags
+   * stay strictly one command.
+   */
+  function commitHandleDrag(hd: HandleDragState, result: DragResult) {
+    const clear = () => setHandleGhost(null);
+    const entity = entityById.get(hd.entityId);
+    if (!sceneId || !entity) {
+      clear();
+      return;
+    }
+    const setProp = (property: string, value: unknown) =>
+      exec('setComponentProperty', { scene: sceneId, entity: hd.entityId, property, value }, { quiet: true });
+    const tf = entity.components.Transform as { rotation?: number; scale?: Vec2 } | undefined;
+
+    if (hd.handleId === 'rotate') {
+      if (!tf) {
+        clear();
+        return;
+      }
+      const deg = Math.round(result.rotation);
+      if (deg === (tf.rotation ?? 0)) {
+        clear();
+        return;
+      }
+      void setProp('Transform.rotation', deg).finally(clear);
+      return;
+    }
+
+    // Which axes this handle edits (corners edit both).
+    const editsW = hd.handleId.includes('e') || hd.handleId.includes('w');
+    const editsH = hd.handleId.includes('n') || hd.handleId.includes('s');
+
+    if (hd.target.kind === 'collider-circle') {
+      // Any handle drags the radius uniformly: take the axis the handle
+      // actually moved (dominant change, so corners work too).
+      const dw = Math.abs(result.width - hd.startBox.width);
+      const dh = Math.abs(result.height - hd.startBox.height);
+      const radius = Math.max(1, Math.round((dw >= dh ? result.width : result.height) / 2));
+      const current = (entity.components.Collider as { radius?: number } | undefined)?.radius ?? 16;
+      if (radius === current) {
+        clear();
+        return;
+      }
+      void setProp('Collider.radius', radius).finally(clear);
+      return;
+    }
+
+    if (hd.target.kind === 'transform-scale') {
+      if (!tf) {
+        clear();
+        return;
+      }
+      // Scale about the entity origin (the only thing one command can do);
+      // base extents are the rendered bounds at scale 1. Signs (flips) are
+      // preserved; magnitude is clamped away from 0 so the entity stays
+      // recoverable, and rounded to 2 decimals like roundPoints.
+      const round2 = (v: number) => Math.round(v * 100) / 100;
+      const cur = { x: tf.scale?.x ?? 1, y: tf.scale?.y ?? 1 };
+      const mag = (extent: number, base: number) => Math.max(0.01, round2(extent / Math.max(base, 1e-6)));
+      const next = {
+        x: editsW ? (cur.x < 0 ? -1 : 1) * mag(result.width, hd.target.width) : cur.x,
+        y: editsH ? (cur.y < 0 ? -1 : 1) * mag(result.height, hd.target.height) : cur.y,
+      };
+      if (next.x === cur.x && next.y === cur.y) {
+        clear();
+        return;
+      }
+      void setProp('Transform.scale', next).finally(clear);
+      return;
+    }
+
+    // sprite-size / collider-box. Sprites render scaled by Transform.scale,
+    // so world extents divide back to component values; physics ignores
+    // scale for box colliders (their width/height ARE world px).
+    const comp = hd.target.component;
+    const asx = hd.target.kind === 'sprite-size' ? Math.abs(tf?.scale?.x ?? 1) || 1 : 1;
+    const asy = hd.target.kind === 'sprite-size' ? Math.abs(tf?.scale?.y ?? 1) || 1 : 1;
+    const commands: Array<[string, number]> = [];
+    const newW = Math.max(1, Math.round(result.width / asx));
+    if (editsW && newW !== Math.round(hd.target.width)) commands.push([`${comp}.width`, newW]);
+    const newH = Math.max(1, Math.round(result.height / asy));
+    if (editsH && newH !== Math.round(hd.target.height)) commands.push([`${comp}.height`, newH]);
+    if (commands.length === 0) {
+      clear();
+      return;
+    }
+    void (async () => {
+      for (const [property, value] of commands) await setProp(property, value);
+    })().finally(clear);
+  }
+
   // ---- pointer handlers ----------------------------------------------------
   function screenOf(e: React.PointerEvent): Vec2 {
     const rect = hostRef.current!.getBoundingClientRect();
@@ -608,6 +837,25 @@ export function SceneView() {
       });
       return;
     }
+    const hDrag = handleDragRef.current;
+    if (hDrag && e.pointerId === hDrag.pointerId) {
+      const now = screenOf(e);
+      if (!hDrag.moved) {
+        // Same dead zone as the entity move drag: ignore sub-half-pixel
+        // wiggle so a plain click on a handle commits nothing.
+        const world = screenToWorld(now);
+        const dx = (world.x - hDrag.startWorld.x) * viewRef.current.s;
+        const dy = (world.y - hDrag.startWorld.y) * viewRef.current.s;
+        if (Math.abs(dx) < 0.5 && Math.abs(dy) < 0.5) return;
+        hDrag.moved = true;
+      }
+      setHandleGhost(
+        applyCenterHandleDrag(hDrag.startBox, hDrag.handleId, hDrag.startWorld, screenToWorld(now), {
+          shift: e.shiftKey,
+        }),
+      );
+      return;
+    }
     const vDrag = vertexDragRef.current;
     if (vDrag && e.pointerId === vDrag.pointerId) {
       const sel = pointsSelection();
@@ -644,6 +892,17 @@ export function SceneView() {
       panRef.current = null;
       return;
     }
+    const hDrag = handleDragRef.current;
+    if (hDrag && e.pointerId === hDrag.pointerId) {
+      handleDragRef.current = null;
+      const result = handleGhostRef.current;
+      if (hDrag.moved && result) {
+        commitHandleDrag(hDrag, result);
+      } else {
+        setHandleGhost(null);
+      }
+      return;
+    }
     const vDrag = vertexDragRef.current;
     if (vDrag && e.pointerId === vDrag.pointerId) {
       vertexDragRef.current = null;
@@ -677,8 +936,17 @@ export function SceneView() {
   function renderSprite(entity: SceneEntity): React.ReactNode {
     const sr = entity.components.SpriteRenderer as any;
     if (!sr || sr.visible === false) return null;
-    const w = sr.width ?? 32;
-    const h = sr.height ?? 32;
+    let w = sr.width ?? 32;
+    let h = sr.height ?? 32;
+    // Live resize ghost: while a handle drag targets this sprite, draw the
+    // in-progress world extents divided back to component-local size
+    // (mirrors the commit math in commitHandleDrag).
+    const hd = handleDragRef.current;
+    if (handleGhost && hd && hd.entityId === entity.id && hd.target.kind === 'sprite-size') {
+      const tf = entity.components.Transform as { scale?: Vec2 } | undefined;
+      w = handleGhost.width / (Math.abs(tf?.scale?.x ?? 1) || 1);
+      h = handleGhost.height / (Math.abs(tf?.scale?.y ?? 1) || 1);
+    }
     const flip = `scale(${sr.flipX ? -1 : 1} ${sr.flipY ? -1 : 1})`;
     const asset = sr.assetId ? assetById.get(sr.assetId) : undefined;
     let visual: React.ReactNode;
@@ -1034,10 +1302,20 @@ export function SceneView() {
           {sorted.map((entity) => {
             const wp = worldPos(entity);
             const tf = entity.components.Transform as any;
-            const rot = tf?.rotation ?? 0;
-            const sx = tf?.scale?.x ?? 1;
-            const sy = tf?.scale?.y ?? 1;
+            let rot = tf?.rotation ?? 0;
+            let sx = tf?.scale?.x ?? 1;
+            let sy = tf?.scale?.y ?? 1;
             const b = boundsOf(entity);
+            // Live rotate/scale ghost for an in-progress handle drag (the
+            // sprite-size ghost lives in renderSprite instead).
+            const hd = handleDragRef.current;
+            if (handleGhost && hd && hd.entityId === entity.id) {
+              rot = handleGhost.rotation;
+              if (hd.target.kind === 'transform-scale') {
+                if (b.w > 0) sx = (sx < 0 ? -1 : 1) * (handleGhost.width / b.w);
+                if (b.h > 0) sy = (sy < 0 ? -1 : 1) * (handleGhost.height / b.h);
+              }
+            }
             return (
               <g
                 key={entity.id}
@@ -1066,8 +1344,11 @@ export function SceneView() {
             );
           })}
 
-          {/* selection outline, drawn on top */}
+          {/* selection outline, drawn on top (the gizmo box replaces it
+              while a handle drag's ghost is live — boundsOf still reads the
+              un-committed component values, so the outline would lag) */}
           {selectedEntity &&
+            !handleGhost &&
             (() => {
               const wp = worldPos(selectedEntity);
               const tf = selectedEntity.components.Transform as any;
@@ -1140,6 +1421,102 @@ export function SceneView() {
                     <g key={`vtx-${i}`} className="poly-vertex" onPointerDown={(e) => onVertexPointerDown(e, i)}>
                       <circle cx={p.x} cy={p.y} r={hit} fill="transparent" stroke="none" />
                       <circle cx={p.x} cy={p.y} r={r} className="poly-vertex-dot" vectorEffect="non-scaling-stroke" />
+                    </g>
+                  ))}
+                </g>
+              );
+            })()}
+
+          {/* transform handles: resize/rotate gizmo on the selection. Drawn
+              last (topmost), so a grab always beats the entity drag-move and
+              background hit-tests underneath. */}
+          {showHandles &&
+            (() => {
+              const sel = handleSelection();
+              if (!sel) return null;
+              const hd = handleDragRef.current;
+              // Live ghost: same center (resizes are center-anchored, see
+              // applyCenterHandleDrag), in-progress extents/rotation.
+              const box: SelectionBox =
+                handleGhost && hd
+                  ? {
+                      center: hd.startBox.center,
+                      width: handleGhost.width,
+                      height: handleGhost.height,
+                      rotation: handleGhost.rotation,
+                    }
+                  : sel.box;
+              const positions = handlePositions(box, view.s);
+              const rotatePos = positions.find((p) => p.id === 'rotate')!;
+              const nPos = positions.find((p) => p.id === 'n')!;
+              const r = 4 / view.s; // 8px squares on screen, like the vertex handles
+              const hit = 10 / view.s; // matches hitHandle's HIT_RADIUS_PX slop
+              return (
+                <g>
+                  {/* target box outline (doubles as the resize ghost; a
+                      circle collider shows its true circle) */}
+                  <g
+                    transform={`translate(${box.center.x} ${box.center.y}) rotate(${box.rotation})`}
+                    pointerEvents="none"
+                  >
+                    {sel.target.kind === 'collider-circle' ? (
+                      <circle
+                        r={box.width / 2}
+                        fill="none"
+                        stroke="var(--accent)"
+                        strokeWidth={1.5}
+                        vectorEffect="non-scaling-stroke"
+                      />
+                    ) : null}
+                    <rect
+                      x={-box.width / 2}
+                      y={-box.height / 2}
+                      width={box.width}
+                      height={box.height}
+                      fill="none"
+                      stroke="var(--accent)"
+                      strokeWidth={1.5}
+                      strokeDasharray={sel.target.kind === 'collider-circle' ? '4 3' : undefined}
+                      vectorEffect="non-scaling-stroke"
+                    />
+                  </g>
+                  <line
+                    x1={nPos.x}
+                    y1={nPos.y}
+                    x2={rotatePos.x}
+                    y2={rotatePos.y}
+                    stroke="var(--accent)"
+                    strokeWidth={1}
+                    vectorEffect="non-scaling-stroke"
+                    pointerEvents="none"
+                  />
+                  {positions.map((h) => (
+                    <g
+                      key={h.id}
+                      className="transform-handle"
+                      style={{ cursor: cursorFor(h.id, box.rotation) }}
+                      onPointerDown={onHandlePointerDown}
+                    >
+                      <circle cx={h.x} cy={h.y} r={hit} fill="transparent" stroke="none" />
+                      {h.id === 'rotate' ? (
+                        <circle
+                          cx={h.x}
+                          cy={h.y}
+                          r={r}
+                          className="transform-handle-rotate-dot"
+                          vectorEffect="non-scaling-stroke"
+                        />
+                      ) : (
+                        <rect
+                          x={h.x - r}
+                          y={h.y - r}
+                          width={r * 2}
+                          height={r * 2}
+                          transform={`rotate(${box.rotation} ${h.x} ${h.y})`}
+                          className="transform-handle-dot"
+                          vectorEffect="non-scaling-stroke"
+                        />
+                      )}
                     </g>
                   ))}
                 </g>

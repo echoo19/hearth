@@ -21,7 +21,7 @@
  * `r = 4 / view.s` pattern for vertex handles. Box-edge handle positions
  * are NOT screen-constant: they sit exactly on the box's world-space edges.
  */
-import type { Vec2 } from './types';
+import type { SceneEntity, Vec2 } from './types';
 
 export type HandleId = 'nw' | 'n' | 'ne' | 'e' | 'se' | 's' | 'sw' | 'w' | 'rotate';
 
@@ -206,6 +206,101 @@ function applyRotateDrag(box: SelectionBox, current: Vec2, mods: { shift: boolea
 export function applyHandleDrag(box: SelectionBox, id: HandleId, start: Vec2, current: Vec2, mods: { shift: boolean }): DragResult {
   if (id === 'rotate') return applyRotateDrag(box, current, mods);
   return applyResizeDrag(box, id, start, current, mods);
+}
+
+/**
+ * Center-anchored variant of {@link applyHandleDrag}, used by SceneView for
+ * the actual gesture. Why not anchored resize: the editor records ONE undo
+ * history entry per command (HearthSession.execute snapshots the project
+ * before every mutating command — see packages/core/src/session.ts — and
+ * `undo` restores one entry per call), so committing an anchored resize
+ * would take a size setComponentProperty PLUS a moveEntity for centerShift
+ * = two undo steps for one gesture. Resizing about the center keeps the
+ * commit to strictly one size command (centerShift is always zero).
+ *
+ * The pointer delta is doubled before delegating so the grabbed handle
+ * still tracks the pointer: growing symmetrically about the center moves
+ * each edge by half the extent change. Rotate drags pass through unchanged
+ * (rotation already pivots on the center).
+ */
+export function applyCenterHandleDrag(box: SelectionBox, id: HandleId, start: Vec2, current: Vec2, mods: { shift: boolean }): DragResult {
+  if (id === 'rotate') return applyRotateDrag(box, current, mods);
+  const doubled: Vec2 = { x: start.x + (current.x - start.x) * 2, y: start.y + (current.y - start.y) * 2 };
+  const result = applyResizeDrag(box, id, start, doubled, mods);
+  return { ...result, centerShift: { x: 0, y: 0 } };
+}
+
+/** What a SceneView handle drag on `entity` actually edits. */
+export interface ResolvedHandleTarget extends HandleTarget {
+  component: 'SpriteRenderer' | 'Collider' | 'Transform';
+  /**
+   * Dot path of the (primary) property the commit writes. `sprite-size` and
+   * `collider-box` extents live in two separate scalar schema leaves
+   * (`.width`/`.height` — there is no vec-shaped size property), so for
+   * those kinds this names the width leaf and the height leaf is the
+   * `.height` sibling.
+   */
+  property: string;
+}
+
+/**
+ * Resolve which component a transform-handle drag edits, in spec priority
+ * order: SpriteRenderer.width/height → box Collider.width/height → circle
+ * Collider.radius (any handle drags the radius uniformly) → Transform.scale.
+ *
+ * The spec's `UIElement.size` tier is unreachable in this schema: UIElement
+ * is anchor/offset/interactive/focusable only (its visuals come from sibling
+ * Text/SpriteRenderer components, which the earlier tiers catch), so
+ * UIElement-only entities fall through to the scale fallback.
+ *
+ * Polygon colliders are skipped too — the point editor owns their geometry,
+ * and Transform.scale is how the runtime scales their points.
+ *
+ * `base` is the entity's rendered bounds at scale 1 (SceneView's boundsOf),
+ * used only by the `transform-scale` fallback: newScale = newExtent / base.
+ * Extents returned are component-local (unscaled) values; SceneView worlds
+ * them per kind (physics ignores Transform scale for box/circle colliders).
+ */
+export function resolveHandleTarget(entity: SceneEntity, base: { w: number; h: number }): ResolvedHandleTarget {
+  const sr = entity.components.SpriteRenderer as { width?: number; height?: number } | undefined;
+  if (sr) {
+    return {
+      kind: 'sprite-size',
+      component: 'SpriteRenderer',
+      property: 'SpriteRenderer.width',
+      width: sr.width ?? 32,
+      height: sr.height ?? 32,
+    };
+  }
+  const collider = entity.components.Collider as
+    | { shape?: string; width?: number; height?: number; radius?: number }
+    | undefined;
+  if (collider && (collider.shape === 'box' || collider.shape === undefined)) {
+    return {
+      kind: 'collider-box',
+      component: 'Collider',
+      property: 'Collider.width',
+      width: collider.width ?? 32,
+      height: collider.height ?? 32,
+    };
+  }
+  if (collider?.shape === 'circle') {
+    const radius = collider.radius ?? 16;
+    return {
+      kind: 'collider-circle',
+      component: 'Collider',
+      property: 'Collider.radius',
+      width: radius * 2,
+      height: radius * 2,
+    };
+  }
+  return {
+    kind: 'transform-scale',
+    component: 'Transform',
+    property: 'Transform.scale',
+    width: base.w,
+    height: base.h,
+  };
 }
 
 const CURSOR_BASE_ANGLE: Record<Exclude<HandleId, 'rotate'>, number> = {
