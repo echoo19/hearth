@@ -368,7 +368,8 @@ describe('syncPrefabInstances', () => {
     // second instance's children also rebuilt from the (now 3-entity) payload
     const secondRootChildren = sceneA.entities.filter((e) => e.parentId === secondRootId);
     expect(secondRootChildren).toHaveLength(2);
-    expect(secondRootChildren.every((c) => c.components.SpriteRenderer?.color === '#abcdef' || true)).toBe(true);
+    // children that have a SpriteRenderer must have the updated color from the payload
+    expect(secondRootChildren.every((c) => !c.components.SpriteRenderer || c.components.SpriteRenderer.color === '#abcdef')).toBe(true);
 
     const sceneB = store.getScene(sceneBId)!;
     const rebuiltThirdRoot = sceneB.entities.find((e) => e.id === thirdRootId)!;
@@ -386,6 +387,27 @@ describe('syncPrefabInstances', () => {
     expect(sync.data.total).toBe(2);
     // sceneB untouched: no entry for it
     expect(sync.data.scenes.find((s: any) => s.scene === sceneBId)).toBeUndefined();
+  });
+
+  it('omits scenes with no instances from the returned scenes array', async () => {
+    const { session, store, asset, sceneAId, sceneBId } = await makeScenario();
+
+    // create a third scene with no instances of the prefab
+    const emptyScene = await session.execute<any>('createScene', { name: 'Empty' });
+    expect(emptyScene.success).toBe(true);
+    const emptySceneId = emptyScene.data.sceneId as string;
+
+    const sync = await session.execute<any>('syncPrefabInstances', { prefab: asset.id });
+    expect(sync.success).toBe(true);
+    expect(sync.data.total).toBe(3); // 2 in sceneA + 1 in sceneB
+    // emptyScene has no instances, so it should be omitted from the scenes array
+    expect(sync.data.scenes.find((s: any) => s.scene === emptySceneId)).toBeUndefined();
+    expect(sync.data.scenes).toEqual(
+      expect.arrayContaining([
+        { scene: sceneAId, instances: 2 },
+        { scene: sceneBId, instances: 1 },
+      ]),
+    );
   });
 
   it('keeps the instance root at its original array index in the scene', async () => {
