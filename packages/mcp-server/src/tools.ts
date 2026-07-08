@@ -543,6 +543,33 @@ export const TOOL_SPECS: ToolSpec[] = [
       loop: z.boolean().optional(),
     },
   },
+  {
+    name: 'create_prefab',
+    command: 'createPrefab',
+    description:
+      "Serialize an entity's full descendant subtree into a reusable prefab asset " +
+      '(assets/prefabs/<slug>.prefab.json). The source root entity becomes an instance of the new prefab. (requires asset-edit)',
+    permission: 'asset-edit',
+    inputShape: {
+      scene: z.string().min(1),
+      entity: z.string().min(1),
+      name: z.string().min(1),
+    },
+  },
+  {
+    name: 'instantiate_prefab',
+    command: 'instantiatePrefab',
+    description:
+      'Instantiate a prefab asset into a scene as a fresh entity subtree (fresh ids), optionally overriding ' +
+      "position/name. The new root entity gains a prefab marker linking it back to the asset. (requires asset-edit)",
+    permission: 'asset-edit',
+    inputShape: {
+      prefab: z.string().min(1),
+      scene: z.string().min(1),
+      position: positionShape.optional(),
+      name: z.string().optional(),
+    },
+  },
 
   // ---- history (undo/redo) ---------------------------------------------------------------
   {

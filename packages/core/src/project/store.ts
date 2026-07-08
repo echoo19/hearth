@@ -43,7 +43,8 @@ export class ProjectError extends Error {
       | 'SCENE_NAME_TAKEN'
       | 'NO_TILEMAP'
       | 'INVALID_TILE_CHAR'
-      | 'TILE_OUT_OF_BOUNDS' = 'INVALID_INPUT',
+      | 'TILE_OUT_OF_BOUNDS'
+      | 'PREFAB_DATA_INVALID' = 'INVALID_INPUT',
   ) {
     super(message);
     this.name = 'ProjectError';

@@ -437,4 +437,48 @@ describe('hearth-mcp server', () => {
     expect(envelope.command).toBe('removeAsset');
     expect(envelope.data.fileDeleted).toBe(true);
   });
+
+  it('create_prefab and instantiate_prefab are registered, mirror every param, and round-trip a subtree', async () => {
+    ctx = await connectClient();
+    const { tools } = await ctx.client.listTools();
+
+    const createTool = tools.find((t) => t.name === 'create_prefab');
+    expect(createTool).toBeDefined();
+    expect(Object.keys(createTool!.inputSchema.properties as Record<string, unknown>).sort()).toEqual([
+      'entity',
+      'name',
+      'scene',
+    ]);
+
+    const placeTool = tools.find((t) => t.name === 'instantiate_prefab');
+    expect(placeTool).toBeDefined();
+    expect(Object.keys(placeTool!.inputSchema.properties as Record<string, unknown>).sort()).toEqual([
+      'name',
+      'position',
+      'prefab',
+      'scene',
+    ]);
+
+    const sceneId = ctx.store.project.initialScene!;
+    const player = ctx.store.getScene(sceneId)!.entities.find((e) => e.name === 'Player')!;
+
+    const create = await ctx.client.callTool({
+      name: 'create_prefab',
+      arguments: { scene: sceneId, entity: player.id, name: 'PlayerPrefab' },
+    });
+    expect(create.isError).toBeFalsy();
+    const createEnvelope = toolJson(create);
+    expect(createEnvelope.command).toBe('createPrefab');
+    expect(createEnvelope.data.asset.type).toBe('prefab');
+
+    const place = await ctx.client.callTool({
+      name: 'instantiate_prefab',
+      arguments: { prefab: 'PlayerPrefab', scene: sceneId, position: { x: 1, y: 2 }, name: 'Player Clone' },
+    });
+    expect(place.isError).toBeFalsy();
+    const placeEnvelope = toolJson(place);
+    expect(placeEnvelope.command).toBe('instantiatePrefab');
+    expect(placeEnvelope.data.entity.name).toBe('Player Clone');
+    expect(placeEnvelope.data.entity.components.Transform.position).toEqual({ x: 1, y: 2 });
+  });
 });

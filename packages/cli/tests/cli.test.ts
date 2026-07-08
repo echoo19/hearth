@@ -488,6 +488,58 @@ describe('hearth duplicate', () => {
   });
 });
 
+describe('hearth prefab', () => {
+  it('prefab create serializes a subtree into a prefab asset and marks the source root', async () => {
+    const dir = path.join(tmpRoot, 'prefab-create');
+    await fsp.mkdir(dir, { recursive: true });
+    await runCli(['init', 'Prefab Create', '--dir', dir, '--json'], tmpRoot);
+
+    const result = await runCli(['prefab', 'create', 'Main', 'Player', 'PlayerPrefab', '--json'], dir);
+    expect(result.code).toBe(0);
+    const envelope = parseJson(result.stdout);
+    expect(envelope.success).toBe(true);
+    expect(envelope.command).toBe('createPrefab');
+    expect(envelope.data.asset.name).toBe('PlayerPrefab');
+    expect(envelope.data.asset.type).toBe('prefab');
+    expect(envelope.data.entityCount).toBe(1);
+
+    const entity = parseJson((await runCli(['inspect', 'entity', 'Main', 'Player', '--json'], dir)).stdout);
+    expect(entity.data.prefab).toEqual({ asset: envelope.data.asset.id });
+  });
+
+  it('prefab place instantiates into a scene with --position and --name', async () => {
+    const dir = path.join(tmpRoot, 'prefab-place');
+    await fsp.mkdir(dir, { recursive: true });
+    await runCli(['init', 'Prefab Place', '--dir', dir, '--json'], tmpRoot);
+    await runCli(['prefab', 'create', 'Main', 'Player', 'PlayerPrefab', '--json'], dir);
+    await runCli(['create', 'scene', 'Level2', '--json'], dir);
+
+    const place = await runCli(
+      ['prefab', 'place', 'PlayerPrefab', 'Level2', '--position', '50,60', '--name', 'Player Clone', '--json'],
+      dir,
+    );
+    expect(place.code).toBe(0);
+    const envelope = parseJson(place.stdout);
+    expect(envelope.success).toBe(true);
+    expect(envelope.command).toBe('instantiatePrefab');
+    expect(envelope.data.entity.name).toBe('Player Clone');
+    expect(envelope.data.entity.components.Transform.position).toEqual({ x: 50, y: 60 });
+    expect(envelope.data.entityCount).toBe(1);
+  });
+
+  it('prefab place with an unknown prefab fails cleanly with NOT_FOUND', async () => {
+    const dir = path.join(tmpRoot, 'prefab-place-missing');
+    await fsp.mkdir(dir, { recursive: true });
+    await runCli(['init', 'Prefab Place Missing', '--dir', dir, '--json'], tmpRoot);
+
+    const place = await runCli(['prefab', 'place', 'NoSuchPrefab', 'Main', '--json'], dir);
+    expect(place.code).toBe(1);
+    const envelope = parseJson(place.stdout);
+    expect(envelope.success).toBe(false);
+    expect(envelope.errors[0].code).toBe('NOT_FOUND');
+  });
+});
+
 describe('hearth commands', () => {
   it('lists more than 30 registered engine commands', async () => {
     const result = await runCli(['commands', '--json'], projectDir);

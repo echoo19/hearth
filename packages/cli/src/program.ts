@@ -627,6 +627,36 @@ export function buildProgram(): Command {
   });
 
   // ---------------------------------------------------------------------
+  // prefab (create from an entity subtree, place instances)
+  // ---------------------------------------------------------------------
+  const prefab = program.command('prefab').description('create prefab assets from entities, and place instances of them');
+  addGlobalOptions(prefab);
+  addGlobalOptions(
+    prefab
+      .command('create <scene> <entity> <name>')
+      .description(
+        "serialize an entity's full descendant subtree into a reusable prefab asset; " +
+          'the source root entity becomes an instance of the new prefab',
+      ),
+  ).action(async (scene: string, entity: string, name: string, opts, cmd) => {
+    await guarded(cmd, 'createPrefab', () => runAndEmit(cmd, 'createPrefab', { scene, entity, name }));
+  });
+  addGlobalOptions(
+    prefab
+      .command('place <prefab> <scene>')
+      .description('instantiate a prefab asset into a scene as a fresh entity subtree')
+      .option('--position <x,y>', 'position for the new root entity')
+      .option('--name <name>', 'name for the new root entity (default: the prefab name)'),
+  ).action(async (prefabRef: string, scene: string, opts, cmd) => {
+    await guarded(cmd, 'instantiatePrefab', () => {
+      const params: Record<string, unknown> = { prefab: prefabRef, scene };
+      if (opts.position) params.position = parsePosition(opts.position);
+      if (opts.name) params.name = opts.name;
+      return runAndEmit(cmd, 'instantiatePrefab', params);
+    });
+  });
+
+  // ---------------------------------------------------------------------
   // paint / fill / resize (tilemap editing)
   // ---------------------------------------------------------------------
   const paint = program.command('paint').description('paint tiles onto a Tilemap component');

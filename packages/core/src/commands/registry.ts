@@ -12,6 +12,7 @@ import * as tilemapCommands from './tilemapCommands.js';
 import * as inspectCommands from './inspectCommands.js';
 import * as scriptCommands from './scriptCommands.js';
 import * as assetCommands from './assetCommands.js';
+import * as prefabCommands from './prefabCommands.js';
 import * as settingsCommands from './settingsCommands.js';
 import * as diffCommands from './diffCommands.js';
 import * as exportCommands from './exportCommands.js';
@@ -68,6 +69,9 @@ const ALL_DEFINITIONS: CommandDefinition[] = [
   assetCommands.removeAsset,
   assetCommands.sliceSpritesheet,
   assetCommands.createAnimationFromSheet,
+  // prefabs
+  prefabCommands.createPrefab,
+  prefabCommands.instantiatePrefab,
   // settings
   settingsCommands.updateSettings,
   // diff / playtest / build
