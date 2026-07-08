@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useState } from 'react';
 import type { DockviewApi } from 'dockview-react';
 import { useEditor } from '../store';
 import { Icon, Modal } from './ui';
@@ -6,7 +6,7 @@ import { ExportDialog } from './ExportDialog';
 import { SceneMenu } from './SceneMenu';
 import { ViewMenu } from '../workspace/ViewMenu';
 import { showPanel } from '../workspace/Workspace';
-import type { HistoryList } from '../types';
+import { useHistoryList } from '../useHistoryList';
 
 // TODO(Task 8): this belongs in keybinds.ts once that module exists — inlined
 // here for now since this is the first place that needs a platform-aware
@@ -18,8 +18,6 @@ export function Toolbar({ dock, storageKey }: { dock: DockviewApi | null; storag
   const sceneId = useEditor((s) => s.sceneId);
   const playing = useEditor((s) => s.playing);
   const debugDraw = useEditor((s) => s.debugDraw);
-  const diff = useEditor((s) => s.diff);
-  const commandSeq = useEditor((s) => s.commandSeq);
   const selectScene = useEditor((s) => s.selectScene);
   const setPlaying = useEditor((s) => s.setPlaying);
   const setDebugDraw = useEditor((s) => s.setDebugDraw);
@@ -31,7 +29,6 @@ export function Toolbar({ dock, storageKey }: { dock: DockviewApi | null; storag
   const [newSceneOpen, setNewSceneOpen] = useState(false);
   const [newSceneName, setNewSceneName] = useState('');
   const [exportOpen, setExportOpen] = useState(false);
-  const [history, setHistory] = useState<HistoryList | null>(null);
 
   async function createScene() {
     const name = newSceneName.trim();
@@ -51,23 +48,8 @@ export function Toolbar({ dock, storageKey }: { dock: DockviewApi | null; storag
     }
   }
 
-  // Same enabled-state wiring as DiffPanel.tsx's Undo/Redo buttons: reload
-  // listHistory whenever a mutation lands (commandSeq) or the diff is
-  // (re)loaded, and derive undo/redo availability from the history cursor.
-  async function loadHistory() {
-    const result = await exec<HistoryList>('listHistory', {}, { quiet: true });
-    setHistory(result.success ? (result.data ?? null) : null);
-  }
-
-  useEffect(() => {
-    void loadHistory();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [diff, commandSeq]);
-
-  const cursor = history?.cursor ?? 0;
-  const entries = history?.entries ?? [];
-  const undoTarget = cursor > 0 ? entries[cursor - 1] : null;
-  const redoTarget = cursor < entries.length ? entries[cursor] : null;
+  // Shared with DiffPanel.tsx's Undo/Redo buttons — see useHistoryList.ts.
+  const { undoTarget, redoTarget } = useHistoryList();
 
   // quiet: the custom log lines below replace exec()'s generic changed-summary.
   async function undo() {
@@ -167,7 +149,7 @@ export function Toolbar({ dock, storageKey }: { dock: DockviewApi | null; storag
         <button
           className="btn btn-sm"
           onClick={() => void snapshot()}
-          title="Save a checkpoint to compare against later (snapshotProject)"
+          title="Save a checkpoint you can review and restore"
         >
           Checkpoint
         </button>
@@ -177,7 +159,7 @@ export function Toolbar({ dock, storageKey }: { dock: DockviewApi | null; storag
             if (dock) showPanel(dock, 'diff');
             void refreshDiff();
           }}
-          title="Show changes since the last checkpoint"
+          title="See what changed since your last checkpoint"
         >
           Review
         </button>

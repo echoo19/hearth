@@ -1,7 +1,8 @@
-import React, { useEffect, useState } from 'react';
+import React, { useState } from 'react';
 import { useEditor } from '../store';
 import { ConfirmDialog, Icon } from './ui';
-import type { HistoryEntry, HistoryList, ProjectDiff } from '../types';
+import { useHistoryList } from '../useHistoryList';
+import type { HistoryEntry, ProjectDiff } from '../types';
 
 function fmt(value: unknown): string {
   const s = JSON.stringify(value);
@@ -14,26 +15,18 @@ function statusClass(status: 'added' | 'removed' | 'modified'): string {
 
 export function DiffPanel() {
   const diff = useEditor((s) => s.diff);
-  const commandSeq = useEditor((s) => s.commandSeq);
   const refreshDiff = useEditor((s) => s.refreshDiff);
   const exec = useEditor((s) => s.exec);
   const log = useEditor((s) => s.log);
   const [confirmRevert, setConfirmRevert] = useState(false);
-  const [history, setHistory] = useState<HistoryList | null>(null);
 
-  async function loadHistory() {
-    const result = await exec<HistoryList>('listHistory', {}, { quiet: true });
-    setHistory(result.success ? (result.data ?? null) : null);
-  }
-
-  // Refetch on mount, after any successful mutating exec() anywhere in the
+  // Refetches on mount, after any successful mutating exec() anywhere in the
   // editor (commandSeq — so Inspector/Hierarchy/SceneView edits show up while
   // this panel stays focused), and whenever the diff is (re)loaded (the
-  // "Refresh diff" button and the panel-focus refresh in Workspace bump `diff`).
-  useEffect(() => {
-    void loadHistory();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [diff, commandSeq]);
+  // "Refresh changes" button and the panel-focus refresh in Workspace bump
+  // `diff`). See useHistoryList.ts.
+  const { undoTarget, redoTarget, history } = useHistoryList();
+  const entries = history?.entries ?? [];
 
   async function snapshot() {
     const result = await exec('snapshotProject', {}, { quiet: true });
@@ -42,11 +35,6 @@ export function DiffPanel() {
       await refreshDiff();
     }
   }
-
-  const cursor = history?.cursor ?? 0;
-  const entries = history?.entries ?? [];
-  const undoTarget = cursor > 0 ? entries[cursor - 1] : null;
-  const redoTarget = cursor < entries.length ? entries[cursor] : null;
 
   // quiet: the custom log lines below replace exec()'s generic changed-summary;
   // history reloads via the commandSeq effect after the mutation lands.
@@ -95,7 +83,7 @@ export function DiffPanel() {
           className="btn btn-danger btn-sm"
           onClick={() => setConfirmRevert(true)}
           disabled={!diff?.hasChanges}
-          title="revertProject: restore the last checkpoint"
+          title="Restore the project to the last checkpoint"
         >
           Restore checkpoint
         </button>

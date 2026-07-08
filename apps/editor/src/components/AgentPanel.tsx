@@ -250,7 +250,7 @@ export function AgentPanel() {
             <h4>The golden rules (what good agents do)</h4>
             <ol className="golden-rules">
               <li>
-                <strong>Snapshot</strong> before changing anything, so the human can diff and revert.
+                <strong>Checkpoint</strong> before changing anything, so you can review and restore.
               </li>
               <li>
                 <strong>Inspect, don't guess</strong>: read the project through structured commands instead of
@@ -264,7 +264,7 @@ export function AgentPanel() {
                 <strong>Validate</strong> after changes and fix what broke.
               </li>
               <li>
-                <strong>Diff</strong> at the end and summarize what changed.
+                <strong>Review</strong> the changes at the end and summarize what changed.
               </li>
             </ol>
           </div>

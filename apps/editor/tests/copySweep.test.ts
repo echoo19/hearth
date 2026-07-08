@@ -33,18 +33,16 @@ const TARGET_RE = /\b(snapshot|diff|baseline)\b/i;
  * Explicit allowlist: `${relative path from apps/editor/src}:${1-indexed line}`.
  * Every entry has a comment explaining why the jargon word is legitimate there.
  */
-const ALLOWLIST = new Set<string>([
-  // --- AgentPanel.tsx: CLI hint block --------------------------------------
-  // Literal shell commands a human/agent types verbatim; `hearth snapshot`
-  // and `hearth diff` are the real CLI verb names and are never renamed.
-  'components/AgentPanel.tsx:113',
-  'components/AgentPanel.tsx:116',
-  // "Golden rules" list restates the same CLI verbs shown in the block above
-  // (snapshot/diff) as instructions for a coding agent driving the CLI —
-  // not the toolbar chrome, so it stays in sync with the actual command names.
-  'components/AgentPanel.tsx:253',
-  'components/AgentPanel.tsx:267',
-]);
+// Nothing needed here right now: AgentPanel.tsx's `hearth snapshot` /
+// `hearth diff` CLI-hint lines (113, 116) live inside a plain template-literal
+// array assigned to a const, not a JSX text node, a tracked attribute, or a
+// log() call, so the sweep never scans them — verified by emptying this set
+// and confirming the test still passes. And the "golden rules" bullets that
+// used to restate "Snapshot"/"Diff" (253, 267) were reworded to the plain
+// vocabulary (Checkpoint/Review), so they no longer match the jargon regex
+// either. If a future edit needs a real allowlist entry, add it here with a
+// comment explaining why the jargon word is legitimate at that position.
+const ALLOWLIST = new Set<string>([]);
 
 function collectTsxFiles(dir: string): string[] {
   const out: string[] = [];
