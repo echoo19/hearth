@@ -206,6 +206,18 @@ subtree has no asset to sync back to.
   committing — see [Tracked-stamp semantics](#tracked-stamp-semantics-read-this-before-you-sync)
   above for exactly what "kept" does and doesn't cover.
 
+## Non-goals
+
+**No live-linked prefabs or per-field overrides.** Instances are deep copies,
+not bindings; you can't override a single component on one instance while
+keeping the rest synced. This is intentional — tracked stamps are simpler and
+more predictable. Per-field overrides and live-link variants are documented
+for a future wave. **Nested prefabs flatten at create time.** If you serialize
+a subtree that contains an instance of another prefab, the child's `prefab`
+marker gets stripped and its entities bake into the new payload — no reference,
+just a flattened copy. **No automatic sync.** Changing a prefab doesn't touch
+any instances until you call `syncPrefabInstances`; sync is always explicit.
+
 ## See also
 
 - [scripting.md](./scripting.md#entities-in-the-current-scene) — the full
