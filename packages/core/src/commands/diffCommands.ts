@@ -12,7 +12,12 @@ import { validateProject } from '../validate.js';
 async function loadBaseline(ctx: any): Promise<ProjectSnapshot | null> {
   const path = joinPath(ctx.store.root, BASELINE_FILE);
   if (!(await ctx.fs.exists(path))) return null;
-  return (await readJson(ctx.fs, path)) as ProjectSnapshot;
+  const snap = (await readJson(ctx.fs, path)) as ProjectSnapshot;
+  // Baselines written before v0.9 have no prefabs section (prefabs didn't
+  // exist, so an old-shape baseline can't reference any payload file either).
+  // Default it so diff/revert on an upgraded project don't blow up.
+  snap.prefabs ??= {};
+  return snap;
 }
 
 export const snapshotProject = defineCommand({

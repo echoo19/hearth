@@ -53,14 +53,18 @@ export async function applySnapshot(ctx: RestoreContext, snapshot: ProjectSnapsh
   // is already on disk and reconcile's exists-guard skips a (missing) trash
   // restore rather than warning; on a create-undo the payload is removed here
   // and reconcile's moveToTrash is a no-op on the already-gone file.
+  // `?? {}`: a snapshot written before v0.9 has no prefabs section. Prefabs
+  // didn't exist then, so such a snapshot can't reference a payload file —
+  // treating it as empty correctly removes any payload created after it.
+  const snapshotPrefabs = snapshot.prefabs ?? {};
   const currentPrefabFiles = await ctx.store.listPrefabFiles();
   for (const path of currentPrefabFiles) {
-    if (!(path in snapshot.prefabs)) {
+    if (!(path in snapshotPrefabs)) {
       await ctx.fs.remove(joinPath(ctx.root, path));
       ctx.changed({ kind: 'asset', path, action: 'deleted' });
     }
   }
-  for (const [path, content] of Object.entries(snapshot.prefabs)) {
+  for (const [path, content] of Object.entries(snapshotPrefabs)) {
     await ctx.fs.writeFile(joinPath(ctx.root, path), content);
     ctx.changed({ kind: 'asset', path, action: 'modified' });
   }

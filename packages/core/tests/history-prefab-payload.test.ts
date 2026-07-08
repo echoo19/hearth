@@ -128,6 +128,57 @@ describe('prefab payload survives undo/redo (snapshot content model)', () => {
     expect(changed.status).toBe('modified');
   });
 
+  it('tolerates a pre-0.9 baseline without a prefabs key: diff succeeds and revert fully applies', async () => {
+    const { fs, session, store } = await makeSession();
+    const sceneId = store.project.initialScene as string;
+
+    // Simulate a v0.8.x checkpoint: snapshot, then strip the prefabs key the
+    // old core never wrote. (Pre-0.9 projects can't have prefab assets, so an
+    // old-shape baseline never references any payload file.)
+    const snap = await session.execute<any>('snapshotProject');
+    expect(snap.success).toBe(true);
+    const baselinePath = '/proj/.hearth/baseline.json';
+    const baseline = JSON.parse(await fs.readFile(baselinePath));
+    expect(baseline.prefabs).toBeDefined();
+    delete baseline.prefabs;
+    await fs.writeFile(baselinePath, JSON.stringify(baseline));
+
+    // Post-baseline changes across every restore phase: a script (restored
+    // before the prefab loop), a scene entity (model), and a brand-new prefab
+    // (asset index + payload file).
+    const script = await session.execute<any>('createScript', { name: 'mover' });
+    expect(script.success).toBe(true);
+    const scriptPath = script.data.path as string;
+    const created = await session.execute<any>('createEntity', { scene: sceneId, name: 'Extra' });
+    expect(created.success).toBe(true);
+    const player = store.getScene(sceneId)!.entities.find((e: any) => e.name === 'Player')!;
+    const prefab = await session.execute<any>('createPrefab', {
+      scene: sceneId,
+      entity: player.id,
+      name: 'PlayerPrefab',
+    });
+    expect(prefab.success).toBe(true);
+    const prefabPath = prefab.data.asset.path as string;
+
+    // diff must not throw on the missing prefabs section.
+    const diff = await session.execute<any>('diffProject');
+    expect(diff.success).toBe(true);
+    expect(diff.data.hasChanges).toBe(true);
+
+    // revert must apply FULLY — the old bug threw mid-applySnapshot after the
+    // scripts loop, leaving scripts rewritten but scenes/assets untouched.
+    const revert = await session.execute<any>('revertProject', { confirm: true });
+    expect(revert.success).toBe(true);
+
+    expect(await fs.exists(`/proj/${scriptPath}`)).toBe(false); // script rolled back
+    const scene = store.getScene(sceneId)!;
+    expect(scene.entities.some((e: any) => e.name === 'Extra')).toBe(false); // scene rolled back
+    expect(store.getAsset('PlayerPrefab')).toBeUndefined(); // asset index rolled back
+    expect(await fs.exists(`/proj/${prefabPath}`)).toBe(false); // payload file rolled back
+    const player2 = scene.entities.find((e: any) => e.name === 'Player')!;
+    expect(player2.prefab).toBeUndefined(); // marker rolled back
+  });
+
   it('(e) a corrupt prefab payload section in a history snapshot fails undo cleanly (HISTORY_CORRUPT)', async () => {
     const { fs, session, store } = await makeSession();
     const { sceneId, asset } = await makePrefab(session, store);

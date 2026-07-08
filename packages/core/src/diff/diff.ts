@@ -213,9 +213,12 @@ export function diffSnapshots(before: ProjectSnapshot, after: ProjectSnapshot): 
   // updatePrefab (same id/path, same entityCount metadata) leaves the index
   // entry byte-identical. Track which prefab payload files changed so such a
   // rewrite still surfaces as a modified asset.
+  // `?? {}` guards: a snapshot written before v0.9 has no prefabs section.
+  const beforePrefabs = before.prefabs ?? {};
+  const afterPrefabs = after.prefabs ?? {};
   const changedPrefabPaths = new Set<string>();
-  for (const path of new Set([...Object.keys(before.prefabs), ...Object.keys(after.prefabs)])) {
-    if (before.prefabs[path] !== after.prefabs[path]) changedPrefabPaths.add(path);
+  for (const path of new Set([...Object.keys(beforePrefabs), ...Object.keys(afterPrefabs)])) {
+    if (beforePrefabs[path] !== afterPrefabs[path]) changedPrefabPaths.add(path);
   }
 
   const assets: AssetDiffEntry[] = [];
