@@ -12,7 +12,13 @@ import { ZodError } from 'zod';
 import type { FsLike } from '../fs.js';
 import { joinPath } from '../fs.js';
 import { readJson, writeJson, ProjectError, type ProjectSnapshot } from './store.js';
-import { HISTORY_DIR, ProjectFileSchema, AssetIndexSchema, PlaytestSchema } from '../schema/project.js';
+import {
+  HISTORY_DIR,
+  ProjectFileSchema,
+  AssetIndexSchema,
+  PlaytestSchema,
+  PrefabDataSchema,
+} from '../schema/project.js';
 import { SceneSchema } from '../schema/scene.js';
 import { pruneTrash } from './trash.js';
 
@@ -64,7 +70,28 @@ function validateSnapshot(raw: unknown, sourceFile: string): ProjectSnapshot {
       playtests[id] = PlaytestSchema.parse(pt);
     }
 
-    return { project, scenes, assets, scripts, playtests };
+    // Prefab payloads are path -> raw file text (like scripts), but the text
+    // must be a valid prefab payload — a garbled one would get written to disk
+    // by applySnapshot and then fail every later loadPrefabData. Absent on
+    // snapshots written before payloads were tracked; treat that as empty.
+    const prefabsRaw = snap.prefabs ?? {};
+    if (typeof prefabsRaw !== 'object' || prefabsRaw === null || Array.isArray(prefabsRaw)) {
+      throw new Error('prefabs must be an object keyed by path');
+    }
+    const prefabs: Record<string, string> = {};
+    for (const [path, content] of Object.entries(prefabsRaw as Record<string, unknown>)) {
+      if (typeof content !== 'string') throw new Error(`prefab "${path}" is not a string`);
+      let payload: unknown;
+      try {
+        payload = JSON.parse(content);
+      } catch {
+        throw new Error(`prefab "${path}" is not valid JSON`);
+      }
+      PrefabDataSchema.parse(payload);
+      prefabs[path] = content;
+    }
+
+    return { project, scenes, assets, scripts, prefabs, playtests };
   } catch (err) {
     const detail =
       err instanceof ZodError

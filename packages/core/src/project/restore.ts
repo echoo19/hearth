@@ -43,6 +43,28 @@ export async function applySnapshot(ctx: RestoreContext, snapshot: ProjectSnapsh
     ctx.changed({ kind: 'script', path, action: 'modified' });
   }
 
+  // Restore prefab payload files, the same content-owned way as scripts.
+  // reconcileAssetFiles below only knows create/delete (an asset appearing or
+  // vanishing from the index); an in-place updatePrefab keeps the same asset
+  // id/path and just rewrites the payload, so the index diff is blind to it.
+  // Rewriting every payload from the snapshot — and dropping any payload file
+  // created after it — makes that rewrite undoable and keeps disk in sync.
+  // This runs BEFORE reconcileAssetFiles so that on a create-redo the payload
+  // is already on disk and reconcile's exists-guard skips a (missing) trash
+  // restore rather than warning; on a create-undo the payload is removed here
+  // and reconcile's moveToTrash is a no-op on the already-gone file.
+  const currentPrefabFiles = await ctx.store.listPrefabFiles();
+  for (const path of currentPrefabFiles) {
+    if (!(path in snapshot.prefabs)) {
+      await ctx.fs.remove(joinPath(ctx.root, path));
+      ctx.changed({ kind: 'asset', path, action: 'deleted' });
+    }
+  }
+  for (const [path, content] of Object.entries(snapshot.prefabs)) {
+    await ctx.fs.writeFile(joinPath(ctx.root, path), content);
+    ctx.changed({ kind: 'asset', path, action: 'modified' });
+  }
+
   // Playtest and scene files aren't reconstructed from the snapshot (unlike
   // scripts, whose content IS the snapshot) — they're written wholesale by
   // store.save() from whatever's now in ctx.store.playtests/scenes. save()

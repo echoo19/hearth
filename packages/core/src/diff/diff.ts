@@ -209,14 +209,27 @@ export function diffSnapshots(before: ProjectSnapshot, after: ProjectSnapshot): 
   }
 
   // --- assets ---
+  // A prefab's payload lives in a file, not the index, so an in-place
+  // updatePrefab (same id/path, same entityCount metadata) leaves the index
+  // entry byte-identical. Track which prefab payload files changed so such a
+  // rewrite still surfaces as a modified asset.
+  const changedPrefabPaths = new Set<string>();
+  for (const path of new Set([...Object.keys(before.prefabs), ...Object.keys(after.prefabs)])) {
+    if (before.prefabs[path] !== after.prefabs[path]) changedPrefabPaths.add(path);
+  }
+
   const assets: AssetDiffEntry[] = [];
   const bAssets = new Map(before.assets.assets.map((a) => [a.id, a]));
   const aAssets = new Map(after.assets.assets.map((a) => [a.id, a]));
   for (const [id, asset] of aAssets) {
     if (!bAssets.has(id)) {
       assets.push({ id, name: asset.name, type: asset.type, path: asset.path, status: 'added' });
-    } else if (JSON.stringify(bAssets.get(id)) !== JSON.stringify(asset)) {
-      assets.push({ id, name: asset.name, type: asset.type, path: asset.path, status: 'modified' });
+    } else {
+      const indexChanged = JSON.stringify(bAssets.get(id)) !== JSON.stringify(asset);
+      const payloadChanged = asset.type === 'prefab' && changedPrefabPaths.has(asset.path);
+      if (indexChanged || payloadChanged) {
+        assets.push({ id, name: asset.name, type: asset.type, path: asset.path, status: 'modified' });
+      }
     }
   }
   for (const [id, asset] of bAssets) {

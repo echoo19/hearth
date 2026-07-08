@@ -15,6 +15,7 @@ import {
   PROJECT_FILE,
   ASSET_INDEX_FILE,
   PLAYTESTS_DIR,
+  PREFABS_DIR,
 } from '../schema/project.js';
 import { SceneSchema, type Scene } from '../schema/scene.js';
 import { joinPath, type FsLike } from '../fs.js';
@@ -26,6 +27,14 @@ export interface ProjectSnapshot {
   assets: AssetIndex;
   /** Script path -> file contents. */
   scripts: Record<string, string>;
+  /**
+   * Prefab payload path -> raw file contents. Captured (and restored) exactly
+   * like `scripts`: the asset index tracks a prefab's existence, but updatePrefab
+   * rewrites the payload file in place under the same path/asset id, so the
+   * index alone can't see the change. Storing the payload here makes an
+   * in-place rewrite visible to undo/redo, revert, and diff.
+   */
+  prefabs: Record<string, string>;
   playtests: Record<string, Playtest>; // keyed by playtest id
 }
 
@@ -194,17 +203,38 @@ export class ProjectStore {
     return out.sort();
   }
 
+  /** Read a prefab payload file's raw text (project-relative path). */
+  async readPrefabFile(prefabPath: string): Promise<string> {
+    return this.fs.readFile(joinPath(this.root, prefabPath));
+  }
+
+  /** All prefab payload files on disk (project-relative), sorted. */
+  async listPrefabFiles(): Promise<string[]> {
+    const dir = joinPath(this.root, PREFABS_DIR);
+    if (!(await this.fs.exists(dir))) return [];
+    const out: string[] = [];
+    for (const f of await this.fs.readdir(dir)) {
+      if (f.endsWith('.prefab.json')) out.push(joinPath(PREFABS_DIR, f));
+    }
+    return out.sort();
+  }
+
   /** Deep-copy snapshot of the whole project model (for diff baselines). */
   async toSnapshot(): Promise<ProjectSnapshot> {
     const scripts: Record<string, string> = {};
     for (const path of await this.listScripts()) {
       scripts[path] = await this.readScript(path);
     }
+    const prefabs: Record<string, string> = {};
+    for (const path of await this.listPrefabFiles()) {
+      prefabs[path] = await this.readPrefabFile(path);
+    }
     return structuredClone({
       project: this.project,
       scenes: Object.fromEntries(this.scenes),
       assets: this.assets,
       scripts,
+      prefabs,
       playtests: Object.fromEntries(this.playtests),
     });
   }
