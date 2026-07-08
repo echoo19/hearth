@@ -6,7 +6,7 @@ import type { AssetItem } from '../types';
 import { ConfirmDialog, Icon, Modal } from './ui';
 import { SliceDialog } from './SliceDialog';
 import { frameCrop, parseFrameRef, readSheetSize } from '../assetPreview';
-import { countPrefabInstances, syncConfirmBody } from '../prefabActions';
+import { countPrefabInstances, createSyncPreflight, syncConfirmBody } from '../prefabActions';
 
 /** One animation asset's resolved first-frame thumbnail (fetched from its
  * .anim.json), or null once we've tried and found nothing showable. */
@@ -100,6 +100,15 @@ export function AssetsPanel() {
   const [tileDialog, setTileDialog] = useState(false);
   const [sliceDialog, setSliceDialog] = useState(false);
   const [syncTarget, setSyncTarget] = useState<{ asset: AssetItem; count: number } | null>(null);
+  // Sync's instance-count preflight (countPrefabInstances) is a multi-scene
+  // round-trip — while it's in flight the user can click Sync again (same or
+  // a different asset) or select a different asset entirely. The token
+  // guards "no newer request started"; the ref guards "the asset the user is
+  // still looking at hasn't changed" (selectedAssetId is stale in the
+  // closure once we're past the `await`).
+  const syncPreflightRef = useRef(createSyncPreflight());
+  const selectedAssetIdRef = useRef<string | null>(null);
+  const [pendingSyncAssetId, setPendingSyncAssetId] = useState<string | null>(null);
 
   // animation card thumbnails: resolved lazily from each animation's
   // .anim.json (first frame ref), cached per asset id so re-renders don't
@@ -141,6 +150,10 @@ export function AssetsPanel() {
       audioRef.current = null;
     };
   }, []);
+
+  useEffect(() => {
+    selectedAssetIdRef.current = selectedAssetId;
+  }, [selectedAssetId]);
 
   // Animation cards show a first-frame thumbnail: fetch each animation
   // asset's .anim.json once and remember whether frame[0] is a plain
@@ -274,8 +287,22 @@ export function AssetsPanel() {
   }
 
   async function openSyncConfirm(asset: AssetItem) {
-    const count = await countPrefabInstances(exec, info?.scenes.map((s) => s.id) ?? [], asset.id);
-    setSyncTarget({ asset, count });
+    const token = syncPreflightRef.current.begin();
+    setPendingSyncAssetId(asset.id);
+    try {
+      const count = await countPrefabInstances(exec, info?.scenes.map((s) => s.id) ?? [], asset.id);
+      // Drop the result silently if a newer Sync click has started, or the
+      // user has since selected a different asset — either way this count
+      // is no longer for what's on screen and must not pop a destructive
+      // confirm dialog for it.
+      if (syncPreflightRef.current.isCurrent(token) && selectedAssetIdRef.current === asset.id) {
+        setSyncTarget({ asset, count });
+      }
+    } catch (err) {
+      log('error', 'editor', `Could not count "${asset.name}" instances: ${(err as Error).message}`);
+    } finally {
+      setPendingSyncAssetId((id) => (id === asset.id ? null : id));
+    }
   }
 
   async function importFiles(files: Iterable<File>) {
@@ -554,8 +581,13 @@ export function AssetsPanel() {
                 >
                   <Icon name="plus" size={11} /> Add to scene
                 </button>
-                <button className="btn btn-sm" onClick={() => void openSyncConfirm(selectedAsset)}>
-                  <Icon name="prefab" size={11} /> Sync instances
+                <button
+                  className="btn btn-sm"
+                  disabled={pendingSyncAssetId === selectedAsset.id}
+                  onClick={() => void openSyncConfirm(selectedAsset)}
+                >
+                  <Icon name="prefab" size={11} />{' '}
+                  {pendingSyncAssetId === selectedAsset.id ? 'Syncing…' : 'Sync instances'}
                 </button>
               </>
             ) : (

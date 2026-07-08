@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { countPrefabInstances, syncConfirmBody } from '../src/prefabActions';
+import { countPrefabInstances, createSyncPreflight, syncConfirmBody } from '../src/prefabActions';
 import type { CommandResult } from '../src/types';
 
 describe('syncConfirmBody', () => {
@@ -58,5 +58,28 @@ describe('countPrefabInstances', () => {
     const exec = async <T>(): Promise<CommandResult<T>> => ok({ entities: [] }) as unknown as CommandResult<T>;
     const total = await countPrefabInstances(exec, [], 'ast_1');
     expect(total).toBe(0);
+  });
+});
+
+describe('createSyncPreflight', () => {
+  it('reports a token current when no later begin() has been issued', () => {
+    const preflight = createSyncPreflight();
+    const token = preflight.begin();
+    expect(preflight.isCurrent(token)).toBe(true);
+  });
+
+  it('invalidates an earlier token once a second begin() call is made — the second call wins, the first is stale', () => {
+    const preflight = createSyncPreflight();
+    const firstToken = preflight.begin();
+    const secondToken = preflight.begin();
+    expect(preflight.isCurrent(firstToken)).toBe(false);
+    expect(preflight.isCurrent(secondToken)).toBe(true);
+  });
+
+  it('keeps the latest token current across repeated checks (does not consume it)', () => {
+    const preflight = createSyncPreflight();
+    const token = preflight.begin();
+    expect(preflight.isCurrent(token)).toBe(true);
+    expect(preflight.isCurrent(token)).toBe(true);
   });
 });

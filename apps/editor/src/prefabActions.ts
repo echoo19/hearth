@@ -42,3 +42,41 @@ export async function countPrefabInstances(
 export function syncConfirmBody(count: number): string {
   return `Rebuilds ${count} instances from this prefab. Names and positions are kept.`;
 }
+
+/**
+ * Guards a countPrefabInstances preflight against races: AssetsPanel's
+ * "Sync instances" and Inspector's "Sync all" both `await
+ * countPrefabInstances(...)` (a multi-scene inspectScene round-trip) before
+ * opening a destructive-styled confirm dialog for whatever was the target at
+ * click time. If the user moves on — clicks Sync again (for the same or a
+ * different target) or the underlying selection changes — while that count
+ * is still in flight, the eventual result must not surface a confirm dialog
+ * for a target the user is no longer looking at.
+ *
+ * `begin()` marks the start of a new attempt and invalidates every prior one
+ * from this controller; call sites should call it again (or otherwise bump
+ * it) whenever the target itself changes, not just when a new count starts,
+ * so a passive selection change also drops a stale in-flight result.
+ * `isCurrent(token)` is the only source of truth for "is this result still
+ * wanted" — false means drop it silently, no dialog, no state update beyond
+ * clearing the pending flag.
+ */
+export interface SyncPreflight {
+  /** Start a new attempt, invalidating any earlier one from this controller. Returns a token for this attempt. */
+  begin(): number;
+  /** True only if no `begin()` call has happened since `token` was issued. */
+  isCurrent(token: number): boolean;
+}
+
+export function createSyncPreflight(): SyncPreflight {
+  let latest = 0;
+  return {
+    begin() {
+      latest += 1;
+      return latest;
+    },
+    isCurrent(token) {
+      return token === latest;
+    },
+  };
+}

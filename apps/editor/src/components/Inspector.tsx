@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { getSheetFrames } from '@hearth/core';
 import { useEditor } from '../store';
 import type { AssetItem, SceneEntity } from '../types';
@@ -15,7 +15,7 @@ import {
   type TileAssetRow,
 } from '../tileAssetsList';
 import { ConfirmDialog, Icon, componentIcon } from './ui';
-import { countPrefabInstances, syncConfirmBody } from '../prefabActions';
+import { countPrefabInstances, createSyncPreflight, syncConfirmBody } from '../prefabActions';
 
 // ---------------------------------------------------------------------------
 // Field editors: value type decides the control. All commit on blur / Enter.
@@ -510,10 +510,23 @@ export function Inspector() {
   const componentDocs = useEditor((s) => s.componentDocs);
   const exec = useEditor((s) => s.exec);
   const select = useEditor((s) => s.select);
+  const log = useEditor((s) => s.log);
 
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [confirmRemove, setConfirmRemove] = useState<string | null>(null);
   const [syncAllTarget, setSyncAllTarget] = useState<{ asset: string; count: number } | null>(null);
+  // "Sync all"'s instance-count preflight (countPrefabInstances) is a
+  // multi-scene round-trip — while it's in flight the user can click Sync
+  // all again or select a different entity. The token guards "no newer
+  // request started"; the ref guards "selection hasn't moved on" (selection
+  // is stale in the closure once we're past the `await`).
+  const syncPreflightRef = useRef(createSyncPreflight());
+  const selectionRef = useRef(selection);
+  const [pendingSyncAllFor, setPendingSyncAllFor] = useState<string | null>(null);
+
+  useEffect(() => {
+    selectionRef.current = selection;
+  }, [selection]);
 
   const entity = useMemo(
     () => scene?.entities.find((e) => e.id === selection),
@@ -555,8 +568,23 @@ export function Inspector() {
 
   const openSyncAllConfirm = async () => {
     if (!prefabAssetId) return;
-    const count = await countPrefabInstances(exec, info?.scenes.map((s) => s.id) ?? [], prefabAssetId);
-    setSyncAllTarget({ asset: prefabAssetId, count });
+    const requestEntityId = entity.id;
+    const token = syncPreflightRef.current.begin();
+    setPendingSyncAllFor(requestEntityId);
+    try {
+      const count = await countPrefabInstances(exec, info?.scenes.map((s) => s.id) ?? [], prefabAssetId);
+      // Drop the result silently if a newer Sync all click has started, or
+      // selection has since moved to a different entity — either way this
+      // count is no longer for what's on screen and must not pop a
+      // destructive confirm dialog for it.
+      if (syncPreflightRef.current.isCurrent(token) && selectionRef.current === requestEntityId) {
+        setSyncAllTarget({ asset: prefabAssetId, count });
+      }
+    } catch (err) {
+      log('error', 'editor', `Could not count prefab instances: ${(err as Error).message}`);
+    } finally {
+      setPendingSyncAllFor((id) => (id === requestEntityId ? null : id));
+    }
   };
 
   return (
@@ -577,8 +605,12 @@ export function Inspector() {
           <button className="btn btn-sm" onClick={() => void handleUpdatePrefab()}>
             Update prefab
           </button>
-          <button className="btn btn-sm" onClick={() => void openSyncAllConfirm()}>
-            Sync all
+          <button
+            className="btn btn-sm"
+            disabled={pendingSyncAllFor === entity.id}
+            onClick={() => void openSyncAllConfirm()}
+          >
+            {pendingSyncAllFor === entity.id ? 'Syncing…' : 'Sync all'}
           </button>
         </div>
       )}
