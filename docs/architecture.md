@@ -30,7 +30,7 @@ results.
 
 | Package | Role |
 | --- | --- |
-| `packages/core` | Zod schemas for every file format; `ProjectStore` (load/save); the **command registry** (56 operations, including web export, pathfinding, spritesheet slicing, undo/redo/history, the command journal, tilemap editing, and the `ctx` API reference); validation; structural diff; permission model; procedural asset generation (SVG sprites/tiles, WAV sounds); AGENTS.md/CLAUDE.md generation; the deterministic grid A\* pathfinding module shared by the runtime and the CLI/MCP. Browser-safe: Node fs access is isolated in `@hearth/core/node`. |
+| `packages/core` | Zod schemas for every file format; `ProjectStore` (load/save); the **command registry** (60 operations, including web export, pathfinding, spritesheet slicing, undo/redo/history, the command journal, tilemap editing, prefab authoring, and the `ctx` API reference); validation; structural diff; permission model; procedural asset generation (SVG sprites/tiles, WAV sounds); AGENTS.md/CLAUDE.md generation; the deterministic grid A\* pathfinding module shared by the runtime and the CLI/MCP; prefab serialization/instantiation (see [Prefabs](#prefabs) below). Browser-safe: Node fs access is isolated in `@hearth/core/node`. |
 | `packages/runtime` | 2D runtime: scene instantiation, fixed-timestep loop, input actions, box/circle/convex-polygon physics (SAT, with mass/restitution/friction and named collision layers), a synchronous deterministic event bus, screen-space UI with pointer hit-testing, audio (recorded headlessly, Web Audio in the browser), camera, and the script engine — **Lua 5.4 (sandboxed wasmoon VM) by default, JavaScript equally supported, one identical `ctx` API** with scene switching, timers, tweens, seeded RNG, and persistent save data. `SceneRuntime` runs a single scene; `GameSession` wraps it for cross-scene games (`ctx.scenes.load` swaps runtimes while the RNG stream, save storage, frame counter, and logs carry across). The main entry is **headless** (runs in Node for playtests); the PixiJS renderer is the separate `@hearth/runtime/pixi` subpath used by the editor's game preview, and the web-export player bundle is built from the same code. |
 | `packages/playtest` | Headless playtest execution: scripted input + assertions over a `GameSession` (seeded, scene-switch aware), exposed as `RuntimeHooks` injected into core commands (`runPlaytest`, `runScene`). |
 | `packages/cli` | `hearth`, the command-line surface. Every subcommand dispatches into the core command system; `--json` emits the raw `CommandResult` envelope for agents. |
@@ -212,6 +212,26 @@ real `metadata.frames`/`metadata.grid` for sliced sheets to render
 correctly, exactly as they do from the authored `assets.json`. See
 [assets.md](./assets.md) for the full import → slice → animate → play
 walkthrough.
+
+## Prefabs
+
+`packages/core/src/project/prefabData.ts` is the pure, file-I/O-free layer
+`createPrefab`/`instantiatePrefab`/`updatePrefab`/`syncPrefabInstances`
+(`packages/core/src/commands/prefabCommands.ts`) all build on:
+`collectSubtree` (root-first BFS over a scene's flat entity list, following
+`parentId`), `serializePrefab` (subtree → normalized-local-id `PrefabData`,
+stripping any `prefab` marker so nested-prefab instances flatten into plain
+entities), and `instantiatePrefabData` (payload → fresh scene entities with
+new `ent_*` ids, optionally pinning the root's id via `preserveRootId` —
+the one thing `syncPrefabInstances` needs that a plain instantiate
+doesn't, since a sync must keep the existing root entity's id valid). The
+runtime's `spawnPrefab` (`packages/runtime/src/runtime.ts`) calls the same
+`instantiatePrefabData` at play time — one instantiation code path for
+both "author time" (commands writing into a scene file) and "play time"
+(the runtime creating live entities), so behavior can't drift between the
+two. See [prefabs.md](./prefabs.md) for the full data model, command
+reference, and tracked-stamp semantics (what `syncPrefabInstances`
+preserves vs. rebuilds).
 
 ## Filesystem abstraction
 

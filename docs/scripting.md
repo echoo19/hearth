@@ -121,6 +121,7 @@ virtual axes are configured (CLI, MCP, and the editor's Input panel) and
 | `ctx.scene.find(idOrName)` | EntityHandle or nil (exact name) |
 | `ctx.scene.findByTag(tag)` | EntityHandle list |
 | `ctx.scene.spawn(def)` | Create an entity at runtime: `{ name, position?, tags?, components? }` |
+| `ctx.scene.spawnPrefab(name, opts?)` | Spawn a prefab asset (by name or id) as a fresh entity subtree: `opts = { position?, name? }`. Returns the root's handle, or `nil` if no such prefab exists. |
 | `ctx.scene.destroy(ref)` | Remove an entity (id or handle) |
 | `ctx.scene.findPath(from, to, opts?)` | Grid A\* path over the scene's solid geometry — `Vec2[]` of cell centers, or `nil` if unreachable |
 
@@ -161,6 +162,32 @@ Re-running `findPath` every frame is wasteful for most AI — the
 `bounce-patrol` example (`packages/examples/bounce-patrol`) only
 recomputes every 30 frames and walks the cached path waypoint-to-waypoint
 in between.
+
+`spawnPrefab` instantiates a prefab asset (authored via `createPrefab` /
+`hearth prefab create`, or the editor's "Save as prefab") as a live entity
+subtree: every entity in the payload gets a fresh id, parent/child links
+within the spawned set are preserved, and spawned children register their
+scripts exactly like the root does. Spawning is deterministic — ids come
+from the engine's id generator, never the seeded RNG stream, so it doesn't
+perturb `ctx.random`. Two things to know before you rely on it:
+
+- An unknown prefab name/id returns `nil` (with a `warn`-level log), the
+  same tolerance-for-bad-input contract as `ctx.scene.spawn` — it never
+  throws.
+- **Destroying the returned root does NOT cascade to its children** —
+  `ctx.scene.destroy` is always per-entity, so a spawned subtree's children
+  outlive a destroyed root unless you destroy each of them too.
+
+```lua
+local grub = ctx.scene.spawnPrefab("Ember Grub", { position = { x = 400, y = 300 } })
+```
+
+```js
+const grub = ctx.scene.spawnPrefab('Ember Grub', { position: { x: 400, y: 300 } });
+```
+
+See [prefabs.md](./prefabs.md) for the full prefab data model, the four
+authoring commands, and the editor flows around them.
 
 ### Scene management
 

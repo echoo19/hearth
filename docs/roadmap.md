@@ -1,15 +1,20 @@
 # Hearth Roadmap
 
-v0.8 is the current milestone. Its first release, v0.8.0 (shipped,
-below), gave the editor an embedded agent panel (a real terminal running
-the user's own `claude`, pre-wired to the project via MCP, with a live
-trust timeline and Snapshot/Review/Revert), made the editor live-follow
-any external agent through a new disk-backed command journal, and used
-that journal to publish real performance numbers plus land the perf work
-(spatial-hash broadphase, entity/tilemap caching, particle pooling) that
-makes them look good, alongside scene-management and tilemap-editing
-ergonomics and a 9th example proving the new scale ceiling. On top of
-v0.7's disk-backed undo/redo, gamepad input with virtual analog axes,
+v0.9 is the current milestone. Its first release, v0.9.0 (shipped,
+below), added **prefabs** (tracked-stamp reusable entity templates: create/
+instantiate/update/sync, CLI + MCP parity, `ctx.scene.spawnPrefab`) and a
+round of **editor friendliness** — plain-language chrome
+(Checkpoint/Review/Changes), visible toolbar Undo/Redo, a keybind registry
+with a `?` shortcut cheat sheet, and direct-manipulation transform handles
+in the scene view. On top of v0.8's embedded agent panel (a real terminal
+running the user's own `claude`, pre-wired to the project via MCP, with a
+live trust timeline and Snapshot/Review/Revert), the disk-backed command
+journal that made the editor live-follow any external agent, published
+performance numbers plus the perf work (spatial-hash broadphase,
+entity/tilemap caching, particle pooling) that makes them look good, and
+scene-management/tilemap-editing ergonomics with a 9th example proving the
+new scale ceiling — v0.7's disk-backed undo/redo, gamepad input with
+virtual analog axes,
 deterministic camera effects (shake/flash/fade/zoom punch), and a second
 generation of UI widgets (`UILayout`/`UISlider`/`UIToggle`, focus
 navigation) — v0.6's asset pipeline v2 (imported spritesheets
@@ -31,6 +36,45 @@ what's deliberately missing.
 The standing rule for everything below: **agent-native first**. Each system
 ships as schemas + commands (inspectable via `hearth … --json`, exposed as
 MCP tools, testable in headless playtests) before it gets editor UI.
+
+## Shipped in v0.9.0
+
+- **Prefabs (tracked stamps)**: reusable entity templates. `createPrefab`
+  serializes an entity's full descendant subtree into a new prefab asset
+  (`assets/prefabs/<slug>.prefab.json`, normalized local ids, root-first);
+  `instantiatePrefab` places a fresh, freshly-id'd copy into a scene;
+  `updatePrefab` pushes a modified instance's subtree back onto the asset;
+  `syncPrefabInstances` rebuilds every tracked instance (one scene or all)
+  from the current payload, preserving each instance's id/name/position/
+  enabled state but replacing its whole descendant subtree. Registry grew
+  56 → 60; CLI `hearth prefab create|place|update|sync`, MCP
+  `create_prefab`/`instantiate_prefab`/`update_prefab`/
+  `sync_prefab_instances`, four new `PREFAB_*` validation codes, and
+  `ctx.scene.spawnPrefab(name, opts?)` for runtime spawning (returns `nil`/
+  `null` on an unknown name; destroying the returned root does not cascade
+  to its children). No live linking, no per-field overrides — a sync is an
+  all-or-nothing rebuild by design. Editor surfaces: Hierarchy's "Save as
+  prefab", Assets panel's "Add to scene"/"Sync instances", and Inspector's
+  "Update prefab"/"Sync all" banner on a selected instance. See
+  [prefabs.md](./prefabs.md).
+- **Editor friendliness**: human-facing chrome dropped engine jargon
+  (Toolbar/Changes-panel copy: Snapshot → **Checkpoint**, Diff →
+  **Review**/**Changes**; agent-facing CLI/MCP names are unchanged) and
+  gained visible **Undo/Redo** buttons in the main toolbar (previously only
+  in the Changes panel). A new central keybind registry
+  (`apps/editor/src/keybinds.ts`) is the single source of truth for every
+  shortcut and drives a `?` cheat-sheet overlay, so the dispatcher and the
+  documentation can never drift apart. New bindings: ⌘D duplicate, Delete
+  removes the selection, F focuses the camera on it, arrow keys nudge
+  1px/10px, and ⇧⌘S checkpoints (⌘S alone just logs a "saved
+  automatically" reassurance and swallows the browser's Save dialog —
+  binding checkpoint to plain ⌘S would silently reset the review baseline
+  on a habitual keypress). The Scene View also gained direct-manipulation
+  transform handles: 8 resize handles + 1 rotate handle on the current
+  selection, targeting `SpriteRenderer`/box-or-circle `Collider`/
+  `Transform.scale` by priority, one undo step per gesture except a corner
+  drag on a sprite or box collider (which edits two separate scalar
+  fields, so it commits two). See [editor.md](./editor.md).
 
 ## Shipped in v0.8.0
 
@@ -240,12 +284,11 @@ MCP tools, testable in headless playtests) before it gets editor UI.
 - Web export: `hearth export web [--single-file] [--zip]` — static
   self-contained builds, itch.io-ready zips.
 
-## Near term (later v0.8 releases)
+## Near term (later v0.9 releases)
 
 - **Codex first-class MCP wiring**: the agent panel detects and launches
-  Codex today, but `.mcp.json` auto-preparation is Claude-Code-only in
-  v0.8.0 — Codex's config story is TOML-based and needs its own wiring
-  path.
+  Codex today, but `.mcp.json` auto-preparation is Claude-Code-only —
+  Codex's config story is TOML-based and needs its own wiring path.
 - **Custom chat UI over the agent**: out of scope until it can be built
   API-key-only (the Claude Agent SDK) or Anthropic clarifies that
   subscription use through a wrapped, non-terminal UI is fine — see
@@ -263,6 +306,9 @@ MCP tools, testable in headless playtests) before it gets editor UI.
   one undo step, which is the right granularity for most operations but
   worth revisiting for continuous ones (Inspector number-drag, slider
   scrubbing) if it turns out too coarse in practice.
+- **Multi-select transform handles**: the Scene View's resize/rotate
+  handles (v0.9.0) operate on a single selected entity; multi-select drag
+  gestures aren't designed yet.
 
 ## Medium term
 
@@ -274,9 +320,11 @@ MCP tools, testable in headless playtests) before it gets editor UI.
 - **Multi-instance components** (array form, `formatVersion: 2`).
 - **MCP resources**: expose scenes/scripts as MCP resources (today:
   tools-only, which every client supports).
-- **Prefabs**: reusable entity templates with overrides —
-  `duplicateEntity`/`duplicateScene` (shipped in v0.8.0) are the stepping
-  stone, not the destination.
+- **Live-linked prefabs / per-field overrides**: v0.9.0 shipped tracked-stamp
+  prefabs (deep-copy instances + an explicit re-sync command, see
+  [prefabs.md](./prefabs.md)) rather than live links with per-instance
+  field overrides — that richer model is a deliberately deferred future
+  wave, not something tracked stamps grow into incrementally.
 - **Further scale headroom**: physics islands/sleeping, worker-thread
   physics, and renderer culling are all deliberately not planned yet —
   only worth it if a future bench run shows a real scenario needing more

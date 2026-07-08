@@ -98,8 +98,10 @@ hearth test                              # validate + all playtests
 ## 6. See it
 
 From the hearth repo: `npm run dev`, open http://localhost:5173, open your
-project folder in the launcher, press **Play**. The Diff panel shows exactly
-what you (or an agent) changed since the last `hearth snapshot`.
+project folder in the launcher, press **Play**. The Changes panel (toolbar:
+**Review**) shows exactly what you (or an agent) changed since the last
+checkpoint (`hearth snapshot`) — see [docs/editor.md](./editor.md) for the
+rest of the editor's chrome and shortcuts.
 
 ## 7. Hand it to an agent
 
@@ -125,6 +127,8 @@ See [export.md](./export.md).
 
 - [Scripting guide](./scripting.md): the full `ctx` API
 - [CLI guide](./cli.md): everything `hearth` can do
+- [Prefabs](./prefabs.md): reusable entity templates, `ctx.scene.spawnPrefab`
+- [Editor guide](./editor.md): chrome, shortcuts, transform handles
 - [Web export](./export.md): folder vs single file, itch.io
 - [Examples](../packages/examples): platformer, top-down, visual novel,
   Ember Trail (an all-Lua two-scene game), and Glow Caves (an all-Lua

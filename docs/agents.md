@@ -18,7 +18,7 @@ reviewable diffs.
 - **CLI**: `hearth <command> --json` (see [cli.md](./cli.md)). Best when the
   agent already lives in a shell (Claude Code, Codex CLI).
 - **MCP**: `hearth-mcp --project <path>` over stdio (see
-  [mcp.md](./mcp.md)). Best for MCP-native clients; 55 tools wrapping the
+  [mcp.md](./mcp.md)). Best for MCP-native clients; 59 tools wrapping the
   same core commands (a handful of housekeeping commands are CLI-only).
 
 Both call the identical core command layer. Pick either; never mix in
@@ -51,7 +51,8 @@ snapshot  →  inspect  →  change (commands)  →  validate  →  playtest  �
    too.
 6. **Diff** (`hearth diff --json`) and summarize the changes for the human:
    scenes/entities/components/scripts/assets touched. The human sees the
-   same diff in the editor's Diff panel and can revert.
+   same diff in the editor's Changes panel (opened via the toolbar's
+   Review button) and can revert.
 
 ## Permission modes
 

@@ -30,7 +30,7 @@ and assets on your own disk.
    Agent ──▶ CLI / MCP ──┘      (validate · execute · diff)     scenes · scripts · assets
 ```
 
-Both audiences use the same 56 engine commands: `createEntity`,
+Both audiences use the same 60 engine commands: `createEntity`,
 `setComponentProperty`, `runPlaytest`, `getDiff`, and so on. An agent can
 build a level, wire input, write behavior scripts, import and slice art, run
 headless playtests, and hand you a structural diff to review in the editor,
@@ -59,30 +59,42 @@ RNG, pub/sub events, math helpers, grid pathfinding, camera control and
 effects, UI focus, save data, and scene switching for building your own
 menus. `hearth inspect api` prints the whole surface.
 
-**Editor.** A dockable workspace with a scene view (with a tilemap paint
-tool: palette, click/drag paint, shift-drag rect-fill), hierarchy,
+**Editor.** A dockable workspace with a scene view (tilemap paint tool,
+plus direct-manipulation transform handles — 8 resize + 1 rotate handle on
+the current selection), hierarchy (with a "Save as prefab" action),
 schema-driven inspector (enum dropdowns and typed pickers for every
 fixed-choice or asset-reference field — no raw JSON textareas), asset
-browser with spritesheet slicing and previews, live game preview, console,
-an Input settings panel (key capture, gamepad bindings), undo/redo with a
-history panel, a scene menu (duplicate/rename/set-initial/delete), a
-diff/review panel for agent sessions, and an **Agent panel**: a real
-embedded terminal running your own `claude` CLI, wired to the project via
-MCP, with a live activity timeline and Snapshot/Review/Revert one click
-away (see [docs/agent-panel.md](docs/agent-panel.md)). The editor also
-live-follows changes from any *external* agent session — CLI, MCP, or
-another editor — reloading automatically instead of going stale. Runs in
-the browser during development or as a packaged desktop app (Electron)
-with native folder dialogs.
+browser with spritesheet slicing, previews, and prefab cards ("Add to
+scene" / "Sync instances"), live game preview, console, an Input settings
+panel (key capture, gamepad bindings), visible toolbar Undo/Redo plus a
+history panel, a scene menu (duplicate/rename/set-initial/delete), a plain-
+language Checkpoint/Review/Changes review loop for agent sessions, a
+keyboard-shortcut cheat sheet (`?`, driven by one keybind registry), and an
+**Agent panel**: a real embedded terminal running your own `claude` CLI,
+wired to the project via MCP, with a live activity timeline and
+Checkpoint/Review/Revert one click away (see
+[docs/agent-panel.md](docs/agent-panel.md)). The editor also live-follows
+changes from any *external* agent session — CLI, MCP, or another editor —
+reloading automatically instead of going stale. Runs in the browser during
+development or as a packaged desktop app (Electron) with native folder
+dialogs.
 
 **Agent tooling.** The `hearth` CLI wraps every command with `--json`
 envelopes, including `undo`/`redo`/`history` and `log` (a disk-backed
-journal of every command any session has run). The MCP server exposes 55
+journal of every command any session has run). The MCP server exposes 59
 typed tools with per-session permission modes. Playtests script input
 (including gamepad axes and pointer drags) and assert on game state,
 events, particles, audio, camera effects, and UI focus, entirely headless
 and CI-friendly. `hearth screenshot` renders real frames through headless
 Chromium so agents can see their own work.
+
+**Prefabs.** Reusable entity templates: serialize any entity's subtree into
+a prefab asset (`createPrefab`/`hearth prefab create`), place tracked
+instances of it (`instantiatePrefab`/`hearth prefab place`), push edits
+back onto the asset (`updatePrefab`), and propagate them to every existing
+instance on demand (`syncPrefabInstances`) — CLI, MCP, and editor surfaces
+all the way through. Scripts spawn prefabs live with
+`ctx.scene.spawnPrefab`. See [docs/prefabs.md](docs/prefabs.md).
 
 **Export.** `hearth export web` produces a static, self-contained build
 (one folder, one HTML file, or a zip for itch.io) that boots straight into
@@ -96,20 +108,24 @@ same asset pipeline: import, probe, slice, animate.
 
 ## Status
 
-Hearth is at **v0.8.0**, a developer preview. The full loop works end to
+Hearth is at **v0.9.0**, a developer preview. The full loop works end to
 end: project model, editor, runtime preview, CLI, MCP, headless playtests,
-diff review, web export. This release added an embedded agent panel (a
-real terminal running the user's own `claude` CLI, a live activity
-timeline, Snapshot/Review/Revert), a disk-backed command journal that lets
-the editor live-follow any external agent session, published performance
-numbers backed by a spatial-hash broadphase and other bit-identical perf
-work, scene management and tilemap editing surfaced end to end (editor +
-CLI + MCP), and a 9th example (Ember Horde) proving the new scale ceiling —
-on top of earlier releases' undo/redo, gamepad input, camera effects, UI
-widgets, asset pipeline, physics v2, pathfinding, 2D lighting and
-particles, and Lua scripting. The [roadmap](docs/roadmap.md) keeps an
-honest list of what's still missing, including prefabs, bulk asset import,
-and notarized desktop builds.
+diff review, web export. This release added **prefabs** — reusable entity
+templates authored, placed, retuned, and propagated through
+`createPrefab`/`instantiatePrefab`/`updatePrefab`/`syncPrefabInstances`
+(CLI, MCP, and editor surfaces), plus runtime spawning via
+`ctx.scene.spawnPrefab` — and a round of **editor friendliness**:
+plain-language chrome (Checkpoint/Review/Changes replacing
+Snapshot/Diff terminology in the UI; the underlying commands and CLI/MCP
+names are unchanged), visible toolbar Undo/Redo, a central keybind
+registry with a `?` shortcut cheat sheet, and direct-manipulation
+transform handles (resize + rotate) in the scene view — on top of earlier
+releases' embedded agent panel, disk-backed command journal, published
+performance numbers, scene management, tilemap editing, undo/redo, gamepad
+input, camera effects, UI widgets, asset pipeline, physics v2,
+pathfinding, 2D lighting and particles, and Lua scripting. The
+[roadmap](docs/roadmap.md) keeps an honest list of what's still missing,
+including bulk asset import and notarized desktop builds.
 
 ## Install
 
@@ -211,10 +227,12 @@ reference projects: everything the docs describe, one of them does.
 | [Architecture](docs/architecture.md) | Packages, command system, data flow |
 | [Project format](docs/project-format.md) | Every file, every schema |
 | [Components](docs/components.md) | All 17 component types and their defaults |
+| [Prefabs](docs/prefabs.md) | Reusable entity templates, tracked-stamp sync, `ctx.scene.spawnPrefab` |
 | [Assets](docs/assets.md) | Import, spritesheets, animations, music, fonts |
 | [Scripting](docs/scripting.md) | Lua and JS, the full `ctx` API |
 | [Input](docs/input.md) | Actions, keyboard, gamepad, virtual axes |
 | [UI](docs/ui.md) | Widgets, layout, focus navigation |
+| [Editor guide](docs/editor.md) | Chrome, keyboard shortcuts, transform handles |
 | [Performance](docs/performance.md) | Benchmark harness, published numbers, honest guidance |
 | [Web export](docs/export.md) | Static builds, single-file, itch.io |
 | [Roadmap](docs/roadmap.md) | What's next, and what's honestly missing |

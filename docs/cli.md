@@ -122,6 +122,21 @@ every other CLI delete verb removes its target outright and this closes
 that parity gap) — see [assets.md](./assets.md) for the full pipeline,
 worked examples, and the music/font/`assertAudioCount` side of things.
 
+**Prefabs** (asset-edit): `prefab create <scene> <entity> <name>`
+(serializes the entity's full descendant subtree into a reusable prefab
+asset at `assets/prefabs/<slug>.prefab.json`; the source entity becomes the
+prefab's first tracked instance), `prefab place <prefab> <scene>
+[--position x,y] [--name n]` (instantiates a prefab into a scene as a fresh
+entity subtree with new ids), `prefab update <prefab> <scene> <entity>`
+(re-serializes a modified instance's subtree back over the prefab asset's
+payload — `entity` must already be a tracked instance of that exact
+prefab), `prefab sync <prefab> [--scene s]` (rebuilds every tracked
+instance from the current payload, all scenes or just one — preserves each
+instance's id/name/position/enabled state but **replaces its entire
+descendant subtree**, including any child you added by hand). See
+[prefabs.md](./prefabs.md) for the full data model, tracked-stamp
+semantics, validation codes, and `ctx.scene.spawnPrefab`.
+
 **Undo/redo** (safe-edit; read-only for `history`): `undo` (undo the most
 recent recorded change), `redo` (redo the most recently undone change),
 `history` (list recorded entries, oldest first, each with `seq`, `command`,

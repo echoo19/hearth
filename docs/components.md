@@ -506,3 +506,4 @@ restart at frame 0) with `ctx.animate(assetRef)` — see
 - Colors are hex strings (`#rgb`, `#rrggbb`, `#rrggbbaa`).
 - Positions/sizes are pixels; rotation is degrees; +y is down.
 - `SpriteRenderer` with `assetId: null` draws its primitive `shape`/`color`, so you can build a whole game before any art exists.
+- An entity can also carry an optional `prefab: { asset }` field — not a component, so it never shows up in `hearth inspect components` or the list above, but it round-trips through scenes, snapshots, and undo history like any other entity field. It marks the entity as a live, tracked instance of a prefab asset. See [prefabs.md](./prefabs.md).

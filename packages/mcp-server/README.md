@@ -147,6 +147,10 @@ requires no permission (it's purely informational).
 | `slice_spritesheet` | `sliceSpritesheet` | asset-edit |
 | `remove_asset` | `removeAsset` | asset-edit |
 | `create_animation_from_sheet` | `createAnimationFromSheet` | asset-edit |
+| `create_prefab` | `createPrefab` | asset-edit |
+| `instantiate_prefab` | `instantiatePrefab` | asset-edit |
+| `update_prefab` | `updatePrefab` | asset-edit |
+| `sync_prefab_instances` | `syncPrefabInstances` | asset-edit |
 | `undo` | `undo` | safe-edit |
 | `redo` | `redo` | safe-edit |
 | `list_history` | `listHistory` | read-only |

@@ -75,11 +75,12 @@ descriptively — no logos, no implied partnership or endorsement.
   command (icon by kind, summary, ok/✗, relative time), newest first.
   Playtest rows show pass/fail and assertion counts; validate rows show
   error/warning counts.
-- **Snapshot / Review changes / Revert session** — the timeline's header
-  actions: `snapshotProject`, focusing the Diff panel (`Review changes`),
-  and `revertProject` with a confirm dialog (`Revert session`, disabled
-  when there's nothing to revert). A link to the History panel covers
-  granular per-command undo instead of a whole-session revert.
+- **Checkpoint / Review changes / Revert session** — the timeline's header
+  actions: `snapshotProject` (`Checkpoint`), focusing the Changes panel
+  (`Review changes`), and `revertProject` with a confirm dialog (`Revert
+  session`, disabled when there's nothing to revert). A link to the
+  History panel covers granular per-command undo instead of a
+  whole-session revert.
 - **Manual setup** — a collapsible section with the CLI/MCP copy-paste
   snippets and the permission-mode table, for anyone not using the embedded
   terminal at all (see [Manual setup](#manual-setup-non-claude-agents)).

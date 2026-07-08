@@ -72,10 +72,24 @@ hearth export web --zip                # playable static build (needs --allow bu
 
 - \`hearth.json\`: project manifest (scenes list, input mappings, build settings)
 - \`scenes/*.scene.json\`: scene files (entities + components)
-- \`assets.json\`: asset index; \`assets/\`: asset files
+- \`assets.json\`: asset index; \`assets/\`: asset files, including \`assets/prefabs/*.prefab.json\` (reusable entity-subtree templates)
 - \`scripts/*.lua\` (and \`*.js\`): behavior scripts (Lua by default; \`hearth inspect api --json\` documents the ctx API)
 - \`playtests/*.playtest.json\`: headless playtest definitions
 - \`.hearth/\`: engine state (baseline snapshots, agent config); don't edit manually
+
+## Prefabs
+
+Reusable entity templates: \`hearth prefab create <scene> <entity> <name>\`
+serializes an entity's full subtree into a prefab asset; \`hearth prefab
+place <prefab> <scene>\` instantiates it as a fresh entity subtree;
+\`hearth prefab update <prefab> <scene> <entity>\` pushes edits on a tracked
+instance back onto the asset; \`hearth prefab sync <prefab>\` rebuilds every
+tracked instance from the current payload, keeping each instance's id,
+name, position, and enabled state, but **replacing its whole descendant
+subtree** (any child you added by hand to one instance is lost on sync).
+Scripts spawn prefabs at runtime with \`ctx.scene.spawnPrefab(name, opts?)\`
+(returns \`nil\`/\`null\` if the name is unknown; destroying the returned
+root does not cascade to its children).
 
 ## Scripting quick reference
 

@@ -1,7 +1,7 @@
 # MCP Guide
 
 Hearth ships `hearth-mcp` (`packages/mcp-server`), a stdio MCP server that
-exposes the engine command layer as 55 typed tools (53 command tools, plus
+exposes the engine command layer as 59 typed tools (57 command tools, plus
 `screenshot` and `get_agent_instructions`, neither of which wraps a core
 command). The full reference (flags, registration snippets, permission
 table, complete tool list) lives in
@@ -38,7 +38,9 @@ imported spritesheet — takes numeric `frameWidth`/`frameHeight` rather
 than the CLI's `--frame-size WxH` string), `remove_asset` (unregisters an
 asset; the CLI's `delete asset` wraps this same tool), `create_animation_from_sheet`
 (an animation asset from named sheet frames — see
-[assets.md](./assets.md)), `undo`, `redo`, `list_history` (disk-backed
+[assets.md](./assets.md)), `create_prefab`, `instantiate_prefab`,
+`update_prefab`, `sync_prefab_instances` (tracked-stamp prefab authoring —
+see [prefabs.md](./prefabs.md)), `undo`, `redo`, `list_history` (disk-backed
 undo/redo, independent of `snapshot_project`/`revert_project`'s single
 diff baseline — see [cli.md](./cli.md#command-tour)), `list_journal`
 (the command journal backing `hearth log` and the editor's Agent panel

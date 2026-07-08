@@ -17,7 +17,8 @@ my-game/
 │   ├── sprites/coin.svg         # procedural or imported sprites
 │   ├── tiles/grass.svg
 │   ├── sounds/coin_sound.wav    # procedural sound effects (16-bit PCM WAV)
-│   └── animations/idle.anim.json
+│   ├── animations/idle.anim.json
+│   └── prefabs/ember_grub.prefab.json  # reusable entity-subtree templates
 ├── scripts/
 │   └── player-controller.lua    # behavior scripts (Lua by default; .js works too)
 ├── playtests/
@@ -111,6 +112,8 @@ parent's translation at runtime). IDs are stable and prefixed (`ent_`,
         "Script":         { "scriptPath": "scripts/player-controller.lua",
                             "params": { "speed": 220 } }
       }
+      // optional: "prefab": { "asset": "ast_…" } marks this entity as a
+      // tracked instance of a prefab asset — see prefabs.md
     }
   ]
 }
@@ -134,11 +137,14 @@ and property, or run `hearth inspect components --json`.
 }
 ```
 
-Asset types: `sprite`, `tile`, `audio`, `animation`, `font`, `data`, `other`.
-Procedural assets are deterministic: SVG for sprites/tiles, 16-bit PCM WAV
-for sounds (`createSound`; same preset + seed → identical bytes). No AI, no
-network. Animation assets are JSON: `{ "frames": ["ast_…", …],
-"frameDuration": 0.15, "loop": true }` referencing sprite assets.
+Asset types: `sprite`, `tile`, `audio`, `animation`, `font`, `prefab`,
+`data`, `other`. Procedural assets are deterministic: SVG for sprites/tiles,
+16-bit PCM WAV for sounds (`createSound`; same preset + seed → identical
+bytes). No AI, no network. Animation assets are JSON: `{ "frames":
+["ast_…", …], "frameDuration": 0.15, "loop": true }` referencing sprite
+assets. Prefab assets are JSON too (`{ "name", "entities": [...] }`,
+normalized local ids, root-first) — see [prefabs.md](./prefabs.md) for the
+full shape and the four commands that read/write it.
 
 ## Playtests (`playtests/*.playtest.json`)
 
