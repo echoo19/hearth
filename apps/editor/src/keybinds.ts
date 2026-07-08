@@ -43,7 +43,7 @@ export const KEYBINDS: Keybind[] = [
   // ---- General ----------------------------------------------------------
   { id: 'undo', combo: 'mod+z', label: 'Undo', group: 'General', when: 'always', run: (s) => void s.exec('undo') },
   { id: 'redo', combo: 'shift+mod+z', label: 'Redo', group: 'General', when: 'always', run: (s) => void s.exec('redo') },
-  { id: 'redo-y', combo: 'mod+y', label: 'Redo', group: 'General', when: 'always', run: (s) => void s.exec('redo') },
+  { id: 'redo-y', combo: 'mod+y', label: 'Redo (alternate)', group: 'General', when: 'always', run: (s) => void s.exec('redo') },
   {
     id: 'save',
     combo: 'mod+s',
