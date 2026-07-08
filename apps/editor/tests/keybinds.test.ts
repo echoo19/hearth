@@ -8,6 +8,7 @@ import {
   groupedKeybinds,
   canonicalCombo,
   dispatchDecision,
+  isMac,
   type KeyLike,
   type DispatchEventLike,
 } from '../src/keybinds';
@@ -158,7 +159,7 @@ describe('platform display', () => {
 
 describe('dispatchDecision (installKeybinds guards, DOM-free)', () => {
   it('ignores an auto-repeat keydown', () => {
-    const d = dispatchDecision(dispatchKey('z', { metaKey: true, repeat: true }), {
+    const d = dispatchDecision(dispatchKey('z', { metaKey: isMac, ctrlKey: !isMac, repeat: true }), {
       hasSelection: false,
       dialogOpen: false,
     });
@@ -166,7 +167,7 @@ describe('dispatchDecision (installKeybinds guards, DOM-free)', () => {
   });
 
   it('ignores keys while a typing target (input/textarea/contentEditable) is focused', () => {
-    const d = dispatchDecision(dispatchKey('d', { metaKey: true, target: { tagName: 'INPUT' } }), {
+    const d = dispatchDecision(dispatchKey('d', { metaKey: isMac, ctrlKey: !isMac, target: { tagName: 'INPUT' } }), {
       hasSelection: true,
       dialogOpen: false,
     });
@@ -174,7 +175,7 @@ describe('dispatchDecision (installKeybinds guards, DOM-free)', () => {
   });
 
   it('ignores non-Escape keys while a dialog is open, but still resolves Escape', () => {
-    const modZ = dispatchDecision(dispatchKey('z', { metaKey: true }), {
+    const modZ = dispatchDecision(dispatchKey('z', { metaKey: isMac, ctrlKey: !isMac }), {
       hasSelection: false,
       dialogOpen: true,
     });
@@ -206,14 +207,14 @@ describe('dispatchDecision (installKeybinds guards, DOM-free)', () => {
   });
 
   it('mod+s resolves to run with preventDefault true (intercepts the browser Save dialog)', () => {
-    const d = dispatchDecision(dispatchKey('s', { metaKey: true }), { hasSelection: false, dialogOpen: false });
+    const d = dispatchDecision(dispatchKey('s', { metaKey: isMac, ctrlKey: !isMac }), { hasSelection: false, dialogOpen: false });
     expect(d.action).toBe('run');
     expect(d.bind?.id).toBe('save');
     expect(d.preventDefault).toBe(true);
   });
 
   it('a selection-only binding without a live selection resolves to passthrough, not run', () => {
-    const d = dispatchDecision(dispatchKey('d', { metaKey: true }), { hasSelection: false, dialogOpen: false });
+    const d = dispatchDecision(dispatchKey('d', { metaKey: isMac, ctrlKey: !isMac }), { hasSelection: false, dialogOpen: false });
     expect(d.action).toBe('passthrough');
     expect(d.bind).toBeUndefined();
   });
