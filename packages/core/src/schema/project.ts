@@ -2,7 +2,8 @@
  * Project-level schemas: hearth.json, assets.json, playtest files.
  */
 import { z } from 'zod';
-import { Vec2Schema } from './components.js';
+import { Vec2Schema, type ComponentMap } from './components.js';
+import { EntitySchema } from './scene.js';
 
 export const FORMAT_VERSION = 1;
 export const HEARTH_VERSION = '0.8.0';
@@ -80,7 +81,7 @@ export const ProjectFileSchema = z.object({
 });
 export type ProjectFile = z.infer<typeof ProjectFileSchema>;
 
-export const ASSET_TYPES = ['sprite', 'tile', 'audio', 'animation', 'font', 'data', 'other'] as const;
+export const ASSET_TYPES = ['sprite', 'tile', 'audio', 'animation', 'prefab', 'font', 'data', 'other'] as const;
 export const AssetSchema = z.object({
   id: z.string().regex(/^ast_[a-z0-9]+$/),
   name: z.string().min(1),
@@ -104,6 +105,35 @@ export const AnimationDataSchema = z.object({
   loop: z.boolean().default(true),
 });
 export type AnimationData = z.infer<typeof AnimationDataSchema>;
+
+/**
+ * An entity inside a prefab asset: same shape as a scene `Entity`, but ids
+ * are local to the prefab (`pfe_<n>`, assigned in BFS order at serialize
+ * time) instead of scene-global `ent_*` ids, and the `prefab` marker itself
+ * is never carried inside prefab data (nested prefab instances flatten to
+ * plain entities on serialize — re-linking them to their own source prefab
+ * is a non-goal for wave F).
+ */
+export const PrefabEntitySchema = EntitySchema.omit({ id: true, parentId: true, prefab: true }).extend({
+  id: z.string().regex(/^pfe_[0-9]+$/, 'prefab entity ids look like pfe_1'),
+  parentId: z
+    .string()
+    .regex(/^pfe_[0-9]+$/, 'prefab entity ids look like pfe_1')
+    .nullable()
+    .default(null),
+});
+export type PrefabEntity = Omit<z.infer<typeof PrefabEntitySchema>, 'components'> & {
+  components: ComponentMap;
+};
+
+/** Prefab asset payload (stored as the asset's JSON file). */
+export const PrefabDataSchema = z.object({
+  name: z.string().min(1),
+  entities: z.array(PrefabEntitySchema).min(1), // root first; ids `pfe_<n>`; root.parentId === null
+});
+export type PrefabData = z.infer<typeof PrefabDataSchema>;
+
+export const PREFABS_DIR = 'assets/prefabs';
 
 /** Spritesheet frame metadata. */
 export const SpritesheetFrameSchema = z.object({

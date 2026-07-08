@@ -23,6 +23,8 @@ export const EntitySchema = z.object({
   /** Free-form tags for queries like scene.findByTag('enemy'). */
   tags: z.array(z.string()).default([]),
   components: ComponentMapSchema.default({}),
+  /** Marks this entity as a live instance of a prefab asset (round-trip only for now; sync lands in a later wave-F task). */
+  prefab: z.object({ asset: z.string() }).optional(),
 });
 
 export type Entity = Omit<z.infer<typeof EntitySchema>, 'components'> & {

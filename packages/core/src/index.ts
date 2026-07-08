@@ -18,6 +18,13 @@ export * from './input/gamepad.js';
 // Project model
 export { ProjectStore, ProjectError, readJson, writeJson, type ProjectSnapshot } from './project/store.js';
 export { createProject, DEFAULT_INPUT_ACTIONS, type CreateProjectOptions } from './project/create.js';
+export {
+  collectSubtree,
+  serializePrefab,
+  instantiatePrefabData,
+  validatePrefabLocalIds,
+  type InstantiateOptions,
+} from './project/prefabData.js';
 export { HistoryStore, type HistoryEntryMeta, type HistoryIndex } from './project/history.js';
 export { applySnapshot, type RestoreContext } from './project/restore.js';
 export {
