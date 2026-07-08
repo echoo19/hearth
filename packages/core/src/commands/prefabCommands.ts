@@ -200,7 +200,9 @@ export const syncPrefabInstances = defineCommand({
   description:
     'Rebuild every marked instance of a prefab (all scenes, or one scene via `scene`) from the current prefab ' +
     "asset payload: each instance root keeps its id, name, Transform.position, and enabled state; the root's " +
-    'descendants are deleted and rebuilt from the payload.',
+    'descendants are deleted and rebuilt from the payload. If one instance is nested inside another instance of ' +
+    'the same prefab, only the outermost is rebuilt as an instance — the nested one is rebuilt as a plain child ' +
+    'of the outer instance (it loses its own marker).',
   permission: 'asset-edit',
   mutates: true,
   paramsSchema: z.object({
@@ -221,11 +223,24 @@ export const syncPrefabInstances = defineCommand({
     let total = 0;
 
     for (const scene of targetScenes) {
-      const roots = scene.entities
+      const marked = scene.entities
         .map((e, index) => ({ e, index }))
         .filter(({ e }) => e.prefab?.asset === asset.id)
         .sort((a, b) => a.index - b.index)
         .map(({ e }) => e);
+
+      // Drop any marked instance nested inside another marked instance's
+      // subtree: rebuilding the outer root deletes the inner one's entities
+      // before its own turn comes, so iterating it would collectSubtree a
+      // now-missing entity and throw mid-loop, leaving the scene half-synced.
+      // The nested instance is rebuilt as a plain child of the outer instance.
+      const roots = marked.filter((candidate) => {
+        return !marked.some(
+          (other) =>
+            other.id !== candidate.id &&
+            collectSubtree(scene.entities, other.id).some((e) => e.id === candidate.id),
+        );
+      });
 
       if (roots.length === 0) continue;
 

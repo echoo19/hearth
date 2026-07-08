@@ -423,6 +423,48 @@ describe('syncPrefabInstances', () => {
     expect(indexAfter).toBe(indexBefore);
   });
 
+  it('does not crash when one instance is nested inside another same-prefab instance', async () => {
+    const { session, store, asset, sceneAId, sceneBId, firstRootId, secondRootId } = await makeScenario();
+
+    // Reparent instance 2 UNDER instance 1 — now instance 2 lives inside
+    // instance 1's subtree. Both are still marked instances of the prefab, so
+    // both are collected as "roots" up front. Rebuilding instance 1 first
+    // deletes its whole subtree (instance 2 included) — the old code then hit
+    // collectSubtree(instance 2) after it was already gone and threw NOT_FOUND
+    // mid-loop, leaving the store half-synced.
+    const reparent = await session.execute<any>('moveEntity', {
+      scene: sceneAId,
+      entity: secondRootId,
+      parent: firstRootId,
+    });
+    expect(reparent.success).toBe(true);
+
+    const sync = await session.execute<any>('syncPrefabInstances', { prefab: asset.id });
+    expect(sync.success).toBe(true);
+
+    // The nested instance was dropped from the root set (it gets rebuilt as a
+    // plain child of the outer instance), so scene A reports a single root.
+    expect(sync.data.scenes).toEqual(
+      expect.arrayContaining([
+        { scene: sceneAId, instances: 1 },
+        { scene: sceneBId, instances: 1 },
+      ]),
+    );
+
+    // Store intact: every entity's parentId still resolves within its scene —
+    // no dangling references left by a half-completed sync.
+    const sceneA = store.getScene(sceneAId)!;
+    const ids = new Set(sceneA.entities.map((e) => e.id));
+    for (const e of sceneA.entities) {
+      if (e.parentId !== null) expect(ids.has(e.parentId)).toBe(true);
+    }
+    // The old inner-instance root id is gone (rebuilt from the payload).
+    expect(sceneA.entities.some((e) => e.id === secondRootId)).toBe(false);
+    // The outer instance survives and is still marked.
+    const outer = sceneA.entities.find((e) => e.id === firstRootId)!;
+    expect(outer.prefab).toEqual({ asset: asset.id });
+  });
+
   it('undo restores the pre-sync scenes exactly', async () => {
     const { session, store, asset } = await makeScenario();
     const beforeSnapshot = await store.toSnapshot();
