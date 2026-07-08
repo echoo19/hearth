@@ -39,6 +39,11 @@ export function SceneMenu() {
     };
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
+        // Stop here: this is a document-level listener, which (per the
+        // keydown bubble path: target -> ... -> document -> window) runs
+        // BEFORE SceneView's window-level Escape-deselect listener. Without
+        // this, closing the popover would also deselect the current entity.
+        e.stopPropagation();
         setOpen(false);
         buttonRef.current?.focus();
       }

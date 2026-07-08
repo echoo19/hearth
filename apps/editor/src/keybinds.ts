@@ -224,29 +224,69 @@ export function groupedKeybinds(): KeybindGroup[] {
   return order.map((group) => ({ group, binds: KEYBINDS.filter((b) => b.group === group) }));
 }
 
+/** A KeyboardEvent-shaped input for dispatch decisions — KeyLike plus the fields the guards read. */
+export interface DispatchEventLike extends KeyLike {
+  repeat: boolean;
+  target: unknown;
+}
+
+/** Ambient info the dispatcher needs beyond the event itself. */
+export interface DispatchContext {
+  hasSelection: boolean;
+  /** Whether a native `<dialog>` is currently open. */
+  dialogOpen: boolean;
+}
+
+export interface DispatchDecision {
+  /** 'run': fire bind.run(store) and preventDefault. 'ignore': a guard ate the key, do nothing.
+   * 'passthrough': a display-only row (or no binding at all) — let the key reach native/local handlers. */
+  action: 'run' | 'ignore' | 'passthrough';
+  bind?: Keybind;
+  preventDefault: boolean;
+}
+
 /**
- * Install the one global keydown listener. Returns a teardown fn.
+ * Pure decision function for a single keydown: given an event-shaped input
+ * and ambient context, decide whether to run a binding, ignore the key, or
+ * let it pass through untouched. No DOM access, no store mutation — kept
+ * side-effect-free so the guards (repeat, typing target, dialog-open,
+ * display-only rows) are unit-testable without a real KeyboardEvent/window.
  *
  * Guards (in order): auto-repeat (a held combo must not fire a burst of
  * mutating commands), typing fields, and an open native <dialog> (which owns
- * everything except Escape). InputSettings' key-capture swallows keydowns at
- * the *capture* phase, so this bubble-phase listener never sees an armed
- * capture — no extra guard needed here.
+ * everything except Escape).
+ */
+export function dispatchDecision(e: DispatchEventLike, ctx: DispatchContext): DispatchDecision {
+  if (e.repeat) return { action: 'ignore', preventDefault: false };
+  if (isTypingTarget(e.target)) return { action: 'ignore', preventDefault: false };
+  const combo = eventCombo(e);
+  if (!combo) return { action: 'ignore', preventDefault: false };
+  if (ctx.dialogOpen && combo !== 'escape') return { action: 'ignore', preventDefault: false };
+  const bind = resolveBinding({ combo, hasSelection: ctx.hasSelection });
+  if (!bind || bind.display) {
+    // No binding, or a display-only row (Space-pan, Escape): let
+    // SceneView/native handlers see the key untouched.
+    return { action: 'passthrough', bind, preventDefault: false };
+  }
+  return { action: 'run', bind, preventDefault: true };
+}
+
+/**
+ * Install the one global keydown listener. Returns a teardown fn.
+ *
+ * A thin DOM adapter around `dispatchDecision`: reads the event and the open
+ * <dialog>/selection state, then applies the decision. InputSettings'
+ * key-capture swallows keydowns at the *capture* phase, so this bubble-phase
+ * listener never sees an armed capture — no extra guard needed here.
  */
 export function installKeybinds(getStore: () => EditorStore): () => void {
   function onKeyDown(e: KeyboardEvent): void {
-    if (e.repeat) return;
-    if (isTypingTarget(e.target)) return;
-    const combo = eventCombo(e);
-    if (!combo) return;
+    const store = getStore();
     const dialogOpen =
       typeof document !== 'undefined' && document.querySelector('dialog[open]') !== null;
-    if (dialogOpen && combo !== 'escape') return;
-    const store = getStore();
-    const bind = resolveBinding({ combo, hasSelection: store.selection !== null });
-    if (!bind || bind.display) return; // display-only rows: let SceneView/native handle the key
-    e.preventDefault();
-    bind.run(store);
+    const decision = dispatchDecision(e, { hasSelection: store.selection !== null, dialogOpen });
+    if (decision.preventDefault) e.preventDefault();
+    if (decision.action === 'run' && decision.bind) decision.bind.run(store);
   }
   window.addEventListener('keydown', onKeyDown);
   return () => window.removeEventListener('keydown', onKeyDown);

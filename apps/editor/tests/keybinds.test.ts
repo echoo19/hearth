@@ -7,13 +7,20 @@ import {
   isTypingTarget,
   groupedKeybinds,
   canonicalCombo,
+  dispatchDecision,
   type KeyLike,
+  type DispatchEventLike,
 } from '../src/keybinds';
 import type { EditorStore } from '../src/store';
 
 /** A KeyboardEvent-shaped fixture; only the fields the pure helpers read. */
 function key(k: string, mods: Partial<KeyLike> = {}): KeyLike {
   return { key: k, metaKey: false, ctrlKey: false, shiftKey: false, altKey: false, ...mods };
+}
+
+/** A dispatchDecision event fixture: key() plus repeat/target. */
+function dispatchKey(k: string, over: Partial<DispatchEventLike> = {}): DispatchEventLike {
+  return { ...key(k, over), repeat: false, target: null, ...over };
 }
 
 /** A mock store recording which actions a binding invoked. */
@@ -146,6 +153,69 @@ describe('platform display', () => {
     expect(comboDisplay('shift+up', true)).toBe('⇧↑');
     expect(comboDisplay('mod+enter', false)).toBe('Ctrl+Enter');
     expect(comboDisplay('delete', false)).toBe('Del');
+  });
+});
+
+describe('dispatchDecision (installKeybinds guards, DOM-free)', () => {
+  it('ignores an auto-repeat keydown', () => {
+    const d = dispatchDecision(dispatchKey('z', { metaKey: true, repeat: true }), {
+      hasSelection: false,
+      dialogOpen: false,
+    });
+    expect(d).toEqual({ action: 'ignore', preventDefault: false });
+  });
+
+  it('ignores keys while a typing target (input/textarea/contentEditable) is focused', () => {
+    const d = dispatchDecision(dispatchKey('d', { metaKey: true, target: { tagName: 'INPUT' } }), {
+      hasSelection: true,
+      dialogOpen: false,
+    });
+    expect(d).toEqual({ action: 'ignore', preventDefault: false });
+  });
+
+  it('ignores non-Escape keys while a dialog is open, but still resolves Escape', () => {
+    const modZ = dispatchDecision(dispatchKey('z', { metaKey: true }), {
+      hasSelection: false,
+      dialogOpen: true,
+    });
+    expect(modZ).toEqual({ action: 'ignore', preventDefault: false });
+
+    // Escape's own row is display-only, so a dialog-open Escape resolves to
+    // passthrough (the native <dialog> handles it), not 'run'.
+    const esc = dispatchDecision(dispatchKey('Escape'), { hasSelection: false, dialogOpen: true });
+    expect(esc.action).toBe('passthrough');
+    expect(esc.bind?.id).toBe('escape');
+    expect(esc.preventDefault).toBe(false);
+  });
+
+  it('display rows (space, escape) resolve to passthrough with preventDefault false', () => {
+    const space = dispatchDecision(dispatchKey(' '), { hasSelection: false, dialogOpen: false });
+    expect(space.action).toBe('passthrough');
+    expect(space.bind?.id).toBe('pan');
+    expect(space.preventDefault).toBe(false);
+
+    const esc = dispatchDecision(dispatchKey('Escape'), { hasSelection: false, dialogOpen: false });
+    expect(esc.action).toBe('passthrough');
+    expect(esc.bind?.id).toBe('escape');
+    expect(esc.preventDefault).toBe(false);
+  });
+
+  it('an unbound key (no matching combo) also resolves to passthrough', () => {
+    const d = dispatchDecision(dispatchKey('q'), { hasSelection: false, dialogOpen: false });
+    expect(d).toEqual({ action: 'passthrough', bind: undefined, preventDefault: false });
+  });
+
+  it('mod+s resolves to run with preventDefault true (intercepts the browser Save dialog)', () => {
+    const d = dispatchDecision(dispatchKey('s', { metaKey: true }), { hasSelection: false, dialogOpen: false });
+    expect(d.action).toBe('run');
+    expect(d.bind?.id).toBe('save');
+    expect(d.preventDefault).toBe(true);
+  });
+
+  it('a selection-only binding without a live selection resolves to passthrough, not run', () => {
+    const d = dispatchDecision(dispatchKey('d', { metaKey: true }), { hasSelection: false, dialogOpen: false });
+    expect(d.action).toBe('passthrough');
+    expect(d.bind).toBeUndefined();
   });
 });
 

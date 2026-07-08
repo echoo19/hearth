@@ -22,6 +22,7 @@ import type {
 import type { WsFrame } from '../server/ws';
 import type { AgentPermissionMode, DetectAgentsResult } from '../server/agentSetup';
 import { ingestPtyFrame, resetAgentSocket, type AgentStatus } from './components/agent/useAgentSocket';
+import { createNudgeQueue } from './nudgeQueue';
 
 export interface EditorState {
   meta: ServerMeta | null;
@@ -191,29 +192,18 @@ export const useEditor = create<EditorState>((set, get) => {
   let wsEpoch = 0;
 
   // --- Arrow-key nudge: accumulate presses, debounce to one moveEntity ------
-  // The in-flight burst lives here (not in zustand): its base position and
-  // running delta are bookkeeping, not rendered state. `commitNudge` flushes
-  // it into a single `moveEntity` exec so the whole burst is one undo step.
-  interface PendingNudge {
-    scene: string;
-    entity: string;
-    base: Vec2;
-    accum: Vec2;
-  }
-  let pendingNudge: PendingNudge | null = null;
-  let nudgeTimer: ReturnType<typeof setTimeout> | null = null;
-
-  function commitNudge(): void {
-    if (nudgeTimer) {
-      clearTimeout(nudgeTimer);
-      nudgeTimer = null;
-    }
-    const p = pendingNudge;
-    pendingNudge = null;
-    if (!p) return;
+  // The in-flight burst lives outside zustand (its base position and running
+  // delta are bookkeeping, not rendered state) in nudgeQueue.ts, which owns
+  // the accumulate/debounce/flush contract. This closure just supplies the
+  // `moveEntity` exec that a flush performs. Callers that tear down the
+  // current scene/project (closeProject, selectScene, afterOpen) must flush
+  // or clear the queue themselves — see those call sites below — so a
+  // pending burst never fires ~300ms later against a scene/project that's
+  // no longer open.
+  const nudgeQueue = createNudgeQueue((p) => {
     const position = { x: p.base.x + p.accum.x, y: p.base.y + p.accum.y };
     void get().exec('moveEntity', { scene: p.scene, entity: p.entity, position }, { quiet: true });
-  }
+  });
 
   /** Return a copy of `scene` with `entityId`'s Transform.position set to `pos`. */
   function withEntityPosition(scene: SceneData, entityId: string, pos: Vec2): SceneData {
@@ -325,6 +315,12 @@ export const useEditor = create<EditorState>((set, get) => {
   }
 
   async function afterOpen(path: string, info: ProjectInfo): Promise<void> {
+    // A pending nudge burst belongs to whatever project/scene was open before
+    // this call (openProject reopening the same path, or switching to a
+    // different one) — its scene/entity ids are meaningless in the freshly
+    // loaded project, so drop it rather than flush a moveEntity against a
+    // scene that may no longer exist.
+    nudgeQueue.clear();
     try {
       localStorage.setItem(LAST_PROJECT_KEY, path);
     } catch {
@@ -436,23 +432,19 @@ export const useEditor = create<EditorState>((set, get) => {
       if (!selection || !sceneId || !scene) return;
       const entity = scene.entities.find((e) => e.id === selection);
       if (!entity) return;
-      // A pending burst for a different entity/scene must land before we start
-      // a new one, so each entity's move stays its own undo step.
-      if (pendingNudge && (pendingNudge.entity !== selection || pendingNudge.scene !== sceneId)) {
-        commitNudge();
-      }
-      if (!pendingNudge) {
-        const transform = entity.components.Transform as { position?: Vec2 } | undefined;
-        const pos = transform?.position;
-        pendingNudge = { scene: sceneId, entity: selection, base: { x: pos?.x ?? 0, y: pos?.y ?? 0 }, accum: { x: 0, y: 0 } };
-      }
-      pendingNudge.accum = { x: pendingNudge.accum.x + dx, y: pendingNudge.accum.y + dy };
-      const next = { x: pendingNudge.base.x + pendingNudge.accum.x, y: pendingNudge.base.y + pendingNudge.accum.y };
-      // Optimistic: move it now for instant feedback; the debounced exec below
-      // persists it and refresh() reconciles against the source of truth.
+      const transform = entity.components.Transform as { position?: Vec2 } | undefined;
+      const pos = transform?.position;
+      const next = nudgeQueue.nudge({
+        scene: sceneId,
+        entity: selection,
+        base: { x: pos?.x ?? 0, y: pos?.y ?? 0 },
+        dx,
+        dy,
+      });
+      // Optimistic: move it now for instant feedback; the debounced exec
+      // (nudgeQueue's flush callback) persists it and refresh() reconciles
+      // against the source of truth.
       set((state) => ({ scene: state.scene ? withEntityPosition(state.scene, selection, next) : state.scene }));
-      if (nudgeTimer) clearTimeout(nudgeTimer);
-      nudgeTimer = setTimeout(commitNudge, 300);
     },
 
     async detectAgent() {
@@ -504,6 +496,10 @@ export const useEditor = create<EditorState>((set, get) => {
     },
 
     closeProject() {
+      // Drop any pending nudge burst without flushing: the project (and its
+      // API base) is going away, so a moveEntity fired ~300ms from now would
+      // either hit a closed project or silently no-op — neither is right.
+      nudgeQueue.clear();
       try {
         localStorage.removeItem(LAST_PROJECT_KEY);
       } catch {
@@ -527,6 +523,10 @@ export const useEditor = create<EditorState>((set, get) => {
     },
 
     async selectScene(sceneId) {
+      // A pending nudge burst targets the scene being left; land it now
+      // (synchronously, not waiting out the debounce) so the move isn't lost
+      // and doesn't fire later against whatever scene is current by then.
+      nudgeQueue.flush();
       // A center measured against the previous scene's viewport doesn't apply
       // here; SceneView re-measures and pushes a fresh one once mounted.
       set({ sceneId, selection: null, playing: false, debugDraw: false, sceneViewCenter: null });
