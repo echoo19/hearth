@@ -3,9 +3,10 @@ import { getSheetFrames } from '@hearth/core';
 import { useEditor } from '../store';
 import { apiImportAsset, fileUrl } from '../api';
 import type { AssetItem } from '../types';
-import { Icon, Modal } from './ui';
+import { ConfirmDialog, Icon, Modal } from './ui';
 import { SliceDialog } from './SliceDialog';
 import { frameCrop, parseFrameRef, readSheetSize } from '../assetPreview';
+import { countPrefabInstances, syncConfirmBody } from '../prefabActions';
 
 /** One animation asset's resolved first-frame thumbnail (fetched from its
  * .anim.json), or null once we've tried and found nothing showable. */
@@ -84,17 +85,21 @@ function FrameGrid({ projectPath, asset }: { projectPath: string; asset: AssetIt
 export function AssetsPanel() {
   const projectPath = useEditor((s) => s.projectPath);
   const assets = useEditor((s) => s.assets);
+  const info = useEditor((s) => s.info);
   const scene = useEditor((s) => s.scene);
   const sceneId = useEditor((s) => s.sceneId);
   const selection = useEditor((s) => s.selection);
+  const select = useEditor((s) => s.select);
   const exec = useEditor((s) => s.exec);
   const refresh = useEditor((s) => s.refresh);
   const log = useEditor((s) => s.log);
+  const sceneViewCenter = useEditor((s) => s.sceneViewCenter);
 
   const [selectedAssetId, setSelectedAssetId] = useState<string | null>(null);
   const [spriteDialog, setSpriteDialog] = useState(false);
   const [tileDialog, setTileDialog] = useState(false);
   const [sliceDialog, setSliceDialog] = useState(false);
+  const [syncTarget, setSyncTarget] = useState<{ asset: AssetItem; count: number } | null>(null);
 
   // animation card thumbnails: resolved lazily from each animation's
   // .anim.json (first frame ref), cached per asset id so re-renders don't
@@ -254,6 +259,25 @@ export function AssetsPanel() {
     }
   }
 
+  async function addPrefabToScene(asset: AssetItem) {
+    if (!sceneId) return;
+    // Falls back to (0,0) when no SceneView has mounted/measured yet (e.g.
+    // the Scene panel is closed) — no seam into SceneView internals beyond
+    // the store's published sceneViewCenter.
+    const position = sceneViewCenter ?? { x: 0, y: 0 };
+    const result = await exec<{ entity: { id: string } }>('instantiatePrefab', {
+      prefab: asset.id,
+      scene: sceneId,
+      position,
+    });
+    if (result.success && result.data) select(result.data.entity.id);
+  }
+
+  async function openSyncConfirm(asset: AssetItem) {
+    const count = await countPrefabInstances(exec, info?.scenes.map((s) => s.id) ?? [], asset.id);
+    setSyncTarget({ asset, count });
+  }
+
   async function importFiles(files: Iterable<File>) {
     if (!projectPath) return;
     const fileList = Array.from(files);
@@ -367,6 +391,13 @@ export function AssetsPanel() {
         </span>
       );
     }
+    if (asset.type === 'prefab') {
+      return (
+        <span style={{ color: 'var(--ink-faint)' }}>
+          <Icon name="prefab" size={20} />
+        </span>
+      );
+    }
     if (asset.type === 'font') {
       if (loadedFontNames.has(asset.name)) {
         return (
@@ -461,6 +492,7 @@ export function AssetsPanel() {
             {assets.map((asset) => {
               const isSheet = asset.type === 'sprite' || asset.type === 'tile';
               const frameCount = isSheet ? getSheetFrames(asset).length : 0;
+              const prefabEntityCount = asset.type === 'prefab' ? (asset.prefab?.entityCount ?? null) : null;
               return (
                 <div
                   key={asset.id}
@@ -475,6 +507,11 @@ export function AssetsPanel() {
                   {frameCount > 0 && (
                     <span className="asset-count-badge">
                       {frameCount} frame{frameCount === 1 ? '' : 's'}
+                    </span>
+                  )}
+                  {prefabEntityCount !== null && (
+                    <span className="asset-count-badge">
+                      {prefabEntityCount} entit{prefabEntityCount === 1 ? 'y' : 'ies'}
                     </span>
                   )}
                 </div>
@@ -507,29 +544,45 @@ export function AssetsPanel() {
                 <Icon name="grid" size={11} /> Slice…
               </button>
             )}
-            <button
-              className="btn btn-sm"
-              disabled={!canAssign}
-              title={
-                canAssign
-                  ? `Set ${selectedEntity?.name}'s ${assignProperty}`
-                  : selectedAsset.type === 'audio'
-                    ? 'Select an entity with an AudioSource to assign'
-                    : 'Select an entity with a SpriteRenderer to assign'
-              }
-              onClick={() =>
-                selectedEntity &&
-                sceneId &&
-                void exec('setComponentProperty', {
-                  scene: sceneId,
-                  entity: selectedEntity.id,
-                  property: assignProperty,
-                  value: selectedAsset.id,
-                })
-              }
-            >
-              Assign to {selectedEntity ? `“${selectedEntity.name}”` : 'selection'}
-            </button>
+            {selectedAsset.type === 'prefab' ? (
+              <>
+                <button
+                  className="btn btn-sm"
+                  disabled={!sceneId}
+                  title={sceneId ? `Instantiate into "${scene?.name}" at the viewport center` : 'Open a scene first'}
+                  onClick={() => void addPrefabToScene(selectedAsset)}
+                >
+                  <Icon name="plus" size={11} /> Add to scene
+                </button>
+                <button className="btn btn-sm" onClick={() => void openSyncConfirm(selectedAsset)}>
+                  <Icon name="prefab" size={11} /> Sync instances
+                </button>
+              </>
+            ) : (
+              <button
+                className="btn btn-sm"
+                disabled={!canAssign}
+                title={
+                  canAssign
+                    ? `Set ${selectedEntity?.name}'s ${assignProperty}`
+                    : selectedAsset.type === 'audio'
+                      ? 'Select an entity with an AudioSource to assign'
+                      : 'Select an entity with a SpriteRenderer to assign'
+                }
+                onClick={() =>
+                  selectedEntity &&
+                  sceneId &&
+                  void exec('setComponentProperty', {
+                    scene: sceneId,
+                    entity: selectedEntity.id,
+                    property: assignProperty,
+                    value: selectedAsset.id,
+                  })
+                }
+              >
+                Assign to {selectedEntity ? `“${selectedEntity.name}”` : 'selection'}
+              </button>
+            )}
           </div>
 
           {projectPath &&
@@ -646,6 +699,20 @@ export function AssetsPanel() {
       </Modal>
 
       <SliceDialog open={sliceDialog} asset={selectedAsset} onClose={() => setSliceDialog(false)} />
+
+      <ConfirmDialog
+        open={syncTarget !== null}
+        title={`Sync "${syncTarget?.asset.name ?? ''}" instances?`}
+        body={syncConfirmBody(syncTarget?.count ?? 0)}
+        confirmLabel="Sync instances"
+        danger
+        onCancel={() => setSyncTarget(null)}
+        onConfirm={() => {
+          const target = syncTarget;
+          setSyncTarget(null);
+          if (target) void exec('syncPrefabInstances', { prefab: target.asset.id });
+        }}
+      />
     </div>
   );
 }

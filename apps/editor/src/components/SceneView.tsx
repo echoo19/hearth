@@ -86,6 +86,7 @@ export function SceneView() {
   const select = useEditor((s) => s.select);
   const exec = useEditor((s) => s.exec);
   const log = useEditor((s) => s.log);
+  const setSceneViewCenter = useEditor((s) => s.setSceneViewCenter);
 
   const hostRef = useRef<HTMLDivElement>(null);
   const svgRef = useRef<SVGSVGElement>(null);
@@ -198,6 +199,20 @@ export function SceneView() {
     fittedScene.current = sceneId;
     setView({ s, tx: (cw - W * s) / 2, ty: (ch - H * s) / 2 });
   }, [info, sceneId, scene, viewportEpoch]);
+
+  // Publish the viewport's world-space center to the store on every
+  // pan/zoom/fit/resize, so panels outside SceneView (AssetsPanel's "Add to
+  // scene") can place new entities in view without reaching into this
+  // component's internals. Cleared on unmount so a stale center from a
+  // closed/hidden SceneView never survives into another panel's placement.
+  useEffect(() => {
+    const host = hostRef.current;
+    if (!host) return;
+    const { clientWidth: cw, clientHeight: ch } = host;
+    if (cw === 0 || ch === 0) return;
+    setSceneViewCenter({ x: (cw / 2 - view.tx) / view.s, y: (ch / 2 - view.ty) / view.s });
+  }, [view, viewportEpoch, setSceneViewCenter]);
+  useEffect(() => () => setSceneViewCenter(null), [setSceneViewCenter]);
 
   // ---- wheel zoom (non-passive so we can preventDefault) -------------------
   useEffect(() => {

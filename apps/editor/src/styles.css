@@ -806,6 +806,19 @@ label.field-label {
   color: var(--err);
 }
 
+/* Prefab instance marker on a Hierarchy row — icon only, name lives in the
+   title tooltip so the row stays quiet at rest. */
+.prefab-badge {
+  display: inline-flex;
+  align-items: center;
+  flex: none;
+  color: var(--ink-faint);
+}
+
+.tree-row.selected .prefab-badge {
+  color: var(--accent);
+}
+
 .rename-input {
   flex: 1;
   padding: 1px 4px;
@@ -921,6 +934,29 @@ label.field-label {
   display: flex;
   flex-direction: column;
   gap: 6px;
+}
+
+/* "Instance of <prefab>" context banner: sits above the scrollable body so
+   it stays visible while editing the instance's components below. */
+.prefab-banner {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  background: var(--accent-soft);
+  border-bottom: 1px solid var(--border);
+  font-size: 12px;
+  color: var(--ink);
+}
+
+.prefab-banner-icon {
+  display: inline-flex;
+  color: var(--accent);
+  flex: none;
+}
+
+.prefab-banner-text strong {
+  font-weight: 600;
 }
 
 .inspector-row {

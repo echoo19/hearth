@@ -10,11 +10,18 @@ export function Hierarchy() {
   const selection = useEditor((s) => s.selection);
   const select = useEditor((s) => s.select);
   const exec = useEditor((s) => s.exec);
+  const assets = useEditor((s) => s.assets);
 
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
   const [renaming, setRenaming] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState('');
   const [deleting, setDeleting] = useState<SceneEntity | null>(null);
+  const [savingPrefab, setSavingPrefab] = useState<string | null>(null);
+  const [prefabNameValue, setPrefabNameValue] = useState('');
+
+  function prefabAssetName(assetId: string): string {
+    return assets.find((a) => a.id === assetId)?.name ?? assetId;
+  }
 
   const childrenOf = useMemo(() => {
     const map = new Map<string | null, SceneEntity[]>();
@@ -58,6 +65,13 @@ export function Hierarchy() {
     setRenaming(null);
     if (!sceneId || !newName || newName === entity.name) return;
     await exec('renameEntity', { scene: sceneId, entity: entity.id, newName });
+  }
+
+  async function commitSaveAsPrefab(entity: SceneEntity) {
+    const name = prefabNameValue.trim();
+    setSavingPrefab(null);
+    if (!sceneId || !name) return;
+    await exec('createPrefab', { scene: sceneId, entity: entity.id, name });
   }
 
   function toggleCollapsed(id: string) {
@@ -115,9 +129,31 @@ export function Hierarchy() {
               }}
               onClick={(e) => e.stopPropagation()}
             />
+          ) : savingPrefab === entity.id ? (
+            <input
+              className="rename-input"
+              value={prefabNameValue}
+              autoFocus
+              placeholder="Prefab name"
+              onChange={(e) => setPrefabNameValue(e.target.value)}
+              onBlur={() => void commitSaveAsPrefab(entity)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') void commitSaveAsPrefab(entity);
+                if (e.key === 'Escape') setSavingPrefab(null);
+              }}
+              onClick={(e) => e.stopPropagation()}
+            />
           ) : (
             <span className="tree-name" title={entity.id}>
               {entity.name}
+            </span>
+          )}
+          {entity.prefab && (
+            <span
+              className="prefab-badge"
+              title={`Instance of ${prefabAssetName(entity.prefab.asset)}`}
+            >
+              <Icon name="prefab" size={10} />
             </span>
           )}
           <span className="tree-actions" onClick={(e) => e.stopPropagation()}>
@@ -133,6 +169,16 @@ export function Hierarchy() {
             </button>
             <button className="icon-btn" title="Duplicate" onClick={() => void duplicate(entity)}>
               <Icon name="duplicate" size={11} />
+            </button>
+            <button
+              className="icon-btn"
+              title="Save as prefab"
+              onClick={() => {
+                setSavingPrefab(entity.id);
+                setPrefabNameValue(entity.name);
+              }}
+            >
+              <Icon name="prefab" size={11} />
             </button>
             <button className="icon-btn danger" title="Delete" onClick={() => setDeleting(entity)}>
               <Icon name="trash" size={11} />

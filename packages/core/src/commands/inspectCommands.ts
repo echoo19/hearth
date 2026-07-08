@@ -132,6 +132,11 @@ export const inspectScene = defineCommand({
       components: params.full ? e.components : Object.keys(e.components),
       position: e.components.Transform?.position ?? null,
       children: childrenOf(scene, e.id).map((c) => c.id),
+      // Prefab instance marker (root entities only) — the editor's Hierarchy
+      // badge and Inspector "Instance of <prefab>" banner both need this
+      // without a per-entity inspectEntity round trip. Present regardless of
+      // `full` since it's a single small field, not bulk component data.
+      prefab: e.prefab,
     });
 
     return {

@@ -53,6 +53,8 @@ export interface SceneEntity {
   components: Record<string, Record<string, unknown>>;
   position: Vec2 | null;
   children: string[];
+  /** Set on a prefab instance's root entity only; links back to the source asset. */
+  prefab?: { asset: string };
 }
 
 export interface SceneData {
@@ -66,9 +68,11 @@ export interface SceneData {
 export interface AssetItem {
   id: string;
   name: string;
-  type: 'sprite' | 'tile' | 'audio' | 'animation' | 'font' | 'data' | 'other';
+  type: 'sprite' | 'tile' | 'audio' | 'animation' | 'font' | 'data' | 'other' | 'prefab';
   path: string;
   metadata: Record<string, unknown>;
+  /** Fresh-from-disk summary attached by inspectAssets for `type: 'prefab'` assets only. */
+  prefab?: { entityCount: number; rootComponents: string[] };
 }
 
 export interface ComponentDoc {

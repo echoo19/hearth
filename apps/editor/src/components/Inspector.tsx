@@ -15,6 +15,7 @@ import {
   type TileAssetRow,
 } from '../tileAssetsList';
 import { ConfirmDialog, Icon, componentIcon } from './ui';
+import { countPrefabInstances, syncConfirmBody } from '../prefabActions';
 
 // ---------------------------------------------------------------------------
 // Field editors: value type decides the control. All commit on blur / Enter.
@@ -505,12 +506,14 @@ export function Inspector() {
   const sceneId = useEditor((s) => s.sceneId);
   const selection = useEditor((s) => s.selection);
   const assets = useEditor((s) => s.assets);
+  const info = useEditor((s) => s.info);
   const componentDocs = useEditor((s) => s.componentDocs);
   const exec = useEditor((s) => s.exec);
   const select = useEditor((s) => s.select);
 
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [confirmRemove, setConfirmRemove] = useState<string | null>(null);
+  const [syncAllTarget, setSyncAllTarget] = useState<{ asset: string; count: number } | null>(null);
 
   const entity = useMemo(
     () => scene?.entities.find((e) => e.id === selection),
@@ -542,12 +545,43 @@ export function Inspector() {
   const existingTypes = Object.keys(entity.components);
   const addableTypes = componentDocs.filter((d) => !existingTypes.includes(d.type));
 
+  const prefabAssetId = entity.prefab?.asset;
+  const prefabAsset = prefabAssetId ? assets.find((a) => a.id === prefabAssetId) : undefined;
+
+  const handleUpdatePrefab = async () => {
+    if (!prefabAssetId) return;
+    await exec('updatePrefab', { prefab: prefabAssetId, scene: sceneId, entity: entity.id });
+  };
+
+  const openSyncAllConfirm = async () => {
+    if (!prefabAssetId) return;
+    const count = await countPrefabInstances(exec, info?.scenes.map((s) => s.id) ?? [], prefabAssetId);
+    setSyncAllTarget({ asset: prefabAssetId, count });
+  };
+
   return (
     <>
       <div className="panel-header">
         <span>Inspector</span>
         <span className="mono panel-header-detail">{entity.id}</span>
       </div>
+      {entity.prefab && (
+        <div className="prefab-banner">
+          <span className="prefab-banner-icon">
+            <Icon name="prefab" size={12} />
+          </span>
+          <span className="prefab-banner-text">
+            Instance of <strong>{prefabAsset?.name ?? entity.prefab.asset}</strong>
+          </span>
+          <span style={{ flex: 1 }} />
+          <button className="btn btn-sm" onClick={() => void handleUpdatePrefab()}>
+            Update prefab
+          </button>
+          <button className="btn btn-sm" onClick={() => void openSyncAllConfirm()}>
+            Sync all
+          </button>
+        </div>
+      )}
       <div className="panel-scroll">
         {/* entity-level fields */}
         <div className="inspector-section">
@@ -903,6 +937,19 @@ export function Inspector() {
           const type = confirmRemove;
           setConfirmRemove(null);
           if (type) void exec('removeComponent', { scene: sceneId, entity: entity.id, type });
+        }}
+      />
+      <ConfirmDialog
+        open={syncAllTarget !== null}
+        title="Sync all instances?"
+        body={syncConfirmBody(syncAllTarget?.count ?? 0)}
+        confirmLabel="Sync instances"
+        danger
+        onCancel={() => setSyncAllTarget(null)}
+        onConfirm={() => {
+          const target = syncAllTarget;
+          setSyncAllTarget(null);
+          if (target) void exec('syncPrefabInstances', { prefab: target.asset });
         }}
       />
     </>

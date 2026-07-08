@@ -17,6 +17,7 @@ import type {
   ProjectInfo,
   SceneData,
   ServerMeta,
+  Vec2,
 } from './types';
 import type { WsFrame } from '../server/ws';
 import type { AgentPermissionMode, DetectAgentsResult } from '../server/agentSetup';
@@ -83,12 +84,21 @@ interface EditorState {
    * while already on the Diff panel still register as a change; mirrors the
    * `playing` -> "surface the Game panel" pattern in Workspace.tsx. */
   diffFocusRequest: number;
+  /**
+   * World-space center of the current SceneView viewport, kept in sync by
+   * SceneView on every pan/zoom/fit. Consumers outside SceneView (e.g.
+   * AssetsPanel's "Add to scene") read this instead of reaching into
+   * SceneView internals; null before any SceneView has mounted/measured a
+   * host size, in which case callers fall back to (0,0).
+   */
+  sceneViewCenter: Vec2 | null;
 
   setAgentMode(mode: AgentPermissionMode): void;
   detectAgent(): Promise<void>;
   /** Sends a pty-* frame over the shared WS socket; a no-op (returns false) when disconnected. */
   sendAgentFrame(frame: WsFrame): boolean;
   requestDiffFocus(): void;
+  setSceneViewCenter(center: Vec2 | null): void;
 
   loadMeta(): Promise<void>;
   openProject(path: string): Promise<{ ok: boolean; error?: string }>;
@@ -265,6 +275,7 @@ export const useEditor = create<EditorState>((set, get) => {
       playing: false,
       debugDraw: false,
       snapshotTaken: false,
+      sceneViewCenter: null,
     });
     get().log('info', 'editor', `Opened project "${info.name}" (${info.scenes.length} scene${info.scenes.length === 1 ? '' : 's'})`);
     connectWs(path);
@@ -299,6 +310,7 @@ export const useEditor = create<EditorState>((set, get) => {
     agentDetecting: false,
     snapshotTaken: false,
     diffFocusRequest: 0,
+    sceneViewCenter: null,
 
     setAgentMode(mode) {
       set({ agentMode: mode });
@@ -306,6 +318,10 @@ export const useEditor = create<EditorState>((set, get) => {
 
     requestDiffFocus() {
       set((state) => ({ diffFocusRequest: state.diffFocusRequest + 1 }));
+    },
+
+    setSceneViewCenter(center) {
+      set({ sceneViewCenter: center });
     },
 
     async detectAgent() {
@@ -375,11 +391,14 @@ export const useEditor = create<EditorState>((set, get) => {
         playing: false,
         debugDraw: false,
         snapshotTaken: false,
+        sceneViewCenter: null,
       });
     },
 
     async selectScene(sceneId) {
-      set({ sceneId, selection: null, playing: false, debugDraw: false });
+      // A center measured against the previous scene's viewport doesn't apply
+      // here; SceneView re-measures and pushes a fresh one once mounted.
+      set({ sceneId, selection: null, playing: false, debugDraw: false, sceneViewCenter: null });
       await get().refresh();
     },
 
