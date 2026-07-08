@@ -75,6 +75,11 @@ export interface InstantiateOptions {
  * remapped to match, `opts.position` overrides the root's Transform
  * position (creating a Transform if the root doesn't have one), and the
  * root's name defaults to `data.name` or `opts.name` when given.
+ *
+ * This function is pure and sceneless, so it does NOT uniquify the root name
+ * against any scene — a caller that inserts the result into a scene is
+ * responsible for scene-level name uniquification (see instantiatePrefab in
+ * prefabCommands.ts).
  */
 export function instantiatePrefabData(data: PrefabData, opts: InstantiateOptions = {}): Entity[] {
   const idMap = new Map<string, string>();

@@ -20,6 +20,22 @@ function requireScene(ctx: CommandContext, sceneRef: string): Scene {
   return scene;
 }
 
+/**
+ * A scene-unique entity name derived from `desired`: returns it unchanged if
+ * free, else appends the lowest " 2", " 3", ... suffix that isn't taken (the
+ * same convention duplicateScene uses). Instance roots are uniquified so that
+ * placing a prefab twice yields addressable names ("Slime", "Slime 2") rather
+ * than two identically-named entities that update/inspect-by-name can't tell
+ * apart.
+ */
+function uniquifyEntityName(scene: Scene, desired: string): string {
+  const taken = new Set(scene.entities.map((e) => e.name));
+  if (!taken.has(desired)) return desired;
+  let suffix = 2;
+  while (taken.has(`${desired} ${suffix}`)) suffix += 1;
+  return `${desired} ${suffix}`;
+}
+
 function requireEntity(scene: Scene, ref: string): Entity {
   const entity = findEntity(scene, ref);
   if (!entity) {
@@ -149,6 +165,10 @@ export const instantiatePrefab = defineCommand({
     });
 
     const root = instances[0];
+    // instantiatePrefabData is pure and sceneless, so the root name it sets
+    // (opts.name ?? data.name) can collide with an existing entity. Uniquify
+    // here, where the target scene is known, so names stay addressable.
+    root.name = uniquifyEntityName(scene, root.name);
     root.prefab = { asset: asset.id };
 
     scene.entities.push(...instances);

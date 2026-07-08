@@ -153,6 +153,56 @@ describe('instantiatePrefab', () => {
     expect(result.errors[0].code).toBe('NOT_FOUND');
   });
 
+  it('uniquifies the instance name against the target scene (two places -> distinct names)', async () => {
+    const { session, store, asset, sourceSceneId } = await makePrefabAsset();
+
+    const first = await session.execute<any>('instantiatePrefab', { prefab: asset.id, scene: sourceSceneId });
+    expect(first.success).toBe(true);
+    expect(first.data.entity.name).toBe('PlayerPrefab');
+
+    const second = await session.execute<any>('instantiatePrefab', { prefab: asset.id, scene: sourceSceneId });
+    expect(second.success).toBe(true);
+    // The default name would collide, so it is uniquified.
+    expect(second.data.entity.name).toBe('PlayerPrefab 2');
+
+    const third = await session.execute<any>('instantiatePrefab', { prefab: asset.id, scene: sourceSceneId });
+    expect(third.success).toBe(true);
+    expect(third.data.entity.name).toBe('PlayerPrefab 3');
+  });
+
+  it('uniquifies an explicit name param on collision too', async () => {
+    const { session, asset, sourceSceneId } = await makePrefabAsset();
+
+    const a = await session.execute<any>('instantiatePrefab', { prefab: asset.id, scene: sourceSceneId, name: 'Slime' });
+    expect(a.success).toBe(true);
+    expect(a.data.entity.name).toBe('Slime');
+
+    const b = await session.execute<any>('instantiatePrefab', { prefab: asset.id, scene: sourceSceneId, name: 'Slime' });
+    expect(b.success).toBe(true);
+    expect(b.data.entity.name).toBe('Slime 2');
+  });
+
+  it('update-by-name after two places targets the uniquely-named instance', async () => {
+    const { session, store, asset, sourceSceneId } = await makePrefabAsset();
+
+    await session.execute<any>('instantiatePrefab', { prefab: asset.id, scene: sourceSceneId });
+    await session.execute<any>('instantiatePrefab', { prefab: asset.id, scene: sourceSceneId });
+
+    // "PlayerPrefab 2" now names exactly one entity — update-by-name is
+    // unambiguous rather than silently targeting whichever matched first.
+    const second = store.getScene(sourceSceneId)!.entities.find((e) => e.name === 'PlayerPrefab 2')!;
+    expect(second).toBeDefined();
+    const matches = store.getScene(sourceSceneId)!.entities.filter((e) => e.name === 'PlayerPrefab 2');
+    expect(matches).toHaveLength(1);
+
+    const update = await session.execute<any>('updatePrefab', {
+      prefab: asset.id,
+      scene: sourceSceneId,
+      entity: 'PlayerPrefab 2',
+    });
+    expect(update.success).toBe(true);
+  });
+
   it('errors PREFAB_DATA_INVALID when the payload on disk is corrupt', async () => {
     const { session, fs, asset, sourceSceneId } = await makePrefabAsset();
     await fs.writeFile(`/proj/${asset.path}`, 'not json {{{');

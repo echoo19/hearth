@@ -78,6 +78,11 @@ entity (remapping `parentId` to match), and pushes the whole subtree into
 position stored in the payload); `name` overrides the root's name (default:
 the prefab's own `name`). The new root gets `prefab: { asset }`.
 
+The root name is **uniquified against the target scene**: placing a prefab
+twice gives you `Ember Grub` then `Ember Grub 2` (an explicit `name` that
+collides is suffixed the same way), so every instance stays addressable by a
+distinct name for `updatePrefab`/`inspectEntity`.
+
 ```bash
 hearth prefab place "Ember Grub" Warren --position 400,300
 ```
@@ -91,6 +96,11 @@ entity-count metadata refresh). `entity` must already carry
 isn't a tracked instance of that exact asset is a `PREFAB_NOT_INSTANCE`
 error. This is how you retune a prefab: instantiate one, tweak it like any
 other entity, then `updatePrefab` to bake the change back into the asset.
+
+`entity` can be an id or a name. Because instance names are uniquified on
+placement, a name like `Ember Grub 2` addresses exactly one instance — but
+prefer the entity id when a scene holds several instances and you want to be
+unambiguous no matter how they were named.
 
 ```bash
 hearth prefab update "Ember Grub" Warren "Ember Grub"
