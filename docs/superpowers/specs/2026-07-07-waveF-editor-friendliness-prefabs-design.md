@@ -64,7 +64,8 @@ inapplicable):
 | --- | --- |
 | ⌘D | Duplicate selected entity (`duplicateEntity`) |
 | Delete / Backspace | Delete selected entity (`removeEntity`, no confirm — undo covers it) |
-| ⌘S | Checkpoint (`snapshotProject`) — swallows browser save dialog |
+| ⌘S | "Saved automatically" reassurance log — swallows browser save dialog. (Amended during Wave F execution: binding checkpoint to habitual ⌘S would silently overwrite the review baseline; checkpoint moved to ⇧⌘S.) |
+| ⇧⌘S | Checkpoint (`snapshotProject`) |
 | F | Focus/zoom SceneView camera on selection (fit entity bounds, sensible min/max zoom) |
 | ⌘Enter | Play/Stop toggle |
 | Arrow keys | Nudge selected entity 1px (`moveEntity` on key **release**/debounce so one undo step per burst, not per press) |
