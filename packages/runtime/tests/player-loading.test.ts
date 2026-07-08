@@ -5,6 +5,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   DEFAULT_LOADING_BACKGROUND,
+  assetNeedsRawContent,
   loadingForegroundColor,
   normalizeLoadingSettings,
   parseHexColor,
@@ -73,6 +74,22 @@ describe('parseHexColor', () => {
     expect(parseHexColor('red')).toBeNull();
     expect(parseHexColor('#12345')).toBeNull();
     expect(parseHexColor('rgb(1,2,3)')).toBeNull();
+  });
+});
+
+describe('assetNeedsRawContent', () => {
+  it('flags the asset types the runtime reads off the store fs', () => {
+    // Multi-file exports fetch these into the player's in-memory fs so
+    // loadAnimations / loadPrefabs can read them; missing one silently
+    // freezes that feature (the Wave A regression class).
+    expect(assetNeedsRawContent('animation')).toBe(true);
+    expect(assetNeedsRawContent('prefab')).toBe(true);
+  });
+
+  it('does not flag URL-loaded asset types', () => {
+    for (const type of ['sprite', 'audio', 'font', 'image', 'unknown']) {
+      expect(assetNeedsRawContent(type)).toBe(false);
+    }
   });
 });
 

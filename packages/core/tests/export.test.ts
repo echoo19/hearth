@@ -142,6 +142,62 @@ describe('exportWeb failure modes', () => {
   });
 });
 
+describe('exportWeb prefab payloads', () => {
+  /** Add a Coin prefab (serialized from the default Player entity) to a session. */
+  async function withPrefab(session: any) {
+    const created = await session.execute<any>('createPrefab', {
+      scene: 'Main',
+      entity: 'Player',
+      name: 'Coin',
+    });
+    expect(created.success).toBe(true);
+    return created.data.asset.id as string;
+  }
+
+  it('ships the prefab payload as a real file + bundle entry (multi-file)', async () => {
+    const { session, fs } = await makeSession(stubResources);
+    await withPrefab(session);
+
+    const result = await session.execute<any>('exportWeb', {});
+    expect(result.success).toBe(true);
+
+    const bundle = JSON.parse(await fs.readFile('/proj/export/web/project.bundle.json')) as WebExportBundle;
+    const prefab = bundle.assets.find((a) => a.type === 'prefab');
+    expect(prefab).toBeDefined();
+    expect(prefab?.name).toBe('Coin');
+    // Multi-file ships content as a copied file the player fetches into its fs.
+    expect(prefab?.path).toMatch(/\.prefab\.json$/);
+    expect(prefab?.dataUri).toBeUndefined();
+    const payload = JSON.parse(await fs.readFile(`/proj/export/web/${prefab!.path}`));
+    expect(payload.name).toBe('Coin');
+    expect(Array.isArray(payload.entities)).toBe(true);
+    expect(payload.entities.length).toBeGreaterThan(0);
+  });
+
+  it('inlines the prefab payload as a data URI (single-file)', async () => {
+    const { session, fs } = await makeSession(stubResources);
+    await withPrefab(session);
+
+    const result = await session.execute<any>('exportWeb', { singleFile: true });
+    expect(result.success).toBe(true);
+
+    const html = await fs.readFile('/proj/export/web/index.html');
+    const bundleMatch = html.match(/^\s*var bundle = (\{.*\});$/m);
+    expect(bundleMatch).toBeTruthy();
+    const bundle = JSON.parse(bundleMatch![1]) as WebExportBundle;
+
+    const prefab = bundle.assets.find((a) => a.type === 'prefab');
+    expect(prefab).toBeDefined();
+    expect(prefab?.dataUri).toMatch(/^data:application\/json;base64,/);
+    // Decode the inlined payload back and confirm it is the real prefab JSON.
+    const base64 = prefab!.dataUri!.slice(prefab!.dataUri!.indexOf(',') + 1);
+    const payload = JSON.parse(Buffer.from(base64, 'base64').toString('utf8'));
+    expect(payload.name).toBe('Coin');
+    expect(Array.isArray(payload.entities)).toBe(true);
+    expect(payload.entities.length).toBeGreaterThan(0);
+  });
+});
+
 describe('exportWeb bundle asset metadata', () => {
   it('carries asset metadata (e.g., spritesheet frames) through to the bundle', async () => {
     const { session, fs } = await makeSession(stubResources);

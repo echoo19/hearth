@@ -75,6 +75,15 @@ export interface ScriptContext {
     find(idOrName: string): EntityHandle | null;
     findByTag(tag: string): EntityHandle[];
     spawn(def: SpawnDef): EntityHandle;
+    /**
+     * Spawn a prefab asset (by name or id) as a fresh entity subtree: every
+     * entity gets a new id, parent/child links are preserved among the
+     * spawned set, `opts.position` overrides the root's Transform position and
+     * `opts.name` its name. Returns the root handle, or null (with a warn log)
+     * when no prefab by that name exists. Destroying the returned root does
+     * NOT cascade to its children — destroy is per-entity.
+     */
+    spawnPrefab(name: string, opts?: { position?: Vec2; name?: string }): EntityHandle | null;
     destroy(idOrHandle: string | EntityHandle): void;
     /**
      * Grid A* path from `from` to `to` over solid tilemaps and static,

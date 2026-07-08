@@ -112,6 +112,18 @@ export const CTX_API: readonly CtxApiEntry[] = [
     },
   },
   {
+    path: 'scene.spawnPrefab',
+    kind: 'method',
+    signature:
+      'spawnPrefab(name: string, opts?: { position?: Vec2; name?: string }): EntityHandle | null',
+    description:
+      "Spawn a prefab asset (by name or id) as a fresh entity subtree at runtime: every entity gets a new id, parent/child links are preserved among the spawned set, opts.position overrides the root's position and opts.name its name. Spawned children are registered for scripts just like the root. Returns the root's EntityHandle, or null (with a warn log) when no prefab by that name exists. Note: destroying the returned root does NOT cascade to its children — destroy is per-entity, so destroy each child yourself if you want the whole subtree gone.",
+    example: {
+      js: "const coin = ctx.scene.spawnPrefab('Coin', { position: { x: 100, y: 50 } })",
+      lua: 'local coin = ctx.scene.spawnPrefab("Coin", { position = { x = 100, y = 50 } })',
+    },
+  },
+  {
     path: 'scene.destroy',
     kind: 'method',
     signature: 'destroy(idOrHandle: string | EntityHandle): void',

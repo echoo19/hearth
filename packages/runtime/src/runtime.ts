@@ -18,14 +18,17 @@
  */
 import {
   AnimationDataSchema,
+  PrefabDataSchema,
   buildNavGrid,
   collectNavSolids,
   createComponent,
   findPath,
   generateId,
+  instantiatePrefabData,
   isComponentType,
   joinPath,
   type AnimationData,
+  type PrefabData,
   type ComponentMap,
   type Entity,
   type NavEntityInput,
@@ -307,6 +310,7 @@ export class SceneRuntime {
   private warnedNoCamera = false;
   private emitters = new Map<string, EmitterState>();
   private animationAssets = new Map<string, AnimationData>();
+  private prefabAssets = new Map<string, PrefabData>();
   private animatorStates = new Map<string, AnimatorState>();
   private eventBus = new EventBus();
   private emitDepth = 0;
@@ -352,6 +356,7 @@ export class SceneRuntime {
     }
     const runtime = new SceneRuntime(store, scene, options);
     await runtime.loadAnimations();
+    await runtime.loadPrefabs();
     await runtime.loadScripts();
     return runtime;
   }
@@ -1100,6 +1105,68 @@ export class SceneRuntime {
     }
   }
 
+  /**
+   * Preload every prefab asset payload in the project (tiny JSON, like
+   * animations) so ctx.scene.spawnPrefab can instantiate them synchronously,
+   * with zero I/O, at play time. Reads raw content straight off the store's
+   * fs — in exports the player's loadStore materializes prefab files into
+   * that fs (see player/index.ts + loading.ts assetNeedsRawContent).
+   */
+  private async loadPrefabs(): Promise<void> {
+    for (const asset of this.store.assets.assets) {
+      if (asset.type !== 'prefab') continue;
+      try {
+        const raw = await this.store.fs.readFile(joinPath(this.store.root, asset.path));
+        this.prefabAssets.set(asset.id, PrefabDataSchema.parse(JSON.parse(raw)));
+      } catch (err) {
+        this.recordError({
+          frame: this._frame,
+          message: `Failed to load prefab asset "${asset.name}": ${(err as Error).message}`,
+          phase: 'load',
+        });
+      }
+    }
+  }
+
+  /**
+   * Spawn a prefab asset (resolved by name or id) as a live entity subtree:
+   * every prefab entity becomes a fresh RuntimeEntity with a new id, the
+   * parent/child links are preserved AMONG the spawned set, `opts.position`
+   * overrides the root's Transform position and `opts.name` its name. Entities
+   * are inserted in payload order (root first) and each is registered for its
+   * Script, exactly like the single-entity spawn(). Returns the root handle,
+   * or null (with a warn log) when the prefab is unknown — matching spawn()'s
+   * tolerance for unknown inputs. No prefab marker is attached at runtime.
+   *
+   * Deterministic: ids come from generateId (a global counter, never the
+   * seeded ctx.random stream), so spawning consumes nothing from the RNG.
+   */
+  private spawnPrefab(
+    name: string,
+    opts: { position?: Vec2; name?: string } = {},
+  ): EntityHandle | null {
+    const asset = this.store.getAsset(name);
+    const data =
+      asset && asset.type === 'prefab' ? this.prefabAssets.get(asset.id) : undefined;
+    if (!data) {
+      this.recordLog('warn', `spawnPrefab: unknown prefab "${name}"`);
+      return null;
+    }
+    // instantiatePrefabData remaps local pfe_* ids to fresh ent_* ids and
+    // rewrites parentId to match; instantiate() then turns each schema Entity
+    // into a RuntimeEntity (deep-cloned live components) just like an authored
+    // scene entity, so the spawned subtree follows the normal entity lifecycle.
+    const instances = instantiatePrefabData(data, {
+      position: opts.position,
+      name: opts.name,
+    });
+    const entities = instances.map((authored) => this.instantiate(authored));
+    for (const entity of entities) this.entities.push(entity);
+    this.invalidateEntitiesCache();
+    for (const entity of entities) this.registerScript(entity);
+    return this.handleFor(entities[0]);
+  }
+
   /** Advance every live enabled SpriteAnimator one fixed step; reap destroyed entities. */
   private stepAnimators(): void {
     const liveIds = new Set<string>();
@@ -1297,6 +1364,7 @@ export class SceneRuntime {
         },
         findByTag: (tag) => runtime.findByTag(tag).map((e) => runtime.handleFor(e)),
         spawn: (def) => runtime.spawn(def),
+        spawnPrefab: (name, opts) => runtime.spawnPrefab(name, opts),
         destroy: (idOrHandle) =>
           runtime.destroyEntity(typeof idOrHandle === 'string' ? idOrHandle : idOrHandle.id),
         findPath: (from, to, opts) => {
