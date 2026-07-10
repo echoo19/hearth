@@ -31,6 +31,13 @@ const AGENT_MODE_HINTS: Record<AgentPermissionMode, string> = {
 };
 
 const INSTALL_COMMAND = 'npm install -g @anthropic-ai/claude-code';
+type AgentLauncher = 'claude' | 'codex' | 'shell';
+
+const AGENT_LAUNCHER_LABELS: Record<AgentLauncher, string> = {
+  claude: 'Claude Code',
+  codex: 'Codex',
+  shell: 'Terminal / other CLI',
+};
 
 function statusLabel(session: AgentSessionSummary): string {
   switch (session.status) {
@@ -58,6 +65,7 @@ export function AgentPanel() {
   const agent = useAgentSocket();
   const [manualOpen, setManualOpen] = useState(false);
   const [prepareError, setPrepareError] = useState<string | null>(null);
+  const [agentLauncher, setAgentLauncher] = useState<AgentLauncher>('claude');
 
   useEffect(() => {
     void detectAgent();
@@ -67,9 +75,23 @@ export function AgentPanel() {
 
   const running = agent.session.status === 'running';
   const claudeFound = agentDetect?.claude.found ?? false;
+  const codexFound = agentDetect?.codex.found ?? false;
+  const launcherFound = agentLauncher === 'shell' || (agentLauncher === 'claude' ? claudeFound : codexFound);
+  const launcherHint =
+    agentLauncher === 'claude'
+      ? 'Claude Code gets Hearth MCP prepared automatically.'
+      : agentLauncher === 'codex'
+        ? 'Codex launches in this project; use the CLI or manual MCP setup below as needed.'
+        : 'Use the project terminal for OpenCode, Hermes, or any other shell-native agent.';
 
-  async function startClaude() {
+  async function startAgent() {
     if (!projectPath) return;
+    if (agentLauncher !== 'claude') {
+      setPrepareError(null);
+      agent.start(agentLauncher);
+      return;
+    }
+
     // Permissioning happens here, not in the spawn: prepare writes the
     // hearth entry (with --mode) into .mcp.json, which the bare interactive
     // `claude` picks up itself. The mode rides along on pty-start only so
@@ -92,10 +114,6 @@ export function AgentPanel() {
     // Run the official install visibly in the terminal; if the shell could
     // not start (socket down), don't fire the command into the void.
     if (agent.start('shell')) agent.sendInput(`${INSTALL_COMMAND}\r`);
-  }
-
-  function openTerminal() {
-    agent.start('shell');
   }
 
   // --- Manual-setup content (unchanged from the pre-terminal panel) --------
@@ -136,6 +154,20 @@ export function AgentPanel() {
       <div className="panel-toolbar agent-toolbar">
         <select
           className="select"
+          value={agentLauncher}
+          onChange={(e) => {
+            setAgentLauncher(e.target.value as AgentLauncher);
+            setPrepareError(null);
+          }}
+          title="Choose which local agent CLI to launch"
+        >
+          <option value="claude">{AGENT_LAUNCHER_LABELS.claude}</option>
+          <option value="codex">{AGENT_LAUNCHER_LABELS.codex}</option>
+          <option value="shell">{AGENT_LAUNCHER_LABELS.shell}</option>
+        </select>
+
+        <select
+          className="select"
           value={agentMode}
           onChange={(e) => setAgentMode(e.target.value as AgentPermissionMode)}
           title={AGENT_MODE_HINTS[agentMode]}
@@ -147,15 +179,15 @@ export function AgentPanel() {
           ))}
         </select>
 
-        {agentDetecting ? (
+        {agentDetecting && agentLauncher !== 'shell' ? (
           <button className="btn btn-primary btn-sm" disabled>
             Checking…
           </button>
-        ) : claudeFound ? (
-          <button className="btn btn-primary btn-sm" onClick={() => void startClaude()} disabled={!projectPath}>
-            Start Claude Code
+        ) : launcherFound ? (
+          <button className="btn btn-primary btn-sm" onClick={() => void startAgent()} disabled={!projectPath}>
+            {agentLauncher === 'shell' ? 'Open Terminal' : 'Start agent'}
           </button>
-        ) : (
+        ) : agentLauncher === 'claude' ? (
           <>
             <button className="btn btn-primary btn-sm" onClick={installClaude} disabled={!projectPath}>
               Install Claude Code
@@ -168,11 +200,20 @@ export function AgentPanel() {
               Re-detect
             </button>
           </>
+        ) : (
+          <>
+            <button className="btn btn-primary btn-sm" disabled>
+              Codex not found
+            </button>
+            <button
+              className="btn btn-ghost btn-sm"
+              onClick={() => void detectAgent()}
+              title="Re-check whether the codex CLI is on PATH"
+            >
+              Re-detect
+            </button>
+          </>
         )}
-
-        <button className="btn btn-sm" onClick={openTerminal} disabled={!projectPath}>
-          Open Terminal
-        </button>
 
         <span className="panel-divider" />
 
@@ -187,7 +228,9 @@ export function AgentPanel() {
 
       {prepareError && <div className="agent-prepare-error">Agent setup failed: {prepareError}</div>}
 
-      <div className="agent-mode-hint">{AGENT_MODE_HINTS[agentMode]}</div>
+      <div className="agent-mode-hint">
+        {AGENT_MODE_HINTS[agentMode]} {launcherHint}
+      </div>
 
       <div className="agent-body">
         <div className="agent-terminal-pane">
@@ -212,8 +255,9 @@ export function AgentPanel() {
           <div className="agent-manual-body agent-panel">
             <p>
               Hearth is agent-native: everything this editor does goes through the same command system that the{' '}
-              <code>hearth</code> CLI and the MCP server expose. Point a coding agent at this project and review its
-              work in the Changes panel. New projects also get AGENTS.md / CLAUDE.md with these instructions baked in.
+              <code>hearth</code> CLI and the MCP server expose. Start Claude Code or Codex here, or open the terminal
+              for OpenCode, Hermes, and other shell-native agents. New projects also get AGENTS.md / CLAUDE.md with
+              these instructions baked in.
             </p>
 
             <h4>CLI (any agent with a shell)</h4>
@@ -222,7 +266,7 @@ export function AgentPanel() {
             <h4>MCP: Claude Code</h4>
             <CodeBlock code={mcpClaudeBlock} />
 
-            <h4>MCP: generic .mcp.json</h4>
+            <h4>MCP: generic clients</h4>
             <CodeBlock code={mcpJsonBlock} />
 
             <h4>Permission modes</h4>

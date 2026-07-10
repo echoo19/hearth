@@ -1,17 +1,19 @@
 # Agent Panel
 
 The Agent panel is the editor's built-in home for a coding agent: a real
-embedded terminal running your own copy of the agent's CLI, pre-wired to the
-open project via MCP, next to a live timeline of every structured command it
-runs. The onboarding story it exists for is: download Hearth → open a
-project → click **Start Claude Code** → describe your game.
+embedded terminal running your own copy of the agent's CLI, next to a live
+timeline of every structured command it runs. The onboarding story it exists
+for is: download Hearth → open a project → choose your agent → describe your
+game. Claude Code gets automatic MCP setup; Codex launches directly when it is
+on `PATH`; OpenCode, Hermes, and other shell-native agents use the project
+terminal plus the same Hearth CLI/MCP surfaces.
 
 It is not a chat UI, and it does not run any model. Hearth never calls an
 LLM, never holds an API key, and the panel's terminal is exactly the
-official `claude` CLI you'd run in any terminal — just spawned inside the
-editor with its working directory set to your project. Everything the panel
-shows is either that CLI's own terminal output, or facts read back from
-Hearth's own on-disk command journal.
+official CLI you'd run in any terminal — just spawned inside the editor with
+its working directory set to your project. Everything the panel shows is
+either that CLI's own terminal output, or facts read back from Hearth's own
+on-disk command journal.
 
 ## Why a terminal, not a custom chat UI
 
@@ -41,7 +43,7 @@ Hearth's embedded panel stays on the safe side of that line deliberately:
   [project-format.md](./project-format.md#hearthlogcommandsjsonl)) — a
   record of engine commands the CLI happened to run through Hearth's MCP
   server, not anything read out of the agent's own process.
-- Login is entirely the CLI's own business: clicking **Start Claude Code**
+- Login is entirely the CLI's own business: starting Claude Code
   never touches your credentials. If the CLI needs you to authenticate, it
   prompts for it inside the terminal exactly as it would from any shell,
   and whatever it persists to your machine is between you and the CLI.
@@ -55,21 +57,25 @@ descriptively — no logos, no implied partnership or endorsement.
 
 ## What's in the panel
 
+- **Agent selector** — choose Claude Code, Codex, or a plain project
+  terminal for OpenCode, Hermes, or any other shell-native CLI agent.
 - **Permission mode selector** — a 4-tier ladder (`Read-only` / `Safe edit`
   / `Full (no build)` / `All (incl. build)`) above the terminal, defaulting
   to Safe edit. See [Permission modes](#permission-modes) below.
-- **Start Claude Code** — writes/merges a `hearth` entry into the project's
-  `.mcp.json` at the selected mode, then spawns `claude` in the terminal
-  pane. Claude Code discovers `.mcp.json` itself, asks you to approve the
+- **Start agent** — for Claude Code, writes/merges a `hearth` entry into the
+  project's `.mcp.json` at the selected mode, then spawns `claude` in the
+  terminal pane. Claude Code discovers `.mcp.json` itself, asks you to approve the
   server on first use, and handles its own login if needed — all inside the
   terminal.
+- **Start agent: Codex** — spawns `codex` in the same terminal when it is on
+  `PATH`. Codex first-class MCP config wiring is future work, so use the CLI
+  or manual MCP snippets below as needed.
 - **Install Claude Code** — shown instead of Start when `claude` isn't found
   on `PATH`. Runs the official install command visibly in the terminal (no
   hidden installs happen anywhere), then re-detects.
-- **Open Terminal** — always available: a plain shell (`$SHELL` on
-  macOS/Linux, PowerShell on Windows) in the project root, for Codex or any
-  other agent/tool. This is also where the install command above actually
-  runs.
+- **Open Terminal** — a plain shell (`$SHELL` on macOS/Linux, PowerShell on
+  Windows) in the project root, for OpenCode, Hermes, any other agent/tool,
+  or manual installs.
 - **Stop** — kills the current terminal session.
 - **Activity timeline** — the right-hand rail: one row per journaled
   command (icon by kind, summary, ok/✗, relative time), newest first.
@@ -103,18 +109,19 @@ composed from the tiers they actually grant, not separate claims:
 | Full (no build) | Safe edit, plus create/edit/attach scripts, and import/create/modify assets. Explicitly **not** build/export. |
 | All (incl. build) | Everything above, plus build/export the project. |
 
-Selecting a mode and clicking **Start Claude Code** rewrites `.mcp.json`
-with that mode and restarts the CLI so the change takes effect immediately.
+Selecting a mode and starting Claude Code rewrites `.mcp.json` with that mode
+and restarts the CLI so the change takes effect immediately.
 Denied tool calls return a structured `PERMISSION_DENIED` error the agent
 can relay to you, rather than failing silently — same behavior as the CLI
 and MCP server outside the panel.
 
-## Manual setup (non-Claude agents)
+## Manual setup (other agents)
 
-Codex gets detection ("is it on `PATH`") in the panel, but not automatic
-`.mcp.json` wiring in this release — its configuration story is TOML-based
-and first-class wiring is future work. Use **Open Terminal** and wire it
-yourself, or use the Manual setup section's snippets, which cover:
+Codex gets detection ("is it on `PATH`") and a direct launcher in the panel,
+but not automatic `.mcp.json` wiring in this release — its configuration story
+is TOML-based and first-class wiring is future work. OpenCode, Hermes, and
+other shell-native agents can run from **Open Terminal**. Use the Manual setup
+section's snippets for:
 
 - The plain CLI loop (`hearth snapshot` → `hearth inspect` → edit → `hearth
   validate` → `hearth diff`) for any agent that just gets a shell.
@@ -156,8 +163,8 @@ you, not this refresh mechanism.
 
 ## Troubleshooting
 
-**"Install Claude Code" instead of "Start Claude Code."** The panel didn't
-find `claude` on `PATH`. Click **Install Claude Code** (runs the official
+**"Install Claude Code" instead of "Start agent."** The panel didn't find
+`claude` on `PATH`. Click **Install Claude Code** (runs the official
 install command in the terminal so you can see exactly what it does), then
 **Re-detect** once it finishes. If you installed it in a way that doesn't
 land on the `PATH` the editor's process sees (e.g. a shell-specific rc file
@@ -169,19 +176,19 @@ restart the editor from a shell that has the updated `PATH`.
 **"Agent setup failed: ... exists but is not valid JSON" (409).** The
 project's `.mcp.json` already exists but doesn't parse as JSON. Hearth
 refuses to overwrite a file it can't safely merge into rather than
-clobbering whatever's there — fix or delete the file and click **Start
-Claude Code** again. (This surfaces as HTTP 409 from the panel's
+clobbering whatever's there — fix or delete the file and start Claude Code
+again. (This surfaces as HTTP 409 from the panel's
 `/api/agent/prepare` call if you're driving it directly.)
 
 **Terminal shows "Exited" after switching projects.** Expected: this
 release supports one PTY per open project, and switching projects tears
 down the old project's WebSocket connection, which kills its terminal
-session with it. Click **Start Claude Code** or **Open Terminal** again in
-the new project — the old session isn't recoverable, but nothing about it
-was silently lost either (its work is exactly what's on disk plus whatever
-the timeline/journal recorded).
+session with it. Start the agent or terminal again in the new project — the
+old session isn't recoverable, but nothing about it was silently lost either
+(its work is exactly what's on disk plus whatever the timeline/journal
+recorded).
 
-**Nothing happens when I click Start Claude Code.** Check for an inline
+**Nothing happens when I click Start agent.** Check for an inline
 "Agent setup failed: …" message under the toolbar — the panel deliberately
 refuses to launch `claude` if writing `.mcp.json` failed, since a stale
 `.mcp.json` from an earlier session could otherwise grant a more permissive
