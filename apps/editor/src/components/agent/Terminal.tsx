@@ -27,16 +27,16 @@ import {
   subscribeAgentSocket,
 } from './useAgentSocket';
 
-// Matches the editor's jet-black command palette (styles.css :root) — xterm needs
+// Matches the editor's charcoal ember palette (styles.css :root) — xterm needs
 // literal color strings for its theme, not CSS custom properties.
 const XTERM_THEME = {
-  background: 'oklch(0.075 0.006 285)',
+  background: 'oklch(0.115 0.006 285)',
   foreground: 'oklch(0.95 0.006 85)',
-  cursor: 'oklch(0.78 0.12 220)',
-  cursorAccent: 'oklch(0.075 0.006 285)',
-  selectionBackground: 'oklch(0.78 0.12 220 / 0.16)',
-  black: 'oklch(0.155 0.014 285)',
-  brightBlack: 'oklch(0.34 0.026 285)',
+  cursor: 'oklch(0.684 0.192 42)',
+  cursorAccent: 'oklch(0.115 0.006 285)',
+  selectionBackground: 'oklch(0.684 0.192 42 / 0.14)',
+  black: 'oklch(0.19 0.01 285)',
+  brightBlack: 'oklch(0.42 0.016 285)',
   red: 'oklch(0.7 0.17 25)',
   brightRed: 'oklch(0.75 0.18 25)',
   green: 'oklch(0.76 0.14 150)',

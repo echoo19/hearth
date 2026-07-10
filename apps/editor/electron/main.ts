@@ -169,7 +169,7 @@ async function main(): Promise<void> {
     minWidth: 880,
     minHeight: 600,
     title: 'Hearth — Projects',
-    backgroundColor: '#07070a',
+    backgroundColor: '#111116',
     center: true,
     webPreferences: {
       preload: path.join(__dirname, 'preload.cjs'),

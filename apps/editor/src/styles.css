@@ -2,7 +2,7 @@
    Hearth Editor — design tokens & app styles.
    Dark by intent: game editors are lived-in tools; the scene canvas is the
    brightest thing on screen and colored game content must pop against calm,
-   near-black neutrals. Cyan carries commands; ember stays in the mark.
+   charcoal neutrals. Ember carries commands without tinting the panels.
    ========================================================================== */
 
 /* Type: Archivo for UI chrome, IBM Plex Mono for values/scripts/console.
@@ -13,27 +13,27 @@
 @import '@fontsource/ibm-plex-mono/600.css';
 
 :root {
-  /* Surfaces: jet black, with a slight violet cast to keep depth visible. */
-  --bg-0: oklch(0.075 0.006 285); /* window chrome, deepest */
-  --bg-1: oklch(0.115 0.01 285);  /* panels */
-  --bg-2: oklch(0.155 0.014 285); /* inputs, cards, tab strip */
-  --bg-3: oklch(0.205 0.018 285); /* hover */
-  --border: oklch(0.25 0.02 285);
-  --border-strong: oklch(0.34 0.026 285);
-  --guide: oklch(0.2 0.016 285);
+  /* Surfaces: neutral charcoal, not fire-tinted. */
+  --bg-0: oklch(0.115 0.006 285); /* window chrome, deepest */
+  --bg-1: oklch(0.15 0.008 285);  /* panels */
+  --bg-2: oklch(0.19 0.01 285); /* inputs, cards, tab strip */
+  --bg-3: oklch(0.245 0.012 285); /* hover */
+  --border: oklch(0.32 0.014 285);
+  --border-strong: oklch(0.42 0.016 285);
+  --guide: oklch(0.27 0.012 285);
 
   /* Ink */
   --ink: oklch(0.95 0.006 85);
-  --ink-mute: oklch(0.74 0.018 270);
-  --ink-faint: oklch(0.58 0.018 275);
+  --ink-mute: oklch(0.74 0.012 85);
+  --ink-faint: oklch(0.58 0.01 85);
 
-  /* Command accent */
-  --accent: oklch(0.78 0.12 220);
-  --accent-hover: oklch(0.86 0.1 215);
-  --accent-down: oklch(0.66 0.14 225);
-  --accent-ink: oklch(0.075 0.006 285);
-  --accent-soft: oklch(0.78 0.12 220 / 0.16);
-  --accent-faint: oklch(0.78 0.12 220 / 0.07);
+  /* Ember command accent */
+  --accent: oklch(0.684 0.192 42);
+  --accent-hover: oklch(0.785 0.135 55);
+  --accent-down: oklch(0.6 0.19 27);
+  --accent-ink: oklch(0.14 0.02 45);
+  --accent-soft: oklch(0.684 0.192 42 / 0.14);
+  --accent-faint: oklch(0.684 0.192 42 / 0.055);
 
   /* Semantic status */
   --ok: oklch(0.76 0.14 150);
@@ -46,9 +46,9 @@
   --warn-soft: oklch(0.8 0.13 85 / 0.14);
 
   /* Canvas (scene view) */
-  --canvas-bg: oklch(0.055 0.006 285);
-  --grid-line: oklch(0.18 0.014 285);
-  --grid-axis: oklch(0.29 0.02 285);
+  --canvas-bg: oklch(0.095 0.006 285);
+  --grid-line: oklch(0.22 0.01 285);
+  --grid-axis: oklch(0.34 0.014 285);
 
   --radius: 6px;
   --radius-sm: 4px;
@@ -243,7 +243,7 @@ code, .mono {
 .input:hover:not(:disabled),
 .select:hover:not(:disabled),
 .textarea:hover:not(:disabled) {
-  border-color: oklch(0.48 0.03 285);
+  border-color: oklch(0.48 0.018 285);
 }
 
 .input::placeholder,
@@ -409,8 +409,8 @@ label.field-label {
 
 /* ---- Hearth dockview theme ------------------------------------------------
    Custom theme class: dockview's stock look must not show anywhere. Compact
-   30px tabs, muted inactive tabs, a 2px cyan indicator under the selected
-   tab, hairline separators, cyan-tinted drop targets and sash hover. */
+   30px tabs, muted inactive tabs, a 2px ember indicator under the selected
+   tab, hairline separators, ember-tinted drop targets and sash hover. */
 
 .dockview-theme-hearth {
   /* Surfaces */
@@ -445,14 +445,14 @@ label.field-label {
   --dv-tab-group-line-height: 0px;
   --dv-tab-group-line-opacity: 0;
 
-  /* Sash: invisible at rest, soft cyan when grabbed/hovered. */
+  /* Sash: invisible at rest, soft ember when grabbed/hovered. */
   --dv-sash-color: transparent;
   --dv-active-sash-color: var(--accent-soft);
   --dv-active-sash-transition-duration: 140ms;
   --dv-active-sash-transition-delay: 150ms;
 
-  /* Drag & drop: cyan accent at ~12% with a 1px accent border. */
-  --dv-drag-over-background-color: oklch(0.78 0.12 220 / 0.12);
+  /* Drag & drop: ember accent at ~12% with a 1px accent border. */
+  --dv-drag-over-background-color: oklch(0.684 0.192 42 / 0.12);
   --dv-drag-over-border-color: var(--accent);
   --dv-drag-over-border: 1px solid var(--accent);
 
@@ -497,7 +497,7 @@ label.field-label {
   white-space: nowrap;
 }
 
-/* Selected-tab indicator: subtle 2px cyan bar, same idiom as the old strips. */
+/* Selected-tab indicator: subtle 2px ember bar, same idiom as the old strips. */
 .hearth-tab::after {
   content: '';
   position: absolute;
@@ -2240,7 +2240,7 @@ kbd.shortcut-keys {
   justify-content: center;
   border: 1.5px dashed var(--accent);
   border-radius: var(--radius);
-  background: oklch(0.78 0.12 220 / 0.12);
+  background: oklch(0.684 0.192 42 / 0.12);
   color: var(--accent);
   font-size: 13px;
   font-weight: 600;
@@ -2298,7 +2298,7 @@ kbd.shortcut-keys {
 
 .poly-vertex-dot {
   fill: var(--accent);
-  stroke: oklch(0.075 0.006 285);
+  stroke: oklch(0.115 0.006 285);
   stroke-width: 1.5;
 }
 
@@ -2334,7 +2334,7 @@ kbd.shortcut-keys {
 
 .transform-handle-rotate-dot {
   fill: var(--accent);
-  stroke: oklch(0.075 0.006 285);
+  stroke: oklch(0.115 0.006 285);
   stroke-width: 1.5;
 }
 

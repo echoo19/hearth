@@ -1103,7 +1103,7 @@ export function SceneView() {
           y={-h / 2}
           width={w}
           height={h}
-          fill={cam.backgroundColor ?? '#07070a'}
+          fill={cam.backgroundColor ?? '#111116'}
           fillOpacity={0.18}
           stroke="var(--info)"
           strokeDasharray="6 4"
