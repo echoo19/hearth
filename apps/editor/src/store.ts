@@ -179,6 +179,31 @@ const LAST_PROJECT_KEY = 'hearth:lastProject';
 const WS_BACKOFF_INITIAL_MS = 1000;
 const WS_BACKOFF_MAX_MS = 5000;
 
+/**
+ * Plain-language labels for the highest-traffic core commands, used in place
+ * of the raw camelCase command name in Console lines (exec()'s error/warning/
+ * summary log calls, and refreshDiff()'s diffProject error). Every mutating
+ * action in the app funnels through exec(), so this is the actual "voice" of
+ * the Console for command results — falling back to the raw name keeps
+ * anything not yet in the map working, just less polished.
+ */
+const COMMAND_LABELS: Record<string, string> = {
+  createEntity: 'Create entity',
+  deleteEntity: 'Delete entity',
+  moveEntity: 'Move entity',
+  setComponentProperty: 'Edit component',
+  editScript: 'Save script',
+  snapshotProject: 'Save checkpoint',
+  revertProject: 'Restore checkpoint',
+  syncPrefabInstances: 'Sync prefab instances',
+  diffProject: 'Review changes',
+};
+
+/** Plain-language label for a command name, falling back to the raw name. */
+export function commandLabel(name: string): string {
+  return COMMAND_LABELS[name] ?? name;
+}
+
 export const useEditor = create<EditorState>((set, get) => {
   /** Run a read-only command without console noise (errors still logged). */
   async function query<T>(name: string, params: unknown = {}): Promise<T | null> {
@@ -187,7 +212,7 @@ export const useEditor = create<EditorState>((set, get) => {
     const result = await apiCommand<T>(project, name, params);
     if (!result.success) {
       for (const err of result.errors) {
-        get().log('error', 'command', `${name}: ${err.message}`);
+        get().log('error', 'command', `${commandLabel(name)}: ${err.message}`);
       }
       return null;
     }
@@ -205,6 +230,15 @@ export const useEditor = create<EditorState>((set, get) => {
   let wsReconnectTimer: ReturnType<typeof setTimeout> | null = null;
   let wsBackoffMs = WS_BACKOFF_INITIAL_MS;
   let wsEpoch = 0;
+
+  // Dedupe concurrent loadMeta() calls: React.StrictMode double-invokes
+  // App.tsx's mount effect in dev, and loadMeta's own `!projectPath` guard
+  // can't catch the second call because the first is still awaiting the
+  // async open — without this, both calls race past the guard and open (and
+  // log "Opened project…" for) the same last-project twice. Dev-only in
+  // practice (StrictMode doesn't double-invoke effects in production), but
+  // memoizing the in-flight call is correct regardless of the cause.
+  let loadMetaPromise: Promise<void> | null = null;
 
   // --- Arrow-key nudge: accumulate presses, debounce to one moveEntity ------
   // The in-flight burst lives outside zustand (its base position and running
@@ -477,20 +511,28 @@ export const useEditor = create<EditorState>((set, get) => {
     },
 
     async loadMeta() {
-      const meta = await apiMeta();
-      if (meta) set({ meta });
-      // Reopen the last project after a page reload (dev HMR, F5).
-      if (!get().projectPath) {
-        let last: string | null = null;
-        try {
-          last = localStorage.getItem(LAST_PROJECT_KEY);
-        } catch {
-          /* ignore */
+      if (loadMetaPromise) return loadMetaPromise;
+      loadMetaPromise = (async () => {
+        const meta = await apiMeta();
+        if (meta) set({ meta });
+        // Reopen the last project after a page reload (dev HMR, F5).
+        if (!get().projectPath) {
+          let last: string | null = null;
+          try {
+            last = localStorage.getItem(LAST_PROJECT_KEY);
+          } catch {
+            /* ignore */
+          }
+          if (last) {
+            const res = await apiOpenProject(last);
+            if (res.ok && res.path && res.info) await afterOpen(res.path, res.info);
+          }
         }
-        if (last) {
-          const res = await apiOpenProject(last);
-          if (res.ok && res.path && res.info) await afterOpen(res.path, res.info);
-        }
+      })();
+      try {
+        await loadMetaPromise;
+      } finally {
+        loadMetaPromise = null;
       }
     },
 
@@ -631,7 +673,7 @@ export const useEditor = create<EditorState>((set, get) => {
       } else {
         set({ diff: null });
         for (const err of result.errors) {
-          get().log(err.code === 'NOT_FOUND' ? 'info' : 'error', 'command', `diffProject: ${err.message}`);
+          get().log(err.code === 'NOT_FOUND' ? 'info' : 'error', 'command', `${commandLabel('diffProject')}: ${err.message}`);
         }
       }
     },
@@ -655,17 +697,17 @@ export const useEditor = create<EditorState>((set, get) => {
         // Empty history isn't an error worth a Console badge (same treatment
         // as refreshDiff's NOT_FOUND for a missing baseline below).
         const emptyHistory = (name === 'undo' || name === 'redo') && err.code === 'NOT_FOUND';
-        get().log(emptyHistory ? 'info' : 'error', 'command', `${name}: ${err.message}`);
+        get().log(emptyHistory ? 'info' : 'error', 'command', `${commandLabel(name)}: ${err.message}`);
       }
       for (const warning of result.warnings) {
-        get().log('warn', 'command', `${name}: ${warning.message}`);
+        get().log('warn', 'command', `${commandLabel(name)}: ${warning.message}`);
       }
       if (result.success && !opts.quiet && result.changed.length > 0) {
         const summary = result.changed
           .map((c) => `${c.action} ${c.kind}${c.name ? ` "${c.name}"` : ''}`)
           .slice(0, 3)
           .join(', ');
-        get().log('info', 'command', `${name}: ${summary}${result.changed.length > 3 ? ', …' : ''}`);
+        get().log('info', 'command', `${commandLabel(name)}: ${summary}${result.changed.length > 3 ? ', …' : ''}`);
       }
       if (result.success && (result.changed.length > 0 || result.files.length > 0)) {
         set((state) => ({ commandSeq: state.commandSeq + 1 }));

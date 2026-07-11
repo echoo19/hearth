@@ -7,11 +7,12 @@
  * shortcut and documents it in one place — the no-drift test in
  * apps/editor/tests/keybinds.test.ts asserts the two can never disagree.
  *
- * Display-only rows (Space-pan, Escape) have `display: true` and a no-op
- * `run`: the actual behavior lives where it needs local state (SceneView's
- * pan / mode-exit / deselect handlers, or a native <dialog>'s own Escape),
- * but the row still documents the key in the cheat sheet. The dispatcher
- * returns early for them so the keypress reaches those handlers untouched.
+ * Display-only rows (Space-pan, Escape, Zoom in/out/fit) have `display: true`
+ * and a no-op `run`: the actual behavior lives where it needs local state
+ * (SceneView's pan / mode-exit / deselect / view-transform handlers, or a
+ * native <dialog>'s own Escape), but the row still documents the key in the
+ * cheat sheet. The dispatcher returns early for them so the keypress reaches
+ * those handlers untouched.
  */
 import type { EditorStore } from './store';
 
@@ -26,8 +27,13 @@ export interface Keybind {
   combo: string;
   label: string;
   group: 'General' | 'Scene' | 'Selection';
-  /** 'selection' bindings only fire while an entity is selected. */
-  when?: 'selection' | 'always';
+  /**
+   * 'selection' bindings only fire while an entity is selected. 'playing'
+   * bindings only fire while the game preview is running (mirrors a
+   * toolbar button's own `disabled={!playing}`) — e.g. Pause/Resume must
+   * not fire while stopped.
+   */
+  when?: 'selection' | 'playing' | 'always';
   /** Documentation-only row: shown in the cheat sheet, never dispatched. */
   display?: boolean;
   run(store: EditorStore): void;
@@ -47,10 +53,13 @@ export const KEYBINDS: Keybind[] = [
   {
     id: 'save',
     combo: 'mod+s',
-    label: 'Save (already automatic)',
+    label: 'Save (auto-saves everywhere; also saves the open script in the Code panel)',
     group: 'General',
     when: 'always',
     // Intercept the browser's Save dialog; the project autosaves every change.
+    // The Code panel's own Mod-s keymap (CodeEditor.tsx, Prec.highest) owns
+    // this key while it has focus and does a real save there — see
+    // isTypingTarget's contentEditable guard below, which yields to it.
     run: (s) => s.log('info', 'editor', 'Your changes are saved automatically — no need to save.'),
   },
   {
@@ -72,11 +81,26 @@ export const KEYBINDS: Keybind[] = [
 
   // ---- Scene ------------------------------------------------------------
   { id: 'play', combo: 'mod+enter', label: 'Play / Stop', group: 'Scene', when: 'always', run: (s) => s.togglePlay() },
+  {
+    id: 'pause',
+    combo: 'shift+mod+enter',
+    label: 'Pause / Resume',
+    group: 'Scene',
+    when: 'playing',
+    run: (s) => s.setPaused(!s.paused),
+  },
   { id: 'focus', combo: 'f', label: 'Focus the selected entity', group: 'Scene', when: 'selection', run: (s) => s.requestFocusSelection() },
   // Display-only: SceneView owns pan + mode-exit + deselect (needs its local
   // mode state); a native <dialog> owns its own Escape. Documented here.
   { id: 'pan', combo: 'space', label: 'Pan the canvas (hold)', group: 'Scene', display: true, run: noop },
   { id: 'escape', combo: 'escape', label: 'Deselect · exit the current mode', group: 'Scene', display: true, run: noop },
+  // Display-only: SceneView owns zoom's local view-transform state (like pan
+  // above). Bare keys — Mod+=/Mod+-/Mod+0 collide with the browser's own
+  // page-zoom shortcuts, which preventDefault() can't reliably suppress
+  // across browsers, so this deliberately skips the modifier.
+  { id: 'zoom-in', combo: '=', label: 'Zoom in', group: 'Scene', display: true, run: noop },
+  { id: 'zoom-out', combo: '-', label: 'Zoom out', group: 'Scene', display: true, run: noop },
+  { id: 'zoom-fit', combo: '0', label: 'Zoom to fit the scene', group: 'Scene', display: true, run: noop },
 
   // ---- Selection --------------------------------------------------------
   { id: 'duplicate', combo: 'mod+d', label: 'Duplicate', group: 'Selection', when: 'selection', run: (s) => void s.duplicateSelection() },
@@ -155,12 +179,17 @@ export function eventCombo(e: KeyLike, mac: boolean = isMac): string | null {
   return canonicalCombo(parts.join('+'));
 }
 
-/** The binding for a combo, honoring the selection guard. Undefined if none applies. */
-export function resolveBinding(input: { combo: string; hasSelection: boolean }): Keybind | undefined {
+/** The binding for a combo, honoring the selection/playing guards. Undefined if none applies. */
+export function resolveBinding(input: {
+  combo: string;
+  hasSelection: boolean;
+  isPlaying?: boolean;
+}): Keybind | undefined {
   const c = canonicalCombo(input.combo);
   const bind = KEYBINDS.find((b) => canonicalCombo(b.combo) === c);
   if (!bind) return undefined;
   if (bind.when === 'selection' && !input.hasSelection) return undefined;
+  if (bind.when === 'playing' && !input.isPlaying) return undefined;
   return bind;
 }
 
@@ -233,6 +262,8 @@ export interface DispatchEventLike extends KeyLike {
 /** Ambient info the dispatcher needs beyond the event itself. */
 export interface DispatchContext {
   hasSelection: boolean;
+  /** Whether the game preview is currently running — gates 'playing' bindings (e.g. Pause). */
+  isPlaying: boolean;
   /** Whether a native `<dialog>` is currently open. */
   dialogOpen: boolean;
 }
@@ -262,7 +293,7 @@ export function dispatchDecision(e: DispatchEventLike, ctx: DispatchContext): Di
   const combo = eventCombo(e);
   if (!combo) return { action: 'ignore', preventDefault: false };
   if (ctx.dialogOpen && combo !== 'escape') return { action: 'ignore', preventDefault: false };
-  const bind = resolveBinding({ combo, hasSelection: ctx.hasSelection });
+  const bind = resolveBinding({ combo, hasSelection: ctx.hasSelection, isPlaying: ctx.isPlaying });
   if (!bind || bind.display) {
     // No binding, or a display-only row (Space-pan, Escape): let
     // SceneView/native handlers see the key untouched.
@@ -284,7 +315,11 @@ export function installKeybinds(getStore: () => EditorStore): () => void {
     const store = getStore();
     const dialogOpen =
       typeof document !== 'undefined' && document.querySelector('dialog[open]') !== null;
-    const decision = dispatchDecision(e, { hasSelection: store.selection !== null, dialogOpen });
+    const decision = dispatchDecision(e, {
+      hasSelection: store.selection !== null,
+      isPlaying: store.playing,
+      dialogOpen,
+    });
     if (decision.preventDefault) e.preventDefault();
     if (decision.action === 'run' && decision.bind) decision.bind.run(store);
   }

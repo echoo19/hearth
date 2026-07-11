@@ -32,6 +32,8 @@ function mockStore(over: Partial<EditorStore> = {}) {
   };
   const store = {
     selection: null,
+    playing: false,
+    paused: false,
     exec: vi.fn((name: string, params?: unknown) => {
       calls.push(['exec', name, params]);
       return Promise.resolve({ success: true });
@@ -42,6 +44,7 @@ function mockStore(over: Partial<EditorStore> = {}) {
     nudgeSelection: rec('nudgeSelection'),
     requestFocusSelection: rec('requestFocusSelection'),
     togglePlay: rec('togglePlay'),
+    setPaused: rec('setPaused'),
     checkpoint: rec('checkpoint'),
     toggleShortcutSheet: rec('toggleShortcutSheet'),
     ...over,
@@ -71,6 +74,17 @@ describe('combo matching', () => {
     expect(eventCombo(key('Shift', { shiftKey: true }))).toBeNull();
     expect(eventCombo(key('Meta', { metaKey: true }), true)).toBeNull();
   });
+
+  it('resolves the Pause combo (shift+mod+enter) with mod as both meta and ctrl, explicitly on each platform', () => {
+    expect(eventCombo(key('Enter', { metaKey: true, shiftKey: true }), true)).toBe('mod+shift+enter');
+    expect(eventCombo(key('Enter', { ctrlKey: true, shiftKey: true }), false)).toBe('mod+shift+enter');
+  });
+
+  it('resolves the bare zoom keys with no modifier (avoiding the browser Mod+=/Mod+-/Mod+0 page-zoom collision)', () => {
+    expect(eventCombo(key('='))).toBe('=');
+    expect(eventCombo(key('-'))).toBe('-');
+    expect(eventCombo(key('0'))).toBe('0');
+  });
 });
 
 describe('resolveBinding + guards', () => {
@@ -91,6 +105,13 @@ describe('resolveBinding + guards', () => {
     expect(isTypingTarget({ isContentEditable: true })).toBe(true);
     expect(isTypingTarget({ tagName: 'DIV' })).toBe(false);
     expect(isTypingTarget(null)).toBe(false);
+  });
+
+  it('gates the "playing" Pause binding on isPlaying, mirroring the selection guard', () => {
+    expect(resolveBinding({ combo: 'shift+mod+enter', hasSelection: false, isPlaying: false })).toBeUndefined();
+    expect(resolveBinding({ combo: 'shift+mod+enter', hasSelection: false, isPlaying: true })?.id).toBe('pause');
+    // Omitting isPlaying entirely defaults to "not playing" (safe default).
+    expect(resolveBinding({ combo: 'shift+mod+enter', hasSelection: false })).toBeUndefined();
   });
 });
 
@@ -132,14 +153,32 @@ describe('table dispatch', () => {
     expect(calls).toContainEqual(['togglePlay']);
   });
 
-  it('display-only rows (space, escape) carry the flag and are inert', () => {
+  it('Shift+Mod+Enter pauses/resumes by flipping the store\'s paused flag (only reachable while playing)', () => {
+    const { store: playingStore, calls: playingCalls } = mockStore({ playing: true, paused: false } as Partial<EditorStore>);
+    resolveBinding({ combo: 'shift+mod+enter', hasSelection: false, isPlaying: true })!.run(playingStore);
+    expect(playingCalls).toContainEqual(['setPaused', true]);
+
+    const { store: resumeStore, calls: resumeCalls } = mockStore({ playing: true, paused: true } as Partial<EditorStore>);
+    resolveBinding({ combo: 'shift+mod+enter', hasSelection: false, isPlaying: true })!.run(resumeStore);
+    expect(resumeCalls).toContainEqual(['setPaused', false]);
+
+    // Not reachable while stopped — mirrors the toolbar Pause button's own disabled={!playing}.
+    expect(resolveBinding({ combo: 'shift+mod+enter', hasSelection: false, isPlaying: false })).toBeUndefined();
+  });
+
+  it('display-only rows (space, escape, zoom) carry the flag and are inert', () => {
     const space = KEYBINDS.find((b) => b.id === 'pan')!;
     const escape = KEYBINDS.find((b) => b.id === 'escape')!;
-    expect(space.display).toBe(true);
-    expect(escape.display).toBe(true);
+    const zoomIn = KEYBINDS.find((b) => b.id === 'zoom-in')!;
+    const zoomOut = KEYBINDS.find((b) => b.id === 'zoom-out')!;
+    const zoomFit = KEYBINDS.find((b) => b.id === 'zoom-fit')!;
+    for (const b of [space, escape, zoomIn, zoomOut, zoomFit]) expect(b.display).toBe(true);
     const { store, calls } = mockStore();
     space.run(store);
     escape.run(store);
+    zoomIn.run(store);
+    zoomOut.run(store);
+    zoomFit.run(store);
     expect(calls).toHaveLength(0);
   });
 });
@@ -161,6 +200,7 @@ describe('dispatchDecision (installKeybinds guards, DOM-free)', () => {
   it('ignores an auto-repeat keydown', () => {
     const d = dispatchDecision(dispatchKey('z', { metaKey: isMac, ctrlKey: !isMac, repeat: true }), {
       hasSelection: false,
+      isPlaying: false,
       dialogOpen: false,
     });
     expect(d).toEqual({ action: 'ignore', preventDefault: false });
@@ -169,6 +209,7 @@ describe('dispatchDecision (installKeybinds guards, DOM-free)', () => {
   it('ignores keys while a typing target (input/textarea/contentEditable) is focused', () => {
     const d = dispatchDecision(dispatchKey('d', { metaKey: isMac, ctrlKey: !isMac, target: { tagName: 'INPUT' } }), {
       hasSelection: true,
+      isPlaying: false,
       dialogOpen: false,
     });
     expect(d).toEqual({ action: 'ignore', preventDefault: false });
@@ -177,40 +218,77 @@ describe('dispatchDecision (installKeybinds guards, DOM-free)', () => {
   it('ignores non-Escape keys while a dialog is open, but still resolves Escape', () => {
     const modZ = dispatchDecision(dispatchKey('z', { metaKey: isMac, ctrlKey: !isMac }), {
       hasSelection: false,
+      isPlaying: false,
       dialogOpen: true,
     });
     expect(modZ).toEqual({ action: 'ignore', preventDefault: false });
 
     // Escape's own row is display-only, so a dialog-open Escape resolves to
     // passthrough (the native <dialog> handles it), not 'run'.
-    const esc = dispatchDecision(dispatchKey('Escape'), { hasSelection: false, dialogOpen: true });
+    const esc = dispatchDecision(dispatchKey('Escape'), { hasSelection: false, isPlaying: false, dialogOpen: true });
     expect(esc.action).toBe('passthrough');
     expect(esc.bind?.id).toBe('escape');
     expect(esc.preventDefault).toBe(false);
   });
 
   it('display rows (space, escape) resolve to passthrough with preventDefault false', () => {
-    const space = dispatchDecision(dispatchKey(' '), { hasSelection: false, dialogOpen: false });
+    const space = dispatchDecision(dispatchKey(' '), { hasSelection: false, isPlaying: false, dialogOpen: false });
     expect(space.action).toBe('passthrough');
     expect(space.bind?.id).toBe('pan');
     expect(space.preventDefault).toBe(false);
 
-    const esc = dispatchDecision(dispatchKey('Escape'), { hasSelection: false, dialogOpen: false });
+    const esc = dispatchDecision(dispatchKey('Escape'), { hasSelection: false, isPlaying: false, dialogOpen: false });
     expect(esc.action).toBe('passthrough');
     expect(esc.bind?.id).toBe('escape');
     expect(esc.preventDefault).toBe(false);
   });
 
   it('an unbound key (no matching combo) also resolves to passthrough', () => {
-    const d = dispatchDecision(dispatchKey('q'), { hasSelection: false, dialogOpen: false });
+    const d = dispatchDecision(dispatchKey('q'), { hasSelection: false, isPlaying: false, dialogOpen: false });
     expect(d).toEqual({ action: 'passthrough', bind: undefined, preventDefault: false });
   });
 
   it('mod+s resolves to run with preventDefault true (intercepts the browser Save dialog)', () => {
-    const d = dispatchDecision(dispatchKey('s', { metaKey: isMac, ctrlKey: !isMac }), { hasSelection: false, dialogOpen: false });
+    const d = dispatchDecision(dispatchKey('s', { metaKey: isMac, ctrlKey: !isMac }), { hasSelection: false, isPlaying: false, dialogOpen: false });
     expect(d.action).toBe('run');
     expect(d.bind?.id).toBe('save');
     expect(d.preventDefault).toBe(true);
+  });
+
+  it('shift+mod+enter resolves to run only while playing (mod resolved via isMac, like the mod+s test above — platform-independent)', () => {
+    // metaKey: isMac, ctrlKey: !isMac mirrors eventCombo's own mac ? metaKey :
+    // ctrlKey branch, so this passes whether the test runs on mac or not.
+    const running = dispatchDecision(dispatchKey('Enter', { metaKey: isMac, ctrlKey: !isMac, shiftKey: true }), {
+      hasSelection: false,
+      isPlaying: true,
+      dialogOpen: false,
+    });
+    expect(running.action).toBe('run');
+    expect(running.bind?.id).toBe('pause');
+    expect(running.preventDefault).toBe(true);
+
+    // Same combo while stopped: no binding resolves (mirrors the toolbar
+    // Pause button's disabled={!playing}), so it passes through untouched.
+    const stopped = dispatchDecision(dispatchKey('Enter', { metaKey: isMac, ctrlKey: !isMac, shiftKey: true }), {
+      hasSelection: false,
+      isPlaying: false,
+      dialogOpen: false,
+    });
+    expect(stopped.action).toBe('passthrough');
+    expect(stopped.bind).toBeUndefined();
+  });
+
+  it('bare zoom keys (=, -, 0) resolve to passthrough display rows, never "run" — SceneView owns the real behavior', () => {
+    for (const [k, id] of [
+      ['=', 'zoom-in'],
+      ['-', 'zoom-out'],
+      ['0', 'zoom-fit'],
+    ] as const) {
+      const d = dispatchDecision(dispatchKey(k), { hasSelection: false, isPlaying: false, dialogOpen: false });
+      expect(d.action).toBe('passthrough');
+      expect(d.bind?.id).toBe(id);
+      expect(d.preventDefault).toBe(false);
+    }
   });
 
   it('mod+s inside CodeMirror\'s contenteditable content is ignored by the global registry (double-fire guard)', () => {
@@ -220,19 +298,19 @@ describe('dispatchDecision (installKeybinds guards, DOM-free)', () => {
     // both mod forms (meta on mac, ctrl elsewhere) — platform-independent.
     const viaMeta = dispatchDecision(
       dispatchKey('s', { metaKey: true, target: { tagName: 'DIV', isContentEditable: true } }),
-      { hasSelection: false, dialogOpen: false },
+      { hasSelection: false, isPlaying: false, dialogOpen: false },
     );
     expect(viaMeta).toEqual({ action: 'ignore', preventDefault: false });
 
     const viaCtrl = dispatchDecision(
       dispatchKey('s', { ctrlKey: true, target: { tagName: 'DIV', isContentEditable: true } }),
-      { hasSelection: false, dialogOpen: false },
+      { hasSelection: false, isPlaying: false, dialogOpen: false },
     );
     expect(viaCtrl).toEqual({ action: 'ignore', preventDefault: false });
   });
 
   it('a selection-only binding without a live selection resolves to passthrough, not run', () => {
-    const d = dispatchDecision(dispatchKey('d', { metaKey: isMac, ctrlKey: !isMac }), { hasSelection: false, dialogOpen: false });
+    const d = dispatchDecision(dispatchKey('d', { metaKey: isMac, ctrlKey: !isMac }), { hasSelection: false, isPlaying: false, dialogOpen: false });
     expect(d.action).toBe('passthrough');
     expect(d.bind).toBeUndefined();
   });

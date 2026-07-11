@@ -34,6 +34,10 @@ export const codeEditorTheme = EditorView.theme(
       color: INK,
       backgroundColor: BG_1,
       height: '100%',
+      // Intentionally 13px, not the 12px mono spec used elsewhere (Console,
+      // values/scripts chrome) — a deliberate readability bump for the
+      // editor's primary code-authoring surface, not a drift. See
+      // .superpowers/polish/audit-visual.md P2-6.
       fontSize: '13px',
     },
     '.cm-content': {

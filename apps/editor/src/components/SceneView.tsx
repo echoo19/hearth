@@ -7,6 +7,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import type { TilemapComponent } from '@hearth/core';
 import { useEditor } from '../store';
 import { fileUrl } from '../api';
+import { isTypingTarget } from '../keybinds';
 import {
   edgeMidpoints,
   insertVertexOnEdge,
@@ -100,6 +101,51 @@ type PaintPreview = { rectMode: false; cells: TileCell[] } | { rectMode: true; r
 
 const MIN_ZOOM = 0.05;
 const MAX_ZOOM = 12;
+/** Multiplicative step for the =/- keyboard-zoom shortcuts (a 25% step per press). */
+const KEY_ZOOM_FACTOR = 1.25;
+
+/**
+ * Zoom by `factor` around a fixed screen-space point (keeps that point under
+ * the cursor/center as the scale changes), clamped to [MIN_ZOOM, MAX_ZOOM].
+ * Shared by wheel-zoom (continuous factor from deltaY) and the discrete
+ * =/- keyboard shortcuts — same math, different factor source.
+ */
+export function zoomBy(view: ViewTransform, factor: number, center: Vec2): ViewTransform {
+  const s = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, view.s * factor));
+  const wx = (center.x - view.tx) / view.s;
+  const wy = (center.y - view.ty) / view.s;
+  return { s, tx: center.x - wx * s, ty: center.y - wy * s };
+}
+
+/** Scale + center a `buildSize`-sized scene inside a `hostSize`-sized viewport, with padding. */
+export function fitView(hostSize: { w: number; h: number }, buildSize: { w: number; h: number }): ViewTransform {
+  const s = Math.min(hostSize.w / (buildSize.w + 160), hostSize.h / (buildSize.h + 120), 1.5);
+  return { s, tx: (hostSize.w - buildSize.w * s) / 2, ty: (hostSize.h - buildSize.h * s) / 2 };
+}
+
+/**
+ * Decide what (if anything) a keydown should do for the bare =/-/0 zoom
+ * shortcuts: null when it's not a zoom key, a typing target has focus (the
+ * same guard the global registry's isTypingTarget enforces), or a modifier
+ * is held — bare keys only, since Mod+=/Mod+-/Mod+0 are the browser's own
+ * page-zoom shortcuts and this app also ships in the browser (see
+ * .superpowers/polish/audit-hotkeys.md F7's collision analysis). Pure and
+ * DOM-free so it's unit-testable without mounting SceneView.
+ */
+export function sceneZoomKey(e: {
+  key: string;
+  metaKey: boolean;
+  ctrlKey: boolean;
+  altKey: boolean;
+  target: unknown;
+}): 'in' | 'out' | 'fit' | null {
+  if (e.metaKey || e.ctrlKey || e.altKey) return null;
+  if (isTypingTarget(e.target)) return null;
+  if (e.key === '=') return 'in';
+  if (e.key === '-') return 'out';
+  if (e.key === '0') return 'fit';
+  return null;
+}
 
 export function SceneView() {
   const projectPath = useEditor((s) => s.projectPath);
@@ -234,9 +280,8 @@ export function SceneView() {
     const { clientWidth: cw, clientHeight: ch } = host;
     if (cw === 0 || ch === 0) return;
     const { width: W, height: H } = info.buildSettings;
-    const s = Math.min(cw / (W + 160), ch / (H + 120), 1.5);
     fittedScene.current = sceneId;
-    setView({ s, tx: (cw - W * s) / 2, ty: (ch - H * s) / 2 });
+    setView(fitView({ w: cw, h: ch }, { w: W, h: H }));
   }, [info, sceneId, scene, viewportEpoch]);
 
   // Publish the viewport's world-space center to the store on every
@@ -308,19 +353,40 @@ export function SceneView() {
     const onWheel = (e: WheelEvent) => {
       e.preventDefault();
       const rect = host.getBoundingClientRect();
-      const cx = e.clientX - rect.left;
-      const cy = e.clientY - rect.top;
-      setView((v) => {
-        const factor = Math.exp(-e.deltaY * 0.0015);
-        const s = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, v.s * factor));
-        const wx = (cx - v.tx) / v.s;
-        const wy = (cy - v.ty) / v.s;
-        return { s, tx: cx - wx * s, ty: cy - wy * s };
-      });
+      const center = { x: e.clientX - rect.left, y: e.clientY - rect.top };
+      setView((v) => zoomBy(v, Math.exp(-e.deltaY * 0.0015), center));
     };
     host.addEventListener('wheel', onWheel, { passive: false });
     return () => host.removeEventListener('wheel', onWheel);
   }, []);
+
+  // ---- keyboard zoom (=/-/0, bare keys — display-only rows in keybinds.ts) -
+  // Bare keys deliberately, not Mod+=/Mod+-/Mod+0: those are the browser's
+  // own page-zoom shortcuts, unreliable to preventDefault() across browsers,
+  // and this editor also ships in the browser. sceneZoomKey carries the
+  // typing-target guard so this never fires while typing (an input/textarea,
+  // or CodeMirror's contentEditable surface in the Code panel).
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const action = sceneZoomKey(e);
+      if (!action) return;
+      if (typeof document !== 'undefined' && document.querySelector('dialog[open]')) return;
+      const host = hostRef.current;
+      if (!host) return;
+      const { clientWidth: cw, clientHeight: ch } = host;
+      if (cw === 0 || ch === 0) return;
+      e.preventDefault();
+      if (action === 'fit') {
+        if (!info) return;
+        const { width: W, height: H } = info.buildSettings;
+        setView(fitView({ w: cw, h: ch }, { w: W, h: H }));
+        return;
+      }
+      setView((v) => zoomBy(v, action === 'in' ? KEY_ZOOM_FACTOR : 1 / KEY_ZOOM_FACTOR, { x: cw / 2, y: ch / 2 }));
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [info]);
 
   // ---- space-to-pan --------------------------------------------------------
   useEffect(() => {

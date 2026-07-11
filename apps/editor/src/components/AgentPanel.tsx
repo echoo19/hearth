@@ -86,9 +86,9 @@ export function AgentPanel() {
   const launcherFound = agentLauncher === 'shell' || (agentLauncher === 'claude' ? claudeFound : codexFound);
   const launcherHint =
     agentLauncher === 'claude'
-      ? 'Claude Code gets Hearth MCP prepared automatically.'
+      ? 'Claude Code sets up its Hearth connection automatically.'
       : agentLauncher === 'codex'
-        ? 'Codex launches in this project; use the CLI or manual MCP setup below as needed.'
+        ? 'Codex launches in this project — see Manual setup below for other clients.'
         : 'Use the project terminal for OpenCode, Hermes, or any other shell-native agent.';
 
   async function startAgent() {

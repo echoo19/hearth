@@ -89,7 +89,7 @@ export function Toolbar({ dock, storageKey }: { dock: DockviewApi | null; storag
 
       <span className="toolbar-group">
         <select
-          className="select"
+          className="select select-sm"
           value={sceneId ?? ''}
           onChange={(e) => void selectScene(e.target.value)}
           aria-label="Scene"
@@ -113,7 +113,7 @@ export function Toolbar({ dock, storageKey }: { dock: DockviewApi | null; storag
       <button
         className={playing ? 'btn btn-sm btn-stop' : 'btn btn-primary btn-sm btn-play'}
         onClick={() => setPlaying(!playing)}
-        title={playing ? 'Stop the preview' : 'Play the current scene in the Game tab'}
+        title={`${playing ? 'Stop the preview' : 'Play the current scene in the Game tab'} (${comboDisplay('mod+enter')})`}
       >
         <Icon name={playing ? 'stop' : 'play'} /> {playing ? 'Stop' : 'Play'}
       </button>
@@ -124,7 +124,7 @@ export function Toolbar({ dock, storageKey }: { dock: DockviewApi | null; storag
           onClick={() => setPaused(!paused)}
           disabled={!playing}
           aria-pressed={paused}
-          title={paused ? 'Resume the running game' : 'Freeze the running game in place, without stopping it'}
+          title={`${paused ? 'Resume the running game' : 'Freeze the running game in place, without stopping it'} (${comboDisplay('shift+mod+enter')})`}
         >
           <Icon name={paused ? 'play' : 'pause'} /> {paused ? 'Resume' : 'Pause'}
         </button>
@@ -176,7 +176,7 @@ export function Toolbar({ dock, storageKey }: { dock: DockviewApi | null; storag
         <button
           className="btn btn-sm"
           onClick={() => void snapshot()}
-          title="Save a checkpoint you can review and restore"
+          title={`Save a checkpoint you can review and restore (${comboDisplay('shift+mod+s')})`}
         >
           Checkpoint
         </button>
@@ -193,7 +193,7 @@ export function Toolbar({ dock, storageKey }: { dock: DockviewApi | null; storag
         <button
           className="btn btn-sm"
           onClick={() => setExportOpen(true)}
-          title="Export a playable web build (exportWeb)"
+          title="Export a playable web build"
         >
           Export
         </button>
