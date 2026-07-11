@@ -1,7 +1,100 @@
 /**
- * Small shared UI primitives: icons, modal dialog, confirm dialog.
+ * Small shared UI primitives: icons, modal dialog, confirm dialog, and the
+ * scalar field editors (NumberField/TextField/ColorField) every typed
+ * Inspector control is built from.
  */
-import React, { useEffect, useRef, type ReactNode } from 'react';
+import React, { useEffect, useRef, useState, type ReactNode } from 'react';
+
+// ---------------------------------------------------------------------------
+// Field editors: value type decides the control. All commit on blur / Enter.
+// Shared by Inspector.tsx, PostEffectsField.tsx, InputSettings.tsx, and
+// anything else editing a typed scalar — kept here (rather than in
+// Inspector.tsx) so those consumers don't have to import Inspector.tsx just
+// to reach a field primitive, which used to create a circular import between
+// Inspector.tsx and PostEffectsField.tsx.
+// ---------------------------------------------------------------------------
+
+export function NumberField({ value, onCommit }: { value: number; onCommit: (v: number) => void }) {
+  const [draft, setDraft] = useState(String(value));
+  useEffect(() => setDraft(String(value)), [value]);
+  const commit = () => {
+    const parsed = Number(draft);
+    if (!Number.isFinite(parsed)) {
+      setDraft(String(value));
+      return;
+    }
+    if (parsed !== value) onCommit(parsed);
+  };
+  return (
+    <input
+      className="input"
+      type="number"
+      step="any"
+      value={draft}
+      onChange={(e) => setDraft(e.target.value)}
+      onBlur={commit}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter') (e.target as HTMLInputElement).blur();
+        if (e.key === 'Escape') setDraft(String(value));
+      }}
+    />
+  );
+}
+
+export function TextField({
+  value,
+  placeholder,
+  onCommit,
+}: {
+  value: string;
+  placeholder?: string;
+  onCommit: (v: string) => void;
+}) {
+  const [draft, setDraft] = useState(value);
+  useEffect(() => setDraft(value), [value]);
+  return (
+    <input
+      className="input"
+      placeholder={placeholder}
+      value={draft}
+      onChange={(e) => setDraft(e.target.value)}
+      onBlur={() => draft !== value && onCommit(draft)}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter') (e.target as HTMLInputElement).blur();
+        if (e.key === 'Escape') setDraft(value);
+      }}
+    />
+  );
+}
+
+export function ColorField({ value, onCommit }: { value: string; onCommit: (v: string) => void }) {
+  const [draft, setDraft] = useState(value);
+  useEffect(() => setDraft(value), [value]);
+  const pickerValue = /^#[0-9a-fA-F]{6}$/.test(draft) ? draft : '#ffffff';
+  return (
+    <div className="color-pair">
+      <input
+        type="color"
+        value={pickerValue}
+        onChange={(e) => {
+          setDraft(e.target.value);
+          onCommit(e.target.value);
+        }}
+        aria-label="Pick color"
+      />
+      <input
+        className="input mono"
+        value={draft}
+        onChange={(e) => setDraft(e.target.value)}
+        onBlur={() => draft !== value && onCommit(draft)}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') (e.target as HTMLInputElement).blur();
+          if (e.key === 'Escape') setDraft(value);
+        }}
+      />
+    </div>
+  );
+}
 
 // ---------------------------------------------------------------------------
 // Icons — one minimal 12px stroke set so the whole surface shares a vocabulary

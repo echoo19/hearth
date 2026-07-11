@@ -1,7 +1,7 @@
 /**
  * Input settings panel: keyboard/gamepad-button/gamepad-axis bindings per
  * action, virtual axes, and the global deadzone — no JSON textareas, every
- * control is typed (reuses NumberField/TextField from the Inspector).
+ * control is typed (reuses NumberField/TextField from ui.tsx).
  *
  * Every edit calls exec('updateSettings', { inputMappings }). Per Task 4's
  * settingsCommands.ts: `actions` merges per-action (an empty code array
@@ -31,8 +31,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { GAMEPAD_BUTTON_NAMES } from '@hearth/core';
 import type { GamepadAxisBinding, InputMappings, VirtualAxis } from '@hearth/core';
 import { useEditor } from '../store';
-import { NumberField, TextField } from './Inspector';
-import { ConfirmDialog, Icon } from './ui';
+import { ConfirmDialog, Icon, NumberField, TextField } from './ui';
 
 function withoutKey<T>(map: Record<string, T>, key: string): Record<string, T> {
   const next = { ...map };

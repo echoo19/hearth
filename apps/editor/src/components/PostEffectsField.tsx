@@ -3,7 +3,7 @@
  * post-processing effects (PostEffect[], a discriminated union on `type`;
  * see PostEffectSchema in @hearth/core). One card per effect: a type label,
  * a typed input per scalar field (reusing NumberField/ColorField from
- * Inspector.tsx so a bloom.strength number or a vignette.color swatch reads
+ * ui.tsx so a bloom.strength number or a vignette.color swatch reads
  * exactly like any other component field), ↑/↓ reorder, and a remove
  * button, plus an "Add effect" dropdown of the 6 variant types capped at 8
  * (Camera.postEffects.max(8) in the schema). Never falls through to
@@ -17,8 +17,7 @@
 import React from 'react';
 import { POST_EFFECT_TYPES, type PostEffect, type PostEffectType } from '@hearth/core';
 import { POST_EFFECTS_MAX, addEffect, moveEffect, removeEffect, updateEffect } from '../postEffectsList';
-import { ColorField, NumberField } from './Inspector';
-import { Icon } from './ui';
+import { ColorField, Icon, NumberField } from './ui';
 
 /** Effect types whose title case reads as an unfinished word ("Crt") rather
  * than the acronym everyone actually calls it — checked before the generic
