@@ -72,4 +72,20 @@ doc described the surfaces as "ember-tinted"; the tokens below are what
   ring in accent.
 - **Buttons**: primary = accent fill with `--accent-ink` text; secondary =
   `--bg-2` with border; destructive = `--err` styling; all at `--ctl-h`.
-- **Console/log rows**: mono font, status color per level.
+- **Console/log rows**: mono font, status color per level. A row that names an
+  exact script location renders a trailing **console link** (`.console-link`):
+  a real `<button>`, mono 11px, `--ink-faint` at rest → `--accent` (underlined)
+  on hover, that opens the script at that line. Focus ring from the global
+  `:focus-visible` rule; never inline-styled.
+- **Tab strip in a panel** (`.code-tabs`): a `--bg-2` strip of tabs, each a
+  presentation **cell** holding two sibling `<button>`s — the tab
+  (`role="tab"`, roving `tabindex`, arrow/Home/End nav) and its close control
+  (never nested inside the tab, to avoid a nested-interactive widget). Active
+  tab: `--bg-1` fill plus the shared 2px `--accent` underline idiom
+  (`.hearth-tab::after`), driven by `aria-selected`. Dirty = an `--accent`
+  dot; changed-outside-the-editor = a `--warn` dot. The close control is
+  opacity-0 until the cell is hovered/active or the button is focused.
+- **Status dot** (`.ws-dot`): an 8px round connection indicator — `--ok`
+  connected, `--err` down, `--warn` with a soft opacity pulse while
+  reconnecting (flattened under reduced-motion). Status only:
+  `role="status"` + `aria-label`, never focusable.
