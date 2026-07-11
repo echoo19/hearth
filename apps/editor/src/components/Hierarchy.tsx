@@ -4,6 +4,13 @@ import type { SceneEntity } from '../types';
 import { uniqueName as computeUniqueName } from '../uniqueName';
 import { ConfirmDialog, Icon, entityIcon } from './ui';
 
+// Tree rows are clickable divs, not native buttons — Enter/Space is the
+// keyboard equivalent of the click that selects a row. Exported (module
+// scope, not a closure) so it's unit-testable without a DOM.
+export function isActivationKey(key: string): boolean {
+  return key === 'Enter' || key === ' ';
+}
+
 export function Hierarchy() {
   const scene = useEditor((s) => s.scene);
   const sceneId = useEditor((s) => s.sceneId);
@@ -93,10 +100,19 @@ export function Hierarchy() {
         <div
           className={`tree-row${isSelected ? ' selected' : ''}${entity.enabled ? '' : ' disabled-entity'}`}
           style={{ '--depth': depth } as React.CSSProperties}
+          role="treeitem"
+          aria-selected={isSelected}
+          tabIndex={0}
           onClick={() => select(entity.id)}
           onDoubleClick={() => {
             setRenaming(entity.id);
             setRenameValue(entity.name);
+          }}
+          onKeyDown={(e) => {
+            if (isActivationKey(e.key)) {
+              e.preventDefault();
+              select(entity.id);
+            }
           }}
         >
           {children.length > 0 ? (
@@ -216,14 +232,16 @@ export function Hierarchy() {
             )}
           </div>
         ) : (
-          <div className="tree">{roots.map((e) => renderRow(e, 0))}</div>
+          <div className="tree" role="tree" aria-label="Scene hierarchy">
+            {roots.map((e) => renderRow(e, 0))}
+          </div>
         )}
       </div>
 
       <ConfirmDialog
         open={deleting !== null}
         title={`Delete “${deleting?.name ?? ''}”?`}
-        body="Its children are kept and re-parented one level up. This mutation is recorded like any other command; checkpoint first if you want an undo point."
+        body="Its children are kept and re-parented one level up. This shows up in your undo history, so Ctrl/Cmd+Z brings it back."
         confirmLabel="Delete entity"
         danger
         onCancel={() => setDeleting(null)}

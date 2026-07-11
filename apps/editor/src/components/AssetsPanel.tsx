@@ -44,6 +44,13 @@ function extensionOf(name: string): string {
   return name.split('.').pop()?.toLowerCase() ?? '';
 }
 
+// Asset cards are clickable divs, not native buttons — Enter/Space is the
+// keyboard equivalent of the click that (de)selects a card. Exported (module
+// scope, not a closure) so it's unit-testable without a DOM.
+export function isActivationKey(key: string): boolean {
+  return key === 'Enter' || key === ' ';
+}
+
 function fileToBase64(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -143,6 +150,7 @@ export function AssetsPanel() {
   const dragDepth = useRef(0);
   const [dropping, setDropping] = useState(false);
   const [importing, setImporting] = useState(false);
+  const [importErrors, setImportErrors] = useState<{ name: string; reason: string }[]>([]);
 
   // audio preview: one element at a time
   const audioRef = useRef<HTMLAudioElement | null>(null);
@@ -314,6 +322,7 @@ export function AssetsPanel() {
     const fileList = Array.from(files);
     if (fileList.length === 0) return;
     setImporting(true);
+    setImportErrors([]);
     let imported = 0;
     const failed: { name: string; reason: string }[] = [];
     try {
@@ -365,6 +374,7 @@ export function AssetsPanel() {
       }
     } finally {
       setImporting(false);
+      setImportErrors(failed);
     }
     if (imported > 0) await refresh();
   }
@@ -505,6 +515,16 @@ export function AssetsPanel() {
         />
       </div>
 
+      {importErrors.length > 0 && (
+        <div className="export-errors" role="alert" style={{ margin: '8px 10px 0' }}>
+          {importErrors.map((f, i) => (
+            <p key={i}>
+              {f.name}: {f.reason}
+            </p>
+          ))}
+        </div>
+      )}
+
       <div className="panel-body">
         {assets.length === 0 ? (
           <div className="empty-state">
@@ -513,9 +533,8 @@ export function AssetsPanel() {
             </span>
             <span>No assets yet</span>
             <span className="hint">
-              Create a procedural placeholder sprite or tile above (deterministic SVGs that agents can also
-              generate via createSpriteAsset), or bring your own images, sounds, and fonts with Import… —
-              dropping files onto this panel works too.
+              Create a procedural placeholder sprite or tile above — agents can generate these too — or bring
+              your own images, sounds, and fonts with Import… Dropping files onto this panel works as well.
             </span>
           </div>
         ) : (
@@ -528,7 +547,16 @@ export function AssetsPanel() {
                 <div
                   key={asset.id}
                   className={`asset-card${selectedAssetId === asset.id ? ' selected' : ''}`}
+                  role="button"
+                  aria-pressed={selectedAssetId === asset.id}
+                  tabIndex={0}
                   onClick={() => setSelectedAssetId(asset.id === selectedAssetId ? null : asset.id)}
+                  onKeyDown={(e) => {
+                    if (isActivationKey(e.key)) {
+                      e.preventDefault();
+                      setSelectedAssetId(asset.id === selectedAssetId ? null : asset.id);
+                    }
+                  }}
                 >
                   <div className="asset-thumb">{preview(asset)}</div>
                   <span className="asset-name" title={asset.name}>
