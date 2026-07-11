@@ -10,12 +10,13 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { CommandResult } from '../src/types';
 import type { MountedGameView, ReloadScriptResult } from '../src/runtimeBridge';
 
-const { apiCommand, apiOpenProject, apiCreateProject, apiMeta, apiDetectAgents } = vi.hoisted(() => ({
+const { apiCommand, apiOpenProject, apiCreateProject, apiMeta, apiDetectAgents, fileUrl } = vi.hoisted(() => ({
   apiCommand: vi.fn(),
   apiOpenProject: vi.fn(),
   apiCreateProject: vi.fn(),
   apiMeta: vi.fn(async () => null),
   apiDetectAgents: vi.fn(async () => null),
+  fileUrl: vi.fn((project: string, relPath: string) => `http://localhost/${project}/${relPath}`),
 }));
 
 vi.mock('../src/api', () => ({
@@ -24,6 +25,7 @@ vi.mock('../src/api', () => ({
   apiCreateProject,
   apiMeta,
   apiDetectAgents,
+  fileUrl,
 }));
 
 class FakeWebSocket {
@@ -145,6 +147,45 @@ describe('hot-reload notices get a Console link (Task 7)', () => {
       .getState()
       .consoleEntries.find((e) => e.message.startsWith('Hot-reload failed'));
     expect(entry?.link).toEqual({ path: 'scripts/enemy.lua', line: null });
+  });
+
+  it('fetch FAILURE (reload with no inline source) — error entry with link {path, line:null}', async () => {
+    // Mirror of the compile-failure branch, one layer earlier: when a reload
+    // carries no inline source it falls back to fetchScriptSource, and if that
+    // on-disk fetch rejects (network drop / file yanked), the catch branch logs
+    // the same linkable "Hot-reload failed" notice — line unknown, so null.
+    await openAndPlay();
+    const realFetch = globalThis.fetch;
+    (globalThis as unknown as { fetch: unknown }).fetch = vi.fn(async () => {
+      throw new Error('network down');
+    });
+    // reloadScript must never run — the source resolves to null first.
+    const reload = vi.fn(async () => ({ ok: true as const, entities: 0 }));
+    setGameView(fakeView(reload));
+    // editScript result deliberately omits `source`, so applyReload has no
+    // inline text and must fetch the file off disk.
+    apiCommand.mockImplementation(
+      baseApiCommand(() =>
+        ok(
+          { path: 'scripts/enemy.lua', lines: 1 },
+          { changed: [{ action: 'modified', kind: 'script', name: 'enemy.lua' }] },
+        ),
+      ),
+    );
+
+    await useEditor.getState().exec('editScript', { path: 'scripts/enemy.lua', source: 'x=1' });
+
+    const entry = useEditor
+      .getState()
+      .consoleEntries.find((e) => e.message.startsWith('Hot-reload failed'));
+    expect(entry).toMatchObject({
+      level: 'error',
+      message: 'Hot-reload failed: scripts/enemy.lua — network down',
+      link: { path: 'scripts/enemy.lua', line: null },
+    });
+    expect(reload).not.toHaveBeenCalled();
+
+    (globalThis as unknown as { fetch: unknown }).fetch = realFetch;
   });
 
   it('SUCCESS — plain info notice, no link', async () => {

@@ -54,5 +54,15 @@ export function decideExternalChange(opts: {
   // Either the path matches the open script, or it's unknown and can't be
   // ruled out — conservatively treat both as "might be my file". Local
   // dirty state decides whether that's safe to apply automatically.
+  //
+  // Path-less fan-out (intended): a script entry with no detail.path returns
+  // 'reload' for EVERY clean open buffer at once — the caller (CodePanel's
+  // journalFeed effect) then reloads each from disk. That mass-reload is safe
+  // and acceptable by construction: reloadBuffer only ever re-reads the
+  // current on-disk source, so a buffer whose file didn't actually change
+  // just re-adopts identical bytes (a revision bump, no visible edit, no data
+  // loss). Only DIRTY buffers carry unsaved work, and those never reach here
+  // as 'reload' — they resolve to 'banner' above, so the user's edits are
+  // always protected regardless of how coarse the path-less match is.
   return dirty ? 'banner' : 'reload';
 }
