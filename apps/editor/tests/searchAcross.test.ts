@@ -17,6 +17,7 @@ import {
   initialReplaceFlowState,
   matchSummaryText,
   replaceFlowReducer,
+  shouldResetReplaceFlow,
   validateQueryRegex,
   type SearchMatch,
 } from '../src/components/code/SearchAcross';
@@ -228,5 +229,69 @@ describe('replaceFlowReducer (idle -> previewing -> applying -> done, cancel res
     );
     const s = replaceFlowReducer(done, { type: 'CANCEL' });
     expect(s).toEqual(initialReplaceFlowState);
+  });
+
+  it('CANCEL resets cleanly to idle from applying (the Cancel button is disabled mid-apply, but the reducer must still be safe if it ever fires)', () => {
+    const applying = replaceFlowReducer(
+      replaceFlowReducer(
+        replaceFlowReducer(initialReplaceFlowState, { type: 'PREVIEW_START' }),
+        { type: 'PREVIEW_SUCCESS', changes: [{ path: 'scripts/a.lua', count: 1 }], total: 1 },
+      ),
+      { type: 'APPLY_START' },
+    );
+    const s = replaceFlowReducer(applying, { type: 'CANCEL' });
+    expect(s).toEqual(initialReplaceFlowState);
+  });
+
+  it('PREVIEW_ERROR surfaces a first-use invalid-regex error dispatched straight from idle (no prior PREVIEW_START) — the client-side pre-validation path runPreview takes before any request goes out', () => {
+    const s = replaceFlowReducer(initialReplaceFlowState, { type: 'PREVIEW_ERROR', message: 'Invalid regular expression: /[/: Unterminated character class' });
+    expect(s.status).toBe('idle');
+    expect(s.error).toBe('Invalid regular expression: /[/: Unterminated character class');
+  });
+
+  it('PREVIEW_ERROR surfaces from done too (re-running Preview with a bad pattern after a completed replace)', () => {
+    const done = replaceFlowReducer(
+      replaceFlowReducer(
+        replaceFlowReducer(
+          replaceFlowReducer(initialReplaceFlowState, { type: 'PREVIEW_START' }),
+          { type: 'PREVIEW_SUCCESS', changes: [{ path: 'scripts/a.lua', count: 1 }], total: 1 },
+        ),
+        { type: 'APPLY_START' },
+      ),
+      { type: 'APPLY_SUCCESS', filesChanged: 1, totalReplaced: 1 },
+    );
+    const s = replaceFlowReducer(done, { type: 'PREVIEW_ERROR', message: 'bad pattern' });
+    expect(s.status).toBe('idle');
+    expect(s.error).toBe('bad pattern');
+  });
+
+  it('PREVIEW_ERROR still no-ops while an apply is genuinely in flight (must not clobber an in-progress apply)', () => {
+    const applying = replaceFlowReducer(
+      replaceFlowReducer(
+        replaceFlowReducer(initialReplaceFlowState, { type: 'PREVIEW_START' }),
+        { type: 'PREVIEW_SUCCESS', changes: [{ path: 'scripts/a.lua', count: 1 }], total: 1 },
+      ),
+      { type: 'APPLY_START' },
+    );
+    const s = replaceFlowReducer(applying, { type: 'PREVIEW_ERROR', message: 'should be ignored' });
+    expect(s).toBe(applying);
+  });
+});
+
+describe('shouldResetReplaceFlow (stale preview vs apply — editing inputs after a preview must force a re-preview)', () => {
+  it('resets a shown preview when inputs change, since Preview no longer predicts what Replace all would do', () => {
+    expect(shouldResetReplaceFlow('previewing')).toBe(true);
+  });
+
+  it('resets after done too — a completed replace should not be silently re-applied against new inputs', () => {
+    expect(shouldResetReplaceFlow('done')).toBe(true);
+  });
+
+  it('leaves idle alone — nothing shown yet, nothing to invalidate', () => {
+    expect(shouldResetReplaceFlow('idle')).toBe(false);
+  });
+
+  it('leaves an in-flight apply alone — an input edit should not interrupt an apply already underway', () => {
+    expect(shouldResetReplaceFlow('applying')).toBe(false);
   });
 });

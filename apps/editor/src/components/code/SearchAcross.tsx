@@ -181,7 +181,12 @@ export function replaceFlowReducer(state: ReplaceFlowState, action: ReplaceFlowA
       if (state.status !== 'previewing') return state;
       return { ...state, loading: false, changes: action.changes, total: action.total, error: null };
     case 'PREVIEW_ERROR':
-      if (state.status !== 'previewing') return state;
+      // Deliberately NOT gated to status === 'previewing': runPreview's
+      // client-side regex pre-validation dispatches this straight from idle
+      // (or done, on a re-run) before any PREVIEW_START — a first-use bad
+      // pattern must still surface. Only an apply genuinely in flight is
+      // off-limits, so a stray preview error can't clobber it.
+      if (state.status === 'applying') return state;
       return { ...initialReplaceFlowState, error: action.message };
     case 'APPLY_START':
       if (state.status !== 'previewing' || state.loading) return state;
@@ -197,6 +202,20 @@ export function replaceFlowReducer(state: ReplaceFlowState, action: ReplaceFlowA
     default:
       return state;
   }
+}
+
+/**
+ * Whether an edit to query/regexMode/caseSensitive/replacement should reset
+ * an already-run replace flow back to idle. Preview only predicts what
+ * Replace all does for the exact inputs it ran against; once the query,
+ * flags, or replacement text change, a 'previewing' result (or a stale
+ * 'done' summary) no longer matches what Replace all would send, so the
+ * flow must be invalidated and re-previewed before Replace all is offered
+ * again. An in-flight 'applying' apply is intentionally left alone — it was
+ * already dispatched with the inputs at that moment.
+ */
+export function shouldResetReplaceFlow(status: ReplaceFlowState['status']): boolean {
+  return status === 'previewing' || status === 'done';
 }
 
 // ---------------------------------------------------------------------------
@@ -346,6 +365,29 @@ export function SearchAcross({ focusNonce, onClose, onReplaceApplied }: SearchAc
     dispatchReplace({ type: 'CANCEL' });
   }
 
+  // Any edit to the query/flags/replacement while a preview is on screen (or
+  // a replace just completed) invalidates it — see shouldResetReplaceFlow.
+  // Replace all must never fire against stale counts.
+  function updateQuery(value: string) {
+    setQuery(value);
+    if (shouldResetReplaceFlow(replaceFlow.status)) dispatchReplace({ type: 'CANCEL' });
+  }
+
+  function toggleCaseSensitive() {
+    setCaseSensitive((v) => !v);
+    if (shouldResetReplaceFlow(replaceFlow.status)) dispatchReplace({ type: 'CANCEL' });
+  }
+
+  function toggleRegexMode() {
+    setRegexMode((v) => !v);
+    if (shouldResetReplaceFlow(replaceFlow.status)) dispatchReplace({ type: 'CANCEL' });
+  }
+
+  function updateReplacement(value: string) {
+    setReplacement(value);
+    if (shouldResetReplaceFlow(replaceFlow.status)) dispatchReplace({ type: 'CANCEL' });
+  }
+
   const groups = results ? groupMatchesByPath(results.matches) : [];
   const rows: FlatRow[] = groups.flatMap((g) => g.matches.map((m) => ({ match: m, groupPath: g.path })));
 
@@ -402,7 +444,7 @@ export function SearchAcross({ focusNonce, onClose, onReplaceApplied }: SearchAc
           placeholder="Search scripts…"
           aria-label="Search query"
           value={query}
-          onChange={(e) => setQuery(e.target.value)}
+          onChange={(e) => updateQuery(e.target.value)}
           onKeyDown={onQueryKeyDown}
         />
         <button
@@ -410,7 +452,7 @@ export function SearchAcross({ focusNonce, onClose, onReplaceApplied }: SearchAc
           className={caseSensitive ? 'btn btn-sm btn-primary code-search-toggle' : 'btn btn-sm code-search-toggle'}
           aria-pressed={caseSensitive}
           title="Match case"
-          onClick={() => setCaseSensitive((v) => !v)}
+          onClick={toggleCaseSensitive}
         >
           Aa
         </button>
@@ -419,7 +461,7 @@ export function SearchAcross({ focusNonce, onClose, onReplaceApplied }: SearchAc
           className={regexMode ? 'btn btn-sm btn-primary code-search-toggle' : 'btn btn-sm code-search-toggle'}
           aria-pressed={regexMode}
           title="Use a regular expression"
-          onClick={() => setRegexMode((v) => !v)}
+          onClick={toggleRegexMode}
         >
           .*
         </button>
@@ -458,7 +500,7 @@ export function SearchAcross({ focusNonce, onClose, onReplaceApplied }: SearchAc
               placeholder="Replace with…"
               aria-label="Replacement text"
               value={replacement}
-              onChange={(e) => setReplacement(e.target.value)}
+              onChange={(e) => updateReplacement(e.target.value)}
             />
             <div className="code-search-replace-actions">
               <button
@@ -470,7 +512,13 @@ export function SearchAcross({ focusNonce, onClose, onReplaceApplied }: SearchAc
                 {replaceFlow.status === 'previewing' && replaceFlow.loading ? 'Previewing…' : 'Preview'}
               </button>
               {(replaceFlow.status === 'previewing' || replaceFlow.status === 'applying' || replaceFlow.status === 'done') && (
-                <button type="button" className="btn btn-sm" onClick={cancelReplace}>
+                <button
+                  type="button"
+                  className="btn btn-sm"
+                  onClick={cancelReplace}
+                  disabled={replaceFlow.status === 'applying'}
+                  title={replaceFlow.status === 'applying' ? 'Replace is already in progress and cannot be cancelled' : undefined}
+                >
                   {replaceFlow.status === 'done' ? 'Dismiss' : 'Cancel'}
                 </button>
               )}
