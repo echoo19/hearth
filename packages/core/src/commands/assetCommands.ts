@@ -46,6 +46,53 @@ const EXT_TO_TYPE: Record<string, Asset['type']> = {
   json: 'data',
 };
 
+/** The assets/ subdirectory a given asset type is copied into. Every type except `sprite` matches its own name. */
+function typeDir(type: Asset['type']): string {
+  return type === 'sprite' ? 'sprites' : type;
+}
+
+/**
+ * Copy `sourcePath` to `destRelPath` under the project root, probe image
+ * dimensions when relevant, and register the result in the asset index.
+ * Shared by `importAsset` (single file, caller-checked collisions) and
+ * `importAssets` (bulk, collision-safe auto-naming) — the only difference
+ * between the two call sites is how `name`/`destRelPath` were resolved
+ * before getting here; the copy/probe/register mechanics are identical.
+ */
+async function copyAndRegisterAsset(
+  ctx: any,
+  spec: { sourcePath: string; filename: string; destRelPath: string; name: string; type: Asset['type'] },
+): Promise<Asset> {
+  const destPath = joinPath(ctx.store.root, spec.destRelPath);
+  await ctx.fs.mkdir(joinPath(ctx.store.root, ASSETS_DIR, typeDir(spec.type)));
+  await ctx.fs.copyFile(spec.sourcePath, destPath);
+
+  const metadata: Record<string, any> = { importedFrom: spec.filename };
+
+  // Probe image dimensions for sprites and tiles.
+  if ((spec.type === 'sprite' || spec.type === 'tile') && ctx.fs.readFileBinary) {
+    try {
+      const bytes = await ctx.fs.readFileBinary(destPath);
+      const info = probeImage(bytes);
+      if (info) {
+        metadata.width = info.width;
+        metadata.height = info.height;
+        metadata.format = info.format;
+      }
+    } catch {
+      // Silently ignore probe failures — asset import should not fail.
+    }
+  }
+
+  return registerAsset(ctx, {
+    id: generateId('ast'),
+    name: spec.name,
+    type: spec.type,
+    path: spec.destRelPath,
+    metadata,
+  });
+}
+
 export const importAsset = defineCommand({
   name: 'importAsset',
   description:
@@ -66,39 +113,116 @@ export const importAsset = defineCommand({
     const ext = filename.split('.').pop()?.toLowerCase() ?? '';
     const type = params.type ?? EXT_TO_TYPE[ext] ?? 'other';
     const name = params.name ?? filename.replace(/\.[^.]+$/, '');
-    const relPath = joinPath(ASSETS_DIR, type === 'sprite' ? 'sprites' : type, filename);
+    const relPath = joinPath(ASSETS_DIR, typeDir(type), filename);
     const destPath = joinPath(ctx.store.root, relPath);
     if (await ctx.fs.exists(destPath)) {
       throw new ProjectError(`Destination already exists: ${relPath}`, 'CONFLICT');
     }
-    await ctx.fs.mkdir(joinPath(ctx.store.root, ASSETS_DIR, type === 'sprite' ? 'sprites' : type));
-    await ctx.fs.copyFile(params.sourcePath, destPath);
-
-    const metadata: Record<string, any> = { importedFrom: filename };
-
-    // Probe image dimensions for sprites and tiles.
-    if ((type === 'sprite' || type === 'tile') && ctx.fs.readFileBinary) {
-      try {
-        const bytes = await ctx.fs.readFileBinary(destPath);
-        const info = probeImage(bytes);
-        if (info) {
-          metadata.width = info.width;
-          metadata.height = info.height;
-          metadata.format = info.format;
-        }
-      } catch {
-        // Silently ignore probe failures — asset import should not fail.
-      }
-    }
-
-    const asset = registerAsset(ctx, {
-      id: generateId('ast'),
+    const asset = await copyAndRegisterAsset(ctx, {
+      sourcePath: params.sourcePath,
+      filename,
+      destRelPath: relPath,
       name,
       type,
-      path: relPath,
-      metadata,
     });
     return { asset };
+  },
+});
+
+export const importAssets = defineCommand({
+  name: 'importAssets',
+  description:
+    'Import multiple external files into the project assets/ directory and register them in the asset index, ' +
+    'in one atomic undo/journal step. Every path is validated up front; bad ones are reported in `skipped` without ' +
+    'blocking the rest of the batch. Name/path collisions (including within the batch itself) are resolved with an ' +
+    'auto-suffix (-2, -3, ...) rather than failing.',
+  permission: 'asset-edit',
+  mutates: true,
+  paramsSchema: z.object({
+    sourcePaths: z.array(z.string().min(1)).min(1),
+    /** Applied to every file, overriding extension-based type inference. */
+    type: z.enum(ASSET_TYPES).optional(),
+  }),
+  async run(ctx, params) {
+    const imported: { path: string; assetId: string; name: string; type: Asset['type'] }[] = [];
+    const skipped: { path: string; code: string; message: string }[] = [];
+
+    // Phase 1: validate every path up front, before any file is touched.
+    const toImport: { sourcePath: string; filename: string; type: Asset['type'] }[] = [];
+    for (const sourcePath of params.sourcePaths) {
+      if (!(await ctx.fs.exists(sourcePath))) {
+        skipped.push({ path: sourcePath, code: 'NOT_FOUND', message: `Source file not found: ${sourcePath}` });
+        continue;
+      }
+      let isDirectory = false;
+      try {
+        isDirectory = (await ctx.fs.stat(sourcePath)).isDirectory;
+      } catch {
+        // stat can fail for reasons exists() didn't catch (races, odd fs
+        // backends); treat as importable and let copyFile surface the error.
+      }
+      if (isDirectory) {
+        skipped.push({
+          path: sourcePath,
+          code: 'IS_DIRECTORY',
+          message: `${sourcePath} is a directory, not a file — pass individual file paths.`,
+        });
+        continue;
+      }
+      const filename = basenamePath(sourcePath);
+      const ext = filename.split('.').pop()?.toLowerCase() ?? '';
+      const type = params.type ?? EXT_TO_TYPE[ext];
+      if (!type) {
+        skipped.push({
+          path: sourcePath,
+          code: 'UNKNOWN_TYPE',
+          message: `Cannot infer an asset type for "${filename}" (unknown extension "${ext}") — pass "type" to override.`,
+        });
+        continue;
+      }
+      toImport.push({ sourcePath, filename, type });
+    }
+
+    // Phase 2: copy + register each validated file, auto-suffixing any
+    // name/path collision — against the live store, and against earlier
+    // files in this same batch.
+    const batchNames = new Set<string>();
+    const batchPaths = new Set<string>();
+    for (const item of toImport) {
+      const dot = item.filename.lastIndexOf('.');
+      const baseName = dot > 0 ? item.filename.slice(0, dot) : item.filename;
+      const ext = dot > 0 ? item.filename.slice(dot) : '';
+      const dir = typeDir(item.type);
+
+      let name = baseName;
+      let filename = item.filename;
+      let relPath = joinPath(ASSETS_DIR, dir, filename);
+      let attempt = 1;
+      while (
+        batchNames.has(name) ||
+        batchPaths.has(relPath) ||
+        ctx.store.getAsset(name) ||
+        (await ctx.fs.exists(joinPath(ctx.store.root, relPath)))
+      ) {
+        attempt++;
+        name = `${baseName}-${attempt}`;
+        filename = `${name}${ext}`;
+        relPath = joinPath(ASSETS_DIR, dir, filename);
+      }
+      batchNames.add(name);
+      batchPaths.add(relPath);
+
+      const asset = await copyAndRegisterAsset(ctx, {
+        sourcePath: item.sourcePath,
+        filename,
+        destRelPath: relPath,
+        name,
+        type: item.type,
+      });
+      imported.push({ path: item.sourcePath, assetId: asset.id, name: asset.name, type: asset.type });
+    }
+
+    return { imported, skipped };
   },
 });
 

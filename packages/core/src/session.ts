@@ -73,6 +73,17 @@ export function extractJournalDetail(
     if (!Array.isArray(d.errors) || !Array.isArray(d.warnings)) return undefined;
     return { errors: d.errors.length, warnings: d.warnings.length };
   }
+  if (name === 'importAssets') {
+    if (!Array.isArray(d.imported)) return undefined;
+    const types = Array.from(
+      new Set(
+        (d.imported as unknown[])
+          .map((i) => (i && typeof i === 'object' ? (i as Record<string, unknown>).type : undefined))
+          .filter((t): t is string => typeof t === 'string'),
+      ),
+    );
+    return { count: d.imported.length, types };
+  }
   if (name === 'editScript' || name === 'createScript') {
     if (typeof d.path !== 'string') return undefined;
     return { path: d.path };
