@@ -609,6 +609,34 @@ describe('hearth-mcp server', () => {
     expect(envelope.data.fileDeleted).toBe(true);
   });
 
+  it('import_assets is registered, mirrors every param, and imports a batch in one atomic step', async () => {
+    ctx = await connectClient(['read-only', 'safe-edit', 'asset-edit']);
+    const { tools } = await ctx.client.listTools();
+    const tool = tools.find((t) => t.name === 'import_assets');
+    expect(tool).toBeDefined();
+    const props = tool!.inputSchema.properties as Record<string, unknown>;
+    expect(Object.keys(props).sort()).toEqual(['sourcePaths', 'type']);
+
+    const pngBytes = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 1, 2, 3, 4, 5]);
+    await ctx.fs.writeFile('/tmp/coin.png', pngBytes);
+    await ctx.fs.writeFile('/tmp/notes.xyz', pngBytes);
+
+    const result = await ctx.client.callTool({
+      name: 'import_assets',
+      arguments: { sourcePaths: ['/tmp/coin.png', '/tmp/notes.xyz', '/tmp/missing.png'] },
+    });
+    expect(result.isError).toBeFalsy();
+    const envelope = toolJson(result);
+    expect(envelope.command).toBe('importAssets');
+    expect(envelope.data.imported).toHaveLength(1);
+    expect(envelope.data.imported[0]).toMatchObject({ name: 'coin', type: 'sprite' });
+    expect(envelope.data.skipped).toHaveLength(2);
+    expect(envelope.data.skipped.map((s: any) => s.code).sort()).toEqual(['NOT_FOUND', 'UNKNOWN_TYPE']);
+
+    const journal = await ctx.session.execute<any>('listJournal');
+    expect(journal.data.entries.filter((e: any) => e.command === 'importAssets')).toHaveLength(1);
+  });
+
   it('create_prefab and instantiate_prefab are registered, mirror every param, and round-trip a subtree', async () => {
     ctx = await connectClient();
     const { tools } = await ctx.client.listTools();

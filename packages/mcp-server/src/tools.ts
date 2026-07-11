@@ -554,6 +554,19 @@ export const TOOL_SPECS: ToolSpec[] = [
     },
   },
   {
+    name: 'import_assets',
+    command: 'importAssets',
+    description:
+      'Import multiple external files into the project assets/ directory and register them in one atomic ' +
+      'undo/journal step. Every path is validated up front; bad ones are reported in `skipped` (with a code and ' +
+      'message) instead of failing the batch. Name/path collisions are auto-suffixed (-2, -3, ...). (requires asset-edit)',
+    permission: 'asset-edit',
+    inputShape: {
+      sourcePaths: z.array(z.string().min(1)).min(1),
+      type: z.enum(ASSET_TYPES).optional(),
+    },
+  },
+  {
     name: 'create_sprite_asset',
     command: 'createSpriteAsset',
     description:

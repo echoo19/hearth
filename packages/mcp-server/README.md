@@ -145,6 +145,7 @@ requires no permission (it's purely informational).
 | `search_scripts` | `searchScripts` | read-only |
 | `replace_in_scripts` | `replaceInScripts` | code-edit |
 | `import_asset` | `importAsset` | asset-edit |
+| `import_assets` | `importAssets` | asset-edit |
 | `create_sprite_asset` | `createSpriteAsset` | asset-edit |
 | `create_tile_asset` | `createTileAsset` | asset-edit |
 | `create_sound` | `createSound` | asset-edit |
