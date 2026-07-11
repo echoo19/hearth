@@ -242,3 +242,40 @@ left, roughly in order of remaining cost:
 None of these are urgent: every bench scenario now finishes well under the
 16.6ms/frame (60Hz) budget, including colliders-1500 and mixed-horde, which
 were the only two scenarios over budget in the original baseline.
+
+## Bundle sizes
+
+Wave G Task 12 code-split the editor's eagerly-bundled Terminal (`@xterm/xterm`
++ `addon-fit` + `xterm.css`) and `SliceDialog` behind `React.lazy`, alongside
+Task 7's already-lazy `CodeEditor` (CodeMirror). Both now load only when the
+Agent panel actually mounts a terminal or a spritesheet asset opens Slice…,
+instead of shipping in the editor's main chunk on every load.
+
+**Editor main chunk** (`apps/editor/dist/assets/index-*.js`, fresh
+`npm run build -w @hearth/editor`, no manualChunks tuning):
+
+| | raw | gzip |
+|---|---|---|
+| before (pre-split, Wave G code included) | 1,251,480 B | 331,466 B |
+| after (Terminal + SliceDialog lazy) | 910,263 B | 244,444 B |
+| delta | -341,217 B (-27.3%) | -87,022 B (-26.3%) |
+
+The removed weight now lives in its own on-demand chunks: `Terminal-*.js`
+(335,759 B, xterm + the fit addon) plus a small `Terminal-*.css` (5,240 B,
+`xterm.css`), and `SliceDialog-*.js` (5,390 B). `CodeEditor-*.js` (519,856 B,
+already lazy since Task 7) is unchanged by this task.
+
+**`hearth-player.js`** (`packages/runtime/player/hearth-player.js`, the
+standalone player every exported game ships): 1,366,476 B, +16,827 B (~1.2%)
+over the pre-post-effects 0.10 baseline of 1,349,649 B — the Wave G
+hand-written Pixi post-effect + SpriteEffects filters (final numbers from
+Task 6's fix). Stays well under the 1.45 MB budget enforced by
+`packages/runtime/tests/player-bundle.test.ts`'s `stays under the 1.45 MB
+player budget` test.
+
+**Re-measuring:** rebuild fresh (`rm -rf apps/editor/dist && npm run build -w
+@hearth/editor`) before recording numbers — a stale `dist/` from an earlier
+task understates or overstates the real delta. `ls -S apps/editor/dist/assets/*.js
+| head -8 | xargs -I{} sh -c 'printf "%8d  %s\n" "$(wc -c < {})" "{}"'` lists
+the largest chunks by raw byte size (same command CI runs after "Build
+editor"); `gzip -c <file> | wc -c` gives the gzip size for any one of them.

@@ -1,12 +1,19 @@
-import React, { useEffect, useState } from 'react';
+import React, { Suspense, lazy, useEffect, useState } from 'react';
 import { PERMISSION_DOCS, PERMISSION_MODES } from '@hearth/core';
 import { useEditor } from '../store';
 import { apiPrepareAgent } from '../api';
 import type { AgentPermissionMode } from '../../server/agentSetup';
 import { CodeBlock, Icon } from './ui';
-import { Terminal } from './agent/Terminal';
 import { Timeline } from './agent/Timeline';
 import { planClaudeStart, useAgentSocket, type AgentSessionSummary } from './agent/useAgentSocket';
+
+// xterm (+ its addon and css) is a heavy dependency that only the Agent
+// panel needs; keeping it out of the main chunk mirrors CodePanel's lazy
+// CodeEditor. React.lazy needs a default export, so map Terminal's named
+// export — this doesn't change component identity across suspense
+// boundaries (Terminal itself is only ever mounted once per AgentPanel
+// lifetime; see Terminal.tsx's mount/scrollback-replay comment).
+const Terminal = lazy(() => import('./agent/Terminal').then((m) => ({ default: m.Terminal })));
 
 // The editor's 4-tier picker onto the MCP server's real permission modes
 // (agentSetup.ts's AgentPermissionMode/MODE_ARGS). Labels + hints are built
@@ -234,7 +241,9 @@ export function AgentPanel() {
 
       <div className="agent-body">
         <div className="agent-terminal-pane">
-          <Terminal onData={agent.sendInput} onResize={agent.sendResize} />
+          <Suspense fallback={<div className="empty-state">Loading terminal…</div>}>
+            <Terminal onData={agent.sendInput} onResize={agent.sendResize} />
+          </Suspense>
         </div>
         <div className="agent-side-rail">
           <Timeline />

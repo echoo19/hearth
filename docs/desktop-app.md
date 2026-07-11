@@ -68,6 +68,24 @@ Notes:
   configured in `apps/editor/package.json` → `build`; build them on the
   matching OS or in CI.
 
+## Dependency audit posture
+
+`npm audit --omit=dev`: **0 vulnerabilities.** Nothing that ships in the
+packaged app (or in an exported game) carries a known advisory.
+
+`npm audit` (full, including dev tooling): **11 advisories** (1 moderate, 10
+high), all in the packaging toolchain — `electron` (bundled dev version
+33.x, fix requires 43.x), `electron-builder` (25.x → 26.x) and its
+`app-builder-lib`/`dmg-builder`/`tar` dependency chain, and `esbuild` (0.24.x
+→ 0.28.x, used by Vite/vitest, not shipped). Every fix `npm audit fix
+--force` offers is a breaking major bump, and none of the flagged code paths
+run in the built app — Electron's advisories are renderer/IPC bugs in
+Chromium versions this project isn't shipping, and esbuild's is a dev-server
+CORS issue that doesn't exist once `dist/` is built. Consciously deferred
+rather than force-bumped mid-wave; revisit alongside the next toolchain
+upgrade (Electron majors land every few months and tend to want a coordinated
+bump of `electron-builder` alongside them).
+
 ## Real signing & notarization (removing the warnings entirely)
 
 Release builds sign automatically once these GitHub Actions secrets exist;

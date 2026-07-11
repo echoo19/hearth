@@ -1,10 +1,9 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { Suspense, lazy, useEffect, useMemo, useRef, useState } from 'react';
 import { getSheetFrames } from '@hearth/core';
 import { useEditor } from '../store';
 import { apiImportAsset, fileUrl } from '../api';
 import type { AssetItem } from '../types';
 import { ConfirmDialog, Icon, Modal } from './ui';
-import { SliceDialog } from './SliceDialog';
 import { frameCrop, parseFrameRef, readSheetSize } from '../assetPreview';
 import { countPrefabInstances, createSyncPreflight, syncConfirmBody } from '../prefabActions';
 
@@ -35,6 +34,11 @@ const FONT_EXTENSIONS = ['ttf', 'otf', 'woff', 'woff2'];
 const IMPORT_EXTENSIONS = [...IMAGE_EXTENSIONS, ...AUDIO_EXTENSIONS, ...FONT_EXTENSIONS];
 const IMPORT_ACCEPT = IMPORT_EXTENSIONS.map((e) => `.${e}`).join(',');
 const MAX_IMPORT_BYTES = 25 * 1024 * 1024;
+
+// SliceDialog only ever mounts once a spritesheet asset is selected and
+// "Slice…" is clicked, so lazy-loading it costs nothing on the common
+// (no-dialog) path and keeps its module out of the panel's initial chunk.
+const SliceDialog = lazy(() => import('./SliceDialog').then((m) => ({ default: m.SliceDialog })));
 
 function extensionOf(name: string): string {
   return name.split('.').pop()?.toLowerCase() ?? '';
@@ -730,7 +734,11 @@ export function AssetsPanel() {
         </div>
       </Modal>
 
-      <SliceDialog open={sliceDialog} asset={selectedAsset} onClose={() => setSliceDialog(false)} />
+      {sliceDialog && (
+        <Suspense fallback={null}>
+          <SliceDialog open={sliceDialog} asset={selectedAsset} onClose={() => setSliceDialog(false)} />
+        </Suspense>
+      )}
 
       <ConfirmDialog
         open={syncTarget !== null}
