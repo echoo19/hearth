@@ -642,6 +642,37 @@ describe('diff & snapshot', () => {
       },
     ]);
   });
+
+  it('a baseline project file in an old shape does not crash diffProject/revertProject', async () => {
+    const { fs, session, store } = await makeSession();
+
+    // Simulate a baseline written by a DIFFERENT core version whose project
+    // shape this one can't validate (e.g. a formatVersion that predates the
+    // current literal). ProjectFileSchema.parse throws a ZodError on this,
+    // same failure class as the scene-level ComponentMapSchema case above —
+    // the fix must mirror that posture exactly: safeParse, and on failure
+    // fall back to the raw project snapshot rather than taking
+    // diffProject/revertProject down. Normalization is an enhancement,
+    // never a gate.
+    const snap = await session.execute<any>('snapshotProject');
+    expect(snap.success).toBe(true);
+    const baselinePath = '/proj/.hearth/baseline.json';
+    const baseline = JSON.parse(await fs.readFile(baselinePath));
+    baseline.project.formatVersion = 0; // not the current literal FORMAT_VERSION
+    await fs.writeFile(baselinePath, JSON.stringify(baseline));
+
+    const diff = await session.execute<any>('diffProject');
+    expect(diff.success).toBe(true);
+    // The raw (un-normalized) baseline still diffs sensibly: formatVersion
+    // reads as changed relative to the live project's normalized value.
+    expect(diff.data.projectChanges).toEqual(
+      expect.arrayContaining([{ path: 'formatVersion', before: 0, after: 1 }]),
+    );
+
+    const revert = await session.execute<any>('revertProject', { confirm: true });
+    expect(revert.success).toBe(true);
+    expect(store.project.formatVersion).toBe(0);
+  });
 });
 
 describe('playtests & build', () => {

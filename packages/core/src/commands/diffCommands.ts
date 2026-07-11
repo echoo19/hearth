@@ -26,7 +26,16 @@ async function loadBaseline(ctx: any): Promise<ProjectSnapshot | null> {
   // already has every default filled in) — re-parsing the baseline's project
   // here keeps both sides of diffSnapshots normalized the same way, so a
   // schema addition never shows up as a phantom project-setting change.
-  snap.project = ProjectFileSchema.parse(snap.project);
+  //
+  // safeParse, not parse: a baseline written by a core version whose project
+  // shape this schema can't validate (e.g. a stale formatVersion literal,
+  // or any other incompatible field) would make the re-parse throw and take
+  // diffProject/revertProject down with it. Same posture as the per-scene
+  // normalization below — normalization is an enhancement, never a gate: on
+  // failure, fall back to the raw project snapshot (the pre-normalization
+  // behavior, which at worst shows a few phantom default-value diffs).
+  const parsedProject = ProjectFileSchema.safeParse(snap.project);
+  if (parsedProject.success) snap.project = parsedProject.data;
   // Same principle at the component level: a pre-0.10 baseline's Camera has
   // no `postEffects` key (the field didn't exist yet), but the live scene
   // always went through SceneSchema.parse at load time (ProjectStore.load),
