@@ -45,6 +45,11 @@ await writeFile(
         email: 'hearth@users.noreply.github.com',
       },
       homepage: 'https://github.com/echoo19/hearth',
+      // electron-builder's update-info builder needs a detectable repository;
+      // without it, local `electron-builder --publish never` runs crash in
+      // cleanup (computeChannelNames on a null publish config). CI is
+      // unaffected but local packaging + HEARTH_SMOKE hit it.
+      repository: { type: 'git', url: 'https://github.com/echoo19/hearth.git' },
       license: 'MIT',
       main: 'dist-electron/main.cjs',
       dependencies: {
