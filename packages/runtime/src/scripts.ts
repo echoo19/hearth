@@ -197,6 +197,15 @@ export interface ScriptContext {
     /** A zoom kick that eases back to 1x over `seconds`. */
     zoomPunch(scale: number, seconds: number): void;
   };
+  effects: {
+    /**
+     * Trigger this entity's own hit-flash: sets its SpriteEffects
+     * flashColor/flashStrength=1/flashDuration (adding the component if
+     * absent; authored scene data is untouched). Decays linearly back to 0
+     * over `seconds` (default 0.15, clamped to [0.01, 10]), deterministically.
+     */
+    flash(color?: string, seconds?: number): void;
+  };
   /** Global pub/sub. emit delivers synchronously; on() subscriptions die with this entity. */
   events: {
     emit(name: string, data?: unknown): void;

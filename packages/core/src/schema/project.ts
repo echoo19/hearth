@@ -2,7 +2,7 @@
  * Project-level schemas: hearth.json, assets.json, playtest files.
  */
 import { z } from 'zod';
-import { Vec2Schema, type ComponentMap } from './components.js';
+import { POST_EFFECT_TYPES, Vec2Schema, type ComponentMap } from './components.js';
 import { EntitySchema } from './scene.js';
 
 export const FORMAT_VERSION = 1;
@@ -244,6 +244,13 @@ const PlaytestStepUnionSchema = z.discriminatedUnion('type', [
     /** Expected focused entity id or name; null asserts nothing is focused. */
     entity: z.string().nullable(),
   }),
+  z.object({
+    type: z.literal('assertPostEffect'),
+    /** Post-effect type to check for on the main camera's postEffects stack. */
+    effect: z.enum(POST_EFFECT_TYPES),
+    /** true: effect must be present; false: effect must be absent. */
+    active: z.boolean().optional(),
+  }),
 ]);
 
 export const PlaytestStepSchema = PlaytestStepUnionSchema.superRefine((step, ctx) => {
@@ -289,6 +296,12 @@ export const PlaytestStepSchema = PlaytestStepUnionSchema.superRefine((step, ctx
     ctx.addIssue({
       code: z.ZodIssueCode.custom,
       message: 'assertCameraEffect requires at least one of equals, min, or max',
+    });
+  }
+  if (step.type === 'assertPostEffect' && step.active === undefined) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: 'assertPostEffect requires active (boolean)',
     });
   }
 });

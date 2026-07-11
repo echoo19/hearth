@@ -464,6 +464,18 @@ export const CTX_API: readonly CtxApiEntry[] = [
     description: 'A zoom kick that eases back to 1x over `seconds`.',
     example: { js: 'ctx.camera.zoomPunch(1.2, 0.25)', lua: 'ctx.camera.zoomPunch(1.2, 0.25)' },
   },
+  // --- effects (per-sprite, wave G) ---------------------------------------
+  {
+    path: 'effects.flash',
+    kind: 'method',
+    signature: 'flash(color?: string, seconds?: number): void',
+    description:
+      "Trigger this entity's own hit-flash: sets its SpriteEffects flashColor/flashStrength=1/flashDuration (adding the component if the entity doesn't have one; authored scene data is untouched). flashStrength then decays linearly back to 0 over `seconds` (default 0.15, clamped to [0.01, 10]), deterministically, no RNG. For a camera-wide look instead of a per-sprite flash, use data-driven Camera.postEffects (e.g. a 'vignette' or 'colorGrade' entry) rather than this.",
+    example: {
+      js: "ctx.effects.flash('#ff0000', 0.2)",
+      lua: 'ctx.effects.flash("#ff0000", 0.2)',
+    },
+  },
   // --- audio -----------------------------------------------------------
   {
     path: 'audio.play',

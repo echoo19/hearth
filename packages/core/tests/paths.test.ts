@@ -71,6 +71,19 @@ describe('validateComponentPath', () => {
       expect(check.suggestions).toEqual([]);
     }
   });
+
+  it('accepts a valid nested path into Camera.postEffects (real discriminated union)', () => {
+    expect(validateComponentPath('Camera', ['postEffects', '0', 'strength'])).toEqual({ ok: true });
+  });
+
+  it('rejects a typo\'d Camera.postEffects field with a did-you-mean suggestion', () => {
+    const check = validateComponentPath('Camera', ['postEffects', '0', 'strenght']);
+    expect(check.ok).toBe(false);
+    if (!check.ok) {
+      expect(check.failedAt).toBe('Camera.postEffects.0.strenght');
+      expect(check.suggestions).toContain('strength');
+    }
+  });
 });
 
 describe('validateSchemaPath — union / discriminated union node kinds', () => {

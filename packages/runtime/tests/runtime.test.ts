@@ -91,6 +91,7 @@ describe('camera', () => {
       zoom: 2,
       backgroundColor: '#123456',
       ambientLight: 1,
+      postEffects: [],
     });
   });
 
@@ -102,6 +103,7 @@ describe('camera', () => {
       zoom: 1,
       backgroundColor: '#1a1a2e',
       ambientLight: 1,
+      postEffects: [],
     });
   });
 

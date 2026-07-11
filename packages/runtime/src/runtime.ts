@@ -35,6 +35,7 @@ import {
   type NavGrid,
   type ParticleEmitterComponent,
   type PhysicsBodyComponent,
+  type PostEffect,
   type ProjectStore,
   type Scene,
   type TilemapComponent,
@@ -419,7 +420,13 @@ export class SceneRuntime {
   }
 
   /** Active camera view: main Camera entity, or build-settings defaults. */
-  get camera(): { position: Vec2; zoom: number; backgroundColor: string; ambientLight: number } {
+  get camera(): {
+    position: Vec2;
+    zoom: number;
+    backgroundColor: string;
+    ambientLight: number;
+    postEffects: PostEffect[];
+  } {
     const settings = this.store.project.buildSettings;
     const cameras = this.getEntities().filter((e) => e.enabled && e.components.Camera);
     const cam = cameras.find((e) => e.components.Camera!.isMain) ?? cameras[0];
@@ -429,6 +436,7 @@ export class SceneRuntime {
         zoom: 1,
         backgroundColor: settings.backgroundColor,
         ambientLight: 1,
+        postEffects: [],
       };
     }
     return {
@@ -436,6 +444,7 @@ export class SceneRuntime {
       zoom: cam.components.Camera!.zoom,
       backgroundColor: cam.components.Camera!.backgroundColor,
       ambientLight: cam.components.Camera!.ambientLight,
+      postEffects: cam.components.Camera!.postEffects ?? [],
     };
   }
 
@@ -575,6 +584,15 @@ export class SceneRuntime {
         phase: 'cameraEffect',
       }),
     );
+
+    // 4b3. SpriteEffects hit-flash decays deterministically — pure arithmetic,
+    // no RNG: flashStrength counts down to 0 over flashDuration seconds.
+    for (const entity of this.getEntities()) {
+      if (!entity.enabled) continue;
+      const fx = entity.components.SpriteEffects;
+      if (!fx || fx.flashStrength <= 0) continue;
+      fx.flashStrength = Math.max(0, fx.flashStrength - this.fixedDt / fx.flashDuration);
+    }
 
     // 4c. Particle emitters step deterministically (per-emitter seeded RNG).
     this.stepParticles();
@@ -1544,6 +1562,17 @@ export class SceneRuntime {
         flash: (color, seconds) => runtime.cameraEffects.flash(color, seconds),
         fade: (alpha, seconds, opts) => runtime.cameraEffects.fade(alpha, seconds, opts),
         zoomPunch: (scale, seconds) => runtime.cameraEffects.zoomPunch(scale, seconds),
+      },
+      effects: {
+        flash: (color, seconds) => {
+          const fx =
+            entity.components.SpriteEffects ??
+            (entity.components.SpriteEffects = createComponent('SpriteEffects'));
+          const duration = Math.min(10, Math.max(0.01, seconds ?? 0.15));
+          fx.flashColor = color ?? '#ffffff';
+          fx.flashStrength = 1;
+          fx.flashDuration = duration;
+        },
       },
       events: {
         emit: (name, data) => runtime.emitEvent(name, data),

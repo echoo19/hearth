@@ -75,6 +75,8 @@ export interface PlaytestResult {
   cameraOverlayAlpha: number;
   /** ctx.ui focus at end of run: entity name if resolvable, else id, else null when nothing is focused. */
   focusedEntity: string | null;
+  /** Active post-effect types (Camera.postEffects) on the main camera at end of run. */
+  postEffects: string[];
 }
 
 export interface SmokeResult {
@@ -100,6 +102,8 @@ export interface SmokeResult {
   cameraEffects: CameraEffectRecord[];
   /** Final combined camera overlay alpha (flash pulse over persistent fade level) at end of run. */
   cameraOverlayAlpha: number;
+  /** Active post-effect types (Camera.postEffects) on the main camera at end of run. */
+  postEffects: string[];
 }
 
 const ASSERT_TYPES = new Set([
@@ -113,6 +117,7 @@ const ASSERT_TYPES = new Set([
   'assertAudioCount',
   'assertCameraEffect',
   'assertFocus',
+  'assertPostEffect',
 ]);
 
 export async function runPlaytest(
@@ -137,6 +142,7 @@ export async function runPlaytest(
     cameraEffects: [],
     cameraOverlayAlpha: 0,
     focusedEntity: null,
+    postEffects: [],
   });
 
   const playtest = store.getPlaytest(playtestIdOrName);
@@ -203,6 +209,7 @@ export async function runPlaytest(
     cameraEffects: [...session.cameraEffects],
     cameraOverlayAlpha: session.runtime.cameraEffects.overlay.alpha,
     focusedEntity: resolveFocusedEntity(session.runtime),
+    postEffects: session.runtime.camera.postEffects.map((e) => e.type),
   };
   session.destroy();
   return result;
@@ -559,6 +566,21 @@ async function executeStep(
           : `expected ${step.entity === null ? 'nothing' : `"${step.entity}"`} focused, but ${actualDesc} is${capNote}`,
       };
     }
+    case 'assertPostEffect': {
+      const activeTypes = runtime.camera.postEffects.map((e) => e.type);
+      const isActive = activeTypes.includes(step.effect);
+      const wantActive = step.active ?? true;
+      const passed = isActive === wantActive;
+      const stackDesc = activeTypes.length > 0 ? `[${activeTypes.join(', ')}]` : '[]';
+      return {
+        index,
+        type: step.type,
+        passed,
+        message: passed
+          ? `postEffect "${step.effect}" ${wantActive ? 'active' : 'absent'} OK${capNote}`
+          : `expected postEffect "${step.effect}" ${wantActive ? 'active' : 'absent'}, but stack is ${stackDesc}${capNote}`,
+      };
+    }
     default: {
       const unknown = step as { type: string };
       return {
@@ -594,6 +616,7 @@ export async function runSceneSmoke(
       eventCounts: {},
       cameraEffects: [],
       cameraOverlayAlpha: 0,
+      postEffects: [],
     };
   }
   const session = await GameSession.create(store, { scene: scene.id });
@@ -614,6 +637,7 @@ export async function runSceneSmoke(
     eventCounts: Object.fromEntries(session.eventCounts),
     cameraEffects: [...session.cameraEffects],
     cameraOverlayAlpha: session.runtime.cameraEffects.overlay.alpha,
+    postEffects: session.runtime.camera.postEffects.map((e) => e.type),
   };
   session.destroy();
   return result;

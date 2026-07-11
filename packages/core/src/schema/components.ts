@@ -91,12 +91,67 @@ export const ScriptSchema = z.object({
   params: z.record(z.string(), z.unknown()).default({}),
 });
 
+/** Post-processing effect types stackable on Camera.postEffects. */
+export const POST_EFFECT_TYPES = [
+  'bloom',
+  'crt',
+  'vignette',
+  'chromaticAberration',
+  'pixelate',
+  'colorGrade',
+] as const;
+
+/**
+ * One entry in Camera.postEffects — a screen-space post-processing effect.
+ * Rendered as Pixi filters by the renderer; this schema is render-agnostic
+ * (headless-safe) data only. Every field defaults to a visually neutral
+ * value, but presence in the stack still enables the effect — postEffects
+ * defaulting to [] is what keeps a fresh Camera a no-op.
+ */
+export const PostEffectSchema = z.discriminatedUnion('type', [
+  z.object({
+    type: z.literal('bloom'),
+    strength: z.number().min(0).max(3).default(1),
+    threshold: z.number().min(0).max(1).default(0.5),
+  }),
+  z.object({
+    type: z.literal('crt'),
+    curvature: z.number().min(0).max(1).default(0.15),
+    scanlineIntensity: z.number().min(0).max(1).default(0.25),
+    noise: z.number().min(0).max(1).default(0),
+  }),
+  z.object({
+    type: z.literal('vignette'),
+    intensity: z.number().min(0).max(1).default(0.4),
+    color: ColorSchema.default('#000000'),
+  }),
+  z.object({
+    type: z.literal('chromaticAberration'),
+    offset: z.number().min(0).max(20).default(2),
+  }),
+  z.object({
+    type: z.literal('pixelate'),
+    size: z.number().int().min(1).max(64).default(4),
+  }),
+  z.object({
+    type: z.literal('colorGrade'),
+    brightness: z.number().min(0).max(2).default(1),
+    contrast: z.number().min(0).max(2).default(1),
+    saturation: z.number().min(0).max(2).default(1),
+    tint: ColorSchema.default('#ffffff'),
+  }),
+]);
+export type PostEffect = z.infer<typeof PostEffectSchema>;
+export type PostEffectType = (typeof POST_EFFECT_TYPES)[number];
+
 export const CameraSchema = z.object({
   zoom: z.number().positive().default(1),
   isMain: z.boolean().default(true),
   backgroundColor: ColorSchema.default('#1a1a2e'),
   /** Scene brightness with no lights: 1 = fully lit (lighting disabled), 0 = black. */
   ambientLight: z.number().min(0).max(1).default(1),
+  /** Screen-space post-processing stack, rendered in order. Empty = no-op. */
+  postEffects: z.array(PostEffectSchema).max(8).default([]),
 });
 
 export const TextSchema = z.object({
@@ -256,6 +311,24 @@ export const SpriteAnimatorSchema = z.object({
   loop: z.boolean().default(true),
 });
 
+/**
+ * Per-sprite visual effects: outline, hit flash, dissolve. All fields default
+ * to a no-op (outline off, flashStrength 0, dissolveAmount 0) so attaching
+ * this component with no overrides changes nothing on screen. flashStrength
+ * decays deterministically toward 0 over flashDuration seconds once
+ * triggered (ctx.effects.flash or scripted directly); no RNG involved.
+ */
+export const SpriteEffectsSchema = z.object({
+  outlineEnabled: z.boolean().default(false),
+  outlineColor: ColorSchema.default('#ffffff'),
+  outlineWidth: z.number().min(0).max(16).default(2),
+  flashColor: ColorSchema.default('#ffffff'),
+  flashStrength: z.number().min(0).max(1).default(0),
+  flashDuration: z.number().min(0.01).max(10).default(0.15),
+  dissolveAmount: z.number().min(0).max(1).default(0),
+  dissolveSeed: z.number().int().default(0),
+});
+
 export const COMPONENT_SCHEMAS = {
   Transform: TransformSchema,
   SpriteRenderer: SpriteRendererSchema,
@@ -270,6 +343,7 @@ export const COMPONENT_SCHEMAS = {
   LineRenderer: LineRendererSchema,
   ParticleEmitter: ParticleEmitterSchema,
   SpriteAnimator: SpriteAnimatorSchema,
+  SpriteEffects: SpriteEffectsSchema,
   UIElement: UIElementSchema,
   UILayout: UILayoutSchema,
   UISlider: UISliderSchema,
@@ -293,6 +367,7 @@ export type Light2DComponent = z.infer<typeof Light2DSchema>;
 export type LineRendererComponent = z.infer<typeof LineRendererSchema>;
 export type ParticleEmitterComponent = z.infer<typeof ParticleEmitterSchema>;
 export type SpriteAnimatorComponent = z.infer<typeof SpriteAnimatorSchema>;
+export type SpriteEffectsComponent = z.infer<typeof SpriteEffectsSchema>;
 export type UIElementComponent = z.infer<typeof UIElementSchema>;
 export type UILayoutComponent = z.infer<typeof UILayoutSchema>;
 export type UISliderComponent = z.infer<typeof UISliderSchema>;
@@ -313,6 +388,7 @@ export interface ComponentMap {
   LineRenderer?: LineRendererComponent;
   ParticleEmitter?: ParticleEmitterComponent;
   SpriteAnimator?: SpriteAnimatorComponent;
+  SpriteEffects?: SpriteEffectsComponent;
   UIElement?: UIElementComponent;
   UILayout?: UILayoutComponent;
   UISlider?: UISliderComponent;
@@ -354,6 +430,8 @@ export const COMPONENT_DOCS: Record<ComponentType, string> = {
   LineRenderer: 'Renders a polyline in local space; use for debug geometry or simple line effects.',
   ParticleEmitter: 'Spawns and simulates particles deterministically; seed controls reproducibility.',
   SpriteAnimator: 'Plays sprite animations; requires a sibling SpriteRenderer and animation asset.',
+  SpriteEffects:
+    'Per-sprite visual effects: outline, hit flash (ctx.effects.flash), dissolve. All values are no-ops at defaults.',
   UIElement:
     'Makes the entity screen-space UI: positioned by anchor+offset, unaffected by the camera. Visuals come from Text/SpriteRenderer. interactive=true sends pointer events to the Script hook onUiEvent(ctx, event). focusable=true lets it participate in keyboard/gamepad focus navigation.',
   UILayout:
