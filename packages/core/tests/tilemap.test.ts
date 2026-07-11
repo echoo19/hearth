@@ -407,4 +407,63 @@ describe('resizeTilemap', () => {
     expect(undo.success).toBe(true);
     expect(tilemapOf(store).grid).toEqual(before);
   });
+
+  it('succeeds at exactly the 1024 cap', async () => {
+    const { session, store } = await makeSession();
+    await addTilemap(session, ['GG', 'GG']);
+    const result = await session.execute<any>('resizeTilemap', {
+      scene: 'Main',
+      entity: 'Player',
+      width: 1024,
+      height: 1024,
+    });
+    expect(result.success).toBe(true);
+    const grid = tilemapOf(store).grid;
+    expect(grid).toHaveLength(1024);
+    expect(grid[0]).toHaveLength(1024);
+  });
+});
+
+describe('Tilemap.grid schema cap (setComponentProperty bypass)', () => {
+  it('rejects an oversized grid (too many rows) via setComponentProperty as SCHEMA_ERROR', async () => {
+    const { session } = await makeSession();
+    await addTilemap(session);
+    const tooManyRows = Array.from({ length: 1025 }, () => '.');
+    const result = await session.execute('setComponentProperty', {
+      scene: 'Main',
+      entity: 'Player',
+      property: 'Tilemap.grid',
+      value: tooManyRows,
+    });
+    expect(result.success).toBe(false);
+    expect(result.errors[0].code).toBe('SCHEMA_ERROR');
+  });
+
+  it('rejects an oversized grid (a row wider than the cap) via setComponentProperty as SCHEMA_ERROR', async () => {
+    const { session } = await makeSession();
+    await addTilemap(session);
+    const wideRow = '.'.repeat(1025);
+    const result = await session.execute('setComponentProperty', {
+      scene: 'Main',
+      entity: 'Player',
+      property: 'Tilemap.grid',
+      value: [wideRow],
+    });
+    expect(result.success).toBe(false);
+    expect(result.errors[0].code).toBe('SCHEMA_ERROR');
+  });
+
+  it('accepts a grid exactly at the 1024x1024 cap via setComponentProperty', async () => {
+    const { session, store } = await makeSession();
+    await addTilemap(session);
+    const atCap = Array.from({ length: 1024 }, () => '.'.repeat(1024));
+    const result = await session.execute('setComponentProperty', {
+      scene: 'Main',
+      entity: 'Player',
+      property: 'Tilemap.grid',
+      value: atCap,
+    });
+    expect(result.success).toBe(true);
+    expect(tilemapOf(store).grid).toHaveLength(1024);
+  });
 });

@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import { defineCommand } from './types.js';
 import { findEntity } from '../schema/scene.js';
-import { COMPONENT_SCHEMAS, type TilemapComponent } from '../schema/components.js';
+import { COMPONENT_SCHEMAS, TILEMAP_MAX_DIM, type TilemapComponent } from '../schema/components.js';
 import { ProjectError } from '../project/store.js';
 
 import type { Entity, Scene } from '../schema/scene.js';
@@ -139,8 +139,8 @@ export const fillTilemapRect = defineCommand({
     entity: z.string().min(1),
     x: z.number().int(),
     y: z.number().int(),
-    width: z.number().int().positive().max(1024),
-    height: z.number().int().positive().max(1024),
+    width: z.number().int().positive().max(TILEMAP_MAX_DIM),
+    height: z.number().int().positive().max(TILEMAP_MAX_DIM),
     char: z.string(),
   }),
   async run(ctx, params) {
@@ -204,8 +204,8 @@ export const resizeTilemap = defineCommand({
   paramsSchema: z.object({
     scene: z.string().min(1),
     entity: z.string().min(1),
-    width: z.number().int().min(1).max(1024),
-    height: z.number().int().min(1).max(1024),
+    width: z.number().int().min(1).max(TILEMAP_MAX_DIM),
+    height: z.number().int().min(1).max(TILEMAP_MAX_DIM),
     anchor: z.enum(['top-left']).default('top-left'),
   }),
   async run(ctx, params) {

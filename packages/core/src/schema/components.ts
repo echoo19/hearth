@@ -176,6 +176,9 @@ export const UIToggleSchema = z.object({
   layer: z.number().int().default(0),
 });
 
+/** Max rows and max columns (row string length) for a Tilemap grid, shared with resizeTilemap/fillTilemapRect caps. */
+export const TILEMAP_MAX_DIM = 1024;
+
 export const TilemapSchema = z.object({
   tileSize: z.number().positive().default(32),
   /**
@@ -184,7 +187,13 @@ export const TilemapSchema = z.object({
    */
   tileAssets: z.record(z.string(), z.string()).default({}),
   /** Rows of characters, top row first, e.g. ["........", "GGGGGGGG"]. */
-  grid: z.array(z.string()).default([]),
+  grid: z
+    .array(z.string())
+    .max(TILEMAP_MAX_DIM, `grid must have at most ${TILEMAP_MAX_DIM} rows`)
+    .refine((rows) => rows.every((row) => row.length <= TILEMAP_MAX_DIM), {
+      message: `each grid row must be at most ${TILEMAP_MAX_DIM} characters wide`,
+    })
+    .default([]),
   /** Whether tiles get box colliders automatically. */
   solid: z.boolean().default(true),
   layer: z.number().int().default(-10),
