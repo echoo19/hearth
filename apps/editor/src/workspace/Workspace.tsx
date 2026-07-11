@@ -29,6 +29,7 @@ import { ConsolePanel } from '../components/ConsolePanel';
 import { DiffPanel } from '../components/DiffPanel';
 import { AgentPanel } from '../components/AgentPanel';
 import { InputSettings } from '../components/InputSettings';
+import { LivePanel } from '../components/LivePanel';
 import { restoreLayout, serializeLayout, type PanelId } from './layout';
 
 export const PANEL_TITLES: Record<PanelId, string> = {
@@ -42,6 +43,7 @@ export const PANEL_TITLES: Record<PanelId, string> = {
   diff: 'Changes',
   agent: 'Agent',
   input: 'Input',
+  live: 'Live',
 };
 
 /** Menu order for the View menu (matches the default layout, left to right). */
@@ -56,6 +58,7 @@ export const VIEW_MENU_PANELS: readonly PanelId[] = [
   'diff',
   'agent',
   'input',
+  'live',
 ];
 
 const HEARTH_THEME: DockviewTheme = {
@@ -120,6 +123,21 @@ function ConsolePanelHost(props: IDockviewPanelProps) {
   );
 }
 
+/** Live panel: only polls the runtime while its tab is actually visible. */
+function LivePanelHost(props: IDockviewPanelProps) {
+  const [visible, setVisible] = useState(props.api.isVisible);
+  useEffect(() => {
+    setVisible(props.api.isVisible);
+    const disposable = props.api.onDidVisibilityChange(({ isVisible }) => setVisible(isVisible));
+    return () => disposable.dispose();
+  }, [props.api]);
+  return (
+    <div className="workspace-panel">
+      <LivePanel visible={visible} />
+    </div>
+  );
+}
+
 const PANEL_COMPONENTS: Record<PanelId, React.FunctionComponent<IDockviewPanelProps>> = {
   hierarchy: panelHost(Hierarchy),
   scene: panelHost(SceneView, true),
@@ -131,6 +149,7 @@ const PANEL_COMPONENTS: Record<PanelId, React.FunctionComponent<IDockviewPanelPr
   diff: panelHost(DiffPanel),
   agent: panelHost(AgentPanel),
   input: panelHost(InputSettings),
+  live: LivePanelHost,
 };
 
 // ---------------------------------------------------------------------------
@@ -242,7 +261,7 @@ function findReference(api: DockviewApi, preferred: readonly PanelId[]): PanelId
 }
 
 const CENTER_PANELS: readonly PanelId[] = ['scene', 'game', 'code'];
-const BOTTOM_PANELS: readonly PanelId[] = ['assets', 'console', 'diff', 'agent', 'input'];
+const BOTTOM_PANELS: readonly PanelId[] = ['assets', 'console', 'diff', 'agent', 'input', 'live'];
 
 /**
  * Show a panel: activate it when open, otherwise re-open it in a sensible

@@ -53,6 +53,12 @@ export interface EditorState {
   /** Status of the /api/ws connection for the open project (or 'disconnected' when none is open). */
   wsStatus: 'connected' | 'connecting' | 'disconnected';
   playing: boolean;
+  /**
+   * Play-mode debug pause (Task 9): freezes the running game in place without
+   * stopping the run — distinct from `playing`/Stop, which tears the preview
+   * down. Only meaningful while `playing`; Play/Stop both reset it to false.
+   */
+  paused: boolean;
   /** Bumped every time playback starts, so the preview restarts from the current scene state. */
   runNonce: number;
   /**
@@ -133,6 +139,7 @@ export interface EditorState {
   select(entityId: string | null): void;
   setConsoleOpen(open: boolean): void;
   setPlaying(playing: boolean): void;
+  setPaused(paused: boolean): void;
   setDebugDraw(on: boolean): void;
   log(level: ConsoleLevel, source: ConsoleSource, message: string): void;
   clearConsole(): void;
@@ -344,6 +351,7 @@ export const useEditor = create<EditorState>((set, get) => {
       assets: [],
       journalFeed: [],
       playing: false,
+      paused: false,
       debugDraw: false,
       snapshotTaken: false,
       sceneViewCenter: null,
@@ -372,6 +380,7 @@ export const useEditor = create<EditorState>((set, get) => {
     journalFeed: [],
     wsStatus: 'disconnected',
     playing: false,
+    paused: false,
     runNonce: 0,
     debugDraw: false,
 
@@ -524,6 +533,7 @@ export const useEditor = create<EditorState>((set, get) => {
         diff: null,
         journalFeed: [],
         playing: false,
+        paused: false,
         debugDraw: false,
         snapshotTaken: false,
         sceneViewCenter: null,
@@ -537,7 +547,7 @@ export const useEditor = create<EditorState>((set, get) => {
       nudgeQueue.flush();
       // A center measured against the previous scene's viewport doesn't apply
       // here; SceneView re-measures and pushes a fresh one once mounted.
-      set({ sceneId, selection: null, playing: false, debugDraw: false, sceneViewCenter: null });
+      set({ sceneId, selection: null, playing: false, paused: false, debugDraw: false, sceneViewCenter: null });
       await get().refresh();
     },
 
@@ -554,11 +564,18 @@ export const useEditor = create<EditorState>((set, get) => {
       // Play always runs the scene as it is now (Godot-style); Stop freezes it.
       // Starting a run remounts the preview (see GamePreview's runNonce effect),
       // so debugDraw resets to off along with it — no persistence across runs.
+      // Either direction also clears a lingering debug pause: a fresh Play
+      // should never come up paused, and Stop has nothing left to pause.
       set((state) => ({
         playing,
+        paused: false,
         runNonce: playing ? state.runNonce + 1 : state.runNonce,
         debugDraw: playing ? false : state.debugDraw,
       }));
+    },
+
+    setPaused(paused) {
+      set({ paused });
     },
 
     setDebugDraw(on) {

@@ -4,7 +4,14 @@
  * (default project settings: 60 Hz, so dt = 1/60).
  */
 import { describe, it, expect } from 'vitest';
-import { EASINGS, MemorySessionStorage, SceneRuntime, createRng, resolveNumericTarget } from '@hearth/runtime';
+import {
+  EASINGS,
+  EntityScheduler,
+  MemorySessionStorage,
+  SceneRuntime,
+  createRng,
+  resolveNumericTarget,
+} from '@hearth/runtime';
 import { makeStore, ent } from './helpers.js';
 
 const messages = (runtime: SceneRuntime) => runtime.logs.map((l) => l.message);
@@ -340,5 +347,82 @@ describe('ctx.camera', () => {
     const warns = runtime.logs.filter((l) => l.level === 'warn' && l.message.includes('no Camera entity'));
     expect(warns).toHaveLength(1);
     expect(messages(runtime)).toContain('zoom:1'); // build-settings default view
+  });
+});
+
+describe('EntityScheduler.listTimers / listTweens', () => {
+  it('returns plain serializable data with closures omitted', () => {
+    const scheduler = new EntityScheduler();
+    scheduler.after(1, () => {});
+    scheduler.every(0.5, () => {});
+    const holder = { x: 0 };
+    scheduler.tweenTo(holder, 'x', 10, 1, EASINGS.linear, () => {});
+    scheduler.step(0.1, () => {});
+
+    const timers = scheduler.listTimers();
+    expect(timers).toHaveLength(2);
+    for (const timer of timers) {
+      expect(Object.keys(timer).sort()).toEqual(['id', 'interval', 'remaining', 'repeat']);
+    }
+    const after = timers.find((t) => !t.repeat)!;
+    expect(after.interval).toBe(1);
+    expect(after.remaining).toBeCloseTo(0.9, 10);
+    const every = timers.find((t) => t.repeat)!;
+    expect(every.interval).toBe(0.5);
+    expect(every.remaining).toBeCloseTo(0.4, 10);
+
+    const tweens = scheduler.listTweens();
+    expect(tweens).toHaveLength(1);
+    for (const tween of tweens) {
+      expect(Object.keys(tween).sort()).toEqual(['duration', 'elapsed', 'from', 'id', 'key', 'to']);
+    }
+    expect(tweens[0]).toMatchObject({ key: 'x', from: 0, to: 10, duration: 1 });
+    expect(tweens[0].elapsed).toBeCloseTo(0.1, 10);
+  });
+
+  it('lists timers/tweens with no fn/onComplete/holder present anywhere', () => {
+    const scheduler = new EntityScheduler();
+    scheduler.after(1, () => {
+      throw new Error('should never be inspected, only invoked');
+    });
+    scheduler.tweenTo({ x: 0 }, 'x', 1, 1, EASINGS.linear, () => {});
+    const [timer] = scheduler.listTimers();
+    const [tween] = scheduler.listTweens();
+    expect('fn' in timer).toBe(false);
+    expect('onComplete' in tween).toBe(false);
+    expect('holder' in tween).toBe(false);
+  });
+});
+
+describe('SceneRuntime.getSchedulerSnapshot', () => {
+  it('snapshots a scripted entity\'s pending timers and active tween', async () => {
+    const runtime = await runScript(
+      `export default {
+        onStart(ctx) {
+          ctx.timers.after(1, () => {});
+          ctx.timers.every(0.5, () => {});
+          ctx.tweens.to('Transform.position.x', 100, 1, { easing: 'linear' });
+        },
+      };`,
+      3,
+    );
+    const entity = runtime.find('Subject')!;
+    const snapshot = runtime.getSchedulerSnapshot(entity.id);
+    expect(snapshot).not.toBeNull();
+    expect(snapshot!.timers).toHaveLength(2);
+    const after = snapshot!.timers.find((t) => !t.repeat)!;
+    expect(after.interval).toBe(1);
+    expect(after.remaining).toBeCloseTo(1 - 3 / 60, 10);
+    const every = snapshot!.timers.find((t) => t.repeat)!;
+    expect(every.remaining).toBeCloseTo(0.5 - 3 / 60, 10);
+
+    expect(snapshot!.tweens).toHaveLength(1);
+    expect(snapshot!.tweens[0]).toMatchObject({ key: 'x', from: 0, to: 100, duration: 1 });
+    expect(snapshot!.tweens[0].elapsed).toBeCloseTo(3 / 60, 10);
+  });
+
+  it('returns null for an unknown entity id', async () => {
+    const runtime = await runScript(`export default {};`, 1);
+    expect(runtime.getSchedulerSnapshot('nope')).toBeNull();
   });
 });

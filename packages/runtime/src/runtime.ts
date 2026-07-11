@@ -419,6 +419,22 @@ export class SceneRuntime {
     return this.getParticles(entityIdOrName).length;
   }
 
+  /**
+   * Read-only snapshot of an entity's pending timers and active tweens
+   * (Live panel inspection). Null for an unknown entity or one with no
+   * script (and so no scheduler) — never throws.
+   */
+  getSchedulerSnapshot(
+    entityId: string,
+  ): {
+    timers: ReadonlyArray<{ id: string; remaining: number; interval: number; repeat: boolean }>;
+    tweens: ReadonlyArray<{ id: string; key: string; elapsed: number; duration: number; from: number; to: number }>;
+  } | null {
+    const state = this.scriptStates.get(entityId);
+    if (!state) return null;
+    return { timers: state.scheduler.listTimers(), tweens: state.scheduler.listTweens() };
+  }
+
   /** Active camera view: main Camera entity, or build-settings defaults. */
   get camera(): {
     position: Vec2;

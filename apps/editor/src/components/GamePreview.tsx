@@ -4,6 +4,7 @@
  */
 import React, { useEffect, useRef, useState } from 'react';
 import { useEditor } from '../store';
+import { setGameView } from '../gameViewRef';
 import type { MountedGameView, RuntimeLogEvent } from '../runtimeBridge';
 
 type Status = 'loading' | 'ready' | 'unavailable' | 'error';
@@ -18,6 +19,7 @@ export function GamePreview() {
   const projectPath = useEditor((s) => s.projectPath);
   const sceneId = useEditor((s) => s.sceneId);
   const playing = useEditor((s) => s.playing);
+  const paused = useEditor((s) => s.paused);
   const runNonce = useEditor((s) => s.runNonce);
   const debugDraw = useEditor((s) => s.debugDraw);
   const log = useEditor((s) => s.log);
@@ -33,6 +35,7 @@ export function GamePreview() {
     let cancelled = false;
     const container = hostRef.current;
     viewRef.current = null;
+    setGameView(null);
 
     if (!projectPath || !sceneId || !container) return;
 
@@ -70,6 +73,7 @@ export function GamePreview() {
           return;
         }
         viewRef.current = view;
+        setGameView(view);
         setStatus('ready');
       } catch (err) {
         if (cancelled) return;
@@ -87,6 +91,7 @@ export function GamePreview() {
         /* runtime cleanup is best-effort */
       }
       viewRef.current = null;
+      setGameView(null);
     };
     // runNonce remounts the view on every Play, so runs always start from the
     // scene as it currently is rather than resuming a stale world.
@@ -104,6 +109,21 @@ export function GamePreview() {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [playing, status]);
+
+  // Debug pause (Task 9): freezes the running game without stopping the run.
+  // Only meaningful while playing — Stop already froze the view via the
+  // effect above, and a fresh Play always starts with paused reset to false.
+  useEffect(() => {
+    const view = viewRef.current;
+    if (!view || status !== 'ready' || !playing) return;
+    try {
+      if (paused) view.pause();
+      else view.play();
+    } catch (err) {
+      log('error', 'runtime', `pause/resume failed: ${(err as Error).message}`);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [paused, status]);
 
   // debugDraw resets to false in the store whenever the view remounts (new
   // Play, scene switch); this effect just keeps the live view in sync with

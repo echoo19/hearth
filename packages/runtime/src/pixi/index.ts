@@ -397,6 +397,17 @@ export class PixiSceneView {
     this.syncCamera();
   }
 
+  /**
+   * One deterministic frame plus an immediate render, for manual-step UIs
+   * (play-mode pause/step): scene-switch-safe advance via `stepOnceAsync`,
+   * then `renderOnce` so the canvas reflects it without waiting for the
+   * next ticker tick.
+   */
+  async stepFrame(): Promise<void> {
+    await this.stepOnceAsync();
+    this.renderOnce();
+  }
+
   /** Force one render pass so the canvas reflects current state right now, without waiting for the next ticker/rAF tick (manual-stepping hosts call this before taking a screenshot). */
   renderOnce(): void {
     this.app.render();

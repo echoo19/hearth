@@ -176,4 +176,23 @@ export class EntityScheduler {
     this.timers = [];
     this.tweens = [];
   }
+
+  /**
+   * Plain, serializable snapshot of pending timers (creation order) — for
+   * read-only inspection (Live panel). Omits `fn`: closures are not
+   * meaningfully displayable and must never leak into a UI data path.
+   */
+  listTimers(): ReadonlyArray<{ id: string; remaining: number; interval: number; repeat: boolean }> {
+    return this.timers.map(({ id, remaining, interval, repeat }) => ({ id, remaining, interval, repeat }));
+  }
+
+  /**
+   * Plain, serializable snapshot of active tweens (creation order) — for
+   * read-only inspection (Live panel). Omits `holder`/`onComplete`: the
+   * holder is a live component reference and onComplete is a closure,
+   * neither of which belongs in inspector data.
+   */
+  listTweens(): ReadonlyArray<{ id: string; key: string; elapsed: number; duration: number; from: number; to: number }> {
+    return this.tweens.map(({ id, key, elapsed, duration, from, to }) => ({ id, key, elapsed, duration, from, to }));
+  }
 }

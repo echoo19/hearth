@@ -2682,6 +2682,71 @@ kbd.shortcut-keys {
 }
 
 /* --------------------------------------------------------------------------
+   Live panel (Task 9: play-mode runtime inspector)
+   -------------------------------------------------------------------------- */
+
+.live-summary {
+  color: var(--ink-mute);
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.live-table {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.live-table-head,
+.live-table-row {
+  display: grid;
+  gap: 8px;
+  font-size: 12px;
+  padding: 2px 0;
+}
+
+.live-table-timers .live-table-head,
+.live-table-timers .live-table-row {
+  grid-template-columns: 1fr 1fr 1fr;
+}
+
+.live-table-tweens .live-table-head,
+.live-table-tweens .live-table-row {
+  grid-template-columns: 1fr 1fr 1fr 1fr;
+}
+
+.live-table-head {
+  color: var(--ink-faint);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  font-size: 10px;
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 4px;
+}
+
+.live-table-row {
+  color: var(--ink);
+}
+
+.live-events-list {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.live-event-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 12px;
+}
+
+.live-event-row .live-event-frame {
+  color: var(--ink-faint);
+}
+
+/* --------------------------------------------------------------------------
    Scrollbars & motion preferences
    -------------------------------------------------------------------------- */
 

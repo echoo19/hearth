@@ -8,14 +8,17 @@ import { ViewMenu } from '../workspace/ViewMenu';
 import { showPanel } from '../workspace/Workspace';
 import { useHistoryList } from '../useHistoryList';
 import { comboDisplay } from '../keybinds';
+import { getGameView } from '../gameViewRef';
 
 export function Toolbar({ dock, storageKey }: { dock: DockviewApi | null; storageKey: string }) {
   const info = useEditor((s) => s.info);
   const sceneId = useEditor((s) => s.sceneId);
   const playing = useEditor((s) => s.playing);
+  const paused = useEditor((s) => s.paused);
   const debugDraw = useEditor((s) => s.debugDraw);
   const selectScene = useEditor((s) => s.selectScene);
   const setPlaying = useEditor((s) => s.setPlaying);
+  const setPaused = useEditor((s) => s.setPaused);
   const setDebugDraw = useEditor((s) => s.setDebugDraw);
   const refreshDiff = useEditor((s) => s.refreshDiff);
   const exec = useEditor((s) => s.exec);
@@ -59,6 +62,14 @@ export function Toolbar({ dock, storageKey }: { dock: DockviewApi | null; storag
     const result = await exec<{ redone: string; seq: number }>('redo', {}, { quiet: true });
     if (result.success && result.data) {
       log('info', 'command', `Redo: reapplied "${result.data.redone}" (#${result.data.seq}).`);
+    }
+  }
+
+  async function stepFrame() {
+    try {
+      await getGameView()?.stepFrame?.();
+    } catch (err) {
+      log('error', 'runtime', `Step failed: ${(err as Error).message}`);
     }
   }
 
@@ -106,6 +117,26 @@ export function Toolbar({ dock, storageKey }: { dock: DockviewApi | null; storag
       >
         <Icon name={playing ? 'stop' : 'play'} /> {playing ? 'Stop' : 'Play'}
       </button>
+
+      <span className="toolbar-group">
+        <button
+          className={paused ? 'btn btn-primary btn-sm' : 'btn btn-sm'}
+          onClick={() => setPaused(!paused)}
+          disabled={!playing}
+          aria-pressed={paused}
+          title={paused ? 'Resume the running game' : 'Freeze the running game in place, without stopping it'}
+        >
+          <Icon name={paused ? 'play' : 'pause'} /> {paused ? 'Resume' : 'Pause'}
+        </button>
+        <button
+          className="btn btn-sm"
+          onClick={() => void stepFrame()}
+          disabled={!playing || !paused}
+          title="Advance the paused game by exactly one frame"
+        >
+          <Icon name="step" /> Step
+        </button>
+      </span>
 
       <span className="toolbar-group">
         <button

@@ -21,13 +21,56 @@ export interface RuntimeLogEvent {
   frame?: number;
 }
 
+/** A live runtime entity, as surfaced by RuntimeHandle.getEntities()/find(). */
+export interface RuntimeEntityHandle {
+  id: string;
+  name: string;
+  tags: string[];
+  enabled: boolean;
+  parentId: string | null;
+  transform: { position: { x: number; y: number } };
+  /** Loosely typed component bag; the Live panel only reaches into PhysicsBody.velocity by name. */
+  components: { PhysicsBody?: { velocity: { x: number; y: number } } } & Record<string, unknown>;
+}
+
+/** One recorded ctx.events.emit call (SceneRuntime.events). */
+export interface RuntimeEventRecord {
+  frame: number;
+  name: string;
+  data?: unknown;
+}
+
+/** Read-only snapshot of one entity's pending timers and active tweens (SceneRuntime.getSchedulerSnapshot). */
+export interface RuntimeSchedulerSnapshot {
+  timers: ReadonlyArray<{ id: string; remaining: number; interval: number; repeat: boolean }>;
+  tweens: ReadonlyArray<{ id: string; key: string; elapsed: number; duration: number; from: number; to: number }>;
+}
+
+/**
+ * Narrow, hand-rolled structural view over @hearth/runtime's SceneRuntime —
+ * only the read-only surface the Live inspector panel needs. Mirrors
+ * RuntimeLogEvent's approach: no import from @hearth/runtime (the package
+ * may not be built yet), so this stays typecheck-safe either way.
+ */
+export interface RuntimeHandle {
+  readonly frame: number;
+  getEntities(): RuntimeEntityHandle[];
+  find(idOrName: string): RuntimeEntityHandle | undefined;
+  getWorldPosition(entity: RuntimeEntityHandle): { x: number; y: number };
+  readonly events: ReadonlyArray<RuntimeEventRecord>;
+  readonly eventCounts: Map<string, number>;
+  getSchedulerSnapshot(entityId: string): RuntimeSchedulerSnapshot | null;
+}
+
 export interface MountedGameView {
   play(): void;
   pause(): void;
   destroy(): void;
   /** Toggle the collider/velocity/light debug overlay (PixiSceneView.setDebugDraw, since Task 7). */
   setDebugDraw?(on: boolean): void;
-  runtime?: { errors?: unknown[] };
+  /** Advance exactly one fixed frame and render it (PixiSceneView.stepFrame, play-mode pause/step). */
+  stepFrame?(): Promise<void>;
+  runtime?: RuntimeHandle & { errors?: unknown[] };
 }
 
 export interface MountGameOptions {

@@ -62,6 +62,42 @@ describe('scene instantiation', () => {
   });
 });
 
+describe('step() / run() determinism (manual pause-stepping equivalence)', () => {
+  it('N manual step() calls trace identically to a fresh run(N) — the basis for play-mode Step-frame', async () => {
+    const build = async () =>
+      SceneRuntime.create(
+        (
+          await makeStore({
+            entities: [
+              ent('Ball', {
+                Transform: { position: { x: 0, y: 0 } },
+                PhysicsBody: { bodyType: 'dynamic', gravityScale: 0, velocity: { x: 60, y: 30 } },
+              }),
+            ],
+          })
+        ).store,
+        'Test',
+      );
+
+    const stepped = await build();
+    const positions: { x: number; y: number }[] = [];
+    for (let i = 0; i < 3; i++) {
+      stepped.step();
+      const ball = stepped.find('Ball')!;
+      positions.push({ x: ball.transform.position.x, y: ball.transform.position.y });
+    }
+
+    const run = await build();
+    run.run(3);
+
+    expect(stepped.frame).toBe(run.frame);
+    expect(stepped.find('Ball')!.transform.position).toEqual(run.find('Ball')!.transform.position);
+    // Sanity: the entity actually moved (velocity engaged), not a no-op trace.
+    expect(positions[2].x).toBeGreaterThan(positions[0].x);
+    expect(positions[2].y).toBeGreaterThan(positions[0].y);
+  });
+});
+
 describe('hierarchy', () => {
   it('children inherit parent translation in world position', async () => {
     const { store } = await makeStore({

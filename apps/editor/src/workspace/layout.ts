@@ -20,6 +20,7 @@ export const PANEL_IDS = [
   'diff',
   'agent',
   'input',
+  'live',
 ] as const;
 
 export type PanelId = (typeof PANEL_IDS)[number];

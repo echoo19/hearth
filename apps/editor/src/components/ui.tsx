@@ -39,6 +39,19 @@ const ICON_PATHS: Record<string, ReactNode> = {
   script: <path d="M4 3.5L2 6l2 2.5M8 3.5L10 6 8 8.5" />,
   play: <path d="M3.5 2.5l6 3.5-6 3.5z" fill="currentColor" />,
   stop: <rect x="3" y="3" width="6" height="6" fill="currentColor" stroke="none" />,
+  pause: (
+    <>
+      <rect x="3" y="2.5" width="2" height="7" fill="currentColor" stroke="none" />
+      <rect x="7" y="2.5" width="2" height="7" fill="currentColor" stroke="none" />
+    </>
+  ),
+  // A play triangle butted against a bar — "advance one step" (frame-step glyph).
+  step: (
+    <>
+      <path d="M2.5 2.5l4 3.5-4 3.5z" fill="currentColor" stroke="none" />
+      <rect x="8" y="2.5" width="1.5" height="7" fill="currentColor" stroke="none" />
+    </>
+  ),
   copy: (
     <>
       <rect x="4" y="4" width="6" height="6" rx="1" />
