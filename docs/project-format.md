@@ -41,7 +41,7 @@ normative; this page is descriptive. Every file carries `formatVersion: 1`.
 ```jsonc
 {
   "formatVersion": 1,
-  "hearthVersion": "0.9.0",
+  "hearthVersion": "0.10.0",
   "id": "prj_a1b2c3d4",
   "name": "My Game",
   "description": "",
@@ -123,6 +123,11 @@ Components are a map keyed by type: **one component per type per entity** in
 format v1 (multi-instance components are the documented extension path via a
 `formatVersion` bump). See [components.md](./components.md) for every type
 and property, or run `hearth inspect components --json`.
+
+`Camera.postEffects` (a stack of screen-space post-processing filters) and
+`SpriteEffects` (per-sprite outline/flash/dissolve) round-trip through
+scene files like any other component data — see
+[effects.md](./effects.md) for the full catalog.
 
 ## assets.json + asset files
 

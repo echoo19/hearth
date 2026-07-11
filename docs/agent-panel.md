@@ -143,6 +143,15 @@ using the same journal that feeds the timeline:
 - The project server watches `.hearth/log/commands.jsonl` for the open
   project (`fs.watch` plus a polling fallback) and pushes new entries to
   every connected editor over one WebSocket endpoint.
+- Every `/api/*` request and the `/api/ws` upgrade enforce Origin/Host
+  before doing anything else: a request with no `Origin` header is allowed
+  (non-browser clients like the CLI/MCP server never send one), but a
+  present `Origin` must resolve to a loopback hostname
+  (`localhost`/`127.0.0.1`/`::1`), and a present `Host` header is checked
+  the same way as a DNS-rebinding backstop. This is what stops a hostile
+  webpage from driving the local project server just by pointing a
+  browser tab at its port — there's no auth token to check, so Origin/Host
+  is the only defense a loopback dev server has.
 - When a pushed batch contains an entry whose `source` isn't `editor`, the
   server drops its in-memory session for that project so the next command
   re-reads from disk, and the editor bumps its own refresh signal — every

@@ -10,7 +10,10 @@ exported web player — so what you test is what ships.
 
 The machine-readable version of everything on this page:
 `hearth inspect api --json` (every `ctx` member with signature,
-description, and a Lua + JS example).
+description, and a Lua + JS example). This same `CTX_API` array drives the
+editor's [Code panel](./editor.md#code-panel) `ctx.` autocomplete, so the
+suggestions you see while typing and this page can never silently drift
+apart — both read the identical source of truth.
 
 ## A Lua script
 
@@ -381,6 +384,35 @@ at the end of the run). The `assertCameraEffect` playtest step asserts
 against a **count** of calls to one effect kind, not a live intensity —
 see [cli.md](./cli.md#command-tour).
 
+### Effects
+
+| Member | What it is |
+| --- | --- |
+| `ctx.effects.flash(color?, seconds?)` | Trigger this entity's own hit-flash (per-sprite, via its `SpriteEffects`) |
+
+Sets this entity's `SpriteEffects.flashColor`/`flashStrength: 1`/
+`flashDuration` (adding a `SpriteEffects` component if the entity doesn't
+have one yet — authored scene data is untouched, the component is created
+purely at runtime). `flashStrength` then decays linearly back to `0` over
+`seconds` (default `0.15`, clamped to `[0.01, 10]`), deterministically —
+same-frame decay applies exactly like `ctx.camera.shake`/`flash`/`fade`/
+`zoomPunch` above, so the first read after triggering is already slightly
+below `1`, not exactly `1`. No RNG anywhere in the decay.
+
+```lua
+ctx.effects.flash("#ff0000", 0.2)
+```
+
+```js
+ctx.effects.flash('#ff0000', 0.2);
+```
+
+This is the **per-sprite** hit flash. For a whole-screen flash use
+`ctx.camera.flash` above; for a persistent screen-space look (vignette,
+color grade, CRT, …) use the data-driven `Camera.postEffects` stack
+instead. See [effects.md](./effects.md) for the full catalog of both
+systems, param ranges, and determinism notes.
+
 ### UI focus
 
 | Member | What it is |
@@ -665,6 +697,13 @@ JS-specific rules:
 - `hearth validate` syntax-checks every script (both languages) and
   reports `SCRIPT_SYNTAX_ERROR` with the file and line — agents can fix
   scripts without booting the game.
+- `hearth check-script <path> [--source text]` (MCP `check_script`)
+  pre-flights a single script — source text you haven't saved yet, or an
+  existing file — without writing anything: read-only, same diagnostics
+  shape as `validate`'s per-script check. Useful before `edit-script`/
+  `edit_script` when you want to confirm a draft is syntactically valid
+  first. This is also what the editor's Code panel runs on every edit to
+  drive its inline lint gutter (see [editor.md](./editor.md#code-panel)).
 
 ## Input actions
 

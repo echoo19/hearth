@@ -131,6 +131,7 @@ requires no permission (it's purely informational).
 | `add_component` | `addComponent` | safe-edit |
 | `remove_component` | `removeComponent` | safe-edit |
 | `set_component_property` | `setComponentProperty` | safe-edit |
+| `set_properties` | `setProperties` | safe-edit |
 | `set_input_mapping` | `setInputMapping` | safe-edit |
 | `paint_tiles` | `paintTiles` | safe-edit |
 | `fill_tilemap_rect` | `fillTilemapRect` | safe-edit |
@@ -138,6 +139,7 @@ requires no permission (it's purely informational).
 | `update_settings` | `updateSettings` | safe-edit |
 | `create_script` | `createScript` | code-edit |
 | `edit_script` | `editScript` | code-edit |
+| `check_script` | `checkScript` | read-only |
 | `attach_script` | `attachScript` | code-edit |
 | `import_asset` | `importAsset` | asset-edit |
 | `create_sprite_asset` | `createSpriteAsset` | asset-edit |

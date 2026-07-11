@@ -31,13 +31,52 @@ about identical commands under different names for different audiences.
 ## Toolbar
 
 Left to right: project name and scene picker, **+ Scene**, **Play/Stop**,
-**Undo**/**Redo** (enabled state follows `listHistory`'s undo/redo cursor,
-tooltip shows the platform shortcut), **Debug** (toggles the collider/
-velocity/light debug overlay in the preview — never on in exports), the view
-menu, **Checkpoint**, **Review**, **Export**, and **Close project**. A
-"Every change saves automatically" note sits near Export as a reminder that
-there's no separate save step — see [⌘S](#shortcuts) below for why that
-matters for the keyboard.
+**Pause**/**Resume** and **Step** (enabled only while playing; see
+[Pause and Step](#pause-and-step) below), **Undo**/**Redo** (enabled state
+follows `listHistory`'s undo/redo cursor, tooltip shows the platform
+shortcut), **Debug** (toggles the collider/ velocity/light debug overlay in
+the preview — never on in exports), the view menu, **Checkpoint**,
+**Review**, **Export**, and **Close project**. A "Every change saves
+automatically" note sits near Export as a reminder that there's no separate
+save step — see [⌘S](#shortcuts) below for why that matters for the
+keyboard.
+
+## Pause and Step
+
+**Pause** freezes the running game in place without stopping it — the
+`SceneRuntime` simply stops advancing fixed frames; nothing is torn down,
+so **Resume** continues exactly where it left off. **Step** (enabled only
+while paused) advances the frozen game by exactly one fixed frame per
+click, for frame-by-frame inspection of physics/animation/script behavior
+that's too fast to see at full speed. Both are toolbar buttons only, no
+keyboard shortcut. Pair Pause/Step with the [Live panel](#live-panel) to
+watch an entity's live state change one frame at a time.
+
+## Code panel
+
+A single-document script editor (CodeMirror 6, lazy-loaded — the CM6 chunk
+only downloads once you actually open this panel) with a script picker,
+dirty-state dot, Save (`⌘S` while the editor has focus), and:
+
+- **`ctx.` autocomplete**: suggestions are generated from the same
+  `CTX_API` array that backs `hearth inspect api` and
+  [scripting.md](./scripting.md), so the completion list and the docs can
+  never silently drift apart. Registered additively via CodeMirror's
+  language-data facet, so JavaScript's own built-in keyword/snippet
+  completions still work alongside it (Lua gets a small static
+  reserved-word list on top, since the legacy Lua mode has no language-data
+  completion of its own).
+- **Inline lint**: every edit (debounced) runs the buffer through
+  `checkScript` — the same read-only pre-flight command available on the
+  CLI/MCP (see [scripting.md](./scripting.md#errors-and-validation)) — and
+  surfaces diagnostics in CodeMirror's lint gutter, without ever saving the
+  draft.
+- **External-change follow**: if the open script changes outside the
+  editor (another CLI/MCP session, an agent) while your buffer is clean, it
+  silently reloads; while your buffer is **dirty**, it never overwrites
+  your edits — a conflict banner offers **Reload** or **Keep mine**
+  instead, so a later Save can never clobber an external change without you
+  knowing.
 
 ## Shortcuts
 
@@ -78,6 +117,28 @@ message ("Your changes are saved automatically"). Checkpointing needs its
 own gesture (it resets the Changes panel's comparison point, which *is* a
 meaningful action to trigger by accident), so it lives on **⇧⌘S** instead.
 
+## Live panel
+
+A read-only runtime inspector for the game while it's playing (empty with
+a hint until you press Play). Polls the running `SceneRuntime` at 10Hz —
+only while the panel is actually visible and a run is playing, so it costs
+nothing when docked behind another tab — and shows, for one selected
+entity (defaults to the current scene selection, or the first live entity;
+pick any other from the dropdown, including ones spawned at runtime):
+
+- **Identity/state**: name, id, tags, enabled, live world position, and
+  `PhysicsBody` velocity if present.
+- **Timers** and **Tweens**: every pending `ctx.timers`/`ctx.tweens` entry
+  on this entity (interval/remaining/repeats for timers; property/progress/
+  from/to for tweens), via `runtime.getSchedulerSnapshot(entityId)`.
+- **Recent events**: the last 10 scene-wide `ctx.events.emit` calls
+  (name + frame), newest first.
+
+Every value shown is a specific typed field pulled off the live runtime —
+never a raw state dump — matching the rest of the editor's no-raw-JSON
+convention. Pair with [Pause and Step](#pause-and-step) to watch a value
+change frame by frame instead of at full speed.
+
 ## Direct-manipulation transform handles
 
 Selecting an entity in the Scene View draws 8 resize handles (4 corners + 4
@@ -88,8 +149,8 @@ edge midpoints) plus 1 rotate handle floated above the box with a stem line.
 - **Resize** (the other 8): edge handles resize one axis, corner handles
   resize both (hold Shift on a corner to lock the aspect ratio). Handles
   resize about the box's center — not the opposite edge — so a resize
-  gesture always commits as exactly one undo step (see below for the one
-  exception).
+  gesture always commits as exactly one undo step, even a corner drag that
+  edits two fields at once (see **Undo granularity** below).
 - **What a handle actually edits** is resolved per selected entity, in this
   priority order, stopping at the first component present:
   1. `SpriteRenderer.width` / `.height`
@@ -100,15 +161,19 @@ edge midpoints) plus 1 rotate handle floated above the box with a stem line.
   Polygon colliders keep their existing vertex editor ("Edit points")
   instead — transform handles hide while point-edit mode is active.
 
-- **Undo granularity**: every gesture commits as **one** `setComponentProperty`
-  call — one undo step — with one specific, spec'd exception: **a corner
-  drag on a `SpriteRenderer` or box `Collider` edits both `width` and
-  `height`, which are two separate scalar schema fields (there's no
-  vec-shaped size property to set in one call), so a corner drag on those
-  two kinds unavoidably commits two `setComponentProperty` calls — two undo
-  steps for that one gesture.** Edge drags (which only ever touch one axis)
-  and every other kind (circle radius, `Transform.scale`, rotation) stay a
-  single undo step.
+- **Undo granularity**: every gesture commits as exactly **one** undo step,
+  full stop. Most gestures touch a single scalar property, so that's one
+  `setComponentProperty` call; a corner drag on a `SpriteRenderer` or box
+  `Collider` edits two separate scalar fields at once (`width` **and**
+  `height` — there's no vec-shaped size property to set in one call), so it
+  commits through `setProperties` instead, batching both writes into the
+  same single undo entry (`HearthSession` snapshots once per `execute()`
+  call, and `setProperties` is one `execute()` call regardless of how many
+  keys it carries — see [cli.md](./cli.md#command-tour)). Older releases
+  committed a corner drag as two sequential `setComponentProperty` calls
+  (two undo steps for one gesture); that's fixed. Edge drags (which only
+  ever touch one axis), circle radius, `Transform.scale`, and rotation all
+  stay their original single `setComponentProperty` call.
 
 ## Prefab authoring surfaces
 

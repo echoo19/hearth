@@ -1,7 +1,7 @@
 # MCP Guide
 
 Hearth ships `hearth-mcp` (`packages/mcp-server`), a stdio MCP server that
-exposes the engine command layer as 59 typed tools (57 command tools, plus
+exposes the engine command layer as 61 typed tools (59 command tools, plus
 `screenshot` and `get_agent_instructions`, neither of which wraps a core
 command). The full reference (flags, registration snippets, permission
 table, complete tool list) lives in
@@ -29,10 +29,15 @@ optionally clones playtests targeting the source scene, retargeted to the
 copy — see [cli.md](./cli.md#command-tour)), `create_entity`,
 `duplicate_entity` (deep-copies an entity and its full descendant subtree
 with fresh ids in one call, offset from the original), `add_component`,
-`set_component_property`, `paint_tiles`, `fill_tilemap_rect`,
-`resize_tilemap` (batched Tilemap edits — see
+`set_component_property` (strict dot-path validation with a did-you-mean
+suggestion on an unknown segment), `set_properties` (batch: multiple
+dot-path properties on one entity in a single undo step, all-or-nothing
+validated — see [cli.md](./cli.md#command-tour)), `paint_tiles`,
+`fill_tilemap_rect`, `resize_tilemap` (batched Tilemap edits — see
 [cli.md](./cli.md#tilemap-editing)), `create_script`, `edit_script`,
-`attach_script`, `import_asset`, `create_sprite_asset`, `create_tile_asset`,
+`check_script` (syntax-check source or an existing script file without
+saving — read-only, a pre-flight before `edit_script`), `attach_script`,
+`import_asset`, `create_sprite_asset`, `create_tile_asset`,
 `create_sound`, `create_animation_asset`, `slice_spritesheet` (frame grid over an
 imported spritesheet — takes numeric `frameWidth`/`frameHeight` rather
 than the CLI's `--frame-size WxH` string), `remove_asset` (unregisters an

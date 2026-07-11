@@ -77,7 +77,16 @@ relative position unchanged),
 `add component <scene> <entity> <Type> [--properties '<json>']`,
 `remove component`, `set <scene> <entity> <Type.path.to.prop> <value>`
 (value parses as JSON: `100` is a number, `true` a boolean, `#ff0000` a
-string), `set-input <action> [keys...]`,
+string; the path is validated against the component's actual schema shape
+before writing — an unknown segment, e.g. a typo'd `Transform.postiion.x`,
+is rejected with a did-you-mean suggestion and the full list of valid keys,
+instead of silently succeeding against a throwaway key), `set-many <scene>
+<entity> --properties '<json>'` (sets multiple dot-path properties, across
+one or several components, as **one undo step** — e.g. `hearth set-many
+Level1 Coin --properties '{"Transform.position.x":100,"SpriteRenderer.width":64}'`;
+all-or-nothing: every key is validated before anything is written, and
+when two keys target the same nested path the later one wins), `set-input
+<action> [keys...]`,
 `set-settings [--build-settings '<json>'] [--initial-scene s]
 [--input-actions '<json>'] [--input-gamepad-buttons '<json>']
 [--input-gamepad-axes '<json>'] [--input-axes '<json>']
@@ -97,10 +106,17 @@ default stick deadzone (`0`-`1`, default `0.15`), overridable per axis. See
 [input.md](./input.md) for the whole input system, including the editor's
 Input panel.
 
-**Scripts** (code-edit): `create script <name> [--language lua|js]
-[--source-file f]` (Lua is the default),
-`edit-script <path> --source-file f` (or pipe stdin),
-`attach script <scene> <entity> <path> [--params '<json>']`.
+**Scripts** (code-edit, except `check-script` which is read-only):
+`create script <name> [--language lua|js] [--source-file f]` (Lua is the
+default), `edit-script <path> --source-file f` (or pipe stdin),
+`check-script <path> [--source text] [--language lua|js]` (syntax-checks a
+script without saving it — a pre-flight before `edit-script`; with
+`--source`, checks that text as if it would be saved to `<path>`,
+otherwise reads `<path>` from the project; human output is one
+`path:line message` line per diagnostic, same shape as `validate`'s
+script-error reporting; this is what the editor's Code panel runs on every
+edit to power its inline lint), `attach script <scene> <entity> <path>
+[--params '<json>']`.
 
 **Assets** (asset-edit): `create asset sprite <name> --shape circle --color
 gold --width 24 --height 24` (shapes: rectangle, circle, triangle, diamond,
@@ -194,9 +210,13 @@ assertions — `assertEntityExists`, `assertProperty`, `assertPositionNear`,
 `equals`/`min`/`max` — see [assets.md](./assets.md#testing-audio-assertaudiocount)),
 `assertCameraEffect` (`effect: shake|flash|fade|zoomPunch`, counted against
 `equals`/`min`/`max`; results also expose `cameraEffects` and
-`cameraOverlayAlpha`), `assertFocus` (`entity` name/id, or `null` for
-nothing focused; results expose `focusedEntity`), `assertNoErrors`),
-`test` (validate + all playtests, the CI command).
+`cameraOverlayAlpha`), `assertPostEffect` (`effect` one of the 6
+`Camera.postEffects` types, `active: true|false` — checks presence in the
+main camera's stack, not param values; see
+[effects.md](./effects.md#playtests-assertposteffect)), `assertFocus`
+(`entity` name/id, or `null` for nothing focused; results expose
+`focusedEntity`), `assertNoErrors`), `test` (validate + all playtests, the
+CI command).
 
 **Export** (requires `--allow build`): `export web [--out dir]
 [--single-file] [--zip]` — a static playable web build; `--zip` writes an

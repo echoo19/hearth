@@ -1,7 +1,34 @@
 # Hearth Roadmap
 
-v0.9 is the current milestone. Its first release, v0.9.0 (shipped,
-below), added **prefabs** (tracked-stamp reusable entity templates: create/
+v0.10 is the current milestone. Its first release, v0.10.0 (shipped,
+below, "Write & See"), added a **Code panel** in the editor (lazy-loaded
+CodeMirror 6, `ctx.` autocomplete driven by the same `CTX_API` the docs and
+`hearth inspect api` use, inline `checkScript` lint, external-change
+follow), a **Live panel** (read-only 10Hz runtime inspector: entity
+transform/velocity/timers/tweens/recent events) plus toolbar **Pause**/
+**Step** for frame-by-frame inspection, a full **post-processing system**
+(`Camera.postEffects` — bloom/CRT/vignette/chromatic-aberration/pixelate/
+color-grade, up to 8 stacked, rendered as hand-written Pixi filters — and
+per-sprite `SpriteEffects` outline/hit-flash/dissolve, `ctx.effects.flash`,
+the `assertPostEffect` playtest step), a typed `PostEffectsField` Inspector
+control (no raw JSON for the new array field, same as everywhere else) and
+a fix making a corner transform-drag on a sprite/collider commit as one
+undo step instead of two (via the new `setProperties` batch command),
+stricter property-path validation (`setComponentProperty`/`setProperties`
+now reject an unknown dot-path segment with a did-you-mean suggestion
+instead of silently succeeding against a throwaway key), a `checkScript`
+command/CLI/MCP tool for pre-flighting a script without saving it,
+Origin/Host enforcement on the local project server's `/api/*` routes and
+WebSocket upgrade (closing a DNS-rebinding-style hole where a hostile
+webpage could otherwise drive the loopback dev server), a code-split
+editor bundle (Terminal and the spritesheet Slice dialog now lazy-load
+instead of shipping in the main chunk), and the 10th example, **Ember
+Arcade**, exercising the whole post-effects/SpriteEffects set. Registry
+grew 60 → 62 commands; MCP grew 59 → 61 tools. See
+[effects.md](./effects.md), [editor.md](./editor.md), and
+[scripting.md](./scripting.md).
+
+On top of v0.9's **prefabs** (tracked-stamp reusable entity templates: create/
 instantiate/update/sync, CLI + MCP parity, `ctx.scene.spawnPrefab`) and a
 round of **editor friendliness** — plain-language chrome
 (Checkpoint/Review/Changes), visible toolbar Undo/Redo, a keybind registry
@@ -36,6 +63,73 @@ what's deliberately missing.
 The standing rule for everything below: **agent-native first**. Each system
 ships as schemas + commands (inspectable via `hearth … --json`, exposed as
 MCP tools, testable in headless playtests) before it gets editor UI.
+
+## Shipped in v0.10.0
+
+- **Post-processing system**: `Camera.postEffects`, an array of up to 8
+  screen-space filters (`bloom`, `crt`, `vignette`, `chromaticAberration`,
+  `pixelate`, `colorGrade`), rendered in stack order as hand-written Pixi
+  GLSL filters, cached per view and only rebuilt on a stack-shape change
+  (param edits just refresh uniforms). Paired with per-sprite
+  `SpriteEffects` (outline/hit-flash/dissolve — every field defaults to a
+  no-op) and `ctx.effects.flash(color?, seconds?)` for a one-entity hit
+  flash, deterministic linear decay, no RNG. The `assertPostEffect`
+  playtest step checks presence of an effect type on the main camera. Both
+  work identically in the editor preview, `hearth screenshot`, and exported
+  games — no editor-only preview effect. See [effects.md](./effects.md).
+- **Editor: Code panel**: a single-document script editor (CodeMirror 6,
+  lazy-loaded so the CM6 chunk never lands in the main bundle until
+  opened) with `ctx.` autocomplete generated from the same `CTX_API` array
+  `hearth inspect api` and the docs use, inline `checkScript` lint, and
+  external-change follow (a dirty buffer never gets silently overwritten —
+  a conflict banner offers Reload/Keep mine instead).
+- **Editor: Live panel + Pause/Step**: a read-only 10Hz runtime inspector
+  (entity transform/velocity/timers/tweens/recent events, including
+  runtime-spawned entities) alongside new toolbar **Pause** (freezes the
+  running game in place) and **Step** (advances exactly one fixed frame
+  while paused) controls, for frame-by-frame debugging.
+  `SceneRuntime.getSchedulerSnapshot`/`stepFrame` back both.
+- **`PostEffectsField` + one-undo corner drags**: a typed Inspector control
+  for `Camera.postEffects` (per-effect cards, typed number/color fields,
+  reorder, an 8-entry cap) — no raw JSON, ever. Also fixed: a corner
+  transform-drag on a `SpriteRenderer`/box `Collider` (which edits two
+  separate scalar fields) now commits as one undo step instead of two,
+  using the new `setProperties` batch command internally.
+- **Strict property paths + `setProperties` batch**: `setComponentProperty`
+  and the new `setProperties` (set several dot-path properties on one
+  entity in a single undo step, all-or-nothing validated; CLI `set-many`,
+  MCP `set_properties`) both now reject an unknown dot-path segment with a
+  did-you-mean suggestion and the valid-keys list, instead of Zod silently
+  stripping it and corrupting the write. `hearth validate` also warns
+  `UNKNOWN_COMPONENT_KEY` on scene files with a stray key. Registry grew
+  60 → 62 commands, MCP 59 → 61 tools.
+- **`checkScript` command**: syntax-check script source or an existing
+  script file without saving — read-only, a pre-flight before
+  `editScript`/`edit-script`/`edit_script`. CLI `check-script`, MCP
+  `check_script`; also what the Code panel's inline lint runs.
+- **`/api` + WebSocket Origin/Host enforcement**: the local project
+  server's `/api/*` routes and `/api/ws` upgrade now reject a present
+  `Origin`/`Host` header that doesn't resolve to a loopback hostname —
+  closing a hole where a hostile webpage could otherwise drive the local
+  dev server just by pointing a browser tab at its port (no Origin header
+  at all, e.g. from the CLI or MCP server, is still allowed). See
+  [agent-panel.md](./agent-panel.md#the-external-change-model).
+- **Editor bundle code-split**: the Agent panel's embedded Terminal
+  (`@xterm/xterm`) and the spritesheet `SliceDialog` now lazy-load with
+  `React.lazy`, alongside the already-lazy Code panel editor — the
+  editor's main chunk dropped from 1,251,480 B to 910,263 B (-27.3%
+  raw, -26.3% gzip). See [performance.md](./performance.md#bundle-sizes).
+- **Seeded ids + CI clean-tree check**: example generation now uses
+  deterministic seeded id generation so regenerating the bundled examples
+  is byte-reproducible, and CI verifies the working tree is clean after a
+  fresh `npm run build:packages && node packages/examples/generate.mjs`.
+- **`Tilemap.grid` size cap**: rows/columns are capped at 1024
+  (`TILEMAP_MAX_DIM`), enforced at the schema level, shared by
+  `resizeTilemap`/`fillTilemapRect`.
+- The all-Lua `ember-arcade` example (the 10th) is a showcase built to
+  exercise the whole post-effects/SpriteEffects surface: a stacked
+  `Camera.postEffects` look, `ctx.effects.flash` hits, and a dissolve
+  death animation.
 
 ## Shipped in v0.9.0
 

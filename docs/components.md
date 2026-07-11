@@ -166,7 +166,8 @@ Defaults:
   "zoom": 1,
   "isMain": true,
   "backgroundColor": "#1a1a2e",
-  "ambientLight": 1
+  "ambientLight": 1,
+  "postEffects": []
 }
 ```
 
@@ -176,6 +177,14 @@ so existing projects with no `Light2D`s render exactly as before this
 feature existed — down to `0`, black except inside a `Light2D`'s radius.
 Lower it (e.g. `0.15`) for a dark scene lit by torches/lanterns placed as
 `Light2D` entities.
+
+`postEffects` is a stack of up to 8 screen-space post-processing filters
+(bloom, CRT, vignette, chromatic aberration, pixelate, color grade),
+rendered in array order. The empty-array default is what keeps a fresh
+`Camera` a no-op — any non-empty entry always changes pixels, since each
+effect's own field defaults are visually reasonable starting points, not
+off/neutral values. See [effects.md](./effects.md) for the full param
+catalog, ranges, order semantics, and determinism notes.
 
 ## Text
 
@@ -499,6 +508,37 @@ sprite-asset clip); `fps: 0` uses the animation asset's own
 the last frame and flips `playing` to false. Scripts switch clips (and
 restart at frame 0) with `ctx.animate(assetRef)` — see
 [scripting.md](./scripting.md#sprite-animation).
+
+## SpriteEffects
+
+Per-sprite visual effects: outline, hit flash (`ctx.effects.flash`), dissolve. Every field defaults to a no-op, so attaching this component with no overrides changes nothing.
+
+Defaults:
+
+```json
+{
+  "outlineEnabled": false,
+  "outlineColor": "#ffffff",
+  "outlineWidth": 2,
+  "flashColor": "#ffffff",
+  "flashStrength": 0,
+  "flashDuration": 0.15,
+  "dissolveAmount": 0,
+  "dissolveSeed": 0
+}
+```
+
+`flashStrength` decays linearly to `0` over `flashDuration` seconds once
+triggered (by `ctx.effects.flash(color?, seconds?)` or a direct
+`setComponentProperty` write) — deterministic, no RNG, same-frame decay
+applies (see [effects.md](./effects.md#determinism) for the exact first-read
+value). `dissolveAmount` masks sprite texels by a per-texel hash of pixel
+position + `dissolveSeed`, not randomness, so the same seed dissolves the
+same texels every run — tween it with `ctx.tweens.to('SpriteEffects.
+dissolveAmount', 1, 0.6)` for a reproducible death/spawn effect. See
+[effects.md](./effects.md) for the full field reference, the `ctx.effects`
+scripting surface, and the `assertPostEffect` playtest step's sibling
+coverage of `Camera.postEffects`.
 
 ## Notes
 
