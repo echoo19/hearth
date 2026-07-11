@@ -729,6 +729,16 @@ label.field-label {
   background: var(--accent);
   border-color: var(--accent);
   white-space: nowrap;
+  /* Subtle entrance so the badge doesn't pop abruptly; flattened by the
+     global prefers-reduced-motion rule. */
+  animation: restart-badge-in 160ms var(--ease-out);
+}
+
+@keyframes restart-badge-in {
+  from {
+    opacity: 0;
+    transform: translateY(-2px);
+  }
 }
 
 .btn-restart:hover:not(:disabled) {
@@ -1625,6 +1635,29 @@ label.field-label {
   color: var(--warn);
 }
 
+/* Clickable path:line link on a runtime-error / hot-reload console row —
+   opens the script at that line in the Code panel. A real <button>, so it
+   inherits the global :focus-visible ring; only base/hover color and the
+   mono type live here. */
+.console-link {
+  flex: none;
+  margin-left: 8px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: var(--ink-faint);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  line-height: 1.4;
+  cursor: pointer;
+  transition: color var(--t-fast) var(--ease-out);
+}
+
+.console-link:hover {
+  color: var(--accent);
+  text-decoration: underline;
+}
+
 /* Diff */
 .diff-summary {
   padding: 2px 0 10px;
@@ -2041,36 +2074,25 @@ label.field-label {
   scrollbar-width: thin;
 }
 
-.code-tab {
+/* A tab + its close control are two sibling buttons in a presentation cell
+   (never nested — see CodePanel.tsx). The cell is the flex item that carries
+   the divider, the active background, and the ember underline; both buttons
+   sit on top of it transparently. */
+.code-tab-cell {
   position: relative;
   display: inline-flex;
-  align-items: center;
-  gap: 6px;
+  align-items: stretch;
   flex: none;
-  height: 100%;
-  padding: 0 8px 0 10px;
-  border: none;
   border-right: 1px solid var(--border);
-  background: transparent;
-  color: var(--ink-faint);
-  font-size: 12px;
-  font-weight: 500;
-  white-space: nowrap;
-  cursor: pointer;
-  transition: color 140ms var(--ease-out), background 140ms var(--ease-out);
 }
 
-.code-tab:hover {
-  color: var(--ink);
-}
-
-.code-tab-active {
-  color: var(--ink);
+.code-tab-cell-active {
   background: var(--bg-1);
 }
 
-/* Selected-tab indicator: the same 2px ember bar as .hearth-tab::after. */
-.code-tab::after {
+/* Selected-tab indicator: the same 2px ember bar as .hearth-tab::after,
+   spanning the whole cell (tab + close). */
+.code-tab-cell::after {
   content: '';
   position: absolute;
   left: 8px;
@@ -2082,8 +2104,29 @@ label.field-label {
   transition: background 140ms var(--ease-out);
 }
 
-.code-tab-active::after {
+.code-tab-cell-active::after {
   background: var(--accent);
+}
+
+.code-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 30px;
+  padding: 0 4px 0 10px;
+  border: none;
+  background: transparent;
+  color: var(--ink-faint);
+  font-size: 12px;
+  font-weight: 500;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: color 140ms var(--ease-out);
+}
+
+.code-tab-cell:hover .code-tab,
+.code-tab-cell-active .code-tab {
+  color: var(--ink);
 }
 
 .code-tab:focus-visible {
@@ -2112,11 +2155,15 @@ label.field-label {
 }
 
 .code-tab-close {
+  align-self: center;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   width: 16px;
   height: 16px;
+  margin-right: 6px;
+  border: none;
+  background: transparent;
   border-radius: var(--radius-sm);
   color: var(--ink-faint);
   cursor: pointer;
@@ -2124,8 +2171,8 @@ label.field-label {
   transition: opacity 140ms var(--ease-out), color 140ms var(--ease-out), background 140ms var(--ease-out);
 }
 
-.code-tab:hover .code-tab-close,
-.code-tab-active .code-tab-close,
+.code-tab-cell:hover .code-tab-close,
+.code-tab-cell-active .code-tab-close,
 .code-tab-close:focus-visible {
   opacity: 1;
 }

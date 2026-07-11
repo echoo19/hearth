@@ -540,62 +540,62 @@ export function CodePanel() {
           {buffers.map((buf, i) => {
             const selected = buf.path === activePath;
             const dirty = isDirty(buf);
+            // Presentation cell wraps two sibling <button>s — the tab and its
+            // close control. They must not nest (a focusable control inside a
+            // role="tab" widget is the axe "nested-interactive" violation), so
+            // the close sits alongside the tab, not within it, while the cell
+            // carries the shared active background + ember underline.
             return (
-              <button
+              <div
                 key={buf.path}
-                ref={(el) => {
-                  if (el) tabRefs.current.set(buf.path, el);
-                  else tabRefs.current.delete(buf.path);
-                }}
-                type="button"
-                role="tab"
-                aria-selected={selected}
-                tabIndex={selected ? 0 : -1}
-                className={`code-tab${selected ? ' code-tab-active' : ''}`}
-                onClick={() => setBufferState((s) => ({ ...s, activePath: buf.path }))}
-                onKeyDown={(e) => onTabKeyDown(e, i)}
-                onAuxClick={(e) => {
-                  if (e.button === 1) {
-                    e.preventDefault();
-                    requestClose(buf.path);
-                  }
-                }}
-                title={buf.path}
+                role="presentation"
+                className={`code-tab-cell${selected ? ' code-tab-cell-active' : ''}`}
               >
-                <span className="code-tab-name">{scriptLabel(buf.path)}</span>
-                {buf.conflict && (
-                  <span
-                    className="code-tab-conflict"
-                    aria-label="changed outside the editor"
-                    title={dirty ? 'Changed outside the editor while you have unsaved edits' : 'Changed outside the editor'}
-                  />
-                )}
-                {dirty ? (
-                  <span className="code-tab-dot" aria-label="unsaved changes" title="Unsaved changes">
-                    •
-                  </span>
-                ) : null}
-                <span
-                  role="button"
+                <button
+                  ref={(el) => {
+                    if (el) tabRefs.current.set(buf.path, el);
+                    else tabRefs.current.delete(buf.path);
+                  }}
+                  type="button"
+                  role="tab"
+                  aria-selected={selected}
+                  tabIndex={selected ? 0 : -1}
+                  className="code-tab"
+                  onClick={() => setBufferState((s) => ({ ...s, activePath: buf.path }))}
+                  onKeyDown={(e) => onTabKeyDown(e, i)}
+                  onAuxClick={(e) => {
+                    if (e.button === 1) {
+                      e.preventDefault();
+                      requestClose(buf.path);
+                    }
+                  }}
+                  title={buf.path}
+                >
+                  <span className="code-tab-name">{scriptLabel(buf.path)}</span>
+                  {buf.conflict && (
+                    <span
+                      className="code-tab-conflict"
+                      aria-label="changed outside the editor"
+                      title={dirty ? 'Changed outside the editor while you have unsaved edits' : 'Changed outside the editor'}
+                    />
+                  )}
+                  {dirty ? (
+                    <span className="code-tab-dot" aria-label="unsaved changes" title="Unsaved changes">
+                      •
+                    </span>
+                  ) : null}
+                </button>
+                <button
+                  type="button"
                   tabIndex={selected ? 0 : -1}
                   className="code-tab-close"
                   aria-label={`Close ${scriptLabel(buf.path)}`}
                   title="Close"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    requestClose(buf.path);
-                  }}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter' || e.key === ' ') {
-                      e.preventDefault();
-                      e.stopPropagation();
-                      requestClose(buf.path);
-                    }
-                  }}
+                  onClick={() => requestClose(buf.path)}
                 >
                   <Icon name="cross" size={11} />
-                </span>
-              </button>
+                </button>
+              </div>
             );
           })}
         </div>

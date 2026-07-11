@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef } from 'react';
 import { useEditor } from '../store';
 import type { ConsoleEntry, ValidationReport } from '../types';
 import { Icon } from './ui';
@@ -9,12 +9,9 @@ import { Icon } from './ui';
  * store.ts's `formatRuntimeError`/`applyReload`). `line` is null when only
  * the file is known; the click still opens it, just at the top.
  *
- * No `.console-link` rule exists in styles.css yet (Task 7 ships this ahead
- * of the concurrent styles.css work this cycle to avoid a merge collision —
- * see task-7-brief.md); base look + accent hover are tokened inline so it
- * reads correctly today, and a future polish pass can lift this into a real
- * stylesheet rule. Keyboard focus is already covered by the global
- * `:focus-visible` button rule in styles.css.
+ * Styling lives in the `.console-link` rule in styles.css (base ink-faint,
+ * ember hover, mono font, focus-visible ring). Keyboard focus is a real
+ * `<button>` — reachable in Console tab order and activatable with Enter/Space.
  */
 // Click behavior, pulled out of the JSX closure (module scope, not a
 // component-local closure) so it's unit-testable without a DOM — mirrors
@@ -26,7 +23,6 @@ export function openConsoleLink(link: NonNullable<ConsoleEntry['link']>, openScr
 
 function ConsoleLink({ link }: { link: NonNullable<ConsoleEntry['link']> }) {
   const openScriptAt = useEditor((s) => s.openScriptAt);
-  const [hover, setHover] = useState(false);
   const label = link.line != null ? `${link.path}:${link.line}` : link.path;
 
   return (
@@ -34,21 +30,7 @@ function ConsoleLink({ link }: { link: NonNullable<ConsoleEntry['link']> }) {
       type="button"
       className="console-link"
       onClick={() => openConsoleLink(link, openScriptAt)}
-      onMouseEnter={() => setHover(true)}
-      onMouseLeave={() => setHover(false)}
       title={`Open ${label}`}
-      style={{
-        fontFamily: 'var(--font-mono)',
-        fontSize: '11px',
-        lineHeight: 1.4,
-        background: 'transparent',
-        border: 'none',
-        padding: 0,
-        marginLeft: 8,
-        cursor: 'pointer',
-        color: hover ? 'var(--accent)' : 'var(--ink-faint)',
-        textDecoration: hover ? 'underline' : 'none',
-      }}
     >
       {label}
     </button>
