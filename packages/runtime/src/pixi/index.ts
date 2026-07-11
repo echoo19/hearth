@@ -77,6 +77,7 @@ import {
   type PostEffectFilterState,
 } from './postEffects.js';
 import { syncSpriteEffectsFilter } from './spriteEffectsFilter.js';
+import { buildTilemapContainer } from './tilemapRender.js';
 
 export { localStorageAdapter, type WebStorageLike } from './storage.js';
 
@@ -1037,26 +1038,39 @@ export class PixiSceneView {
   /**
    * Resolves the texture to draw for a textured SpriteRenderer: the whole
    * base texture when `frame` is null, or a cached sub-texture cropped to
-   * the named sheet frame (built once per `${assetId}#${frame}` and reused).
-   * Falls back to the whole texture — logging a warning exactly once per key
-   * via `onLog` — when the frame name isn't on the asset's sliced sheet
-   * metadata (asset was never sliced, or the name doesn't exist).
+   * the named sheet frame — delegates the actual crop/cache/fallback-warn
+   * logic to `resolveFrameTexture`, shared with Tilemap autotile rendering
+   * (see `buildTilemap` below), since both are "asset id + named sheet
+   * frame -> cropped Texture".
    */
   private resolveSpriteTexture(sprite: SpriteRendererComponent, base: Texture): Texture {
-    if (!sprite.frame) return base;
-    const key = `${sprite.assetId}#${sprite.frame}`;
+    if (!sprite.frame || !sprite.assetId) return base;
+    return this.resolveFrameTexture(sprite.assetId, sprite.frame, base);
+  }
+
+  /**
+   * Crops `base` to `frameName` on `assetId`'s sliced sheet metadata, caching
+   * the result per `${assetId}#${frameName}` and reusing it across every
+   * sprite/tile that draws that frame (mirrors `textures` itself being
+   * preloaded once per project rather than rebuilt per draw). Falls back to
+   * the whole `base` texture — logging a warning exactly once per key via
+   * `onLog` — when the frame name isn't on the asset's sliced sheet metadata
+   * (asset was never sliced, or the name doesn't exist).
+   */
+  private resolveFrameTexture(assetId: string, frameName: string, base: Texture): Texture {
+    const key = `${assetId}#${frameName}`;
     const cached = this.frameTextures.get(key);
     if (cached) return cached;
 
-    const asset = sprite.assetId ? this.opts.store.getAsset(sprite.assetId) : undefined;
-    const frame = asset ? findSheetFrame(asset, sprite.frame) : null;
+    const asset = this.opts.store.getAsset(assetId);
+    const frame = asset ? findSheetFrame(asset, frameName) : null;
     if (!frame) {
       if (!this.warnedFrames.has(key)) {
         this.warnedFrames.add(key);
         this.opts.onLog?.({
           frame: this.session.frame,
           level: 'warn',
-          message: `SpriteRenderer frame "${sprite.frame}" not found on asset "${asset?.name ?? sprite.assetId}" — drawing the whole texture`,
+          message: `Sheet frame "${frameName}" not found on asset "${asset?.name ?? assetId}" — drawing the whole texture`,
         });
       }
       return base;
@@ -1069,35 +1083,17 @@ export class PixiSceneView {
     return sub;
   }
 
+  /**
+   * Builds the tile display graph fresh from `tilemap.grid` every call — see
+   * ./tilemapRender.ts for the actual per-cell resolution (plain asset id vs
+   * autotile rule) and why that's a standalone function rather than inlined
+   * here (unit-testable without a canvas).
+   */
   private buildTilemap(tilemap: TilemapComponent): Container {
-    const container = new Container();
-    const ts = tilemap.tileSize;
-    for (let row = 0; row < tilemap.grid.length; row++) {
-      const line = tilemap.grid[row];
-      for (let col = 0; col < line.length; col++) {
-        const ch = line[col];
-        if (ch === '.' || ch === ' ') continue;
-        const tile = tilemap.tileAssets[ch];
-        // Autotile rules (object arm) resolve a per-cell frame from neighbours;
-        // that rendering is owned by the autotile-rendering task. Until then a
-        // rule falls through to the placeholder box. Plain string ids draw the
-        // preloaded texture exactly as before.
-        const assetId = typeof tile === 'string' ? tile : undefined;
-        const texture = assetId ? this.textures.get(assetId) : undefined;
-        if (texture) {
-          const s = new Sprite(texture);
-          s.position.set(col * ts, row * ts);
-          s.width = ts;
-          s.height = ts;
-          container.addChild(s);
-        } else {
-          const g = new Graphics();
-          g.rect(col * ts, row * ts, ts, ts).fill('#888888');
-          container.addChild(g);
-        }
-      }
-    }
-    return container;
+    return buildTilemapContainer(tilemap, {
+      getTexture: (assetId) => this.textures.get(assetId),
+      resolveFrameTexture: (assetId, frameName, base) => this.resolveFrameTexture(assetId, frameName, base),
+    });
   }
 
   private updateNode(entity: RuntimeEntity, node: Container, uiPositions: Map<string, Vec2>): void {
