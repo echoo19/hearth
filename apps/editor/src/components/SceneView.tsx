@@ -41,6 +41,8 @@ import {
   type Rect,
   type TileCell,
 } from '../tilemapPaint';
+import { readSheetSize } from '../assetPreview';
+import { overlayStrokeCells, resolveTileVisual, type TileAsset, type TileVisual } from '../tileAutotileVisual';
 import { ERASER_CHAR, TilemapPainter } from './TilemapPainter';
 import { Icon } from './ui';
 import type { AssetItem, SceneEntity, Vec2 } from '../types';
@@ -1154,47 +1156,78 @@ export function SceneView() {
     );
   }
 
+  /**
+   * Draws one resolved tile visual (see ../tileAutotileVisual.ts): the whole
+   * image for a plain asset id, a cropped `<image>` for an autotile frame
+   * (nested `<svg>` whose viewBox is the frame's own pixel rect, sized via
+   * the sheet's metadata.width/height — same numbers Assets panel/Slice
+   * dialog previews use, see ../assetPreview.ts's readSheetSize), or the
+   * same gray placeholder renderTilemap has always shown for an
+   * unresolved/missing asset.
+   */
+  function renderTileVisual(visual: TileVisual | null, x: number, y: number, size: number, key: string): React.ReactNode {
+    const asset = visual ? assetById.get(visual.assetId) : undefined;
+    const placeholder = (
+      <rect
+        key={key}
+        x={x}
+        y={y}
+        width={size}
+        height={size}
+        fill="oklch(0.5 0.02 55)"
+        stroke="oklch(0.35 0.02 55)"
+        strokeWidth={1}
+      />
+    );
+    if (!visual || !asset || !projectPath) return placeholder;
+    const href = fileUrl(projectPath, asset.path);
+    if (!visual.frame) {
+      return <image key={key} href={href} x={x} y={y} width={size} height={size} preserveAspectRatio="none" />;
+    }
+    const sheetSize = readSheetSize(asset);
+    if (!sheetSize) return placeholder; // sheet metadata missing/malformed — can't crop correctly
+    const { frame } = visual;
+    return (
+      <svg
+        key={key}
+        x={x}
+        y={y}
+        width={size}
+        height={size}
+        viewBox={`0 0 ${frame.width} ${frame.height}`}
+        preserveAspectRatio="none"
+      >
+        <image
+          href={href}
+          x={-frame.x}
+          y={-frame.y}
+          width={sheetSize.width}
+          height={sheetSize.height}
+          preserveAspectRatio="none"
+        />
+      </svg>
+    );
+  }
+
   function renderTilemap(entity: SceneEntity): React.ReactNode {
-    const tm = entity.components.Tilemap as any;
+    const tm = entity.components.Tilemap as TilemapComponent | undefined;
     if (!tm) return null;
-    const size = tm.tileSize ?? 32;
+    const size = tm.tileSize > 0 ? tm.tileSize : 32;
     const grid: string[] = Array.isArray(tm.grid) ? tm.grid : [];
+    const tileAssets = (tm.tileAssets ?? {}) as Record<string, TileAsset>;
     const cells: React.ReactNode[] = [];
     grid.forEach((row: string, ry: number) => {
       [...row].forEach((ch, cx) => {
         if (ch === '.' || ch === ' ') return;
-        const assetId = tm.tileAssets?.[ch];
-        const asset = assetId ? assetById.get(assetId) : undefined;
-        if (asset && projectPath) {
-          cells.push(
-            <image
-              key={`${cx}-${ry}`}
-              href={fileUrl(projectPath, asset.path)}
-              x={cx * size}
-              y={ry * size}
-              width={size}
-              height={size}
-              preserveAspectRatio="none"
-            />,
-          );
-        } else {
-          cells.push(
-            <rect
-              key={`${cx}-${ry}`}
-              x={cx * size}
-              y={ry * size}
-              width={size}
-              height={size}
-              fill="oklch(0.5 0.02 55)"
-              stroke="oklch(0.35 0.02 55)"
-              strokeWidth={1}
-            />,
-          );
-        }
+        const visual = resolveTileVisual(grid, ry, cx, tileAssets, assetById);
+        cells.push(renderTileVisual(visual, cx * size, ry * size, size, `${cx}-${ry}`));
       });
     });
     return <g>{cells}</g>;
   }
+
+  /** A freehand stroke resolves real autotile frames up to this many painted cells (not eraser cells — nothing to resolve there); a longer drag falls back to the plain highlight instead of paying a per-cell mask lookup on every pointer move. Rect-mode fill (up to 1024×1024 cells) always uses the plain single-rect preview, never per-cell resolution. */
+  const FREEHAND_AUTOTILE_PREVIEW_CAP = 200;
 
   /**
    * Live feedback for an in-progress tilemap paint stroke: highlighted cells
@@ -1202,6 +1235,13 @@ export function SceneView() {
    * Drawn in the same local space as renderTilemap (cx*size / ry*size)
    * inside the same entity group, only for the entity currently being
    * painted.
+   *
+   * A freehand stroke additionally resolves each cell's actual autotile
+   * frame (against a tentative grid with the stroke's own cells overlaid —
+   * see overlayStrokeCells — so neighbours within the same stroke react to
+   * each other) when that's cheap; see FREEHAND_AUTOTILE_PREVIEW_CAP. Tiles
+   * already on the map adjacent to the stroke keep showing their current
+   * committed appearance until the stroke actually commits.
    */
   function renderPaintPreview(entity: SceneEntity): React.ReactNode {
     if (!paintPreview) return null;
@@ -1225,22 +1265,35 @@ export function SceneView() {
         />
       );
     }
+    const cells = paintPreview.cells;
+    const paintingCells = cells.filter((c) => c.char !== ERASER_CHAR);
+    const tentativeGrid =
+      paintingCells.length > 0 && paintingCells.length <= FREEHAND_AUTOTILE_PREVIEW_CAP
+        ? overlayStrokeCells(tm.grid, paintingCells)
+        : null;
+    const tileAssets = (tm.tileAssets ?? {}) as Record<string, TileAsset>;
     return (
       <g pointerEvents="none">
-        {paintPreview.cells.map((c) => (
-          <rect
-            key={`${c.x}-${c.y}`}
-            x={c.x * size}
-            y={c.y * size}
-            width={size}
-            height={size}
-            fill={c.char === ERASER_CHAR ? 'none' : 'var(--accent)'}
-            fillOpacity={c.char === ERASER_CHAR ? 0.06 : 0.32}
-            stroke="var(--accent)"
-            strokeWidth={1}
-            vectorEffect="non-scaling-stroke"
-          />
-        ))}
+        {cells.map((c) => {
+          const isErase = c.char === ERASER_CHAR;
+          const visual = !isErase && tentativeGrid ? resolveTileVisual(tentativeGrid, c.y, c.x, tileAssets, assetById) : null;
+          return (
+            <g key={`${c.x}-${c.y}`}>
+              {visual && renderTileVisual(visual, c.x * size, c.y * size, size, `preview-${c.x}-${c.y}`)}
+              <rect
+                x={c.x * size}
+                y={c.y * size}
+                width={size}
+                height={size}
+                fill={isErase ? 'none' : 'var(--accent)'}
+                fillOpacity={isErase ? 0.06 : visual ? 0.18 : 0.32}
+                stroke="var(--accent)"
+                strokeWidth={1}
+                vectorEffect="non-scaling-stroke"
+              />
+            </g>
+          );
+        })}
       </g>
     );
   }
