@@ -2,13 +2,14 @@
  * The CM6 host. This is the only file the rest of the editor reaches
  * eagerly — always through `React.lazy(() => import('./CodeEditor'))` (see
  * ../CodePanel.tsx) — so the CodeMirror chunk is split out of the main
- * bundle and only loaded once a user opens the Code panel. `./completion`
- * and `./lint` also import CodeMirror packages (they build a
- * `CompletionSource` and a lint `Extension`), but since this file is their
- * only importer that matters, they still only ever load inside the lazy
- * chunk. `./scriptLanguage` stays CodeMirror-free on purpose — CodePanel.tsx
- * needs `languageForPath` outside the lazy boundary, to pick the `language`
- * param for its `checkScript` query.
+ * bundle and only loaded once a user opens the Code panel. `./completion`,
+ * `./lint`, and `./hoverDocs` also import CodeMirror packages (they build a
+ * `CompletionSource`, a lint `Extension`, and a `hoverTooltip` `Extension`
+ * respectively), but since this file is their only importer that matters,
+ * they still only ever load inside the lazy chunk. `./scriptLanguage` stays
+ * CodeMirror-free on purpose — CodePanel.tsx needs `languageForPath` outside
+ * the lazy boundary, to pick the `language` param for its `checkScript`
+ * query.
  *
  * ONE EditorView for the whole panel: the Code panel is tabbed (many open
  * buffers), and per-tab undo history is the feature. Rather than remount a
@@ -29,8 +30,10 @@ import { javascript, javascriptLanguage } from '@codemirror/lang-javascript';
 import { StreamLanguage } from '@codemirror/language';
 import { lua } from '@codemirror/legacy-modes/mode/lua';
 import { lintGutter } from '@codemirror/lint';
+import { search, searchKeymap } from '@codemirror/search';
 import { codeTheme } from './codeTheme';
 import { ctxCompletionSource } from './completion';
+import { ctxHoverExtension } from './hoverDocs';
 import { makeCheckScriptLinter, type ScriptDiagnostic } from './lint';
 import { languageForPath, type ScriptLanguage } from './scriptLanguage';
 
@@ -52,9 +55,51 @@ const luaLanguage = StreamLanguage.define(lua);
  */
 export function languageExtensions(lang: ScriptLanguage): Extension[] {
   return lang === 'js'
-    ? [javascript(), javascriptLanguage.data.of({ autocomplete: ctxCompletionSource('js') })]
-    : [luaLanguage, luaLanguage.data.of({ autocomplete: ctxCompletionSource('lua') })];
+    ? [javascript(), javascriptLanguage.data.of({ autocomplete: ctxCompletionSource('js') }), ctxHoverExtension('js')]
+    : [luaLanguage, luaLanguage.data.of({ autocomplete: ctxCompletionSource('lua') }), ctxHoverExtension('lua')];
 }
+
+/**
+ * Plain-language overrides for @codemirror/search's panel labels (the
+ * `EditorState.phrases` i18n facet search.ts reads its strings from). The
+ * library's built-in English defaults already read as "Find"/"Replace"/
+ * "next"/"previous"/"all" etc. — this restates them explicitly so the panel's
+ * copy is a deliberate, reviewable choice here rather than an unpinned
+ * upstream default that could silently change wording on a future bump.
+ */
+const SEARCH_PHRASES: Record<string, string> = {
+  Find: 'Find',
+  Replace: 'Replace',
+  next: 'next',
+  previous: 'previous',
+  all: 'all',
+  'match case': 'match case',
+  'by word': 'by word',
+  regexp: 'regexp',
+  replace: 'replace',
+  'replace all': 'replace all',
+  close: 'close',
+};
+
+/**
+ * In-file search: `search({ top: true })` supplies the state field/config
+ * the search panel and its commands (openSearchPanel, findNext, …) read —
+ * without it those commands throw, since basicSetup binds `searchKeymap`
+ * (Mod-f et al.) but never itself calls `search()`. `searchKeymap` is added
+ * again here for explicitness even though basicSetup already spreads it into
+ * its own keymap; CM6 tolerates the duplicate binding harmlessly (first
+ * match wins).
+ *
+ * Exported for codeEditorExtensions.test.ts, which builds a real EditorState
+ * from `[...languageExtensions('lua'), ...searchExtensions]` and asserts
+ * `getSearchQuery`/`searchPanelOpen` work against it — pinning the exact
+ * failure mode above (those commands throwing without this extension).
+ */
+export const searchExtensions: Extension[] = [
+  search({ top: true }),
+  EditorState.phrases.of(SEARCH_PHRASES),
+  keymap.of(searchKeymap),
+];
 
 // Transient "ember line" highlight for openScriptAt(path, line): a decoration
 // on one line, cleared ~1.5s later. Lives in the state (so it survives while
@@ -122,6 +167,10 @@ export interface CodeEditorProps {
   onChange: (value: string) => void;
   /** Ctrl/Cmd+S while the editor has focus. */
   onSave: () => void;
+  /** Shift-Alt-F while the editor has focus: format + save the active
+   * buffer (there is no format-without-save — see CodePanel's "Format &
+   * save" button, which does the same thing). */
+  onFormatSave: () => void;
   /**
    * Syntax-check a candidate source string (wired by CodePanel to the
    * store's silent `query('checkScript', { source, language })`, which
@@ -144,6 +193,7 @@ export default function CodeEditor({
   shouldCacheState,
   onChange,
   onSave,
+  onFormatSave,
   checkScript,
   focusRequest,
   applyContent,
@@ -165,6 +215,8 @@ export default function CodeEditor({
   onChangeRef.current = onChange;
   const onSaveRef = useRef(onSave);
   onSaveRef.current = onSave;
+  const onFormatSaveRef = useRef(onFormatSave);
+  onFormatSaveRef.current = onFormatSave;
   const checkScriptRef = useRef(checkScript);
   checkScriptRef.current = checkScript;
   const shouldCacheStateRef = useRef(shouldCacheState);
@@ -186,6 +238,17 @@ export default function CodeEditor({
             return true;
           },
         },
+        {
+          // Format + save the active buffer. There is no format-without-save
+          // command (editScript's `format` flag always writes) — this and
+          // the header's "Format & save" button both just call onFormatSave.
+          key: 'Shift-Alt-f',
+          preventDefault: true,
+          run: () => {
+            onFormatSaveRef.current();
+            return true;
+          },
+        },
       ]),
     );
     // Note: basicSetup's searchKeymap also binds Mod-d to "select next
@@ -204,6 +267,7 @@ export default function CodeEditor({
       extensions: [
         basicSetup,
         ...languageExtensions(lang),
+        ...searchExtensions,
         codeTheme,
         saveKeymap,
         updateListener,

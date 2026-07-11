@@ -67,6 +67,11 @@ export function classifySaveFailure(
 export function CodePanel() {
   const projectPath = useEditor((s) => s.projectPath);
   const scripts = useEditor((s) => s.info?.scripts ?? []);
+  // Task 2's project setting, default true (older projects predate the
+  // field). `exec('updateSettings', …)` refreshes `s.info` on success (see
+  // store.ts's `refresh()` after every mutating exec), so this selector is
+  // the toggle's whole state — no local optimistic copy needed.
+  const formatOnSave = useEditor((s) => s.info?.codeStyle?.formatOnSave ?? true);
   const journalFeed = useEditor((s) => s.journalFeed);
   const codeOpenRequest = useEditor((s) => s.codeOpenRequest);
   const exec = useEditor((s) => s.exec);
@@ -207,21 +212,35 @@ export function CodePanel() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [codeOpenRequest?.nonce]);
 
-  async function save() {
-    if (!active) return;
+  /**
+   * Shared body of Save and Format & save — the only difference is the
+   * `format` flag sent to `editScript` and, for a plain Save, the
+   * `shouldSave` no-op guard (a Cmd+S on a clean buffer must not write; a
+   * deliberate Format & save always does, even on a clean buffer, since
+   * formatting can change bytes on disk without the buffer having been
+   * hand-edited). There is no format-without-save: both the header's
+   * "Format & save" button and CodeEditor's Shift-Alt-F keymap call
+   * `formatAndSave`, which lands here with `format: true`.
+   */
+  async function runSave(format: boolean) {
+    if (!active || saving) return;
     const path = active.path;
     const source = active.source;
-    if (!shouldSave({ selectedPath: path, saving, dirty: activeDirty })) return;
+    if (!format && !shouldSave({ selectedPath: path, saving, dirty: activeDirty })) return;
     setSaving(true);
     patch(path, { saveError: null, scriptMissing: false });
-    const result = await exec<{ path: string; source?: string; formatted?: boolean }>('editScript', { path, source });
+    const result = await exec<{ path: string; source?: string; formatted?: boolean }>('editScript', {
+      path,
+      source,
+      ...(format ? { format: true } : {}),
+    });
     setSaving(false);
     if (result.success) {
-      // Forward-compat with the concurrent formatter task: when editScript
-      // returns the formatted source, adopt it as both the buffer's live and
-      // saved content (so the tab is clean) and push it into the view in one
-      // transaction (preserving undo history + selection). Guard for absence
-      // — the field may not exist yet.
+      // When editScript returns the formatted source (Task 2), adopt it as
+      // both the buffer's live and saved content (so the tab is clean) and
+      // push it into the view in one transaction (preserving undo history +
+      // selection). Guard for absence in case format was off and codeStyle
+      // formatting didn't run.
       const data = result.data;
       if (data && data.formatted && typeof data.source === 'string') {
         const formatted = data.source;
@@ -235,6 +254,14 @@ export function CodePanel() {
       if (outcome.kind === 'missing') patch(path, { scriptMissing: true });
       else patch(path, { saveError: outcome.message });
     }
+  }
+
+  async function save() {
+    await runSave(false);
+  }
+
+  async function formatAndSave() {
+    await runSave(true);
   }
 
   /**
@@ -409,15 +436,33 @@ export function CodePanel() {
           ))}
         </select>
         <span style={{ flex: 1 }} />
+        <label className="input-checkbox-label" title="Format scripts with the project's code style whenever they're saved">
+          <input
+            type="checkbox"
+            checked={formatOnSave}
+            onChange={(e) => void exec('updateSettings', { codeStyle: { formatOnSave: e.target.checked } }, { quiet: true })}
+          />
+          Format on save
+        </label>
         {active && (
-          <button
-            className="btn btn-sm btn-primary"
-            onClick={() => void save()}
-            disabled={!activeDirty || saving}
-            title={`Save (${comboDisplay('mod+s')})`}
-          >
-            {saving ? 'Saving…' : 'Save'}
-          </button>
+          <>
+            <button
+              className="btn btn-sm"
+              onClick={() => void formatAndSave()}
+              disabled={saving}
+              title={`Format & save (${comboDisplay('shift+alt+f')})`}
+            >
+              {saving ? 'Saving…' : 'Format & save'}
+            </button>
+            <button
+              className="btn btn-sm btn-primary"
+              onClick={() => void save()}
+              disabled={!activeDirty || saving}
+              title={`Save (${comboDisplay('mod+s')})`}
+            >
+              {saving ? 'Saving…' : 'Save'}
+            </button>
+          </>
         )}
       </div>
 
@@ -566,6 +611,7 @@ export function CodePanel() {
               shouldCacheState={shouldCacheState}
               onChange={(v) => patch(active.path, { source: v })}
               onSave={() => void save()}
+              onFormatSave={() => void formatAndSave()}
               checkScript={checkScript}
               focusRequest={focusForActive}
               applyContent={applyForActive}

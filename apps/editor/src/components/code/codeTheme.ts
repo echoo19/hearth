@@ -15,7 +15,9 @@ import { tags as t } from '@lezer/highlight';
 const BG_0 = 'oklch(0.115 0.006 285)'; // window chrome, deepest
 const BG_1 = 'oklch(0.15 0.008 285)'; // panels
 const BG_2 = 'oklch(0.19 0.01 285)'; // inputs, cards, tab strip
+const BG_3 = 'oklch(0.245 0.012 285)'; // hover
 const BORDER = 'oklch(0.32 0.014 285)';
+const BORDER_STRONG = 'oklch(0.42 0.016 285)'; // .btn/.select's resting border
 const GUIDE = 'oklch(0.27 0.012 285)';
 const INK = 'oklch(0.95 0.006 85)';
 const INK_MUTE = 'oklch(0.74 0.012 85)';
@@ -26,6 +28,8 @@ const ACCENT_FAINT = 'oklch(0.684 0.192 42 / 0.055)';
 const ERR = 'oklch(0.7 0.17 25)';
 const ERR_SOFT = 'oklch(0.7 0.17 25 / 0.14)';
 const FONT_MONO = "'IBM Plex Mono', ui-monospace, 'SF Mono', Menlo, Consolas, monospace";
+const RADIUS_SM = '4px'; // mirrors styles.css --radius-sm
+const CTL_H_SM = '22px'; // mirrors styles.css --ctl-h-sm — .btn-sm/.select-sm's height
 
 /** EditorView.theme: chrome (gutters, selection, cursor, panels) — everything but token colors. */
 export const codeEditorTheme = EditorView.theme(
@@ -94,6 +98,53 @@ export const codeEditorTheme = EditorView.theme(
     '.cm-panels-top': {
       borderBottom: `1px solid ${BORDER}`,
     },
+    // In-file search/replace panel (@codemirror/search's `search({ top: true })`).
+    // @codemirror/search ships its own low-priority baseTheme for layout
+    // (control spacing, the absolutely-positioned close button) — this only
+    // overrides color/surface so the panel reads as editor chrome, not a
+    // browser-default form.
+    '.cm-panel.cm-search': {
+      paddingTop: '6px',
+      paddingBottom: '8px',
+    },
+    '.cm-panel.cm-search label': {
+      color: INK_MUTE,
+    },
+    '.cm-panel.cm-search .cm-textfield': {
+      height: CTL_H_SM,
+      padding: '0 8px',
+      border: `1px solid ${BORDER_STRONG}`,
+      borderRadius: RADIUS_SM,
+      backgroundColor: BG_0,
+      color: INK,
+      fontFamily: FONT_MONO,
+      fontSize: '12px',
+    },
+    '.cm-panel.cm-search .cm-textfield:hover': {
+      borderColor: 'oklch(0.48 0.018 285)',
+    },
+    '.cm-panel.cm-search .cm-button': {
+      height: CTL_H_SM,
+      padding: '0 8px',
+      border: `1px solid ${BORDER_STRONG}`,
+      borderRadius: RADIUS_SM,
+      backgroundColor: BG_2,
+      backgroundImage: 'none',
+      color: INK,
+      fontSize: '12px',
+      cursor: 'pointer',
+    },
+    '.cm-panel.cm-search .cm-button:hover': {
+      backgroundColor: BG_3,
+    },
+    '.cm-panel.cm-search button[name="close"]': {
+      color: INK_FAINT,
+      fontSize: '14px',
+      cursor: 'pointer',
+    },
+    '.cm-panel.cm-search button[name="close"]:hover': {
+      color: INK,
+    },
     '.cm-tooltip': {
       backgroundColor: BG_2,
       border: `1px solid ${BORDER}`,
@@ -102,6 +153,38 @@ export const codeEditorTheme = EditorView.theme(
     '.cm-tooltip-autocomplete ul li[aria-selected]': {
       backgroundColor: ACCENT_SOFT,
       color: INK,
+    },
+    // ctx.<path> hover docs (hoverDocs.ts's ctxHoverExtension). `.cm-tooltip`
+    // above already supplies the charcoal surface/border/ink color; this
+    // just sizes and typesets the signature/description/example content.
+    '.cm-ctx-hover': {
+      maxWidth: '46ch',
+      padding: '8px 10px',
+    },
+    '.cm-ctx-hover-signature': {
+      fontFamily: FONT_MONO,
+      fontSize: '12px',
+      color: ACCENT,
+      whiteSpace: 'pre-wrap',
+      wordBreak: 'break-word',
+    },
+    '.cm-ctx-hover-description': {
+      margin: '6px 0 0',
+      fontSize: '12px',
+      lineHeight: '1.5',
+      color: INK_MUTE,
+    },
+    '.cm-ctx-hover-example': {
+      margin: '8px 0 0',
+      padding: '6px 8px',
+      borderRadius: RADIUS_SM,
+      backgroundColor: BG_0,
+      border: `1px solid ${BORDER}`,
+      fontFamily: FONT_MONO,
+      fontSize: '11px',
+      color: INK,
+      whiteSpace: 'pre-wrap',
+      wordBreak: 'break-word',
     },
     '.cm-diagnostic-error': {
       borderLeft: `3px solid ${ERR}`,
