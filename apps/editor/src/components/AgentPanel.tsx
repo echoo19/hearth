@@ -1,8 +1,8 @@
-import React, { Suspense, lazy, useEffect, useState } from 'react';
+import React, { Suspense, lazy, useEffect, useRef, useState } from 'react';
 import { PERMISSION_DOCS, PERMISSION_MODES } from '@hearth/core';
 import { useEditor } from '../store';
 import { apiPrepareAgent } from '../api';
-import type { AgentPermissionMode } from '../../server/agentSetup';
+import type { AgentPermissionMode, DetectAgentsResult } from '../../server/agentSetup';
 import { CodeBlock, Icon } from './ui';
 import { Timeline } from './agent/Timeline';
 import { planClaudeStart, useAgentSocket, type AgentSessionSummary } from './agent/useAgentSocket';
@@ -46,6 +46,22 @@ const AGENT_LAUNCHER_LABELS: Record<AgentLauncher, string> = {
   shell: 'Terminal / other CLI',
 };
 
+/**
+ * True when a just-completed detect attempt failed outright (network error,
+ * malformed response) rather than succeeding and genuinely finding neither
+ * CLI on PATH — `apiDetectAgents` returns `null` for both cases, but they
+ * call for different next actions (retry vs. install), so the panel needs
+ * to tell them apart. `wasDetecting`/`isDetecting` bracket one attempt;
+ * `result` is the store's `agentDetect` value once `isDetecting` goes false.
+ */
+export function detectionFailed(
+  wasDetecting: boolean,
+  isDetecting: boolean,
+  result: DetectAgentsResult | null,
+): boolean {
+  return wasDetecting && !isDetecting && result === null;
+}
+
 function statusLabel(session: AgentSessionSummary): string {
   switch (session.status) {
     case 'idle':
@@ -73,12 +89,24 @@ export function AgentPanel() {
   const [manualOpen, setManualOpen] = useState(false);
   const [prepareError, setPrepareError] = useState<string | null>(null);
   const [agentLauncher, setAgentLauncher] = useState<AgentLauncher>('claude');
+  const [detectFailed, setDetectFailed] = useState(false);
+  const wasDetecting = useRef(agentDetecting);
 
   useEffect(() => {
     void detectAgent();
     // Detect once per mount; the Re-detect button covers "I just installed it".
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  useEffect(() => {
+    if (detectionFailed(wasDetecting.current, agentDetecting, agentDetect)) {
+      setDetectFailed(true);
+    } else if (agentDetecting) {
+      // A new attempt just started — clear any stale failure from last time.
+      setDetectFailed(false);
+    }
+    wasDetecting.current = agentDetecting;
+  }, [agentDetecting, agentDetect]);
 
   const running = agent.session.status === 'running';
   const claudeFound = agentDetect?.claude.found ?? false;
@@ -194,6 +222,19 @@ export function AgentPanel() {
           <button className="btn btn-primary btn-sm" onClick={() => void startAgent()} disabled={!projectPath}>
             {agentLauncher === 'shell' ? 'Open Terminal' : 'Start agent'}
           </button>
+        ) : detectFailed ? (
+          <>
+            <button className="btn btn-primary btn-sm" disabled>
+              Couldn't check for {AGENT_LAUNCHER_LABELS[agentLauncher]}
+            </button>
+            <button
+              className="btn btn-ghost btn-sm"
+              onClick={() => void detectAgent()}
+              title={`Re-check whether the ${agentLauncher} CLI is on PATH`}
+            >
+              Re-detect
+            </button>
+          </>
         ) : agentLauncher === 'claude' ? (
           <>
             <button className="btn btn-primary btn-sm" onClick={installClaude} disabled={!projectPath}>

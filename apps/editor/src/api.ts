@@ -45,7 +45,12 @@ export async function apiMeta(): Promise<ServerMeta | null> {
     const res = await fetch('/api/meta');
     const body = await res.json();
     return body.ok ? (body as ServerMeta) : null;
-  } catch {
+  } catch (err) {
+    // This runs before a project (and therefore the store's log()) is
+    // necessarily wired up, so console.error is the floor for visibility —
+    // silently returning null here made a network hiccup indistinguishable
+    // from a legitimate "nothing to report" response.
+    console.error('apiMeta: request failed', err);
     return null;
   }
 }
@@ -95,7 +100,11 @@ export async function apiDetectAgents(): Promise<DetectAgentsResult | null> {
     const res = await fetch('/api/agent/detect');
     const body = await res.json();
     return body.ok ? (body as DetectAgentsResult) : null;
-  } catch {
+  } catch (err) {
+    // A `null` here is read by AgentPanel as "couldn't check" (distinct from
+    // a successful check that found nothing) — log so a network hiccup
+    // isn't completely invisible even though the UI already recovers.
+    console.error('apiDetectAgents: request failed', err);
     return null;
   }
 }

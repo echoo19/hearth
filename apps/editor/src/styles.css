@@ -1905,7 +1905,8 @@ label.field-label {
   align-items: center;
   gap: 6px;
   width: 100%;
-  padding: 7px 10px;
+  height: var(--ctl-h);
+  padding: 0 10px;
   border: none;
   background: var(--bg-1);
   color: var(--ink-mute);
