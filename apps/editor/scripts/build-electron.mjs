@@ -21,17 +21,17 @@ await mkdir(path.join(appRoot, 'dist-electron'), { recursive: true });
 // it (and __filename doesn't exist in ESM output at all). The inject shim
 // inlines the wasm as base64 (loader below) and calls setLuaWasmUri with a
 // data: URI before any entry code runs, so every bundle stays one file.
-const luaWasmInline = {
-  inject: [path.join(here, 'lua-wasm-inline.mjs')],
-  loader: { '.wasm': 'base64' },
-};
-
-// The standalone CLI/MCP tool bundles additionally inline the script
-// formatters (StyLua wasm + Prettier). @hearth/core loads those via
-// non-literal dynamic imports the bundler can't follow, so `hearth script
-// format` would otherwise fail with no node_modules present. The Electron
-// main bundle skips this — it runs with real node_modules and format.ts's
-// normal dynamic-import resolution.
+//
+// The standalone CLI/MCP tool bundles — AND the Electron main bundle —
+// additionally inline the script formatters (StyLua wasm + Prettier).
+// @hearth/core loads those via non-literal dynamic imports the bundler can't
+// follow, so `hearth script format` (and the packaged app's in-process
+// format-on-save) would otherwise fail with no node_modules present. The
+// packaged desktop app ships main.cjs with only @lydell/node-pty in
+// release-app/node_modules (assemble-app.mjs) — stylua/prettier aren't there —
+// so the main bundle needs the shim too, or every editScript/createScript in
+// the shipped app breaks. (In dev, real node_modules resolve the imports; the
+// shim's setFormatterModules override is harmless there.)
 const toolInline = {
   inject: [path.join(here, 'lua-wasm-inline.mjs'), path.join(here, 'format-inline.mjs')],
   loader: { '.wasm': 'base64' },
@@ -57,7 +57,7 @@ await build({
   external: ['electron', 'playwright-core', '@lydell/node-pty'],
   sourcemap: false,
   logLevel: 'info',
-  ...luaWasmInline,
+  ...toolInline,
   // The server dynamically imports @hearth/playtest for runtime hooks; make
   // sure esbuild follows workspace symlinks and inlines it too.
   alias: {

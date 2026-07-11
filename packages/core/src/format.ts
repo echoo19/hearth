@@ -68,7 +68,13 @@ export function setFormatterModules(mods: { stylua?: StyluaModule; prettier?: Pr
 let styluaModule: Promise<StyluaModule> | undefined;
 function loadStylua(): Promise<StyluaModule> {
   if (styluaOverride) return Promise.resolve(styluaOverride);
-  styluaModule ??= import(STYLUA_SPECIFIER) as Promise<StyluaModule>;
+  // Wrap a module-resolution failure in FormatError so applyFormatting's
+  // "format never blocks a save" fallback engages even in a context that
+  // ships without the formatter (e.g. a bundle missing the inline shim) —
+  // otherwise a raw ERR_MODULE_NOT_FOUND rethrows and fails the whole save.
+  styluaModule ??= (import(STYLUA_SPECIFIER) as Promise<StyluaModule>).catch((err) => {
+    throw new FormatError(`Could not load formatter '${STYLUA_SPECIFIER}': ${errorMessage(err)}`);
+  });
   return styluaModule;
 }
 
@@ -96,11 +102,17 @@ function loadPrettier(): Promise<PrettierModules> {
     // the `Plugin` interface needs.
     import(PRETTIER_BABEL_SPECIFIER) as Promise<Plugin>,
     import(PRETTIER_ESTREE_SPECIFIER) as Promise<Plugin>,
-  ]).then(([standalone, babel, estree]) => ({
-    format: standalone.format,
-    babel: babel as Plugin,
-    estree: estree as Plugin,
-  }));
+  ])
+    .then(([standalone, babel, estree]) => ({
+      format: standalone.format,
+      babel: babel as Plugin,
+      estree: estree as Plugin,
+    }))
+    // Wrap a module-resolution failure in FormatError (see loadStylua) so a
+    // missing formatter degrades to a verbatim save + warning, never a reject.
+    .catch((err) => {
+      throw new FormatError(`Could not load formatter '${PRETTIER_STANDALONE_SPECIFIER}': ${errorMessage(err)}`);
+    });
   return prettierModules;
 }
 
