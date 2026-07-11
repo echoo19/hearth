@@ -2,9 +2,9 @@
  * Client-side shapes for data crossing the /api boundary.
  * Command payload types mirror what the core inspect commands return.
  */
-import type { CommandResult, InputMappings, JournalEntry, ProjectDiff } from '@hearth/core';
+import type { CommandResult, InputMappings, JournalEntry, ProjectDiff, ScriptDiagnostic } from '@hearth/core';
 
-export type { CommandResult, JournalEntry, ProjectDiff };
+export type { CommandResult, JournalEntry, ProjectDiff, ScriptDiagnostic };
 
 export interface Vec2 {
   x: number;

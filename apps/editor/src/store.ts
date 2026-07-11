@@ -143,6 +143,14 @@ export interface EditorState {
    * in the Console; successful mutations trigger a model refresh.
    */
   exec<T = unknown>(name: string, params?: unknown, opts?: { quiet?: boolean }): Promise<CommandResult<T>>;
+  /**
+   * Run a read-only command silently: no Console noise on success, still
+   * logs (and swallows to `null`) on failure — see the module-level `query`
+   * helper this wraps. Exposed on the store (rather than staying a private
+   * closure) so panels like the Code panel can back their own read-only
+   * queries (e.g. `checkScript` for lint) without a bespoke fetch path.
+   */
+  query<T = unknown>(name: string, params?: unknown): Promise<T | null>;
 }
 
 /** The full editor store (state + actions) as returned by `useEditor.getState()`. */
@@ -654,5 +662,7 @@ export const useEditor = create<EditorState>((set, get) => {
       }
       return result as CommandResult<never>;
     },
+
+    query,
   };
 });

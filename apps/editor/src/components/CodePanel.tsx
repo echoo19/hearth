@@ -10,7 +10,8 @@ import { useEditor } from '../store';
 import { fileUrl } from '../api';
 import { ConfirmDialog, Icon } from './ui';
 import { decideExternalChange, type ExternalChangeEntry } from './code/externalChange';
-import type { JournalEntry } from '../types';
+import type { JournalEntry, ScriptDiagnostic } from '../types';
+import { languageForPath } from './code/scriptLanguage';
 
 const CodeEditor = lazy(() => import('./code/CodeEditor'));
 
@@ -36,6 +37,7 @@ export function CodePanel() {
   const journalFeed = useEditor((s) => s.journalFeed);
   const exec = useEditor((s) => s.exec);
   const log = useEditor((s) => s.log);
+  const query = useEditor((s) => s.query);
 
   const [selectedPath, setSelectedPath] = useState<string | null>(null);
   const [source, setSource] = useState('');
@@ -66,6 +68,22 @@ export function CodePanel() {
     const res = await fetch(fileUrl(project, path));
     if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
     return res.text();
+  }
+
+  /**
+   * Injected into the lazy CodeEditor as its `checkScript` prop — wraps the
+   * store's silent `query('checkScript', ...)` (no Console noise, `null` on
+   * a failed/offline command) and unwraps to just the diagnostics array, so
+   * the lint extension never has to special-case a missing result itself.
+   */
+  async function checkScript(source: string): Promise<ScriptDiagnostic[]> {
+    const path = selectedPathRef.current;
+    if (!path) return [];
+    const result = await query<{ valid: boolean; language: 'lua' | 'js'; diagnostics: ScriptDiagnostic[] }>(
+      'checkScript',
+      { source, language: languageForPath(path) },
+    );
+    return result?.diagnostics ?? [];
   }
 
   async function openScript(path: string) {
@@ -278,6 +296,7 @@ export function CodePanel() {
               value={source}
               onChange={setSource}
               onSave={() => void save()}
+              checkScript={checkScript}
             />
           </Suspense>
         )}

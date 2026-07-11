@@ -1,8 +1,14 @@
 /**
- * The CM6 host. This is the ONLY file in the editor that imports CodeMirror
- * packages — always reach it through `React.lazy(() => import('./CodeEditor'))`
- * (see ../CodePanel.tsx) so the CodeMirror chunk is split out of the main
- * bundle and only loaded once a user opens the Code panel.
+ * The CM6 host. This is the only file the rest of the editor reaches
+ * eagerly — always through `React.lazy(() => import('./CodeEditor'))` (see
+ * ../CodePanel.tsx) — so the CodeMirror chunk is split out of the main
+ * bundle and only loaded once a user opens the Code panel. `./completion`
+ * and `./lint` also import CodeMirror packages (they build a
+ * `CompletionSource` and a lint `Extension`), but since this file is their
+ * only importer that matters, they still only ever load inside the lazy
+ * chunk. `./scriptLanguage` stays CodeMirror-free on purpose — CodePanel.tsx
+ * needs `languageForPath` outside the lazy boundary, to pick the `language`
+ * param for its `checkScript` query.
  *
  * Task 8 adds completion + lint on top of this: keep new CM6 extensions
  * appended to the `extensions` array in the effect below rather than
@@ -15,14 +21,12 @@ import { basicSetup } from 'codemirror';
 import { javascript } from '@codemirror/lang-javascript';
 import { StreamLanguage, type LanguageSupport } from '@codemirror/language';
 import { lua } from '@codemirror/legacy-modes/mode/lua';
+import { autocompletion } from '@codemirror/autocomplete';
+import { lintGutter } from '@codemirror/lint';
 import { codeTheme } from './codeTheme';
-
-export type ScriptLanguage = 'lua' | 'js';
-
-/** Infer the scripting language from a project-relative script path. */
-export function languageForPath(path: string): ScriptLanguage {
-  return path.endsWith('.js') || path.endsWith('.ts') ? 'js' : 'lua';
-}
+import { ctxCompletionSource } from './completion';
+import { makeCheckScriptLinter, type ScriptDiagnostic } from './lint';
+import { languageForPath, type ScriptLanguage } from './scriptLanguage';
 
 const luaLanguage = StreamLanguage.define(lua);
 
@@ -40,9 +44,16 @@ export interface CodeEditorProps {
   onChange: (value: string) => void;
   /** Ctrl/Cmd+S while the editor has focus. */
   onSave: () => void;
+  /**
+   * Syntax-check a candidate source string (wired by CodePanel to the
+   * store's silent `query('checkScript', { source, language })`, which
+   * already resolves to `null` — mapped here to no diagnostics — on a
+   * failed/offline command). Debounced ~500ms by the lint extension itself.
+   */
+  checkScript: (source: string) => Promise<ScriptDiagnostic[]>;
 }
 
-export default function CodeEditor({ path, value, onChange, onSave }: CodeEditorProps) {
+export default function CodeEditor({ path, value, onChange, onSave, checkScript }: CodeEditorProps) {
   const hostRef = useRef<HTMLDivElement>(null);
   // Kept in refs so the extensions built once per mount always call the
   // latest handlers without forcing a full EditorView rebuild on every
@@ -51,6 +62,8 @@ export default function CodeEditor({ path, value, onChange, onSave }: CodeEditor
   onChangeRef.current = onChange;
   const onSaveRef = useRef(onSave);
   onSaveRef.current = onSave;
+  const checkScriptRef = useRef(checkScript);
+  checkScriptRef.current = checkScript;
 
   useEffect(() => {
     const host = hostRef.current;
@@ -73,9 +86,24 @@ export default function CodeEditor({ path, value, onChange, onSave }: CodeEditor
       if (update.docChanged) onChangeRef.current(update.state.doc.toString());
     });
 
+    const lang = languageForPath(path);
+    // A stable wrapper (rather than passing checkScriptRef.current directly)
+    // so the linter always calls the latest `checkScript` prop without
+    // needing the extension itself rebuilt.
+    const checkScriptStable = (source: string) => checkScriptRef.current(source);
+
     const state = EditorState.create({
       doc: value,
-      extensions: [basicSetup, languageExtension(languageForPath(path)), codeTheme, saveKeymap, updateListener],
+      extensions: [
+        basicSetup,
+        languageExtension(lang),
+        codeTheme,
+        saveKeymap,
+        updateListener,
+        autocompletion({ override: [ctxCompletionSource(lang)] }),
+        lintGutter(),
+        makeCheckScriptLinter(checkScriptStable, lang),
+      ],
     });
 
     const view = new EditorView({ state, parent: host });
