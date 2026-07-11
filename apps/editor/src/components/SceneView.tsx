@@ -4,10 +4,11 @@
  * This is deliberately not the game runtime — it draws the authored data.
  */
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import type { TilemapComponent } from '@hearth/core';
+import type { ParticleEmitterComponent, TilemapComponent } from '@hearth/core';
 import { useEditor } from '../store';
 import { fileUrl } from '../api';
 import { isTypingTarget } from '../keybinds';
+import { ParticlePreview, particleVisual, type PreviewTarget } from '../particlePreview';
 import {
   edgeMidpoints,
   insertVertexOnEdge,
@@ -41,6 +42,7 @@ import {
   type TileCell,
 } from '../tilemapPaint';
 import { ERASER_CHAR, TilemapPainter } from './TilemapPainter';
+import { Icon } from './ui';
 import type { AssetItem, SceneEntity, Vec2 } from '../types';
 
 interface ViewTransform {
@@ -103,6 +105,26 @@ const MIN_ZOOM = 0.05;
 const MAX_ZOOM = 12;
 /** Multiplicative step for the =/- keyboard-zoom shortcuts (a 25% step per press). */
 const KEY_ZOOM_FACTOR = 1.25;
+
+/** localStorage key for the "Particles" toolbar toggle, alongside the layout/last-project keys. */
+const PARTICLES_PREVIEW_PREF_KEY = 'hearth.scene.particlesPreview';
+
+/** Default ON; only turns off if the user explicitly stored '0'. */
+function readParticlesPreviewPref(): boolean {
+  try {
+    return localStorage.getItem(PARTICLES_PREVIEW_PREF_KEY) !== '0';
+  } catch {
+    return true;
+  }
+}
+
+function writeParticlesPreviewPref(enabled: boolean): void {
+  try {
+    localStorage.setItem(PARTICLES_PREVIEW_PREF_KEY, enabled ? '1' : '0');
+  } catch {
+    /* private mode / quota — best-effort, like the layout/last-project prefs */
+  }
+}
 
 /**
  * Zoom by `factor` around a fixed screen-space point (keeps that point under
@@ -264,14 +286,75 @@ export function SceneView() {
   // The host lives in a dockview panel, so it can be zero-sized on first
   // render (hidden tab, layout still settling). A ResizeObserver bumps
   // viewportEpoch so the fit retries once the panel actually has a size.
+  // The same "zero-sized while hidden" behavior (dockview detaches an
+  // inactive tab's content from the DOM) doubles as the particle preview's
+  // "is the Scene panel actually visible" gate below — no dockview API
+  // wiring needed, just this already-observed size.
   const [viewportEpoch, setViewportEpoch] = useState(0);
+  const [panelVisible, setPanelVisible] = useState(false);
   useEffect(() => {
     const host = hostRef.current;
     if (!host || typeof ResizeObserver === 'undefined') return;
-    const observer = new ResizeObserver(() => setViewportEpoch((n) => n + 1));
+    const observer = new ResizeObserver(() => {
+      setViewportEpoch((n) => n + 1);
+      setPanelVisible(host.clientWidth > 0 && host.clientHeight > 0);
+    });
     observer.observe(host);
     return () => observer.disconnect();
   }, []);
+
+  // ---- editor-only live particle preview for the selected emitter ---------
+  // See particlePreview.ts for the ticker/gating/reset design. One
+  // ParticlePreview instance per SceneView mount; disposed on unmount so its
+  // rAF ticker never outlives the component. The cleanup also clears the ref
+  // (not just calling dispose()) so React 18 StrictMode's dev-only
+  // mount→unmount→remount cycle doesn't permanently poison a disposed
+  // instance that the render-phase guard below would otherwise never
+  // replace — without this, the remounted component keeps reusing the same
+  // (now-disposed, un-recoverable) ParticlePreview and the preview silently
+  // never starts.
+  const particlePreviewRef = useRef<ParticlePreview | null>(null);
+  if (!particlePreviewRef.current) particlePreviewRef.current = new ParticlePreview();
+  const particlePreview = particlePreviewRef.current;
+  useEffect(() => {
+    return () => {
+      particlePreview.dispose();
+      if (particlePreviewRef.current === particlePreview) particlePreviewRef.current = null;
+    };
+  }, [particlePreview]);
+
+  const [particlesEnabled, setParticlesEnabledState] = useState(readParticlesPreviewPref);
+  function setParticlesEnabled(next: boolean): void {
+    setParticlesEnabledState(next);
+    writeParticlesPreviewPref(next);
+  }
+
+  // Re-render on every stepped preview frame (only fires while the ticker is
+  // actually gated on — see ParticlePreview.sync/isActive).
+  const [, bumpParticleTick] = useState(0);
+  useEffect(() => particlePreview.subscribe(() => bumpParticleTick((n) => n + 1)), [particlePreview]);
+
+  useEffect(() => particlePreview.setVisible(panelVisible), [particlePreview, panelVisible]);
+  useEffect(() => particlePreview.setToggleEnabled(particlesEnabled), [particlePreview, particlesEnabled]);
+  useEffect(() => {
+    const fixedTimestep = info?.buildSettings.fixedTimestep;
+    particlePreview.setFixedDt(fixedTimestep && fixedTimestep > 0 ? 1 / fixedTimestep : 1 / 60);
+  }, [particlePreview, info?.buildSettings.fixedTimestep]);
+
+  // Only the selected entity's ParticleEmitter (if any, and if enabled) ever
+  // gets a target — perf guard: nothing else in the scene simulates. Reruns
+  // on `dragPos` too so a live move-drag (not just an Inspector edit, which
+  // already produces a new `entityById`/entity object via the store's
+  // full-scene refresh) resets the preview at its new origin.
+  const selectedForPreview = selection ? entityById.get(selection) : undefined;
+  useEffect(() => {
+    const pe = selectedForPreview?.components.ParticleEmitter as ParticleEmitterComponent | undefined;
+    const targets: PreviewTarget[] =
+      selectedForPreview && selectedForPreview.enabled && pe
+        ? [{ entityId: selectedForPreview.id, emitter: pe, origin: worldPos(selectedForPreview) }]
+        : [];
+    particlePreview.setTargets(targets);
+  }, [particlePreview, selectedForPreview, dragPos]);
 
   useEffect(() => {
     const host = hostRef.current;
@@ -1295,6 +1378,40 @@ export function SceneView() {
     );
   }
 
+  /**
+   * Live editor-only preview for the selected entity's ParticleEmitter (see
+   * particlePreview.ts): one SVG circle per surviving particle, sized/colored
+   * by start→end interpolation exactly like packages/runtime/src/pixi/index.ts's
+   * updateParticles (see particleVisual). Particle x/y are world-space, so
+   * they're offset by -worldPos here since this renders inside the entity's
+   * `<g transform="translate(wp.x wp.y)">` (world position only, unrotated/
+   * unscaled — same group renderParticleGizmo uses, for the same reason).
+   */
+  function renderLiveParticles(entity: SceneEntity): React.ReactNode {
+    const pe = entity.components.ParticleEmitter as ParticleEmitterComponent | undefined;
+    if (!pe) return null;
+    const wp = worldPos(entity);
+    const particles = particlePreview.getPreviewParticles(entity.id);
+    return (
+      <g pointerEvents="none">
+        {particles.map((p, i) => {
+          const visual = particleVisual(p, pe);
+          if (!visual) return null;
+          return (
+            <circle
+              key={i}
+              cx={visual.x - wp.x}
+              cy={visual.y - wp.y}
+              r={visual.radius}
+              fill={visual.color}
+              fillOpacity={visual.alpha}
+            />
+          );
+        })}
+      </g>
+    );
+  }
+
   /** Visual bounds in local space, for hit-testing and the selection outline. */
   function boundsOf(entity: SceneEntity): { x: number; y: number; w: number; h: number } {
     const sr = entity.components.SpriteRenderer as any;
@@ -1414,9 +1531,16 @@ export function SceneView() {
                   <rect x={b.x} y={b.y} width={b.w} height={b.h} fill="transparent" stroke="none" />
                 </g>
                 {/* Light2D/ParticleEmitter gizmos: world position only, not the
-                    entity's own rotation/scale — see their render fns for why. */}
+                    entity's own rotation/scale — see their render fns for why.
+                    The selected entity's emitter swaps the static cone gizmo
+                    for the live preview while it's actually active (panel
+                    visible + toggle on); every other emitter, and the
+                    selected one when the preview isn't active, keeps the
+                    cone gizmo so it's never simply invisible. */}
                 {renderLightGizmo(entity)}
-                {renderParticleGizmo(entity)}
+                {entity.id === selection && particlesEnabled && panelVisible
+                  ? renderLiveParticles(entity)
+                  : renderParticleGizmo(entity)}
               </g>
             );
           })}
@@ -1635,6 +1759,16 @@ export function SceneView() {
           onResize={handleResizeTilemap}
         />
       )}
+
+      <button
+        type="button"
+        className={particlesEnabled ? 'btn btn-primary btn-sm scene-particles-toggle' : 'btn btn-sm scene-particles-toggle'}
+        onClick={() => setParticlesEnabled(!particlesEnabled)}
+        title="Toggle the live particle preview for the selected emitter (Scene view only — doesn't affect Play mode)"
+        aria-pressed={particlesEnabled}
+      >
+        <Icon name="particles" size={11} /> Particles
+      </button>
 
       <div className="scene-hud">
         <span>{Math.round(view.s * 100)}%</span>
