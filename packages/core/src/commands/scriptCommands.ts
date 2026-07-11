@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { defineCommand } from './types.js';
+import { defineCommand, type CommandContext } from './types.js';
 import { findEntity } from '../schema/scene.js';
 import { createComponent } from '../schema/components.js';
 import { ProjectError } from '../project/store.js';
@@ -7,6 +7,7 @@ import { joinPath, isSafeRelativePath } from '../fs.js';
 import { slugify } from '../ids.js';
 import { SCRIPTS_DIR } from '../schema/project.js';
 import { checkScriptSource } from '../validate.js';
+import { formatSource, FormatError } from '../format.js';
 
 export const SCRIPT_TEMPLATE = `/**
  * {{NAME}} — a Hearth behavior script.
@@ -155,6 +156,8 @@ export const createScript = defineCommand({
     language: z.enum(['lua', 'js']).default('lua'),
     /** Full source; omit to use the documented template. */
     source: z.string().optional(),
+    /** Override project codeStyle.formatOnSave for this call. */
+    format: z.boolean().optional(),
   }),
   async run(ctx, params) {
     const filename = slugify(params.name).replace(/_/g, '-') + '.' + params.language;
@@ -164,11 +167,12 @@ export const createScript = defineCommand({
       throw new ProjectError(`Script already exists: ${relPath}. Use editScript to modify it.`, 'CONFLICT');
     }
     const template = params.language === 'js' ? SCRIPT_TEMPLATE : LUA_SCRIPT_TEMPLATE;
-    const source = params.source ?? template.replace('{{NAME}}', params.name);
+    const rawSource = params.source ?? template.replace('{{NAME}}', params.name);
+    const { source, formatted } = await applyFormatting(ctx, relPath, rawSource, params.format);
     await ctx.fs.writeFile(absPath, source);
     ctx.changed({ kind: 'script', path: relPath, name: params.name, action: 'created' });
     ctx.suggest(`attachScript --scene <scene> --entity <entity> --script ${relPath}`);
-    return { path: relPath, language: params.language, lines: source.split('\n').length };
+    return { path: relPath, language: params.language, lines: source.split('\n').length, source, formatted };
   },
 });
 
@@ -181,12 +185,48 @@ export const createScript = defineCommand({
  * Throws INVALID_INPUT when the path escapes the project root or lands
  * outside scripts/.
  */
-function resolveScriptsPath(rawPath: string): string {
+export function resolveScriptsPath(rawPath: string): string {
   const normalized = joinPath(rawPath);
   if (!isSafeRelativePath(rawPath) || !normalized.startsWith(SCRIPTS_DIR + '/')) {
     throw new ProjectError(`Script path must be inside ${SCRIPTS_DIR}/ (got: ${rawPath})`, 'INVALID_INPUT');
   }
   return normalized;
+}
+
+/** The formattable language for a script path, or undefined for others (e.g. .ts). */
+function scriptLanguage(path: string): 'lua' | 'js' | undefined {
+  if (path.endsWith('.lua')) return 'lua';
+  if (path.endsWith('.js')) return 'js';
+  return undefined;
+}
+
+/**
+ * Run the on-save formatter over a script's source, honouring the per-call
+ * `format` override / project `codeStyle.formatOnSave`. Formatting NEVER
+ * blocks a save: an unformattable-but-writeable source falls back to a
+ * verbatim write plus a `FORMAT_FAILED` warning. Paths with no formatter
+ * (e.g. `.ts`) are written verbatim, silently. Returns the final on-disk
+ * source and whether the formatter was applied.
+ */
+async function applyFormatting(
+  ctx: CommandContext,
+  path: string,
+  source: string,
+  wantFormat: boolean | undefined,
+): Promise<{ source: string; formatted: boolean }> {
+  const shouldFormat = wantFormat ?? ctx.store.project.codeStyle.formatOnSave;
+  const language = scriptLanguage(path);
+  if (!shouldFormat || !language) return { source, formatted: false };
+  try {
+    const { formatted } = await formatSource(language, source);
+    return { source: formatted, formatted: true };
+  } catch (err) {
+    if (err instanceof FormatError) {
+      ctx.warn('FORMAT_FAILED', `Could not format ${path} (saved as-is): ${err.message}`);
+      return { source, formatted: false };
+    }
+    throw err;
+  }
 }
 
 export const editScript = defineCommand({
@@ -197,6 +237,8 @@ export const editScript = defineCommand({
   paramsSchema: z.object({
     path: z.string().min(1),
     source: z.string(),
+    /** Override project codeStyle.formatOnSave for this call. */
+    format: z.boolean().optional(),
   }),
   async run(ctx, params) {
     const path = resolveScriptsPath(params.path);
@@ -204,10 +246,11 @@ export const editScript = defineCommand({
     if (!(await ctx.fs.exists(absPath))) {
       throw new ProjectError(`Script not found: ${path}. Use createScript first.`, 'NOT_FOUND');
     }
-    await ctx.fs.writeFile(absPath, params.source);
+    const { source, formatted } = await applyFormatting(ctx, path, params.source, params.format);
+    await ctx.fs.writeFile(absPath, source);
     ctx.changed({ kind: 'script', path, action: 'modified' });
     ctx.suggest('validateProject', 'runPlaytest <playtest> to verify behavior');
-    return { path, lines: params.source.split('\n').length };
+    return { path, lines: source.split('\n').length, source, formatted };
   },
 });
 
@@ -255,6 +298,74 @@ export const checkScript = defineCommand({
       language,
       diagnostics,
     };
+  },
+});
+
+export const formatScript = defineCommand({
+  name: 'formatScript',
+  description:
+    'Reformat one script (path) or every .lua/.js script under scripts/ (all: true) to Hearth house style. ' +
+    'Agents normally do not need this — createScript/editScript format automatically unless format:false.',
+  permission: 'code-edit',
+  mutates: true,
+  paramsSchema: z.object({
+    /** A single scripts/ file to reformat. Mutually exclusive with `all`. */
+    path: z.string().optional(),
+    /** Reformat every formattable script under scripts/. Mutually exclusive with `path`. */
+    all: z.boolean().optional(),
+  }),
+  async run(ctx, params) {
+    // Hand-checked (not a zod .refine) so it surfaces as INVALID_INPUT, the
+    // code the rest of this file's path validation uses, not INVALID_PARAMS.
+    const hasPath = params.path !== undefined;
+    const hasAll = params.all === true;
+    if (hasPath === hasAll) {
+      throw new ProjectError('formatScript requires exactly one of "path" or "all: true"', 'INVALID_INPUT');
+    }
+
+    const targets: string[] = [];
+    if (hasPath) {
+      const path = resolveScriptsPath(params.path as string);
+      const absPath = joinPath(ctx.store.root, path);
+      if (!(await ctx.fs.exists(absPath))) {
+        throw new ProjectError(`Script not found: ${path}`, 'NOT_FOUND');
+      }
+      targets.push(path);
+    } else {
+      for (const path of await ctx.store.listScripts()) {
+        if (scriptLanguage(path)) {
+          targets.push(path);
+        } else {
+          ctx.warn('SCRIPT_UNKNOWN_EXTENSION', `Skipped ${path}: no formatter for this file type.`);
+        }
+      }
+    }
+
+    const results: Array<{ path: string; changed: boolean }> = [];
+    for (const path of targets) {
+      const language = scriptLanguage(path)!;
+      const absPath = joinPath(ctx.store.root, path);
+      const current = await ctx.store.readScript(path);
+      let changed = false;
+      try {
+        const formatted = await formatSource(language, current);
+        if (formatted.changed) {
+          await ctx.fs.writeFile(absPath, formatted.formatted);
+          ctx.changed({ kind: 'script', path, action: 'modified' });
+          changed = true;
+        }
+      } catch (err) {
+        if (err instanceof FormatError) {
+          ctx.warn('FORMAT_FAILED', `Could not format ${path} (left unchanged): ${err.message}`);
+        } else {
+          throw err;
+        }
+      }
+      results.push({ path, changed });
+    }
+
+    ctx.suggest('validateProject');
+    return { results };
   },
 });
 

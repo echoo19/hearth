@@ -28,12 +28,20 @@ function script.onUpdate(ctx, dt)
 end
 
 function script.onCollision(ctx, other)
-  if ctx.vars.paused then return end
-  if other.name ~= "Enemy" then return end
-  if ctx.vars.hp <= 0 then return end
+  if ctx.vars.paused then
+    return
+  end
+  if other.name ~= "Enemy" then
+    return
+  end
+  if ctx.vars.hp <= 0 then
+    return
+  end
   local now = ctx.time.elapsed
   local cooldown = ctx.params.hitCooldown or 0.4
-  if now - ctx.vars.lastHit < cooldown then return end
+  if now - ctx.vars.lastHit < cooldown then
+    return
+  end
   ctx.vars.lastHit = now
   ctx.vars.hp = math.max(0, ctx.vars.hp - (ctx.params.contactDamage or 8))
   if ctx.vars.hpHud then

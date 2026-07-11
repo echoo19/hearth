@@ -17,7 +17,7 @@ export * from './input/gamepad.js';
 
 // Formatting (fixed Hearth style; deps load lazily via `await import()` so
 // this stays safe to include in the browser bundle — see format.ts).
-export { formatSource, FormatError, type FormatResult } from './format.js';
+export { formatSource, FormatError, setFormatterModules, type FormatResult } from './format.js';
 
 // Project model
 export { ProjectStore, ProjectError, readJson, writeJson, type ProjectSnapshot } from './project/store.js';
@@ -54,7 +54,7 @@ export {
 } from './commands/types.js';
 export { type WebExportBundle } from './commands/exportCommands.js';
 export { HearthSession, extractJournalDetail, type SessionOptions } from './session.js';
-export { SCRIPT_TEMPLATE, LUA_SCRIPT_TEMPLATE } from './commands/scriptCommands.js';
+export { SCRIPT_TEMPLATE, LUA_SCRIPT_TEMPLATE, resolveScriptsPath } from './commands/scriptCommands.js';
 export { HISTORY_EXEMPT } from './commands/historyCommands.js';
 export { CTX_API, type CtxApiEntry } from './ctxApi.js';
 

@@ -535,34 +535,45 @@ export function buildProgram(): Command {
     );
   });
 
-  addGlobalOptions(
-    program
-      .command('edit-script <path>')
-      .description('replace the full source of a script file')
-      .option('--source-file <path>', 'read new source from a file instead of stdin'),
-  ).action(async (scriptPath: string, opts, cmd) => {
-    await guarded(cmd, 'editScript', async () => {
-      const source = opts.sourceFile
-        ? await fsp.readFile(path.resolve(opts.sourceFile), 'utf8')
-        : await readStdin();
-      if (source === null) {
-        throw new CliError('INVALID_INPUT', 'edit-script needs --source-file <path>, or source piped via stdin.');
-      }
-      await runAndEmit(cmd, 'editScript', { path: scriptPath, source });
-    });
-  });
-
-  addGlobalOptions(
-    program
-      .command('check-script <path>')
+  // The `script` subcommand group is the forward surface for script ops
+  // (edit / check / format). The legacy top-level `edit-script` /
+  // `check-script` verbs stay as aliases into the same handlers — agents have
+  // them memorized.
+  const editScriptOpts = (cmd: Command) =>
+    cmd
+      .description('replace the full source of a script file (reformats on save unless --no-format)')
+      .option('--source-file <path>', 'read new source from a file instead of stdin')
+      .option('--no-format', 'save verbatim, without reformatting to Hearth house style');
+  const checkScriptOpts = (cmd: Command) =>
+    cmd
       .description(
-        'check a script for syntax errors without saving it (pre-flight before edit-script). ' +
+        'check a script for syntax errors without saving it (pre-flight before edit). ' +
           'With --source, checks that text as if it would be saved to <path>; otherwise reads <path> from the project.',
       )
       .option('--source <text>', 'check this text instead of reading <path> from disk')
-      .option('--language <language>', 'scripting language override: lua or js'),
-  ).action(async (scriptPath: string, opts: { source?: string; language?: string }, cmd) => {
+      .option('--language <language>', 'scripting language override: lua or js');
+
+  const editScriptAction = async (scriptPath: string, opts: { sourceFile?: string; format?: boolean }, cmd: Command) => {
+    await guarded(cmd, 'editScript', () => runEditScriptCommand(cmd, scriptPath, opts));
+  };
+  const checkScriptAction = async (scriptPath: string, opts: { source?: string; language?: string }, cmd: Command) => {
     await guarded(cmd, 'checkScript', () => runCheckScriptCommand(cmd, scriptPath, opts));
+  };
+
+  addGlobalOptions(editScriptOpts(program.command('edit-script <path>'))).action(editScriptAction);
+  addGlobalOptions(checkScriptOpts(program.command('check-script <path>'))).action(checkScriptAction);
+
+  const script = program.command('script').description('edit, check, or reformat script files');
+  addGlobalOptions(script);
+  addGlobalOptions(editScriptOpts(script.command('edit <path>'))).action(editScriptAction);
+  addGlobalOptions(checkScriptOpts(script.command('check <path>'))).action(checkScriptAction);
+  addGlobalOptions(
+    script
+      .command('format [path]')
+      .description('reformat a script (or --all scripts) to Hearth house style')
+      .option('--all', 'reformat every .lua/.js script under scripts/'),
+  ).action(async (scriptPath: string | undefined, opts: { all?: boolean }, cmd) => {
+    await guarded(cmd, 'formatScript', () => runFormatScriptCommand(cmd, scriptPath, opts));
   });
 
   // ---------------------------------------------------------------------
@@ -1170,6 +1181,35 @@ interface CheckScriptDiagnostic {
   line: number | null;
   message: string;
   severity: 'error' | 'warning';
+}
+
+async function runEditScriptCommand(
+  cmd: Command,
+  scriptPath: string,
+  opts: { sourceFile?: string; format?: boolean },
+): Promise<void> {
+  const source = opts.sourceFile ? await fsp.readFile(path.resolve(opts.sourceFile), 'utf8') : await readStdin();
+  if (source === null) {
+    throw new CliError('INVALID_INPUT', 'edit-script needs --source-file <path>, or source piped via stdin.');
+  }
+  // commander's --no-format sets opts.format=false; absent means "use the
+  // project's codeStyle.formatOnSave" (send nothing).
+  const format = opts.format === false ? false : undefined;
+  await runAndEmit(cmd, 'editScript', { path: scriptPath, source, format });
+}
+
+async function runFormatScriptCommand(
+  cmd: Command,
+  scriptPath: string | undefined,
+  opts: { all?: boolean },
+): Promise<void> {
+  if (opts.all) {
+    await runAndEmit(cmd, 'formatScript', { all: true });
+  } else if (scriptPath) {
+    await runAndEmit(cmd, 'formatScript', { path: scriptPath });
+  } else {
+    throw new CliError('INVALID_INPUT', 'script format needs a <path> or --all.');
+  }
 }
 
 async function runCheckScriptCommand(

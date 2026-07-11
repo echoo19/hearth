@@ -26,6 +26,17 @@ const luaWasmInline = {
   loader: { '.wasm': 'base64' },
 };
 
+// The standalone CLI/MCP tool bundles additionally inline the script
+// formatters (StyLua wasm + Prettier). @hearth/core loads those via
+// non-literal dynamic imports the bundler can't follow, so `hearth script
+// format` would otherwise fail with no node_modules present. The Electron
+// main bundle skips this — it runs with real node_modules and format.ts's
+// normal dynamic-import resolution.
+const toolInline = {
+  inject: [path.join(here, 'lua-wasm-inline.mjs'), path.join(here, 'format-inline.mjs')],
+  loader: { '.wasm': 'base64' },
+};
+
 await build({
   entryPoints: [path.join(appRoot, 'electron', 'main.ts')],
   outfile: path.join(appRoot, 'dist-electron', 'main.cjs'),
@@ -111,7 +122,7 @@ for (const [entry, outfile] of [
         'const __dirname = __hearthDirname(__filename);',
       ].join(' '),
     },
-    ...luaWasmInline,
+    ...toolInline,
     alias: toolAliases,
   });
 }

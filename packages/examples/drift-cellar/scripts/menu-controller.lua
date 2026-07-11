@@ -30,15 +30,31 @@ end
 
 function script.onUpdate(ctx, dt)
   if ctx.input.justPressed("pause") then
-    if ctx.vars.open then closeMenu(ctx) else openMenu(ctx) end
+    if ctx.vars.open then
+      closeMenu(ctx)
+    else
+      openMenu(ctx)
+    end
     return
   end
-  if not ctx.vars.open then return end
-  if ctx.input.justPressed("ui-up") then ctx.ui.moveFocus("up") end
-  if ctx.input.justPressed("ui-down") then ctx.ui.moveFocus("down") end
-  if ctx.input.justPressed("ui-left") then ctx.ui.adjust(-1) end
-  if ctx.input.justPressed("ui-right") then ctx.ui.adjust(1) end
-  if ctx.input.justPressed("ui-confirm") then ctx.ui.activate() end
+  if not ctx.vars.open then
+    return
+  end
+  if ctx.input.justPressed("ui-up") then
+    ctx.ui.moveFocus("up")
+  end
+  if ctx.input.justPressed("ui-down") then
+    ctx.ui.moveFocus("down")
+  end
+  if ctx.input.justPressed("ui-left") then
+    ctx.ui.adjust(-1)
+  end
+  if ctx.input.justPressed("ui-right") then
+    ctx.ui.adjust(1)
+  end
+  if ctx.input.justPressed("ui-confirm") then
+    ctx.ui.activate()
+  end
 end
 
 function script.onEvent(ctx, name)

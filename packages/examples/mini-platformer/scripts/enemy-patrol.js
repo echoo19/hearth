@@ -18,10 +18,10 @@ export default {
   },
 
   onCollision(ctx, other) {
-    if (!other.tags.includes('player')) return;
+    if (!other.tags.includes("player")) return;
     other.transform.position.x = 120;
     other.transform.position.y = 380;
-    ctx.audio.play('hit-sound');
-    ctx.log('player hit by enemy');
+    ctx.audio.play("hit-sound");
+    ctx.log("player hit by enemy");
   },
 };

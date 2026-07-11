@@ -26,9 +26,17 @@ local function spawnEnemy(ctx, x, y)
     tags = { "enemy" },
     components = {
       SpriteRenderer = { assetId = ctx.params.enemyAsset, width = 22, height = 22 },
-      Collider = { shape = "circle", radius = 11, layer = "enemy", collidesWith = { "default", "player" } },
+      Collider = {
+        shape = "circle",
+        radius = 11,
+        layer = "enemy",
+        collidesWith = { "default", "player" },
+      },
       PhysicsBody = { bodyType = "kinematic" },
-      Script = { scriptPath = "scripts/enemy-chase.lua", params = { speed = ctx.params.enemySpeed or 90 } },
+      Script = {
+        scriptPath = "scripts/enemy-chase.lua",
+        params = { speed = ctx.params.enemySpeed or 90 },
+      },
     },
   })
   ctx.events.emit("enemy-spawned")
@@ -51,7 +59,8 @@ function script.onUpdate(ctx, dt)
     ctx.vars.timerHud.getComponent("Text").content = string.format("Time: %.1f", ctx.time.elapsed)
   end
   if ctx.vars.hordeHud then
-    ctx.vars.hordeHud.getComponent("Text").content = string.format("Enemies: %d/%d", ctx.vars.count, ENEMY_CAP)
+    ctx.vars.hordeHud.getComponent("Text").content =
+      string.format("Enemies: %d/%d", ctx.vars.count, ENEMY_CAP)
   end
 end
 

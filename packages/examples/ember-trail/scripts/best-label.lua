@@ -4,7 +4,9 @@ local script = {}
 
 function script.onStart(ctx)
   local best = ctx.load("best")
-  if type(best) ~= "number" then best = 0 end
+  if type(best) ~= "number" then
+    best = 0
+  end
   ctx.getComponent("Text").content = string.format("Best: %d", best)
 end
 

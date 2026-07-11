@@ -7,7 +7,8 @@ local TOTAL_PARCELS = 3
 
 function script.onStart(ctx)
   ctx.vars.collected = 0
-  ctx.getComponent("Text").content = string.format("Parcels: %d/%d", ctx.vars.collected, TOTAL_PARCELS)
+  ctx.getComponent("Text").content =
+    string.format("Parcels: %d/%d", ctx.vars.collected, TOTAL_PARCELS)
 end
 
 function script.onEvent(ctx, name, data)
@@ -17,7 +18,8 @@ function script.onEvent(ctx, name, data)
       amount = data.left
     end
     ctx.vars.collected = ctx.vars.collected + amount
-    ctx.getComponent("Text").content = string.format("Parcels: %d/%d", ctx.vars.collected, TOTAL_PARCELS)
+    ctx.getComponent("Text").content =
+      string.format("Parcels: %d/%d", ctx.vars.collected, TOTAL_PARCELS)
   elseif name == "delivered" then
     ctx.getComponent("Text").content = "All delivered!"
   end

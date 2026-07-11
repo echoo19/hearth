@@ -14,7 +14,9 @@ function script.onStart(ctx)
 end
 
 function script.onEvent(ctx, name, data)
-  if name ~= "gem" then return end
+  if name ~= "gem" then
+    return
+  end
   local amount = 1
   if data and type(data.value) == "number" then
     amount = data.value

@@ -55,5 +55,8 @@
       "image": null,
       "spinner": false
     }
+  },
+  "codeStyle": {
+    "formatOnSave": true
   }
 }

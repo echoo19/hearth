@@ -47,10 +47,16 @@ function script.onUpdate(ctx, dt)
 end
 
 function script.onCollision(ctx, other)
-  if string.sub(other.name, 1, 4) ~= "Wall" then return end
-  if ctx.vars.speedInto < 80 then return end
+  if string.sub(other.name, 1, 4) ~= "Wall" then
+    return
+  end
+  if ctx.vars.speedInto < 80 then
+    return
+  end
   local now = ctx.time.elapsed
-  if now - ctx.vars.lastBump < 0.5 then return end
+  if now - ctx.vars.lastBump < 0.5 then
+    return
+  end
   ctx.vars.lastBump = now
   ctx.camera.flash("#b7f0ff", 0.15)
   local toggle = ctx.scene.find("Screen Shake")

@@ -4,7 +4,9 @@
 local script = {}
 
 function script.onUiEvent(ctx, event)
-  if event.type ~= "click" then return end
+  if event.type ~= "click" then
+    return
+  end
   ctx.audio.play("start-sound")
   ctx.scenes.load("Level")
 end

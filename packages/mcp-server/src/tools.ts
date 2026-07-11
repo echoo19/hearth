@@ -425,22 +425,37 @@ export const TOOL_SPECS: ToolSpec[] = [
     name: 'create_script',
     command: 'createScript',
     description:
-      'Create a new script file in scripts/ from the standard template (or custom source). Lua by default; language "js" for JavaScript. Returns its path. (requires code-edit)',
+      'Create a new script file in scripts/ from the standard template (or custom source). Lua by default; language "js" for JavaScript. Reformats to Hearth house style on save unless format:false. Returns its path. (requires code-edit)',
     permission: 'code-edit',
     inputShape: {
       name: z.string().min(1),
       language: z.enum(['lua', 'js']).optional(),
       source: z.string().optional(),
+      format: z.boolean().optional(),
     },
   },
   {
     name: 'edit_script',
     command: 'editScript',
-    description: 'Replace the full source of an existing script file. (requires code-edit)',
+    description:
+      'Replace the full source of an existing script file. Reformats to Hearth house style on save unless format:false. (requires code-edit)',
     permission: 'code-edit',
     inputShape: {
       path: z.string().min(1),
       source: z.string(),
+      format: z.boolean().optional(),
+    },
+  },
+  {
+    name: 'format_script',
+    command: 'formatScript',
+    description:
+      "Reformat script(s) to Hearth house style; agents normally don't need this — edit_script formats " +
+      'automatically unless format:false. Pass path for one script, or all:true for every .lua/.js under scripts/. (requires code-edit)',
+    permission: 'code-edit',
+    inputShape: {
+      path: z.string().optional(),
+      all: z.boolean().optional(),
     },
   },
   {

@@ -7,7 +7,9 @@ function script.onStart(ctx)
 end
 
 function script.onEvent(ctx, name, data)
-  if name ~= "coin" then return end
+  if name ~= "coin" then
+    return
+  end
   -- Event payloads cross the JS/Lua boundary as proxies, not plain Lua
   -- tables: type(data) reports "userdata" here, never "table", so a
   -- type(data) == "table" guard always fails. Field access on the proxy

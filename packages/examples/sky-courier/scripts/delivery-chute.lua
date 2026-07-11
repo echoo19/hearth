@@ -14,7 +14,9 @@ function script.onStart(ctx)
 end
 
 function script.onEvent(ctx, name, data)
-  if name ~= "parcel" then return end
+  if name ~= "parcel" then
+    return
+  end
   local amount = 1
   if data and type(data.left) == "number" then
     amount = data.left
@@ -23,8 +25,12 @@ function script.onEvent(ctx, name, data)
 end
 
 function script.onCollision(ctx, other)
-  if other.name ~= "Courier" then return end
-  if ctx.vars.delivered or ctx.vars.collected < TOTAL_PARCELS then return end
+  if other.name ~= "Courier" then
+    return
+  end
+  if ctx.vars.delivered or ctx.vars.collected < TOTAL_PARCELS then
+    return
+  end
   ctx.vars.delivered = true
   ctx.events.emit("delivered")
   ctx.audio.play("delivery-sound", { volume = 0.9 })

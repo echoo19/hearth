@@ -24,7 +24,9 @@ function script.onUpdate(ctx, dt)
     return
   end
   local player = ctx.vars.player
-  if not player then return end
+  if not player then
+    return
+  end
   local toPlayer = ctx.math.sub(player.transform.position, ctx.transform.position)
   local steer = ctx.math.scale(ctx.math.normalize(toPlayer), ctx.params.speed or 90)
   body.velocity.x = steer.x

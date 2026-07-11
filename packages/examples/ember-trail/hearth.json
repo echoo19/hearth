@@ -60,5 +60,8 @@
       "image": null,
       "spinner": true
     }
+  },
+  "codeStyle": {
+    "formatOnSave": true
   }
 }

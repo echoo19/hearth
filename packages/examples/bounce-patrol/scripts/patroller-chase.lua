@@ -15,7 +15,9 @@ local REPATH_INTERVAL = 30
 
 local function repath(ctx)
   local player = ctx.scene.find("Player")
-  if not player then return end
+  if not player then
+    return
+  end
   ctx.vars.path = ctx.scene.findPath(ctx.transform.position, player.transform.position)
   ctx.vars.waypointIndex = 1
 end
@@ -59,7 +61,9 @@ function script.onUpdate(ctx, dt)
 end
 
 function script.onCollision(ctx, other)
-  if other.name ~= "Player" then return end
+  if other.name ~= "Player" then
+    return
+  end
   ctx.events.emit("caught")
 end
 

@@ -49,8 +49,25 @@ type StyluaModule = typeof import('@johnnymorganz/stylua');
 
 const STYLUA_SPECIFIER = '@johnnymorganz/stylua';
 
+/**
+ * Standalone-bundle escape hatch. The single-file `hearth-cli.mjs` /
+ * `hearth-mcp.mjs` esbuild bundles ship with NO node_modules, so the runtime
+ * `import(...)` below would fail there. Their build injects a shim that
+ * pre-resolves the formatter libraries (stylua's WASM initialised from
+ * embedded bytes, prettier standalone + plugins bundled in) and hands them
+ * here via `setFormatterModules`. Dev / editor-server / npm-installed
+ * contexts never call this, so they keep using ordinary Node resolution.
+ */
+let styluaOverride: StyluaModule | undefined;
+let prettierOverride: PrettierModules | undefined;
+export function setFormatterModules(mods: { stylua?: StyluaModule; prettier?: PrettierModules }): void {
+  if (mods.stylua) styluaOverride = mods.stylua;
+  if (mods.prettier) prettierOverride = mods.prettier;
+}
+
 let styluaModule: Promise<StyluaModule> | undefined;
 function loadStylua(): Promise<StyluaModule> {
+  if (styluaOverride) return Promise.resolve(styluaOverride);
   styluaModule ??= import(STYLUA_SPECIFIER) as Promise<StyluaModule>;
   return styluaModule;
 }
@@ -68,6 +85,7 @@ const PRETTIER_ESTREE_SPECIFIER = 'prettier/plugins/estree';
 
 let prettierModules: Promise<PrettierModules> | undefined;
 function loadPrettier(): Promise<PrettierModules> {
+  if (prettierOverride) return Promise.resolve(prettierOverride);
   prettierModules ??= Promise.all([
     import(PRETTIER_STANDALONE_SPECIFIER) as Promise<PrettierStandalone>,
     // Import the plugin modules as namespaces (not their default export):

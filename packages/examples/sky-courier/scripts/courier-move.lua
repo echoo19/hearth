@@ -18,8 +18,12 @@ function script.onUpdate(ctx, dt)
   local speed = ctx.params.speed or 170
 
   local vx = 0
-  if ctx.input.isDown("left") then vx = vx - speed end
-  if ctx.input.isDown("right") then vx = vx + speed end
+  if ctx.input.isDown("left") then
+    vx = vx - speed
+  end
+  if ctx.input.isDown("right") then
+    vx = vx + speed
+  end
   body.velocity.x = vx
 
   if ctx.input.justPressed("jump") and ctx.isGrounded() then

@@ -12,7 +12,9 @@ function script.onStart(ctx)
 end
 
 function script.onCollision(ctx, other)
-  if ctx.vars.hit or other.name ~= "Player" then return end
+  if ctx.vars.hit or other.name ~= "Player" then
+    return
+  end
   ctx.vars.hit = true
   ctx.effects.flash(ctx.params.flashColor or "#fff4d6", ctx.params.flashSeconds or 0.2)
   ctx.audio.play("hit-sound", { volume = 0.6 })
@@ -20,7 +22,9 @@ function script.onCollision(ctx, other)
 end
 
 function script.onUpdate(ctx, dt)
-  if not ctx.vars.hit then return end
+  if not ctx.vars.hit then
+    return
+  end
   ctx.vars.dissolveElapsed = ctx.vars.dissolveElapsed + dt
   local duration = ctx.params.dissolveSeconds or 0.5
   local fx = ctx.getComponent("SpriteEffects")

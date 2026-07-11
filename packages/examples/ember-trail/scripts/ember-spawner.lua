@@ -23,7 +23,9 @@ function script.onStart(ctx)
     })
     ctx.timers.after(ctx.params.lifetime or 4, function()
       local e = ctx.scene.find(name)
-      if e then ctx.scene.destroy(e) end
+      if e then
+        ctx.scene.destroy(e)
+      end
     end)
   end)
 end

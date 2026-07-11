@@ -22,9 +22,13 @@ local function setCrt(camera, enabled)
 end
 
 function script.onUiEvent(ctx, event)
-  if event.type ~= "change" then return end
+  if event.type ~= "change" then
+    return
+  end
   local mainCamera = ctx.scene.find("Main Camera")
-  if not mainCamera then return end
+  if not mainCamera then
+    return
+  end
   setCrt(mainCamera.getComponent("Camera"), event.value)
   ctx.audio.play("toggle-sound", { volume = 0.5 })
 end

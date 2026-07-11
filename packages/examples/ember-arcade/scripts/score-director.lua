@@ -8,11 +8,14 @@ function script.onStart(ctx)
 end
 
 function script.onEvent(ctx, name)
-  if name ~= "target-hit" then return end
+  if name ~= "target-hit" then
+    return
+  end
   ctx.vars.count = ctx.vars.count + 1
   local hud = ctx.scene.find("Score HUD")
   if hud then
-    hud.getComponent("Text").content = string.format("Targets: %d/%d", ctx.vars.count, ctx.params.total or 3)
+    hud.getComponent("Text").content =
+      string.format("Targets: %d/%d", ctx.vars.count, ctx.params.total or 3)
   end
 end
 

@@ -5,7 +5,9 @@
 local script = {}
 
 function script.onCollision(ctx, other)
-  if other.name ~= "Courier" then return end
+  if other.name ~= "Courier" then
+    return
+  end
   ctx.events.emit("parcel", { left = 1 })
   ctx.audio.play("parcel-sound", { volume = 0.8 })
   ctx.destroySelf()
