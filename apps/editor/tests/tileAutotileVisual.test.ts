@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import type { AutotileRule } from '@hearth/core';
 import { isAutotileRule, overlayStrokeCells, resolveTileVisual, type TileAsset } from '../src/tileAutotileVisual';
 import type { AssetItem } from '../src/types';
@@ -82,6 +82,22 @@ describe('resolveTileVisual', () => {
     const visual = resolveTileVisual(['...', '.G.', '...'], 1, 1, { G: rule }, map);
     expect(visual).toEqual({ assetId: 'ast_sheet', frame: { name: 'custom_lone', x: 4, y: 4, width: 16, height: 16 } });
   });
+
+  it('resolves a 1x1 grid through the full mask path, off-grid neighbours counting as same (fully-surrounded shape)', () => {
+    // A single-cell grid has all 8 neighbours off-grid, which computeMask
+    // treats as SAME -> raw mask 255 -> canonical shape '255' -> blob_255,
+    // the same frame a tile fully surrounded by its own kind would get.
+    // This must resolve through the real mask/frame lookup, not just hit
+    // the missing-sheet fallback (which would also produce an assetId-only
+    // result and mask this path being broken).
+    const asset = sheetAsset('ast_sheet', [
+      { name: 'blob_0', x: 0, y: 0, w: 16, h: 16 },
+      { name: 'blob_255', x: 32, y: 0, w: 16, h: 16 },
+    ]);
+    const map = new Map([[asset.id, asset]]);
+    const visual = resolveTileVisual(['G'], 0, 0, { G: RULE }, map);
+    expect(visual).toEqual({ assetId: 'ast_sheet', frame: { name: 'blob_255', x: 32, y: 0, width: 16, height: 16 } });
+  });
 });
 
 describe('overlayStrokeCells', () => {
@@ -113,6 +129,27 @@ describe('overlayStrokeCells', () => {
       { x: 0, y: 0, char: 'W' },
     ];
     expect(overlayStrokeCells(grid, cells)).toEqual(['W..']);
+  });
+
+  it('only rebuilds rows that contain a stroke cell, leaving every other row untouched (copy-on-write)', () => {
+    // Guards against an O(grid-size) full-grid split/join copy on every
+    // call: JS string primitives compare by value, so `toBe` can't tell
+    // "same reference" from "freshly built identical string" -- spy on
+    // String.prototype.split instead, since that's the per-row rebuild
+    // operation. A stroke touching 1 of 1000 rows must only split() that
+    // one row, not all 1000, so a 5-cell stroke on a huge map stays cheap.
+    const rowCount = 1000;
+    const grid = Array.from({ length: rowCount }, () => 'GGG');
+    const cells: TileCell[] = [{ x: 1, y: 500, char: 'W' }];
+    const splitSpy = vi.spyOn(String.prototype, 'split');
+    const result = overlayStrokeCells(grid, cells);
+    expect(splitSpy).toHaveBeenCalledTimes(1);
+    expect(splitSpy).toHaveBeenCalledWith('');
+    splitSpy.mockRestore();
+    expect(result[500]).toBe('GWG');
+    expect(result[0]).toBe(grid[0]);
+    expect(result[999]).toBe(grid[999]);
+    expect(result).toHaveLength(rowCount);
   });
 });
 

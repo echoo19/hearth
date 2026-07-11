@@ -67,10 +67,24 @@ export function resolveTileVisual(
  */
 export function overlayStrokeCells(grid: readonly string[], cells: readonly TileCell[]): string[] {
   if (cells.length === 0) return grid.slice();
-  const rows = grid.map((line) => line.split(''));
+  // Copy-on-write per row: a stroke is at most FREEHAND_AUTOTILE_PREVIEW_CAP
+  // cells, but the grid can be huge, so touching every row on every
+  // pointermove (a prior version did `grid.map(line => line.split(''))`)
+  // makes preview cost scale with map size instead of stroke size. Only
+  // rows containing a stroke cell get split/rebuilt; every other row keeps
+  // its original string in the result array untouched.
+  const rows = grid.slice();
+  const dirtyRows = new Map<number, string[]>();
   for (const cell of cells) {
-    const row = rows[cell.y];
-    if (row && cell.x >= 0 && cell.x < row.length) row[cell.x] = cell.char;
+    const original = rows[cell.y];
+    if (original === undefined || cell.x < 0 || cell.x >= original.length) continue;
+    let chars = dirtyRows.get(cell.y);
+    if (!chars) {
+      chars = original.split('');
+      dirtyRows.set(cell.y, chars);
+    }
+    chars[cell.x] = cell.char;
   }
-  return rows.map((chars) => chars.join(''));
+  for (const [y, chars] of dirtyRows) rows[y] = chars.join('');
+  return rows;
 }
