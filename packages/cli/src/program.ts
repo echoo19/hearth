@@ -439,6 +439,24 @@ export function buildProgram(): Command {
 
   addGlobalOptions(
     program
+      .command('set-many <scene> <entity>')
+      .description(
+        'set multiple component properties on one entity in a single undo step, e.g. ' +
+          'hearth set-many MyScene Coin --properties \'{"Transform.position.x":100,"SpriteRenderer.width":64}\'',
+      )
+      .requiredOption('--properties <json>', 'dot-path property map, e.g. {"Transform.position.x":100}'),
+  ).action(async (scene: string, entity: string, opts, cmd) => {
+    await guarded(cmd, 'setProperties', () =>
+      runAndEmit(cmd, 'setProperties', {
+        scene,
+        entity,
+        properties: parseJsonObject(opts.properties, '--properties'),
+      }),
+    );
+  });
+
+  addGlobalOptions(
+    program
       .command('set-input <action> [keys...]')
       .description('set (or, with no keys, remove) the key bindings for an input action'),
   ).action(async (action: string, keys: string[], opts, cmd) => {

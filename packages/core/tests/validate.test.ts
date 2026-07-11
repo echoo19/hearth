@@ -163,3 +163,56 @@ describe('prefab validation', () => {
     expect(err?.message).toContain('not an animation');
   });
 });
+
+describe('UNKNOWN_COMPONENT_KEY validation (pre-fix projects must still load)', () => {
+  it('warns (never errors) when a raw scene file has a typo\'d component field', async () => {
+    const { session, store, fs } = await makeSession();
+    const created = await session.execute<any>('createEntity', { scene: 'Main', name: 'Coin' });
+    expect(created.success).toBe(true);
+    const entityId = created.data.entityId as string;
+    const sceneId = store.getScene('Main')!.id;
+    const scenePath = `/proj/${store.sceneRef(sceneId)!.path}`;
+
+    // Simulate a pre-fix project written before strict path validation existed:
+    // a typo'd key that Zod silently stripped on load is still sitting in the raw file.
+    const data: any = await readJson(fs, scenePath);
+    const entity = data.entities.find((e: any) => e.id === entityId);
+    entity.components.Transform.postiion = { x: 1, y: 1 };
+    await fs.writeFile(scenePath, JSON.stringify(data));
+
+    const report = await validateProject(store);
+    expect(report.valid).toBe(true); // warning only, never an error
+    const warning = report.warnings.find((w) => w.code === 'UNKNOWN_COMPONENT_KEY');
+    expect(warning).toBeTruthy();
+    expect(warning?.message).toContain('postiion');
+    expect(warning?.message).toContain('Transform');
+    expect(warning?.entity).toBe(entityId);
+    expect(warning?.scene).toBe(sceneId);
+  });
+
+  it('recurses one level into known nested objects', async () => {
+    const { session, store, fs } = await makeSession();
+    const created = await session.execute<any>('createEntity', { scene: 'Main', name: 'Coin' });
+    const entityId = created.data.entityId as string;
+    const sceneId = store.getScene('Main')!.id;
+    const scenePath = `/proj/${store.sceneRef(sceneId)!.path}`;
+
+    const data: any = await readJson(fs, scenePath);
+    const entity = data.entities.find((e: any) => e.id === entityId);
+    entity.components.Transform.position = { x: 0, y: 0, zz: 5 };
+    await fs.writeFile(scenePath, JSON.stringify(data));
+
+    const report = await validateProject(store);
+    const warning = report.warnings.find((w) => w.code === 'UNKNOWN_COMPONENT_KEY');
+    expect(warning).toBeTruthy();
+    expect(warning?.message).toContain('position.zz');
+  });
+
+  it('does not warn for a clean project', async () => {
+    const { session, store } = await makeSession();
+    await session.execute('createEntity', { scene: 'Main', name: 'Coin', components: { SpriteRenderer: {} } });
+
+    const report = await validateProject(store);
+    expect(report.warnings.some((w) => w.code === 'UNKNOWN_COMPONENT_KEY')).toBe(false);
+  });
+});

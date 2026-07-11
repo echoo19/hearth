@@ -284,6 +284,21 @@ export const TOOL_SPECS: ToolSpec[] = [
     },
   },
   {
+    name: 'set_properties',
+    command: 'setProperties',
+    description:
+      'Set multiple component properties on one entity in a single undo step, e.g. properties={' +
+      '"Transform.position.x": 100, "SpriteRenderer.width": 64}. Keys are "<ComponentType>.<path.to.property>", ' +
+      'same as set_component_property. All-or-nothing: every key is validated (path + resulting schema) before ' +
+      'anything is written. (requires safe-edit)',
+    permission: 'safe-edit',
+    inputShape: {
+      scene: z.string().min(1),
+      entity: z.string().min(1),
+      properties: z.record(z.string(), z.unknown()),
+    },
+  },
+  {
     name: 'set_input_mapping',
     command: 'setInputMapping',
     description:

@@ -6,7 +6,10 @@ import {
   COMPONENT_TYPES,
   createComponent,
   isComponentType,
+  type ComponentType,
+  type ComponentMap,
 } from '../schema/components.js';
+import { validateComponentPath } from '../schema/paths.js';
 import { ProjectError } from '../project/store.js';
 
 function resolve(ctx: any, sceneRef: string, entityRef: string) {
@@ -90,6 +93,25 @@ function setByPath(target: Record<string, unknown>, path: string[], value: unkno
   return copy;
 }
 
+/**
+ * Validates `pathParts` against `type`'s schema shape, throwing INVALID_INPUT
+ * with a did-you-mean suggestion on the first bad segment. Without this, Zod
+ * objects silently strip unknown keys, so e.g. `Transform.postiion.x` would
+ * "succeed" against a throwaway key and corrupt the write without any error.
+ */
+function assertValidPath(type: ComponentType, pathParts: string[]): void {
+  const check = validateComponentPath(type, pathParts);
+  if (check.ok) return;
+  const segments = check.failedAt.split('.');
+  const badSegment = segments[segments.length - 1];
+  const prefixPath = segments.slice(0, -1).join('.');
+  const suggestion = check.suggestions.length > 0 ? ` Did you mean "${check.suggestions[0]}"?` : '';
+  throw new ProjectError(
+    `Unknown property "${badSegment}" on ${prefixPath}.${suggestion} Valid keys: ${check.validKeys.join(', ')}`,
+    'INVALID_INPUT',
+  );
+}
+
 export const setComponentProperty = defineCommand({
   name: 'setComponentProperty',
   description:
@@ -128,6 +150,7 @@ export const setComponentProperty = defineCommand({
         'NOT_FOUND',
       );
     }
+    assertValidPath(type, pathParts);
     const updated = setByPath(current, pathParts, params.value);
     const parsed = COMPONENT_SCHEMAS[type].safeParse(updated);
     if (!parsed.success) {
@@ -143,6 +166,85 @@ export const setComponentProperty = defineCommand({
       property: params.property,
       value: params.value,
       component: parsed.data,
+    };
+  },
+});
+
+export const setProperties = defineCommand({
+  name: 'setProperties',
+  description:
+    'Set multiple component properties on one entity in a single undo step, e.g. properties={' +
+    '"Transform.position.x": 100, "SpriteRenderer.width": 64}. Keys are "<ComponentType>.<path.to.property>", ' +
+    'same as setComponentProperty. All-or-nothing: every key (component type, path shape, and the resulting ' +
+    'component schema) is validated before anything is written, and one execute() call records exactly one undo ' +
+    'entry for the whole batch. Keys are applied in the order given; when two keys target the same nested path ' +
+    'on the same component, the later one wins.',
+  permission: 'safe-edit',
+  mutates: true,
+  paramsSchema: z.object({
+    scene: z.string().min(1),
+    entity: z.string().min(1),
+    properties: z
+      .record(z.string().min(1), z.unknown())
+      .refine((obj) => Object.keys(obj).length > 0, { message: 'properties must have at least one entry' }),
+  }),
+  async run(ctx, params) {
+    const { scene, entity } = resolve(ctx, params.scene, params.entity);
+
+    // Phase 1: validate every key against a per-type clone before writing
+    // anything to the entity, so a bad key anywhere fails the whole batch.
+    const drafts = new Map<ComponentType, Record<string, unknown>>();
+    for (const [key, value] of Object.entries(params.properties)) {
+      const [type, ...pathParts] = key.split('.');
+      if (!isComponentType(type)) {
+        throw new ProjectError(
+          `Property must start with a component type (got "${type}"). Example: Transform.position.x`,
+          'INVALID_INPUT',
+        );
+      }
+      if (pathParts.length === 0) {
+        throw new ProjectError(
+          `Property path missing for "${key}". Example: ${type === 'Transform' ? 'Transform.position.x' : `${type}.<property>`}`,
+          'INVALID_INPUT',
+        );
+      }
+      let draft = drafts.get(type);
+      if (!draft) {
+        const current = (entity.components as Record<string, unknown>)[type] as
+          | Record<string, unknown>
+          | undefined;
+        if (!current) {
+          throw new ProjectError(
+            `Entity "${entity.name}" has no ${type} component. Add it first with addComponent.`,
+            'NOT_FOUND',
+          );
+        }
+        draft = structuredClone(current);
+      }
+      assertValidPath(type, pathParts);
+      drafts.set(type, setByPath(draft, pathParts, value));
+    }
+
+    const parsedByType = new Map<ComponentType, Record<string, unknown>>();
+    for (const [type, draft] of drafts) {
+      const parsed = COMPONENT_SCHEMAS[type].safeParse(draft);
+      if (!parsed.success) {
+        const issues = parsed.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join('; ');
+        throw new ProjectError(`Invalid value for ${type}: ${issues}`, 'SCHEMA_ERROR');
+      }
+      parsedByType.set(type, parsed.data as Record<string, unknown>);
+    }
+
+    // Phase 2: every key and every touched component passed validation — write it all.
+    for (const [type, data] of parsedByType) {
+      (entity.components as Record<string, unknown>)[type] = data;
+      ctx.changed({ kind: 'component', id: entity.id, name: type, scene: scene.id, action: 'modified' });
+    }
+
+    return {
+      entityId: entity.id,
+      applied: params.properties,
+      components: Object.fromEntries(parsedByType) as Partial<ComponentMap>,
     };
   },
 });

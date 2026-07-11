@@ -117,6 +117,22 @@ describe('hearth inspect / create / set / validate (end-to-end flow)', () => {
     expect(setEnvelope.success).toBe(true);
     expect(setEnvelope.data.component.position.x).toBe(200);
 
+    const badSet = await runCli(['set', 'Main', 'Coin', 'Transform.postiion.x', '999', '--json'], projectDir);
+    expect(badSet.code).not.toBe(0);
+    const badSetEnvelope = parseJson(badSet.stdout);
+    expect(badSetEnvelope.success).toBe(false);
+    expect(badSetEnvelope.errors[0].message).toContain('position');
+
+    const setMany = await runCli(
+      ['set-many', 'Main', 'Coin', '--properties', '{"Transform.position.y":300,"Transform.rotation":45}', '--json'],
+      projectDir,
+    );
+    expect(setMany.code).toBe(0);
+    const setManyEnvelope = parseJson(setMany.stdout);
+    expect(setManyEnvelope.success).toBe(true);
+    expect(setManyEnvelope.data.components.Transform.position.y).toBe(300);
+    expect(setManyEnvelope.data.components.Transform.rotation).toBe(45);
+
     const validate = await runCli(['validate', '--json'], projectDir);
     expect(validate.code).toBe(0);
     const validateEnvelope = parseJson(validate.stdout);

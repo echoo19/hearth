@@ -50,6 +50,7 @@ const ALL_DEFINITIONS: CommandDefinition[] = [
   componentCommands.addComponent,
   componentCommands.removeComponent,
   componentCommands.setComponentProperty,
+  componentCommands.setProperties,
   componentCommands.setInputMapping,
   // tilemap
   tilemapCommands.paintTiles,

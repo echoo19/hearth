@@ -2,12 +2,15 @@
  * Project validation: referential integrity and common mistakes, beyond the
  * per-file schema validation that happens at load time.
  */
+import { z } from 'zod';
 import luaparse from 'luaparse';
 import { readJson, type ProjectStore } from './project/store.js';
 import { joinPath } from './fs.js';
 import { AnimationDataSchema, PrefabDataSchema, type PrefabData } from './schema/project.js';
 import { findSheetFrame } from './assets/sheetFrames.js';
 import { validatePrefabLocalIds } from './project/prefabData.js';
+import { COMPONENT_SCHEMAS, isComponentType } from './schema/components.js';
+import { unwrap } from './schema/paths.js';
 
 export interface ValidationIssue {
   severity: 'error' | 'warning';
@@ -157,6 +160,89 @@ async function validateScriptSyntax(store: ProjectStore, push: (issue: Validatio
   }
 }
 
+/**
+ * Diffs a raw (pre-Zod-strip) component object's keys against its schema's
+ * field names, recursing one extra level into fields that are themselves
+ * known objects (e.g. Transform.position). Zod strips unrecognized keys
+ * silently rather than erroring, so this is the only place a typo like
+ * `Transform.postiion` becomes visible once the project has already loaded —
+ * this pass is a warning only: pre-fix projects (saved before strict path
+ * validation existed) must still load and run.
+ */
+function unknownKeyPaths(
+  schema: z.ZodTypeAny,
+  rawValue: Record<string, unknown>,
+  depthRemaining: number,
+): string[] {
+  const node = unwrap(schema);
+  if (!(node instanceof z.ZodObject)) return [];
+  const fields = node.shape as Record<string, z.ZodTypeAny>;
+  const validKeys = Object.keys(fields);
+  const found: string[] = [];
+  for (const key of Object.keys(rawValue)) {
+    if (!validKeys.includes(key)) {
+      found.push(key);
+      continue;
+    }
+    if (depthRemaining <= 0) continue;
+    const fieldValue = rawValue[key];
+    if (fieldValue && typeof fieldValue === 'object' && !Array.isArray(fieldValue)) {
+      for (const nested of unknownKeyPaths(fields[key], fieldValue as Record<string, unknown>, depthRemaining - 1)) {
+        found.push(`${key}.${nested}`);
+      }
+    }
+  }
+  return found;
+}
+
+/**
+ * Re-reads every scene's raw JSON (bypassing the Zod strip that already
+ * happened when `store` was loaded) and warns about component keys that
+ * don't match the component's schema — top level, plus one extra level into
+ * known nested objects (e.g. Transform.position.z would be caught;
+ * a typo three levels deep would not).
+ */
+async function checkUnknownComponentKeys(store: ProjectStore, push: (issue: ValidationIssue) => void): Promise<void> {
+  for (const sceneId of store.scenes.keys()) {
+    const ref = store.sceneRef(sceneId);
+    if (!ref) continue;
+    const absPath = joinPath(store.root, ref.path);
+    if (!(await store.fs.exists(absPath))) continue; // missing file is handled elsewhere (project.load would already have thrown)
+
+    let raw: unknown;
+    try {
+      raw = await readJson(store.fs, absPath);
+    } catch {
+      continue; // unreadable/corrupt file; nothing more this pass can say
+    }
+    const rawEntities = (raw as { entities?: unknown }).entities;
+    if (!Array.isArray(rawEntities)) continue;
+
+    for (const rawEntity of rawEntities) {
+      if (typeof rawEntity !== 'object' || rawEntity === null) continue;
+      const entityId = typeof (rawEntity as any).id === 'string' ? (rawEntity as any).id : undefined;
+      const entityName = typeof (rawEntity as any).name === 'string' ? (rawEntity as any).name : entityId ?? '(unknown)';
+      const rawComponents = (rawEntity as { components?: unknown }).components;
+      if (typeof rawComponents !== 'object' || rawComponents === null) continue;
+
+      for (const [type, rawComponent] of Object.entries(rawComponents as Record<string, unknown>)) {
+        if (!isComponentType(type)) continue; // unknown component type names are caught at load time (ComponentMapSchema is strict)
+        if (typeof rawComponent !== 'object' || rawComponent === null) continue;
+        const unknownPaths = unknownKeyPaths(COMPONENT_SCHEMAS[type], rawComponent as Record<string, unknown>, 1);
+        for (const path of unknownPaths) {
+          push({
+            severity: 'warning',
+            code: 'UNKNOWN_COMPONENT_KEY',
+            message: `Entity "${entityName}" ${type} has an unrecognized property "${path}" (not in the ${type} schema); it is ignored on load`,
+            scene: sceneId,
+            entity: entityId,
+          });
+        }
+      }
+    }
+  }
+}
+
 export async function validateProject(store: ProjectStore): Promise<ValidationReport> {
   const issues: ValidationIssue[] = [];
   const push = (issue: ValidationIssue) => issues.push(issue);
@@ -241,6 +327,9 @@ export async function validateProject(store: ProjectStore): Promise<ValidationRe
   // --- scripts (syntax) ---
   await validateScriptSyntax(store, push);
   const scripts = new Set(await store.listScripts());
+
+  // --- unrecognized component keys (typos Zod silently stripped on load) ---
+  await checkUnknownComponentKeys(store, push);
 
   // --- prefabs ---
   // Payload files are validated the same way instantiatePrefab/syncPrefabInstances

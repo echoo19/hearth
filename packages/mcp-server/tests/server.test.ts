@@ -104,6 +104,44 @@ describe('hearth-mcp server', () => {
     expect(envelope.errors[0].code).toBe('SCHEMA_ERROR');
   });
 
+  it('set_component_property rejects an unknown path with a did-you-mean suggestion', async () => {
+    ctx = await connectClient();
+    const sceneId = ctx.store.project.initialScene;
+    const player = ctx.store.getScene(sceneId!)!.entities.find((e) => e.name === 'Player')!;
+
+    const result = await ctx.client.callTool({
+      name: 'set_component_property',
+      arguments: { scene: sceneId, entity: player.id, property: 'Transform.postiion.x', value: 100 },
+    });
+    expect(result.isError).toBe(true);
+    const envelope = toolJson(result);
+    expect(envelope.success).toBe(false);
+    expect(envelope.errors[0].code).toBe('INVALID_INPUT');
+    expect(envelope.errors[0].message).toContain('position');
+  });
+
+  it('set_properties applies a batch across two components in one undo step', async () => {
+    ctx = await connectClient();
+    const sceneId = ctx.store.project.initialScene;
+    const player = ctx.store.getScene(sceneId!)!.entities.find((e) => e.name === 'Player')!;
+
+    const result = await ctx.client.callTool({
+      name: 'set_properties',
+      arguments: {
+        scene: sceneId,
+        entity: player.id,
+        properties: { 'Transform.position.x': 42, 'Transform.position.y': 7 },
+      },
+    });
+    expect(result.isError).toBeFalsy();
+    const envelope = toolJson(result);
+    expect(envelope.success).toBe(true);
+    expect(envelope.data.components.Transform.position).toEqual({ x: 42, y: 7 });
+
+    const undoResult = await ctx.client.callTool({ name: 'undo', arguments: {} });
+    expect(toolJson(undoResult).data.undone).toBe('setProperties');
+  });
+
   it('denies mutating tools when the session only grants read-only', async () => {
     ctx = await connectClient(['read-only']);
     const result = await ctx.client.callTool({
