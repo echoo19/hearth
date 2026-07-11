@@ -1073,6 +1073,45 @@ label.field-label {
   padding: 10px;
 }
 
+/* Camera.postEffects (PostEffectsField): a nested card per stacked effect,
+   reusing .component-card's visual language (header + body) at a smaller
+   scale so a stack of effects still reads as "inside" the Camera field
+   rather than as its own top-level component. */
+.effect-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.effect-card {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+}
+
+.effect-card-header {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 4px 4px 4px 8px;
+  background: var(--bg-2);
+  font-weight: 600;
+  font-size: 11px;
+}
+
+.effect-card-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.effect-card-body {
+  padding: 6px 8px 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
 /* --------------------------------------------------------------------------
    Input settings (chips, key capture, add rows) — shares .component-card /
    .component-header / .component-body / .inspector-row with the Inspector so

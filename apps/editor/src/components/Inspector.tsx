@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { getSheetFrames } from '@hearth/core';
+import { getSheetFrames, type PostEffect } from '@hearth/core';
 import { useEditor } from '../store';
+import { PostEffectsField } from './PostEffectsField';
 import type { AssetItem, SceneEntity } from '../types';
 import { addPoint, removePoint, setPointAxis, shouldHideField } from '../vec2List';
 import { addString, removeString, setStringAt } from '../stringList';
@@ -74,7 +75,7 @@ export function TextField({
   );
 }
 
-function ColorField({ value, onCommit }: { value: string; onCommit: (v: string) => void }) {
+export function ColorField({ value, onCommit }: { value: string; onCommit: (v: string) => void }) {
   const [draft, setDraft] = useState(value);
   useEffect(() => setDraft(value), [value]);
   const pickerValue = /^#[0-9a-fA-F]{6}$/.test(draft) ? draft : '#ffffff';
@@ -893,6 +894,21 @@ export function Inspector() {
                         value={value}
                         assets={assets}
                         onCommit={(map) => setProperty(property, map)}
+                      />
+                    );
+                  } else if (type === 'Camera' && field === 'postEffects' && Array.isArray(value)) {
+                    // Camera.postEffects is a PostEffect[] (a 6-variant
+                    // discriminated union) — never raw JSON. The stack
+                    // editor lives in PostEffectsField.tsx/postEffectsList.ts
+                    // so it stays unit-testable without a DOM, matching
+                    // Vec2ListField/TileAssetsField. SpriteEffects needs no
+                    // equivalent special case: it's flat scalars/colors/bools
+                    // that already render via the branches above.
+                    control = (
+                      <PostEffectsField
+                        key={rowKey}
+                        value={value as PostEffect[]}
+                        onCommit={(next) => setProperty(property, next)}
                       />
                     );
                   } else {

@@ -21,6 +21,7 @@ import {
   cursorFor,
   handlePositions,
   hitHandle,
+  planDragCommit,
   resolveHandleTarget,
   type DragResult,
   type HandleId,
@@ -672,21 +673,24 @@ export function SceneView() {
   }
 
   /**
-   * Commit a finished handle gesture. One setComponentProperty per gesture
-   * ({ quiet: true }, like commitPoints), values rounded like drag-move
-   * (integers; Transform.scale to 2 decimals like roundPoints, since integer
-   * scale is useless). Resizes are committed WITHOUT centerShift
-   * compensation — i.e. from the center: the history model records one undo
-   * entry per command (HearthSession.execute snapshots before every mutating
-   * command), so pairing the size command with a moveEntity would make one
-   * gesture undo in two steps. See applyCenterHandleDrag, which keeps the
-   * ghost consistent with that commit.
+   * Commit a finished handle gesture. ONE exec() call per gesture ({ quiet:
+   * true }, like commitPoints) — so one undo step, always — with values
+   * rounded like drag-move (integers; Transform.scale to 2 decimals like
+   * roundPoints, since integer scale is useless). Resizes are committed
+   * WITHOUT centerShift compensation — i.e. from the center: the history
+   * model records one undo entry per command (HearthSession.execute
+   * snapshots before every mutating command), so pairing the size command
+   * with a moveEntity would make one gesture undo in two steps. See
+   * applyCenterHandleDrag, which keeps the ghost consistent with that
+   * commit.
    *
-   * The one exception: a CORNER drag on a sprite or box collider edits
-   * width AND height, which are two separate scalar schema leaves (there is
-   * no vec-shaped size property and no batch command), so it unavoidably
-   * commits two setComponentProperty commands = two undo steps. Edge drags
-   * stay strictly one command.
+   * A CORNER drag on a sprite or box collider edits width AND height, which
+   * are two separate scalar schema leaves (there is no vec-shaped size
+   * property) — planDragCommit (transformHandles.ts) turns those two
+   * commands into a single setProperties batch (Task 2), so even a corner
+   * drag commits as one undo step. A single-property drag (edge resize,
+   * rotate, circle radius, Transform.scale) still uses the cheaper
+   * setComponentProperty directly.
    */
   function commitHandleDrag(hd: HandleDragState, result: DragResult) {
     const clear = () => setHandleGhost(null);
@@ -767,13 +771,20 @@ export function SceneView() {
     if (editsW && newW !== Math.round(hd.target.width)) commands.push([`${comp}.width`, newW]);
     const newH = Math.max(1, Math.round(result.height / asy));
     if (editsH && newH !== Math.round(hd.target.height)) commands.push([`${comp}.height`, newH]);
-    if (commands.length === 0) {
+    const plan = planDragCommit(commands);
+    if (plan.kind === 'none') {
       clear();
       return;
     }
-    void (async () => {
-      for (const [property, value] of commands) await setProp(property, value);
-    })().finally(clear);
+    if (plan.kind === 'single') {
+      void setProp(plan.property, plan.value).finally(clear);
+      return;
+    }
+    void exec(
+      'setProperties',
+      { scene: sceneId, entity: hd.entityId, properties: plan.properties },
+      { quiet: true },
+    ).finally(clear);
   }
 
   // ---- pointer handlers ----------------------------------------------------

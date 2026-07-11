@@ -334,3 +334,30 @@ export function cursorFor(id: HandleId, rotation: number): string {
       return 'ns-resize';
   }
 }
+
+/**
+ * Turns the 0-2 scalar property commands a handle-drag commit built (see
+ * SceneView's commitHandleDrag) into a single exec() call plan: one
+ * setComponentProperty when there's exactly one property (cheaper than a
+ * 1-entry batch), or one setProperties batch when there's more than one —
+ * e.g. a CORNER drag on a sprite/box Collider, which edits width AND height
+ * (two separate scalar schema leaves, no vec-shaped size property). Either
+ * way the gesture now commits as exactly ONE undo step (HearthSession
+ * snapshots once per execute() call), using Task 2's setProperties batch
+ * command — a corner drag used to commit width then height as two
+ * sequential setComponentProperty calls, which was two undo steps for one
+ * gesture.
+ */
+export type DragCommitPlan =
+  | { kind: 'none' }
+  | { kind: 'single'; property: string; value: unknown }
+  | { kind: 'batch'; properties: Record<string, unknown> };
+
+export function planDragCommit(commands: ReadonlyArray<readonly [string, unknown]>): DragCommitPlan {
+  if (commands.length === 0) return { kind: 'none' };
+  if (commands.length === 1) {
+    const [property, value] = commands[0];
+    return { kind: 'single', property, value };
+  }
+  return { kind: 'batch', properties: Object.fromEntries(commands) };
+}

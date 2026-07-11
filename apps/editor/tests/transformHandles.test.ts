@@ -11,6 +11,7 @@ import {
   applyCenterHandleDrag,
   resolveHandleTarget,
   cursorFor,
+  planDragCommit,
   type SelectionBox,
 } from '../src/transformHandles';
 import type { SceneEntity } from '../src/types';
@@ -358,5 +359,39 @@ describe('cursorFor', () => {
     expect(cursorFor('n', 135)).toBe('nwse-resize');
     expect(cursorFor('n', 180)).toBe('ns-resize');
     expect(cursorFor('n', 360)).toBe('ns-resize');
+  });
+});
+
+describe('planDragCommit', () => {
+  it('returns none for an empty commands list (nothing changed)', () => {
+    expect(planDragCommit([])).toEqual({ kind: 'none' });
+  });
+
+  it('returns a single setComponentProperty plan for one command (an edge drag)', () => {
+    expect(planDragCommit([['SpriteRenderer.width', 64]])).toEqual({
+      kind: 'single',
+      property: 'SpriteRenderer.width',
+      value: 64,
+    });
+  });
+
+  it('returns a batch setProperties plan for two commands (a corner drag: width + height)', () => {
+    expect(
+      planDragCommit([
+        ['SpriteRenderer.width', 64],
+        ['SpriteRenderer.height', 48],
+      ]),
+    ).toEqual({
+      kind: 'batch',
+      properties: { 'SpriteRenderer.width': 64, 'SpriteRenderer.height': 48 },
+    });
+  });
+
+  it('later commands win when a batch has duplicate keys', () => {
+    const plan = planDragCommit([
+      ['Collider.width', 10],
+      ['Collider.width', 20],
+    ]);
+    expect(plan).toEqual({ kind: 'batch', properties: { 'Collider.width': 20 } });
   });
 });
