@@ -24,6 +24,16 @@ function toHex2(n: number): string {
   return Math.round(n).toString(16).padStart(2, '0');
 }
 
+/**
+ * Parse #rgb / #rrggbb / #rrggbbaa into a normalized [r, g, b] triple in
+ * [0, 1] (alpha ignored) — the shape filter shaders want their color uniforms
+ * in. Reuses the same lenient hex parsing as {@link lerpColor}.
+ */
+export function hexToRgb01(color: string): [number, number, number] {
+  const { r, g, b } = parseHex(color);
+  return [r / 255, g / 255, b / 255];
+}
+
 /** Clamp t into [0, 1]. */
 function clamp01(t: number): number {
   return Math.min(1, Math.max(0, t));

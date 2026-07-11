@@ -338,6 +338,78 @@ async function makeSheetStore(): Promise<{
   return { store, cleanup, sheetId, frames: [frameA, frameB] };
 }
 
+/**
+ * A real, disk-backed project set up for post-processing pixel tests: Player
+ * disabled (its dynamic PhysicsBody falls each step and would confound
+ * byte-for-byte capture comparisons), plus a spread of opaque rectangle
+ * sprites — one bright white block at center (so bloom has content above its
+ * luminance threshold) and four saturated blocks pushed into the corners (so
+ * vignette/chromatic-aberration/pixelate, which are strongest away from
+ * center and at color edges, all have something to act on). The camera entity
+ * is 'Main Camera'; set Camera.postEffects on it to exercise each effect.
+ */
+async function makePostFxStore(): Promise<{ store: ProjectStore; cleanup: () => Promise<void> }> {
+  const { store, cleanup } = await makeRealStore();
+  const session = HearthSession.fromStore(store, { granted: ['asset-edit', 'safe-edit'] });
+
+  const disabledPlayer = await session.execute('setEntityEnabled', {
+    scene: 'Main',
+    entity: 'Player',
+    enabled: false,
+  });
+  if (!disabledPlayer.success) throw new Error('could not disable Player');
+
+  const blocks: Array<{ name: string; x: number; y: number; w: number; h: number; color: string }> = [
+    { name: 'FxWhite', x: 400, y: 300, w: 260, h: 260, color: '#ffffff' },
+    { name: 'FxRed', x: 110, y: 110, w: 180, h: 180, color: '#ff0000' },
+    { name: 'FxGreen', x: 690, y: 110, w: 180, h: 180, color: '#00ff00' },
+    { name: 'FxBlue', x: 110, y: 490, w: 180, h: 180, color: '#0000ff' },
+    { name: 'FxYellow', x: 690, y: 490, w: 180, h: 180, color: '#ffff00' },
+  ];
+  for (const b of blocks) {
+    const created = await session.execute('createEntity', {
+      scene: 'Main',
+      name: b.name,
+      position: { x: b.x, y: b.y },
+      components: {
+        SpriteRenderer: { shape: 'rectangle', color: b.color, width: b.w, height: b.h },
+      },
+    });
+    if (!created.success) throw new Error(`could not create ${b.name}`);
+  }
+  return { store, cleanup };
+}
+
+/**
+ * A real, disk-backed project with the Player disabled and a single opaque
+ * rectangle sprite ('FxSprite') centered on screen, for SpriteEffects
+ * (outline/flash/dissolve) pixel tests. The sprite is the only thing that can
+ * change frame-to-frame, so any pixel difference between captures is the
+ * SpriteEffects filter.
+ */
+async function makeSpriteFxStore(): Promise<{ store: ProjectStore; cleanup: () => Promise<void> }> {
+  const { store, cleanup } = await makeRealStore();
+  const session = HearthSession.fromStore(store, { granted: ['asset-edit', 'safe-edit'] });
+
+  const disabledPlayer = await session.execute('setEntityEnabled', {
+    scene: 'Main',
+    entity: 'Player',
+    enabled: false,
+  });
+  if (!disabledPlayer.success) throw new Error('could not disable Player');
+
+  const created = await session.execute('createEntity', {
+    scene: 'Main',
+    name: 'FxSprite',
+    position: { x: 400, y: 300 },
+    components: {
+      SpriteRenderer: { shape: 'rectangle', color: '#3366cc', width: 140, height: 140 },
+    },
+  });
+  if (!created.success) throw new Error('could not create FxSprite');
+  return { store, cleanup };
+}
+
 describe('captureScreenshot option validation', () => {
   it('rejects an unknown scene before ever touching Chromium', async () => {
     const store = await makeStore();
@@ -787,5 +859,152 @@ describe('captureScreenshot (real Chromium)', () => {
       }
     },
     30000,
+  );
+
+  // Task 6: Camera.postEffects render as hand-written Pixi filters on the game
+  // view. Each of the six effect types, applied to a scene with real content,
+  // must change the captured pixels versus no effect. One shared OFF baseline
+  // is compared against each effect ON (each setComponentProperty overwrites
+  // the whole postEffects array, so no reset between effects is needed).
+  it.skipIf(!hasChromium)(
+    'each of the six post effects changes the rendered frame vs. no effect',
+    async () => {
+      const { store, cleanup } = await makePostFxStore();
+      try {
+        const session = HearthSession.fromStore(store, { granted: ['safe-edit'] });
+        const off = await captureScreenshot(store, { frame: 0, seed: 1, out: 'shots/post-off.png' });
+        const offBytes = await readFile(off.path);
+
+        const effects: Array<{ label: string; stack: unknown[] }> = [
+          { label: 'bloom', stack: [{ type: 'bloom', strength: 2.5, threshold: 0.3 }] },
+          { label: 'crt', stack: [{ type: 'crt', curvature: 0.5, scanlineIntensity: 0.6, noise: 0.3 }] },
+          { label: 'vignette', stack: [{ type: 'vignette', intensity: 1, color: '#000000' }] },
+          { label: 'chromaticAberration', stack: [{ type: 'chromaticAberration', offset: 12 }] },
+          { label: 'pixelate', stack: [{ type: 'pixelate', size: 16 }] },
+          {
+            label: 'colorGrade',
+            stack: [{ type: 'colorGrade', brightness: 1.6, contrast: 1.4, saturation: 0.2, tint: '#ff8800' }],
+          },
+        ];
+
+        for (const { label, stack } of effects) {
+          const set = await session.execute('setComponentProperty', {
+            scene: 'Main',
+            entity: 'Main Camera',
+            property: 'Camera.postEffects',
+            value: stack,
+          });
+          expect(set.success, `set ${label}`).toBe(true);
+          const on = await captureScreenshot(store, { frame: 0, seed: 1, out: `shots/post-${label}.png` });
+          const onBytes = await readFile(on.path);
+          expect(Buffer.compare(offBytes, onBytes), `${label} must change pixels`).not.toBe(0);
+        }
+      } finally {
+        await cleanup();
+      }
+    },
+    120_000,
+  );
+
+  // Neutral guard: an explicitly-empty postEffects stack must render
+  // byte-identical to never having set one (gameView restructure is
+  // render-neutral, filters = null). Mirrors the white-tint no-op regression.
+  it.skipIf(!hasChromium)(
+    'an empty postEffects stack is byte-identical to no post effects',
+    async () => {
+      const { store, cleanup } = await makePostFxStore();
+      try {
+        const session = HearthSession.fromStore(store, { granted: ['safe-edit'] });
+        const baseline = await captureScreenshot(store, { frame: 0, seed: 1, out: 'shots/post-baseline.png' });
+        const setEmpty = await session.execute('setComponentProperty', {
+          scene: 'Main',
+          entity: 'Main Camera',
+          property: 'Camera.postEffects',
+          value: [],
+        });
+        expect(setEmpty.success).toBe(true);
+        const empty = await captureScreenshot(store, { frame: 0, seed: 1, out: 'shots/post-empty.png' });
+
+        const [baselineBytes, emptyBytes] = await Promise.all([
+          readFile(baseline.path),
+          readFile(empty.path),
+        ]);
+        expect(Buffer.compare(baselineBytes, emptyBytes)).toBe(0);
+      } finally {
+        await cleanup();
+      }
+    },
+    60_000,
+  );
+
+  // Task 6: SpriteEffects (outline/flash/dissolve) render as one combined
+  // per-sprite filter. Each non-neutral field must change the pixels, while a
+  // default (all no-op) SpriteEffects component must be byte-identical to
+  // having no component at all — the load-bearing no-op invariant.
+  it.skipIf(!hasChromium)(
+    'sprite outline, dissolve, and flash change pixels; a default SpriteEffects component is a no-op',
+    async () => {
+      const { store, cleanup } = await makeSpriteFxStore();
+      try {
+        const session = HearthSession.fromStore(store, { granted: ['safe-edit'] });
+        const baseline = await captureScreenshot(store, { frame: 0, seed: 1, out: 'shots/fx-baseline.png' });
+        const baselineBytes = await readFile(baseline.path);
+
+        // Default SpriteEffects component: attaches no filter → no-op.
+        const added = await session.execute('addComponent', {
+          scene: 'Main',
+          entity: 'FxSprite',
+          type: 'SpriteEffects',
+        });
+        expect(added.success).toBe(true);
+        const neutral = await captureScreenshot(store, { frame: 0, seed: 1, out: 'shots/fx-neutral.png' });
+        expect(Buffer.compare(baselineBytes, await readFile(neutral.path))).toBe(0);
+
+        // Outline on.
+        const outline = await session.execute('setProperties', {
+          scene: 'Main',
+          entity: 'FxSprite',
+          properties: {
+            'SpriteEffects.outlineEnabled': true,
+            'SpriteEffects.outlineColor': '#ff0000',
+            'SpriteEffects.outlineWidth': 5,
+          },
+        });
+        expect(outline.success).toBe(true);
+        const outlineCap = await captureScreenshot(store, { frame: 0, seed: 1, out: 'shots/fx-outline.png' });
+        expect(Buffer.compare(baselineBytes, await readFile(outlineCap.path)), 'outline').not.toBe(0);
+
+        // Dissolve 0.5 (reset outline first so it's the only change).
+        const dissolve = await session.execute('setProperties', {
+          scene: 'Main',
+          entity: 'FxSprite',
+          properties: {
+            'SpriteEffects.outlineEnabled': false,
+            'SpriteEffects.dissolveAmount': 0.5,
+          },
+        });
+        expect(dissolve.success).toBe(true);
+        const dissolveCap = await captureScreenshot(store, { frame: 0, seed: 1, out: 'shots/fx-dissolve.png' });
+        expect(Buffer.compare(baselineBytes, await readFile(dissolveCap.path)), 'dissolve').not.toBe(0);
+
+        // Flash mid-decay (~0.9167, the first-frame value Task 5's decay
+        // produces). Reset dissolve so flash is the only active field.
+        const flash = await session.execute('setProperties', {
+          scene: 'Main',
+          entity: 'FxSprite',
+          properties: {
+            'SpriteEffects.dissolveAmount': 0,
+            'SpriteEffects.flashColor': '#ffffff',
+            'SpriteEffects.flashStrength': 0.9167,
+          },
+        });
+        expect(flash.success).toBe(true);
+        const flashCap = await captureScreenshot(store, { frame: 0, seed: 1, out: 'shots/fx-flash.png' });
+        expect(Buffer.compare(baselineBytes, await readFile(flashCap.path)), 'flash').not.toBe(0);
+      } finally {
+        await cleanup();
+      }
+    },
+    120_000,
   );
 });

@@ -71,6 +71,12 @@ import { resolveUiPositions, uiScreenPosition } from '../ui.js';
 import { WebAudioPlayer, routeAudioEvent } from './audio.js';
 import { lerp, lerpColor } from './color.js';
 import { loadFontFaces } from './fonts.js';
+import {
+  createPostEffectFilterState,
+  syncPostEffectFilters,
+  type PostEffectFilterState,
+} from './postEffects.js';
+import { syncSpriteEffectsFilter } from './spriteEffectsFilter.js';
 
 export { localStorageAdapter, type WebStorageLike } from './storage.js';
 
@@ -181,6 +187,16 @@ export class PixiSceneView {
    * redrawn every syncCamera call. Sits above `ui` so a fade covers the HUD.
    */
   private fxOverlay = new Graphics();
+  /**
+   * Post-processing host: world, lightmap, ui, and fxOverlay all live inside
+   * this one container so Camera.postEffects filters (bloom/crt/…) apply to
+   * the whole composited game view at once. The debug overlay is deliberately
+   * NOT a child of this — it stays a direct stage child above gameView so
+   * collider/velocity lines are never distorted by a CRT warp or pixelate.
+   */
+  private gameView = new Container();
+  /** Cached post-effect filters, rebuilt only when the stack signature changes. */
+  private postEffectState: PostEffectFilterState = createPostEffectFilterState();
   private audio: WebAudioPlayer | null = null;
   private accumulator = 0;
   private _paused: boolean;
@@ -228,15 +244,19 @@ export class PixiSceneView {
     this.fxOverlay.label = 'fx-overlay';
     this.fxOverlay.eventMode = 'none';
 
-    // Stage order: world, lightmapSprite, debugLayer, ui, fxOverlay — the
-    // lightmap darkens/tints the world but never the UI or debug overlay
-    // (debug lines sit above the lightmap so they stay full-brightness); the
-    // fx overlay sits above everything so a fade covers the HUD too.
-    this.app.stage.addChild(this.world);
-    this.app.stage.addChild(this.lightmapSprite);
+    // Stage order: gameView (world, lightmapSprite, ui, fxOverlay) then
+    // debugLayer above it. The lightmap darkens/tints the world but never the
+    // UI, and the fx overlay sits above everything inside the view so a fade
+    // covers the HUD too. Everything filterable lives inside gameView so
+    // Camera.postEffects apply to the whole composited frame at once; the
+    // debug overlay stays a DIRECT stage child above gameView so its lines are
+    // never warped/tinted by a post effect.
+    this.gameView.addChild(this.world);
+    this.gameView.addChild(this.lightmapSprite);
+    this.gameView.addChild(this.ui);
+    this.gameView.addChild(this.fxOverlay);
+    this.app.stage.addChild(this.gameView);
     this.app.stage.addChild(this.debugLayer);
-    this.app.stage.addChild(this.ui);
-    this.app.stage.addChild(this.fxOverlay);
     this.tickerFn = (ticker) => this.onTick(ticker);
   }
 
@@ -618,6 +638,16 @@ export class PixiSceneView {
     this.app.renderer.background.color = cam.backgroundColor;
     this.updateLightmap(cam, settings.width, settings.height);
     this.syncFxOverlay(fx.overlay, settings.width, settings.height);
+
+    // Screen-space post-processing (Camera.postEffects). Filters are cached by
+    // stack signature; uniforms (including CRT's frame-seeded noise) refresh
+    // every tick. An empty stack yields `filters = null` — byte-identical to
+    // no effects, which the neutral-guard screenshot test locks in.
+    this.gameView.filters = syncPostEffectFilters(
+      this.postEffectState,
+      cam.postEffects,
+      this.runtime.frame,
+    );
 
     if (this._debugDraw) {
       // Same camera transform as `world` — debug lines are drawn in world
@@ -1073,6 +1103,11 @@ export class PixiSceneView {
     if (toggleNode && toggle) {
       this.redrawToggle(entity.id, toggleNode, toggle);
     }
+
+    // Per-sprite outline/flash/dissolve. Attaches the combined filter only
+    // when a field is non-neutral; a default (or absent) SpriteEffects
+    // component leaves `node.filters` null so it renders byte-identically.
+    syncSpriteEffectsFilter(node, entity.components.SpriteEffects);
   }
 
   /**
