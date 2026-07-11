@@ -84,6 +84,26 @@ describe('validateComponentPath', () => {
       expect(check.suggestions).toContain('strength');
     }
   });
+
+  it('does not mix keys from a shallower-failing variant into a deeper failure inside the same union', () => {
+    // `color` IS a valid key — for the vignette variant. Descending into it
+    // with an extra `.x` segment fails two levels deeper than the variants
+    // that don't have a `color` key at all (bloom, crt, ...), which bail out
+    // immediately at `color` itself. The reported error must describe the
+    // deepest, most-specific failure (vignette's leaf `color` field can't be
+    // drilled into further) rather than mixing in unrelated top-level field
+    // names (strength, tint, noise, ...) from variants that never matched
+    // `color` in the first place.
+    const check = validateComponentPath('Camera', ['postEffects', '0', 'color', 'x']);
+    expect(check.ok).toBe(false);
+    if (!check.ok) {
+      expect(check.failedAt).toBe('Camera.postEffects.0.color.x');
+      expect(check.validKeys).toEqual([]);
+      expect(check.validKeys).not.toContain('strength');
+      expect(check.validKeys).not.toContain('tint');
+      expect(check.validKeys).not.toContain('type');
+    }
+  });
 });
 
 describe('validateSchemaPath — union / discriminated union node kinds', () => {

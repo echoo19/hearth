@@ -105,12 +105,30 @@ function walk(node: z.ZodTypeAny, parts: string[], prefix: string[]): PathCheck 
     const results = options.map((option) => walk(option, parts, prefix));
     const match = results.find((r) => r.ok);
     if (match) return match;
-    // No option accepted this segment: aggregate every option's valid keys
-    // at this node so the suggestion/valid-keys list stays useful.
-    const validKeys = Array.from(
-      new Set(results.flatMap((r) => (r.ok ? [] : r.validKeys))),
-    );
-    return fail(prefix, segment, validKeys);
+    // No option accepted this segment. Each option may have failed at a
+    // different depth: a variant that lacks `segment` entirely bails out
+    // immediately (failedAt === prefix+segment), while a variant that HAS
+    // `segment` but rejects something further down the path recurses deeper
+    // before failing (failedAt is longer). Those two kinds of failure
+    // describe different nodes in the schema and must not be aggregated
+    // together — e.g. mixing a leaf field's (empty) valid-keys with a
+    // sibling variant's unrelated top-level field names. Only the deepest
+    // failure(s) — the most specific match for the given path — contribute
+    // candidates; shallower failures come from variants that never matched
+    // this far in the first place.
+    const failures = results as Array<Extract<PathCheck, { ok: false }>>;
+    const depthOf = (r: Extract<PathCheck, { ok: false }>) => r.failedAt.split('.').length;
+    const maxDepth = Math.max(...failures.map(depthOf));
+    const deepest = failures.filter((r) => depthOf(r) === maxDepth);
+    const failedAt = deepest[0].failedAt;
+    const badSegment = failedAt.split('.').pop()!;
+    const validKeys = Array.from(new Set(deepest.flatMap((r) => r.validKeys)));
+    return {
+      ok: false,
+      failedAt,
+      validKeys,
+      suggestions: suggestionsFor(badSegment, validKeys),
+    };
   }
 
   // A leaf/primitive node (string, number, boolean, enum, ...) can't be
