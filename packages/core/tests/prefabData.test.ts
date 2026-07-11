@@ -4,6 +4,7 @@ import {
   serializePrefab,
   instantiatePrefabData,
   validatePrefabLocalIds,
+  findInstanceMembership,
   PrefabDataSchema,
   EntitySchema,
   createComponent,
@@ -11,6 +12,7 @@ import {
   ProjectError,
   type Entity,
   type PrefabData,
+  type Scene,
 } from '@hearth/core';
 
 function makeEntity(id: string, parentId: string | null, extra: Partial<Entity> = {}): Entity {
@@ -222,7 +224,7 @@ describe('validatePrefabLocalIds', () => {
 });
 
 describe('EntitySchema prefab marker', () => {
-  it('accepts and round-trips an optional prefab marker', () => {
+  it('parses a legacy {asset}-only marker, filling ids/overrides via defaults', () => {
     const parsed = EntitySchema.parse({
       id: 'ent_abc123',
       name: 'Instance',
@@ -230,7 +232,44 @@ describe('EntitySchema prefab marker', () => {
       components: {},
       prefab: { asset: 'ast_myprefab' },
     });
-    expect(parsed.prefab).toEqual({ asset: 'ast_myprefab' });
+    // Old scenes wrote only { asset }; defaults keep them parsing and make an
+    // ids-less instance "legacy-detached" (empty ids => no membership).
+    expect(parsed.prefab).toEqual({ asset: 'ast_myprefab', ids: {}, overrides: [] });
+  });
+
+  it('round-trips a full marker with ids and overrides', () => {
+    const marker = {
+      asset: 'ast_myprefab',
+      ids: { pfe_1: 'ent_root', pfe_2: 'ent_child' },
+      overrides: [
+        { entity: 'ent_child', component: 'Transform', path: 'position.x', value: 42 },
+        { entity: 'ent_root', component: 'SpriteRenderer', path: 'color', value: '#ff0000' },
+      ],
+    };
+    const parsed = EntitySchema.parse({
+      id: 'ent_root',
+      name: 'Instance',
+      parentId: null,
+      components: {},
+      prefab: marker,
+    });
+    expect(parsed.prefab).toEqual(marker);
+  });
+
+  it('rejects an override with an unknown key (strict)', () => {
+    expect(() =>
+      EntitySchema.parse({
+        id: 'ent_root',
+        name: 'Instance',
+        parentId: null,
+        components: {},
+        prefab: {
+          asset: 'ast_x',
+          ids: {},
+          overrides: [{ entity: 'ent_child', component: 'Transform', path: 'x', value: 1, extra: true }],
+        },
+      }),
+    ).toThrow();
   });
 
   it('still parses old scenes with no prefab marker', () => {
@@ -241,6 +280,71 @@ describe('EntitySchema prefab marker', () => {
       components: {},
     });
     expect(parsed.prefab).toBeUndefined();
+  });
+});
+
+describe('instantiatePrefabData id map', () => {
+  it('populates the optional out-param with every local id -> spawned scene id', () => {
+    const { all } = makeTree();
+    const data = serializePrefab('MyPrefab', all, 'ent_root');
+    const ids: Record<string, string> = {};
+    const instances = instantiatePrefabData(data, {}, ids);
+    expect(Object.keys(ids).sort()).toEqual(['pfe_1', 'pfe_2', 'pfe_3', 'pfe_4']);
+    // pfe_1 is the root, mapped to the first instance (root) id.
+    expect(ids['pfe_1']).toBe(instances[0].id);
+    // Every mapped scene id is a real freshly-spawned entity.
+    const spawnedIds = new Set(instances.map((e) => e.id));
+    for (const sceneId of Object.values(ids)) {
+      expect(spawnedIds.has(sceneId)).toBe(true);
+    }
+  });
+
+  it('honors preserveRootId in the emitted map', () => {
+    const { all } = makeTree();
+    const data = serializePrefab('MyPrefab', all, 'ent_root');
+    const ids: Record<string, string> = {};
+    instantiatePrefabData(data, { preserveRootId: 'ent_fixed' }, ids);
+    expect(ids['pfe_1']).toBe('ent_fixed');
+  });
+});
+
+describe('findInstanceMembership', () => {
+  function makeScene(entities: Entity[]): Scene {
+    return { formatVersion: 1, id: 'scn_x', name: 'S', entities };
+  }
+
+  it('locates a member (root and child) via the root marker ids map', () => {
+    const root = makeEntity('ent_root', null, {
+      name: 'Root',
+      prefab: { asset: 'ast_p', ids: { pfe_1: 'ent_root', pfe_2: 'ent_child' }, overrides: [] } as any,
+    });
+    const child = makeEntity('ent_child', 'ent_root', { name: 'Child' });
+    const plain = makeEntity('ent_plain', null, { name: 'Plain' });
+    const scene = makeScene([root, child, plain]);
+
+    expect(findInstanceMembership(scene, 'ent_root')).toEqual({
+      rootId: 'ent_root',
+      asset: 'ast_p',
+      localId: 'pfe_1',
+    });
+    expect(findInstanceMembership(scene, 'ent_child')).toEqual({
+      rootId: 'ent_root',
+      asset: 'ast_p',
+      localId: 'pfe_2',
+    });
+  });
+
+  it('returns null for a non-member and for a legacy (empty-ids) instance', () => {
+    const legacy = makeEntity('ent_legacy', null, {
+      name: 'Legacy',
+      prefab: { asset: 'ast_p', ids: {}, overrides: [] } as any,
+    });
+    const plain = makeEntity('ent_plain', null, { name: 'Plain' });
+    const scene = makeScene([legacy, plain]);
+
+    expect(findInstanceMembership(scene, 'ent_plain')).toBeNull();
+    // legacy instance has no ids -> not resolvable as a member of itself
+    expect(findInstanceMembership(scene, 'ent_legacy')).toBeNull();
   });
 });
 

@@ -6,7 +6,7 @@
  */
 import { generateId } from '../ids.js';
 import { createComponent } from '../schema/components.js';
-import type { Entity } from '../schema/scene.js';
+import type { Entity, Scene } from '../schema/scene.js';
 import { PrefabDataSchema, type PrefabData, type PrefabEntity } from '../schema/project.js';
 import { ProjectError } from './store.js';
 
@@ -80,12 +80,25 @@ export interface InstantiateOptions {
  * against any scene — a caller that inserts the result into a scene is
  * responsible for scene-level name uniquification (see instantiatePrefab in
  * prefabCommands.ts).
+ *
+ * If `idMapOut` is provided, it is filled with the local-id (`pfe_<n>`) ->
+ * spawned scene-id mapping for every entity, so the caller can write the live
+ * `prefab.ids` link on the instance root. (Passed as an out-param rather than
+ * a richer return type to keep existing array consumers, e.g. the runtime's
+ * spawnPrefab, source-compatible.)
  */
-export function instantiatePrefabData(data: PrefabData, opts: InstantiateOptions = {}): Entity[] {
+export function instantiatePrefabData(
+  data: PrefabData,
+  opts: InstantiateOptions = {},
+  idMapOut?: Record<string, string>,
+): Entity[] {
   const idMap = new Map<string, string>();
   data.entities.forEach((e, i) => {
     idMap.set(e.id, i === 0 && opts.preserveRootId ? opts.preserveRootId : generateId('ent'));
   });
+  if (idMapOut) {
+    for (const [localId, sceneId] of idMap) idMapOut[localId] = sceneId;
+  }
 
   const instances: Entity[] = data.entities.map((e) => {
     const clone = structuredClone(e) as PrefabEntity;
@@ -153,4 +166,83 @@ export function validatePrefabLocalIds(data: PrefabData): string[] {
   }
 
   return problems;
+}
+
+/** The prefab instance a scene entity belongs to (see findInstanceMembership). */
+export interface InstanceMembership {
+  /** Scene id of the instance root that owns this entity. */
+  rootId: string;
+  /** Prefab asset id the instance links to. */
+  asset: string;
+  /** This entity's prefab-local id (`pfe_<n>`) within the instance. */
+  localId: string;
+}
+
+/**
+ * Locate the prefab instance `entityId` belongs to by scanning root markers'
+ * `ids` maps in the same scene. Returns the root id, prefab asset, and the
+ * entity's prefab-local id, or `null` when it is not a member of any instance
+ * (including "legacy-detached" instances whose `ids` map is empty). The root
+ * itself is a member (it maps to `pfe_1`).
+ *
+ * A reverse scan is built per call — there is no persistent cache that could
+ * go stale. Each spawned entity id appears in at most one marker's `ids` map
+ * (instantiate only writes ids for its own freshly-spawned subtree), so the
+ * first match is unambiguous.
+ */
+export function findInstanceMembership(scene: Scene, entityId: string): InstanceMembership | null {
+  for (const e of scene.entities) {
+    const marker = e.prefab;
+    // `marker.ids` can be absent on a marker written by older code paths (e.g.
+    // createPrefab marks the source root with `{ asset }` only) before a
+    // save/reload normalizes it — treat such markers as legacy-detached.
+    if (!marker?.ids) continue;
+    for (const [localId, sceneId] of Object.entries(marker.ids)) {
+      if (sceneId === entityId) {
+        return { rootId: e.id, asset: marker.asset, localId };
+      }
+    }
+  }
+  return null;
+}
+
+/**
+ * Record (or replace) an implicit override on the instance root that owns
+ * `entityId`. No-op when `entityId` is not an instance member. `value` must be
+ * the post-parse, JSON-safe written value (what the component now holds); it is
+ * cloned so the stored record doesn't alias live component data.
+ *
+ * The instance root's own name, enabled flag, and `Transform.position` are
+ * per-instance placement, never overrides — so a write to the ROOT's
+ * `Transform.position` (or any deeper position path) is skipped here. Every
+ * other write, on the root or any descendant, records. Overrides on the same
+ * (entity, component, path) replace in place rather than appending.
+ */
+export function recordInstanceOverride(
+  scene: Scene,
+  entityId: string,
+  component: string,
+  path: string,
+  value: unknown,
+): void {
+  const membership = findInstanceMembership(scene, entityId);
+  if (!membership) return;
+
+  const isRoot = membership.rootId === entityId;
+  if (isRoot && component === 'Transform' && (path === 'position' || path.startsWith('position.'))) {
+    return; // root position is per-instance placement, not an override
+  }
+
+  const root = scene.entities.find((e) => e.id === membership.rootId);
+  if (!root?.prefab) return;
+  const overrides = (root.prefab.overrides ??= []);
+  const cloned = structuredClone(value);
+  const existing = overrides.find(
+    (o) => o.entity === entityId && o.component === component && o.path === path,
+  );
+  if (existing) {
+    existing.value = cloned;
+  } else {
+    overrides.push({ entity: entityId, component, path, value: cloned });
+  }
 }

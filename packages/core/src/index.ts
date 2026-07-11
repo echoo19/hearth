@@ -27,7 +27,10 @@ export {
   serializePrefab,
   instantiatePrefabData,
   validatePrefabLocalIds,
+  findInstanceMembership,
+  recordInstanceOverride,
   type InstantiateOptions,
+  type InstanceMembership,
 } from './project/prefabData.js';
 export { HistoryStore, type HistoryEntryMeta, type HistoryIndex } from './project/history.js';
 export { applySnapshot, type RestoreContext } from './project/restore.js';

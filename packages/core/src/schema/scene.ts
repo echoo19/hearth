@@ -23,8 +23,33 @@ export const EntitySchema = z.object({
   /** Free-form tags for queries like scene.findByTag('enemy'). */
   tags: z.array(z.string()).default([]),
   components: ComponentMapSchema.default({}),
-  /** Marks this entity as a live instance of a prefab asset (round-trip only for now; sync lands in a later wave-F task). */
-  prefab: z.object({ asset: z.string() }).optional(),
+  /**
+   * Marks this entity as a live instance of a prefab asset (root entity only).
+   * `ids` maps the prefab's local ids (`pfe_<n>`) to the spawned scene entity
+   * ids, so edits inside the instance subtree can be traced back to the root.
+   * `overrides` records implicit per-instance edits (component property writes
+   * and non-root moves) so a later sync can re-apply them. Both default so old
+   * `{ asset }`-only markers keep parsing (a marker with empty `ids` is
+   * "legacy-detached" and behaves as an un-linked instance until re-synced).
+   */
+  prefab: z
+    .object({
+      asset: z.string(),
+      ids: z.record(z.string()).default({}),
+      overrides: z
+        .array(
+          z
+            .object({
+              entity: z.string(),
+              component: z.string(),
+              path: z.string(),
+              value: z.unknown(),
+            })
+            .strict(),
+        )
+        .default([]),
+    })
+    .optional(),
 });
 
 export type Entity = Omit<z.infer<typeof EntitySchema>, 'components'> & {
