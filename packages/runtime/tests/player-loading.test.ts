@@ -84,6 +84,7 @@ describe('assetNeedsRawContent', () => {
     // freezes that feature (the Wave A regression class).
     expect(assetNeedsRawContent('animation')).toBe(true);
     expect(assetNeedsRawContent('prefab')).toBe(true);
+    expect(assetNeedsRawContent('stateMachine')).toBe(true);
   });
 
   it('does not flag URL-loaded asset types', () => {

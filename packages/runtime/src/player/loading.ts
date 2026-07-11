@@ -69,7 +69,8 @@ export function parseHexColor(color: string): { r: number; g: number; b: number 
 /**
  * Asset types whose raw JSON content the runtime reads straight off the
  * store's fs (SceneRuntime.loadAnimations for 'animation', loadPrefabs for
- * 'prefab') rather than by URL through resolveAssetUrl. Multi-file exports
+ * 'prefab', loadStateMachines for 'stateMachine') rather than by URL through
+ * resolveAssetUrl. Multi-file exports
  * must materialize these into the player's in-memory fs (see the loadStore
  * fetch loop in ./index.ts); single-file exports already inline every asset
  * as a dataUri, so this gate only guards the multi-file fetch path. Missing a
@@ -77,7 +78,7 @@ export function parseHexColor(color: string): { r: number; g: number; b: number 
  * their first frame before this existed — the Wave A regression class).
  */
 export function assetNeedsRawContent(type: string): boolean {
-  return type === 'animation' || type === 'prefab';
+  return type === 'animation' || type === 'prefab' || type === 'stateMachine';
 }
 
 /** Minimal bundle-asset shape needed to resolve a displayable URL. */
