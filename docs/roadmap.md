@@ -378,66 +378,89 @@ MCP tools, testable in headless playtests) before it gets editor UI.
 - Web export: `hearth export web [--single-file] [--zip]` — static
   self-contained builds, itch.io-ready zips.
 
-## Near term (later v0.9 releases)
+## The road to 1.0
 
-- **Codex first-class MCP wiring**: the agent panel detects and launches
-  Codex today, but `.mcp.json` auto-preparation is Claude-Code-only —
-  Codex's config story is TOML-based and needs its own wiring path.
-- **Custom chat UI over the agent**: out of scope until it can be built
-  API-key-only (the Claude Agent SDK) or Anthropic clarifies that
-  subscription use through a wrapped, non-terminal UI is fine — see
-  [agent-panel.md](./agent-panel.md#why-a-terminal-not-a-custom-chat-ui)
-  for the full reasoning. The embedded terminal is the answer for now.
-- **Incremental spatial hash**: `stepPhysics` still resets and reinserts
-  its broadphase every frame rather than updating one incrementally
-  across frames — the next lever if a scenario needs to shrink further
-  (see [performance.md](./performance.md#current-bottlenecks); nothing
-  benchmarked today is close to needing it).
-- **Bulk asset import**: `importAsset` is one file per call today;
-  a multi-file/folder import command is the natural follow-up.
-- **Finer-grained editor undo**: today's undo/redo is whole-command
-  (one entry per `execute()` call); an in-progress drag or text edit is
-  one undo step, which is the right granularity for most operations but
-  worth revisiting for continuous ones (Inspector number-drag, slider
-  scrubbing) if it turns out too coarse in practice.
-- **Multi-select transform handles**: the Scene View's resize/rotate
-  handles (v0.9.0) operate on a single selected entity; multi-select drag
-  gestures aren't designed yet.
+The end goal, stated so every release aims at it: **a solo dev or an agent
+can take a 2D game from empty project to a polished, distributable game
+without leaving the tool or hitting a wall.** Four waves remain. Each one
+completes a loop rather than scattering features; anything that doesn't
+serve that loop waits (see Non-goals).
 
-## Medium term
+### v0.11 — the iteration loop
 
-- **Desktop polish**: signed/notarized builds (still ad-hoc-signed
-  preview builds today), custom app icon, auto-update.
-- **Custom shaders (tier 2)**: still research-stage; no design committed
-  yet.
-- **TypeScript scripts** with a compile step and typed `ctx`.
-- **Multi-instance components** (array form, `formatVersion: 2`).
-- **MCP resources**: expose scenes/scripts as MCP resources (today:
-  tools-only, which every client supports).
-- **Live-linked prefabs / per-field overrides**: v0.9.0 shipped tracked-stamp
-  prefabs (deep-copy instances + an explicit re-sync command, see
-  [prefabs.md](./prefabs.md)) rather than live links with per-instance
-  field overrides — that richer model is a deliberately deferred future
-  wave, not something tracked stamps grow into incrementally.
-- **Further scale headroom**: physics islands/sleeping, worker-thread
-  physics, and renderer culling are all deliberately not planned yet —
-  only worth it if a future bench run shows a real scenario needing more
-  than v0.8.0's broadphase/caching/pooling work already delivers.
+Write → play → tweak becomes professional:
 
-## Long term / research
+- **Script hot-reload during play** — edit a script, the running game picks
+  it up; no Stop/Play round-trip.
+- **Live property patching** — Inspector edits apply to the running game
+  (this also closes the long-standing "ambientLight needs Stop/Play" gap).
+- **Runtime error → exact line** — a script error in the Console jumps to
+  the failing line in the Code panel.
+- **Format-on-save** for Lua and JS, **code tabs** (multi-file editing),
+  **hover docs** on the `ctx` API, **find/replace across scripts**.
 
-- Multiplayer-friendly deterministic core (already fixed-timestep; needs
-  input serialization + rollback investigation).
-- Visual logic editor that round-trips to the same command system and
-  generated scripts, so agents and humans edit the same artifact.
-- Agent-facing "explain this scene" summaries (structured scene semantics
-  rather than screenshots).
-- Plugin/component SDK for third-party components with schema registration.
-- Native executable export (per-platform player templates; web export
-  covers distribution today).
+Every item doubles for agents: hot-reload makes iteration cheaper over
+CLI/MCP too, and error→line makes self-fixing faster.
 
-## Non-goals (for now)
+### v0.12 — the content ceiling
 
+What games can be stops being tooling-limited:
+
+- **Animation state machines** (SpriteAnimator is frame-loop only today).
+- **Tilemap autotiling** — the single biggest level-design quality-of-life
+  in any 2D engine.
+- **Particle preview** in the editor.
+- **Live-linked prefabs with per-field overrides** (v0.9 shipped tracked
+  stamps; this is the richer model it deliberately deferred).
+- **Bulk asset import** (folder/multi-file `importAsset`).
+
+### v0.13 — ship your game
+
+Exports stop being web-only:
+
+- **Desktop game export** — per-platform packaged builds of *your game*,
+  not just the editor.
+- **Signed/notarized engine builds**, custom app icon, auto-update.
+- **itch.io-ready output** and **project templates** for the
+  empty-project moment.
+
+### v1.0 — hardening
+
+No features. Project-format stability guarantee (documented migrations,
+upgrade tests), docs completeness, performance regression fences,
+onboarding polish, and a bug-tail burn-down. Then 1.0.
+
+## Parallel track / post-1.0
+
+None of these block 1.0; they ride alongside or after it:
+
+- **Codex first-class MCP wiring** (the agent panel launches Codex today;
+  `.mcp.json` auto-preparation is Claude-Code-only — Codex's config story
+  is TOML-based and needs its own path).
+- **Custom chat UI over the agent** — only when it can be built
+  API-key-only (Claude Agent SDK) or subscription terms allow a wrapped
+  UI; see [agent-panel.md](./agent-panel.md#why-a-terminal-not-a-custom-chat-ui).
+  The embedded terminal is the answer for now.
+- **Custom shader assets (user GLSL)** — the curated `postEffects` set
+  covers the common cases; user-authored shaders need a sandboxing and
+  asset-format design first.
+- **TypeScript scripts** with a compile step and typed `ctx`;
+  **multi-instance components** (`formatVersion: 2`); **MCP resources**.
+- **Incremental spatial hash** and further scale headroom (physics
+  islands/sleeping, worker physics, culling) — only if a real benchmark
+  demands it (see [performance.md](./performance.md#current-bottlenecks)).
+- **Multi-select transform handles**; **finer-grained undo** for
+  continuous gestures, if whole-command granularity proves too coarse.
+- Agent-facing "explain this scene" structured summaries; plugin/component
+  SDK; multiplayer-friendly determinism research (input serialization +
+  rollback).
+
+## Non-goals
+
+- **A visual logic editor.** Cut, not deferred: agents write code, and
+  humans get a real code editor and an approachable scripting language. A
+  node graph is a second, worse programming language to maintain, and it
+  drags every future feature into building two UIs.
 - Competing with Unity/Godot on 3D, shaders, or console targets.
 - Built-in AI/LLM API calls. Agents connect **from outside** via MCP/CLI;
   the engine stays model-agnostic and fully usable offline.
