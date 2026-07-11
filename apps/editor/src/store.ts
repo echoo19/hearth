@@ -108,6 +108,15 @@ export interface EditorState {
    * mirrors the `diffFocusRequest` seam above.
    */
   focusSelectionRequest: number;
+  /**
+   * Imperative "open this script in the Code panel" request, mirroring the
+   * `diffFocusRequest` seam. Any panel (Inspector's Script component,
+   * Assets, a diagnostic) calls `openScriptAt(path, line?)`; the workspace
+   * shell surfaces the Code panel and CodePanel opens/activates that buffer,
+   * scrolling to `line` (1-based) with a transient highlight when set. The
+   * `nonce` makes a repeat request for the already-open script still fire.
+   */
+  codeOpenRequest: { path: string; line?: number; nonce: number } | null;
 
   setAgentMode(mode: AgentPermissionMode): void;
   detectAgent(): Promise<void>;
@@ -118,6 +127,9 @@ export interface EditorState {
   setShortcutSheet(open: boolean): void;
   toggleShortcutSheet(): void;
   requestFocusSelection(): void;
+  /** Open (and surface) a script in the Code panel, optionally scrolling to
+   * a 1-based line. See `codeOpenRequest`. */
+  openScriptAt(path: string, line?: number): void;
   /** Shortcut actions (Task 8), each backed by an exec() where it mutates. */
   togglePlay(): void;
   checkpoint(): Promise<void>;
@@ -427,6 +439,7 @@ export const useEditor = create<EditorState>((set, get) => {
     sceneViewCenter: null,
     shortcutSheetOpen: false,
     focusSelectionRequest: 0,
+    codeOpenRequest: null,
 
     setAgentMode(mode) {
       set({ agentMode: mode });
@@ -451,6 +464,10 @@ export const useEditor = create<EditorState>((set, get) => {
     requestFocusSelection() {
       if (!get().selection) return;
       set((state) => ({ focusSelectionRequest: state.focusSelectionRequest + 1 }));
+    },
+
+    openScriptAt(path, line) {
+      set((state) => ({ codeOpenRequest: { path, line, nonce: (state.codeOpenRequest?.nonce ?? 0) + 1 } }));
     },
 
     togglePlay() {

@@ -352,6 +352,7 @@ export function Workspace({
 }) {
   const playing = useEditor((s) => s.playing);
   const diffFocusRequest = useEditor((s) => s.diffFocusRequest);
+  const codeOpenRequest = useEditor((s) => s.codeOpenRequest);
   const apiRef = useRef<DockviewApi | null>(null);
   const saveTimer = useRef<number | null>(null);
   const disposables = useRef<{ dispose(): void }[]>([]);
@@ -406,6 +407,14 @@ export function Workspace({
       }
     }
   }, [diffFocusRequest]);
+
+  // openScriptAt() surfaces the Code panel the same way (the panel itself
+  // opens/activates the buffer and scrolls to the line — this effect only
+  // makes sure the panel is visible). Keyed on the request nonce so a repeat
+  // open of the already-open script still re-surfaces the panel.
+  useEffect(() => {
+    if (codeOpenRequest && apiRef.current) showPanel(apiRef.current, 'code');
+  }, [codeOpenRequest?.nonce]);
 
   // Flush a pending save and release listeners when the workspace unmounts
   // (project switch or close).
