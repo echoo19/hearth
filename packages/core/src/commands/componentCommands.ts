@@ -11,6 +11,7 @@ import {
 } from '../schema/components.js';
 import { validateComponentPath } from '../schema/paths.js';
 import { ProjectError } from '../project/store.js';
+import { recordInstanceOverride } from '../project/prefabData.js';
 
 function resolve(ctx: any, sceneRef: string, entityRef: string) {
   const scene = ctx.store.getScene(sceneRef);
@@ -76,6 +77,16 @@ export const removeComponent = defineCommand({
     return { entityId: entity.id, type: params.type };
   },
 });
+
+/** Read a nested value by dot path (the post-parse value actually stored). */
+function valueAtPath(data: unknown, path: string[]): unknown {
+  let cursor: unknown = data;
+  for (const seg of path) {
+    if (cursor === null || typeof cursor !== 'object') return undefined;
+    cursor = (cursor as Record<string, unknown>)[seg];
+  }
+  return cursor;
+}
 
 /** Set a nested value by dot path, returning a modified deep copy. */
 function setByPath(target: Record<string, unknown>, path: string[], value: unknown): Record<string, unknown> {
@@ -248,6 +259,11 @@ export const setComponentProperty = defineCommand({
     assertNotAutotileWrite(type, pathParts, parsed.data);
     (entity.components as Record<string, unknown>)[type] = parsed.data;
     ctx.changed({ kind: 'component', id: entity.id, name: type, scene: scene.id, action: 'modified' });
+    // If this entity lives inside a prefab instance, record the edit as an
+    // implicit override on that instance's root marker (same mutation, so undo
+    // reverts the record with the value change). Root name/position/enabled are
+    // excluded inside recordInstanceOverride.
+    recordInstanceOverride(scene, entity.id, type, pathParts.join('.'), valueAtPath(parsed.data, pathParts));
     return {
       entityId: entity.id,
       property: params.property,
@@ -336,6 +352,18 @@ export const setProperties = defineCommand({
     for (const [type, data] of parsedByType) {
       (entity.components as Record<string, unknown>)[type] = data;
       ctx.changed({ kind: 'component', id: entity.id, name: type, scene: scene.id, action: 'modified' });
+    }
+
+    // One override per written key on the instance root (if this entity is an
+    // instance member). Same command mutation, so a single undo drops them all.
+    for (const { type, pathParts } of writes) {
+      recordInstanceOverride(
+        scene,
+        entity.id,
+        type,
+        pathParts.join('.'),
+        valueAtPath(parsedByType.get(type), pathParts),
+      );
     }
 
     return {

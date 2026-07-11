@@ -4,6 +4,7 @@ import { generateId } from '../ids.js';
 import { findEntity, wouldCreateCycle, type Entity } from '../schema/scene.js';
 import { createComponent, isComponentType, COMPONENT_TYPES } from '../schema/components.js';
 import { ProjectError } from '../project/store.js';
+import { recordInstanceOverride } from '../project/prefabData.js';
 
 import type { Scene } from '../schema/scene.js';
 import type { CommandContext } from './types.js';
@@ -190,6 +191,10 @@ export const moveEntity = defineCommand({
       const transform = entity.components.Transform ?? createComponent('Transform');
       transform.position = { ...params.position };
       entity.components.Transform = transform;
+      // A move of a NON-root instance member is an implicit Transform.position
+      // override; a move of the instance ROOT is per-instance placement and is
+      // never recorded (recordInstanceOverride enforces the root exclusion).
+      recordInstanceOverride(scene, entity.id, 'Transform', 'position', entity.components.Transform.position);
     }
     if (params.parent !== undefined) {
       const newParentId = params.parent === null ? null : requireEntity(scene, params.parent).id;

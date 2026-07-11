@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { defineCommand } from './types.js';
 import { findEntity, childrenOf } from '../schema/scene.js';
+import { findInstanceMembership } from '../project/prefabData.js';
 import { COMPONENT_DOCS, COMPONENT_ENUMS, COMPONENT_SCHEMAS, COMPONENT_TYPES } from '../schema/components.js';
 import { validateProject } from '../validate.js';
 import { ProjectError, readJson } from '../project/store.js';
@@ -184,10 +185,36 @@ export const inspectEntity = defineCommand({
     if (!scene) throw new ProjectError(`Scene not found: ${params.scene}`, 'NOT_FOUND');
     const entity = findEntity(scene, params.entity);
     if (!entity) throw new ProjectError(`Entity not found: ${params.entity}`, 'NOT_FOUND');
+
+    // Prefab instance view: if this entity belongs to a live instance, replace
+    // the raw marker with a resolved block naming the asset, the instance root,
+    // this entity's local id, and which of its own components/paths carry
+    // implicit overrides. An entity that carries a marker but has no resolvable
+    // live link yet (a "legacy-detached" instance root with an empty ids map)
+    // still surfaces the asset link with a null localId, so the prefab
+    // relationship stays visible. Entities with no marker get no block.
+    const membership = findInstanceMembership(scene, entity.id);
+    let prefab:
+      | { asset: string; root: string; localId: string | null; overridden: { component: string; path: string }[] }
+      | undefined;
+    if (membership) {
+      prefab = {
+        asset: membership.asset,
+        root: membership.rootId,
+        localId: membership.localId,
+        overridden: (scene.entities.find((e) => e.id === membership.rootId)?.prefab?.overrides ?? [])
+          .filter((o) => o.entity === entity.id)
+          .map((o) => ({ component: o.component, path: o.path })),
+      };
+    } else if (entity.prefab) {
+      prefab = { asset: entity.prefab.asset, root: entity.id, localId: null, overridden: [] };
+    }
+
     return {
       sceneId: scene.id,
       sceneName: scene.name,
       ...entity,
+      prefab,
       children: childrenOf(scene, entity.id).map((c) => ({ id: c.id, name: c.name })),
     };
   },

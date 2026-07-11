@@ -133,7 +133,11 @@ export const createPrefab = defineCommand({
       metadata: { entityCount: data.entities.length },
     });
 
-    root.prefab = { asset: asset.id };
+    // Write the fully-defaulted marker shape (empty ids/overrides) so the live
+    // store matches what a save/reload produces. The source keeps an empty ids
+    // map — it's "legacy-detached" (no membership, no implicit override
+    // recording); edits to the source are pushed to the asset via updatePrefab.
+    root.prefab = { asset: asset.id, ids: {}, overrides: [] };
     ctx.changed({ kind: 'entity', id: root.id, name: root.name, scene: scene.id, action: 'modified' });
     ctx.suggest(`instantiatePrefab --prefab ${asset.id} --scene <scene>`);
 
@@ -159,17 +163,22 @@ export const instantiatePrefab = defineCommand({
     const scene = requireScene(ctx, params.scene);
     const data = await loadPrefabData(ctx, asset);
 
-    const instances = instantiatePrefabData(data, {
-      position: params.position,
-      name: params.name,
-    });
+    const ids: Record<string, string> = {};
+    const instances = instantiatePrefabData(
+      data,
+      { position: params.position, name: params.name },
+      ids,
+    );
 
     const root = instances[0];
     // instantiatePrefabData is pure and sceneless, so the root name it sets
     // (opts.name ?? data.name) can collide with an existing entity. Uniquify
     // here, where the target scene is known, so names stay addressable.
     root.name = uniquifyEntityName(scene, root.name);
-    root.prefab = { asset: asset.id };
+    // Live-link marker: `ids` maps every prefab local id to its spawned scene
+    // id so later edits inside the subtree can be traced back to this root;
+    // `overrides` starts empty and accrues implicit per-instance edits.
+    root.prefab = { asset: asset.id, ids, overrides: [] };
 
     scene.entities.push(...instances);
     ctx.changed({ kind: 'entity', id: root.id, name: root.name, scene: scene.id, action: 'created' });
@@ -278,7 +287,10 @@ export const syncPrefabInstances = defineCommand({
         });
         const newRoot = instances[0];
         newRoot.enabled = root.enabled;
-        newRoot.prefab = { asset: asset.id };
+        // Full rebuild: emit the normalized marker shape. ids stays empty (the
+        // rebuilt instance is legacy-detached until Task 6 repopulates the live
+        // link) — functionally identical to the prior `{ asset }` write.
+        newRoot.prefab = { asset: asset.id, ids: {}, overrides: [] };
 
         kept.splice(insertIndex, 0, ...instances);
         scene.entities = kept;

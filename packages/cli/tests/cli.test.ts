@@ -720,7 +720,11 @@ describe('hearth prefab', () => {
     expect(envelope.data.entityCount).toBe(1);
 
     const entity = parseJson((await runCli(['inspect', 'entity', 'Main', 'Player', '--json'], dir)).stdout);
-    expect(entity.data.prefab).toEqual({ asset: envelope.data.asset.id });
+    // inspectEntity now returns a resolved prefab block. The createPrefab source
+    // is legacy-detached (empty ids), so it surfaces the asset link with a null
+    // localId rather than the raw marker.
+    expect(entity.data.prefab.asset).toBe(envelope.data.asset.id);
+    expect(entity.data.prefab.localId).toBeNull();
   });
 
   it('prefab place instantiates into a scene with --position and --name', async () => {
@@ -1051,5 +1055,97 @@ describe('hearth create asset state-machine / set-state-machine', () => {
     const envelope = parseJson(result.stdout);
     expect(envelope.success).toBe(false);
     expect(envelope.errors[0].code).toBe('NOT_FOUND');
+  });
+});
+
+describe('hearth import asset (single + bulk)', () => {
+  const pngBytes = Buffer.from([0x89, 0x50, 0x4e, 0x47, 1, 2, 3, 4, 5]);
+
+  it('a single source path runs importAsset (unchanged single-asset output)', async () => {
+    const src = path.join(tmpRoot, 'import-single.png');
+    await fsp.writeFile(src, pngBytes);
+
+    const result = await runCli(['import', 'asset', src, '--name', 'SingleCoin', '--json'], projectDir);
+    expect(result.code).toBe(0);
+    const envelope = parseJson(result.stdout);
+    expect(envelope.success).toBe(true);
+    expect(envelope.command).toBe('importAsset');
+    expect(envelope.data.asset.name).toBe('SingleCoin');
+  });
+
+  it('multiple source paths run importAssets as one batch, reporting per-file skips', async () => {
+    const dir = path.join(tmpRoot, 'import-multi');
+    await fsp.mkdir(dir, { recursive: true });
+    const good1 = path.join(dir, 'coin.png');
+    const good2 = path.join(dir, 'jump.wav');
+    const bad = path.join(dir, 'notes.xyz');
+    await fsp.writeFile(good1, pngBytes);
+    await fsp.writeFile(good2, pngBytes);
+    await fsp.writeFile(bad, pngBytes);
+
+    const result = await runCli(['import', 'asset', good1, good2, bad, '--json'], projectDir);
+    expect(result.code).toBe(0);
+    const envelope = parseJson(result.stdout);
+    expect(envelope.success).toBe(true);
+    expect(envelope.command).toBe('importAssets');
+    expect(envelope.data.imported).toHaveLength(2);
+    expect(envelope.data.skipped).toHaveLength(1);
+    expect(envelope.data.skipped[0].code).toBe('UNKNOWN_TYPE');
+  });
+
+  it('--recursive expands a directory (including nested subdirectories) into its files', async () => {
+    const dir = path.join(tmpRoot, 'import-recursive');
+    await fsp.mkdir(path.join(dir, 'nested'), { recursive: true });
+    await fsp.writeFile(path.join(dir, 'top.png'), pngBytes);
+    await fsp.writeFile(path.join(dir, 'nested', 'deep.png'), pngBytes);
+
+    const result = await runCli(['import', 'asset', dir, '--recursive', '--json'], projectDir);
+    expect(result.code).toBe(0);
+    const envelope = parseJson(result.stdout);
+    expect(envelope.success).toBe(true);
+    expect(envelope.command).toBe('importAssets');
+    expect(envelope.data.imported).toHaveLength(2);
+    expect(envelope.data.imported.map((i: any) => i.name).sort()).toEqual(['deep', 'top']);
+  });
+
+  it('a bare directory path without --recursive is a clean INVALID_INPUT error', async () => {
+    const dir = path.join(tmpRoot, 'import-bare-dir');
+    await fsp.mkdir(dir, { recursive: true });
+
+    const result = await runCli(['import', 'asset', dir, '--json'], projectDir);
+    expect(result.code).toBe(1);
+    const envelope = parseJson(result.stdout);
+    expect(envelope.success).toBe(false);
+    expect(envelope.errors[0].code).toBe('INVALID_INPUT');
+  });
+
+  it('--name with multiple source paths is rejected', async () => {
+    const dir = path.join(tmpRoot, 'import-name-reject');
+    await fsp.mkdir(dir, { recursive: true });
+    const a = path.join(dir, 'a.png');
+    const b = path.join(dir, 'b.png');
+    await fsp.writeFile(a, pngBytes);
+    await fsp.writeFile(b, pngBytes);
+
+    const result = await runCli(['import', 'asset', a, b, '--name', 'Nope', '--json'], projectDir);
+    expect(result.code).toBe(1);
+    const envelope = parseJson(result.stdout);
+    expect(envelope.success).toBe(false);
+    expect(envelope.errors[0].code).toBe('INVALID_INPUT');
+  });
+
+  it('a --type override applied to a bulk import applies to every file', async () => {
+    const dir = path.join(tmpRoot, 'import-type-override');
+    await fsp.mkdir(dir, { recursive: true });
+    const a = path.join(dir, 'a.dat');
+    const b = path.join(dir, 'b.dat');
+    await fsp.writeFile(a, pngBytes);
+    await fsp.writeFile(b, pngBytes);
+
+    const result = await runCli(['import', 'asset', a, b, '--type', 'other', '--json'], projectDir);
+    expect(result.code).toBe(0);
+    const envelope = parseJson(result.stdout);
+    expect(envelope.data.imported).toHaveLength(2);
+    expect(envelope.data.imported.every((i: any) => i.type === 'other')).toBe(true);
   });
 });

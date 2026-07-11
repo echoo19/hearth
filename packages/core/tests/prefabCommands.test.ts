@@ -49,9 +49,10 @@ describe('createPrefab', () => {
     expect(parsed.entities[0].parentId).toBeNull();
     expect(parsed.entities[1].parentId).toBe('pfe_1');
 
-    // source root gains a prefab marker pointing at the new asset
+    // source root gains a prefab marker pointing at the new asset (fully
+    // defaulted shape; empty ids => legacy-detached source)
     const updatedPlayer = store.getScene(sceneId)!.entities.find((e) => e.id === player.id)!;
-    expect(updatedPlayer.prefab).toEqual({ asset: asset.id });
+    expect(updatedPlayer.prefab).toEqual({ asset: asset.id, ids: {}, overrides: [] });
   });
 
   it('enforces unique asset names (duplicate name -> CONFLICT)', async () => {
@@ -128,7 +129,11 @@ describe('instantiatePrefab', () => {
     expect(rootEntity.name).toBe('Player Clone');
     expect(rootEntity.parentId).toBeNull();
     expect(rootEntity.components.Transform.position).toEqual({ x: 111, y: 222 });
-    expect(rootEntity.prefab).toEqual({ asset: asset.id });
+    // Live-link marker: asset + a complete local-id -> scene-id map + empty overrides.
+    expect(rootEntity.prefab.asset).toBe(asset.id);
+    expect(rootEntity.prefab.overrides).toEqual([]);
+    expect(rootEntity.prefab.ids.pfe_1).toBe(rootEntity.id);
+    expect(Object.values(rootEntity.prefab.ids)).toContain(rootEntity.id);
 
     const scene = store.getScene(otherSceneId)!;
     expect(scene.entities).toHaveLength(3); // default Main Camera + the 2 instantiated entities
@@ -405,7 +410,7 @@ describe('syncPrefabInstances', () => {
     const sceneA = store.getScene(sceneAId)!;
 
     const rebuiltFirstRoot = sceneA.entities.find((e) => e.id === firstRootId)!;
-    expect(rebuiltFirstRoot.prefab).toEqual({ asset: asset.id });
+    expect(rebuiltFirstRoot.prefab).toEqual({ asset: asset.id, ids: {}, overrides: [] });
     expect(rebuiltFirstRoot.components.SpriteRenderer.color).toBe('#abcdef');
     const firstRootChildren = sceneA.entities.filter((e) => e.parentId === firstRootId);
     expect(firstRootChildren).toHaveLength(2);
@@ -414,7 +419,7 @@ describe('syncPrefabInstances', () => {
     expect(rebuiltSecondRoot.enabled).toBe(false);
     expect(rebuiltSecondRoot.name).toBe('Renamed Two');
     expect(rebuiltSecondRoot.components.Transform.position).toEqual({ x: 77, y: 88 });
-    expect(rebuiltSecondRoot.prefab).toEqual({ asset: asset.id });
+    expect(rebuiltSecondRoot.prefab).toEqual({ asset: asset.id, ids: {}, overrides: [] });
     // the second instance's root picked up the updated payload color via sync
     expect(rebuiltSecondRoot.components.SpriteRenderer?.color).toBe('#abcdef');
     // second instance's children also rebuilt from the (now 3-entity) payload
@@ -424,7 +429,7 @@ describe('syncPrefabInstances', () => {
     const sceneB = store.getScene(sceneBId)!;
     const rebuiltThirdRoot = sceneB.entities.find((e) => e.id === thirdRootId)!;
     expect(rebuiltThirdRoot.name).toBe('Player Three');
-    expect(rebuiltThirdRoot.prefab).toEqual({ asset: asset.id });
+    expect(rebuiltThirdRoot.prefab).toEqual({ asset: asset.id, ids: {}, overrides: [] });
     expect(sceneB.entities.filter((e) => e.parentId === thirdRootId)).toHaveLength(2);
   });
 
@@ -512,7 +517,7 @@ describe('syncPrefabInstances', () => {
     expect(sceneA.entities.some((e) => e.id === secondRootId)).toBe(false);
     // The outer instance survives and is still marked.
     const outer = sceneA.entities.find((e) => e.id === firstRootId)!;
-    expect(outer.prefab).toEqual({ asset: asset.id });
+    expect(outer.prefab).toEqual({ asset: asset.id, ids: {}, overrides: [] });
   });
 
   it('undo restores the pre-sync scenes exactly', async () => {
