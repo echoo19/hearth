@@ -312,6 +312,18 @@ export const SpriteAnimatorSchema = z.object({
 });
 
 /**
+ * Drives a sibling SpriteRenderer from an animation state machine asset
+ * (assets/statemachines/*.asm.json). When both this and a SpriteAnimator are
+ * present the state machine wins (the runtime warns once). playing=false
+ * freezes the current frame without advancing the clip or taking transitions.
+ */
+export const AnimationStateMachineSchema = z.object({
+  /** State machine asset id (assets/statemachines/*.asm.json). */
+  assetId: z.string().default(''),
+  playing: z.boolean().default(true),
+});
+
+/**
  * Per-sprite visual effects: outline, hit flash, dissolve. All fields default
  * to a no-op (outline off, flashStrength 0, dissolveAmount 0) so attaching
  * this component with no overrides changes nothing on screen. flashStrength
@@ -343,6 +355,7 @@ export const COMPONENT_SCHEMAS = {
   LineRenderer: LineRendererSchema,
   ParticleEmitter: ParticleEmitterSchema,
   SpriteAnimator: SpriteAnimatorSchema,
+  AnimationStateMachine: AnimationStateMachineSchema,
   SpriteEffects: SpriteEffectsSchema,
   UIElement: UIElementSchema,
   UILayout: UILayoutSchema,
@@ -367,6 +380,7 @@ export type Light2DComponent = z.infer<typeof Light2DSchema>;
 export type LineRendererComponent = z.infer<typeof LineRendererSchema>;
 export type ParticleEmitterComponent = z.infer<typeof ParticleEmitterSchema>;
 export type SpriteAnimatorComponent = z.infer<typeof SpriteAnimatorSchema>;
+export type AnimationStateMachineComponent = z.infer<typeof AnimationStateMachineSchema>;
 export type SpriteEffectsComponent = z.infer<typeof SpriteEffectsSchema>;
 export type UIElementComponent = z.infer<typeof UIElementSchema>;
 export type UILayoutComponent = z.infer<typeof UILayoutSchema>;
@@ -388,6 +402,7 @@ export interface ComponentMap {
   LineRenderer?: LineRendererComponent;
   ParticleEmitter?: ParticleEmitterComponent;
   SpriteAnimator?: SpriteAnimatorComponent;
+  AnimationStateMachine?: AnimationStateMachineComponent;
   SpriteEffects?: SpriteEffectsComponent;
   UIElement?: UIElementComponent;
   UILayout?: UILayoutComponent;
@@ -430,6 +445,8 @@ export const COMPONENT_DOCS: Record<ComponentType, string> = {
   LineRenderer: 'Renders a polyline in local space; use for debug geometry or simple line effects.',
   ParticleEmitter: 'Spawns and simulates particles deterministically; seed controls reproducibility.',
   SpriteAnimator: 'Plays sprite animations; requires a sibling SpriteRenderer and animation asset.',
+  AnimationStateMachine:
+    'Drives a sibling SpriteRenderer from an animation state machine asset (states, params, transitions). Wins over a SpriteAnimator on the same entity. Scripts drive it via ctx.animator.setParam/fire.',
   SpriteEffects:
     'Per-sprite visual effects: outline, hit flash (ctx.effects.flash), dissolve. All values are no-ops at defaults.',
   UIElement:

@@ -124,7 +124,7 @@ describe('SpriteEffects registration', () => {
     expect(COMPONENT_DOCS.SpriteEffects).toMatch(/ctx\.effects\.flash/);
   });
 
-  it('inspectComponents lists 18 types, including SpriteEffects defaults', async () => {
+  it('inspectComponents lists 19 types, including SpriteEffects defaults', async () => {
     const fs = new MemoryFileSystem();
     const { store } = await createProject(fs, '/proj', { name: 'Test' });
     const session = HearthSession.fromStore(store, {});
@@ -134,7 +134,7 @@ describe('SpriteEffects registration', () => {
     );
     expect(result.success).toBe(true);
     const components = result.data!.components;
-    expect(components).toHaveLength(18);
+    expect(components).toHaveLength(19);
     const spriteEffects = components.find((c) => c.type === 'SpriteEffects');
     expect(spriteEffects).toBeDefined();
     expect(spriteEffects!.defaults).toEqual({
