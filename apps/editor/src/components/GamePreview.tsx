@@ -23,6 +23,7 @@ export function GamePreview() {
   const runNonce = useEditor((s) => s.runNonce);
   const debugDraw = useEditor((s) => s.debugDraw);
   const log = useEditor((s) => s.log);
+  const recordRuntimeError = useEditor((s) => s.recordRuntimeError);
 
   const hostRef = useRef<HTMLDivElement>(null);
   const viewRef = useRef<MountedGameView | null>(null);
@@ -62,6 +63,11 @@ export function GamePreview() {
           autoplay: useEditor.getState().playing,
           onLog: (event) => log('info', 'runtime', eventMessage(event)),
           onError: (event) => log('error', 'runtime', eventMessage(event)),
+          // Structured errors (script/line/phase) are recorded for Task 7's
+          // clickable diagnostics; onError above still handles the Console line.
+          onErrorEntry: (error) => {
+            if (!cancelled) recordRuntimeError(error);
+          },
           onSceneChange: (sceneName) => {
             if (cancelled) return;
             setLiveScene(sceneName);

@@ -10,14 +10,33 @@ import { useHistoryList } from '../useHistoryList';
 import { comboDisplay } from '../keybinds';
 import { getGameView } from '../gameViewRef';
 
+/**
+ * Live connection to the project server (WS journal + external-change channel).
+ * Connected: a steady --ok dot. Connecting: a pulsing dot (killed under
+ * prefers-reduced-motion by the global media rule). Disconnected: an --err dot.
+ * Reads `wsStatus` only — no state of its own.
+ */
+function WsStatusDot() {
+  const wsStatus = useEditor((s) => s.wsStatus);
+  // Disconnected is transient — the store auto-reconnects with backoff — so
+  // both non-connected states read as "reconnecting" to the user.
+  const label =
+    wsStatus === 'connected' ? 'Connected to project server' : 'Reconnecting to project server…';
+  return (
+    <span className={`ws-dot ws-dot-${wsStatus}`} role="status" aria-label={label} title={label} />
+  );
+}
+
 export function Toolbar({ dock, storageKey }: { dock: DockviewApi | null; storageKey: string }) {
   const info = useEditor((s) => s.info);
   const sceneId = useEditor((s) => s.sceneId);
   const playing = useEditor((s) => s.playing);
   const paused = useEditor((s) => s.paused);
+  const pendingRestart = useEditor((s) => s.pendingRestart);
   const debugDraw = useEditor((s) => s.debugDraw);
   const selectScene = useEditor((s) => s.selectScene);
   const setPlaying = useEditor((s) => s.setPlaying);
+  const restartPlay = useEditor((s) => s.restartPlay);
   const setPaused = useEditor((s) => s.setPaused);
   const setDebugDraw = useEditor((s) => s.setDebugDraw);
   const refreshDiff = useEditor((s) => s.refreshDiff);
@@ -118,6 +137,17 @@ export function Toolbar({ dock, storageKey }: { dock: DockviewApi | null; storag
         <Icon name={playing ? 'stop' : 'play'} /> {playing ? 'Stop' : 'Play'}
       </button>
 
+      {/* Persistent restart badge: a structural change (new entity, component,
+          settings…) landed mid-run and can't be live-patched. Announced
+          politely, silent otherwise, cleared on Play/Stop/restart. */}
+      <span className="restart-badge-slot" aria-live="polite">
+        {playing && pendingRestart && (
+          <button className="btn btn-sm btn-restart" onClick={() => restartPlay()} title="Restart the preview to apply changes that can't be live-patched">
+            <Icon name="play" /> Scene changed — Restart
+          </button>
+        )}
+      </span>
+
       <span className="toolbar-group">
         <button
           className={paused ? 'btn btn-primary btn-sm' : 'btn btn-sm'}
@@ -171,6 +201,8 @@ export function Toolbar({ dock, storageKey }: { dock: DockviewApi | null; storag
       <ViewMenu dock={dock} storageKey={storageKey} />
 
       <span className="spacer" />
+
+      <WsStatusDot />
 
       <span className="toolbar-group">
         <button

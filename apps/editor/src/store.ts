@@ -4,7 +4,9 @@
  * a core command and refreshes the model from the source of truth.
  */
 import { create } from 'zustand';
-import { apiCommand, apiMeta, apiOpenProject, apiCreateProject, apiDetectAgents } from './api';
+import { apiCommand, apiMeta, apiOpenProject, apiCreateProject, apiDetectAgents, fileUrl } from './api';
+import { classifyLocal, classifyJournal } from './livePatch';
+import { getGameView } from './gameViewRef';
 import type {
   AssetItem,
   CommandResult,
@@ -20,6 +22,7 @@ import type {
   Vec2,
 } from './types';
 import type { WsFrame } from '../server/ws';
+import type { RuntimeErrorEntry } from './runtimeBridge';
 import type { AgentPermissionMode, DetectAgentsResult } from '../server/agentSetup';
 import { ingestPtyFrame, resetAgentSocket, type AgentStatus } from './components/agent/useAgentSocket';
 import { createNudgeQueue } from './nudgeQueue';
@@ -53,6 +56,21 @@ export interface EditorState {
   /** Status of the /api/ws connection for the open project (or 'disconnected' when none is open). */
   wsStatus: 'connected' | 'connecting' | 'disconnected';
   playing: boolean;
+  /**
+   * A structural change (new/removed entity or component, settings, a reparent,
+   * a new script) landed while a preview is running — the live world can't be
+   * patched in place, so the Toolbar shows a "Scene changed — Restart" badge.
+   * Set by the live dispatcher (local exec + external journal), cleared on
+   * Play/Stop/restart. Only meaningful while `playing`.
+   */
+  pendingRestart: boolean;
+  /**
+   * Structured runtime errors (the full RuntimeError incl. script/line) from
+   * the current run, newest last and capped. Fed by GamePreview's
+   * onErrorEntry; a fresh Play/restart/scene-switch clears it. Task 7 turns
+   * these into clickable script-panel diagnostics — this task only records them.
+   */
+  runtimeErrors: RuntimeErrorEntry[];
   /**
    * Play-mode debug pause (Task 9): freezes the running game in place without
    * stopping the run — distinct from `playing`/Stop, which tears the preview
@@ -151,6 +169,10 @@ export interface EditorState {
   select(entityId: string | null): void;
   setConsoleOpen(open: boolean): void;
   setPlaying(playing: boolean): void;
+  /** Restart the running preview from the current scene, clearing the restart badge (the badge's action). */
+  restartPlay(): void;
+  /** Record a structured runtime error from the running preview (feeds Task 7's diagnostics). */
+  recordRuntimeError(error: RuntimeErrorEntry): void;
   setPaused(paused: boolean): void;
   setDebugDraw(on: boolean): void;
   log(level: ConsoleLevel, source: ConsoleSource, message: string): void;
@@ -187,6 +209,7 @@ function makeEntry(level: ConsoleLevel, source: ConsoleSource, message: string):
 
 const MAX_CONSOLE = 500;
 const MAX_JOURNAL_FEED = 200;
+const MAX_RUNTIME_ERRORS = 200;
 const LAST_PROJECT_KEY = 'hearth:lastProject';
 const WS_BACKOFF_INITIAL_MS = 1000;
 const WS_BACKOFF_MAX_MS = 5000;
@@ -281,6 +304,95 @@ export const useEditor = create<EditorState>((set, get) => {
     };
   }
 
+  // --- Live update dispatch (Wave H) ---------------------------------------
+  // Apply a classified LiveAction against the running preview. Patches go
+  // straight to the live PixiSceneView (independent of the authored-scene
+  // refresh); reloads hot-swap a script's source; structural changes raise
+  // the restart badge. All best-effort: a stale entity ref just returns false.
+
+  /** Split a "Camera.ambientLight" property into [componentType, "ambientLight"]. */
+  function splitProperty(property: string): [string, string] {
+    const dot = property.indexOf('.');
+    return dot === -1 ? [property, ''] : [property.slice(0, dot), property.slice(dot + 1)];
+  }
+
+  /** Fetch a script's current on-disk source (used for external/format reloads). */
+  async function fetchScriptSource(path: string): Promise<string | null> {
+    const project = get().projectPath;
+    if (!project) return null;
+    try {
+      const res = await fetch(fileUrl(project, path));
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      return await res.text();
+    } catch (err) {
+      get().log('error', 'runtime', `Hot-reload failed: ${path} — ${(err as Error).message}`);
+      return null;
+    }
+  }
+
+  /** Hot-reload one script, logging the console notice (structured for Task 7 linkability). */
+  async function applyReload(path: string, source: string | undefined): Promise<void> {
+    const view = getGameView();
+    if (!view?.reloadScript) return;
+    const src = source ?? (await fetchScriptSource(path));
+    if (src === null) return;
+    const result = await view.reloadScript(path, src);
+    if (result.ok) {
+      const n = result.entities;
+      get().log('info', 'runtime', `Hot-reloaded ${path} (${n} ${n === 1 ? 'entity' : 'entities'})`);
+    } else {
+      const at = result.line != null ? `${path}:${result.line}` : path;
+      get().log('error', 'runtime', `Hot-reload failed: ${at} — ${result.message}`);
+    }
+  }
+
+  /** Live-patch one component property on the running preview. */
+  function applyPatch(entity: string, property: string, value: unknown): void {
+    const [type, rest] = splitProperty(property);
+    if (!rest) return;
+    getGameView()?.patchComponent?.(entity, type, rest, value);
+  }
+
+  /** Read a dot-path value out of an entity's component bag (external patch resolution). */
+  function readComponentPath(components: Record<string, unknown> | undefined, property: string): unknown {
+    const [type, rest] = splitProperty(property);
+    let node: unknown = components?.[type];
+    for (const key of rest.split('.')) {
+      if (node === null || typeof node !== 'object') return undefined;
+      node = (node as Record<string, unknown>)[key];
+    }
+    return node;
+  }
+
+  /** Run the live actions for a just-succeeded LOCAL exec (only while playing). */
+  async function applyLocalActions(command: string, params: Record<string, unknown>, data: unknown): Promise<void> {
+    const localSource = command === 'editScript' ? (data as { source?: unknown } | null)?.source : undefined;
+    for (const action of classifyLocal(command, params, data)) {
+      if (action.kind === 'patch') applyPatch(action.entity, action.property, action.value);
+      else if (action.kind === 'reload') {
+        await applyReload(action.path, typeof localSource === 'string' ? localSource : undefined);
+      } else if (action.kind === 'structural') set({ pendingRestart: true });
+    }
+  }
+
+  /** Run the live actions for an EXTERNAL journal entry (refresh already ran; only while playing). */
+  async function applyJournalActions(entry: JournalEntry): Promise<void> {
+    for (const action of classifyJournal(entry)) {
+      if (action.kind === 'reload') await applyReload(action.path, undefined);
+      else if (action.kind === 'structural') set({ pendingRestart: true });
+      else if (action.kind === 'patch' && !action.hasValue) {
+        // No value in the journal detail: resolve the current value from the
+        // freshly-refreshed authored scene via one read-only query, then patch.
+        const ent = await query<{ components?: Record<string, unknown> }>('inspectEntity', {
+          scene: action.scene,
+          entity: action.entity,
+        });
+        const value = readComponentPath(ent?.components, action.property);
+        if (value !== undefined) applyPatch(action.entity, action.property, value);
+      }
+    }
+  }
+
   function wsUrl(project: string): string {
     const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
     return `${proto}//${location.host}/api/ws?project=${encodeURIComponent(project)}`;
@@ -344,9 +456,18 @@ export const useEditor = create<EditorState>((set, get) => {
       }
       if (frame.type === 'journal') {
         pushJournalFeed(frame.entries);
-        if (frame.entries.some((entry) => entry.source !== 'editor')) {
+        const external = frame.entries.filter((entry) => entry.source !== 'editor');
+        if (external.length > 0) {
           set((state) => ({ commandSeq: state.commandSeq + 1 }));
-          void get().refresh();
+          void (async () => {
+            await get().refresh();
+            // Mirror external changes into the running preview. Guarded on
+            // `playing` — the restart badge and live patches are only
+            // meaningful while a preview is up; a fresh Play picks up the
+            // already-refreshed authored scene otherwise.
+            if (!get().playing) return;
+            for (const entry of external) await applyJournalActions(entry);
+          })();
         }
         return;
       }
@@ -397,6 +518,8 @@ export const useEditor = create<EditorState>((set, get) => {
       assets: [],
       journalFeed: [],
       playing: false,
+      pendingRestart: false,
+      runtimeErrors: [],
       paused: false,
       debugDraw: false,
       snapshotTaken: false,
@@ -426,6 +549,8 @@ export const useEditor = create<EditorState>((set, get) => {
     journalFeed: [],
     wsStatus: 'disconnected',
     playing: false,
+    pendingRestart: false,
+    runtimeErrors: [],
     paused: false,
     runNonce: 0,
     debugDraw: false,
@@ -592,6 +717,8 @@ export const useEditor = create<EditorState>((set, get) => {
         diff: null,
         journalFeed: [],
         playing: false,
+        pendingRestart: false,
+        runtimeErrors: [],
         paused: false,
         debugDraw: false,
         snapshotTaken: false,
@@ -606,7 +733,7 @@ export const useEditor = create<EditorState>((set, get) => {
       nudgeQueue.flush();
       // A center measured against the previous scene's viewport doesn't apply
       // here; SceneView re-measures and pushes a fresh one once mounted.
-      set({ sceneId, selection: null, playing: false, paused: false, debugDraw: false, sceneViewCenter: null });
+      set({ sceneId, selection: null, playing: false, pendingRestart: false, runtimeErrors: [], paused: false, debugDraw: false, sceneViewCenter: null });
       await get().refresh();
     },
 
@@ -628,9 +755,31 @@ export const useEditor = create<EditorState>((set, get) => {
       set((state) => ({
         playing,
         paused: false,
+        // Either direction clears a pending restart: Play/Stop both remount or
+        // tear down the preview, so a queued "restart to apply" is moot. The
+        // fresh run also starts with a clean runtime-error list.
+        pendingRestart: false,
+        runtimeErrors: [],
         runNonce: playing ? state.runNonce + 1 : state.runNonce,
         debugDraw: playing ? false : state.debugDraw,
       }));
+    },
+
+    restartPlay() {
+      // The restart badge's action: replay the current scene from scratch
+      // (same remount path as a fresh Play) and clear the badge.
+      set((state) => ({
+        playing: true,
+        paused: false,
+        pendingRestart: false,
+        runtimeErrors: [],
+        runNonce: state.runNonce + 1,
+        debugDraw: false,
+      }));
+    },
+
+    recordRuntimeError(error) {
+      set((state) => ({ runtimeErrors: [...state.runtimeErrors.slice(-MAX_RUNTIME_ERRORS + 1), error] }));
     },
 
     setPaused(paused) {
@@ -729,6 +878,12 @@ export const useEditor = create<EditorState>((set, get) => {
       if (result.success && (result.changed.length > 0 || result.files.length > 0)) {
         set((state) => ({ commandSeq: state.commandSeq + 1 }));
         await get().refresh();
+        // Mirror the change into the running preview (live patch / hot-reload /
+        // restart badge). Only while playing; params carry every value locally,
+        // so live-patching works fully regardless of what the journal records.
+        if (get().playing) {
+          await applyLocalActions(name, (params ?? {}) as Record<string, unknown>, result.data);
+        }
       }
       // Centralized here (rather than in each caller) so any surface that
       // triggers a snapshot — DiffPanel's button or the Agent panel's
