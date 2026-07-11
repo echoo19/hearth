@@ -33,6 +33,22 @@ export interface RuntimeEntityHandle {
   components: { PhysicsBody?: { velocity: { x: number; y: number } } } & Record<string, unknown>;
 }
 
+/** One recorded runtime error (SceneRuntime.errors / RuntimeError). */
+export interface RuntimeErrorEntry {
+  frame: number;
+  message: string;
+  entity?: string;
+  script?: string;
+  phase?: string;
+  /** 1-based source line when extractable; null otherwise. */
+  line?: number | null;
+}
+
+/** Result of a hot-reload (SceneRuntime.reloadScript). */
+export type ReloadScriptResult =
+  | { ok: true; entities: number }
+  | { ok: false; message: string; line: number | null };
+
 /** One recorded ctx.events.emit call (SceneRuntime.events). */
 export interface RuntimeEventRecord {
   frame: number;
@@ -70,6 +86,15 @@ export interface MountedGameView {
   setDebugDraw?(on: boolean): void;
   /** Advance exactly one fixed frame and render it (PixiSceneView.stepFrame, play-mode pause/step). */
   stepFrame?(): Promise<void>;
+  /** Hot-reload a script against the current scene, preserving vars/timers/tweens (PixiSceneView.reloadScript, since Wave H). */
+  reloadScript?(path: string, source: string): Promise<ReloadScriptResult>;
+  /** Live-patch a component property on the current scene (PixiSceneView.patchComponent, since Wave H). */
+  patchComponent?(
+    entityRef: string,
+    componentType: string,
+    propertyPath: string,
+    value: unknown,
+  ): boolean;
   runtime?: RuntimeHandle & { errors?: unknown[] };
 }
 
@@ -80,6 +105,13 @@ export interface MountGameOptions {
   autoplay: boolean;
   onLog?: (event: RuntimeLogEvent | string) => void;
   onError?: (event: RuntimeLogEvent | string | Error) => void;
+  /**
+   * Structured runtime-error callback (the full RuntimeError, incl. `line`).
+   * Fires alongside `onError`; use this when you need the phase/script/line,
+   * e.g. to surface a script-panel diagnostic. `onError` stays string-friendly
+   * for back-compat.
+   */
+  onErrorEntry?: (event: RuntimeErrorEntry) => void;
   /** Fired after a script-requested scene switch completes (scene NAME). */
   onSceneChange?: (sceneName: string) => void;
 }
@@ -173,7 +205,13 @@ export async function mountGameView(options: MountGameOptions): Promise<MountedG
     resolveAssetUrl: (asset: { path: string }) => fileUrl(options.projectPath, asset.path),
     autoplay: options.autoplay,
     onLog: options.onLog,
-    onError: options.onError,
+    // The runtime hands onError a structured RuntimeError; forward it to both
+    // the (back-compat, string-friendly) onError and the structured
+    // onErrorEntry so callers can pick either shape.
+    onError: (e: RuntimeErrorEntry) => {
+      options.onError?.(e);
+      options.onErrorEntry?.(e);
+    },
     onSceneChange: (e: { frame: number; from: string | null; to: string }) => {
       const name = store.getScene(e.to)?.name ?? e.to;
       options.onSceneChange?.(name);

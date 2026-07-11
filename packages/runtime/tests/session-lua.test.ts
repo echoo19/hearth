@@ -57,6 +57,29 @@ describe('Lua script dispatch (SceneRuntime)', () => {
     expect(messages(runtime.logs)).toEqual(expect.arrayContaining(['js:JsOne', 'lua:LuaTwo']));
     runtime.destroy();
   });
+
+  it('records the Lua source line on a hook error', async () => {
+    const { store } = await makeStore({
+      entities: [ent('Angry', { Transform: {}, Script: { scriptPath: 'scripts/angry.lua' } })],
+      scripts: {
+        'angry.lua': [
+          'local script = {}',
+          'function script.onUpdate(ctx, dt)',
+          '  error("kaboom")',
+          'end',
+          'return script',
+        ].join('\n'),
+      },
+    });
+    const runtime = await SceneRuntime.create(store, 'Test');
+    runtime.run(1);
+    expect(runtime.errors[0]).toMatchObject({
+      script: 'scripts/angry.lua',
+      phase: 'onUpdate',
+      line: 3, // error() is on line 3 of angry.lua
+    });
+    runtime.destroy();
+  });
 });
 
 describe('Lua through GameSession', () => {

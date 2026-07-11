@@ -241,6 +241,8 @@ describe('script errors', () => {
       entity: 'Broken',
       script: 'scripts/broken.js',
       phase: 'onUpdate',
+      // The throw sits on source line 3 (line 1 blank, line 2 the export).
+      line: 3,
     });
     expect(runtime.logs.some((l) => l.level === 'warn' && /disabled after 3/.test(l.message))).toBe(
       true,

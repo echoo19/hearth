@@ -292,4 +292,40 @@ describe('ctx.events', () => {
     const recorded = runtime.events.find((e) => e.name === 'score');
     expect(recorded?.data).toEqual({ score: 5 });
   });
+
+  it('keeps pre-reload ctx.events.on closures after reloadScript, while onEvent resolves to new code', async () => {
+    // Documented, pinned behavior: reloadScript swaps the onEvent hook but
+    // CANNOT re-register imperative ctx.events.on subscriptions — those keep
+    // firing the closure captured before the reload.
+    const { store } = await makeStore({
+      entities: [scripted('Sub', 'scripts/sub.js')],
+      scripts: {
+        'sub.js': `export default {
+          onStart(ctx) { ctx.events.on('ping', () => ctx.log('sub:v1')); },
+          onEvent(ctx, name) { if (name === 'ping') ctx.log('hook:v1'); },
+        };`,
+      },
+    });
+    const runtime = await SceneRuntime.create(store, 'Test');
+    runtime.run(1); // onStart registers the v1 subscription
+    runtime.emitEvent('ping');
+    expect(messages(runtime.logs)).toEqual(expect.arrayContaining(['sub:v1', 'hook:v1']));
+
+    const result = await runtime.reloadScript(
+      'scripts/sub.js',
+      `export default {
+        onStart(ctx) { ctx.events.on('ping', () => ctx.log('sub:v2')); },
+        onEvent(ctx, name) { if (name === 'ping') ctx.log('hook:v2'); },
+      };`,
+    );
+    expect(result).toEqual({ ok: true, entities: 1 });
+
+    const mark = runtime.logs.length;
+    runtime.emitEvent('ping');
+    const after = messages(runtime.logs.slice(mark));
+    expect(after).toContain('sub:v1'); // OLD closure still fires
+    expect(after).toContain('hook:v2'); // onEvent hook is NEW code
+    expect(after).not.toContain('sub:v2'); // onStart never re-ran, so no v2 sub
+    expect(after).not.toContain('hook:v1'); // old hook replaced
+  });
 });

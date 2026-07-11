@@ -429,6 +429,30 @@ export class PixiSceneView {
     if (!on) this.debugGraphics.clear();
   }
 
+  /**
+   * Hot-reload a script against the CURRENT scene's runtime (editor
+   * write→play→tweak). Resolves `this.runtime` per call so it targets whatever
+   * scene the GameSession is on right now. See SceneRuntime.reloadScript.
+   */
+  reloadScript(
+    path: string,
+    source: string,
+  ): Promise<
+    { ok: true; entities: number } | { ok: false; message: string; line: number | null }
+  > {
+    return this.runtime.reloadScript(path, source);
+  }
+
+  /** Live-patch a component property on the current scene's runtime. See SceneRuntime.patchComponent. */
+  patchComponent(
+    entityRef: string,
+    componentType: string,
+    propertyPath: string,
+    value: unknown,
+  ): boolean {
+    return this.runtime.patchComponent(entityRef, componentType, propertyPath, value);
+  }
+
   destroy(): void {
     if (this.destroyed) return;
     this.destroyed = true;

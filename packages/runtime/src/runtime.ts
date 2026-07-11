@@ -93,6 +93,8 @@ export interface RuntimeError {
   entity?: string;
   script?: string;
   phase?: string;
+  /** 1-based source line, when extractable from the error; null otherwise. */
+  line?: number | null;
 }
 
 /** One recorded audio play/stop, as it appears in run reports. */
@@ -211,6 +213,33 @@ interface Contact {
   nx: number;
   ny: number;
   trigger: boolean;
+}
+
+/**
+ * Best-effort 1-based source line for a script error, kept LOCAL to the
+ * runtime so this package never pulls in core's validate.ts (and luaparse
+ * with it, which would bloat the player bundle). Lua errors carry a native
+ * "path:LINE:" prefix from the `@path` chunk name; JS runtime errors carry a
+ * `<anonymous>:LINE:COL` stack frame whose line is offset by 2 for the
+ * `new Function(module, exports)` wrapper compileScript uses (same offset as
+ * validate.ts). Returns null when no line is recoverable (notably JS
+ * *compile* failures, whose SyntaxError has no usable stack frame).
+ */
+function extractScriptErrorLine(path: string, err: unknown): number | null {
+  if (isLuaPath(path)) {
+    const message = (err as Error | undefined)?.message ?? String(err);
+    const match = message.match(new RegExp(`${escapeRegExp(path)}:(\\d+):`));
+    return match ? parseInt(match[1], 10) : null;
+  }
+  const stack = (err as Error | undefined)?.stack ?? '';
+  const match = stack.match(/<anonymous>:(\d+):\d+/);
+  if (!match) return null;
+  const line = parseInt(match[1], 10) - 2;
+  return line >= 1 ? line : null;
+}
+
+function escapeRegExp(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
 const MAX_CONSECUTIVE_SCRIPT_ERRORS = 3;
@@ -433,6 +462,94 @@ export class SceneRuntime {
     const state = this.scriptStates.get(entityId);
     if (!state) return null;
     return { timers: state.scheduler.listTimers(), tweens: state.scheduler.listTweens() };
+  }
+
+  /**
+   * Hot-reload one script's source while the scene keeps running (editor
+   * write→play→tweak). On success every live entity bound to `path` gets the
+   * newly compiled hooks; their vars, scheduler (timers/tweens), ctx, and
+   * `started` flag are all preserved — so onStart does NOT re-run, and an
+   * error-disabled script re-enables. Future spawns of `path` pick up the new
+   * hooks too (scriptModules is updated). On a compile failure the old hooks
+   * keep running unchanged and the failure is recorded (phase 'reload') with a
+   * best-effort source line.
+   *
+   * Note (documented, pinned by tests): existing `ctx.events.on` subscriptions
+   * keep firing their OLD closures — reload does not, and cannot, re-register
+   * them. Only the `onEvent` hook resolves to the new code.
+   */
+  async reloadScript(
+    path: string,
+    source: string,
+  ): Promise<
+    { ok: true; entities: number } | { ok: false; message: string; line: number | null }
+  > {
+    let hooks: ScriptHooks | null;
+    try {
+      if (isLuaPath(path)) {
+        const engine = this.options.luaEngine ?? this.ownedLuaEngine;
+        if (!engine) throw new Error('Lua engine unavailable');
+        hooks = engine.compile(path, source);
+      } else {
+        hooks = compileScript(source);
+      }
+    } catch (err) {
+      const message = (err as Error)?.message ?? String(err);
+      const line = extractScriptErrorLine(path, err);
+      this.recordError({ frame: this._frame, message, script: path, phase: 'reload', line });
+      return { ok: false, message, line };
+    }
+    // Swap the module (so future spawns compile against it) and re-point every
+    // live entity already bound to this path at the fresh hooks.
+    this.scriptModules.set(path, hooks);
+    let entities = 0;
+    for (const state of this.scriptStates.values()) {
+      if (state.path !== path) continue;
+      state.hooks = hooks;
+      state.disabled = false;
+      state.consecutiveErrors = 0;
+      entities++;
+    }
+    return { ok: true, entities };
+  }
+
+  /**
+   * Live-patch a single component property on one entity (editor Inspector
+   * tweaks during play). `entityRef` is an id, falling back to a UNIQUE name
+   * match. `propertyPath` is a dot path WITHOUT the leading component type
+   * (e.g. "ambientLight" or "position.x"); a numeric segment indexes an array.
+   * Returns false (a silent skip) when the entity, the component, or an
+   * intermediate object on the path is missing — patching never creates
+   * structure (the authoring layer already validated the write). Camera props
+   * take effect immediately: runtime.camera reads live component data every
+   * tick.
+   */
+  patchComponent(
+    entityRef: string,
+    componentType: string,
+    propertyPath: string,
+    value: unknown,
+  ): boolean {
+    const live = this.getEntities();
+    let entity = live.find((e) => e.id === entityRef);
+    if (!entity) {
+      const named = live.filter((e) => e.name === entityRef);
+      if (named.length === 1) entity = named[0];
+    }
+    if (!entity) return false;
+    const component = (entity.components as Record<string, unknown>)[componentType];
+    if (component === undefined || component === null || typeof component !== 'object') {
+      return false;
+    }
+    const segments = propertyPath.split('.');
+    let target: Record<string, unknown> = component as Record<string, unknown>;
+    for (let i = 0; i < segments.length - 1; i++) {
+      const next = target[segments[i]];
+      if (next === undefined || next === null || typeof next !== 'object') return false;
+      target = next as Record<string, unknown>;
+    }
+    target[segments[segments.length - 1]] = value;
+    return true;
   }
 
   /** Active camera view: main Camera entity, or build-settings defaults. */
@@ -1719,6 +1836,7 @@ export class SceneRuntime {
       entity: entityName,
       script: state.path,
       phase,
+      line: extractScriptErrorLine(state.path, err),
     });
     if (state.consecutiveErrors >= MAX_CONSECUTIVE_SCRIPT_ERRORS) {
       state.disabled = true;
