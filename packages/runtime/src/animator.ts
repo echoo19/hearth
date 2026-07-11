@@ -41,6 +41,55 @@ export interface AnimatorFrame {
 // would otherwise delay a frame advance by one extra step.
 const EPSILON = 1e-9;
 
+/** A frame-advance cursor: seconds toward the next frame + current frame index. */
+export interface FramePlayback {
+  elapsed: number;
+  frame: number;
+}
+
+/**
+ * Advance a frame-playback cursor one fixed step, mutating `pb` in place.
+ * Shared by SpriteAnimator (stepAnimator) and the AnimationStateMachine
+ * stepper so both use identical frame-advance math. `frameCount` must be > 0
+ * and `frameDuration` > 0. Returns true when a NON-looping clip reached (and
+ * stuck at) its final frame during this step — the caller decides what that
+ * means (SpriteAnimator sets playing=false; the state machine marks the clip
+ * done). Looping clips never return true and wrap to frame 0.
+ */
+export function advancePlayback(
+  pb: FramePlayback,
+  frameCount: number,
+  frameDuration: number,
+  loop: boolean,
+  fixedDt: number,
+): boolean {
+  pb.elapsed += fixedDt;
+  while (pb.elapsed >= frameDuration - EPSILON) {
+    pb.elapsed -= frameDuration;
+    pb.frame++;
+    if (pb.frame >= frameCount) {
+      if (loop) {
+        pb.frame = 0;
+      } else {
+        pb.frame = frameCount - 1;
+        pb.elapsed = 0;
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
+/**
+ * Split a frames[] entry into the SpriteRenderer write: a plain sprite-asset
+ * id (no '#') yields `frame: null`; a `<assetId>#<frameName>` sheet ref splits
+ * on the first '#'.
+ */
+export function resolveFrameRef(ref: string): AnimatorFrame {
+  const i = ref.indexOf('#');
+  return i === -1 ? { assetId: ref, frame: null } : { assetId: ref.slice(0, i), frame: ref.slice(i + 1) };
+}
+
 /**
  * Advance one fixed step. Mutates `state` in place (and flips
  * `component.playing` to false when a non-looping animation finishes).
@@ -68,24 +117,10 @@ export function stepAnimator(
 
   if (component.playing) {
     const frameDuration = component.fps > 0 ? 1 / component.fps : asset.frameDuration;
-    state.elapsed += fixedDt;
-    while (state.elapsed >= frameDuration - EPSILON) {
-      state.elapsed -= frameDuration;
-      state.frame++;
-      if (state.frame >= asset.frames.length) {
-        if (component.loop) {
-          state.frame = 0;
-        } else {
-          state.frame = asset.frames.length - 1;
-          component.playing = false;
-          state.elapsed = 0;
-          break;
-        }
-      }
+    if (advancePlayback(state, asset.frames.length, frameDuration, component.loop, fixedDt)) {
+      component.playing = false;
     }
   }
 
-  const ref = asset.frames[state.frame];
-  const i = ref.indexOf('#');
-  return i === -1 ? { assetId: ref, frame: null } : { assetId: ref.slice(0, i), frame: ref.slice(i + 1) };
+  return resolveFrameRef(asset.frames[state.frame]);
 }
