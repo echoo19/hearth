@@ -5,10 +5,38 @@
  * module to scenes and the asset index.
  */
 import { generateId } from '../ids.js';
-import { createComponent } from '../schema/components.js';
+import { createComponent, COMPONENT_SCHEMAS, isComponentType } from '../schema/components.js';
 import type { Entity, Scene } from '../schema/scene.js';
 import { PrefabDataSchema, type PrefabData, type PrefabEntity } from '../schema/project.js';
 import { ProjectError } from './store.js';
+
+/** Read a nested value by dot-path segments (undefined if any segment is absent). */
+export function valueAtPath(data: unknown, path: string[]): unknown {
+  let cursor: unknown = data;
+  for (const seg of path) {
+    if (cursor === null || typeof cursor !== 'object') return undefined;
+    cursor = (cursor as Record<string, unknown>)[seg];
+  }
+  return cursor;
+}
+
+/** Set a nested value by dot-path segments, returning a modified deep copy. */
+export function setAtPath(
+  target: Record<string, unknown>,
+  path: string[],
+  value: unknown,
+): Record<string, unknown> {
+  const copy = structuredClone(target);
+  let cursor: Record<string, unknown> = copy;
+  for (let i = 0; i < path.length - 1; i++) {
+    const key = path[i];
+    const next = cursor[key];
+    if (typeof next !== 'object' || next === null) cursor[key] = {};
+    cursor = cursor[key] as Record<string, unknown>;
+  }
+  cursor[path[path.length - 1]] = value;
+  return copy;
+}
 
 /**
  * BFS `entities` starting at `rootId`, returning the root and every
@@ -245,4 +273,202 @@ export function recordInstanceOverride(
   } else {
     overrides.push({ entity: entityId, component, path, value: cloned });
   }
+}
+
+/** A prefab override record (component-property or non-root move) on a marker. */
+export interface OverrideRecord {
+  entity: string;
+  component: string;
+  path: string;
+  value?: unknown;
+}
+
+/** Result of building the merged subtree for a single instance root. */
+export interface MergedInstance {
+  /** Rebuilt subtree (root first) with reused scene ids and overrides re-applied. */
+  instances: Entity[];
+  /** Overrides that were re-applied (survived the merge). */
+  overridesPreserved: OverrideRecord[];
+  /** Overrides dropped because their local/component/path no longer exists in the prefab. */
+  overridesDropped: OverrideRecord[];
+}
+
+/**
+ * Rebuild the subtree for the instance rooted at `rootId` from `data`, MERGING
+ * rather than replacing: every prefab local that already has a scene id in the
+ * root marker's `ids` map keeps that id (so references stay stable), new prefab
+ * locals get fresh ids, and locals removed from the prefab simply aren't
+ * rebuilt (their old entities are dropped by the caller). The root keeps its
+ * scene id, name, `enabled`, and `Transform.position` (per-instance placement);
+ * every other field comes from the prefab. Recorded overrides are then
+ * re-applied on top of the rebuilt components; an override whose local,
+ * component, or path no longer exists in the prefab is dropped (surfaced via
+ * `overridesDropped`). The returned root marker carries the complete new `ids`
+ * map and the surviving overrides.
+ *
+ * Pure: reads the current marker off `scene` but does not mutate the scene —
+ * the caller splices `instances` in and deletes the old subtree.
+ */
+export function buildMergedInstance(scene: Scene, rootId: string, data: PrefabData): MergedInstance {
+  const root = scene.entities.find((e) => e.id === rootId);
+  if (!root) throw new ProjectError(`Entity not found: ${rootId}`, 'NOT_FOUND');
+  const asset = root.prefab?.asset;
+  if (!asset) throw new ProjectError(`Entity ${rootId} is not a prefab instance root`, 'INVALID_INPUT');
+
+  const oldIds: Record<string, string> = root.prefab?.ids ?? {};
+  const oldOverrides: OverrideRecord[] = (root.prefab?.overrides ?? []).map((o) => ({ ...o }));
+
+  // local id (pfe_*) -> scene id: reuse existing, fresh for new locals; root pinned.
+  const newIds: Record<string, string> = {};
+  data.entities.forEach((e, i) => {
+    if (i === 0) newIds[e.id] = rootId;
+    else newIds[e.id] = oldIds[e.id] ?? generateId('ent');
+  });
+
+  const instances: Entity[] = data.entities.map((e) => {
+    const clone = structuredClone(e) as PrefabEntity;
+    return {
+      ...clone,
+      id: newIds[e.id],
+      parentId: e.parentId === null ? null : (newIds[e.parentId] ?? null),
+    };
+  });
+
+  // Preserve per-instance placement on the root.
+  const newRoot = instances[0];
+  newRoot.name = root.name;
+  newRoot.enabled = root.enabled;
+  const preservedPosition = root.components.Transform?.position;
+  if (preservedPosition) {
+    newRoot.components.Transform = {
+      ...(newRoot.components.Transform ?? createComponent('Transform')),
+      position: { ...preservedPosition },
+    };
+  }
+
+  // Re-apply overrides. Map each override's scene id back to its local id via
+  // the OLD ids map to check the local still exists in the new prefab, then
+  // confirm the component/path still resolve there.
+  const reverse = new Map<string, string>(); // sceneId -> pfe local id
+  for (const [local, sid] of Object.entries(oldIds)) reverse.set(sid, local);
+  const prefabByLocal = new Map(data.entities.map((e) => [e.id, e]));
+  const instanceById = new Map(instances.map((e) => [e.id, e]));
+
+  const overridesPreserved: OverrideRecord[] = [];
+  const overridesDropped: OverrideRecord[] = [];
+  for (const o of oldOverrides) {
+    const local = reverse.get(o.entity);
+    const prefabEntity = local ? prefabByLocal.get(local) : undefined;
+    const prefabComponent = prefabEntity
+      ? (prefabEntity.components as Record<string, unknown>)[o.component]
+      : undefined;
+    const parts = o.path.split('.');
+    const stale =
+      !local ||
+      !prefabEntity ||
+      prefabComponent === undefined ||
+      valueAtPath(prefabComponent, parts) === undefined;
+    if (stale) {
+      overridesDropped.push(o);
+      continue;
+    }
+    const target = instanceById.get(o.entity);
+    if (!target) {
+      overridesDropped.push(o);
+      continue;
+    }
+    const current = (target.components as Record<string, unknown>)[o.component];
+    if (current === undefined || current === null || typeof current !== 'object') {
+      overridesDropped.push(o);
+      continue;
+    }
+    (target.components as Record<string, unknown>)[o.component] = setAtPath(
+      current as Record<string, unknown>,
+      parts,
+      structuredClone(o.value),
+    );
+    overridesPreserved.push(o);
+  }
+
+  newRoot.prefab = {
+    asset,
+    ids: newIds,
+    overrides: overridesPreserved.map((o) => ({ ...o, value: structuredClone(o.value) })),
+  };
+
+  return { instances, overridesPreserved, overridesDropped };
+}
+
+/**
+ * Restore the prefab's own value(s) for the overrides on `entityId` that match
+ * `component`/`path` scope, dropping the matching override records. Scope:
+ * both omitted -> every override on this entity; only `component` -> all of
+ * that component's overrides; both -> the single field. `data` is the current
+ * prefab payload (used to read the value to restore). Returns the reverted
+ * targets; a no-op (empty) when nothing matches. Mutates the live entity's
+ * component data and the root marker's overrides list in place.
+ */
+export function revertInstanceOverrides(
+  scene: Scene,
+  entityId: string,
+  data: PrefabData,
+  component?: string,
+  path?: string,
+): { component: string; path: string }[] {
+  const membership = findInstanceMembership(scene, entityId);
+  if (!membership) return [];
+  const root = scene.entities.find((e) => e.id === membership.rootId);
+  const entity = scene.entities.find((e) => e.id === entityId);
+  if (!root?.prefab || !entity) return [];
+
+  const overrides = root.prefab.overrides ?? [];
+  const matches = overrides.filter(
+    (o) =>
+      o.entity === entityId &&
+      (component === undefined || o.component === component) &&
+      (path === undefined || o.path === path),
+  );
+  if (matches.length === 0) return [];
+
+  const prefabEntity = data.entities.find((e) => e.id === membership.localId);
+  const reverted: { component: string; path: string }[] = [];
+  for (const o of matches) {
+    const prefabComponent = prefabEntity
+      ? (prefabEntity.components as Record<string, unknown>)[o.component]
+      : undefined;
+    const parts = o.path.split('.');
+    const prefabValue = prefabComponent !== undefined ? valueAtPath(prefabComponent, parts) : undefined;
+    const current = (entity.components as Record<string, unknown>)[o.component];
+    if (prefabValue !== undefined && current !== undefined && current !== null && typeof current === 'object') {
+      const updated = setAtPath(current as Record<string, unknown>, parts, structuredClone(prefabValue));
+      if (isComponentType(o.component)) {
+        const parsed = COMPONENT_SCHEMAS[o.component].safeParse(updated);
+        (entity.components as Record<string, unknown>)[o.component] = parsed.success ? parsed.data : updated;
+      } else {
+        (entity.components as Record<string, unknown>)[o.component] = updated;
+      }
+    }
+    reverted.push({ component: o.component, path: o.path });
+  }
+
+  root.prefab.overrides = overrides.filter((o) => !matches.includes(o));
+  return reverted;
+}
+
+/**
+ * If `entityId` belongs to a live prefab instance, detach that instance by
+ * removing its root marker and return the detach info; otherwise a no-op. Used
+ * by structural edits (adding/removing an entity or component inside an
+ * instance) that break the live link between an instance and its prefab.
+ */
+export function detachInstanceContaining(
+  scene: Scene,
+  entityId: string,
+): { detached: boolean; rootId?: string; asset?: string } {
+  const membership = findInstanceMembership(scene, entityId);
+  if (!membership) return { detached: false };
+  const root = scene.entities.find((e) => e.id === membership.rootId);
+  if (!root?.prefab) return { detached: false };
+  delete root.prefab;
+  return { detached: true, rootId: membership.rootId, asset: membership.asset };
 }

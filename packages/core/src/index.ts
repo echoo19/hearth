@@ -29,8 +29,15 @@ export {
   validatePrefabLocalIds,
   findInstanceMembership,
   recordInstanceOverride,
+  buildMergedInstance,
+  revertInstanceOverrides,
+  detachInstanceContaining,
+  valueAtPath,
+  setAtPath,
   type InstantiateOptions,
   type InstanceMembership,
+  type OverrideRecord,
+  type MergedInstance,
 } from './project/prefabData.js';
 export { HistoryStore, type HistoryEntryMeta, type HistoryIndex } from './project/history.js';
 export { applySnapshot, type RestoreContext } from './project/restore.js';

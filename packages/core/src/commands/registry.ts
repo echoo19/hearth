@@ -82,6 +82,7 @@ const ALL_DEFINITIONS: CommandDefinition[] = [
   prefabCommands.instantiatePrefab,
   prefabCommands.updatePrefab,
   prefabCommands.syncPrefabInstances,
+  prefabCommands.revertPrefabOverride,
   // state machines
   stateMachineCommands.createStateMachineAsset,
   stateMachineCommands.updateStateMachineAsset,

@@ -88,6 +88,17 @@ export function extractJournalDetail(
     if (typeof d.path !== 'string') return undefined;
     return { path: d.path };
   }
+  if (name === 'revertPrefabOverride') {
+    // Record only the revert TARGET (scene/entity + optional component/path),
+    // never the restored values.
+    if (typeof params !== 'object' || params === null) return undefined;
+    const p = params as Record<string, unknown>;
+    if (typeof p.scene !== 'string' || typeof p.entity !== 'string') return undefined;
+    const detail: Record<string, unknown> = { scene: p.scene, entity: p.entity };
+    if (typeof p.component === 'string') detail.component = p.component;
+    if (typeof p.path === 'string') detail.path = p.path;
+    return detail;
+  }
   if (name === 'setTileAutotile') {
     // Record only the target (scene/entity/char), never the rule payload.
     if (typeof params !== 'object' || params === null) return undefined;

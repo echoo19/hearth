@@ -4,10 +4,30 @@ import { generateId } from '../ids.js';
 import { findEntity, wouldCreateCycle, type Entity } from '../schema/scene.js';
 import { createComponent, isComponentType, COMPONENT_TYPES } from '../schema/components.js';
 import { ProjectError } from '../project/store.js';
-import { recordInstanceOverride } from '../project/prefabData.js';
+import {
+  recordInstanceOverride,
+  detachInstanceContaining,
+  findInstanceMembership,
+} from '../project/prefabData.js';
 
 import type { Scene } from '../schema/scene.js';
 import type { CommandContext } from './types.js';
+
+/**
+ * Structural edits inside a live prefab instance (adding or removing an entity
+ * or component in the subtree) break the merge link, so the instance is
+ * detached: its root marker is removed and a PREFAB_INSTANCE_DETACHED warning
+ * is surfaced. A no-op when `anchorId` isn't part of any live instance.
+ */
+function detachOnStructuralEdit(ctx: CommandContext, scene: Scene, anchorId: string): void {
+  const result = detachInstanceContaining(scene, anchorId);
+  if (result.detached) {
+    ctx.warn(
+      'PREFAB_INSTANCE_DETACHED',
+      `A structural edit detached this prefab instance (root ${result.rootId}); it no longer syncs with its prefab.`,
+    );
+  }
+}
 
 function requireScene(ctx: CommandContext, sceneRef: string): Scene {
   const scene = ctx.store.getScene(sceneRef);
@@ -67,6 +87,9 @@ export const createEntity = defineCommand({
       (entity.components as Record<string, unknown>)[type] = createComponent(type, overrides);
     }
     scene.entities.push(entity);
+    // Adding a child inside a live instance's subtree is a structural change:
+    // detach the instance (anchor on the parent, which is the instance member).
+    if (parentId) detachOnStructuralEdit(ctx, scene, parentId);
     ctx.changed({ kind: 'entity', id: entity.id, name: entity.name, scene: scene.id, action: 'created' });
     ctx.suggest(`inspectEntity --scene ${scene.id} ${entity.id}`, `addComponent --scene ${scene.id} ${entity.id} <type>`);
     return { entityId: entity.id, name: entity.name, sceneId: scene.id, components: Object.keys(entity.components) };
@@ -82,10 +105,17 @@ export const deleteEntity = defineCommand({
   async run(ctx, params) {
     const scene = requireScene(ctx, params.scene);
     const entity = requireEntity(scene, params.entity);
+    // Removing a NON-root member from a live instance's subtree detaches the
+    // instance. Deleting the root removes the instance outright (its marker goes
+    // with it), so that isn't a detach — capture membership before deleting.
+    const membership = findInstanceMembership(scene, entity.id);
     for (const child of scene.entities) {
       if (child.parentId === entity.id) child.parentId = entity.parentId;
     }
     scene.entities = scene.entities.filter((e) => e.id !== entity.id);
+    if (membership && membership.rootId !== entity.id) {
+      detachOnStructuralEdit(ctx, scene, membership.rootId);
+    }
     ctx.changed({ kind: 'entity', id: entity.id, name: entity.name, scene: scene.id, action: 'deleted' });
     return { entityId: entity.id, name: entity.name };
   },

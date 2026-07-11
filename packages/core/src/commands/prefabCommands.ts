@@ -10,9 +10,92 @@ import {
   instantiatePrefabData,
   validatePrefabLocalIds,
   collectSubtree,
+  buildMergedInstance,
+  revertInstanceOverrides,
+  findInstanceMembership,
 } from '../project/prefabData.js';
 
 import type { CommandContext } from './types.js';
+
+/**
+ * Merge-sync every marked instance of `asset` across `targetScenes` from the
+ * given prefab `data`. Each instance keeps its scene ids (via the marker's ids
+ * map), gains fresh ids for new prefab locals, drops entities for removed
+ * locals, preserves per-instance root name/position/enabled, and has its
+ * recorded overrides re-applied on top — stale overrides (local/component/path
+ * gone from the prefab) are dropped, each surfacing a PREFAB_OVERRIDE_STALE
+ * warning. Returns per-scene instance counts and the total override tallies.
+ */
+function syncInstances(
+  ctx: CommandContext,
+  asset: Asset,
+  data: PrefabData,
+  targetScenes: Scene[],
+): { scenes: { scene: string; instances: number }[]; total: number; overridesPreserved: number; overridesDropped: number } {
+  const scenes: { scene: string; instances: number }[] = [];
+  let total = 0;
+  let overridesPreserved = 0;
+  let overridesDropped = 0;
+
+  for (const scene of targetScenes) {
+    const marked = scene.entities
+      .map((e, index) => ({ e, index }))
+      .filter(({ e }) => e.prefab?.asset === asset.id)
+      .sort((a, b) => a.index - b.index)
+      .map(({ e }) => e);
+
+    // Drop any marked instance nested inside another marked instance's subtree:
+    // rebuilding the outer root deletes the inner one's entities first, so
+    // iterating it afterward would collectSubtree a now-missing entity. The
+    // nested instance is rebuilt as a plain child of the outer instance.
+    const roots = marked.filter(
+      (candidate) =>
+        !marked.some(
+          (other) =>
+            other.id !== candidate.id &&
+            collectSubtree(scene.entities, other.id).some((e) => e.id === candidate.id),
+        ),
+    );
+    if (roots.length === 0) continue;
+
+    for (const root of roots) {
+      const before = scene.entities;
+      const rootIndex = before.findIndex((e) => e.id === root.id);
+      const subtreeIds = new Set(collectSubtree(before, root.id).map((e) => e.id));
+      const insertIndex = before.slice(0, rootIndex).filter((e) => !subtreeIds.has(e.id)).length;
+      const kept = before.filter((e) => !subtreeIds.has(e.id));
+
+      const merged = buildMergedInstance(scene, root.id, data);
+      overridesPreserved += merged.overridesPreserved.length;
+      overridesDropped += merged.overridesDropped.length;
+      for (const dropped of merged.overridesDropped) {
+        ctx.warn(
+          'PREFAB_OVERRIDE_STALE',
+          `Dropped a stale override on ${dropped.entity} (${dropped.component}.${dropped.path}): ` +
+            `that component/path no longer exists in prefab "${asset.name}".`,
+        );
+      }
+
+      kept.splice(insertIndex, 0, ...merged.instances);
+      scene.entities = kept;
+
+      const newRoot = merged.instances[0];
+      ctx.changed({ kind: 'entity', id: newRoot.id, name: newRoot.name, scene: scene.id, action: 'modified' });
+    }
+
+    scenes.push({ scene: scene.id, instances: roots.length });
+    total += roots.length;
+  }
+
+  return { scenes, total, overridesPreserved, overridesDropped };
+}
+
+/** Every scene in the project that loads successfully (stable project order). */
+function allScenes(ctx: CommandContext): Scene[] {
+  return ctx.store.project.scenes
+    .map((ref) => ctx.store.getScene(ref.id))
+    .filter((s): s is Scene => Boolean(s));
+}
 
 function requireScene(ctx: CommandContext, sceneRef: string): Scene {
   const scene = ctx.store.getScene(sceneRef);
@@ -218,9 +301,20 @@ export const updatePrefab = defineCommand({
 
     asset.metadata = { ...asset.metadata, entityCount: data.entities.length };
     ctx.changed({ kind: 'asset', id: asset.id, name: asset.name, path: asset.path, action: 'modified' });
-    ctx.suggest(`syncPrefabInstances --prefab ${asset.id}`);
 
-    return { asset, entityCount: data.entities.length };
+    // Auto-sync: push the new payload to every instance of this prefab across
+    // all scenes in the SAME command, so one undo entry rolls back both the
+    // payload file and every re-synced instance.
+    const synced = syncInstances(ctx, asset, data, allScenes(ctx));
+    ctx.suggest(`inspectAssets --type prefab`);
+
+    return {
+      asset,
+      entityCount: data.entities.length,
+      instancesSynced: synced.total,
+      overridesPreserved: synced.overridesPreserved,
+      overridesDropped: synced.overridesDropped,
+    };
   },
 });
 
@@ -242,66 +336,62 @@ export const syncPrefabInstances = defineCommand({
     const asset = requirePrefabAsset(ctx, params.prefab);
     const data = await loadPrefabData(ctx, asset);
 
-    const targetScenes: Scene[] = params.scene
-      ? [requireScene(ctx, params.scene)]
-      : ctx.store.project.scenes
-          .map((ref) => ctx.store.getScene(ref.id))
-          .filter((s): s is Scene => Boolean(s));
+    const targetScenes: Scene[] = params.scene ? [requireScene(ctx, params.scene)] : allScenes(ctx);
+    const synced = syncInstances(ctx, asset, data, targetScenes);
 
-    const scenes: { scene: string; instances: number }[] = [];
-    let total = 0;
+    return {
+      scenes: synced.scenes,
+      total: synced.total,
+      overridesPreserved: synced.overridesPreserved,
+      overridesDropped: synced.overridesDropped,
+    };
+  },
+});
 
-    for (const scene of targetScenes) {
-      const marked = scene.entities
-        .map((e, index) => ({ e, index }))
-        .filter(({ e }) => e.prefab?.asset === asset.id)
-        .sort((a, b) => a.index - b.index)
-        .map(({ e }) => e);
+export const revertPrefabOverride = defineCommand({
+  name: 'revertPrefabOverride',
+  description:
+    'Revert per-instance prefab overrides on an entity back to the prefab asset values. `entity` may be any ' +
+    'member of the instance (root or descendant). Scope narrows with optional args: `component` + `path` reverts ' +
+    'one field; `component` alone reverts every override on that component; neither reverts every override on that ' +
+    "entity. Restores the prefab value(s) write-through and removes the override records. A no-op success when the " +
+    'entity has no matching overrides.',
+  permission: 'safe-edit',
+  mutates: true,
+  paramsSchema: z.object({
+    scene: z.string().min(1),
+    entity: z.string().min(1),
+    component: z.string().min(1).optional(),
+    path: z.string().min(1).optional(),
+  }),
+  async run(ctx, params) {
+    const scene = requireScene(ctx, params.scene);
+    const entity = requireEntity(scene, params.entity);
 
-      // Drop any marked instance nested inside another marked instance's
-      // subtree: rebuilding the outer root deletes the inner one's entities
-      // before its own turn comes, so iterating it would collectSubtree a
-      // now-missing entity and throw mid-loop, leaving the scene half-synced.
-      // The nested instance is rebuilt as a plain child of the outer instance.
-      const roots = marked.filter((candidate) => {
-        return !marked.some(
-          (other) =>
-            other.id !== candidate.id &&
-            collectSubtree(scene.entities, other.id).some((e) => e.id === candidate.id),
-        );
-      });
-
-      if (roots.length === 0) continue;
-
-      for (const root of roots) {
-        const before = scene.entities;
-        const rootIndex = before.findIndex((e) => e.id === root.id);
-        const subtreeIds = new Set(collectSubtree(before, root.id).map((e) => e.id));
-        const insertIndex = before.slice(0, rootIndex).filter((e) => !subtreeIds.has(e.id)).length;
-        const kept = before.filter((e) => !subtreeIds.has(e.id));
-
-        const instances = instantiatePrefabData(data, {
-          preserveRootId: root.id,
-          name: root.name,
-          position: root.components.Transform?.position,
-        });
-        const newRoot = instances[0];
-        newRoot.enabled = root.enabled;
-        // Full rebuild: emit the normalized marker shape. ids stays empty (the
-        // rebuilt instance is legacy-detached until Task 6 repopulates the live
-        // link) — functionally identical to the prior `{ asset }` write.
-        newRoot.prefab = { asset: asset.id, ids: {}, overrides: [] };
-
-        kept.splice(insertIndex, 0, ...instances);
-        scene.entities = kept;
-
-        ctx.changed({ kind: 'entity', id: newRoot.id, name: newRoot.name, scene: scene.id, action: 'modified' });
-      }
-
-      scenes.push({ scene: scene.id, instances: roots.length });
-      total += roots.length;
+    const membership = findInstanceMembership(scene, entity.id);
+    if (!membership) {
+      throw new ProjectError(
+        `Entity "${entity.name}" (${entity.id}) is not a member of any prefab instance.`,
+        'PREFAB_NOT_INSTANCE',
+      );
+    }
+    if (params.path && !params.component) {
+      throw new ProjectError('revertPrefabOverride: `path` requires `component`.', 'INVALID_INPUT');
     }
 
-    return { scenes, total };
+    const asset = requirePrefabAsset(ctx, membership.asset);
+    const data = await loadPrefabData(ctx, asset);
+
+    const reverted = revertInstanceOverrides(scene, entity.id, data, params.component, params.path);
+    if (reverted.length > 0) {
+      ctx.changed({ kind: 'entity', id: entity.id, name: entity.name, scene: scene.id, action: 'modified' });
+    }
+
+    const rootMarker = scene.entities.find((e) => e.id === membership.rootId)?.prefab;
+    return {
+      entityId: entity.id,
+      reverted,
+      remaining: rootMarker?.overrides?.length ?? 0,
+    };
   },
 });

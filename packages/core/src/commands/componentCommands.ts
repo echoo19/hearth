@@ -11,7 +11,22 @@ import {
 } from '../schema/components.js';
 import { validateComponentPath } from '../schema/paths.js';
 import { ProjectError } from '../project/store.js';
-import { recordInstanceOverride } from '../project/prefabData.js';
+import { recordInstanceOverride, detachInstanceContaining } from '../project/prefabData.js';
+
+/**
+ * Adding or removing a component on a live prefab instance member (root or
+ * descendant) is a structural change that detaches the instance: the root
+ * marker is removed and a PREFAB_INSTANCE_DETACHED warning is surfaced.
+ */
+function detachOnStructuralEdit(ctx: any, scene: any, anchorId: string): void {
+  const result = detachInstanceContaining(scene, anchorId);
+  if (result.detached) {
+    ctx.warn(
+      'PREFAB_INSTANCE_DETACHED',
+      `A structural edit detached this prefab instance (root ${result.rootId}); it no longer syncs with its prefab.`,
+    );
+  }
+}
 
 function resolve(ctx: any, sceneRef: string, entityRef: string) {
   const scene = ctx.store.getScene(sceneRef);
@@ -49,6 +64,7 @@ export const addComponent = defineCommand({
     }
     const component = createComponent(params.type, params.properties);
     (entity.components as Record<string, unknown>)[params.type] = component;
+    detachOnStructuralEdit(ctx, scene, entity.id);
     ctx.changed({ kind: 'component', id: entity.id, name: params.type, scene: scene.id, action: 'created' });
     return { entityId: entity.id, type: params.type, component };
   },
@@ -73,6 +89,7 @@ export const removeComponent = defineCommand({
       ctx.warn('REMOVED_TRANSFORM', 'Removing Transform: the entity will not be positioned or rendered.');
     }
     delete (entity.components as Record<string, unknown>)[params.type];
+    detachOnStructuralEdit(ctx, scene, entity.id);
     ctx.changed({ kind: 'component', id: entity.id, name: params.type, scene: scene.id, action: 'deleted' });
     return { entityId: entity.id, type: params.type };
   },

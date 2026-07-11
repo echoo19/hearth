@@ -410,7 +410,11 @@ describe('syncPrefabInstances', () => {
     const sceneA = store.getScene(sceneAId)!;
 
     const rebuiltFirstRoot = sceneA.entities.find((e) => e.id === firstRootId)!;
-    expect(rebuiltFirstRoot.prefab).toEqual({ asset: asset.id, ids: {}, overrides: [] });
+    // Merge sync repopulates the ids map (linked), keeps the asset + empty overrides.
+    expect(rebuiltFirstRoot.prefab!.asset).toBe(asset.id);
+    expect(rebuiltFirstRoot.prefab!.overrides).toEqual([]);
+    expect(rebuiltFirstRoot.prefab!.ids.pfe_1).toBe(firstRootId);
+    expect(Object.keys(rebuiltFirstRoot.prefab!.ids).length).toBeGreaterThanOrEqual(3);
     expect(rebuiltFirstRoot.components.SpriteRenderer.color).toBe('#abcdef');
     const firstRootChildren = sceneA.entities.filter((e) => e.parentId === firstRootId);
     expect(firstRootChildren).toHaveLength(2);
@@ -419,7 +423,8 @@ describe('syncPrefabInstances', () => {
     expect(rebuiltSecondRoot.enabled).toBe(false);
     expect(rebuiltSecondRoot.name).toBe('Renamed Two');
     expect(rebuiltSecondRoot.components.Transform.position).toEqual({ x: 77, y: 88 });
-    expect(rebuiltSecondRoot.prefab).toEqual({ asset: asset.id, ids: {}, overrides: [] });
+    expect(rebuiltSecondRoot.prefab!.asset).toBe(asset.id);
+    expect(rebuiltSecondRoot.prefab!.ids.pfe_1).toBe(secondRootId);
     // the second instance's root picked up the updated payload color via sync
     expect(rebuiltSecondRoot.components.SpriteRenderer?.color).toBe('#abcdef');
     // second instance's children also rebuilt from the (now 3-entity) payload
@@ -429,7 +434,8 @@ describe('syncPrefabInstances', () => {
     const sceneB = store.getScene(sceneBId)!;
     const rebuiltThirdRoot = sceneB.entities.find((e) => e.id === thirdRootId)!;
     expect(rebuiltThirdRoot.name).toBe('Player Three');
-    expect(rebuiltThirdRoot.prefab).toEqual({ asset: asset.id, ids: {}, overrides: [] });
+    expect(rebuiltThirdRoot.prefab!.asset).toBe(asset.id);
+    expect(rebuiltThirdRoot.prefab!.ids.pfe_1).toBe(thirdRootId);
     expect(sceneB.entities.filter((e) => e.parentId === thirdRootId)).toHaveLength(2);
   });
 
@@ -515,9 +521,10 @@ describe('syncPrefabInstances', () => {
     }
     // The old inner-instance root id is gone (rebuilt from the payload).
     expect(sceneA.entities.some((e) => e.id === secondRootId)).toBe(false);
-    // The outer instance survives and is still marked.
+    // The outer instance survives and is still marked (merge repopulates ids).
     const outer = sceneA.entities.find((e) => e.id === firstRootId)!;
-    expect(outer.prefab).toEqual({ asset: asset.id, ids: {}, overrides: [] });
+    expect(outer.prefab!.asset).toBe(asset.id);
+    expect(outer.prefab!.ids.pfe_1).toBe(firstRootId);
   });
 
   it('undo restores the pre-sync scenes exactly', async () => {
