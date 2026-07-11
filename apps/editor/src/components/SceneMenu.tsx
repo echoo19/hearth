@@ -7,7 +7,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { useEditor } from '../store';
 import { uniqueName } from '../uniqueName';
-import { ConfirmDialog, Icon, Modal } from './ui';
+import { Icon, Modal } from './ui';
 
 export function SceneMenu() {
   const info = useEditor((s) => s.info);
@@ -31,6 +31,8 @@ export function SceneMenu() {
   const [renaming, setRenaming] = useState(false);
 
   const [deleteOpen, setDeleteOpen] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [deleting, setDeleting] = useState(false);
 
   useEffect(() => {
     if (!open) return;
@@ -123,14 +125,21 @@ export function SceneMenu() {
   }
 
   async function confirmDelete() {
-    setDeleteOpen(false);
     if (!scene) return;
+    setDeleting(true);
+    setDeleteError(null);
     // deleteScene reassigns initialScene server-side when the deleted scene
     // was it; the store's refresh() (run by exec() after every mutation)
     // already falls back sceneId to info.initialScene when the current
     // sceneId no longer exists, so deleting the active scene lands on the
     // (possibly new) initial scene with no extra bookkeeping here.
-    await exec('deleteScene', { scene: scene.id });
+    const result = await exec('deleteScene', { scene: scene.id });
+    setDeleting(false);
+    if (result.success) {
+      setDeleteOpen(false);
+    } else {
+      setDeleteError(result.errors[0]?.message ?? 'Could not delete the scene.');
+    }
   }
 
   return (
@@ -170,6 +179,7 @@ export function SceneMenu() {
             disabled={onlyScene}
             title={onlyScene ? 'Cannot delete the only scene in a project' : undefined}
             onClick={() => {
+              setDeleteError(null);
               setDeleteOpen(true);
               setOpen(false);
             }}
@@ -260,15 +270,24 @@ export function SceneMenu() {
         </div>
       </Modal>
 
-      <ConfirmDialog
-        open={deleteOpen}
-        title={`Delete “${scene?.name ?? ''}”?`}
-        body="This removes the scene file from the project. This mutation is recorded like any other command; checkpoint first if you want an undo point."
-        confirmLabel="Delete scene"
-        danger
-        onCancel={() => setDeleteOpen(false)}
-        onConfirm={() => void confirmDelete()}
-      />
+      <Modal open={deleteOpen} title={`Delete “${scene?.name ?? ''}”?`} onClose={() => setDeleteOpen(false)}>
+        <div className="modal-body">
+          <p>This removes the scene file from the project. It shows up in your undo history, so Ctrl/Cmd+Z brings it back.</p>
+          {deleteError && (
+            <span className="field-error">
+              Couldn't delete “{scene?.name ?? ''}”: {deleteError}
+            </span>
+          )}
+        </div>
+        <div className="modal-actions">
+          <button className="btn" onClick={() => setDeleteOpen(false)}>
+            Cancel
+          </button>
+          <button className="btn btn-danger" onClick={() => void confirmDelete()} disabled={deleting} autoFocus>
+            {deleting ? 'Deleting…' : 'Delete scene'}
+          </button>
+        </div>
+      </Modal>
     </span>
   );
 }

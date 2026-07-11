@@ -97,6 +97,14 @@ export default function CodeEditor({ path, value, onChange, onSave, checkScript 
       ]),
     );
 
+    // Note: basicSetup's searchKeymap also binds Mod-d to "select next
+    // occurrence" — this intentionally shadows the editor-wide Duplicate
+    // keybind (keybinds.ts) while the Code panel has focus, since the
+    // global dispatcher's isTypingTarget guard already skips this
+    // contenteditable surface. Not a bug; documented so a future reader
+    // investigating "duplicate doesn't work in the Code panel" doesn't
+    // file it as one.
+
     const updateListener = EditorView.updateListener.of((update) => {
       if (update.docChanged) onChangeRef.current(update.state.doc.toString());
     });

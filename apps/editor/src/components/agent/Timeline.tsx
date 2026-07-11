@@ -203,7 +203,7 @@ export function Timeline() {
         <button
           className="btn btn-sm"
           onClick={() => void snapshot()}
-          title="snapshotProject: save a checkpoint to compare against later"
+          title="Save a checkpoint you can review and restore"
         >
           {snapshotTaken && <span className="timeline-check">✓</span>} Checkpoint
         </button>
@@ -214,9 +214,9 @@ export function Timeline() {
           className="btn btn-danger btn-sm"
           onClick={() => setConfirmRevert(true)}
           disabled={!diff?.hasChanges}
-          title="revertProject: restore the last checkpoint"
+          title="Restore the project to the last checkpoint"
         >
-          Revert session
+          Restore checkpoint
         </button>
       </div>
 
@@ -251,7 +251,7 @@ export function Timeline() {
 
       <ConfirmDialog
         open={confirmRevert}
-        title="Revert session?"
+        title="Restore checkpoint?"
         body="All scene, script, and asset-index changes since the last checkpoint are discarded — including anything the agent just did. A revert isn't recorded in the undo history, so it can't be reversed with Undo."
         confirmLabel="Revert everything"
         danger

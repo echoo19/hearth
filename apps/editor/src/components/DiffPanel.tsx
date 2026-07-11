@@ -19,6 +19,10 @@ export function DiffPanel() {
   const exec = useEditor((s) => s.exec);
   const log = useEditor((s) => s.log);
   const [confirmRevert, setConfirmRevert] = useState(false);
+  /** Which toolbar action is currently in flight, if any — drives the
+   * disabled-state + label swap for Undo/Redo/Checkpoint/Refresh/Restore,
+   * matching the "Syncing…"/"Duplicating…" convention used elsewhere. */
+  const [busy, setBusy] = useState<'undo' | 'redo' | 'checkpoint' | 'refresh' | 'restore' | null>(null);
 
   // Refetches on mount, after any successful mutating exec() anywhere in the
   // editor (commandSeq — so Inspector/Hierarchy/SceneView edits show up while
@@ -29,7 +33,9 @@ export function DiffPanel() {
   const entries = history?.entries ?? [];
 
   async function snapshot() {
+    setBusy('checkpoint');
     const result = await exec('snapshotProject', {}, { quiet: true });
+    setBusy(null);
     if (result.success) {
       log('info', 'command', 'Checkpoint saved. The Changes panel now compares against this checkpoint.');
       await refreshDiff();
@@ -39,53 +45,63 @@ export function DiffPanel() {
   // quiet: the custom log lines below replace exec()'s generic changed-summary;
   // history reloads via the commandSeq effect after the mutation lands.
   async function undo() {
+    setBusy('undo');
     const result = await exec<{ undone: string; seq: number }>('undo', {}, { quiet: true });
+    setBusy(null);
     if (result.success && result.data) {
       log('info', 'command', `Undo: reverted "${result.data.undone}" (#${result.data.seq}).`);
     }
   }
 
   async function redo() {
+    setBusy('redo');
     const result = await exec<{ redone: string; seq: number }>('redo', {}, { quiet: true });
+    setBusy(null);
     if (result.success && result.data) {
       log('info', 'command', `Redo: reapplied "${result.data.redone}" (#${result.data.seq}).`);
     }
   }
 
+  async function doRefresh() {
+    setBusy('refresh');
+    await refreshDiff();
+    setBusy(null);
+  }
+
   return (
     <>
       <div className="panel-toolbar">
-        <button
-          className="btn btn-sm"
-          onClick={() => void undo()}
-          disabled={!undoTarget}
-          title="undo"
-        >
-          {undoTarget ? `Undo ${undoTarget.command}` : 'Undo'}
+        <button className="btn btn-sm" onClick={() => void undo()} disabled={!undoTarget || busy !== null}>
+          {busy === 'undo' ? 'Undoing…' : undoTarget ? `Undo ${undoTarget.command}` : 'Undo'}
         </button>
-        <button
-          className="btn btn-sm"
-          onClick={() => void redo()}
-          disabled={!redoTarget}
-          title="redo"
-        >
-          {redoTarget ? `Redo ${redoTarget.command}` : 'Redo'}
+        <button className="btn btn-sm" onClick={() => void redo()} disabled={!redoTarget || busy !== null}>
+          {busy === 'redo' ? 'Redoing…' : redoTarget ? `Redo ${redoTarget.command}` : 'Redo'}
         </button>
         <span className="panel-divider" />
-        <button className="btn btn-sm" onClick={() => void snapshot()} title="snapshotProject">
-          Checkpoint
+        <button
+          className="btn btn-sm"
+          onClick={() => void snapshot()}
+          disabled={busy !== null}
+          title="Save a checkpoint you can review and restore"
+        >
+          {busy === 'checkpoint' ? 'Saving…' : 'Checkpoint'}
         </button>
-        <button className="btn btn-sm" onClick={() => void refreshDiff()} title="diffProject">
-          Refresh changes
+        <button
+          className="btn btn-sm"
+          onClick={() => void doRefresh()}
+          disabled={busy !== null}
+          title="See what changed since your last checkpoint"
+        >
+          {busy === 'refresh' ? 'Refreshing…' : 'Refresh changes'}
         </button>
         <span style={{ flex: 1 }} />
         <button
           className="btn btn-danger btn-sm"
           onClick={() => setConfirmRevert(true)}
-          disabled={!diff?.hasChanges}
+          disabled={!diff?.hasChanges || busy !== null}
           title="Restore the project to the last checkpoint"
         >
-          Restore checkpoint
+          {busy === 'restore' ? 'Restoring…' : 'Restore checkpoint'}
         </button>
       </div>
 
@@ -126,7 +142,10 @@ export function DiffPanel() {
         onCancel={() => setConfirmRevert(false)}
         onConfirm={() => {
           setConfirmRevert(false);
-          void exec('revertProject', { confirm: true }).then(() => refreshDiff());
+          setBusy('restore');
+          void exec('revertProject', { confirm: true })
+            .then(() => refreshDiff())
+            .finally(() => setBusy(null));
         }}
       />
     </>

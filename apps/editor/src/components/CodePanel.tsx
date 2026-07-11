@@ -8,9 +8,10 @@
 import React, { Suspense, lazy, useEffect, useRef, useState } from 'react';
 import { useEditor } from '../store';
 import { fileUrl } from '../api';
+import { comboDisplay } from '../keybinds';
 import { ConfirmDialog, Icon } from './ui';
 import { decideExternalChange, type ExternalChangeEntry } from './code/externalChange';
-import type { JournalEntry, ScriptDiagnostic } from '../types';
+import type { CommandResult, JournalEntry, ScriptDiagnostic } from '../types';
 import { languageForPath } from './code/scriptLanguage';
 
 const CodeEditor = lazy(() => import('./code/CodeEditor'));
@@ -18,6 +19,32 @@ const CodeEditor = lazy(() => import('./code/CodeEditor'));
 /** A script's file name, without the scripts/ prefix, for the picker label. */
 function scriptLabel(path: string): string {
   return path.replace(/^scripts\//, '');
+}
+
+/**
+ * Pure guard for whether a Save should actually run. The toolbar Save
+ * button already disables itself on `!dirty || saving` — but CM6's local
+ * `Mod-s` keymap (CodeEditor.tsx) calls `onSave()` unconditionally on every
+ * keypress, bypassing that. Pressing Cmd+S on an already-saved script must
+ * be a true no-op: no redundant disk write, no fake undo/journal entry.
+ * Exported for unit testing (see codePanelSave.test.ts).
+ */
+export function shouldSave(state: { selectedPath: string | null; saving: boolean; dirty: boolean }): boolean {
+  return state.selectedPath !== null && !state.saving && state.dirty;
+}
+
+/**
+ * Pure classifier for a failed `editScript` result: a missing file (the
+ * script was undone/reverted out from under the open buffer) needs a
+ * different message and recovery path than any other save failure. Exported
+ * for unit testing.
+ */
+export function classifySaveFailure(
+  errors: CommandResult<unknown>['errors'],
+): { kind: 'missing' } | { kind: 'error'; message: string } {
+  const first = errors[0];
+  if (first?.code === 'NOT_FOUND') return { kind: 'missing' };
+  return { kind: 'error', message: first?.message ?? 'Save failed.' };
 }
 
 /** Maps a raw journal entry to the shape decideExternalChange reasons over.
@@ -45,10 +72,17 @@ export function CodePanel() {
   const [loading, setLoading] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [savingAsNew, setSavingAsNew] = useState(false);
   const [revision, setRevision] = useState(0);
   /** null = no confirmation pending; 'close' or a script path = the switch waiting on the user's choice. */
   const [pendingPath, setPendingPath] = useState<string | 'close' | null>(null);
   const [conflict, setConflict] = useState(false);
+  /** Set when the last Save failed for a reason other than "the file is gone" (see scriptMissing below). */
+  const [saveError, setSaveError] = useState<string | null>(null);
+  /** Set when the last Save failed because the open script no longer exists on disk
+   * (undone/reverted out from under the buffer) — a different message and recovery
+   * path than a generic save error. */
+  const [scriptMissing, setScriptMissing] = useState(false);
 
   const dirty = selectedPath !== null && source !== savedSource;
 
@@ -91,6 +125,8 @@ export function CodePanel() {
     setLoading(true);
     setLoadError(null);
     setConflict(false);
+    setSaveError(null);
+    setScriptMissing(false);
     // Entries already in the feed predate this open; only react to ones that
     // arrive from here on.
     lastSeqRef.current = journalFeed.length ? journalFeed[journalFeed.length - 1].seq : 0;
@@ -122,6 +158,8 @@ export function CodePanel() {
     setSavedSource('');
     setLoadError(null);
     setConflict(false);
+    setSaveError(null);
+    setScriptMissing(false);
   }
 
   function confirmPendingSwitch() {
@@ -132,13 +170,43 @@ export function CodePanel() {
   }
 
   async function save() {
-    if (!selectedPath || saving) return;
+    if (!shouldSave({ selectedPath, saving, dirty })) return;
     setSaving(true);
-    const result = await exec('editScript', { path: selectedPath, source });
+    setSaveError(null);
+    setScriptMissing(false);
+    const result = await exec('editScript', { path: selectedPath as string, source });
     setSaving(false);
     if (result.success) {
       setSavedSource(source);
       setConflict(false);
+    } else {
+      const outcome = classifySaveFailure(result.errors);
+      if (outcome.kind === 'missing') setScriptMissing(true);
+      else setSaveError(outcome.message);
+    }
+  }
+
+  /**
+   * Recovery path for a save onto a script that no longer exists on disk
+   * (scriptMissing): the engine has no "recreate at this exact path" command
+   * (createScript derives its filename from `name`, not an explicit path),
+   * so this is a genuine save-as — the buffer's content survives, possibly
+   * under a slightly different filename.
+   */
+  async function saveAsNewScript() {
+    if (!selectedPath || savingAsNew) return;
+    setSavingAsNew(true);
+    setSaveError(null);
+    const language = languageForPath(selectedPath);
+    const name = scriptLabel(selectedPath).replace(/\.(lua|js)$/, '');
+    const result = await exec<{ path: string }>('createScript', { name, language, source });
+    setSavingAsNew(false);
+    if (result.success && result.data) {
+      setScriptMissing(false);
+      setSavedSource(source);
+      setSelectedPath(result.data.path);
+    } else {
+      setSaveError(result.errors[0]?.message ?? 'Save failed.');
     }
   }
 
@@ -238,7 +306,7 @@ export function CodePanel() {
               className="btn btn-sm btn-primary"
               onClick={() => void save()}
               disabled={!dirty || saving}
-              title="Save (Ctrl/Cmd+S)"
+              title={`Save (${comboDisplay('mod+s')})`}
             >
               {saving ? 'Saving…' : 'Save'}
             </button>
@@ -249,13 +317,40 @@ export function CodePanel() {
       {conflict && (
         <div className="code-conflict-banner">
           <Icon name="entity" size={13} />
-          <span>This script changed outside the editor while you had unsaved edits.</span>
+          <span>This script changed outside the editor — from an agent or another process — while you had unsaved edits here.</span>
           <span style={{ flex: 1 }} />
           <button className="btn btn-sm" onClick={reloadFromConflict}>
             Reload
           </button>
           <button className="btn btn-sm btn-primary" onClick={keepMine}>
-            Keep mine
+            Keep mine (overwrite on save)
+          </button>
+        </div>
+      )}
+
+      {scriptMissing && (
+        <div className="code-conflict-banner">
+          <Icon name="cross" size={13} />
+          <span>
+            {selectedPath ? scriptLabel(selectedPath) : 'This script'} no longer exists in the project — it may
+            have been undone or reverted. Your edits are still here if you want to save them under a new name.
+          </span>
+          <span style={{ flex: 1 }} />
+          <button className="btn btn-sm btn-primary" onClick={() => void saveAsNewScript()} disabled={savingAsNew}>
+            {savingAsNew ? 'Saving…' : 'Save as new script'}
+          </button>
+        </div>
+      )}
+
+      {saveError && !scriptMissing && (
+        <div className="code-conflict-banner">
+          <Icon name="cross" size={13} />
+          <span>
+            Couldn't save {selectedPath ? scriptLabel(selectedPath) : 'this script'} — {saveError}
+          </span>
+          <span style={{ flex: 1 }} />
+          <button className="btn btn-sm" onClick={() => void save()}>
+            Retry
           </button>
         </div>
       )}

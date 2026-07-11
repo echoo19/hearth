@@ -32,7 +32,7 @@ import { GAMEPAD_BUTTON_NAMES } from '@hearth/core';
 import type { GamepadAxisBinding, InputMappings, VirtualAxis } from '@hearth/core';
 import { useEditor } from '../store';
 import { NumberField, TextField } from './Inspector';
-import { Icon } from './ui';
+import { ConfirmDialog, Icon } from './ui';
 
 function withoutKey<T>(map: Record<string, T>, key: string): Record<string, T> {
   const next = { ...map };
@@ -45,6 +45,18 @@ function has(map: Record<string, unknown>, key: string): boolean {
 }
 
 const DEFAULT_AXIS_BINDING: GamepadAxisBinding = { axis: 0, direction: 1, threshold: 0.5 };
+
+/**
+ * Pure classifier for a settled `updateSettings` result: decides the message
+ * shown when an optimistic key/gamepad binding edit fails to persist and
+ * snaps back to server truth. Previously this rollback happened with zero
+ * explanation — a user who pressed a key to bind an action would see the
+ * chip vanish a moment later with no idea why. Exported for unit testing.
+ */
+export function updateSettingsErrorMessage(result: { success: boolean; errors: { message: string }[] }): string | null {
+  if (result.success) return null;
+  return result.errors[0]?.message ?? "That didn't save.";
+}
 
 /** One edit = the full next local state + the minimal updateSettings patch derived from it. */
 interface Edit {
@@ -353,6 +365,8 @@ export function InputSettings() {
   const [newActionName, setNewActionName] = useState('');
   const [newAxisName, setNewAxisName] = useState('');
   const [draftActionNames, setDraftActionNames] = useState<string[]>([]);
+  const [editError, setEditError] = useState<string | null>(null);
+  const [pendingDelete, setPendingDelete] = useState<{ kind: 'action' | 'axis'; name: string } | null>(null);
 
   // Optimistic local mappings (see the file header). `localRef` mirrors the
   // state synchronously so consecutive edits compose without waiting for a
@@ -385,17 +399,19 @@ export function InputSettings() {
     if (!result) return;
     localRef.current = result.next;
     setLocal(result.next);
+    setEditError(null);
     pendingWrites.current += 1;
-    exec('updateSettings', { inputMappings: result.patch }, { quiet: true })
-      .catch(() => undefined) // network failure: still settle; the re-sync below rolls back
-      .finally(() => {
-        pendingWrites.current -= 1;
-        if (pendingWrites.current === 0) {
-          const latest = useEditor.getState().info?.inputMappings ?? null;
-          localRef.current = latest;
-          setLocal(latest);
-        }
-      });
+    exec('updateSettings', { inputMappings: result.patch }, { quiet: true }).then(
+      (settled) => setEditError(updateSettingsErrorMessage(settled)),
+      () => setEditError("That change didn't save — check your connection."),
+    ).finally(() => {
+      pendingWrites.current -= 1;
+      if (pendingWrites.current === 0) {
+        const latest = useEditor.getState().info?.inputMappings ?? null;
+        localRef.current = latest;
+        setLocal(latest);
+      }
+    });
   }
 
   // Drop a locally-drafted action name once it gets a real binding — it then
@@ -641,10 +657,18 @@ export function InputSettings() {
       <div className="panel-header">
         <span>Input</span>
       </div>
+      {editError && (
+        <div className="code-conflict-banner">
+          <Icon name="cross" size={13} />
+          <span>That change didn't save: {editError}</span>
+        </div>
+      )}
       <div className="panel-body">
         <div className="diff-section">
           <h4>Actions</h4>
-          {actionNames.length === 0 && <div className="chip-list-empty">No actions yet.</div>}
+          {actionNames.length === 0 && (
+            <div className="chip-list-empty">No actions yet — add one below and bind a key or gamepad button to it.</div>
+          )}
           {actionNames.map((name) => (
             <ActionRow
               key={name}
@@ -661,7 +685,7 @@ export function InputSettings() {
               onAddAxisBinding={() => addAxisBinding(name)}
               onRemoveAxisBinding={() => removeAxisBinding(name)}
               onSetAxisField={(fieldPatch) => setAxisBindingField(name, fieldPatch)}
-              onDelete={() => deleteAction(name)}
+              onDelete={() => setPendingDelete({ kind: 'action', name })}
             />
           ))}
           <div className="settings-add-row">
@@ -682,7 +706,11 @@ export function InputSettings() {
 
         <div className="diff-section">
           <h4>Virtual axes</h4>
-          {axisNames.length === 0 && <div className="chip-list-empty">No virtual axes yet.</div>}
+          {axisNames.length === 0 && (
+            <div className="chip-list-empty">
+              No virtual axes yet — add one below for analog movement, like a joystick or WASD pair.
+            </div>
+          )}
           {axisNames.map((name) => (
             <AxisRow
               key={name}
@@ -699,7 +727,7 @@ export function InputSettings() {
               onRename={(newName) => renameAxis(name, newName)}
               onSetGamepadAxis={(v) => setAxisField(name, { gamepadAxis: v })}
               onSetDeadzone={(v) => setAxisField(name, { deadzone: v })}
-              onDelete={() => deleteAxis(name)}
+              onDelete={() => setPendingDelete({ kind: 'axis', name })}
             />
           ))}
           <div className="settings-add-row">
@@ -726,6 +754,25 @@ export function InputSettings() {
           </div>
         </div>
       </div>
+
+      <ConfirmDialog
+        open={pendingDelete !== null}
+        title={`Delete "${pendingDelete?.name ?? ''}"?`}
+        body={
+          pendingDelete?.kind === 'axis'
+            ? 'All of its key and gamepad-axis bindings are removed. This shows up in your undo history, so Ctrl/Cmd+Z brings it back.'
+            : 'All of its key and gamepad bindings are removed. This shows up in your undo history, so Ctrl/Cmd+Z brings it back.'
+        }
+        confirmLabel={pendingDelete?.kind === 'axis' ? 'Delete axis' : 'Delete action'}
+        danger
+        onCancel={() => setPendingDelete(null)}
+        onConfirm={() => {
+          if (!pendingDelete) return;
+          if (pendingDelete.kind === 'axis') deleteAxis(pendingDelete.name);
+          else deleteAction(pendingDelete.name);
+          setPendingDelete(null);
+        }}
+      />
     </>
   );
 }
