@@ -25,6 +25,7 @@ import { NodeFileSystem } from '@hearth/core/node';
 import { startJournalWatcher } from './journalWatcher.js';
 import type { ProjectServerContext } from './projectServer.js';
 import { PtyManager, type PtyBackend, type PtyHandle } from './ptyManager.js';
+import { isRequestAllowed } from './originGuard.js';
 
 export type WsFrame =
   | { type: 'journal'; entries: JournalEntry[] }
@@ -163,6 +164,13 @@ export function attachWebSocket(httpServer: HttpServer, ctx: ProjectServerContex
   httpServer.on('upgrade', (req: IncomingMessage, socket, head) => {
     const url = new URL(req.url ?? '/', 'http://localhost');
     if (url.pathname !== '/api/ws') return; // not ours: leave it for any other upgrade listener
+
+    const originCheck = isRequestAllowed({ origin: req.headers.origin, host: req.headers.host });
+    if (!originCheck.ok) {
+      socket.write('HTTP/1.1 403 Forbidden\r\n\r\n');
+      socket.destroy();
+      return;
+    }
 
     wss.handleUpgrade(req, socket, head, (ws) => {
       const projectParam = url.searchParams.get('project');

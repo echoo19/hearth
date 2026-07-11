@@ -129,4 +129,45 @@ describe('attachWebSocket', () => {
 
     client.close();
   });
+
+  it('rejects the upgrade when Origin is cross-site', async () => {
+    const client = new WebSocket(`${baseUrl}/api/ws?project=${encodeURIComponent(projectRoot)}`, {
+      headers: { Origin: 'https://evil.example' },
+    });
+    const failure = await new Promise<Error | null>((resolve) => {
+      client.on('open', () => resolve(null));
+      client.on('error', (err) => resolve(err));
+    });
+    expect(failure).not.toBeNull();
+    client.close();
+  });
+
+  it('allows the upgrade with a localhost Origin and still carries journal frames', async () => {
+    const client = new WebSocket(`${baseUrl}/api/ws?project=${encodeURIComponent(projectRoot)}`, {
+      headers: { Origin: 'http://localhost:5173' },
+    });
+    const frames: WsFrame[] = [];
+    await new Promise<void>((resolve, reject) => {
+      client.on('open', resolve);
+      client.on('error', reject);
+    });
+    client.on('message', (raw) => {
+      frames.push(JSON.parse(raw.toString()) as WsFrame);
+    });
+
+    const nodeFs = new NodeFileSystem();
+    const cliSession = await HearthSession.open(nodeFs, projectRoot, {
+      granted: [...PERMISSION_MODES],
+      source: 'cli',
+    });
+    const created = await cliSession.execute('createScene', { name: 'FromCliOriginTest' });
+    expect(created.success).toBe(true);
+
+    await wait(500);
+
+    const journalFrames = frames.filter((f): f is Extract<WsFrame, { type: 'journal' }> => f.type === 'journal');
+    expect(journalFrames.length).toBeGreaterThan(0);
+
+    client.close();
+  });
 });

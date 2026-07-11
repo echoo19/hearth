@@ -28,6 +28,7 @@ import {
   type RuntimeHooks,
 } from '@hearth/core';
 import { NodeFileSystem, loadPlayerBundle } from '@hearth/core/node';
+import { isRequestAllowed } from './originGuard.js';
 import { attachWebSocket } from './ws.js';
 import { detectAgents, prepareMcpConfig, McpConfigParseError, type AgentPermissionMode } from './agentSetup.js';
 
@@ -698,6 +699,14 @@ export async function handleApiRequest(
 }
 
 async function route(ctx: ProjectServerContext, req: IncomingMessage, res: ServerResponse): Promise<void> {
+  const originCheck = isRequestAllowed({
+    origin: req.headers.origin,
+    host: req.headers.host,
+  });
+  if (!originCheck.ok) {
+    return sendJson(res, 403, { ok: false, error: 'Forbidden: cross-origin request rejected' });
+  }
+
   const url = new URL(req.url ?? '/', 'http://localhost');
   const q = url.searchParams;
   const method = req.method ?? 'GET';
