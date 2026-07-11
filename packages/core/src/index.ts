@@ -117,6 +117,18 @@ export {
 // Agent integration files
 export { generateAgentsMd, generateClaudeMd, generateAgentConfig } from './agentFiles.js';
 
+// Autotile (blob47 resolver)
+export {
+  computeMask,
+  canonicalMask,
+  maskToShape,
+  resolveTileFrame,
+  resolvedMapping,
+  AUTOTILE_SHAPES,
+  BLOB47_TEMPLATE,
+  type AutotileRule,
+} from './tilemap/autotile.js';
+
 // Pathfinding
 export {
   collectNavSolids,
