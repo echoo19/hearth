@@ -27,13 +27,18 @@
   --ink-mute: oklch(0.74 0.012 85);
   --ink-faint: oklch(0.58 0.01 85);
 
-  /* Ember command accent */
+  /* Ember command accent — the only place ember hue appears. Surfaces stay
+     neutral (hue 285); accent carries all "ember" meaning. */
   --accent: oklch(0.684 0.192 42);
   --accent-hover: oklch(0.785 0.135 55);
   --accent-down: oklch(0.6 0.19 27);
   --accent-ink: oklch(0.14 0.02 45);
   --accent-soft: oklch(0.684 0.192 42 / 0.14);
   --accent-faint: oklch(0.684 0.192 42 / 0.055);
+
+  /* Wordmark flame: deliberately hotter/brighter than --accent (brand mark,
+     not a UI action color) — named token so it isn't a stray hex. */
+  --flame-brand: #f76b15;
 
   /* Semantic status */
   --ok: oklch(0.76 0.14 150);
@@ -50,8 +55,24 @@
   --grid-line: oklch(0.22 0.01 285);
   --grid-axis: oklch(0.34 0.014 285);
 
+  /* Floating overlays/scrims over the canvas (scene HUD, tilemap palette,
+     game-preview badges) — same neutral hue-285 surface family as --bg-*,
+     just translucent so the canvas shows through. Not ember-tinted. */
+  --overlay-bg: oklch(0.15 0.008 285 / 0.92);
+
+  /* Modal backdrop scrim — darker/heavier than --overlay-bg, same neutral hue. */
+  --scrim: oklch(0.1 0.006 285 / 0.6);
+
+  /* Transparent-image checkerboard (asset thumbs, sliced-sheet crops) —
+     neutral hue-285, matching the rest of the surface family. */
+  --checker-a: oklch(0.28 0.008 285);
+  --checker-b: oklch(0.23 0.008 285);
+
   --radius: 6px;
   --radius-sm: 4px;
+  /* Larger surfaces (modals, the shortcut cheat sheet, launcher cards) get
+     one shared larger radius rather than each picking its own value. */
+  --radius-lg: 10px;
 
   /* Control metrics: one height per control size, everywhere. */
   --ctl-h: 26px;
@@ -252,6 +273,7 @@ code, .mono {
 }
 
 .input.invalid,
+.select.invalid,
 .textarea.invalid {
   border-color: var(--err);
 }
@@ -263,6 +285,15 @@ code, .mono {
   background-repeat: no-repeat;
   background-position: right 8px center;
   cursor: pointer;
+}
+
+/* Compact select variant, metrics matched to .btn-sm (22px / --radius-sm) —
+   use next to btn-sm buttons (e.g. the toolbar) so control heights don't mix. */
+.select-sm {
+  height: var(--ctl-h-sm);
+  padding: 0 24px 0 8px;
+  border-radius: var(--radius-sm);
+  font-size: 12px;
 }
 
 .textarea {
@@ -451,8 +482,8 @@ label.field-label {
   --dv-active-sash-transition-duration: 140ms;
   --dv-active-sash-transition-delay: 150ms;
 
-  /* Drag & drop: ember accent at ~12% with a 1px accent border. */
-  --dv-drag-over-background-color: oklch(0.684 0.192 42 / 0.12);
+  /* Drag & drop: ember accent (same token as .drop-target below) with a 1px accent border. */
+  --dv-drag-over-background-color: var(--accent-soft);
   --dv-drag-over-border-color: var(--accent);
   --dv-drag-over-border: 1px solid var(--accent);
 
@@ -560,7 +591,7 @@ label.field-label {
   top: calc(100% + 4px);
   left: 0;
   z-index: var(--z-dropdown);
-  min-width: 170px;
+  min-width: 200px;
   padding: 4px;
   background: var(--bg-1);
   border: 1px solid var(--border-strong);
@@ -574,7 +605,7 @@ label.field-label {
   display: flex;
   align-items: center;
   gap: 8px;
-  height: 26px;
+  height: var(--ctl-h);
   padding: 0 10px 0 6px;
   border: none;
   border-radius: var(--radius-sm);
@@ -582,6 +613,7 @@ label.field-label {
   color: var(--ink);
   font-size: 12px;
   text-align: left;
+  white-space: nowrap;
   cursor: pointer;
   transition: background var(--t-fast) var(--ease-out);
 }
@@ -649,7 +681,7 @@ label.field-label {
 }
 
 .flame {
-  color: #f76b15;
+  color: var(--flame-brand);
   display: inline-flex;
 }
 
@@ -873,7 +905,7 @@ label.field-label {
   display: flex;
   gap: 6px;
   align-items: center;
-  background: oklch(0.21 0.009 55 / 0.9);
+  background: var(--overlay-bg);
   border: 1px solid var(--border);
   border-radius: var(--radius);
   padding: 3px 8px;
@@ -920,9 +952,9 @@ label.field-label {
   left: 10px;
   z-index: 2;
   padding: 2px 8px;
-  border-radius: 4px;
-  background: rgba(0, 0, 0, 0.55);
-  color: var(--text-dim, #b9b4c4);
+  border-radius: var(--radius-sm);
+  background: var(--overlay-bg);
+  color: var(--ink-mute);
   font-size: 11px;
   pointer-events: none;
 }
@@ -969,7 +1001,7 @@ label.field-label {
 
 .inspector-row {
   display: grid;
-  grid-template-columns: 86px minmax(0, 1fr);
+  grid-template-columns: 104px minmax(0, 1fr);
   align-items: center;
   gap: 8px;
   min-height: var(--ctl-h);
@@ -1374,7 +1406,7 @@ label.field-label {
    sheets, animation thumbnails) all share this rule. */
 .asset-thumb,
 .checkerboard-bg {
-  background: repeating-conic-gradient(oklch(0.28 0.008 55) 0% 25%, oklch(0.23 0.008 55) 0% 50%) 0 0 / 16px 16px;
+  background: repeating-conic-gradient(var(--checker-a) 0% 25%, var(--checker-b) 0% 50%) 0 0 / 16px 16px;
 }
 
 /* Sliced-sheet frame grid (asset details): one cropped swatch per frame,
@@ -1961,7 +1993,7 @@ label.field-label {
 
 dialog.modal {
   border: 1px solid var(--border-strong);
-  border-radius: 10px;
+  border-radius: var(--radius-lg);
   background: var(--bg-1);
   color: var(--ink);
   padding: 0;
@@ -1982,7 +2014,7 @@ dialog.modal[open] {
 }
 
 dialog.modal::backdrop {
-  background: oklch(0.1 0.01 55 / 0.6);
+  background: var(--scrim);
 }
 
 dialog.modal[open]::backdrop {
@@ -2033,7 +2065,7 @@ dialog.modal[open]::backdrop {
 
 dialog.shortcut-sheet {
   border: 1px solid var(--border-strong);
-  border-radius: 12px;
+  border-radius: var(--radius-lg);
   background: var(--bg-1);
   color: var(--ink);
   padding: 0;
@@ -2047,7 +2079,7 @@ dialog.shortcut-sheet[open] {
 }
 
 dialog.shortcut-sheet::backdrop {
-  background: oklch(0.1 0.01 55 / 0.6);
+  background: var(--scrim);
 }
 
 dialog.shortcut-sheet[open]::backdrop {
@@ -2108,7 +2140,7 @@ dialog.shortcut-sheet[open]::backdrop {
   justify-content: space-between;
   gap: 16px;
   padding: 5px 0;
-  font-size: 12.5px;
+  font-size: 12px;
   border-bottom: 1px solid transparent;
 }
 
@@ -2201,7 +2233,7 @@ kbd.shortcut-keys {
 .launcher-card {
   background: var(--bg-1);
   border: 1px solid var(--border);
-  border-radius: 10px;
+  border-radius: var(--radius-lg);
   padding: 20px;
   display: flex;
   flex-direction: column;
@@ -2333,7 +2365,7 @@ kbd.shortcut-keys {
   justify-content: center;
   border: 1.5px dashed var(--accent);
   border-radius: var(--radius);
-  background: oklch(0.684 0.192 42 / 0.12);
+  background: var(--accent-soft);
   color: var(--accent);
   font-size: 13px;
   font-weight: 600;
@@ -2391,7 +2423,7 @@ kbd.shortcut-keys {
 
 .poly-vertex-dot {
   fill: var(--accent);
-  stroke: oklch(0.115 0.006 285);
+  stroke: var(--bg-0);
   stroke-width: 1.5;
 }
 
@@ -2427,7 +2459,7 @@ kbd.shortcut-keys {
 
 .transform-handle-rotate-dot {
   fill: var(--accent);
-  stroke: oklch(0.115 0.006 285);
+  stroke: var(--bg-0);
   stroke-width: 1.5;
 }
 
@@ -2460,7 +2492,7 @@ kbd.shortcut-keys {
   padding: 8px;
   border: 1px solid var(--border-strong);
   border-radius: var(--radius);
-  background: oklch(0.21 0.009 55 / 0.94);
+  background: var(--overlay-bg);
 }
 
 .tilemap-palette-swatches {
