@@ -353,6 +353,7 @@ export function Workspace({
   const playing = useEditor((s) => s.playing);
   const diffFocusRequest = useEditor((s) => s.diffFocusRequest);
   const codeOpenRequest = useEditor((s) => s.codeOpenRequest);
+  const codeSearchRequest = useEditor((s) => s.codeSearchRequest);
   const apiRef = useRef<DockviewApi | null>(null);
   const saveTimer = useRef<number | null>(null);
   const disposables = useRef<{ dispose(): void }[]>([]);
@@ -415,6 +416,13 @@ export function Workspace({
   useEffect(() => {
     if (codeOpenRequest && apiRef.current) showPanel(apiRef.current, 'code');
   }, [codeOpenRequest?.nonce]);
+
+  // The global "Search scripts" shortcut (keybinds.ts) surfaces the Code
+  // panel the same way; CodePanel itself reacts to the same counter to flip
+  // into search mode and (re)focus the query input.
+  useEffect(() => {
+    if (codeSearchRequest > 0 && apiRef.current) showPanel(apiRef.current, 'code');
+  }, [codeSearchRequest]);
 
   // Flush a pending save and release listeners when the workspace unmounts
   // (project switch or close).

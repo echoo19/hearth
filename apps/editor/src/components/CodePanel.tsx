@@ -30,6 +30,7 @@ import {
 } from './code/buffers';
 import type { CommandResult, ScriptDiagnostic } from '../types';
 import { languageForPath } from './code/scriptLanguage';
+import { SearchAcross } from './code/SearchAcross';
 
 const CodeEditor = lazy(() => import('./code/CodeEditor'));
 
@@ -74,6 +75,7 @@ export function CodePanel() {
   const formatOnSave = useEditor((s) => s.info?.codeStyle?.formatOnSave ?? true);
   const journalFeed = useEditor((s) => s.journalFeed);
   const codeOpenRequest = useEditor((s) => s.codeOpenRequest);
+  const codeSearchRequest = useEditor((s) => s.codeSearchRequest);
   const exec = useEditor((s) => s.exec);
   const log = useEditor((s) => s.log);
   const query = useEditor((s) => s.query);
@@ -88,6 +90,13 @@ export function CodePanel() {
   /** Drives CodeEditor's full-doc replace with a formatted-on-save result. */
   const [applyContent, setApplyContent] = useState<{ path: string; text: string; nonce: number } | null>(null);
   const applyNonceRef = useRef(0);
+  /** Task 9: whether the cross-script search bar is showing under the tab strip. */
+  const [searchOpen, setSearchOpen] = useState(false);
+  /** Wraps the editor host so closeSearch() can hand focus back to CodeMirror's
+   * contenteditable surface (a plain DOM query — CodeEditor.tsx exposes no
+   * imperative focus handle, and reaching for `.cm-content` here keeps that
+   * lazy chunk's API untouched). */
+  const editorContainerRef = useRef<HTMLDivElement>(null);
 
   const active = activePath !== null ? findBuffer(buffers, activePath) : undefined;
   const activeDirty = active ? isDirty(active) : false;
@@ -211,6 +220,57 @@ export function CodePanel() {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [codeOpenRequest?.nonce]);
+
+  // The global "Search scripts" shortcut (keybinds.ts) bumps this counter;
+  // Workspace.tsx surfaces the Code panel on the same signal. Only ever
+  // opens (never toggles closed) — SearchAcross's own focusNonce prop (fed
+  // this same counter) re-focuses the query input on every repress, even
+  // while already open, mirroring a browser's Cmd+F.
+  useEffect(() => {
+    if (codeSearchRequest > 0) setSearchOpen(true);
+  }, [codeSearchRequest]);
+
+  /** Esc from SearchAcross, or the header toggle button closing an already-open
+   * search bar: hide the bar and hand focus back to the CodeMirror surface. */
+  function closeSearch() {
+    setSearchOpen(false);
+    requestAnimationFrame(() => {
+      editorContainerRef.current?.querySelector<HTMLElement>('.cm-content')?.focus();
+    });
+  }
+
+  /**
+   * SearchAcross's completion hook for a real (non-dryRun) replace: resolve
+   * every touched path against this panel's OPEN buffers, the same way the
+   * journalFeed effect below resolves an external edit — dirty gets the
+   * conflict banner, clean gets a silent reload. Can't just rely on the
+   * journalFeed effect itself: replaceInScripts' journal entries are
+   * stamped `source: 'editor'` (every command this server runs is,
+   * regardless of which panel triggered it), and `decideExternalChange`
+   * deliberately ignores same-source entries as "already reflected, it's
+   * just this buffer's own save echoing back" — an assumption that doesn't
+   * hold for a cross-script replace touching OTHER open buffers. So this
+   * calls the exact same decision helper directly against the known
+   * changed-path list instead of inferring it from the feed.
+   */
+  function onReplaceApplied(paths: string[]) {
+    for (const path of paths) {
+      const buf = findBuffer(bufferStateRef.current.buffers, path);
+      if (!buf) continue;
+      const action = decideExternalChange({
+        openPath: path,
+        dirty: isDirty(buf),
+        entry: { kind: 'script', source: 'search-replace', path },
+      });
+      if (action === 'banner') {
+        patch(path, { conflict: true });
+      } else if (action === 'reload') {
+        void reloadBuffer(path).then(() => {
+          log('info', 'editor', `${scriptLabel(path)} was updated by a cross-script replace — reloaded.`);
+        });
+      }
+    }
+  }
 
   /**
    * Shared body of Save and Format & save — the only difference is the
@@ -436,6 +496,15 @@ export function CodePanel() {
           ))}
         </select>
         <span style={{ flex: 1 }} />
+        <button
+          type="button"
+          className={searchOpen ? 'btn btn-sm btn-primary' : 'btn btn-sm'}
+          aria-pressed={searchOpen}
+          onClick={() => (searchOpen ? closeSearch() : setSearchOpen(true))}
+          title={`Search scripts (${comboDisplay('shift+mod+f')})`}
+        >
+          Search
+        </button>
         <label className="input-checkbox-label" title="Format scripts with the project's code style whenever they're saved">
           <input
             type="checkbox"
@@ -532,6 +601,10 @@ export function CodePanel() {
         </div>
       )}
 
+      {searchOpen && (
+        <SearchAcross focusNonce={codeSearchRequest} onClose={closeSearch} onReplaceApplied={onReplaceApplied} />
+      )}
+
       {active?.conflict && (
         <div className="code-conflict-banner">
           <Icon name="entity" size={13} />
@@ -573,7 +646,7 @@ export function CodePanel() {
         </div>
       )}
 
-      <div className="code-editor-container">
+      <div className="code-editor-container" ref={editorContainerRef}>
         {!active ? (
           <div className="empty-state">
             <span className="empty-icon" aria-hidden="true">

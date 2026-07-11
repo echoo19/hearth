@@ -47,6 +47,7 @@ function mockStore(over: Partial<EditorStore> = {}) {
     setPaused: rec('setPaused'),
     checkpoint: rec('checkpoint'),
     toggleShortcutSheet: rec('toggleShortcutSheet'),
+    requestCodeSearch: rec('requestCodeSearch'),
     ...over,
   } as unknown as EditorStore;
   return { store, calls };
@@ -151,6 +152,14 @@ describe('table dispatch', () => {
     resolveBinding({ combo: 'mod+enter', hasSelection: false })!.run(store);
     expect(calls).toContainEqual(['toggleShortcutSheet']);
     expect(calls).toContainEqual(['togglePlay']);
+  });
+
+  it('Shift+Mod+F opens/focuses the Code panel search bar', () => {
+    const { store, calls } = mockStore();
+    const bind = resolveBinding({ combo: 'shift+mod+f', hasSelection: false })!;
+    expect(bind.id).toBe('search-scripts');
+    bind.run(store);
+    expect(calls).toContainEqual(['requestCodeSearch']);
   });
 
   it('Shift+Mod+Enter pauses/resumes by flipping the store\'s paused flag (only reachable while playing)', () => {
@@ -307,6 +316,30 @@ describe('dispatchDecision (installKeybinds guards, DOM-free)', () => {
       { hasSelection: false, isPlaying: false, dialogOpen: false },
     );
     expect(viaCtrl).toEqual({ action: 'ignore', preventDefault: false });
+  });
+
+  it('Shift+Mod+F still resolves to run while a typing target (e.g. CodeMirror\'s contenteditable) has focus, unlike mod+s', () => {
+    // mod resolved via isMac (metaKey on mac, ctrlKey elsewhere), mirroring
+    // the mod+s / shift+mod+enter platform-independent tests above.
+    const viaContentEditable = dispatchDecision(
+      dispatchKey('f', {
+        metaKey: isMac,
+        ctrlKey: !isMac,
+        shiftKey: true,
+        target: { tagName: 'DIV', isContentEditable: true },
+      }),
+      { hasSelection: false, isPlaying: false, dialogOpen: false },
+    );
+    expect(viaContentEditable.action).toBe('run');
+    expect(viaContentEditable.bind?.id).toBe('search-scripts');
+    expect(viaContentEditable.preventDefault).toBe(true);
+
+    const viaInput = dispatchDecision(
+      dispatchKey('f', { metaKey: isMac, ctrlKey: !isMac, shiftKey: true, target: { tagName: 'INPUT' } }),
+      { hasSelection: false, isPlaying: false, dialogOpen: false },
+    );
+    expect(viaInput.action).toBe('run');
+    expect(viaInput.bind?.id).toBe('search-scripts');
   });
 
   it('a selection-only binding without a live selection resolves to passthrough, not run', () => {

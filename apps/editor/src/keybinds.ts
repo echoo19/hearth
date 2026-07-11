@@ -36,6 +36,16 @@ export interface Keybind {
   when?: 'selection' | 'playing' | 'always';
   /** Documentation-only row: shown in the cheat sheet, never dispatched. */
   display?: boolean;
+  /**
+   * Fires even while a text-entry field (or CodeMirror's contentEditable
+   * surface) has focus — the opposite of the isTypingTarget guard's default
+   * yield-to-typing behavior. Reserved for global shortcuts that must work
+   * "from anywhere" and don't collide with what the focused field's own
+   * keymap binds (e.g. 'search-scripts': shift+mod+f, which CM6's built-in
+   * searchKeymap never claims — it only binds plain Mod-f). Every other
+   * binding still yields to typing, unchanged.
+   */
+  allowWhileTyping?: boolean;
   run(store: EditorStore): void;
 }
 
@@ -77,6 +87,18 @@ export const KEYBINDS: Keybind[] = [
     group: 'General',
     when: 'always',
     run: (s) => s.toggleShortcutSheet(),
+  },
+  {
+    id: 'search-scripts',
+    combo: 'shift+mod+f',
+    label: 'Search scripts',
+    group: 'General',
+    when: 'always',
+    // Must work from anywhere, including with a script open and CodeMirror
+    // focused — CM6's own searchKeymap only claims plain Mod-f, so this
+    // never collides with it. See `allowWhileTyping` on the Keybind type.
+    allowWhileTyping: true,
+    run: (s) => s.requestCodeSearch(),
   },
 
   // ---- Scene ------------------------------------------------------------
@@ -284,16 +306,23 @@ export interface DispatchDecision {
  * display-only rows) are unit-testable without a real KeyboardEvent/window.
  *
  * Guards (in order): auto-repeat (a held combo must not fire a burst of
- * mutating commands), typing fields, and an open native <dialog> (which owns
- * everything except Escape).
+ * mutating commands), typing fields (unless the resolved binding opts in via
+ * `allowWhileTyping`), and an open native <dialog> (which owns everything
+ * except Escape).
  */
 export function dispatchDecision(e: DispatchEventLike, ctx: DispatchContext): DispatchDecision {
   if (e.repeat) return { action: 'ignore', preventDefault: false };
-  if (isTypingTarget(e.target)) return { action: 'ignore', preventDefault: false };
   const combo = eventCombo(e);
   if (!combo) return { action: 'ignore', preventDefault: false };
-  if (ctx.dialogOpen && combo !== 'escape') return { action: 'ignore', preventDefault: false };
+  // Resolved ahead of the typing-target guard so an `allowWhileTyping` row
+  // (only 'search-scripts' today) can bypass it — every other binding's
+  // guard behavior is unchanged, since resolveBinding is a pure lookup with
+  // no side effects either way.
   const bind = resolveBinding({ combo, hasSelection: ctx.hasSelection, isPlaying: ctx.isPlaying });
+  if (isTypingTarget(e.target) && !bind?.allowWhileTyping) {
+    return { action: 'ignore', preventDefault: false };
+  }
+  if (ctx.dialogOpen && combo !== 'escape') return { action: 'ignore', preventDefault: false };
   if (!bind || bind.display) {
     // No binding, or a display-only row (Space-pan, Escape): let
     // SceneView/native handlers see the key untouched.

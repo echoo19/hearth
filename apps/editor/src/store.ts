@@ -135,6 +135,14 @@ export interface EditorState {
    * `nonce` makes a repeat request for the already-open script still fire.
    */
   codeOpenRequest: { path: string; line?: number; nonce: number } | null;
+  /**
+   * Imperative "open the Code panel's search bar" request (Task 9), mirroring
+   * `diffFocusRequest`'s bare counter — search mode has no payload, just an
+   * open-or-refocus signal, so a plain nonce is enough (the workspace shell
+   * surfaces the Code panel; CodePanel flips into search mode and re-focuses
+   * the query input on every bump, even if it was already open).
+   */
+  codeSearchRequest: number;
 
   setAgentMode(mode: AgentPermissionMode): void;
   detectAgent(): Promise<void>;
@@ -148,6 +156,8 @@ export interface EditorState {
   /** Open (and surface) a script in the Code panel, optionally scrolling to
    * a 1-based line. See `codeOpenRequest`. */
   openScriptAt(path: string, line?: number): void;
+  /** Open (and surface) the Code panel's search bar. See `codeSearchRequest`. */
+  requestCodeSearch(): void;
   /** Shortcut actions (Task 8), each backed by an exec() where it mutates. */
   togglePlay(): void;
   checkpoint(): Promise<void>;
@@ -585,6 +595,7 @@ export const useEditor = create<EditorState>((set, get) => {
     shortcutSheetOpen: false,
     focusSelectionRequest: 0,
     codeOpenRequest: null,
+    codeSearchRequest: 0,
 
     setAgentMode(mode) {
       set({ agentMode: mode });
@@ -613,6 +624,10 @@ export const useEditor = create<EditorState>((set, get) => {
 
     openScriptAt(path, line) {
       set((state) => ({ codeOpenRequest: { path, line, nonce: (state.codeOpenRequest?.nonce ?? 0) + 1 } }));
+    },
+
+    requestCodeSearch() {
+      set((state) => ({ codeSearchRequest: state.codeSearchRequest + 1 }));
     },
 
     togglePlay() {
