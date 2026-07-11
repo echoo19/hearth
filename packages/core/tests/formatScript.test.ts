@@ -172,6 +172,22 @@ describe('formatScript command', () => {
     expect(res.warnings.some((w: any) => w.message.includes('typed.ts'))).toBe(true);
   });
 
+  it('path pointing at a non-formattable extension (.ts) is skipped with a warning, not misformatted', async () => {
+    const { session, fs } = await makeSession();
+    const original = 'export default {}\n';
+    await fs.writeFile('/proj/scripts/typed.ts', original);
+
+    const res = await session.execute<any>('formatScript', { path: 'scripts/typed.ts' });
+    expect(res.success).toBe(true);
+    // Matches the all branch: skipped files are excluded from results entirely.
+    expect(res.data.results).toEqual([]);
+    expect(
+      res.warnings.some((w: any) => w.code === 'SCRIPT_UNKNOWN_EXTENSION' && w.message.includes('typed.ts')),
+    ).toBe(true);
+    // Bytes untouched.
+    expect(await fs.readFile('/proj/scripts/typed.ts')).toBe(original);
+  });
+
   it('formatter failure warns and leaves that file unchanged', async () => {
     const { session } = await makeSession();
     await session.execute('createScript', { name: 'broken', source: BROKEN_LUA });

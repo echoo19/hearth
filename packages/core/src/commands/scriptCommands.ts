@@ -330,7 +330,14 @@ export const formatScript = defineCommand({
       if (!(await ctx.fs.exists(absPath))) {
         throw new ProjectError(`Script not found: ${path}`, 'NOT_FOUND');
       }
-      targets.push(path);
+      // Same guard as the `all` branch: a valid, existing path with no
+      // formatter (e.g. .ts) is skipped with a warning, never pushed through
+      // formatJs by default.
+      if (scriptLanguage(path)) {
+        targets.push(path);
+      } else {
+        ctx.warn('SCRIPT_UNKNOWN_EXTENSION', `Skipped ${path}: no formatter for this file type.`);
+      }
     } else {
       for (const path of await ctx.store.listScripts()) {
         if (scriptLanguage(path)) {

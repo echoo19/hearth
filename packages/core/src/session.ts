@@ -55,11 +55,12 @@ export function extractJournalDetail(name: string, data: unknown): Record<string
   }
   if (name === 'formatScript') {
     if (!Array.isArray(d.results)) return undefined;
-    const paths = d.results
-      .filter((r): r is { path: string; changed: boolean } =>
-        r != null && typeof r === 'object' && (r as any).changed === true && typeof (r as any).path === 'string',
-      )
-      .map((r) => r.path);
+    const paths: string[] = [];
+    for (const r of d.results as unknown[]) {
+      if (r === null || typeof r !== 'object') continue;
+      const { path, changed } = r as Record<string, unknown>;
+      if (changed === true && typeof path === 'string') paths.push(path);
+    }
     return { paths };
   }
   return undefined;
