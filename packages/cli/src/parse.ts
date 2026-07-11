@@ -139,6 +139,19 @@ export function parseCells(raw: string): Array<{ x: number; y: number; char: str
   return cells;
 }
 
+/**
+ * Parse a strict boolean flag value: only "true"/"false" (case-insensitive).
+ * Loose truthiness (anything not "false" becoming true) silently accepts
+ * typos and wrong guesses like "yes" or "1" as true — reject them instead
+ * with a clear error naming the flag.
+ */
+export function parseBool(raw: string, flagName: string): boolean {
+  const normalized = raw.trim().toLowerCase();
+  if (normalized === 'true') return true;
+  if (normalized === 'false') return false;
+  throw new ParseError(`Invalid ${flagName} "${raw}": expected "true" or "false"`);
+}
+
 /** Parse a JSON array option (e.g. --steps-file contents). */
 export function parseJsonArray(raw: string, sourceName: string): unknown[] {
   let value: unknown;

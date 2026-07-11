@@ -24,6 +24,7 @@ import { captureScreenshot } from '@hearth/playtest';
 import { CliError, openSession, resolveProjectRoot, type GlobalOpts } from './context.js';
 import { emit, errorResult, makeResult, logStderr } from './output.js';
 import {
+  parseBool,
   parseJsonArray,
   parseJsonObject,
   parseList,
@@ -254,13 +255,17 @@ export function buildProgram(): Command {
   addGlobalOptions(
     create
       .command('script <name>')
-      .description('create a script from the standard template (Lua by default)')
+      .description('create a script from the standard template (Lua by default; reformats on save unless --no-format)')
       .option('--language <language>', 'scripting language: lua (default) or js')
-      .option('--source-file <path>', 'read initial source from a file instead of the template'),
-  ).action(async (name: string, opts, cmd) => {
+      .option('--source-file <path>', 'read initial source from a file instead of the template')
+      .option('--no-format', 'save verbatim, without reformatting to Hearth house style'),
+  ).action(async (name: string, opts: { language?: string; sourceFile?: string; format?: boolean }, cmd) => {
     await guarded(cmd, 'createScript', async () => {
       const source = opts.sourceFile ? await fsp.readFile(path.resolve(opts.sourceFile), 'utf8') : undefined;
-      await runAndEmit(cmd, 'createScript', { name, language: opts.language, source });
+      // commander's --no-format sets opts.format=false; absent means "use
+      // the project's codeStyle.formatOnSave" (send nothing).
+      const format = opts.format === false ? false : undefined;
+      await runAndEmit(cmd, 'createScript', { name, language: opts.language, source, format });
     });
   });
 
@@ -517,11 +522,7 @@ export function buildProgram(): Command {
         'virtual axis name -> axis JSON, replaced wholesale, e.g. \'{"horizontal":{"gamepadAxis":0,"negativeCodes":["ArrowLeft"],"positiveCodes":["ArrowRight"]}}\'',
       )
       .option('--input-deadzone <number>', 'global gamepad stick deadzone (0-1)', (v) => parseFloat(v))
-      .option(
-        '--format-on-save <bool>',
-        'auto-format Lua/JS scripts on save (true/false)',
-        (v) => v !== 'false',
-      ),
+      .option('--format-on-save <bool>', 'auto-format Lua/JS scripts on save (true/false)'),
   ).action(async (opts, cmd) => {
     await guarded(cmd, 'updateSettings', () => {
       const params: Record<string, unknown> = {};
@@ -538,7 +539,9 @@ export function buildProgram(): Command {
       if (opts.inputAxes) inputMappings.axes = parseJsonObject(opts.inputAxes, '--input-axes');
       if (opts.inputDeadzone !== undefined) inputMappings.deadzone = opts.inputDeadzone;
       if (Object.keys(inputMappings).length > 0) params.inputMappings = inputMappings;
-      if (opts.formatOnSave !== undefined) params.codeStyle = { formatOnSave: opts.formatOnSave };
+      if (opts.formatOnSave !== undefined) {
+        params.codeStyle = { formatOnSave: parseBool(opts.formatOnSave, '--format-on-save') };
+      }
       return runAndEmit(cmd, 'updateSettings', params);
     });
   });

@@ -165,6 +165,18 @@ describe('hearth create script / inspect api / set-settings', () => {
     await fsp.rm(path.join(projectDir, 'scripts', 'spin-js.js'));
   });
 
+  it('creates a script formatted by default, and verbatim with --no-format', async () => {
+    const formatted = await runCli(['create', 'script', 'spin-fmt', '--json'], projectDir);
+    expect(formatted.code).toBe(0);
+    expect(parseJson(formatted.stdout).data.formatted).toBe(true);
+    await fsp.rm(path.join(projectDir, 'scripts', 'spin-fmt.lua'));
+
+    const unformatted = await runCli(['create', 'script', 'spin-noformat', '--no-format', '--json'], projectDir);
+    expect(unformatted.code).toBe(0);
+    expect(parseJson(unformatted.stdout).data.formatted).toBe(false);
+    await fsp.rm(path.join(projectDir, 'scripts', 'spin-noformat.lua'));
+  });
+
   it('inspect api returns the machine-readable ctx reference', async () => {
     const result = await runCli(['inspect', 'api', '--json'], projectDir);
     expect(result.code).toBe(0);
@@ -208,6 +220,34 @@ describe('hearth create script / inspect api / set-settings', () => {
     const on = await runCli(['set-settings', '--format-on-save', 'true', '--json'], projectDir);
     expect(on.code).toBe(0);
     expect(parseJson(on.stdout).data.codeStyle).toEqual({ formatOnSave: true });
+  });
+
+  it('set-settings --format-on-save accepts true/false case-insensitively and rejects anything else', async () => {
+    // Case-insensitive true/false must still work.
+    const upper = await runCli(['set-settings', '--format-on-save', 'TRUE', '--json'], projectDir);
+    expect(upper.code).toBe(0);
+    expect(parseJson(upper.stdout).data.codeStyle).toEqual({ formatOnSave: true });
+
+    const lower = await runCli(['set-settings', '--format-on-save', 'false', '--json'], projectDir);
+    expect(lower.code).toBe(0);
+    expect(parseJson(lower.stdout).data.codeStyle).toEqual({ formatOnSave: false });
+
+    // Loose truthiness (anything not the literal string "false" becoming
+    // true) must be gone: "yes" and "1" are common but wrong guesses for a
+    // boolean flag and must be rejected with a clear error, not silently
+    // coerced to true.
+    const yes = await runCli(['set-settings', '--format-on-save', 'yes', '--json'], projectDir);
+    expect(yes.code).toBe(1);
+    const yesEnvelope = parseJson(yes.stdout);
+    expect(yesEnvelope.success).toBe(false);
+    expect(yesEnvelope.errors[0].code).toBe('INVALID_INPUT');
+    expect(yesEnvelope.errors[0].message).toMatch(/--format-on-save/);
+
+    const one = await runCli(['set-settings', '--format-on-save', '1', '--json'], projectDir);
+    expect(one.code).toBe(1);
+    const oneEnvelope = parseJson(one.stdout);
+    expect(oneEnvelope.success).toBe(false);
+    expect(oneEnvelope.errors[0].code).toBe('INVALID_INPUT');
   });
 
   it('set-settings sets a gamepad button binding end to end', async () => {
