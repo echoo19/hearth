@@ -95,6 +95,75 @@ async function runAndEmit(
   process.exitCode = code;
 }
 
+/**
+ * Expand a single `import asset --recursive` argument: a file passes through
+ * unchanged; a directory is walked recursively for the files under it
+ * (dotfiles and dot-directories skipped). A path that doesn't exist also
+ * passes through unchanged — importAssets reports the NOT_FOUND skip for it
+ * with the original path, which is a better error than one from this helper.
+ */
+export async function expandImportPath(sourcePath: string): Promise<string[]> {
+  let stat;
+  try {
+    stat = await fsp.stat(sourcePath);
+  } catch {
+    return [sourcePath];
+  }
+  if (!stat.isDirectory()) return [sourcePath];
+  const out: string[] = [];
+  async function walk(dir: string): Promise<void> {
+    const entries = await fsp.readdir(dir, { withFileTypes: true });
+    for (const entry of entries) {
+      if (entry.name.startsWith('.')) continue;
+      const full = path.join(dir, entry.name);
+      if (entry.isDirectory()) await walk(full);
+      else if (entry.isFile()) out.push(full);
+    }
+  }
+  await walk(sourcePath);
+  return out;
+}
+
+/**
+ * `import asset <source-paths...>`: a single path (no --recursive) runs the
+ * single-file importAsset command unchanged (keeps --name support and its
+ * one-asset output shape); anything else — multiple paths, or --recursive —
+ * expands any directories and runs importAssets as one atomic batch.
+ */
+async function runImportAssetCommand(
+  cmd: Command,
+  sourcePaths: string[],
+  opts: { name?: string; type?: string; recursive?: boolean },
+): Promise<void> {
+  if (sourcePaths.length === 1 && !opts.recursive) {
+    let stat: Awaited<ReturnType<typeof fsp.stat>> | undefined;
+    try {
+      stat = await fsp.stat(sourcePaths[0]);
+    } catch {
+      // Missing path: let importAsset produce its usual NOT_FOUND error.
+    }
+    if (stat?.isDirectory()) {
+      throw new CliError(
+        'INVALID_INPUT',
+        `"${sourcePaths[0]}" is a directory — pass --recursive to import the files under it.`,
+      );
+    }
+    await runAndEmit(cmd, 'importAsset', { sourcePath: sourcePaths[0], name: opts.name, type: opts.type });
+    return;
+  }
+  if (opts.name) {
+    throw new CliError('INVALID_INPUT', '--name can only be used when importing a single file.');
+  }
+  let expanded = sourcePaths;
+  if (opts.recursive) {
+    expanded = [];
+    for (const p of sourcePaths) expanded.push(...(await expandImportPath(p)));
+  }
+  const params: Record<string, unknown> = { sourcePaths: expanded };
+  if (opts.type) params.type = opts.type;
+  await runAndEmit(cmd, 'importAssets', params);
+}
+
 function addGlobalOptions(cmd: Command): Command {
   return cmd
     .option('-p, --project <path>', 'project root (default: walk up from cwd looking for hearth.json)')
@@ -662,14 +731,18 @@ export function buildProgram(): Command {
   addGlobalOptions(importGroup);
   addGlobalOptions(
     importGroup
-      .command('asset <source-path>')
-      .description('import an external file into assets/ and register it')
-      .option('--name <name>', 'asset name (default: filename without extension)')
-      .option('--type <type>', 'asset type override (sprite, tile, audio, animation, font, data, other)'),
-  ).action(async (sourcePath: string, opts, cmd) => {
-    await guarded(cmd, 'importAsset', () =>
-      runAndEmit(cmd, 'importAsset', { sourcePath, name: opts.name, type: opts.type }),
-    );
+      .command('asset <source-paths...>')
+      .description(
+        'import one or more external files into assets/ and register them. ' +
+          'A single path (without --recursive) runs importAsset; anything else (multiple paths, or --recursive) ' +
+          'runs importAssets as one atomic batch — see `skipped` in the JSON output for any per-file skip reasons.',
+      )
+      .option('--name <name>', 'asset name — only valid when importing a single file (default: filename without extension)')
+      .option('--type <type>', 'asset type override (sprite, tile, audio, animation, font, data, other), applied to every file')
+      .option('--recursive', 'expand any directory arguments into the files under them (recursively) before importing'),
+  ).action(async (sourcePaths: string[], opts: { name?: string; type?: string; recursive?: boolean }, cmd) => {
+    const commandName = sourcePaths.length === 1 && !opts.recursive ? 'importAsset' : 'importAssets';
+    await guarded(cmd, commandName, () => runImportAssetCommand(cmd, sourcePaths, opts));
   });
 
   // ---------------------------------------------------------------------
