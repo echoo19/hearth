@@ -705,13 +705,30 @@ export const TOOL_SPECS: ToolSpec[] = [
     name: 'sync_prefab_instances',
     command: 'syncPrefabInstances',
     description:
-      'Rebuild every marked instance of a prefab (all scenes, or one scene via `scene`) from the current prefab ' +
-      "asset payload: each instance root keeps its id, name, Transform.position, and enabled state; the root's " +
-      'descendants are deleted and rebuilt from the payload. (requires asset-edit)',
+      'Merge-sync every marked instance of a prefab (all scenes, or one scene via `scene`) from the current prefab ' +
+      "asset payload: each instance keeps its scene ids (new prefab locals get fresh ids, removed locals are " +
+      "deleted), preserves its root name/Transform.position/enabled, and re-applies its recorded per-instance " +
+      'overrides on top. Stale overrides are dropped. (requires asset-edit)',
     permission: 'asset-edit',
     inputShape: {
       prefab: z.string().min(1),
       scene: z.string().optional(),
+    },
+  },
+  {
+    name: 'revert_prefab_override',
+    command: 'revertPrefabOverride',
+    description:
+      'Revert per-instance prefab overrides on an instance member back to the prefab asset values. `entity` may be ' +
+      'any member (root or descendant). Scope: `component` + `path` reverts one field; `component` alone reverts all ' +
+      "of that component's overrides; neither reverts every override on that entity. A no-op success when nothing " +
+      'is overridden. (requires safe-edit)',
+    permission: 'safe-edit',
+    inputShape: {
+      scene: z.string().min(1),
+      entity: z.string().min(1),
+      component: z.string().min(1).optional(),
+      path: z.string().min(1).optional(),
     },
   },
 

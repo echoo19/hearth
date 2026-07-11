@@ -883,6 +883,22 @@ export function buildProgram(): Command {
       return runAndEmit(cmd, 'syncPrefabInstances', params);
     });
   });
+  addGlobalOptions(
+    prefab
+      .command('revert <entity> [component] [path]')
+      .description(
+        'revert per-instance prefab overrides on an instance member back to the prefab values; ' +
+          'scope narrows with the optional component and path args',
+      )
+      .requiredOption('--scene <scene>', 'scene containing the instance member'),
+  ).action(async (entity: string, component: string | undefined, path: string | undefined, opts, cmd) => {
+    await guarded(cmd, 'revertPrefabOverride', () => {
+      const params: Record<string, unknown> = { scene: opts.scene, entity };
+      if (component) params.component = component;
+      if (path) params.path = path;
+      return runAndEmit(cmd, 'revertPrefabOverride', params);
+    });
+  });
 
   // ---------------------------------------------------------------------
   // paint / fill / resize (tilemap editing)
