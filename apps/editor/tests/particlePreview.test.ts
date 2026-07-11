@@ -262,13 +262,79 @@ describe('ParticlePreview reset-on-edit', () => {
     expect(preview.getPreviewParticles('e2')).toBe(e2Before); // untouched, same reference
   });
 
-  it('a Transform (origin) change also resets the emitter', async () => {
-    await warmUp('e1', { seed: 1, rate: 10, burst: 4, lifetime: 5 });
+  it('an origin-only change (e.g. a live drag) does NOT reset the emitter: existing particles keep simulating, new ones spawn from the new origin', async () => {
+    // speed: 0 + gravity: 0 so already-spawned particles never move — any
+    // position drift can only come from where they were spawned, isolating
+    // the "old particles keep their old spawn point" half of the assertion.
+    const overrides = { seed: 1, rate: 30, burst: 3, lifetime: 5, speed: 0, gravity: { x: 0, y: 0 } };
+    await warmUp('e1', overrides);
+    const before = preview.getPreviewParticles('e1');
+    expect(before.length).toBeGreaterThan(0);
+    const beforeCount = before.length;
+    for (const p of before) {
+      expect(p.x).toBe(0);
+      expect(p.y).toBe(0);
+    }
+
+    // Simulate SceneView's drag effect: a fresh, value-identical emitter
+    // object (same as an unrelated re-render) but a moved world origin.
+    preview.setTargets([{ entityId: 'e1', emitter: makeEmitter(overrides), origin: { x: 100, y: 50 } }]);
+
+    // No reset: same array reference, same particles, still at the old spot.
+    const afterTargetsUpdate = preview.getPreviewParticles('e1');
+    expect(afterTargetsUpdate).toBe(before);
+    for (const p of afterTargetsUpdate) {
+      expect(p.x).toBe(0);
+      expect(p.y).toBe(0);
+    }
+
+    // Step forward: rate-spawned particles now appear at the NEW origin,
+    // while the pre-existing ones are untouched (still at the old spot).
+    let t = (1000 / 60) * 5;
+    for (let i = 1; i <= 5; i++) {
+      t += 1000 / 60;
+      fake.fire(t);
+    }
+    const after = preview.getPreviewParticles('e1');
+    expect(after.length).toBeGreaterThan(beforeCount);
+    for (const p of after.slice(0, beforeCount)) {
+      expect(p.x).toBe(0);
+      expect(p.y).toBe(0);
+    }
+    for (const p of after.slice(beforeCount)) {
+      expect(p.x).toBe(100);
+      expect(p.y).toBe(50);
+    }
+  });
+
+  it('changing an emitter field AND the origin at the same time resets once, and the fresh burst spawns from the new origin', async () => {
+    // speed: 0 + gravity: 0 again, so the fresh burst's particles don't
+    // drift off origin during the one step() that runs right after burst()
+    // fires within the same tick (see stepAll) — isolates this assertion to
+    // spawn position only.
+    await warmUp('e1', { seed: 1, rate: 0, burst: 4, lifetime: 5, speed: 0, gravity: { x: 0, y: 0 } });
     const before = preview.getPreviewParticles('e1');
     expect(before.length).toBeGreaterThan(0);
 
-    preview.setTargets([{ entityId: 'e1', emitter: makeEmitter({ seed: 1, rate: 10, burst: 4, lifetime: 5 }), origin: { x: 100, y: 0 } }]);
-    expect(preview.getPreviewParticles('e1')).toEqual([]);
+    preview.setTargets([
+      {
+        entityId: 'e1',
+        emitter: makeEmitter({ seed: 1, rate: 0, burst: 6, lifetime: 5, speed: 0, gravity: { x: 0, y: 0 } }),
+        origin: { x: 100, y: 0 },
+      },
+    ]);
+    expect(preview.getPreviewParticles('e1')).toEqual([]); // reset
+
+    // One clean tick fires the fresh burst (burst: 6) at the new origin.
+    let t = (1000 / 60) * 5;
+    t += 1000 / 60;
+    fake.fire(t);
+    const after = preview.getPreviewParticles('e1');
+    expect(after.length).toBe(6);
+    for (const p of after) {
+      expect(p.x).toBe(100);
+      expect(p.y).toBe(0);
+    }
   });
 });
 

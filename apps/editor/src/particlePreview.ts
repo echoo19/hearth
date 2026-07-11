@@ -79,14 +79,26 @@ const EMPTY_PARTICLES: readonly Particle[] = [];
 
 /**
  * Value-based signature of everything that should restart an emitter's
- * preview from a clean slate: its own field values (rate/gravity/seed/…)
- * plus world origin. Value-based (not object identity) because the editor
- * re-fetches the whole scene tree after every command, so an unrelated edit
- * elsewhere hands SceneView a brand-new (but often deep-equal) component
- * object on the very next render — that must NOT reset a running preview.
+ * preview from a clean slate: its own field values (rate/gravity/seed/…).
+ * Value-based (not object identity) because the editor re-fetches the whole
+ * scene tree after every command, so an unrelated edit elsewhere hands
+ * SceneView a brand-new (but often deep-equal) component object on the very
+ * next render — that must NOT reset a running preview.
+ *
+ * Deliberately excludes `origin`: SceneView recomputes `origin` from live
+ * `dragPos` on every pointermove while an entity is being dragged, so
+ * folding it into the reset signature would blow away the sim every frame
+ * of a drag. This mirrors the real runtime — `EmitterState.step`/`burst`
+ * only ever *read* `origin` to place newly spawned particles (see
+ * packages/runtime/src/particles.ts's `spawnOne`); already-alive particles
+ * keep integrating their own `x`/`y` regardless of where the emitter moves
+ * to. So an origin-only change here just updates the tracked origin (used
+ * by the next `step`/`burst` call) without touching `state` — existing
+ * particles keep their world positions, and new ones spawn from wherever
+ * the emitter currently is, exactly like the game runtime.
  */
-function emitterSignature(emitter: ParticleEmitterComponent, origin: Vec2): string {
-  return JSON.stringify([emitter, origin]);
+function emitterSignature(emitter: ParticleEmitterComponent): string {
+  return JSON.stringify(emitter);
 }
 
 export class ParticlePreview {
@@ -176,11 +188,13 @@ export class ParticlePreview {
     const seen = new Set<string>();
     for (const target of this.targets) {
       seen.add(target.entityId);
-      const signature = emitterSignature(target.emitter, target.origin);
+      const signature = emitterSignature(target.emitter);
       const existing = this.tracked.get(target.entityId);
       if (existing && existing.signature === signature) {
-        // Unchanged (by value) — keep simulating, just refresh the object
-        // refs so stepping always uses the latest scene-tree instances.
+        // Emitter fields unchanged (by value) — keep simulating, just
+        // refresh the object refs so stepping always uses the latest
+        // scene-tree instances. In particular `origin` may have moved (a
+        // live drag) without resetting `state`: see emitterSignature's doc.
         existing.emitter = target.emitter;
         existing.origin = target.origin;
         continue;

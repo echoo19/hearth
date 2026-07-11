@@ -8,7 +8,7 @@ import type { ParticleEmitterComponent, TilemapComponent } from '@hearth/core';
 import { useEditor } from '../store';
 import { fileUrl } from '../api';
 import { isTypingTarget } from '../keybinds';
-import { ParticlePreview, particleVisual, type PreviewTarget } from '../particlePreview';
+import { ParticlePreview, particleVisual, type Particle, type PreviewTarget } from '../particlePreview';
 import {
   edgeMidpoints,
   insertVertexOnEdge,
@@ -1386,12 +1386,15 @@ export function SceneView() {
    * they're offset by -worldPos here since this renders inside the entity's
    * `<g transform="translate(wp.x wp.y)">` (world position only, unrotated/
    * unscaled — same group renderParticleGizmo uses, for the same reason).
+   * Takes the already-fetched `particles` snapshot (rather than re-reading
+   * it via getPreviewParticles) so the call site can decide, from the same
+   * snapshot, whether to render this at all vs. fall back to the static
+   * cone gizmo (see the zero-particle fallback at the call site below).
    */
-  function renderLiveParticles(entity: SceneEntity): React.ReactNode {
+  function renderLiveParticles(entity: SceneEntity, particles: readonly Particle[]): React.ReactNode {
     const pe = entity.components.ParticleEmitter as ParticleEmitterComponent | undefined;
     if (!pe) return null;
     const wp = worldPos(entity);
-    const particles = particlePreview.getPreviewParticles(entity.id);
     return (
       <g pointerEvents="none">
         {particles.map((p, i) => {
@@ -1534,13 +1537,23 @@ export function SceneView() {
                     entity's own rotation/scale — see their render fns for why.
                     The selected entity's emitter swaps the static cone gizmo
                     for the live preview while it's actually active (panel
-                    visible + toggle on); every other emitter, and the
-                    selected one when the preview isn't active, keeps the
-                    cone gizmo so it's never simply invisible. */}
+                    visible + toggle on) AND currently has live particles to
+                    show; every other emitter, the selected one when the
+                    preview isn't active, and the selected one when the
+                    preview IS active but has zero live particles right now
+                    (rate 0 + burst 0, or the runtime chunk hasn't finished
+                    its async import yet) all keep the cone gizmo, so the
+                    emitter is never simply invisible. */}
                 {renderLightGizmo(entity)}
-                {entity.id === selection && particlesEnabled && panelVisible
-                  ? renderLiveParticles(entity)
-                  : renderParticleGizmo(entity)}
+                {(() => {
+                  const liveParticles =
+                    entity.id === selection && particlesEnabled && panelVisible
+                      ? particlePreview.getPreviewParticles(entity.id)
+                      : null;
+                  return liveParticles && liveParticles.length > 0
+                    ? renderLiveParticles(entity, liveParticles)
+                    : renderParticleGizmo(entity);
+                })()}
               </g>
             );
           })}
