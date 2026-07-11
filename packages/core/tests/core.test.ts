@@ -399,6 +399,22 @@ describe('scripts', () => {
     const result = await session.execute('editScript', { path: '../evil.js', source: '' });
     expect(result.success).toBe(false);
   });
+
+  it('editScript rejects the traversal payload scripts/../hearth.json with INVALID_INPUT and never writes it', async () => {
+    const { session, fs } = await makeSession();
+    const before = await fs.readFile('/proj/hearth.json');
+    const result = await session.execute('editScript', { path: 'scripts/../hearth.json', source: 'clobbered' });
+    expect(result.success).toBe(false);
+    expect(result.errors[0].code).toBe('INVALID_INPUT');
+    expect(await fs.readFile('/proj/hearth.json')).toBe(before);
+  });
+
+  it('editScript rejects the traversal payload scripts/../scenes/x.json with INVALID_INPUT', async () => {
+    const { session } = await makeSession();
+    const result = await session.execute('editScript', { path: 'scripts/../scenes/x.json', source: '' });
+    expect(result.success).toBe(false);
+    expect(result.errors[0].code).toBe('INVALID_INPUT');
+  });
 });
 
 describe('assets', () => {

@@ -172,6 +172,23 @@ export const createScript = defineCommand({
   },
 });
 
+/**
+ * Validate an agent-supplied script path and return its normalized form.
+ * The guard runs on the NORMALIZED path ('.'/'..' segments resolved via the
+ * same joinPath the read/write below uses), never the raw string — a raw
+ * `startsWith('scripts/')` check passes traversal payloads like
+ * "scripts/../hearth.json" that normalize to files outside scripts/.
+ * Throws INVALID_INPUT when the path escapes the project root or lands
+ * outside scripts/.
+ */
+function resolveScriptsPath(rawPath: string): string {
+  const normalized = joinPath(rawPath);
+  if (!isSafeRelativePath(rawPath) || !normalized.startsWith(SCRIPTS_DIR + '/')) {
+    throw new ProjectError(`Script path must be inside ${SCRIPTS_DIR}/ (got: ${rawPath})`, 'INVALID_INPUT');
+  }
+  return normalized;
+}
+
 export const editScript = defineCommand({
   name: 'editScript',
   description: 'Replace the full source of an existing script file.',
@@ -182,17 +199,15 @@ export const editScript = defineCommand({
     source: z.string(),
   }),
   async run(ctx, params) {
-    if (!isSafeRelativePath(params.path) || !params.path.startsWith(SCRIPTS_DIR + '/')) {
-      throw new ProjectError(`Script path must be inside ${SCRIPTS_DIR}/ (got: ${params.path})`, 'INVALID_INPUT');
-    }
-    const absPath = joinPath(ctx.store.root, params.path);
+    const path = resolveScriptsPath(params.path);
+    const absPath = joinPath(ctx.store.root, path);
     if (!(await ctx.fs.exists(absPath))) {
-      throw new ProjectError(`Script not found: ${params.path}. Use createScript first.`, 'NOT_FOUND');
+      throw new ProjectError(`Script not found: ${path}. Use createScript first.`, 'NOT_FOUND');
     }
     await ctx.fs.writeFile(absPath, params.source);
-    ctx.changed({ kind: 'script', path: params.path, action: 'modified' });
+    ctx.changed({ kind: 'script', path, action: 'modified' });
     ctx.suggest('validateProject', 'runPlaytest <playtest> to verify behavior');
-    return { path: params.path, lines: params.source.split('\n').length };
+    return { path, lines: params.source.split('\n').length };
   },
 });
 
@@ -214,7 +229,7 @@ export const checkScript = defineCommand({
     // A plain zod .refine() here would surface as INVALID_PARAMS (thrown
     // during paramsSchema.parse, before run() is even called) rather than
     // the INVALID_INPUT code the rest of this command's validation uses
-    // (matching editScript's path check below) — so this is checked by hand.
+    // (matching the shared resolveScriptsPath guard) — so this is checked by hand.
     if (params.source === undefined && params.path === undefined) {
       throw new ProjectError('checkScript requires either "source" or "path"', 'INVALID_INPUT');
     }
@@ -222,15 +237,13 @@ export const checkScript = defineCommand({
     let source: string;
     let language: 'lua' | 'js';
     if (params.path !== undefined) {
-      if (!isSafeRelativePath(params.path) || !params.path.startsWith(SCRIPTS_DIR + '/')) {
-        throw new ProjectError(`Script path must be inside ${SCRIPTS_DIR}/ (got: ${params.path})`, 'INVALID_INPUT');
-      }
-      const absPath = joinPath(ctx.store.root, params.path);
+      const path = resolveScriptsPath(params.path);
+      const absPath = joinPath(ctx.store.root, path);
       if (!(await ctx.fs.exists(absPath))) {
-        throw new ProjectError(`Script not found: ${params.path}`, 'NOT_FOUND');
+        throw new ProjectError(`Script not found: ${path}`, 'NOT_FOUND');
       }
-      source = await ctx.store.readScript(params.path);
-      language = params.language ?? (params.path.endsWith('.js') ? 'js' : 'lua');
+      source = await ctx.store.readScript(path);
+      language = params.language ?? (path.endsWith('.js') ? 'js' : 'lua');
     } else {
       source = params.source as string;
       language = params.language ?? 'lua';

@@ -113,6 +113,20 @@ describe('checkScript', () => {
     expect(result.errors[0].code).toBe('INVALID_INPUT');
   });
 
+  it('traversal payload scripts/../hearth.json -> INVALID_INPUT (never reads it)', async () => {
+    const { session } = await makeSession();
+    const result = await session.execute<any>('checkScript', { path: 'scripts/../hearth.json' });
+    expect(result.success).toBe(false);
+    expect(result.errors[0].code).toBe('INVALID_INPUT');
+  });
+
+  it('traversal payload scripts/../scenes/x.json -> INVALID_INPUT', async () => {
+    const { session } = await makeSession();
+    const result = await session.execute<any>('checkScript', { path: 'scripts/../scenes/x.json' });
+    expect(result.success).toBe(false);
+    expect(result.errors[0].code).toBe('INVALID_INPUT');
+  });
+
   it('neither source nor path -> INVALID_INPUT', async () => {
     const { session } = await makeSession();
     const result = await session.execute<any>('checkScript', {});

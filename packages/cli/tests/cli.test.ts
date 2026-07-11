@@ -263,6 +263,16 @@ describe('hearth check-script', () => {
     expect(envelope.success).toBe(false);
     expect(envelope.errors[0].code).toBe('INVALID_INPUT');
   });
+
+  it('a traversal payload (scripts/../hearth.json) fails with INVALID_INPUT and discloses nothing', async () => {
+    const result = await runCli(['check-script', 'scripts/../hearth.json', '--json'], projectDir);
+    expect(result.code).toBe(1);
+    const envelope = parseJson(result.stdout);
+    expect(envelope.success).toBe(false);
+    expect(envelope.errors[0].code).toBe('INVALID_INPUT');
+    // No diagnostics leaking hearth.json contents through syntax-error messages.
+    expect(envelope.data).toBeNull();
+  });
 });
 
 describe('hearth snapshot / diff', () => {
