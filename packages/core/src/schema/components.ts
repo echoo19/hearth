@@ -234,13 +234,40 @@ export const UIToggleSchema = z.object({
 /** Max rows and max columns (row string length) for a Tilemap grid, shared with resizeTilemap/fillTilemapRect caps. */
 export const TILEMAP_MAX_DIM = 1024;
 
+/**
+ * The object arm of a Tilemap `tileAssets` value: an autotile RULE rather than
+ * a plain asset id. The tile's per-cell frame is picked from its 8 neighbours
+ * at render time (see tilemap/autotile.ts). `template: 'blob47'` is the only
+ * layout today; `mapping` optionally overrides individual shape keys with
+ * custom sheet frame names (unmapped shapes fall back to the standard
+ * template). `.strict()` so an unknown `template` value or stray key is
+ * rejected rather than silently stripped. Written only by the `setTileAutotile`
+ * command — `setComponentProperty` refuses to write this arm directly.
+ */
+export const AutotileRuleSchema = z
+  .object({
+    sheet: z.string(),
+    template: z.literal('blob47'),
+    mapping: z.record(z.string(), z.string()).optional(),
+  })
+  .strict();
+export type AutotileRule = z.infer<typeof AutotileRuleSchema>;
+
+/**
+ * A Tilemap `tileAssets` value: EITHER a plain asset id (string) OR an autotile
+ * rule (object arm). The string arm is unchanged and fully back-compatible.
+ */
+export const TileAssetSchema = z.union([z.string(), AutotileRuleSchema]);
+export type TileAsset = z.infer<typeof TileAssetSchema>;
+
 export const TilemapSchema = z.object({
   tileSize: z.number().positive().default(32),
   /**
-   * Maps single characters used in `grid` rows to asset IDs.
-   * '.' and ' ' always mean empty.
+   * Maps single characters used in `grid` rows to a tile source: a plain asset
+   * id, or an autotile rule (see AutotileRuleSchema). '.' and ' ' always mean
+   * empty.
    */
-  tileAssets: z.record(z.string(), z.string()).default({}),
+  tileAssets: z.record(z.string(), TileAssetSchema).default({}),
   /** Rows of characters, top row first, e.g. ["........", "GGGGGGGG"]. */
   grid: z
     .array(z.string())

@@ -610,12 +610,16 @@ export class PixiSceneView {
     const animationAssetIds = new Set<string>();
     const collect = (components: {
       SpriteRenderer?: { assetId?: string | null };
-      Tilemap?: { tileAssets: Record<string, string> };
+      Tilemap?: { tileAssets: Record<string, string | { sheet: string }> };
       SpriteAnimator?: { assetId?: string };
     }) => {
       if (components.SpriteRenderer?.assetId) assetIds.add(components.SpriteRenderer.assetId);
       if (components.Tilemap) {
-        for (const id of Object.values(components.Tilemap.tileAssets)) assetIds.add(id);
+        // A tile source is a plain asset id (string) or an autotile rule whose
+        // `sheet` is the spritesheet asset id — preload whichever it references.
+        for (const tile of Object.values(components.Tilemap.tileAssets)) {
+          assetIds.add(typeof tile === 'string' ? tile : tile.sheet);
+        }
       }
       if (components.SpriteAnimator?.assetId) animationAssetIds.add(components.SpriteAnimator.assetId);
     };
@@ -1073,7 +1077,12 @@ export class PixiSceneView {
       for (let col = 0; col < line.length; col++) {
         const ch = line[col];
         if (ch === '.' || ch === ' ') continue;
-        const assetId = tilemap.tileAssets[ch];
+        const tile = tilemap.tileAssets[ch];
+        // Autotile rules (object arm) resolve a per-cell frame from neighbours;
+        // that rendering is owned by the autotile-rendering task. Until then a
+        // rule falls through to the placeholder box. Plain string ids draw the
+        // preloaded texture exactly as before.
+        const assetId = typeof tile === 'string' ? tile : undefined;
         const texture = assetId ? this.textures.get(assetId) : undefined;
         if (texture) {
           const s = new Sprite(texture);

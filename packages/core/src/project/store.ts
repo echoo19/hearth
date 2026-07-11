@@ -63,7 +63,9 @@ export class ProjectError extends Error {
       | 'TILE_OUT_OF_BOUNDS'
       | 'PREFAB_DATA_INVALID'
       | 'PREFAB_NOT_INSTANCE'
-      | 'ASM_ANIMATION_NOT_FOUND' = 'INVALID_INPUT',
+      | 'ASM_ANIMATION_NOT_FOUND'
+      | 'AUTOTILE_SHEET_NOT_FOUND'
+      | 'AUTOTILE_FRAME_MISSING' = 'INVALID_INPUT',
   ) {
     super(message);
     this.name = 'ProjectError';

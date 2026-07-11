@@ -437,7 +437,8 @@ export async function validateProject(store: ProjectStore): Promise<ValidationRe
         }
       }
       if (c.Tilemap) {
-        for (const [ch, tileAssetId] of Object.entries(c.Tilemap.tileAssets)) {
+        for (const [ch, tile] of Object.entries(c.Tilemap.tileAssets)) {
+          const tileAssetId = typeof tile === 'string' ? tile : tile.sheet;
           if (!assetIds.has(tileAssetId)) {
             push({
               severity: 'error',
@@ -586,12 +587,19 @@ export async function validateProject(store: ProjectStore): Promise<ValidationRe
         }
       }
       if (c.Tilemap) {
-        for (const [ch, assetId] of Object.entries(c.Tilemap.tileAssets)) {
-          if (!assetIds.has(assetId)) {
+        for (const [ch, tile] of Object.entries(c.Tilemap.tileAssets)) {
+          // A tile source is either a plain asset id (string) or an autotile
+          // rule (object) whose `sheet` names the spritesheet asset. Either
+          // way the referenced asset must exist.
+          const assetRef = typeof tile === 'string' ? tile : tile.sheet;
+          if (!assetIds.has(assetRef)) {
             push({
               severity: 'error',
               code: 'MISSING_TILE_ASSET',
-              message: `Tilemap on "${entity.name}" maps '${ch}' to unknown asset ${assetId}`,
+              message:
+                typeof tile === 'string'
+                  ? `Tilemap on "${entity.name}" maps '${ch}' to unknown asset ${assetRef}`
+                  : `Tilemap on "${entity.name}" autotiles '${ch}' from unknown spritesheet ${assetRef}`,
               scene: sceneId,
               entity: entity.id,
             });
