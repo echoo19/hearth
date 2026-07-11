@@ -19,6 +19,7 @@
 import {
   AnimationDataSchema,
   PrefabDataSchema,
+  StateMachineDataSchema,
   buildNavGrid,
   collectNavSolids,
   createComponent,
@@ -28,7 +29,9 @@ import {
   isComponentType,
   joinPath,
   type AnimationData,
+  type AnimationStateMachineComponent,
   type PrefabData,
+  type StateMachineData,
   type ComponentMap,
   type Entity,
   type NavEntityInput,
@@ -43,6 +46,14 @@ import {
   type Vec2,
 } from '@hearth/core';
 import { createAnimatorState, stepAnimator, type AnimatorState } from './animator.js';
+import {
+  createSmState,
+  fireSmTrigger,
+  getSmParam,
+  setSmParam,
+  stepStateMachine,
+  type SmState,
+} from './stateMachine.js';
 import {
   SpatialHash,
   broadphaseTestHooks,
@@ -340,8 +351,12 @@ export class SceneRuntime {
   private warnedNoCamera = false;
   private emitters = new Map<string, EmitterState>();
   private animationAssets = new Map<string, AnimationData>();
+  private stateMachineAssets = new Map<string, StateMachineData>();
   private prefabAssets = new Map<string, PrefabData>();
   private animatorStates = new Map<string, AnimatorState>();
+  private smStates = new Map<string, SmState>();
+  /** Entities warned once about an AnimationStateMachine overriding a SpriteAnimator. */
+  private warnedDualAnimator = new Set<string>();
   private eventBus = new EventBus();
   private emitDepth = 0;
   private navGrid: NavGrid | null = null;
@@ -386,6 +401,7 @@ export class SceneRuntime {
     }
     const runtime = new SceneRuntime(store, scene, options);
     await runtime.loadAnimations();
+    await runtime.loadStateMachines();
     await runtime.loadPrefabs();
     await runtime.loadScripts();
     return runtime;
@@ -695,7 +711,12 @@ export class SceneRuntime {
       this.callHook(entity, 'onUpdate', this.fixedDt);
     }
 
-    // 2c. SpriteAnimator playback, right after scripts so same-frame
+    // 2c. AnimationStateMachine playback runs BEFORE plain SpriteAnimator so a
+    // machine wins the shared SpriteRenderer on entities that (mis)configure
+    // both; the plain animator then skips those entities.
+    this.stepStateMachines();
+
+    // 2d. SpriteAnimator playback, right after scripts so same-frame
     // playing/assetId mutations (including ctx.animate) take effect the
     // frame they're made.
     this.stepAnimators();
@@ -1257,6 +1278,29 @@ export class SceneRuntime {
   }
 
   /**
+   * Preload every state machine asset payload (tiny JSON, like animations) so
+   * the AnimationStateMachine stepper and ctx.animator can resolve them
+   * synchronously at play time. In exports the player's loadStore materializes
+   * .asm.json files into the store fs (assetNeedsRawContent includes
+   * 'stateMachine'), same as animations/prefabs.
+   */
+  private async loadStateMachines(): Promise<void> {
+    for (const asset of this.store.assets.assets) {
+      if (asset.type !== 'stateMachine') continue;
+      try {
+        const raw = await this.store.fs.readFile(joinPath(this.store.root, asset.path));
+        this.stateMachineAssets.set(asset.id, StateMachineDataSchema.parse(JSON.parse(raw)));
+      } catch (err) {
+        this.recordError({
+          frame: this._frame,
+          message: `Failed to load state machine asset "${asset.name}": ${(err as Error).message}`,
+          phase: 'load',
+        });
+      }
+    }
+  }
+
+  /**
    * Preload every prefab asset payload in the project (tiny JSON, like
    * animations) so ctx.scene.spawnPrefab can instantiate them synchronously,
    * with zero I/O, at play time. Reads raw content straight off the store's
@@ -1324,6 +1368,9 @@ export class SceneRuntime {
     for (const entity of this.getEntities()) {
       const animator = entity.components.SpriteAnimator;
       if (!animator) continue;
+      // An AnimationStateMachine on the same entity owns the SpriteRenderer
+      // (stepped in stepStateMachines); the plain animator yields to it.
+      if (entity.components.AnimationStateMachine) continue;
       // Disabled entities keep their state (frozen); only destruction reaps it.
       liveIds.add(entity.id);
       if (!entity.enabled) continue;
@@ -1344,6 +1391,100 @@ export class SceneRuntime {
     for (const id of [...this.animatorStates.keys()]) {
       if (!liveIds.has(id)) this.animatorStates.delete(id);
     }
+  }
+
+  // ---------------------------------------------------------------------------
+  // Animation state machines
+  // ---------------------------------------------------------------------------
+
+  /** Get or lazily (re)create the SmState for an entity's AnimationStateMachine. */
+  private getOrCreateSmState(
+    entity: RuntimeEntity,
+    component: AnimationStateMachineComponent,
+    asset: StateMachineData,
+  ): SmState {
+    let state = this.smStates.get(entity.id);
+    // A changed assetId means a different machine — rebuild from the new asset.
+    if (!state || state.assetId !== component.assetId) {
+      state = createSmState(asset, component.assetId);
+      this.smStates.set(entity.id, state);
+    }
+    return state;
+  }
+
+  /**
+   * Advance every live enabled AnimationStateMachine one fixed step, writing
+   * the current frame into the sibling SpriteRenderer; reap destroyed entities.
+   * Runs before stepAnimators so a machine wins the renderer when both
+   * components are present (warned once per entity).
+   */
+  private stepStateMachines(): void {
+    const liveIds = new Set<string>();
+    for (const entity of this.getEntities()) {
+      const component = entity.components.AnimationStateMachine;
+      if (!component) continue;
+      // Disabled entities keep their state (frozen); only destruction reaps it.
+      liveIds.add(entity.id);
+      if (!entity.enabled) continue;
+      if (entity.components.SpriteAnimator && !this.warnedDualAnimator.has(entity.id)) {
+        this.warnedDualAnimator.add(entity.id);
+        this.recordLog(
+          'warn',
+          `AnimationStateMachine on "${entity.name}" overrides its SpriteAnimator (state machine wins the SpriteRenderer)`,
+        );
+      }
+      const renderer = entity.components.SpriteRenderer;
+      if (!renderer) continue; // no renderer to write frames into: skip silently
+      const asset = component.assetId ? this.stateMachineAssets.get(component.assetId) : undefined;
+      if (!asset) continue; // unknown/empty assetId: skip silently
+      const state = this.getOrCreateSmState(entity, component, asset);
+      const r = stepStateMachine(state, component, asset, this.animationAssets, this.fixedDt);
+      if (r !== null) {
+        renderer.assetId = r.assetId;
+        renderer.frame = r.frame;
+      }
+    }
+    for (const id of [...this.smStates.keys()]) {
+      if (!liveIds.has(id)) this.smStates.delete(id);
+    }
+    for (const id of [...this.warnedDualAnimator]) {
+      if (!liveIds.has(id)) this.warnedDualAnimator.delete(id);
+    }
+  }
+
+  /**
+   * Current state name of an entity's AnimationStateMachine (by id or name),
+   * or null when the entity has no machine (or none has run yet). Read-only
+   * accessor for hosts and the Task 11 script bridge.
+   */
+  getStateMachineState(entityIdOrName: string): string | null {
+    const entity = this.find(entityIdOrName);
+    if (!entity) return null;
+    return this.smStates.get(entity.id)?.current ?? null;
+  }
+
+  /**
+   * Resolve an entity's AnimationStateMachine for a ctx.animator call. Throws
+   * (surfacing as a script error with line info) when the entity, its
+   * component, or its asset is missing.
+   */
+  private smForScript(
+    entityRef: string,
+    method: string,
+  ): { asset: StateMachineData; state: SmState } {
+    const entity = this.find(entityRef);
+    if (!entity) throw new Error(`ctx.animator.${method}: entity not found "${entityRef}"`);
+    const component = entity.components.AnimationStateMachine;
+    if (!component) {
+      throw new Error(`ctx.animator.${method}: no AnimationStateMachine on "${entity.name}"`);
+    }
+    const asset = component.assetId ? this.stateMachineAssets.get(component.assetId) : undefined;
+    if (!asset) {
+      throw new Error(
+        `ctx.animator.${method}: unknown state machine asset "${component.assetId}" on "${entity.name}"`,
+      );
+    }
+    return { asset, state: this.getOrCreateSmState(entity, component, asset) };
   }
 
   // ---------------------------------------------------------------------------
@@ -1632,6 +1773,21 @@ export class SceneRuntime {
         // fire when the asset id is unchanged. Stage 2c recreates the
         // state at frame 0 the same frame.
         runtime.animatorStates.delete(entity.id);
+      },
+      animator: {
+        setParam: (entityRef, name, value) => {
+          const { asset, state } = runtime.smForScript(entityRef, 'setParam');
+          setSmParam(state, asset, name, value);
+        },
+        getParam: (entityRef, name) => {
+          const { asset, state } = runtime.smForScript(entityRef, 'getParam');
+          return getSmParam(state, asset, name);
+        },
+        fire: (entityRef, name) => {
+          const { asset, state } = runtime.smForScript(entityRef, 'fire');
+          fireSmTrigger(state, asset, name);
+        },
+        state: (entityRef) => runtime.smForScript(entityRef, 'state').state.current,
       },
       save: (key, value) => {
         runtime.storage.set(key, JSON.stringify(value) ?? 'null');

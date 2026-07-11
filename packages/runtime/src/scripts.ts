@@ -171,6 +171,21 @@ export interface ScriptContext {
    * the entity has no SpriteAnimator or the asset is unknown.
    */
   animate(assetRef: string): void;
+  /**
+   * Drive an entity's AnimationStateMachine (by id, or a unique name). Every
+   * method throws a script error (with a source line) when the entity, its
+   * AnimationStateMachine, or a named param is missing, or on a type mismatch.
+   */
+  animator: {
+    /** Set a bool/number param. Throws for a trigger param (use fire) or a type mismatch. */
+    setParam(entityRef: string, name: string, value: boolean | number): void;
+    /** Read a bool/number param value, or a trigger's latched state. */
+    getParam(entityRef: string, name: string): boolean | number;
+    /** Latch a trigger param; consumed by the next transition that names it. */
+    fire(entityRef: string, name: string): void;
+    /** Current state name. */
+    state(entityRef: string): string;
+  };
   /** Persistent save data (JSON values), survives scene switches; in the
    *  browser it persists across sessions via localStorage. */
   save(key: string, value: unknown): void;
