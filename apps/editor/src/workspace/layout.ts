@@ -13,6 +13,7 @@ export const PANEL_IDS = [
   'hierarchy',
   'scene',
   'game',
+  'code',
   'inspector',
   'assets',
   'console',

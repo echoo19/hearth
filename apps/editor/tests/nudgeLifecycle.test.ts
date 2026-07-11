@@ -60,6 +60,7 @@ const PROJECT_INFO = {
   ],
   assetCount: 0,
   scriptCount: 0,
+  scripts: [],
   playtestCount: 0,
   inputActions: {},
   inputMappings: {},

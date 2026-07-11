@@ -37,6 +37,8 @@ export interface ProjectInfo {
   scenes: SceneListItem[];
   assetCount: number;
   scriptCount: number;
+  /** Project-relative paths of every script file (Code panel's script picker). */
+  scripts: string[];
   playtestCount: number;
   inputActions: Record<string, string[]>;
   inputMappings: InputMappings;

@@ -213,6 +213,24 @@ describe('dispatchDecision (installKeybinds guards, DOM-free)', () => {
     expect(d.preventDefault).toBe(true);
   });
 
+  it('mod+s inside CodeMirror\'s contenteditable content is ignored by the global registry (double-fire guard)', () => {
+    // CM6's editable surface is a contenteditable div; the Code panel binds its
+    // own Mod-s -> save inside the CM6 keymap. The global dispatcher must yield
+    // here so the two handlers never both fire for one keypress. Checked for
+    // both mod forms (meta on mac, ctrl elsewhere) — platform-independent.
+    const viaMeta = dispatchDecision(
+      dispatchKey('s', { metaKey: true, target: { tagName: 'DIV', isContentEditable: true } }),
+      { hasSelection: false, dialogOpen: false },
+    );
+    expect(viaMeta).toEqual({ action: 'ignore', preventDefault: false });
+
+    const viaCtrl = dispatchDecision(
+      dispatchKey('s', { ctrlKey: true, target: { tagName: 'DIV', isContentEditable: true } }),
+      { hasSelection: false, dialogOpen: false },
+    );
+    expect(viaCtrl).toEqual({ action: 'ignore', preventDefault: false });
+  });
+
   it('a selection-only binding without a live selection resolves to passthrough, not run', () => {
     const d = dispatchDecision(dispatchKey('d', { metaKey: isMac, ctrlKey: !isMac }), { hasSelection: false, dialogOpen: false });
     expect(d.action).toBe('passthrough');

@@ -22,6 +22,7 @@ import { Icon } from '../components/ui';
 import { Hierarchy } from '../components/Hierarchy';
 import { SceneView } from '../components/SceneView';
 import { GamePreview } from '../components/GamePreview';
+import { CodePanel } from '../components/CodePanel';
 import { Inspector } from '../components/Inspector';
 import { AssetsPanel } from '../components/AssetsPanel';
 import { ConsolePanel } from '../components/ConsolePanel';
@@ -34,6 +35,7 @@ export const PANEL_TITLES: Record<PanelId, string> = {
   hierarchy: 'Hierarchy',
   scene: 'Scene',
   game: 'Game',
+  code: 'Code',
   inspector: 'Inspector',
   assets: 'Assets',
   console: 'Console',
@@ -47,6 +49,7 @@ export const VIEW_MENU_PANELS: readonly PanelId[] = [
   'hierarchy',
   'scene',
   'game',
+  'code',
   'inspector',
   'assets',
   'console',
@@ -121,6 +124,7 @@ const PANEL_COMPONENTS: Record<PanelId, React.FunctionComponent<IDockviewPanelPr
   hierarchy: panelHost(Hierarchy),
   scene: panelHost(SceneView, true),
   game: GamePanelHost,
+  code: panelHost(CodePanel),
   inspector: panelHost(Inspector),
   assets: panelHost(AssetsPanel),
   console: ConsolePanelHost,
@@ -201,6 +205,7 @@ export function buildDefaultLayout(api: DockviewApi): void {
   api.clear();
   const scene = api.addPanel(addPanelOptions('scene'));
   api.addPanel(addPanelOptions('game', { position: { referencePanel: 'scene', direction: 'within' }, inactive: true }));
+  api.addPanel(addPanelOptions('code', { position: { referencePanel: 'scene', direction: 'within' }, inactive: true }));
   api.addPanel(
     addPanelOptions('hierarchy', {
       position: { referencePanel: 'scene', direction: 'left' },
@@ -236,7 +241,7 @@ function findReference(api: DockviewApi, preferred: readonly PanelId[]): PanelId
   return null;
 }
 
-const CENTER_PANELS: readonly PanelId[] = ['scene', 'game'];
+const CENTER_PANELS: readonly PanelId[] = ['scene', 'game', 'code'];
 const BOTTOM_PANELS: readonly PanelId[] = ['assets', 'console', 'diff', 'agent', 'input'];
 
 /**
@@ -261,7 +266,7 @@ export function showPanel(api: DockviewApi, id: PanelId): void {
         initialWidth: id === 'hierarchy' ? LEFT_WIDTH : RIGHT_WIDTH,
       };
     }
-  } else if (id === 'scene' || id === 'game') {
+  } else if (id === 'scene' || id === 'game' || id === 'code') {
     const sibling = findReference(
       api,
       CENTER_PANELS.filter((p) => p !== id),

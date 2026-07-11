@@ -87,6 +87,25 @@ describe('command journal', () => {
     expect(entry.detail).toEqual({ errors: 0, warnings: 0 });
   });
 
+  it('createScript and editScript append with a path detail (external-change detection seam)', async () => {
+    const { session } = await makeSession();
+
+    const created = await session.execute<any>('createScript', { name: 'Player Move' });
+    expect(created.success).toBe(true);
+
+    const edited = await session.execute<any>('editScript', {
+      path: 'scripts/player-move.lua',
+      source: '-- edited',
+    });
+    expect(edited.success).toBe(true);
+
+    const list = await session.execute<any>('listJournal');
+    const createdEntry = list.data.entries.find((e: any) => e.command === 'createScript');
+    const editedEntry = list.data.entries.find((e: any) => e.command === 'editScript');
+    expect(createdEntry.detail).toEqual({ path: 'scripts/player-move.lua' });
+    expect(editedEntry.detail).toEqual({ path: 'scripts/player-move.lua' });
+  });
+
   it('a failing mutating command (duplicate createScene) appends ok=false with the error code', async () => {
     const { session } = await makeSession();
 
@@ -206,6 +225,16 @@ describe('command journal', () => {
     expect(extractJournalDetail('runPlaytest', null)).toBeUndefined();
     // non-object data
     expect(extractJournalDetail('runPlaytest', 'not an object')).toBeUndefined();
+    // editScript/createScript missing path
+    expect(extractJournalDetail('editScript', { lines: 3 })).toBeUndefined();
+    expect(extractJournalDetail('createScript', { lines: 3 })).toBeUndefined();
+    // editScript/createScript with a path detail
+    expect(extractJournalDetail('editScript', { path: 'scripts/x.lua', lines: 3 })).toEqual({
+      path: 'scripts/x.lua',
+    });
+    expect(extractJournalDetail('createScript', { path: 'scripts/x.lua', lines: 3 })).toEqual({
+      path: 'scripts/x.lua',
+    });
   });
 
   it('a failing allowlisted command (runPlaytest with nonexistent playtest) appends ok=false with error code and no detail', async () => {

@@ -1863,6 +1863,60 @@ label.field-label {
 }
 
 /* --------------------------------------------------------------------------
+   Code panel
+   -------------------------------------------------------------------------- */
+
+.code-panel-root {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+}
+
+.code-dirty-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: transparent;
+  border: 1px solid var(--border-strong);
+  flex: none;
+}
+
+.code-dirty-dot-active {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+.code-conflict-banner {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  background: var(--warn-soft);
+  border-bottom: 1px solid var(--border);
+  color: var(--ink);
+  font-size: 12px;
+  flex: none;
+}
+
+.code-editor-container {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  overflow: hidden;
+}
+
+.code-editor-host {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.code-editor-host .cm-editor {
+  height: 100%;
+}
+
+/* --------------------------------------------------------------------------
    Dialogs
    -------------------------------------------------------------------------- */
 

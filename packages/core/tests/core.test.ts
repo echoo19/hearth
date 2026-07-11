@@ -387,6 +387,17 @@ describe('scripts', () => {
     expect(scripts.data.scripts[0].attachedTo[0].entityName).toBe('Player');
   });
 
+  it('inspectProject additively lists script paths alongside scriptCount', async () => {
+    const { session } = await makeSession();
+    await session.execute<any>('createScript', { name: 'Player Move' });
+    await session.execute<any>('createScript', { name: 'Enemy AI', language: 'js' });
+
+    const inspect = await session.execute<any>('inspectProject');
+    expect(inspect.success).toBe(true);
+    expect(inspect.data.scriptCount).toBe(2);
+    expect(inspect.data.scripts).toEqual(['scripts/enemy-ai.js', 'scripts/player-move.lua']);
+  });
+
   it('code-edit permission gates script commands', async () => {
     const { session } = await makeSession(['read-only', 'safe-edit']);
     const created = await session.execute('createScript', { name: 'x' });

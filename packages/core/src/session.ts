@@ -26,10 +26,16 @@ function summarizeCommand(name: string, params: unknown): string {
 }
 
 /**
- * `detail` for the journal entry of a small set of read-only-but-journaled
- * commands: small, defensively-extracted facts, never the full result. Any
- * shape mismatch (missing/wrong-typed field) omits `detail` entirely rather
- * than recording a partial/garbled fact.
+ * `detail` for the journal entry of a small set of commands: small,
+ * defensively-extracted facts, never the full result. Any shape mismatch
+ * (missing/wrong-typed field) omits `detail` entirely rather than recording
+ * a partial/garbled fact.
+ *
+ * Two purposes: surfacing outcomes for read-only-but-journaled commands
+ * (runPlaytest, validateProject), and — for editScript/createScript —
+ * recording the script's path so the editor's Code panel can tell, from the
+ * WS-pushed journal feed alone, whether an external edit (source !== 'editor')
+ * touched the file it currently has open (external-change detection).
  */
 export function extractJournalDetail(name: string, data: unknown): Record<string, unknown> | undefined {
   if (typeof data !== 'object' || data === null) return undefined;
@@ -42,6 +48,10 @@ export function extractJournalDetail(name: string, data: unknown): Record<string
   if (name === 'validateProject') {
     if (!Array.isArray(d.errors) || !Array.isArray(d.warnings)) return undefined;
     return { errors: d.errors.length, warnings: d.warnings.length };
+  }
+  if (name === 'editScript' || name === 'createScript') {
+    if (typeof d.path !== 'string') return undefined;
+    return { path: d.path };
   }
   return undefined;
 }
