@@ -306,7 +306,9 @@ export const removeAsset = defineCommand({
         if (
           c.SpriteRenderer?.assetId === asset.id ||
           c.AudioSource?.assetId === asset.id ||
-          Object.values(c.Tilemap?.tileAssets ?? {}).includes(asset.id)
+          Object.values(c.Tilemap?.tileAssets ?? {}).some(
+            (t) => (typeof t === 'string' ? t : t.sheet) === asset.id,
+          )
         ) {
           references.push(`${e.name} (${e.id}) in scene ${sceneId}`);
         }

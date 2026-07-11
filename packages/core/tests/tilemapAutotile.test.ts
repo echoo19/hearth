@@ -333,3 +333,23 @@ describe('setComponentProperty rejects the autotile object arm', () => {
     expect(result.errors[0].message).toContain('setTileAutotile');
   });
 });
+
+describe('removeAsset refuses when referenced by an autotile rule', () => {
+  it('rejects removal of a spritesheet referenced via tileAssets.<char>.sheet', async () => {
+    const { session, store } = await makeSession();
+    await addTilemap(session);
+    addBlob47Sheet(store);
+
+    const rule = await session.execute<any>('setTileAutotile', {
+      scene: 'Main',
+      entity: 'Player',
+      char: 'W',
+      sheet: 'GroundSheet',
+    });
+    expect(rule.success).toBe(true);
+
+    const rm = await session.execute('removeAsset', { asset: 'ast_sheet' });
+    expect(rm.success).toBe(false);
+    expect(rm.errors[0].code).toBe('CONFLICT');
+  });
+});

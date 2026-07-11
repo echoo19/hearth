@@ -443,7 +443,10 @@ export async function validateProject(store: ProjectStore): Promise<ValidationRe
             push({
               severity: 'error',
               code: 'PREFAB_ASSET_NOT_FOUND',
-              message: `Prefab "${asset.name}" (${asset.id}) entity "${entity.name}" Tilemap maps '${ch}' to unknown asset ${tileAssetId}`,
+              message:
+                typeof tile === 'string'
+                  ? `Prefab "${asset.name}" (${asset.id}) entity "${entity.name}" Tilemap maps '${ch}' to unknown asset ${tileAssetId}`
+                  : `Prefab "${asset.name}" (${asset.id}) entity "${entity.name}" Tilemap autotiles '${ch}' from unknown spritesheet ${tileAssetId}`,
               asset: asset.id,
             });
           }
