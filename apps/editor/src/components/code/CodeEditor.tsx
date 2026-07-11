@@ -82,6 +82,24 @@ const emberLineField = StateField.define<DecorationSet>({
   provide: (f) => EditorView.decorations.from(f),
 });
 
+/**
+ * Snapshot the outgoing buffer's state into the cache on a swap/teardown —
+ * but only when the host still considers that path open. Without the guard,
+ * closing the ACTIVE tab leaks: CodePanel deletes the cache entry in
+ * doClose(), but the very next render switches `path` to a neighbour and the
+ * swap effect would re-insert the just-closed path's full doc + undo history
+ * into the Map, keeping it alive for the whole session. Exported for unit
+ * testing (codePanelBuffers.test.ts) — pure with respect to its arguments.
+ */
+export function cacheOutgoingState(
+  stateCache: Map<string, EditorState>,
+  outgoingPath: string | null,
+  state: EditorState,
+  shouldCache: (path: string) => boolean,
+): void {
+  if (outgoingPath !== null && shouldCache(outgoingPath)) stateCache.set(outgoingPath, state);
+}
+
 export interface CodeEditorProps {
   /** Project-relative path of the active buffer. Drives both the language
    * and the state-cache swap (see the swap effect below). */
@@ -96,6 +114,11 @@ export interface CodeEditorProps {
   /** Host-owned per-path EditorState cache. This component reads/writes it to
    * preserve each tab's undo history and selection across switches. */
   stateCache: Map<string, EditorState>;
+  /** Whether a path is still an open buffer in the host. Consulted before
+   * snapshotting an outgoing state into the cache, so a just-closed tab's
+   * state isn't resurrected by the swap that follows its close (see
+   * cacheOutgoingState). */
+  shouldCacheState: (path: string) => boolean;
   onChange: (value: string) => void;
   /** Ctrl/Cmd+S while the editor has focus. */
   onSave: () => void;
@@ -118,6 +141,7 @@ export default function CodeEditor({
   value,
   revision,
   stateCache,
+  shouldCacheState,
   onChange,
   onSave,
   checkScript,
@@ -143,6 +167,8 @@ export default function CodeEditor({
   onSaveRef.current = onSave;
   const checkScriptRef = useRef(checkScript);
   checkScriptRef.current = checkScript;
+  const shouldCacheStateRef = useRef(shouldCacheState);
+  shouldCacheStateRef.current = shouldCacheState;
 
   // Build a full EditorState for a given path + doc. Every state carries its
   // own language extensions, so states for different languages swap freely
@@ -199,8 +225,9 @@ export default function CodeEditor({
     shownPathRef.current = path;
     shownRevRef.current = revision;
     return () => {
-      // Preserve the current buffer's state for a later reopen, then tear down.
-      if (shownPathRef.current) stateCache.set(shownPathRef.current, view.state);
+      // Preserve the current buffer's state (if it's still open) for a later
+      // reopen, then tear down.
+      cacheOutgoingState(stateCache, shownPathRef.current, view.state, shouldCacheStateRef.current);
       view.destroy();
       viewRef.current = null;
     };
@@ -219,9 +246,11 @@ export default function CodeEditor({
     if (shownPath === path && shownRev === revision) return; // mount run, or nothing changed
 
     if (shownPath !== path) {
-      // Tab switch: snapshot the outgoing buffer, restore (or first-build) the
-      // incoming one. Cached state brings its undo history and selection back.
-      if (shownPath !== null) stateCache.set(shownPath, view.state);
+      // Tab switch: snapshot the outgoing buffer (unless the host just closed
+      // it — a closed tab's state must not be resurrected into the cache),
+      // then restore (or first-build) the incoming one. Cached state brings
+      // its undo history and selection back.
+      cacheOutgoingState(stateCache, shownPath, view.state, shouldCacheStateRef.current);
       const cached = stateCache.get(path);
       view.setState(cached ?? buildStateRef.current(path, valueRef.current));
     } else {

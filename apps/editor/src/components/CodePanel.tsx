@@ -101,6 +101,18 @@ export function CodePanel() {
   activePathRef.current = activePath;
   const lastSeqRef = useRef(0);
 
+  /**
+   * Consulted by CodeEditor before it snapshots an outgoing EditorState into
+   * the cache: only still-open paths get cached. Closing the ACTIVE tab
+   * would otherwise leak — doClose() deletes the cache entry, but the
+   * follow-up render activates a neighbour and CodeEditor's swap effect
+   * would re-insert the just-closed path's full doc + undo history, keeping
+   * it alive for the whole session. Reads through bufferStateRef (refreshed
+   * during render), so by the time the post-close swap effect runs, the
+   * closed path is already gone from the list.
+   */
+  const shouldCacheState = (path: string) => findBuffer(bufferStateRef.current.buffers, path) !== undefined;
+
   async function readScript(path: string): Promise<string> {
     const project = projectPathRef.current;
     if (!project) throw new Error('No project open');
@@ -153,7 +165,14 @@ export function CodePanel() {
     });
     if (!already) {
       // Entries already in the feed predate this open; only react to ones that
-      // arrive from here on (advance-only so other open buffers keep their baseline).
+      // arrive from here on (advance-only so other open buffers keep their
+      // baseline). Note the narrow race with the [journalFeed] effect: if an
+      // entry arrived between that effect's last run and this open, jumping
+      // the cursor here would skip it for the OTHER open buffers too. Safe in
+      // practice: React flushes the journal effect for any feed change before
+      // this handler can run (effects fire before the next user event), so at
+      // this point lastSeqRef has already caught up with everything the other
+      // buffers needed to see.
       const tail = journalFeed.length ? journalFeed[journalFeed.length - 1].seq : 0;
       lastSeqRef.current = Math.max(lastSeqRef.current, tail);
       void loadInto(path);
@@ -544,6 +563,7 @@ export function CodePanel() {
               value={active.source}
               revision={active.revision}
               stateCache={stateCacheRef.current}
+              shouldCacheState={shouldCacheState}
               onChange={(v) => patch(active.path, { source: v })}
               onSave={() => void save()}
               checkScript={checkScript}

@@ -1,8 +1,10 @@
 /**
  * Pure logic tests for the Code panel's multi-buffer model: the tab list is
  * a plain `Buffer[]` + `activePath`, mutated only through the side-effect-free
- * reducers in code/buffers.ts. No DOM, no store, no CodeMirror — the same
- * testing style as externalChange.test.ts and codePanelSave.test.ts.
+ * reducers in code/buffers.ts. No DOM, no store — the same testing style as
+ * externalChange.test.ts and codePanelSave.test.ts. (cacheOutgoingState at
+ * the bottom pulls in real EditorStates, but still needs no DOM — the same
+ * trick completionWiring.test.ts uses.)
  *
  * The invariants that must never break:
  *  - dirty is derived per buffer (source !== savedSource, once loaded);
@@ -10,9 +12,12 @@
  *    one (unsaved work is never silently discarded);
  *  - closing the active tab hands focus to a sensible neighbour;
  *  - a formatScript/replaceInScripts journal entry carrying `{ paths }` fans
- *    out to one external-change entry per path.
+ *    out to one external-change entry per path;
+ *  - a closed tab's EditorState is never re-inserted into the cache by the
+ *    swap that follows its close (session-long memory leak otherwise).
  */
 import { describe, expect, it } from 'vitest';
+import { EditorState } from '@codemirror/state';
 import {
   MAX_BUFFERS,
   closeBuffer,
@@ -21,6 +26,7 @@ import {
   openBuffer,
   toExternalChangeEntries,
 } from '../src/components/code/buffers';
+import { cacheOutgoingState } from '../src/components/code/CodeEditor';
 import type { JournalEntry } from '../src/types';
 
 /** A loaded buffer with the given dirty state, for terse test setup. */
@@ -159,5 +165,45 @@ describe('toExternalChangeEntries', () => {
   it('yields a single path-less script entry when detail carries neither path nor paths', () => {
     const entry = { ...base, command: 'editScript', detail: undefined } as JournalEntry;
     expect(toExternalChangeEntries(entry)).toEqual([{ kind: 'script', source: 'cli', path: undefined }]);
+  });
+});
+
+describe('cacheOutgoingState', () => {
+  // The regression this guards (reviewer-flagged leak): closing the ACTIVE
+  // tab deletes its cache entry, but the follow-up swap to a neighbour used
+  // to unconditionally re-snapshot the outgoing (just-closed) path back into
+  // the Map — one full doc + undo history retained per distinct closed
+  // script, for the whole session. The predicate (backed by the live buffer
+  // list in CodePanel) is what breaks that cycle.
+
+  it('snapshots the outgoing state when its path is still an open buffer', () => {
+    const cache = new Map<string, EditorState>();
+    const state = EditorState.create({ doc: 'still open' });
+    cacheOutgoingState(cache, 'scripts/a.lua', state, () => true);
+    expect(cache.get('scripts/a.lua')).toBe(state);
+  });
+
+  it('does NOT re-insert a just-closed path into the cache (the leak case)', () => {
+    const cache = new Map<string, EditorState>();
+    const state = EditorState.create({ doc: 'closed tab' });
+    const stillOpen = new Set(['scripts/b.lua']); // a.lua was just closed
+    cacheOutgoingState(cache, 'scripts/a.lua', state, (p) => stillOpen.has(p));
+    expect(cache.has('scripts/a.lua')).toBe(false);
+    expect(cache.size).toBe(0);
+  });
+
+  it('is a no-op for a null outgoing path (first mount, nothing shown yet)', () => {
+    const cache = new Map<string, EditorState>();
+    cacheOutgoingState(cache, null, EditorState.create({ doc: '' }), () => true);
+    expect(cache.size).toBe(0);
+  });
+
+  it('overwrites a stale cached state for a path that remains open', () => {
+    const cache = new Map<string, EditorState>();
+    const older = EditorState.create({ doc: 'v1' });
+    const newer = EditorState.create({ doc: 'v2' });
+    cache.set('scripts/a.lua', older);
+    cacheOutgoingState(cache, 'scripts/a.lua', newer, () => true);
+    expect(cache.get('scripts/a.lua')).toBe(newer);
   });
 });
