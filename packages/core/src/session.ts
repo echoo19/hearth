@@ -63,6 +63,19 @@ export function extractJournalDetail(name: string, data: unknown): Record<string
     }
     return { paths };
   }
+  if (name === 'replaceInScripts') {
+    if (typeof d.applied !== 'boolean' || !Array.isArray(d.changes)) return undefined;
+    // A dryRun writes nothing, so the journal records it as a no-op even
+    // when `changes` lists what WOULD have been edited.
+    if (!d.applied) return { paths: [] };
+    const paths: string[] = [];
+    for (const c of d.changes as unknown[]) {
+      if (c === null || typeof c !== 'object') continue;
+      const { path, count } = c as Record<string, unknown>;
+      if (typeof path === 'string' && typeof count === 'number' && count > 0) paths.push(path);
+    }
+    return { paths };
+  }
   return undefined;
 }
 

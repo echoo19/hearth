@@ -62,6 +62,8 @@ const ALL_DEFINITIONS: CommandDefinition[] = [
   scriptCommands.formatScript,
   scriptCommands.attachScript,
   scriptCommands.checkScript,
+  scriptCommands.searchScripts,
+  scriptCommands.replaceInScripts,
   // assets
   assetCommands.importAsset,
   assetCommands.createSpriteAsset,

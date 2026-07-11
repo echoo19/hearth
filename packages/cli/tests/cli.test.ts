@@ -301,6 +301,81 @@ describe('hearth check-script', () => {
   });
 });
 
+describe('hearth script search / replace', () => {
+  it('search --json returns 1-based line/column matches', async () => {
+    await runCli(['create', 'script', 'srch-a', '--json'], projectDir);
+    await fsp.writeFile(
+      path.join(projectDir, 'scripts', 'srch-a.lua'),
+      'local script = {}\nfunction script.onStart(ctx)\n  ctx.log("hello marker")\nend\nreturn script\n',
+    );
+
+    const result = await runCli(['script', 'search', 'marker', '--json'], projectDir);
+    expect(result.code).toBe(0);
+    const envelope = parseJson(result.stdout);
+    expect(envelope.success).toBe(true);
+    expect(envelope.data.total).toBe(1);
+    expect(envelope.data.matches[0]).toMatchObject({ path: 'scripts/srch-a.lua', line: 3 });
+
+    await fsp.rm(path.join(projectDir, 'scripts', 'srch-a.lua'));
+  });
+
+  it('search plain-text output prints "path:line:col  preview" per match', async () => {
+    await runCli(['create', 'script', 'srch-b', '--json'], projectDir);
+    await fsp.writeFile(path.join(projectDir, 'scripts', 'srch-b.lua'), 'local plaintext_marker = 1\n');
+
+    const result = await runCli(['script', 'search', 'plaintext_marker'], projectDir);
+    expect(result.code).toBe(0);
+    expect(result.stdout).toMatch(/^scripts\/srch-b\.lua:1:7 {2}local plaintext_marker = 1$/m);
+
+    await fsp.rm(path.join(projectDir, 'scripts', 'srch-b.lua'));
+  });
+
+  it('search exits 0 even with zero matches — it is a search, not a test', async () => {
+    const result = await runCli(['script', 'search', 'no-such-token-xyz'], projectDir);
+    expect(result.code).toBe(0);
+    expect(result.stdout).not.toMatch(/no-such-token-xyz/);
+  });
+
+  it('replace --dry-run leaves disk untouched and reports per-file counts', async () => {
+    await runCli(['create', 'script', 'rep-a', '--json'], projectDir);
+    const scriptFile = path.join(projectDir, 'scripts', 'rep-a.lua');
+    await fsp.writeFile(scriptFile, 'local value = "before"\n');
+    const before = await fsp.readFile(scriptFile, 'utf8');
+
+    const result = await runCli(['script', 'replace', 'before', 'after', '--dry-run'], projectDir);
+    expect(result.code).toBe(0);
+    expect(result.stdout).toContain('dry run');
+    expect(result.stdout).toContain('scripts/rep-a.lua: 1 replacement');
+
+    expect(await fsp.readFile(scriptFile, 'utf8')).toBe(before);
+    await fsp.rm(scriptFile);
+  });
+
+  it('replace (real run) --json edits the file and applied is true', async () => {
+    await runCli(['create', 'script', 'rep-b', '--json'], projectDir);
+    const scriptFile = path.join(projectDir, 'scripts', 'rep-b.lua');
+    await fsp.writeFile(scriptFile, 'local value = "before"\n');
+
+    const result = await runCli(['script', 'replace', 'before', 'after', '--json'], projectDir);
+    expect(result.code).toBe(0);
+    const envelope = parseJson(result.stdout);
+    expect(envelope.success).toBe(true);
+    expect(envelope.data.applied).toBe(true);
+    expect(envelope.data.changes).toEqual([{ path: 'scripts/rep-b.lua', count: 1, preview: expect.any(String) }]);
+
+    expect(await fsp.readFile(scriptFile, 'utf8')).toBe('local value = "after"\n');
+    await fsp.rm(scriptFile);
+  });
+
+  it('replace with an invalid --regex query fails with INVALID_INPUT', async () => {
+    const result = await runCli(['script', 'replace', '(', 'x', '--regex', '--json'], projectDir);
+    expect(result.code).toBe(1);
+    const envelope = parseJson(result.stdout);
+    expect(envelope.success).toBe(false);
+    expect(envelope.errors[0].code).toBe('INVALID_INPUT');
+  });
+});
+
 describe('hearth snapshot / diff', () => {
   it('reports changes made after a snapshot', async () => {
     const snap = await runCli(['snapshot', '--json'], projectDir);

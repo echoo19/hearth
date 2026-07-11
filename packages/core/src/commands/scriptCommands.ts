@@ -376,6 +376,197 @@ export const formatScript = defineCommand({
   },
 });
 
+/** Search results are capped at this many entries; `capped: true` signals more exist. */
+const SEARCH_CAP = 500;
+
+/** Match previews are trimmed to at most this many characters, centered on the match. */
+const PREVIEW_MAX_LEN = 120;
+
+/** Escape regex metacharacters so a plain-text query matches literally, not as a pattern. */
+export function escapeRegExp(str: string): string {
+  return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+/**
+ * Convert a simple glob to a RegExp anchored to the whole path: `*` matches
+ * any run of non-slash characters, `**` matches any run including slashes,
+ * `?` matches exactly one character. Everything else is matched literally.
+ */
+function globToRegExp(glob: string): RegExp {
+  let pattern = '^';
+  for (let i = 0; i < glob.length; i++) {
+    const c = glob[i];
+    if (c === '*') {
+      if (glob[i + 1] === '*') {
+        pattern += '.*';
+        i++;
+      } else {
+        pattern += '[^/]*';
+      }
+    } else if (c === '?') {
+      pattern += '[^/]';
+    } else if ('.+^${}()|[]\\'.includes(c)) {
+      pattern += '\\' + c;
+    } else {
+      pattern += c;
+    }
+  }
+  pattern += '$';
+  return new RegExp(pattern);
+}
+
+/**
+ * Build the shared search/replace regex: non-regex queries are escaped so
+ * they match literally; a `regex: true` query is compiled as-is. Always
+ * global (so callers can iterate every match on a line) plus case-
+ * insensitive unless `caseSensitive`. An invalid pattern surfaces as
+ * INVALID_INPUT carrying the engine's own SyntaxError message verbatim (no
+ * stack) rather than throwing an unhandled SyntaxError.
+ */
+function buildQueryRegex(query: string, regex: boolean | undefined, caseSensitive: boolean | undefined): RegExp {
+  const pattern = regex ? query : escapeRegExp(query);
+  const flags = 'g' + (caseSensitive ? '' : 'i');
+  try {
+    return new RegExp(pattern, flags);
+  } catch (err) {
+    throw new ProjectError((err as Error).message, 'INVALID_INPUT');
+  }
+}
+
+/** Trim a matched line to a window of at most PREVIEW_MAX_LEN chars, centered on the match. */
+function buildPreview(line: string, matchStart: number, matchLen: number): string {
+  if (line.length <= PREVIEW_MAX_LEN) return line.trim();
+  const center = matchStart + matchLen / 2;
+  let start = Math.round(center - PREVIEW_MAX_LEN / 2);
+  start = Math.max(0, Math.min(start, line.length - PREVIEW_MAX_LEN));
+  return line.slice(start, start + PREVIEW_MAX_LEN).trim();
+}
+
+/** Every script path, optionally narrowed to those matching a glob (e.g. "scripts/enemies/*"). */
+async function scriptsToScan(ctx: CommandContext, pathGlob: string | undefined): Promise<string[]> {
+  const all = await ctx.store.listScripts();
+  if (!pathGlob) return all;
+  const re = globToRegExp(pathGlob);
+  return all.filter((path) => re.test(path));
+}
+
+export const searchScripts = defineCommand({
+  name: 'searchScripts',
+  description:
+    'Search script source across scripts/ for a plain-text or regex query, returning 1-based line/column plus ' +
+    'a preview (≤120 chars, centered on the match) per hit. Matching is line-based — patterns never span ' +
+    'multiple lines. Case-insensitive by default; set caseSensitive:true to narrow. Narrow the file set with ' +
+    'pathGlob (e.g. "scripts/enemies/*"). Capped at 500 matches; capped:true means more exist beyond what was ' +
+    'returned — narrow with pathGlob or a more specific query.',
+  permission: 'read-only',
+  mutates: false,
+  paramsSchema: z.object({
+    query: z.string().min(1),
+    regex: z.boolean().optional(),
+    caseSensitive: z.boolean().optional(),
+    pathGlob: z.string().optional(),
+  }),
+  async run(ctx, params) {
+    const re = buildQueryRegex(params.query, params.regex, params.caseSensitive);
+    const paths = await scriptsToScan(ctx, params.pathGlob);
+
+    const matches: Array<{ path: string; line: number; column: number; preview: string }> = [];
+    let total = 0;
+    for (const path of paths) {
+      const source = await ctx.store.readScript(path);
+      const lines = source.split('\n');
+      for (let i = 0; i < lines.length; i++) {
+        const line = lines[i];
+        re.lastIndex = 0;
+        let m: RegExpExecArray | null;
+        while ((m = re.exec(line)) !== null) {
+          total++;
+          if (matches.length < SEARCH_CAP) {
+            matches.push({
+              path,
+              line: i + 1,
+              column: m.index + 1,
+              preview: buildPreview(line, m.index, m[0].length),
+            });
+          }
+          if (m[0].length === 0) re.lastIndex++; // avoid an infinite loop on a zero-width match
+        }
+      }
+    }
+
+    const capped = total > SEARCH_CAP;
+    if (capped) {
+      ctx.suggest(`narrow with pathGlob (e.g. "scripts/enemies/*") — ${total} matches found, only the first ${SEARCH_CAP} are returned`);
+    }
+    return { matches, total, capped };
+  },
+});
+
+export const replaceInScripts = defineCommand({
+  name: 'replaceInScripts',
+  description:
+    'Find-and-replace across script files: plain-text or regex query, with $1-style capture-group references ' +
+    'in the replacement when regex:true. Matching is line-based — patterns never span multiple lines. Case-' +
+    'insensitive by default; set caseSensitive:true to narrow. Narrow the file set with pathGlob. Surgical: the ' +
+    'result is written verbatim, NOT re-formatted — call formatScript afterward for cleanup. Pass dryRun:true ' +
+    'first to preview per-file counts with nothing written (recommended agent workflow: dryRun, inspect, then a ' +
+    'real call).',
+  permission: 'code-edit',
+  mutates: true,
+  paramsSchema: z.object({
+    query: z.string().min(1),
+    replacement: z.string(),
+    regex: z.boolean().optional(),
+    caseSensitive: z.boolean().optional(),
+    pathGlob: z.string().optional(),
+    dryRun: z.boolean().optional(),
+  }),
+  async run(ctx, params) {
+    const re = buildQueryRegex(params.query, params.regex, params.caseSensitive);
+    const paths = await scriptsToScan(ctx, params.pathGlob);
+    const applied = params.dryRun !== true;
+
+    const changes: Array<{ path: string; count: number; preview?: string }> = [];
+    for (const path of paths) {
+      const source = await ctx.store.readScript(path);
+      const lines = source.split('\n');
+      let count = 0;
+      let preview: string | undefined;
+
+      const nextLines = lines.map((line) => {
+        re.lastIndex = 0;
+        const lineMatches = [...line.matchAll(re)];
+        if (lineMatches.length === 0) return line;
+        count += lineMatches.length;
+        const replaced = line.replace(re, params.replacement);
+        if (preview === undefined) {
+          const first = lineMatches[0];
+          // Best-effort centering: the replacement can change the line's
+          // length, so this centers the preview on the ORIGINAL match
+          // position rather than tracking the exact post-replace offset.
+          preview = buildPreview(replaced, first.index ?? 0, first[0].length);
+        }
+        return replaced;
+      });
+
+      if (count === 0) continue;
+      changes.push({ path, count, preview });
+
+      if (applied) {
+        const absPath = joinPath(ctx.store.root, path);
+        await ctx.fs.writeFile(absPath, nextLines.join('\n'));
+        ctx.changed({ kind: 'script', path, action: 'modified' });
+      }
+    }
+
+    const total = changes.reduce((sum, c) => sum + c.count, 0);
+    if (applied && changes.length > 0) {
+      ctx.suggest('formatScript');
+    }
+    return { changes, total, applied };
+  },
+});
+
 export const attachScript = defineCommand({
   name: 'attachScript',
   description:

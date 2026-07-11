@@ -485,6 +485,41 @@ export const TOOL_SPECS: ToolSpec[] = [
       params: z.record(z.string(), z.unknown()).optional(),
     },
   },
+  {
+    name: 'search_scripts',
+    command: 'searchScripts',
+    description:
+      'Search script source across scripts/ for a plain-text or regex query, returning 1-based line/column plus ' +
+      'a preview (≤120 chars, centered on the match) per hit. Matching is line-based — patterns never span ' +
+      'multiple lines. Case-insensitive by default; set caseSensitive:true to narrow. Narrow the file set with ' +
+      'pathGlob (e.g. "scripts/enemies/*"). Capped at 500 matches. (requires read-only)',
+    permission: 'read-only',
+    inputShape: {
+      query: z.string().min(1),
+      regex: z.boolean().optional(),
+      caseSensitive: z.boolean().optional(),
+      pathGlob: z.string().optional(),
+    },
+  },
+  {
+    name: 'replace_in_scripts',
+    command: 'replaceInScripts',
+    description:
+      'Find-and-replace across script files: plain-text or regex query, with $1-style capture-group references ' +
+      'in the replacement when regex:true. Matching is line-based. Surgical: results are written verbatim, NOT ' +
+      're-formatted — call format_script afterward for cleanup. RECOMMENDED WORKFLOW: call with dryRun:true ' +
+      'first to preview per-file counts with nothing written, inspect the result, then call again without ' +
+      'dryRun to apply. (requires code-edit)',
+    permission: 'code-edit',
+    inputShape: {
+      query: z.string().min(1),
+      replacement: z.string(),
+      regex: z.boolean().optional(),
+      caseSensitive: z.boolean().optional(),
+      pathGlob: z.string().optional(),
+      dryRun: z.boolean().optional(),
+    },
+  },
 
   // ---- assets ---------------------------------------------------------------
   {

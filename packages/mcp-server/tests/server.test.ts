@@ -240,6 +240,73 @@ describe('hearth-mcp server', () => {
     expect(toolJson(result).errors[0].code).toBe('INVALID_INPUT');
   });
 
+  it('search_scripts is registered and finds matches with 1-based line/column', async () => {
+    ctx = await connectClient();
+    const { tools } = await ctx.client.listTools();
+    const tool = tools.find((t) => t.name === 'search_scripts');
+    expect(tool).toBeDefined();
+    const props = tool!.inputSchema.properties as Record<string, unknown>;
+    expect(Object.keys(props).sort()).toEqual(['caseSensitive', 'pathGlob', 'query', 'regex']);
+
+    await ctx.client.callTool({
+      name: 'create_script',
+      arguments: { name: 'mover', source: 'ctx.log("find me here")\n' },
+    });
+
+    const result = await ctx.client.callTool({ name: 'search_scripts', arguments: { query: 'find me' } });
+    expect(result.isError).toBeFalsy();
+    const envelope = toolJson(result);
+    expect(envelope.success).toBe(true);
+    expect(envelope.command).toBe('searchScripts');
+    expect(envelope.data.total).toBe(1);
+    expect(envelope.data.matches[0]).toMatchObject({ path: 'scripts/mover.lua', line: 1 });
+  });
+
+  it('search_scripts with an invalid regex fails with INVALID_INPUT', async () => {
+    ctx = await connectClient();
+    const result = await ctx.client.callTool({ name: 'search_scripts', arguments: { query: '[', regex: true } });
+    expect(result.isError).toBe(true);
+    expect(toolJson(result).errors[0].code).toBe('INVALID_INPUT');
+  });
+
+  it('replace_in_scripts is registered; dryRun:true previews without writing, a real call applies', async () => {
+    ctx = await connectClient();
+    const { tools } = await ctx.client.listTools();
+    const tool = tools.find((t) => t.name === 'replace_in_scripts');
+    expect(tool).toBeDefined();
+    const props = tool!.inputSchema.properties as Record<string, unknown>;
+    expect(Object.keys(props).sort()).toEqual(['caseSensitive', 'dryRun', 'pathGlob', 'query', 'regex', 'replacement']);
+
+    await ctx.client.callTool({
+      name: 'create_script',
+      arguments: { name: 'mover', source: 'local status = "before"\n' },
+    });
+
+    const dry = await ctx.client.callTool({
+      name: 'replace_in_scripts',
+      arguments: { query: 'before', replacement: 'after', dryRun: true },
+    });
+    expect(dry.isError).toBeFalsy();
+    const dryEnvelope = toolJson(dry);
+    expect(dryEnvelope.data.applied).toBe(false);
+    expect(dryEnvelope.data.changes).toEqual([{ path: 'scripts/mover.lua', count: 1, preview: expect.any(String) }]);
+
+    const unchanged = await ctx.client.callTool({ name: 'read_script', arguments: { path: 'scripts/mover.lua' } });
+    expect(toolJson(unchanged).data.source).toBe('local status = "before"\n');
+
+    const real = await ctx.client.callTool({
+      name: 'replace_in_scripts',
+      arguments: { query: 'before', replacement: 'after' },
+    });
+    expect(real.isError).toBeFalsy();
+    const realEnvelope = toolJson(real);
+    expect(realEnvelope.data.applied).toBe(true);
+    expect(realEnvelope.command).toBe('replaceInScripts');
+
+    const changed = await ctx.client.callTool({ name: 'read_script', arguments: { path: 'scripts/mover.lua' } });
+    expect(toolJson(changed).data.source).toBe('local status = "after"\n');
+  });
+
   it('inspect_api returns the ctx reference', async () => {
     ctx = await connectClient();
     const result = await ctx.client.callTool({ name: 'inspect_api', arguments: {} });

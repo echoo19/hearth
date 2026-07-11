@@ -563,7 +563,7 @@ export function buildProgram(): Command {
   addGlobalOptions(editScriptOpts(program.command('edit-script <path>'))).action(editScriptAction);
   addGlobalOptions(checkScriptOpts(program.command('check-script <path>'))).action(checkScriptAction);
 
-  const script = program.command('script').description('edit, check, or reformat script files');
+  const script = program.command('script').description('edit, check, reformat, search, or replace in script files');
   addGlobalOptions(script);
   addGlobalOptions(editScriptOpts(script.command('edit <path>'))).action(editScriptAction);
   addGlobalOptions(checkScriptOpts(script.command('check <path>'))).action(checkScriptAction);
@@ -575,6 +575,41 @@ export function buildProgram(): Command {
   ).action(async (scriptPath: string | undefined, opts: { all?: boolean }, cmd) => {
     await guarded(cmd, 'formatScript', () => runFormatScriptCommand(cmd, scriptPath, opts));
   });
+  addGlobalOptions(
+    script
+      .command('search <query>')
+      .description(
+        'search script source for a plain-text or regex query (line-based matching, no multiline patterns); ' +
+          'prints path:line:col  preview per match',
+      )
+      .option('--regex', 'treat <query> as a regular expression')
+      .option('--case', 'case-sensitive matching (default: case-insensitive)')
+      .option('--glob <glob>', 'restrict to scripts matching this glob, e.g. "scripts/enemies/*"'),
+  ).action(async (query: string, opts: { regex?: boolean; case?: boolean; glob?: string }, cmd) => {
+    await guarded(cmd, 'searchScripts', () => runSearchScriptsCommand(cmd, query, opts));
+  });
+  addGlobalOptions(
+    script
+      .command('replace <query> <replacement>')
+      .description(
+        'find-and-replace across script files (line-based matching; $1-style capture groups with --regex). ' +
+          'Results are written verbatim, not reformatted — run "script format --all" after. Use --dry-run to ' +
+          'preview counts before writing.',
+      )
+      .option('--regex', 'treat <query> as a regular expression')
+      .option('--case', 'case-sensitive matching (default: case-insensitive)')
+      .option('--glob <glob>', 'restrict to scripts matching this glob, e.g. "scripts/enemies/*"')
+      .option('--dry-run', 'preview per-file counts without writing anything'),
+  ).action(
+    async (
+      query: string,
+      replacement: string,
+      opts: { regex?: boolean; case?: boolean; glob?: string; dryRun?: boolean },
+      cmd,
+    ) => {
+      await guarded(cmd, 'replaceInScripts', () => runReplaceScriptsCommand(cmd, query, replacement, opts));
+    },
+  );
 
   // ---------------------------------------------------------------------
   // import
@@ -1210,6 +1245,82 @@ async function runFormatScriptCommand(
   } else {
     throw new CliError('INVALID_INPUT', 'script format needs a <path> or --all.');
   }
+}
+
+async function runSearchScriptsCommand(
+  cmd: Command,
+  query: string,
+  opts: { regex?: boolean; case?: boolean; glob?: string },
+): Promise<void> {
+  const g = globalOpts(cmd);
+  const session = await openSession(g);
+  const result = await session.execute<{
+    matches: Array<{ path: string; line: number; column: number; preview: string }>;
+    total: number;
+    capped: boolean;
+  }>('searchScripts', { query, regex: opts.regex, caseSensitive: opts.case, pathGlob: opts.glob });
+
+  if (g.json) {
+    process.exitCode = emit(result, g);
+    return;
+  }
+
+  if (!result.success) {
+    console.log('✗ searchScripts');
+    for (const e of result.errors) console.log(`  error [${e.code}]: ${e.message}`);
+    process.exitCode = 1;
+    return;
+  }
+  for (const m of result.data!.matches) {
+    console.log(`${m.path}:${m.line}:${m.column}  ${m.preview}`);
+  }
+  if (result.data!.capped) {
+    console.log(
+      `  (capped at ${result.data!.matches.length} of ${result.data!.total} matches — narrow with --glob)`,
+    );
+  }
+  // A search finding zero matches is not a failure — exit 0 regardless.
+  process.exitCode = 0;
+}
+
+async function runReplaceScriptsCommand(
+  cmd: Command,
+  query: string,
+  replacement: string,
+  opts: { regex?: boolean; case?: boolean; glob?: string; dryRun?: boolean },
+): Promise<void> {
+  const g = globalOpts(cmd);
+  const session = await openSession(g);
+  const result = await session.execute<{
+    changes: Array<{ path: string; count: number; preview?: string }>;
+    total: number;
+    applied: boolean;
+  }>('replaceInScripts', {
+    query,
+    replacement,
+    regex: opts.regex,
+    caseSensitive: opts.case,
+    pathGlob: opts.glob,
+    dryRun: opts.dryRun,
+  });
+
+  if (g.json) {
+    process.exitCode = emit(result, g);
+    return;
+  }
+
+  if (!result.success) {
+    console.log('✗ replaceInScripts');
+    for (const e of result.errors) console.log(`  error [${e.code}]: ${e.message}`);
+    process.exitCode = 1;
+    return;
+  }
+  console.log(result.data!.applied ? '✓ replaceInScripts' : '✓ replaceInScripts (dry run — nothing written)');
+  for (const c of result.data!.changes) {
+    console.log(`  ${c.path}: ${c.count} replacement${c.count === 1 ? '' : 's'}`);
+  }
+  console.log(`  total: ${result.data!.total}`);
+  process.exitCode = 0;
 }
 
 async function runCheckScriptCommand(
