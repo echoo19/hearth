@@ -25,7 +25,8 @@
           "zoom": 1,
           "isMain": true,
           "backgroundColor": "#170a06",
-          "ambientLight": 1
+          "ambientLight": 1,
+          "postEffects": []
         }
       }
     },

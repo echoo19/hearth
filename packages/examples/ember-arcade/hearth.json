@@ -1,0 +1,58 @@
+{
+  "formatVersion": 1,
+  "hearthVersion": "0.9.0",
+  "id": "prj_n1r1yy2v",
+  "name": "Ember Arcade",
+  "description": "Run the embers down before they fade. Touch a target to pop it, and flip CRT to see the stack move.",
+  "initialScene": "scn_szhty34v",
+  "scenes": [
+    {
+      "id": "scn_szhty34v",
+      "name": "Arcade",
+      "path": "scenes/arcade.scene.json"
+    }
+  ],
+  "inputMappings": {
+    "actions": {},
+    "gamepadButtons": {},
+    "gamepadAxes": {},
+    "axes": {
+      "moveX": {
+        "gamepadAxis": 0,
+        "negativeCodes": [
+          "ArrowLeft",
+          "KeyA"
+        ],
+        "positiveCodes": [
+          "ArrowRight",
+          "KeyD"
+        ]
+      },
+      "moveY": {
+        "gamepadAxis": 1,
+        "negativeCodes": [
+          "ArrowUp",
+          "KeyW"
+        ],
+        "positiveCodes": [
+          "ArrowDown",
+          "KeyS"
+        ]
+      }
+    },
+    "deadzone": 0.15
+  },
+  "buildSettings": {
+    "width": 800,
+    "height": 600,
+    "backgroundColor": "#1a1a2e",
+    "targetFps": 60,
+    "fixedTimestep": 60,
+    "title": "Ember Arcade",
+    "loading": {
+      "backgroundColor": "#170a1f",
+      "image": null,
+      "spinner": true
+    }
+  }
+}

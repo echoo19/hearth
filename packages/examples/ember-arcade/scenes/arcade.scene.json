@@ -1,10 +1,10 @@
 {
   "formatVersion": 1,
-  "id": "scn_zb28m64w",
-  "name": "Room",
+  "id": "scn_szhty34v",
+  "name": "Arcade",
   "entities": [
     {
-      "id": "ent_u25o1zif",
+      "id": "ent_h3amvuev",
       "name": "Main Camera",
       "parentId": null,
       "enabled": true,
@@ -24,25 +24,42 @@
         "Camera": {
           "zoom": 1,
           "isMain": true,
-          "backgroundColor": "#101418",
+          "backgroundColor": "#170a1f",
           "ambientLight": 1,
-          "postEffects": []
+          "postEffects": [
+            {
+              "type": "crt",
+              "curvature": 0.18,
+              "scanlineIntensity": 0.3,
+              "noise": 0.05
+            },
+            {
+              "type": "vignette",
+              "intensity": 0.45,
+              "color": "#000000"
+            },
+            {
+              "type": "bloom",
+              "strength": 1.1,
+              "threshold": 0.45
+            }
+          ]
         }
       }
     },
     {
-      "id": "ent_6n8sxpe1",
-      "name": "Room",
+      "id": "ent_jf9zvve8",
+      "name": "Backdrop",
       "parentId": null,
       "enabled": true,
       "tags": [
-        "level"
+        "background"
       ],
       "components": {
         "Transform": {
           "position": {
-            "x": 0,
-            "y": 28
+            "x": 400,
+            "y": 300
           },
           "rotation": 0,
           "scale": {
@@ -50,38 +67,23 @@
             "y": 1
           }
         },
-        "Tilemap": {
-          "tileSize": 32,
-          "tileAssets": {
-            "W": "ast_l9wrawb2",
-            "F": "ast_9gx5vvow"
-          },
-          "grid": [
-            "WWWWWWWWWWWWWWWWWWWWWWWWW",
-            "WFFFFFFFFFFFFFFFFFFFFFFFW",
-            "WFFFFFFFFFFFFFFFFFFFFFFFW",
-            "WFFFFFFFFFFFFFFFFFFFFFFFW",
-            "WFFFFFFFFFFFFFFFFFFFFFFFW",
-            "WFFFFFFFFFFFFFFFFFFFFFFFW",
-            "WFFFFFFFFFFFFFFFFFFFFFFFW",
-            "WFFFFFFFFFFFFFFFFFFFFFFFW",
-            "WFFFFFFFFFFFFFFFFFFFFFFF.",
-            "WFFFFFFFFFFFFFFFFFFFFFFFW",
-            "WFFFFFFFFFFFFFFFFFFFFFFFW",
-            "WFFFFFFFFFFFFFFFFFFFFFFFW",
-            "WFFFFFFFFFFFFFFFFFFFFFFFW",
-            "WFFFFFFFFFFFFFFFFFFFFFFFW",
-            "WFFFFFFFFFFFFFFFFFFFFFFFW",
-            "WFFFFFFFFFFFFFFFFFFFFFFFW",
-            "WWWWWWWWWWWWWWWWWWWWWWWWW"
-          ],
-          "solid": false,
-          "layer": -10
+        "SpriteRenderer": {
+          "assetId": null,
+          "frame": null,
+          "shape": "rectangle",
+          "color": "#241333",
+          "width": 800,
+          "height": 600,
+          "opacity": 1,
+          "flipX": false,
+          "flipY": false,
+          "layer": -20,
+          "visible": true
         }
       }
     },
     {
-      "id": "ent_w1ea22hl",
+      "id": "ent_lx0hio3s",
       "name": "Wall Top",
       "parentId": null,
       "enabled": true,
@@ -92,7 +94,7 @@
         "Transform": {
           "position": {
             "x": 400,
-            "y": 44
+            "y": 12
           },
           "rotation": 0,
           "scale": {
@@ -100,10 +102,23 @@
             "y": 1
           }
         },
+        "SpriteRenderer": {
+          "assetId": null,
+          "frame": null,
+          "shape": "rectangle",
+          "color": "#3a2150",
+          "width": 800,
+          "height": 24,
+          "opacity": 1,
+          "flipX": false,
+          "flipY": false,
+          "layer": 0,
+          "visible": true
+        },
         "Collider": {
           "shape": "box",
           "width": 800,
-          "height": 32,
+          "height": 24,
           "radius": 16,
           "points": [
             {
@@ -145,7 +160,7 @@
       }
     },
     {
-      "id": "ent_0bibl7lo",
+      "id": "ent_88cr5ibv",
       "name": "Wall Bottom",
       "parentId": null,
       "enabled": true,
@@ -156,7 +171,7 @@
         "Transform": {
           "position": {
             "x": 400,
-            "y": 556
+            "y": 588
           },
           "rotation": 0,
           "scale": {
@@ -164,10 +179,23 @@
             "y": 1
           }
         },
+        "SpriteRenderer": {
+          "assetId": null,
+          "frame": null,
+          "shape": "rectangle",
+          "color": "#3a2150",
+          "width": 800,
+          "height": 24,
+          "opacity": 1,
+          "flipX": false,
+          "flipY": false,
+          "layer": 0,
+          "visible": true
+        },
         "Collider": {
           "shape": "box",
           "width": 800,
-          "height": 32,
+          "height": 24,
           "radius": 16,
           "points": [
             {
@@ -209,7 +237,7 @@
       }
     },
     {
-      "id": "ent_yfx2xqdo",
+      "id": "ent_cvgb6xyb",
       "name": "Wall Left",
       "parentId": null,
       "enabled": true,
@@ -219,135 +247,7 @@
       "components": {
         "Transform": {
           "position": {
-            "x": 16,
-            "y": 300
-          },
-          "rotation": 0,
-          "scale": {
-            "x": 1,
-            "y": 1
-          }
-        },
-        "Collider": {
-          "shape": "box",
-          "width": 32,
-          "height": 544,
-          "radius": 16,
-          "points": [
-            {
-              "x": 0,
-              "y": -16
-            },
-            {
-              "x": 16,
-              "y": 16
-            },
-            {
-              "x": -16,
-              "y": 16
-            }
-          ],
-          "offset": {
-            "x": 0,
-            "y": 0
-          },
-          "isTrigger": false,
-          "layer": "default",
-          "collidesWith": [
-            "*"
-          ],
-          "oneWay": false
-        },
-        "PhysicsBody": {
-          "bodyType": "static",
-          "velocity": {
-            "x": 0,
-            "y": 0
-          },
-          "gravityScale": 1,
-          "drag": 0,
-          "mass": 1,
-          "restitution": 0,
-          "friction": 0
-        }
-      }
-    },
-    {
-      "id": "ent_6q69vhww",
-      "name": "Wall Right",
-      "parentId": null,
-      "enabled": true,
-      "tags": [
-        "wall"
-      ],
-      "components": {
-        "Transform": {
-          "position": {
-            "x": 784,
-            "y": 300
-          },
-          "rotation": 0,
-          "scale": {
-            "x": 1,
-            "y": 1
-          }
-        },
-        "Collider": {
-          "shape": "box",
-          "width": 32,
-          "height": 544,
-          "radius": 16,
-          "points": [
-            {
-              "x": 0,
-              "y": -16
-            },
-            {
-              "x": 16,
-              "y": 16
-            },
-            {
-              "x": -16,
-              "y": 16
-            }
-          ],
-          "offset": {
-            "x": 0,
-            "y": 0
-          },
-          "isTrigger": false,
-          "layer": "default",
-          "collidesWith": [
-            "*"
-          ],
-          "oneWay": false
-        },
-        "PhysicsBody": {
-          "bodyType": "static",
-          "velocity": {
-            "x": 0,
-            "y": 0
-          },
-          "gravityScale": 1,
-          "drag": 0,
-          "mass": 1,
-          "restitution": 0,
-          "friction": 0
-        }
-      }
-    },
-    {
-      "id": "ent_v6n6bqia",
-      "name": "Player",
-      "parentId": null,
-      "enabled": true,
-      "tags": [
-        "player"
-      ],
-      "components": {
-        "Transform": {
-          "position": {
-            "x": 200,
+            "x": 12,
             "y": 300
           },
           "rotation": 0,
@@ -357,7 +257,161 @@
           }
         },
         "SpriteRenderer": {
-          "assetId": "ast_qvphf7xb",
+          "assetId": null,
+          "frame": null,
+          "shape": "rectangle",
+          "color": "#3a2150",
+          "width": 24,
+          "height": 600,
+          "opacity": 1,
+          "flipX": false,
+          "flipY": false,
+          "layer": 0,
+          "visible": true
+        },
+        "Collider": {
+          "shape": "box",
+          "width": 24,
+          "height": 600,
+          "radius": 16,
+          "points": [
+            {
+              "x": 0,
+              "y": -16
+            },
+            {
+              "x": 16,
+              "y": 16
+            },
+            {
+              "x": -16,
+              "y": 16
+            }
+          ],
+          "offset": {
+            "x": 0,
+            "y": 0
+          },
+          "isTrigger": false,
+          "layer": "default",
+          "collidesWith": [
+            "*"
+          ],
+          "oneWay": false
+        },
+        "PhysicsBody": {
+          "bodyType": "static",
+          "velocity": {
+            "x": 0,
+            "y": 0
+          },
+          "gravityScale": 1,
+          "drag": 0,
+          "mass": 1,
+          "restitution": 0,
+          "friction": 0
+        }
+      }
+    },
+    {
+      "id": "ent_ygzm9iic",
+      "name": "Wall Right",
+      "parentId": null,
+      "enabled": true,
+      "tags": [
+        "wall"
+      ],
+      "components": {
+        "Transform": {
+          "position": {
+            "x": 788,
+            "y": 300
+          },
+          "rotation": 0,
+          "scale": {
+            "x": 1,
+            "y": 1
+          }
+        },
+        "SpriteRenderer": {
+          "assetId": null,
+          "frame": null,
+          "shape": "rectangle",
+          "color": "#3a2150",
+          "width": 24,
+          "height": 600,
+          "opacity": 1,
+          "flipX": false,
+          "flipY": false,
+          "layer": 0,
+          "visible": true
+        },
+        "Collider": {
+          "shape": "box",
+          "width": 24,
+          "height": 600,
+          "radius": 16,
+          "points": [
+            {
+              "x": 0,
+              "y": -16
+            },
+            {
+              "x": 16,
+              "y": 16
+            },
+            {
+              "x": -16,
+              "y": 16
+            }
+          ],
+          "offset": {
+            "x": 0,
+            "y": 0
+          },
+          "isTrigger": false,
+          "layer": "default",
+          "collidesWith": [
+            "*"
+          ],
+          "oneWay": false
+        },
+        "PhysicsBody": {
+          "bodyType": "static",
+          "velocity": {
+            "x": 0,
+            "y": 0
+          },
+          "gravityScale": 1,
+          "drag": 0,
+          "mass": 1,
+          "restitution": 0,
+          "friction": 0
+        }
+      }
+    },
+    {
+      "id": "ent_9okeb452",
+      "name": "Player",
+      "parentId": null,
+      "enabled": true,
+      "tags": [
+        "player"
+      ],
+      "components": {
+        "Transform": {
+          "position": {
+            "x": 120,
+            "y": 300
+          },
+          "rotation": 0,
+          "scale": {
+            "x": 1,
+            "y": 1
+          }
+        },
+        "SpriteRenderer": {
+          "assetId": "ast_ofcmd4m7",
           "frame": null,
           "shape": "rectangle",
           "color": "#ffffff",
@@ -412,26 +466,26 @@
           "friction": 0
         },
         "Script": {
-          "scriptPath": "scripts/top-down-move.js",
+          "scriptPath": "scripts/player-move.lua",
           "params": {
-            "speed": 180
+            "speed": 200
           }
         }
       }
     },
     {
-      "id": "ent_sq2l36pg",
-      "name": "Door",
+      "id": "ent_3fc8g0nf",
+      "name": "Target 1",
       "parentId": null,
       "enabled": true,
       "tags": [
-        "door"
+        "target"
       ],
       "components": {
         "Transform": {
           "position": {
-            "x": 768,
-            "y": 268
+            "x": 300,
+            "y": 300
           },
           "rotation": 0,
           "scale": {
@@ -440,12 +494,12 @@
           }
         },
         "SpriteRenderer": {
-          "assetId": null,
+          "assetId": "ast_9pnzseqd",
           "frame": null,
           "shape": "rectangle",
-          "color": "#c0392b",
+          "color": "#ffffff",
           "width": 32,
-          "height": 64,
+          "height": 32,
           "opacity": 1,
           "flipX": false,
           "flipY": false,
@@ -453,9 +507,9 @@
           "visible": true
         },
         "Collider": {
-          "shape": "box",
-          "width": 40,
-          "height": 70,
+          "shape": "circle",
+          "width": 32,
+          "height": 32,
           "radius": 16,
           "points": [
             {
@@ -482,25 +536,39 @@
           ],
           "oneWay": false
         },
+        "SpriteEffects": {
+          "outlineEnabled": false,
+          "outlineColor": "#ffffff",
+          "outlineWidth": 2,
+          "flashColor": "#ffffff",
+          "flashStrength": 0,
+          "flashDuration": 0.15,
+          "dissolveAmount": 0,
+          "dissolveSeed": 0
+        },
         "Script": {
-          "scriptPath": "scripts/door-trigger.js",
-          "params": {}
+          "scriptPath": "scripts/target-hit.lua",
+          "params": {
+            "flashColor": "#fff4d6",
+            "flashSeconds": 0.2,
+            "dissolveSeconds": 0.5
+          }
         }
       }
     },
     {
-      "id": "ent_ttn8xsrb",
-      "name": "Keeper",
+      "id": "ent_ojile8na",
+      "name": "Target 2",
       "parentId": null,
       "enabled": true,
       "tags": [
-        "npc"
+        "target"
       ],
       "components": {
         "Transform": {
           "position": {
-            "x": 560,
-            "y": 180
+            "x": 480,
+            "y": 300
           },
           "rotation": 0,
           "scale": {
@@ -509,12 +577,12 @@
           }
         },
         "SpriteRenderer": {
-          "assetId": "ast_vvff8jar",
+          "assetId": "ast_9pnzseqd",
           "frame": null,
           "shape": "rectangle",
           "color": "#ffffff",
-          "width": 30,
-          "height": 34,
+          "width": 32,
+          "height": 32,
           "opacity": 1,
           "flipX": false,
           "flipY": false,
@@ -522,9 +590,9 @@
           "visible": true
         },
         "Collider": {
-          "shape": "box",
-          "width": 30,
-          "height": 34,
+          "shape": "circle",
+          "width": 32,
+          "height": 32,
           "radius": 16,
           "points": [
             {
@@ -544,37 +612,147 @@
             "x": 0,
             "y": 0
           },
-          "isTrigger": false,
+          "isTrigger": true,
           "layer": "default",
           "collidesWith": [
             "*"
           ],
           "oneWay": false
         },
-        "PhysicsBody": {
-          "bodyType": "static",
-          "velocity": {
-            "x": 0,
-            "y": 0
-          },
-          "gravityScale": 1,
-          "drag": 0,
-          "mass": 1,
-          "restitution": 0,
-          "friction": 0
+        "SpriteEffects": {
+          "outlineEnabled": false,
+          "outlineColor": "#ffffff",
+          "outlineWidth": 2,
+          "flashColor": "#ffffff",
+          "flashStrength": 0,
+          "flashDuration": 0.15,
+          "dissolveAmount": 0,
+          "dissolveSeed": 0
         },
         "Script": {
-          "scriptPath": "scripts/npc-dialogue.js",
+          "scriptPath": "scripts/target-hit.lua",
           "params": {
-            "line": "The door on the east wall leads out. It opens at a touch.",
-            "radius": 70
+            "flashColor": "#fff4d6",
+            "flashSeconds": 0.2,
+            "dissolveSeconds": 0.5
           }
         }
       }
     },
     {
-      "id": "ent_ohtbumui",
-      "name": "DialogueText",
+      "id": "ent_i2dr9pno",
+      "name": "Target 3",
+      "parentId": null,
+      "enabled": true,
+      "tags": [
+        "target"
+      ],
+      "components": {
+        "Transform": {
+          "position": {
+            "x": 650,
+            "y": 300
+          },
+          "rotation": 0,
+          "scale": {
+            "x": 1,
+            "y": 1
+          }
+        },
+        "SpriteRenderer": {
+          "assetId": "ast_9pnzseqd",
+          "frame": null,
+          "shape": "rectangle",
+          "color": "#ffffff",
+          "width": 32,
+          "height": 32,
+          "opacity": 1,
+          "flipX": false,
+          "flipY": false,
+          "layer": 0,
+          "visible": true
+        },
+        "Collider": {
+          "shape": "circle",
+          "width": 32,
+          "height": 32,
+          "radius": 16,
+          "points": [
+            {
+              "x": 0,
+              "y": -16
+            },
+            {
+              "x": 16,
+              "y": 16
+            },
+            {
+              "x": -16,
+              "y": 16
+            }
+          ],
+          "offset": {
+            "x": 0,
+            "y": 0
+          },
+          "isTrigger": true,
+          "layer": "default",
+          "collidesWith": [
+            "*"
+          ],
+          "oneWay": false
+        },
+        "SpriteEffects": {
+          "outlineEnabled": false,
+          "outlineColor": "#ffffff",
+          "outlineWidth": 2,
+          "flashColor": "#ffffff",
+          "flashStrength": 0,
+          "flashDuration": 0.15,
+          "dissolveAmount": 0,
+          "dissolveSeed": 0
+        },
+        "Script": {
+          "scriptPath": "scripts/target-hit.lua",
+          "params": {
+            "flashColor": "#fff4d6",
+            "flashSeconds": 0.2,
+            "dissolveSeconds": 0.5
+          }
+        }
+      }
+    },
+    {
+      "id": "ent_axxy5uqv",
+      "name": "Director",
+      "parentId": null,
+      "enabled": true,
+      "tags": [
+        "system"
+      ],
+      "components": {
+        "Transform": {
+          "position": {
+            "x": 0,
+            "y": 0
+          },
+          "rotation": 0,
+          "scale": {
+            "x": 1,
+            "y": 1
+          }
+        },
+        "Script": {
+          "scriptPath": "scripts/score-director.lua",
+          "params": {
+            "total": 3
+          }
+        }
+      }
+    },
+    {
+      "id": "ent_fdzd3e8t",
+      "name": "Score HUD",
       "parentId": null,
       "enabled": true,
       "tags": [
@@ -583,8 +761,8 @@
       "components": {
         "Transform": {
           "position": {
-            "x": 60,
-            "y": 570
+            "x": 0,
+            "y": 0
           },
           "rotation": 0,
           "scale": {
@@ -592,14 +770,145 @@
             "y": 1
           }
         },
+        "UIElement": {
+          "anchor": "top-left",
+          "offset": {
+            "x": 24,
+            "y": 20
+          },
+          "interactive": false,
+          "focusable": false
+        },
         "Text": {
-          "content": "Find the keeper. Press E to talk.",
-          "fontSize": 16,
-          "color": "#ecf0f1",
+          "content": "Targets: 0/3",
+          "fontSize": 18,
+          "color": "#ffe8d1",
           "align": "left",
           "fontFamily": "monospace",
           "layer": 10,
           "visible": true
+        }
+      }
+    },
+    {
+      "id": "ent_j4vqun33",
+      "name": "Hint",
+      "parentId": null,
+      "enabled": true,
+      "tags": [
+        "ui"
+      ],
+      "components": {
+        "Transform": {
+          "position": {
+            "x": 0,
+            "y": 0
+          },
+          "rotation": 0,
+          "scale": {
+            "x": 1,
+            "y": 1
+          }
+        },
+        "UIElement": {
+          "anchor": "bottom",
+          "offset": {
+            "x": 0,
+            "y": -24
+          },
+          "interactive": false,
+          "focusable": false
+        },
+        "Text": {
+          "content": "Stick/WASD runs — touch a target to pop it",
+          "fontSize": 13,
+          "color": "#c9a8db",
+          "align": "center",
+          "fontFamily": "monospace",
+          "layer": 10,
+          "visible": true
+        }
+      }
+    },
+    {
+      "id": "ent_s501kbvm",
+      "name": "CRT Label",
+      "parentId": null,
+      "enabled": true,
+      "tags": [
+        "ui"
+      ],
+      "components": {
+        "Transform": {
+          "position": {
+            "x": 0,
+            "y": 0
+          },
+          "rotation": 0,
+          "scale": {
+            "x": 1,
+            "y": 1
+          }
+        },
+        "UIElement": {
+          "anchor": "top-right",
+          "offset": {
+            "x": -64,
+            "y": 22
+          },
+          "interactive": false,
+          "focusable": false
+        },
+        "Text": {
+          "content": "CRT",
+          "fontSize": 14,
+          "color": "#c9a8db",
+          "align": "right",
+          "fontFamily": "monospace",
+          "layer": 10,
+          "visible": true
+        }
+      }
+    },
+    {
+      "id": "ent_v3e271n6",
+      "name": "CRT Toggle",
+      "parentId": null,
+      "enabled": true,
+      "tags": [
+        "ui"
+      ],
+      "components": {
+        "Transform": {
+          "position": {
+            "x": 0,
+            "y": 0
+          },
+          "rotation": 0,
+          "scale": {
+            "x": 1,
+            "y": 1
+          }
+        },
+        "UIElement": {
+          "anchor": "top-right",
+          "offset": {
+            "x": -20,
+            "y": 20
+          },
+          "interactive": true,
+          "focusable": true
+        },
+        "UIToggle": {
+          "value": true,
+          "size": 22,
+          "color": "#3a3a3a",
+          "checkColor": "#f76b15",
+          "layer": 0
+        },
+        "Script": {
+          "scriptPath": "scripts/crt-toggle.lua",
+          "params": {}
         }
       }
     }

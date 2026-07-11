@@ -3685,6 +3685,411 @@ return script
 }
 
 // ---------------------------------------------------------------------------
+// Example 10: Ember Arcade (the Wave G effects-system proof)
+// ---------------------------------------------------------------------------
+// A compact arcade scene (drift-cellar tier, not bounce-patrol tier) built
+// to exercise Task 5/6's screen-space effects end-to-end: Camera.postEffects
+// (crt + vignette + bloom, stacked on the main camera at scene start),
+// ctx.effects.flash (per-sprite SpriteEffects hit-flash), and a scripted
+// dissolve (SpriteEffects.dissolveAmount driven 0->1 by a target's own
+// script, then ctx.scene.destroy). Every script is Lua.
+//
+// The player runs around and touches Targets (trigger colliders — contact
+// doesn't block movement, so a straight run can clip through several in
+// sequence); each hit target flashes once, dissolves out over half a
+// second, and reports itself to the Director via a "target-hit" event. A
+// standalone "CRT" UIToggle proves scripts can drive the postEffects stack
+// an author set up, not just render it: its change handler reads
+// ctx.getComponent('Camera') on the Main Camera and rewrites postEffects —
+// see crt-toggle.lua below for why every field of the crt entry it pushes
+// back must be spelled out explicitly (a runtime component write, unlike
+// the setComponentProperty command, skips zod's schema defaulting).
+//
+// Every baked playtest expectation below is read back from a probe run of
+// this exact project (GameSession.stepAsync — the same engine path
+// runPlaytest uses), never hand-computed — matching every other example's
+// approach, and especially important here since flash decay and dissolve
+// timing are real fixed-frame arithmetic, not round numbers.
+async function generateEmberArcade() {
+  const session = await freshProject('ember-arcade', {
+    name: 'Ember Arcade',
+    description: 'Run the embers down before they fade. Touch a target to pop it, and flip CRT to see the stack move.',
+  });
+
+  const scene = (await run(session, 'createScene', { name: 'Arcade', withCamera: false })).sceneId;
+
+  await run(session, 'updateSettings', {
+    initialScene: 'Arcade',
+    buildSettings: {
+      title: 'Ember Arcade',
+      loading: { backgroundColor: '#170a1f', spinner: true },
+    },
+    inputMappings: {
+      actions: { left: [], right: [], up: [], down: [], jump: [], action: [] },
+      axes: {
+        moveX: { gamepadAxis: 0, negativeCodes: ['ArrowLeft', 'KeyA'], positiveCodes: ['ArrowRight', 'KeyD'] },
+        moveY: { gamepadAxis: 1, negativeCodes: ['ArrowUp', 'KeyW'], positiveCodes: ['ArrowDown', 'KeyS'] },
+      },
+    },
+  });
+
+  // --- assets ---
+  const playerAsset = (await run(session, 'createSpriteAsset', {
+    name: 'ember-runner', shape: 'character', color: '#ffe08a', width: 30, height: 34,
+  })).asset;
+  const targetAsset = (await run(session, 'createSpriteAsset', {
+    name: 'ember-target', shape: 'circle', color: '#ff5d3a', width: 32, height: 32,
+  })).asset;
+  await run(session, 'createSound', { name: 'hit-sound', preset: 'laser' });
+  await run(session, 'createSound', { name: 'pop-sound', preset: 'explosion' });
+  await run(session, 'createSound', { name: 'toggle-sound', preset: 'blip' });
+
+  // --- scripts (all Lua) ---
+  await run(session, 'createScript', {
+    name: 'player-move',
+    language: 'lua',
+    source: `-- Player: direct velocity-follows-axis movement — snappy arcade
+-- controls, no drift/easing. Targets react to touching the player (see
+-- target-hit.lua); this script only handles movement.
+local script = {}
+
+function script.onUpdate(ctx, dt)
+  local body = ctx.getComponent("PhysicsBody")
+  local speed = ctx.params.speed or 200
+  body.velocity.x = ctx.input.axis("moveX") * speed
+  body.velocity.y = ctx.input.axis("moveY") * speed
+end
+
+return script
+`,
+  });
+
+  await run(session, 'createScript', {
+    name: 'target-hit',
+    language: 'lua',
+    source: `-- Target: on first contact with the Player, flashes (ctx.effects.flash —
+-- SpriteEffects.flashStrength decays deterministically toward 0 over
+-- flashDuration seconds, no RNG involved) and dissolves out over
+-- dissolveSeconds by driving SpriteEffects.dissolveAmount from 0 to 1,
+-- then removes itself with ctx.scene.destroy. ctx.vars.hit guards against
+-- a lingering trigger overlap re-firing the sequence.
+local script = {}
+
+function script.onStart(ctx)
+  ctx.vars.hit = false
+  ctx.vars.dissolveElapsed = 0
+end
+
+function script.onCollision(ctx, other)
+  if ctx.vars.hit or other.name ~= "Player" then return end
+  ctx.vars.hit = true
+  ctx.effects.flash(ctx.params.flashColor or "#fff4d6", ctx.params.flashSeconds or 0.2)
+  ctx.audio.play("hit-sound", { volume = 0.6 })
+  ctx.events.emit("target-hit")
+end
+
+function script.onUpdate(ctx, dt)
+  if not ctx.vars.hit then return end
+  ctx.vars.dissolveElapsed = ctx.vars.dissolveElapsed + dt
+  local duration = ctx.params.dissolveSeconds or 0.5
+  local fx = ctx.getComponent("SpriteEffects")
+  fx.dissolveAmount = math.min(1, ctx.vars.dissolveElapsed / duration)
+  if ctx.vars.dissolveElapsed >= duration then
+    ctx.audio.play("pop-sound", { volume = 0.5 })
+    ctx.scene.destroy(ctx.entity.id)
+  end
+end
+
+return script
+`,
+  });
+
+  await run(session, 'createScript', {
+    name: 'score-director',
+    language: 'lua',
+    source: `-- Director: tallies "target-hit" events scene-wide and keeps the HUD
+-- current. Purely a counter — the targets themselves own their flash/
+-- dissolve/destroy sequence.
+local script = {}
+
+function script.onStart(ctx)
+  ctx.vars.count = 0
+end
+
+function script.onEvent(ctx, name)
+  if name ~= "target-hit" then return end
+  ctx.vars.count = ctx.vars.count + 1
+  local hud = ctx.scene.find("Score HUD")
+  if hud then
+    hud.getComponent("Text").content = string.format("Targets: %d/%d", ctx.vars.count, ctx.params.total or 3)
+  end
+end
+
+return script
+`,
+  });
+
+  await run(session, 'createScript', {
+    name: 'crt-toggle',
+    language: 'lua',
+    source: `-- CRT toggle: mutates the Main Camera's live Camera.postEffects stack
+-- directly through ctx.getComponent — proving a script can drive the
+-- post-effects stack an author set up, not just render it. A runtime
+-- component write skips schema defaulting (see docs/scripting.md's
+-- component-mutation contract), so every field of the crt entry this
+-- pushes must be spelled out explicitly — matching the values Ember
+-- Arcade's Main Camera was authored with.
+local script = {}
+
+local function setCrt(camera, enabled)
+  local kept = {}
+  for i = 1, #camera.postEffects do
+    local effect = camera.postEffects[i]
+    if effect.type ~= "crt" then
+      table.insert(kept, effect)
+    end
+  end
+  if enabled then
+    table.insert(kept, { type = "crt", curvature = 0.18, scanlineIntensity = 0.3, noise = 0.05 })
+  end
+  camera.postEffects = kept
+end
+
+function script.onUiEvent(ctx, event)
+  if event.type ~= "change" then return end
+  local mainCamera = ctx.scene.find("Main Camera")
+  if not mainCamera then return end
+  setCrt(mainCamera.getComponent("Camera"), event.value)
+  ctx.audio.play("toggle-sound", { volume = 0.5 })
+end
+
+return script
+`,
+  });
+
+  // --- entities ---
+  const CENTER_Y = 300;
+  await run(session, 'createEntity', {
+    scene, name: 'Main Camera', position: { x: 400, y: CENTER_Y },
+    components: {
+      Camera: {
+        backgroundColor: '#170a1f',
+        postEffects: [
+          { type: 'crt', curvature: 0.18, scanlineIntensity: 0.3, noise: 0.05 },
+          { type: 'vignette', intensity: 0.45, color: '#000000' },
+          { type: 'bloom', strength: 1.1, threshold: 0.45 },
+        ],
+      },
+    },
+  });
+  await run(session, 'createEntity', {
+    scene, name: 'Backdrop', tags: ['background'], position: { x: 400, y: CENTER_Y },
+    components: { SpriteRenderer: { shape: 'rectangle', color: '#241333', width: 800, height: 600, layer: -20 } },
+  });
+
+  const walls = [
+    { name: 'Wall Top', x: 400, y: 12, w: 800, h: 24 },
+    { name: 'Wall Bottom', x: 400, y: 588, w: 800, h: 24 },
+    { name: 'Wall Left', x: 12, y: 300, w: 24, h: 600 },
+    { name: 'Wall Right', x: 788, y: 300, w: 24, h: 600 },
+  ];
+  for (const w of walls) {
+    await run(session, 'createEntity', {
+      scene, name: w.name, tags: ['wall'], position: { x: w.x, y: w.y },
+      components: {
+        SpriteRenderer: { shape: 'rectangle', color: '#3a2150', width: w.w, height: w.h },
+        Collider: { shape: 'box', width: w.w, height: w.h },
+        PhysicsBody: { bodyType: 'static' },
+      },
+    });
+  }
+
+  await run(session, 'createEntity', {
+    scene, name: 'Player', tags: ['player'], position: { x: 120, y: CENTER_Y },
+    components: {
+      SpriteRenderer: { assetId: playerAsset.id, width: 30, height: 34 },
+      Collider: { shape: 'box', width: 26, height: 30 },
+      PhysicsBody: { bodyType: 'dynamic', gravityScale: 0 },
+    },
+  });
+  await run(session, 'attachScript', {
+    scene, entity: 'Player', script: 'scripts/player-move.lua', params: { speed: 200 },
+  });
+
+  // Targets: a straight row at the player's starting height, spaced so a
+  // steady rightward run clips through all three in sequence (they're
+  // trigger colliders — contact never blocks movement).
+  const targets = [
+    { name: 'Target 1', x: 300 },
+    { name: 'Target 2', x: 480 },
+    { name: 'Target 3', x: 650 },
+  ];
+  for (const t of targets) {
+    await run(session, 'createEntity', {
+      scene, name: t.name, tags: ['target'], position: { x: t.x, y: CENTER_Y },
+      components: {
+        SpriteRenderer: { assetId: targetAsset.id, width: 32, height: 32 },
+        Collider: { shape: 'circle', radius: 16, isTrigger: true },
+        SpriteEffects: {},
+      },
+    });
+    await run(session, 'attachScript', {
+      scene, entity: t.name, script: 'scripts/target-hit.lua',
+      params: { flashColor: '#fff4d6', flashSeconds: 0.2, dissolveSeconds: 0.5 },
+    });
+  }
+
+  await run(session, 'createEntity', {
+    scene, name: 'Director', tags: ['system'], position: { x: 0, y: 0 },
+    components: {},
+  });
+  await run(session, 'attachScript', {
+    scene, entity: 'Director', script: 'scripts/score-director.lua', params: { total: targets.length },
+  });
+
+  await run(session, 'createEntity', {
+    scene, name: 'Score HUD', tags: ['ui'],
+    components: {
+      UIElement: { anchor: 'top-left', offset: { x: 24, y: 20 } },
+      Text: { content: 'Targets: 0/3', fontSize: 18, color: '#ffe8d1' },
+    },
+  });
+  await run(session, 'createEntity', {
+    scene, name: 'Hint', tags: ['ui'],
+    components: {
+      UIElement: { anchor: 'bottom', offset: { x: 0, y: -24 } },
+      Text: { content: 'Stick/WASD runs — touch a target to pop it', fontSize: 13, color: '#c9a8db', align: 'center' },
+    },
+  });
+  await run(session, 'createEntity', {
+    scene, name: 'CRT Label', tags: ['ui'],
+    components: {
+      UIElement: { anchor: 'top-right', offset: { x: -64, y: 22 } },
+      Text: { content: 'CRT', fontSize: 14, color: '#c9a8db', align: 'right' },
+    },
+  });
+  await run(session, 'createEntity', {
+    scene, name: 'CRT Toggle', tags: ['ui'],
+    components: {
+      UIElement: { anchor: 'top-right', offset: { x: -20, y: 20 }, interactive: true, focusable: true },
+      UIToggle: { value: true, size: 22 },
+    },
+  });
+  await run(session, 'attachScript', { scene, entity: 'CRT Toggle', script: 'scripts/crt-toggle.lua' });
+
+  // --- probes + playtests ---
+  // Every baked expectation below is read back from a probe run of this
+  // exact project (GameSession.stepAsync — the same engine path
+  // runPlaytest uses), never hand-computed.
+
+  // Probe 1: run right the whole time and watch the first target's flash
+  // decay and dissolve to completion, recording the exact frame counts and
+  // values instead of assuming round numbers.
+  let probe = await GameSession.create(session.store, { scene, seed: 0 });
+  probe.runtime.input.setAxis('moveX', 1);
+  let frame = 0;
+  let hitFrame = null;
+  const HIT_SEARCH_CAP = 400;
+  while (frame < HIT_SEARCH_CAP && hitFrame === null) {
+    await probe.stepAsync();
+    frame++;
+    if ((probe.eventCounts.get('target-hit') ?? 0) >= 1) hitFrame = frame;
+  }
+  if (hitFrame === null) {
+    throw new Error(`ember-arcade: player never touched Target 1 within ${HIT_SEARCH_CAP} frames — check speed/spacing`);
+  }
+  const FLASH_SAMPLE_DELAY = 5;
+  for (let i = 0; i < FLASH_SAMPLE_DELAY; i++) {
+    await probe.stepAsync();
+    frame++;
+  }
+  const FLASH_SAMPLE_FRAME = frame;
+  const target1AtSample = probe.runtime.find('Target 1');
+  if (!target1AtSample) throw new Error('ember-arcade: Target 1 already gone at the flash-sample frame');
+  const expectedFlashStrength = target1AtSample.components.SpriteEffects.flashStrength;
+  if (!(expectedFlashStrength > 0 && expectedFlashStrength < 1)) {
+    throw new Error(`ember-arcade: flash-sample strength ${expectedFlashStrength} is not mid-decay — adjust FLASH_SAMPLE_DELAY`);
+  }
+  const DISSOLVE_SEARCH_CAP = 400;
+  while (frame < FLASH_SAMPLE_FRAME + DISSOLVE_SEARCH_CAP && probe.runtime.find('Target 1')) {
+    await probe.stepAsync();
+    frame++;
+  }
+  if (probe.runtime.find('Target 1')) {
+    throw new Error('ember-arcade: Target 1 never finished dissolving — check dissolveSeconds/DISSOLVE_SEARCH_CAP');
+  }
+  const DISSOLVE_DONE_FRAME = frame;
+  if (!probe.runtime.find('Target 2')) {
+    throw new Error('ember-arcade: Target 2 was unexpectedly destroyed too — spacing/timing overlap');
+  }
+  if ((probe.eventCounts.get('target-hit') ?? 0) !== 1) {
+    throw new Error('ember-arcade: expected exactly one target-hit by the time Target 1 finished dissolving');
+  }
+  probe.destroy();
+
+  // Probe 2: the CRT toggle's resolved screen position, for a `click` step.
+  probe = await GameSession.create(session.store, { scene, seed: 0 });
+  await probe.stepAsync();
+  const settings = session.store.project.buildSettings;
+  const uiPos = resolveUiPositions(probe.runtime.getEntities(), settings.width, settings.height);
+  const toggleEnt = probe.runtime.find('CRT Toggle');
+  const togglePos = uiPos.get(toggleEnt.id);
+  if (!togglePos) throw new Error('ember-arcade: CRT Toggle has no resolved UI position');
+  const toggleClick = { x: Math.round(togglePos.x), y: Math.round(togglePos.y) };
+  probe.destroy();
+
+  await run(session, 'createPlaytest', {
+    name: 'crt-toggle-drives-post-effects',
+    scene,
+    steps: [
+      { type: 'wait', frames: 1 },
+      { type: 'assertPostEffect', effect: 'crt', active: true },
+      { type: 'click', x: toggleClick.x, y: toggleClick.y },
+      { type: 'assertPostEffect', effect: 'crt', active: false },
+      { type: 'assertProperty', entity: 'CRT Toggle', property: 'UIToggle.value', equals: false },
+      { type: 'assertNoErrors' },
+    ],
+    maxFrames: 100,
+  });
+  await run(session, 'createPlaytest', {
+    name: 'target-hit-flash-and-dissolve',
+    scene,
+    steps: [
+      { type: 'setAxis', axis: 'moveX', value: 1, frames: FLASH_SAMPLE_FRAME },
+      { type: 'assertProperty', entity: 'Target 1', property: 'SpriteEffects.flashStrength', equals: expectedFlashStrength },
+      { type: 'setAxis', axis: 'moveX', value: 1, frames: DISSOLVE_DONE_FRAME - FLASH_SAMPLE_FRAME },
+      { type: 'assertEntityExists', entity: 'Target 1', exists: false },
+      { type: 'assertEntityExists', entity: 'Target 2', exists: true },
+      { type: 'assertEventCount', event: 'target-hit', equals: 1 },
+      { type: 'assertNoErrors' },
+    ],
+    maxFrames: 900,
+  });
+  await run(session, 'createPlaytest', {
+    name: 'smoke',
+    scene,
+    steps: [
+      { type: 'wait', frames: 30 },
+      { type: 'assertEntityExists', entity: 'Player', exists: true },
+      { type: 'assertEntityExists', entity: 'Target 1', exists: true },
+      { type: 'assertEntityExists', entity: 'Target 2', exists: true },
+      { type: 'assertEntityExists', entity: 'Target 3', exists: true },
+      { type: 'assertEntityExists', entity: 'CRT Toggle', exists: true },
+      { type: 'assertEntityExists', entity: 'Score HUD', exists: true },
+      { type: 'assertPostEffect', effect: 'crt', active: true },
+      { type: 'assertPostEffect', effect: 'vignette', active: true },
+      { type: 'assertPostEffect', effect: 'bloom', active: true },
+      { type: 'assertNoErrors' },
+    ],
+    maxFrames: 100,
+  });
+
+  const report = await run(session, 'validateProject', {});
+  if (report.errors.length > 0) throw new Error('ember-arcade validation failed: ' + JSON.stringify(report.errors));
+  console.log('✓ ember-arcade generated');
+}
+
+// ---------------------------------------------------------------------------
 await generatePlatformer();
 await generateTopDown();
 await generateVisualNovel();
@@ -3694,4 +4099,5 @@ await generateBouncePatrol();
 await generateSkyCourier();
 await generateDriftCellar();
 await generateEmberHorde();
+await generateEmberArcade();
 console.log('All example projects generated.');

@@ -25,7 +25,8 @@
           "zoom": 1,
           "isMain": true,
           "backgroundColor": "#16213e",
-          "ambientLight": 1
+          "ambientLight": 1,
+          "postEffects": []
         },
         "Script": {
           "scriptPath": "scripts/camera-follow.js",

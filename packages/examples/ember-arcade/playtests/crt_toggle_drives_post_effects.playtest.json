@@ -1,0 +1,38 @@
+{
+  "formatVersion": 1,
+  "id": "ptt_pcfvx5dr",
+  "name": "crt-toggle-drives-post-effects",
+  "scene": "scn_szhty34v",
+  "steps": [
+    {
+      "type": "wait",
+      "frames": 1
+    },
+    {
+      "type": "assertPostEffect",
+      "effect": "crt",
+      "active": true
+    },
+    {
+      "type": "click",
+      "x": 780,
+      "y": 20
+    },
+    {
+      "type": "assertPostEffect",
+      "effect": "crt",
+      "active": false
+    },
+    {
+      "type": "assertProperty",
+      "entity": "CRT Toggle",
+      "property": "UIToggle.value",
+      "equals": false
+    },
+    {
+      "type": "assertNoErrors"
+    }
+  ],
+  "maxFrames": 100,
+  "seed": 0
+}

@@ -1,4 +1,4 @@
-# Working on "Mini Platformer" (a Hearth project)
+# Working on "Ember Arcade" (a Hearth project)
 
 This directory is a **Hearth** game project. Hearth is an open-source,
 agent-native 2D game engine: the entire editor/runtime is exposed through a

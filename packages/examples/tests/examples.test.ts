@@ -17,6 +17,7 @@ const EXAMPLES = [
   'sky-courier',
   'drift-cellar',
   'ember-horde',
+  'ember-arcade',
 ];
 
 function loadStore(name: string) {
@@ -681,5 +682,68 @@ describe('ember-horde v0.7 showcase (Wave E spatial-hash horde scale)', () => {
     const store = await loadStore('ember-horde');
     const result = await runPlaytest(store, 'smoke');
     expect(result.passed).toBe(true);
+  });
+});
+
+describe('ember-arcade v0.10 showcase (Wave G post-effects system)', () => {
+  it('is scripted entirely in Lua', async () => {
+    const store = await loadStore('ember-arcade');
+    const scripts = await store.listScripts();
+    expect(scripts.length).toBeGreaterThan(0);
+    expect(scripts.every((p) => p.endsWith('.lua'))).toBe(true);
+  });
+
+  it('has the expected cast and playtests', async () => {
+    const store = await loadStore('ember-arcade');
+    const scene = store.getScene('Arcade')!;
+    const names = scene.entities.map((e) => e.name);
+    expect(names).toContain('Player');
+    expect(names).toContain('Target 1');
+    expect(names).toContain('Target 2');
+    expect(names).toContain('Target 3');
+    expect(names).toContain('Director');
+    expect(names).toContain('Score HUD');
+    expect(names).toContain('CRT Toggle');
+    expect(store.playtests.size).toBe(3);
+  });
+
+  it('the Main Camera starts with crt, vignette, and bloom stacked', async () => {
+    const store = await loadStore('ember-arcade');
+    const scene = store.getScene('Arcade')!;
+    const camera = scene.entities.find((e) => e.name === 'Main Camera')!;
+    const types = camera.components.Camera!.postEffects.map((e) => e.type);
+    expect(types).toEqual(['crt', 'vignette', 'bloom']);
+  });
+
+  it('every target is authored with a no-op SpriteEffects component and a trigger collider', async () => {
+    const store = await loadStore('ember-arcade');
+    const scene = store.getScene('Arcade')!;
+    for (const name of ['Target 1', 'Target 2', 'Target 3']) {
+      const target = scene.entities.find((e) => e.name === name)!;
+      expect(target.components.SpriteEffects!.dissolveAmount).toBe(0);
+      expect(target.components.SpriteEffects!.flashStrength).toBe(0);
+      expect(target.components.Collider!.isTrigger).toBe(true);
+    }
+  });
+
+  it('the CRT toggle flips Camera.postEffects (crt-toggle-drives-post-effects playtest)', async () => {
+    const store = await loadStore('ember-arcade');
+    const result = await runPlaytest(store, 'crt-toggle-drives-post-effects');
+    expect(result.passed).toBe(true);
+    expect(result.postEffects).toEqual(['vignette', 'bloom']);
+  });
+
+  it('touching a target flashes then dissolves it out (target-hit-flash-and-dissolve playtest)', async () => {
+    const store = await loadStore('ember-arcade');
+    const result = await runPlaytest(store, 'target-hit-flash-and-dissolve');
+    expect(result.passed).toBe(true);
+    expect(result.eventCounts['target-hit']).toBe(1);
+  });
+
+  it('the smoke playtest passes with the full post-effects stack active and no script errors', async () => {
+    const store = await loadStore('ember-arcade');
+    const result = await runPlaytest(store, 'smoke');
+    expect(result.passed).toBe(true);
+    expect(result.postEffects).toEqual(['crt', 'vignette', 'bloom']);
   });
 });

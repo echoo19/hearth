@@ -1,0 +1,46 @@
+{
+  "formatVersion": 1,
+  "id": "ptt_cbm5oid9",
+  "name": "target-hit-flash-and-dissolve",
+  "scene": "scn_szhty34v",
+  "steps": [
+    {
+      "type": "setAxis",
+      "axis": "moveX",
+      "value": 1,
+      "frames": 51
+    },
+    {
+      "type": "assertProperty",
+      "entity": "Target 1",
+      "property": "SpriteEffects.flashStrength",
+      "equals": 0.49999999999999983
+    },
+    {
+      "type": "setAxis",
+      "axis": "moveX",
+      "value": 1,
+      "frames": 26
+    },
+    {
+      "type": "assertEntityExists",
+      "entity": "Target 1",
+      "exists": false
+    },
+    {
+      "type": "assertEntityExists",
+      "entity": "Target 2",
+      "exists": true
+    },
+    {
+      "type": "assertEventCount",
+      "event": "target-hit",
+      "equals": 1
+    },
+    {
+      "type": "assertNoErrors"
+    }
+  ],
+  "maxFrames": 900,
+  "seed": 0
+}

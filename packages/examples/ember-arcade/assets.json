@@ -1,0 +1,64 @@
+{
+  "formatVersion": 1,
+  "assets": [
+    {
+      "id": "ast_ofcmd4m7",
+      "name": "ember-runner",
+      "type": "sprite",
+      "path": "assets/sprites/ember_runner.svg",
+      "metadata": {
+        "procedural": true,
+        "shape": "character",
+        "color": "#ffe08a",
+        "width": 30,
+        "height": 34
+      }
+    },
+    {
+      "id": "ast_9pnzseqd",
+      "name": "ember-target",
+      "type": "sprite",
+      "path": "assets/sprites/ember_target.svg",
+      "metadata": {
+        "procedural": true,
+        "shape": "circle",
+        "color": "#ff5d3a",
+        "width": 32,
+        "height": 32
+      }
+    },
+    {
+      "id": "ast_ay5w8wzv",
+      "name": "hit-sound",
+      "type": "audio",
+      "path": "assets/sounds/hit_sound.wav",
+      "metadata": {
+        "procedural": true,
+        "preset": "laser",
+        "seed": 0
+      }
+    },
+    {
+      "id": "ast_zg7y0sn4",
+      "name": "pop-sound",
+      "type": "audio",
+      "path": "assets/sounds/pop_sound.wav",
+      "metadata": {
+        "procedural": true,
+        "preset": "explosion",
+        "seed": 0
+      }
+    },
+    {
+      "id": "ast_y5fu01c5",
+      "name": "toggle-sound",
+      "type": "audio",
+      "path": "assets/sounds/toggle_sound.wav",
+      "metadata": {
+        "procedural": true,
+        "preset": "blip",
+        "seed": 0
+      }
+    }
+  ]
+}

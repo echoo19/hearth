@@ -1,0 +1,62 @@
+{
+  "formatVersion": 1,
+  "id": "ptt_1bjjqiwo",
+  "name": "smoke",
+  "scene": "scn_szhty34v",
+  "steps": [
+    {
+      "type": "wait",
+      "frames": 30
+    },
+    {
+      "type": "assertEntityExists",
+      "entity": "Player",
+      "exists": true
+    },
+    {
+      "type": "assertEntityExists",
+      "entity": "Target 1",
+      "exists": true
+    },
+    {
+      "type": "assertEntityExists",
+      "entity": "Target 2",
+      "exists": true
+    },
+    {
+      "type": "assertEntityExists",
+      "entity": "Target 3",
+      "exists": true
+    },
+    {
+      "type": "assertEntityExists",
+      "entity": "CRT Toggle",
+      "exists": true
+    },
+    {
+      "type": "assertEntityExists",
+      "entity": "Score HUD",
+      "exists": true
+    },
+    {
+      "type": "assertPostEffect",
+      "effect": "crt",
+      "active": true
+    },
+    {
+      "type": "assertPostEffect",
+      "effect": "vignette",
+      "active": true
+    },
+    {
+      "type": "assertPostEffect",
+      "effect": "bloom",
+      "active": true
+    },
+    {
+      "type": "assertNoErrors"
+    }
+  ],
+  "maxFrames": 100,
+  "seed": 0
+}
