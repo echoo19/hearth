@@ -16,12 +16,11 @@
  */
 import { useEffect, useRef } from 'react';
 import { EditorView, keymap } from '@codemirror/view';
-import { EditorState, Prec } from '@codemirror/state';
+import { EditorState, Prec, type Extension } from '@codemirror/state';
 import { basicSetup } from 'codemirror';
-import { javascript } from '@codemirror/lang-javascript';
-import { StreamLanguage, type LanguageSupport } from '@codemirror/language';
+import { javascript, javascriptLanguage } from '@codemirror/lang-javascript';
+import { StreamLanguage } from '@codemirror/language';
 import { lua } from '@codemirror/legacy-modes/mode/lua';
-import { autocompletion } from '@codemirror/autocomplete';
 import { lintGutter } from '@codemirror/lint';
 import { codeTheme } from './codeTheme';
 import { ctxCompletionSource } from './completion';
@@ -30,8 +29,24 @@ import { languageForPath, type ScriptLanguage } from './scriptLanguage';
 
 const luaLanguage = StreamLanguage.define(lua);
 
-function languageExtension(lang: ScriptLanguage): LanguageSupport | typeof luaLanguage {
-  return lang === 'js' ? javascript() : luaLanguage;
+/**
+ * Language support plus the ctx completion source, registered ADDITIVELY via
+ * each language's `data` facet — the same channel @codemirror/lang-javascript
+ * uses for its own snippet/keyword and local-variable sources. Never wire the
+ * ctx source through `autocompletion({ override: [...] })`: the completion
+ * plugin reads `conf.override || state.languageDataAt('autocomplete', ...)`,
+ * so an override REPLACES every built-in language-data source (JS scripts
+ * would silently lose local-variable and snippet completion). basicSetup's
+ * own config-free `autocompletion()` picks all of these up.
+ *
+ * Exported for the no-override regression tests (completionWiring.test.ts),
+ * which build a real EditorState from this and assert the built-in sources
+ * remain present and functional alongside ours.
+ */
+export function languageExtensions(lang: ScriptLanguage): Extension[] {
+  return lang === 'js'
+    ? [javascript(), javascriptLanguage.data.of({ autocomplete: ctxCompletionSource('js') })]
+    : [luaLanguage, luaLanguage.data.of({ autocomplete: ctxCompletionSource('lua') })];
 }
 
 export interface CodeEditorProps {
@@ -96,11 +111,10 @@ export default function CodeEditor({ path, value, onChange, onSave, checkScript 
       doc: value,
       extensions: [
         basicSetup,
-        languageExtension(lang),
+        ...languageExtensions(lang),
         codeTheme,
         saveKeymap,
         updateListener,
-        autocompletion({ override: [ctxCompletionSource(lang)] }),
         lintGutter(),
         makeCheckScriptLinter(checkScriptStable, lang),
       ],
