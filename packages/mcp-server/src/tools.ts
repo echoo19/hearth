@@ -10,6 +10,7 @@ import {
   SPRITE_SHAPES,
   SOUND_PRESETS,
   PlaytestStepSchema,
+  StateMachineDataSchema,
   type PermissionMode,
   type SpriteShape,
 } from '@hearth/core';
@@ -679,6 +680,32 @@ export const TOOL_SPECS: ToolSpec[] = [
     inputShape: {
       prefab: z.string().min(1),
       scene: z.string().optional(),
+    },
+  },
+
+  // ---- state machines ---------------------------------------------------------------
+  {
+    name: 'create_state_machine_asset',
+    command: 'createStateMachineAsset',
+    description:
+      'Create an animation state machine asset (params/states/transitions) at assets/statemachines/<slug>.asm.json. ' +
+      'Every state.animation must reference an existing animation asset. (requires asset-edit)',
+    permission: 'asset-edit',
+    inputShape: {
+      name: z.string().min(1),
+      data: StateMachineDataSchema,
+    },
+  },
+  {
+    name: 'update_state_machine_asset',
+    command: 'updateStateMachineAsset',
+    description:
+      "Replace a state machine asset's payload document in place (same asset id/path). Every state.animation " +
+      'must reference an existing animation asset. (requires asset-edit)',
+    permission: 'asset-edit',
+    inputShape: {
+      assetId: z.string().min(1),
+      data: StateMachineDataSchema,
     },
   },
 

@@ -718,4 +718,83 @@ describe('hearth-mcp server', () => {
     const secondRoot = ctx.store.getScene(sceneId)!.entities.find((e) => e.id === secondRootId)!;
     expect(secondRoot.components.SpriteRenderer!.color).toBe('#123456');
   });
+
+  it('create_state_machine_asset and update_state_machine_asset are registered, mirror every param, and round-trip', async () => {
+    ctx = await connectClient();
+    const { tools } = await ctx.client.listTools();
+
+    const createTool = tools.find((t) => t.name === 'create_state_machine_asset');
+    expect(createTool).toBeDefined();
+    expect(Object.keys(createTool!.inputSchema.properties as Record<string, unknown>).sort()).toEqual([
+      'data',
+      'name',
+    ]);
+
+    const updateTool = tools.find((t) => t.name === 'update_state_machine_asset');
+    expect(updateTool).toBeDefined();
+    expect(Object.keys(updateTool!.inputSchema.properties as Record<string, unknown>).sort()).toEqual([
+      'assetId',
+      'data',
+    ]);
+
+    const f1 = await ctx.client.callTool({ name: 'create_sprite_asset', arguments: { name: 'walk_f1' } });
+    const f2 = await ctx.client.callTool({ name: 'create_sprite_asset', arguments: { name: 'walk_f2' } });
+    expect(f1.isError).toBeFalsy();
+    expect(f2.isError).toBeFalsy();
+
+    const anim = await ctx.client.callTool({
+      name: 'create_animation_asset',
+      arguments: { name: 'Walk', frames: ['walk_f1', 'walk_f2'] },
+    });
+    expect(anim.isError).toBeFalsy();
+    const animId = toolJson(anim).data.asset.id as string;
+
+    const doc = {
+      params: { moving: { type: 'bool', default: false } },
+      states: [
+        { name: 'idle', animation: animId, speed: 1 },
+        { name: 'walk', animation: animId, speed: 1 },
+      ],
+      initial: 'idle',
+      transitions: [
+        { from: 'idle', to: 'walk', conditions: [{ param: 'moving', op: 'eq', value: true }] },
+        { from: 'walk', to: 'idle', conditions: [{ param: 'moving', op: 'eq', value: false }] },
+      ],
+    };
+
+    const create = await ctx.client.callTool({
+      name: 'create_state_machine_asset',
+      arguments: { name: 'Enemy AI', data: doc },
+    });
+    expect(create.isError).toBeFalsy();
+    const createEnvelope = toolJson(create);
+    expect(createEnvelope.command).toBe('createStateMachineAsset');
+    expect(createEnvelope.data.path).toBe('assets/statemachines/enemy_ai.asm.json');
+    const assetId = createEnvelope.data.assetId as string;
+
+    const badDoc = {
+      ...doc,
+      states: doc.states.map((s) => (s.name === 'idle' ? { ...s, animation: 'ast_nope' } : s)),
+    };
+    const badAnim = await ctx.client.callTool({
+      name: 'create_state_machine_asset',
+      arguments: { name: 'Bad AI', data: badDoc },
+    });
+    expect(badAnim.isError).toBe(true);
+    expect(toolJson(badAnim).errors[0].code).toBe('ASM_ANIMATION_NOT_FOUND');
+
+    const newDoc = { ...doc, states: [...doc.states, { name: 'attack', animation: animId, speed: 2 }] };
+    const update = await ctx.client.callTool({
+      name: 'update_state_machine_asset',
+      arguments: { assetId, data: newDoc },
+    });
+    expect(update.isError).toBeFalsy();
+    const updateEnvelope = toolJson(update);
+    expect(updateEnvelope.command).toBe('updateStateMachineAsset');
+    expect(updateEnvelope.data).toEqual({ assetId });
+
+    const listAssets = await ctx.client.callTool({ name: 'list_assets', arguments: { type: 'stateMachine' } });
+    const listed = toolJson(listAssets).data.assets.find((a: any) => a.id === assetId);
+    expect(listed.stateMachine.states.map((s: any) => s.name)).toEqual(['idle', 'walk', 'attack']);
+  });
 });
