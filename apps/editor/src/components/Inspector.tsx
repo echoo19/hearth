@@ -1,20 +1,19 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { getSheetFrames, type PostEffect } from '@hearth/core';
+import { AUTOTILE_SHAPES, BLOB47_TEMPLATE, getSheetFrames, type AutotileRule, type PostEffect } from '@hearth/core';
 import { useEditor } from '../store';
 import { PostEffectsField } from './PostEffectsField';
 import type { AssetItem, SceneEntity } from '../types';
 import { addPoint, removePoint, setPointAxis, shouldHideField } from '../vec2List';
 import { addString, removeString, setStringAt } from '../stringList';
 import {
-  addRow,
-  removeRow,
-  renameRowChar,
-  rowsToMap,
-  setRowAsset,
-  toRows,
-  validateChar,
-  type TileAssetRow,
-} from '../tileAssetsList';
+  isAutotileRule,
+  nextAvailableChar,
+  setMappingOverride,
+  toTileRows,
+  validateTileChar,
+  type TileAsset,
+  type TileRow,
+} from '../tileAutotileRows';
 import { ColorField, ConfirmDialog, Icon, NumberField, TextField, componentIcon } from './ui';
 import { countPrefabInstances, createSyncPreflight, syncConfirmBody } from '../prefabActions';
 
@@ -144,10 +143,10 @@ function StringListField({
 
 /**
  * Single-char input for a TileAssetsField row: like TextField (draft state,
- * commits on blur/Enter, Escape reverts), but validates via ../tileAssetsList
- * and shows an inline hint instead of committing an invalid char — a
- * multi-char/empty value, or '.'/' ' (reserved for empty cells), or a char
- * already used by another row.
+ * commits on blur/Enter, Escape reverts), but validates via
+ * ../tileAutotileRows and shows an inline hint instead of committing an
+ * invalid char — a multi-char/empty value, or '.'/' ' (reserved for empty
+ * cells), or a char already used by another row.
  */
 function TileCharField({
   value,
@@ -156,7 +155,7 @@ function TileCharField({
   onCommit,
 }: {
   value: string;
-  rows: readonly TileAssetRow[];
+  rows: readonly TileRow[];
   index: number;
   onCommit: (v: string) => void;
 }) {
@@ -171,7 +170,7 @@ function TileCharField({
       setError('');
       return;
     }
-    const issue = validateChar(draft, rows, index);
+    const issue = validateTileChar(draft, rows, index);
     if (issue) {
       setError(issue);
       return;
@@ -201,84 +200,260 @@ function TileCharField({
   );
 }
 
+/** Minimal shape of useEditor's exec() this field needs — just enough to check success before chaining a dependent call. */
+type TileExecFn = (name: string, params?: unknown, opts?: { quiet?: boolean }) => Promise<{ success: boolean }>;
+
+const MISSING_ASSET = '__missing__';
+
 /**
- * Row-per-char editor for Tilemap.tileAssets (Record<char, assetId>): a
- * single-char input, an image-asset dropdown, and a remove button per row,
- * plus an add-row button. Replaces JsonField's raw JSON textarea (Jake:
- * never raw JSON for these) — the row-editing logic lives in
- * ../tileAssetsList so it stays unit-testable without a DOM, matching
- * Vec2ListField/StringListField.
+ * A row's autotile controls: sheet dropdown + template (blob47 is the only
+ * one that exists today, so this is a locked single-option select — swap in
+ * real options the day a second template ships) + a collapsed "Advanced
+ * mapping" section with one frame dropdown per blob47 shape, overriding that
+ * shape's frame away from the standard `blob_<shapeKey>` template name (see
+ * @hearth/core's BLOB47_TEMPLATE/AUTOTILE_SHAPES). Collapsed by default:
+ * 47 rows would otherwise dominate the Inspector for every autotile char.
+ */
+function AutotileRuleFields({
+  rule,
+  sheetAssets,
+  onChange,
+}: {
+  rule: AutotileRule;
+  sheetAssets: AssetItem[];
+  onChange: (next: AutotileRule) => void;
+}) {
+  const sheetAsset = sheetAssets.find((a) => a.id === rule.sheet);
+  const frames = sheetAsset ? getSheetFrames(sheetAsset) : [];
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 4, paddingLeft: 46 }}>
+      <div className="vec2-list-row">
+        <label className="field-label" style={{ minWidth: 60 }}>
+          Template
+        </label>
+        <select className="select" style={{ maxWidth: 180 }} value={rule.template} disabled title="Blob47 is the only autotile template today.">
+          <option value="blob47">Blob47 (47-shape)</option>
+        </select>
+      </div>
+      <details>
+        <summary>Advanced mapping</summary>
+        <div className="vec2-list autotile-mapping-list">
+          {AUTOTILE_SHAPES.map((shape) => (
+            <div className="vec2-list-row" key={shape}>
+              <span className="mono" style={{ width: 36, flex: 'none' }} title={`Shape key ${shape}`}>
+                {shape}
+              </span>
+              <select
+                className="select"
+                value={rule.mapping?.[shape] ?? ''}
+                onChange={(e) => {
+                  const frameName = e.target.value === '' ? null : e.target.value;
+                  onChange({ ...rule, mapping: setMappingOverride(rule.mapping, shape, frameName) });
+                }}
+              >
+                <option value="">(default: {BLOB47_TEMPLATE[shape]})</option>
+                {frames.map((f) => (
+                  <option key={f.name} value={f.name}>
+                    {f.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+          ))}
+        </div>
+      </details>
+    </div>
+  );
+}
+
+/** One TileAssetsField row: char input, sprite/autotile mode select, mode-specific controls, and a remove button. */
+function TileRowEditor({
+  row,
+  rows,
+  index,
+  imageAssets,
+  sheetAssets,
+  onRename,
+  onWrite,
+  onRemove,
+}: {
+  row: TileRow;
+  rows: readonly TileRow[];
+  index: number;
+  imageAssets: AssetItem[];
+  sheetAssets: AssetItem[];
+  onRename: (newChar: string) => void;
+  onWrite: (next: TileAsset) => void;
+  onRemove: () => void;
+}) {
+  const autotile = isAutotileRule(row.value);
+  const assetId = autotile ? '' : (row.value as string);
+  const missingAsset = !autotile && assetId !== '' && !imageAssets.some((a) => a.id === assetId);
+  const canUseAutotile = autotile || sheetAssets.length > 0;
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+      <div className="vec2-list-row">
+        <TileCharField value={row.char} rows={rows} index={index} onCommit={onRename} />
+        <select
+          className="select"
+          style={{ maxWidth: 96, flex: 'none' }}
+          value={autotile ? 'autotile' : 'sprite'}
+          disabled={!canUseAutotile}
+          title={canUseAutotile ? undefined : 'Import a spritesheet with sliced frames to use autotile.'}
+          onChange={(e) => {
+            if (e.target.value === 'autotile') {
+              if (sheetAssets.length === 0) return;
+              onWrite({ sheet: sheetAssets[0].id, template: 'blob47' });
+            } else {
+              onWrite('');
+            }
+          }}
+        >
+          <option value="sprite">Sprite</option>
+          <option value="autotile">Autotile</option>
+        </select>
+        {!autotile && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 2, flex: 1, minWidth: 0 }}>
+            <select
+              className={`select${missingAsset ? ' invalid' : ''}`}
+              value={missingAsset ? MISSING_ASSET : assetId}
+              onChange={(e) => {
+                if (e.target.value === MISSING_ASSET) return;
+                onWrite(e.target.value);
+              }}
+            >
+              <option value="">(none)</option>
+              {missingAsset && (
+                <option value={MISSING_ASSET} disabled>
+                  (missing asset)
+                </option>
+              )}
+              {imageAssets.map((a) => (
+                <option key={a.id} value={a.id}>
+                  {a.name}
+                </option>
+              ))}
+            </select>
+            {missingAsset && <span className="field-error">Referenced asset was deleted — pick a replacement.</span>}
+          </div>
+        )}
+        {autotile && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 2, flex: 1, minWidth: 0 }}>
+            <select
+              className="select"
+              value={(row.value as AutotileRule).sheet}
+              onChange={(e) => onWrite({ ...(row.value as AutotileRule), sheet: e.target.value })}
+            >
+              {!sheetAssets.some((a) => a.id === (row.value as AutotileRule).sheet) && (
+                <option value={(row.value as AutotileRule).sheet} disabled>
+                  (missing sheet)
+                </option>
+              )}
+              {sheetAssets.map((a) => (
+                <option key={a.id} value={a.id}>
+                  {a.name}
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
+        <button type="button" className="icon-btn danger" title={`Remove "${row.char}"`} onClick={onRemove}>
+          <Icon name="cross" size={10} />
+        </button>
+      </div>
+      {autotile && (
+        <AutotileRuleFields rule={row.value as AutotileRule} sheetAssets={sheetAssets} onChange={onWrite} />
+      )}
+    </div>
+  );
+}
+
+/**
+ * Row-per-char editor for Tilemap.tileAssets: each char is either a plain
+ * sprite/tile asset (sprite mode) or an autotile rule (autotile mode — the
+ * blob47 resolver, see @hearth/core's tilemap/autotile.ts). Replaces
+ * JsonField's raw JSON textarea (Jake: never raw JSON for these) — row
+ * ordering/validation/mapping edits live in ../tileAutotileRows so they stay
+ * unit-testable without a DOM, matching Vec2ListField/StringListField.
+ *
+ * Unlike the other row editors, this does NOT commit via a single
+ * onCommit(wholeMap) — setComponentProperty refuses to write the autotile
+ * object arm at all (core's assertNotAutotileWrite: a whole-map write is
+ * rejected the instant ANY char in the resulting map is autotile-mode, and a
+ * per-char write is rejected only for the exact char it targets). So every
+ * edit here is its own per-char setComponentProperty (sprite mode) or
+ * setTileAutotile (autotile mode, and clearing a row of either mode — clear
+ * doesn't care what the char's prior value was) call. A char rename is two
+ * calls — write the new char, then clear the old one — since there's no
+ * "rename a record key" verb in the command surface; each is its own undo
+ * step, same as any other multi-command composition in this app.
  */
 function TileAssetsField({
   value,
   assets,
-  onCommit,
+  sceneId,
+  entityId,
+  exec,
 }: {
-  value: Record<string, string>;
+  value: Record<string, TileAsset>;
   assets: AssetItem[];
-  onCommit: (map: Record<string, string>) => void;
+  sceneId: string;
+  entityId: string;
+  exec: TileExecFn;
 }) {
-  const rows = toRows(value);
+  const rows = toTileRows(value);
   // tileAssets maps to sprite/tile assets, same pool SpriteRenderer.assetId
-  // picks from (renderTilemap resolves them the same way).
+  // picks from (renderTilemap resolves them the same way). Autotile mode
+  // narrows further to sheets that are actually sliced (getSheetFrames > 0)
+  // — an unsliced sheet has no frames to resolve to.
   const imageAssets = assets.filter((a) => a.type === 'sprite' || a.type === 'tile');
-  const MISSING = '__missing__';
+  const sheetAssets = imageAssets.filter((a) => getSheetFrames(a).length > 0);
+
+  function writeChar(char: string, next: TileAsset) {
+    if (typeof next === 'string') {
+      return exec(
+        'setComponentProperty',
+        { scene: sceneId, entity: entityId, property: `Tilemap.tileAssets.${char}`, value: next },
+        { quiet: true },
+      );
+    }
+    return exec(
+      'setTileAutotile',
+      { scene: sceneId, entity: entityId, char, sheet: next.sheet, template: next.template, mapping: next.mapping },
+      { quiet: true },
+    );
+  }
+
+  function clearChar(char: string) {
+    return exec('setTileAutotile', { scene: sceneId, entity: entityId, char, clear: true }, { quiet: true });
+  }
+
+  async function renameChar(oldChar: string, newChar: string, current: TileAsset) {
+    const result = await writeChar(newChar, current);
+    if (!result.success) return; // leave the old char alone if the new one failed to validate/write
+    await clearChar(oldChar);
+  }
+
   return (
     <div className="vec2-list">
       {rows.length === 0 && <span className="vec2-list-empty">No tile chars mapped</span>}
-      {rows.map((row, i) => {
-        // The asset a row points at can be deleted out from under the
-        // mapping — the char/mapping itself still exists, but the native
-        // <select> would otherwise render blank with no signal that
-        // anything's wrong. Surface it as a disabled "(missing asset)"
-        // option plus an inline error instead.
-        const missing = row.assetId !== '' && !imageAssets.some((a) => a.id === row.assetId);
-        return (
-          <div className="vec2-list-row" key={i}>
-            <TileCharField
-              value={row.char}
-              rows={rows}
-              index={i}
-              onCommit={(char) => onCommit(rowsToMap(renameRowChar(rows, i, char)))}
-            />
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 2, flex: 1, minWidth: 0 }}>
-              <select
-                className={`select${missing ? ' invalid' : ''}`}
-                value={missing ? MISSING : row.assetId}
-                onChange={(e) => {
-                  if (e.target.value === MISSING) return;
-                  onCommit(rowsToMap(setRowAsset(rows, i, e.target.value)));
-                }}
-              >
-                <option value="">(none)</option>
-                {missing && (
-                  <option value={MISSING} disabled>
-                    (missing asset)
-                  </option>
-                )}
-                {imageAssets.map((a) => (
-                  <option key={a.id} value={a.id}>
-                    {a.name}
-                  </option>
-                ))}
-              </select>
-              {missing && <span className="field-error">Referenced asset was deleted — pick a replacement.</span>}
-            </div>
-            <button
-              type="button"
-              className="icon-btn danger"
-              title={`Remove "${row.char}"`}
-              onClick={() => onCommit(rowsToMap(removeRow(rows, i)))}
-            >
-              <Icon name="cross" size={10} />
-            </button>
-          </div>
-        );
-      })}
+      {rows.map((row, i) => (
+        <TileRowEditor
+          key={i}
+          row={row}
+          rows={rows}
+          index={i}
+          imageAssets={imageAssets}
+          sheetAssets={sheetAssets}
+          onRename={(newChar) => void renameChar(row.char, newChar, row.value)}
+          onWrite={(next) => void writeChar(row.char, next)}
+          onRemove={() => void clearChar(row.char)}
+        />
+      ))}
       <button
         type="button"
         className="btn btn-sm"
-        onClick={() => onCommit(rowsToMap(addRow(rows, imageAssets[0]?.id ?? '')))}
+        onClick={() => void writeChar(nextAvailableChar(rows), imageAssets[0]?.id ?? '')}
       >
         <Icon name="plus" size={10} /> Add tile char
       </button>
@@ -433,13 +608,13 @@ function isStringArray(v: unknown): v is string[] {
   return Array.isArray(v) && v.every((s) => typeof s === 'string');
 }
 
-/** Tilemap.tileAssets shape: a plain object mapping chars to asset ids. */
-function isStringRecord(v: unknown): v is Record<string, string> {
+/** Tilemap.tileAssets shape: values are plain asset ids (sprite mode) or autotile rule objects (the object arm) — never anything else. */
+function isTileAssetsRecord(v: unknown): v is Record<string, TileAsset> {
   return (
     typeof v === 'object' &&
     v !== null &&
     !Array.isArray(v) &&
-    Object.values(v).every((x) => typeof x === 'string')
+    Object.values(v).every((x) => typeof x === 'string' || (typeof x === 'object' && x !== null && !Array.isArray(x)))
   );
 }
 
@@ -864,13 +1039,15 @@ export function Inspector() {
                         onCommit={(list) => setProperty(property, list)}
                       />
                     );
-                  } else if (type === 'Tilemap' && field === 'tileAssets' && isStringRecord(value)) {
+                  } else if (type === 'Tilemap' && field === 'tileAssets' && isTileAssetsRecord(value)) {
                     control = (
                       <TileAssetsField
                         key={rowKey}
                         value={value}
                         assets={assets}
-                        onCommit={(map) => setProperty(property, map)}
+                        sceneId={sceneId}
+                        entityId={entity.id}
+                        exec={exec}
                       />
                     );
                   } else if (type === 'Camera' && field === 'postEffects' && Array.isArray(value)) {

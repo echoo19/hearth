@@ -1170,6 +1170,19 @@ label.field-label {
   font-size: 12px;
 }
 
+/* Tilemap.tileAssets autotile row (Inspector.tsx's AutotileRuleFields): the
+   47-shape mapping list is collapsed behind a <details> by default, so this
+   only ever shows once expanded — scrolls instead of dominating the panel. */
+.autotile-mapping-list {
+  max-height: 220px;
+  overflow-y: auto;
+  margin-top: 4px;
+  padding: 6px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg-2);
+}
+
 .add-component-row {
   padding: 10px;
 }
