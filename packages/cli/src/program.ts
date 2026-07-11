@@ -865,6 +865,31 @@ export function buildProgram(): Command {
     });
   });
 
+  const autotile = program.command('autotile').description('bind a Tilemap tile char to an autotile rule');
+  addGlobalOptions(autotile);
+  addGlobalOptions(
+    autotile
+      .command('set <scene> <entity>')
+      .description(
+        'bind a tile char to a blob47 autotile rule, e.g. --char G --sheet GroundSheet. The char picks its ' +
+          'per-cell frame from its 8 neighbours at render time. Use --clear to remove an existing rule.',
+      )
+      .requiredOption('--char <c>', 'the tile char to bind (a single char, not "." or " ")')
+      .option('--sheet <asset>', 'spritesheet asset id or name (required unless --clear)')
+      .option('--template <t>', 'autotile template (only "blob47" is supported today)')
+      .option('--mapping <json>', 'shape-key -> frame-name overrides JSON, e.g. \'{"255":"center"}\'')
+      .option('--clear', 'remove the char\'s autotile rule instead of setting one'),
+  ).action(async (scene: string, entity: string, opts, cmd) => {
+    await guarded(cmd, 'setTileAutotile', () => {
+      const params: Record<string, unknown> = { scene, entity, char: opts.char };
+      if (opts.clear) params.clear = true;
+      if (opts.sheet) params.sheet = opts.sheet;
+      if (opts.template) params.template = opts.template;
+      if (opts.mapping) params.mapping = parseJsonObject(opts.mapping, '--mapping');
+      return runAndEmit(cmd, 'setTileAutotile', params);
+    });
+  });
+
   // ---------------------------------------------------------------------
   // snapshot / diff / revert
   // ---------------------------------------------------------------------

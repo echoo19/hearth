@@ -77,6 +77,15 @@ export function extractJournalDetail(
     if (typeof d.path !== 'string') return undefined;
     return { path: d.path };
   }
+  if (name === 'setTileAutotile') {
+    // Record only the target (scene/entity/char), never the rule payload.
+    if (typeof params !== 'object' || params === null) return undefined;
+    const p = params as Record<string, unknown>;
+    if (typeof p.scene !== 'string' || typeof p.entity !== 'string' || typeof p.char !== 'string') {
+      return undefined;
+    }
+    return { scene: p.scene, entity: p.entity, char: p.char };
+  }
   if (name === 'createStateMachineAsset') {
     if (typeof params !== 'object' || params === null) return undefined;
     const p = params as Record<string, unknown>;

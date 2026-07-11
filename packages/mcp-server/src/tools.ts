@@ -420,6 +420,25 @@ export const TOOL_SPECS: ToolSpec[] = [
       anchor: z.enum(['top-left']).optional(),
     },
   },
+  {
+    name: 'set_tile_autotile',
+    command: 'setTileAutotile',
+    description:
+      'Bind a Tilemap tile char to an autotile rule: the char picks its per-cell sheet frame from its 8 ' +
+      'neighbours at render time (blob47 47-shape standard). sheet must be a sliced spritesheet whose frames ' +
+      'are named blob_<shapeKey>; mapping overrides individual shape keys with custom frame names. Pass ' +
+      'clear:true to remove an existing rule for char. (requires safe-edit)',
+    permission: 'safe-edit',
+    inputShape: {
+      scene: z.string().min(1),
+      entity: z.string().min(1),
+      char: z.string(),
+      sheet: z.string().min(1).optional(),
+      template: z.literal('blob47').optional(),
+      mapping: z.record(z.string(), z.string()).optional(),
+      clear: z.boolean().optional(),
+    },
+  },
 
   // ---- scripts ---------------------------------------------------------------
   {

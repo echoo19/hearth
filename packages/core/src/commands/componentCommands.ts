@@ -170,6 +170,33 @@ function assertWriteResolves(type: ComponentType, pathParts: string[], data: unk
   }
 }
 
+/**
+ * Reject a write that would place an autotile RULE (the object arm of the
+ * `Tilemap.tileAssets` union) via setComponentProperty/setProperties. Those
+ * commands do no sheet/frame validation, so a rule written this way could
+ * point at a non-existent sheet or missing frames; the dedicated
+ * `setTileAutotile` command owns that validation. Plain string tile ids write
+ * through untouched — this only fires when the affected char resolves to an
+ * object after parsing.
+ */
+function assertNotAutotileWrite(type: ComponentType, pathParts: string[], parsedData: unknown): void {
+  if (type !== 'Tilemap' || pathParts[0] !== 'tileAssets') return;
+  const tileAssets = (parsedData as { tileAssets?: unknown })?.tileAssets;
+  if (tileAssets === null || typeof tileAssets !== 'object') return;
+  const record = tileAssets as Record<string, unknown>;
+  const chars = pathParts.length === 1 ? Object.keys(record) : [pathParts[1]];
+  for (const ch of chars) {
+    const val = record[ch];
+    if (val !== null && typeof val === 'object') {
+      throw new ProjectError(
+        `Tilemap.tileAssets["${ch}"] is an autotile rule (object arm). setComponentProperty/setProperties ` +
+          'cannot write autotile rules — use the setTileAutotile command (with clear:true to remove one).',
+        'INVALID_INPUT',
+      );
+    }
+  }
+}
+
 export const setComponentProperty = defineCommand({
   name: 'setComponentProperty',
   description:
@@ -218,6 +245,7 @@ export const setComponentProperty = defineCommand({
       throw new ProjectError(`Invalid value for ${params.property}: ${issues}`, 'SCHEMA_ERROR');
     }
     assertWriteResolves(type, pathParts, parsed.data);
+    assertNotAutotileWrite(type, pathParts, parsed.data);
     (entity.components as Record<string, unknown>)[type] = parsed.data;
     ctx.changed({ kind: 'component', id: entity.id, name: type, scene: scene.id, action: 'modified' });
     return {
@@ -301,6 +329,7 @@ export const setProperties = defineCommand({
     // safeParse (Zod strips the unknown field) while reporting success.
     for (const { type, pathParts } of writes) {
       assertWriteResolves(type, pathParts, parsedByType.get(type));
+      assertNotAutotileWrite(type, pathParts, parsedByType.get(type));
     }
 
     // Phase 2: every key and every touched component passed validation — write it all.

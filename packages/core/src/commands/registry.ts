@@ -57,6 +57,7 @@ const ALL_DEFINITIONS: CommandDefinition[] = [
   tilemapCommands.paintTiles,
   tilemapCommands.fillTilemapRect,
   tilemapCommands.resizeTilemap,
+  tilemapCommands.setTileAutotile,
   // scripts
   scriptCommands.createScript,
   scriptCommands.editScript,
