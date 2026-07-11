@@ -94,7 +94,17 @@ export const ProjectFileSchema = z.object({
 });
 export type ProjectFile = z.infer<typeof ProjectFileSchema>;
 
-export const ASSET_TYPES = ['sprite', 'tile', 'audio', 'animation', 'prefab', 'font', 'data', 'other'] as const;
+export const ASSET_TYPES = [
+  'sprite',
+  'tile',
+  'audio',
+  'animation',
+  'prefab',
+  'font',
+  'data',
+  'other',
+  'stateMachine',
+] as const;
 export const AssetSchema = z.object({
   id: z.string().regex(/^ast_[a-z0-9]+$/),
   name: z.string().min(1),
@@ -118,6 +128,176 @@ export const AnimationDataSchema = z.object({
   loop: z.boolean().default(true),
 });
 export type AnimationData = z.infer<typeof AnimationDataSchema>;
+
+// ---------------------------------------------------------------------------
+// State machines
+// ---------------------------------------------------------------------------
+
+export const STATE_MACHINE_PARAM_TYPES = ['bool', 'number', 'trigger'] as const;
+export const StateMachineParamSchema = z
+  .object({
+    type: z.enum(STATE_MACHINE_PARAM_TYPES),
+    default: z.union([z.boolean(), z.number()]).optional(),
+  })
+  .strict();
+export type StateMachineParam = z.infer<typeof StateMachineParamSchema>;
+
+export const STATE_MACHINE_CONDITION_OPS = ['eq', 'neq', 'gt', 'gte', 'lt', 'lte'] as const;
+/**
+ * `op`/`value` are optional at the shape level (a trigger condition is just
+ * `{param}`) — whether they're required, and what `op` is allowed, depends
+ * on the referenced param's type, so that cross-check lives in
+ * `StateMachineDataSchema`'s superRefine (needs the params map for context),
+ * not here.
+ */
+export const StateMachineConditionSchema = z
+  .object({
+    param: z.string().min(1),
+    op: z.enum(STATE_MACHINE_CONDITION_OPS).optional(),
+    value: z.union([z.boolean(), z.number()]).optional(),
+  })
+  .strict();
+export type StateMachineCondition = z.infer<typeof StateMachineConditionSchema>;
+
+export const StateMachineStateSchema = z
+  .object({
+    name: z.string().min(1),
+    /** Animation asset id — validated against the asset index at command time (ASM_ANIMATION_NOT_FOUND), not here. */
+    animation: z.string().min(1),
+    speed: z.number().positive().default(1),
+  })
+  .strict();
+export type StateMachineState = z.infer<typeof StateMachineStateSchema>;
+
+export const StateMachineTransitionSchema = z
+  .object({
+    /** A state name, or the literal 'any' (matches from every state). */
+    from: z.string().min(1),
+    to: z.string().min(1),
+    conditions: z.array(StateMachineConditionSchema).default([]),
+    /** Clip progress (0..1) required before this transition is eligible. */
+    exitTime: z.number().min(0).max(1).optional(),
+  })
+  .strict();
+export type StateMachineTransition = z.infer<typeof StateMachineTransitionSchema>;
+
+/** State machine asset payload (stored as the asset's JSON file). */
+export const StateMachineDataSchema = z
+  .object({
+    params: z.record(z.string(), StateMachineParamSchema).default({}),
+    states: z.array(StateMachineStateSchema).min(1),
+    /** Name of the state the machine starts in. */
+    initial: z.string().min(1),
+    transitions: z.array(StateMachineTransitionSchema).default([]),
+  })
+  .strict()
+  .superRefine((data, ctx) => {
+    const stateNames = new Set<string>();
+    data.states.forEach((state, index) => {
+      if (stateNames.has(state.name)) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: `Duplicate state name "${state.name}"`,
+          path: ['states', index, 'name'],
+        });
+      }
+      stateNames.add(state.name);
+    });
+
+    if (!stateNames.has(data.initial)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: `initial "${data.initial}" does not name a state`,
+        path: ['initial'],
+      });
+    }
+
+    const paramTypes = new Map(Object.entries(data.params).map(([name, p]) => [name, p.type]));
+
+    data.transitions.forEach((transition, tIndex) => {
+      if (transition.from !== 'any' && !stateNames.has(transition.from)) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: `Transition "from" does not name a state or 'any': "${transition.from}"`,
+          path: ['transitions', tIndex, 'from'],
+        });
+      }
+      if (!stateNames.has(transition.to)) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: `Transition "to" does not name a state: "${transition.to}"`,
+          path: ['transitions', tIndex, 'to'],
+        });
+      }
+
+      transition.conditions.forEach((condition, cIndex) => {
+        const paramType = paramTypes.get(condition.param);
+        const condPath = ['transitions', tIndex, 'conditions', cIndex] as const;
+        if (!paramType) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            message: `Condition references unknown param "${condition.param}"`,
+            path: [...condPath, 'param'],
+          });
+          return;
+        }
+        if (paramType === 'trigger') {
+          if (condition.op !== undefined) {
+            ctx.addIssue({
+              code: z.ZodIssueCode.custom,
+              message: `Trigger param "${condition.param}" conditions must be {param} only (no op)`,
+              path: [...condPath, 'op'],
+            });
+          }
+          if (condition.value !== undefined) {
+            ctx.addIssue({
+              code: z.ZodIssueCode.custom,
+              message: `Trigger param "${condition.param}" conditions must be {param} only (no value)`,
+              path: [...condPath, 'value'],
+            });
+          }
+          return;
+        }
+        if (condition.op === undefined) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            message: `Condition on "${condition.param}" requires op`,
+            path: [...condPath, 'op'],
+          });
+        } else if (paramType === 'bool' && condition.op !== 'eq' && condition.op !== 'neq') {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            message: `bool param "${condition.param}" conditions only support eq/neq`,
+            path: [...condPath, 'op'],
+          });
+        }
+        if (condition.value === undefined) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            message: `Condition on "${condition.param}" requires value`,
+            path: [...condPath, 'value'],
+          });
+        }
+      });
+
+      const hasGate = transition.conditions.length > 0 || transition.exitTime !== undefined;
+      if (!hasGate) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: 'Transition needs at least one condition or an exitTime',
+          path: ['transitions', tIndex],
+        });
+      }
+      if (transition.from === 'any' && transition.conditions.length === 0) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: `from:'any' transitions need at least one condition`,
+          path: ['transitions', tIndex, 'conditions'],
+        });
+      }
+    });
+  });
+export type StateMachineData = z.infer<typeof StateMachineDataSchema>;
 
 /**
  * An entity inside a prefab asset: same shape as a scene `Entity`, but ids
@@ -149,6 +329,7 @@ export type PrefabData = Omit<z.infer<typeof PrefabDataSchema>, 'entities'> & {
 };
 
 export const PREFABS_DIR = 'assets/prefabs';
+export const STATEMACHINES_DIR = 'assets/statemachines';
 
 /** Spritesheet frame metadata. */
 export const SpritesheetFrameSchema = z.object({
