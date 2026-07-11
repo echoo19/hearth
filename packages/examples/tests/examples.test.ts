@@ -627,7 +627,10 @@ describe('ember-horde v0.7 showcase (Wave E spatial-hash horde scale)', () => {
   // broadphase). This is a performance headroom bump, not a correctness change
   // — the enemy-spawned count is monotonic integer logic (enemies never die
   // here), identical on every platform.
-  it('the horde actually reaches 300 concurrent enemies (sustained-horde-scale playtest)', { timeout: 120_000 }, async () => {
+  // 300s: the v0.10.0 release run proved 120s is not enough headroom on a
+  // slow windows-latest runner (timed out while every other platform passed).
+  // Same platform-honesty rationale as the v0.8.0 bump (c79bf86).
+  it('the horde actually reaches 300 concurrent enemies (sustained-horde-scale playtest)', { timeout: 300_000 }, async () => {
     const store = await loadStore('ember-horde');
     const result = await runPlaytest(store, 'sustained-horde-scale');
     expect(result.passed).toBe(true);
