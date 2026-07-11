@@ -1,11 +1,12 @@
 import React, { Suspense, lazy, useEffect, useMemo, useRef, useState } from 'react';
 import { getSheetFrames } from '@hearth/core';
 import { useEditor } from '../store';
-import { apiImportAsset, fileUrl } from '../api';
+import { apiImportAssets, fileUrl } from '../api';
 import type { AssetItem } from '../types';
 import { ConfirmDialog, Icon, Modal } from './ui';
 import { frameCrop, parseFrameRef, readSheetSize } from '../assetPreview';
 import { countPrefabInstances, createSyncPreflight, syncConfirmBody } from '../prefabActions';
+import { collectDropEntries, entriesFromDataTransferItems } from '../dropEntries';
 
 /** One animation asset's resolved first-frame thumbnail (fetched from its
  * .anim.json), or null once we've tried and found nothing showable. */
@@ -318,6 +319,14 @@ export function AssetsPanel() {
     }
   }
 
+  /** Group skip reasons for the summary line: "unsupported type ×2, missing (...)" reads at a glance instead of one entry per file. */
+  function summarizeSkipReasons(failed: { name: string; reason: string }[]): string {
+    const counts = new Map<string, number>();
+    for (const f of failed) counts.set(f.reason, (counts.get(f.reason) ?? 0) + 1);
+    return [...counts.entries()].map(([reason, count]) => (count > 1 ? `${reason} ×${count}` : reason)).join(', ');
+  }
+
+  /** The whole FileList (however it was gathered — file picker or a drag-drop, folders already flattened) goes through ONE importAssets call: one atomic undo/journal entry, one collision-safe naming pass. */
   async function importFiles(files: Iterable<File>) {
     if (!projectPath) return;
     const fileList = Array.from(files);
@@ -327,6 +336,7 @@ export function AssetsPanel() {
     let imported = 0;
     const failed: { name: string; reason: string }[] = [];
     try {
+      const okFiles: File[] = [];
       for (const file of fileList) {
         const ext = extensionOf(file.name);
         if (!IMPORT_EXTENSIONS.includes(ext)) {
@@ -341,38 +351,48 @@ export function AssetsPanel() {
           failed.push({ name: file.name, reason });
           continue;
         }
+        okFiles.push(file);
+      }
+
+      if (okFiles.length > 0) {
         try {
-          const result = await apiImportAsset(projectPath, file.name, await fileToBase64(file));
+          const payload = await Promise.all(
+            okFiles.map(async (file) => ({ filename: file.name, dataBase64: await fileToBase64(file) })),
+          );
+          const result = await apiImportAssets(projectPath, payload);
           if (result.success) {
-            imported++;
-            const asset = (result.data as { asset?: AssetItem } | null)?.asset;
-            log('info', 'editor', `Imported "${asset?.name ?? file.name}"${asset ? ` → ${asset.path}` : ''}`);
+            const data = result.data as {
+              imported: { path: string; assetId: string; name: string; type: string }[];
+              skipped: { path: string; code: string; message: string }[];
+            } | null;
+            imported = data?.imported.length ?? 0;
+            for (const item of data?.imported ?? []) {
+              log('info', 'editor', `Imported "${item.name}" (${item.type})`);
+            }
+            for (const item of data?.skipped ?? []) {
+              const reason = item.message || item.code;
+              log('warn', 'editor', `Skipped "${item.path}": ${reason}`);
+              failed.push({ name: item.path, reason });
+            }
           } else {
             const reason = result.errors.map((e) => e.message).join('; ') || 'import failed';
-            for (const err of result.errors) log('error', 'command', `importAsset: ${err.message}`);
-            failed.push({ name: file.name, reason });
+            for (const err of result.errors) log('error', 'command', `importAssets: ${err.message}`);
+            for (const file of okFiles) failed.push({ name: file.name, reason });
           }
         } catch (err) {
           const reason = (err as Error).message;
-          log('error', 'editor', `Import of "${file.name}" failed: ${reason}`);
-          failed.push({ name: file.name, reason });
+          log('error', 'editor', `Import failed: ${reason}`);
+          for (const file of okFiles) failed.push({ name: file.name, reason });
         }
       }
-      // A per-file breakdown already went to the console above; for a
-      // multi-file batch also fold it into one summary line so a partial
-      // failure ("imported 3, failed 1: coin.exe (...)") reads at a glance
-      // instead of scrolling console history.
-      if (fileList.length > 1) {
-        if (failed.length === 0) {
-          log('info', 'editor', `Imported ${imported}/${fileList.length} files.`);
-        } else {
-          log(
-            'warn',
-            'editor',
-            `Imported ${imported}, failed ${failed.length}: ${failed.map((f) => `${f.name} (${f.reason})`).join(', ')}`,
-          );
-        }
-      }
+
+      // Summary toast: one line covering the whole drop/pick, however many
+      // files it contained — a partial failure reads at a glance instead of
+      // scrolling per-file console history.
+      const summary = `Imported ${imported}, skipped ${failed.length}${
+        failed.length > 0 ? ` (${summarizeSkipReasons(failed)})` : ''
+      }`;
+      log(failed.length > 0 ? 'warn' : 'info', 'editor', summary);
     } finally {
       setImporting(false);
       setImportErrors(failed);
@@ -490,7 +510,15 @@ export function AssetsPanel() {
         e.preventDefault();
         dragDepth.current = 0;
         setDropping(false);
-        void importFiles(Array.from(e.dataTransfer.files));
+        // webkitGetAsEntry() must be read synchronously off the drop event —
+        // it (and the DataTransfer it comes from) isn't guaranteed valid once
+        // this handler returns. The resulting entries stay walkable async.
+        const entries = entriesFromDataTransferItems(e.dataTransfer.items);
+        if (entries.length > 0) {
+          void collectDropEntries(entries).then((files) => importFiles(files));
+        } else {
+          void importFiles(Array.from(e.dataTransfer.files));
+        }
       }}
     >
       <div className="panel-toolbar">

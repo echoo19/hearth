@@ -72,6 +72,20 @@ export function apiImportAsset(
   return postJson<CommandResult>('/api/assets/import', { project, filename, dataBase64 });
 }
 
+export interface ImportFilePayload {
+  filename: string;
+  dataBase64: string;
+}
+
+/** Upload multiple files (base64 bytes) in one atomic importAssets batch — one undo/journal entry for the whole drop. */
+export function apiImportAssets(
+  project: string,
+  files: ImportFilePayload[],
+  type?: string,
+): Promise<CommandResult> {
+  return postJson<CommandResult>('/api/assets/import-batch', { project, files, type });
+}
+
 export interface ExportWebData {
   outDir: string;
   singleFile: boolean;

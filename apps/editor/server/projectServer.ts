@@ -521,6 +521,159 @@ export function createProjectServerContext(options: ProjectServerOptions = {}) {
       }
     },
 
+    /**
+     * Import a batch of uploaded files (base64 bodies) as project assets in
+     * ONE atomic importAssets call: every file is staged under
+     * assets/imported/, importAssets runs once (one journal/undo entry
+     * covering the whole batch), then every staging copy is removed. A file
+     * that fails to decode/stage never reaches core — it's reported as a
+     * skip directly, alongside whatever core itself skips (unknown
+     * extension, etc). `imported`/`skipped` entries come back with `path`
+     * rewritten from the internal staged path to the original filename the
+     * browser sent, so the editor can report against what the user dragged
+     * in. Always 200; the CommandResult envelope carries success/errors.
+     */
+    async importAssetsBatch(project: unknown, filesRaw: unknown, type: unknown): Promise<JsonResult> {
+      const fail = (code: string, message: string): JsonResult => ({
+        status: 200,
+        body: errorEnvelope('importAssets', code, message),
+      });
+      if (typeof project !== 'string' || project.trim() === '') {
+        return fail('NO_PROJECT', 'No project path supplied with the import.');
+      }
+      if (!Array.isArray(filesRaw) || filesRaw.length === 0) {
+        return fail('INVALID_INPUT', 'Import requires a non-empty "files" array.');
+      }
+      let typeOverride: string | undefined;
+      if (type !== undefined) {
+        if (typeof type !== 'string' || type.trim() === '') {
+          return fail('INVALID_INPUT', '"type" must be a non-empty string.');
+        }
+        typeOverride = type;
+      }
+
+      let session: HearthSession;
+      try {
+        session = await getSession(project);
+      } catch (err) {
+        return fail('NO_PROJECT', (err as Error).message);
+      }
+      const root = path.resolve(project);
+
+      const preSkipped: { path: string; code: string; message: string }[] = [];
+      const sourcePaths: string[] = [];
+      const stagedAbsPaths: string[] = [];
+      const originalNameByStaged = new Map<string, string>();
+      const usedStagedNames = new Set<string>();
+
+      for (const raw of filesRaw) {
+        const f = (raw ?? {}) as { filename?: unknown; dataBase64?: unknown };
+        const displayName = typeof f.filename === 'string' ? f.filename : '(unnamed file)';
+        if (typeof f.filename !== 'string' || typeof f.dataBase64 !== 'string' || f.dataBase64 === '') {
+          preSkipped.push({ path: displayName, code: 'INVALID_INPUT', message: 'Each file requires "filename" and "dataBase64".' });
+          continue;
+        }
+        const safeName = sanitizeImportFilename(f.filename);
+        if (!safeName) {
+          preSkipped.push({
+            path: displayName,
+            code: 'INVALID_INPUT',
+            message: `Cannot import "${displayName}": the filename has no usable name or extension.`,
+          });
+          continue;
+        }
+        let bytes: Buffer;
+        try {
+          bytes = Buffer.from(f.dataBase64, 'base64');
+        } catch {
+          preSkipped.push({ path: displayName, code: 'INVALID_INPUT', message: `"${displayName}": dataBase64 is not valid base64.` });
+          continue;
+        }
+        if (bytes.length === 0) {
+          preSkipped.push({ path: displayName, code: 'INVALID_INPUT', message: `"${displayName}" decoded to zero bytes.` });
+          continue;
+        }
+        if (bytes.length > MAX_IMPORT_BYTES) {
+          const mb = (bytes.length / (1024 * 1024)).toFixed(1);
+          preSkipped.push({ path: displayName, code: 'INVALID_INPUT', message: `"${displayName}" is ${mb} MB; imports are limited to 25 MB.` });
+          continue;
+        }
+
+        // Distinct staging basenames within this batch — separate from
+        // core's asset-name collision handling, this is just "don't let two
+        // uploads clobber the same staging path before core ever sees them".
+        let stagedName = safeName;
+        if (usedStagedNames.has(stagedName)) {
+          const dot = stagedName.lastIndexOf('.');
+          const stem = dot > 0 ? stagedName.slice(0, dot) : stagedName;
+          const ext = dot > 0 ? stagedName.slice(dot) : '';
+          let n = 2;
+          while (usedStagedNames.has(`${stem}-${n}${ext}`)) n++;
+          stagedName = `${stem}-${n}${ext}`;
+        }
+        usedStagedNames.add(stagedName);
+
+        const stagedAbs = resolveInside(root, path.join(IMPORT_STAGING_DIR, stagedName));
+        if (!stagedAbs) {
+          preSkipped.push({ path: displayName, code: 'INVALID_INPUT', message: 'Import path escapes the project root.' });
+          continue;
+        }
+        try {
+          await fsp.mkdir(path.dirname(stagedAbs), { recursive: true });
+          await fsp.writeFile(stagedAbs, bytes);
+        } catch (err) {
+          preSkipped.push({ path: displayName, code: 'INTERNAL', message: (err as Error).message });
+          continue;
+        }
+        stagedAbsPaths.push(stagedAbs);
+        originalNameByStaged.set(stagedAbs, displayName);
+        sourcePaths.push(stagedAbs);
+      }
+
+      try {
+        if (sourcePaths.length === 0) {
+          return {
+            status: 200,
+            body: {
+              success: true,
+              command: 'importAssets',
+              data: { imported: [], skipped: preSkipped },
+              errors: [],
+              warnings: [],
+              changed: [],
+              files: [],
+              suggestions: [],
+            },
+          };
+        }
+        const params: Record<string, unknown> = { sourcePaths };
+        if (typeOverride) params.type = typeOverride;
+        const result = (await session.execute('importAssets', params)) as CommandResult<{
+          imported: { path: string; assetId: string; name: string; type: string }[];
+          skipped: { path: string; code: string; message: string }[];
+        }>;
+        await syncSeenSeq(root);
+        if (result.data) {
+          result.data.imported = result.data.imported.map((i) => ({
+            ...i,
+            path: originalNameByStaged.get(i.path) ?? i.path,
+          }));
+          result.data.skipped = [
+            ...result.data.skipped.map((s) => ({ ...s, path: originalNameByStaged.get(s.path) ?? s.path })),
+            ...preSkipped,
+          ];
+        }
+        return { status: 200, body: result };
+      } finally {
+        // The staging copies are only a hand-off to importAssets; drop them
+        // whether or not the command succeeded so retries start clean.
+        for (const abs of stagedAbsPaths) {
+          await fsp.rm(abs, { force: true }).catch(() => {});
+        }
+        await fsp.rmdir(path.join(root, IMPORT_STAGING_DIR)).catch(() => {});
+      }
+    },
+
     async listProjectCommands(project: unknown): Promise<JsonResult> {
       try {
         if (typeof project !== 'string' || project.trim() === '') {
@@ -740,6 +893,13 @@ async function route(ctx: ProjectServerContext, req: IncomingMessage, res: Serve
       // Base64 inflates the 25 MB file limit by ~4/3, plus JSON overhead.
       const body = await readJsonBody(req, 36 * 1024 * 1024);
       const result = await ctx.importAssetFile(body.project, body.filename, body.dataBase64);
+      return sendJson(res, result.status, result.body);
+    }
+    case 'POST /api/assets/import-batch': {
+      // Each file is still capped at 25 MB client-side; this just bounds the
+      // whole multi-file request body (base64 + JSON overhead) generously.
+      const body = await readJsonBody(req, 256 * 1024 * 1024);
+      const result = await ctx.importAssetsBatch(body.project, body.files, body.type);
       return sendJson(res, result.status, result.body);
     }
     case 'POST /api/export/web': {

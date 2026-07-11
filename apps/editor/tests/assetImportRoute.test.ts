@@ -154,3 +154,87 @@ describe('POST /api/assets/import handler', () => {
     expect(badName.errors[0].code).toBe('INVALID_INPUT');
   });
 });
+
+interface BatchEnvelope {
+  success: boolean;
+  command: string;
+  data: {
+    imported: { path: string; assetId: string; name: string; type: string }[];
+    skipped: { path: string; code: string; message: string }[];
+  } | null;
+  errors: { code: string; message: string }[];
+}
+
+describe('POST /api/assets/import-batch handler', () => {
+  let batchProject: string;
+
+  beforeAll(async () => {
+    const created = await ctx.createNewProject(path.join(tmpDir, 'batch-projects'), 'Batch Import Target');
+    expect(created.status).toBe(200);
+    batchProject = (created.body as { path: string }).path;
+  });
+
+  it('imports every file in one atomic importAssets call and reports original filenames', async () => {
+    const result = await ctx.importAssetsBatch(batchProject, [
+      { filename: 'coin.png', dataBase64: PNG_BYTES.toString('base64') },
+      { filename: 'jump.wav', dataBase64: Buffer.from('RIFF....WAVEfmt ').toString('base64') },
+    ], undefined);
+    expect(result.status).toBe(200);
+    const body = result.body as BatchEnvelope;
+    expect(body.success).toBe(true);
+    expect(body.command).toBe('importAssets');
+    expect(body.data?.imported).toHaveLength(2);
+    expect(body.data?.skipped).toHaveLength(0);
+    const names = body.data?.imported.map((i) => i.path).sort();
+    expect(names).toEqual(['coin.png', 'jump.wav']);
+
+    // Staging directory is cleaned up after the batch.
+    await expect(fsp.access(path.join(batchProject, 'assets', 'imported'))).rejects.toThrow();
+
+    // Exactly one journal entry covers the whole batch.
+    const journalPath = path.join(batchProject, '.hearth', 'log', 'commands.jsonl');
+    const journalText = await fsp.readFile(journalPath, 'utf8');
+    const entries = journalText.trim().split('\n').map((l) => JSON.parse(l));
+    expect(entries.filter((e) => e.command === 'importAssets')).toHaveLength(1);
+  });
+
+  it('reports a bad upload (invalid base64/empty/oversize) as a skip without failing the whole batch', async () => {
+    const result = await ctx.importAssetsBatch(batchProject, [
+      { filename: 'good.png', dataBase64: PNG_BYTES.toString('base64') },
+      { filename: 'empty.png', dataBase64: '' },
+      { filename: 'noext', dataBase64: PNG_BYTES.toString('base64') },
+    ], undefined);
+    const body = (result.body as BatchEnvelope);
+    expect(body.success).toBe(true);
+    expect(body.data?.imported).toHaveLength(1);
+    expect(body.data?.imported[0].path).toBe('good.png');
+    expect(body.data?.skipped).toHaveLength(2);
+    expect(body.data?.skipped.map((s) => s.path).sort()).toEqual(['empty.png', 'noext']);
+  });
+
+  it('applies a type override to every file in the batch', async () => {
+    const result = await ctx.importAssetsBatch(
+      batchProject,
+      [
+        { filename: 'blob-a.dat', dataBase64: PNG_BYTES.toString('base64') },
+        { filename: 'blob-b.dat', dataBase64: PNG_BYTES.toString('base64') },
+      ],
+      'other',
+    );
+    const body = result.body as BatchEnvelope;
+    expect(body.success).toBe(true);
+    expect(body.data?.imported).toHaveLength(2);
+    expect(body.data?.imported.every((i) => i.type === 'other')).toBe(true);
+  });
+
+  it('rejects missing project / empty files array', async () => {
+    const noProject = (await ctx.importAssetsBatch(undefined, [{ filename: 'a.png', dataBase64: 'aGk=' }], undefined))
+      .body as BatchEnvelope;
+    expect(noProject.success).toBe(false);
+    expect(noProject.errors[0].code).toBe('NO_PROJECT');
+
+    const empty = (await ctx.importAssetsBatch(batchProject, [], undefined)).body as BatchEnvelope;
+    expect(empty.success).toBe(false);
+    expect(empty.errors[0].code).toBe('INVALID_INPUT');
+  });
+});
