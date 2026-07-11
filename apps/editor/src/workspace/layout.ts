@@ -21,6 +21,7 @@ export const PANEL_IDS = [
   'agent',
   'input',
   'live',
+  'animator',
 ] as const;
 
 export type PanelId = (typeof PANEL_IDS)[number];

@@ -2,7 +2,7 @@
  * Client-side shapes for data crossing the /api boundary.
  * Command payload types mirror what the core inspect commands return.
  */
-import type { CommandResult, InputMappings, JournalEntry, ProjectDiff, ScriptDiagnostic } from '@hearth/core';
+import type { CommandResult, InputMappings, JournalEntry, ProjectDiff, ScriptDiagnostic, StateMachineData } from '@hearth/core';
 
 export type { CommandResult, JournalEntry, ProjectDiff, ScriptDiagnostic };
 
@@ -71,11 +71,13 @@ export interface SceneData {
 export interface AssetItem {
   id: string;
   name: string;
-  type: 'sprite' | 'tile' | 'audio' | 'animation' | 'font' | 'data' | 'other' | 'prefab';
+  type: 'sprite' | 'tile' | 'audio' | 'animation' | 'font' | 'data' | 'other' | 'prefab' | 'stateMachine';
   path: string;
   metadata: Record<string, unknown>;
   /** Fresh-from-disk summary attached by inspectAssets for `type: 'prefab'` assets only. */
   prefab?: { entityCount: number; rootComponents: string[] };
+  /** Full parsed document attached by inspectAssets for `type: 'stateMachine'` assets only. */
+  stateMachine?: StateMachineData;
 }
 
 export interface ComponentDoc {

@@ -189,6 +189,20 @@ const ICON_PATHS: Record<string, ReactNode> = {
       <circle cx="6" cy="9.25" r="0.9" fill="currentColor" stroke="none" />
     </>
   ),
+  check: <path d="M2.5 6.2L5 8.7l4.5-5" />,
+  star: (
+    <path
+      d="M6 2l1.24 2.52 2.78.4-2.01 1.96.47 2.77L6 8.34 3.52 9.65l.47-2.77L1.98 4.92l2.78-.4z"
+      fill="currentColor"
+      stroke="none"
+    />
+  ),
+  warning: (
+    <>
+      <path d="M6 2.2l4 6.8H2z" />
+      <path d="M6 5v2M6 8.2v.05" />
+    </>
+  ),
   // Prefabs are "tracked stamps" (see wave design doc) — a stamp base with
   // its handle arch, distinct from `duplicate`'s overlapping-squares glyph.
   prefab: (

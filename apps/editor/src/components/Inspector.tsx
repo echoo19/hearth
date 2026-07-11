@@ -458,6 +458,7 @@ export function Inspector() {
   const exec = useEditor((s) => s.exec);
   const select = useEditor((s) => s.select);
   const log = useEditor((s) => s.log);
+  const openAnimatorFor = useEditor((s) => s.openAnimatorFor);
 
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [confirmRemove, setConfirmRemove] = useState<string | null>(null);
@@ -676,7 +677,37 @@ export function Inspector() {
                   const property = `${type}.${field}`;
                   const rowKey = `${entity.id}.${property}`;
                   let control: React.ReactNode;
-                  if (field === 'assetId' && type === 'SpriteAnimator' && typeof value === 'string') {
+                  if (field === 'assetId' && type === 'AnimationStateMachine' && typeof value === 'string') {
+                    // AnimationStateMachine.assetId picks from state-machine
+                    // assets, with an inline Edit that opens the Animator
+                    // editor for the chosen machine (mirrors SpriteAnimator's
+                    // animation-asset dropdown below).
+                    const options = assets.filter((a) => a.type === 'stateMachine');
+                    control = (
+                      <div className="asset-with-edit">
+                        <select
+                          className="select"
+                          value={value}
+                          onChange={(e) => setProperty(property, e.target.value)}
+                        >
+                          <option value="">(none)</option>
+                          {options.map((a) => (
+                            <option key={a.id} value={a.id}>
+                              {a.name}
+                            </option>
+                          ))}
+                        </select>
+                        <button
+                          className="btn btn-sm"
+                          disabled={!value}
+                          title={value ? 'Edit this state machine' : 'Assign a state machine to edit it'}
+                          onClick={() => value && openAnimatorFor(value)}
+                        >
+                          <Icon name="animator" size={11} /> Edit
+                        </button>
+                      </div>
+                    );
+                  } else if (field === 'assetId' && type === 'SpriteAnimator' && typeof value === 'string') {
                     // SpriteAnimator.assetId is a non-nullable string (default ''),
                     // unlike SpriteRenderer/AudioSource's nullable assetId, and it
                     // picks from animation assets specifically.

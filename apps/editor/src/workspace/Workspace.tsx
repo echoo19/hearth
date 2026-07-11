@@ -30,6 +30,7 @@ import { DiffPanel } from '../components/DiffPanel';
 import { AgentPanel } from '../components/AgentPanel';
 import { InputSettings } from '../components/InputSettings';
 import { LivePanel } from '../components/LivePanel';
+import { AnimatorEditor } from '../components/AnimatorEditor';
 import { restoreLayout, serializeLayout, type PanelId } from './layout';
 
 export const PANEL_TITLES: Record<PanelId, string> = {
@@ -44,6 +45,7 @@ export const PANEL_TITLES: Record<PanelId, string> = {
   agent: 'Agent',
   input: 'Input',
   live: 'Live',
+  animator: 'Animator',
 };
 
 /** Menu order for the View menu (matches the default layout, left to right). */
@@ -59,6 +61,7 @@ export const VIEW_MENU_PANELS: readonly PanelId[] = [
   'agent',
   'input',
   'live',
+  'animator',
 ];
 
 const HEARTH_THEME: DockviewTheme = {
@@ -150,6 +153,7 @@ const PANEL_COMPONENTS: Record<PanelId, React.FunctionComponent<IDockviewPanelPr
   agent: panelHost(AgentPanel),
   input: panelHost(InputSettings),
   live: LivePanelHost,
+  animator: panelHost(AnimatorEditor),
 };
 
 // ---------------------------------------------------------------------------
@@ -260,7 +264,7 @@ function findReference(api: DockviewApi, preferred: readonly PanelId[]): PanelId
   return null;
 }
 
-const CENTER_PANELS: readonly PanelId[] = ['scene', 'game', 'code'];
+const CENTER_PANELS: readonly PanelId[] = ['scene', 'game', 'code', 'animator'];
 const BOTTOM_PANELS: readonly PanelId[] = ['assets', 'console', 'diff', 'agent', 'input', 'live'];
 
 /**
@@ -285,7 +289,7 @@ export function showPanel(api: DockviewApi, id: PanelId): void {
         initialWidth: id === 'hierarchy' ? LEFT_WIDTH : RIGHT_WIDTH,
       };
     }
-  } else if (id === 'scene' || id === 'game' || id === 'code') {
+  } else if (id === 'scene' || id === 'game' || id === 'code' || id === 'animator') {
     const sibling = findReference(
       api,
       CENTER_PANELS.filter((p) => p !== id),
@@ -354,6 +358,7 @@ export function Workspace({
   const diffFocusRequest = useEditor((s) => s.diffFocusRequest);
   const codeOpenRequest = useEditor((s) => s.codeOpenRequest);
   const codeSearchRequest = useEditor((s) => s.codeSearchRequest);
+  const animatorTarget = useEditor((s) => s.animatorTarget);
   const apiRef = useRef<DockviewApi | null>(null);
   const saveTimer = useRef<number | null>(null);
   const disposables = useRef<{ dispose(): void }[]>([]);
@@ -423,6 +428,13 @@ export function Workspace({
   useEffect(() => {
     if (codeSearchRequest > 0 && apiRef.current) showPanel(apiRef.current, 'code');
   }, [codeSearchRequest]);
+
+  // openAnimatorFor() surfaces the Animator panel; AnimatorEditor itself reads
+  // animatorTarget to load the requested state-machine asset. Keyed on the
+  // nonce so a repeat open of the already-open asset still re-surfaces it.
+  useEffect(() => {
+    if (animatorTarget && apiRef.current) showPanel(apiRef.current, 'animator');
+  }, [animatorTarget?.nonce]);
 
   // Flush a pending save and release listeners when the workspace unmounts
   // (project switch or close).

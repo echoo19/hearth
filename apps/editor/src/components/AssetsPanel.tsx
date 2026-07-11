@@ -105,6 +105,7 @@ export function AssetsPanel() {
   const refresh = useEditor((s) => s.refresh);
   const log = useEditor((s) => s.log);
   const sceneViewCenter = useEditor((s) => s.sceneViewCenter);
+  const openAnimatorFor = useEditor((s) => s.openAnimatorFor);
 
   const [selectedAssetId, setSelectedAssetId] = useState<string | null>(null);
   const [spriteDialog, setSpriteDialog] = useState(false);
@@ -439,6 +440,13 @@ export function AssetsPanel() {
         </span>
       );
     }
+    if (asset.type === 'stateMachine') {
+      return (
+        <span style={{ color: 'var(--ink-faint)' }}>
+          <Icon name="animator" size={20} />
+        </span>
+      );
+    }
     if (asset.type === 'font') {
       if (loadedFontNames.has(asset.name)) {
         return (
@@ -622,6 +630,10 @@ export function AssetsPanel() {
                   {pendingSyncAssetId === selectedAsset.id ? 'Syncing…' : 'Sync instances'}
                 </button>
               </>
+            ) : selectedAsset.type === 'stateMachine' ? (
+              <button className="btn btn-sm" onClick={() => openAnimatorFor(selectedAsset.id)}>
+                <Icon name="animator" size={11} /> Edit state machine
+              </button>
             ) : (
               <button
                 className="btn btn-sm"

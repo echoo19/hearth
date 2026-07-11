@@ -143,6 +143,14 @@ export interface EditorState {
    * the query input on every bump, even if it was already open).
    */
   codeSearchRequest: number;
+  /**
+   * Imperative "open the Animator editor for this state-machine asset" request
+   * (Task 8), mirroring `codeOpenRequest`. The Assets card's "Edit" action and
+   * the Inspector's AnimationStateMachine row call `openAnimatorFor(assetId)`;
+   * the workspace shell surfaces the Animator panel and AnimatorEditor loads
+   * that asset's document. The `nonce` re-fires a repeat open of the same asset.
+   */
+  animatorTarget: { assetId: string; nonce: number } | null;
 
   setAgentMode(mode: AgentPermissionMode): void;
   detectAgent(): Promise<void>;
@@ -158,6 +166,8 @@ export interface EditorState {
   openScriptAt(path: string, line?: number): void;
   /** Open (and surface) the Code panel's search bar. See `codeSearchRequest`. */
   requestCodeSearch(): void;
+  /** Open (and surface) the Animator editor targeting a state-machine asset. See `animatorTarget`. */
+  openAnimatorFor(assetId: string): void;
   /** Shortcut actions (Task 8), each backed by an exec() where it mutates. */
   togglePlay(): void;
   checkpoint(): Promise<void>;
@@ -639,6 +649,7 @@ export const useEditor = create<EditorState>((set, get) => {
     focusSelectionRequest: 0,
     codeOpenRequest: null,
     codeSearchRequest: 0,
+    animatorTarget: null,
 
     setAgentMode(mode) {
       set({ agentMode: mode });
@@ -671,6 +682,10 @@ export const useEditor = create<EditorState>((set, get) => {
 
     requestCodeSearch() {
       set((state) => ({ codeSearchRequest: state.codeSearchRequest + 1 }));
+    },
+
+    openAnimatorFor(assetId) {
+      set((state) => ({ animatorTarget: { assetId, nonce: (state.animatorTarget?.nonce ?? 0) + 1 } }));
     },
 
     togglePlay() {
