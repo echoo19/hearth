@@ -1,6 +1,6 @@
 {
   "name": "@hearth/core",
-  "version": "0.10.0",
+  "version": "0.11.0",
   "description": "Hearth core: project model, schemas, command system, validation, diff engine, procedural assets",
   "license": "MIT",
   "type": "module",
