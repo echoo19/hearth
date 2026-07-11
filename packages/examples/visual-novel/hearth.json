@@ -1,13 +1,13 @@
 {
   "formatVersion": 1,
   "hearthVersion": "0.9.0",
-  "id": "prj_g8rmx5u8",
+  "id": "prj_v9nvsooc",
   "name": "Visual Novel Scene",
   "description": "A dialogue scene: advance lines with the action key.",
-  "initialScene": "scn_9mppd546",
+  "initialScene": "scn_vxsbldw9",
   "scenes": [
     {
-      "id": "scn_9mppd546",
+      "id": "scn_vxsbldw9",
       "name": "Prologue",
       "path": "scenes/prologue.scene.json"
     }

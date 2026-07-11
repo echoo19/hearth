@@ -31,6 +31,8 @@ jobs:
         run: node packages/runtime/bench/bench.mjs --smoke
       - name: Regenerate examples (dogfoods the command system)
         run: node packages/examples/generate.mjs
+      - name: Examples are clean (byte-identical regen)
+        run: git diff --exit-code -- packages/examples
       - name: CLI smoke test
         run: |
           node packages/cli/dist/main.js --help

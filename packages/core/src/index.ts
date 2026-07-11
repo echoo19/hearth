@@ -124,7 +124,13 @@ export {
 } from './pathfinding.js';
 
 // Utilities
-export { generateId, slugify, type IdPrefix } from './ids.js';
+export {
+  generateId,
+  slugify,
+  setIdRandomSource,
+  createSeededRng,
+  type IdPrefix,
+} from './ids.js';
 export {
   type FsLike,
   MemoryFileSystem,

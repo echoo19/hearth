@@ -6,19 +6,26 @@
  *   npm run build -w @hearth/core && node packages/examples/generate.mjs
  *
  * The generated projects are committed to the repo so they work out of the
- * box; re-running this script recreates them from scratch (ids change).
+ * box; re-running this script recreates them from scratch. Ids are seeded
+ * (see setIdRandomSource below), so regeneration is byte-identical run to
+ * run — CI diffs packages/examples after regenerating to catch drift.
  */
 import { rm, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { createProject, HearthSession } from '../core/dist/index.js';
+import { createProject, HearthSession, setIdRandomSource, createSeededRng } from '../core/dist/index.js';
 import { NodeFileSystem } from '../core/dist/node/index.js';
 import { GameSession, resolveUiPositions } from '../runtime/dist/index.js';
 import { encodePng, renderChiptuneWav } from './pixelart.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const fs = new NodeFileSystem();
+
+// Seed id generation so regenerating this file produces byte-identical
+// output every time (see packages/core/src/ids.ts). Generator/test-only —
+// does not touch the runtime's seeded ctx.random stream.
+setIdRandomSource(createSeededRng(1));
 
 /** Execute a command and fail loudly if it doesn't succeed. */
 async function run(session, name, params) {

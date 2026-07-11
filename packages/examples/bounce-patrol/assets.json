@@ -2,7 +2,7 @@
   "formatVersion": 1,
   "assets": [
     {
-      "id": "ast_2am2o3ja",
+      "id": "ast_phh4ehua",
       "name": "player",
       "type": "sprite",
       "path": "assets/sprites/player.svg",
@@ -15,7 +15,7 @@
       }
     },
     {
-      "id": "ast_ij3iumt5",
+      "id": "ast_614vk7gx",
       "name": "ball",
       "type": "sprite",
       "path": "assets/sprites/ball.svg",
@@ -28,7 +28,7 @@
       }
     },
     {
-      "id": "ast_14jyds1k",
+      "id": "ast_d0zjzu5k",
       "name": "patroller",
       "type": "sprite",
       "path": "assets/sprites/patroller.svg",
@@ -41,7 +41,7 @@
       }
     },
     {
-      "id": "ast_mxkb8wgy",
+      "id": "ast_km0wya63",
       "name": "coin",
       "type": "sprite",
       "path": "assets/sprites/coin.svg",
@@ -54,7 +54,7 @@
       }
     },
     {
-      "id": "ast_f4bl3153",
+      "id": "ast_ivhfldfv",
       "name": "wall",
       "type": "tile",
       "path": "assets/tiles/wall.svg",

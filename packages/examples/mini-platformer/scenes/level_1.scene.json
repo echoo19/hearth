@@ -1,10 +1,10 @@
 {
   "formatVersion": 1,
-  "id": "scn_au7fcld1",
+  "id": "scn_p9qrfoif",
   "name": "Level 1",
   "entities": [
     {
-      "id": "ent_mrpagnrb",
+      "id": "ent_fckyxess",
       "name": "Main Camera",
       "parentId": null,
       "enabled": true,
@@ -34,7 +34,7 @@
       }
     },
     {
-      "id": "ent_c5xf7shi",
+      "id": "ent_h2j985ag",
       "name": "Ground",
       "parentId": null,
       "enabled": true,
@@ -56,8 +56,8 @@
         "Tilemap": {
           "tileSize": 32,
           "tileAssets": {
-            "G": "ast_3zfyoqun",
-            "S": "ast_bddehuwo"
+            "G": "ast_oif0uejb",
+            "S": "ast_w5i9zoky"
           },
           "grid": [
             "GGGGGGGGGGGGGGGGGGGGGGGGG..GGGGGGGGGG",
@@ -69,7 +69,7 @@
       }
     },
     {
-      "id": "ent_zvqh0tmj",
+      "id": "ent_b9lz5dj5",
       "name": "Platform A",
       "parentId": null,
       "enabled": true,
@@ -146,7 +146,7 @@
       }
     },
     {
-      "id": "ent_32vjlmwq",
+      "id": "ent_22hdfotk",
       "name": "Platform B",
       "parentId": null,
       "enabled": true,
@@ -223,7 +223,7 @@
       }
     },
     {
-      "id": "ent_b79l8ez0",
+      "id": "ent_5l65wyin",
       "name": "Platform C",
       "parentId": null,
       "enabled": true,
@@ -300,7 +300,7 @@
       }
     },
     {
-      "id": "ent_ogmdirze",
+      "id": "ent_lhj78flc",
       "name": "Player",
       "parentId": null,
       "enabled": true,
@@ -320,7 +320,7 @@
           }
         },
         "SpriteRenderer": {
-          "assetId": "ast_zk21xqw8",
+          "assetId": "ast_rco1kgbp",
           "frame": null,
           "shape": "rectangle",
           "color": "#ffffff",
@@ -384,7 +384,7 @@
       }
     },
     {
-      "id": "ent_nzodo2zs",
+      "id": "ent_b2nif3l6",
       "name": "Coin 1",
       "parentId": null,
       "enabled": true,
@@ -404,7 +404,7 @@
           }
         },
         "SpriteRenderer": {
-          "assetId": "ast_vranz5n9",
+          "assetId": "ast_zq19i1fl",
           "frame": null,
           "shape": "rectangle",
           "color": "#ffffff",
@@ -453,7 +453,7 @@
       }
     },
     {
-      "id": "ent_1s8tk15z",
+      "id": "ent_spymit12",
       "name": "Coin 2",
       "parentId": null,
       "enabled": true,
@@ -473,7 +473,7 @@
           }
         },
         "SpriteRenderer": {
-          "assetId": "ast_vranz5n9",
+          "assetId": "ast_zq19i1fl",
           "frame": null,
           "shape": "rectangle",
           "color": "#ffffff",
@@ -522,7 +522,7 @@
       }
     },
     {
-      "id": "ent_bz2cperd",
+      "id": "ent_bhwxblp5",
       "name": "Coin 3",
       "parentId": null,
       "enabled": true,
@@ -542,7 +542,7 @@
           }
         },
         "SpriteRenderer": {
-          "assetId": "ast_vranz5n9",
+          "assetId": "ast_zq19i1fl",
           "frame": null,
           "shape": "rectangle",
           "color": "#ffffff",
@@ -591,7 +591,7 @@
       }
     },
     {
-      "id": "ent_iqhltbg8",
+      "id": "ent_xmmva7tu",
       "name": "Spikes",
       "parentId": null,
       "enabled": true,
@@ -660,7 +660,7 @@
       }
     },
     {
-      "id": "ent_fhrkj27g",
+      "id": "ent_xec3fzjx",
       "name": "Enemy",
       "parentId": null,
       "enabled": true,
@@ -680,7 +680,7 @@
           }
         },
         "SpriteRenderer": {
-          "assetId": "ast_5vdfd23o",
+          "assetId": "ast_v2khxt1g",
           "frame": null,
           "shape": "rectangle",
           "color": "#ffffff",
@@ -732,7 +732,7 @@
       }
     },
     {
-      "id": "ent_uotqfenr",
+      "id": "ent_kt7cdgyb",
       "name": "Score",
       "parentId": null,
       "enabled": true,
@@ -772,7 +772,7 @@
       }
     },
     {
-      "id": "ent_e937mfk2",
+      "id": "ent_tn2jd99a",
       "name": "Restart",
       "parentId": null,
       "enabled": true,
@@ -829,7 +829,7 @@
       }
     },
     {
-      "id": "ent_qk4x5nja",
+      "id": "ent_4eovsnze",
       "name": "Ambience",
       "parentId": null,
       "enabled": true,
@@ -849,7 +849,7 @@
           }
         },
         "AudioSource": {
-          "assetId": "ast_e6gwajj1",
+          "assetId": "ast_k6kfxtle",
           "autoplay": true,
           "loop": true,
           "volume": 0.25,
