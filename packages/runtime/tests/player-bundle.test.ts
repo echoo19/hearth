@@ -33,11 +33,12 @@ describe.skipIf(!built)('player bundle (hearth-player.js)', () => {
   // Bundle budget: the standalone player ships in every exported game, so its
   // size is a hard product constraint. 0.10 baseline (pre-post-effects) was
   // 1,349,649 B; adding the hand-written Pixi post-effect + SpriteEffects
-  // filters (postEffects.ts + spriteEffectsFilter.ts, GLSL as inline strings)
-  // measured 1,365,867 B — a +16,218 B (~1.2%) delta. The 1,450,000 B ceiling
-  // leaves headroom for the rest of the 0.10 visual-effects work while still
-  // catching an accidental heavyweight dependency (e.g. pulling in
-  // pixi-filters, which the bloat rule forbids).
+  // filters (postEffects.ts + spriteEffectsFilter.ts, GLSL as inline strings,
+  // plus the full-screen background rect that lets post effects cover the
+  // whole frame) measured 1,366,476 B — a +16,827 B (~1.2%) delta. The
+  // 1,450,000 B ceiling leaves headroom for the rest of the 0.10
+  // visual-effects work while still catching an accidental heavyweight
+  // dependency (e.g. pulling in pixi-filters, which the bloat rule forbids).
   it('stays under the 1.45 MB player budget', () => {
     const size = statSync(bundlePath).size;
     expect(size).toBeLessThan(1_450_000);

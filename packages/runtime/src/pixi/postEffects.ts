@@ -4,9 +4,11 @@
  * Pixi v8 GLSL filter applied, in stack order, to the game-view container.
  *
  * Design notes:
- *   - Filters are cached per view and keyed by `JSON.stringify(stack)` so the
- *     GPU programs are rebuilt only when the stack's shape/values change;
- *     uniforms are refreshed every syncCamera call (cheap, no allocation).
+ *   - Filters are cached per view and rebuilt only when the stack's SHAPE
+ *     (length + per-entry effect types) changes — per effect type the uniform
+ *     layout is fixed, and uniform VALUES are refreshed every syncCamera call
+ *     anyway, so a value change never needs a GPU-program rebuild. The shape
+ *     check is a tiny loop with zero per-frame allocation (no JSON.stringify).
  *   - The one per-frame uniform is CRT's `uFrame` (fed from runtime.frame),
  *     so its noise is deterministic and frame-derived — never Date.now /
  *     Math.random, which would break headless/screenshot reproducibility.
@@ -26,14 +28,15 @@ import { Filter, defaultFilterVert } from 'pixi.js';
 import type { PostEffect } from '@hearth/core';
 import { hexToRgb01 } from './color.js';
 
-/** Per-view cache: the filter instances for the current stack and its signature. */
+/** Per-view cache: the filter instances for the current stack and their effect types. */
 export interface PostEffectFilterState {
-  signature: string | null;
+  /** Effect type per cached filter, index-aligned with `filters`. */
+  types: PostEffect['type'][];
   filters: Filter[];
 }
 
 export function createPostEffectFilterState(): PostEffectFilterState {
-  return { signature: null, filters: [] };
+  return { types: [], filters: [] };
 }
 
 type UniformDecl = Record<string, { value: number | Float32Array; type: string }>;
@@ -250,12 +253,22 @@ function updateFilter(filter: Filter, effect: PostEffect, frame: number): void {
   }
 }
 
+/** True when the cached filter list no longer matches the stack's length/types. */
+function shapeChanged(state: PostEffectFilterState, stack: PostEffect[]): boolean {
+  if (state.types.length !== stack.length) return true;
+  for (let i = 0; i < stack.length; i++) {
+    if (state.types[i] !== stack[i].type) return true;
+  }
+  return false;
+}
+
 /**
  * Reconcile `state`'s cached filters with `stack`, returning the Filter[] to
  * assign to the game-view container (or null when the stack is empty, so the
  * container renders with `filters = null` — byte-identical to no effects).
- * Rebuilds the GPU programs only when the stack signature changes; otherwise
- * just refreshes uniforms (including CRT's per-frame `uFrame`).
+ * Rebuilds the GPU programs only when the stack's shape (length/types)
+ * changes; otherwise just refreshes uniforms (including CRT's per-frame
+ * `uFrame`) — see the module header for why value changes never rebuild.
  */
 export function syncPostEffectFilters(
   state: PostEffectFilterState,
@@ -263,13 +276,12 @@ export function syncPostEffectFilters(
   frame: number,
 ): Filter[] | null {
   if (stack.length === 0) {
-    state.signature = null;
+    state.types = [];
     state.filters = [];
     return null;
   }
-  const signature = JSON.stringify(stack);
-  if (signature !== state.signature) {
-    state.signature = signature;
+  if (shapeChanged(state, stack)) {
+    state.types = stack.map((e) => e.type);
     state.filters = stack.map(buildFilter);
   }
   for (let i = 0; i < stack.length; i++) updateFilter(state.filters[i], stack[i], frame);

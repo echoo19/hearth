@@ -906,6 +906,57 @@ describe('captureScreenshot (real Chromium)', () => {
     120_000,
   );
 
+  // Full-screen coverage: post effects must reach the BACKGROUND, not just
+  // drawn sprite texels. Both starter renderables (Player, Ground) are
+  // disabled so nothing renders except the camera background — if the
+  // renderer's clear color were still the only background (outside the
+  // filter input), or if the filter host's bounds collapsed to an empty/
+  // content bbox, vignette ON would be byte-identical to OFF. Any pixel
+  // difference here can only be background pixels changing (corners
+  // darkening toward the vignette color), which is exactly the guarantee
+  // this locks in.
+  it.skipIf(!hasChromium)(
+    'vignette darkens the camera background itself, not just sprite content',
+    async () => {
+      const { store, cleanup } = await makeRealStore();
+      try {
+        const session = HearthSession.fromStore(store, { granted: ['safe-edit'] });
+        for (const entity of ['Player', 'Ground']) {
+          const disabled = await session.execute('setEntityEnabled', {
+            scene: 'Main',
+            entity,
+            enabled: false,
+          });
+          expect(disabled.success, `disable ${entity}`).toBe(true);
+        }
+        const setBg = await session.execute('setComponentProperty', {
+          scene: 'Main',
+          entity: 'Main Camera',
+          property: 'Camera.backgroundColor',
+          value: '#008080',
+        });
+        expect(setBg.success).toBe(true);
+
+        const off = await captureScreenshot(store, { frame: 0, seed: 1, out: 'shots/bg-off.png' });
+
+        const setVignette = await session.execute('setComponentProperty', {
+          scene: 'Main',
+          entity: 'Main Camera',
+          property: 'Camera.postEffects',
+          value: [{ type: 'vignette', intensity: 1, color: '#000000' }],
+        });
+        expect(setVignette.success).toBe(true);
+        const on = await captureScreenshot(store, { frame: 0, seed: 1, out: 'shots/bg-on.png' });
+
+        const [offBytes, onBytes] = await Promise.all([readFile(off.path), readFile(on.path)]);
+        expect(Buffer.compare(offBytes, onBytes)).not.toBe(0);
+      } finally {
+        await cleanup();
+      }
+    },
+    30000,
+  );
+
   // Neutral guard: an explicitly-empty postEffects stack must render
   // byte-identical to never having set one (gameView restructure is
   // render-neutral, filters = null). Mirrors the white-tint no-op regression.

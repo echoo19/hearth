@@ -188,14 +188,31 @@ export class PixiSceneView {
    */
   private fxOverlay = new Graphics();
   /**
-   * Post-processing host: world, lightmap, ui, and fxOverlay all live inside
-   * this one container so Camera.postEffects filters (bloom/crt/…) apply to
-   * the whole composited game view at once. The debug overlay is deliberately
-   * NOT a child of this — it stays a direct stage child above gameView so
-   * collider/velocity lines are never distorted by a CRT warp or pixelate.
+   * Post-processing host: background, world, lightmap, ui, and fxOverlay all
+   * live inside this one container so Camera.postEffects filters (bloom/crt/…)
+   * apply to the whole composited game view at once. The debug overlay is
+   * deliberately NOT a child of this — it stays a direct stage child above
+   * gameView so collider/velocity lines are never distorted by a CRT warp or
+   * pixelate.
    */
   private gameView = new Container();
-  /** Cached post-effect filters, rebuilt only when the stack signature changes. */
+  /**
+   * Full-screen opaque rect in Camera.backgroundColor, gameView's FIRST child
+   * (below the world). Two jobs, both for post effects: (1) the renderer's
+   * own clear color lives OUTSIDE gameView, so without this rect a vignette/
+   * CRT/colorGrade would only touch drawn texels and leave raw background
+   * showing through untinted; (2) it pins gameView's bounds to the full
+   * screen, so filter geometry (uOutputFrame) anchors to screen space instead
+   * of the content bounding box — vignette centers on the screen, not on
+   * wherever the sprites happen to cluster. The renderer clear stays as-is
+   * (same color, hidden behind this rect); with an empty effect stack the
+   * rect renders byte-identically to that clear, which the neutral-guard
+   * screenshot test locks in. Redrawn only when color/size change.
+   */
+  private backgroundRect = new Graphics();
+  /** Last-drawn (color|width|height) of backgroundRect, to skip redundant redraws. */
+  private backgroundSnapshot = '';
+  /** Cached post-effect filters, rebuilt only when the stack shape changes. */
   private postEffectState: PostEffectFilterState = createPostEffectFilterState();
   private audio: WebAudioPlayer | null = null;
   private accumulator = 0;
@@ -244,13 +261,18 @@ export class PixiSceneView {
     this.fxOverlay.label = 'fx-overlay';
     this.fxOverlay.eventMode = 'none';
 
-    // Stage order: gameView (world, lightmapSprite, ui, fxOverlay) then
-    // debugLayer above it. The lightmap darkens/tints the world but never the
-    // UI, and the fx overlay sits above everything inside the view so a fade
-    // covers the HUD too. Everything filterable lives inside gameView so
-    // Camera.postEffects apply to the whole composited frame at once; the
-    // debug overlay stays a DIRECT stage child above gameView so its lines are
-    // never warped/tinted by a post effect.
+    // Stage order: gameView (backgroundRect, world, lightmapSprite, ui,
+    // fxOverlay) then debugLayer above it. The lightmap darkens/tints the
+    // world (and the background rect, exactly as it darkened the renderer
+    // clear before) but never the UI, and the fx overlay sits above
+    // everything inside the view so a fade covers the HUD too. Everything
+    // filterable lives inside gameView so Camera.postEffects apply to the
+    // whole composited frame at once; the debug overlay stays a DIRECT stage
+    // child above gameView so its lines are never warped/tinted by a post
+    // effect.
+    this.backgroundRect.label = 'background';
+    this.backgroundRect.eventMode = 'none';
+    this.gameView.addChild(this.backgroundRect);
     this.gameView.addChild(this.world);
     this.gameView.addChild(this.lightmapSprite);
     this.gameView.addChild(this.ui);
@@ -636,11 +658,12 @@ export class PixiSceneView {
       settings.height / 2 - (cam.position.y + fx.offset.y) * zoom,
     );
     this.app.renderer.background.color = cam.backgroundColor;
+    this.syncBackgroundRect(cam.backgroundColor, settings.width, settings.height);
     this.updateLightmap(cam, settings.width, settings.height);
     this.syncFxOverlay(fx.overlay, settings.width, settings.height);
 
     // Screen-space post-processing (Camera.postEffects). Filters are cached by
-    // stack signature; uniforms (including CRT's frame-seeded noise) refresh
+    // stack shape; uniforms (including CRT's frame-seeded noise) refresh
     // every tick. An empty stack yields `filters = null` — byte-identical to
     // no effects, which the neutral-guard screenshot test locks in.
     this.gameView.filters = syncPostEffectFilters(
@@ -794,6 +817,19 @@ export class PixiSceneView {
 
     this.app.renderer.render({ container: this.lightScene, target: this.lightmapRT, clear: true });
     this.lightmapSprite.visible = true;
+  }
+
+  /**
+   * Redraw the full-screen background rect (gameView's bottom child — see the
+   * `backgroundRect` field doc for why post effects need it) when the camera
+   * background color or screen size changed since last tick.
+   */
+  private syncBackgroundRect(color: string, width: number, height: number): void {
+    const snapshot = `${color}|${width}x${height}`;
+    if (this.backgroundSnapshot === snapshot) return;
+    this.backgroundSnapshot = snapshot;
+    this.backgroundRect.clear();
+    this.backgroundRect.rect(0, 0, width, height).fill(color);
   }
 
   /**
