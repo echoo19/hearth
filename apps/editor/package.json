@@ -1,6 +1,6 @@
 {
   "name": "@hearth/editor",
-  "version": "0.9.0",
+  "version": "0.10.0",
   "description": "Hearth desktop editor (Tauri + React). Also runs in the browser via `npm run dev`.",
   "license": "MIT",
   "type": "module",
