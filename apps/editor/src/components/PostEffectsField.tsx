@@ -20,8 +20,17 @@ import { POST_EFFECTS_MAX, addEffect, moveEffect, removeEffect, updateEffect } f
 import { ColorField, NumberField } from './Inspector';
 import { Icon } from './ui';
 
+/** Effect types whose title case reads as an unfinished word ("Crt") rather
+ * than the acronym everyone actually calls it — checked before the generic
+ * word-split transform below. */
+const ACRONYMS: Partial<Record<PostEffectType, string>> = {
+  crt: 'CRT',
+};
+
 /** camelCase variant name -> "Title Case With Spaces" for the type label and add-dropdown. */
-function humanize(type: string): string {
+export function humanize(type: string): string {
+  const acronym = ACRONYMS[type as PostEffectType];
+  if (acronym) return acronym;
   return type.replace(/([a-z])([A-Z])/g, '$1 $2').replace(/^./, (c) => c.toUpperCase());
 }
 

@@ -22,6 +22,16 @@ import { countPrefabInstances, createSyncPreflight, syncConfirmBody } from '../p
 // Field editors: value type decides the control. All commit on blur / Enter.
 // ---------------------------------------------------------------------------
 
+/** Raw schema field name -> "Title Case With Spaces" label, e.g.
+ * "backgroundColor" -> "Background Color". PRODUCT.md targets a newcomer
+ * audience; raw camelCase schema keys (isMain, ambientLight, fontFamily)
+ * read as developer identifiers otherwise. Mirrors PostEffectsField.tsx's
+ * humanize() for the same reason. The raw property name stays available in
+ * the row's `title` tooltip for anyone who wants the exact schema key. */
+export function humanizeFieldLabel(field: string): string {
+  return field.replace(/([a-z0-9])([A-Z])/g, '$1 $2').replace(/^./, (c) => c.toUpperCase());
+}
+
 export function NumberField({ value, onCommit }: { value: number; onCommit: (v: number) => void }) {
   const [draft, setDraft] = useState(String(value));
   useEffect(() => setDraft(String(value)), [value]);
@@ -294,39 +304,59 @@ function TileAssetsField({
   // tileAssets maps to sprite/tile assets, same pool SpriteRenderer.assetId
   // picks from (renderTilemap resolves them the same way).
   const imageAssets = assets.filter((a) => a.type === 'sprite' || a.type === 'tile');
+  const MISSING = '__missing__';
   return (
     <div className="vec2-list">
       {rows.length === 0 && <span className="vec2-list-empty">No tile chars mapped</span>}
-      {rows.map((row, i) => (
-        <div className="vec2-list-row" key={i}>
-          <TileCharField
-            value={row.char}
-            rows={rows}
-            index={i}
-            onCommit={(char) => onCommit(rowsToMap(renameRowChar(rows, i, char)))}
-          />
-          <select
-            className="select"
-            value={row.assetId}
-            onChange={(e) => onCommit(rowsToMap(setRowAsset(rows, i, e.target.value)))}
-          >
-            <option value="">(none)</option>
-            {imageAssets.map((a) => (
-              <option key={a.id} value={a.id}>
-                {a.name}
-              </option>
-            ))}
-          </select>
-          <button
-            type="button"
-            className="icon-btn danger"
-            title={`Remove "${row.char}"`}
-            onClick={() => onCommit(rowsToMap(removeRow(rows, i)))}
-          >
-            <Icon name="cross" size={10} />
-          </button>
-        </div>
-      ))}
+      {rows.map((row, i) => {
+        // The asset a row points at can be deleted out from under the
+        // mapping — the char/mapping itself still exists, but the native
+        // <select> would otherwise render blank with no signal that
+        // anything's wrong. Surface it as a disabled "(missing asset)"
+        // option plus an inline error instead.
+        const missing = row.assetId !== '' && !imageAssets.some((a) => a.id === row.assetId);
+        return (
+          <div className="vec2-list-row" key={i}>
+            <TileCharField
+              value={row.char}
+              rows={rows}
+              index={i}
+              onCommit={(char) => onCommit(rowsToMap(renameRowChar(rows, i, char)))}
+            />
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 2, flex: 1, minWidth: 0 }}>
+              <select
+                className={`select${missing ? ' invalid' : ''}`}
+                value={missing ? MISSING : row.assetId}
+                onChange={(e) => {
+                  if (e.target.value === MISSING) return;
+                  onCommit(rowsToMap(setRowAsset(rows, i, e.target.value)));
+                }}
+              >
+                <option value="">(none)</option>
+                {missing && (
+                  <option value={MISSING} disabled>
+                    (missing asset)
+                  </option>
+                )}
+                {imageAssets.map((a) => (
+                  <option key={a.id} value={a.id}>
+                    {a.name}
+                  </option>
+                ))}
+              </select>
+              {missing && <span className="field-error">Referenced asset was deleted — pick a replacement.</span>}
+            </div>
+            <button
+              type="button"
+              className="icon-btn danger"
+              title={`Remove "${row.char}"`}
+              onClick={() => onCommit(rowsToMap(removeRow(rows, i)))}
+            >
+              <Icon name="cross" size={10} />
+            </button>
+          </div>
+        );
+      })}
       <button
         type="button"
         className="btn btn-sm"
@@ -338,33 +368,31 @@ function TileAssetsField({
   );
 }
 
-function JsonField({ value, onCommit }: { value: unknown; onCommit: (v: unknown) => void }) {
-  const formatted = useMemo(() => JSON.stringify(value, null, 2) ?? 'null', [value]);
-  const [draft, setDraft] = useState(formatted);
-  const [error, setError] = useState('');
+/**
+ * Fallback for a component field that doesn't match any typed branch below —
+ * Jake's bar is "no raw JSON for a typed field, ever," so this deliberately
+ * does NOT fall back to a JSON textarea (that used to be JsonField, now
+ * retired). Read-only by design: showing an editable raw-JSON escape hatch
+ * here would silently defeat the "every field gets a real control" contract
+ * the moment a new schema field shipped without one. Warns once in dev so
+ * whoever adds the next component field notices immediately instead of
+ * finding out from a bug report.
+ */
+function UnsupportedField({ value, property }: { value: unknown; property: string }) {
   useEffect(() => {
-    setDraft(formatted);
-    setError('');
-  }, [formatted]);
-  const commit = () => {
-    try {
-      const parsed = draft.trim() === '' ? null : JSON.parse(draft);
-      setError('');
-      if (JSON.stringify(parsed) !== JSON.stringify(value)) onCommit(parsed);
-    } catch (err) {
-      setError(`Invalid JSON: ${(err as Error).message}`);
+    if (import.meta.env.DEV) {
+      // eslint-disable-next-line no-console
+      console.warn(
+        `Inspector: "${property}" has no typed control and is showing read-only. Add a branch for it instead of falling back to raw JSON.`,
+      );
     }
-  };
+  }, [property]);
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
-      <textarea
-        className={`textarea${error ? ' invalid' : ''}`}
-        rows={Math.min(8, Math.max(2, formatted.split('\n').length))}
-        value={draft}
-        onChange={(e) => setDraft(e.target.value)}
-        onBlur={commit}
-      />
-      {error && <span className="field-error">{error}</span>}
+      <span className="mono" style={{ color: 'var(--ink-faint)', fontSize: 12 }}>
+        {JSON.stringify(value)}
+      </span>
+      <span className="field-error">Unsupported field — needs a typed control. Not editable here; file a bug.</span>
     </div>
   );
 }
@@ -611,7 +639,7 @@ export function Inspector() {
             disabled={pendingSyncAllFor === entity.id}
             onClick={() => void openSyncAllConfirm()}
           >
-            {pendingSyncAllFor === entity.id ? 'Syncing…' : 'Sync all'}
+            {pendingSyncAllFor === entity.id ? 'Syncing…' : 'Sync instances'}
           </button>
         </div>
       )}
@@ -912,14 +940,12 @@ export function Inspector() {
                       />
                     );
                   } else {
-                    control = (
-                      <JsonField key={rowKey} value={value} onCommit={(v) => setProperty(property, v)} />
-                    );
+                    control = <UnsupportedField key={rowKey} value={value} property={property} />;
                   }
                   return (
                     <div className="inspector-row" key={field}>
                       <label className="field-label" title={property}>
-                        {field}
+                        {humanizeFieldLabel(field)}
                       </label>
                       {control}
                     </div>
@@ -964,7 +990,7 @@ export function Inspector() {
       <ConfirmDialog
         open={confirmDelete}
         title={`Delete “${entity.name}”?`}
-        body="Its children are kept and re-parented one level up."
+        body="Its children are kept and re-parented one level up. This shows up in your undo history, so Ctrl/Cmd+Z brings it back."
         confirmLabel="Delete entity"
         danger
         onCancel={() => setConfirmDelete(false)}
