@@ -18,6 +18,7 @@ import {
   AssetIndexSchema,
   PlaytestSchema,
   PrefabDataSchema,
+  StateMachineDataSchema,
 } from '../schema/project.js';
 import { SceneSchema } from '../schema/scene.js';
 import { pruneTrash } from './trash.js';
@@ -91,7 +92,26 @@ function validateSnapshot(raw: unknown, sourceFile: string): ProjectSnapshot {
       prefabs[path] = content;
     }
 
-    return { project, scenes, assets, scripts, prefabs, playtests };
+    // State machine payloads: same content-owned bucket as prefabs, same
+    // reasoning. Absent on snapshots written before this wave; treat as empty.
+    const stateMachinesRaw = snap.stateMachines ?? {};
+    if (typeof stateMachinesRaw !== 'object' || stateMachinesRaw === null || Array.isArray(stateMachinesRaw)) {
+      throw new Error('stateMachines must be an object keyed by path');
+    }
+    const stateMachines: Record<string, string> = {};
+    for (const [path, content] of Object.entries(stateMachinesRaw as Record<string, unknown>)) {
+      if (typeof content !== 'string') throw new Error(`state machine "${path}" is not a string`);
+      let payload: unknown;
+      try {
+        payload = JSON.parse(content);
+      } catch {
+        throw new Error(`state machine "${path}" is not valid JSON`);
+      }
+      StateMachineDataSchema.parse(payload);
+      stateMachines[path] = content;
+    }
+
+    return { project, scenes, assets, scripts, prefabs, stateMachines, playtests };
   } catch (err) {
     const detail =
       err instanceof ZodError

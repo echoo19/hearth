@@ -18,6 +18,8 @@ async function loadBaseline(ctx: any): Promise<ProjectSnapshot | null> {
   // exist, so an old-shape baseline can't reference any payload file either).
   // Default it so diff/revert on an upgraded project don't blow up.
   snap.prefabs ??= {};
+  // Same guard for state machines, which don't exist before v0.12.
+  snap.stateMachines ??= {};
   // A baseline is raw JSON, so a pre-0.11 snapshot's `project` has no
   // codeStyle key (and future fields will have the same gap). The live
   // project always went through ProjectFileSchema.parse at load time (so it

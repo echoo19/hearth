@@ -221,6 +221,16 @@ export function diffSnapshots(before: ProjectSnapshot, after: ProjectSnapshot): 
     if (beforePrefabs[path] !== afterPrefabs[path]) changedPrefabPaths.add(path);
   }
 
+  // Same reasoning, same bucket shape, for state machine payloads: an
+  // in-place updateStateMachineAsset (same id/path) leaves the index entry
+  // byte-identical.
+  const beforeStateMachines = before.stateMachines ?? {};
+  const afterStateMachines = after.stateMachines ?? {};
+  const changedStateMachinePaths = new Set<string>();
+  for (const path of new Set([...Object.keys(beforeStateMachines), ...Object.keys(afterStateMachines)])) {
+    if (beforeStateMachines[path] !== afterStateMachines[path]) changedStateMachinePaths.add(path);
+  }
+
   const assets: AssetDiffEntry[] = [];
   const bAssets = new Map(before.assets.assets.map((a) => [a.id, a]));
   const aAssets = new Map(after.assets.assets.map((a) => [a.id, a]));
@@ -229,7 +239,9 @@ export function diffSnapshots(before: ProjectSnapshot, after: ProjectSnapshot): 
       assets.push({ id, name: asset.name, type: asset.type, path: asset.path, status: 'added' });
     } else {
       const indexChanged = JSON.stringify(bAssets.get(id)) !== JSON.stringify(asset);
-      const payloadChanged = asset.type === 'prefab' && changedPrefabPaths.has(asset.path);
+      const payloadChanged =
+        (asset.type === 'prefab' && changedPrefabPaths.has(asset.path)) ||
+        (asset.type === 'stateMachine' && changedStateMachinePaths.has(asset.path));
       if (indexChanged || payloadChanged) {
         assets.push({ id, name: asset.name, type: asset.type, path: asset.path, status: 'modified' });
       }

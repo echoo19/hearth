@@ -69,6 +69,22 @@ export async function applySnapshot(ctx: RestoreContext, snapshot: ProjectSnapsh
     ctx.changed({ kind: 'asset', path, action: 'modified' });
   }
 
+  // Restore state machine payload files — same content-owned reasoning as
+  // prefabs above: an in-place updateStateMachineAsset keeps the same asset
+  // id/path and just rewrites the payload, so the index diff is blind to it.
+  const snapshotStateMachines = snapshot.stateMachines ?? {};
+  const currentStateMachineFiles = await ctx.store.listStateMachineFiles();
+  for (const path of currentStateMachineFiles) {
+    if (!(path in snapshotStateMachines)) {
+      await ctx.fs.remove(joinPath(ctx.root, path));
+      ctx.changed({ kind: 'asset', path, action: 'deleted' });
+    }
+  }
+  for (const [path, content] of Object.entries(snapshotStateMachines)) {
+    await ctx.fs.writeFile(joinPath(ctx.root, path), content);
+    ctx.changed({ kind: 'asset', path, action: 'modified' });
+  }
+
   // Playtest and scene files aren't reconstructed from the snapshot (unlike
   // scripts, whose content IS the snapshot) — they're written wholesale by
   // store.save() from whatever's now in ctx.store.playtests/scenes. save()

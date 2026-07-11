@@ -77,6 +77,16 @@ export function extractJournalDetail(
     if (typeof d.path !== 'string') return undefined;
     return { path: d.path };
   }
+  if (name === 'createStateMachineAsset') {
+    if (typeof params !== 'object' || params === null) return undefined;
+    const p = params as Record<string, unknown>;
+    if (typeof p.name !== 'string') return undefined;
+    return { name: p.name };
+  }
+  if (name === 'updateStateMachineAsset') {
+    if (typeof d.assetId !== 'string') return undefined;
+    return { assetId: d.assetId };
+  }
   if (name === 'formatScript') {
     if (!Array.isArray(d.results)) return undefined;
     const paths: string[] = [];

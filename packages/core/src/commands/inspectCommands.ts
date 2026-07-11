@@ -5,7 +5,7 @@ import { COMPONENT_DOCS, COMPONENT_ENUMS, COMPONENT_SCHEMAS, COMPONENT_TYPES } f
 import { validateProject } from '../validate.js';
 import { ProjectError, readJson } from '../project/store.js';
 import { joinPath } from '../fs.js';
-import { PrefabDataSchema, type Asset } from '../schema/project.js';
+import { PrefabDataSchema, StateMachineDataSchema, type Asset, type StateMachineData } from '../schema/project.js';
 import { CTX_API } from '../ctxApi.js';
 import { collectNavSolids, buildNavGrid, findPath } from '../pathfinding.js';
 import type { Scene } from '../schema/scene.js';
@@ -30,6 +30,22 @@ async function summarizePrefabAsset(
       entityCount: parsed.data.entities.length,
       rootComponents: root ? Object.keys(root.components) : [],
     };
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * The full parsed state machine document for inspectAssets: agents/editor
+ * need the whole config (params, states, transitions), not a summary.
+ * Returns `undefined` (rather than throwing) when the file is missing or
+ * invalid — validateProject is the source of truth for flagging that.
+ */
+async function summarizeStateMachineAsset(ctx: CommandContext, asset: Asset): Promise<StateMachineData | undefined> {
+  try {
+    const raw = await readJson(ctx.fs, joinPath(ctx.store.root, asset.path));
+    const parsed = StateMachineDataSchema.safeParse(raw);
+    return parsed.success ? parsed.data : undefined;
   } catch {
     return undefined;
   }
@@ -209,9 +225,15 @@ export const inspectAssets = defineCommand({
     if (params.type) assets = assets.filter((a) => a.type === params.type);
     const summarized = await Promise.all(
       assets.map(async (asset) => {
-        if (asset.type !== 'prefab') return asset;
-        const prefab = await summarizePrefabAsset(ctx, asset);
-        return prefab ? { ...asset, prefab } : asset;
+        if (asset.type === 'prefab') {
+          const prefab = await summarizePrefabAsset(ctx, asset);
+          return prefab ? { ...asset, prefab } : asset;
+        }
+        if (asset.type === 'stateMachine') {
+          const stateMachine = await summarizeStateMachineAsset(ctx, asset);
+          return stateMachine ? { ...asset, stateMachine } : asset;
+        }
+        return asset;
       }),
     );
     return { count: assets.length, assets: summarized };

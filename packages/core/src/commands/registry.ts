@@ -13,6 +13,7 @@ import * as inspectCommands from './inspectCommands.js';
 import * as scriptCommands from './scriptCommands.js';
 import * as assetCommands from './assetCommands.js';
 import * as prefabCommands from './prefabCommands.js';
+import * as stateMachineCommands from './stateMachineCommands.js';
 import * as settingsCommands from './settingsCommands.js';
 import * as diffCommands from './diffCommands.js';
 import * as exportCommands from './exportCommands.js';
@@ -79,6 +80,9 @@ const ALL_DEFINITIONS: CommandDefinition[] = [
   prefabCommands.instantiatePrefab,
   prefabCommands.updatePrefab,
   prefabCommands.syncPrefabInstances,
+  // state machines
+  stateMachineCommands.createStateMachineAsset,
+  stateMachineCommands.updateStateMachineAsset,
   // settings
   settingsCommands.updateSettings,
   // diff / playtest / build

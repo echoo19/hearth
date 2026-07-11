@@ -16,6 +16,7 @@ import {
   ASSET_INDEX_FILE,
   PLAYTESTS_DIR,
   PREFABS_DIR,
+  STATEMACHINES_DIR,
 } from '../schema/project.js';
 import { SceneSchema, type Scene } from '../schema/scene.js';
 import { joinPath, type FsLike } from '../fs.js';
@@ -35,6 +36,13 @@ export interface ProjectSnapshot {
    * in-place rewrite visible to undo/redo, revert, and diff.
    */
   prefabs: Record<string, string>;
+  /**
+   * State machine payload path -> raw file contents. Same content-owned
+   * bucket as `prefabs`, for the same reason: updateStateMachineAsset
+   * rewrites the payload file in place under the same path/asset id, so the
+   * asset index alone can't see the change.
+   */
+  stateMachines: Record<string, string>;
   playtests: Record<string, Playtest>; // keyed by playtest id
 }
 
@@ -54,7 +62,8 @@ export class ProjectError extends Error {
       | 'INVALID_TILE_CHAR'
       | 'TILE_OUT_OF_BOUNDS'
       | 'PREFAB_DATA_INVALID'
-      | 'PREFAB_NOT_INSTANCE' = 'INVALID_INPUT',
+      | 'PREFAB_NOT_INSTANCE'
+      | 'ASM_ANIMATION_NOT_FOUND' = 'INVALID_INPUT',
   ) {
     super(message);
     this.name = 'ProjectError';
@@ -219,6 +228,22 @@ export class ProjectStore {
     return out.sort();
   }
 
+  /** Read a state machine payload file's raw text (project-relative path). */
+  async readStateMachineFile(smPath: string): Promise<string> {
+    return this.fs.readFile(joinPath(this.root, smPath));
+  }
+
+  /** All state machine payload files on disk (project-relative), sorted. */
+  async listStateMachineFiles(): Promise<string[]> {
+    const dir = joinPath(this.root, STATEMACHINES_DIR);
+    if (!(await this.fs.exists(dir))) return [];
+    const out: string[] = [];
+    for (const f of await this.fs.readdir(dir)) {
+      if (f.endsWith('.asm.json')) out.push(joinPath(STATEMACHINES_DIR, f));
+    }
+    return out.sort();
+  }
+
   /** Deep-copy snapshot of the whole project model (for diff baselines). */
   async toSnapshot(): Promise<ProjectSnapshot> {
     const scripts: Record<string, string> = {};
@@ -229,12 +254,17 @@ export class ProjectStore {
     for (const path of await this.listPrefabFiles()) {
       prefabs[path] = await this.readPrefabFile(path);
     }
+    const stateMachines: Record<string, string> = {};
+    for (const path of await this.listStateMachineFiles()) {
+      stateMachines[path] = await this.readStateMachineFile(path);
+    }
     return structuredClone({
       project: this.project,
       scenes: Object.fromEntries(this.scenes),
       assets: this.assets,
       scripts,
       prefabs,
+      stateMachines,
       playtests: Object.fromEntries(this.playtests),
     });
   }
