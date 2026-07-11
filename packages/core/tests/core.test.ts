@@ -549,6 +549,35 @@ describe('diff & snapshot', () => {
     expect(revert.success).toBe(true);
     expect(store.project.codeStyle).toEqual({ formatOnSave: true });
   });
+
+  it('a pre-0.10 baseline whose Camera lacks postEffects does not phantom-diff against the live default []', async () => {
+    const { fs, session } = await makeSession();
+
+    // Simulate a pre-0.10 checkpoint: snapshot, then strip `postEffects` from
+    // the starter scene's Main Camera component (postEffects is new in 0.10,
+    // so an old core never wrote it). The live scene still gets postEffects
+    // defaulted in by CameraSchema.parse at load time (via ProjectStore.load
+    // -> SceneSchema.parse), so this is the same phantom-diff class as
+    // project.codeStyle above, but at the component level: does loadBaseline's
+    // project-only re-parse also cover scenes, or does the differ need its
+    // own component-schema normalization pass?
+    const snap = await session.execute<any>('snapshotProject');
+    expect(snap.success).toBe(true);
+    const baselinePath = '/proj/.hearth/baseline.json';
+    const baseline = JSON.parse(await fs.readFile(baselinePath));
+    const mainScene = Object.values(baseline.scenes as Record<string, any>).find(
+      (s: any) => s.name === 'Main',
+    ) as any;
+    const cameraEntity = mainScene.entities.find((e: any) => e.components.Camera);
+    expect(cameraEntity.components.Camera.postEffects).toEqual([]);
+    delete cameraEntity.components.Camera.postEffects;
+    await fs.writeFile(baselinePath, JSON.stringify(baseline));
+
+    const diff = await session.execute<any>('diffProject');
+    expect(diff.success).toBe(true);
+    expect(diff.data.hasChanges).toBe(false);
+    expect(diff.data.scenes).toEqual([]);
+  });
 });
 
 describe('playtests & build', () => {

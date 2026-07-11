@@ -5,6 +5,7 @@ import { applySnapshot } from '../project/restore.js';
 import { diffSnapshots } from '../diff/diff.js';
 import { joinPath, isSafeOut } from '../fs.js';
 import { BASELINE_FILE, PLAYTESTS_DIR, SCRIPTS_DIR, ProjectFileSchema } from '../schema/project.js';
+import { SceneSchema } from '../schema/scene.js';
 import { generateId, slugify } from '../ids.js';
 import { PlaytestSchema, PlaytestStepSchema } from '../schema/project.js';
 import { validateProject } from '../validate.js';
@@ -24,6 +25,16 @@ async function loadBaseline(ctx: any): Promise<ProjectSnapshot | null> {
   // here keeps both sides of diffSnapshots normalized the same way, so a
   // schema addition never shows up as a phantom project-setting change.
   snap.project = ProjectFileSchema.parse(snap.project);
+  // Same principle at the component level: a pre-0.10 baseline's Camera has
+  // no `postEffects` key (the field didn't exist yet), but the live scene
+  // always went through SceneSchema.parse at load time (ProjectStore.load),
+  // which fills every component's schema defaults in — postEffects: []
+  // included. Re-parsing every baseline scene here keeps both sides of
+  // diffSnapshots normalized the same way, so a component-schema addition
+  // never shows up as a phantom component change.
+  for (const [id, scene] of Object.entries(snap.scenes)) {
+    snap.scenes[id] = SceneSchema.parse(scene);
+  }
   return snap;
 }
 
