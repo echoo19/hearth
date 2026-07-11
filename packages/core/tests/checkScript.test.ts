@@ -30,7 +30,7 @@ describe('checkScript', () => {
     expect(diag.message.length).toBeGreaterThan(0);
   });
 
-  it('reports a JS syntax error with the line matching the -2 wrapper offset', async () => {
+  it('reports a JS syntax error with line: null — a documented V8 limitation, not a bug (M-1)', async () => {
     const { session } = await makeSession();
     const result = await session.execute<any>('checkScript', {
       source: 'export default {\n  onUpdate(ctx, dt) {\n};\n', // unbalanced braces
@@ -42,11 +42,23 @@ describe('checkScript', () => {
     expect(result.data.diagnostics.length).toBe(1);
     const diag = result.data.diagnostics[0];
     expect(diag.severity).toBe('error');
-    // Same offset rule as extractJsErrorLine: V8 reports the line of the
-    // synthesized `function anonymous(...) {` header, two lines above body.
-    if (diag.line !== null) {
-      expect(diag.line).toBeGreaterThanOrEqual(1);
-    }
+    // M-1 (waveG final review): `new Function(...)`'s compile-time
+    // SyntaxError.stack never carries a `<anonymous>:LINE:COL` frame in
+    // current V8 (only `at new Function (<anonymous>)`) — verified live
+    // against Node 22 — so `extractJsErrorLine` never matches and every JS
+    // syntax error's diagnostic carries `line: null`. This is a *pinned*
+    // assertion of that documented behavior, not the old
+    // `if (diag.line !== null) { ... }` guard, which could never fire (since
+    // the value is always null) and so passed trivially without verifying
+    // anything. A `node:vm`-based recompile can recover a real line number,
+    // but was reverted after it broke `npm run build:editor` — see
+    // `extractJsErrorLine`'s docstring in validate.ts for why. Lua is
+    // unaffected: luaparse carries native line info (see the test above) and
+    // is Hearth's default scripting language, so this stays documented
+    // rather than fixed.
+    expect(diag.line).toBeNull();
+    expect(typeof diag.message).toBe('string');
+    expect(diag.message.length).toBeGreaterThan(0);
   });
 
   it('valid Lua source -> valid: true, diagnostics: []', async () => {

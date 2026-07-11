@@ -82,6 +82,27 @@ function validatePolygonPoints(points: { x: number; y: number }[]): { code: stri
  * reports the failing position in the error stack as `<anonymous>:LINE:COL`,
  * where LINE counts from the synthesized `function anonymous(...) {` header —
  * two lines above the script body.
+ *
+ * In practice this never matches (M-1, waveG final review): verified live
+ * against Node 22 that a `new Function(...)` compile-time SyntaxError's
+ * `.stack` contains no `<anonymous>:LINE:COL` frame at all — only
+ * `at new Function (<anonymous>)` — so every JS syntax error's diagnostic
+ * carries `line: null`. `checkScript.test.ts` pins this as the documented
+ * current behavior rather than asserting it conditionally.
+ *
+ * `node:vm`'s `Script` constructor *does* report a usable line (it compiles
+ * without the synthetic function-wrapper header), and was tried here as a
+ * secondary compile purely for line recovery — but `packages/core`'s
+ * `validate.ts` is pulled into the editor's browser bundle via the
+ * `@hearth/core` barrel (confirmed live: `npm run build:editor` fails with
+ * `"Script" is not exported by "__vite-browser-external"` the moment a
+ * static `node:vm` import is added, even though the editor never calls
+ * `checkScriptSource` directly — it only reaches it over HTTP via the
+ * `checkScript` command). Making the import conditional/dynamic would
+ * require turning this synchronous, publicly-exported function async, a
+ * breaking API change out of scope for a line-number nicety. Lua is
+ * unaffected (luaparse carries native line info) and is Hearth's default
+ * scripting language, so this stays a documented limitation.
  */
 function extractJsErrorLine(err: unknown): number | undefined {
   const stack = (err as Error | undefined)?.stack ?? '';

@@ -112,6 +112,64 @@ function assertValidPath(type: ComponentType, pathParts: string[]): void {
   );
 }
 
+/**
+ * Data-aware post-check for discriminated-union array elements (waveG I-1).
+ *
+ * `validateComponentPath` accepts a path segment if it's valid on ANY member
+ * of a discriminated union, because the schema-only path walker has no way to
+ * know which member is actually stored at a given array index — that's
+ * inherent to validating a *path* against a *schema* before the write
+ * happens. So `Camera.postEffects.0.scanlineIntensity` (a crt-only field)
+ * passes path validation even when element 0 is a stored bloom. The write
+ * then goes through `safeParse`, which resolves the *real* discriminant and
+ * silently strips the unknown field per normal Zod object semantics — so the
+ * command would report success + a changed component while writing nothing.
+ *
+ * This walks `pathParts` back through the already-parsed (post-safeParse)
+ * data and confirms every segment still resolves. This is a *resolves*
+ * check, not a deep-equality check: legitimate writes zod coerces or fills
+ * with defaults still resolve (the key exists), so only an actually-stripped
+ * key is flagged. When a segment vanishes inside an object that carries a
+ * `type` discriminant, the error names the real variant and lists only that
+ * variant's own keys, instead of failing on the whole-union's fidelity claim.
+ */
+function assertWriteResolves(type: ComponentType, pathParts: string[], data: unknown): void {
+  let cursor: unknown = data;
+  for (let i = 0; i < pathParts.length; i++) {
+    const segment = pathParts[i];
+    if (cursor === null || typeof cursor !== 'object') {
+      // Path validation already confirmed the schema shape; a non-object
+      // cursor here means the path legitimately stopped early (wholesale
+      // write of a primitive-adjacent value) — nothing further to check.
+      return;
+    }
+    if (Array.isArray(cursor)) {
+      const idx = Number(segment);
+      if (!Number.isInteger(idx) || idx < 0 || idx >= cursor.length) return;
+      cursor = cursor[idx];
+      continue;
+    }
+    const obj = cursor as Record<string, unknown>;
+    if (!Object.prototype.hasOwnProperty.call(obj, segment)) {
+      const prefixPath = [type, ...pathParts.slice(0, i)].join('.');
+      const variant = typeof obj.type === 'string' ? obj.type : undefined;
+      if (variant) {
+        const validKeys = Object.keys(obj).filter((key) => key !== 'type');
+        throw new ProjectError(
+          `"${segment}" is not a property of the "${variant}" variant at ${prefixPath}. ` +
+            `Valid keys for "${variant}": ${validKeys.join(', ')}.`,
+          'INVALID_INPUT',
+        );
+      }
+      throw new ProjectError(
+        `Write to ${[type, ...pathParts].join('.')} did not take effect: the value was stripped during schema validation.`,
+        'INVALID_INPUT',
+      );
+    }
+    cursor = obj[segment];
+  }
+}
+
 export const setComponentProperty = defineCommand({
   name: 'setComponentProperty',
   description:
@@ -159,6 +217,7 @@ export const setComponentProperty = defineCommand({
         .join('; ');
       throw new ProjectError(`Invalid value for ${params.property}: ${issues}`, 'SCHEMA_ERROR');
     }
+    assertWriteResolves(type, pathParts, parsed.data);
     (entity.components as Record<string, unknown>)[type] = parsed.data;
     ctx.changed({ kind: 'component', id: entity.id, name: type, scene: scene.id, action: 'modified' });
     return {
@@ -194,6 +253,7 @@ export const setProperties = defineCommand({
     // Phase 1: validate every key against a per-type clone before writing
     // anything to the entity, so a bad key anywhere fails the whole batch.
     const drafts = new Map<ComponentType, Record<string, unknown>>();
+    const writes: Array<{ type: ComponentType; pathParts: string[] }> = [];
     for (const [key, value] of Object.entries(params.properties)) {
       const [type, ...pathParts] = key.split('.');
       if (!isComponentType(type)) {
@@ -223,6 +283,7 @@ export const setProperties = defineCommand({
       }
       assertValidPath(type, pathParts);
       drafts.set(type, setByPath(draft, pathParts, value));
+      writes.push({ type, pathParts });
     }
 
     const parsedByType = new Map<ComponentType, Record<string, unknown>>();
@@ -233,6 +294,13 @@ export const setProperties = defineCommand({
         throw new ProjectError(`Invalid value for ${type}: ${issues}`, 'SCHEMA_ERROR');
       }
       parsedByType.set(type, parsed.data as Record<string, unknown>);
+    }
+
+    // Every written path must still resolve in the final parsed data — a
+    // cross-branch discriminated-union write (I-1) would otherwise pass
+    // safeParse (Zod strips the unknown field) while reporting success.
+    for (const { type, pathParts } of writes) {
+      assertWriteResolves(type, pathParts, parsedByType.get(type));
     }
 
     // Phase 2: every key and every touched component passed validation — write it all.
