@@ -287,6 +287,18 @@ describe('hearth-mcp server', () => {
     expect(ctx.store.project.inputMappings.gamepadButtons).toEqual({ jump: ['a'] });
   });
 
+  it('update_settings deep-merges codeStyle', async () => {
+    ctx = await connectClient();
+    const result = await ctx.client.callTool({
+      name: 'update_settings',
+      arguments: { codeStyle: { formatOnSave: false } },
+    });
+    expect(result.isError).toBeFalsy();
+    const envelope = toolJson(result);
+    expect(envelope.data.codeStyle).toEqual({ formatOnSave: false });
+    expect(ctx.store.project.codeStyle.formatOnSave).toBe(false);
+  });
+
   it('run_playtest executes headlessly and returns a passing result', async () => {
     ctx = await connectClient();
     const sceneId = ctx.store.project.initialScene!;

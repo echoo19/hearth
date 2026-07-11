@@ -15,6 +15,10 @@ export * from './schema/scene.js';
 export * from './schema/project.js';
 export * from './input/gamepad.js';
 
+// Formatting (fixed Hearth style; deps load lazily via `await import()` so
+// this stays safe to include in the browser bundle — see format.ts).
+export { formatSource, FormatError, type FormatResult } from './format.js';
+
 // Project model
 export { ProjectStore, ProjectError, readJson, writeJson, type ProjectSnapshot } from './project/store.js';
 export { createProject, DEFAULT_INPUT_ACTIONS, type CreateProjectOptions } from './project/create.js';

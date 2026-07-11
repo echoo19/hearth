@@ -199,6 +199,23 @@ describe('updateSettings', () => {
     expect(result.success).toBe(false);
     expect(result.errors[0].code).toBe('PERMISSION_DENIED');
   });
+
+  it('a fresh project defaults codeStyle.formatOnSave to true', async () => {
+    const { store } = await makeSession();
+    expect(store.project.codeStyle).toEqual({ formatOnSave: true });
+  });
+
+  it('deep-merges partial codeStyle', async () => {
+    const { session, store } = await makeSession();
+    const result = await session.execute<any>('updateSettings', { codeStyle: { formatOnSave: false } });
+    expect(result.success).toBe(true);
+    expect(result.data.codeStyle).toEqual({ formatOnSave: false });
+    expect(store.project.codeStyle.formatOnSave).toBe(false);
+
+    // Passing an empty patch leaves the existing value untouched.
+    const again = await session.execute<any>('updateSettings', { codeStyle: {} });
+    expect(again.data.codeStyle).toEqual({ formatOnSave: false });
+  });
 });
 
 describe('inspectApi', () => {

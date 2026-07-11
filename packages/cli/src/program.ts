@@ -466,7 +466,9 @@ export function buildProgram(): Command {
   addGlobalOptions(
     program
       .command('set-settings')
-      .description('update project settings: partial buildSettings (deep-merged), initial scene, input mappings')
+      .description(
+        'update project settings: partial buildSettings (deep-merged), initial scene, input mappings, code style',
+      )
       .option(
         '--build-settings <json>',
         'partial buildSettings JSON, deep-merged, e.g. \'{"title":"My Game","loading":{"spinner":true}}\'',
@@ -485,7 +487,12 @@ export function buildProgram(): Command {
         '--input-axes <json>',
         'virtual axis name -> axis JSON, replaced wholesale, e.g. \'{"horizontal":{"gamepadAxis":0,"negativeCodes":["ArrowLeft"],"positiveCodes":["ArrowRight"]}}\'',
       )
-      .option('--input-deadzone <number>', 'global gamepad stick deadzone (0-1)', (v) => parseFloat(v)),
+      .option('--input-deadzone <number>', 'global gamepad stick deadzone (0-1)', (v) => parseFloat(v))
+      .option(
+        '--format-on-save <bool>',
+        'auto-format Lua/JS scripts on save (true/false)',
+        (v) => v !== 'false',
+      ),
   ).action(async (opts, cmd) => {
     await guarded(cmd, 'updateSettings', () => {
       const params: Record<string, unknown> = {};
@@ -502,6 +509,7 @@ export function buildProgram(): Command {
       if (opts.inputAxes) inputMappings.axes = parseJsonObject(opts.inputAxes, '--input-axes');
       if (opts.inputDeadzone !== undefined) inputMappings.deadzone = opts.inputDeadzone;
       if (Object.keys(inputMappings).length > 0) params.inputMappings = inputMappings;
+      if (opts.formatOnSave !== undefined) params.codeStyle = { formatOnSave: opts.formatOnSave };
       return runAndEmit(cmd, 'updateSettings', params);
     });
   });

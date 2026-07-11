@@ -57,7 +57,7 @@ function getWorldPosition(scene: Scene, entityId: string): { x: number; y: numbe
 
 export const inspectProject = defineCommand({
   name: 'inspectProject',
-  description: 'Get project metadata: name, scenes, asset/script counts, input actions, build settings.',
+  description: 'Get project metadata: name, scenes, asset/script counts, input actions, build settings, code style.',
   permission: 'read-only',
   mutates: false,
   paramsSchema: z.object({}),
@@ -89,6 +89,7 @@ export const inspectProject = defineCommand({
       // panel needs the whole shape, not just the keyboard actions slice.
       inputMappings: ctx.store.project.inputMappings,
       buildSettings: ctx.store.project.buildSettings,
+      codeStyle: ctx.store.project.codeStyle,
     };
   },
 });

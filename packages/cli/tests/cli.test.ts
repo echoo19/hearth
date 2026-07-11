@@ -200,6 +200,16 @@ describe('hearth create script / inspect api / set-settings', () => {
     expect(parseJson(bad.stdout).errors[0].code).toBe('NOT_FOUND');
   });
 
+  it('set-settings sets codeStyle.formatOnSave', async () => {
+    const off = await runCli(['set-settings', '--format-on-save', 'false', '--json'], projectDir);
+    expect(off.code).toBe(0);
+    expect(parseJson(off.stdout).data.codeStyle).toEqual({ formatOnSave: false });
+
+    const on = await runCli(['set-settings', '--format-on-save', 'true', '--json'], projectDir);
+    expect(on.code).toBe(0);
+    expect(parseJson(on.stdout).data.codeStyle).toEqual({ formatOnSave: true });
+  });
+
   it('set-settings sets a gamepad button binding end to end', async () => {
     const result = await runCli(
       ['set-settings', '--input-gamepad-buttons', '{"jump":["a"]}', '--json'],

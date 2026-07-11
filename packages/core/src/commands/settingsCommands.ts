@@ -6,7 +6,7 @@
 import { z } from 'zod';
 import { defineCommand } from './types.js';
 import { ProjectError } from '../project/store.js';
-import { BuildSettingsSchema, InputMappingsSchema } from '../schema/project.js';
+import { BuildSettingsSchema, CodeStyleSchema, InputMappingsSchema } from '../schema/project.js';
 
 const LoadingSettingsPatchSchema = z.object({
   backgroundColor: z.string().optional(),
@@ -26,6 +26,10 @@ const BuildSettingsPatchSchema = z.object({
   loading: LoadingSettingsPatchSchema.optional(),
 });
 
+const CodeStylePatchSchema = z.object({
+  formatOnSave: z.boolean().optional(),
+});
+
 /** Shallow copy without keys whose value is undefined. */
 function definedOnly<T extends Record<string, unknown>>(obj: T): Partial<T> {
   const out: Record<string, unknown> = {};
@@ -39,8 +43,9 @@ export const updateSettings = defineCommand({
   name: 'updateSettings',
   description:
     'Update project settings: partial buildSettings (deep-merged, incl. the loading screen visuals), ' +
-    'the initial scene, and input mappings (actions are replaced per action, empty keys removes one; ' +
-    'gamepadButtons, gamepadAxes, axes, and deadzone each replace that top-level key wholesale).',
+    'the initial scene, input mappings (actions are replaced per action, empty keys removes one; ' +
+    'gamepadButtons, gamepadAxes, axes, and deadzone each replace that top-level key wholesale), and ' +
+    'codeStyle (deep-merged, e.g. formatOnSave).',
   permission: 'safe-edit',
   mutates: true,
   paramsSchema: z.object({
@@ -50,6 +55,8 @@ export const updateSettings = defineCommand({
     initialScene: z.string().min(1).optional(),
     /** Partial inputMappings; each provided top-level key is replaced wholesale. */
     inputMappings: InputMappingsSchema.partial().optional(),
+    /** Partial codeStyle; deep-merged like buildSettings.loading. */
+    codeStyle: CodeStylePatchSchema.optional(),
   }),
   async run(ctx, params) {
     const project = ctx.store.project;
@@ -71,8 +78,16 @@ export const updateSettings = defineCommand({
         loading: { ...project.buildSettings.loading, ...definedOnly(loading ?? {}) },
       });
     }
+    let mergedCodeStyle: typeof project.codeStyle | undefined;
+    if (params.codeStyle) {
+      mergedCodeStyle = CodeStyleSchema.parse({
+        ...project.codeStyle,
+        ...definedOnly(params.codeStyle),
+      });
+    }
 
     if (mergedBuildSettings) project.buildSettings = mergedBuildSettings;
+    if (mergedCodeStyle) project.codeStyle = mergedCodeStyle;
     if (initialSceneId !== undefined) project.initialScene = initialSceneId;
     if (params.inputMappings) {
       // For actions: merge individual actions (deep-merge, [] removes action)
@@ -103,6 +118,7 @@ export const updateSettings = defineCommand({
       initialScene: project.initialScene,
       inputActions: project.inputMappings.actions,
       inputMappings: project.inputMappings,
+      codeStyle: project.codeStyle,
     };
   },
 });

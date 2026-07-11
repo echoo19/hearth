@@ -522,6 +522,33 @@ describe('diff & snapshot', () => {
     expect(diff2.data.hasChanges).toBe(false);
     expect(store.getScene('Main')!.entities.find((e) => e.name === 'Enemy')).toBeUndefined();
   });
+
+  it('a pre-0.11 baseline without a codeStyle key does not phantom-diff against the live project', async () => {
+    const { fs, session, store } = await makeSession();
+
+    // Simulate a v0.10.x checkpoint: snapshot, then strip the codeStyle key
+    // the old core never wrote (codeStyle is new in 0.11). The live project
+    // still gets codeStyle defaulted in by ProjectFileSchema.parse at load
+    // time, so a naive raw-JSON diff would report a phantom "codeStyle added"
+    // project change even though nothing actually changed.
+    const snap = await session.execute<any>('snapshotProject');
+    expect(snap.success).toBe(true);
+    const baselinePath = '/proj/.hearth/baseline.json';
+    const baseline = JSON.parse(await fs.readFile(baselinePath));
+    expect(baseline.project.codeStyle).toBeDefined();
+    delete baseline.project.codeStyle;
+    await fs.writeFile(baselinePath, JSON.stringify(baseline));
+
+    const diff = await session.execute<any>('diffProject');
+    expect(diff.success).toBe(true);
+    expect(diff.data.hasChanges).toBe(false);
+    expect(diff.data.projectChanges).toEqual([]);
+
+    // Revert must not clobber the live default with `undefined` either.
+    const revert = await session.execute<any>('revertProject', { confirm: true });
+    expect(revert.success).toBe(true);
+    expect(store.project.codeStyle).toEqual({ formatOnSave: true });
+  });
 });
 
 describe('playtests & build', () => {

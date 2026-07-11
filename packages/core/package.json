@@ -24,7 +24,9 @@
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
+    "@johnnymorganz/stylua": "^2.5.2",
     "luaparse": "^0.3.1",
+    "prettier": "^3.9.5",
     "zod": "^3.24.1"
   },
   "devDependencies": {

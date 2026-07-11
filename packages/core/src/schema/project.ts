@@ -67,6 +67,18 @@ export const BuildSettingsSchema = z.object({
 });
 export type BuildSettings = z.infer<typeof BuildSettingsSchema>;
 
+/**
+ * Fixed Hearth code style (StyLua for Lua, Prettier for JS) — not a build
+ * concern, so it's top-level on ProjectFileSchema, siblings with
+ * buildSettings rather than nested under it.
+ */
+export const CodeStyleSchema = z
+  .object({
+    formatOnSave: z.boolean().default(true),
+  })
+  .default({ formatOnSave: true });
+export type CodeStyle = z.infer<typeof CodeStyleSchema>;
+
 export const ProjectFileSchema = z.object({
   formatVersion: z.literal(FORMAT_VERSION).default(FORMAT_VERSION),
   hearthVersion: z.string().default(HEARTH_VERSION),
@@ -78,6 +90,7 @@ export const ProjectFileSchema = z.object({
   scenes: z.array(SceneRefSchema).default([]),
   inputMappings: InputMappingsSchema.default({ actions: {} }),
   buildSettings: BuildSettingsSchema.default({}),
+  codeStyle: CodeStyleSchema,
 });
 export type ProjectFile = z.infer<typeof ProjectFileSchema>;
 

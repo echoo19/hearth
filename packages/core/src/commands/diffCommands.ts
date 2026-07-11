@@ -4,7 +4,7 @@ import { ProjectError, readJson, writeJson, ProjectStore, type ProjectSnapshot }
 import { applySnapshot } from '../project/restore.js';
 import { diffSnapshots } from '../diff/diff.js';
 import { joinPath, isSafeOut } from '../fs.js';
-import { BASELINE_FILE, PLAYTESTS_DIR, SCRIPTS_DIR } from '../schema/project.js';
+import { BASELINE_FILE, PLAYTESTS_DIR, SCRIPTS_DIR, ProjectFileSchema } from '../schema/project.js';
 import { generateId, slugify } from '../ids.js';
 import { PlaytestSchema, PlaytestStepSchema } from '../schema/project.js';
 import { validateProject } from '../validate.js';
@@ -17,6 +17,13 @@ async function loadBaseline(ctx: any): Promise<ProjectSnapshot | null> {
   // exist, so an old-shape baseline can't reference any payload file either).
   // Default it so diff/revert on an upgraded project don't blow up.
   snap.prefabs ??= {};
+  // A baseline is raw JSON, so a pre-0.11 snapshot's `project` has no
+  // codeStyle key (and future fields will have the same gap). The live
+  // project always went through ProjectFileSchema.parse at load time (so it
+  // already has every default filled in) — re-parsing the baseline's project
+  // here keeps both sides of diffSnapshots normalized the same way, so a
+  // schema addition never shows up as a phantom project-setting change.
+  snap.project = ProjectFileSchema.parse(snap.project);
   return snap;
 }
 

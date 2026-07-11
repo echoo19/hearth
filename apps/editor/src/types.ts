@@ -43,6 +43,7 @@ export interface ProjectInfo {
   inputActions: Record<string, string[]>;
   inputMappings: InputMappings;
   buildSettings: BuildSettings;
+  codeStyle?: { formatOnSave: boolean };
 }
 
 /** Entity shape from inspectScene with full=true. */
