@@ -183,6 +183,15 @@ export interface EditorState {
   restartPlay(): void;
   /** Record a structured runtime error from the running preview (feeds Task 7's diagnostics). */
   recordRuntimeError(error: RuntimeErrorEntry): void;
+  /**
+   * Mirror one EXTERNAL journal entry (source !== 'editor') into the running
+   * preview: hot-reload scripts, live-patch properties (scene-guarded, values
+   * resolved via one read-only query per entity), or raise the restart badge.
+   * The WS journal handler's per-entry step, run after refresh(); a no-op
+   * unless `playing`. Exposed on the store (rather than staying a private
+   * closure) so tests can drive the live-dispatch path without a socket.
+   */
+  applyExternalJournalEntry(entry: JournalEntry): Promise<void>;
   setPaused(paused: boolean): void;
   setDebugDraw(on: boolean): void;
   /** `link` (Task 7): when present, ConsolePanel renders a clickable `path:line` suffix that jumps to it via `openScriptAt`. */
@@ -405,20 +414,55 @@ export const useEditor = create<EditorState>((set, get) => {
     }
   }
 
+  /**
+   * Whether an external patch targeting `scene` refers to the scene the
+   * preview is running. The running scene is the store's current `sceneId`:
+   * GamePreview mounts that scene and remounts whenever it changes, so from
+   * the editor's side they can never diverge. The runtime CAN scene-switch
+   * internally mid-run (ctx.scenes.load) without the store tracking it —
+   * accepted: a patch skipped for the wrong reason is honest (same latitude
+   * as an entity-id miss), whereas applying a cross-scene patch is silently
+   * wrong — patchComponent resolves entity refs by id OR name, so a
+   * same-named entity in the running scene would take the other scene's
+   * value. Journal details carry the scene as the external tool passed it —
+   * an id or a human name (the CLI takes names) — so match either.
+   */
+  function isRunningScene(scene: string): boolean {
+    const { sceneId, scene: sceneData, info } = get();
+    if (!sceneId) return false;
+    if (scene === sceneId) return true;
+    const runningName =
+      sceneData?.id === sceneId ? sceneData.name : info?.scenes.find((s) => s.id === sceneId)?.name;
+    return runningName !== undefined && scene === runningName;
+  }
+
   /** Run the live actions for an EXTERNAL journal entry (refresh already ran; only while playing). */
   async function applyJournalActions(entry: JournalEntry): Promise<void> {
+    // Valueless patches are grouped per entity before resolving, so a
+    // multi-key setProperties costs ONE inspectEntity query, not one per key.
+    const resolveGroups = new Map<string, { scene: string; entity: string; properties: string[] }>();
     for (const action of classifyJournal(entry)) {
       if (action.kind === 'reload') await applyReload(action.path, undefined);
       else if (action.kind === 'structural') set({ pendingRestart: true });
       else if (action.kind === 'patch' && !action.hasValue) {
-        // No value in the journal detail: resolve the current value from the
-        // freshly-refreshed authored scene via one read-only query, then patch.
-        const ent = await query<{ components?: Record<string, unknown> }>('inspectEntity', {
-          scene: action.scene,
-          entity: action.entity,
-        });
-        const value = readComponentPath(ent?.components, action.property);
-        if (value !== undefined) applyPatch(action.entity, action.property, value);
+        if (!isRunningScene(action.scene)) continue;
+        const key = `${action.scene}\u0000${action.entity}`;
+        const group = resolveGroups.get(key) ?? { scene: action.scene, entity: action.entity, properties: [] };
+        group.properties.push(action.property);
+        resolveGroups.set(key, group);
+      }
+    }
+    for (const group of resolveGroups.values()) {
+      // No value in the journal detail: resolve the current values from the
+      // freshly-refreshed authored scene via one read-only query, then patch.
+      const ent = await query<{ components?: Record<string, unknown> }>('inspectEntity', {
+        scene: group.scene,
+        entity: group.entity,
+      });
+      if (!ent) continue;
+      for (const property of group.properties) {
+        const value = readComponentPath(ent.components, property);
+        if (value !== undefined) applyPatch(group.entity, property, value);
       }
     }
   }
@@ -491,12 +535,11 @@ export const useEditor = create<EditorState>((set, get) => {
           set((state) => ({ commandSeq: state.commandSeq + 1 }));
           void (async () => {
             await get().refresh();
-            // Mirror external changes into the running preview. Guarded on
-            // `playing` — the restart badge and live patches are only
-            // meaningful while a preview is up; a fresh Play picks up the
-            // already-refreshed authored scene otherwise.
-            if (!get().playing) return;
-            for (const entry of external) await applyJournalActions(entry);
+            // Mirror external changes into the running preview. The action
+            // no-ops per entry unless `playing` (so a Stop landing mid-batch
+            // halts the mirroring) — a fresh Play picks up the
+            // already-refreshed authored scene instead.
+            for (const entry of external) await get().applyExternalJournalEntry(entry);
           })();
         }
         return;
@@ -820,6 +863,13 @@ export const useEditor = create<EditorState>((set, get) => {
       // null — the click just opens the file at the top).
       const link = error.script ? { path: error.script, line: error.line ?? null } : undefined;
       get().log('error', 'runtime', formatRuntimeError(error), link);
+    },
+
+    async applyExternalJournalEntry(entry) {
+      // Per-entry (not per-batch) playing check: a Stop that lands while a
+      // batch of external entries is being mirrored stops the rest too.
+      if (!get().playing) return;
+      await applyJournalActions(entry);
     },
 
     setPaused(paused) {
