@@ -146,9 +146,12 @@ export function classifyLocal(command: string, params: Record<string, unknown>, 
  * Classify an external journal entry (CLI/MCP) pushed over the WS channel.
  * Editor-sourced entries produce nothing — they already ran through exec() and
  * were live-applied there. Failed commands changed nothing to mirror. Property
- * edits carry no journal detail in core today, so they land on the structural
- * fallback (accepted: badge, never a guessed patch); the valueless-patch path
- * is honored only when a detail explicitly records {scene,entity,property}.
+ * writes carry their TARGET in the journal detail ({scene,entity,property}, or
+ * a setProperties key list) but never the value, so they become valueless
+ * patches: the store resolves the current value with one read-only query after
+ * the refresh, then patches — identical live behavior to an Inspector edit.
+ * Entries from older journals with no detail fall back to structural (badge,
+ * never a guessed patch).
  */
 export function classifyJournal(entry: JournalEntry): LiveAction[] {
   if (entry.source === 'editor') return [{ kind: 'none' }];
@@ -158,13 +161,22 @@ export function classifyJournal(entry: JournalEntry): LiveAction[] {
   if (reload) return reload;
 
   const detail = entry.detail;
-  if (
-    detail &&
-    typeof detail.scene === 'string' &&
-    typeof detail.entity === 'string' &&
-    typeof detail.property === 'string'
-  ) {
-    return [{ kind: 'patch', scene: detail.scene, entity: detail.entity, property: detail.property, hasValue: false }];
+  if (detail && typeof detail.scene === 'string' && typeof detail.entity === 'string') {
+    const { scene, entity } = detail as { scene: string; entity: string };
+    // Single-property target (setComponentProperty, or any command recording one).
+    if (typeof detail.property === 'string') {
+      return [{ kind: 'patch', scene, entity, property: detail.property, hasValue: false }];
+    }
+    // Multi-property key list (setProperties) — one valueless patch per key.
+    if (Array.isArray(detail.properties) && detail.properties.every((p) => typeof p === 'string')) {
+      return (detail.properties as string[]).map((property) => ({
+        kind: 'patch',
+        scene,
+        entity,
+        property,
+        hasValue: false,
+      }));
+    }
   }
 
   return fallback(entry.command);

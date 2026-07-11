@@ -31,15 +31,39 @@ function summarizeCommand(name: string, params: unknown): string {
  * (missing/wrong-typed field) omits `detail` entirely rather than recording
  * a partial/garbled fact.
  *
- * Two purposes: surfacing outcomes for read-only-but-journaled commands
- * (runPlaytest, validateProject), and — for editScript/createScript —
- * recording the script's path so the editor's Code panel can tell, from the
- * WS-pushed journal feed alone, whether an external edit (source !== 'editor')
- * touched the file it currently has open (external-change detection).
+ * Three purposes: surfacing outcomes for read-only-but-journaled commands
+ * (runPlaytest, validateProject); for editScript/createScript, recording the
+ * script's path so the editor's Code panel can tell, from the WS-pushed
+ * journal feed alone, whether an external edit (source !== 'editor') touched
+ * the file it currently has open (external-change detection); and for
+ * setComponentProperty/setProperties, recording the write's TARGET (never the
+ * value) so the editor's live-patch dispatcher can mirror an external
+ * property edit into the running preview.
  */
-export function extractJournalDetail(name: string, data: unknown): Record<string, unknown> | undefined {
+export function extractJournalDetail(
+  name: string,
+  data: unknown,
+  params?: unknown,
+): Record<string, unknown> | undefined {
+  // A failed command has no result data — and nothing landed worth a detail.
   if (typeof data !== 'object' || data === null) return undefined;
   const d = data as Record<string, unknown>;
+  // Property writes record their TARGET from params ({scene, entity, property}
+  // / the setProperties key list) — never the value, which can be arbitrarily
+  // large. The editor's live-patch dispatcher resolves the current value with
+  // a read-only query after refreshing, so an external property edit can
+  // live-patch the running preview exactly like an Inspector edit.
+  if (name === 'setComponentProperty' || name === 'setProperties') {
+    if (typeof params !== 'object' || params === null) return undefined;
+    const p = params as Record<string, unknown>;
+    if (typeof p.scene !== 'string' || typeof p.entity !== 'string') return undefined;
+    if (name === 'setComponentProperty') {
+      if (typeof p.property !== 'string') return undefined;
+      return { scene: p.scene, entity: p.entity, property: p.property };
+    }
+    if (typeof p.properties !== 'object' || p.properties === null || Array.isArray(p.properties)) return undefined;
+    return { scene: p.scene, entity: p.entity, properties: Object.keys(p.properties) };
+  }
   if (name === 'runPlaytest') {
     if (typeof d.passed !== 'boolean' || !Array.isArray(d.steps)) return undefined;
     const failures = d.steps.filter((s) => s && typeof s === 'object' && (s as any).passed === false).length;
@@ -241,7 +265,7 @@ export class HearthSession {
           summary: summarizeCommand(name, params2),
           ok: !failure,
           error: failure?.code,
-          detail: extractJournalDetail(name, data),
+          detail: extractJournalDetail(name, data, params2),
         });
       } catch (journalErr) {
         warnings.push({

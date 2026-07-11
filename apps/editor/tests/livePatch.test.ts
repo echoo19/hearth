@@ -174,11 +174,40 @@ describe('classifyJournal', () => {
     ]);
   });
 
-  it('external property edits carry no journal detail → structural (honest fallback)', () => {
-    // setComponentProperty/setProperties emit no journal detail in core, so an
-    // external one is indistinguishable from any other mutating command: badge.
+  it('external setComponentProperty with a target detail → one valueless patch (resolved post-refresh)', () => {
+    expect(
+      classifyJournal(
+        entry({
+          command: 'setComponentProperty',
+          detail: { scene: 'main', entity: 'e1', property: 'Camera.ambientLight' },
+        }),
+      ),
+    ).toEqual([{ kind: 'patch', scene: 'main', entity: 'e1', property: 'Camera.ambientLight', hasValue: false }]);
+  });
+
+  it('external setProperties with a keys detail → one valueless patch per key', () => {
+    expect(
+      classifyJournal(
+        entry({
+          command: 'setProperties',
+          detail: { scene: 'main', entity: 'e1', properties: ['Transform.position.x', 'SpriteRenderer.width'] },
+        }),
+      ),
+    ).toEqual([
+      { kind: 'patch', scene: 'main', entity: 'e1', property: 'Transform.position.x', hasValue: false },
+      { kind: 'patch', scene: 'main', entity: 'e1', property: 'SpriteRenderer.width', hasValue: false },
+    ]);
+  });
+
+  it('legacy external property edits WITHOUT detail → structural (honest fallback, never a guessed patch)', () => {
+    // Older journals (pre-detail core) carry no detail for property writes —
+    // indistinguishable from any other mutating command: badge.
     expect(kinds(classifyJournal(entry({ command: 'setComponentProperty' })))).toEqual(['structural']);
     expect(kinds(classifyJournal(entry({ command: 'setProperties' })))).toEqual(['structural']);
+    // A malformed properties detail (not a string array) also falls back.
+    expect(
+      kinds(classifyJournal(entry({ command: 'setProperties', detail: { scene: 'main', entity: 'e1', properties: 'nope' } }))),
+    ).toEqual(['structural']);
   });
 
   it('an unknown external mutating command with no detail → structural', () => {
@@ -189,10 +218,10 @@ describe('classifyJournal', () => {
     expect(kinds(classifyJournal(entry({ command: 'validateProject', detail: { errors: 0, warnings: 0 } })))).toEqual(['none']);
   });
 
-  it('a detail carrying an explicit patch target → a valueless patch (resolved post-refresh)', () => {
-    // Forward-compatible: if a command ever records {scene,entity,property} in
-    // its journal detail, mirror it as a patch with hasValue:false so the store
-    // resolves the current value after refresh(). No core command emits this today.
+  it('ANY detail carrying an explicit patch target → a valueless patch (not just setComponentProperty)', () => {
+    // Generic: any command that records {scene,entity,property} in its journal
+    // detail is mirrored as a patch with hasValue:false so the store resolves
+    // the current value after refresh().
     expect(
       classifyJournal(entry({ command: 'someLiveCommand', detail: { scene: 'main', entity: 'e1', property: 'Camera.ambientLight' } })),
     ).toEqual([{ kind: 'patch', scene: 'main', entity: 'e1', property: 'Camera.ambientLight', hasValue: false }]);

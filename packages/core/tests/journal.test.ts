@@ -237,6 +237,103 @@ describe('command journal', () => {
     });
   });
 
+  it('setComponentProperty appends a {scene, entity, property} detail — target only, never the value (live-patch seam)', async () => {
+    const { session } = await makeSession({ source: 'cli' });
+
+    const created = await session.execute<any>('createEntity', { scene: 'Main', name: 'Coin' });
+    expect(created.success).toBe(true);
+
+    const set = await session.execute<any>('setComponentProperty', {
+      scene: 'Main',
+      entity: 'Coin',
+      property: 'Transform.position.x',
+      value: 100,
+    });
+    expect(set.success).toBe(true);
+
+    const list = await session.execute<any>('listJournal');
+    const entry = list.data.entries.find((e: any) => e.command === 'setComponentProperty');
+    expect(entry).toBeDefined();
+    expect(entry.detail).toEqual({ scene: 'Main', entity: 'Coin', property: 'Transform.position.x' });
+    // Values can be arbitrarily large (nested objects, long strings) — the
+    // journal records only the target; consumers resolve the current value.
+    expect(entry.detail.value).toBeUndefined();
+  });
+
+  it('setProperties appends a {scene, entity, properties} detail listing the keys only', async () => {
+    const { session } = await makeSession({ source: 'mcp' });
+
+    const created = await session.execute<any>('createEntity', { scene: 'Main', name: 'Coin' });
+    expect(created.success).toBe(true);
+
+    const set = await session.execute<any>('setProperties', {
+      scene: 'Main',
+      entity: 'Coin',
+      properties: { 'Transform.position.x': 100, 'Transform.scale.y': 2 },
+    });
+    expect(set.success).toBe(true);
+
+    const list = await session.execute<any>('listJournal');
+    const entry = list.data.entries.find((e: any) => e.command === 'setProperties');
+    expect(entry).toBeDefined();
+    expect(entry.detail).toEqual({
+      scene: 'Main',
+      entity: 'Coin',
+      properties: ['Transform.position.x', 'Transform.scale.y'],
+    });
+  });
+
+  it('a FAILING property write appends no detail (nothing landed to mirror)', async () => {
+    const { session } = await makeSession();
+
+    const failed = await session.execute<any>('setComponentProperty', {
+      scene: 'Main',
+      entity: 'NoSuchEntity',
+      property: 'Transform.position.x',
+      value: 1,
+    });
+    expect(failed.success).toBe(false);
+
+    const list = await session.execute<any>('listJournal');
+    const entry = list.data.entries.find((e: any) => e.command === 'setComponentProperty');
+    expect(entry).toBeDefined();
+    expect(entry.ok).toBe(false);
+    expect(entry.detail).toBeUndefined();
+  });
+
+  it('extractJournalDetail: property-write details come from params, defensively', () => {
+    const okData = { entityId: 'ent_1', property: 'Camera.zoom', value: 2 };
+    // Well-formed params → target-only detail.
+    expect(
+      extractJournalDetail('setComponentProperty', okData, {
+        scene: 'Main',
+        entity: 'Cam',
+        property: 'Camera.zoom',
+        value: 2,
+      }),
+    ).toEqual({ scene: 'Main', entity: 'Cam', property: 'Camera.zoom' });
+    expect(
+      extractJournalDetail('setProperties', { entityId: 'ent_1' }, {
+        scene: 'Main',
+        entity: 'Cam',
+        properties: { 'Camera.zoom': 2, 'Camera.isMain': true },
+      }),
+    ).toEqual({ scene: 'Main', entity: 'Cam', properties: ['Camera.zoom', 'Camera.isMain'] });
+    // Missing/malformed params → no detail (never a partial fact).
+    expect(extractJournalDetail('setComponentProperty', okData)).toBeUndefined();
+    expect(extractJournalDetail('setComponentProperty', okData, { scene: 'Main', entity: 'Cam' })).toBeUndefined();
+    expect(extractJournalDetail('setProperties', okData, { scene: 'Main', entity: 'Cam', properties: [] })).toBeUndefined();
+    // Failed command (no result data) → no detail even with good params.
+    expect(
+      extractJournalDetail('setComponentProperty', undefined, {
+        scene: 'Main',
+        entity: 'Cam',
+        property: 'Camera.zoom',
+        value: 2,
+      }),
+    ).toBeUndefined();
+  });
+
   it('a failing allowlisted command (runPlaytest with nonexistent playtest) appends ok=false with error code and no detail', async () => {
     const runtimeStub = {
       runPlaytest: async () => ({
