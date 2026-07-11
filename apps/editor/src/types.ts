@@ -132,6 +132,14 @@ export interface ConsoleEntry {
   level: ConsoleLevel;
   source: ConsoleSource;
   message: string;
+  /**
+   * Present when this entry names an exact script location (a runtime error
+   * or a hot-reload compile failure). `line` is null when the location is
+   * only a file (no line number extractable) — clicking still opens the
+   * file, just at the top. See ConsolePanel's `.console-link` button and
+   * `openScriptAt`.
+   */
+  link?: { path: string; line: number | null };
 }
 
 /** One entry from the `listHistory` command. `undone` means it's ahead of the cursor (redoable). */

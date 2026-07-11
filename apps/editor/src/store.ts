@@ -175,7 +175,8 @@ export interface EditorState {
   recordRuntimeError(error: RuntimeErrorEntry): void;
   setPaused(paused: boolean): void;
   setDebugDraw(on: boolean): void;
-  log(level: ConsoleLevel, source: ConsoleSource, message: string): void;
+  /** `link` (Task 7): when present, ConsolePanel renders a clickable `path:line` suffix that jumps to it via `openScriptAt`. */
+  log(level: ConsoleLevel, source: ConsoleSource, message: string, link?: ConsoleEntry['link']): void;
   clearConsole(): void;
   refresh(): Promise<void>;
   refreshDiff(): Promise<void>;
@@ -203,8 +204,21 @@ function timestamp(): string {
   return new Date().toTimeString().slice(0, 8);
 }
 
-function makeEntry(level: ConsoleLevel, source: ConsoleSource, message: string): ConsoleEntry {
-  return { id: ++entryId, time: timestamp(), level, source, message };
+function makeEntry(level: ConsoleLevel, source: ConsoleSource, message: string, link?: ConsoleEntry['link']): ConsoleEntry {
+  return { id: ++entryId, time: timestamp(), level, source, message, link };
+}
+
+/**
+ * Plain-language, entity-first Console message for a runtime error (Task 7):
+ * e.g. "Enemy hit an error in scripts/enemy.lua:12 — attempt to index a nil
+ * value". Falls back gracefully as script/line go missing (no script at all
+ * for a global/engine-level error; no line when it isn't extractable).
+ */
+function formatRuntimeError(error: RuntimeErrorEntry): string {
+  const who = error.entity ?? 'Script';
+  if (!error.script) return `${who} hit an error — ${error.message}`;
+  const where = error.line != null ? `${error.script}:${error.line}` : error.script;
+  return `${who} hit an error in ${where} — ${error.message}`;
 }
 
 const MAX_CONSOLE = 500;
@@ -325,7 +339,10 @@ export const useEditor = create<EditorState>((set, get) => {
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       return await res.text();
     } catch (err) {
-      get().log('error', 'runtime', `Hot-reload failed: ${path} — ${(err as Error).message}`);
+      get().log('error', 'runtime', `Hot-reload failed: ${path} — ${(err as Error).message}`, {
+        path,
+        line: null,
+      });
       return null;
     }
   }
@@ -342,7 +359,10 @@ export const useEditor = create<EditorState>((set, get) => {
       get().log('info', 'runtime', `Hot-reloaded ${path} (${n} ${n === 1 ? 'entity' : 'entities'})`);
     } else {
       const at = result.line != null ? `${path}:${result.line}` : path;
-      get().log('error', 'runtime', `Hot-reload failed: ${at} — ${result.message}`);
+      get().log('error', 'runtime', `Hot-reload failed: ${at} — ${result.message}`, {
+        path,
+        line: result.line,
+      });
     }
   }
 
@@ -780,6 +800,11 @@ export const useEditor = create<EditorState>((set, get) => {
 
     recordRuntimeError(error) {
       set((state) => ({ runtimeErrors: [...state.runtimeErrors.slice(-MAX_RUNTIME_ERRORS + 1), error] }));
+      // Also surface it in the Console (Task 7): plain-language message, and
+      // a link to the offending script when one is known (line may still be
+      // null — the click just opens the file at the top).
+      const link = error.script ? { path: error.script, line: error.line ?? null } : undefined;
+      get().log('error', 'runtime', formatRuntimeError(error), link);
     },
 
     setPaused(paused) {
@@ -790,9 +815,9 @@ export const useEditor = create<EditorState>((set, get) => {
       set({ debugDraw: on });
     },
 
-    log(level, source, message) {
+    log(level, source, message, link) {
       set((state) => ({
-        consoleEntries: [...state.consoleEntries.slice(-MAX_CONSOLE + 1), makeEntry(level, source, message)],
+        consoleEntries: [...state.consoleEntries.slice(-MAX_CONSOLE + 1), makeEntry(level, source, message, link)],
         consoleUnread:
           level === 'error' && !state.consoleOpen ? state.consoleUnread + 1 : state.consoleUnread,
       }));

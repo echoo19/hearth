@@ -62,9 +62,10 @@ export function GamePreview() {
           sceneId,
           autoplay: useEditor.getState().playing,
           onLog: (event) => log('info', 'runtime', eventMessage(event)),
-          onError: (event) => log('error', 'runtime', eventMessage(event)),
-          // Structured errors (script/line/phase) are recorded for Task 7's
-          // clickable diagnostics; onError above still handles the Console line.
+          // The structured RuntimeError (script/line/phase) is what actually
+          // drives the Console line, so onError's plain-string variant is
+          // deliberately left unwired here — recordRuntimeError() builds the
+          // plain-language, clickable entry (Task 7) from onErrorEntry below.
           onErrorEntry: (error) => {
             if (!cancelled) recordRuntimeError(error);
           },
