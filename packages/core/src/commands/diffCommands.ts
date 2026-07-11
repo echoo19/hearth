@@ -32,8 +32,17 @@ async function loadBaseline(ctx: any): Promise<ProjectSnapshot | null> {
   // included. Re-parsing every baseline scene here keeps both sides of
   // diffSnapshots normalized the same way, so a component-schema addition
   // never shows up as a phantom component change.
+  //
+  // safeParse, not parse: unlike ProjectFileSchema (non-strict, unknown keys
+  // just pass through), ComponentMapSchema is .strict() — a baseline written
+  // by a core version whose schema knew a component type this one doesn't
+  // would make the re-parse throw and take diffProject/revertProject down
+  // with it. Normalization is an enhancement, never a gate: on failure, fall
+  // back to the raw scene snapshot (the pre-normalization behavior, which at
+  // worst shows a few phantom default-value diffs).
   for (const [id, scene] of Object.entries(snap.scenes)) {
-    snap.scenes[id] = SceneSchema.parse(scene);
+    const parsed = SceneSchema.safeParse(scene);
+    if (parsed.success) snap.scenes[id] = parsed.data;
   }
   return snap;
 }

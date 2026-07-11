@@ -578,6 +578,70 @@ describe('diff & snapshot', () => {
     expect(diff.data.hasChanges).toBe(false);
     expect(diff.data.scenes).toEqual([]);
   });
+
+  it('a baseline scene with an unrecognized component type does not crash diffProject', async () => {
+    const { fs, session } = await makeSession();
+
+    // Simulate a baseline written by a DIFFERENT core version whose schema
+    // knew a component type this one doesn't. ComponentMapSchema is
+    // .strict(), so loadBaseline's normalizing SceneSchema re-parse rejects
+    // the whole scene — that must degrade to diffing the raw snapshot (the
+    // pre-normalization behavior), never blow up diffProject/revertProject.
+    // Normalization is an enhancement, not a gate.
+    const snap = await session.execute<any>('snapshotProject');
+    expect(snap.success).toBe(true);
+    const baselinePath = '/proj/.hearth/baseline.json';
+    const baseline = JSON.parse(await fs.readFile(baselinePath));
+    const mainScene = Object.values(baseline.scenes as Record<string, any>).find(
+      (s: any) => s.name === 'Main',
+    ) as any;
+    const cameraEntity = mainScene.entities.find((e: any) => e.components.Camera);
+    cameraEntity.components.NotARealComponent = { some: 'data' };
+    await fs.writeFile(baselinePath, JSON.stringify(baseline));
+
+    const diff = await session.execute<any>('diffProject');
+    expect(diff.success).toBe(true);
+    // The raw diff still makes sense: the unknown baseline-only component
+    // reads as removed relative to the current state.
+    expect(diff.data.hasChanges).toBe(true);
+    const entityDiff = diff.data.scenes[0].entities.find((e: any) =>
+      e.components.some((c: any) => c.type === 'NotARealComponent'),
+    );
+    expect(entityDiff.components).toEqual([
+      { type: 'NotARealComponent', status: 'removed', changes: [] },
+    ]);
+  });
+
+  it('a genuine postEffects change still surfaces as a diff after baseline normalization', async () => {
+    const { session } = await makeSession();
+
+    // Pin that the normalizing re-parse never masks REAL changes: snapshot,
+    // then actually add a post effect to the live Camera.
+    const snap = await session.execute<any>('snapshotProject');
+    expect(snap.success).toBe(true);
+    const set = await session.execute<any>('setComponentProperty', {
+      scene: 'Main',
+      entity: 'Main Camera',
+      property: 'Camera.postEffects',
+      value: [{ type: 'bloom', strength: 2, threshold: 0.5 }],
+    });
+    expect(set.success).toBe(true);
+
+    const diff = await session.execute<any>('diffProject');
+    expect(diff.success).toBe(true);
+    expect(diff.data.hasChanges).toBe(true);
+    const cameraDiff = diff.data.scenes[0].entities
+      .flatMap((e: any) => e.components)
+      .find((c: any) => c.type === 'Camera');
+    expect(cameraDiff.status).toBe('modified');
+    expect(cameraDiff.changes).toEqual([
+      {
+        path: 'postEffects',
+        before: [],
+        after: [{ type: 'bloom', strength: 2, threshold: 0.5 }],
+      },
+    ]);
+  });
 });
 
 describe('playtests & build', () => {
