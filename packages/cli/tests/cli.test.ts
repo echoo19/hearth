@@ -903,3 +903,113 @@ describe('hearth create asset anim-from-sheet (createAnimationFromSheet)', () =>
     expect(envelope.success).toBe(true);
   });
 });
+
+describe('hearth create asset state-machine / set-state-machine', () => {
+  /** Create two sprites + an animation named `name`, returning its asset id. */
+  async function makeAnimation(name: string): Promise<string> {
+    await runCli(['create', 'asset', 'sprite', `${name}_f1`, '--json'], projectDir);
+    await runCli(['create', 'asset', 'sprite', `${name}_f2`, '--json'], projectDir);
+    const anim = await runCli(
+      ['create', 'animation', name, '--frames', `${name}_f1`, `${name}_f2`, '--json'],
+      projectDir,
+    );
+    expect(anim.code).toBe(0);
+    return parseJson(anim.stdout).data.asset.id as string;
+  }
+
+  function makeDoc(animId: string) {
+    return {
+      params: { moving: { type: 'bool', default: false } },
+      states: [
+        { name: 'idle', animation: animId, speed: 1 },
+        { name: 'walk', animation: animId, speed: 1 },
+      ],
+      initial: 'idle',
+      transitions: [
+        { from: 'idle', to: 'walk', conditions: [{ param: 'moving', op: 'eq', value: true }] },
+        { from: 'walk', to: 'idle', conditions: [{ param: 'moving', op: 'eq', value: false }] },
+      ],
+    };
+  }
+
+  it('creates a state machine asset from inline --data JSON', async () => {
+    const animId = await makeAnimation('cli_sm_walk');
+    const result = await runCli(
+      ['create', 'asset', 'state-machine', 'cli-ai', '--data', JSON.stringify(makeDoc(animId)), '--json'],
+      projectDir,
+    );
+    expect(result.code).toBe(0);
+    const envelope = parseJson(result.stdout);
+    expect(envelope.success).toBe(true);
+    expect(envelope.command).toBe('createStateMachineAsset');
+    expect(envelope.data.path).toBe('assets/statemachines/cli_ai.asm.json');
+  });
+
+  it('creates a state machine asset from --data @file', async () => {
+    const animId = await makeAnimation('cli_sm_walk2');
+    const dataFile = path.join(projectDir, 'sm-doc.json');
+    await fsp.writeFile(dataFile, JSON.stringify(makeDoc(animId)));
+
+    const result = await runCli(
+      ['create', 'asset', 'state-machine', 'cli-ai-file', '--data', `@${dataFile}`, '--json'],
+      projectDir,
+    );
+    expect(result.code).toBe(0);
+    const envelope = parseJson(result.stdout);
+    expect(envelope.success).toBe(true);
+    expect(typeof envelope.data.assetId).toBe('string');
+  });
+
+  it('rejects a state referencing an unknown animation (ASM_ANIMATION_NOT_FOUND)', async () => {
+    const result = await runCli(
+      [
+        'create',
+        'asset',
+        'state-machine',
+        'cli-ai-bad',
+        '--data',
+        JSON.stringify(makeDoc('ast_doesnotexist')),
+        '--json',
+      ],
+      projectDir,
+    );
+    expect(result.code).toBe(1);
+    const envelope = parseJson(result.stdout);
+    expect(envelope.success).toBe(false);
+    expect(envelope.errors[0].code).toBe('ASM_ANIMATION_NOT_FOUND');
+  });
+
+  it('set-state-machine replaces the document in place', async () => {
+    const animId = await makeAnimation('cli_sm_walk3');
+    const created = await runCli(
+      ['create', 'asset', 'state-machine', 'cli-ai-update', '--data', JSON.stringify(makeDoc(animId)), '--json'],
+      projectDir,
+    );
+    expect(created.code).toBe(0);
+    const assetId = parseJson(created.stdout).data.assetId as string;
+
+    const newDoc = makeDoc(animId);
+    newDoc.states.push({ name: 'attack', animation: animId, speed: 2 });
+    const updateResult = await runCli(
+      ['set-state-machine', assetId, '--data', JSON.stringify(newDoc), '--json'],
+      projectDir,
+    );
+    expect(updateResult.code).toBe(0);
+    const envelope = parseJson(updateResult.stdout);
+    expect(envelope.success).toBe(true);
+    expect(envelope.command).toBe('updateStateMachineAsset');
+    expect(envelope.data).toEqual({ assetId });
+  });
+
+  it('set-state-machine on an unknown assetId -> NOT_FOUND', async () => {
+    const animId = await makeAnimation('cli_sm_walk4');
+    const result = await runCli(
+      ['set-state-machine', 'ast_doesnotexist', '--data', JSON.stringify(makeDoc(animId)), '--json'],
+      projectDir,
+    );
+    expect(result.code).toBe(1);
+    const envelope = parseJson(result.stdout);
+    expect(envelope.success).toBe(false);
+    expect(envelope.errors[0].code).toBe('NOT_FOUND');
+  });
+});

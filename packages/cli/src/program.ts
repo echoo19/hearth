@@ -64,6 +64,21 @@ async function guarded(cmd: Command, commandName: string, body: () => Promise<vo
   }
 }
 
+/**
+ * Resolve a `--data <json|@file>` option: a value starting with `@` is a
+ * path to a JSON file (read + parsed); anything else is parsed as inline
+ * JSON. Used by state-machine asset documents, which are too large to type
+ * as a single flag value in practice.
+ */
+async function readDataOption(raw: string, flagName: string): Promise<Record<string, unknown>> {
+  if (raw.startsWith('@')) {
+    const filePath = raw.slice(1);
+    const text = await fsp.readFile(path.resolve(filePath), 'utf8');
+    return parseJsonObject(text, filePath);
+  }
+  return parseJsonObject(raw, flagName);
+}
+
 /** Open a session, execute a core command, and emit the result. `okIf` can force exit 1 on semantic failure. */
 async function runAndEmit(
   cmd: Command,
@@ -369,6 +384,20 @@ export function buildProgram(): Command {
   });
 
   addGlobalOptions(
+    createAsset
+      .command('state-machine <name>')
+      .description(
+        'create an animation state machine asset (params/states/transitions) — every state.animation must be an existing animation asset',
+      )
+      .requiredOption('--data <json|@file>', 'the state machine document: inline JSON, or @path/to/file.json'),
+  ).action(async (name: string, opts, cmd) => {
+    await guarded(cmd, 'createStateMachineAsset', async () => {
+      const data = await readDataOption(opts.data, '--data');
+      await runAndEmit(cmd, 'createStateMachineAsset', { name, data });
+    });
+  });
+
+  addGlobalOptions(
     create
       .command('playtest <name>')
       .description('create a playtest definition')
@@ -511,6 +540,18 @@ export function buildProgram(): Command {
       if (Object.keys(inputMappings).length > 0) params.inputMappings = inputMappings;
       if (opts.formatOnSave !== undefined) params.codeStyle = { formatOnSave: opts.formatOnSave };
       return runAndEmit(cmd, 'updateSettings', params);
+    });
+  });
+
+  addGlobalOptions(
+    program
+      .command('set-state-machine <assetId>')
+      .description("replace a state machine asset's document in place (same asset id/path)")
+      .requiredOption('--data <json|@file>', 'the state machine document: inline JSON, or @path/to/file.json'),
+  ).action(async (assetId: string, opts, cmd) => {
+    await guarded(cmd, 'updateStateMachineAsset', async () => {
+      const data = await readDataOption(opts.data, '--data');
+      await runAndEmit(cmd, 'updateStateMachineAsset', { assetId, data });
     });
   });
 
