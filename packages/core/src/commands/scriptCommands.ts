@@ -6,6 +6,7 @@ import { ProjectError } from '../project/store.js';
 import { joinPath, isSafeRelativePath } from '../fs.js';
 import { slugify } from '../ids.js';
 import { SCRIPTS_DIR } from '../schema/project.js';
+import { checkScriptSource } from '../validate.js';
 
 export const SCRIPT_TEMPLATE = `/**
  * {{NAME}} — a Hearth behavior script.
@@ -192,6 +193,55 @@ export const editScript = defineCommand({
     ctx.changed({ kind: 'script', path: params.path, action: 'modified' });
     ctx.suggest('validateProject', 'runPlaytest <playtest> to verify behavior');
     return { path: params.path, lines: params.source.split('\n').length };
+  },
+});
+
+export const checkScript = defineCommand({
+  name: 'checkScript',
+  description:
+    'Check a script for syntax errors without saving it: pass source text directly, or path to check an ' +
+    'existing project script. Read-only, never writes — pre-flight a script before editScript.',
+  permission: 'read-only',
+  mutates: false,
+  paramsSchema: z.object({
+    /** Source text to check directly (bare source defaults to Lua unless language is set). */
+    source: z.string().optional(),
+    /** Project-relative path (must be under scripts/) to read and check instead of source. */
+    path: z.string().optional(),
+    language: z.enum(['lua', 'js']).optional(),
+  }),
+  async run(ctx, params) {
+    // A plain zod .refine() here would surface as INVALID_PARAMS (thrown
+    // during paramsSchema.parse, before run() is even called) rather than
+    // the INVALID_INPUT code the rest of this command's validation uses
+    // (matching editScript's path check below) — so this is checked by hand.
+    if (params.source === undefined && params.path === undefined) {
+      throw new ProjectError('checkScript requires either "source" or "path"', 'INVALID_INPUT');
+    }
+
+    let source: string;
+    let language: 'lua' | 'js';
+    if (params.path !== undefined) {
+      if (!isSafeRelativePath(params.path) || !params.path.startsWith(SCRIPTS_DIR + '/')) {
+        throw new ProjectError(`Script path must be inside ${SCRIPTS_DIR}/ (got: ${params.path})`, 'INVALID_INPUT');
+      }
+      const absPath = joinPath(ctx.store.root, params.path);
+      if (!(await ctx.fs.exists(absPath))) {
+        throw new ProjectError(`Script not found: ${params.path}`, 'NOT_FOUND');
+      }
+      source = await ctx.store.readScript(params.path);
+      language = params.language ?? (params.path.endsWith('.js') ? 'js' : 'lua');
+    } else {
+      source = params.source as string;
+      language = params.language ?? 'lua';
+    }
+
+    const diagnostics = checkScriptSource(language, source);
+    return {
+      valid: diagnostics.every((d) => d.severity !== 'error'),
+      language,
+      diagnostics,
+    };
   },
 });
 

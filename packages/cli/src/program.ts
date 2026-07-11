@@ -526,6 +526,19 @@ export function buildProgram(): Command {
     });
   });
 
+  addGlobalOptions(
+    program
+      .command('check-script <path>')
+      .description(
+        'check a script for syntax errors without saving it (pre-flight before edit-script). ' +
+          'With --source, checks that text as if it would be saved to <path>; otherwise reads <path> from the project.',
+      )
+      .option('--source <text>', 'check this text instead of reading <path> from disk')
+      .option('--language <language>', 'scripting language override: lua or js'),
+  ).action(async (scriptPath: string, opts: { source?: string; language?: string }, cmd) => {
+    await guarded(cmd, 'checkScript', () => runCheckScriptCommand(cmd, scriptPath, opts));
+  });
+
   // ---------------------------------------------------------------------
   // import
   // ---------------------------------------------------------------------
@@ -1120,6 +1133,61 @@ async function runLogCommand(cmd: Command, since: number | undefined, limit: num
     }
   }
   process.exitCode = 0;
+}
+
+// ---------------------------------------------------------------------------
+// check-script (custom human formatting: one "path:line message" line per
+// diagnostic, matching `hearth validate`'s exit-code-on-invalid behavior)
+// ---------------------------------------------------------------------------
+
+interface CheckScriptDiagnostic {
+  line: number | null;
+  message: string;
+  severity: 'error' | 'warning';
+}
+
+async function runCheckScriptCommand(
+  cmd: Command,
+  scriptPath: string,
+  opts: { source?: string; language?: string },
+): Promise<void> {
+  const g = globalOpts(cmd);
+  const session = await openSession(g);
+
+  const params: Record<string, unknown> = {};
+  if (opts.source !== undefined) {
+    // Bare-source mode: never sent as `path` (checkScript reads `path` from
+    // disk when present), so the language is inferred here from <path>'s
+    // extension unless overridden.
+    params.source = opts.source;
+    params.language = opts.language ?? (scriptPath.endsWith('.js') ? 'js' : 'lua');
+  } else {
+    params.path = scriptPath;
+    if (opts.language) params.language = opts.language;
+  }
+
+  const result = await session.execute<{ valid: boolean; language: string; diagnostics: CheckScriptDiagnostic[] }>(
+    'checkScript',
+    params,
+  );
+
+  if (g.json) {
+    let code = emit(result, g);
+    if (code === 0 && !result.data!.valid) code = 1;
+    process.exitCode = code;
+    return;
+  }
+
+  console.log(`${result.success ? '✓' : '✗'} checkScript`);
+  if (!result.success) {
+    for (const e of result.errors) console.log(`  error [${e.code}]: ${e.message}`);
+    process.exitCode = 1;
+    return;
+  }
+  for (const d of result.data!.diagnostics) {
+    console.log(`${scriptPath}${d.line !== null ? `:${d.line}` : ''} ${d.message}`);
+  }
+  process.exitCode = result.data!.valid ? 0 : 1;
 }
 
 // ---------------------------------------------------------------------------

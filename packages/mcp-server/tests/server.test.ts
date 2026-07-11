@@ -148,6 +148,60 @@ describe('hearth-mcp server', () => {
     expect(js.data.path).toBe('scripts/mover-js.js');
   });
 
+  it('check_script is registered, mirrors every param, and pre-flights bare source without saving', async () => {
+    ctx = await connectClient();
+    const { tools } = await ctx.client.listTools();
+    const tool = tools.find((t) => t.name === 'check_script');
+    expect(tool).toBeDefined();
+    const props = tool!.inputSchema.properties as Record<string, unknown>;
+    expect(Object.keys(props).sort()).toEqual(['language', 'path', 'source']);
+
+    const bad = await ctx.client.callTool({
+      name: 'check_script',
+      arguments: { source: 'if x then\n', language: 'lua' },
+    });
+    expect(bad.isError).toBeFalsy();
+    const badEnvelope = toolJson(bad);
+    expect(badEnvelope.success).toBe(true);
+    expect(badEnvelope.command).toBe('checkScript');
+    expect(badEnvelope.data.valid).toBe(false);
+    expect(badEnvelope.data.diagnostics.length).toBe(1);
+
+    const good = await ctx.client.callTool({
+      name: 'check_script',
+      arguments: { source: 'local x = 1\n', language: 'lua' },
+    });
+    const goodEnvelope = toolJson(good);
+    expect(goodEnvelope.data.valid).toBe(true);
+    expect(goodEnvelope.data.diagnostics).toEqual([]);
+
+    // Read-only and non-mutating: no script file exists on disk from this.
+    const listResult = await ctx.client.callTool({ name: 'list_scripts', arguments: {} });
+    expect(toolJson(listResult).data.scripts).toEqual([]);
+  });
+
+  it('check_script in path mode reads an existing project script and reports its syntax error', async () => {
+    ctx = await connectClient();
+    const create = await ctx.client.callTool({
+      name: 'create_script',
+      arguments: { name: 'bad-js', language: 'js', source: 'export default {\n  onUpdate(ctx, dt) {\n};\n' },
+    });
+    expect(create.isError).toBeFalsy();
+
+    const result = await ctx.client.callTool({ name: 'check_script', arguments: { path: 'scripts/bad-js.js' } });
+    expect(result.isError).toBeFalsy();
+    const envelope = toolJson(result);
+    expect(envelope.data.language).toBe('js');
+    expect(envelope.data.valid).toBe(false);
+  });
+
+  it('check_script with neither source nor path fails with INVALID_INPUT', async () => {
+    ctx = await connectClient();
+    const result = await ctx.client.callTool({ name: 'check_script', arguments: {} });
+    expect(result.isError).toBe(true);
+    expect(toolJson(result).errors[0].code).toBe('INVALID_INPUT');
+  });
+
   it('inspect_api returns the ctx reference', async () => {
     ctx = await connectClient();
     const result = await ctx.client.callTool({ name: 'inspect_api', arguments: {} });

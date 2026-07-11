@@ -423,6 +423,20 @@ export const TOOL_SPECS: ToolSpec[] = [
     },
   },
   {
+    name: 'check_script',
+    command: 'checkScript',
+    description:
+      'Check a script for syntax errors without saving it: pass source text directly to check a draft, or ' +
+      'path (a scripts/ file) to check an existing project script from disk. Read-only, never writes — ' +
+      'pre-flight a script before edit_script. Provide at least one of source or path. (requires read-only)',
+    permission: 'read-only',
+    inputShape: {
+      source: z.string().optional(),
+      path: z.string().optional(),
+      language: z.enum(['lua', 'js']).optional(),
+    },
+  },
+  {
     name: 'attach_script',
     command: 'attachScript',
     description:

@@ -88,41 +88,62 @@ function extractJsErrorLine(err: unknown): number | undefined {
   return line >= 1 ? line : undefined;
 }
 
+export interface ScriptDiagnostic {
+  /** 1-based source line, when extractable; null otherwise. */
+  line: number | null;
+  message: string;
+  severity: 'error' | 'warning';
+}
+
 /**
- * Per-script syntax check. JS scripts get the same `export default` rewrite
- * the runtime's compileScript performs, then a compile-only `new Function`
- * (never executed). Lua scripts are parsed with luaparse.
+ * Compile-only syntax check for a single script's source, shared by
+ * `validateScriptSyntax` (whole-project validate) and the `checkScript`
+ * command (pre-flight a script before saving it, e.g. from the editor's
+ * code panel). JS scripts get the same `export default` rewrite the
+ * runtime's compileScript performs, then a compile-only `new Function`
+ * (never executed). Lua scripts are parsed with luaparse. Returns an empty
+ * array when the source is syntactically valid.
+ */
+export function checkScriptSource(language: 'lua' | 'js', source: string): ScriptDiagnostic[] {
+  if (language === 'js') {
+    try {
+      const body = source.replace(/export\s+default/, 'module.exports =');
+      // Compile-only syntax check; the factory is never invoked.
+      new Function('module', 'exports', body);
+      return [];
+    } catch (err) {
+      const line = extractJsErrorLine(err);
+      return [{ severity: 'error', line: line ?? null, message: (err as Error).message }];
+    }
+  }
+  try {
+    luaparse.parse(source, { luaVersion: '5.3' });
+    return [];
+  } catch (err) {
+    const e = err as Error & { line?: number };
+    const line = typeof e.line === 'number' ? e.line : null;
+    return [{ severity: 'error', line, message: e.message }];
+  }
+}
+
+/**
+ * Per-script syntax check across the whole project: thin wrapper around
+ * `checkScriptSource` that maps its diagnostics into `ValidationIssue`
+ * pushes (same message format, codes, and line handling as before the
+ * extraction).
  */
 async function validateScriptSyntax(store: ProjectStore, push: (issue: ValidationIssue) => void): Promise<void> {
   for (const scriptPath of await store.listScripts()) {
     const source = await store.readScript(scriptPath);
-    if (scriptPath.endsWith('.js')) {
-      try {
-        const body = source.replace(/export\s+default/, 'module.exports =');
-        // Compile-only syntax check; the factory is never invoked.
-        new Function('module', 'exports', body);
-      } catch (err) {
-        const line = extractJsErrorLine(err);
+    if (scriptPath.endsWith('.js') || scriptPath.endsWith('.lua')) {
+      const language = scriptPath.endsWith('.js') ? 'js' : 'lua';
+      for (const diag of checkScriptSource(language, source)) {
         push({
-          severity: 'error',
+          severity: diag.severity,
           code: 'SCRIPT_SYNTAX_ERROR',
-          message: `Script ${scriptPath}${line ? `:${line}` : ''}: ${(err as Error).message}`,
+          message: `Script ${scriptPath}${diag.line ? `:${diag.line}` : ''}: ${diag.message}`,
           script: scriptPath,
-          ...(line !== undefined ? { line } : {}),
-        });
-      }
-    } else if (scriptPath.endsWith('.lua')) {
-      try {
-        luaparse.parse(source, { luaVersion: '5.3' });
-      } catch (err) {
-        const e = err as Error & { line?: number };
-        const line = typeof e.line === 'number' ? e.line : undefined;
-        push({
-          severity: 'error',
-          code: 'SCRIPT_SYNTAX_ERROR',
-          message: `Script ${scriptPath}${line ? `:${line}` : ''}: ${e.message}`,
-          script: scriptPath,
-          ...(line !== undefined ? { line } : {}),
+          ...(diag.line !== null ? { line: diag.line } : {}),
         });
       }
     } else {

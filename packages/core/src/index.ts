@@ -55,7 +55,13 @@ export { HISTORY_EXEMPT } from './commands/historyCommands.js';
 export { CTX_API, type CtxApiEntry } from './ctxApi.js';
 
 // Validation & diff
-export { validateProject, type ValidationReport, type ValidationIssue } from './validate.js';
+export {
+  validateProject,
+  checkScriptSource,
+  type ValidationReport,
+  type ValidationIssue,
+  type ScriptDiagnostic,
+} from './validate.js';
 export {
   diffSnapshots,
   diffValues,

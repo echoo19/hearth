@@ -200,6 +200,71 @@ describe('hearth create script / inspect api / set-settings', () => {
   });
 });
 
+describe('hearth check-script', () => {
+  it('--json reports valid: true for a syntactically clean --source', async () => {
+    const result = await runCli(
+      ['check-script', 'scripts/draft.lua', '--source', 'local x = 1\n', '--json'],
+      projectDir,
+    );
+    expect(result.code).toBe(0);
+    const envelope = parseJson(result.stdout);
+    expect(envelope.success).toBe(true);
+    expect(envelope.command).toBe('checkScript');
+    expect(envelope.data.valid).toBe(true);
+    expect(envelope.data.language).toBe('lua');
+    expect(envelope.data.diagnostics).toEqual([]);
+  });
+
+  it('exits non-zero and prints one "path:line message" line per diagnostic for broken --source', async () => {
+    const result = await runCli(
+      ['check-script', 'scripts/draft.lua', '--source', 'if x then\n'],
+      projectDir,
+    );
+    expect(result.code).toBe(1);
+    const lines = result.stdout.split('\n');
+    const diagLine = lines.find((l) => l.startsWith('scripts/draft.lua:'));
+    expect(diagLine).toBeTruthy();
+  });
+
+  it('infers js from the <path> extension when --source is given without --language', async () => {
+    const result = await runCli(
+      ['check-script', 'scripts/draft.js', '--source', 'export default {\n  onUpdate(ctx, dt) {\n};\n', '--json'],
+      projectDir,
+    );
+    expect(result.code).toBe(1);
+    const envelope = parseJson(result.stdout);
+    expect(envelope.data.language).toBe('js');
+    expect(envelope.data.valid).toBe(false);
+  });
+
+  it('with no --source, reads and checks an existing project script by path', async () => {
+    await runCli(['create', 'script', 'chk-good', '--json'], projectDir);
+    const result = await runCli(['check-script', 'scripts/chk-good.lua', '--json'], projectDir);
+    expect(result.code).toBe(0);
+    const envelope = parseJson(result.stdout);
+    expect(envelope.data.valid).toBe(true);
+    await fsp.rm(path.join(projectDir, 'scripts', 'chk-good.lua'));
+  });
+
+  it('never writes: the checked script file is unchanged on disk', async () => {
+    await runCli(['create', 'script', 'chk-untouched', '--json'], projectDir);
+    const scriptFile = path.join(projectDir, 'scripts', 'chk-untouched.lua');
+    const before = await fsp.readFile(scriptFile, 'utf8');
+    await runCli(['check-script', 'scripts/chk-untouched.lua', '--source', 'if x then\n', '--json'], projectDir);
+    const after = await fsp.readFile(scriptFile, 'utf8');
+    expect(after).toBe(before);
+    await fsp.rm(scriptFile);
+  });
+
+  it('a path outside scripts/ fails with INVALID_INPUT', async () => {
+    const result = await runCli(['check-script', 'hearth.json', '--json'], projectDir);
+    expect(result.code).toBe(1);
+    const envelope = parseJson(result.stdout);
+    expect(envelope.success).toBe(false);
+    expect(envelope.errors[0].code).toBe('INVALID_INPUT');
+  });
+});
+
 describe('hearth snapshot / diff', () => {
   it('reports changes made after a snapshot', async () => {
     const snap = await runCli(['snapshot', '--json'], projectDir);
