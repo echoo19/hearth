@@ -106,17 +106,11 @@ default stick deadzone (`0`-`1`, default `0.15`), overridable per axis. See
 [input.md](./input.md) for the whole input system, including the editor's
 Input panel.
 
-**Scripts** (code-edit, except `check-script` which is read-only):
-`create script <name> [--language lua|js] [--source-file f]` (Lua is the
-default), `edit-script <path> --source-file f` (or pipe stdin),
-`check-script <path> [--source text] [--language lua|js]` (syntax-checks a
-script without saving it — a pre-flight before `edit-script`; with
-`--source`, checks that text as if it would be saved to `<path>`,
-otherwise reads `<path>` from the project; human output is one
-`path:line message` line per diagnostic, same shape as `validate`'s
-script-error reporting; this is what the editor's Code panel runs on every
-edit to power its inline lint), `attach script <scene> <entity> <path>
-[--params '<json>']`.
+**Scripts** (code-edit, except `check-script`/`script search` which are
+read-only): `create script <name> [--language lua|js] [--source-file f]`
+(Lua is the default), `attach script <scene> <entity> <path>
+[--params '<json>']`, plus the `script edit|check|format|search|replace`
+group — see [The `script` group](#the-script-group) below.
 
 **Assets** (asset-edit): `create asset sprite <name> --shape circle --color
 gold --width 24 --height 24` (shapes: rectangle, circle, triangle, diamond,
@@ -234,6 +228,51 @@ Needs a real Chromium: Google Chrome or Microsoft Edge on the machine, a
 `CHROMIUM_PATH` environment variable pointing at one, or
 `npx playwright install chromium`; without any of those it fails with a
 message telling you exactly that.
+
+## The `script` group
+
+`hearth script edit|check|format|search|replace` is the forward surface
+for every script-editing operation; the older top-level `edit-script` and
+`check-script` verbs still work — they're aliases into the exact same
+handlers, kept because agents have them memorized.
+
+- **`script edit <path> --source-file f`** (or pipe stdin): replace a
+  script's full source. Reformats to Hearth house style on save unless
+  `--no-format` is passed or the project's `codeStyle.formatOnSave` is
+  `false` — StyLua (2-space indent, 100-column) for `.lua`, Prettier
+  defaults for `.js`. Same command as `edit-script`/MCP `edit_script`.
+- **`script check <path> [--source text] [--language lua|js]`**:
+  syntax-checks a script without saving it — a pre-flight before `script
+  edit`. With `--source`, checks that text as if it would be saved to
+  `<path>`; otherwise reads `<path>` from the project. Human output is one
+  `path:line message` line per diagnostic, same shape as `validate`'s
+  script-error reporting; this is what the editor's Code panel runs on
+  every edit to power its inline lint. Same command as `check-script`/MCP
+  `check_script`.
+- **`script format [path] [--all]`**: reformat one script, or every
+  `.lua`/`.js` script under `scripts/` with `--all`, to Hearth house style
+  (StyLua / Prettier as above). MCP `format_script`. Useful after a
+  `script replace`, which writes verbatim without reformatting.
+- **`script search <query> [--regex] [--case] [--glob g]`**: search script
+  source for a plain-text or regex query, printing `path:line:col
+  preview` per match. Matching is line-based — a regex can't span multiple
+  lines. Case-insensitive by default; `--case` for case-sensitive.
+  `--glob` restricts to scripts matching a glob (e.g.
+  `"scripts/enemies/*"`). Read-only; MCP `search_scripts`. **CRLF files**:
+  a matched line's preview keeps its trailing `\r` — a cosmetic artifact
+  of line-based reading, not a matching bug.
+- **`script replace <query> <replacement> [--regex] [--case] [--glob g]
+  [--dry-run]`**: find-and-replace across every script file matching the
+  query (and `--glob`, if given). `--regex` enables `$1`-style capture
+  groups in `<replacement>`; matching is line-based, same caveat as
+  `search`. Results are written **verbatim, not reformatted** — this is a
+  surgical text operation, not a save-through-the-formatter — run `script
+  format --all` afterward if you want house style restored. Always
+  `--dry-run` first: it previews per-file match counts without writing
+  anything, the same workflow the editor's cross-script search panel
+  enforces (Preview, then Replace all). A real apply is one command/undo
+  entry regardless of how many files it touches, so a single `undo`
+  reverts the whole replace atomically. MCP `replace_in_scripts`.
 
 ## Pathfinding
 

@@ -30,7 +30,7 @@ and assets on your own disk.
    Agent ──▶ CLI / MCP ──┘      (validate · execute · diff)     scenes · scripts · assets
 ```
 
-Both audiences use the same 62 engine commands: `createEntity`,
+Both audiences use the same 65 engine commands: `createEntity`,
 `setComponentProperty`, `runPlaytest`, `getDiff`, and so on. An agent can
 build a level, wire input, write behavior scripts, import and slice art, run
 headless playtests, and hand you a structural diff to review in the editor,
@@ -98,7 +98,7 @@ journal of every command any session has run). Property writes
 (`set`/`set-many`, MCP `set_component_property`/`set_properties`) validate
 the full dot-path against the component's real schema shape, with a
 did-you-mean suggestion on a typo instead of silently corrupting the write.
-The MCP server exposes 61 typed tools with per-session permission modes.
+The MCP server exposes 64 typed tools with per-session permission modes.
 Playtests script input (including gamepad axes and pointer drags) and
 assert on game state, events, particles, audio, camera effects, post
 effects, and UI focus, entirely headless and CI-friendly. `hearth

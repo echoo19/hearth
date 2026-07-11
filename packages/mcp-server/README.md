@@ -139,8 +139,11 @@ requires no permission (it's purely informational).
 | `update_settings` | `updateSettings` | safe-edit |
 | `create_script` | `createScript` | code-edit |
 | `edit_script` | `editScript` | code-edit |
+| `format_script` | `formatScript` | code-edit |
 | `check_script` | `checkScript` | read-only |
 | `attach_script` | `attachScript` | code-edit |
+| `search_scripts` | `searchScripts` | read-only |
+| `replace_in_scripts` | `replaceInScripts` | code-edit |
 | `import_asset` | `importAsset` | asset-edit |
 | `create_sprite_asset` | `createSpriteAsset` | asset-edit |
 | `create_tile_asset` | `createTileAsset` | asset-edit |

@@ -18,8 +18,9 @@ reviewable diffs.
 - **CLI**: `hearth <command> --json` (see [cli.md](./cli.md)). Best when the
   agent already lives in a shell (Claude Code, Codex CLI).
 - **MCP**: `hearth-mcp --project <path>` over stdio (see
-  [mcp.md](./mcp.md)). Best for MCP-native clients; 59 tools wrapping the
-  same core commands (a handful of housekeeping commands are CLI-only).
+  [mcp.md](./mcp.md)). Best for MCP-native clients; 62 command tools
+  (plus `screenshot` and `get_agent_instructions`) wrapping the same core
+  commands.
 
 Both call the identical core command layer. Pick either; never mix in
 hand-edits of `hearth.json`/`*.scene.json`/`assets.json`.
@@ -53,6 +54,22 @@ snapshot  →  inspect  →  change (commands)  →  validate  →  playtest  �
    scenes/entities/components/scripts/assets touched. The human sees the
    same diff in the editor's Changes panel (opened via the toolbar's
    Review button) and can revert.
+
+**Scripting iteration**: `check_script`/`check-script` before
+`edit_script`/`edit-script` as a pre-flight — it catches syntax errors
+without writing anything. `edit_script` formats automatically (StyLua/
+Prettier house style) unless you pass `format: false` or the project has
+`codeStyle.formatOnSave` off, so you don't need a separate format step.
+If the human has the editor open and playing while you work, your script
+edits hot-reload into the running game and your property writes
+(`set_component_property`/`set_properties`) apply live — no need to ask
+them to Stop/Play for most changes; see
+[scripting.md](./scripting.md#hot-reload-during-play) and
+[editor.md](./editor.md#live-iteration-during-play) for exactly what
+does and doesn't carry over. For cross-file work, `search_scripts` finds
+matches read-only; `replace_in_scripts` always takes a `dryRun: true`
+pass first to preview per-file counts before writing for real — see
+[cli.md](./cli.md#the-script-group).
 
 ## Permission modes
 

@@ -705,6 +705,53 @@ JS-specific rules:
   first. This is also what the editor's Code panel runs on every edit to
   drive its inline lint gutter (see [editor.md](./editor.md#code-panel)).
 
+## Hot-reload during play
+
+Saving a script while the editor is playing hot-reloads it into the
+running scene instead of requiring a Stop/Play round-trip — whether the
+save comes from the editor's own [Code panel](./editor.md#code-panel) or
+from `edit_script`/`edit-script` run by a CLI or MCP agent against the
+same project (the editor picks up the external edit over the command
+journal and reloads it the same way; see
+[editor.md](./editor.md#live-iteration-during-play)). `formatScript` and
+`replaceInScripts` reload every script file they touch the same way.
+
+**What survives a reload:** every live entity already running that
+script keeps its `ctx.vars`, pending `ctx.timers`, running `ctx.tweens`,
+and `ctx.entity`/`ctx.params` — only the compiled hook functions
+(`onStart`/`onUpdate`/`onCollision`/`onUiEvent`/`onEvent`) are swapped
+for the new code. **`onStart` does NOT re-run** on reload — it only runs
+once, the first time an entity starts. A script that had been
+error-disabled (three consecutive errors, see
+[Errors and validation](#errors-and-validation) below) re-enables on a
+successful reload. Future spawns of the script (e.g. via
+`ctx.scene.spawn`) pick up the new code too. If the edited source fails
+to compile, the reload is rejected and every entity keeps running the
+**old** code unchanged — a bad save during play never breaks a running
+game.
+
+**Pinned caveat — `ctx.events.on` subscriptions do not re-bind.** A
+subscription registered with `ctx.events.on(name, fn)` closes over the
+`fn` that existed at the time it was called; reloading the script
+recompiles the module but cannot — and does not — re-register existing
+subscriptions against the new code, so an already-subscribed callback
+keeps running its **old** closure until the entity restarts (Stop/Play).
+The `onEvent(ctx, name, data)` hook has no such caveat: it always
+resolves to whatever code was most recently loaded, exactly like
+`onUpdate`/`onCollision`. If you need a listener that reliably tracks
+live edits, prefer `onEvent` (with a `name` filter) over `ctx.events.on`
+for anything you expect to iterate on during play. This is documented,
+tested, pinned behavior, not a bug.
+
+**Runtime error → exact line.** A script error logged to the Console
+during play is clickable: clicking it jumps the [Code
+panel](./editor.md#code-panel) to the failing line. Lua errors always
+carry a line (`scripts/foo.lua:LINE`, the same format `hearth validate`
+and `checkScript` use); JS errors resolve a line on a best-effort basis
+— some JS runtime errors (e.g. ones thrown from inside a callback with
+no useful stack frame in the script itself) have no extractable line, in
+which case the Console entry isn't clickable.
+
 ## Input actions
 
 Scripts read actions rather than raw keys: `hearth.json` maps action

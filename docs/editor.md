@@ -39,7 +39,17 @@ the preview — never on in exports), the view menu, **Checkpoint**,
 **Review**, **Export**, and **Close project**. A "Every change saves
 automatically" note sits near Export as a reminder that there's no separate
 save step — see [⌘S](#shortcuts) below for why that matters for the
-keyboard.
+keyboard. While playing, a **Scene changed — Restart** button appears next
+to Play/Stop whenever something changed that can't be applied to the
+running game live — see [Live iteration during
+play](#live-iteration-during-play) below.
+
+A small **connection dot** next to the toolbar shows the editor's
+WebSocket link to the local project server (the same channel the external
+agent watcher and the Agent panel timeline read from): solid when
+connected, pulsing while it reconnects. The dot tracks the dev-server
+connection only — it says nothing about a running game or an agent
+session.
 
 ## Pause and Step
 
@@ -54,10 +64,18 @@ watch an entity's live state change one frame at a time.
 
 ## Code panel
 
-A single-document script editor (CodeMirror 6, lazy-loaded — the CM6 chunk
-only downloads once you actually open this panel) with a script picker,
-dirty-state dot, Save (`⌘S` while the editor has focus), and:
+A multi-buffer script editor (CodeMirror 6, lazy-loaded — the CM6 chunk
+only downloads once you actually open this panel) with a tab strip, a
+dirty-state dot per tab, Save (`⌘S` while the editor has focus), and:
 
+- **Tabs, per-buffer undo**: open scripts stack up as tabs (soft cap of 12
+  — opening a 13th evicts the oldest *clean* tab; dirty tabs are never
+  auto-evicted, so the count can briefly exceed 12 if every tab has unsaved
+  changes). Each tab keeps its own CodeMirror document, selection, and undo
+  history, cached per file and swapped in on tab switch — undoing in one
+  tab never touches another's history. Closing a dirty tab (✕, or
+  middle-click) asks first; closing a clean one closes immediately.
+  Arrow/Home/End keys move focus across the tab strip.
 - **`ctx.` autocomplete**: suggestions are generated from the same
   `CTX_API` array that backs `hearth inspect api` and
   [scripting.md](./scripting.md), so the completion list and the docs can
@@ -66,17 +84,52 @@ dirty-state dot, Save (`⌘S` while the editor has focus), and:
   completions still work alongside it (Lua gets a small static
   reserved-word list on top, since the legacy Lua mode has no language-data
   completion of its own).
+- **`ctx.` hover docs**: hovering a `ctx.foo.bar` token shows a tooltip
+  with its signature, description, and a language-appropriate example —
+  resolved from the exact same `CTX_API` trie the autocomplete reads, so
+  hovering and completing a member can never show different information.
+  Hovering the bare `ctx` token itself shows nothing; you need at least one
+  `.member`.
 - **Inline lint**: every edit (debounced) runs the buffer through
   `checkScript` — the same read-only pre-flight command available on the
   CLI/MCP (see [scripting.md](./scripting.md#errors-and-validation)) — and
   surfaces diagnostics in CodeMirror's lint gutter, without ever saving the
   draft.
+- **In-file search** (`Mod-F` — Ctrl-F on Windows/Linux, ⌘F on macOS):
+  CodeMirror's own search panel — find, find next/previous, replace,
+  replace-all, case-sensitive and regex matching — scoped to the open
+  buffer. See [Search across scripts](#search-across-scripts) below for
+  project-wide search/replace.
 - **External-change follow**: if the open script changes outside the
   editor (another CLI/MCP session, an agent) while your buffer is clean, it
   silently reloads; while your buffer is **dirty**, it never overwrites
   your edits — a conflict banner offers **Reload** or **Keep mine**
   instead, so a later Save can never clobber an external change without you
   knowing.
+- **Format on save**: a toolbar checkbox toggles the project's
+  `codeStyle.formatOnSave` setting (default on) — StyLua for `.lua`
+  (2-space indent, 100-column) and Prettier defaults for `.js`. It's a thin
+  UI over the same project setting `hearth set-settings
+  --format-on-save`/`updateSettings` writes, so toggling it here changes
+  behavior for the CLI and MCP `edit_script` too, not just the editor.
+
+## Search across scripts
+
+**⇧⌘F** opens a project-wide search/replace panel over every script file,
+backed directly by the `searchScripts`/`replaceInScripts` commands (see
+[cli.md](./cli.md#command-tour)) — the same line-based, no-multiline-regex
+matching either surface uses. Results group by file with a "N matches in M
+scripts" summary (results cap at 500 — narrow the query or the `--glob`
+equivalent if you hit it).
+
+Replace is a two-step flow, matching the CLI/MCP `--dry-run`/`dryRun`
+convention: **Preview** runs the replacement with dry-run on and shows
+per-file match counts with nothing written; **Replace all** then runs it
+for real. A real apply goes through the normal command/undo pipeline, so
+one **Undo** reverts every file the replace touched, atomically, like any
+other command. Any open tab for a touched file reconciles automatically —
+a clean tab silently reloads the new source, a dirty one gets the same
+conflict banner as an external change.
 
 ## Shortcuts
 
@@ -94,6 +147,7 @@ drift apart. If this table and that file ever disagree, trust the file.
 | ⌘S | "Saved automatically" reassurance log (swallows the browser's Save dialog — see below) | General |
 | ⇧⌘S | Save a checkpoint (`snapshotProject`) | General |
 | ⇧/ (`?`) | Show keyboard shortcuts | General |
+| ⇧⌘F | [Search across scripts](#search-across-scripts) | General |
 | ⌘Enter | Play / Stop | Scene |
 | F | Focus the selected entity (fit camera to bounds) | Scene |
 | Space (hold) | Pan the canvas | Scene |
@@ -138,6 +192,36 @@ Every value shown is a specific typed field pulled off the live runtime —
 never a raw state dump — matching the rest of the editor's no-raw-JSON
 convention. Pair with [Pause and Step](#pause-and-step) to watch a value
 change frame by frame instead of at full speed.
+
+## Live iteration during play
+
+While the game is playing, three kinds of edits apply to the running
+scene without a Stop/Play round-trip:
+
+- **Inspector property edits** dual-write: the change always goes through
+  the normal `setComponentProperty`/`setProperties` command first (so it's
+  saved and undoable exactly like when stopped), and while playing it's
+  also live-patched straight into the running preview, so you see the
+  effect immediately instead of after a restart. Camera fields
+  (`Camera.ambientLight` and friends) take effect immediately this way.
+- **Script edits hot-reload**: saving a script (Code panel Save, or
+  format-on-save) swaps its compiled code into every live entity running
+  it, preserving `ctx.vars`, timers, and tweens — see
+  [scripting.md](./scripting.md#hot-reload-during-play) for exactly what
+  survives, the `ctx.events.on` caveat, and how a compile failure is
+  handled.
+- **External agent edits apply too**: an `edit_script`, `setComponentProperty`,
+  or `setProperties` command run by a CLI or MCP session against the same
+  project — while this editor is open and playing — live-patches or
+  hot-reloads the same way a local edit would, via the command journal
+  (the editor resolves the current value with one read-only query first,
+  since the journal records the target, not the value).
+
+Some changes can't be applied to a running scene in place — adding or
+removing an entity or component, reparenting, or anything else structural.
+Those raise the **Scene changed — Restart** button next to Play/Stop
+instead of guessing at a live patch; click it (or Stop then Play again) to
+pick up the change.
 
 ## Direct-manipulation transform handles
 

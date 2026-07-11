@@ -1,7 +1,7 @@
 # MCP Guide
 
 Hearth ships `hearth-mcp` (`packages/mcp-server`), a stdio MCP server that
-exposes the engine command layer as 61 typed tools (59 command tools, plus
+exposes the engine command layer as 64 typed tools (62 command tools, plus
 `screenshot` and `get_agent_instructions`, neither of which wraps a core
 command). The full reference (flags, registration snippets, permission
 table, complete tool list) lives in
@@ -35,8 +35,16 @@ dot-path properties on one entity in a single undo step, all-or-nothing
 validated — see [cli.md](./cli.md#command-tour)), `paint_tiles`,
 `fill_tilemap_rect`, `resize_tilemap` (batched Tilemap edits — see
 [cli.md](./cli.md#tilemap-editing)), `create_script`, `edit_script`,
-`check_script` (syntax-check source or an existing script file without
-saving — read-only, a pre-flight before `edit_script`), `attach_script`,
+`format_script` (reformat a script, or every script with `all: true`, to
+Hearth house style — StyLua/Prettier — see
+[cli.md](./cli.md#the-script-group)), `check_script` (syntax-check source
+or an existing script file without saving — read-only, a pre-flight
+before `edit_script`), `attach_script`, `search_scripts` (plain-text or
+regex search across script source, read-only — see
+[cli.md](./cli.md#the-script-group)), `replace_in_scripts` (find-and-replace
+across script files; always run with `dryRun: true` first to preview
+per-file match counts, results are written verbatim without reformatting
+— see [cli.md](./cli.md#the-script-group)),
 `import_asset`, `create_sprite_asset`, `create_tile_asset`,
 `create_sound`, `create_animation_asset`, `slice_spritesheet` (frame grid over an
 imported spritesheet — takes numeric `frameWidth`/`frameHeight` rather

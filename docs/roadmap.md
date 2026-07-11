@@ -1,8 +1,30 @@
 # Hearth Roadmap
 
-v0.10 is the current milestone. Its first release, v0.10.0 (shipped,
-below, "Write & See"), added a **Code panel** in the editor (lazy-loaded
-CodeMirror 6, `ctx.` autocomplete driven by the same `CTX_API` the docs and
+v0.11 is the current milestone. Its first release, v0.11.0 (shipped,
+below, "the iteration loop"), made write → play → tweak professional:
+**script hot-reload during play** (edit a script, every live entity
+running it picks up the new code — `ctx.vars`/timers/tweens survive,
+`onStart` does not re-run, a compile failure keeps the old code running,
+and an error-disabled script re-enables), **live Inspector property
+patching during play** (Inspector edits dual-write — saved and undoable
+as always, and live-patched into the running preview so a field like
+`Camera.ambientLight` no longer needs a Stop/Play round-trip — external
+CLI/MCP edits from another session patch live too, via the command
+journal), a **"Scene changed — Restart" badge** for structural changes
+that can't be live-patched, **runtime error → exact line** (a Console
+error is clickable straight to the failing line — always for Lua, best-effort
+for JS), **format-on-save** (StyLua/Prettier house style, on by default,
+toggleable per project), **Code panel tabs** (multi-buffer editing with
+independent per-tab undo), **`ctx.` hover docs**, **in-file search**
+(`Mod-F`), and **cross-script search/replace** (`⇧⌘F` in the editor;
+`hearth script search|replace`/MCP `search_scripts`/`replace_in_scripts`
+on the CLI/MCP, dry-run-first). Registry grew 62 → 65 commands; MCP grew
+61 → 64 tools. See [scripting.md](./scripting.md#hot-reload-during-play),
+[editor.md](./editor.md#live-iteration-during-play), and
+[cli.md](./cli.md#the-script-group).
+
+On top of v0.10's **Code panel** in the editor (lazy-loaded CodeMirror 6,
+`ctx.` autocomplete driven by the same `CTX_API` the docs and
 `hearth inspect api` use, inline `checkScript` lint, external-change
 follow), a **Live panel** (read-only 10Hz runtime inspector: entity
 transform/velocity/timers/tweens/recent events) plus toolbar **Pause**/
@@ -63,6 +85,59 @@ what's deliberately missing.
 The standing rule for everything below: **agent-native first**. Each system
 ships as schemas + commands (inspectable via `hearth … --json`, exposed as
 MCP tools, testable in headless playtests) before it gets editor UI.
+
+## Shipped in v0.11.0
+
+- **Script hot-reload during play**: saving a script while the editor is
+  playing swaps its compiled code into every live entity running it,
+  preserving `ctx.vars`, pending timers, and running tweens. `onStart`
+  does **not** re-run on reload; an error-disabled script re-enables on a
+  successful reload; a compile failure leaves the old code running
+  unchanged. Pinned caveat: existing `ctx.events.on` subscriptions keep
+  firing their old closure (reload can't re-register them) — `onEvent`
+  always resolves to the newest code. Works for external CLI/MCP
+  `edit_script` calls too, via the command journal, not just the editor's
+  own Code panel. See
+  [scripting.md](./scripting.md#hot-reload-during-play).
+- **Live Inspector property patching during play**: an Inspector edit
+  dual-writes — always saved and undoable through the normal
+  `setComponentProperty`/`setProperties` command, and, while playing,
+  live-patched straight into the running preview. Closes the
+  long-standing "`ambientLight` needs Stop/Play" gap. Property writes
+  from an external CLI/MCP session apply live too, resolved through the
+  command journal. Structural changes (new/removed entity or component,
+  reparenting, and the like) can't be live-patched — they raise a
+  **"Scene changed — Restart"** toolbar badge instead of guessing.
+- **Runtime error → exact line**: a script error logged to the Console
+  during play is clickable, jumping the Code panel to the failing line.
+  Lua errors always carry a line; JS errors resolve one on a best-effort
+  basis (some have none).
+- **Format-on-save**: `editScript`/`createScript` reformat to Hearth house
+  style automatically — StyLua (2-space indent, 100-column) for `.lua`,
+  Prettier defaults for `.js` — unless `format: false` is passed or the
+  project's `codeStyle.formatOnSave` is off. CLI `hearth script
+  format [path] [--all]`, MCP `format_script`.
+- **`hearth script` CLI group**: `edit|check|format|search|replace` is the
+  forward surface for every script-editing verb; the older top-level
+  `edit-script`/`check-script` stay as aliases.
+- **Cross-script search/replace**: `searchScripts`/`replaceInScripts`
+  commands (line-based plain-text or regex matching, no multiline
+  patterns) — CLI `hearth script search|replace`, MCP
+  `search_scripts`/`replace_in_scripts`, and an editor panel (`⇧⌘F`).
+  Replace always previews per-file match counts with `dryRun`/`--dry-run`
+  before writing; a real apply writes verbatim (not reformatted — run
+  `script format --all` after) and is one undo entry regardless of how
+  many files it touched.
+- **Editor: Code panel tabs**: scripts open as tabs (soft cap 12) with
+  independent per-tab undo history, `ctx.` hover docs (signature +
+  description + example, off the same `CTX_API` table the autocomplete
+  and docs use), in-file search/replace (`Mod-F`, CodeMirror's own search
+  panel), and a format-on-save toggle wired to the project setting.
+- **WS-status dot**: a small toolbar indicator for the editor's WebSocket
+  link to the local project server (connected / reconnecting).
+- Registry grew 62 → 65 commands (`formatScript`, `searchScripts`,
+  `replaceInScripts`); MCP grew 61 → 64 tools (`format_script`,
+  `search_scripts`, `replace_in_scripts`).
 
 ## Shipped in v0.10.0
 
@@ -382,25 +457,9 @@ MCP tools, testable in headless playtests) before it gets editor UI.
 
 The end goal, stated so every release aims at it: **a solo dev or an agent
 can take a 2D game from empty project to a polished, distributable game
-without leaving the tool or hitting a wall.** Four waves remain. Each one
+without leaving the tool or hitting a wall.** Three waves remain. Each one
 completes a loop rather than scattering features; anything that doesn't
 serve that loop waits (see Non-goals).
-
-### v0.11 — the iteration loop
-
-Write → play → tweak becomes professional:
-
-- **Script hot-reload during play** — edit a script, the running game picks
-  it up; no Stop/Play round-trip.
-- **Live property patching** — Inspector edits apply to the running game
-  (this also closes the long-standing "ambientLight needs Stop/Play" gap).
-- **Runtime error → exact line** — a script error in the Console jumps to
-  the failing line in the Code panel.
-- **Format-on-save** for Lua and JS, **code tabs** (multi-file editing),
-  **hover docs** on the `ctx` API, **find/replace across scripts**.
-
-Every item doubles for agents: hot-reload makes iteration cheaper over
-CLI/MCP too, and error→line makes self-fixing faster.
 
 ### v0.12 — the content ceiling
 
