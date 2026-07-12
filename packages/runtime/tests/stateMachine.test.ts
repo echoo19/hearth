@@ -7,6 +7,7 @@
  */
 import { describe, it, expect } from 'vitest';
 import { SceneRuntime } from '@hearth/runtime';
+import { StateMachineDataSchema } from '@hearth/core';
 import { makeStore, ent } from './helpers.js';
 
 const IDLE = { frames: ['idle0', 'idle1'], frameDuration: 0.1, loop: true };
@@ -132,6 +133,87 @@ describe('AnimationStateMachine runtime', () => {
     rt.run(6);
     // Still walking: the SM state (moving=true, current=walk) survived the reload.
     expect(rt.getStateMachineState('Hero')).toBe('walk');
+  });
+});
+
+describe('SceneRuntime.reloadStateMachineAsset', () => {
+  const SM2_ASSET = {
+    id: 'ast_sm2',
+    name: 'hero-sm2',
+    type: 'stateMachine',
+    path: 'assets/statemachines/hero2.asm.json',
+  };
+  // Fires the `attack` trigger once, driving 'any' -> 'attacking'.
+  const FIRE_ATTACK = `export default {
+    onUpdate(ctx) { if (ctx.time.frame === 1) ctx.animator.fire(ctx.entity.name, 'attack'); },
+  };`;
+  // Sets the persistent `moving` bool once, driving idle -> walk.
+  const SET_MOVING = `export default {
+    onUpdate(ctx) { if (ctx.time.frame === 1) ctx.animator.setParam(ctx.entity.name, 'moving', true); },
+  };`;
+
+  it('swaps the asset doc and resets only entities bound to it, leaving others untouched', async () => {
+    const { store, fs } = await makeStore({
+      entities: [
+        ent('A', {
+          Transform: {},
+          SpriteRenderer: { assetId: 'idle0' },
+          AnimationStateMachine: { assetId: 'ast_sm' },
+          Script: { scriptPath: 'scripts/a.js' },
+        }),
+        ent('B', {
+          Transform: {},
+          SpriteRenderer: { assetId: 'idle0' },
+          AnimationStateMachine: { assetId: 'ast_sm2' },
+          Script: { scriptPath: 'scripts/b.js' },
+        }),
+      ],
+      assets: [SM_ASSET, SM2_ASSET, ...ANIM_ASSETS],
+      scripts: { 'a.js': FIRE_ATTACK, 'b.js': FIRE_ATTACK },
+    });
+    await writeAnims(fs);
+    await fs.writeFile('/proj/assets/statemachines/hero2.asm.json', JSON.stringify(SM_DATA));
+    const rt = await SceneRuntime.create(store, 'Test');
+    rt.run(3); // both fire `attack` -> both in 'attacking'
+    expect(rt.getStateMachineState('A')).toBe('attacking');
+    expect(rt.getStateMachineState('B')).toBe('attacking');
+
+    // Swap ast_sm with a doc whose initial state differs ('walk' not 'idle'):
+    // A must reset to the NEW initial (proves both reset AND that the doc was
+    // actually swapped), B (a different asset) must be untouched.
+    const NEW_DATA = StateMachineDataSchema.parse({ ...SM_DATA, initial: 'walk' });
+    const reset = rt.reloadStateMachineAsset('ast_sm', NEW_DATA);
+    expect(reset).toBe(1);
+    expect(rt.getStateMachineState('A')).toBe('walk');
+    expect(rt.getStateMachineState('B')).toBe('attacking');
+  });
+
+  it('re-defaults params on the reset, so a previously-set param no longer holds', async () => {
+    const { store, fs } = await makeStore({
+      entities: [
+        ent('A', {
+          Transform: {},
+          SpriteRenderer: { assetId: 'idle0' },
+          AnimationStateMachine: { assetId: 'ast_sm' },
+          Script: { scriptPath: 'scripts/a.js' },
+        }),
+      ],
+      assets: [SM_ASSET, ...ANIM_ASSETS],
+      scripts: { 'a.js': SET_MOVING },
+    });
+    await writeAnims(fs);
+    const rt = await SceneRuntime.create(store, 'Test');
+    rt.run(3); // moving=true drove idle -> walk
+    expect(rt.getStateMachineState('A')).toBe('walk');
+
+    // Reload with the SAME graph: A resets to 'idle' and `moving` returns to its
+    // default (false). The script's frame-1 setParam won't re-fire, so A stays
+    // idle — proving params were re-defaulted rather than carried over.
+    const reset = rt.reloadStateMachineAsset('ast_sm', StateMachineDataSchema.parse(SM_DATA));
+    expect(reset).toBe(1);
+    expect(rt.getStateMachineState('A')).toBe('idle');
+    rt.run(5);
+    expect(rt.getStateMachineState('A')).toBe('idle');
   });
 });
 

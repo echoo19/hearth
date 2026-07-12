@@ -568,6 +568,29 @@ export class SceneRuntime {
     return true;
   }
 
+  /**
+   * Live-swap a state-machine asset's parsed document while the scene keeps
+   * running (editor Animator edits, or an external `hearth` update, during
+   * play). Replaces the stored StateMachineData for `assetId`, then resets ONLY
+   * the entities currently bound to that asset back to their initial state
+   * (params re-defaulted, triggers cleared, clip rewound) so the new graph
+   * takes effect immediately; every other entity's SmState — including entities
+   * on a DIFFERENT machine — is left untouched. Entities that reference the
+   * asset but have not stepped yet (no SmState) simply pick up the new document
+   * lazily. Returns the number of live entities that were reset.
+   */
+  reloadStateMachineAsset(assetId: string, data: StateMachineData): number {
+    this.stateMachineAssets.set(assetId, data);
+    let reset = 0;
+    for (const [entityId, state] of this.smStates) {
+      if (state.assetId !== assetId) continue;
+      // Reseed from the new asset: initial state, default params, empty triggers.
+      this.smStates.set(entityId, createSmState(data, assetId));
+      reset++;
+    }
+    return reset;
+  }
+
   /** Active camera view: main Camera entity, or build-settings defaults. */
   get camera(): {
     position: Vec2;

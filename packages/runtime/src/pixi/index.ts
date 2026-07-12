@@ -51,6 +51,7 @@ import {
 } from 'pixi.js';
 import {
   AnimationDataSchema,
+  StateMachineDataSchema,
   findSheetFrame,
   joinPath,
   type Asset,
@@ -142,6 +143,16 @@ export class PixiSceneView {
    * canvas would never pick up a texture change after entity creation.
    */
   private spriteSnapshots = new Map<string, string>();
+  /**
+   * Last-seen Tilemap.grid and Tilemap.tileAssets REFERENCES per entity, to
+   * detect when the tilemap child needs a rebuild — a live paint or autotile
+   * edit (setTiles/setTileAutotile, or the editor's live-patch) replaces one of
+   * those arrays/objects with a fresh reference. buildNode's tilemap child is
+   * only built once, so without this a live tilemap edit would never show until
+   * a restart. Reference identity (not a deep hash) keeps this O(1) per tick,
+   * matching why the physics tilemap cache avoids per-frame grid joins.
+   */
+  private tilemapRefs = new Map<string, { grid: unknown; tileAssets: unknown }>();
   /** Last-drawn (min,max,value,step,width,trackColor,fillColor,handleColor) snapshot per entity, to skip redundant UISlider redraws. */
   private sliderSnapshots = new Map<string, string>();
   /** Last-drawn (value,size,color,checkColor) snapshot per entity, to skip redundant UIToggle redraws. */
@@ -454,6 +465,23 @@ export class PixiSceneView {
     return this.runtime.patchComponent(entityRef, componentType, propertyPath, value);
   }
 
+  /**
+   * Live-swap a state-machine asset's parsed doc against the CURRENT scene's
+   * runtime (editor Animator edits / an external `hearth` update during play).
+   * Re-reads the asset file fresh from the store fs and parses it (the on-disk
+   * copy the mutation just wrote), then hands the parsed doc to the runtime,
+   * which resets only the entities bound to that machine. Resolves to the
+   * number of entities reset (0 when the asset is unknown/not a state machine).
+   * See SceneRuntime.reloadStateMachineAsset.
+   */
+  async reloadStateMachineAsset(assetId: string): Promise<number> {
+    const asset = this.opts.store.getAsset(assetId);
+    if (!asset || asset.type !== 'stateMachine') return 0;
+    const raw = await this.opts.store.fs.readFile(joinPath(this.opts.store.root, asset.path));
+    const data = StateMachineDataSchema.parse(JSON.parse(raw));
+    return this.runtime.reloadStateMachineAsset(assetId, data);
+  }
+
   destroy(): void {
     if (this.destroyed) return;
     this.destroyed = true;
@@ -470,6 +498,7 @@ export class PixiSceneView {
     this.particleNodes.clear();
     this.lineSnapshots.clear();
     this.spriteSnapshots.clear();
+    this.tilemapRefs.clear();
     this.sliderSnapshots.clear();
     this.toggleSnapshots.clear();
     // `textures` (the base preloaded set) is never explicitly cleared/destroyed
@@ -502,6 +531,7 @@ export class PixiSceneView {
     this.particleNodes.clear();
     this.lineSnapshots.clear();
     this.spriteSnapshots.clear();
+    this.tilemapRefs.clear();
     this.sliderSnapshots.clear();
     this.toggleSnapshots.clear();
     this.accumulator = 0;
@@ -1178,6 +1208,23 @@ export class PixiSceneView {
     const toggleNode = node.getChildByLabel?.('toggle') as Graphics | null;
     if (toggleNode && toggle) {
       this.redrawToggle(entity.id, toggleNode, toggle);
+    }
+    const tilemapNode = node.getChildByLabel?.('tilemap') ?? null;
+    if (tilemapNode && tilemap) {
+      const prev = this.tilemapRefs.get(entity.id);
+      if (!prev || prev.grid !== tilemap.grid || prev.tileAssets !== tilemap.tileAssets) {
+        this.tilemapRefs.set(entity.id, { grid: tilemap.grid, tileAssets: tilemap.tileAssets });
+        // First sight (prev undefined) is the child buildNode already drew — only
+        // a subsequent grid/tileAssets swap rebuilds it.
+        if (prev) {
+          const index = node.getChildIndex(tilemapNode);
+          node.removeChild(tilemapNode);
+          tilemapNode.destroy({ children: true });
+          const rebuilt = this.buildTilemap(tilemap);
+          rebuilt.label = 'tilemap';
+          node.addChildAt(rebuilt, Math.min(index, node.children.length));
+        }
+      }
     }
 
     // Per-sprite outline/flash/dissolve. Attaches the combined filter only
