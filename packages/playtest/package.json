@@ -1,6 +1,6 @@
 {
   "name": "@hearth/playtest",
-  "version": "0.11.0",
+  "version": "0.12.0",
   "description": "Hearth headless playtest tools: simulated runs, assertions, input scripts",
   "license": "MIT",
   "type": "module",

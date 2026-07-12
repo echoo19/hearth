@@ -46,7 +46,7 @@ import { createZip } from './zip.js';
 // than a version bump justifies here. Keep this in sync with package.json's
 // "version" on every release — see the version-bump checklist in
 // .superpowers/sdd/task-12-report.md.
-const VERSION = '0.11.0';
+const VERSION = '0.12.0';
 
 /** Read a global-options snapshot off a commander Command. */
 function globalOpts(cmd: Command): GlobalOpts {
