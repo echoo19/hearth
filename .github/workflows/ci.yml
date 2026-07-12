@@ -25,6 +25,11 @@ jobs:
         run: npm run build:packages
       - name: Typecheck
         run: npm run typecheck
+      - name: Cache Electron download
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/electron
+          key: electron-33.4.11-${{ runner.os }}
       - name: Run tests
         run: npm test
         env:
