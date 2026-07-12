@@ -1,0 +1,70 @@
+{
+  "name": "Target",
+  "entities": [
+    {
+      "name": "Target",
+      "enabled": true,
+      "tags": [
+        "target"
+      ],
+      "components": {
+        "Transform": {
+          "position": {
+            "x": 240,
+            "y": 150
+          },
+          "rotation": 0,
+          "scale": {
+            "x": 1,
+            "y": 1
+          }
+        },
+        "SpriteRenderer": {
+          "assetId": "ast_28r6vedh",
+          "frame": null,
+          "shape": "rectangle",
+          "color": "#ffffff",
+          "width": 32,
+          "height": 32,
+          "opacity": 1,
+          "flipX": false,
+          "flipY": false,
+          "layer": 0,
+          "visible": true
+        },
+        "Collider": {
+          "shape": "circle",
+          "width": 32,
+          "height": 32,
+          "radius": 16,
+          "points": [
+            {
+              "x": 0,
+              "y": -16
+            },
+            {
+              "x": 16,
+              "y": 16
+            },
+            {
+              "x": -16,
+              "y": 16
+            }
+          ],
+          "offset": {
+            "x": 0,
+            "y": 0
+          },
+          "isTrigger": true,
+          "layer": "default",
+          "collidesWith": [
+            "*"
+          ],
+          "oneWay": false
+        }
+      },
+      "id": "pfe_1",
+      "parentId": null
+    }
+  ]
+}

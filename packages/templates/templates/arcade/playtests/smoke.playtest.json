@@ -1,0 +1,33 @@
+{
+  "formatVersion": 1,
+  "id": "ptt_z60gnbly",
+  "name": "smoke",
+  "scene": "scn_kxl6dtza",
+  "steps": [
+    {
+      "type": "wait",
+      "frames": 10
+    },
+    {
+      "type": "press",
+      "action": "right",
+      "frames": 45
+    },
+    {
+      "type": "assertProperty",
+      "entity": "Ship",
+      "property": "Transform.position.x",
+      "greaterThan": 480
+    },
+    {
+      "type": "assertEntityExists",
+      "entity": "Ship",
+      "exists": true
+    },
+    {
+      "type": "assertNoErrors"
+    }
+  ],
+  "maxFrames": 200,
+  "seed": 0
+}

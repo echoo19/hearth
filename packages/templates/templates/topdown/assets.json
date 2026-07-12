@@ -1,0 +1,361 @@
+{
+  "formatVersion": 1,
+  "assets": [
+    {
+      "id": "ast_hvyhj6xa",
+      "name": "hero",
+      "type": "sprite",
+      "path": "assets/sprites/hero.svg",
+      "metadata": {
+        "procedural": true,
+        "shape": "character",
+        "color": "#b06bff",
+        "width": 26,
+        "height": 30
+      }
+    },
+    {
+      "id": "ast_qdgeggk3",
+      "name": "wall-tiles",
+      "type": "sprite",
+      "path": "assets/sprites/wall-tiles.png",
+      "metadata": {
+        "importedFrom": "wall-tiles.png",
+        "width": 128,
+        "height": 96,
+        "format": "png",
+        "frames": [
+          {
+            "name": "blob_0",
+            "x": 0,
+            "y": 0,
+            "width": 16,
+            "height": 16
+          },
+          {
+            "name": "blob_1",
+            "x": 16,
+            "y": 0,
+            "width": 16,
+            "height": 16
+          },
+          {
+            "name": "blob_4",
+            "x": 32,
+            "y": 0,
+            "width": 16,
+            "height": 16
+          },
+          {
+            "name": "blob_5",
+            "x": 48,
+            "y": 0,
+            "width": 16,
+            "height": 16
+          },
+          {
+            "name": "blob_7",
+            "x": 64,
+            "y": 0,
+            "width": 16,
+            "height": 16
+          },
+          {
+            "name": "blob_16",
+            "x": 80,
+            "y": 0,
+            "width": 16,
+            "height": 16
+          },
+          {
+            "name": "blob_17",
+            "x": 96,
+            "y": 0,
+            "width": 16,
+            "height": 16
+          },
+          {
+            "name": "blob_20",
+            "x": 112,
+            "y": 0,
+            "width": 16,
+            "height": 16
+          },
+          {
+            "name": "blob_21",
+            "x": 0,
+            "y": 16,
+            "width": 16,
+            "height": 16
+          },
+          {
+            "name": "blob_23",
+            "x": 16,
+            "y": 16,
+            "width": 16,
+            "height": 16
+          },
+          {
+            "name": "blob_28",
+            "x": 32,
+            "y": 16,
+            "width": 16,
+            "height": 16
+          },
+          {
+            "name": "blob_29",
+            "x": 48,
+            "y": 16,
+            "width": 16,
+            "height": 16
+          },
+          {
+            "name": "blob_31",
+            "x": 64,
+            "y": 16,
+            "width": 16,
+            "height": 16
+          },
+          {
+            "name": "blob_64",
+            "x": 80,
+            "y": 16,
+            "width": 16,
+            "height": 16
+          },
+          {
+            "name": "blob_65",
+            "x": 96,
+            "y": 16,
+            "width": 16,
+            "height": 16
+          },
+          {
+            "name": "blob_68",
+            "x": 112,
+            "y": 16,
+            "width": 16,
+            "height": 16
+          },
+          {
+            "name": "blob_69",
+            "x": 0,
+            "y": 32,
+            "width": 16,
+            "height": 16
+          },
+          {
+            "name": "blob_71",
+            "x": 16,
+            "y": 32,
+            "width": 16,
+            "height": 16
+          },
+          {
+            "name": "blob_80",
+            "x": 32,
+            "y": 32,
+            "width": 16,
+            "height": 16
+          },
+          {
+            "name": "blob_81",
+            "x": 48,
+            "y": 32,
+            "width": 16,
+            "height": 16
+          },
+          {
+            "name": "blob_84",
+            "x": 64,
+            "y": 32,
+            "width": 16,
+            "height": 16
+          },
+          {
+            "name": "blob_85",
+            "x": 80,
+            "y": 32,
+            "width": 16,
+            "height": 16
+          },
+          {
+            "name": "blob_87",
+            "x": 96,
+            "y": 32,
+            "width": 16,
+            "height": 16
+          },
+          {
+            "name": "blob_92",
+            "x": 112,
+            "y": 32,
+            "width": 16,
+            "height": 16
+          },
+          {
+            "name": "blob_93",
+            "x": 0,
+            "y": 48,
+            "width": 16,
+            "height": 16
+          },
+          {
+            "name": "blob_95",
+            "x": 16,
+            "y": 48,
+            "width": 16,
+            "height": 16
+          },
+          {
+            "name": "blob_112",
+            "x": 32,
+            "y": 48,
+            "width": 16,
+            "height": 16
+          },
+          {
+            "name": "blob_113",
+            "x": 48,
+            "y": 48,
+            "width": 16,
+            "height": 16
+          },
+          {
+            "name": "blob_116",
+            "x": 64,
+            "y": 48,
+            "width": 16,
+            "height": 16
+          },
+          {
+            "name": "blob_117",
+            "x": 80,
+            "y": 48,
+            "width": 16,
+            "height": 16
+          },
+          {
+            "name": "blob_119",
+            "x": 96,
+            "y": 48,
+            "width": 16,
+            "height": 16
+          },
+          {
+            "name": "blob_124",
+            "x": 112,
+            "y": 48,
+            "width": 16,
+            "height": 16
+          },
+          {
+            "name": "blob_125",
+            "x": 0,
+            "y": 64,
+            "width": 16,
+            "height": 16
+          },
+          {
+            "name": "blob_127",
+            "x": 16,
+            "y": 64,
+            "width": 16,
+            "height": 16
+          },
+          {
+            "name": "blob_193",
+            "x": 32,
+            "y": 64,
+            "width": 16,
+            "height": 16
+          },
+          {
+            "name": "blob_197",
+            "x": 48,
+            "y": 64,
+            "width": 16,
+            "height": 16
+          },
+          {
+            "name": "blob_199",
+            "x": 64,
+            "y": 64,
+            "width": 16,
+            "height": 16
+          },
+          {
+            "name": "blob_209",
+            "x": 80,
+            "y": 64,
+            "width": 16,
+            "height": 16
+          },
+          {
+            "name": "blob_213",
+            "x": 96,
+            "y": 64,
+            "width": 16,
+            "height": 16
+          },
+          {
+            "name": "blob_215",
+            "x": 112,
+            "y": 64,
+            "width": 16,
+            "height": 16
+          },
+          {
+            "name": "blob_221",
+            "x": 0,
+            "y": 80,
+            "width": 16,
+            "height": 16
+          },
+          {
+            "name": "blob_223",
+            "x": 16,
+            "y": 80,
+            "width": 16,
+            "height": 16
+          },
+          {
+            "name": "blob_241",
+            "x": 32,
+            "y": 80,
+            "width": 16,
+            "height": 16
+          },
+          {
+            "name": "blob_245",
+            "x": 48,
+            "y": 80,
+            "width": 16,
+            "height": 16
+          },
+          {
+            "name": "blob_247",
+            "x": 64,
+            "y": 80,
+            "width": 16,
+            "height": 16
+          },
+          {
+            "name": "blob_253",
+            "x": 80,
+            "y": 80,
+            "width": 16,
+            "height": 16
+          },
+          {
+            "name": "blob_255",
+            "x": 96,
+            "y": 80,
+            "width": 16,
+            "height": 16
+          }
+        ]
+      }
+    }
+  ]
+}

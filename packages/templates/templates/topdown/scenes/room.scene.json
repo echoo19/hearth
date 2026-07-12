@@ -1,0 +1,249 @@
+{
+  "formatVersion": 1,
+  "id": "scn_rg3yu74b",
+  "name": "Room",
+  "entities": [
+    {
+      "id": "ent_f4y3n8t8",
+      "name": "Main Camera",
+      "parentId": null,
+      "enabled": true,
+      "tags": [],
+      "components": {
+        "Transform": {
+          "position": {
+            "x": 400,
+            "y": 300
+          },
+          "rotation": 0,
+          "scale": {
+            "x": 1,
+            "y": 1
+          }
+        },
+        "Camera": {
+          "zoom": 1,
+          "isMain": true,
+          "backgroundColor": "#14100f",
+          "ambientLight": 1,
+          "postEffects": []
+        }
+      }
+    },
+    {
+      "id": "ent_3rj77cmm",
+      "name": "Room",
+      "parentId": null,
+      "enabled": true,
+      "tags": [
+        "level"
+      ],
+      "components": {
+        "Transform": {
+          "position": {
+            "x": 160,
+            "y": 120
+          },
+          "rotation": 0,
+          "scale": {
+            "x": 1,
+            "y": 1
+          }
+        },
+        "Tilemap": {
+          "tileSize": 16,
+          "tileAssets": {
+            "W": {
+              "sheet": "ast_qdgeggk3",
+              "template": "blob47"
+            }
+          },
+          "grid": [
+            "WWWWWWWWWWWWWWWWWWWWWWWWWWWWWW",
+            "W............................W",
+            "W............................W",
+            "W............................W",
+            "W............................W",
+            "W............................W",
+            "W............................W",
+            "W............................W",
+            "W............................W",
+            "W............................W",
+            "W............................W",
+            "W............................W",
+            "W............................W",
+            "W............................W",
+            "W............................W",
+            "W............................W",
+            "W............................W",
+            "W............................W",
+            "W............................W",
+            "WWWWWWWWWWWWWWWWWWWWWWWWWWWWWW"
+          ],
+          "solid": true,
+          "layer": -10
+        }
+      }
+    },
+    {
+      "id": "ent_6pp30t3c",
+      "name": "Player",
+      "parentId": null,
+      "enabled": true,
+      "tags": [
+        "player"
+      ],
+      "components": {
+        "Transform": {
+          "position": {
+            "x": 240,
+            "y": 280
+          },
+          "rotation": 0,
+          "scale": {
+            "x": 1,
+            "y": 1
+          }
+        },
+        "SpriteRenderer": {
+          "assetId": "ast_hvyhj6xa",
+          "frame": null,
+          "shape": "rectangle",
+          "color": "#ffffff",
+          "width": 26,
+          "height": 30,
+          "opacity": 1,
+          "flipX": false,
+          "flipY": false,
+          "layer": 0,
+          "visible": true
+        },
+        "Collider": {
+          "shape": "box",
+          "width": 24,
+          "height": 28,
+          "radius": 16,
+          "points": [
+            {
+              "x": 0,
+              "y": -16
+            },
+            {
+              "x": 16,
+              "y": 16
+            },
+            {
+              "x": -16,
+              "y": 16
+            }
+          ],
+          "offset": {
+            "x": 0,
+            "y": 0
+          },
+          "isTrigger": false,
+          "layer": "default",
+          "collidesWith": [
+            "*"
+          ],
+          "oneWay": false
+        },
+        "PhysicsBody": {
+          "bodyType": "dynamic",
+          "velocity": {
+            "x": 0,
+            "y": 0
+          },
+          "gravityScale": 0,
+          "drag": 0,
+          "mass": 1,
+          "restitution": 0,
+          "friction": 0
+        },
+        "Script": {
+          "scriptPath": "scripts/player-controller.lua",
+          "params": {
+            "speed": 180
+          }
+        }
+      }
+    },
+    {
+      "id": "ent_a7563525",
+      "name": "Crate",
+      "parentId": null,
+      "enabled": true,
+      "tags": [
+        "obstacle"
+      ],
+      "components": {
+        "Transform": {
+          "position": {
+            "x": 470,
+            "y": 340
+          },
+          "rotation": 0,
+          "scale": {
+            "x": 1,
+            "y": 1
+          }
+        },
+        "SpriteRenderer": {
+          "assetId": null,
+          "frame": null,
+          "shape": "rectangle",
+          "color": "#8a6d4f",
+          "width": 40,
+          "height": 40,
+          "opacity": 1,
+          "flipX": false,
+          "flipY": false,
+          "layer": 0,
+          "visible": true
+        },
+        "Collider": {
+          "shape": "box",
+          "width": 40,
+          "height": 40,
+          "radius": 16,
+          "points": [
+            {
+              "x": 0,
+              "y": -16
+            },
+            {
+              "x": 16,
+              "y": 16
+            },
+            {
+              "x": -16,
+              "y": 16
+            }
+          ],
+          "offset": {
+            "x": 0,
+            "y": 0
+          },
+          "isTrigger": false,
+          "layer": "default",
+          "collidesWith": [
+            "*"
+          ],
+          "oneWay": false
+        },
+        "PhysicsBody": {
+          "bodyType": "static",
+          "velocity": {
+            "x": 0,
+            "y": 0
+          },
+          "gravityScale": 1,
+          "drag": 0,
+          "mass": 1,
+          "restitution": 0,
+          "friction": 0
+        }
+      }
+    }
+  ]
+}

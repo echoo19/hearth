@@ -1,0 +1,31 @@
+{
+  "name": "@hearth/templates",
+  "version": "0.12.0",
+  "description": "Hearth genre starter templates: small, playable platformer/topdown/arcade skeletons plus the generator and apply helper used by `hearth init` and the editor",
+  "license": "MIT",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./apply": {
+      "types": "./dist/apply.d.ts",
+      "default": "./dist/apply.js"
+    }
+  },
+  "files": [
+    "dist",
+    "templates"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "generate": "node generate.mjs"
+  },
+  "dependencies": {
+    "@hearth/core": "*"
+  }
+}

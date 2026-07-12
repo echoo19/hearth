@@ -1,0 +1,40 @@
+{
+  "formatVersion": 1,
+  "assets": [
+    {
+      "id": "ast_egs7qgqi",
+      "name": "ship",
+      "type": "sprite",
+      "path": "assets/sprites/ship.svg",
+      "metadata": {
+        "procedural": true,
+        "shape": "triangle",
+        "color": "#5ce1e6",
+        "width": 34,
+        "height": 30
+      }
+    },
+    {
+      "id": "ast_28r6vedh",
+      "name": "target",
+      "type": "sprite",
+      "path": "assets/sprites/target.svg",
+      "metadata": {
+        "procedural": true,
+        "shape": "circle",
+        "color": "#ff6b6b",
+        "width": 32,
+        "height": 32
+      }
+    },
+    {
+      "id": "ast_02b506gb",
+      "name": "Target",
+      "type": "prefab",
+      "path": "assets/prefabs/target.prefab.json",
+      "metadata": {
+        "entityCount": 1
+      }
+    }
+  ]
+}

@@ -1,0 +1,63 @@
+{
+  "formatVersion": 1,
+  "hearthVersion": "0.12.0",
+  "id": "prj_h4f30yj7",
+  "name": "Platformer Starter",
+  "description": "A side-scrolling platformer skeleton: gravity, jump, and an autotiled ground strip.",
+  "initialScene": "scn_ewzvk7k0",
+  "scenes": [
+    {
+      "id": "scn_ewzvk7k0",
+      "name": "Level",
+      "path": "scenes/level.scene.json"
+    }
+  ],
+  "inputMappings": {
+    "actions": {
+      "left": [
+        "ArrowLeft",
+        "KeyA"
+      ],
+      "right": [
+        "ArrowRight",
+        "KeyD"
+      ],
+      "up": [
+        "ArrowUp",
+        "KeyW"
+      ],
+      "down": [
+        "ArrowDown",
+        "KeyS"
+      ],
+      "jump": [
+        "Space"
+      ],
+      "action": [
+        "KeyE",
+        "Enter"
+      ]
+    },
+    "gamepadButtons": {},
+    "gamepadAxes": {},
+    "axes": {},
+    "deadzone": 0.15
+  },
+  "buildSettings": {
+    "width": 800,
+    "height": 600,
+    "backgroundColor": "#1a1a2e",
+    "targetFps": 60,
+    "fixedTimestep": 60,
+    "title": "Platformer Starter",
+    "icon": null,
+    "loading": {
+      "backgroundColor": "#000000",
+      "image": null,
+      "spinner": false
+    }
+  },
+  "codeStyle": {
+    "formatOnSave": true
+  }
+}

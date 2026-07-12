@@ -1,0 +1,33 @@
+{
+  "formatVersion": 1,
+  "id": "ptt_8e7y2m1l",
+  "name": "smoke",
+  "scene": "scn_ewzvk7k0",
+  "steps": [
+    {
+      "type": "wait",
+      "frames": 30
+    },
+    {
+      "type": "press",
+      "action": "right",
+      "frames": 45
+    },
+    {
+      "type": "assertProperty",
+      "entity": "Player",
+      "property": "Transform.position.x",
+      "greaterThan": 200
+    },
+    {
+      "type": "assertEntityExists",
+      "entity": "Player",
+      "exists": true
+    },
+    {
+      "type": "assertNoErrors"
+    }
+  ],
+  "maxFrames": 200,
+  "seed": 0
+}

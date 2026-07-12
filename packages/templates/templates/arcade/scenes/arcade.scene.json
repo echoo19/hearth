@@ -1,0 +1,292 @@
+{
+  "formatVersion": 1,
+  "id": "scn_kxl6dtza",
+  "name": "Arcade",
+  "entities": [
+    {
+      "id": "ent_wzvow3dl",
+      "name": "Main Camera",
+      "parentId": null,
+      "enabled": true,
+      "tags": [],
+      "components": {
+        "Transform": {
+          "position": {
+            "x": 400,
+            "y": 300
+          },
+          "rotation": 0,
+          "scale": {
+            "x": 1,
+            "y": 1
+          }
+        },
+        "Camera": {
+          "zoom": 1,
+          "isMain": true,
+          "backgroundColor": "#0c0f1a",
+          "ambientLight": 1,
+          "postEffects": []
+        }
+      }
+    },
+    {
+      "id": "ent_95k1bvgx",
+      "name": "Backdrop",
+      "parentId": null,
+      "enabled": true,
+      "tags": [
+        "background"
+      ],
+      "components": {
+        "Transform": {
+          "position": {
+            "x": 400,
+            "y": 300
+          },
+          "rotation": 0,
+          "scale": {
+            "x": 1,
+            "y": 1
+          }
+        },
+        "SpriteRenderer": {
+          "assetId": null,
+          "frame": null,
+          "shape": "rectangle",
+          "color": "#141b2e",
+          "width": 800,
+          "height": 600,
+          "opacity": 1,
+          "flipX": false,
+          "flipY": false,
+          "layer": -20,
+          "visible": true
+        }
+      }
+    },
+    {
+      "id": "ent_k0rs71lh",
+      "name": "Ship",
+      "parentId": null,
+      "enabled": true,
+      "tags": [
+        "player"
+      ],
+      "components": {
+        "Transform": {
+          "position": {
+            "x": 400,
+            "y": 460
+          },
+          "rotation": 0,
+          "scale": {
+            "x": 1,
+            "y": 1
+          }
+        },
+        "SpriteRenderer": {
+          "assetId": "ast_egs7qgqi",
+          "frame": null,
+          "shape": "rectangle",
+          "color": "#ffffff",
+          "width": 34,
+          "height": 30,
+          "opacity": 1,
+          "flipX": false,
+          "flipY": false,
+          "layer": 0,
+          "visible": true
+        },
+        "Collider": {
+          "shape": "box",
+          "width": 30,
+          "height": 26,
+          "radius": 16,
+          "points": [
+            {
+              "x": 0,
+              "y": -16
+            },
+            {
+              "x": 16,
+              "y": 16
+            },
+            {
+              "x": -16,
+              "y": 16
+            }
+          ],
+          "offset": {
+            "x": 0,
+            "y": 0
+          },
+          "isTrigger": false,
+          "layer": "default",
+          "collidesWith": [
+            "*"
+          ],
+          "oneWay": false
+        },
+        "PhysicsBody": {
+          "bodyType": "dynamic",
+          "velocity": {
+            "x": 0,
+            "y": 0
+          },
+          "gravityScale": 0,
+          "drag": 0,
+          "mass": 1,
+          "restitution": 0,
+          "friction": 0
+        },
+        "Script": {
+          "scriptPath": "scripts/ship-controller.lua",
+          "params": {
+            "speed": 200,
+            "bulletSpeed": 420
+          }
+        }
+      }
+    },
+    {
+      "id": "ent_739bgwe5",
+      "name": "Target",
+      "parentId": null,
+      "enabled": true,
+      "tags": [
+        "target"
+      ],
+      "components": {
+        "Transform": {
+          "position": {
+            "x": 240,
+            "y": 150
+          },
+          "rotation": 0,
+          "scale": {
+            "x": 1,
+            "y": 1
+          }
+        },
+        "SpriteRenderer": {
+          "assetId": "ast_28r6vedh",
+          "frame": null,
+          "shape": "rectangle",
+          "color": "#ffffff",
+          "width": 32,
+          "height": 32,
+          "opacity": 1,
+          "flipX": false,
+          "flipY": false,
+          "layer": 0,
+          "visible": true
+        },
+        "Collider": {
+          "shape": "circle",
+          "width": 32,
+          "height": 32,
+          "radius": 16,
+          "points": [
+            {
+              "x": 0,
+              "y": -16
+            },
+            {
+              "x": 16,
+              "y": 16
+            },
+            {
+              "x": -16,
+              "y": 16
+            }
+          ],
+          "offset": {
+            "x": 0,
+            "y": 0
+          },
+          "isTrigger": true,
+          "layer": "default",
+          "collidesWith": [
+            "*"
+          ],
+          "oneWay": false
+        }
+      },
+      "prefab": {
+        "asset": "ast_02b506gb",
+        "ids": {},
+        "overrides": []
+      }
+    },
+    {
+      "id": "ent_nx1i9lvx",
+      "name": "Spawner",
+      "parentId": null,
+      "enabled": true,
+      "tags": [
+        "system"
+      ],
+      "components": {
+        "Transform": {
+          "position": {
+            "x": 0,
+            "y": 0
+          },
+          "rotation": 0,
+          "scale": {
+            "x": 1,
+            "y": 1
+          }
+        },
+        "Script": {
+          "scriptPath": "scripts/target-spawner.lua",
+          "params": {
+            "x": 560,
+            "y": 150
+          }
+        }
+      }
+    },
+    {
+      "id": "ent_0c1tqmz1",
+      "name": "Score HUD",
+      "parentId": null,
+      "enabled": true,
+      "tags": [
+        "ui"
+      ],
+      "components": {
+        "Transform": {
+          "position": {
+            "x": 0,
+            "y": 0
+          },
+          "rotation": 0,
+          "scale": {
+            "x": 1,
+            "y": 1
+          }
+        },
+        "UIElement": {
+          "anchor": "top-left",
+          "offset": {
+            "x": 24,
+            "y": 20
+          },
+          "interactive": false,
+          "focusable": false
+        },
+        "Text": {
+          "content": "Arrows to move, Space to shoot",
+          "fontSize": 15,
+          "color": "#cfe8ff",
+          "align": "left",
+          "fontFamily": "monospace",
+          "layer": 10,
+          "visible": true
+        }
+      }
+    }
+  ]
+}
