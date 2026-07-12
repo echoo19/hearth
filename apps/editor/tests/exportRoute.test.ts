@@ -105,4 +105,51 @@ describe('POST /api/export/web handler', () => {
     expect(body.success).toBe(true);
     expect(body.data.zip).toBeUndefined();
   });
+
+  it('zip failure after a successful export still returns the envelope with export data intact and a ZIP_FAILED warning', async () => {
+    process.env.HEARTH_TOOLS_DIR = toolsDir;
+    const outDir = 'export/zipfail';
+
+    // zipAbs sits next to (not inside) the out dir, at
+    // <project>/export/<slug>-web.zip. Pre-creating a directory at that
+    // exact path forces zipDirectory's fsp.writeFile to throw EISDIR — a
+    // real-fs stand-in for "disk full / permissions" that doesn't touch the
+    // export step itself. Same technique as the MCP server's zip-failure test.
+    const created = await ctx.exportWebBuild(projectPath, outDir, false);
+    const slug = (created.body as { data: { slug: string } }).data.slug;
+    const zipPath = path.join(projectPath, 'export', `${slug}-web.zip`);
+    // A prior test in this file may have already written a real zip at this
+    // same path (same slug, same "export" parent dir); clear it first so the
+    // directory can be created in its place.
+    await fsp.rm(zipPath, { force: true });
+    await fsp.mkdir(zipPath, { recursive: true });
+
+    try {
+      const result = await ctx.exportWebBuild(projectPath, outDir, false, true);
+      expect(result.status).toBe(200);
+      const body = result.body as {
+        success: boolean;
+        data: { outDir: string; slug: string; zip?: string; files: string[] };
+        files: string[];
+        warnings: { code: string; message: string }[];
+      };
+
+      // The export succeeded, so success stays true and outDir/slug are intact.
+      expect(body.success).toBe(true);
+      expect(body.data.outDir).toBe(outDir);
+      expect(body.data.slug).toBe(slug);
+      await expect(fsp.access(path.join(projectPath, outDir, 'index.html'))).resolves.toBeUndefined();
+
+      // No zip field/entry, since zipping failed.
+      expect(body.data.zip).toBeUndefined();
+      expect(body.files).not.toContain(`export/${slug}-web.zip`);
+
+      // The zip failure is visible in the envelope's warnings, not silently dropped.
+      expect(body.warnings).toHaveLength(1);
+      expect(body.warnings[0].code).toBe('ZIP_FAILED');
+      expect(body.warnings[0].message).toMatch(/zip/i);
+    } finally {
+      await fsp.rm(zipPath, { recursive: true, force: true });
+    }
+  });
 });

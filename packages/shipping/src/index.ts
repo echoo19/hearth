@@ -2,7 +2,7 @@ export { renderElectronMain, packageJsonForApp } from './shell.js';
 export type { ElectronShellOptions, AppPackageJsonOptions } from './shell.js';
 export { zipDirectory, createZip, crc32 } from './zip.js';
 export type { ZipInputEntry } from './zip.js';
-export { packageDesktop, splitPlatform } from './package.js';
+export { packageDesktop, splitPlatform, DesktopPackageError } from './package.js';
 export type { PackageDesktopOptions, ProgressEvent, PackageStage } from './package.js';
 export { describeSigningCapability, signMacApp, createDefaultExec } from './sign.js';
 export type { ExecFn, SigningMode, SignMacOptions, SignMacResult } from './sign.js';

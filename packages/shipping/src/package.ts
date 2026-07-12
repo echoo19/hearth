@@ -75,68 +75,97 @@ export async function packageDesktop(opts: PackageDesktopOptions): Promise<Deskt
   const results: DesktopBuildResult[] = [];
 
   for (const platform of spec.platforms) {
-    const { platform: osName, arch } = splitPlatform(platform);
+    try {
+      const { platform: osName, arch } = splitPlatform(platform);
 
-    // 1. Stage web files + Electron shell into a temp app source dir.
-    emit(platform, 'stage', `staging ${platform} app`);
-    const stageDir = await makeScratchDir(`hearth-stage-${platform}-`);
-    for (const f of spec.files) await writeStaged(stageDir, f.path, f.content);
-    await writeStaged(stageDir, 'main.js', renderElectronMain({ width: spec.width, height: spec.height, title: spec.title }));
-    await writeStaged(stageDir, 'package.json', packageJsonForApp({ name: spec.title }));
+      // 1. Stage web files + Electron shell into a temp app source dir.
+      emit(platform, 'stage', `staging ${platform} app`);
+      const stageDir = await makeScratchDir(`hearth-stage-${platform}-`);
+      for (const f of spec.files) await writeStaged(stageDir, f.path, f.content);
+      await writeStaged(stageDir, 'main.js', renderElectronMain({ width: spec.width, height: spec.height, title: spec.title }));
+      await writeStaged(stageDir, 'package.json', packageJsonForApp({ name: spec.title }));
 
-    // 2. Resolve the platform icon (falls back to bundled defaults on failure).
-    const iconWork = await makeScratchDir(`hearth-icon-${platform}-`);
-    const icons = await resolveIcons({
-      iconPng: spec.iconPng,
-      workDir: iconWork,
-      onProgress: (m) => emit(platform, 'package', m),
-    });
-    const icon = osName === 'darwin' ? icons.icns : osName === 'win32' ? icons.ico : icons.png;
-
-    // 3. Package with Electron (downloads the runtime on first use per version).
-    emit(platform, 'download', `ensuring Electron ${ELECTRON_VERSION} for ${platform}`);
-    emit(platform, 'package', `packaging ${platform}`);
-    const outParent = path.join(spec.outDirAbs, platform);
-    const packaged = await packager({
-      dir: stageDir,
-      out: outParent,
-      platform: osName as OfficialPlatform,
-      arch: arch as SupportedArch,
-      icon,
-      appVersion: '1.0.0',
-      name: spec.title,
-      electronVersion: ELECTRON_VERSION,
-      overwrite: true,
-      prune: true,
-      quiet: true,
-    });
-    const packagedDir = packaged[0];
-    const appDir = osName === 'darwin' ? await findDotApp(packagedDir) : packagedDir;
-
-    // 4. Sign (darwin only).
-    let signed: DesktopBuildResult['signed'] = 'none';
-    let notarized = false;
-    if (osName === 'darwin') {
-      emit(platform, 'sign', `signing ${platform}`);
-      const signWork = await makeScratchDir(`hearth-sign-${platform}-`);
-      const r = await signMacApp({
-        appDir,
-        env,
-        exec,
-        workDir: signWork,
-        onProgress: (stage, message) => emit(platform, stage, message),
+      // 2. Resolve the platform icon (falls back to bundled defaults on failure).
+      const iconWork = await makeScratchDir(`hearth-icon-${platform}-`);
+      const icons = await resolveIcons({
+        iconPng: spec.iconPng,
+        workDir: iconWork,
+        onProgress: (m) => emit(platform, 'package', m),
       });
-      signed = r.signed;
-      notarized = r.notarized;
+      const icon = osName === 'darwin' ? icons.icns : osName === 'win32' ? icons.ico : icons.png;
+
+      // 3. Package with Electron (downloads the runtime on first use per version).
+      emit(platform, 'download', `ensuring Electron ${ELECTRON_VERSION} for ${platform}`);
+      emit(platform, 'package', `packaging ${platform}`);
+      const outParent = path.join(spec.outDirAbs, platform);
+      const packaged = await packager({
+        dir: stageDir,
+        out: outParent,
+        platform: osName as OfficialPlatform,
+        arch: arch as SupportedArch,
+        icon,
+        appVersion: '1.0.0',
+        name: spec.title,
+        electronVersion: ELECTRON_VERSION,
+        overwrite: true,
+        prune: true,
+        quiet: true,
+      });
+      const packagedDir = packaged[0];
+      const appDir = osName === 'darwin' ? await findDotApp(packagedDir) : packagedDir;
+
+      // 4. Sign (darwin only).
+      let signed: DesktopBuildResult['signed'] = 'none';
+      let notarized = false;
+      if (osName === 'darwin') {
+        emit(platform, 'sign', `signing ${platform}`);
+        const signWork = await makeScratchDir(`hearth-sign-${platform}-`);
+        const r = await signMacApp({
+          appDir,
+          env,
+          exec,
+          workDir: signWork,
+          onProgress: (stage, message) => emit(platform, stage, message),
+        });
+        signed = r.signed;
+        notarized = r.notarized;
+      }
+
+      // 5. Zip the packaged output.
+      emit(platform, 'zip', `zipping ${platform}`);
+      const zipAbs = path.join(spec.outDirAbs, `${spec.slug}-${platform}.zip`);
+      await zipDirectory(packagedDir, zipAbs);
+
+      results.push({ platform, appDir: rel(appDir), zip: rel(zipAbs), signed, notarized });
+    } catch (err) {
+      // A failure partway through one platform's build (most commonly a hard
+      // signing failure — HEARTH_MAC_IDENTITY set, codesign rejects it) must
+      // not surface as an anonymous error: hosts (the editor's export-error
+      // frame in particular) need to know which platform failed so they can
+      // attribute it in the UI instead of blaming the whole multi-platform
+      // run. Throw-on-first-failure semantics are unchanged — this only
+      // tags the error before it propagates.
+      throw new DesktopPackageError(platform, err);
     }
-
-    // 5. Zip the packaged output.
-    emit(platform, 'zip', `zipping ${platform}`);
-    const zipAbs = path.join(spec.outDirAbs, `${spec.slug}-${platform}.zip`);
-    await zipDirectory(packagedDir, zipAbs);
-
-    results.push({ platform, appDir: rel(appDir), zip: rel(zipAbs), signed, notarized });
   }
 
   return results;
+}
+
+/**
+ * Wraps an error thrown while packaging a single platform, tagging it with
+ * the platform id so hosts (editor export-error frames, CLI output) can
+ * attribute the failure instead of treating it as a whole-run failure with
+ * no origin. `message` stays informative on its own (includes the platform
+ * id) so callers that only read `.message` are not degraded.
+ */
+export class DesktopPackageError extends Error {
+  readonly platform: DesktopPlatform;
+
+  constructor(platform: DesktopPlatform, cause: unknown) {
+    const causeMessage = cause instanceof Error ? cause.message : String(cause);
+    super(`packaging ${platform} failed: ${causeMessage}`, { cause });
+    this.name = 'DesktopPackageError';
+    this.platform = platform;
+  }
 }

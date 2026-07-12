@@ -158,6 +158,79 @@ describe('POST /api/export/desktop (ctx.startDesktopExport)', () => {
   });
 });
 
+describe('a per-platform packageDesktop failure attributes the platform in the export-error frame', () => {
+  // packages/shipping's packageDesktop tags a per-platform failure (e.g. a
+  // hard codesign failure) by throwing a DesktopPackageError whose message
+  // is "packaging <platform> failed: ...". session.execute() flattens that
+  // to a plain {code, message} CommandIssue (the .platform property does not
+  // survive), so startDesktopExport recovers the platform id from the
+  // message text (extractFailingPlatform in projectServer.ts) before
+  // emitting the export-error frame. This stub packageDesktop mirrors that
+  // shape without depending on @hearth/shipping's Electron toolchain.
+  const failingPackageDesktop: PackageDesktopFn = async (opts) => {
+    const [platform] = opts.spec.platforms;
+    opts.onProgress?.({ platform, stage: 'sign', message: `signing ${platform}` });
+    throw new Error(`packaging ${platform} failed: codesign failed`);
+  };
+
+  let failTmpDir: string;
+  let failToolsDir: string;
+  let failProjectPath: string;
+  let failCtx: ProjectServerContext;
+
+  beforeAll(async () => {
+    failTmpDir = await fsp.mkdtemp(path.join(os.tmpdir(), 'hearth-desktop-export-fail-'));
+    failToolsDir = path.join(failTmpDir, 'tools');
+    await fsp.mkdir(failToolsDir, { recursive: true });
+    await fsp.writeFile(path.join(failToolsDir, 'hearth-player.js'), STUB_PLAYER);
+
+    const savedDir = process.env.HEARTH_TOOLS_DIR;
+    process.env.HEARTH_TOOLS_DIR = failToolsDir;
+    failCtx = createProjectServerContext({
+      recentsFile: path.join(failTmpDir, 'recent-projects.json'),
+      repoRoot: failTmpDir,
+      packageDesktop: failingPackageDesktop,
+    });
+    const created = await failCtx.createNewProject(path.join(failTmpDir, 'projects'), 'Fail Game');
+    expect(created.status).toBe(200);
+    failProjectPath = (created.body as { path: string }).path;
+    if (savedDir === undefined) delete process.env.HEARTH_TOOLS_DIR;
+    else process.env.HEARTH_TOOLS_DIR = savedDir;
+  });
+
+  afterAll(async () => {
+    await fsp.rm(failTmpDir, { recursive: true, force: true });
+  });
+
+  it('emits export-error with platform populated', async () => {
+    const savedDir = process.env.HEARTH_TOOLS_DIR;
+    process.env.HEARTH_TOOLS_DIR = failToolsDir;
+    try {
+      const frames: WsFrame[] = [];
+      const listener = (payload: { root: string; frame: WsFrame }) => frames.push(payload.frame);
+      failCtx.exportBus.on('frame', listener);
+
+      const start = await failCtx.startDesktopExport(failProjectPath, undefined, ['win32-x64']);
+      expect(start.status).toBe(200);
+      const jobId = (start.body as { jobId: string }).jobId;
+
+      for (let i = 0; i < 100 && !frames.some((f) => f.type === 'export-error'); i++) await wait(10);
+      failCtx.exportBus.off('frame', listener);
+
+      const errorFrame = frames.find((f) => f.type === 'export-error') as
+        | { type: 'export-error'; jobId: string; platform?: string; message: string }
+        | undefined;
+      expect(errorFrame).toBeDefined();
+      expect(errorFrame!.jobId).toBe(jobId);
+      expect(errorFrame!.platform).toBe('win32-x64');
+      expect(errorFrame!.message).toMatch(/win32-x64/);
+    } finally {
+      if (savedDir === undefined) delete process.env.HEARTH_TOOLS_DIR;
+      else process.env.HEARTH_TOOLS_DIR = savedDir;
+    }
+  });
+});
+
 describe('desktop export progress over the WebSocket', () => {
   it('delivers export-progress and export-done frames to a subscribed socket', async () => {
     const server = http.createServer((req, res) => {

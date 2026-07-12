@@ -82,6 +82,24 @@ export interface ProjectServerOptions {
 /** Native desktop targets offered by exportDesktop, surfaced on the capability route. */
 const DESKTOP_PLATFORMS: DesktopPlatform[] = ['darwin-arm64', 'darwin-x64', 'win32-x64', 'linux-x64'];
 
+/**
+ * Best-effort recovery of which platform a desktop-export failure belongs to.
+ *
+ * `session.execute()` (packages/core/src/session.ts) catches every error
+ * `def.run()` throws and flattens it to a plain `{code, message}`
+ * `CommandIssue` — any extra property on the thrown error (like
+ * `DesktopPackageError.platform` from @hearth/shipping's `packageDesktop`,
+ * see packages/shipping/src/package.ts) does not survive that boundary. The
+ * platform id does survive as a substring of the message, though
+ * (`DesktopPackageError`'s message is "packaging <platform> failed: ..."), so
+ * recover it from there rather than widening the core CommandResult/CommandIssue
+ * shape for one error source.
+ */
+function extractFailingPlatform(message: string | undefined): DesktopPlatform | undefined {
+  if (!message) return undefined;
+  return DESKTOP_PLATFORMS.find((p) => message.includes(p));
+}
+
 interface RecentEntry {
   path: string;
   name: string;
@@ -535,12 +553,27 @@ export function createProjectServerContext(options: ProjectServerOptions = {}) {
           // Next to (not inside) the out dir, so index.html sits at the zip
           // root — what itch.io expects. Same layout as the CLI helper.
           const zipAbs = path.join(path.dirname(outAbs), `${body.data.slug}-web.zip`);
-          const { zipDirectory } = await import('@hearth/shipping');
-          await zipDirectory(outAbs, zipAbs);
-          const zipRel = path.relative(root, zipAbs).split(path.sep).join('/');
-          body.data.zip = zipRel;
-          body.data.files.push(zipRel);
-          body.files.push(zipRel);
+          // The export itself has already succeeded and been persisted by
+          // the time we get here; a failure zipping it (disk full,
+          // permissions) must not turn that into a failed result — same
+          // reasoning as session.ts's HISTORY_RECORD_FAILED /
+          // JOURNAL_RECORD_FAILED warnings for a post-mutation step that
+          // fails after the real work is done. Report it as a warning on
+          // the normal envelope instead of letting the exception escape to
+          // the transport's top-level catch (mirrors the MCP server's fix).
+          try {
+            const { zipDirectory } = await import('@hearth/shipping');
+            await zipDirectory(outAbs, zipAbs);
+            const zipRel = path.relative(root, zipAbs).split(path.sep).join('/');
+            body.data.zip = zipRel;
+            body.data.files.push(zipRel);
+            body.files.push(zipRel);
+          } catch (err) {
+            body.warnings.push({
+              code: 'ZIP_FAILED',
+              message: `Export succeeded, but zipping the output failed: ${(err as Error).message}`,
+            });
+          }
         }
       }
       return jsonResult;
@@ -606,19 +639,23 @@ export function createProjectServerContext(options: ProjectServerOptions = {}) {
           if (result.success) {
             emitExport(root, { type: 'export-done', jobId, result: result.data as DesktopExportResult });
           } else {
+            const message = result.errors[0]?.message ?? 'Desktop export failed.';
+            const platform = extractFailingPlatform(message);
             emitExport(root, {
               type: 'export-error',
               jobId,
-              message: result.errors[0]?.message ?? 'Desktop export failed.',
+              ...(platform ? { platform } : {}),
+              message,
             });
           }
         } catch (err) {
-          const platform = (err as { platform?: DesktopPlatform }).platform;
+          const message = (err as Error).message;
+          const platform = (err as { platform?: DesktopPlatform }).platform ?? extractFailingPlatform(message);
           emitExport(root, {
             type: 'export-error',
             jobId,
             ...(platform ? { platform } : {}),
-            message: (err as Error).message,
+            message,
           });
         } finally {
           job.done = true;

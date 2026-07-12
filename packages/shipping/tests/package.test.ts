@@ -4,7 +4,7 @@ import * as path from 'node:path';
 import * as fsp from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import type { DesktopBuildSpec, DesktopPlatform } from '@hearth/core';
-import { packageDesktop, splitPlatform } from '../src/package.js';
+import { packageDesktop, splitPlatform, DesktopPackageError } from '../src/package.js';
 import type { ExecFn } from '../src/sign.js';
 
 // The real packager downloads Electron; unit tests replace it with a stub that
@@ -157,6 +157,58 @@ describe('packageDesktop', () => {
       exec: fakeExec(),
     });
     expect(res[0].signed).toBe('identity');
+  });
+
+  it('tags a hard signing failure with the failing platform so hosts can attribute it', async () => {
+    // Rung 2 (HEARTH_MAC_IDENTITY set): codesign failure is fatal, not
+    // degraded to signed:none. Editors read err.platform off the thrown
+    // error to build an export-error frame naming the failing platform
+    // instead of blaming the whole (possibly multi-platform) run.
+    const spec = await makeSpec(['darwin-arm64']);
+    let thrown: unknown;
+    try {
+      await packageDesktop({
+        spec,
+        env: { HEARTH_MAC_IDENTITY: 'Developer ID Application: X' },
+        exec: fakeExec(true),
+      });
+    } catch (err) {
+      thrown = err;
+    }
+    expect(thrown).toBeInstanceOf(DesktopPackageError);
+    expect((thrown as DesktopPackageError).platform).toBe('darwin-arm64');
+    // Informative on its own for callers that only read .message.
+    expect((thrown as Error).message).toContain('darwin-arm64');
+    expect((thrown as Error).message).toContain('codesign failed');
+  });
+
+  it('attributes the failure to the specific platform in a multi-platform run, not the whole batch', async () => {
+    // darwin-arm64 packages fine; win32-x64 fails during packaging. The
+    // thrown error must carry win32-x64, not the first platform in the list
+    // or an unattributed error.
+    const failingSpec = await makeSpec(['darwin-arm64', 'win32-x64']);
+    mockPackager.mockImplementationOnce(async (opts: any) => {
+      const fs = await import('node:fs/promises');
+      const p = await import('node:path');
+      const dir = p.join(opts.out, `${opts.name}-${opts.platform}-${opts.arch}`);
+      await fs.mkdir(dir, { recursive: true });
+      const contents = p.join(dir, `${opts.name}.app`, 'Contents');
+      await fs.mkdir(contents, { recursive: true });
+      await fs.writeFile(p.join(contents, 'Info.plist'), '<plist/>');
+      return [dir];
+    });
+    mockPackager.mockImplementationOnce(async () => {
+      throw new Error('electron packager exploded');
+    });
+
+    let thrown: unknown;
+    try {
+      await packageDesktop({ spec: failingSpec, env: {}, exec: fakeExec() });
+    } catch (err) {
+      thrown = err;
+    }
+    expect(thrown).toBeInstanceOf(DesktopPackageError);
+    expect((thrown as DesktopPackageError).platform).toBe('win32-x64');
   });
 
   it('falls back to the default icon and warns when icon conversion fails', async () => {
