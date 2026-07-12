@@ -10,6 +10,7 @@ import {
 import { getSheetFrames, findSheetFrame } from '../assets/sheetFrames.js';
 import { resolvedMapping, AUTOTILE_SHAPES } from '../tilemap/autotile.js';
 import { ProjectError } from '../project/store.js';
+import { recordInstanceOverride } from '../project/prefabData.js';
 
 import type { Entity, Scene } from '../schema/scene.js';
 import type { CommandContext } from './types.js';
@@ -128,8 +129,11 @@ export const paintTiles = defineCommand({
   async run(ctx, params) {
     const { scene, entity, tilemap } = resolveTilemap(ctx, params.scene, params.entity);
     const grid = paintCells(tilemap, params.cells, ctx);
-    writeGrid(entity, tilemap, grid);
+    const stored = writeGrid(entity, tilemap, grid);
     ctx.changed({ kind: 'component', id: entity.id, name: 'Tilemap', scene: scene.id, action: 'modified' });
+    // If this tilemap lives inside a live prefab instance, record the painted
+    // grid as an implicit override so the next updatePrefab/sync preserves it.
+    recordInstanceOverride(scene, entity.id, 'Tilemap', 'grid', stored.grid);
     return { painted: params.cells.length };
   },
 });
@@ -195,8 +199,9 @@ export const fillTilemapRect = defineCommand({
       }
     }
     const grid = paintCells(tilemap, cells, ctx);
-    writeGrid(entity, tilemap, grid);
+    const stored = writeGrid(entity, tilemap, grid);
     ctx.changed({ kind: 'component', id: entity.id, name: 'Tilemap', scene: scene.id, action: 'modified' });
+    recordInstanceOverride(scene, entity.id, 'Tilemap', 'grid', stored.grid);
     return { painted: cells.length };
   },
 });
@@ -261,8 +266,11 @@ export const setTileAutotile = defineCommand({
         );
       }
       delete next.tileAssets[params.char];
-      writeTilemap(entity, next);
+      const stored = writeTilemap(entity, next);
       ctx.changed({ kind: 'component', id: entity.id, name: 'Tilemap', scene: scene.id, action: 'modified' });
+      // Autotile rules live in the union arm of tileAssets, which can't
+      // round-trip through per-key override paths, so record the whole field.
+      recordInstanceOverride(scene, entity.id, 'Tilemap', 'tileAssets', stored.tileAssets);
       return { entityId: entity.id, char: params.char, cleared: true };
     }
 
@@ -315,8 +323,9 @@ export const setTileAutotile = defineCommand({
     }
 
     next.tileAssets[params.char] = rule;
-    writeTilemap(entity, next);
+    const stored = writeTilemap(entity, next);
     ctx.changed({ kind: 'component', id: entity.id, name: 'Tilemap', scene: scene.id, action: 'modified' });
+    recordInstanceOverride(scene, entity.id, 'Tilemap', 'tileAssets', stored.tileAssets);
     return { entityId: entity.id, char: params.char, rule };
   },
 });
@@ -349,8 +358,11 @@ export const resizeTilemap = defineCommand({
         rows.push(existing.slice(0, width));
       }
     }
-    writeGrid(entity, tilemap, rows);
+    const stored = writeGrid(entity, tilemap, rows);
     ctx.changed({ kind: 'component', id: entity.id, name: 'Tilemap', scene: scene.id, action: 'modified' });
+    // resize only rewrites the grid (tileSize is untouched), so a single grid
+    // override captures the change for a live prefab instance member.
+    recordInstanceOverride(scene, entity.id, 'Tilemap', 'grid', stored.grid);
     return { width, height };
   },
 });
