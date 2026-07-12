@@ -318,6 +318,110 @@ sibling `SpriteRenderer` every fixed frame on its own — most animations
 need no script at all. Reach for `ctx.animate` only to switch clips at
 runtime (a torch flaring up, a character starting to run).
 
+### Animation state machines
+
+| Member | What it is |
+| --- | --- |
+| `ctx.animator.setParam(entityRef, name, value)` | Set a bool/number param. Throws for a trigger param (use `fire`) or a type mismatch. |
+| `ctx.animator.getParam(entityRef, name)` | Read a bool/number param's value, or a trigger's latched state. |
+| `ctx.animator.fire(entityRef, name)` | Latch a trigger param; consumed by the next transition that names it. |
+| `ctx.animator.state(entityRef)` | The machine's current state name. |
+
+An `AnimationStateMachine` component (`assetId`, `playing`) drives a
+sibling `SpriteRenderer` from a state machine asset instead of a single
+looping clip — a state machine asset lives at
+`assets/statemachines/<slug>.asm.json`, is created with `createStateMachineAsset`
+(CLI `hearth create asset state-machine <name> --data <json|@file>`) and
+edited whole with `updateStateMachineAsset` (CLI `hearth set-state-machine
+<assetId> --data <json|@file>`), or interactively in the editor's
+[Animator editor](./editor.md#animator-editor). When both an
+`AnimationStateMachine` and a `SpriteAnimator` are present on the same
+entity, the state machine wins (the runtime warns once). `playing: false`
+freezes the current frame — no transitions evaluated, no clip advance.
+
+Unlike most of `ctx`, every `ctx.animator` method takes an explicit
+`entityRef` (id, or a unique name) rather than always acting on this
+entity — it can drive any entity's machine, including itself via
+`ctx.entity.id`/`ctx.entity.name`. All four throw a script error (with a
+source line, same as any other runtime error — see [Errors and
+validation](#errors-and-validation)) when `entityRef` doesn't resolve,
+the entity has no `AnimationStateMachine`, its asset is missing, or
+`name` doesn't name a real param on that asset.
+
+A state machine asset's document:
+
+```jsonc
+{
+  "params": { "moving": { "type": "bool" } },
+  "states": [
+    { "name": "idle", "animation": "walk-idle", "speed": 1 },
+    { "name": "walk", "animation": "walk-cycle", "speed": 1 }
+  ],
+  "initial": "idle",
+  "transitions": [
+    { "from": "idle", "to": "walk", "conditions": [{ "param": "moving", "op": "eq", "value": true }] },
+    { "from": "walk", "to": "idle", "conditions": [{ "param": "moving", "op": "eq", "value": false }] }
+  ]
+}
+```
+
+- **`params`**: a map of name → `{ type: "bool" | "number" | "trigger", default? }`.
+  Only `bool`/`number` params take a `default`; a `trigger` has no stored
+  value, only a latched/not-latched state.
+- **`states`**: each names an existing `animation` asset (id or name) and
+  an optional `speed` multiplier (default `1`) applied to that clip's
+  `frameDuration`.
+- **`initial`**: the state name the machine starts in.
+- **`transitions`**: each has a `from` (a state name, or the literal
+  `'any'` to match from every state), a `to`, zero or more `conditions`,
+  and an optional `exitTime` (`0..1`, gates on the current clip's
+  playback progress — `1` means "only once the clip has finished"). Every
+  transition needs at least one condition or an `exitTime` — there's no
+  unconditional/always-on transition. A condition's `op` is one of `eq |
+  neq | gt | gte | lt | lte` for a `number` param, `eq | neq` for a
+  `bool` param, and omitted entirely for a `trigger` param (a trigger
+  condition is just `{ "param": "attack" }` — true exactly when that
+  trigger is currently latched).
+
+**Per fixed step**, at most one transition is taken: explicit `from:
+<current state>` transitions are checked first (in declaration order),
+then `from: 'any'` ones, first eligible wins. A taken transition resets
+the clip to frame 0 and consumes only the trigger(s) its own conditions
+reference — any other latched trigger keeps waiting. Unconsumed triggers
+never expire or auto-reset on their own; `fire`d once, a trigger stays
+latched across as many frames as it takes for an eligible transition to
+consume it (or forever, if none ever does).
+
+The `sky-courier` example (`packages/examples/sky-courier`) drives its
+walk-cycle this way — `courier-move.lua` sets a `moving` bool every frame
+regardless of whether it actually changed:
+
+```lua
+-- setParam is cheap and idempotent, and the machine only restarts a clip
+-- when it actually transitions to a different state, so calling this
+-- unconditionally every frame doesn't reset the gait the way an
+-- unconditional ctx.animate() call would have.
+ctx.animator.setParam(ctx.entity.name, "moving", math.abs(vx) > 1)
+```
+
+```js
+// A trigger-driven attack: fire it on input, read the state back later.
+if (ctx.input.justPressed('attack')) {
+  ctx.animator.fire(ctx.entity.name, 'attack');
+}
+```
+
+**Hot-reload note**: saving a *script* while the machine is running
+[hot-reloads](#hot-reload-during-play) exactly like any other script —
+the machine's live state (current state, param values, latched triggers,
+clip position) survives untouched. Swapping the *state machine asset
+itself* (`updateStateMachineAsset`, live-patched the same way — see
+[editor.md](./editor.md#live-iteration-during-play)) is a different,
+deliberate operation: every entity currently on that asset resets to the
+new document's `initial` state with params back at their defaults, so
+renaming or removing a state in the graph can never leave a live machine
+pointing at a state that no longer exists.
+
 ### Save data
 
 | Member | What it is |

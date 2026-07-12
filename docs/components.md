@@ -364,6 +364,15 @@ layer name. A solid Tilemap's generated colliders are always physics
 `layer: "default"`, `collidesWith: ["*"]`; see [Collider](#collider)
 above.)
 
+A `tileAssets` entry is either a plain asset id (a fixed sprite/tile for
+that char) or an **autotile rule** — `{ sheet, template: "blob47",
+mapping? }` — that picks the char's on-screen frame from its 8 neighbours
+at render time instead of drawing the same tile everywhere. Set with
+`setTileAutotile`/`hearth autotile set`, never with
+`setComponentProperty` directly (it rejects the rule shape). See
+[editor.md](./editor.md#autotile) for the frame-naming convention and an
+ASCII diagram of the neighbour bitmask.
+
 ## Light2D
 
 Emits dynamic 2D light (radius, color, intensity) in the forward rendering pipeline.
@@ -509,6 +518,32 @@ the last frame and flips `playing` to false. Scripts switch clips (and
 restart at frame 0) with `ctx.animate(assetRef)` — see
 [scripting.md](./scripting.md#sprite-animation).
 
+## AnimationStateMachine
+
+Drives a sibling `SpriteRenderer` from an animation state machine asset
+(params/states/transitions) instead of a single looping clip. Wins over a
+`SpriteAnimator` on the same entity (the runtime warns once).
+
+Defaults:
+
+```json
+{
+  "assetId": "",
+  "playing": true
+}
+```
+
+`assetId` references a state machine asset at
+`assets/statemachines/*.asm.json`, created with `createStateMachineAsset`
+(CLI `hearth create asset state-machine`) or edited with
+`updateStateMachineAsset` (CLI `hearth set-state-machine`) — see
+[scripting.md](./scripting.md#animation-state-machines) for the asset's
+`{ params, states, initial, transitions }` shape and the full
+`ctx.animator` scripting API, or the editor's [Animator
+editor](./editor.md#animator-editor) for a typed authoring UI.
+`playing: false` freezes the current frame — no transitions evaluated, no
+clip advance.
+
 ## SpriteEffects
 
 Per-sprite visual effects: outline, hit flash (`ctx.effects.flash`), dissolve. Every field defaults to a no-op, so attaching this component with no overrides changes nothing.
@@ -546,4 +581,4 @@ coverage of `Camera.postEffects`.
 - Colors are hex strings (`#rgb`, `#rrggbb`, `#rrggbbaa`).
 - Positions/sizes are pixels; rotation is degrees; +y is down.
 - `SpriteRenderer` with `assetId: null` draws its primitive `shape`/`color`, so you can build a whole game before any art exists.
-- An entity can also carry an optional `prefab: { asset }` field — not a component, so it never shows up in `hearth inspect components` or the list above, but it round-trips through scenes, snapshots, and undo history like any other entity field. It marks the entity as a live, tracked instance of a prefab asset. See [prefabs.md](./prefabs.md).
+- An entity can also carry an optional `prefab: { asset, ids, overrides }` field — not a component, so it never shows up in `hearth inspect components` or the list above, but it round-trips through scenes, snapshots, and undo history like any other entity field. It marks the entity as a live-linked instance of a prefab asset; `overrides` records the instance's own per-field edits so a later sync can re-apply them. See [prefabs.md](./prefabs.md).

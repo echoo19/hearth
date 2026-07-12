@@ -18,7 +18,7 @@ reviewable diffs.
 - **CLI**: `hearth <command> --json` (see [cli.md](./cli.md)). Best when the
   agent already lives in a shell (Claude Code, Codex CLI).
 - **MCP**: `hearth-mcp --project <path>` over stdio (see
-  [mcp.md](./mcp.md)). Best for MCP-native clients; 62 command tools
+  [mcp.md](./mcp.md)). Best for MCP-native clients; 67 command tools
   (plus `screenshot` and `get_agent_instructions`) wrapping the same core
   commands.
 
@@ -106,6 +106,129 @@ the same `CTX_API` table that powers `hearth inspect api`), **CLAUDE.md**
 recommended first commands, permission defaults) in every project. The MCP
 server serves the same content via the `get_agent_instructions` tool, so an
 agent that connects cold can bootstrap itself.
+
+## Recipes
+
+Four common Wave I ("the content ceiling") workflows, worked end to end on
+the CLI — every command has an MCP equivalent (see [mcp.md](./mcp.md#tool-naming)).
+
+### Build an animation state machine from scratch
+
+```bash
+# 1. Two little animations to drive (idle: 2 frames, walk: 2 frames)
+hearth create asset sprite hero-idle-a --shape rectangle --color "#f4a460" --width 24 --height 24 --json
+hearth create asset sprite hero-idle-b --shape rectangle --color "#f4a460" --width 24 --height 26 --json
+hearth create animation hero-idle --frames hero-idle-a hero-idle-b --frame-duration 0.4
+
+hearth create asset sprite hero-walk-a --shape rectangle --color "#f4a460" --width 22 --height 24 --json
+hearth create asset sprite hero-walk-b --shape rectangle --color "#f4a460" --width 26 --height 22 --json
+hearth create animation hero-walk --frames hero-walk-a hero-walk-b --frame-duration 0.1
+
+# 2. The state machine document: a bool "moving" param toggles idle <-> walk
+hearth create asset state-machine hero-motion --data '{
+  "params": { "moving": { "type": "bool" } },
+  "states": [
+    { "name": "idle", "animation": "hero-idle" },
+    { "name": "walk", "animation": "hero-walk" }
+  ],
+  "initial": "idle",
+  "transitions": [
+    { "from": "idle", "to": "walk", "conditions": [{ "param": "moving", "op": "eq", "value": true }] },
+    { "from": "walk", "to": "idle", "conditions": [{ "param": "moving", "op": "eq", "value": false }] }
+  ]
+}' --json
+# -> { "success": true, "command": "createStateMachineAsset",
+#      "data": { "assetId": "ast_h0er0m0t", "path": "assets/statemachines/hero-motion.asm.json" }, … }
+
+# 3. Attach it to the entity (assetId from step 2's output; state.animation
+#    above could have been ids or names — getAsset resolves either)
+hearth add component "Level 1" Hero AnimationStateMachine --properties '{"assetId":"ast_h0er0m0t"}'
+```
+
+Drive it from a script with `ctx.animator` — see
+[scripting.md](./scripting.md#animation-state-machines) for the full API,
+param types, and trigger consume/latch semantics:
+
+```lua
+ctx.animator.setParam(ctx.entity.name, "moving", math.abs(vx) > 1)
+```
+
+Editing the graph later: `hearth set-state-machine ast_h0er0m0t --data '<full document>'`
+replaces it wholesale (same asset id/path) — or use the editor's
+[Animator editor](./editor.md#animator-editor) for a typed params/states/
+transitions UI instead of hand-writing JSON.
+
+### Autotile a map
+
+```bash
+# 1. Import + slice a blob47 tileset (frames slice as ground_0, ground_1, …
+#    in row-major order — sliceSpritesheet can't name frames by shape key
+#    directly, so a --mapping translates slice order to shape keys below)
+hearth import asset ./art/ground-blob47.png --name ground-sheet --json
+hearth create asset slice ground-sheet --frame-size 16x16 --prefix ground --json
+
+# 2. Paint some "G" cells first — autotile shades existing terrain, it
+#    doesn't place it
+hearth fill tiles Arena Ground --rect 2,2,10,6 --char G --json
+
+# 3. Bind "G" to a blob47 rule. mapping keys are canonical shape keys (see
+#    editor.md#autotile for the full 47-key table); values are whatever
+#    frame names sliceSpritesheet actually produced, in your tileset's
+#    layout order
+hearth autotile set Arena Ground --char G --sheet ground-sheet \
+  --mapping '{"0":"ground_0","1":"ground_1","4":"ground_2","5":"ground_3","7":"ground_4", …}' \
+  --json
+# -> { "success": true, "command": "setTileAutotile",
+#      "data": { "entityId": "ent_…", "char": "G",
+#                 "rule": { "sheet": "ast_…", "template": "blob47", "mapping": { "0": "ground_0", … } } }, … }
+```
+
+The running editor preview (and any exported build) re-renders the map
+live the moment the rule changes — no restart. To remove a rule:
+`hearth autotile set Arena Ground --char G --clear`.
+
+### Override an instance field, then revert it
+
+```bash
+# Assume "Elite Enemy" is a placed instance of the Enemy prefab (see
+# prefabs.md — packages/examples/ember-horde does exactly this)
+hearth set Arena "Elite Enemy" SpriteRenderer.color "#c9184a"
+hearth set Arena "Elite Enemy" SpriteRenderer.width 32
+hearth set Arena "Elite Enemy" SpriteRenderer.height 32
+# Each set is a normal setComponentProperty call — the override recording
+# is implicit, no separate command. Confirm with inspectEntity or the
+# Inspector's ember dots.
+
+hearth prefab update Enemy Arena "Enemy"   # tweak the base prefab...
+# ...auto-syncs every instance, INCLUDING Elite Enemy, whose three
+# overrides above are preserved on top of the merge (see
+# prefabs.md#live-link-semantics-marker-merge-detach)
+
+# Change your mind about the size, keep the color override:
+hearth prefab revert Arena "Elite Enemy" SpriteRenderer width
+hearth prefab revert Arena "Elite Enemy" SpriteRenderer height
+# Or revert every override on this entity in one call:
+hearth prefab revert Arena "Elite Enemy"
+```
+
+### Bulk import a folder
+
+```bash
+hearth import asset ./art/tileset/ --recursive --json
+# -> { "success": true, "command": "importAssets",
+#      "data": { "imported": [ { "path": "art/tileset/grass.png", "assetId": "ast_…", "name": "grass", "type": "sprite" },
+#                                … ],
+#                 "skipped": [ { "path": "art/tileset/notes.txt", "code": "UNKNOWN_TYPE", "message": "…" } ] },
+#      … "files": ["hearth.json", "assets.json"] }
+```
+
+One atomic undo/journal entry for the whole folder; name/path collisions
+auto-suffix (`grass` → `grass-2`) instead of failing the batch, and a bad
+file is reported in `data.skipped` (with a `code`/`message`) rather than
+aborting everything else. Over MCP, `import_assets` takes `sourcePaths`
+directly with no `--recursive` equivalent — enumerate the folder's files
+yourself (e.g. via `list_assets`-style host tooling, or a directory
+listing tool the client has) and pass the full path list.
 
 ## Discovering capabilities
 

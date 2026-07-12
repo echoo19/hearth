@@ -136,6 +136,7 @@ requires no permission (it's purely informational).
 | `paint_tiles` | `paintTiles` | safe-edit |
 | `fill_tilemap_rect` | `fillTilemapRect` | safe-edit |
 | `resize_tilemap` | `resizeTilemap` | safe-edit |
+| `set_tile_autotile` | `setTileAutotile` | safe-edit |
 | `update_settings` | `updateSettings` | safe-edit |
 | `create_script` | `createScript` | code-edit |
 | `edit_script` | `editScript` | code-edit |
@@ -157,6 +158,9 @@ requires no permission (it's purely informational).
 | `instantiate_prefab` | `instantiatePrefab` | asset-edit |
 | `update_prefab` | `updatePrefab` | asset-edit |
 | `sync_prefab_instances` | `syncPrefabInstances` | asset-edit |
+| `revert_prefab_override` | `revertPrefabOverride` | safe-edit |
+| `create_state_machine_asset` | `createStateMachineAsset` | asset-edit |
+| `update_state_machine_asset` | `updateStateMachineAsset` | asset-edit |
 | `undo` | `undo` | safe-edit |
 | `redo` | `redo` | safe-edit |
 | `list_history` | `listHistory` | read-only |

@@ -51,6 +51,51 @@ hearth import asset ./art/walk-sheet.png --name walk-sheet --json
 }
 ```
 
+## Bulk import
+
+`importAssets` (CLI: `hearth import asset <path...> [--recursive]`; MCP:
+`import_assets`) imports several files in one atomic undo/journal step
+instead of one `importAsset` call per file. A single path with no
+`--recursive` still runs the single-file `importAsset` command (so
+`--name` keeps working); anything else — multiple paths, or a directory
+with `--recursive` — expands any directory argument into the files under
+it (recursively, dotfiles/dot-directories skipped) and runs `importAssets`
+as one batch:
+
+```bash
+hearth import asset ./art/tileset/ --recursive --json
+```
+
+```jsonc
+{
+  "success": true,
+  "command": "importAssets",
+  "data": {
+    "imported": [
+      { "path": "assets/sprites/grass.png", "assetId": "ast_…", "name": "grass", "type": "sprite" }
+      // … one entry per successfully imported file
+    ],
+    "skipped": [
+      { "path": "art/tileset/notes.txt", "code": "UNKNOWN_TYPE", "message": "…" }
+    ]
+  },
+  "errors": [], "warnings": [], "changed": [ /* … */ ],
+  "files": ["hearth.json", "assets.json"], "suggestions": []
+}
+```
+
+Every path is validated up front — a missing file, an unrecognized
+extension, or a directory passed without `--recursive` lands in
+`skipped` (with a `code` and `message`) rather than failing the whole
+batch. Name/path collisions, including two files in the same batch that
+would land on the same name, are resolved with an auto-suffix (`grass`,
+`grass-2`, …) instead of erroring. `type` (when passed) overrides
+extension-based inference for every file in the batch; `--name` is only
+valid for the single-file form. The editor's Assets panel funnels both
+its multi-select file picker and whole-panel drag-and-drop (including
+dropped folders) through this same command — see
+[editor.md](./editor.md#bulk-import).
+
 ## Slicing a spritesheet
 
 `sliceSpritesheet` (CLI: `hearth create asset slice <asset> --frame-size

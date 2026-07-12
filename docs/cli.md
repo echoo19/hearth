@@ -117,35 +117,60 @@ gold --width 24 --height 24` (shapes: rectangle, circle, triangle, diamond,
 star, capsule, polygon, character, enemy, coin, heart), `create asset tile
 <name> --color green`, `create sound <name> --preset coin [--seed n]`
 (deterministic WAV; presets: coin, jump, hit, laser, powerup, explosion,
-blip), `create animation <name> --frames f1 f2`, `import asset <path>`
-(probes image dimensions for sprites/tiles into `metadata`; `.woff`/
-`.woff2`/`.ttf`/`.otf` import as `font` assets), `create asset slice
-<asset> --frame-size WxH [--margin N] [--spacing N] [--prefix NAME]`
-(cuts an imported spritesheet into named frames, stored in the asset's
-own `metadata`), `create asset anim-from-sheet <name> --sheet <asset>
---frames a,b,c [--duration S] [--no-loop]` (an animation asset whose
-frames are `<sheetAssetId>#<frameName>` refs), `delete asset <asset>
-[--keep-file]` (unregisters the asset; also deletes its file unless
-`--keep-file` is passed — note this CLI verb's default is the *opposite*
-of the underlying `removeAsset` command's own `deleteFile` default, since
-every other CLI delete verb removes its target outright and this closes
-that parity gap) — see [assets.md](./assets.md) for the full pipeline,
-worked examples, and the music/font/`assertAudioCount` side of things.
+blip), `create animation <name> --frames f1 f2`, `import asset <path...>
+[--name n] [--type t] [--recursive]` (a single path with no `--recursive`
+runs `importAsset` unchanged — probes image dimensions for sprites/tiles
+into `metadata`, `.woff`/`.woff2`/`.ttf`/`.otf` import as `font` assets;
+**multiple paths, or `--recursive`, run `importAssets` instead** — one
+atomic batch, collision-safe auto-suffixed naming, bad paths reported in
+`skipped` rather than failing the whole call; `--recursive` expands any
+directory argument into the files under it, recursively, before
+importing — `--name` isn't valid in batch mode, `--type` applies to every
+file in the batch), `create asset slice <asset> --frame-size WxH
+[--margin N] [--spacing N] [--prefix NAME]` (cuts an imported spritesheet
+into named frames, stored in the asset's own `metadata`), `create asset
+anim-from-sheet <name> --sheet <asset> --frames a,b,c [--duration S]
+[--no-loop]` (an animation asset whose frames are
+`<sheetAssetId>#<frameName>` refs), `create asset state-machine <name>
+--data <json|@file>` (an animation state machine asset — see
+[scripting.md](./scripting.md#animation-state-machines) for the document
+shape and `ctx.animator`), `delete asset <asset> [--keep-file]`
+(unregisters the asset; also deletes its file unless `--keep-file` is
+passed — note this CLI verb's default is the *opposite* of the underlying
+`removeAsset` command's own `deleteFile` default, since every other CLI
+delete verb removes its target outright and this closes that parity gap)
+— see [assets.md](./assets.md) for the full pipeline, worked examples,
+and the music/font/`assertAudioCount` side of things.
 
-**Prefabs** (asset-edit): `prefab create <scene> <entity> <name>`
-(serializes the entity's full descendant subtree into a reusable prefab
-asset at `assets/prefabs/<slug>.prefab.json`; the source entity becomes the
-prefab's first tracked instance), `prefab place <prefab> <scene>
+**State machines** (asset-edit): `create asset state-machine <name> --data
+<json|@file>` (above) creates one; `set-state-machine <assetId> --data
+<json|@file>` replaces an existing one's document wholesale, in place
+(same asset id/path) — both take the full `{ params, states, initial,
+transitions }` document either as inline JSON or `@path/to/file.json`. See
+[scripting.md](./scripting.md#animation-state-machines) for the schema and
+[editor.md](./editor.md#animator-editor) for the typed editor UI.
+
+**Prefabs** (asset-edit, except `prefab revert` which is safe-edit):
+`prefab create <scene> <entity> <name>` (serializes the entity's full
+descendant subtree into a reusable prefab asset at
+`assets/prefabs/<slug>.prefab.json`; the source entity becomes the
+prefab's first live-linked instance), `prefab place <prefab> <scene>
 [--position x,y] [--name n]` (instantiates a prefab into a scene as a fresh
 entity subtree with new ids), `prefab update <prefab> <scene> <entity>`
 (re-serializes a modified instance's subtree back over the prefab asset's
-payload — `entity` must already be a tracked instance of that exact
-prefab), `prefab sync <prefab> [--scene s]` (rebuilds every tracked
-instance from the current payload, all scenes or just one — preserves each
-instance's id/name/position/enabled state but **replaces its entire
-descendant subtree**, including any child you added by hand). See
-[prefabs.md](./prefabs.md) for the full data model, tracked-stamp
-semantics, validation codes, and `ctx.scene.spawnPrefab`.
+payload, then auto-syncs every other tracked instance in the same command —
+`entity` must already be a tracked instance of that exact prefab), `prefab
+sync <prefab> [--scene s]` (force a merge sync of every tracked instance
+from the current payload, all scenes or just one — preserves each
+instance's id/name/position/enabled state and re-applies its recorded
+per-field overrides on top of the rebuilt subtree; a stale override that no
+longer applies is dropped with a `PREFAB_OVERRIDE_STALE` warning), `prefab
+revert <scene> <entity> [component] [path]` (reverts per-instance overrides
+on an instance member back to the prefab's values; scope narrows with the
+optional `component`/`path` args — neither reverts every override on that
+entity, `component` alone reverts that whole component, both revert one
+field). See [prefabs.md](./prefabs.md) for the full data model, live-link
+merge/detach semantics, validation codes, and `ctx.scene.spawnPrefab`.
 
 **Undo/redo** (safe-edit; read-only for `history`): `undo` (undo the most
 recent recorded change), `redo` (redo the most recently undone change),
@@ -187,6 +212,17 @@ space means empty, anything else must be a key of the Tilemap's
 `tileAssets`; out-of-bounds cells are command errors (with a suggestion to
 resize first). See [Tilemap editing](#tilemap-editing) below for a worked
 example.
+
+**Autotile** (safe-edit): `autotile set <scene> <entity> --char c --sheet
+<asset> [--template blob47] [--mapping '<json>']` (binds a tile char to a
+47-blob autotile rule instead of a fixed asset — the char's per-cell
+frame is picked from its 8 neighbours at render time; `--sheet` must be a
+sliced spritesheet, `--template` defaults to and today only supports
+`blob47`, `--mapping` overrides individual shape keys with custom frame
+names, e.g. `'{"255":"center"}'`), `autotile set <scene> <entity> --char c
+--clear` (removes the char's autotile rule). See
+[editor.md](./editor.md#autotile) for the frame-naming convention and an
+ASCII diagram of the neighbour bitmask.
 
 **Testing & review**: `snapshot`, `diff`, `revert --confirm`,
 `run <scene> [--frames n]` (the report includes `audioEvents`),

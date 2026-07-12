@@ -1,10 +1,12 @@
 # MCP Guide
 
 Hearth ships `hearth-mcp` (`packages/mcp-server`), a stdio MCP server that
-exposes the engine command layer as 64 typed tools (62 command tools, plus
+exposes the engine command layer as 69 typed tools (67 command tools, plus
 `screenshot` and `get_agent_instructions`, neither of which wraps a core
-command). The full reference (flags, registration snippets, permission
-table, complete tool list) lives in
+command). The engine's own command registry has 70 commands total — three
+(`setEntityEnabled`, `setEntityTags`, `setAssetMetadata`) are CLI-only
+housekeeping verbs with no MCP wrapper. The full reference (flags,
+registration snippets, permission table, complete tool list) lives in
 [`packages/mcp-server/README.md`](../packages/mcp-server/README.md).
 
 ## Quick start (Claude Code)
@@ -45,15 +47,24 @@ regex search across script source, read-only — see
 across script files; always run with `dryRun: true` first to preview
 per-file match counts, results are written verbatim without reformatting
 — see [cli.md](./cli.md#the-script-group)),
-`import_asset`, `create_sprite_asset`, `create_tile_asset`,
-`create_sound`, `create_animation_asset`, `slice_spritesheet` (frame grid over an
+`import_asset`, `import_assets` (bulk/atomic multi-file import, `skipped`
+per-file reasons — see [cli.md](./cli.md#command-tour)), `create_sprite_asset`,
+`create_tile_asset`, `create_sound`, `create_animation_asset`,
+`slice_spritesheet` (frame grid over an
 imported spritesheet — takes numeric `frameWidth`/`frameHeight` rather
 than the CLI's `--frame-size WxH` string), `remove_asset` (unregisters an
 asset; the CLI's `delete asset` wraps this same tool), `create_animation_from_sheet`
 (an animation asset from named sheet frames — see
-[assets.md](./assets.md)), `create_prefab`, `instantiate_prefab`,
-`update_prefab`, `sync_prefab_instances` (tracked-stamp prefab authoring —
-see [prefabs.md](./prefabs.md)), `undo`, `redo`, `list_history` (disk-backed
+[assets.md](./assets.md)), `set_tile_autotile` (bind a Tilemap tile char to
+a blob47 autotile rule, or clear one — see
+[editor.md](./editor.md#autotile)), `create_state_machine_asset`,
+`update_state_machine_asset` (author an animation state machine asset's
+full document — params/states/transitions — see
+[scripting.md](./scripting.md#animation-state-machines)), `create_prefab`,
+`instantiate_prefab`, `update_prefab`, `sync_prefab_instances`,
+`revert_prefab_override` (live-linked prefab authoring, merge sync, and
+per-field/instance revert — see [prefabs.md](./prefabs.md)), `undo`, `redo`,
+`list_history` (disk-backed
 undo/redo, independent of `snapshot_project`/`revert_project`'s single
 diff baseline — see [cli.md](./cli.md#command-tour)), `list_journal`
 (the command journal backing `hearth log` and the editor's Agent panel

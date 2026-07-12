@@ -30,7 +30,7 @@ and assets on your own disk.
    Agent ──▶ CLI / MCP ──┘      (validate · execute · diff)     scenes · scripts · assets
 ```
 
-Both audiences use the same 65 engine commands: `createEntity`,
+Both audiences use the same 70 engine commands: `createEntity`,
 `setComponentProperty`, `runPlaytest`, `getDiff`, and so on. An agent can
 build a level, wire input, write behavior scripts, import and slice art, run
 headless playtests, and hand you a structural diff to review in the editor,
@@ -43,8 +43,11 @@ you can read as `hearth log` or watch live in the editor's Agent panel.
 ## What's in the engine
 
 **Runtime.** A fixed-timestep, deterministic 2D runtime: sprites and
-spritesheets, tilemaps with auto-generated colliders, text, 2D lighting,
-polylines, deterministic particles, sprite animation, gamepad input with
+spritesheets, tilemaps with auto-generated colliders and 47-blob
+autotiling (a tile char's frame is picked from its 8 neighbours at
+render time), text, 2D lighting, polylines, deterministic particles,
+sprite animation plus animation state machines (params/states/
+transitions driving a sibling `SpriteRenderer`), gamepad input with
 analog virtual axes, camera effects (shake/flash/fade/zoom punch), a
 screen-space post-processing stack (bloom/CRT/vignette/chromatic-
 aberration/pixelate/color-grade, up to 8 stacked) plus per-sprite outline/
@@ -60,31 +63,37 @@ and in exported games — including every post-processing/sprite effect, see
 **Scripting.** Lua by default (sandboxed, seed-deterministic), JavaScript
 equally supported, both against the same `ctx` API: timers, tweens, seeded
 RNG, pub/sub events, math helpers, grid pathfinding, camera control and
-effects, a per-sprite hit-flash (`ctx.effects.flash`), UI focus, save data,
-and scene switching for building your own menus. `hearth inspect api`
-prints the whole surface, and the editor's Code panel autocompletes
-straight off that same reference. `checkScript` (CLI `check-script`, MCP
-`check_script`) syntax-checks a draft before you save it.
+effects, a per-sprite hit-flash (`ctx.effects.flash`), animation state
+machine control (`ctx.animator.setParam/getParam/fire/state`), UI focus,
+save data, and scene switching for building your own menus. `hearth
+inspect api` prints the whole surface, and the editor's Code panel
+autocompletes straight off that same reference. `checkScript` (CLI
+`check-script`, MCP `check_script`) syntax-checks a draft before you save
+it.
 
-**Editor.** A dockable workspace with a scene view (tilemap paint tool,
-plus direct-manipulation transform handles — 8 resize + 1 rotate handle on
-the current selection, always one undo step per gesture), hierarchy (with a
-"Save as prefab" action), schema-driven inspector (enum dropdowns and typed
-pickers for every fixed-choice or asset-reference field, including a
-dedicated post-effects stack editor — no raw JSON textareas anywhere), asset
-browser with spritesheet slicing, previews, and prefab cards ("Add to
-scene" / "Sync instances"), live game preview with Pause/Step for
-frame-by-frame debugging, a Code panel (lazy-loaded CodeMirror, `ctx.`
-autocomplete, inline lint), a Live panel (a read-only runtime inspector:
-live transform/velocity/timers/tweens/events for any entity while playing),
-console, an Input settings panel (key capture, gamepad bindings), visible
-toolbar Undo/Redo plus a history panel, a scene menu
-(duplicate/rename/set-initial/delete), a plain-language
-Checkpoint/Review/Changes review loop for agent sessions, a
-keyboard-shortcut cheat sheet (`?`, driven by one keybind registry), and an
-**Agent panel**: a real embedded terminal running your own `claude` CLI,
-wired to the project via MCP, with a live activity timeline and
-Checkpoint/Review/Revert one click away (see
+**Editor.** A dockable workspace with a scene view (tilemap paint tool
+with a per-char sprite/autotile mode toggle, a live particle preview for
+the selected emitter, plus direct-manipulation transform handles — 8
+resize + 1 rotate handle on the current selection, always one undo step
+per gesture), hierarchy (with a "Save as prefab" action), schema-driven
+inspector (enum dropdowns and typed pickers for every fixed-choice or
+asset-reference field, including a dedicated post-effects stack editor
+and ember override dots + per-field revert on live prefab instances — no
+raw JSON textareas anywhere), an **Animator editor** for state-machine
+assets (typed params/states/transitions, no raw JSON), asset browser with
+spritesheet slicing, previews, prefab cards ("Add to scene" / "Sync
+instances"), and multi-file/whole-folder drag-drop import, live game
+preview with Pause/Step for frame-by-frame debugging, a Code panel
+(lazy-loaded CodeMirror, `ctx.` autocomplete, inline lint), a Live panel
+(a read-only runtime inspector: live transform/velocity/timers/tweens/
+events for any entity while playing), console, an Input settings panel
+(key capture, gamepad bindings), visible toolbar Undo/Redo plus a history
+panel, a scene menu (duplicate/rename/set-initial/delete), a
+plain-language Checkpoint/Review/Changes review loop for agent sessions,
+a keyboard-shortcut cheat sheet (`?`, driven by one keybind registry),
+and an **Agent panel**: a real embedded terminal running your own
+`claude` CLI, wired to the project via MCP, with a live activity timeline
+and Checkpoint/Review/Revert one click away (see
 [docs/agent-panel.md](docs/agent-panel.md)). The editor also live-follows
 changes from any *external* agent session — CLI, MCP, or another editor —
 reloading automatically instead of going stale, and its local project
@@ -98,19 +107,27 @@ journal of every command any session has run). Property writes
 (`set`/`set-many`, MCP `set_component_property`/`set_properties`) validate
 the full dot-path against the component's real schema shape, with a
 did-you-mean suggestion on a typo instead of silently corrupting the write.
-The MCP server exposes 64 typed tools with per-session permission modes.
+The MCP server exposes 69 typed tools (67 wrapping a core command, plus
+`screenshot`/`get_agent_instructions`) with per-session permission modes.
 Playtests script input (including gamepad axes and pointer drags) and
 assert on game state, events, particles, audio, camera effects, post
 effects, and UI focus, entirely headless and CI-friendly. `hearth
 screenshot` renders real frames through headless Chromium so agents can
 see their own work.
 
-**Prefabs.** Reusable entity templates: serialize any entity's subtree into
-a prefab asset (`createPrefab`/`hearth prefab create`), place tracked
-instances of it (`instantiatePrefab`/`hearth prefab place`), push edits
-back onto the asset (`updatePrefab`), and propagate them to every existing
-instance on demand (`syncPrefabInstances`) — CLI, MCP, and editor surfaces
-all the way through. Scripts spawn prefabs live with
+**Prefabs.** Reusable entity templates, live-linked: serialize any
+entity's subtree into a prefab asset (`createPrefab`/`hearth prefab
+create`), place instances of it (`instantiatePrefab`/`hearth prefab
+place`), edit an instance directly and the change records as a
+per-instance override automatically, push a change back onto the asset
+(`updatePrefab`) and every other instance auto-syncs in the same command
+— merging the new payload with each instance's own overrides rather than
+discarding them — or force a resync on demand
+(`syncPrefabInstances`/`hearth prefab sync`). `revertPrefabOverride`/
+`hearth prefab revert` restores the prefab's own value for one field, one
+component, or a whole instance. A structural edit inside an instance
+detaches it from the link rather than guessing. CLI, MCP, and editor
+surfaces all the way through; scripts spawn prefabs live with
 `ctx.scene.spawnPrefab`. See [docs/prefabs.md](docs/prefabs.md).
 
 **Export.** `hearth export web` produces a static, self-contained build
@@ -125,26 +142,31 @@ same asset pipeline: import, probe, slice, animate.
 
 ## Status
 
-Hearth is at **v0.10.0**, a developer preview. The full loop works end to
+Hearth is at **v0.12.0**, a developer preview. The full loop works end to
 end: project model, editor, runtime preview, CLI, MCP, headless playtests,
-diff review, web export. This release, "Write & See," added a full
-**post-processing system** — `Camera.postEffects` (bloom/CRT/vignette/
-chromatic-aberration/pixelate/color-grade, up to 8 stacked, rendered as
-hand-written Pixi filters) and per-sprite `SpriteEffects`
-(outline/hit-flash/dissolve, `ctx.effects.flash`), both scriptable,
-testable (`assertPostEffect`), and typed end to end (a dedicated
-`PostEffectsField` Inspector control, no raw JSON) — plus an editor **Code
-panel** (lazy CodeMirror, `ctx.` autocomplete, inline lint), a **Live
-panel** and **Pause**/**Step** for frame-by-frame runtime inspection,
-stricter property-path validation with did-you-mean suggestions, a
-`checkScript` pre-flight command, Origin/Host enforcement on the local
-project server, and an editor bundle code-split — on top of earlier
-releases' prefabs, embedded agent panel, disk-backed command journal,
+diff review, web export. This release, "The Content Ceiling," stops what
+games can be from being tooling-limited: **animation state machines** (an
+`AnimationStateMachine` component plus `ctx.animator.setParam/getParam/
+fire/state`, scriptable identically in Lua and JS, and a typed Animator
+editor panel), **47-blob tilemap autotiling** (`setTileAutotile`/`hearth
+autotile set` picks a tile's sheet frame from its 8 neighbours instead of
+hand-placing every edge/corner variant), **live-linked prefabs with
+per-field overrides** (editing an instance records an override
+automatically; `updatePrefab` auto-syncs every other instance in the same
+command, merging in each instance's own overrides rather than discarding
+them; `revertPrefabOverride` restores one field, one component, or a
+whole instance), **in-scene particle preview** (a Scene toolbar toggle
+simulates the selected emitter live, off the same deterministic stepper
+the runtime uses), and **bulk asset import** (`importAssets`/`hearth
+import asset <paths...> --recursive` — one atomic batch, whole-folder
+drag-drop in the editor) — on top of earlier releases' script hot-reload,
+live Inspector patching, post-processing system, Code/Live panels,
+Pause/Step, prefabs, embedded agent panel, disk-backed command journal,
 published performance numbers, scene management, tilemap editing, undo/
 redo, gamepad input, camera effects, UI widgets, asset pipeline, physics
 v2, pathfinding, 2D lighting and particles, and Lua scripting. The
 [roadmap](docs/roadmap.md) keeps an honest list of what's still missing,
-including bulk asset import and notarized desktop builds.
+including desktop game export and notarized builds.
 
 ## Install
 
@@ -223,18 +245,20 @@ Ten example projects live in `packages/examples`, every one generated
 through the command system itself and covered by playtests in CI. They
 range from a mini platformer and a visual novel up to all-Lua showcases:
 **Ember Trail** (scene switching, timers, saved best score), **Glow Caves**
-(lighting and particles in a torch-lit cave), **Bounce Patrol** (physics
-layers and a pathfinding patroller), **Sky Courier** (a sliced pixel-art
-spritesheet, streamed chiptune music, and an imported font), **Drift
+(lighting and particles in a torch-lit cave, now on blob47-autotiled
+terrain), **Bounce Patrol** (physics layers and a pathfinding patroller),
+**Sky Courier** (a sliced pixel-art spritesheet driven by an animation
+state machine, streamed chiptune music, and an imported font), **Drift
 Cellar** (analog gamepad movement, camera shake/flash/fade, and a
 focus-navigable pause menu with a slider and toggle), **Ember Horde**
-(a survivors-like horde of hundreds of concurrent pathing enemies, pooled
-hit-spark particles, and camera shake — the playable proof behind
-[docs/performance.md](docs/performance.md)'s numbers), and **Ember Arcade**
-(a `Camera.postEffects` stack, `ctx.effects.flash` hit reactions, and a
-seeded dissolve death animation — the playable proof behind
-[docs/effects.md](docs/effects.md)). They double as reference projects:
-everything the docs describe, one of them does.
+(a survivors-like horde of hundreds of concurrent pathing enemies spawned
+from a live-linked prefab — including an overridden "Elite Enemy"
+instance — pooled hit-spark particles, and camera shake — the playable
+proof behind [docs/performance.md](docs/performance.md)'s numbers), and
+**Ember Arcade** (a `Camera.postEffects` stack, `ctx.effects.flash` hit
+reactions, and a seeded dissolve death animation — the playable proof
+behind [docs/effects.md](docs/effects.md)). They double as reference
+projects: everything the docs describe, one of them does.
 
 ## Documentation
 
@@ -248,14 +272,14 @@ everything the docs describe, one of them does.
 | [Agent workflow](docs/agents.md) | How agents should operate, and why |
 | [Architecture](docs/architecture.md) | Packages, command system, data flow |
 | [Project format](docs/project-format.md) | Every file, every schema |
-| [Components](docs/components.md) | All 18 component types and their defaults |
+| [Components](docs/components.md) | All 19 component types and their defaults |
 | [Effects](docs/effects.md) | `Camera.postEffects`, `SpriteEffects`, `ctx.effects.flash`, determinism |
-| [Prefabs](docs/prefabs.md) | Reusable entity templates, tracked-stamp sync, `ctx.scene.spawnPrefab` |
-| [Assets](docs/assets.md) | Import, spritesheets, animations, music, fonts |
-| [Scripting](docs/scripting.md) | Lua and JS, the full `ctx` API |
+| [Prefabs](docs/prefabs.md) | Reusable entity templates, live-link merge sync, `ctx.scene.spawnPrefab` |
+| [Assets](docs/assets.md) | Import (incl. bulk/folder), spritesheets, animations, music, fonts |
+| [Scripting](docs/scripting.md) | Lua and JS, the full `ctx` API, animation state machines |
 | [Input](docs/input.md) | Actions, keyboard, gamepad, virtual axes |
 | [UI](docs/ui.md) | Widgets, layout, focus navigation |
-| [Editor guide](docs/editor.md) | Chrome, keyboard shortcuts, transform handles, Code/Live panels |
+| [Editor guide](docs/editor.md) | Chrome, keyboard shortcuts, transform handles, Code/Live/Animator panels |
 | [Performance](docs/performance.md) | Benchmark harness, published numbers, honest guidance |
 | [Web export](docs/export.md) | Static builds, single-file, itch.io |
 | [Roadmap](docs/roadmap.md) | What's next, and what's honestly missing |

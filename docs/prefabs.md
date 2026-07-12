@@ -3,12 +3,14 @@
 Reusable entity templates: author an entity (and its full descendant
 subtree) once, save it as a **prefab asset**, then place as many instances
 of it as you like — in the editor, from the CLI, over MCP, or spawned live
-at runtime. Prefabs are **tracked stamps**, not live links: instantiating
-one deep-copies its payload into fresh scene entities; a later `sync`
-re-stamps every existing instance from the current payload on demand. There
-is no per-field override machinery and no continuous binding between an
-instance and its source asset — see [Non-goals](#non-goals) for what that
-implies.
+at runtime. Prefab instances are **live-linked**: editing a component
+property on an instance directly records it as a per-instance **override**
+instead of just silently drifting, and pushing a change back onto the
+prefab (`updatePrefab`) automatically re-syncs every other instance in the
+same command — merging the new payload with each instance's own recorded
+overrides rather than blowing them away. A structural edit (adding or
+removing an entity/component inside an instance) can't be merged, so it
+**detaches** that instance from the link instead of guessing.
 
 ## Data model
 
@@ -33,12 +35,34 @@ A prefab is an asset (`type: 'prefab'`) whose payload lives at
   `parentId` is always `null`. This is what makes a prefab payload
   reusable across scenes and instances — nothing in it names a live entity.
 - **The marker field**: an entity that is a live instance of a prefab
-  carries an optional `prefab: { asset: <assetId> }` field alongside its
-  normal `components`. It's an entity-level field, not a component — it
-  won't show up in `hearth inspect components`, but it round-trips through
-  scene files, snapshots, undo history, and everything else that already
-  handles entities. **Only the root of an instantiated subtree carries the
-  marker**; its descendants are plain entities with no marker of their own.
+  carries an optional `prefab` field alongside its normal `components`.
+  It's an entity-level field, not a component — it won't show up in
+  `hearth inspect components`, but it round-trips through scene files,
+  snapshots, undo history, and everything else that already handles
+  entities. **Only the root of an instantiated subtree carries the
+  marker**; its descendants are plain entities, resolved back to their
+  root by reverse-scanning `ids` (see below). The marker's shape:
+
+  ```ts
+  prefab: {
+    asset: string;                 // the prefab asset id
+    ids: Record<string, string>;   // prefab local id (pfe_1, …) -> this instance's scene entity id
+    overrides: {                   // implicit per-instance edits, re-applied on every merge sync
+      entity: string;    // scene entity id (root or a descendant)
+      component: string; // component type name
+      path: string;      // dot-path within that component
+      value: unknown;
+    }[];
+  }
+  ```
+
+  `ids` is what lets a merge sync (below) reuse an instance's existing
+  scene ids for locals that still exist in the prefab, mint fresh ids only
+  for genuinely new locals, and drop entities for locals that were
+  removed — instead of a full delete-and-recreate. A marker with an empty
+  `ids` map (e.g. one written by an older `createPrefab` call before this
+  field existed) is "legacy-detached": it behaves as an unlinked instance
+  until the next `syncPrefabInstances` normalizes it.
 - **Nested prefabs flatten at create time.** If the subtree you serialize
   with `createPrefab` contains an instance of some *other* prefab, that
   descendant's own `prefab` marker is stripped when it's baked into the new
@@ -46,7 +70,7 @@ A prefab is an asset (`type: 'prefab'`) whose payload lives at
   reference to the nested one. Editing the original nested prefab later has
   no effect on prefabs that were created from a subtree containing it.
 
-## The four commands
+## The five commands
 
 Every prefab operation is a core command with CLI and MCP parity, like
 everything else in Hearth:
@@ -57,14 +81,16 @@ everything else in Hearth:
 | `instantiatePrefab` | `hearth prefab place <prefab> <scene> [--position x,y] [--name n]` | `instantiate_prefab` | asset-edit |
 | `updatePrefab` | `hearth prefab update <prefab> <scene> <entity>` | `update_prefab` | asset-edit |
 | `syncPrefabInstances` | `hearth prefab sync <prefab> [--scene s]` | `sync_prefab_instances` | asset-edit |
+| `revertPrefabOverride` | `hearth prefab revert <scene> <entity> [component] [path]` | `revert_prefab_override` | safe-edit |
 
 ### `createPrefab { scene, entity, name }`
 
 Serializes `entity`'s full descendant subtree (BFS, root first) into a new
 prefab asset at `assets/prefabs/<slug(name)>.prefab.json`, registers it
 under `name` (asset names must be unique), and stamps the **source** entity
-with `prefab: { asset }` — it becomes the prefab's first tracked instance.
-Fails if `name` is already taken or the target file already exists.
+with a full `prefab` marker (empty `ids`/`overrides`) — it becomes the
+prefab's first tracked instance. Fails if `name` is already taken or the
+target file already exists.
 
 ```bash
 hearth prefab create Warren "Ember Grub" "Ember Grub"
@@ -76,7 +102,9 @@ Reads and schema-validates the payload, mints a fresh `ent_*` id for every
 entity (remapping `parentId` to match), and pushes the whole subtree into
 `scene`. `position` overrides the root's `Transform.position` (default: the
 position stored in the payload); `name` overrides the root's name (default:
-the prefab's own `name`). The new root gets `prefab: { asset }`.
+the prefab's own `name`). The new root gets a `prefab` marker whose `ids`
+maps every prefab local to the scene id it was just spawned with —
+this is what a later merge sync reuses.
 
 The root name is **uniquified against the target scene**: placing a prefab
 twice gives you `Ember Grub` then `Ember Grub 2` (an explicit `name` that
@@ -89,13 +117,15 @@ hearth prefab place "Ember Grub" Warren --position 400,300
 
 ### `updatePrefab { prefab, scene, entity }`
 
-The reverse direction: re-serializes `entity`'s current subtree back over
-the prefab asset's payload file (same path, same asset id, same
-entity-count metadata refresh). `entity` must already carry
-`prefab: { asset }` matching `prefab` — pushing edits from an entity that
-isn't a tracked instance of that exact asset is a `PREFAB_NOT_INSTANCE`
-error. This is how you retune a prefab: instantiate one, tweak it like any
-other entity, then `updatePrefab` to bake the change back into the asset.
+Re-serializes `entity`'s current subtree back over the prefab asset's
+payload file (same path, same asset id), **then auto-syncs every marked
+instance of that prefab across every scene in the same command** — one
+undo entry rolls back both the payload write and every re-synced instance.
+`entity` must already carry a `prefab` marker matching `prefab`; pushing
+edits from an entity that isn't a tracked instance of that exact asset is a
+`PREFAB_NOT_INSTANCE` error. This is how you retune a prefab: instantiate
+one, tweak it like any other entity, then `updatePrefab` to bake the change
+back into the asset and propagate it everywhere else it's placed.
 
 `entity` can be an id or a name. Because instance names are uniquified on
 placement, a name like `Ember Grub 2` addresses exactly one instance — but
@@ -109,40 +139,90 @@ hearth prefab update "Ember Grub" Warren "Ember Grub"
 ### `syncPrefabInstances { prefab, scene? }`
 
 Rebuilds **every** marked instance of `prefab` (across all scenes, or just
-`scene` if given) from the asset's *current* payload — the propagation step
-after `updatePrefab` changes the source of truth. Read the next section
-carefully before calling this on anything you've hand-edited.
+`scene` if given) from the asset's *current* payload — the same merge sync
+`updatePrefab` runs automatically, available on its own for when you've
+edited the payload file some other way (or just want to force a resync). See
+[Live-link semantics](#live-link-semantics-marker-merge-detach) for exactly
+what a merge sync does with per-instance overrides.
 
 ```bash
 hearth prefab sync "Ember Grub"
 ```
 
-## Tracked-stamp semantics (read this before you sync)
+### `revertPrefabOverride { scene, entity, component?, path? }`
 
-`syncPrefabInstances` is a full rebuild, not a merge. For each marked
-instance root it finds:
+Reverts per-instance overrides on an instance member back to the prefab's
+own values, write-through, and removes the matching override records.
+`entity` can be any member of the instance — root or descendant, resolved
+back to its instance via `ids`. Scope narrows with the optional args:
+`component` + `path` reverts one field; `component` alone reverts every
+override on that component; neither reverts every override on that entity.
+A no-op success when nothing matches.
 
-**Preserved** on the instance root:
-- its entity **id** (so anything already referencing that entity by id
-  stays valid)
-- its **name**
-- `Transform.position`
-- `enabled`
+```bash
+hearth prefab revert Arena "Elite Enemy" SpriteRenderer color
+```
 
-**Rebuilt from scratch** — everything else:
-- every other component on the root (all properties reset to whatever the
-  payload says, overwriting any tweak you made directly to that instance)
-- **the entire descendant subtree is deleted and recreated from the
-  payload, including any child you added by hand to that one instance**
-  that isn't part of the prefab. If you parented an extra decoration under
-  a prefab instance, a sync will delete it. There is no per-instance
-  override or per-field diff — this is the tradeoff of tracked stamps over
-  live links: simple, predictable, but all-or-nothing per instance.
+## Live-link semantics: marker, merge, detach
 
-If you want an instance-specific variation to survive syncs, don't make it
-a hand-edit on a live instance — either accept the divergence will be lost
-on the next sync, or promote the change into the prefab itself with
-`updatePrefab` so every instance gets it.
+### Implicit overrides
+
+Editing a component property on any member of a live instance —
+`setComponentProperty`/`hearth set`/`set_component_property`, or the batch
+`setProperties`/`set-many`/`set_properties` — records that write as an
+**implicit override** on the instance root's marker automatically; there is
+no separate "record an override" step or command. The instance root's own
+`name`, `enabled`, and `Transform.position` are the exception: those are
+per-instance **placement**, not overrides, so moving/renaming/toggling the
+root itself is never recorded (moving a *descendant* still records — only
+the root's own position is exempt). Writing the same `(entity, component,
+path)` again replaces the recorded value in place rather than appending a
+second record.
+
+### Merge sync (`updatePrefab` / `syncPrefabInstances`)
+
+A sync rebuilds each marked instance's subtree from the prefab's current
+payload, but it's a **merge**, not a blind overwrite:
+
+**Preserved** on the instance root, exactly like before:
+- its entity **id**, its **name**, `Transform.position`, and `enabled`.
+
+**Reused where possible, rebuilt where not:**
+- every prefab local that still exists keeps the **same scene id** it
+  already had (via the marker's `ids` map) — entity references elsewhere
+  in the project that point at it stay valid; a **new** local (added to
+  the prefab since the last sync) gets a fresh id; a local **removed**
+  from the prefab is simply not rebuilt, so its old entity disappears.
+
+**Overrides are re-applied on top**, not discarded:
+- every recorded override is checked against the freshly-rebuilt subtree:
+  if its local/component/path still exists there, the override is
+  re-applied (write-through, re-validated against the component's schema)
+  and kept on the new marker; if the prefab changed shape enough that the
+  override no longer applies (the local, component, or path is gone, or a
+  once-numeric field is now a different type), it's dropped and reported
+  as a `PREFAB_OVERRIDE_STALE` warning naming exactly what was dropped and
+  why — overrides never silently vanish.
+
+If two marked instances are nested (one inside the other's subtree), only
+the outer one is rebuilt as a tracked instance; the inner one becomes a
+plain (unmarked) child of the outer, since rebuilding the outer deletes and
+recreates its whole subtree first.
+
+### Detach rules
+
+A merge sync can reconcile *property* changes, but it can't reconcile a
+**structural** edit made directly to a live instance — adding or removing
+an entity or a component inside the subtree changes the very shape a merge
+needs to match up against. Rather than guess, that instance **detaches**:
+its `prefab` marker is removed outright (the entity keeps every field it
+currently has, it just stops being tracked), and a `PREFAB_INSTANCE_DETACHED`
+warning names which instance and why. A detached entity is a normal entity
+from then on — nothing prevents re-linking it by hand (delete and
+`instantiatePrefab` fresh, or ignore it and keep editing freely).
+
+Property edits — however many, on the root or any descendant — never
+detach; only structural ones do.
 
 ## Validation
 
@@ -154,12 +234,18 @@ markers with four dedicated codes:
 | `PREFAB_DATA_INVALID` | error | The payload file doesn't parse, doesn't match `PrefabDataSchema`, or fails local-id invariants (non-root-first order, dangling `parentId`, duplicate ids). |
 | `PREFAB_ASSET_NOT_FOUND` | error | A component inside the payload (`SpriteRenderer`/`AudioSource`/`SpriteAnimator.assetId`, a `Tilemap.tileAssets` entry) references an asset id that doesn't exist, or references the wrong asset type (e.g. a `SpriteAnimator` pointing at something that isn't an `animation` asset). |
 | `PREFAB_SCRIPT_NOT_FOUND` | error | A `Script.scriptPath` inside the payload references a script file that doesn't exist. |
-| `PREFAB_INSTANCE_ORPHANED` | warning | An entity's `prefab.asset` marker points at an asset that's missing or isn't type `prefab` (e.g. the prefab was deleted). The instance itself is unaffected — it's a full copy, not a reference, so it stays exactly as playable as it was — this is purely a "the marker is now dangling" notice. |
+| `PREFAB_INSTANCE_ORPHANED` | warning | An entity's `prefab.asset` marker points at an asset that's missing or isn't type `prefab` (e.g. the prefab was deleted). The instance itself is unaffected — it's a live-linked copy, not a reference, so it stays exactly as playable as it was — this is purely a "the marker is now dangling" notice. |
 
 `removeAsset` on a prefab with live instances doesn't block the delete; it
 returns a warning listing which instances will be left with an orphaned
 marker (the next `validateProject` call flags them as
 `PREFAB_INSTANCE_ORPHANED`).
+
+Two more codes surface from the commands themselves rather than `validate`
+(both documented above): `PREFAB_NOT_INSTANCE` (an `updatePrefab`/
+`revertPrefabOverride` target isn't a tracked instance of the given prefab)
+and the warnings `PREFAB_OVERRIDE_STALE` / `PREFAB_INSTANCE_DETACHED` a
+merge sync or a structural edit can emit.
 
 ## Runtime: `ctx.scene.spawnPrefab`
 
@@ -195,8 +281,10 @@ Two behaviors worth calling out explicitly:
   each child yourself.
 
 No `prefab` marker is attached to runtime-spawned entities — the marker is
-an authoring/tracked-sync concept for scene files; a spawned-at-runtime
-subtree has no asset to sync back to.
+an authoring/live-link concept for scene files; a spawned-at-runtime
+subtree has no asset to sync back to, and no live game state should depend
+on script-spawned enemies staying in lockstep with an asset someone edits
+mid-session.
 
 ## Editor flows
 
@@ -207,26 +295,17 @@ subtree has no asset to sync back to.
   viewport center.
 - **Update prefab** (Inspector, shown as a banner — "Instance of `<name>`"
   — when the selected entity carries a `prefab` marker): calls
-  `updatePrefab` for that one instance.
+  `updatePrefab` for that one instance, which — per the merge semantics
+  above — also re-syncs every other instance in the same action.
 - **Sync all** (Inspector, same banner) / **Sync instances** (Assets
   panel, on the prefab asset's card): both call `syncPrefabInstances`,
   after a preflight that counts affected instances across every scene and
-  shows a confirm dialog stating the scope and what's kept ("Rebuilds N
-  instances from this prefab. Names and positions are kept.") before
-  committing — see [Tracked-stamp semantics](#tracked-stamp-semantics-read-this-before-you-sync)
-  above for exactly what "kept" does and doesn't cover.
-
-## Non-goals
-
-**No live-linked prefabs or per-field overrides.** Instances are deep copies,
-not bindings; you can't override a single component on one instance while
-keeping the rest synced. This is intentional — tracked stamps are simpler and
-more predictable. Per-field overrides and live-link variants are documented
-for a future wave. **Nested prefabs flatten at create time.** If you serialize
-a subtree that contains an instance of another prefab, the child's `prefab`
-marker gets stripped and its entities bake into the new payload — no reference,
-just a flattened copy. **No automatic sync.** Changing a prefab doesn't touch
-any instances until you call `syncPrefabInstances`; sync is always explicit.
+  shows a confirm dialog stating the scope.
+- **Override dots + revert** (Inspector): a field that diverges from the
+  prefab grows a small ember dot next to its label and a **Revert** button
+  on hover — see [editor.md](./editor.md#prefab-authoring-surfaces) for the
+  full per-field/instance revert UI. The banner shows a running override
+  count and a **Revert all** action.
 
 ## See also
 
@@ -237,3 +316,9 @@ any instances until you call `syncPrefabInstances`; sync is always explicit.
   marker field (not a component).
 - [architecture.md](./architecture.md#prefabs) — where prefab
   serialization/instantiation lives in the codebase.
+- **`ember-horde`** (`packages/examples/ember-horde`) is the reference
+  project for all of this: an `Enemy` prefab with several plain instances
+  plus one **Elite Enemy** instance that overrides `SpriteRenderer.color`/
+  `width`/`height` (a bigger, red variant) — edit the base prefab and
+  re-run `hearth prefab update` to watch the plain instances pick up the
+  change while the elite's overrides survive the sync.

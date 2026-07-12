@@ -259,8 +259,170 @@ edge midpoints) plus 1 rotate handle floated above the box with a stem line.
   ever touch one axis), circle radius, `Transform.scale`, and rotation all
   stay their original single `setComponentProperty` call.
 
+## Animator editor
+
+A typed, list-based editor for a state-machine asset's document (params,
+states, transitions) — no raw JSON anywhere. Open it from the View menu,
+the Assets panel's "Edit state machine" card action, or the Inspector's
+`AnimationStateMachine` component row (which opens the asset the
+component's `assetId` currently points at). Three sections, each backed
+by a typed row list:
+
+- **Params**: add/remove/rename, a type dropdown (`bool`/`number`/
+  `trigger`), and a default-value field for `bool`/`number` params
+  (triggers have none).
+- **States**: add/remove/rename, an animation-asset picker (only
+  `animation`-type assets), and a `speed` multiplier.
+- **Transitions**: `from` (a state, or `any`), `to`, an optional
+  `exitTime` (clip-progress gate, `0..1`), and a condition-row list per
+  transition — each row picks a param and, for `bool`/`number` params,
+  an operator (`=`/`≠`/`>`/`≥`/`<`/`≤`, narrowed to what that param type
+  allows) and a value; trigger conditions are just the param name, no
+  operator or value.
+
+**Save** commits exactly one `updateStateMachineAsset` call — a single
+undo entry — after validating the whole draft is complete (every state
+has an animation, `initial` names a real state, every transition is
+gated by at least one condition or an `exitTime`, and so on; the same
+rules `StateMachineDataSchema` enforces on the CLI/MCP side, surfaced
+here as inline field errors instead of a rejected command). See
+[scripting.md](./scripting.md#animation-state-machines) for the asset
+shape, `ctx.animator` API, and trigger semantics, and
+[cli.md](./cli.md#command-tour) for the CLI/MCP equivalents
+(`create asset state-machine`/`set-state-machine`).
+
+## Autotile
+
+Painting a 47-blob ("blob47") autotile terrain instead of single fixed
+tiles: bind a `Tilemap` char to a sliced spritesheet and the tile's
+on-screen frame is picked automatically from its 8 neighbours every time
+the map changes, so a cave wall or a patch of grass gets seamless
+edges/corners without hand-placing every variant.
+
+**Per-char mode toggle** (Inspector, `Tilemap.tileAssets` row list — see
+[components.md](./components.md#tilemap)): each char has a **Sprite** /
+**Autotile** mode `<select>`, disabled (with an explanatory tooltip)
+until the project has at least one sliced spritesheet asset to bind to.
+Switching a char to **Autotile** shows a sheet picker (defaulting to the
+first available sliced sheet), a locked "Blob47 (47-shape)" template
+field (the only template today), and a collapsed **Advanced mapping**
+section listing all 47 shape keys, each with a frame-name `<select>`
+that defaults to the standard template name and can be overridden
+per-shape. Every edit here dispatches its own `setTileAutotile` call (or
+`setComponentProperty` for a plain sprite-mode char) rather than a
+whole-map commit — the autotile rule shape is rejected by
+`setComponentProperty` entirely, so it always goes through the dedicated
+command.
+
+**Frame-naming convention.** The standard blob47 template names every
+frame `blob_<shapeKey>`, where `shapeKey` is a neighbour bitmask
+(N=1, NE=2, E=4, SE=8, S=16, SW=32, W=64, NW=128) reduced from 256 raw
+combinations to the 47 that are visually distinct — a diagonal neighbour
+only changes a tile's silhouette when both of its adjacent edges are
+also present, so a lone corner bit collapses away. `blob_0` is a fully
+isolated tile (no same-char neighbours); `blob_255` is fully surrounded.
+`sliceSpritesheet` always names frames sequentially (`<prefix>_0`,
+`<prefix>_1`, … in row-major order) — it has no way to produce
+`blob_<shapeKey>` names directly, since a raw shape key (e.g. `4`, `7`,
+`255`) isn't the same as a sequential slice index. In practice a tileset
+laid out in the standard 47-tile order (many blob47 tilesets are) slices
+to `blob_0`, `blob_1`, `blob_2`, … in that same order, so the Advanced
+mapping section is where you translate: shape key `0` → `blob_0`, shape
+key `1` → `blob_1`, shape key `4` (the 3rd tile in canonical order) →
+`blob_2`, and so on — one row per shape key, done once per tileset. A
+rule is only valid once every shape key it needs (every one of the 47,
+unless overridden) resolves to a real frame on the sheet.
+
+```
+        N (1)
+   NW  ┌───┐  NE
+  (128)│ X │ (2)
+        │   │
+   W    │   │   E
+  (64)  └───┘  (4)
+   SW           SE
+  (32)          (8)
+        S (16)
+
+  Edge bits set only when that exact neighbour holds the SAME char.
+  A corner bit (NE/SE/SW/NW) counts only when BOTH adjacent edges are
+  also set — e.g. NE only contributes if N and E are both present.
+  shapeKey = sum of set bits, canonicalized this way; frame = blob_<shapeKey>.
+
+  Example — a tile with neighbours to the N, E, and NE (a convex corner,
+  both edges present so the diagonal counts):
+    N(1) + NE(2) + E(4) = shapeKey 7  →  frame "blob_7"
+
+  Example — a tile with only a NE neighbour (no N, no E):
+    the NE bit is masked out (its edges aren't both set) → shapeKey 0
+    →  frame "blob_0", same as a fully isolated tile.
+```
+
+Off-grid neighbours (map edges) always count as "same tile", so terrain
+never sprouts a spurious outline at the map boundary. See
+[cli.md](./cli.md#command-tour) for `hearth autotile set`, and
+`packages/core/src/tilemap/autotile.ts` for the canonical bit order and
+the full 47-shape table (`AUTOTILE_SHAPES`) if you need it verbatim.
+
+## Particle preview
+
+The Scene View toolbar's **Particles** toggle (persisted per-browser)
+turns on a live, in-place simulation of the **currently selected**
+entity's `ParticleEmitter`, drawn directly over the canvas — without
+pressing Play. It runs only while the Scene panel is visible, the toggle
+is on, and an entity with a `ParticleEmitter` is selected; deselecting,
+hiding the panel, or switching off the toggle stops it. This is a
+genuine simulation, not an approximation: it drives the same seeded,
+deterministic `EmitterState` stepper the real runtime uses (own RNG
+stream keyed by the emitter's `seed`, same size/color-lerp math), just
+paced by real time instead of the fixed-timestep game loop, so what you
+see previewing an emitter's `rate`/`spread`/`gravity`/colors while
+dragging its Inspector fields is exactly what the emitter looks like in
+Play or in an exported game. Editing a field restarts the preview from a
+clean slate; dragging the entity around the canvas does not (particles
+keep their world positions and new ones spawn from the emitter's current
+location, matching real runtime behavior).
+
+## Bulk import
+
+The Assets panel's **Import…** button (multi-select file picker) and
+whole-panel drag-and-drop both funnel through one `importAssets` call —
+one atomic undo/journal entry regardless of how many files, with
+collision-safe auto-suffixed naming (`walk -> walk-2`) instead of
+failing on a name clash. Dropping a **folder** onto the panel walks it
+recursively (dotfiles/dot-directories skipped) and imports every file it
+finds, exactly like `hearth import asset <folder> --recursive` on the
+CLI — see [cli.md](./cli.md#command-tour). A per-file 25 MB size cap and
+an extension allowlist (images/audio/fonts) apply the same as a single
+`Import…` pick; anything rejected shows up in the summary toast
+("Imported N, skipped M (reason ×count)") rather than silently
+vanishing or aborting the whole batch.
+
 ## Prefab authoring surfaces
 
-See [prefabs.md](./prefabs.md#editor-flows) for **Save as prefab**
-(Hierarchy), **Add to scene** / **Sync instances** (Assets panel), and
-**Update prefab** / **Sync all** (Inspector).
+- **Save as prefab** (Hierarchy, per-entity row action): serializes the
+  selected entity's subtree via `createPrefab`.
+- **Add to scene** (Assets panel, on a prefab asset's card): calls
+  `instantiatePrefab` into the currently open scene.
+- **Update prefab** / **Sync all** (Inspector, "Instance of `<name>`"
+  banner shown when the selection carries a `prefab` marker): **Update
+  prefab** re-serializes this instance over the asset and auto-syncs
+  every other instance in the same command; **Sync all** force-rebuilds
+  every instance from the asset's current payload after a preflight
+  confirm dialog stating the affected count.
+- **Override dots + per-field revert** (Inspector): once an instance's
+  field diverges from its prefab (any direct edit to a non-root field —
+  root name/position/enabled don't count, they're per-instance
+  placement), that field's label grows a small ember dot and a **Revert**
+  button appears next to it on hover, calling `revertPrefabOverride`
+  scoped to that exact field. The banner itself shows a running
+  "N overrides" count and a **Revert all** button (confirm-gated) that
+  clears every override on the whole instance in one action.
+- **Structural edits detach**: adding/removing a child entity or a
+  component inside an instance breaks its live link — the instance's
+  marker is removed (a `PREFAB_INSTANCE_DETACHED` warning explains why)
+  and it becomes a normal, unlinked entity. Property edits never detach.
+
+See [prefabs.md](./prefabs.md#editor-flows) for the full data model
+behind all of this — the marker shape, implicit override recording, and
+exactly what a merge-sync preserves vs. drops.

@@ -30,12 +30,12 @@ results.
 
 | Package | Role |
 | --- | --- |
-| `packages/core` | Zod schemas for every file format; `ProjectStore` (load/save); the **command registry** (60 operations, including web export, pathfinding, spritesheet slicing, undo/redo/history, the command journal, tilemap editing, prefab authoring, and the `ctx` API reference); validation; structural diff; permission model; procedural asset generation (SVG sprites/tiles, WAV sounds); AGENTS.md/CLAUDE.md generation; the deterministic grid A\* pathfinding module shared by the runtime and the CLI/MCP; prefab serialization/instantiation (see [Prefabs](#prefabs) below). Browser-safe: Node fs access is isolated in `@hearth/core/node`. |
+| `packages/core` | Zod schemas for every file format; `ProjectStore` (load/save); the **command registry** (70 operations, including web export, pathfinding, spritesheet slicing, undo/redo/history, the command journal, tilemap editing/autotiling, prefab authoring, animation state machines, and the `ctx` API reference); validation; structural diff; permission model; procedural asset generation (SVG sprites/tiles, WAV sounds); AGENTS.md/CLAUDE.md generation; the deterministic grid A\* pathfinding module shared by the runtime and the CLI/MCP; prefab serialization/instantiation, live-link merge/detach (see [Prefabs](#prefabs) below). Browser-safe: Node fs access is isolated in `@hearth/core/node`. |
 | `packages/runtime` | 2D runtime: scene instantiation, fixed-timestep loop, input actions, box/circle/convex-polygon physics (SAT, with mass/restitution/friction and named collision layers), a synchronous deterministic event bus, screen-space UI with pointer hit-testing, audio (recorded headlessly, Web Audio in the browser), camera, and the script engine — **Lua 5.4 (sandboxed wasmoon VM) by default, JavaScript equally supported, one identical `ctx` API** with scene switching, timers, tweens, seeded RNG, and persistent save data. `SceneRuntime` runs a single scene; `GameSession` wraps it for cross-scene games (`ctx.scenes.load` swaps runtimes while the RNG stream, save storage, frame counter, and logs carry across). The main entry is **headless** (runs in Node for playtests); the PixiJS renderer is the separate `@hearth/runtime/pixi` subpath used by the editor's game preview, and the web-export player bundle is built from the same code. |
 | `packages/playtest` | Headless playtest execution: scripted input + assertions over a `GameSession` (seeded, scene-switch aware), exposed as `RuntimeHooks` injected into core commands (`runPlaytest`, `runScene`). |
 | `packages/cli` | `hearth`, the command-line surface. Every subcommand dispatches into the core command system; `--json` emits the raw `CommandResult` envelope for agents. |
 | `packages/mcp-server` | `hearth-mcp`, a stdio MCP server exposing the same commands as typed MCP tools, with permission modes. |
-| `packages/examples` | Nine sample projects **generated through the command system itself** (`generate.mjs`); they double as integration tests and agent references. Three are JavaScript-scripted; `ember-trail`, `glow-caves`, `bounce-patrol`, `sky-courier`, `drift-cellar`, and `ember-horde` are all-Lua — `ember-trail` exercises the scene/stdlib surface end to end, `glow-caves` exercises rendering v2 (lighting, particles, sprite animation), `bounce-patrol` exercises physics v2 (mass/restitution/friction, layered and one-way colliders), `ctx.events`/`onEvent`, and `ctx.scene.findPath`, `sky-courier` exercises asset pipeline v2 — the first example built from **imported binary assets** (a sliced PNG spritesheet, a streamed WAV music loop, an imported font) rather than procedural SVGs — `drift-cellar` exercises game feel v1: analog virtual axes with gamepad bindings (`ctx.input.axis`), camera effects (`ctx.camera.shake/flash/fade/zoomPunch`), the UI widget set (`UILayout`/`UISlider`/`UIToggle`), and `ctx.ui` focus navigation — and `ember-horde` demonstrates the new scale ceiling. |
+| `packages/examples` | Ten sample projects **generated through the command system itself** (`generate.mjs`); they double as integration tests and agent references. Three are JavaScript-scripted; `ember-trail`, `glow-caves`, `bounce-patrol`, `sky-courier`, `drift-cellar`, `ember-horde`, and `ember-arcade` are all-Lua — `ember-trail` exercises the scene/stdlib surface end to end, `glow-caves` exercises rendering v2 (lighting, particles, sprite animation) plus blob47-autotiled cave terrain, `bounce-patrol` exercises physics v2 (mass/restitution/friction, layered and one-way colliders), `ctx.events`/`onEvent`, and `ctx.scene.findPath`, `sky-courier` exercises asset pipeline v2 — the first example built from **imported binary assets** (a sliced PNG spritesheet, a streamed WAV music loop, an imported font) rather than procedural SVGs — plus an animation state machine driving its idle/walk cycle, `drift-cellar` exercises game feel v1: analog virtual axes with gamepad bindings (`ctx.input.axis`), camera effects (`ctx.camera.shake/flash/fade/zoomPunch`), the UI widget set (`UILayout`/`UISlider`/`UIToggle`), and `ctx.ui` focus navigation, `ember-horde` demonstrates the scale ceiling plus a live-linked `Enemy` prefab with an overridden "Elite Enemy" instance, and `ember-arcade` exercises the post-processing/`SpriteEffects` surface. |
 | `apps/editor` | Vite + React editor. A Vite-plugin project server (Node) opens `HearthSession`s and exposes `/api/command` etc.; the browser UI renders panels and dispatches commands. An Electron shell packages the desktop app, running the same project server in-process; an experimental Tauri shell config is also included. |
 
 ## The command system (the load-bearing wall)
@@ -216,22 +216,33 @@ walkthrough.
 ## Prefabs
 
 `packages/core/src/project/prefabData.ts` is the pure, file-I/O-free layer
-`createPrefab`/`instantiatePrefab`/`updatePrefab`/`syncPrefabInstances`
-(`packages/core/src/commands/prefabCommands.ts`) all build on:
-`collectSubtree` (root-first BFS over a scene's flat entity list, following
-`parentId`), `serializePrefab` (subtree → normalized-local-id `PrefabData`,
-stripping any `prefab` marker so nested-prefab instances flatten into plain
-entities), and `instantiatePrefabData` (payload → fresh scene entities with
-new `ent_*` ids, optionally pinning the root's id via `preserveRootId` —
-the one thing `syncPrefabInstances` needs that a plain instantiate
-doesn't, since a sync must keep the existing root entity's id valid). The
-runtime's `spawnPrefab` (`packages/runtime/src/runtime.ts`) calls the same
-`instantiatePrefabData` at play time — one instantiation code path for
-both "author time" (commands writing into a scene file) and "play time"
-(the runtime creating live entities), so behavior can't drift between the
-two. See [prefabs.md](./prefabs.md) for the full data model, command
-reference, and tracked-stamp semantics (what `syncPrefabInstances`
-preserves vs. rebuilds).
+`createPrefab`/`instantiatePrefab`/`updatePrefab`/`syncPrefabInstances`/
+`revertPrefabOverride` (`packages/core/src/commands/prefabCommands.ts`)
+all build on: `collectSubtree` (root-first BFS over a scene's flat entity
+list, following `parentId`), `serializePrefab` (subtree →
+normalized-local-id `PrefabData`, stripping any `prefab` marker so
+nested-prefab instances flatten into plain entities), and
+`instantiatePrefabData` (payload → fresh scene entities with new `ent_*`
+ids) for a brand-new placement. `updatePrefab`/`syncPrefabInstances` use a
+separate function, `buildMergedInstance`, instead of a plain instantiate —
+a merge reuses each existing local's scene id (from the marker's `ids`
+map), mints ids only for genuinely new locals, drops entities for removed
+locals, and re-applies the marker's recorded `overrides` on top of the
+rebuilt components (dropping and reporting any that no longer resolve).
+`recordInstanceOverride`/`findInstanceMembership`/
+`detachInstanceContaining` are the other three load-bearing helpers here:
+the first records an implicit override whenever `setComponentProperty`/
+`setProperties` touches a live instance member, the second resolves any
+member entity back to its instance root by reverse-scanning `ids` maps,
+and the third removes a marker outright when a structural edit (add/
+remove entity or component) breaks the merge link. The runtime's
+`spawnPrefab` (`packages/runtime/src/runtime.ts`) calls the plain
+`instantiatePrefabData` at play time, same as `instantiatePrefab` the
+command — one instantiation code path for both "author time" and "play
+time," so behavior can't drift between the two; runtime-spawned entities
+never carry a `prefab` marker; there's no asset to merge-sync back to. See
+[prefabs.md](./prefabs.md) for the full data model, command reference, and
+live-link merge/detach semantics.
 
 ## Filesystem abstraction
 

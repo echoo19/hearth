@@ -258,6 +258,51 @@ export const CTX_API: readonly CtxApiEntry[] = [
       "Switch this entity's SpriteAnimator to `assetRef` (animation asset id or name), set playing = true, and restart at frame 0. Warns if the entity has no SpriteAnimator or the asset is unknown.",
     example: { js: "ctx.animate('torch-flare')", lua: 'ctx.animate("torch-flare")' },
   },
+  // --- animation state machines (wave I) -------------------------------
+  {
+    path: 'animator.setParam',
+    kind: 'method',
+    signature: 'setParam(entityRef: string, name: string, value: boolean | number): void',
+    description:
+      "Set a bool or number param on entityRef's AnimationStateMachine (id or unique name — not always this entity). Persists until changed again. Throws a script error if entityRef has no AnimationStateMachine, name isn't a param on its asset, name is a trigger param (use ctx.animator.fire instead), or value's type doesn't match the param's declared type.",
+    example: {
+      js: "ctx.animator.setParam(ctx.entity.name, 'moving', Math.abs(vx) > 1)",
+      lua: 'ctx.animator.setParam(ctx.entity.name, "moving", math.abs(vx) > 1)',
+    },
+  },
+  {
+    path: 'animator.getParam',
+    kind: 'method',
+    signature: 'getParam(entityRef: string, name: string): boolean | number',
+    description:
+      "Read a param's current value: the stored bool/number for a bool or number param, or whether a trigger param is currently latched (true) or already consumed/never fired (false). Throws if entityRef has no AnimationStateMachine or name isn't a param on its asset.",
+    example: {
+      js: "const moving = ctx.animator.getParam(ctx.entity.name, 'moving')",
+      lua: 'local moving = ctx.animator.getParam(ctx.entity.name, "moving")',
+    },
+  },
+  {
+    path: 'animator.fire',
+    kind: 'method',
+    signature: 'fire(entityRef: string, name: string): void',
+    description:
+      "Latch a trigger param on entityRef's AnimationStateMachine. Stays latched — surviving as many fixed frames as it takes — until a transition whose conditions name it is actually taken, at which point only that trigger is consumed; other latched triggers are untouched. A paused machine (component.playing = false) never consumes it. Throws if entityRef has no AnimationStateMachine, name isn't a param on its asset, or name isn't a trigger param.",
+    example: {
+      js: "ctx.animator.fire(ctx.entity.name, 'attack')",
+      lua: 'ctx.animator.fire(ctx.entity.name, "attack")',
+    },
+  },
+  {
+    path: 'animator.state',
+    kind: 'method',
+    signature: 'state(entityRef: string): string',
+    description:
+      "The current state name of entityRef's AnimationStateMachine. Throws if entityRef has no AnimationStateMachine or its asset is unknown.",
+    example: {
+      js: "ctx.log('state:', ctx.animator.state(ctx.entity.name))",
+      lua: 'ctx.log("state:", ctx.animator.state(ctx.entity.name))',
+    },
+  },
   // --- math (wave B) --------------------------------------------------
   {
     path: 'math.vec2',

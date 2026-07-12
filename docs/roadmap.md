@@ -1,58 +1,69 @@
 # Hearth Roadmap
 
-v0.11 is the current milestone. Its first release, v0.11.0 (shipped,
-below, "the iteration loop"), made write → play → tweak professional:
-**script hot-reload during play** (edit a script, every live entity
-running it picks up the new code — `ctx.vars`/timers/tweens survive,
-`onStart` does not re-run, a compile failure keeps the old code running,
-and an error-disabled script re-enables), **live Inspector property
-patching during play** (Inspector edits dual-write — saved and undoable
-as always, and live-patched into the running preview so a field like
-`Camera.ambientLight` no longer needs a Stop/Play round-trip — external
-CLI/MCP edits from another session patch live too, via the command
-journal), a **"Scene changed — Restart" badge** for structural changes
-that can't be live-patched, **runtime error → exact line** (a Console
-error is clickable straight to the failing line — always for Lua, best-effort
-for JS), **format-on-save** (StyLua/Prettier house style, on by default,
-toggleable per project), **Code panel tabs** (multi-buffer editing with
-independent per-tab undo), **`ctx.` hover docs**, **in-file search**
-(`Mod-F`), and **cross-script search/replace** (`⇧⌘F` in the editor;
-`hearth script search|replace`/MCP `search_scripts`/`replace_in_scripts`
-on the CLI/MCP, dry-run-first). Registry grew 62 → 65 commands; MCP grew
-61 → 64 tools. See [scripting.md](./scripting.md#hot-reload-during-play),
-[editor.md](./editor.md#live-iteration-during-play), and
-[cli.md](./cli.md#the-script-group).
+v0.12 is the current milestone. Its first release, v0.12.0 (shipped,
+below, "the content ceiling"), stops what games can be from being
+tooling-limited: **animation state machines** (an `AnimationStateMachine`
+component drives a sibling `SpriteRenderer` from a params/states/
+transitions asset — `assets/statemachines/*.asm.json`,
+`createStateMachineAsset`/`updateStateMachineAsset`,
+`ctx.animator.setParam/getParam/fire/state` in both Lua and JS, a typed
+Animator editor panel), **47-blob tilemap autotiling** (`setTileAutotile`/
+`hearth autotile set` binds a tile char to a blob47 rule so its sheet
+frame is picked from its 8 neighbours at render time instead of
+hand-placing every edge/corner variant, plus a per-char sprite/autotile
+mode toggle in the Inspector), **live-linked prefabs with per-field
+overrides** (editing an instance's field directly now records it as an
+override instead of silently drifting; `updatePrefab` auto-syncs every
+other instance in the same command, merging the new payload with each
+instance's own overrides rather than replacing them wholesale;
+`revertPrefabOverride`/`hearth prefab revert` plus ember override dots
+and per-field/whole-instance revert buttons in the Inspector; a
+structural edit inside an instance detaches it instead of guessing),
+**in-scene particle preview** (a Scene toolbar toggle simulates the
+selected entity's `ParticleEmitter` live, off the same deterministic
+stepper the runtime uses, without pressing Play), and **bulk asset
+import** (`importAssets`/`hearth import asset <paths...> [--recursive]`/
+MCP `import_assets` — one atomic undo entry per batch, auto-suffixed name
+collisions, bad files reported in `skipped` instead of failing the whole
+import; the editor's Assets panel accepts multi-file picks and
+whole-folder drag-drop). Registry grew 65 → 70 commands; MCP grew 64 → 67
+command tools (69 tools total, including `screenshot`/
+`get_agent_instructions`). See
+[scripting.md](./scripting.md#animation-state-machines),
+[editor.md](./editor.md#autotile), and
+[prefabs.md](./prefabs.md#live-link-semantics-marker-merge-detach).
 
-On top of v0.10's **Code panel** in the editor (lazy-loaded CodeMirror 6,
-`ctx.` autocomplete driven by the same `CTX_API` the docs and
-`hearth inspect api` use, inline `checkScript` lint, external-change
-follow), a **Live panel** (read-only 10Hz runtime inspector: entity
-transform/velocity/timers/tweens/recent events) plus toolbar **Pause**/
-**Step** for frame-by-frame inspection, a full **post-processing system**
-(`Camera.postEffects` — bloom/CRT/vignette/chromatic-aberration/pixelate/
-color-grade, up to 8 stacked, rendered as hand-written Pixi filters — and
-per-sprite `SpriteEffects` outline/hit-flash/dissolve, `ctx.effects.flash`,
-the `assertPostEffect` playtest step), a typed `PostEffectsField` Inspector
-control (no raw JSON for the new array field, same as everywhere else) and
-a fix making a corner transform-drag on a sprite/collider commit as one
-undo step instead of two (via the new `setProperties` batch command),
-stricter property-path validation (`setComponentProperty`/`setProperties`
-now reject an unknown dot-path segment with a did-you-mean suggestion
-instead of silently succeeding against a throwaway key), a `checkScript`
-command/CLI/MCP tool for pre-flighting a script without saving it,
-Origin/Host enforcement on the local project server's `/api/*` routes and
-WebSocket upgrade (closing a DNS-rebinding-style hole where a hostile
-webpage could otherwise drive the loopback dev server), a code-split
-editor bundle (Terminal and the spritesheet Slice dialog now lazy-load
-instead of shipping in the main chunk), and the 10th example, **Ember
-Arcade**, exercising the whole post-effects/SpriteEffects set. Registry
-grew 60 → 62 commands; MCP grew 59 → 61 tools. See
-[effects.md](./effects.md), [editor.md](./editor.md), and
-[scripting.md](./scripting.md).
+On top of v0.11's **script hot-reload during play** (edit a script, every
+live entity running it picks up the new code — `ctx.vars`/timers/tweens
+survive, `onStart` does not re-run, a compile failure keeps the old code
+running, and an error-disabled script re-enables), **live Inspector
+property patching during play** (Inspector edits dual-write — saved and
+undoable as always, and live-patched into the running preview so a field
+like `Camera.ambientLight` no longer needs a Stop/Play round-trip —
+external CLI/MCP edits from another session patch live too, via the
+command journal), a **"Scene changed — Restart" badge** for structural
+changes that can't be live-patched, **runtime error → exact line**,
+**format-on-save** (StyLua/Prettier house style), **Code panel tabs**
+(multi-buffer editing with independent per-tab undo), **`ctx.` hover
+docs**, **in-file search** (`Mod-F`), and **cross-script search/replace**
+(`⇧⌘F` in the editor; `hearth script search|replace`/MCP
+`search_scripts`/`replace_in_scripts`, dry-run-first). Registry grew 62 →
+65 commands; MCP grew 61 → 64 tools. See
+[scripting.md](./scripting.md#hot-reload-during-play) and
+[editor.md](./editor.md#live-iteration-during-play).
 
-On top of v0.9's **prefabs** (tracked-stamp reusable entity templates: create/
-instantiate/update/sync, CLI + MCP parity, `ctx.scene.spawnPrefab`) and a
-round of **editor friendliness** — plain-language chrome
+On top of v0.10's **post-processing system** (`Camera.postEffects` —
+bloom/CRT/vignette/chromatic-aberration/pixelate/color-grade, up to 8
+stacked — and per-sprite `SpriteEffects` outline/hit-flash/dissolve,
+`ctx.effects.flash`), editor **Code panel** (lazy CodeMirror 6, `ctx.`
+autocomplete, inline `checkScript` lint) plus a **Live panel** and
+**Pause**/**Step** for frame-by-frame inspection, stricter
+property-path validation with did-you-mean suggestions, a `checkScript`
+pre-flight command, and Origin/Host enforcement on the local project
+server — v0.9's **prefabs** (tracked-stamp reusable entity templates:
+create/instantiate/update/sync, CLI + MCP parity, `ctx.scene.spawnPrefab`
+— the richer live-link model above is what v0.12 built on top of these)
+and a round of **editor friendliness** — plain-language chrome
 (Checkpoint/Review/Changes), visible toolbar Undo/Redo, a keybind registry
 with a `?` shortcut cheat sheet, and direct-manipulation transform handles
 in the scene view. On top of v0.8's embedded agent panel (a real terminal
@@ -85,6 +96,91 @@ what's deliberately missing.
 The standing rule for everything below: **agent-native first**. Each system
 ships as schemas + commands (inspectable via `hearth … --json`, exposed as
 MCP tools, testable in headless playtests) before it gets editor UI.
+
+## Shipped in v0.12.0
+
+- **Animation state machines**: an `AnimationStateMachine` component
+  (`assetId`, `playing`) drives a sibling `SpriteRenderer` from a
+  params/states/transitions asset (`assets/statemachines/*.asm.json`,
+  `StateMachineDataSchema` — bool/number/trigger params, `exitTime`- and
+  condition-gated transitions, `from: 'any'` wildcards) instead of a
+  single looping clip; wins over a plain `SpriteAnimator` on the same
+  entity (one warning, not a hard error). `createStateMachineAsset`/
+  `updateStateMachineAsset` (CLI `create asset state-machine`/
+  `set-state-machine`, MCP `create_state_machine_asset`/
+  `update_state_machine_asset`) author the document; scripts drive it with
+  `ctx.animator.setParam/getParam/fire/state`, identical in Lua and JS — a
+  fired trigger latches until an eligible transition actually consumes it,
+  never auto-expiring on its own. Script hot-reload preserves a machine's
+  live state (current state, params, latched triggers); reloading the
+  *asset* itself resets every entity on it to the new `initial` state on
+  purpose, so a renamed/removed state can't leave a live machine dangling.
+  Editor: a typed **Animator editor** panel (params/states/transitions row
+  lists, no raw JSON, one `updateStateMachineAsset` per Save). See
+  [scripting.md](./scripting.md#animation-state-machines) and
+  [editor.md](./editor.md#animator-editor).
+- **47-blob tilemap autotiling**: `setTileAutotile` (CLI `autotile set`,
+  MCP `set_tile_autotile`) binds a `Tilemap` char to a blob47 rule — the
+  char's on-screen frame is picked from its 8 neighbours (an 8-bit mask
+  canonicalized down to the 47 visually-distinct shapes) every time the
+  map changes, instead of hand-placing every edge/corner tile variant.
+  `--mapping` overrides individual shape keys with custom frame names
+  when a sheet's slice order doesn't already match the standard
+  `blob_<shapeKey>` template. Editor: a per-char Sprite/Autotile mode
+  toggle in the Inspector's `tileAssets` row list, with a collapsed
+  Advanced-mapping editor for all 47 shapes; both the editor preview and
+  the runtime re-render a map's tiles live the moment a rule or a paint
+  changes, no restart. See [editor.md](./editor.md#autotile).
+- **Live-linked prefabs with per-field overrides**: editing a component
+  property directly on a prefab instance (root or descendant) now records
+  it as an implicit override on the instance's marker instead of just
+  silently drifting until the next full rebuild. `updatePrefab` auto-syncs
+  every other tracked instance of that prefab, across every scene, in the
+  same command — a true **merge**: locals that still exist keep their
+  scene ids, new locals mint fresh ones, removed locals drop out, and
+  every instance's own overrides are re-applied on top (a stale override
+  that no longer fits is dropped with a `PREFAB_OVERRIDE_STALE` warning
+  naming exactly what and why). `revertPrefabOverride` (CLI `prefab
+  revert <scene> <entity> [component] [path]`, MCP
+  `revert_prefab_override`) restores the prefab's own value(s) and clears
+  the matching override records. A structural edit inside an instance
+  (add/remove an entity or component) can't be merged, so it **detaches**
+  that instance instead of guessing (`PREFAB_INSTANCE_DETACHED`).
+  Editor: ember override dots + per-field **Revert** buttons in the
+  Inspector, and a running override count + **Revert all** on the
+  instance banner. See
+  [prefabs.md](./prefabs.md#live-link-semantics-marker-merge-detach).
+- **In-scene particle preview**: a Scene View toolbar **Particles**
+  toggle simulates the currently-selected entity's `ParticleEmitter` live,
+  directly over the canvas, without pressing Play — driven by the same
+  seeded, deterministic `EmitterState` stepper the real runtime uses (not
+  an approximation), so previewing `rate`/`spread`/`gravity`/color edits
+  while dragging Inspector fields matches Play and exported builds
+  exactly. See [editor.md](./editor.md#particle-preview).
+- **Bulk asset import**: `importAssets` (CLI `import asset <paths...>
+  [--recursive]`, MCP `import_assets`) imports many files — or a whole
+  folder, recursively — in one atomic undo/journal entry, auto-suffixing
+  name collisions instead of failing the batch and reporting any bad file
+  in `skipped` (with a code and message) rather than aborting everything
+  else. Editor: the Assets panel's file picker takes multiple files and
+  the whole panel accepts folder drag-and-drop, both funneling through the
+  same command and summarized in one toast. See
+  [editor.md](./editor.md#bulk-import).
+- **Ledger fixes**: `create script` gains `--no-format` (parity with
+  `edit-script`'s existing flag — CLI-created scripts could not
+  previously opt out of house-style reformatting), and `set-settings`'s
+  boolean-flag parsing (`--format-on-save`, etc.) is now strict instead of
+  accepting anything JS treats as truthy.
+- Three existing examples were extended to showcase the new systems
+  rather than adding an 11th: **ember-horde** gained a real `Enemy`
+  prefab with a live-linked "Elite Enemy" override instance,
+  **sky-courier** gained a `courier-motion` state machine driving its
+  idle/walk animation off a `moving` param, and **glow-caves** gained
+  blob47-autotiled cave terrain.
+- Registry grew 65 → 70 commands (`setTileAutotile`,
+  `createStateMachineAsset`, `updateStateMachineAsset`, `importAssets`,
+  `revertPrefabOverride`); MCP grew 64 → 67 command tools (69 tools total
+  including `screenshot`/`get_agent_instructions`).
 
 ## Shipped in v0.11.0
 
@@ -457,21 +553,10 @@ MCP tools, testable in headless playtests) before it gets editor UI.
 
 The end goal, stated so every release aims at it: **a solo dev or an agent
 can take a 2D game from empty project to a polished, distributable game
-without leaving the tool or hitting a wall.** Three waves remain. Each one
-completes a loop rather than scattering features; anything that doesn't
-serve that loop waits (see Non-goals).
-
-### v0.12 — the content ceiling
-
-What games can be stops being tooling-limited:
-
-- **Animation state machines** (SpriteAnimator is frame-loop only today).
-- **Tilemap autotiling** — the single biggest level-design quality-of-life
-  in any 2D engine.
-- **Particle preview** in the editor.
-- **Live-linked prefabs with per-field overrides** (v0.9 shipped tracked
-  stamps; this is the richer model it deliberately deferred).
-- **Bulk asset import** (folder/multi-file `importAsset`).
+without leaving the tool or hitting a wall.** Two waves remain — v0.12's
+content ceiling shipped above. Each one completes a loop rather than
+scattering features; anything that doesn't serve that loop waits (see
+Non-goals).
 
 ### v0.13 — ship your game
 

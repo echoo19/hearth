@@ -55,6 +55,15 @@ describe('ctxDocAt', () => {
     const line = 'ctx.scene.spawn()  -- comment';
     expect(ctxDocAt(line, line.length - 2)).toBeNull();
   });
+
+  it('resolves a nested animator method (wave I: state machines)', () => {
+    const line = 'ctx.animator.setParam(ctx.entity.name, "moving", true)';
+    const col = line.indexOf('setParam') + 3;
+    const entry = ctxDocAt(line, col);
+    expect(entry).not.toBeNull();
+    expect(entry!.path).toBe('animator.setParam');
+    expect(entry!.signature).toContain('setParam(entityRef: string, name: string');
+  });
 });
 
 describe('ctxChainMatchAt', () => {
