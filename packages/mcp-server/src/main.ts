@@ -18,6 +18,7 @@ import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { HearthSession, DEFAULT_MODES, parseModes } from '@hearth/core';
 import { NodeFileSystem, loadPlayerBundle } from '@hearth/core/node';
 import { createRuntimeHooks } from '@hearth/playtest';
+import { packageDesktop } from '@hearth/shipping';
 import { createHearthMcpServer } from './server.js';
 
 function printUsageAndExit(message?: string): never {
@@ -56,7 +57,10 @@ async function main(): Promise<void> {
     session = await HearthSession.open(new NodeFileSystem(), values.project, {
       granted,
       runtime: createRuntimeHooks(),
-      resources: { getPlayerBundle: () => loadPlayerBundle() },
+      resources: {
+        getPlayerBundle: () => loadPlayerBundle(),
+        packageDesktop: (spec) => packageDesktop({ spec }),
+      },
       onLog: (level, message) => console.error(`[hearth-mcp] [${level}] ${message}`),
       source: 'mcp',
     });

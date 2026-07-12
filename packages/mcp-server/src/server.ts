@@ -3,6 +3,7 @@
  * dispatched through the same `HearthSession.execute()` command layer used
  * by the CLI and the editor. One operation vocabulary, every surface.
  */
+import * as path from 'node:path';
 import { z } from 'zod';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
@@ -15,6 +16,7 @@ import {
   PermissionError,
 } from '@hearth/core';
 import { captureScreenshot } from '@hearth/playtest';
+import { zipDirectory } from '@hearth/shipping';
 import { TOOL_SPECS } from './tools.js';
 
 const SERVER_NAME = 'hearth-mcp';
@@ -65,6 +67,21 @@ export function createHearthMcpServer(session: HearthSession, granted: Permissio
       spec.name,
       { description: spec.description, inputSchema: spec.inputShape },
       async (args) => {
+        // export_web's `zip` flag is an MCP/CLI-level post-step, not part of
+        // exportWeb's own paramsSchema — mirrors the CLI's `export web --zip`
+        // handling in packages/cli/src/program.ts (zipExportedDir), but via
+        // @hearth/shipping's zipDirectory since this package already depends
+        // on it for exportDesktop.
+        if (spec.name === 'export_web') {
+          const { zip, ...rest } = (args ?? {}) as { zip?: boolean; [key: string]: unknown };
+          const result = await session.execute<{ outDir: string; slug: string }>(spec.command, rest);
+          if (result.success && zip && result.data) {
+            const zipRel = await zipExportedWebBuild(session.root, result.data.outDir, result.data.slug);
+            (result.data as Record<string, unknown>).zip = zipRel;
+            result.files.push(zipRel);
+          }
+          return jsonResult(result, !result.success);
+        }
         const result = await session.execute(spec.command, args ?? {});
         return jsonResult(result, !result.success);
       },
@@ -138,4 +155,19 @@ export function createHearthMcpServer(session: HearthSession, granted: Permissio
   );
 
   return server;
+}
+
+/**
+ * Zip an exported web build (STORE-only, via @hearth/shipping's
+ * zipDirectory) next to the output folder as `<slug>-web.zip` — same
+ * naming/path semantics as the CLI's `export web --zip` post-step
+ * (zipExportedDir in packages/cli/src/program.ts). Returns the
+ * project-relative zip path. Node-only: operates on real disk paths, same as
+ * the CLI and the exportDesktop packager.
+ */
+async function zipExportedWebBuild(projectRoot: string, outDirRel: string, slug: string): Promise<string> {
+  const outAbs = path.resolve(projectRoot, outDirRel);
+  const zipAbs = path.join(path.dirname(outAbs), `${slug}-web.zip`);
+  await zipDirectory(outAbs, zipAbs);
+  return path.relative(projectRoot, zipAbs).split(path.sep).join('/');
 }

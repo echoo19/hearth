@@ -13,7 +13,12 @@ import {
   StateMachineDataSchema,
   type PermissionMode,
   type SpriteShape,
+  type DesktopPlatform,
 } from '@hearth/core';
+
+// Mirrors core's exportCommands.ts DESKTOP_PLATFORMS (not exported from
+// @hearth/core, since it's private to the exportDesktop command definition).
+const DESKTOP_PLATFORMS = ['darwin-arm64', 'darwin-x64', 'win32-x64', 'linux-x64'] as const satisfies readonly DesktopPlatform[];
 
 export interface ToolSpec {
   /** MCP tool name (snake_case). */
@@ -877,11 +882,28 @@ export const TOOL_SPECS: ToolSpec[] = [
     command: 'exportWeb',
     description:
       'Export a production web build: a static, self-contained playable page (index.html + player + bundle + assets). ' +
-      'singleFile=true inlines everything into one index.html. Validates first. (requires build)',
+      'singleFile=true inlines everything into one index.html. zip=true also writes <project-slug>-web.zip next to ' +
+      'the output folder (itch.io-ready). Validates first. (requires build)',
     permission: 'build',
     inputShape: {
       outDir: z.string().optional(),
       singleFile: z.boolean().optional(),
+      zip: z.boolean().optional(),
+    },
+  },
+  {
+    name: 'export_desktop',
+    command: 'exportDesktop',
+    description:
+      'Export native desktop builds: wraps the web build in an Electron shell and zips one app per platform ' +
+      `(${DESKTOP_PLATFORMS.join(', ')} — all four by default; pass platforms to narrow). Output goes to ` +
+      'export/desktop by default. macOS builds are ad-hoc signed unless HEARTH_MAC_IDENTITY is set (real identity), ' +
+      'and notarized when HEARTH_APPLE_ID/HEARTH_APPLE_PASSWORD/HEARTH_TEAM_ID are also present; Windows/Linux are ' +
+      'never signed. Validates first. (requires build)',
+    permission: 'build',
+    inputShape: {
+      outDir: z.string().optional(),
+      platforms: z.array(z.enum(DESKTOP_PLATFORMS)).min(1).optional(),
     },
   },
 ];
