@@ -1207,6 +1207,44 @@ label.field-label {
   font-size: 11px;
 }
 
+/* Game settings: width/height/rate field wraps its input + inline reject hint. */
+.int-field {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.int-field .input {
+  width: 100%;
+}
+
+/* Sprite-asset picker (icon / loading image): optional thumbnail beside the select. */
+.sprite-picker {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.sprite-picker .select {
+  flex: 1;
+  min-width: 0;
+}
+
+.sprite-picker-thumb {
+  width: 32px;
+  height: 32px;
+  flex: none;
+  background: var(--bg-2);
+  color: var(--ink-faint);
+}
+
+/* Helper caption under the app-icon picker — extra top gap off the row above. */
+.game-settings-hint {
+  margin-top: 4px;
+}
+
 /* Quiet caption under a read-only fallback field: a known product gap, not
    the user's error, so it speaks in the muted ink rather than shouting in
    var(--err) red (that stays reserved for actual validation failures). */

@@ -18,6 +18,14 @@ export interface SceneListItem {
   entityCount: number;
 }
 
+/** What the exported player shows while the game loads (see core's LoadingSettingsSchema). */
+export interface LoadingSettings {
+  backgroundColor: string;
+  /** Sprite asset id shown centered while loading, or null for none. */
+  image: string | null;
+  spinner: boolean;
+}
+
 export interface BuildSettings {
   width: number;
   height: number;
@@ -25,6 +33,9 @@ export interface BuildSettings {
   targetFps: number;
   fixedTimestep: number;
   title: string;
+  /** Sprite asset id used as the native app/window icon, or null for none. */
+  icon: string | null;
+  loading: LoadingSettings;
 }
 
 export interface ProjectInfo {

@@ -20,6 +20,7 @@ export const PANEL_IDS = [
   'diff',
   'agent',
   'input',
+  'gameSettings',
   'live',
   'animator',
 ] as const;

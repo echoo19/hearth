@@ -29,6 +29,7 @@ import { ConsolePanel } from '../components/ConsolePanel';
 import { DiffPanel } from '../components/DiffPanel';
 import { AgentPanel } from '../components/AgentPanel';
 import { InputSettings } from '../components/InputSettings';
+import { GameSettings } from '../components/GameSettings';
 import { LivePanel } from '../components/LivePanel';
 import { AnimatorEditor } from '../components/AnimatorEditor';
 import { restoreLayout, serializeLayout, type PanelId } from './layout';
@@ -44,6 +45,7 @@ export const PANEL_TITLES: Record<PanelId, string> = {
   diff: 'Changes',
   agent: 'Agent',
   input: 'Input',
+  gameSettings: 'Game Settings',
   live: 'Live',
   animator: 'Animator',
 };
@@ -60,6 +62,7 @@ export const VIEW_MENU_PANELS: readonly PanelId[] = [
   'diff',
   'agent',
   'input',
+  'gameSettings',
   'live',
   'animator',
 ];
@@ -152,6 +155,7 @@ const PANEL_COMPONENTS: Record<PanelId, React.FunctionComponent<IDockviewPanelPr
   diff: panelHost(DiffPanel),
   agent: panelHost(AgentPanel),
   input: panelHost(InputSettings),
+  gameSettings: panelHost(GameSettings),
   live: LivePanelHost,
   animator: panelHost(AnimatorEditor),
 };
@@ -250,7 +254,7 @@ export function buildDefaultLayout(api: DockviewApi): void {
       inactive: true,
     }),
   );
-  for (const id of ['console', 'diff', 'agent', 'input'] as const) {
+  for (const id of ['console', 'diff', 'agent', 'input', 'gameSettings'] as const) {
     api.addPanel(addPanelOptions(id, { position: { referencePanel: 'assets', direction: 'within' }, inactive: true }));
   }
   scene.api.setActive();
@@ -265,7 +269,7 @@ function findReference(api: DockviewApi, preferred: readonly PanelId[]): PanelId
 }
 
 const CENTER_PANELS: readonly PanelId[] = ['scene', 'game', 'code', 'animator'];
-const BOTTOM_PANELS: readonly PanelId[] = ['assets', 'console', 'diff', 'agent', 'input', 'live'];
+const BOTTOM_PANELS: readonly PanelId[] = ['assets', 'console', 'diff', 'agent', 'input', 'gameSettings', 'live'];
 
 /**
  * Show a panel: activate it when open, otherwise re-open it in a sensible
