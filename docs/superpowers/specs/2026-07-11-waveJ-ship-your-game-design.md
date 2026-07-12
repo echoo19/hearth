@@ -59,8 +59,12 @@ browser bundle. Responsibilities:
   caller-provided progress callback (CLI prints it, editor streams it).
 - **Icon**: `buildSettings` gains `icon: string | null` (sprite asset id,
   default `null`), mirroring the existing `loading.image` pattern —
-  editable in the editor settings UI (typed asset picker), `set-settings`
-  CLI, and MCP. When set, `@hearth/shipping` converts the PNG to
+  editable in the editor (typed asset picker), `set-settings` CLI, and MCP.
+  Since no editor surface for `buildSettings` exists today, add a **Game
+  Settings dockview panel** (same pattern as the Input panel) with typed
+  controls for the existing fields (title, width/height, background color,
+  fps, loading options) plus the new icon picker — closing a standing
+  editor/agent parity gap. When set, `@hearth/shipping` converts the PNG to
   `.icns`/`.ico` with a pure-JS converter (`png2icons`); when null, use the
   bundled Hearth default icon. This is the wave's only new settings field.
 - **Zipping**: one zip per platform named `<slug>-<platform>.zip` beside the
