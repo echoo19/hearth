@@ -464,7 +464,7 @@ export const useEditor = create<EditorState>((set, get) => {
     entity: string,
     property: string,
   ): void {
-    const key = `${scene} ${entity}`;
+    const key = `${scene}\x00${entity}`;
     const group = groups.get(key) ?? { scene, entity, properties: [] };
     group.properties.push(property);
     groups.set(key, group);
