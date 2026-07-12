@@ -168,16 +168,27 @@ hearth prefab revert Arena "Elite Enemy" SpriteRenderer color
 ### Implicit overrides
 
 Editing a component property on any member of a live instance —
-`setComponentProperty`/`hearth set`/`set_component_property`, or the batch
-`setProperties`/`set-many`/`set_properties` — records that write as an
-**implicit override** on the instance root's marker automatically; there is
-no separate "record an override" step or command. The instance root's own
-`name`, `enabled`, and `Transform.position` are the exception: those are
-per-instance **placement**, not overrides, so moving/renaming/toggling the
-root itself is never recorded (moving a *descendant* still records — only
-the root's own position is exempt). Writing the same `(entity, component,
-path)` again replaces the recorded value in place rather than appending a
-second record.
+`setComponentProperty`/`hearth set`/`set_component_property`, the batch
+`setProperties`/`set-many`/`set_properties`, or a `moveEntity` position
+write — records that write as an **implicit override** on the instance
+root's marker automatically; there is no separate "record an override" step
+or command. `name` and `enabled` are **not** component properties, so they
+are never recorded as overrides for **any** entity, root or descendant —
+there's no code path that writes one. The one true exception is the
+instance root's own `Transform.position`: that's per-instance
+**placement**, not an override, so moving the root itself is never
+recorded — a descendant's `Transform.position` *is* recorded like any other
+property write.
+
+This has a sharp consequence: a merge sync (below) rebuilds every
+non-root entity in the subtree fresh from the prefab's payload, so a
+descendant you renamed or enabled/disabled by hand — with no override
+record backing it up — **silently reverts to the prefab's values on the
+next `updatePrefab`/`syncPrefabInstances`**. If you need a per-instance name
+or enabled state on a descendant to survive a sync, there's no supported
+way to do it today; only component-property values do. Writing the same
+`(entity, component, path)` again replaces the recorded value in place
+rather than appending a second record.
 
 ### Merge sync (`updatePrefab` / `syncPrefabInstances`)
 
@@ -221,8 +232,22 @@ warning names which instance and why. A detached entity is a normal entity
 from then on — nothing prevents re-linking it by hand (delete and
 `instantiatePrefab` fresh, or ignore it and keep editing freely).
 
+Reparenting counts as structural too, whenever it changes the subtree's
+**membership**: `moveEntity` detaches the affected instance if it moves a
+member entity *out of* the subtree (to a parent outside it), moves a member
+*within* the subtree (reparenting one existing member under another), or
+moves a foreign entity *into* the subtree as a new child. Duplicating a
+member that isn't the instance root also detaches (the duplicate changes
+the subtree's shape); duplicating the instance **root** is the one
+exception — that creates a second, independent, live-linked instance of the
+same prefab instead of detaching anything. A plain reparent of the instance
+**root itself** — moving the whole instance to a new parent elsewhere in
+the hierarchy, without touching which entities belong to it — does **not**
+detach; the subtree's membership hasn't changed, only where it sits.
+
 Property edits — however many, on the root or any descendant — never
-detach; only structural ones do.
+detach; only structural edits, including the membership-altering
+reparents/duplicates above, do.
 
 ## Validation
 

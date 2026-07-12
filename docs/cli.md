@@ -107,9 +107,10 @@ default stick deadzone (`0`-`1`, default `0.15`), overridable per axis. See
 Input panel.
 
 **Scripts** (code-edit, except `check-script`/`script search` which are
-read-only): `create script <name> [--language lua|js] [--source-file f]`
-(Lua is the default), `attach script <scene> <entity> <path>
-[--params '<json>']`, plus the `script edit|check|format|search|replace`
+read-only): `create script <name> [--language lua|js] [--source-file f]
+[--no-format]` (Lua is the default; `--no-format` skips format-on-save for
+this write, saving the source verbatim), `attach script <scene> <entity>
+<path> [--params '<json>']`, plus the `script edit|check|format|search|replace`
 group — see [The `script` group](#the-script-group) below.
 
 **Assets** (asset-edit): `create asset sprite <name> --shape circle --color

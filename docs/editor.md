@@ -421,7 +421,13 @@ vanishing or aborting the whole batch.
 - **Structural edits detach**: adding/removing a child entity or a
   component inside an instance breaks its live link — the instance's
   marker is removed (a `PREFAB_INSTANCE_DETACHED` warning explains why)
-  and it becomes a normal, unlinked entity. Property edits never detach.
+  and it becomes a normal, unlinked entity. Reparenting counts too, when it
+  changes the subtree's membership: moving a member out of or within the
+  subtree, or moving a foreign entity into it, detaches; duplicating a
+  non-root member also detaches (duplicating the instance root instead
+  spins up a second, independent, live-linked instance). Moving the
+  instance root itself elsewhere in the hierarchy — without changing which
+  entities belong to it — does not detach. Property edits never detach.
 
 See [prefabs.md](./prefabs.md#editor-flows) for the full data model
 behind all of this — the marker shape, implicit override recording, and
