@@ -83,4 +83,26 @@ describe('POST /api/export/web handler', () => {
     expect(body.success).toBe(false);
     expect(body.errors[0].code).toBe('NO_PROJECT');
   });
+
+  it('with zip=true, writes <slug>-web.zip next to the output folder and reports its path', async () => {
+    process.env.HEARTH_TOOLS_DIR = toolsDir;
+    const result = await ctx.exportWebBuild(projectPath, 'export/web', false, true);
+    expect(result.status).toBe(200);
+    const body = result.body as { success: boolean; data: { slug: string; zip?: string; files: string[] } };
+    expect(body.success).toBe(true);
+    // Mirrors the CLI: <slug>-web.zip sits next to (not inside) the out dir.
+    const expectedZipRel = `export/${body.data.slug}-web.zip`;
+    expect(body.data.zip).toBe(expectedZipRel);
+    expect(body.data.files).toContain(expectedZipRel);
+    const stat = await fsp.stat(path.join(projectPath, expectedZipRel));
+    expect(stat.size).toBeGreaterThan(0);
+  });
+
+  it('with zip omitted, writes no zip and reports no zip path', async () => {
+    process.env.HEARTH_TOOLS_DIR = toolsDir;
+    const result = await ctx.exportWebBuild(projectPath, 'export/nozip', false);
+    const body = result.body as { success: boolean; data: { zip?: string } };
+    expect(body.success).toBe(true);
+    expect(body.data.zip).toBeUndefined();
+  });
 });

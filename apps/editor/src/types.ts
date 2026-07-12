@@ -2,9 +2,18 @@
  * Client-side shapes for data crossing the /api boundary.
  * Command payload types mirror what the core inspect commands return.
  */
-import type { CommandResult, InputMappings, JournalEntry, ProjectDiff, ScriptDiagnostic, StateMachineData } from '@hearth/core';
+import type {
+  CommandResult,
+  DesktopBuildResult,
+  DesktopPlatform,
+  InputMappings,
+  JournalEntry,
+  ProjectDiff,
+  ScriptDiagnostic,
+  StateMachineData,
+} from '@hearth/core';
 
-export type { CommandResult, JournalEntry, ProjectDiff, ScriptDiagnostic };
+export type { CommandResult, DesktopBuildResult, DesktopPlatform, JournalEntry, ProjectDiff, ScriptDiagnostic };
 
 export interface Vec2 {
   x: number;
@@ -167,4 +176,52 @@ export interface HistoryEntry {
 export interface HistoryList {
   entries: HistoryEntry[];
   cursor: number;
+}
+
+// ---------------------------------------------------------------------------
+// Desktop / web export (Wave J)
+// ---------------------------------------------------------------------------
+
+/** Signing rung the host environment selects (mirrors @hearth/shipping). */
+export type SigningMode = 'adhoc' | 'identity' | 'identity+notarize';
+
+/** GET /api/export/capability payload. */
+export interface ExportCapability {
+  ok: boolean;
+  capability: { mode: SigningMode; identity?: string };
+  platforms: DesktopPlatform[];
+}
+
+/** exportDesktop's result data (carried by an export-done frame). */
+export interface DesktopExportResult {
+  outDir: string;
+  slug: string;
+  builds: DesktopBuildResult[];
+}
+
+/** Packaging stage a progress frame reports (mirrors @hearth/shipping). */
+export type ExportStage = 'stage' | 'download' | 'package' | 'sign' | 'notarize' | 'zip';
+
+/**
+ * WS frames for a running desktop export job (POST /api/export/desktop).
+ * Progress streams as `export-progress`, then exactly one terminal frame:
+ * `export-done` on success or `export-error` on failure (a per-platform
+ * failure carries the `platform`). Task 7's dialog consumes these.
+ */
+export type ExportProgressFrame = {
+  type: 'export-progress';
+  jobId: string;
+  platform: DesktopPlatform | null;
+  stage: ExportStage;
+  message: string;
+};
+export type ExportDoneFrame = { type: 'export-done'; jobId: string; result: DesktopExportResult };
+export type ExportErrorFrame = { type: 'export-error'; jobId: string; platform?: DesktopPlatform; message: string };
+export type ExportFrame = ExportProgressFrame | ExportDoneFrame | ExportErrorFrame;
+
+/** POST /api/export/desktop response. */
+export interface StartDesktopExportResult {
+  ok: boolean;
+  jobId?: string;
+  error?: string;
 }

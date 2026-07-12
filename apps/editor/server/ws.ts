@@ -20,12 +20,33 @@
 import { WebSocketServer, WebSocket } from 'ws';
 import type { Server as HttpServer, IncomingMessage } from 'node:http';
 import path from 'node:path';
-import { type JournalEntry } from '@hearth/core';
+import { type JournalEntry, type DesktopPlatform, type DesktopBuildResult } from '@hearth/core';
 import { NodeFileSystem } from '@hearth/core/node';
 import { startJournalWatcher } from './journalWatcher.js';
 import type { ProjectServerContext } from './projectServer.js';
 import { PtyManager, type PtyBackend, type PtyHandle } from './ptyManager.js';
 import { isRequestAllowed } from './originGuard.js';
+
+/** Desktop-packaging stages, mirroring @hearth/shipping's PackageStage. */
+export type ExportStage = 'stage' | 'download' | 'package' | 'sign' | 'notarize' | 'zip';
+
+/** Result payload carried by an export-done frame (exportDesktop's data). */
+export interface DesktopExportResult {
+  outDir: string;
+  slug: string;
+  builds: DesktopBuildResult[];
+}
+
+/**
+ * Server->client frames for a running desktop export job (see
+ * ctx.startDesktopExport). Progress streams as export-progress, then exactly
+ * one terminal frame: export-done on success or export-error on failure. A
+ * per-platform failure carries the `platform` it failed on.
+ */
+export type ExportFrame =
+  | { type: 'export-progress'; jobId: string; platform: DesktopPlatform | null; stage: ExportStage; message: string }
+  | { type: 'export-done'; jobId: string; result: DesktopExportResult }
+  | { type: 'export-error'; jobId: string; platform?: DesktopPlatform; message: string };
 
 export type WsFrame =
   | { type: 'journal'; entries: JournalEntry[] }
@@ -35,7 +56,8 @@ export type WsFrame =
   | { type: 'pty-resize'; cols: number; rows: number }
   | { type: 'pty-start'; command: 'claude' | 'codex' | 'shell'; mode?: string }
   | { type: 'pty-stop' } // client -> server: explicit kill (the panel's Stop button)
-  | { type: 'pty-error'; message: string };
+  | { type: 'pty-error'; message: string }
+  | ExportFrame;
 
 interface ProjectChannel {
   sockets: Set<WebSocket>;
@@ -80,6 +102,15 @@ export function attachWebSocket(httpServer: HttpServer, ctx: ProjectServerContex
       if (socket.readyState === WebSocket.OPEN) socket.send(text);
     }
   }
+
+  // Desktop export progress: ctx.startDesktopExport runs the job off-request
+  // and emits frames on ctx.exportBus tagged with the project root. Fan them
+  // out to every socket subscribed to that root (like journal frames).
+  const onExportFrame = ({ root, frame }: { root: string; frame: ExportFrame }): void => {
+    const channel = channels.get(root);
+    if (channel) broadcast(channel.sockets, frame);
+  };
+  ctx.exportBus.on('frame', onExportFrame);
 
   /** Starts a pty for `root` and routes its output back to `socket` only. */
   function startPty(root: string, socket: WebSocket, command: 'claude' | 'codex' | 'shell'): void {
@@ -218,6 +249,7 @@ export function attachWebSocket(httpServer: HttpServer, ctx: ProjectServerContex
   });
 
   httpServer.on('close', () => {
+    ctx.exportBus.off('frame', onExportFrame);
     for (const channel of channels.values()) channel.dispose();
     channels.clear();
     ptyOwners.clear();

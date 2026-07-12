@@ -183,6 +183,14 @@ describe('classifyLocal', () => {
       expect(kinds(classifyLocal(cmd, {}, {}))).toEqual(['none']);
     }
   });
+
+  it('exportDesktop / exportWeb → none explicitly (export writes files, never touches the running scene)', () => {
+    // These aren't read-only (they write build output), but they never change
+    // the running preview — so they must map to 'none' EXPLICITLY rather than
+    // falling through to the structural restart badge.
+    expect(kinds(classifyLocal('exportDesktop', {}, {}))).toEqual(['none']);
+    expect(kinds(classifyLocal('exportWeb', {}, {}))).toEqual(['none']);
+  });
 });
 
 describe('classifyJournal', () => {
@@ -310,5 +318,10 @@ describe('classifyJournal', () => {
   it('external importAssets / createStateMachineAsset → none', () => {
     expect(kinds(classifyJournal(entry({ command: 'importAssets', detail: { count: 2, types: ['sprite'] } })))).toEqual(['none']);
     expect(kinds(classifyJournal(entry({ command: 'createStateMachineAsset', detail: { name: 'hero' } })))).toEqual(['none']);
+  });
+
+  it('external exportDesktop / exportWeb → none explicitly (never a structural restart badge)', () => {
+    expect(kinds(classifyJournal(entry({ command: 'exportDesktop' })))).toEqual(['none']);
+    expect(kinds(classifyJournal(entry({ command: 'exportWeb' })))).toEqual(['none']);
   });
 });

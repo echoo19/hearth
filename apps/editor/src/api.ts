@@ -1,7 +1,16 @@
 /**
  * Thin client over the project server's /api routes.
  */
-import type { CommandResult, ExampleProject, ProjectInfo, RecentProject, ServerMeta } from './types';
+import type {
+  CommandResult,
+  DesktopPlatform,
+  ExampleProject,
+  ExportCapability,
+  ProjectInfo,
+  RecentProject,
+  ServerMeta,
+  StartDesktopExportResult,
+} from './types';
 import type { AgentPermissionMode, DetectAgentsResult } from '../server/agentSetup';
 
 async function postJson<T>(url: string, body: unknown): Promise<T> {
@@ -92,15 +101,48 @@ export interface ExportWebData {
   files: string[];
   title: string;
   slug: string;
+  /** Set when `zip` was requested: project-relative path of `<slug>-web.zip`. */
+  zip?: string;
 }
 
-/** Run the exportWeb command (static playable web build). */
+/**
+ * Run the exportWeb command (static playable web build). With `zip`, also
+ * writes `<slug>-web.zip` next to the output folder and reports its path in
+ * `data.zip`.
+ */
 export function apiExportWeb(
   project: string,
   outDir: string,
   singleFile: boolean,
+  zip = false,
 ): Promise<CommandResult<ExportWebData>> {
-  return postJson<CommandResult<ExportWebData>>('/api/export/web', { project, outDir, singleFile });
+  return postJson<CommandResult<ExportWebData>>('/api/export/web', { project, outDir, singleFile, zip });
+}
+
+/**
+ * Start a desktop export job. Returns `{ ok, jobId }` immediately; progress
+ * arrives over the ws as export-progress/-done/-error frames (see types.ts).
+ * A second start while one is running comes back `{ ok: false }` (HTTP 409).
+ */
+export function apiExportDesktop(
+  project: string,
+  outDir?: string,
+  platforms?: DesktopPlatform[],
+): Promise<StartDesktopExportResult> {
+  return postJson<StartDesktopExportResult>('/api/export/desktop', { project, outDir, platforms });
+}
+
+/** Signing capability + the desktop platform ids the export dialog offers. */
+export async function apiExportCapability(): Promise<ExportCapability | null> {
+  try {
+    const res = await fetch('/api/export/capability');
+    const body = await res.json();
+    return body.ok ? (body as ExportCapability) : null;
+  } catch (err) {
+    // Distinct from a successful check; log so a network hiccup isn't silent.
+    console.error('apiExportCapability: request failed', err);
+    return null;
+  }
 }
 
 /** URL for a raw project file (sprites, scripts, scene JSON...). */

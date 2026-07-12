@@ -82,6 +82,15 @@ function reloadActions(command: string, detail: Record<string, unknown> | undefi
 const ASSETS_PANEL_ONLY = new Set(['importAssets', 'createStateMachineAsset']);
 
 /**
+ * Export commands write build artifacts to disk but never change the running
+ * scene, so a live mutation observed for them is a no-op. Kept explicit (not
+ * folded into READ_ONLY — they aren't read-only, they mutate the filesystem)
+ * so they resolve to `none` rather than falling through to the structural
+ * restart badge.
+ */
+const EXPORT_ONLY = new Set(['exportDesktop', 'exportWeb']);
+
+/**
  * Wave I command → live action, shared by the local and journal paths so an
  * external agent behaves identically to an in-editor exec. `target` is the
  * {scene, entity} the command wrote (when it records one); `assetId` is the
@@ -133,6 +142,7 @@ function fallback(command: string): LiveAction[] {
  * journal happens to record. `data` is the command's result payload.
  */
 export function classifyLocal(command: string, params: Record<string, unknown>, data: unknown): LiveAction[] {
+  if (EXPORT_ONLY.has(command)) return [{ kind: 'none' }];
   if (command === 'setComponentProperty') {
     return [
       {
@@ -222,6 +232,7 @@ export function classifyLocal(command: string, params: Record<string, unknown>, 
 export function classifyJournal(entry: JournalEntry): LiveAction[] {
   if (entry.source === 'editor') return [{ kind: 'none' }];
   if (!entry.ok) return [{ kind: 'none' }];
+  if (EXPORT_ONLY.has(entry.command)) return [{ kind: 'none' }];
 
   const reload = reloadActions(entry.command, entry.detail);
   if (reload) return reload;

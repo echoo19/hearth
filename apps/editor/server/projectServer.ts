@@ -16,6 +16,8 @@ import type { Plugin } from 'vite';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import path from 'node:path';
 import os from 'node:os';
+import { EventEmitter } from 'node:events';
+import { randomUUID } from 'node:crypto';
 import { promises as fsp, accessSync } from 'node:fs';
 import {
   HearthSession,
@@ -26,10 +28,13 @@ import {
   JournalStore,
   type CommandResult,
   type RuntimeHooks,
+  type DesktopBuildSpec,
+  type DesktopBuildResult,
+  type DesktopPlatform,
 } from '@hearth/core';
 import { NodeFileSystem, loadPlayerBundle } from '@hearth/core/node';
 import { isRequestAllowed } from './originGuard.js';
-import { attachWebSocket } from './ws.js';
+import { attachWebSocket, type ExportFrame, type ExportStage, type DesktopExportResult } from './ws.js';
 import { detectAgents, prepareMcpConfig, McpConfigParseError, type AgentPermissionMode } from './agentSetup.js';
 
 export { attachWebSocket } from './ws.js';
@@ -52,12 +57,30 @@ export interface FileResult {
   body?: unknown;
 }
 
+/**
+ * The desktop packager, shaped like @hearth/shipping's `packageDesktop`.
+ * Injectable so tests can stand in a stub that never spawns Electron.
+ */
+export type PackageDesktopFn = (opts: {
+  spec: DesktopBuildSpec;
+  onProgress?: (e: { platform: DesktopPlatform | null; stage: ExportStage; message: string }) => void;
+}) => Promise<DesktopBuildResult[]>;
+
 export interface ProjectServerOptions {
   /** Where the recent-projects list is persisted. Default: ~/.hearth/recent-projects.json */
   recentsFile?: string;
   /** Monorepo root (for example projects + agent docs). Auto-detected by default. */
   repoRoot?: string;
+  /**
+   * Test seam: override the desktop packager. Defaults to a lazy import of
+   * @hearth/shipping's `packageDesktop` (which needs Node + Electron), so
+   * suites can inject a stub and never touch the real toolchain.
+   */
+  packageDesktop?: PackageDesktopFn;
 }
+
+/** Native desktop targets offered by exportDesktop, surfaced on the capability route. */
+const DESKTOP_PLATFORMS: DesktopPlatform[] = ['darwin-arm64', 'darwin-x64', 'win32-x64', 'linux-x64'];
 
 interface RecentEntry {
   path: string;
@@ -207,6 +230,32 @@ export function createProjectServerContext(options: ProjectServerOptions = {}) {
     options.recentsFile ?? path.join(os.homedir(), '.hearth', 'recent-projects.json');
   const repoRoot = options.repoRoot ?? findRepoRoot(process.cwd());
 
+  // Desktop packager: the injected stub in tests, else a lazy import of the
+  // real (Electron-backed) @hearth/shipping entry point, so a plain editor
+  // session never loads the packaging toolchain until a desktop export runs.
+  const packageDesktopImpl: PackageDesktopFn =
+    options.packageDesktop ??
+    (async (opts) => {
+      const { packageDesktop } = await import('@hearth/shipping');
+      return packageDesktop(opts);
+    });
+
+  // Desktop-export progress bus. One export runs at a time; the running job
+  // routes packageDesktop's onProgress and its terminal result onto this bus,
+  // tagged with the project root, and ws.ts fans frames out to that root's
+  // sockets. Emitting here (not straight to sockets) keeps projectServer
+  // transport-agnostic — the same as the journal/pty split.
+  const exportBus = new EventEmitter();
+  interface ExportJob {
+    jobId: string;
+    root: string;
+    done: boolean;
+  }
+  let activeExport: ExportJob | null = null;
+  const emitExport = (root: string, frame: ExportFrame): void => {
+    exportBus.emit('frame', { root, frame });
+  };
+
   let runtimeHooksPromise: Promise<RuntimeHooks | undefined> | null = null;
   function loadRuntimeHooks(): Promise<RuntimeHooks | undefined> {
     if (!runtimeHooksPromise) {
@@ -271,7 +320,26 @@ export function createProjectServerContext(options: ProjectServerOptions = {}) {
       runtime,
       // exportWeb needs the built web player: HEARTH_TOOLS_DIR in the
       // packaged app, packages/runtime/player/ from a repo checkout.
-      resources: { getPlayerBundle: () => loadPlayerBundle(repoRoot) },
+      // exportDesktop additionally needs a desktop packager; its onProgress is
+      // routed to the export bus as the running job's stream (one job at a
+      // time, so `activeExport` unambiguously identifies whose progress it is).
+      resources: {
+        getPlayerBundle: () => loadPlayerBundle(repoRoot),
+        packageDesktop: (spec) =>
+          packageDesktopImpl({
+            spec,
+            onProgress: (e) => {
+              if (!activeExport) return;
+              emitExport(activeExport.root, {
+                type: 'export-progress',
+                jobId: activeExport.jobId,
+                platform: e.platform,
+                stage: e.stage,
+                message: e.message,
+              });
+            },
+          }),
+      },
       source: 'editor',
     });
     sessions.set(root, session);
@@ -351,6 +419,8 @@ export function createProjectServerContext(options: ProjectServerOptions = {}) {
   const ctx = {
     repoRoot,
     sessions,
+    /** Desktop-export progress bus; ws.ts subscribes and fans frames to sockets. */
+    exportBus,
 
     async openProject(rawPath: unknown): Promise<JsonResult> {
       if (typeof rawPath !== 'string' || rawPath.trim() === '') {
@@ -441,13 +511,122 @@ export function createProjectServerContext(options: ProjectServerOptions = {}) {
 
     /**
      * Run the exportWeb command (static playable web build). Always 200; the
-     * CommandResult envelope carries success/errors, like /api/command.
+     * CommandResult envelope carries success/errors, like /api/command. When
+     * `zip` is true and the export succeeds, the output folder is archived to
+     * `<slug>-web.zip` next to it (mirrors the CLI's `export web --zip`
+     * naming), and the project-relative zip path is added to the result.
      */
-    async exportWebBuild(project: unknown, outDir: unknown, singleFile: unknown): Promise<JsonResult> {
+    async exportWebBuild(project: unknown, outDir: unknown, singleFile: unknown, zip?: unknown): Promise<JsonResult> {
       const params: Record<string, unknown> = {};
       if (typeof outDir === 'string' && outDir.trim() !== '') params.outDir = outDir;
       if (typeof singleFile === 'boolean') params.singleFile = singleFile;
-      return runCommandImpl(project, 'exportWeb', params);
+      const jsonResult = await runCommandImpl(project, 'exportWeb', params);
+
+      if (zip === true && typeof project === 'string') {
+        const body = jsonResult.body as CommandResult<{
+          outDir: string;
+          slug: string;
+          zip?: string;
+          files: string[];
+        }>;
+        if (body.success && body.data) {
+          const root = path.resolve(project);
+          const outAbs = path.resolve(root, body.data.outDir);
+          // Next to (not inside) the out dir, so index.html sits at the zip
+          // root — what itch.io expects. Same layout as the CLI helper.
+          const zipAbs = path.join(path.dirname(outAbs), `${body.data.slug}-web.zip`);
+          const { zipDirectory } = await import('@hearth/shipping');
+          await zipDirectory(outAbs, zipAbs);
+          const zipRel = path.relative(root, zipAbs).split(path.sep).join('/');
+          body.data.zip = zipRel;
+          body.data.files.push(zipRel);
+          body.files.push(zipRel);
+        }
+      }
+      return jsonResult;
+    },
+
+    /**
+     * GET /api/export/capability: the signing rung this environment selects
+     * (adhoc / identity / identity+notarize) plus the desktop platform ids the
+     * export dialog offers. Read-only; drives the dialog's pre-run summary.
+     */
+    async exportCapability(): Promise<JsonResult> {
+      const { describeSigningCapability } = await import('@hearth/shipping');
+      return {
+        status: 200,
+        body: { ok: true, capability: describeSigningCapability(), platforms: DESKTOP_PLATFORMS },
+      };
+    },
+
+    /**
+     * POST /api/export/desktop: start ONE desktop export job. Returns
+     * `{ ok, jobId }` immediately; the job runs off-request and streams
+     * progress over the ws (export-progress) then a terminal export-done /
+     * export-error. A second start while one is running is refused with a
+     * 409 (the caller should wait for the running job to finish).
+     */
+    async startDesktopExport(project: unknown, outDir: unknown, platforms: unknown): Promise<JsonResult> {
+      if (typeof project !== 'string' || project.trim() === '') {
+        return { status: 400, body: { ok: false, error: 'Missing "project" (absolute project folder).' } };
+      }
+      if (activeExport && !activeExport.done) {
+        return {
+          status: 409,
+          body: {
+            ok: false,
+            error: 'A desktop export is already running. Wait for it to finish before starting another.',
+            jobId: activeExport.jobId,
+          },
+        };
+      }
+      let session: HearthSession;
+      try {
+        session = await getSession(project);
+      } catch (err) {
+        const status = (err as { status?: number }).status ?? 500;
+        return { status, body: { ok: false, error: (err as Error).message } };
+      }
+
+      const root = path.resolve(project);
+      const jobId = randomUUID();
+      const job: ExportJob = { jobId, root, done: false };
+      activeExport = job;
+
+      const params: Record<string, unknown> = {};
+      if (typeof outDir === 'string' && outDir.trim() !== '') params.outDir = outDir;
+      if (Array.isArray(platforms) && platforms.length > 0) params.platforms = platforms;
+
+      // Fire-and-forget: the response returns now with the jobId; results land
+      // on the export bus. Any throw is turned into an export-error frame.
+      void (async () => {
+        try {
+          const result = await session.execute('exportDesktop', params);
+          await syncSeenSeq(root);
+          if (result.success) {
+            emitExport(root, { type: 'export-done', jobId, result: result.data as DesktopExportResult });
+          } else {
+            emitExport(root, {
+              type: 'export-error',
+              jobId,
+              message: result.errors[0]?.message ?? 'Desktop export failed.',
+            });
+          }
+        } catch (err) {
+          const platform = (err as { platform?: DesktopPlatform }).platform;
+          emitExport(root, {
+            type: 'export-error',
+            jobId,
+            ...(platform ? { platform } : {}),
+            message: (err as Error).message,
+          });
+        } finally {
+          job.done = true;
+          if (activeExport === job) activeExport = null;
+        }
+      })();
+
+      return { status: 200, body: { ok: true, jobId } };
     },
 
     /**
@@ -904,7 +1083,16 @@ async function route(ctx: ProjectServerContext, req: IncomingMessage, res: Serve
     }
     case 'POST /api/export/web': {
       const body = await readJsonBody(req);
-      const result = await ctx.exportWebBuild(body.project, body.outDir, body.singleFile);
+      const result = await ctx.exportWebBuild(body.project, body.outDir, body.singleFile, body.zip);
+      return sendJson(res, result.status, result.body);
+    }
+    case 'POST /api/export/desktop': {
+      const body = await readJsonBody(req);
+      const result = await ctx.startDesktopExport(body.project, body.outDir, body.platforms);
+      return sendJson(res, result.status, result.body);
+    }
+    case 'GET /api/export/capability': {
+      const result = await ctx.exportCapability();
       return sendJson(res, result.status, result.body);
     }
     case 'GET /api/commands': {
