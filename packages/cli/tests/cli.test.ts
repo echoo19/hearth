@@ -793,6 +793,31 @@ describe('hearth prefab', () => {
     expect(clone.data.components.SpriteRenderer.color).toBe('#123456');
   });
 
+  it('prefab revert <scene> <entity> [component] [path] restores an override to the prefab value', async () => {
+    const dir = path.join(tmpRoot, 'prefab-revert');
+    await fsp.mkdir(dir, { recursive: true });
+    await runCli(['init', 'Prefab Revert', '--dir', dir, '--json'], tmpRoot);
+    await runCli(['prefab', 'create', 'Main', 'Player', 'PlayerPrefab', '--json'], dir);
+    await runCli(['prefab', 'place', 'PlayerPrefab', 'Main', '--name', 'Player Two', '--json'], dir);
+
+    // Override the placed instance's color, then revert it via the leading-scene form.
+    const set = await runCli(['set', 'Main', 'Player Two', 'SpriteRenderer.color', '#123456', '--json'], dir);
+    expect(set.code).toBe(0);
+
+    const revert = await runCli(
+      ['prefab', 'revert', 'Main', 'Player Two', 'SpriteRenderer', 'color', '--json'],
+      dir,
+    );
+    expect(revert.code).toBe(0);
+    const envelope = parseJson(revert.stdout);
+    expect(envelope.success).toBe(true);
+    expect(envelope.command).toBe('revertPrefabOverride');
+
+    // Color restored to the prefab's value (the source Player's default color).
+    const inspect = parseJson((await runCli(['inspect', 'entity', 'Main', 'Player Two', '--json'], dir)).stdout);
+    expect(inspect.data.components.SpriteRenderer.color).toBe('#3498db');
+  });
+
   it('prefab update errors PREFAB_NOT_INSTANCE for an entity without a matching marker', async () => {
     const dir = path.join(tmpRoot, 'prefab-update-not-instance');
     await fsp.mkdir(dir, { recursive: true });

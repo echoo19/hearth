@@ -194,7 +194,49 @@ export const duplicateEntity = defineCommand({
       };
     }
 
+    // Prefab-instance handling. If the duplicated entity is itself an instance
+    // ROOT, the copy stays an independent instance — but every scene id in its
+    // (cloned) marker must be REMAPPED via the same old->new id map used for the
+    // subtree, or the copy would share ids with the original. Any local id that
+    // can't be remapped means the member wasn't part of the duplicated subtree,
+    // so the marker is dropped rather than shipping stale ids. (Generalized over
+    // all copies so a nested instance marker deeper in the subtree is remapped
+    // or stripped too, never left pointing at the original's entities.)
+    const rootMembership = findInstanceMembership(scene, root.id);
+    const dupIsInstanceRoot = rootMembership?.rootId === root.id;
+    for (const copy of copies) {
+      const marker = copy.prefab;
+      if (!marker) continue;
+      const remappedIds: Record<string, string> = {};
+      let ok = true;
+      for (const [localId, oldSceneId] of Object.entries(marker.ids ?? {})) {
+        const mapped = idMap.get(oldSceneId);
+        if (!mapped) {
+          ok = false;
+          break;
+        }
+        remappedIds[localId] = mapped;
+      }
+      if (!ok) {
+        delete copy.prefab;
+        continue;
+      }
+      const remappedOverrides = (marker.overrides ?? []).flatMap((o) => {
+        const mappedEntity = idMap.get(o.entity);
+        return mappedEntity ? [{ ...structuredClone(o), entity: mappedEntity }] : [];
+      });
+      copy.prefab = { asset: marker.asset, ids: remappedIds, overrides: remappedOverrides };
+    }
+
     scene.entities.push(...copies);
+    // Duplicating an entity that lands INSIDE a live instance's subtree (its
+    // parent is an instance member and it isn't itself the instance root) is a
+    // structural edit on that instance: detach it. The copy of an instance root
+    // lands OUTSIDE the source instance (its parent is the source root's parent),
+    // so this is skipped for the root case handled above.
+    if (!dupIsInstanceRoot && root.parentId) {
+      detachOnStructuralEdit(ctx, scene, root.parentId);
+    }
     ctx.changed({ kind: 'entity', id: rootCopy.id, name: rootCopy.name, scene: scene.id, action: 'created' });
     ctx.suggest(`inspectEntity --scene ${scene.id} ${rootCopy.id}`);
     return { entityId: rootCopy.id, name: rootCopy.name, copiedCount: copies.length };
@@ -235,6 +277,17 @@ export const moveEntity = defineCommand({
         );
       }
       entity.parentId = newParentId;
+      // Reparent detach policy: a membership-altering move breaks the live link.
+      // Moving a NON-root member (out of, or within, its subtree) detaches that
+      // member's instance; moving any entity INTO an instance subtree (the new
+      // parent is a member) detaches the target instance. An instance root's own
+      // reparent under a non-instance parent leaves the subtree intact and does
+      // NOT detach.
+      const membership = findInstanceMembership(scene, entity.id);
+      if (membership && membership.rootId !== entity.id) {
+        detachOnStructuralEdit(ctx, scene, entity.id);
+      }
+      if (newParentId) detachOnStructuralEdit(ctx, scene, newParentId);
     }
     ctx.changed({ kind: 'entity', id: entity.id, name: entity.name, scene: scene.id, action: 'modified' });
     return {

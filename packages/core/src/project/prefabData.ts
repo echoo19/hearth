@@ -382,11 +382,22 @@ export function buildMergedInstance(scene: Scene, rootId: string, data: PrefabDa
       overridesDropped.push(o);
       continue;
     }
-    (target.components as Record<string, unknown>)[o.component] = setAtPath(
-      current as Record<string, unknown>,
-      parts,
-      structuredClone(o.value),
-    );
+    // Re-apply the override, then re-parse via the component schema (same
+    // posture as revertInstanceOverrides). A value that no longer fits the
+    // prefab's current schema shape (e.g. a numeric override on a field the
+    // prefab turned into a string) is dropped as stale rather than written —
+    // the rebuilt prefab value is kept so the component stays valid.
+    const applied = setAtPath(current as Record<string, unknown>, parts, structuredClone(o.value));
+    if (isComponentType(o.component)) {
+      const parsed = COMPONENT_SCHEMAS[o.component].safeParse(applied);
+      if (!parsed.success) {
+        overridesDropped.push(o);
+        continue;
+      }
+      (target.components as Record<string, unknown>)[o.component] = parsed.data;
+    } else {
+      (target.components as Record<string, unknown>)[o.component] = applied;
+    }
     overridesPreserved.push(o);
   }
 

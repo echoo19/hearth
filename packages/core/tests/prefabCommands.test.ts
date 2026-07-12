@@ -487,18 +487,19 @@ describe('syncPrefabInstances', () => {
   it('does not crash when one instance is nested inside another same-prefab instance', async () => {
     const { session, store, asset, sceneAId, sceneBId, firstRootId, secondRootId } = await makeScenario();
 
-    // Reparent instance 2 UNDER instance 1 — now instance 2 lives inside
-    // instance 1's subtree. Both are still marked instances of the prefab, so
-    // both are collected as "roots" up front. Rebuilding instance 1 first
-    // deletes its whole subtree (instance 2 included) — the old code then hit
+    // Nest instance 2 UNDER instance 1 — now instance 2 lives inside instance
+    // 1's subtree. Both are still marked instances of the prefab, so both are
+    // collected as "roots" up front. Rebuilding instance 1 first deletes its
+    // whole subtree (instance 2 included) — the old code then hit
     // collectSubtree(instance 2) after it was already gone and threw NOT_FOUND
     // mid-loop, leaving the store half-synced.
-    const reparent = await session.execute<any>('moveEntity', {
-      scene: sceneAId,
-      entity: secondRootId,
-      parent: firstRootId,
-    });
-    expect(reparent.success).toBe(true);
+    //
+    // moveEntity now detaches on a membership-altering reparent (moving a
+    // foreign entity into an instance subtree), so the nesting is set up by
+    // mutating parentId directly on the store — this keeps exercising the sync
+    // path against nesting that can still arise from hand-authored project data.
+    const secondRoot = store.getScene(sceneAId)!.entities.find((e) => e.id === secondRootId)!;
+    secondRoot.parentId = firstRootId;
 
     const sync = await session.execute<any>('syncPrefabInstances', { prefab: asset.id });
     expect(sync.success).toBe(true);

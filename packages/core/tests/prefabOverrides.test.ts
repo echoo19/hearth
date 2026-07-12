@@ -187,13 +187,14 @@ describe('override recording — moveEntity', () => {
     expect(rootMarker().overrides).toEqual([]);
   });
 
-  it('does not record a pure re-parent (no position)', async () => {
-    const { session, sceneId, rootId, childId, rootMarker } = await makeInstance();
-    // move child to scene root (no position component change)
+  it('reparenting a non-root member out of the instance detaches it (never recorded as an override)', async () => {
+    const { session, store, sceneId, rootId, childId } = await makeInstance();
+    // Moving a member out is a membership-altering structural edit: the instance
+    // is detached (marker removed), so nothing is recorded as an override.
     const r = await session.execute<any>('moveEntity', { scene: sceneId, entity: childId, parent: null });
     expect(r.success).toBe(true);
-    expect(rootMarker().overrides).toEqual([]);
-    void rootId;
+    expect(r.warnings.some((w: any) => w.code === 'PREFAB_INSTANCE_DETACHED')).toBe(true);
+    expect(store.getScene(sceneId)!.entities.find((e) => e.id === rootId)!.prefab).toBeUndefined();
   });
 });
 
