@@ -14,7 +14,7 @@
   ],
   "scripts": {
     "build": "npm run build:packages && npm run build:editor",
-    "build:packages": "npm run build -w @hearth/core && npm run build -w @hearth/runtime && npm run build -w @hearth/playtest && npm run build -w @hearth/cli && npm run build -w @hearth/mcp-server && npm run build -w @hearth/shipping",
+    "build:packages": "npm run build -w @hearth/core && npm run build -w @hearth/runtime && npm run build -w @hearth/playtest && npm run build -w @hearth/shipping && npm run build -w @hearth/templates && npm run build -w @hearth/cli && npm run build -w @hearth/mcp-server",
     "build:editor": "npm run build -w @hearth/editor",
     "dev": "npm run dev -w @hearth/editor",
     "editor": "npm run dev -w @hearth/editor",
