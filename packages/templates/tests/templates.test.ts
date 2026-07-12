@@ -134,6 +134,10 @@ describe('applyTemplate', () => {
     expect(applied.description).toBe('A game of my own');
     expect(applied.id).toMatch(/^prj_/);
     expect(applied.id).not.toBe(templateProject.id);
+    // The exported game's window title follows the new project name, not the
+    // template's ("Platformer Starter").
+    expect(applied.buildSettings.title).toBe('My Game');
+    expect(applied.buildSettings.title).not.toBe(templateProject.buildSettings.title);
 
     // The scaffolded project still loads and validates clean.
     const store = await loadStore(target);

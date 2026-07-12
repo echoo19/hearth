@@ -48,6 +48,10 @@ describe('scaffoldFromTemplate', () => {
       expect(applied.description).toBe('scaffolded from a template');
       expect(applied.id).toMatch(/^prj_/);
       expect(applied.id).not.toBe(templateProject.id);
+      // buildSettings.title (the exported game's window title) follows the new
+      // name, not the template's.
+      expect(applied.buildSettings.title).toBe('My Fresh Game');
+      expect(applied.buildSettings.title).not.toBe(templateProject.buildSettings.title);
 
       // agent-config is regenerated: fresh name + id (matching hearth.json),
       // never the template's stale values.

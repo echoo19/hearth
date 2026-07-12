@@ -246,6 +246,16 @@ export function buildProgram(): Command {
             '--no-starter applies to blank projects only; it cannot be combined with --template.',
           );
         }
+        // Templates own their build dimensions (their levels are laid out for
+        // them), so silently ignoring --width/--height would be a lie. Error
+        // instead; `hearth set-settings --build-settings` can resize afterwards.
+        if (opts.width !== undefined || opts.height !== undefined) {
+          throw new CliError(
+            'INVALID_INPUT',
+            '--width/--height apply to blank projects only; templates set their own build size. ' +
+              'Scaffold first, then resize with: hearth set-settings --build-settings \'{"width":...,"height":...}\'.',
+          );
+        }
       }
 
       const target = await resolveInitTarget(name, opts.dir);

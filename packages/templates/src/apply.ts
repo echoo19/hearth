@@ -91,6 +91,12 @@ export async function applyTemplate(
   project.id = generateId('prj');
   project.name = options.name;
   project.description = options.description ?? '';
+  // buildSettings.title is the exported game's window/page title, and the
+  // template ships it as its own name ("Arcade Starter"). Mirror createProject
+  // (which sets title to the project name) so a scaffolded "My Arcade" doesn't
+  // ship with the template's title.
+  const buildSettings = project.buildSettings as Record<string, unknown> | undefined;
+  if (buildSettings) buildSettings.title = options.name;
   await fs.writeFile(projectPath, JSON.stringify(project, null, 2) + '\n');
 
   files.sort();

@@ -151,6 +151,29 @@ describe('hearth init --template', () => {
     expect(envelope.success).toBe(false);
   });
 
+  it('rejects --template together with --width/--height (templates own their build size)', async () => {
+    const dir = path.join(tmpRoot, 'tpl-size-conflict');
+    await fsp.mkdir(dir, { recursive: true });
+    const result = await runCli(
+      ['init', 'Sized', '--dir', dir, '--template', 'arcade', '--width', '1234', '--height', '777', '--json'],
+      tmpRoot,
+    );
+    expect(result.code).toBe(1);
+    const envelope = parseJson(result.stdout);
+    expect(envelope.success).toBe(false);
+    expect(envelope.errors[0].message).toContain('--width/--height');
+    // Nothing was scaffolded.
+    await expect(fsp.readFile(path.join(dir, 'hearth.json'))).rejects.toThrow();
+
+    // --height alone conflicts too.
+    const heightOnly = await runCli(
+      ['init', 'Sized H', '--dir', dir, '--template', 'arcade', '--height', '777', '--json'],
+      tmpRoot,
+    );
+    expect(heightOnly.code).toBe(1);
+    expect(parseJson(heightOnly.stdout).success).toBe(false);
+  });
+
   it('refuses to scaffold a template over an existing project', async () => {
     // Same cwd, no --dir: both runs resolve to the same slug dir, so the
     // second scaffolds over an existing hearth.json and must CONFLICT.
