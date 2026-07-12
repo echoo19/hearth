@@ -1,6 +1,6 @@
 {
   "formatVersion": 1,
-  "hearthVersion": "0.12.0",
+  "hearthVersion": "0.13.0",
   "id": "prj_w7cldmhp",
   "name": "Ember Horde",
   "description": "Hold the line against a growing horde of embers. Move with the stick/WASD, dodge, survive.",
@@ -75,6 +75,7 @@
     "targetFps": 60,
     "fixedTimestep": 60,
     "title": "Ember Horde",
+    "icon": null,
     "loading": {
       "backgroundColor": "#170a06",
       "image": null,

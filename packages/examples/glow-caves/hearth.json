@@ -1,6 +1,6 @@
 {
   "formatVersion": 1,
-  "hearthVersion": "0.12.0",
+  "hearthVersion": "0.13.0",
   "id": "prj_276xbyq8",
   "name": "Glow Caves",
   "description": "Explore a dark cave by torchlight. A showcase of 2D lighting, particles, and sprite animation.",
@@ -50,6 +50,7 @@
     "targetFps": 60,
     "fixedTimestep": 60,
     "title": "Glow Caves",
+    "icon": null,
     "loading": {
       "backgroundColor": "#000000",
       "image": null,
