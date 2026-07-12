@@ -16,7 +16,7 @@ import {
   desktopExportPlatforms,
   getExportJobSnapshot,
   platformLabel,
-  resetExportJob,
+  reopenMode,
   resolveOutDir,
   signingStatusLabel,
   stageLabel,
@@ -38,22 +38,25 @@ export function ExportDialog({ open, onClose }: { open: boolean; onClose: () => 
 
   const [mode, setMode] = useState<Mode>('web');
 
-  // Each open lands on the Web tab unless a desktop job is mid-flight — then
-  // reopening surfaces that job's live progress rather than resetting the view.
+  // Each open lands on the Web tab unless a desktop job is live OR finished
+  // while the dialog was closed — either way the Desktop pane resurfaces so
+  // in-flight progress / completed results (zip paths) are what the user sees.
   useEffect(() => {
     if (!open) return;
-    setMode(getExportJobSnapshot().running ? 'desktop' : 'web');
+    setMode(reopenMode(getExportJobSnapshot()));
   }, [open]);
 
   return (
     <Modal open={open} title="Export" onClose={onClose}>
       {/* A running desktop job locks the tab so its progress can't be navigated away from. */}
       <ModeSwitch mode={mode} onChange={setMode} disabled={jobRunning} />
-      {mode === 'web' ? (
-        <WebPane projectPath={projectPath} open={open} onClose={onClose} />
-      ) : (
-        <DesktopPane projectPath={projectPath} open={open} onClose={onClose} />
-      )}
+      <div role="tabpanel" id={`export-pane-${mode}`} aria-labelledby={`export-tab-${mode}`}>
+        {mode === 'web' ? (
+          <WebPane projectPath={projectPath} open={open} onClose={onClose} />
+        ) : (
+          <DesktopPane projectPath={projectPath} open={open} onClose={onClose} />
+        )}
+      </div>
     </Modal>
   );
 }
@@ -91,6 +94,8 @@ function ModeSwitch({
           key={m}
           type="button"
           role="tab"
+          id={`export-tab-${m}`}
+          aria-controls={`export-pane-${m}`}
           aria-selected={mode === m}
           tabIndex={mode === m ? 0 : -1}
           className={`seg-btn${mode === m ? ' active' : ''}`}
@@ -290,9 +295,11 @@ function DesktopPane({
   useEffect(() => {
     if (!open) return;
     setAlreadyRunning(null);
-    // A finished (or never-started) job's rows are stale on reopen; a live one
-    // stays so its progress is still visible.
-    if (!getExportJobSnapshot().running) resetExportJob();
+    // Deliberately NO job reset here: a finished job's rows (zip paths, per-
+    // platform errors, the banner) persist across close/reopen until the user
+    // starts a new export — the reducer's 'start' action reseeds them. A
+    // reset-on-open would wipe results a user never saw when the job finished
+    // while the dialog was closed.
     let cancelled = false;
     void apiExportCapability().then((cap) => {
       if (cancelled) return;

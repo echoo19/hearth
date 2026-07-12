@@ -279,6 +279,18 @@ export function reduceExportJob(state: ExportJobState, action: ExportJobAction):
   }
 }
 
+/**
+ * Which pane a (re)opened dialog should land on. Desktop whenever a job is
+ * live OR finished-but-not-yet-cleared — a build that completed while the
+ * dialog was closed must resurface its results (zip paths, errors), not hide
+ * them behind the default Web tab. Finished rows persist until the user
+ * starts a new export (the 'start' action reseeds the rows); routing never
+ * resets anything.
+ */
+export function reopenMode(state: ExportJobState): 'web' | 'desktop' {
+  return state.running || state.finished ? 'desktop' : 'web';
+}
+
 // ---------------------------------------------------------------------------
 // External store — module-level, outside React, so a running job outlives the
 // dialog's own mount/unmount. Fed by store.ts's WS message handler

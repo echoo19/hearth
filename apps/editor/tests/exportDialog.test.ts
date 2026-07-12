@@ -21,6 +21,7 @@ import {
   initialExportJob,
   platformLabel,
   reduceExportJob,
+  reopenMode,
   resolveOutDir,
   signingStatusLabel,
   stageLabel,
@@ -216,6 +217,155 @@ describe('resolveOutDir — falls back when blank', () => {
   it('trims and defaults', () => {
     expect(resolveOutDir('  export/desktop ', 'fallback')).toBe('export/desktop');
     expect(resolveOutDir('   ', 'export/desktop')).toBe('export/desktop');
+  });
+});
+
+describe('reduceExportJob — a late progress frame never drags a terminal row back to running', () => {
+  const started = reduceExportJob(initialExportJob(), {
+    type: 'start',
+    jobId: 'job-1',
+    platforms: ['darwin-arm64', 'win32-x64'],
+  });
+
+  it('keeps a succeeded row succeeded (zip path intact)', () => {
+    const done = reduceExportJob(started, {
+      type: 'frame',
+      frame: {
+        type: 'export-done',
+        jobId: 'job-1',
+        result: {
+          outDir: 'export/desktop',
+          slug: 'g',
+          builds: [
+            { platform: 'darwin-arm64', appDir: 'a', zip: 'export/desktop/g-darwin-arm64.zip', signed: 'adhoc', notarized: false },
+          ],
+        },
+      },
+    });
+    const s = reduceExportJob(done, {
+      type: 'frame',
+      frame: { type: 'export-progress', jobId: 'job-1', platform: 'darwin-arm64', stage: 'package', message: 'late' },
+    });
+    expect(s.rows['darwin-arm64'].status).toBe('success');
+    expect(s.rows['darwin-arm64'].zip).toBe('export/desktop/g-darwin-arm64.zip');
+    expect(s.rows['darwin-arm64'].message).not.toBe('late');
+  });
+
+  it('keeps an errored row errored', () => {
+    const failed = reduceExportJob(started, {
+      type: 'frame',
+      frame: { type: 'export-error', jobId: 'job-1', platform: 'win32-x64', message: 'boom' },
+    });
+    const s = reduceExportJob(failed, {
+      type: 'frame',
+      frame: { type: 'export-progress', jobId: 'job-1', platform: 'win32-x64', stage: 'zip', message: 'late' },
+    });
+    expect(s.rows['win32-x64'].status).toBe('error');
+    expect(s.rows['win32-x64'].error).toBe('boom');
+  });
+});
+
+describe('reduceExportJob — reset returns to the initial state', () => {
+  it('clears a finished job entirely', () => {
+    const started = reduceExportJob(initialExportJob(), {
+      type: 'start',
+      jobId: 'job-1',
+      platforms: ['darwin-arm64'],
+    });
+    const failed = reduceExportJob(started, {
+      type: 'frame',
+      frame: { type: 'export-error', jobId: 'job-1', message: 'boom' },
+    });
+    expect(reduceExportJob(failed, { type: 'reset' })).toEqual(initialExportJob());
+  });
+});
+
+describe('reduceExportJob — export-done extends the order for an unseeded platform', () => {
+  it('appends a platform the start did not seed so its success row still renders', () => {
+    const started = reduceExportJob(initialExportJob(), {
+      type: 'start',
+      jobId: 'job-1',
+      platforms: ['darwin-arm64'],
+    });
+    const s = reduceExportJob(started, {
+      type: 'frame',
+      frame: {
+        type: 'export-done',
+        jobId: 'job-1',
+        result: {
+          outDir: 'export/desktop',
+          slug: 'g',
+          builds: [
+            { platform: 'darwin-arm64', appDir: 'a', zip: 'a.zip', signed: 'adhoc', notarized: false },
+            { platform: 'linux-x64', appDir: 'b', zip: 'b.zip', signed: 'none', notarized: false },
+          ],
+        },
+      },
+    });
+    expect(s.order).toEqual(['darwin-arm64', 'linux-x64']);
+    expect(s.rows['linux-x64'].status).toBe('success');
+    expect(s.rows['linux-x64'].zip).toBe('b.zip');
+  });
+});
+
+describe('reopenMode — a finished job resurfaces the desktop pane with its results intact', () => {
+  const started = reduceExportJob(initialExportJob(), {
+    type: 'start',
+    jobId: 'job-1',
+    platforms: ['darwin-arm64'],
+  });
+
+  it('opens onto the desktop pane while a job runs', () => {
+    expect(reopenMode(started)).toBe('desktop');
+  });
+
+  it('opens onto the desktop pane when a job finished while the dialog was closed', () => {
+    const done = reduceExportJob(started, {
+      type: 'frame',
+      frame: {
+        type: 'export-done',
+        jobId: 'job-1',
+        result: {
+          outDir: 'export/desktop',
+          slug: 'g',
+          builds: [{ platform: 'darwin-arm64', appDir: 'a', zip: 'a.zip', signed: 'adhoc', notarized: false }],
+        },
+      },
+    });
+    expect(reopenMode(done)).toBe('desktop');
+    // The results a reopen must still show: nothing about routing resets rows.
+    expect(done.rows['darwin-arm64'].zip).toBe('a.zip');
+  });
+
+  it('opens onto the desktop pane when a job failed while the dialog was closed', () => {
+    const failed = reduceExportJob(started, {
+      type: 'frame',
+      frame: { type: 'export-error', jobId: 'job-1', message: 'boom' },
+    });
+    expect(reopenMode(failed)).toBe('desktop');
+  });
+
+  it('defaults to the web pane when no job has run', () => {
+    expect(reopenMode(initialExportJob())).toBe('web');
+  });
+
+  it('a new start (Export again) is what clears the previous finished rows', () => {
+    const done = reduceExportJob(started, {
+      type: 'frame',
+      frame: {
+        type: 'export-done',
+        jobId: 'job-1',
+        result: {
+          outDir: 'export/desktop',
+          slug: 'g',
+          builds: [{ platform: 'darwin-arm64', appDir: 'a', zip: 'a.zip', signed: 'adhoc', notarized: false }],
+        },
+      },
+    });
+    const restarted = reduceExportJob(done, { type: 'start', jobId: 'job-2', platforms: ['win32-x64'] });
+    expect(restarted.rows['darwin-arm64']).toBeUndefined();
+    expect(restarted.rows['win32-x64'].status).toBe('pending');
+    expect(restarted.result).toBeNull();
   });
 });
 
