@@ -11,7 +11,18 @@ export interface ZipInputEntry {
   /** Forward-slash path inside the archive, e.g. "assets/sprites/coin.svg". */
   path: string;
   data: Uint8Array;
+  /**
+   * When true, this entry is a symbolic link whose `data` is the (UTF-8) link
+   * target. macOS `.app` bundles rely on relative symlinks inside their
+   * frameworks, so they must be preserved as links, not dereferenced.
+   */
+  symlink?: boolean;
 }
+
+/** Unix `st_mode` for a symlink with 0777 perms (S_IFLNK | rwxrwxrwx). */
+const SYMLINK_MODE = 0o120777;
+/** "Version made by": low byte = zip spec 2.0, high byte = 3 (UNIX) for symlinks. */
+const MADE_BY_UNIX = (3 << 8) | 20;
 
 // --- CRC-32 (IEEE 802.3) ----------------------------------------------------
 
@@ -68,7 +79,7 @@ export function createZip(entries: ZipInputEntry[]): Buffer {
     // Central directory header
     const central = Buffer.alloc(46);
     central.writeUInt32LE(0x02014b50, 0); // signature
-    central.writeUInt16LE(20, 4); // version made by
+    central.writeUInt16LE(entry.symlink ? MADE_BY_UNIX : 20, 4); // version made by
     central.writeUInt16LE(20, 6); // version needed
     central.writeUInt16LE(0x0800, 8); // flags: UTF-8 names
     central.writeUInt16LE(0, 10); // method: STORE
@@ -82,7 +93,9 @@ export function createZip(entries: ZipInputEntry[]): Buffer {
     central.writeUInt16LE(0, 32); // comment length
     central.writeUInt16LE(0, 34); // disk number
     central.writeUInt16LE(0, 36); // internal attrs
-    central.writeUInt32LE(0, 38); // external attrs
+    // External attrs: high 16 bits carry the unix mode for symlinks so that
+    // unzip/ditto recreate them as links rather than plain files.
+    central.writeUInt32LE(entry.symlink ? (SYMLINK_MODE << 16) >>> 0 : 0, 38);
     central.writeUInt32LE(offset, 42); // local header offset
     centralParts.push(central, name);
 
@@ -121,8 +134,16 @@ export async function zipDirectory(srcDir: string, zipPath: string): Promise<voi
   const walk = async (dir: string): Promise<void> => {
     for (const entry of await fsp.readdir(dir, { withFileTypes: true })) {
       const abs = path.join(dir, entry.name);
-      if (entry.isDirectory()) await walk(abs);
-      else entries.push({ path: path.relative(srcAbs, abs).split(path.sep).join('/'), data: await fsp.readFile(abs) });
+      const rel = path.relative(srcAbs, abs).split(path.sep).join('/');
+      if (entry.isSymbolicLink()) {
+        // Preserve links (do not follow) — dereferencing would bloat the
+        // archive and could loop on the cyclic symlinks in macOS frameworks.
+        entries.push({ path: rel, data: Buffer.from(await fsp.readlink(abs), 'utf8'), symlink: true });
+      } else if (entry.isDirectory()) {
+        await walk(abs);
+      } else {
+        entries.push({ path: rel, data: await fsp.readFile(abs) });
+      }
     }
   };
   await walk(srcAbs);

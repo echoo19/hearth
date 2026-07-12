@@ -20,5 +20,12 @@
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@electron/packager": "^20.0.2",
+    "png2icons": "^2.0.1"
+  },
+  "devDependencies": {
+    "@hearth/core": "*"
   }
 }
