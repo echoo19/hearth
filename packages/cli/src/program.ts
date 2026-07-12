@@ -21,6 +21,7 @@ import {
 } from '@hearth/core';
 import { NodeFileSystem } from '@hearth/core/node';
 import { captureScreenshot } from '@hearth/playtest';
+import { zipDirectory, describeSigningCapability } from '@hearth/shipping';
 import { CliError, openSession, resolveProjectRoot, type GlobalOpts } from './context.js';
 import { emit, errorResult, makeResult, logStderr } from './output.js';
 import {
@@ -37,7 +38,6 @@ import {
   parseCells,
   ParseError,
 } from './parse.js';
-import { createZip } from './zip.js';
 
 // Hardcoded rather than imported from package.json: this package builds
 // under NodeNext + esbuild-bundled single-file tool builds (see
@@ -47,6 +47,16 @@ import { createZip } from './zip.js';
 // "version" on every release — see the version-bump checklist in
 // .superpowers/sdd/task-12-report.md.
 const VERSION = '0.12.0';
+
+/** The four native desktop targets `export desktop` can build, mirroring core's exportDesktop schema. */
+const DESKTOP_PLATFORMS = ['darwin-arm64', 'darwin-x64', 'win32-x64', 'linux-x64'] as const;
+type DesktopPlatformId = (typeof DESKTOP_PLATFORMS)[number];
+
+/** Render a signing capability (from @hearth/shipping's describeSigningCapability) for human output. */
+function formatSigningCapability(capability: { mode: string; identity?: string }): string {
+  const mode = capability.mode === 'adhoc' ? 'ad-hoc' : capability.mode;
+  return capability.identity ? `${mode} (${capability.identity})` : mode;
+}
 
 /** Read a global-options snapshot off a commander Command. */
 function globalOpts(cmd: Command): GlobalOpts {
@@ -1105,11 +1115,64 @@ export function buildProgram(): Command {
         singleFile: !!opts.singleFile,
       });
       if (result.success && opts.zip && result.data) {
-        const zipRel = await zipExportedDir(session.root, result.data.outDir, result.data.slug);
+        const zipRel = await zipExportedWebDir(session.root, result.data.outDir, result.data.slug);
         (result.data as Record<string, unknown>).zip = zipRel;
         result.files.push(zipRel);
       }
       process.exitCode = emit(result, g);
+    });
+  });
+
+  addGlobalOptions(
+    exportGroup
+      .command('desktop')
+      .description(
+        'export native desktop builds: wraps the web build in an Electron shell and zips one app per platform ' +
+          '(requires --allow build or all)',
+      )
+      .option('--out <dir>', 'output directory (project-relative)', 'export/desktop')
+      .option(
+        '--platform <id>',
+        `target platform id (repeatable; default: all four — ${DESKTOP_PLATFORMS.join(', ')})`,
+        (val: string, prev: string[]) => [...prev, val],
+        [] as string[],
+      ),
+  ).action(async (opts: { out: string; platform: string[] }, cmd) => {
+    await guarded(cmd, 'exportDesktop', async () => {
+      const g = globalOpts(cmd);
+      for (const p of opts.platform) {
+        if (!(DESKTOP_PLATFORMS as readonly string[]).includes(p)) {
+          throw new ParseError(
+            `Unknown --platform "${p}". Valid platforms: ${DESKTOP_PLATFORMS.join(', ')}`,
+          );
+        }
+      }
+      const session = await openSession(g);
+      const result = await session.execute<{
+        outDir: string;
+        slug: string;
+        builds: Array<{ platform: DesktopPlatformId; appDir: string; zip: string; signed: string; notarized: boolean }>;
+      }>('exportDesktop', {
+        outDir: opts.out,
+        platforms: opts.platform.length > 0 ? opts.platform : undefined,
+      });
+
+      if (g.json) {
+        process.exitCode = emit(result, g);
+        return;
+      }
+
+      const capability = describeSigningCapability();
+      const prefix = result.success ? '✓' : '✗';
+      console.log(`${prefix} exportDesktop (signing: ${formatSigningCapability(capability)})`);
+      if (result.success && result.data) {
+        for (const build of result.data.builds) {
+          console.log(`  ${build.platform}: ${build.zip} (signed: ${build.signed}${build.notarized ? ', notarized' : ''})`);
+        }
+      }
+      for (const w of result.warnings) console.log(`  warning [${w.code}]: ${w.message}`);
+      for (const e of result.errors) console.log(`  error [${e.code}]: ${e.message}`);
+      process.exitCode = result.success ? 0 : 1;
     });
   });
 
@@ -1197,25 +1260,15 @@ async function resolveInitTarget(name: string, dirOpt: string | undefined): Prom
 // ---------------------------------------------------------------------------
 
 /**
- * Zip an exported web build (STORE-only). The archive contains the folder's
- * files at its root (index.html at the top level, as itch.io expects) and is
- * written next to the folder as <slug>-web.zip. Returns the project-relative
- * zip path.
+ * Zip an exported web build (STORE-only, via @hearth/shipping's zipDirectory).
+ * The archive contains the folder's files at its root (index.html at the top
+ * level, as itch.io expects) and is written next to the folder as
+ * <slug>-web.zip. Returns the project-relative zip path.
  */
-async function zipExportedDir(projectRoot: string, outDirRel: string, slug: string): Promise<string> {
+async function zipExportedWebDir(projectRoot: string, outDirRel: string, slug: string): Promise<string> {
   const outAbs = path.resolve(projectRoot, outDirRel);
-  const entries: { path: string; data: Uint8Array }[] = [];
-  const walk = async (dir: string): Promise<void> => {
-    for (const entry of await fsp.readdir(dir, { withFileTypes: true })) {
-      const abs = path.join(dir, entry.name);
-      if (entry.isDirectory()) await walk(abs);
-      else entries.push({ path: path.relative(outAbs, abs).split(path.sep).join('/'), data: await fsp.readFile(abs) });
-    }
-  };
-  await walk(outAbs);
-  entries.sort((a, b) => (a.path < b.path ? -1 : 1));
   const zipAbs = path.join(path.dirname(outAbs), `${slug}-web.zip`);
-  await fsp.writeFile(zipAbs, createZip(entries));
+  await zipDirectory(outAbs, zipAbs);
   return path.relative(projectRoot, zipAbs).split(path.sep).join('/');
 }
 

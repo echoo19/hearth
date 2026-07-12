@@ -13,6 +13,7 @@ import {
 } from '@hearth/core';
 import { NodeFileSystem, loadPlayerBundle } from '@hearth/core/node';
 import { createRuntimeHooks } from '@hearth/playtest';
+import { packageDesktop as shippingPackageDesktop } from '@hearth/shipping';
 import { logStderr } from './output.js';
 
 export class CliError extends Error {
@@ -82,7 +83,14 @@ export async function openSession(opts: GlobalOpts): Promise<HearthSession> {
   return HearthSession.open(new NodeFileSystem(), root, {
     granted,
     runtime: createRuntimeHooks(),
-    resources: { getPlayerBundle: () => loadPlayerBundle() },
+    resources: {
+      getPlayerBundle: () => loadPlayerBundle(),
+      packageDesktop: (spec) =>
+        shippingPackageDesktop({
+          spec,
+          onProgress: (e) => logStderr(opts.quiet, `[desktop:${e.platform ?? 'all'}] ${e.stage}: ${e.message}`),
+        }),
+    },
     onLog: (level, message) => logStderr(opts.quiet, `[${level}] ${message}`),
     source: 'cli',
   });
