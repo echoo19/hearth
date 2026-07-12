@@ -9,7 +9,23 @@
  * Node (no canvas needed until something actually renders to screen), so
  * this suite runs in this workspace's default "node" vitest environment.
  */
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
+
+// PixiJS v8's GL video-texture uploader calls isSafari() at module scope,
+// which reads the bare `navigator` global to sniff the UA string. Node has
+// had a global `navigator` since v21, but this workspace's CI matrix also
+// runs Node 20, where the bare reference throws a ReferenceError the moment
+// `pixi.js` is imported below — before any test in this file even runs.
+// vi.hoisted lifts this stub above that static import (same hoisting this
+// repo already relies on for vi.mock in apps/editor/tests/nudgeLifecycle.test.ts),
+// and only fills in the property when it's actually missing, so newer Node
+// keeps using its real global untouched.
+vi.hoisted(() => {
+  if (typeof globalThis.navigator === 'undefined') {
+    (globalThis as { navigator?: Navigator }).navigator = { userAgent: 'node' } as Navigator;
+  }
+});
+
 import { Container, Sprite, Graphics, Texture } from 'pixi.js';
 import { computeMask, resolveTileFrame, type TilemapComponent, type AutotileRule } from '@hearth/core';
 import { buildTilemapContainer, type TilemapRenderDeps } from '../src/pixi/tilemapRender.js';
