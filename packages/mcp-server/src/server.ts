@@ -76,9 +76,24 @@ export function createHearthMcpServer(session: HearthSession, granted: Permissio
           const { zip, ...rest } = (args ?? {}) as { zip?: boolean; [key: string]: unknown };
           const result = await session.execute<{ outDir: string; slug: string }>(spec.command, rest);
           if (result.success && zip && result.data) {
-            const zipRel = await zipExportedWebBuild(session.root, result.data.outDir, result.data.slug);
-            (result.data as Record<string, unknown>).zip = zipRel;
-            result.files.push(zipRel);
+            // The export itself has already succeeded and been persisted by
+            // the time we get here; a failure zipping it (disk full,
+            // permissions) must not turn that into a failed result — same
+            // reasoning as session.ts's HISTORY_RECORD_FAILED /
+            // JOURNAL_RECORD_FAILED warnings for a post-mutation step that
+            // fails after the real work is done. Report it as a warning on
+            // the normal envelope instead of letting the exception escape to
+            // the MCP SDK's generic (unstructured) error handler.
+            try {
+              const zipRel = await zipExportedWebBuild(session.root, result.data.outDir, result.data.slug);
+              (result.data as Record<string, unknown>).zip = zipRel;
+              result.files.push(zipRel);
+            } catch (err) {
+              result.warnings.push({
+                code: 'ZIP_FAILED',
+                message: `Export succeeded, but zipping the output failed: ${(err as Error).message}`,
+              });
+            }
           }
           return jsonResult(result, !result.success);
         }

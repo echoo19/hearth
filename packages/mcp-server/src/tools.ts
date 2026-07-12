@@ -883,7 +883,9 @@ export const TOOL_SPECS: ToolSpec[] = [
     description:
       'Export a production web build: a static, self-contained playable page (index.html + player + bundle + assets). ' +
       'singleFile=true inlines everything into one index.html. zip=true also writes <project-slug>-web.zip next to ' +
-      'the output folder (itch.io-ready). Validates first. (requires build)',
+      'the output folder (itch.io-ready). Validates first. If zip=true but zipping fails after a successful export ' +
+      "(disk full, permissions), the result still reports success with the export's outDir/files intact, no data.zip, " +
+      'and a ZIP_FAILED entry in warnings. (requires build)',
     permission: 'build',
     inputShape: {
       outDir: z.string().optional(),

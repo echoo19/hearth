@@ -13,6 +13,7 @@ import {
   createProject,
   HearthSession,
   PERMISSION_MODES,
+  slugify,
   type CommandResources,
   type DesktopBuildResult,
 } from '@hearth/core';
@@ -267,6 +268,65 @@ describe('hearth-mcp export_web zip flag (real fs)', () => {
         expect(envelope.success).toBe(true);
         expect(envelope.data.zip).toBeUndefined();
         await expect(fsp.access(path.join(projectDir, 'export', 'no_zip_game-web.zip'))).rejects.toThrow();
+      } finally {
+        await client.close();
+        await server.close();
+      }
+    } finally {
+      await fsp.rm(projectDir, { recursive: true, force: true });
+    }
+  }, 30000);
+
+  it('zip failure after a successful export still returns the structured envelope, with export data intact and the failure surfaced as a warning', async () => {
+    const projectDir = await fsp.mkdtemp(path.join(os.tmpdir(), 'hearth-mcp-export-zipfail-'));
+    try {
+      const fs = new NodeFileSystem();
+      const { store } = await createProject(fs, projectDir, { name: 'Zip Fail Game' });
+      const session = HearthSession.fromStore(store, {
+        granted: [...PERMISSION_MODES],
+        resources: { getPlayerBundle: async () => STUB_PLAYER },
+      });
+      const server = createHearthMcpServer(session, session.granted);
+      const client = new Client({ name: 'test-client', version: '0.0.1' });
+      const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+      await Promise.all([client.connect(clientTransport), server.connect(serverTransport)]);
+
+      // zipExportedWebBuild writes to <projectRoot>/export/<slug>-web.zip.
+      // Pre-creating a directory at that exact path (instead of mocking
+      // zipDirectory, which every other test in this file relies on being
+      // real) forces zipDirectory's fsp.writeFile to throw EISDIR — a
+      // real-fs stand-in for "disk full / permissions" that doesn't touch
+      // the export step itself.
+      const slug = slugify('Zip Fail Game');
+      const zipPath = path.join(projectDir, 'export', `${slug}-web.zip`);
+      await fsp.mkdir(zipPath, { recursive: true });
+
+      try {
+        const result = await client.callTool({ name: 'export_web', arguments: { zip: true } });
+
+        // The failure must never escape as the MCP SDK's generic
+        // unstructured-text error response.
+        expect(result.isError).toBeFalsy();
+        expect(result.content).toHaveLength(1);
+        expect(result.content[0].type).toBe('text');
+
+        const envelope = toolJson(result);
+        // Structured CommandResult envelope, not bare text: the export
+        // succeeded, so success stays true and outDir/slug are intact.
+        expect(envelope.success).toBe(true);
+        expect(envelope.command).toBe('exportWeb');
+        expect(envelope.data.outDir).toBe('export/web');
+        expect(envelope.data.slug).toBe(slug);
+        await expect(fsp.access(path.join(projectDir, 'export', 'web', 'index.html'))).resolves.toBeUndefined();
+
+        // No zip field/entry, since zipping failed.
+        expect(envelope.data.zip).toBeUndefined();
+        expect(envelope.files).not.toContain(`export/${slug}-web.zip`);
+
+        // The zip failure is visible in the envelope's warnings, not silently dropped.
+        expect(envelope.warnings).toHaveLength(1);
+        expect(envelope.warnings[0].code).toBe('ZIP_FAILED');
+        expect(envelope.warnings[0].message).toMatch(/zip/i);
       } finally {
         await client.close();
         await server.close();
