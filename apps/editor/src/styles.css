@@ -1107,6 +1107,24 @@ label.field-label {
   vertical-align: middle;
 }
 
+/* Fixed-width 3rd grid cell for component-field rows (see the field map in
+   Inspector.tsx). It's rendered on every such row — whether or not that
+   field is currently overridden — specifically so .inspector-row's 3rd
+   `auto` track always has a same-sized item to size itself against. An
+   `auto` track only reserves width when a row actually has a 3rd grid
+   item, so previously only overridden rows (which alone rendered the
+   .field-revert-btn) had that track occupied, and their minmax(0, 1fr)
+   control column resolved narrower than plain sibling rows in the same
+   card. Keeping this slot always present, always this width, makes the
+   control column identical across every field row regardless of override
+   state. Entity-level rows (Name/Enabled/Tags/Parent) never render this
+   slot — they can't be overridden — so they're unaffected. */
+.field-revert-slot {
+  width: 54px;
+  display: flex;
+  justify-content: flex-end;
+}
+
 /* Per-field "Revert to prefab" action: hidden until the row is hovered or
    the button itself gets keyboard focus (same hidden-until-hover idiom as
    .tree-actions, but via opacity so it stays tab-reachable rather than

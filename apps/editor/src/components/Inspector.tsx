@@ -1166,16 +1166,21 @@ export function Inspector() {
                         {humanizeFieldLabel(field)}
                       </label>
                       {control}
-                      {overridden && (
-                        <button
-                          type="button"
-                          className="btn btn-sm field-revert-btn"
-                          title={`Revert "${humanizeFieldLabel(field)}" to the prefab's value`}
-                          onClick={() => void handleRevertField(type, field)}
-                        >
-                          Revert
-                        </button>
-                      )}
+                      {/* Always render this 3rd grid cell, overridden or not — see
+                          .field-revert-slot in styles.css for why: it keeps the
+                          control column the same width on every field row. */}
+                      <div className="field-revert-slot">
+                        {overridden && (
+                          <button
+                            type="button"
+                            className="btn btn-sm field-revert-btn"
+                            title={`Revert "${humanizeFieldLabel(field)}" to the prefab's value`}
+                            onClick={() => void handleRevertField(type, field)}
+                          >
+                            Revert
+                          </button>
+                        )}
+                      </div>
                     </div>
                   );
                 })}
