@@ -95,6 +95,13 @@ export interface MountedGameView {
     propertyPath: string,
     value: unknown,
   ): boolean;
+  /**
+   * Live-swap a state-machine asset's parsed doc, resetting only entities bound
+   * to it (PixiSceneView.reloadStateMachineAsset, since Task 11). Re-reads the
+   * asset fresh from the project fs; resolves to the number of entities reset
+   * (0 when the asset is unknown or the runtime has no machine on it).
+   */
+  reloadStateMachineAsset?(assetId: string): Promise<number>;
   runtime?: RuntimeHandle & { errors?: unknown[] };
 }
 

@@ -413,15 +413,100 @@ export const useEditor = create<EditorState>((set, get) => {
     return node;
   }
 
+  /** Re-apply one component's top-level values onto the running preview, leaf by leaf. */
+  function applyComponentResync(entity: string, type: string, component: unknown): void {
+    if (component === null || typeof component !== 'object') return;
+    for (const [key, leaf] of Object.entries(component as Record<string, unknown>)) {
+      applyPatch(entity, `${type}.${key}`, leaf);
+    }
+  }
+
+  /**
+   * Resync a revertPrefabOverride scope onto the running preview from the
+   * refreshed authored scene. `property` encodes the scope the revert touched:
+   * '' = the whole entity (every component), a bare component name = that whole
+   * component, a dotted path = a single field. Patches leaf-by-leaf (never
+   * replacing a component object) so aliases like RuntimeEntity.transform
+   * survive, and stays scoped so components the revert didn't touch keep their
+   * live runtime state.
+   */
+  function applyResync(entity: string, components: Record<string, unknown> | undefined, property: string): void {
+    if (property === '') {
+      for (const [type, value] of Object.entries(components ?? {})) applyComponentResync(entity, type, value);
+      return;
+    }
+    if (!property.includes('.')) {
+      applyComponentResync(entity, property, components?.[property]);
+      return;
+    }
+    const value = readComponentPath(components, property);
+    if (value !== undefined) applyPatch(entity, property, value);
+  }
+
+  /** Live-swap a state-machine asset's parsed doc on the running preview (Task 11 asm-reload). */
+  async function applyAsmReload(assetId: string): Promise<void> {
+    const view = getGameView();
+    if (!view?.reloadStateMachineAsset) return;
+    try {
+      const n = await view.reloadStateMachineAsset(assetId);
+      if (n > 0) {
+        get().log('info', 'runtime', `State machine updated (${n} ${n === 1 ? 'entity' : 'entities'} reset)`);
+      }
+    } catch (err) {
+      get().log('error', 'runtime', `State machine live-update failed: ${(err as Error).message}`);
+    }
+  }
+
+  /** Accumulate a valueless patch under its entity so a multi-key resolve costs one query. */
+  function groupValueless(
+    groups: Map<string, { scene: string; entity: string; properties: string[] }>,
+    scene: string,
+    entity: string,
+    property: string,
+  ): void {
+    const key = `${scene} ${entity}`;
+    const group = groups.get(key) ?? { scene, entity, properties: [] };
+    group.properties.push(property);
+    groups.set(key, group);
+  }
+
+  /**
+   * Resolve grouped valueless patches against the freshly-refreshed authored
+   * scene (one read-only query per entity), then patch the live preview. A ''
+   * property means "resync the whole entity" (see applyEntityResync).
+   */
+  async function resolveValuelessGroups(
+    groups: Map<string, { scene: string; entity: string; properties: string[] }>,
+  ): Promise<void> {
+    for (const group of groups.values()) {
+      const ent = await query<{ components?: Record<string, unknown> }>('inspectEntity', {
+        scene: group.scene,
+        entity: group.entity,
+      });
+      if (!ent) continue;
+      for (const property of group.properties) applyResync(group.entity, ent.components, property);
+    }
+  }
+
   /** Run the live actions for a just-succeeded LOCAL exec (only while playing). */
   async function applyLocalActions(command: string, params: Record<string, unknown>, data: unknown): Promise<void> {
     const localSource = command === 'editScript' ? (data as { source?: unknown } | null)?.source : undefined;
+    // Local commands always target the current scene, so no scene guard is
+    // needed; valueless patches (setTileAutotile, revertPrefabOverride carry no
+    // value in params) resolve against the just-refreshed authored scene, same
+    // as the external path.
+    const resolveGroups = new Map<string, { scene: string; entity: string; properties: string[] }>();
     for (const action of classifyLocal(command, params, data)) {
-      if (action.kind === 'patch') applyPatch(action.entity, action.property, action.value);
-      else if (action.kind === 'reload') {
+      if (action.kind === 'patch') {
+        if (action.hasValue) applyPatch(action.entity, action.property, action.value);
+        else groupValueless(resolveGroups, action.scene, action.entity, action.property);
+      } else if (action.kind === 'reload') {
         await applyReload(action.path, typeof localSource === 'string' ? localSource : undefined);
+      } else if (action.kind === 'asm-reload') {
+        await applyAsmReload(action.assetId);
       } else if (action.kind === 'structural') set({ pendingRestart: true });
     }
+    await resolveValuelessGroups(resolveGroups);
   }
 
   /**
@@ -453,6 +538,7 @@ export const useEditor = create<EditorState>((set, get) => {
     const resolveGroups = new Map<string, { scene: string; entity: string; properties: string[] }>();
     for (const action of classifyJournal(entry)) {
       if (action.kind === 'reload') await applyReload(action.path, undefined);
+      else if (action.kind === 'asm-reload') await applyAsmReload(action.assetId);
       else if (action.kind === 'structural') set({ pendingRestart: true });
       else if (action.kind === 'patch' && !action.hasValue) {
         if (!isRunningScene(action.scene)) continue;
@@ -470,10 +556,7 @@ export const useEditor = create<EditorState>((set, get) => {
         entity: group.entity,
       });
       if (!ent) continue;
-      for (const property of group.properties) {
-        const value = readComponentPath(ent.components, property);
-        if (value !== undefined) applyPatch(group.entity, property, value);
-      }
+      for (const property of group.properties) applyResync(group.entity, ent.components, property);
     }
   }
 

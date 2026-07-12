@@ -138,6 +138,51 @@ describe('classifyLocal', () => {
       expect(kinds(classifyLocal(cmd, {}, {}))).toEqual(['none']);
     }
   });
+
+  // --- Wave I commands -------------------------------------------------------
+
+  it('updateStateMachineAsset → an asm-reload carrying the asset id (from result data)', () => {
+    expect(classifyLocal('updateStateMachineAsset', { assetId: 'ast_sm' }, { assetId: 'ast_sm', name: 'hero' })).toEqual([
+      { kind: 'asm-reload', assetId: 'ast_sm' },
+    ]);
+  });
+
+  it('updateStateMachineAsset with no usable asset id → structural (fail safe)', () => {
+    expect(kinds(classifyLocal('updateStateMachineAsset', {}, {}))).toEqual(['structural']);
+  });
+
+  it('setTileAutotile → a valueless patch of the whole Tilemap.tileAssets (re-read + refresh)', () => {
+    expect(
+      classifyLocal('setTileAutotile', { scene: 'main', entity: 'e1', char: '#', sheet: 'tiles' }, { entityId: 'e1', char: '#', rule: {} }),
+    ).toEqual([{ kind: 'patch', scene: 'main', entity: 'e1', property: 'Tilemap.tileAssets', hasValue: false }]);
+  });
+
+  it('revertPrefabOverride → a valueless resync patch scoped to what was reverted', () => {
+    // A single field: patch just that leaf.
+    expect(
+      classifyLocal('revertPrefabOverride', { scene: 'main', entity: 'e1', component: 'Transform', path: 'position.x' }, {}),
+    ).toEqual([{ kind: 'patch', scene: 'main', entity: 'e1', property: 'Transform.position.x', hasValue: false }]);
+    // A whole component: patch the bare component name.
+    expect(classifyLocal('revertPrefabOverride', { scene: 'main', entity: 'e1', component: 'SpriteRenderer' }, {})).toEqual([
+      { kind: 'patch', scene: 'main', entity: 'e1', property: 'SpriteRenderer', hasValue: false },
+    ]);
+    // The whole entity (no component): property '' = resync every component.
+    expect(classifyLocal('revertPrefabOverride', { scene: 'main', entity: 'e1' }, {})).toEqual([
+      { kind: 'patch', scene: 'main', entity: 'e1', property: '', hasValue: false },
+    ]);
+  });
+
+  it('syncPrefabInstances / updatePrefab → structural (restart badge)', () => {
+    for (const cmd of ['syncPrefabInstances', 'updatePrefab']) {
+      expect(kinds(classifyLocal(cmd, { scene: 'main' }, {}))).toEqual(['structural']);
+    }
+  });
+
+  it('importAssets / createStateMachineAsset → none (Assets panel refreshes via the journal feed)', () => {
+    for (const cmd of ['importAssets', 'createStateMachineAsset']) {
+      expect(kinds(classifyLocal(cmd, {}, {}))).toEqual(['none']);
+    }
+  });
 });
 
 describe('classifyJournal', () => {
@@ -225,5 +270,45 @@ describe('classifyJournal', () => {
     expect(
       classifyJournal(entry({ command: 'someLiveCommand', detail: { scene: 'main', entity: 'e1', property: 'Camera.ambientLight' } })),
     ).toEqual([{ kind: 'patch', scene: 'main', entity: 'e1', property: 'Camera.ambientLight', hasValue: false }]);
+  });
+
+  // --- Wave I commands (external parity with classifyLocal) ------------------
+
+  it('external updateStateMachineAsset → an asm-reload from detail.assetId', () => {
+    expect(classifyJournal(entry({ command: 'updateStateMachineAsset', detail: { assetId: 'ast_sm' } }))).toEqual([
+      { kind: 'asm-reload', assetId: 'ast_sm' },
+    ]);
+  });
+
+  it('external updateStateMachineAsset with no detail → structural (fail safe, never a guessed reload)', () => {
+    expect(kinds(classifyJournal(entry({ command: 'updateStateMachineAsset' })))).toEqual(['structural']);
+  });
+
+  it('external setTileAutotile → a valueless Tilemap.tileAssets patch (re-read + refresh)', () => {
+    expect(
+      classifyJournal(entry({ command: 'setTileAutotile', detail: { scene: 'main', entity: 'e1', char: '#' } })),
+    ).toEqual([{ kind: 'patch', scene: 'main', entity: 'e1', property: 'Tilemap.tileAssets', hasValue: false }]);
+  });
+
+  it('external revertPrefabOverride → a valueless resync patch scoped to the reverted detail', () => {
+    // Field-level revert: patch just that leaf (identical to the local path).
+    expect(
+      classifyJournal(entry({ command: 'revertPrefabOverride', detail: { scene: 'main', entity: 'e1', component: 'Transform', path: 'position.x' } })),
+    ).toEqual([{ kind: 'patch', scene: 'main', entity: 'e1', property: 'Transform.position.x', hasValue: false }]);
+    // Whole-entity revert (no component/path in detail): property '' resync.
+    expect(
+      classifyJournal(entry({ command: 'revertPrefabOverride', detail: { scene: 'main', entity: 'e1' } })),
+    ).toEqual([{ kind: 'patch', scene: 'main', entity: 'e1', property: '', hasValue: false }]);
+  });
+
+  it('external syncPrefabInstances / updatePrefab → structural', () => {
+    for (const command of ['syncPrefabInstances', 'updatePrefab']) {
+      expect(kinds(classifyJournal(entry({ command })))).toEqual(['structural']);
+    }
+  });
+
+  it('external importAssets / createStateMachineAsset → none', () => {
+    expect(kinds(classifyJournal(entry({ command: 'importAssets', detail: { count: 2, types: ['sprite'] } })))).toEqual(['none']);
+    expect(kinds(classifyJournal(entry({ command: 'createStateMachineAsset', detail: { name: 'hero' } })))).toEqual(['none']);
   });
 });

@@ -24,6 +24,7 @@ import type { JournalEntry } from './types';
 export type LiveAction =
   | { kind: 'patch'; scene: string; entity: string; property: string; value?: unknown; hasValue: boolean }
   | { kind: 'reload'; path: string }
+  | { kind: 'asm-reload'; assetId: string }
   | { kind: 'structural' }
   | { kind: 'none' };
 
@@ -68,6 +69,54 @@ function reloadActions(command: string, detail: Record<string, unknown> | undefi
     const paths = detail?.paths;
     if (!Array.isArray(paths)) return [{ kind: 'structural' }];
     return paths.filter((p): p is string => typeof p === 'string').map((path) => ({ kind: 'reload', path }));
+  }
+  return null;
+}
+
+/**
+ * Commands whose only editor effect is refreshing the Assets panel (which the
+ * journal feed already drives): live-mirroring them into the running preview is
+ * a no-op. Kept explicit — they aren't `read-only` (they mutate the project),
+ * so without this they'd fall through to the structural badge.
+ */
+const ASSETS_PANEL_ONLY = new Set(['importAssets', 'createStateMachineAsset']);
+
+/**
+ * Wave I command → live action, shared by the local and journal paths so an
+ * external agent behaves identically to an in-editor exec. `target` is the
+ * {scene, entity} the command wrote (when it records one); `assetId` is the
+ * state-machine asset an ASM update touched. Returns null when `command` is not
+ * a Wave I command (callers fall through to their own logic / `fallback`).
+ */
+function waveIActions(
+  command: string,
+  target: { scene: string; entity: string } | undefined,
+  assetId: string | undefined,
+  revert: { component?: string; path?: string } | undefined,
+): LiveAction[] | null {
+  if (ASSETS_PANEL_ONLY.has(command)) return [{ kind: 'none' }];
+  if (command === 'updateStateMachineAsset') {
+    // Hot-swap the parsed ASM doc and reset only entities bound to it. Without
+    // an asset id there's nothing to target — fail safe to the restart badge.
+    return assetId ? [{ kind: 'asm-reload', assetId }] : [{ kind: 'structural' }];
+  }
+  if (command === 'setTileAutotile') {
+    // Autotile rebinds the whole Tilemap.tileAssets map; re-read + patch it as a
+    // single valueless property (the same resolve-after-refresh lane as paints).
+    return target
+      ? [{ kind: 'patch', scene: target.scene, entity: target.entity, property: 'Tilemap.tileAssets', hasValue: false }]
+      : [{ kind: 'structural' }];
+  }
+  if (command === 'revertPrefabOverride') {
+    if (!target) return [{ kind: 'structural' }];
+    // Scope the resync to exactly what the revert touched (the detail records
+    // it): a single field (`component.path`), a whole component (`component`),
+    // or — when neither is given — every override on the entity (''). Re-read
+    // and patch that scope from the refreshed authored scene, so we never stomp
+    // runtime state on components the revert didn't affect. All valueless.
+    let property = '';
+    if (revert?.component) property = revert.path ? `${revert.component}.${revert.path}` : revert.component;
+    return [{ kind: 'patch', scene: target.scene, entity: target.entity, property, hasValue: false }];
   }
   return null;
 }
@@ -126,6 +175,23 @@ export function classifyLocal(command: string, params: Record<string, unknown>, 
     return [{ kind: 'none' }];
   }
 
+  // Wave I commands (identical mapping to the journal path). Local params carry
+  // the target directly; the ASM asset id comes off the command's result data.
+  const wave = waveIActions(
+    command,
+    typeof params.scene === 'string' && typeof params.entity === 'string'
+      ? { scene: params.scene, entity: params.entity }
+      : undefined,
+    typeof (data as { assetId?: unknown } | null)?.assetId === 'string'
+      ? ((data as { assetId: string }).assetId)
+      : undefined,
+    {
+      component: typeof params.component === 'string' ? params.component : undefined,
+      path: typeof params.path === 'string' ? params.path : undefined,
+    },
+  );
+  if (wave) return wave;
+
   // Script edits: reuse the exact detail extraction the journal uses, so local
   // and external reloads agree on which paths changed. Prefer the post-format
   // path from the result over the raw params path.
@@ -161,6 +227,23 @@ export function classifyJournal(entry: JournalEntry): LiveAction[] {
   if (reload) return reload;
 
   const detail = entry.detail;
+
+  // Wave I commands (identical mapping to the local path). Everything the
+  // classification needs is in the journal detail: the {scene,entity} target,
+  // or the ASM asset id for an update.
+  const wave = waveIActions(
+    entry.command,
+    detail && typeof detail.scene === 'string' && typeof detail.entity === 'string'
+      ? { scene: detail.scene, entity: detail.entity }
+      : undefined,
+    detail && typeof detail.assetId === 'string' ? detail.assetId : undefined,
+    {
+      component: detail && typeof detail.component === 'string' ? detail.component : undefined,
+      path: detail && typeof detail.path === 'string' ? detail.path : undefined,
+    },
+  );
+  if (wave) return wave;
+
   if (detail && typeof detail.scene === 'string' && typeof detail.entity === 'string') {
     const { scene, entity } = detail as { scene: string; entity: string };
     // Single-property target (setComponentProperty, or any command recording one).
