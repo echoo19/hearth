@@ -1046,11 +1046,15 @@ label.field-label {
 }
 
 /* "Instance of <prefab>" context banner: sits above the scrollable body so
-   it stays visible while editing the instance's components below. */
+   it stays visible while editing the instance's components below. The action
+   buttons wrap onto their own line at narrow panel widths — without this the
+   banner overflows the panel and "Update prefab" / "Sync instances" get
+   clipped out of reach at the default Inspector width. */
 .prefab-banner {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: 8px;
+  gap: 6px 8px;
   padding: 8px 10px;
   background: var(--accent-soft);
   border-bottom: 1px solid var(--border);
