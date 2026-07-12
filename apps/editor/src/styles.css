@@ -1207,6 +1207,14 @@ label.field-label {
   font-size: 11px;
 }
 
+/* Quiet caption under a read-only fallback field: a known product gap, not
+   the user's error, so it speaks in the muted ink rather than shouting in
+   var(--err) red (that stays reserved for actual validation failures). */
+.field-fallback-note {
+  color: var(--ink-mute);
+  font-size: 11px;
+}
+
 /* Vec2[] fields (LineRenderer.points, Collider polygon points): a row per
    point, reusing .vec2-pair for each row so it matches Vec2Field exactly. */
 .vec2-list {

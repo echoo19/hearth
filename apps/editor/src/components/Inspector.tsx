@@ -498,7 +498,10 @@ function UnsupportedField({ value, property }: { value: unknown; property: strin
       <span className="mono" style={{ color: 'var(--ink-faint)', fontSize: 12 }}>
         {JSON.stringify(value)}
       </span>
-      <span className="field-error">Unsupported field — needs a typed control. Not editable here; file a bug.</span>
+      <span className="field-fallback-note">
+        No typed control for this field yet — shown read-only. Edit it through your agent or the
+        hearth CLI.
+      </span>
     </div>
   );
 }
