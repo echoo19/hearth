@@ -3641,6 +3641,13 @@ kbd.shortcut-keys {
   border-radius: 3px;
 }
 
+.check-row .radio-detail {
+  display: block;
+  color: var(--ink-faint);
+  font-size: 11px;
+  margin-top: 1px;
+}
+
 .check-row-compact {
   align-items: center;
   padding: 5px 8px;

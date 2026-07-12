@@ -42,6 +42,10 @@ jobs:
         run: node packages/examples/generate.mjs
       - name: Examples are clean (byte-identical regen)
         run: git diff --exit-code -- packages/examples
+      - name: Regenerate templates (dogfoods the command system)
+        run: node packages/templates/generate.mjs
+      - name: Templates are clean (byte-identical regen)
+        run: git diff --exit-code -- packages/templates
       - name: CLI smoke test
         run: |
           node packages/cli/dist/main.js --help
