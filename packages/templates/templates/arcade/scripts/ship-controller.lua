@@ -13,6 +13,8 @@ function script.onStart(ctx)
 end
 
 function script.onUpdate(ctx, dt)
+  -- dt is the fixed timestep in seconds; unused here because we set
+  -- velocity directly and let the physics step integrate position.
   local body = ctx.getComponent("PhysicsBody")
   local speed = ctx.params.speed or 200
 

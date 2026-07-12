@@ -1,5 +1,5 @@
 import { describe, it, expect, afterEach } from 'vitest';
-import { mkdtemp, rm, readFile } from 'node:fs/promises';
+import { mkdtemp, rm, readFile, mkdir, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import {
@@ -154,5 +154,63 @@ describe('applyTemplate', () => {
     const idA = JSON.parse(await readFile(path.join(a, 'hearth.json'), 'utf8')).id;
     const idB = JSON.parse(await readFile(path.join(b, 'hearth.json'), 'utf8')).id;
     expect(idA).not.toBe(idB);
+  });
+
+  it('does not copy authoring state: .hearth/history, .hearth/log, build/, or .gitignore', async () => {
+    const fs = new NodeFileSystem();
+
+    // Build a fake "template" that looks like a checked-out template dir does
+    // after being edited in the editor: real project content, plus the
+    // authoring history/log/build artifacts that accumulate from use.
+    const src = await mkdtemp(path.join(os.tmpdir(), 'hearth-tpl-src-'));
+    cleanups.push(src);
+    await writeFile(
+      path.join(src, 'hearth.json'),
+      JSON.stringify({
+        formatVersion: 1,
+        hearthVersion: HEARTH_VERSION,
+        id: 'prj_fakesrc0',
+        name: 'Fake',
+        description: '',
+        initialScene: null,
+        scenes: [],
+        inputMappings: { actions: {} },
+        buildSettings: { width: 800, height: 600, title: 'Fake' },
+      }),
+    );
+    await mkdir(path.join(src, '.hearth', 'history'), { recursive: true });
+    await writeFile(path.join(src, '.hearth', 'history', 'index.json'), '{}');
+    await writeFile(path.join(src, '.hearth', 'history', 'state-1.json'), '{}');
+    await mkdir(path.join(src, '.hearth', 'log'), { recursive: true });
+    await writeFile(path.join(src, '.hearth', 'log', 'commands.jsonl'), '{}\n');
+    await writeFile(path.join(src, '.hearth', 'baseline.json'), '{}');
+    await writeFile(path.join(src, '.hearth', 'agent-config.json'), '{}');
+    await mkdir(path.join(src, 'build'), { recursive: true });
+    await writeFile(path.join(src, 'build', 'game.js'), '// built output');
+    await writeFile(path.join(src, '.gitignore'), 'build/\n');
+
+    const target = await mkdtemp(path.join(os.tmpdir(), 'hearth-tpl-apply-'));
+    cleanups.push(target);
+
+    const result = await applyTemplate(fs, src, target, { name: 'My Game' });
+
+    // The returned files list excludes every authoring-state path.
+    for (const f of result.files) {
+      expect(f.startsWith('.hearth/history/')).toBe(false);
+      expect(f.startsWith('.hearth/log/')).toBe(false);
+      expect(f).not.toBe('.hearth/baseline.json');
+      expect(f.startsWith('build/')).toBe(false);
+      expect(path.basename(f)).not.toBe('.gitignore');
+    }
+    expect(result.files).toContain('hearth.json');
+    // The engine-expected part of .hearth/ (agent-config.json) is preserved.
+    expect(result.files).toContain('.hearth/agent-config.json');
+
+    // The target directory itself has none of these paths on disk.
+    await expect(readFile(path.join(target, '.hearth', 'history', 'index.json'))).rejects.toThrow();
+    await expect(readFile(path.join(target, '.hearth', 'log', 'commands.jsonl'))).rejects.toThrow();
+    await expect(readFile(path.join(target, '.hearth', 'baseline.json'))).rejects.toThrow();
+    await expect(readFile(path.join(target, 'build', 'game.js'))).rejects.toThrow();
+    await expect(readFile(path.join(target, '.gitignore'))).rejects.toThrow();
   });
 });
