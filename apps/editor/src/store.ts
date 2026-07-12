@@ -25,7 +25,7 @@ import type { WsFrame } from '../server/ws';
 import type { RuntimeErrorEntry } from './runtimeBridge';
 import type { AgentPermissionMode, DetectAgentsResult } from '../server/agentSetup';
 import { ingestPtyFrame, resetAgentSocket, type AgentStatus } from './components/agent/useAgentSocket';
-import { ingestExportFrame } from './components/exportJob';
+import { ingestExportFrame, resetExportJob } from './components/exportJob';
 import { createNudgeQueue } from './nudgeQueue';
 
 export interface EditorState {
@@ -184,7 +184,12 @@ export interface EditorState {
 
   loadMeta(): Promise<void>;
   openProject(path: string): Promise<{ ok: boolean; error?: string }>;
-  createProject(dir: string, name: string, description?: string): Promise<{ ok: boolean; error?: string }>;
+  createProject(
+    dir: string,
+    name: string,
+    description?: string,
+    template?: string,
+  ): Promise<{ ok: boolean; error?: string }>;
   closeProject(): void;
   selectScene(sceneId: string): Promise<void>;
   select(entityId: string | null): void;
@@ -605,6 +610,9 @@ export const useEditor = create<EditorState>((set, get) => {
     // a reconnect after a drop that already killed the old one) — never let
     // a prior project's agent session bleed into this connection.
     resetAgentSocket();
+    // Same reasoning for the export job display: its frames arrived on the
+    // old socket, and a prior project's builds must not surface here.
+    resetExportJob();
     set({ wsStatus: 'connecting' });
     const socket = new WebSocket(wsUrl(project));
     ws = socket;
@@ -669,6 +677,7 @@ export const useEditor = create<EditorState>((set, get) => {
     teardownSocket();
     set({ wsStatus: 'disconnected' });
     resetAgentSocket();
+    resetExportJob();
   }
 
   async function afterOpen(path: string, info: ProjectInfo): Promise<void> {
@@ -872,8 +881,8 @@ export const useEditor = create<EditorState>((set, get) => {
       return { ok: true };
     },
 
-    async createProject(dir, name, description) {
-      const res = await apiCreateProject(dir, name, description);
+    async createProject(dir, name, description, template) {
+      const res = await apiCreateProject(dir, name, description, template);
       if (!res.ok || !res.path || !res.info) {
         return { ok: false, error: res.error ?? 'Failed to create project' };
       }
