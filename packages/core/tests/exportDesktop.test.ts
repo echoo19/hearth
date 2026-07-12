@@ -141,6 +141,7 @@ describe('exportDesktop', () => {
 
     const spec = captured();
     expect(spec).toBeDefined();
+    expect(spec!.projectRoot).toBe('/proj');
     const paths = spec!.files.map((f) => f.path);
     expect(paths).toContain('index.html');
     expect(paths).toContain('project.bundle.json');

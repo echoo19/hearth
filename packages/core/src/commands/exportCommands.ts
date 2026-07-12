@@ -437,6 +437,7 @@ export const exportDesktop = defineCommand({
       width: bs.width,
       height: bs.height,
       outDirAbs: joinPath(ctx.store.root, params.outDir),
+      projectRoot: ctx.store.root,
       platforms,
       ...(iconPng ? { iconPng } : {}),
     };

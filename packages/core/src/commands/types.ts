@@ -66,6 +66,8 @@ export interface DesktopBuildSpec {
   width: number; // buildSettings.width
   height: number; // buildSettings.height
   outDirAbs: string;
+  /** Absolute project root, for computing project-relative result paths. */
+  projectRoot: string;
   platforms: DesktopPlatform[];
   iconPng?: Uint8Array; // decoded project icon asset when buildSettings.icon set
 }

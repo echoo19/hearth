@@ -47,6 +47,7 @@ suite('packageDesktop (real packager, host platform only)', () => {
         width: 640,
         height: 480,
         outDirAbs: path.join(root, 'export', 'desktop'),
+        projectRoot: root,
         platforms: [host!],
       };
 
@@ -58,10 +59,9 @@ suite('packageDesktop (real packager, host platform only)', () => {
       expect(stages).toContain('package');
       expect(stages).toContain('zip');
 
-      // Result paths are project-relative (rooted at the grandparent of outDirAbs).
-      const base = path.dirname(path.dirname(spec.outDirAbs));
-      const appAbs = path.join(base, res[0].appDir);
-      const zipAbs = path.join(base, res[0].zip);
+      // Result paths are project-relative (rooted at spec.projectRoot).
+      const appAbs = path.join(spec.projectRoot, res[0].appDir);
+      const zipAbs = path.join(spec.projectRoot, res[0].zip);
 
       expect((await fsp.stat(appAbs)).isDirectory()).toBe(true);
       expect((await fsp.stat(zipAbs)).size).toBeGreaterThan(0);

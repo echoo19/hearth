@@ -17,7 +17,10 @@ import { zipDirectory } from './zip.js';
 import { resolveIcons } from './icon.js';
 import { signMacApp, createDefaultExec, makeScratchDir, type ExecFn } from './sign.js';
 
-/** Electron version the packaged apps ship with (kept in step with the editor app). */
+/**
+ * Electron version the packaged apps ship with. Must match apps/editor's
+ * pinned (non-caret) `electron` devDependency version exactly.
+ */
 const ELECTRON_VERSION = '33.4.11';
 
 export type PackageStage = 'stage' | 'download' | 'package' | 'sign' | 'notarize' | 'zip';
@@ -65,11 +68,9 @@ export async function packageDesktop(opts: PackageDesktopOptions): Promise<Deskt
   const emit = (platform: DesktopPlatform | null, stage: PackageStage, message: string) =>
     opts.onProgress?.({ platform, stage, message });
 
-  // Result paths are project-relative; the project root is the grandparent of
-  // outDirAbs (default outDir is `export/desktop`), matching the exportDesktop
-  // result contract.
-  const projectRoot = path.dirname(path.dirname(spec.outDirAbs));
-  const rel = (abs: string) => path.relative(projectRoot, abs).split(path.sep).join('/');
+  // Result paths are project-relative, rooted at spec.projectRoot (the
+  // exportDesktop caller's project root), independent of outDir depth.
+  const rel = (abs: string) => path.relative(spec.projectRoot, abs).split(path.sep).join('/');
 
   const results: DesktopBuildResult[] = [];
 

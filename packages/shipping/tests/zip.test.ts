@@ -14,10 +14,18 @@ function parseZip(buf: Buffer) {
   const centralOffset = buf.readUInt32LE(eocdOffset + 16);
   expect(centralOffset + centralSize).toBe(eocdOffset);
 
-  const entries: { name: string; crc: number; size: number; data: Buffer }[] = [];
+  const entries: {
+    name: string;
+    crc: number;
+    size: number;
+    data: Buffer;
+    madeByHigh: number;
+    externalAttrs: number;
+  }[] = [];
   let cursor = centralOffset;
   for (let i = 0; i < entryCount; i++) {
     expect(buf.readUInt32LE(cursor)).toBe(0x02014b50);
+    const madeBy = buf.readUInt16LE(cursor + 4);
     const crc = buf.readUInt32LE(cursor + 16);
     const compSize = buf.readUInt32LE(cursor + 20);
     const size = buf.readUInt32LE(cursor + 24);
@@ -25,6 +33,7 @@ function parseZip(buf: Buffer) {
     const nameLen = buf.readUInt16LE(cursor + 28);
     const extraLen = buf.readUInt16LE(cursor + 30);
     const commentLen = buf.readUInt16LE(cursor + 32);
+    const externalAttrs = buf.readUInt32LE(cursor + 38);
     const localOffset = buf.readUInt32LE(cursor + 42);
     const name = buf.subarray(cursor + 46, cursor + 46 + nameLen).toString('utf8');
 
@@ -34,7 +43,7 @@ function parseZip(buf: Buffer) {
     const dataStart = localOffset + 30 + localNameLen + localExtraLen;
     const data = buf.subarray(dataStart, dataStart + size);
 
-    entries.push({ name, crc, size, data: Buffer.from(data) });
+    entries.push({ name, crc, size, data: Buffer.from(data), madeByHigh: madeBy >> 8, externalAttrs });
     cursor += 46 + nameLen + extraLen + commentLen;
   }
   return entries;
@@ -113,6 +122,29 @@ describe('zipDirectory', () => {
 
     const entries = parseZip(await fsp.readFile(zipPath));
     expect(entries).toEqual([]);
+  });
+
+  it('marks symlink entries UNIX/0120777 in the central directory, and leaves regular files with ordinary attrs', async () => {
+    const symDir = path.join(tmpRoot, 'symtest');
+    await fsp.mkdir(symDir, { recursive: true });
+    await fsp.writeFile(path.join(symDir, 'real.txt'), 'hello');
+    await fsp.symlink('real.txt', path.join(symDir, 'link.txt'));
+
+    const zipPath = path.join(tmpRoot, 'sym.zip');
+    await zipDirectory(symDir, zipPath);
+
+    const entries = parseZip(await fsp.readFile(zipPath));
+    const byName = new Map(entries.map((e) => [e.name, e]));
+
+    const link = byName.get('link.txt')!;
+    expect(link.madeByHigh).toBe(3); // UNIX
+    expect(link.externalAttrs).toBe((0o120777 << 16) >>> 0);
+    expect(link.data.toString('utf8')).toBe('real.txt'); // content is the link target
+
+    const real = byName.get('real.txt')!;
+    expect(real.madeByHigh).toBe(0);
+    expect(real.externalAttrs).toBe(0);
+    expect(real.data.toString('utf8')).toBe('hello');
   });
 
   it('leaves no partial file behind on a nonexistent srcDir', async () => {

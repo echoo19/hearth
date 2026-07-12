@@ -46,6 +46,7 @@ async function makeSpec(platforms: DesktopPlatform[], iconPng?: Uint8Array): Pro
     width: 800,
     height: 600,
     outDirAbs: path.join(root, 'export', 'desktop'),
+    projectRoot: root,
     platforms,
     ...(iconPng ? { iconPng } : {}),
   };
@@ -109,6 +110,37 @@ describe('packageDesktop', () => {
       'export/desktop/game-win32-x64.zip',
       'export/desktop/game-linux-x64.zip',
     ]);
+  });
+
+  it('computes project-relative paths from projectRoot regardless of outDir depth', async () => {
+    const root = await fsp.mkdtemp(path.join(os.tmpdir(), 'hearth-pkg-'));
+    const base = {
+      files: [{ path: 'index.html', content: '<!doctype html><title>x</title>' }],
+      slug: 'game',
+      title: 'Game',
+      width: 800,
+      height: 600,
+      projectRoot: root,
+    };
+
+    // Single-segment outDir ('dist'): the old grandparent-of-outDirAbs
+    // heuristic would climb past the project root and leak its folder name
+    // into the result path.
+    const oneSeg: DesktopBuildSpec = { ...base, outDirAbs: path.join(root, 'dist'), platforms: ['darwin-arm64'] };
+    const resOne = await packageDesktop({ spec: oneSeg, env: {}, exec: fakeExec() });
+    expect(resOne[0].appDir.startsWith('dist/')).toBe(true);
+    expect(resOne[0].zip).toBe('dist/game-darwin-arm64.zip');
+
+    // Three-segment outDir ('a/b/c'): the old heuristic would drop the
+    // leading 'a' segment.
+    mockPackager.mockClear();
+    const threeSeg: DesktopBuildSpec = {
+      ...base,
+      outDirAbs: path.join(root, 'a', 'b', 'c'),
+      platforms: ['win32-x64'],
+    };
+    const resThree = await packageDesktop({ spec: threeSeg, env: {}, exec: fakeExec() });
+    expect(resThree[0].zip).toBe('a/b/c/game-win32-x64.zip');
   });
 
   it('adhoc codesign failure degrades to signed:none without throwing', async () => {
