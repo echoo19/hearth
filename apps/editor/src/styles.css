@@ -1068,9 +1068,17 @@ label.field-label {
   font-weight: 600;
 }
 
+/* "N overrides" count next to the banner text — quiet by default, ember only
+   on the dot glyphs it summarizes (see .field-override-dot), not a second
+   loud accent element competing with the banner icon. */
+.prefab-banner-overrides {
+  color: var(--ink-mute);
+  white-space: nowrap;
+}
+
 .inspector-row {
   display: grid;
-  grid-template-columns: 104px minmax(0, 1fr);
+  grid-template-columns: 104px minmax(0, 1fr) auto;
   align-items: center;
   gap: 8px;
   min-height: var(--ctl-h);
@@ -1084,6 +1092,33 @@ label.field-label {
 
 .inspector-row input[type='checkbox'] {
   justify-self: start;
+}
+
+/* Overridden-field marker: a small ember dot before the label, same accent
+   token as the prefab banner — no separate "override" color vocabulary. */
+.field-override-dot {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  margin-right: 5px;
+  border-radius: 50%;
+  background: var(--accent);
+  flex: none;
+  vertical-align: middle;
+}
+
+/* Per-field "Revert to prefab" action: hidden until the row is hovered or
+   the button itself gets keyboard focus (same hidden-until-hover idiom as
+   .tree-actions, but via opacity so it stays tab-reachable rather than
+   display:none). */
+.field-revert-btn {
+  opacity: 0;
+  transition: opacity var(--t-fast) var(--ease-out);
+}
+
+.inspector-row:hover .field-revert-btn,
+.field-revert-btn:focus-visible {
+  opacity: 1;
 }
 
 .component-card {

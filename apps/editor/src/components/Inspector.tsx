@@ -15,7 +15,20 @@ import {
   type TileRow,
 } from '../tileAutotileRows';
 import { ColorField, ConfirmDialog, Icon, NumberField, TextField, componentIcon } from './ui';
-import { countPrefabInstances, createSyncPreflight, syncConfirmBody } from '../prefabActions';
+import {
+  countPrefabInstances,
+  createSyncPreflight,
+  instanceOverrideCount,
+  revertAllConfirmBody,
+  syncConfirmBody,
+} from '../prefabActions';
+import {
+  isFieldOverridden,
+  overriddenEntityIds,
+  overriddenPathsUnder,
+  type EntityPrefabInfo,
+  type RawPrefabOverride,
+} from '../prefabOverrides';
 
 // ---------------------------------------------------------------------------
 // Field editors: value type decides the control. All commit on blur / Enter.
@@ -631,6 +644,7 @@ export function Inspector() {
   const info = useEditor((s) => s.info);
   const componentDocs = useEditor((s) => s.componentDocs);
   const exec = useEditor((s) => s.exec);
+  const query = useEditor((s) => s.query);
   const select = useEditor((s) => s.select);
   const log = useEditor((s) => s.log);
   const openAnimatorFor = useEditor((s) => s.openAnimatorFor);
@@ -646,6 +660,17 @@ export function Inspector() {
   const syncPreflightRef = useRef(createSyncPreflight());
   const selectionRef = useRef(selection);
   const [pendingSyncAllFor, setPendingSyncAllFor] = useState<string | null>(null);
+  // Per-field override state for the SELECTED entity, resolved fresh from
+  // inspectEntity (the raw scene payload only carries the prefab marker on
+  // an instance's root, not per-field override info, and only inspectEntity
+  // resolves membership for a non-root instance member). Refetched whenever
+  // selection or scene data changes — `entity` gets a new reference on every
+  // scene refresh (which every mutating exec() triggers), so this follows
+  // the same "journal feed causes a refetch" idiom as CodePanel/Timeline
+  // without needing journalFeed itself as a dependency.
+  const [prefabInfo, setPrefabInfo] = useState<EntityPrefabInfo | null>(null);
+  const [confirmRevertAll, setConfirmRevertAll] = useState(false);
+  const [revertingAll, setRevertingAll] = useState(false);
 
   useEffect(() => {
     selectionRef.current = selection;
@@ -655,6 +680,22 @@ export function Inspector() {
     () => scene?.entities.find((e) => e.id === selection),
     [scene, selection],
   );
+
+  useEffect(() => {
+    let cancelled = false;
+    if (!sceneId || !entity) {
+      setPrefabInfo(null);
+      return;
+    }
+    void query<{ prefab?: EntityPrefabInfo }>('inspectEntity', { scene: sceneId, entity: entity.id }).then(
+      (data) => {
+        if (!cancelled) setPrefabInfo(data?.prefab ?? null);
+      },
+    );
+    return () => {
+      cancelled = true;
+    };
+  }, [query, sceneId, entity]);
 
   if (!entity || !sceneId) {
     return (
@@ -683,10 +724,43 @@ export function Inspector() {
 
   const prefabAssetId = entity.prefab?.asset;
   const prefabAsset = prefabAssetId ? assets.find((a) => a.id === prefabAssetId) : undefined;
+  // The raw scene marker (root entities only) carries the FULL override list
+  // for the whole instance — every member entity's overrides, not just the
+  // root's own (unlike the per-entity `prefabInfo.overridden` used for field
+  // dots above). SceneEntity's public type only declares `{ asset }`; the
+  // extra fields are the real runtime shape (schema/scene.ts EntitySchema).
+  const instanceOverrides = (entity.prefab as { overrides?: RawPrefabOverride[] } | undefined)?.overrides ?? [];
+  const overrideCount = instanceOverrideCount(instanceOverrides);
 
   const handleUpdatePrefab = async () => {
     if (!prefabAssetId) return;
     await exec('updatePrefab', { prefab: prefabAssetId, scene: sceneId, entity: entity.id });
+  };
+
+  // One revertPrefabOverride call per exact recorded path under this field
+  // (see overriddenPathsUnder — a "Position" row can carry two separately
+  // recorded axis overrides that a single path="position" call wouldn't
+  // match). Awaited sequentially so concurrent calls don't race mutating the
+  // same root marker's overrides list.
+  const handleRevertField = async (component: string, field: string) => {
+    for (const path of overriddenPathsUnder(prefabInfo, component, field)) {
+      await exec('revertPrefabOverride', { scene: sceneId, entity: entity.id, component, path });
+    }
+  };
+
+  const handleRevertAll = async () => {
+    setRevertingAll(true);
+    try {
+      // One revertPrefabOverride call per distinct member entity (no
+      // component/path narrows the scope, so each call clears every override
+      // on that entity) — the minimal command count for "clear everything on
+      // this instance", rather than one call per individual override record.
+      for (const memberId of overriddenEntityIds(instanceOverrides)) {
+        await exec('revertPrefabOverride', { scene: sceneId, entity: memberId });
+      }
+    } finally {
+      setRevertingAll(false);
+    }
   };
 
   const openSyncAllConfirm = async () => {
@@ -724,7 +798,17 @@ export function Inspector() {
           <span className="prefab-banner-text">
             Instance of <strong>{prefabAsset?.name ?? entity.prefab.asset}</strong>
           </span>
+          {overrideCount > 0 && (
+            <span className="prefab-banner-overrides">
+              {overrideCount} override{overrideCount === 1 ? '' : 's'}
+            </span>
+          )}
           <span style={{ flex: 1 }} />
+          {overrideCount > 0 && (
+            <button className="btn btn-sm" disabled={revertingAll} onClick={() => setConfirmRevertAll(true)}>
+              {revertingAll ? 'Reverting…' : 'Revert all'}
+            </button>
+          )}
           <button className="btn btn-sm" onClick={() => void handleUpdatePrefab()}>
             Update prefab
           </button>
@@ -1068,12 +1152,30 @@ export function Inspector() {
                   } else {
                     control = <UnsupportedField key={rowKey} value={value} property={property} />;
                   }
+                  // A field carries the ember "overridden" dot + a per-field
+                  // revert action once it (or a nested sub-path under it, or
+                  // an ancestor field it's nested under) has a recorded
+                  // instance override — see isFieldOverridden's ancestor/
+                  // descendant handling for why a Vec2 axis-only edit still
+                  // lights up the single "Position" row.
+                  const overridden = isFieldOverridden(prefabInfo, type, field);
                   return (
                     <div className="inspector-row" key={field}>
                       <label className="field-label" title={property}>
+                        {overridden && <span className="field-override-dot" aria-hidden="true" />}
                         {humanizeFieldLabel(field)}
                       </label>
                       {control}
+                      {overridden && (
+                        <button
+                          type="button"
+                          className="btn btn-sm field-revert-btn"
+                          title={`Revert "${humanizeFieldLabel(field)}" to the prefab's value`}
+                          onClick={() => void handleRevertField(type, field)}
+                        >
+                          Revert
+                        </button>
+                      )}
                     </div>
                   );
                 })}
@@ -1150,6 +1252,18 @@ export function Inspector() {
           const target = syncAllTarget;
           setSyncAllTarget(null);
           if (target) void exec('syncPrefabInstances', { prefab: target.asset });
+        }}
+      />
+      <ConfirmDialog
+        open={confirmRevertAll}
+        title="Revert all overrides?"
+        body={revertAllConfirmBody(overrideCount)}
+        confirmLabel="Revert all"
+        danger
+        onCancel={() => setConfirmRevertAll(false)}
+        onConfirm={() => {
+          setConfirmRevertAll(false);
+          void handleRevertAll();
         }}
       />
     </>
