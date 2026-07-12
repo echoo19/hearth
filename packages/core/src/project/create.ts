@@ -41,6 +41,30 @@ export const DEFAULT_INPUT_ACTIONS: Record<string, string[]> = {
   action: ['KeyE', 'Enter'],
 };
 
+/**
+ * The standard `.gitignore` written into every new Hearth project — the single
+ * source of truth for it, shared by `createProject` (blank projects) and the
+ * template scaffolder in `@hearth/templates` (which regenerates it fresh rather
+ * than copying the template's own copy).
+ *
+ * .hearth-tmp/: scratch dir for tools that need an ephemeral in-project export
+ * (hearth screenshot). Cleaned up after every run, but a crash mid-capture can
+ * leave residue — keep it out of the user's git status. screenshot.png:
+ * `hearth screenshot`'s own default --out — an agent running it without an
+ * explicit --out would otherwise litter a throwaway debug capture straight into
+ * the project root.
+ */
+export const PROJECT_GITIGNORE = [
+  'build/',
+  '.hearth/baseline.json',
+  '.hearth/history/',
+  '.hearth/log/',
+  '.hearth-tmp/',
+  'screenshot.png',
+  '.DS_Store',
+  '',
+].join('\n');
+
 export async function createProject(
   fs: FsLike,
   root: string,
@@ -146,25 +170,7 @@ export async function createProject(
   files.push('CLAUDE.md');
   await writeJson(fs, joinPath(root, AGENT_CONFIG_FILE), generateAgentConfig(options.name, projectId));
   files.push(AGENT_CONFIG_FILE);
-  await fs.writeFile(
-    joinPath(root, '.gitignore'),
-    // .hearth-tmp/: scratch dir for tools that need an ephemeral in-project
-    // export (hearth screenshot). Cleaned up after every run, but a crash
-    // mid-capture can leave residue — keep it out of the user's git status.
-    // screenshot.png: `hearth screenshot`'s own default --out — an agent
-    // running it without an explicit --out would otherwise litter a
-    // throwaway debug capture straight into the project root.
-    [
-      'build/',
-      '.hearth/baseline.json',
-      '.hearth/history/',
-      '.hearth/log/',
-      '.hearth-tmp/',
-      'screenshot.png',
-      '.DS_Store',
-      '',
-    ].join('\n'),
-  );
+  await fs.writeFile(joinPath(root, '.gitignore'), PROJECT_GITIGNORE);
   files.push('.gitignore');
 
   const store = await ProjectStore.load(fs, root);

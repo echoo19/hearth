@@ -3118,6 +3118,92 @@ kbd.shortcut-keys {
   padding: 4px 0;
 }
 
+/* Template picker: radio-group of selectable tiles on the New-project form. */
+.tpl-picker {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+}
+
+/* Narrow enough that four tiles fit one row; drops to two-up on small widths. */
+@media (max-width: 380px) {
+  .tpl-picker {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+.tpl-card {
+  display: grid;
+  grid-template-rows: auto auto auto;
+  gap: 3px;
+  padding: 10px 9px 11px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-2);
+  cursor: pointer;
+  transition:
+    border-color var(--t-fast) var(--ease-out),
+    background var(--t-fast) var(--ease-out);
+}
+
+/* The native radio drives state and keyboard nav, but stays visually hidden
+   (not display:none, so it keeps focus + arrow-key group navigation). */
+.tpl-card input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  border: 0;
+  clip: rect(0 0 0 0);
+  clip-path: inset(50%);
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.tpl-card:hover {
+  border-color: var(--border-strong);
+  background: var(--bg-3);
+}
+
+.tpl-card[data-selected='true'] {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+/* Focus ring follows the (hidden) radio for full keyboard visibility. */
+.tpl-card:has(input:focus-visible) {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.tpl-card-glyph {
+  display: inline-flex;
+  color: var(--ink-mute);
+}
+
+.tpl-card[data-selected='true'] .tpl-card-glyph {
+  color: var(--accent);
+}
+
+.tpl-card-name {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.tpl-card-desc {
+  font-size: 11px;
+  line-height: 1.35;
+  color: var(--ink-mute);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tpl-card {
+    transition: none;
+  }
+}
+
 /* --------------------------------------------------------------------------
    Assets panel: file import drop target & audio preview
    -------------------------------------------------------------------------- */

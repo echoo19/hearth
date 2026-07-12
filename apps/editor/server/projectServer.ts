@@ -33,6 +33,7 @@ import {
   type DesktopPlatform,
 } from '@hearth/core';
 import { NodeFileSystem, loadPlayerBundle } from '@hearth/core/node';
+import { listTemplates, getTemplatePath, scaffoldFromTemplate } from '@hearth/templates';
 import { isRequestAllowed } from './originGuard.js';
 import { attachWebSocket, type ExportFrame, type ExportStage, type DesktopExportResult } from './ws.js';
 import { detectAgents, prepareMcpConfig, McpConfigParseError, type AgentPermissionMode } from './agentSetup.js';
@@ -460,18 +461,47 @@ export function createProjectServerContext(options: ProjectServerOptions = {}) {
       }
     },
 
-    async createNewProject(dir: unknown, name: unknown, description?: unknown): Promise<JsonResult> {
+    async createNewProject(
+      dir: unknown,
+      name: unknown,
+      description?: unknown,
+      template?: unknown,
+    ): Promise<JsonResult> {
       if (typeof dir !== 'string' || dir.trim() === '' || typeof name !== 'string' || name.trim() === '') {
         return { status: 400, body: { ok: false, error: 'Both "dir" and "name" are required.' } };
+      }
+      if (template !== undefined && template !== null && template !== '') {
+        if (typeof template !== 'string' || !listTemplates().some((t) => t.name === template)) {
+          const valid = listTemplates()
+            .map((t) => t.name)
+            .join(', ');
+          return {
+            status: 400,
+            body: { ok: false, error: `Unknown template "${String(template)}". Available templates: ${valid}.` },
+          };
+        }
       }
       try {
         const baseDir = path.resolve(dir.trim());
         const slug = slugify(name.trim());
         const target = slug ? path.join(baseDir, slug) : baseDir;
-        await createProject(nodeFs, target, {
-          name: name.trim(),
-          description: typeof description === 'string' ? description : undefined,
-        });
+        const useTemplate = typeof template === 'string' && template !== '';
+        if (useTemplate) {
+          if (await pathExists(path.join(target, 'hearth.json'))) {
+            const err = new Error(`A Hearth project already exists at ${target}`) as Error & { code: string };
+            err.code = 'CONFLICT';
+            throw err;
+          }
+          await scaffoldFromTemplate(nodeFs, getTemplatePath(template), target, {
+            name: name.trim(),
+            description: typeof description === 'string' ? description : undefined,
+          });
+        } else {
+          await createProject(nodeFs, target, {
+            name: name.trim(),
+            description: typeof description === 'string' ? description : undefined,
+          });
+        }
         const session = await getSession(target);
         const result = await session.execute('inspectProject');
         const info = result.data as { name?: string };
@@ -1089,7 +1119,7 @@ async function route(ctx: ProjectServerContext, req: IncomingMessage, res: Serve
     }
     case 'POST /api/project/create': {
       const body = await readJsonBody(req);
-      const result = await ctx.createNewProject(body.dir, body.name, body.description);
+      const result = await ctx.createNewProject(body.dir, body.name, body.description, body.template);
       return sendJson(res, result.status, result.body);
     }
     case 'GET /api/project/recent': {

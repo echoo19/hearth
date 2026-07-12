@@ -66,6 +66,54 @@ describe('project open/create', () => {
     const again = await ctx.createNewProject(path.join(tmpDir, 'projects'), 'Test Game');
     expect(again.status).toBe(409);
   });
+
+  it('scaffolds from a genre template with a fresh agent-config', async () => {
+    const created = await ctx.createNewProject(
+      path.join(tmpDir, 'projects'),
+      'Tpl Game',
+      'from a template',
+      'platformer',
+    );
+    expect(created.status).toBe(200);
+    const body = created.body as { ok: boolean; path: string; info: { name: string } };
+    expect(body.ok).toBe(true);
+    expect(body.info.name).toBe('Tpl Game');
+
+    const project = JSON.parse(await fsp.readFile(path.join(body.path, 'hearth.json'), 'utf8'));
+    expect(project.name).toBe('Tpl Game');
+    // Template gameplay content came through: the platformer ships a scene.
+    expect(project.scenes.length).toBeGreaterThan(0);
+
+    // agent-config is regenerated for the new project (fresh name + matching id),
+    // not the template's stale copy.
+    const agentConfig = JSON.parse(
+      await fsp.readFile(path.join(body.path, '.hearth', 'agent-config.json'), 'utf8'),
+    );
+    expect(agentConfig.project).toBe('Tpl Game');
+    expect(agentConfig.projectId).toBe(project.id);
+
+    // Standard .gitignore written even though the template ships none.
+    const gitignore = await fsp.readFile(path.join(body.path, '.gitignore'), 'utf8');
+    expect(gitignore).toContain('build/');
+
+    // The scaffolded project opens and validates through a real session.
+    const opened = await ctx.openProject(body.path);
+    expect(opened.status).toBe(200);
+    const validate = await ctx.runCommand(body.path, 'validateProject', {});
+    expect((validate.body as { data: { valid: boolean } }).data.valid).toBe(true);
+  });
+
+  it('rejects an unknown template name', async () => {
+    const created = await ctx.createNewProject(
+      path.join(tmpDir, 'projects'),
+      'Bad Tpl',
+      undefined,
+      'roguelike',
+    );
+    expect(created.status).toBe(400);
+    expect((created.body as { ok: boolean }).ok).toBe(false);
+    expect((created.body as { error: string }).error).toContain('platformer');
+  });
 });
 
 describe('command endpoint', () => {

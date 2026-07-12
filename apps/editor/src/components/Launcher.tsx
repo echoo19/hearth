@@ -3,6 +3,7 @@ import { useEditor } from '../store';
 import { apiRecentProjects, apiExampleProjects } from '../api';
 import type { ExampleProject, RecentProject } from '../types';
 import { Icon } from './ui';
+import { TemplatePicker } from './TemplatePicker';
 import { hearthNative } from '../native';
 
 export function Launcher() {
@@ -15,6 +16,7 @@ export function Launcher() {
   const [name, setName] = useState('');
   const [dir, setDir] = useState('');
   const [description, setDescription] = useState('');
+  const [template, setTemplate] = useState(''); // '' = Blank
   const [openPath, setOpenPath] = useState('');
   const [createError, setCreateError] = useState('');
   const [openError, setOpenError] = useState('');
@@ -49,7 +51,12 @@ export function Launcher() {
     }
     setBusy(true);
     setCreateError('');
-    const res = await createProject(dir.trim() || defaultDir, name.trim(), description.trim() || undefined);
+    const res = await createProject(
+      dir.trim() || defaultDir,
+      name.trim(),
+      description.trim() || undefined,
+      template || undefined,
+    );
     setBusy(false);
     if (!res.ok) setCreateError(res.error ?? 'Failed to create project.');
   }
@@ -125,6 +132,11 @@ export function Launcher() {
                 onChange={(e) => setDescription(e.target.value)}
                 placeholder="A tiny game to build with an agent"
               />
+            </div>
+            <div className="form-field">
+              {/* Group caption for the radiogroup; the picker carries its own aria-label. */}
+              <label className="field-label">Start from</label>
+              <TemplatePicker value={template} onChange={setTemplate} disabled={busy} />
             </div>
             {createError && <div className="launcher-error">{createError}</div>}
             <div>

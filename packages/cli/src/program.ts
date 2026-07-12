@@ -20,6 +20,7 @@ import {
   type HearthSession,
 } from '@hearth/core';
 import { NodeFileSystem } from '@hearth/core/node';
+import { listTemplates, getTemplatePath, scaffoldFromTemplate } from '@hearth/templates';
 import { captureScreenshot } from '@hearth/playtest';
 import { zipDirectory, describeSigningCapability } from '@hearth/shipping';
 import { CliError, openSession, resolveProjectRoot, type GlobalOpts } from './context.js';
@@ -47,6 +48,9 @@ import {
 // "version" on every release — see the version-bump checklist in
 // .superpowers/sdd/task-12-report.md.
 const VERSION = '0.12.0';
+
+/** The genre template names `init --template` accepts, in menu order. */
+const TEMPLATE_NAMES: string[] = listTemplates().map((t) => t.name);
 
 /** The four native desktop targets `export desktop` can build, mirroring core's exportDesktop schema. */
 const DESKTOP_PLATFORMS = ['darwin-arm64', 'darwin-x64', 'win32-x64', 'linux-x64'] as const;
@@ -196,25 +200,77 @@ export function buildProgram(): Command {
   // ---------------------------------------------------------------------
   addGlobalOptions(
     program
-      .command('init <name>')
-      .description('create a new Hearth project')
+      // `[name]` is optional so `--list-templates` works on its own; a missing
+      // name for an actual create is rejected in the action below.
+      .command('init [name]')
+      .description('create a new Hearth project (optionally from a genre template)')
       .option('--dir <path>', 'target directory (default: ./<slug-of-name> under cwd)')
       .option('--description <text>', 'project description')
-      .option('--no-starter', 'skip the starter scene (camera + ground + player)')
+      .option('--template <name>', `scaffold from a genre template (${TEMPLATE_NAMES.join(', ')})`)
+      .option('--list-templates', 'list the available genre templates and exit')
+      .option('--no-starter', 'skip the starter scene (camera + ground + player); blank projects only')
       .option('--width <n>', 'build width in pixels', (v) => parseInt(v, 10))
       .option('--height <n>', 'build height in pixels', (v) => parseInt(v, 10)),
-  ).action(async (name: string, opts, cmd: Command) => {
+  ).action(async (name: string | undefined, opts, cmd: Command) => {
     await guarded(cmd, 'init', async () => {
       const g = globalOpts(cmd);
+
+      if (opts.listTemplates) {
+        const templates = listTemplates();
+        if (g.json) {
+          process.exitCode = emit(makeResult('init', true, { templates }), g);
+        } else {
+          console.log('Available templates:');
+          for (const t of templates) console.log(`  ${t.name.padEnd(12)} ${t.description}`);
+          process.exitCode = 0;
+        }
+        return;
+      }
+
+      if (typeof name !== 'string' || name.trim() === '') {
+        throw new CliError('INVALID_INPUT', 'A project name is required (or pass --list-templates).');
+      }
+
+      if (opts.template !== undefined) {
+        if (!TEMPLATE_NAMES.includes(opts.template)) {
+          throw new CliError(
+            'INVALID_INPUT',
+            `Unknown template "${opts.template}". Available templates: ${TEMPLATE_NAMES.join(', ')}.`,
+          );
+        }
+        // --no-starter sets opts.starter === false; it only governs the blank
+        // starter scene, so it's meaningless (and likely a mistake) with a template.
+        if (opts.starter === false) {
+          throw new CliError(
+            'INVALID_INPUT',
+            '--no-starter applies to blank projects only; it cannot be combined with --template.',
+          );
+        }
+      }
+
       const target = await resolveInitTarget(name, opts.dir);
       await fsp.mkdir(target, { recursive: true });
-      const { files } = await createProject(new NodeFileSystem(), target, {
-        name,
-        description: opts.description,
-        starterScene: opts.starter !== false,
-        width: opts.width,
-        height: opts.height,
-      });
+      const fs = new NodeFileSystem();
+
+      let files: string[];
+      if (opts.template !== undefined) {
+        if (existsSync(path.join(target, 'hearth.json'))) {
+          throw new CliError('CONFLICT', `A Hearth project already exists at ${target}`);
+        }
+        ({ files } = await scaffoldFromTemplate(fs, getTemplatePath(opts.template), target, {
+          name,
+          description: opts.description,
+        }));
+      } else {
+        ({ files } = await createProject(fs, target, {
+          name,
+          description: opts.description,
+          starterScene: opts.starter !== false,
+          width: opts.width,
+          height: opts.height,
+        }));
+      }
+
       const suggestions = [
         `cd ${path.relative(process.cwd(), target) || '.'}`,
         'hearth inspect project --json',

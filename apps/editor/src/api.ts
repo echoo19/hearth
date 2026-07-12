@@ -33,8 +33,13 @@ export function apiOpenProject(path: string): Promise<OpenResult> {
   return postJson<OpenResult>('/api/project/open', { path });
 }
 
-export function apiCreateProject(dir: string, name: string, description?: string): Promise<OpenResult> {
-  return postJson<OpenResult>('/api/project/create', { dir, name, description });
+export function apiCreateProject(
+  dir: string,
+  name: string,
+  description?: string,
+  template?: string,
+): Promise<OpenResult> {
+  return postJson<OpenResult>('/api/project/create', { dir, name, description, template });
 }
 
 export async function apiRecentProjects(): Promise<RecentProject[]> {

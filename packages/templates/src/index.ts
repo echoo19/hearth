@@ -83,3 +83,4 @@ export function getTemplatePath(name: string): string {
 }
 
 export { applyTemplate, type ApplyTemplateOptions, type ApplyTemplateResult } from './apply.js';
+export { scaffoldFromTemplate } from './scaffold.js';

@@ -83,6 +83,87 @@ describe('hearth init', () => {
   });
 });
 
+describe('hearth init --template', () => {
+  it('lists the available templates with --list-templates', async () => {
+    const result = await runCli(['init', '--list-templates', '--json'], tmpRoot);
+    expect(result.code).toBe(0);
+    const envelope = parseJson(result.stdout);
+    expect(envelope.success).toBe(true);
+    const names = envelope.data.templates.map((t: { name: string }) => t.name);
+    expect(names).toEqual(['platformer', 'topdown', 'arcade']);
+    for (const t of envelope.data.templates) {
+      expect(typeof t.description).toBe('string');
+      expect(t.description.length).toBeGreaterThan(10);
+    }
+  });
+
+  it('scaffolds a platformer that validates clean, with fresh agent-config', async () => {
+    const dir = path.join(tmpRoot, 'tpl-platformer');
+    await fsp.mkdir(dir, { recursive: true });
+    const result = await runCli(['init', 'My Platformer', '--dir', dir, '--template', 'platformer', '--json'], tmpRoot);
+    expect(result.code).toBe(0);
+    const envelope = parseJson(result.stdout);
+    expect(envelope.success).toBe(true);
+
+    const project = JSON.parse(await fsp.readFile(path.join(dir, 'hearth.json'), 'utf8'));
+    expect(project.name).toBe('My Platformer');
+    expect(project.id).toMatch(/^prj_/);
+
+    // agent-config is regenerated with the new name + id (not the template's).
+    const agentConfig = JSON.parse(await fsp.readFile(path.join(dir, '.hearth', 'agent-config.json'), 'utf8'));
+    expect(agentConfig.project).toBe('My Platformer');
+    expect(agentConfig.projectId).toBe(project.id);
+
+    // A standard .gitignore was written even though the template ships none.
+    const gitignore = await fsp.readFile(path.join(dir, '.gitignore'), 'utf8');
+    expect(gitignore).toContain('build/');
+
+    // The scaffolded project validates through the real CLI validate command.
+    const validate = await runCli(['validate', '--json'], dir);
+    expect(validate.code).toBe(0);
+    const valEnvelope = parseJson(validate.stdout);
+    expect(valEnvelope.success).toBe(true);
+    expect(valEnvelope.data.valid).toBe(true);
+  });
+
+  it('errors on an unknown template, listing the valid ones', async () => {
+    const dir = path.join(tmpRoot, 'tpl-unknown');
+    await fsp.mkdir(dir, { recursive: true });
+    const result = await runCli(['init', 'Bad', '--dir', dir, '--template', 'roguelike', '--json'], tmpRoot);
+    expect(result.code).toBe(1);
+    const envelope = parseJson(result.stdout);
+    expect(envelope.success).toBe(false);
+    const msg = envelope.errors[0].message;
+    expect(msg).toContain('platformer');
+    expect(msg).toContain('topdown');
+    expect(msg).toContain('arcade');
+  });
+
+  it('rejects --template together with --no-starter', async () => {
+    const dir = path.join(tmpRoot, 'tpl-conflict');
+    await fsp.mkdir(dir, { recursive: true });
+    const result = await runCli(
+      ['init', 'Conflict', '--dir', dir, '--template', 'arcade', '--no-starter', '--json'],
+      tmpRoot,
+    );
+    expect(result.code).toBe(1);
+    const envelope = parseJson(result.stdout);
+    expect(envelope.success).toBe(false);
+  });
+
+  it('refuses to scaffold a template over an existing project', async () => {
+    // Same cwd, no --dir: both runs resolve to the same slug dir, so the
+    // second scaffolds over an existing hearth.json and must CONFLICT.
+    const cwd = path.join(tmpRoot, 'tpl-dup-cwd');
+    await fsp.mkdir(cwd, { recursive: true });
+    const first = await runCli(['init', 'Dup Tpl', '--template', 'topdown', '--json'], cwd);
+    expect(first.code).toBe(0);
+    const second = await runCli(['init', 'Dup Tpl', '--template', 'topdown', '--json'], cwd);
+    expect(second.code).toBe(1);
+    expect(parseJson(second.stdout).success).toBe(false);
+  });
+});
+
 describe('hearth inspect / create / set / validate (end-to-end flow)', () => {
   it('inspects the freshly created project', async () => {
     const result = await runCli(['inspect', 'project', '--json'], projectDir);
