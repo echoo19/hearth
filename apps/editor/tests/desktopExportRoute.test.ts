@@ -229,6 +229,34 @@ describe('a per-platform packageDesktop failure attributes the platform in the e
       else process.env.HEARTH_TOOLS_DIR = savedDir;
     }
   });
+
+  it('does NOT attribute a platform for a validation error, even though the message names every id', async () => {
+    // The zod enum-validation message for a bad `platforms` param enumerates
+    // all four platform ids; a bare substring scan would tag the first one.
+    const savedDir = process.env.HEARTH_TOOLS_DIR;
+    process.env.HEARTH_TOOLS_DIR = failToolsDir;
+    try {
+      const frames: WsFrame[] = [];
+      const listener = (payload: { root: string; frame: WsFrame }) => frames.push(payload.frame);
+      failCtx.exportBus.on('frame', listener);
+
+      const start = await failCtx.startDesktopExport(failProjectPath, undefined, ['macos']);
+      expect(start.status).toBe(200);
+
+      for (let i = 0; i < 100 && !frames.some((f) => f.type === 'export-error'); i++) await wait(10);
+      failCtx.exportBus.off('frame', listener);
+
+      const errorFrame = frames.find((f) => f.type === 'export-error') as
+        | { type: 'export-error'; platform?: string; message: string }
+        | undefined;
+      expect(errorFrame).toBeDefined();
+      expect(errorFrame!.message).toMatch(/Invalid|invalid/);
+      expect(errorFrame!.platform).toBeUndefined();
+    } finally {
+      if (savedDir === undefined) delete process.env.HEARTH_TOOLS_DIR;
+      else process.env.HEARTH_TOOLS_DIR = savedDir;
+    }
+  });
 });
 
 describe('desktop export progress over the WebSocket', () => {

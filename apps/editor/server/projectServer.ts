@@ -98,7 +98,12 @@ const DESKTOP_PLATFORMS: DesktopPlatform[] = ['darwin-arm64', 'darwin-x64', 'win
  */
 function extractFailingPlatform(message: string | undefined): DesktopPlatform | undefined {
   if (!message) return undefined;
-  return DESKTOP_PLATFORMS.find((p) => message.includes(p));
+  // Anchor on DesktopPackageError's exact phrase: a bare substring scan
+  // misattributes errors whose message merely mentions a platform id — the
+  // zod enum-validation message for a bad `platforms` param enumerates all
+  // four, and a user outDir could echo one via an fs error.
+  const m = message.match(/packaging (\S+) failed:/);
+  return DESKTOP_PLATFORMS.find((p) => p === m?.[1]);
 }
 
 interface RecentEntry {
