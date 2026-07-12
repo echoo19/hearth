@@ -73,6 +73,14 @@ export function extractJournalDetail(
     if (!Array.isArray(d.errors) || !Array.isArray(d.warnings)) return undefined;
     return { errors: d.errors.length, warnings: d.warnings.length };
   }
+  if (name === 'exportDesktop') {
+    // Record the target platforms + outDir (from the parsed params), never
+    // the build payload — this is a non-mutating, journaled-only outcome.
+    if (typeof params !== 'object' || params === null) return undefined;
+    const p = params as Record<string, unknown>;
+    if (!Array.isArray(p.platforms) || typeof p.outDir !== 'string') return undefined;
+    return { platforms: p.platforms, outDir: p.outDir };
+  }
   if (name === 'importAssets') {
     if (!Array.isArray(d.imported)) return undefined;
     const types = Array.from(

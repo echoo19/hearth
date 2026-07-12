@@ -61,8 +61,11 @@ export {
   type CommandIssue,
   type ChangedRef,
   type RuntimeHooks,
+  type DesktopPlatform,
+  type DesktopBuildSpec,
+  type DesktopBuildResult,
 } from './commands/types.js';
-export { type WebExportBundle } from './commands/exportCommands.js';
+export { assembleWebBuild, type WebExportBundle } from './commands/exportCommands.js';
 export { HearthSession, extractJournalDetail, type SessionOptions } from './session.js';
 export { SCRIPT_TEMPLATE, LUA_SCRIPT_TEMPLATE, resolveScriptsPath } from './commands/scriptCommands.js';
 export { HISTORY_EXEMPT } from './commands/historyCommands.js';

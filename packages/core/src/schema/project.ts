@@ -63,6 +63,12 @@ export const BuildSettingsSchema = z.object({
   /** Fixed physics/update timestep in Hz. */
   fixedTimestep: z.number().int().positive().default(60),
   title: z.string().default(''),
+  /**
+   * Sprite asset id used as the app/window icon for native (desktop) exports,
+   * or null for none. Web export ignores it; `exportDesktop` decodes it to a
+   * PNG for the packaged shell.
+   */
+  icon: z.string().nullable().default(null),
   loading: LoadingSettingsSchema.default({}),
 });
 export type BuildSettings = z.infer<typeof BuildSettingsSchema>;

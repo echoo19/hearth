@@ -98,6 +98,7 @@ const ALL_DEFINITIONS: CommandDefinition[] = [
   diffCommands.runSceneSmoke,
   diffCommands.buildProject,
   exportCommands.exportWeb,
+  exportCommands.exportDesktop,
   // history (undo/redo)
   historyCommands.undo,
   historyCommands.redo,

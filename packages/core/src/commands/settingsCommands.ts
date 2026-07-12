@@ -22,6 +22,8 @@ const BuildSettingsPatchSchema = z.object({
   targetFps: z.number().int().positive().optional(),
   fixedTimestep: z.number().int().positive().optional(),
   title: z.string().optional(),
+  /** Sprite asset id for the native app icon, or null to clear it. */
+  icon: z.string().nullable().optional(),
   /** Deep-merged: only the loading fields you pass change. */
   loading: LoadingSettingsPatchSchema.optional(),
 });

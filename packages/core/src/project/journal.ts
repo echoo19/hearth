@@ -33,7 +33,7 @@ export const JOURNAL_ROTATE_KEEP = 2000;
  * outcome (pass/fail counts, validation results) is itself the kind of fact
  * an agent's trust timeline needs, even on a read-only run.
  */
-export const JOURNAL_ALLOWLIST = new Set(['runPlaytest', 'validateProject']);
+export const JOURNAL_ALLOWLIST = new Set(['runPlaytest', 'validateProject', 'exportDesktop']);
 
 export function shouldJournal(name: string, mutates: boolean): boolean {
   return mutates || JOURNAL_ALLOWLIST.has(name);

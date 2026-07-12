@@ -65,7 +65,8 @@ export class ProjectError extends Error {
       | 'PREFAB_NOT_INSTANCE'
       | 'ASM_ANIMATION_NOT_FOUND'
       | 'AUTOTILE_SHEET_NOT_FOUND'
-      | 'AUTOTILE_FRAME_MISSING' = 'INVALID_INPUT',
+      | 'AUTOTILE_FRAME_MISSING'
+      | 'DESKTOP_EXPORT_UNSUPPORTED' = 'INVALID_INPUT',
   ) {
     super(message);
     this.name = 'ProjectError';

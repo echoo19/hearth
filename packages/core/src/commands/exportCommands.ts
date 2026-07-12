@@ -6,7 +6,7 @@
  * `CommandContext.resources.getPlayerBundle()`.
  */
 import { z } from 'zod';
-import { defineCommand, type CommandContext } from './types.js';
+import { defineCommand, type CommandContext, type DesktopBuildSpec, type DesktopPlatform } from './types.js';
 import { ProjectError } from '../project/store.js';
 import { joinPath, dirnamePath, isSafeOut } from '../fs.js';
 import { slugify } from '../ids.js';
@@ -369,5 +369,80 @@ export const exportWeb = defineCommand({
       title,
       slug,
     };
+  },
+});
+
+const DESKTOP_PLATFORMS = ['darwin-arm64', 'darwin-x64', 'win32-x64', 'linux-x64'] as const;
+
+export const exportDesktop = defineCommand({
+  name: 'exportDesktop',
+  description:
+    'Export native desktop builds: wraps the web build in an Electron shell and zips one app per platform ' +
+    '(darwin-arm64, darwin-x64, win32-x64, linux-x64). Uses buildSettings.icon (a sprite asset) as the app icon. ' +
+    'Validates the project first. Requires a host with a desktop packager (CLI, MCP server, or editor).',
+  permission: 'build',
+  mutates: false,
+  paramsSchema: z.object({
+    outDir: z.string().default('export/desktop'),
+    platforms: z
+      .array(z.enum(DESKTOP_PLATFORMS))
+      .min(1)
+      .default([...DESKTOP_PLATFORMS]),
+  }),
+  async run(ctx, params) {
+    if (!isSafeOut(params.outDir)) {
+      throw new ProjectError(`Export outDir must be a project-relative path (got: ${params.outDir})`, 'INVALID_INPUT');
+    }
+    const report = await validateProject(ctx.store);
+    if (!report.valid) {
+      throw new ProjectError(
+        `Cannot export: project has ${report.errors.length} validation error(s). Run validateProject for details.`,
+        'SCHEMA_ERROR',
+      );
+    }
+
+    if (!ctx.resources?.packageDesktop) {
+      throw new ProjectError(
+        'exportDesktop needs a desktop packager, but this host did not provide one (no resources.packageDesktop). ' +
+          'Desktop export is supported by the Hearth CLI, MCP server, and editor.',
+        'DESKTOP_EXPORT_UNSUPPORTED',
+      );
+    }
+
+    const { files, slug, title } = await assembleWebBuild(ctx, { inlineAssets: false, inlinePlayer: false });
+
+    // Resolve + decode the project icon (a sprite asset) when set.
+    let iconPng: Uint8Array | undefined;
+    const iconId = ctx.store.project.buildSettings.icon;
+    if (iconId) {
+      const asset = ctx.store.getAsset(iconId);
+      if (!asset) {
+        throw new ProjectError(`buildSettings.icon references an unknown asset: ${iconId}`, 'NOT_FOUND');
+      }
+      if (asset.type !== 'sprite') {
+        throw new ProjectError(
+          `buildSettings.icon must be a sprite asset, but ${iconId} is a "${asset.type}" asset`,
+          'INVALID_INPUT',
+        );
+      }
+      iconPng = await ctx.fs.readFileBinary(joinPath(ctx.store.root, asset.path));
+    }
+
+    const bs = ctx.store.project.buildSettings;
+    const platforms = params.platforms as DesktopPlatform[];
+    const spec: DesktopBuildSpec = {
+      files,
+      slug,
+      title,
+      width: bs.width,
+      height: bs.height,
+      outDirAbs: joinPath(ctx.store.root, params.outDir),
+      platforms,
+      ...(iconPng ? { iconPng } : {}),
+    };
+    const builds = await ctx.resources.packageDesktop(spec);
+
+    ctx.changed({ kind: 'file', path: params.outDir, action: 'created' });
+    return { outDir: params.outDir, slug, builds };
   },
 });

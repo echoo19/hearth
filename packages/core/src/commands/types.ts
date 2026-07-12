@@ -51,6 +51,34 @@ export interface RuntimeHooks {
  * itself (built artifacts shipped outside the project). Injected by
  * CLI / MCP / editor.
  */
+/** Native desktop target for `exportDesktop` / `packageDesktop`. */
+export type DesktopPlatform = 'darwin-arm64' | 'darwin-x64' | 'win32-x64' | 'linux-x64';
+
+/**
+ * The web build plus native-shell parameters handed to a host's
+ * `packageDesktop`. `files` are the assembled web build (index.html at root),
+ * to be wrapped in an Electron shell per platform.
+ */
+export interface DesktopBuildSpec {
+  files: Array<{ path: string; content: string | Uint8Array }>;
+  slug: string;
+  title: string;
+  width: number; // buildSettings.width
+  height: number; // buildSettings.height
+  outDirAbs: string;
+  platforms: DesktopPlatform[];
+  iconPng?: Uint8Array; // decoded project icon asset when buildSettings.icon set
+}
+
+/** One packaged desktop build produced by `packageDesktop`. */
+export interface DesktopBuildResult {
+  platform: DesktopPlatform;
+  appDir: string; // project-relative
+  zip: string; // project-relative
+  signed: 'adhoc' | 'identity' | 'none';
+  notarized: boolean;
+}
+
 export interface CommandResources {
   /**
    * Source of the built web player (hearth-player.js) used by exportWeb.
@@ -58,6 +86,13 @@ export interface CommandResources {
    * directory; should reject when no bundle can be found.
    */
   getPlayerBundle(): Promise<string>;
+  /**
+   * Package an assembled web build into native desktop apps (one per
+   * requested platform), used by `exportDesktop`. Requires node + Electron,
+   * so only node hosts (CLI, MCP server, editor) provide it; its absence is
+   * how `exportDesktop` detects an unsupported host.
+   */
+  packageDesktop?(spec: DesktopBuildSpec): Promise<DesktopBuildResult[]>;
 }
 
 export interface CommandContext {
