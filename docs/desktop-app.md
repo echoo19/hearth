@@ -88,6 +88,14 @@ bump of `electron-builder` alongside them).
 
 ## Real signing & notarization (removing the warnings entirely)
 
+This section is about signing **the Hearth editor app itself** (the
+`.dmg`/`.exe`/`.AppImage` you'd distribute from this repo's releases) via
+`electron-builder` and CI secrets — a separate pipeline from signing *games
+made with Hearth*, which `hearth export desktop` handles with its own,
+differently-named environment variables (`HEARTH_MAC_IDENTITY` and
+friends) read locally at export time; see
+[export.md#signing-macos-only](./export.md#signing-macos-only).
+
 Release builds sign automatically once these GitHub Actions secrets exist;
 the workflow itself doesn't need to change:
 

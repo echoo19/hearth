@@ -70,6 +70,7 @@ normative; this page is descriptive. Every file carries `formatVersion: 1`.
     "backgroundColor": "#1a1a2e",
     "targetFps": 60, "fixedTimestep": 60, // physics/update Hz
     "title": "My Game",
+    "icon": null,                // sprite asset id used as the desktop app icon, or null for the bundled default
     "loading": {                 // what an exported game shows while loading
       "backgroundColor": "#000000",
       "image": null,             // sprite asset id, centered, or null
@@ -80,7 +81,9 @@ normative; this page is descriptive. Every file carries `formatVersion: 1`.
 ```
 
 Change settings with the `updateSettings` command (partial deep-merge)
-rather than hand-editing.
+rather than hand-editing, or the editor's **Game Settings** panel for a
+typed UI over every field above — see
+[export.md#editor-game-settings-panel](./export.md#editor-game-settings-panel).
 
 ## Scene files (`scenes/*.scene.json`)
 

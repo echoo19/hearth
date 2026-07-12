@@ -23,7 +23,9 @@ cd star_catcher
 
 You get a `Main` scene with a camera, ground, and a blue player box that
 already falls and lands (dynamic physics body + static ground), plus
-`AGENTS.md`/`CLAUDE.md` for any agent that visits.
+`AGENTS.md`/`CLAUDE.md` for any agent that visits. `hearth init --template
+platformer|topdown|arcade` starts from a genre skeleton instead of blank —
+see [cli.md](./cli.md#project-templates).
 
 ## 3. Make the player move
 
@@ -121,7 +123,9 @@ hearth export web --zip --allow build
 ```
 
 A static playable build lands in `export/web/`, plus an itch.io-ready zip.
-See [export.md](./export.md).
+For a native app instead: `hearth export desktop --allow build` zips one
+packaged app per platform. See [export.md](./export.md) and
+[shipping-to-itch.md](./shipping-to-itch.md).
 
 ## Where next
 
@@ -129,7 +133,8 @@ See [export.md](./export.md).
 - [CLI guide](./cli.md): everything `hearth` can do
 - [Prefabs](./prefabs.md): reusable entity templates, `ctx.scene.spawnPrefab`
 - [Editor guide](./editor.md): chrome, shortcuts, transform handles
-- [Web export](./export.md): folder vs single file, itch.io
+- [Export](./export.md): web (folder vs single file) and desktop (Electron, signing)
+- [Shipping to itch.io](./shipping-to-itch.md): web zip, desktop channels, butler
 - [Examples](../packages/examples): platformer, top-down, visual novel,
   Ember Trail (an all-Lua two-scene game), and Glow Caves (an all-Lua
   lighting/particles/animation showcase)

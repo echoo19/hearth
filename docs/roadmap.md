@@ -1,8 +1,32 @@
 # Hearth Roadmap
 
-v0.12 is the current milestone. Its first release, v0.12.0 (shipped,
-below, "the content ceiling"), stops what games can be from being
-tooling-limited: **animation state machines** (an `AnimationStateMachine`
+v0.13 is the current milestone. Its first release, v0.13.0 (shipped,
+below, "ship your game"), stops exports from being web-only: **desktop
+game export** (`exportDesktop`/`hearth export desktop`/MCP `export_desktop`
+wraps a project's web build in a hardened Electron shell and zips one
+packaged app per platform — `darwin-arm64`, `darwin-x64`, `win32-x64`,
+`linux-x64`, all four by default — via a new `@hearth/shipping` package
+the CLI, MCP server, and editor all share), a **macOS signing ladder**
+(ad-hoc `codesign` by default; `HEARTH_MAC_IDENTITY` for a real identity;
+plus `HEARTH_APPLE_ID`/`HEARTH_APPLE_PASSWORD`/`HEARTH_TEAM_ID` to notarize
+and staple — Windows/Linux ship unsigned this release, honestly
+documented), a shippable **app icon** (`buildSettings.icon`, a sprite
+asset converted to `.icns`/`.ico`, falling back to a bundled default — the
+wave's only new settings field, and the occasion for a new typed **Game
+Settings** editor panel covering every build setting, not just this one),
+**itch.io zip parity everywhere** (`export web --zip` was CLI-only; the
+MCP `export_web` tool and the editor's Export dialog both gained it,
+alongside a new [Shipping to itch.io](./shipping-to-itch.md) guide), and
+**project templates** (`hearth init --template platformer|topdown|arcade`
+scaffolds a small playable genre skeleton instead of an empty scene, with
+a matching picker in the editor's Launcher). Registry grew 70 → 71
+commands; MCP grew 67 → 68 command tools (70 tools total, including
+`screenshot`/`get_agent_instructions`). See
+[export.md](./export.md#desktop-export-electron),
+[shipping-to-itch.md](./shipping-to-itch.md), and
+[cli.md](./cli.md#project-templates).
+
+On top of v0.12's **animation state machines** (an `AnimationStateMachine`
 component drives a sibling `SpriteRenderer` from a params/states/
 transitions asset — `assets/statemachines/*.asm.json`,
 `createStateMachineAsset`/`updateStateMachineAsset`,
@@ -33,26 +57,15 @@ command tools (69 tools total, including `screenshot`/
 [editor.md](./editor.md#autotile), and
 [prefabs.md](./prefabs.md#live-link-semantics-marker-merge-detach).
 
-On top of v0.11's **script hot-reload during play** (edit a script, every
-live entity running it picks up the new code — `ctx.vars`/timers/tweens
-survive, `onStart` does not re-run, a compile failure keeps the old code
-running, and an error-disabled script re-enables), **live Inspector
-property patching during play** (Inspector edits dual-write — saved and
-undoable as always, and live-patched into the running preview so a field
-like `Camera.ambientLight` no longer needs a Stop/Play round-trip —
-external CLI/MCP edits from another session patch live too, via the
-command journal), a **"Scene changed — Restart" badge** for structural
-changes that can't be live-patched, **runtime error → exact line**,
-**format-on-save** (StyLua/Prettier house style), **Code panel tabs**
-(multi-buffer editing with independent per-tab undo), **`ctx.` hover
-docs**, **in-file search** (`Mod-F`), and **cross-script search/replace**
-(`⇧⌘F` in the editor; `hearth script search|replace`/MCP
-`search_scripts`/`replace_in_scripts`, dry-run-first). Registry grew 62 →
-65 commands; MCP grew 61 → 64 tools. See
-[scripting.md](./scripting.md#hot-reload-during-play) and
-[editor.md](./editor.md#live-iteration-during-play).
-
-On top of v0.10's **post-processing system** (`Camera.postEffects` —
+On top of v0.11's script hot-reload during play (edit a script, every live
+entity running it picks up the new code without a Stop/Play round-trip),
+live Inspector property patching during play, a "Scene changed — Restart"
+badge for structural changes that can't be live-patched, runtime error →
+exact line, format-on-save (StyLua/Prettier), Code panel tabs, `ctx.`
+hover docs, in-file search, and cross-script search/replace (`⇧⌘F`;
+`hearth script search|replace`/MCP `search_scripts`/`replace_in_scripts`,
+dry-run-first) — Registry grew 62 → 65 commands; MCP grew 61 → 64 tools —
+v0.10's **post-processing system** (`Camera.postEffects` —
 bloom/CRT/vignette/chromatic-aberration/pixelate/color-grade, up to 8
 stacked — and per-sprite `SpriteEffects` outline/hit-flash/dissolve,
 `ctx.effects.flash`), editor **Code panel** (lazy CodeMirror 6, `ctx.`
@@ -96,6 +109,69 @@ what's deliberately missing.
 The standing rule for everything below: **agent-native first**. Each system
 ships as schemas + commands (inspectable via `hearth … --json`, exposed as
 MCP tools, testable in headless playtests) before it gets editor UI.
+
+## Shipped in v0.13.0
+
+- **Desktop game export (Electron)**: `exportDesktop` wraps a project's web
+  build in a minimal, hardened Electron shell (`contextIsolation: true`,
+  `nodeIntegration: false`, no preload, navigation locked to the loaded
+  file) and packages one app per platform — `darwin-arm64`, `darwin-x64`,
+  `win32-x64`, `linux-x64`, all four by default. CLI `hearth export desktop
+  [--out dir] [--platform p]...` (repeatable), MCP `export_desktop`, and a
+  Desktop pane in the editor's Export dialog (platform checkboxes, output
+  dir, a live per-platform progress stream, per-build zip paths) all wire
+  into the same new `@hearth/shipping` package, which drives
+  `@electron/packager` and moves the CLI's zip helper (now `zipDirectory`,
+  shared by web and desktop output alike) out of the CLI and into one
+  implementation. Output is `<project-slug>-<platform>.zip` next to a
+  per-platform app directory, requires the `build` permission like `export
+  web`. Cross-packaged Windows/Linux artifacts built from a macOS host are
+  packaging-verified but not execution-verified — CI only runs the host
+  platform's packaged app; the docs say so plainly. See
+  [export.md](./export.md#desktop-export-electron).
+- **macOS signing ladder**: ad-hoc `codesign` by default (falls back to
+  unsigned rather than failing the export if codesign itself can't run);
+  `HEARTH_MAC_IDENTITY` signs with a real identity (a signing failure here
+  is a hard error); adding `HEARTH_APPLE_ID`/`HEARTH_APPLE_PASSWORD`/
+  `HEARTH_TEAM_ID` also notarizes (`xcrun notarytool submit --wait`) and
+  staples the ticket. Windows/Linux builds are unsigned this release. Each
+  build reports its own `signed`/`notarized` state, surfaced in the CLI
+  output and the editor's pre-export signing status line
+  (`GET /api/export/capability`).
+- **Shippable app icon + Game Settings panel**: `buildSettings.icon` (a
+  sprite asset id, default `null`) is converted to `.icns`/`.ico` for
+  desktop exports (`png2icons`, pure JS — falls back to a bundled default
+  Hearth icon on a decode failure rather than failing the build). Setting
+  it needed a settings surface that didn't exist yet, so this wave also
+  added a typed **Game Settings** editor panel (Window/Loop/Loading/
+  Shipping sections) covering every `buildSettings` field, not just the
+  icon — closing a standing editor/agent parity gap where `buildSettings`
+  had no UI at all. Every edit is a normal `updateSettings` call, so undo/
+  journal/live-patch all work for free.
+- **itch.io zip parity everywhere**: `export web --zip` (`<project-slug>-
+  web.zip`, `index.html` at the zip root) was CLI-only; the MCP
+  `export_web` tool gained a `zip` param and the editor's Export dialog
+  gained a "Zip for itch.io" checkbox, both wired through the same
+  `zipDirectory` implementation the desktop export uses. A zip failure
+  after a successful export reports as a `ZIP_FAILED` warning rather than
+  turning a real export into a failure. New guide:
+  [shipping-to-itch.md](./shipping-to-itch.md) (web upload, one zip per
+  desktop platform as separate itch.io channels, butler as a documented
+  manual step — Hearth doesn't wrap it).
+- **Project templates**: `hearth init <name> --template
+  platformer|topdown|arcade` (default still `blank`) scaffolds a small,
+  playable genre skeleton — one scene, a camera, a commented movement
+  script, a few obstacles, one `smoke` playtest — instead of an empty
+  scene. `--list-templates` prints the available ones; an unknown name
+  lists them in the error. New checked-in workspace package
+  `@hearth/templates` (mirrors how `packages/examples` is generated and
+  regenerated on every version bump) backs both the CLI flag and a new
+  template-picker card row in the editor's Launcher (`blank` first,
+  preselected). Pre-project, so CLI/editor only — no MCP tool; see
+  [cli.md](./cli.md#project-templates).
+- Registry grew 70 → 71 commands (`exportDesktop`); MCP grew 67 → 68
+  command tools (70 tools total, including `screenshot`/
+  `get_agent_instructions`).
 
 ## Shipped in v0.12.0
 
@@ -553,20 +629,12 @@ MCP tools, testable in headless playtests) before it gets editor UI.
 
 The end goal, stated so every release aims at it: **a solo dev or an agent
 can take a 2D game from empty project to a polished, distributable game
-without leaving the tool or hitting a wall.** Two waves remain — v0.12's
-content ceiling shipped above. Each one completes a loop rather than
-scattering features; anything that doesn't serve that loop waits (see
-Non-goals).
-
-### v0.13 — ship your game
-
-Exports stop being web-only:
-
-- **Desktop game export** — per-platform packaged builds of *your game*,
-  not just the editor.
-- **Signed/notarized engine builds**, custom app icon, auto-update.
-- **itch.io-ready output** and **project templates** for the
-  empty-project moment.
+without leaving the tool or hitting a wall.** One phase remains — v0.13's
+ship-your-game wave (desktop export, signing, itch.io parity, project
+templates — see [Shipped in v0.13.0](#shipped-in-v0130) above) closed the
+last feature gap. Each release completed a loop rather than scattering
+features; anything that didn't serve that loop waited (see Non-goals) and
+still does.
 
 ### v1.0 — hardening
 

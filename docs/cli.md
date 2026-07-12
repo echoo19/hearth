@@ -50,9 +50,15 @@ hearth diff                              # what changed, for human review
 
 ## Command tour
 
-**Project**: `init <name>` (new project + agent files), `doctor` (health
-report), `commands` (dump the full engine command registry; agents can
-discover every operation from this).
+**Project**: `init <name> [--dir path] [--description text] [--template
+platformer|topdown|arcade] [--list-templates] [--no-starter] [--width n]
+[--height n]` (new project + agent files; default is a blank project with a
+starter scene — camera, ground, a player that falls and lands; `--template`
+scaffolds from a genre skeleton instead — see [Templates](#project-templates)
+below; `--list-templates` prints the available ones and exits; `--no-starter`
+skips the starter scene and only applies to blank projects, rejected
+alongside `--template`), `doctor` (health report), `commands` (dump the full
+engine command registry; agents can discover every operation from this).
 
 **Inspect** (read-only): `inspect project|scenes|components|assets|scripts`,
 `inspect scene <scene> [--full]`, `inspect entity <scene> <entity>`,
@@ -252,7 +258,13 @@ CI command).
 **Export** (requires `--allow build`): `export web [--out dir]
 [--single-file] [--zip]` — a static playable web build; `--zip` writes an
 itch.io-ready `<project-slug>-web.zip` (see [export.md](./export.md)).
-`build [--out dir]` still exports a portable project folder.
+`export desktop [--out dir] [--platform p]...` — native Electron builds,
+one zipped app per platform; `--platform` repeats (valid ids:
+`darwin-arm64`, `darwin-x64`, `win32-x64`, `linux-x64`; default is all
+four) — see [export.md#desktop-export-electron](./export.md#desktop-export-electron)
+for the signing ladder, the icon setting, and honest cross-platform
+verification limits. `build [--out dir]` still exports a portable project
+folder.
 
 **Screenshot** (requires `--allow build`): `screenshot [scene] [--frame n]
 [--seed n] [--size WxH] [--debug] [--out path]` — a deterministic PNG of a
@@ -384,6 +396,34 @@ supported today). All three validate `char` against the Tilemap's
 cells as command errors rather than silently clamping — the error
 `suggestions` field points you at `resize tilemap` first if that's what's
 needed.
+
+## Project templates
+
+`hearth init <name> --template <t>` scaffolds a new project from a small,
+playable genre skeleton instead of the blank default — one scene, a camera,
+a player with a comment-annotated movement script, a few obstacles, and a
+`smoke` playtest asserting the player moves. Pick whichever genre is
+closest to what you're building and grow it from there; none of them are
+demo games, just teaching-sized starting points.
+
+| Template | What it starts with |
+| --- | --- |
+| `platformer` | Gravity + jump, a small autotiled ground strip |
+| `topdown` | Four-direction movement, camera follow, a small autotiled room |
+| `arcade` | Fixed camera, a ship, shoot-on-key bullets, one spawned target prefab |
+
+```bash
+hearth init my-platformer --template platformer
+hearth init --list-templates          # names + descriptions, no project created
+```
+
+An unknown `--template` name fails and lists the valid ones. `--template`
+and `--no-starter` don't compose — `--no-starter` only makes sense against
+the blank default, since every template already ships its own starter
+content. This is pre-project setup, so it's CLI/editor-only (the editor's
+Launcher has the same picker as cards, blank preselected); there is no MCP
+tool for it — an MCP agent runs `hearth init` as a shell/CLI step, or asks
+the human to.
 
 ## Command journal
 

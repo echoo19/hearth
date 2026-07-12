@@ -36,7 +36,12 @@ Left to right: project name and scene picker, **+ Scene**, **Play/Stop**,
 follows `listHistory`'s undo/redo cursor, tooltip shows the platform
 shortcut), **Debug** (toggles the collider/ velocity/light debug overlay in
 the preview — never on in exports), the view menu, **Checkpoint**,
-**Review**, **Export**, and **Close project**. A "Every change saves
+**Review**, **Export** (opens the Export dialog — a Web/Desktop segmented
+control; Web has the folder/single-file/zip options `hearth export web`
+takes, Desktop has platform checkboxes, an output dir, a signing status
+line, and a live per-platform progress stream — see
+[export.md](./export.md#desktop-export-electron)), and **Close project**.
+A "Every change saves
 automatically" note sits near Export as a reminder that there's no separate
 save step — see [⌘S](#shortcuts) below for why that matters for the
 keyboard. While playing, a **Scene changed — Restart** button appears next

@@ -18,7 +18,7 @@ reviewable diffs.
 - **CLI**: `hearth <command> --json` (see [cli.md](./cli.md)). Best when the
   agent already lives in a shell (Claude Code, Codex CLI).
 - **MCP**: `hearth-mcp --project <path>` over stdio (see
-  [mcp.md](./mcp.md)). Best for MCP-native clients; 67 command tools
+  [mcp.md](./mcp.md)). Best for MCP-native clients; 68 command tools
   (plus `screenshot` and `get_agent_instructions`) wrapping the same core
   commands.
 
@@ -82,7 +82,7 @@ everything except `build`.
 | `safe-edit` | scene/entity/component CRUD, project settings (`updateSettings`: buildSettings incl. loading visuals, initial scene, input mappings), snapshot/revert, playtest defs |
 | `code-edit` | create/edit/attach scripts (Lua by default, `--language js` for JavaScript) |
 | `asset-edit` | import + procedural asset creation (sprites, tiles, sounds), metadata |
-| `build` | web export (`exportWeb`) + portable project builds (`buildProject`) |
+| `build` | web export (`exportWeb`) + native desktop export (`exportDesktop`) + portable project builds (`buildProject`) |
 
 A human can run an agent read-only to get analysis with a guarantee of no
 mutation, or grant `safe-edit` only to keep the agent out of code.
@@ -106,6 +106,20 @@ the same `CTX_API` table that powers `hearth inspect api`), **CLAUDE.md**
 recommended first commands, permission defaults) in every project. The MCP
 server serves the same content via the `get_agent_instructions` tool, so an
 agent that connects cold can bootstrap itself.
+
+## Starting a new project: templates
+
+`init` is pre-project — there's no MCP tool for it, since a session needs an
+existing `hearth.json` to connect to. An agent working from the CLI picks a
+starting point with `hearth init <name> --template <t>` instead of the
+blank default: `platformer` (gravity + jump), `topdown` (four-direction
+movement + camera follow), or `arcade` (fixed camera, shoot-on-key). Each is
+a small, playable skeleton (one scene, a commented movement script, a
+`smoke` playtest), not a demo to keep or delete — pick whichever genre is
+closest to the ask and build on it, the same way you'd build on a blank
+project. See [cli.md](./cli.md#project-templates) for the full flag
+reference; the editor's Launcher offers the same choice as cards for a
+human starting a project by hand.
 
 ## Recipes
 

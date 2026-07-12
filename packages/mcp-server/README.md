@@ -174,6 +174,7 @@ requires no permission (it's purely informational).
 | `run_scene` | `runScene` | read-only |
 | `build_project` | `buildProject` | build |
 | `export_web` | `exportWeb` | build |
+| `export_desktop` | `exportDesktop` | build |
 | `screenshot` | — (calls `@hearth/playtest`'s `captureScreenshot` directly; needs headless Chrome/Chromium) | build |
 | `get_agent_instructions` | — (reads project `AGENTS.md`, or generates the default) | — |
 

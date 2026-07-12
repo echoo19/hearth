@@ -1,9 +1,9 @@
 # MCP Guide
 
 Hearth ships `hearth-mcp` (`packages/mcp-server`), a stdio MCP server that
-exposes the engine command layer as 69 typed tools (67 command tools, plus
+exposes the engine command layer as 70 typed tools (68 command tools, plus
 `screenshot` and `get_agent_instructions`, neither of which wraps a core
-command). The engine's own command registry has 70 commands total — three
+command). The engine's own command registry has 71 commands total — three
 (`setEntityEnabled`, `setEntityTags`, `setAssetMetadata`) are CLI-only
 housekeeping verbs with no MCP wrapper. The full reference (flags,
 registration snippets, permission table, complete tool list) lives in
@@ -76,7 +76,13 @@ see [input.md](./input.md)), `inspect_api` (the script `ctx` reference),
 `inspect_path` (grid A\* pathfinding over solid scene geometry — same
 query `ctx.scene.findPath` and `hearth inspect path` run, see
 [cli.md](./cli.md#pathfinding)), `build_project`,
-`export_web`, `get_agent_instructions`, … Every result is the standard `CommandResult`
+`export_web` (`zip: true` also writes an itch.io-ready `<project-slug>-web.zip`;
+a zip failure after a successful export reports as a `ZIP_FAILED` warning,
+not a failed result — see [export.md](./export.md)), `export_desktop`
+(native Electron builds, one zipped app per `platforms` entry — darwin-arm64/
+darwin-x64/win32-x64/linux-x64, all four by default; see
+[export.md#desktop-export-electron](./export.md#desktop-export-electron)
+for the signing ladder and icon setting), `get_agent_instructions`, … Every result is the standard `CommandResult`
 JSON envelope in the tool output (with `isError` set on failure), so MCP
 agents and CLI agents read identical structures.
 

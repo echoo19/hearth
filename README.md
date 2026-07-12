@@ -30,7 +30,7 @@ and assets on your own disk.
    Agent ──▶ CLI / MCP ──┘      (validate · execute · diff)     scenes · scripts · assets
 ```
 
-Both audiences use the same 70 engine commands: `createEntity`,
+Both audiences use the same 71 engine commands: `createEntity`,
 `setComponentProperty`, `runPlaytest`, `getDiff`, and so on. An agent can
 build a level, wire input, write behavior scripts, import and slice art, run
 headless playtests, and hand you a structural diff to review in the editor,
@@ -107,7 +107,7 @@ journal of every command any session has run). Property writes
 (`set`/`set-many`, MCP `set_component_property`/`set_properties`) validate
 the full dot-path against the component's real schema shape, with a
 did-you-mean suggestion on a typo instead of silently corrupting the write.
-The MCP server exposes 69 typed tools (67 wrapping a core command, plus
+The MCP server exposes 70 typed tools (68 wrapping a core command, plus
 `screenshot`/`get_agent_instructions`) with per-session permission modes.
 Playtests script input (including gamepad axes and pointer drags) and
 assert on game state, events, particles, audio, camera effects, post
@@ -132,8 +132,13 @@ surfaces all the way through; scripts spawn prefabs live with
 
 **Export.** `hearth export web` produces a static, self-contained build
 (one folder, one HTML file, or a zip for itch.io) that boots straight into
-your first scene. No engine splash screen, no branding, nothing of Hearth's
-chrome ships in your game.
+your first scene. `hearth export desktop` wraps the same build in a
+hardened Electron shell and zips a native app per platform (macOS
+arm64/x64, Windows, Linux — ad-hoc signed by default on macOS, with hooks
+for a real identity and notarization). No engine splash screen, no
+branding, nothing of Hearth's chrome ships in your game either way. See
+[docs/export.md](docs/export.md) and
+[docs/shipping-to-itch.md](docs/shipping-to-itch.md).
 
 **Procedural placeholders.** Agents can create deterministic SVG sprites and
 WAV sound effects through commands, so a game is playable and audible before
@@ -142,31 +147,30 @@ same asset pipeline: import, probe, slice, animate.
 
 ## Status
 
-Hearth is at **v0.12.0**, a developer preview. The full loop works end to
+Hearth is at **v0.13.0**, a developer preview. The full loop works end to
 end: project model, editor, runtime preview, CLI, MCP, headless playtests,
-diff review, web export. This release, "The Content Ceiling," stops what
-games can be from being tooling-limited: **animation state machines** (an
-`AnimationStateMachine` component plus `ctx.animator.setParam/getParam/
-fire/state`, scriptable identically in Lua and JS, and a typed Animator
-editor panel), **47-blob tilemap autotiling** (`setTileAutotile`/`hearth
-autotile set` picks a tile's sheet frame from its 8 neighbours instead of
-hand-placing every edge/corner variant), **live-linked prefabs with
-per-field overrides** (editing an instance records an override
-automatically; `updatePrefab` auto-syncs every other instance in the same
-command, merging in each instance's own overrides rather than discarding
-them; `revertPrefabOverride` restores one field, one component, or a
-whole instance), **in-scene particle preview** (a Scene toolbar toggle
-simulates the selected emitter live, off the same deterministic stepper
-the runtime uses), and **bulk asset import** (`importAssets`/`hearth
-import asset <paths...> --recursive` — one atomic batch, whole-folder
-drag-drop in the editor) — on top of earlier releases' script hot-reload,
-live Inspector patching, post-processing system, Code/Live panels,
-Pause/Step, prefabs, embedded agent panel, disk-backed command journal,
-published performance numbers, scene management, tilemap editing, undo/
-redo, gamepad input, camera effects, UI widgets, asset pipeline, physics
-v2, pathfinding, 2D lighting and particles, and Lua scripting. The
-[roadmap](docs/roadmap.md) keeps an honest list of what's still missing,
-including desktop game export and notarized builds.
+diff review, web and desktop export. This release, "Ship Your Game," stops
+exports from being web-only: **desktop game export** (`hearth export
+desktop` wraps a project's web build in a hardened Electron shell and zips
+a native app per platform — macOS arm64/x64, Windows, Linux — via a new
+`@hearth/shipping` package shared by the CLI, MCP server, and editor), a
+**macOS signing ladder** (ad-hoc by default, with `HEARTH_MAC_IDENTITY`/
+notarization env-var hooks for a real release), a shippable **app icon**
+(`buildSettings.icon`, editable in a new typed **Game Settings** editor
+panel), **itch.io zip parity everywhere** (the MCP `export_web` tool and
+the editor's Export dialog both gained the zip option the CLI already had,
+plus a new [Shipping to itch.io](docs/shipping-to-itch.md) guide), and
+**project templates** (`hearth init --template platformer|topdown|arcade`
+scaffolds a small playable genre skeleton instead of an empty scene) — on
+top of earlier releases' animation state machines, blob47 tilemap
+autotiling, live-linked prefabs with per-field overrides, in-scene
+particle preview, bulk asset import, script hot-reload, live Inspector
+patching, post-processing system, Code/Live panels, Pause/Step, prefabs,
+embedded agent panel, disk-backed command journal, published performance
+numbers, scene management, tilemap editing, undo/redo, gamepad input,
+camera effects, UI widgets, asset pipeline, physics v2, pathfinding, 2D
+lighting and particles, and Lua scripting. The [roadmap](docs/roadmap.md)
+keeps an honest list of what's next.
 
 ## Install
 
@@ -260,6 +264,11 @@ reactions, and a seeded dissolve death animation — the playable proof
 behind [docs/effects.md](docs/effects.md)). They double as reference
 projects: everything the docs describe, one of them does.
 
+Starting your *own* project is a separate, smaller thing: `hearth init
+--template platformer|topdown|arcade` scaffolds a teaching-sized genre
+skeleton (not a showcase) to build on — see
+[docs/cli.md](docs/cli.md#project-templates).
+
 ## Documentation
 
 | | |
@@ -281,7 +290,8 @@ projects: everything the docs describe, one of them does.
 | [UI](docs/ui.md) | Widgets, layout, focus navigation |
 | [Editor guide](docs/editor.md) | Chrome, keyboard shortcuts, transform handles, Code/Live/Animator panels |
 | [Performance](docs/performance.md) | Benchmark harness, published numbers, honest guidance |
-| [Web export](docs/export.md) | Static builds, single-file, itch.io |
+| [Export](docs/export.md) | Web (static/single-file) and desktop (Electron, signing) builds |
+| [Shipping to itch.io](docs/shipping-to-itch.md) | Web zip upload, desktop channel zips, butler |
 | [Roadmap](docs/roadmap.md) | What's next, and what's honestly missing |
 | [Contributing](CONTRIBUTING.md) | Dev setup and the AI contribution policy |
 
