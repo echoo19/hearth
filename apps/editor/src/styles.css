@@ -1112,17 +1112,20 @@ label.field-label {
 }
 
 /* Fixed-width 3rd grid cell for component-field rows (see the field map in
-   Inspector.tsx). It's rendered on every such row — whether or not that
-   field is currently overridden — specifically so .inspector-row's 3rd
-   `auto` track always has a same-sized item to size itself against. An
-   `auto` track only reserves width when a row actually has a 3rd grid
-   item, so previously only overridden rows (which alone rendered the
-   .field-revert-btn) had that track occupied, and their minmax(0, 1fr)
-   control column resolved narrower than plain sibling rows in the same
-   card. Keeping this slot always present, always this width, makes the
+   Inspector.tsx). It's rendered on every such row of a prefab instance
+   member — whether or not that field is currently overridden —
+   specifically so .inspector-row's 3rd `auto` track always has a
+   same-sized item to size itself against. An `auto` track only reserves
+   width when a row actually has a 3rd grid item, so previously only
+   overridden rows (which alone rendered the .field-revert-btn) had that
+   track occupied, and their minmax(0, 1fr) control column resolved
+   narrower than plain sibling rows in the same card. Keeping this slot
+   present on every row of an instance, always this width, makes the
    control column identical across every field row regardless of override
-   state. Entity-level rows (Name/Enabled/Tags/Parent) never render this
-   slot — they can't be overridden — so they're unaffected. */
+   state. Non-instance entities never render the slot at all (gated on
+   prefabInfo in Inspector.tsx) — no row of theirs can be overridden, so
+   they keep the full control width. Entity-level rows
+   (Name/Enabled/Tags/Parent) never render this slot either. */
 .field-revert-slot {
   width: 54px;
   display: flex;

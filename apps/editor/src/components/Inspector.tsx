@@ -1166,21 +1166,29 @@ export function Inspector() {
                         {humanizeFieldLabel(field)}
                       </label>
                       {control}
-                      {/* Always render this 3rd grid cell, overridden or not — see
+                      {/* Render this 3rd grid cell on every field row of a prefab
+                          instance member, overridden or not — see
                           .field-revert-slot in styles.css for why: it keeps the
-                          control column the same width on every field row. */}
-                      <div className="field-revert-slot">
-                        {overridden && (
-                          <button
-                            type="button"
-                            className="btn btn-sm field-revert-btn"
-                            title={`Revert "${humanizeFieldLabel(field)}" to the prefab's value`}
-                            onClick={() => void handleRevertField(type, field)}
-                          >
-                            Revert
-                          </button>
-                        )}
-                      </div>
+                          control column the same width on every field row. On
+                          non-instance entities (prefabInfo == null) no row can
+                          ever be overridden, so the slot is omitted entirely and
+                          the control column recovers its width — per-row
+                          consistency within the card is preserved because the
+                          gate is per-entity, never per-row. */}
+                      {prefabInfo != null && (
+                        <div className="field-revert-slot">
+                          {overridden && (
+                            <button
+                              type="button"
+                              className="btn btn-sm field-revert-btn"
+                              title={`Revert "${humanizeFieldLabel(field)}" to the prefab's value`}
+                              onClick={() => void handleRevertField(type, field)}
+                            >
+                              Revert
+                            </button>
+                          )}
+                        </div>
+                      )}
                     </div>
                   );
                 })}
