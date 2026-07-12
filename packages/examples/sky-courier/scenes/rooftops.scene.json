@@ -1,10 +1,10 @@
 {
   "formatVersion": 1,
-  "id": "scn_b2o9wlix",
+  "id": "scn_85roa0bz",
   "name": "Rooftops",
   "entities": [
     {
-      "id": "ent_1xe6m1a2",
+      "id": "ent_teje12pg",
       "name": "Main Camera",
       "parentId": null,
       "enabled": true,
@@ -31,7 +31,7 @@
       }
     },
     {
-      "id": "ent_ggsvl0wl",
+      "id": "ent_6mw0dkem",
       "name": "Backdrop",
       "parentId": null,
       "enabled": true,
@@ -66,7 +66,7 @@
       }
     },
     {
-      "id": "ent_jrpjtbkz",
+      "id": "ent_ofrnif77",
       "name": "Rooftop A",
       "parentId": null,
       "enabled": true,
@@ -143,7 +143,7 @@
       }
     },
     {
-      "id": "ent_teje12pg",
+      "id": "ent_m7qr6q4u",
       "name": "Rooftop B",
       "parentId": null,
       "enabled": true,
@@ -220,7 +220,7 @@
       }
     },
     {
-      "id": "ent_6mw0dkem",
+      "id": "ent_yiv8evie",
       "name": "Rooftop C",
       "parentId": null,
       "enabled": true,
@@ -297,7 +297,7 @@
       }
     },
     {
-      "id": "ent_ofrnif77",
+      "id": "ent_zqc0nkw6",
       "name": "Rooftop D",
       "parentId": null,
       "enabled": true,
@@ -374,7 +374,7 @@
       }
     },
     {
-      "id": "ent_m7qr6q4u",
+      "id": "ent_e11krpgv",
       "name": "Courier",
       "parentId": null,
       "enabled": true,
@@ -394,7 +394,7 @@
           }
         },
         "SpriteRenderer": {
-          "assetId": "ast_p36324za",
+          "assetId": "ast_130ok490",
           "frame": "courier_4",
           "shape": "rectangle",
           "color": "#ffffff",
@@ -406,11 +406,9 @@
           "layer": 0,
           "visible": true
         },
-        "SpriteAnimator": {
-          "assetId": "ast_130ok490",
-          "fps": 0,
-          "playing": true,
-          "loop": true
+        "AnimationStateMachine": {
+          "assetId": "ast_ftu7lwf6",
+          "playing": true
         },
         "Collider": {
           "shape": "box",
@@ -464,7 +462,7 @@
       }
     },
     {
-      "id": "ent_yiv8evie",
+      "id": "ent_r8kzmuc6",
       "name": "Parcel 1",
       "parentId": null,
       "enabled": true,
@@ -484,7 +482,7 @@
           }
         },
         "SpriteRenderer": {
-          "assetId": "ast_3vzvpp1n",
+          "assetId": "ast_ggsvl0wl",
           "frame": null,
           "shape": "rectangle",
           "color": "#ffffff",
@@ -533,7 +531,7 @@
       }
     },
     {
-      "id": "ent_zqc0nkw6",
+      "id": "ent_xpwpdwa1",
       "name": "Parcel 2",
       "parentId": null,
       "enabled": true,
@@ -553,7 +551,7 @@
           }
         },
         "SpriteRenderer": {
-          "assetId": "ast_3vzvpp1n",
+          "assetId": "ast_ggsvl0wl",
           "frame": null,
           "shape": "rectangle",
           "color": "#ffffff",
@@ -602,7 +600,7 @@
       }
     },
     {
-      "id": "ent_e11krpgv",
+      "id": "ent_fabcxeu4",
       "name": "Parcel 3",
       "parentId": null,
       "enabled": true,
@@ -622,7 +620,7 @@
           }
         },
         "SpriteRenderer": {
-          "assetId": "ast_3vzvpp1n",
+          "assetId": "ast_ggsvl0wl",
           "frame": null,
           "shape": "rectangle",
           "color": "#ffffff",
@@ -671,7 +669,7 @@
       }
     },
     {
-      "id": "ent_r8kzmuc6",
+      "id": "ent_qo0eo69u",
       "name": "Chute",
       "parentId": null,
       "enabled": true,
@@ -691,7 +689,7 @@
           }
         },
         "SpriteRenderer": {
-          "assetId": "ast_xokuw8x3",
+          "assetId": "ast_jrpjtbkz",
           "frame": null,
           "shape": "rectangle",
           "color": "#ffffff",
@@ -740,7 +738,7 @@
       }
     },
     {
-      "id": "ent_xpwpdwa1",
+      "id": "ent_x2ob821p",
       "name": "Title",
       "parentId": null,
       "enabled": true,
@@ -780,7 +778,7 @@
       }
     },
     {
-      "id": "ent_fabcxeu4",
+      "id": "ent_p3r6ldaf",
       "name": "HUD",
       "parentId": null,
       "enabled": true,
@@ -824,7 +822,7 @@
       }
     },
     {
-      "id": "ent_qo0eo69u",
+      "id": "ent_ig5qosao",
       "name": "Music",
       "parentId": null,
       "enabled": true,
@@ -844,7 +842,7 @@
           }
         },
         "AudioSource": {
-          "assetId": "ast_ihbb9llh",
+          "assetId": "ast_qc8u0x45",
           "autoplay": true,
           "loop": true,
           "volume": 0.6,

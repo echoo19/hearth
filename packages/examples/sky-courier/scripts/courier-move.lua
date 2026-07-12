@@ -1,13 +1,14 @@
--- Courier: left/right walk + jump (isGrounded-gated), switching the
--- SpriteAnimator between the walk and idle clips via ctx.animate based on
--- horizontal speed. ctx.animate restarts the clip at frame 0, so it's only
--- called when the desired clip actually changes -- calling it every frame
--- while walking would restart the gait constantly instead of playing it.
+-- Courier: left/right walk + jump (isGrounded-gated). Idle/walk animation
+-- is owned by an AnimationStateMachine (assets/statemachines/courier-motion
+-- .asm.json) via its "moving" bool param, set every frame below --
+-- ctx.animator.setParam is cheap and idempotent, and the machine only
+-- restarts a clip when it actually transitions to a different state, so
+-- this doesn't reset the gait each frame the way an unconditional
+-- ctx.animate() call would have.
 -- Reminder: ctx calls use DOT syntax (ctx.log("hi"), never ctx:log("hi")).
 local script = {}
 
 function script.onStart(ctx)
-  ctx.vars.clip = "idle"
   ctx.vars.spawnX = ctx.transform.position.x
   ctx.vars.spawnY = ctx.transform.position.y
 end
@@ -37,12 +38,7 @@ function script.onUpdate(ctx, dt)
     sprite.flipX = false
   end
 
-  local moving = math.abs(vx) > 1
-  local wantClip = moving and "walk" or "idle"
-  if ctx.vars.clip ~= wantClip then
-    ctx.vars.clip = wantClip
-    ctx.animate(wantClip == "walk" and "courier-walk" or "courier-idle")
-  end
+  ctx.animator.setParam(ctx.entity.name, "moving", math.abs(vx) > 1)
 
   -- Missed a jump and fell past the rooftops: back to the start.
   if ctx.transform.position.y > 700 then

@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { ProjectStore, validateProject } from '@hearth/core';
+import { ProjectStore, validateProject, AUTOTILE_SHAPES } from '@hearth/core';
 import { NodeFileSystem } from '@hearth/core/node';
 import { SceneRuntime } from '@hearth/runtime';
 import { runPlaytest, runSceneSmoke } from '@hearth/playtest';
@@ -164,7 +164,9 @@ describe('ember-trail v0.3 showcase (Lua + scenes + stdlib)', () => {
 // Glow Caves is the rendering-v2 showcase: a dark scene (Camera.ambientLight)
 // lit by a player-following Light2D torch, LineRenderer cave-wall outlines,
 // two ParticleEmitters (torch sparks + a drip trail), and a SpriteAnimator
-// driven flame — all scripted in Lua, all asserted headlessly.
+// driven flame — all scripted in Lua, all asserted headlessly. As of Task
+// 12 it's also the blob47 autotile showcase: a "Cave Rocks" Tilemap whose
+// 'R' char is bound to a generated blob47 sheet.
 describe('glow-caves v0.3 showcase (rendering v2)', () => {
   it('is scripted entirely in Lua', async () => {
     const store = await loadStore('glow-caves');
@@ -196,6 +198,26 @@ describe('glow-caves v0.3 showcase (rendering v2)', () => {
     for (const wall of walls) {
       expect(wall.components.LineRenderer!.points.length).toBeGreaterThanOrEqual(2);
     }
+  });
+
+  it('Cave Rocks is a blob47 autotile Tilemap over a fully-covered generated sheet', async () => {
+    const store = await loadStore('glow-caves');
+    const scene = store.getScene('Cave')!;
+    const rocks = scene.entities.find((e) => e.name === 'Cave Rocks')!;
+    const tilemap = rocks.components.Tilemap!;
+    const rule = tilemap.tileAssets.R;
+    expect(rule).toEqual(expect.objectContaining({ template: 'blob47' }));
+    expect(typeof rule).not.toBe('string');
+    const sheetAssetId = (rule as { sheet: string }).sheet;
+    const sheet = store.getAsset(sheetAssetId)!;
+    expect(sheet.name).toBe('cave-rock-blob47');
+    const frameNames = new Set(((sheet.metadata as any).frames as { name: string }[]).map((f) => f.name));
+    // Every canonical blob47 shape has a frame — setTileAutotile would have
+    // refused the rule otherwise (AUTOTILE_FRAME_MISSING).
+    for (const shape of AUTOTILE_SHAPES) {
+      expect(frameNames.has(`blob_${shape}`)).toBe(true);
+    }
+    expect(tilemap.grid.some((row) => row.includes('R'))).toBe(true);
   });
 
   it('the showcase playtest asserts deterministic particle counts and the animator frame', async () => {
@@ -389,6 +411,25 @@ describe('sky-courier v0.6 showcase (imported binary assets)', () => {
     expect(result.passed).toBe(true);
   });
 
+  it('idle/walk is driven by an AnimationStateMachine, not a hand-toggled SpriteAnimator', async () => {
+    const store = await loadStore('sky-courier');
+    const scene = store.getScene('Rooftops')!;
+    const courier = scene.entities.find((e) => e.name === 'Courier')!;
+    expect(courier.components.AnimationStateMachine).toBeDefined();
+    expect(courier.components.SpriteAnimator).toBeUndefined();
+
+    const runtime = await SceneRuntime.create(store, store.project.initialScene);
+    runtime.run(1); // the state machine initializes its first state on the first tick
+    expect(runtime.getStateMachineState('Courier')).toBe('idle');
+    runtime.input.setActionDown('right');
+    runtime.run(15); // matches the movement playtest's MOVE_FRAMES
+    expect(runtime.getStateMachineState('Courier')).toBe('walk');
+    runtime.input.setActionUp('right');
+    runtime.run(30); // long enough for the "moving" bool to flip back to idle
+    expect(runtime.getStateMachineState('Courier')).toBe('idle');
+    expect(runtime.errors).toEqual([]);
+  });
+
   it('walking the courier onto Parcel 1 emits the parcel event', async () => {
     const store = await loadStore('sky-courier');
     const result = await runPlaytest(store, 'pickup');
@@ -560,11 +601,14 @@ describe('drift-cellar v0.7 showcase (axes + gamepad + widgets + camera effects)
   });
 });
 
-// Ember Horde is the Wave E spatial-hash horde-scale showcase: a Director
-// waves-spawns kinematic enemies at runtime via ctx.scene.spawn, capped at
-// 300 concurrent, each caching the Player EntityHandle once instead of
-// re-searching the scene every frame (see generate.mjs's file-header
-// comment on generateEmberHorde for the full O(n^2)-avoidance rationale).
+// Ember Horde is the Wave E spatial-hash horde-scale showcase, and (as of
+// Task 12) the Wave I prefab-spawn showcase: a Director waves-spawns
+// kinematic enemies at runtime via ctx.scene.spawnPrefab("Enemy", ...),
+// capped at 300 concurrent, each caching the Player EntityHandle once
+// instead of re-searching the scene every frame (see generate.mjs's
+// file-header comment on generateEmberHorde for the full O(n^2)-avoidance
+// rationale, and its prefab-spawning paragraph for why there is no
+// hand-mirrored enemy component tree anymore).
 describe('ember-horde v0.7 showcase (Wave E spatial-hash horde scale)', () => {
   it('is scripted entirely in Lua', async () => {
     const store = await loadStore('ember-horde');
@@ -579,15 +623,55 @@ describe('ember-horde v0.7 showcase (Wave E spatial-hash horde scale)', () => {
     const names = scene.entities.map((e) => e.name);
     expect(names).toContain('Player');
     expect(names).toContain('Director');
-    expect(names).toContain('Enemy Template');
+    expect(names).toContain('Enemy');
+    expect(names).toContain('Elite Enemy');
     expect(names).toContain('Timer HUD');
     expect(names).toContain('HP HUD');
     expect(names).toContain('Horde HUD');
     expect(names).toContain('Resume');
     expect(names).toContain('Screen Shake');
-    const template = scene.entities.find((e) => e.name === 'Enemy Template')!;
-    expect(template.enabled).toBe(false);
+    const enemy = scene.entities.find((e) => e.name === 'Enemy')!;
+    expect(enemy.enabled).toBe(true);
+    expect(enemy.tags).toContain('enemy');
     expect(store.playtests.size).toBe(6);
+  });
+
+  it('spawns enemies from a real prefab, with a tinted/scaled Elite Enemy instance staying live-linked', async () => {
+    const store = await loadStore('ember-horde');
+    const scene = store.getScene('Arena')!;
+    const enemy = scene.entities.find((e) => e.name === 'Enemy')!;
+    const elite = scene.entities.find((e) => e.name === 'Elite Enemy')!;
+
+    // "Enemy" is the prefab's source root; both entities link to the same
+    // prefab asset, which owns exactly one enemy.
+    expect(enemy.prefab).toBeDefined();
+    expect(elite.prefab).toBeDefined();
+    expect(elite.prefab!.asset).toBe(enemy.prefab!.asset);
+    const prefabAsset = store.getAsset(enemy.prefab!.asset)!;
+    expect(prefabAsset.type).toBe('prefab');
+    expect(prefabAsset.path).toBe('assets/prefabs/enemy.prefab.json');
+
+    // Elite Enemy overrides SpriteRenderer.color/width/height on top of the
+    // shared prefab (a visibly distinct "tinted elite" per-field override,
+    // not a detached copy) — every other field (Collider, PhysicsBody,
+    // Script) still comes straight from the prefab.
+    expect(elite.components.SpriteRenderer!.color).not.toBe(enemy.components.SpriteRenderer!.color);
+    expect(elite.components.SpriteRenderer!.width).toBeGreaterThan(enemy.components.SpriteRenderer!.width);
+    expect(elite.components.Collider).toEqual(enemy.components.Collider);
+    expect(elite.components.Script).toEqual(enemy.components.Script);
+
+    const overriddenPaths = elite.prefab!.overrides.map((o) => o.path).sort();
+    expect(overriddenPaths).toEqual(['color', 'height', 'width']);
+
+    // The director spawns copies of this same prefab at runtime — confirm
+    // the spawned enemies actually run enemy-chase.lua (not an inline
+    // hand-mirrored def) by checking a freshly-spawned one carries it.
+    const runtime = await SceneRuntime.create(store, scene.id);
+    runtime.run(25); // past the first wave (WAVE_INTERVAL=20)
+    const spawned = runtime.getEntities().find((e) => e.name === 'Enemy' && e.id !== enemy.id)!;
+    expect(spawned).toBeDefined();
+    expect(spawned.components.Script!.scriptPath).toBe('scripts/enemy-chase.lua');
+    expect(runtime.errors).toEqual([]);
   });
 
   it('declares virtual axes and gamepad button bindings in inputMappings', async () => {

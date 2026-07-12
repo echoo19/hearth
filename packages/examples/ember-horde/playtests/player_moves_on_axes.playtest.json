@@ -1,8 +1,8 @@
 {
   "formatVersion": 1,
-  "id": "ptt_yiy2qq3f",
+  "id": "ptt_n1r1yy2v",
   "name": "player-moves-on-axes",
-  "scene": "scn_7twaz6x9",
+  "scene": "scn_saeprntv",
   "steps": [
     {
       "type": "setAxis",

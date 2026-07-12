@@ -1,0 +1,44 @@
+{
+  "params": {
+    "moving": {
+      "type": "bool"
+    }
+  },
+  "states": [
+    {
+      "name": "idle",
+      "animation": "ast_kf3j27o1",
+      "speed": 1
+    },
+    {
+      "name": "walk",
+      "animation": "ast_ihbb9llh",
+      "speed": 1
+    }
+  ],
+  "initial": "idle",
+  "transitions": [
+    {
+      "from": "idle",
+      "to": "walk",
+      "conditions": [
+        {
+          "param": "moving",
+          "op": "eq",
+          "value": true
+        }
+      ]
+    },
+    {
+      "from": "walk",
+      "to": "idle",
+      "conditions": [
+        {
+          "param": "moving",
+          "op": "eq",
+          "value": false
+        }
+      ]
+    }
+  ]
+}

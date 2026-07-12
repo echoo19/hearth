@@ -1,10 +1,10 @@
 {
   "formatVersion": 1,
-  "id": "scn_szhty34v",
+  "id": "scn_y5fu01c5",
   "name": "Arcade",
   "entities": [
     {
-      "id": "ent_h3amvuev",
+      "id": "ent_ygzm9iic",
       "name": "Main Camera",
       "parentId": null,
       "enabled": true,
@@ -48,7 +48,7 @@
       }
     },
     {
-      "id": "ent_jf9zvve8",
+      "id": "ent_9okeb452",
       "name": "Backdrop",
       "parentId": null,
       "enabled": true,
@@ -83,7 +83,7 @@
       }
     },
     {
-      "id": "ent_lx0hio3s",
+      "id": "ent_3fc8g0nf",
       "name": "Wall Top",
       "parentId": null,
       "enabled": true,
@@ -160,7 +160,7 @@
       }
     },
     {
-      "id": "ent_88cr5ibv",
+      "id": "ent_ojile8na",
       "name": "Wall Bottom",
       "parentId": null,
       "enabled": true,
@@ -237,7 +237,7 @@
       }
     },
     {
-      "id": "ent_cvgb6xyb",
+      "id": "ent_i2dr9pno",
       "name": "Wall Left",
       "parentId": null,
       "enabled": true,
@@ -314,7 +314,7 @@
       }
     },
     {
-      "id": "ent_ygzm9iic",
+      "id": "ent_axxy5uqv",
       "name": "Wall Right",
       "parentId": null,
       "enabled": true,
@@ -391,7 +391,7 @@
       }
     },
     {
-      "id": "ent_9okeb452",
+      "id": "ent_fdzd3e8t",
       "name": "Player",
       "parentId": null,
       "enabled": true,
@@ -411,7 +411,7 @@
           }
         },
         "SpriteRenderer": {
-          "assetId": "ast_ofcmd4m7",
+          "assetId": "ast_h3amvuev",
           "frame": null,
           "shape": "rectangle",
           "color": "#ffffff",
@@ -474,7 +474,7 @@
       }
     },
     {
-      "id": "ent_3fc8g0nf",
+      "id": "ent_j4vqun33",
       "name": "Target 1",
       "parentId": null,
       "enabled": true,
@@ -494,7 +494,7 @@
           }
         },
         "SpriteRenderer": {
-          "assetId": "ast_9pnzseqd",
+          "assetId": "ast_jf9zvve8",
           "frame": null,
           "shape": "rectangle",
           "color": "#ffffff",
@@ -557,7 +557,7 @@
       }
     },
     {
-      "id": "ent_ojile8na",
+      "id": "ent_s501kbvm",
       "name": "Target 2",
       "parentId": null,
       "enabled": true,
@@ -577,7 +577,7 @@
           }
         },
         "SpriteRenderer": {
-          "assetId": "ast_9pnzseqd",
+          "assetId": "ast_jf9zvve8",
           "frame": null,
           "shape": "rectangle",
           "color": "#ffffff",
@@ -640,7 +640,7 @@
       }
     },
     {
-      "id": "ent_i2dr9pno",
+      "id": "ent_v3e271n6",
       "name": "Target 3",
       "parentId": null,
       "enabled": true,
@@ -660,7 +660,7 @@
           }
         },
         "SpriteRenderer": {
-          "assetId": "ast_9pnzseqd",
+          "assetId": "ast_jf9zvve8",
           "frame": null,
           "shape": "rectangle",
           "color": "#ffffff",
@@ -723,7 +723,7 @@
       }
     },
     {
-      "id": "ent_axxy5uqv",
+      "id": "ent_pcfvx5dr",
       "name": "Director",
       "parentId": null,
       "enabled": true,
@@ -751,7 +751,7 @@
       }
     },
     {
-      "id": "ent_fdzd3e8t",
+      "id": "ent_cbm5oid9",
       "name": "Score HUD",
       "parentId": null,
       "enabled": true,
@@ -791,7 +791,7 @@
       }
     },
     {
-      "id": "ent_j4vqun33",
+      "id": "ent_1bjjqiwo",
       "name": "Hint",
       "parentId": null,
       "enabled": true,
@@ -831,7 +831,7 @@
       }
     },
     {
-      "id": "ent_s501kbvm",
+      "id": "ent_001rt7fk",
       "name": "CRT Label",
       "parentId": null,
       "enabled": true,
@@ -871,7 +871,7 @@
       }
     },
     {
-      "id": "ent_v3e271n6",
+      "id": "ent_rwxoycne",
       "name": "CRT Toggle",
       "parentId": null,
       "enabled": true,

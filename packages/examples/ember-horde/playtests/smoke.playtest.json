@@ -1,8 +1,8 @@
 {
   "formatVersion": 1,
-  "id": "ptt_7gpce3uk",
+  "id": "ptt_6rv6r83i",
   "name": "smoke",
-  "scene": "scn_7twaz6x9",
+  "scene": "scn_saeprntv",
   "steps": [
     {
       "type": "wait",
@@ -20,8 +20,13 @@
     },
     {
       "type": "assertEntityExists",
-      "entity": "Enemy Template",
-      "exists": false
+      "entity": "Enemy",
+      "exists": true
+    },
+    {
+      "type": "assertEntityExists",
+      "entity": "Elite Enemy",
+      "exists": true
     },
     {
       "type": "assertEntityExists",

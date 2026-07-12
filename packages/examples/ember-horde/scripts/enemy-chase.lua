@@ -1,14 +1,15 @@
--- Enemy: spawned at runtime by horde-director.lua's ctx.scene.spawn (see
--- generate.mjs for why this mirrors the disabled "Enemy Template" entity's
--- fields instead of instantiating it directly — nothing disabled ever
--- reaches the runtime to instantiate). Every enemy caches the Player
--- EntityHandle exactly once, in onStart — EntityHandle.transform is a
--- live getter onto the real entity, so re-reading
--- ctx.vars.player.transform.position every onUpdate afterward is a plain
--- property read, not a scene search. Calling ctx.scene.find("Player") in
--- onUpdate instead (once per enemy, per frame) is the O(n)-per-enemy
--- pattern that turns into O(n^2) across a few hundred enemies — the exact
--- cost docs/performance.md flags next once broadphase stopped dominating.
+-- Enemy: the "Enemy" prefab's own script (see generate.mjs's createPrefab
+-- call below) — every enemy horde-director.lua spawns via
+-- ctx.scene.spawnPrefab carries this same Script component, so there is
+-- exactly one enemy-chase implementation, not a live one plus a disabled
+-- hand-mirrored copy. Every enemy caches the Player EntityHandle exactly
+-- once, in onStart — EntityHandle.transform is a live getter onto the real
+-- entity, so re-reading ctx.vars.player.transform.position every onUpdate
+-- afterward is a plain property read, not a scene search. Calling
+-- ctx.scene.find("Player") in onUpdate instead (once per enemy, per frame)
+-- is the O(n)-per-enemy pattern that turns into O(n^2) across a few hundred
+-- enemies — the exact cost docs/performance.md flags next once broadphase
+-- stopped dominating.
 local script = {}
 
 function script.onStart(ctx)

@@ -1,10 +1,10 @@
 {
   "formatVersion": 1,
-  "id": "scn_7twaz6x9",
+  "id": "scn_saeprntv",
   "name": "Arena",
   "entities": [
     {
-      "id": "ent_4awc19mr",
+      "id": "ent_ysj4pbt4",
       "name": "Main Camera",
       "parentId": null,
       "enabled": true,
@@ -31,7 +31,7 @@
       }
     },
     {
-      "id": "ent_bufb8iw4",
+      "id": "ent_ps1b0hqn",
       "name": "Backdrop",
       "parentId": null,
       "enabled": true,
@@ -66,7 +66,7 @@
       }
     },
     {
-      "id": "ent_a9mble1a",
+      "id": "ent_fm3woogo",
       "name": "Arena",
       "parentId": null,
       "enabled": true,
@@ -88,7 +88,7 @@
         "Tilemap": {
           "tileSize": 32,
           "tileAssets": {
-            "X": "ast_saeprntv"
+            "X": "ast_a9mble1a"
           },
           "grid": [
             "XXXXXXXXXXXXXXXXXXXXXXXXX",
@@ -117,7 +117,7 @@
       }
     },
     {
-      "id": "ent_ysj4pbt4",
+      "id": "ent_4j8c5wgb",
       "name": "Player",
       "parentId": null,
       "enabled": true,
@@ -137,7 +137,7 @@
           }
         },
         "SpriteRenderer": {
-          "assetId": "ast_4d3gwzsx",
+          "assetId": "ast_4awc19mr",
           "frame": null,
           "shape": "rectangle",
           "color": "#ffffff",
@@ -224,19 +224,18 @@
       }
     },
     {
-      "id": "ent_ps1b0hqn",
-      "name": "Enemy Template",
+      "id": "ent_7ax0y7xc",
+      "name": "Enemy",
       "parentId": null,
-      "enabled": false,
+      "enabled": true,
       "tags": [
-        "enemy",
-        "template"
+        "enemy"
       ],
       "components": {
         "Transform": {
           "position": {
-            "x": 400,
-            "y": 304
+            "x": 120,
+            "y": 120
           },
           "rotation": 0,
           "scale": {
@@ -245,7 +244,7 @@
           }
         },
         "SpriteRenderer": {
-          "assetId": "ast_w7cldmhp",
+          "assetId": "ast_bufb8iw4",
           "frame": null,
           "shape": "rectangle",
           "color": "#ffffff",
@@ -306,10 +305,125 @@
             "speed": 90
           }
         }
+      },
+      "prefab": {
+        "asset": "ast_l2xgfckm",
+        "ids": {},
+        "overrides": []
       }
     },
     {
-      "id": "ent_fm3woogo",
+      "name": "Elite Enemy",
+      "enabled": true,
+      "tags": [
+        "enemy"
+      ],
+      "components": {
+        "Transform": {
+          "position": {
+            "x": 680,
+            "y": 500
+          },
+          "rotation": 0,
+          "scale": {
+            "x": 1,
+            "y": 1
+          }
+        },
+        "SpriteRenderer": {
+          "assetId": "ast_bufb8iw4",
+          "frame": null,
+          "shape": "rectangle",
+          "color": "#c9184a",
+          "width": 32,
+          "height": 32,
+          "opacity": 1,
+          "flipX": false,
+          "flipY": false,
+          "layer": 0,
+          "visible": true
+        },
+        "Collider": {
+          "shape": "circle",
+          "width": 32,
+          "height": 32,
+          "radius": 11,
+          "points": [
+            {
+              "x": 0,
+              "y": -16
+            },
+            {
+              "x": 16,
+              "y": 16
+            },
+            {
+              "x": -16,
+              "y": 16
+            }
+          ],
+          "offset": {
+            "x": 0,
+            "y": 0
+          },
+          "isTrigger": false,
+          "layer": "enemy",
+          "collidesWith": [
+            "default",
+            "player"
+          ],
+          "oneWay": false
+        },
+        "PhysicsBody": {
+          "bodyType": "kinematic",
+          "velocity": {
+            "x": 0,
+            "y": 0
+          },
+          "gravityScale": 1,
+          "drag": 0,
+          "mass": 1,
+          "restitution": 0,
+          "friction": 0
+        },
+        "Script": {
+          "scriptPath": "scripts/enemy-chase.lua",
+          "params": {
+            "speed": 90
+          }
+        }
+      },
+      "id": "ent_morik0z9",
+      "parentId": null,
+      "prefab": {
+        "asset": "ast_l2xgfckm",
+        "ids": {
+          "pfe_1": "ent_morik0z9"
+        },
+        "overrides": [
+          {
+            "entity": "ent_morik0z9",
+            "component": "SpriteRenderer",
+            "path": "color",
+            "value": "#c9184a"
+          },
+          {
+            "entity": "ent_morik0z9",
+            "component": "SpriteRenderer",
+            "path": "width",
+            "value": 32
+          },
+          {
+            "entity": "ent_morik0z9",
+            "component": "SpriteRenderer",
+            "path": "height",
+            "value": 32
+          }
+        ]
+      }
+    },
+    {
+      "id": "ent_ursiilev",
       "name": "Director",
       "parentId": null,
       "enabled": true,
@@ -331,8 +445,6 @@
         "Script": {
           "scriptPath": "scripts/horde-director.lua",
           "params": {
-            "enemyAsset": "ast_w7cldmhp",
-            "enemySpeed": 90,
             "spawnRadius": 250,
             "centerX": 400,
             "centerY": 304
@@ -341,7 +453,7 @@
       }
     },
     {
-      "id": "ent_4j8c5wgb",
+      "id": "ent_e01dx3wc",
       "name": "Timer HUD",
       "parentId": null,
       "enabled": true,
@@ -381,7 +493,7 @@
       }
     },
     {
-      "id": "ent_7ax0y7xc",
+      "id": "ent_xkhp4lzo",
       "name": "HP HUD",
       "parentId": null,
       "enabled": true,
@@ -421,7 +533,7 @@
       }
     },
     {
-      "id": "ent_l2xgfckm",
+      "id": "ent_mhbrle8w",
       "name": "Horde HUD",
       "parentId": null,
       "enabled": true,
@@ -461,7 +573,7 @@
       }
     },
     {
-      "id": "ent_morik0z9",
+      "id": "ent_7ltyzbrz",
       "name": "Hint",
       "parentId": null,
       "enabled": true,
@@ -501,7 +613,7 @@
       }
     },
     {
-      "id": "ent_ursiilev",
+      "id": "ent_5g2bzelx",
       "name": "Pause Menu",
       "parentId": null,
       "enabled": true,
@@ -545,9 +657,9 @@
       }
     },
     {
-      "id": "ent_e01dx3wc",
+      "id": "ent_us37l1bp",
       "name": "Menu Title",
-      "parentId": "ent_ursiilev",
+      "parentId": "ent_5g2bzelx",
       "enabled": true,
       "tags": [
         "ui"
@@ -585,9 +697,9 @@
       }
     },
     {
-      "id": "ent_xkhp4lzo",
+      "id": "ent_8gggoy2c",
       "name": "Resume",
-      "parentId": "ent_ursiilev",
+      "parentId": "ent_5g2bzelx",
       "enabled": true,
       "tags": [
         "ui"
@@ -642,9 +754,9 @@
       }
     },
     {
-      "id": "ent_mhbrle8w",
+      "id": "ent_k46q4y2h",
       "name": "Shake Label",
-      "parentId": "ent_ursiilev",
+      "parentId": "ent_5g2bzelx",
       "enabled": true,
       "tags": [
         "ui"
@@ -682,9 +794,9 @@
       }
     },
     {
-      "id": "ent_7ltyzbrz",
+      "id": "ent_6a2tha56",
       "name": "Screen Shake",
-      "parentId": "ent_ursiilev",
+      "parentId": "ent_5g2bzelx",
       "enabled": true,
       "tags": [
         "ui"

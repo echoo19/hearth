@@ -1,0 +1,89 @@
+{
+  "name": "Enemy",
+  "entities": [
+    {
+      "name": "Enemy",
+      "enabled": true,
+      "tags": [
+        "enemy"
+      ],
+      "components": {
+        "Transform": {
+          "position": {
+            "x": 120,
+            "y": 120
+          },
+          "rotation": 0,
+          "scale": {
+            "x": 1,
+            "y": 1
+          }
+        },
+        "SpriteRenderer": {
+          "assetId": "ast_bufb8iw4",
+          "frame": null,
+          "shape": "rectangle",
+          "color": "#ffffff",
+          "width": 22,
+          "height": 22,
+          "opacity": 1,
+          "flipX": false,
+          "flipY": false,
+          "layer": 0,
+          "visible": true
+        },
+        "Collider": {
+          "shape": "circle",
+          "width": 32,
+          "height": 32,
+          "radius": 11,
+          "points": [
+            {
+              "x": 0,
+              "y": -16
+            },
+            {
+              "x": 16,
+              "y": 16
+            },
+            {
+              "x": -16,
+              "y": 16
+            }
+          ],
+          "offset": {
+            "x": 0,
+            "y": 0
+          },
+          "isTrigger": false,
+          "layer": "enemy",
+          "collidesWith": [
+            "default",
+            "player"
+          ],
+          "oneWay": false
+        },
+        "PhysicsBody": {
+          "bodyType": "kinematic",
+          "velocity": {
+            "x": 0,
+            "y": 0
+          },
+          "gravityScale": 1,
+          "drag": 0,
+          "mass": 1,
+          "restitution": 0,
+          "friction": 0
+        },
+        "Script": {
+          "scriptPath": "scripts/enemy-chase.lua",
+          "params": {
+            "speed": 90
+          }
+        }
+      },
+      "id": "pfe_1",
+      "parentId": null
+    }
+  ]
+}

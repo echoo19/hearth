@@ -4,7 +4,7 @@
   "name": "Cave",
   "entities": [
     {
-      "id": "ent_4ge0v0iy",
+      "id": "ent_m81ijljx",
       "name": "Main Camera",
       "parentId": null,
       "enabled": true,
@@ -31,7 +31,7 @@
       }
     },
     {
-      "id": "ent_m81ijljx",
+      "id": "ent_aj9pky0k",
       "name": "Cave Floor",
       "parentId": null,
       "enabled": true,
@@ -66,7 +66,7 @@
       }
     },
     {
-      "id": "ent_aj9pky0k",
+      "id": "ent_z9ycxjrn",
       "name": "Wall Top",
       "parentId": null,
       "enabled": true,
@@ -130,7 +130,7 @@
       }
     },
     {
-      "id": "ent_z9ycxjrn",
+      "id": "ent_9so8co28",
       "name": "Wall Bottom",
       "parentId": null,
       "enabled": true,
@@ -194,7 +194,7 @@
       }
     },
     {
-      "id": "ent_9so8co28",
+      "id": "ent_dwj8ecve",
       "name": "Wall Left",
       "parentId": null,
       "enabled": true,
@@ -258,7 +258,7 @@
       }
     },
     {
-      "id": "ent_dwj8ecve",
+      "id": "ent_xlamn01t",
       "name": "Wall Right",
       "parentId": null,
       "enabled": true,
@@ -322,7 +322,7 @@
       }
     },
     {
-      "id": "ent_xlamn01t",
+      "id": "ent_z9j8oxk2",
       "name": "Cave Wall Left",
       "parentId": null,
       "enabled": true,
@@ -382,7 +382,7 @@
       }
     },
     {
-      "id": "ent_z9j8oxk2",
+      "id": "ent_q0vy2jmk",
       "name": "Cave Wall Right",
       "parentId": null,
       "enabled": true,
@@ -442,7 +442,51 @@
       }
     },
     {
-      "id": "ent_q0vy2jmk",
+      "id": "ent_0xn2yay9",
+      "name": "Cave Rocks",
+      "parentId": null,
+      "enabled": true,
+      "tags": [
+        "wall",
+        "scenery"
+      ],
+      "components": {
+        "Transform": {
+          "position": {
+            "x": 440,
+            "y": 250
+          },
+          "rotation": 0,
+          "scale": {
+            "x": 1,
+            "y": 1
+          }
+        },
+        "Tilemap": {
+          "tileSize": 16,
+          "tileAssets": {
+            "R": {
+              "sheet": "ast_4ge0v0iy",
+              "template": "blob47"
+            }
+          },
+          "grid": [
+            ".RRRR.....",
+            ".RRRRRR...",
+            "RRRRRRRR..",
+            ".RRRRRRR..",
+            "..RRRRR...",
+            "...RR.....",
+            "..........",
+            "..R......."
+          ],
+          "solid": true,
+          "layer": -10
+        }
+      }
+    },
+    {
+      "id": "ent_zof1m3i1",
       "name": "Player",
       "parentId": null,
       "enabled": true,
@@ -525,9 +569,9 @@
       }
     },
     {
-      "id": "ent_0xn2yay9",
+      "id": "ent_gyamkozd",
       "name": "Torch",
-      "parentId": "ent_q0vy2jmk",
+      "parentId": "ent_zof1m3i1",
       "enabled": true,
       "tags": [
         "torch"
@@ -596,7 +640,7 @@
       }
     },
     {
-      "id": "ent_zof1m3i1",
+      "id": "ent_qqhzh9g6",
       "name": "Stalactite",
       "parentId": null,
       "enabled": true,
@@ -631,7 +675,7 @@
       }
     },
     {
-      "id": "ent_gyamkozd",
+      "id": "ent_x2llen4x",
       "name": "Drip",
       "parentId": null,
       "enabled": true,

@@ -31,7 +31,9 @@ function script.onCollision(ctx, other)
   if ctx.vars.paused then
     return
   end
-  if other.name ~= "Enemy" then
+  -- Tag-, not name-, based: "Elite Enemy" (a tinted prefab instance, still
+  -- tagged "enemy") must hurt on contact exactly like every other enemy.
+  if not other.tags.includes("enemy") then
     return
   end
   if ctx.vars.hp <= 0 then

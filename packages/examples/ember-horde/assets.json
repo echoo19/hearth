@@ -2,7 +2,7 @@
   "formatVersion": 1,
   "assets": [
     {
-      "id": "ast_4d3gwzsx",
+      "id": "ast_4awc19mr",
       "name": "ember-knight",
       "type": "sprite",
       "path": "assets/sprites/ember_knight.svg",
@@ -15,7 +15,7 @@
       }
     },
     {
-      "id": "ast_w7cldmhp",
+      "id": "ast_bufb8iw4",
       "name": "ember-wisp",
       "type": "sprite",
       "path": "assets/sprites/ember_wisp.svg",
@@ -28,7 +28,7 @@
       }
     },
     {
-      "id": "ast_saeprntv",
+      "id": "ast_a9mble1a",
       "name": "ember-wall",
       "type": "tile",
       "path": "assets/tiles/ember_wall.svg",
@@ -36,6 +36,15 @@
         "procedural": true,
         "color": "#5a3620",
         "size": 32
+      }
+    },
+    {
+      "id": "ast_l2xgfckm",
+      "name": "Enemy",
+      "type": "prefab",
+      "path": "assets/prefabs/enemy.prefab.json",
+      "metadata": {
+        "entityCount": 1
       }
     }
   ]

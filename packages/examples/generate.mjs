@@ -14,10 +14,10 @@ import { rm, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { createProject, HearthSession, setIdRandomSource, createSeededRng } from '../core/dist/index.js';
+import { createProject, HearthSession, setIdRandomSource, createSeededRng, AUTOTILE_SHAPES } from '../core/dist/index.js';
 import { NodeFileSystem } from '../core/dist/node/index.js';
 import { GameSession, resolveUiPositions } from '../runtime/dist/index.js';
-import { encodePng, renderChiptuneWav } from './pixelart.mjs';
+import { encodePng, renderChiptuneWav, makeBlob47CaveSheetRgba } from './pixelart.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const fs = new NodeFileSystem();
@@ -1046,6 +1046,12 @@ return script
 // an actual run of the generated scene below — never hand-computed — per
 // particles.ts's fp-real spawn-accumulator timing (see
 // packages/playtest/tests/particles.test.ts).
+//
+// Also the Wave I autotile showcase (Task 12): a "Cave Rocks" Tilemap whose
+// 'R' char is bound to a blob47 rule (setTileAutotile) over a generated
+// spritesheet (pixelart.mjs's makeBlob47CaveSheetRgba) — every filled cell's
+// frame is picked from its 8-neighbour mask at render time, so the rock
+// cluster's shape below needed no per-tile art of its own.
 async function generateGlowCaves() {
   const session = await freshProject('glow-caves', {
     name: 'Glow Caves',
@@ -1067,6 +1073,19 @@ async function generateGlowCaves() {
   const flicker = (await run(session, 'createAnimationAsset', {
     name: 'torch-flicker', frames: [flameA.id, flameB.id], frameDuration: 0.15, loop: true,
   })).asset;
+
+  // Cave-rock blob47 sheet: a generated 16x16-tile spritesheet (imported the
+  // same way sky-courier's hand-drawn PNG is below) whose frame names —
+  // `blob_<shapeKey>` for every canonical blob47 shape — match
+  // setTileAutotile's naming contract exactly, so no mapping override is
+  // needed.
+  const blobSheet = makeBlob47CaveSheetRgba(AUTOTILE_SHAPES);
+  const blobSheetPath = path.join(os.tmpdir(), 'cave-rock-blob47.png');
+  await writeFile(blobSheetPath, encodePng(blobSheet.width, blobSheet.height, blobSheet.rgba));
+  const rockSheet = (
+    await run(session, 'importAsset', { sourcePath: blobSheetPath, name: 'cave-rock-blob47', type: 'sprite' })
+  ).asset;
+  await run(session, 'setAssetMetadata', { asset: rockSheet.id, metadata: { frames: blobSheet.frames } });
 
   await run(session, 'updateSettings', {
     buildSettings: { title: 'Glow Caves' },
@@ -1174,6 +1193,28 @@ return script
       },
     },
   });
+
+  // Cave Rocks: a rock cluster autotiled with the blob47 sheet above — every
+  // filled 'R' cell picks its frame from its own 8-neighbour mask at render
+  // time (setTileAutotile below), so this grid needed no per-cell art
+  // choices, just a shape. Includes one deliberately isolated cell (bottom
+  // row) so the "lonely tile" shape (blob_0) shows up too. Positioned clear
+  // of the player spawn, the stalactite/drip, and the boundary walls.
+  const rockRows = [
+    '.RRRR.....',
+    '.RRRRRR...',
+    'RRRRRRRR..',
+    '.RRRRRRR..',
+    '..RRRRR...',
+    '...RR.....',
+    '..........',
+    '..R.......',
+  ];
+  await run(session, 'createEntity', {
+    scene, name: 'Cave Rocks', tags: ['wall', 'scenery'], position: { x: 440, y: 250 },
+    components: { Tilemap: { tileSize: 16, tileAssets: { R: rockSheet.id }, grid: rockRows, solid: true } },
+  });
+  await run(session, 'setTileAutotile', { scene, entity: 'Cave Rocks', char: 'R', sheet: rockSheet.id });
 
   await run(session, 'createEntity', {
     scene, name: 'Player', tags: ['player'], position: { x: 200, y: 450 },
@@ -1827,6 +1868,26 @@ async function generateSkyCourier() {
     })
   ).asset;
 
+  // Idle/walk state machine: courier-move.lua drives the "moving" bool param
+  // every frame; the machine (not a hand-toggled SpriteAnimator) owns the
+  // Courier's SpriteRenderer from here on — see the AnimationStateMachine
+  // component below and packages/runtime/src/stateMachine.ts.
+  const courierSm = await run(session, 'createStateMachineAsset', {
+    name: 'courier-motion',
+    data: {
+      params: { moving: { type: 'bool' } },
+      states: [
+        { name: 'idle', animation: idleAnim.id },
+        { name: 'walk', animation: walkAnim.id },
+      ],
+      initial: 'idle',
+      transitions: [
+        { from: 'idle', to: 'walk', conditions: [{ param: 'moving', op: 'eq', value: true }] },
+        { from: 'walk', to: 'idle', conditions: [{ param: 'moving', op: 'eq', value: false }] },
+      ],
+    },
+  });
+
   // Music: an 8s two-voice chiptune loop, synthesized and imported the same
   // way — no procedural createSound preset makes a full musical loop.
   const musicPath = path.join(os.tmpdir(), 'rooftop-loop.wav');
@@ -1856,16 +1917,17 @@ async function generateSkyCourier() {
   await run(session, 'createScript', {
     name: 'courier-move',
     language: 'lua',
-    source: `-- Courier: left/right walk + jump (isGrounded-gated), switching the
--- SpriteAnimator between the walk and idle clips via ctx.animate based on
--- horizontal speed. ctx.animate restarts the clip at frame 0, so it's only
--- called when the desired clip actually changes -- calling it every frame
--- while walking would restart the gait constantly instead of playing it.
+    source: `-- Courier: left/right walk + jump (isGrounded-gated). Idle/walk animation
+-- is owned by an AnimationStateMachine (assets/statemachines/courier-motion
+-- .asm.json) via its "moving" bool param, set every frame below --
+-- ctx.animator.setParam is cheap and idempotent, and the machine only
+-- restarts a clip when it actually transitions to a different state, so
+-- this doesn't reset the gait each frame the way an unconditional
+-- ctx.animate() call would have.
 -- Reminder: ctx calls use DOT syntax (ctx.log("hi"), never ctx:log("hi")).
 local script = {}
 
 function script.onStart(ctx)
-  ctx.vars.clip = "idle"
   ctx.vars.spawnX = ctx.transform.position.x
   ctx.vars.spawnY = ctx.transform.position.y
 end
@@ -1891,12 +1953,7 @@ function script.onUpdate(ctx, dt)
     sprite.flipX = false
   end
 
-  local moving = math.abs(vx) > 1
-  local wantClip = moving and "walk" or "idle"
-  if ctx.vars.clip ~= wantClip then
-    ctx.vars.clip = wantClip
-    ctx.animate(wantClip == "walk" and "courier-walk" or "courier-idle")
-  end
+  ctx.animator.setParam(ctx.entity.name, "moving", math.abs(vx) > 1)
 
   -- Missed a jump and fell past the rooftops: back to the start.
   if ctx.transform.position.y > 700 then
@@ -2035,7 +2092,7 @@ return script
     scene, name: 'Courier', tags: ['player'], position: { x: 90, y: 480 },
     components: {
       SpriteRenderer: { assetId: sheetAsset.id, frame: 'courier_4', width: 48, height: 48 },
-      SpriteAnimator: { assetId: idleAnim.id, playing: true, loop: true },
+      AnimationStateMachine: { assetId: courierSm.assetId, playing: true },
       Collider: { shape: 'box', width: 34, height: 44 },
       PhysicsBody: { bodyType: 'dynamic' },
     },
@@ -3024,12 +3081,13 @@ return script
 }
 
 // ---------------------------------------------------------------------------
-// Example 9: Ember Horde (the Wave E spatial-hash horde-scale proof)
+// Example 9: Ember Horde (the Wave E spatial-hash horde-scale proof, and the
+// Wave I prefab-spawn showcase)
 // ---------------------------------------------------------------------------
 // A survivors-like: virtual-axis movement + gamepad (matching drift-cellar),
 // one tilemap-bordered arena, and a Director that waves-spawns kinematic
-// enemies at runtime via ctx.scene.spawn, capped at 300 concurrent — well
-// inside the headroom Wave E's spatial-hash broadphase bought (see
+// enemies at runtime via ctx.scene.spawnPrefab, capped at 300 concurrent —
+// well inside the headroom Wave E's spatial-hash broadphase bought (see
 // docs/performance.md's "mixed-horde" scenario: 800 movers, ~2.7ms/frame
 // after Tasks 9-11, down from 14.3ms before). Every script is Lua.
 //
@@ -3046,18 +3104,18 @@ return script
 // the handle at spawn removes it entirely for a one-time O(n) spawn cost
 // instead. No event-broadcast or save/load channel is needed for this.
 //
-// Template note: the brief describes spawning "via ctx.scene.instantiate
-// from a disabled template entity". That method doesn't exist on ctx —
-// scripts only get ctx.scene.spawn(def) (see packages/runtime/src/scripts.ts)
-// — and a disabled entity is filtered out before the runtime ever
-// instantiates it (packages/runtime/src/runtime.ts's constructor skips
-// `!authored.enabled` entities outright), so there is nothing for a running
-// script to read off it anyway. The scene still authors a disabled "Enemy
-// Template" entity as the human-editable prefab reference (what an agent
-// or designer tweaks in the Scene panel); horde-director.lua's spawnEnemy
-// mirrors its component values directly in an inline ctx.scene.spawn def
-// (asset id passed through via ctx.params, same idiom ember-trail's
-// ember-spawner.lua already uses for its own runtime-spawned entities).
+// Prefab spawning (Task 12): the "Enemy" entity below is authored once as a
+// normal (enabled) scene entity, then promoted to a reusable prefab via
+// createPrefab — horde-director.lua's spawnEnemy spawns copies of it at
+// runtime through ctx.scene.spawnPrefab("Enemy", ...), so an enemy's
+// components live in exactly one place (assets/prefabs/enemy.prefab.json)
+// instead of a hand-mirrored component tree duplicated inside the director
+// script. The source entity stays live in the scene as a stationed sentry;
+// "Elite Enemy" is a second placed instance of the same prefab with a
+// tinted/scaled per-field override (setProperties on an instance member —
+// see packages/core/src/project/prefabData.ts's recordInstanceOverride),
+// showing an instance can diverge from the prefab on specific fields while
+// staying linked for everything else.
 async function generateEmberHorde() {
   const session = await freshProject('ember-horde', {
     name: 'Ember Horde',
@@ -3137,7 +3195,9 @@ end
 
 function script.onCollision(ctx, other)
   if ctx.vars.paused then return end
-  if other.name ~= "Enemy" then return end
+  -- Tag-, not name-, based: "Elite Enemy" (a tinted prefab instance, still
+  -- tagged "enemy") must hurt on contact exactly like every other enemy.
+  if not other.tags.includes("enemy") then return end
   if ctx.vars.hp <= 0 then return end
   local now = ctx.time.elapsed
   local cooldown = ctx.params.hitCooldown or 0.4
@@ -3170,17 +3230,18 @@ return script
   await run(session, 'createScript', {
     name: 'enemy-chase',
     language: 'lua',
-    source: `-- Enemy: spawned at runtime by horde-director.lua's ctx.scene.spawn (see
--- generate.mjs for why this mirrors the disabled "Enemy Template" entity's
--- fields instead of instantiating it directly — nothing disabled ever
--- reaches the runtime to instantiate). Every enemy caches the Player
--- EntityHandle exactly once, in onStart — EntityHandle.transform is a
--- live getter onto the real entity, so re-reading
--- ctx.vars.player.transform.position every onUpdate afterward is a plain
--- property read, not a scene search. Calling ctx.scene.find("Player") in
--- onUpdate instead (once per enemy, per frame) is the O(n)-per-enemy
--- pattern that turns into O(n^2) across a few hundred enemies — the exact
--- cost docs/performance.md flags next once broadphase stopped dominating.
+    source: `-- Enemy: the "Enemy" prefab's own script (see generate.mjs's createPrefab
+-- call below) — every enemy horde-director.lua spawns via
+-- ctx.scene.spawnPrefab carries this same Script component, so there is
+-- exactly one enemy-chase implementation, not a live one plus a disabled
+-- hand-mirrored copy. Every enemy caches the Player EntityHandle exactly
+-- once, in onStart — EntityHandle.transform is a live getter onto the real
+-- entity, so re-reading ctx.vars.player.transform.position every onUpdate
+-- afterward is a plain property read, not a scene search. Calling
+-- ctx.scene.find("Player") in onUpdate instead (once per enemy, per frame)
+-- is the O(n)-per-enemy pattern that turns into O(n^2) across a few hundred
+-- enemies — the exact cost docs/performance.md flags next once broadphase
+-- stopped dominating.
 local script = {}
 
 function script.onStart(ctx)
@@ -3220,12 +3281,15 @@ return script
     language: 'lua',
     source: `-- Director: spawns the horde in fixed-size waves on a frame interval,
 -- capped at ENEMY_CAP concurrent (none of these enemies ever die in this
--- example, so "spawned so far" and "live right now" are the same number
--- the whole run — that's what makes the sustained-horde playtest's exact
--- counts stable once the cap is hit). Keeps the Timer/Horde HUDs current
--- every frame from cached handles (found once in onStart, same live-handle
--- idiom enemy-chase.lua uses, applied here too for consistency even though
--- the director itself only ever does one find per HUD, not one per enemy).
+-- example, so "spawned so far" and "live right now" track together once
+-- the two hand-placed instances below are added in). Each wave spawns the
+-- "Enemy" prefab (see generate.mjs's createPrefab call) via
+-- ctx.scene.spawnPrefab — the prefab asset owns every enemy's components,
+-- so this script only ever decides WHERE and WHEN, never what an enemy is
+-- made of. Keeps the Timer/Horde HUDs current every frame from cached
+-- handles (found once in onStart, same live-handle idiom enemy-chase.lua
+-- uses, applied here too for consistency even though the director itself
+-- only ever does one find per HUD, not one per enemy).
 local script = {}
 
 local ENEMY_CAP = 300
@@ -3240,17 +3304,7 @@ function script.onStart(ctx)
 end
 
 local function spawnEnemy(ctx, x, y)
-  ctx.scene.spawn({
-    name = "Enemy",
-    position = { x = x, y = y },
-    tags = { "enemy" },
-    components = {
-      SpriteRenderer = { assetId = ctx.params.enemyAsset, width = 22, height = 22 },
-      Collider = { shape = "circle", radius = 11, layer = "enemy", collidesWith = { "default", "player" } },
-      PhysicsBody = { bodyType = "kinematic" },
-      Script = { scriptPath = "scripts/enemy-chase.lua", params = { speed = ctx.params.enemySpeed or 90 } },
-    },
-  })
+  ctx.scene.spawnPrefab("Enemy", { position = { x = x, y = y } })
   ctx.events.emit("enemy-spawned")
 end
 
@@ -3430,20 +3484,41 @@ return script
     params: { speed: 170, maxHp: 100, contactDamage: 8, hitCooldown: 0.4 },
   });
 
-  // Enemy Template: disabled, so the runtime never instantiates it (see the
-  // file-header comment for why that means horde-director.lua can't read it
-  // live) — a human-editable prefab reference only, mirrored by hand in
-  // horde-director.lua's spawnEnemy.
+  // Enemy prefab: authored once as a normal (enabled) scene entity, then
+  // promoted to a reusable prefab via createPrefab — this IS the entity
+  // horde-director.lua's ctx.scene.spawnPrefab("Enemy", ...) spawns copies
+  // of at runtime, so there is no hand-mirrored component tree to keep in
+  // sync (see the file-header comment above). The source entity stays in
+  // the scene as a stationed sentry, same as any spawnPrefab copy.
   await run(session, 'createEntity', {
-    scene, name: 'Enemy Template', tags: ['enemy', 'template'], position: { x: CENTER_X, y: CENTER_Y },
+    scene, name: 'Enemy', tags: ['enemy'], position: { x: 120, y: 120 },
     components: {
       SpriteRenderer: { assetId: enemyAsset.id, width: 22, height: 22 },
       Collider: { shape: 'circle', radius: 11, layer: 'enemy', collidesWith: ['default', 'player'] },
       PhysicsBody: { bodyType: 'kinematic' },
-      Script: { scriptPath: 'scripts/enemy-chase.lua', params: { speed: 90 } },
     },
   });
-  await run(session, 'setEntityEnabled', { scene, entity: 'Enemy Template', enabled: false });
+  await run(session, 'attachScript', {
+    scene, entity: 'Enemy', script: 'scripts/enemy-chase.lua', params: { speed: 90 },
+  });
+  const enemyPrefab = (await run(session, 'createPrefab', { scene, entity: 'Enemy', name: 'Enemy' })).asset;
+
+  // Elite Enemy: a second placed instance of the same prefab, tinted and
+  // scaled up via a per-field override. setProperties on an instance member
+  // records the edit on the prefab's live link (recordInstanceOverride)
+  // instead of detaching it, so a later updatePrefab on "Enemy" still flows
+  // through to this instance everywhere except the two overridden fields.
+  await run(session, 'instantiatePrefab', {
+    prefab: enemyPrefab.id, scene, name: 'Elite Enemy', position: { x: 680, y: 500 },
+  });
+  await run(session, 'setProperties', {
+    scene, entity: 'Elite Enemy',
+    properties: {
+      'SpriteRenderer.color': '#c9184a',
+      'SpriteRenderer.width': 32,
+      'SpriteRenderer.height': 32,
+    },
+  });
 
   await run(session, 'createEntity', {
     scene, name: 'Director', tags: ['system'], position: { x: 0, y: 0 },
@@ -3451,7 +3526,7 @@ return script
   });
   await run(session, 'attachScript', {
     scene, entity: 'Director', script: 'scripts/horde-director.lua',
-    params: { enemyAsset: enemyAsset.id, enemySpeed: 90, spawnRadius: 250, centerX: CENTER_X, centerY: CENTER_Y },
+    params: { spawnRadius: 250, centerX: CENTER_X, centerY: CENTER_Y },
   });
 
   await run(session, 'createEntity', {
@@ -3556,16 +3631,22 @@ return script
   probe.destroy();
 
   // Probe 2: sustained horde scale — run well past the frame the wave math
-  // caps out at, then read back the true live/spawned counts.
+  // caps out at, then read back the true live/spawned counts. Live count is
+  // the director's spawn cap PLUS the two hand-placed "enemy"-tagged
+  // instances (Enemy, Elite Enemy) — both permanent, so they add a fixed
+  // offset on top of whatever the wave math caps out at.
+  const ENEMY_CAP = 300;
+  const PLACED_ENEMY_COUNT = 2; // Enemy (prefab source) + Elite Enemy
   const HORDE_FRAMES = 650;
   probe = await GameSession.create(session.store, { scene, seed: 0 });
   for (let i = 0; i < HORDE_FRAMES; i++) await probe.stepAsync();
   const liveEnemyCount = probe.runtime.getEntities().filter((e) => e.tags.includes('enemy')).length;
   const spawnedCount = probe.eventCounts.get('enemy-spawned') ?? 0;
   const hordeHudText = probe.runtime.find('Horde HUD').components.Text.content;
-  if (liveEnemyCount !== 300 || spawnedCount !== 300) {
+  const expectedLiveEnemyCount = ENEMY_CAP + PLACED_ENEMY_COUNT;
+  if (liveEnemyCount !== expectedLiveEnemyCount || spawnedCount !== ENEMY_CAP) {
     throw new Error(
-      `ember-horde: expected the horde to cap at 300 by frame ${HORDE_FRAMES} (live ${liveEnemyCount}, spawned ${spawnedCount}) — adjust HORDE_FRAMES or the wave constants`,
+      `ember-horde: expected the horde to cap at ${ENEMY_CAP} spawns (${expectedLiveEnemyCount} live, incl. placed instances) by frame ${HORDE_FRAMES} (live ${liveEnemyCount}, spawned ${spawnedCount}) — adjust HORDE_FRAMES or the wave constants`,
     );
   }
   probe.destroy();
@@ -3592,7 +3673,8 @@ return script
       { type: 'wait', frames: 60 },
       { type: 'assertEntityExists', entity: 'Player', exists: true },
       { type: 'assertEntityExists', entity: 'Director', exists: true },
-      { type: 'assertEntityExists', entity: 'Enemy Template', exists: false },
+      { type: 'assertEntityExists', entity: 'Enemy', exists: true },
+      { type: 'assertEntityExists', entity: 'Elite Enemy', exists: true },
       { type: 'assertEntityExists', entity: 'Timer HUD', exists: true },
       { type: 'assertEntityExists', entity: 'HP HUD', exists: true },
       { type: 'assertEntityExists', entity: 'Horde HUD', exists: true },

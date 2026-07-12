@@ -1,11 +1,14 @@
 -- Director: spawns the horde in fixed-size waves on a frame interval,
 -- capped at ENEMY_CAP concurrent (none of these enemies ever die in this
--- example, so "spawned so far" and "live right now" are the same number
--- the whole run — that's what makes the sustained-horde playtest's exact
--- counts stable once the cap is hit). Keeps the Timer/Horde HUDs current
--- every frame from cached handles (found once in onStart, same live-handle
--- idiom enemy-chase.lua uses, applied here too for consistency even though
--- the director itself only ever does one find per HUD, not one per enemy).
+-- example, so "spawned so far" and "live right now" track together once
+-- the two hand-placed instances below are added in). Each wave spawns the
+-- "Enemy" prefab (see generate.mjs's createPrefab call) via
+-- ctx.scene.spawnPrefab — the prefab asset owns every enemy's components,
+-- so this script only ever decides WHERE and WHEN, never what an enemy is
+-- made of. Keeps the Timer/Horde HUDs current every frame from cached
+-- handles (found once in onStart, same live-handle idiom enemy-chase.lua
+-- uses, applied here too for consistency even though the director itself
+-- only ever does one find per HUD, not one per enemy).
 local script = {}
 
 local ENEMY_CAP = 300
@@ -20,25 +23,7 @@ function script.onStart(ctx)
 end
 
 local function spawnEnemy(ctx, x, y)
-  ctx.scene.spawn({
-    name = "Enemy",
-    position = { x = x, y = y },
-    tags = { "enemy" },
-    components = {
-      SpriteRenderer = { assetId = ctx.params.enemyAsset, width = 22, height = 22 },
-      Collider = {
-        shape = "circle",
-        radius = 11,
-        layer = "enemy",
-        collidesWith = { "default", "player" },
-      },
-      PhysicsBody = { bodyType = "kinematic" },
-      Script = {
-        scriptPath = "scripts/enemy-chase.lua",
-        params = { speed = ctx.params.enemySpeed or 90 },
-      },
-    },
-  })
+  ctx.scene.spawnPrefab("Enemy", { position = { x = x, y = y } })
   ctx.events.emit("enemy-spawned")
 end
 

@@ -1,10 +1,10 @@
 {
   "formatVersion": 1,
-  "id": "scn_vyx4664y",
+  "id": "scn_614vk7gx",
   "name": "Arena",
   "entities": [
     {
-      "id": "ent_joy5l6qr",
+      "id": "ent_lsw8lazb",
       "name": "Main Camera",
       "parentId": null,
       "enabled": true,
@@ -31,7 +31,7 @@
       }
     },
     {
-      "id": "ent_9o6toanq",
+      "id": "ent_f552x9a0",
       "name": "Backdrop",
       "parentId": null,
       "enabled": true,
@@ -66,7 +66,7 @@
       }
     },
     {
-      "id": "ent_lsw8lazb",
+      "id": "ent_afsiu4m8",
       "name": "Arena",
       "parentId": null,
       "enabled": true,
@@ -88,7 +88,7 @@
         "Tilemap": {
           "tileSize": 32,
           "tileAssets": {
-            "X": "ast_ivhfldfv"
+            "X": "ast_9o6toanq"
           },
           "grid": [
             "XXXXXXXXXXXXXXXXXXXXXXXXX",
@@ -117,7 +117,7 @@
       }
     },
     {
-      "id": "ent_f552x9a0",
+      "id": "ent_easxxmau",
       "name": "Player",
       "parentId": null,
       "enabled": true,
@@ -137,7 +137,7 @@
           }
         },
         "SpriteRenderer": {
-          "assetId": "ast_phh4ehua",
+          "assetId": "ast_d0zjzu5k",
           "frame": null,
           "shape": "rectangle",
           "color": "#ffffff",
@@ -200,7 +200,7 @@
       }
     },
     {
-      "id": "ent_afsiu4m8",
+      "id": "ent_34rdgcse",
       "name": "Ball",
       "parentId": null,
       "enabled": true,
@@ -220,7 +220,7 @@
           }
         },
         "SpriteRenderer": {
-          "assetId": "ast_614vk7gx",
+          "assetId": "ast_km0wya63",
           "frame": null,
           "shape": "rectangle",
           "color": "#ffffff",
@@ -277,7 +277,7 @@
       }
     },
     {
-      "id": "ent_easxxmau",
+      "id": "ent_ts2g2mso",
       "name": "Ice Patch",
       "parentId": null,
       "enabled": true,
@@ -354,7 +354,7 @@
       }
     },
     {
-      "id": "ent_34rdgcse",
+      "id": "ent_o6mpr330",
       "name": "Grind Strip",
       "parentId": null,
       "enabled": true,
@@ -431,7 +431,7 @@
       }
     },
     {
-      "id": "ent_ts2g2mso",
+      "id": "ent_3k34wea4",
       "name": "Ledge",
       "parentId": null,
       "enabled": true,
@@ -508,7 +508,7 @@
       }
     },
     {
-      "id": "ent_o6mpr330",
+      "id": "ent_v30ru6mq",
       "name": "Patroller",
       "parentId": null,
       "enabled": true,
@@ -528,7 +528,7 @@
           }
         },
         "SpriteRenderer": {
-          "assetId": "ast_d0zjzu5k",
+          "assetId": "ast_ivhfldfv",
           "frame": null,
           "shape": "rectangle",
           "color": "#ffffff",
@@ -589,7 +589,7 @@
       }
     },
     {
-      "id": "ent_3k34wea4",
+      "id": "ent_gptshnq7",
       "name": "Coin 1",
       "parentId": null,
       "enabled": true,
@@ -609,145 +609,7 @@
           }
         },
         "SpriteRenderer": {
-          "assetId": "ast_km0wya63",
-          "frame": null,
-          "shape": "rectangle",
-          "color": "#ffffff",
-          "width": 20,
-          "height": 20,
-          "opacity": 1,
-          "flipX": false,
-          "flipY": false,
-          "layer": 0,
-          "visible": true
-        },
-        "Collider": {
-          "shape": "circle",
-          "width": 32,
-          "height": 32,
-          "radius": 10,
-          "points": [
-            {
-              "x": 0,
-              "y": -16
-            },
-            {
-              "x": 16,
-              "y": 16
-            },
-            {
-              "x": -16,
-              "y": 16
-            }
-          ],
-          "offset": {
-            "x": 0,
-            "y": 0
-          },
-          "isTrigger": true,
-          "layer": "pickup",
-          "collidesWith": [
-            "player"
-          ],
-          "oneWay": false
-        },
-        "Script": {
-          "scriptPath": "scripts/coin-collect.lua",
-          "params": {}
-        }
-      }
-    },
-    {
-      "id": "ent_v30ru6mq",
-      "name": "Coin 2",
-      "parentId": null,
-      "enabled": true,
-      "tags": [
-        "coin"
-      ],
-      "components": {
-        "Transform": {
-          "position": {
-            "x": 120,
-            "y": 200
-          },
-          "rotation": 0,
-          "scale": {
-            "x": 1,
-            "y": 1
-          }
-        },
-        "SpriteRenderer": {
-          "assetId": "ast_km0wya63",
-          "frame": null,
-          "shape": "rectangle",
-          "color": "#ffffff",
-          "width": 20,
-          "height": 20,
-          "opacity": 1,
-          "flipX": false,
-          "flipY": false,
-          "layer": 0,
-          "visible": true
-        },
-        "Collider": {
-          "shape": "circle",
-          "width": 32,
-          "height": 32,
-          "radius": 10,
-          "points": [
-            {
-              "x": 0,
-              "y": -16
-            },
-            {
-              "x": 16,
-              "y": 16
-            },
-            {
-              "x": -16,
-              "y": 16
-            }
-          ],
-          "offset": {
-            "x": 0,
-            "y": 0
-          },
-          "isTrigger": true,
-          "layer": "pickup",
-          "collidesWith": [
-            "player"
-          ],
-          "oneWay": false
-        },
-        "Script": {
-          "scriptPath": "scripts/coin-collect.lua",
-          "params": {}
-        }
-      }
-    },
-    {
-      "id": "ent_gptshnq7",
-      "name": "Coin 3",
-      "parentId": null,
-      "enabled": true,
-      "tags": [
-        "coin"
-      ],
-      "components": {
-        "Transform": {
-          "position": {
-            "x": 300,
-            "y": 150
-          },
-          "rotation": 0,
-          "scale": {
-            "x": 1,
-            "y": 1
-          }
-        },
-        "SpriteRenderer": {
-          "assetId": "ast_km0wya63",
+          "assetId": "ast_joy5l6qr",
           "frame": null,
           "shape": "rectangle",
           "color": "#ffffff",
@@ -797,6 +659,144 @@
     },
     {
       "id": "ent_luyc35r7",
+      "name": "Coin 2",
+      "parentId": null,
+      "enabled": true,
+      "tags": [
+        "coin"
+      ],
+      "components": {
+        "Transform": {
+          "position": {
+            "x": 120,
+            "y": 200
+          },
+          "rotation": 0,
+          "scale": {
+            "x": 1,
+            "y": 1
+          }
+        },
+        "SpriteRenderer": {
+          "assetId": "ast_joy5l6qr",
+          "frame": null,
+          "shape": "rectangle",
+          "color": "#ffffff",
+          "width": 20,
+          "height": 20,
+          "opacity": 1,
+          "flipX": false,
+          "flipY": false,
+          "layer": 0,
+          "visible": true
+        },
+        "Collider": {
+          "shape": "circle",
+          "width": 32,
+          "height": 32,
+          "radius": 10,
+          "points": [
+            {
+              "x": 0,
+              "y": -16
+            },
+            {
+              "x": 16,
+              "y": 16
+            },
+            {
+              "x": -16,
+              "y": 16
+            }
+          ],
+          "offset": {
+            "x": 0,
+            "y": 0
+          },
+          "isTrigger": true,
+          "layer": "pickup",
+          "collidesWith": [
+            "player"
+          ],
+          "oneWay": false
+        },
+        "Script": {
+          "scriptPath": "scripts/coin-collect.lua",
+          "params": {}
+        }
+      }
+    },
+    {
+      "id": "ent_bm93i1pv",
+      "name": "Coin 3",
+      "parentId": null,
+      "enabled": true,
+      "tags": [
+        "coin"
+      ],
+      "components": {
+        "Transform": {
+          "position": {
+            "x": 300,
+            "y": 150
+          },
+          "rotation": 0,
+          "scale": {
+            "x": 1,
+            "y": 1
+          }
+        },
+        "SpriteRenderer": {
+          "assetId": "ast_joy5l6qr",
+          "frame": null,
+          "shape": "rectangle",
+          "color": "#ffffff",
+          "width": 20,
+          "height": 20,
+          "opacity": 1,
+          "flipX": false,
+          "flipY": false,
+          "layer": 0,
+          "visible": true
+        },
+        "Collider": {
+          "shape": "circle",
+          "width": 32,
+          "height": 32,
+          "radius": 10,
+          "points": [
+            {
+              "x": 0,
+              "y": -16
+            },
+            {
+              "x": 16,
+              "y": 16
+            },
+            {
+              "x": -16,
+              "y": 16
+            }
+          ],
+          "offset": {
+            "x": 0,
+            "y": 0
+          },
+          "isTrigger": true,
+          "layer": "pickup",
+          "collidesWith": [
+            "player"
+          ],
+          "oneWay": false
+        },
+        "Script": {
+          "scriptPath": "scripts/coin-collect.lua",
+          "params": {}
+        }
+      }
+    },
+    {
+      "id": "ent_exjskise",
       "name": "Score",
       "parentId": null,
       "enabled": true,
