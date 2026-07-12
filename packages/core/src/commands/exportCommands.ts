@@ -272,6 +272,56 @@ async function loadPlayerSource(ctx: CommandContext): Promise<string> {
   }
 }
 
+/**
+ * Assemble the in-memory web build — the shared assembly path behind both
+ * `exportWeb` (writes these files to a project folder) and `exportDesktop`
+ * (hands them to a host packager for wrapping in a native shell). Returns the
+ * files as `{ path, content }` pairs relative to the build root, so `index.html`
+ * sits at the root. Callers gate on `validateProject` themselves.
+ *
+ * - `inlinePlayer`: inline the player source + bundle into `index.html`
+ *   (single file), instead of emitting `hearth-player.js` + `project.bundle.json`.
+ * - `inlineAssets`: inline assets as data URIs in the bundle, instead of
+ *   shipping each asset as its own file the player fetches.
+ */
+export async function assembleWebBuild(
+  ctx: CommandContext,
+  opts: { inlineAssets: boolean; inlinePlayer: boolean },
+): Promise<{ files: Array<{ path: string; content: string | Uint8Array }>; slug: string; title: string }> {
+  const playerSource = await loadPlayerSource(ctx);
+  const title = ctx.store.project.buildSettings.title || ctx.store.project.name;
+  const background = ctx.store.project.buildSettings.loading.backgroundColor;
+  const slug = slugify(ctx.store.project.name);
+  const bundle = await buildBundle(ctx, opts.inlineAssets);
+
+  const files: Array<{ path: string; content: string | Uint8Array }> = [];
+  if (opts.inlinePlayer) {
+    files.push({
+      path: 'index.html',
+      content: renderIndexHtml({
+        title,
+        background,
+        inlinePlayer: playerSource,
+        inlineBundleJson: JSON.stringify(bundle),
+      }),
+    });
+  } else {
+    files.push({ path: 'index.html', content: renderIndexHtml({ title, background }) });
+    files.push({ path: 'hearth-player.js', content: playerSource });
+    files.push({ path: 'project.bundle.json', content: JSON.stringify(bundle, null, 2) + '\n' });
+  }
+
+  // Non-inlined assets ship as their own files (the player fetches them).
+  if (!opts.inlineAssets) {
+    for (const asset of ctx.store.assets.assets) {
+      const bytes = await ctx.fs.readFileBinary(joinPath(ctx.store.root, asset.path));
+      files.push({ path: asset.path, content: bytes });
+    }
+  }
+
+  return { files, slug, title };
+}
+
 export const exportWeb = defineCommand({
   name: 'exportWeb',
   description:
@@ -296,39 +346,19 @@ export const exportWeb = defineCommand({
       );
     }
 
-    const playerSource = await loadPlayerSource(ctx);
-    const title = ctx.store.project.buildSettings.title || ctx.store.project.name;
-    const background = ctx.store.project.buildSettings.loading.backgroundColor;
+    const { files, slug, title } = await assembleWebBuild(ctx, {
+      inlineAssets: params.singleFile,
+      inlinePlayer: params.singleFile,
+    });
+
     const outRoot = joinPath(ctx.store.root, params.outDir);
     await ctx.fs.mkdir(outRoot);
-
     const written: string[] = [];
-    const write = async (rel: string, content: string | Uint8Array) => {
-      await ctx.fs.writeFile(joinPath(outRoot, rel), content);
-      written.push(joinPath(params.outDir, rel));
-    };
-
-    if (params.singleFile) {
-      const bundle = await buildBundle(ctx, true);
-      const html = renderIndexHtml({
-        title,
-        background,
-        inlinePlayer: playerSource,
-        inlineBundleJson: JSON.stringify(bundle),
-      });
-      await write('index.html', html);
-    } else {
-      const bundle = await buildBundle(ctx, false);
-      await write('index.html', renderIndexHtml({ title, background }));
-      await write('hearth-player.js', playerSource);
-      await write('project.bundle.json', JSON.stringify(bundle, null, 2) + '\n');
-      for (const asset of ctx.store.assets.assets) {
-        const src = joinPath(ctx.store.root, asset.path);
-        const dest = joinPath(outRoot, asset.path);
-        await ctx.fs.mkdir(dirnamePath(dest));
-        await ctx.fs.copyFile(src, dest);
-        written.push(joinPath(params.outDir, asset.path));
-      }
+    for (const file of files) {
+      const dest = joinPath(outRoot, file.path);
+      await ctx.fs.mkdir(dirnamePath(dest));
+      await ctx.fs.writeFile(dest, file.content);
+      written.push(joinPath(params.outDir, file.path));
     }
 
     ctx.changed({ kind: 'file', path: params.outDir, action: 'created' });
@@ -337,7 +367,7 @@ export const exportWeb = defineCommand({
       singleFile: params.singleFile,
       files: written,
       title,
-      slug: slugify(ctx.store.project.name),
+      slug,
     };
   },
 });
