@@ -26,6 +26,7 @@
   "dependencies": {
     "@hearth/core": "*",
     "@hearth/playtest": "*",
+    "@hearth/shipping": "*",
     "@modelcontextprotocol/sdk": "^1.6.0",
     "zod": "^3.24.1"
   }

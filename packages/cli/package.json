@@ -26,6 +26,8 @@
   "dependencies": {
     "@hearth/core": "*",
     "@hearth/playtest": "*",
+    "@hearth/shipping": "*",
+    "@hearth/templates": "*",
     "commander": "^13.0.0"
   }
 }
