@@ -89,7 +89,7 @@ descriptively — no logos, no implied partnership or endorsement.
   whole-session revert.
 - **Manual setup** — a collapsible section with the CLI/MCP copy-paste
   snippets and the permission-mode table, for anyone not using the embedded
-  terminal at all (see [Manual setup](#manual-setup-non-claude-agents)).
+  terminal at all (see [Manual setup](#manual-setup-other-agents)).
 
 One PTY session per open project at a time in this release; switching
 projects always kills the old terminal (see
