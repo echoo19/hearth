@@ -57,7 +57,9 @@ starter scene — camera, ground, a player that falls and lands; `--template`
 scaffolds from a genre skeleton instead — see [Templates](#project-templates)
 below; `--list-templates` prints the available ones and exits; `--no-starter`
 skips the starter scene and only applies to blank projects, rejected
-alongside `--template`), `doctor` (health report), `commands` (dump the full
+alongside `--template`; `--width`/`--height` likewise apply to blank projects
+only and are rejected with `--template` — templates set their own build size,
+adjust it afterwards with `set-settings`), `doctor` (health report), `commands` (dump the full
 engine command registry; agents can discover every operation from this).
 
 **Inspect** (read-only): `inspect project|scenes|components|assets|scripts`,
@@ -420,7 +422,9 @@ hearth init --list-templates          # names + descriptions, no project created
 An unknown `--template` name fails and lists the valid ones. `--template`
 and `--no-starter` don't compose — `--no-starter` only makes sense against
 the blank default, since every template already ships its own starter
-content. This is pre-project setup, so it's CLI/editor-only (the editor's
+content. `--width`/`--height` are rejected with `--template` for the same
+reason: each template sets its own build size (change it afterwards with
+`hearth set-settings --width ... --height ...` or the Game Settings panel). This is pre-project setup, so it's CLI/editor-only (the editor's
 Launcher has the same picker as cards, blank preselected); there is no MCP
 tool for it — an MCP agent runs `hearth init` as a shell/CLI step, or asks
 the human to.
