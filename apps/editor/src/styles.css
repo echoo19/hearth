@@ -3474,16 +3474,270 @@ kbd.shortcut-keys {
   align-self: flex-start;
 }
 
-.export-result .export-hint {
-  color: var(--ink-faint);
-  font-size: 11px;
+.export-result .export-zip-line {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
 }
 
-.export-result .export-hint code {
+.export-result .export-zip-line .export-path {
+  flex: 1 1 200px;
+}
+
+/* Web / Desktop segmented control ----------------------------------------- */
+
+.segmented {
+  display: flex;
+  gap: 2px;
+  margin: 12px 16px 0;
+  padding: 2px;
+  background: var(--bg-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+.seg-btn {
+  flex: 1;
+  height: var(--ctl-h);
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--ink-mute);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition:
+    background var(--t) var(--ease-out),
+    color var(--t) var(--ease-out);
+}
+
+.seg-btn:hover:not(.active):not(:disabled) {
+  color: var(--ink);
+  background: var(--bg-3);
+}
+
+.seg-btn.active {
+  background: var(--accent);
+  color: var(--accent-ink);
+}
+
+.seg-btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.seg-btn:disabled {
+  cursor: default;
+  opacity: 0.6;
+}
+
+/* Checkbox rows (web zip + desktop platforms) ----------------------------- */
+
+.check-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.check-row input[type='checkbox'] {
+  margin-top: 1px;
+  accent-color: var(--accent);
+}
+
+.check-row code {
   font-family: var(--font-mono);
   background: var(--bg-3);
   padding: 1px 4px;
   border-radius: 3px;
+}
+
+.check-row-compact {
+  align-items: center;
+  padding: 5px 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-2);
+  transition: border-color var(--t) var(--ease-out);
+}
+
+.check-row-compact:hover {
+  border-color: var(--border-strong);
+}
+
+.check-row-compact:has(input:checked) {
+  border-color: var(--accent);
+  background: var(--accent-faint);
+}
+
+.platform-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 6px;
+}
+
+.field-note {
+  margin: 2px 0 0;
+  color: var(--warn);
+  font-size: 11px;
+}
+
+/* Signing status line ----------------------------------------------------- */
+
+.signing-status {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  color: var(--ink-mute);
+  font-size: 11.5px;
+}
+
+.signing-status svg {
+  color: var(--ink-faint);
+  flex-shrink: 0;
+}
+
+/* Desktop export progress ------------------------------------------------- */
+
+.export-global-msg {
+  margin: 0;
+  color: var(--ink-faint);
+  font-size: 11px;
+}
+
+.export-progress-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.export-row {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-2);
+  transition:
+    border-color var(--t) var(--ease-out),
+    background var(--t) var(--ease-out);
+}
+
+/* The one platform currently building carries the ember accent (full border +
+   soft tint — never a side-stripe). */
+.export-row.active {
+  border-color: var(--accent);
+  background: var(--accent-faint);
+}
+
+.export-row.status-success {
+  border-color: color-mix(in oklch, var(--ok) 45%, var(--border));
+}
+
+.export-row.status-error {
+  border-color: var(--err);
+  background: var(--err-faint);
+}
+
+.export-row-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.export-row-name {
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.export-badge {
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 1px 6px;
+  border-radius: 999px;
+  white-space: nowrap;
+}
+
+.export-badge .badge-sub {
+  font-weight: 400;
+  text-transform: none;
+  letter-spacing: 0;
+  opacity: 0.85;
+}
+
+.badge-pending {
+  color: var(--ink-faint);
+  background: var(--bg-3);
+}
+
+.badge-running {
+  color: var(--accent-ink);
+  background: var(--accent);
+}
+
+.badge-success {
+  color: var(--ok);
+  background: var(--ok-soft);
+}
+
+.badge-error {
+  color: var(--err);
+  background: var(--err-soft);
+}
+
+.export-row-progress {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  margin: 0;
+  min-width: 0;
+}
+
+.export-row-stage {
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--ink-mute);
+  flex-shrink: 0;
+}
+
+.export-row-msg {
+  font-size: 11px;
+  color: var(--ink-faint);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.export-row-error {
+  margin: 0;
+  font-size: 11px;
+  color: var(--err);
+  word-break: break-word;
+}
+
+.export-row-success {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.export-row-success .export-path {
+  flex: 1 1 200px;
+  font-size: 11px;
+  color: var(--ink-mute);
+  word-break: break-all;
 }
 
 /* --------------------------------------------------------------------------

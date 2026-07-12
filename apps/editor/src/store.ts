@@ -25,6 +25,7 @@ import type { WsFrame } from '../server/ws';
 import type { RuntimeErrorEntry } from './runtimeBridge';
 import type { AgentPermissionMode, DetectAgentsResult } from '../server/agentSetup';
 import { ingestPtyFrame, resetAgentSocket, type AgentStatus } from './components/agent/useAgentSocket';
+import { ingestExportFrame } from './components/exportJob';
 import { createNudgeQueue } from './nudgeQueue';
 
 export interface EditorState {
@@ -639,6 +640,14 @@ export const useEditor = create<EditorState>((set, get) => {
       }
       if (frame.type === 'pty-data' || frame.type === 'pty-exit' || frame.type === 'pty-error') {
         ingestPtyFrame(frame);
+        return;
+      }
+      if (frame.type === 'export-progress' || frame.type === 'export-done' || frame.type === 'export-error') {
+        // Desktop export job progress (POST /api/export/desktop), broadcast to
+        // every socket for this project root; the Export dialog subscribes via
+        // useExportJob(). Fed here (not in the dialog) so a running job keeps
+        // advancing even while the dialog is closed.
+        ingestExportFrame(frame);
         return;
       }
       // pty-input/pty-resize/pty-start/pty-stop are client -> server only.
