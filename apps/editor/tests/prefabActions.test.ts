@@ -1,19 +1,69 @@
 import { describe, it, expect } from 'vitest';
-import { countPrefabInstances, createSyncPreflight, syncConfirmBody } from '../src/prefabActions';
+import {
+  countPrefabInstances,
+  createSyncPreflight,
+  instanceOverrideCount,
+  revertAllConfirmBody,
+  syncConfirmBody,
+} from '../src/prefabActions';
 import type { CommandResult } from '../src/types';
 
 describe('syncConfirmBody', () => {
-  it('renders the exact spec copy with the count substituted', () => {
-    expect(syncConfirmBody(3)).toBe('Rebuilds 3 instances from this prefab. Names and positions are kept.');
+  it('renders merge-semantics copy with the count substituted', () => {
+    expect(syncConfirmBody(3)).toBe(
+      "Syncs 3 instances with this prefab. Overrides you've made on each instance are kept; any that no longer apply to the updated prefab are dropped. Names and positions are kept.",
+    );
+  });
+
+  it('no longer describes a wholesale rebuild', () => {
+    // Wave I: syncPrefabInstances merges (reuses scene ids, re-applies
+    // overrides) rather than rebuilding every instance from scratch.
+    expect(syncConfirmBody(3)).not.toMatch(/rebuild/i);
+  });
+
+  it('mentions that overrides are preserved', () => {
+    expect(syncConfirmBody(3)).toMatch(/overrides.*kept/i);
   });
 
   it('still says "instances" (not "instance") for a count of 1', () => {
-    // The spec's exact copy is fixed regardless of count — no singular/plural branching.
-    expect(syncConfirmBody(1)).toBe('Rebuilds 1 instances from this prefab. Names and positions are kept.');
+    // No singular/plural branching, same idiom as before.
+    expect(syncConfirmBody(1)).toContain('Syncs 1 instances with this prefab.');
   });
 
   it('handles zero', () => {
-    expect(syncConfirmBody(0)).toBe('Rebuilds 0 instances from this prefab. Names and positions are kept.');
+    expect(syncConfirmBody(0)).toContain('Syncs 0 instances with this prefab.');
+  });
+});
+
+describe('instanceOverrideCount', () => {
+  it('counts every override record regardless of which member entity it belongs to', () => {
+    const overrides = [
+      { entity: 'ent_root' },
+      { entity: 'ent_child' },
+      { entity: 'ent_root' },
+    ];
+    expect(instanceOverrideCount(overrides)).toBe(3);
+  });
+
+  it('is zero for an instance with no overrides', () => {
+    expect(instanceOverrideCount([])).toBe(0);
+  });
+});
+
+describe('revertAllConfirmBody', () => {
+  it('renders the count with correct pluralization', () => {
+    expect(revertAllConfirmBody(1)).toBe(
+      "Reverts 1 override across this prefab instance, restoring the prefab's own values.",
+    );
+    expect(revertAllConfirmBody(3)).toBe(
+      "Reverts 3 overrides across this prefab instance, restoring the prefab's own values.",
+    );
+  });
+
+  it('handles zero', () => {
+    expect(revertAllConfirmBody(0)).toBe(
+      "Reverts 0 overrides across this prefab instance, restoring the prefab's own values.",
+    );
   });
 });
 

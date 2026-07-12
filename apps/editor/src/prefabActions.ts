@@ -38,9 +38,25 @@ export async function countPrefabInstances(
   return total;
 }
 
-/** Exact confirm-dialog copy for syncing a prefab's instances (spec: verbatim, N substituted). */
+/**
+ * Confirm-dialog copy for syncing a prefab's instances. `syncPrefabInstances`
+ * is a MERGE, not a wholesale rebuild (Wave I): each instance's subtree is
+ * reconciled against the prefab reusing its existing scene ids, so per-
+ * instance overrides survive the sync and are only dropped when the field
+ * they targeted no longer exists on the updated prefab.
+ */
 export function syncConfirmBody(count: number): string {
-  return `Rebuilds ${count} instances from this prefab. Names and positions are kept.`;
+  return `Syncs ${count} instances with this prefab. Overrides you've made on each instance are kept; any that no longer apply to the updated prefab are dropped. Names and positions are kept.`;
+}
+
+/** Total override count across a prefab instance, from the root marker's raw `overrides` list (each entry already scoped to whichever member entity it was recorded on — root or a descendant). */
+export function instanceOverrideCount(overrides: readonly { entity: string }[]): number {
+  return overrides.length;
+}
+
+/** Confirm-dialog copy for the Inspector banner's "Revert all" — clears every recorded override across the whole instance, root and descendants alike, restoring the prefab's own values. */
+export function revertAllConfirmBody(count: number): string {
+  return `Reverts ${count} override${count === 1 ? '' : 's'} across this prefab instance, restoring the prefab's own values.`;
 }
 
 /**
