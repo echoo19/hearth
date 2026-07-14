@@ -15,6 +15,7 @@ import {
   type TileRow,
 } from '../tileAutotileRows';
 import { ColorField, ConfirmDialog, Icon, NumberField, TextField, componentIcon } from './ui';
+import { Button } from './ui/Button';
 import {
   countPrefabInstances,
   createSyncPreflight,
@@ -98,9 +99,9 @@ function Vec2ListField({
           </button>
         </div>
       ))}
-      <button type="button" className="btn btn-sm" onClick={() => onCommit(addPoint(value))}>
+      <Button size="sm" onClick={() => onCommit(addPoint(value))}>
         <Icon name="plus" size={10} /> Add point
-      </button>
+      </Button>
     </div>
   );
 }
@@ -147,9 +148,9 @@ function StringListField({
           </button>
         </div>
       ))}
-      <button type="button" className="btn btn-sm" onClick={() => onCommit(addString(value))}>
+      <Button size="sm" onClick={() => onCommit(addString(value))}>
         <Icon name="plus" size={10} /> Add layer
-      </button>
+      </Button>
     </div>
   );
 }
@@ -463,13 +464,9 @@ function TileAssetsField({
           onRemove={() => void clearChar(row.char)}
         />
       ))}
-      <button
-        type="button"
-        className="btn btn-sm"
-        onClick={() => void writeChar(nextAvailableChar(rows), imageAssets[0]?.id ?? '')}
-      >
+      <Button size="sm" onClick={() => void writeChar(nextAvailableChar(rows), imageAssets[0]?.id ?? '')}>
         <Icon name="plus" size={10} /> Add tile char
-      </button>
+      </Button>
     </div>
   );
 }
@@ -808,20 +805,20 @@ export function Inspector() {
           )}
           <span style={{ flex: 1 }} />
           {overrideCount > 0 && (
-            <button className="btn btn-sm" disabled={revertingAll} onClick={() => setConfirmRevertAll(true)}>
+            <Button size="sm" disabled={revertingAll} onClick={() => setConfirmRevertAll(true)}>
               {revertingAll ? 'Reverting…' : 'Revert all'}
-            </button>
+            </Button>
           )}
-          <button className="btn btn-sm" onClick={() => void handleUpdatePrefab()}>
+          <Button size="sm" onClick={() => void handleUpdatePrefab()}>
             Update prefab
-          </button>
-          <button
-            className="btn btn-sm"
+          </Button>
+          <Button
+            size="sm"
             disabled={pendingSyncAllFor === entity.id}
             onClick={() => void openSyncAllConfirm()}
           >
             {pendingSyncAllFor === entity.id ? 'Syncing…' : 'Sync instances'}
-          </button>
+          </Button>
         </div>
       )}
       <div className="panel-scroll">
@@ -959,14 +956,14 @@ export function Inspector() {
                             </option>
                           ))}
                         </select>
-                        <button
-                          className="btn btn-sm"
+                        <Button
+                          size="sm"
                           disabled={!value}
                           title={value ? 'Edit this state machine' : 'Assign a state machine to edit it'}
                           onClick={() => value && openAnimatorFor(value)}
                         >
                           <Icon name="animator" size={11} /> Edit
-                        </button>
+                        </Button>
                       </div>
                     );
                   } else if (field === 'assetId' && type === 'SpriteAnimator' && typeof value === 'string') {
@@ -1181,14 +1178,14 @@ export function Inspector() {
                       {prefabInfo != null && (
                         <div className="field-revert-slot">
                           {overridden && (
-                            <button
-                              type="button"
-                              className="btn btn-sm field-revert-btn"
+                            <Button
+                              size="sm"
+                              className="field-revert-btn"
                               title={`Revert "${humanizeFieldLabel(field)}" to the prefab's value`}
                               onClick={() => void handleRevertField(type, field)}
                             >
                               Revert
-                            </button>
+                            </Button>
                           )}
                         </div>
                       )}
@@ -1225,9 +1222,9 @@ export function Inspector() {
         </div>
 
         <div style={{ padding: '4px 10px 14px' }}>
-          <button className="btn btn-danger btn-sm" onClick={() => setConfirmDelete(true)}>
+          <Button variant="danger" size="sm" onClick={() => setConfirmDelete(true)}>
             <Icon name="trash" size={11} /> Delete entity
-          </button>
+          </Button>
         </div>
       </div>
 

@@ -32,6 +32,7 @@ import { GAMEPAD_BUTTON_NAMES } from '@hearth/core';
 import type { GamepadAxisBinding, InputMappings, VirtualAxis } from '@hearth/core';
 import { useEditor } from '../store';
 import { ConfirmDialog, Icon, NumberField, TextField } from './ui';
+import { Button } from './ui/Button';
 
 function withoutKey<T>(map: Record<string, T>, key: string): Record<string, T> {
   const next = { ...map };
@@ -110,13 +111,9 @@ function CaptureButton({
 }) {
   return (
     <>
-      <button
-        type="button"
-        className={`btn btn-sm${armed ? ' btn-capture-armed' : ''}`}
-        onClick={armed ? onCancel : onArm}
-      >
+      <Button size="sm" className={armed ? 'btn-capture-armed' : undefined} onClick={armed ? onCancel : onArm}>
         {armed ? 'Press any key…' : label}
-      </button>
+      </Button>
       {armed && <span className="capture-hint">Esc cancels — Escape itself can't be bound here.</span>}
     </>
   );
@@ -224,14 +221,14 @@ function ActionRow({
               <label className="field-label">Threshold</label>
               <NumberField value={axisBinding.threshold} onCommit={(v) => onSetAxisField({ threshold: v })} />
             </div>
-            <button className="btn btn-ghost btn-sm" onClick={onRemoveAxisBinding}>
+            <Button variant="ghost" size="sm" onClick={onRemoveAxisBinding}>
               Remove gamepad axis binding
-            </button>
+            </Button>
           </div>
         ) : (
-          <button className="btn btn-sm" onClick={onAddAxisBinding}>
+          <Button size="sm" onClick={onAddAxisBinding}>
             <Icon name="plus" size={10} /> Add gamepad axis binding
-          </button>
+          </Button>
         )}
       </div>
     </div>
@@ -697,9 +694,9 @@ export function InputSettings() {
                 if (e.key === 'Enter') addAction();
               }}
             />
-            <button className="btn btn-sm" onClick={addAction} disabled={!newActionName.trim()}>
+            <Button size="sm" onClick={addAction} disabled={!newActionName.trim()}>
               <Icon name="plus" size={10} /> Add action
-            </button>
+            </Button>
           </div>
         </div>
 
@@ -739,9 +736,9 @@ export function InputSettings() {
                 if (e.key === 'Enter') addAxis();
               }}
             />
-            <button className="btn btn-sm" onClick={addAxis} disabled={!newAxisName.trim()}>
+            <Button size="sm" onClick={addAxis} disabled={!newAxisName.trim()}>
               <Icon name="plus" size={10} /> Add axis
-            </button>
+            </Button>
           </div>
         </div>
 
