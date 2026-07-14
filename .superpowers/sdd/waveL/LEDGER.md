@@ -50,7 +50,7 @@ high) though it borders on a defect (values unreadable).
   playing. Editor/browser UI keys (Enter/Space/Escape/arrows) must work
   regardless of the project's gameplay bindings.
 - Source: TOOLBAR-2, TOOLBAR-3, HIER-1
-- Disposition: open
+- Disposition: fixed c0fde3e (game keyboard capture gated on focus/dialog/paused; exports keep full capture via ambient body focus)
 
 ### L-002 · runtime · defect · high
 - Element: `InputState.codeToActions` build (`packages/runtime/src/input.ts`
@@ -69,7 +69,7 @@ high) though it borders on a defect (values unreadable).
   the player exactly like arrow keys. Same input subsystem as L-001, distinct
   fix.
 - Source: PLAYMODE-1
-- Disposition: open
+- Disposition: fixed 35fbd9d (axis negative/positive codes registered as mapped codes; WASD verified moving the player in a real-browser export)
 
 ## workspace shell
 
@@ -198,7 +198,7 @@ high) though it borders on a defect (values unreadable).
 - Expected: reject/auto-suffix duplicate renames (or stop uniquifying on
   create) — one consistent invariant.
 - Source: HIER-4
-- Disposition: open
+- Disposition: fixed 5a9e079 (renameEntity auto-suffixes a colliding rename, matching the create/instantiate uniqueness invariant)
 
 ### L-012 · hierarchy · defect · med
 - Element: "Save as prefab" on rows that are already prefab instances.
@@ -209,7 +209,7 @@ high) though it borders on a defect (values unreadable).
 - Expected: differentiate the affordance on instance rows or confirm before
   re-linking.
 - Source: HIER-8
-- Disposition: open
+- Disposition: fixed b2fd8be (createPrefab severs the old live link and warns PREFAB_INSTANCE_RELINKED instead of silently re-linking; editor row-affordance differentiation remains editor-owned)
 
 ### L-013 · hierarchy · defect · med
 - Element: no-op reparent (reparent to the same parent) — `moveEntity`.
@@ -219,7 +219,7 @@ high) though it borders on a defect (values unreadable).
 - Expected: a `parentId`-equality guard so a no-op reparent is a true no-op
   (no detach). Core-command fix.
 - Source: Wave-K tail ("no-op reparent detaches")
-- Disposition: open
+- Disposition: fixed 5a9e079 (moveEntity skips the detach policy when the target parent equals the current parent)
 
 ### L-014 · hierarchy · friction · high
 - Element: tree rows — drag-to-reparent / sibling reorder.
@@ -399,7 +399,7 @@ high) though it borders on a defect (values unreadable).
 - Expected: a value-equality check before `recordInstanceOverride` so
   same-value edits record nothing.
 - Source: Wave-K tail ("same-value instance edits record overrides")
-- Disposition: open
+- Disposition: fixed 5a9e079 (setComponentProperty/setProperties skip recordInstanceOverride when the value is unchanged)
 
 ### L-033 · inspector · friction · high
 - Element: `Tilemap.grid` (a `string[]` of raw row-strings).
