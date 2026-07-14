@@ -105,6 +105,8 @@
     "zustand": "^5.0.2"
   },
   "devDependencies": {
+    "@testing-library/dom": "^10.4.1",
+    "@testing-library/react": "^16.3.2",
     "@types/react": "^18.3.12",
     "@types/react-dom": "^18.3.1",
     "@types/ws": "^8.18.1",
@@ -112,6 +114,7 @@
     "electron": "33.4.11",
     "electron-builder": "^25.1.8",
     "esbuild": "^0.24.2",
+    "jsdom": "^25.0.1",
     "vite": "^6.0.7"
   }
 }

@@ -20,7 +20,7 @@ export default defineConfig({
     include: [
       'packages/*/tests/**/*.test.ts',
       'packages/*/src/**/*.test.ts',
-      'apps/*/tests/**/*.test.ts',
+      'apps/*/tests/**/*.test.{ts,tsx}',
     ],
     environment: 'node',
     testTimeout: 30000,
