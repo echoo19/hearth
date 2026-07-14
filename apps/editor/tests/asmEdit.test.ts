@@ -14,9 +14,13 @@ import {
   addCondition,
   removeCondition,
   setConditionParam,
+  setConditionOp,
+  setConditionValue,
+  setParamType,
   opsForParamType,
   draftIssues,
   isDraftComplete,
+  humanizeSaveError,
   type AsmDraft,
 } from '../src/asmEdit';
 
@@ -143,6 +147,18 @@ describe('transitions & conditions', () => {
     expect(draft.transitions[0].conditions[cIndex]).toEqual({ param: 'grounded', op: 'eq', value: true });
   });
 
+  it('setConditionOp updates only the targeted condition op', () => {
+    const draft = setConditionOp(docToDraft(SAMPLE), 0, 0, 'gte');
+    expect(draft.transitions[0].conditions[0].op).toBe('gte');
+    // untouched fields preserved
+    expect(draft.transitions[0].conditions[0]).toEqual({ param: 'speed', op: 'gte', value: 0 });
+  });
+
+  it('setConditionValue updates only the targeted condition value', () => {
+    const draft = setConditionValue(docToDraft(SAMPLE), 0, 0, 42);
+    expect(draft.transitions[0].conditions[0]).toEqual({ param: 'speed', op: 'gt', value: 42 });
+  });
+
   it('addTransition / removeTransition add and drop rows', () => {
     let draft = addTransition(docToDraft(SAMPLE));
     expect(draft.transitions).toHaveLength(3);
@@ -153,6 +169,44 @@ describe('transitions & conditions', () => {
   it('removeCondition drops a single condition row', () => {
     const draft = removeCondition(docToDraft(SAMPLE), 0, 0);
     expect(draft.transitions[0].conditions).toHaveLength(0);
+  });
+});
+
+describe('setParamType', () => {
+  it('resets the default to a sensible value for the new type', () => {
+    let draft = setParamType(docToDraft(SAMPLE), 0, 'bool'); // speed: number -> bool
+    expect(draft.params[0]).toEqual({ name: 'speed', type: 'bool', default: false });
+    draft = setParamType(draft, 0, 'trigger');
+    expect(draft.params[0]).toEqual({ name: 'speed', type: 'trigger' });
+  });
+
+  it('migrates dependent conditions to op/value valid for the new type', () => {
+    // The idle->run transition gates on speed > 0 (a number condition).
+    // Retyping "speed" to bool must not leave the stale gt/0 behind — the
+    // condition should be reseeded to a bool-valid op/value.
+    const draft = setParamType(docToDraft(SAMPLE), 0, 'bool');
+    expect(draft.transitions[0].conditions[0]).toEqual({ param: 'speed', op: 'eq', value: true });
+  });
+
+  it('clears op/value from dependent conditions when retyped to trigger', () => {
+    const draft = setParamType(docToDraft(SAMPLE), 0, 'trigger');
+    expect(draft.transitions[0].conditions[0]).toEqual({ param: 'speed' });
+  });
+
+  it('leaves conditions on other params untouched', () => {
+    // grounded (bool) is untouched by retyping speed.
+    let draft = docToDraft(SAMPLE);
+    draft = addCondition(draft, 1); // seeds a fresh condition on "speed" (first param) into run->idle
+    draft = setConditionParam(draft, 1, draft.transitions[1].conditions.length - 1, 'grounded');
+    const before = draft.transitions[1].conditions.map((c) => ({ ...c }));
+    draft = setParamType(draft, 0, 'bool'); // retype speed
+    // the grounded condition on transition 1 must be unchanged
+    expect(draft.transitions[1].conditions.at(-1)).toEqual(before.at(-1));
+  });
+
+  it('a valid draft stays saveable after a type change (no stale invalid combo)', () => {
+    const draft = setParamType(docToDraft(SAMPLE), 0, 'bool');
+    expect(draftIssues(draft)).toEqual([]);
   });
 });
 
@@ -204,5 +258,46 @@ describe('completeness gating', () => {
     draft.states[1].name = 'idle';
     expect(isDraftComplete(draft)).toBe(false);
     expect(draftIssues(draft).some((m) => /duplicate/i.test(m))).toBe(true);
+  });
+
+  it('flags a bool-param condition using an ordering operator (server superRefine mirror)', () => {
+    // A hand-mangled draft (or a stale one a future edit path fails to migrate):
+    // grounded is a bool, but its condition carries op:'gt' — the server rejects
+    // this, so draftIssues must catch it before Save rather than after.
+    const draft = docToDraft(SAMPLE);
+    draft.transitions[0].conditions[0] = { param: 'grounded', op: 'gt', value: true };
+    expect(isDraftComplete(draft)).toBe(false);
+    expect(draftIssues(draft).some((m) => /bool|only supports|= or ≠/i.test(m))).toBe(true);
+  });
+
+  it('does not flag a bool-param condition using eq/neq', () => {
+    const draft = docToDraft(SAMPLE);
+    draft.transitions[0].conditions[0] = { param: 'grounded', op: 'neq', value: true };
+    expect(draftIssues(draft)).toEqual([]);
+  });
+});
+
+describe('humanizeSaveError', () => {
+  it('translates a zod transition/condition path into a plain-language location', () => {
+    const raw =
+      'Invalid parameters for updateStateMachineAsset: data.transitions.2.conditions.0.op: bool param "spd" conditions only support eq/neq';
+    expect(humanizeSaveError(raw)).toBe(
+      'Transition 3, condition 1: bool param "spd" conditions only support eq/neq',
+    );
+  });
+
+  it('translates a state path', () => {
+    const raw = 'Invalid parameters for updateStateMachineAsset: data.states.0.animation: Required';
+    expect(humanizeSaveError(raw)).toBe('State 1: Required');
+  });
+
+  it('strips the command prefix even when there is no data path', () => {
+    const raw = 'Invalid parameters for updateStateMachineAsset: something went wrong';
+    expect(humanizeSaveError(raw)).toBe('something went wrong');
+  });
+
+  it('passes a non-schema message through unchanged', () => {
+    const raw = 'State "walk" references an unknown animation asset: ast_x';
+    expect(humanizeSaveError(raw)).toBe('State "walk" references an unknown animation asset: ast_x');
   });
 });

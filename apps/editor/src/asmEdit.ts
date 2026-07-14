@@ -172,17 +172,28 @@ export function renameParam(draft: AsmDraft, index: number, name: string): AsmDr
   };
 }
 
-/** Change a param's type, resetting its default to a sensible value for the new type. */
+/**
+ * Change a param's type, resetting its default to a sensible value for the new
+ * type AND migrating every dependent condition's op/value to that type (the
+ * same reseed `setConditionParam` applies when a condition is repointed). Left
+ * un-migrated, a stale `{op:'gt', value:5}` on a param retyped to bool renders
+ * misleadingly and makes Save fail against the server schema (bool params only
+ * support eq/neq) — so we reseed here, and `draftIssues()` is the safety net.
+ */
 export function setParamType(draft: AsmDraft, index: number, type: ParamType): AsmDraft {
-  return {
-    ...draft,
-    params: draft.params.map((p, i) => {
-      if (i !== index) return p;
-      if (type === 'trigger') return { name: p.name, type };
-      if (type === 'bool') return { name: p.name, type, default: typeof p.default === 'boolean' ? p.default : false };
-      return { name: p.name, type, default: typeof p.default === 'number' ? p.default : 0 };
-    }),
-  };
+  const target = draft.params[index];
+  if (!target) return draft;
+  const params = draft.params.map((p, i) => {
+    if (i !== index) return p;
+    if (type === 'trigger') return { name: p.name, type };
+    if (type === 'bool') return { name: p.name, type, default: typeof p.default === 'boolean' ? p.default : false };
+    return { name: p.name, type, default: typeof p.default === 'number' ? p.default : 0 };
+  });
+  const transitions = draft.transitions.map((t) => ({
+    ...t,
+    conditions: t.conditions.map((c) => (c.param === target.name ? seedCondition(target.name, type) : c)),
+  }));
+  return { ...draft, params, transitions };
 }
 
 export function setParamDefault(draft: AsmDraft, index: number, value: boolean | number): AsmDraft {
@@ -393,6 +404,12 @@ export function draftIssues(draft: AsmDraft): string[] {
       }
       if (type === 'trigger') return; // {param} only
       if (c.op === undefined) issues.push(`${clabel} needs an operator.`);
+      // Mirror the server schema's op-vs-type rule (project.ts superRefine) so an
+      // invalid combo — e.g. a leftover ordering op on a param retyped to bool —
+      // is named here rather than surfacing as a raw schema string after Save.
+      else if (type === 'bool' && c.op !== 'eq' && c.op !== 'neq') {
+        issues.push(`${clabel}: a bool parameter only supports = or ≠.`);
+      }
       if (c.value === undefined) issues.push(`${clabel} needs a value.`);
     });
   });
@@ -402,4 +419,42 @@ export function draftIssues(draft: AsmDraft): string[] {
 
 export function isDraftComplete(draft: AsmDraft): boolean {
   return draftIssues(draft).length === 0;
+}
+
+/**
+ * Turn a raw `updateStateMachineAsset` rejection into a human, field-located
+ * message. The command surfaces zod paths verbatim, e.g.
+ *   `Invalid parameters for updateStateMachineAsset: data.transitions.2.conditions.0.op: bool param "spd" conditions only support eq/neq`
+ * which an end user can't map back to "the 3rd transition's 1st condition".
+ * We strip the command prefix and translate the `data.<path>` locator into a
+ * plain-language location (1-based, matching the on-screen ordering). Anything
+ * we don't recognize passes through minus the noise, so we never dump raw zod.
+ */
+export function humanizeSaveError(message: string): string {
+  const withoutPrefix = message.replace(/^Invalid parameters for \w+:\s*/, '');
+  const match = withoutPrefix.match(/^data\.([A-Za-z0-9_.]+):\s*([\s\S]*)$/);
+  if (!match) return withoutPrefix;
+  const [, rawPath, detail] = match;
+  const parts = rawPath.split('.');
+  const labels: string[] = [];
+  for (let i = 0; i < parts.length; i++) {
+    const seg = parts[i];
+    const idx = Number(parts[i + 1]);
+    if (seg === 'transitions' && Number.isInteger(idx)) {
+      labels.push(`Transition ${idx + 1}`);
+      i++;
+    } else if (seg === 'conditions' && Number.isInteger(idx)) {
+      labels.push(`condition ${idx + 1}`);
+      i++;
+    } else if (seg === 'states' && Number.isInteger(idx)) {
+      labels.push(`State ${idx + 1}`);
+      i++;
+    } else if (seg === 'params') {
+      labels.push('Parameter');
+    } else if (seg === 'initial') {
+      labels.push('Initial state');
+    }
+  }
+  const location = labels.join(', ');
+  return location ? `${location}: ${detail}` : detail;
 }
