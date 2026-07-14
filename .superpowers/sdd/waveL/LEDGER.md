@@ -1400,3 +1400,10 @@ contention with T8 once B1–B7 land)
 - Expected: MCP set_entity_tags + CLI `hearth set tags` exposing the existing command.
 - Source: PARITY.md
 - Disposition: open
+
+### L-113 · investigate · defect · high
+- Element: prefab instance field edit → override recording
+- Observed: T7 live walkthrough: component-field edit (Position.x 7→123) committed but recorded NO override (no dot, no revert affordance). Possibly scene/entity-context (non-instance?) or a real recording regression.
+- Expected: field edits on prefab instances record overrides with revert affordance (Wave I behavior).
+- Source: T7 report
+- Disposition: open
