@@ -70,6 +70,22 @@
   font-size: var(--text-xs);
 }
 
+/* Transient "that key is already bound" notice after a duplicate key capture
+   (INPUT-4) — shown under the panel header, cleared on the next arm/bind. */
+.capture-notice {
+  padding: 6px 10px;
+  color: var(--err);
+  font-size: var(--text-xs);
+  background: var(--err-faint);
+  border-bottom: 1px solid var(--border);
+}
+
+/* Inline duplicate/blank-name reason under an add-row (INPUT-2/3). */
+.settings-add-row + .field-error {
+  display: block;
+  padding: 0 10px 8px;
+}
+
 .input-axis-binding {
   margin-top: 2px;
   padding-top: 8px;

@@ -58,6 +58,27 @@ export function updateSettingsErrorMessage(result: { success: boolean; errors: {
   return result.errors[0]?.message ?? "That didn't save.";
 }
 
+/**
+ * Reason a proposed input name can't be applied, or null when it's fine. One
+ * source of truth for the three silent-rejection spots the audit flagged: a
+ * duplicate/blank axis rename (INPUT-1/3) and a duplicate action/axis add
+ * (INPUT-2). `taken` lists the name maps to check for a collision. A rename
+ * back to the current name is a no-op, not an error. Exported for unit tests.
+ */
+export function nameConflictMessage(
+  kind: 'action' | 'axis',
+  rawName: string,
+  taken: ReadonlyArray<Record<string, unknown>>,
+  currentName?: string,
+): string | null {
+  const name = rawName.trim();
+  if (currentName !== undefined && name === currentName) return null;
+  if (!name) return 'Name can’t be empty.';
+  if (taken.some((map) => has(map, name)))
+    return `${kind === 'action' ? 'An action' : 'An axis'} named “${name}” already exists.`;
+  return null;
+}
+
 /** One edit = the full next local state + the minimal updateSettings patch derived from it. */
 interface Edit {
   next: InputMappings;
@@ -269,7 +290,7 @@ function AxisRow({
   onCancelCapture: () => void;
   onRemoveNegCode: (code: string) => void;
   onRemovePosCode: (code: string) => void;
-  onRename: (newName: string) => void;
+  onRename: (newName: string) => string | undefined;
   onSetGamepadAxis: (value: number | undefined) => void;
   onSetDeadzone: (value: number | undefined) => void;
   onDelete: () => void;
@@ -371,6 +392,9 @@ export function InputSettings() {
   const [newAxisName, setNewAxisName] = useState('');
   const [draftActionNames, setDraftActionNames] = useState<string[]>([]);
   const [editError, setEditError] = useState<string | null>(null);
+  const [addActionError, setAddActionError] = useState<string | null>(null);
+  const [addAxisError, setAddAxisError] = useState<string | null>(null);
+  const [captureNotice, setCaptureNotice] = useState<string | null>(null);
   const [pendingDelete, setPendingDelete] = useState<{ kind: 'action' | 'axis'; name: string } | null>(null);
 
   // Optimistic local mappings (see the file header). `localRef` mirrors the
@@ -481,6 +505,20 @@ export function InputSettings() {
   const m: InputMappings = local;
 
   function recordCapturedCode(target: CaptureTarget, code: string) {
+    // Pressing a key already bound here was a silent no-op — indistinguishable
+    // from the capture not registering (INPUT-4). Surface a brief hint instead.
+    const cur = localRef.current;
+    if (cur) {
+      const already =
+        target.kind === 'action'
+          ? (cur.actions[target.name] ?? []).includes(code)
+          : (cur.axes[target.name]?.[target.kind === 'axis-neg' ? 'negativeCodes' : 'positiveCodes'] ?? []).includes(code);
+      if (already) {
+        setCaptureNotice(`${code} is already bound here.`);
+        return;
+      }
+    }
+    setCaptureNotice(null);
     applyEdit((cur) => {
       if (target.kind === 'action') {
         const existing = cur.actions[target.name] ?? [];
@@ -582,26 +620,38 @@ export function InputSettings() {
     if (!trimmed) return;
     const cur = localRef.current;
     if (!cur) return;
-    const taken =
-      has(cur.actions, trimmed) ||
-      has(cur.gamepadButtons, trimmed) ||
-      has(cur.gamepadAxes, trimmed) ||
-      draftActionNames.includes(trimmed);
-    if (taken) return;
+    const draftMap = Object.fromEntries(draftActionNames.map((n) => [n, true]));
+    const conflict = nameConflictMessage('action', trimmed, [
+      cur.actions,
+      cur.gamepadButtons,
+      cur.gamepadAxes,
+      draftMap,
+    ]);
+    if (conflict) {
+      setAddActionError(conflict);
+      return;
+    }
+    setAddActionError(null);
     setDraftActionNames((prev) => [...prev, trimmed]);
     setNewActionName('');
   }
 
-  function renameAxis(oldName: string, rawNewName: string) {
+  /** Returns a rejection reason (for TextField's inline cue) or undefined on success/no-op. */
+  function renameAxis(oldName: string, rawNewName: string): string | undefined {
+    const cur = localRef.current;
+    if (!cur) return;
+    const conflict = nameConflictMessage('axis', rawNewName, [cur.axes], oldName);
+    if (conflict) return conflict;
     const newName = rawNewName.trim();
-    if (!newName || newName === oldName) return;
-    applyEdit((cur) => {
-      if (has(cur.axes, newName) || !has(cur.axes, oldName)) return null;
-      const entry = cur.axes[oldName];
-      const axes = withoutKey(cur.axes, oldName);
+    if (newName === oldName) return; // no-op, already current
+    applyEdit((c) => {
+      if (has(c.axes, newName) || !has(c.axes, oldName)) return null;
+      const entry = c.axes[oldName];
+      const axes = withoutKey(c.axes, oldName);
       axes[newName] = entry;
-      return { next: { ...cur, axes }, patch: { axes } };
+      return { next: { ...c, axes }, patch: { axes } };
     });
+    return;
   }
 
   function setAxisField(name: string, fieldPatch: Partial<VirtualAxis>) {
@@ -635,10 +685,18 @@ export function InputSettings() {
   function addAxis() {
     const trimmed = newAxisName.trim();
     if (!trimmed) return;
-    applyEdit((cur) => {
-      if (has(cur.axes, trimmed)) return null;
-      const axes = { ...cur.axes, [trimmed]: { negativeCodes: [], positiveCodes: [] } };
-      return { next: { ...cur, axes }, patch: { axes } };
+    const cur = localRef.current;
+    if (!cur) return;
+    const conflict = nameConflictMessage('axis', trimmed, [cur.axes]);
+    if (conflict) {
+      setAddAxisError(conflict);
+      return;
+    }
+    setAddAxisError(null);
+    applyEdit((c) => {
+      if (has(c.axes, trimmed)) return null;
+      const axes = { ...c.axes, [trimmed]: { negativeCodes: [], positiveCodes: [] } };
+      return { next: { ...c, axes }, patch: { axes } };
     });
     setNewAxisName('');
   }
@@ -668,6 +726,7 @@ export function InputSettings() {
           <span>That change didn't save: {editError}</span>
         </div>
       )}
+      {captureNotice && <div className="capture-notice">{captureNotice}</div>}
       <div className="panel-body">
         <div className="diff-section">
           <h4>Actions</h4>
@@ -682,7 +741,10 @@ export function InputSettings() {
               gamepadNames={m.gamepadButtons[name] ?? []}
               axisBinding={m.gamepadAxes[name]}
               capturing={capture?.kind === 'action' && capture.name === name}
-              onArmCapture={() => setCapture({ kind: 'action', name })}
+              onArmCapture={() => {
+                setCaptureNotice(null);
+                setCapture({ kind: 'action', name });
+              }}
               onCancelCapture={() => setCapture(null)}
               onRemoveCode={(code) => removeActionCode(name, code)}
               onAddGamepadButton={(btn) => addGamepadButton(name, btn)}
@@ -695,10 +757,13 @@ export function InputSettings() {
           ))}
           <div className="settings-add-row">
             <input
-              className="input"
+              className={`input${addActionError ? ' invalid' : ''}`}
               placeholder="New action name…"
               value={newActionName}
-              onChange={(e) => setNewActionName(e.target.value)}
+              onChange={(e) => {
+                setNewActionName(e.target.value);
+                if (addActionError) setAddActionError(null);
+              }}
               onKeyDown={(e) => {
                 if (e.key === 'Enter') addAction();
               }}
@@ -707,6 +772,7 @@ export function InputSettings() {
               <Icon name="plus" size={10} /> Add action
             </Button>
           </div>
+          {addActionError && <span className="field-error">{addActionError}</span>}
         </div>
 
         <div className="diff-section">
@@ -724,8 +790,14 @@ export function InputSettings() {
               globalDeadzone={m.deadzone}
               capturingNeg={capture?.kind === 'axis-neg' && capture.name === name}
               capturingPos={capture?.kind === 'axis-pos' && capture.name === name}
-              onArmNeg={() => setCapture({ kind: 'axis-neg', name })}
-              onArmPos={() => setCapture({ kind: 'axis-pos', name })}
+              onArmNeg={() => {
+                setCaptureNotice(null);
+                setCapture({ kind: 'axis-neg', name });
+              }}
+              onArmPos={() => {
+                setCaptureNotice(null);
+                setCapture({ kind: 'axis-pos', name });
+              }}
               onCancelCapture={() => setCapture(null)}
               onRemoveNegCode={(code) => removeAxisCode(name, 'negativeCodes', code)}
               onRemovePosCode={(code) => removeAxisCode(name, 'positiveCodes', code)}
@@ -737,10 +809,13 @@ export function InputSettings() {
           ))}
           <div className="settings-add-row">
             <input
-              className="input"
+              className={`input${addAxisError ? ' invalid' : ''}`}
               placeholder="New axis name…"
               value={newAxisName}
-              onChange={(e) => setNewAxisName(e.target.value)}
+              onChange={(e) => {
+                setNewAxisName(e.target.value);
+                if (addAxisError) setAddAxisError(null);
+              }}
               onKeyDown={(e) => {
                 if (e.key === 'Enter') addAxis();
               }}
@@ -749,6 +824,7 @@ export function InputSettings() {
               <Icon name="plus" size={10} /> Add axis
             </Button>
           </div>
+          {addAxisError && <span className="field-error">{addAxisError}</span>}
         </div>
 
         <div className="diff-section">
