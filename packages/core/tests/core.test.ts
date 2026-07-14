@@ -8,6 +8,8 @@ import {
   resolveColor,
   createComponent,
   COMPONENT_TYPES,
+  AGENT_SKILL_CONTENT,
+  AGENT_SKILL_FILE,
 } from '@hearth/core';
 
 async function makeSession(granted?: any) {
@@ -28,6 +30,7 @@ describe('project creation', () => {
     expect(files).toContain('AGENTS.md');
     expect(files).toContain('CLAUDE.md');
     expect(files).toContain('.hearth/agent-config.json');
+    expect(files).toContain(AGENT_SKILL_FILE);
     expect(store.project.name).toBe('My Game');
     expect(store.project.initialScene).not.toBeNull();
     expect(store.scenes.size).toBe(1);
@@ -36,6 +39,13 @@ describe('project creation', () => {
     const reloaded = await ProjectStore.load(fs, '/proj');
     expect(reloaded.project.id).toBe(store.project.id);
     expect(reloaded.getScene('Main')?.entities.length).toBe(3);
+  });
+
+  it('scaffolds the project-local best-practices skill from the embedded canonical copy', async () => {
+    const fs = new MemoryFileSystem();
+    await createProject(fs, '/proj', { name: 'My Game' });
+    const skill = await fs.readFile(`/proj/${AGENT_SKILL_FILE}`);
+    expect(skill).toBe(AGENT_SKILL_CONTENT);
   });
 
   it('refuses to create a project over an existing one', async () => {

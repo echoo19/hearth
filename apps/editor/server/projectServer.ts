@@ -36,7 +36,13 @@ import { NodeFileSystem, loadPlayerBundle } from '@hearth/core/node';
 import { listTemplates, getTemplatePath, scaffoldFromTemplate } from '@hearth/templates';
 import { isRequestAllowed } from './originGuard.js';
 import { attachWebSocket, type ExportFrame, type ExportStage, type DesktopExportResult } from './ws.js';
-import { detectAgents, prepareMcpConfig, McpConfigParseError, type AgentPermissionMode } from './agentSetup.js';
+import {
+  detectAgents,
+  prepareMcpConfig,
+  ensureAgentSkill,
+  McpConfigParseError,
+  type AgentPermissionMode,
+} from './agentSetup.js';
 
 export { attachWebSocket } from './ws.js';
 
@@ -1050,7 +1056,10 @@ export function createProjectServerContext(options: ProjectServerOptions = {}) {
       const toolPaths = await resolveToolPaths(repoRoot);
       try {
         const result = await prepareMcpConfig(root, toolPaths.mcp, modeValue as AgentPermissionMode);
-        return { status: 200, body: { ok: true, ...result } };
+        // Backfill the project-local best-practices skill for projects created
+        // before it shipped; new projects already have it.
+        const skill = await ensureAgentSkill(root);
+        return { status: 200, body: { ok: true, ...result, skillWritten: skill.written } };
       } catch (err) {
         const status = err instanceof McpConfigParseError ? 409 : 500;
         return { status, body: { ok: false, error: (err as Error).message } };

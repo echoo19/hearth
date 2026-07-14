@@ -10,7 +10,8 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { promises as fsp, accessSync } from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
-import { detectAgents, prepareMcpConfig, McpConfigParseError } from '../server/agentSetup';
+import { detectAgents, prepareMcpConfig, ensureAgentSkill, McpConfigParseError } from '../server/agentSetup';
+import { AGENT_SKILL_CONTENT, AGENT_SKILL_FILE } from '@hearth/core';
 
 let tmpDir: string;
 let savedPath: string | undefined;
@@ -135,5 +136,31 @@ describe('prepareMcpConfig', () => {
     // The broken file must be untouched.
     const raw = await fsp.readFile(path.join(root, '.mcp.json'), 'utf8');
     expect(raw).toBe('{ not valid json');
+  });
+});
+
+describe('ensureAgentSkill', () => {
+  const skillRel = AGENT_SKILL_FILE.split('/');
+
+  it('backfills the skill for a project that lacks it', async () => {
+    const root = path.join(tmpDir, 'proj-no-skill');
+    await fsp.mkdir(root, { recursive: true });
+
+    const result = await ensureAgentSkill(root);
+    expect(result.written).toBe(true);
+
+    const written = await fsp.readFile(path.join(root, ...skillRel), 'utf8');
+    expect(written).toBe(AGENT_SKILL_CONTENT);
+  });
+
+  it('never overwrites an existing skill file (preserves local edits)', async () => {
+    const root = path.join(tmpDir, 'proj-has-skill');
+    const skillPath = path.join(root, ...skillRel);
+    await fsp.mkdir(path.dirname(skillPath), { recursive: true });
+    await fsp.writeFile(skillPath, 'my local edits');
+
+    const result = await ensureAgentSkill(root);
+    expect(result.written).toBe(false);
+    expect(await fsp.readFile(skillPath, 'utf8')).toBe('my local edits');
   });
 });

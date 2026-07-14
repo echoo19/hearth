@@ -11,6 +11,7 @@
 import { spawn } from 'node:child_process';
 import { promises as fsp } from 'node:fs';
 import path from 'node:path';
+import { AGENT_SKILL_CONTENT, AGENT_SKILL_FILE } from '@hearth/core';
 
 const DETECT_TIMEOUT_MS = 3000;
 
@@ -172,5 +173,26 @@ export async function prepareMcpConfig(
   const next: McpConfig = { ...existing, mcpServers: servers };
 
   await fsp.writeFile(mcpConfigPath, JSON.stringify(next, null, 2) + '\n', 'utf8');
+  return { written: true };
+}
+
+/**
+ * Backfill the project-local best-practices skill at
+ * `<root>/.claude/skills/hearth/SKILL.md` if it is missing. New projects get it
+ * at creation (createProject / the template scaffolder), but projects made
+ * before this shipped won't have it — so preparing an agent launch is the point
+ * to add it, giving existing projects the skill on their next agent session.
+ * Never overwrites an existing file (the user may have local edits).
+ */
+export async function ensureAgentSkill(root: string): Promise<{ written: boolean }> {
+  const skillPath = path.join(root, ...AGENT_SKILL_FILE.split('/'));
+  try {
+    await fsp.access(skillPath);
+    return { written: false };
+  } catch {
+    // Not present — write it.
+  }
+  await fsp.mkdir(path.dirname(skillPath), { recursive: true });
+  await fsp.writeFile(skillPath, AGENT_SKILL_CONTENT, 'utf8');
   return { written: true };
 }

@@ -6,12 +6,13 @@ structured CLI (`hearth`) and an MCP server (`hearth-mcp`) so coding agents
 can inspect, modify, test, and build this game through safe engine
 operations instead of hand-editing JSON.
 
-> **Best-practices skill.** Hearth ships a coding-agent skill teaching the
+> **Best-practices skill.** This project ships a coding-agent skill teaching the
 > end-to-end workflows below — project setup, ctx scripting, prefabs,
 > autotiling, playtest-driven verification, and export. It lives at
-> `skills/hearth/SKILL.md` in the Hearth engine repo; Claude Code users can
-> install it so the agent knows how to drive every command. This file is the
-> per-project quick reference; the skill is the deeper playbook.
+> `.claude/skills/hearth/SKILL.md` in this project, so Claude Code loads it
+> automatically — the agent knows how to drive every command. (The canonical
+> copy lives at `skills/hearth/SKILL.md` in the Hearth engine repo.) This file
+> is the per-project quick reference; the skill is the deeper playbook.
 
 ## Golden rules
 
