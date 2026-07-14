@@ -95,6 +95,47 @@ describe('NumberField', () => {
     await waitFor(() => expect(input.value).toBe('4'));
     expect(input.className).toContain('invalid');
   });
+
+  it('rejects a non-integer draft when integer is set (pixelate.size-style)', () => {
+    const onCommit = vi.fn();
+    render(<NumberField value={4} min={1} max={64} integer onCommit={onCommit} />);
+    const input = screen.getByRole('spinbutton') as HTMLInputElement;
+    type(input, '3.5');
+    fireEvent.blur(input);
+    expect(onCommit).not.toHaveBeenCalled();
+    expect(input.value).toBe('4');
+    expect(input.className).toContain('invalid');
+  });
+
+  it('accepts an in-range integer when integer is set', () => {
+    const onCommit = vi.fn();
+    render(<NumberField value={4} min={1} max={64} integer onCommit={onCommit} />);
+    const input = screen.getByRole('spinbutton');
+    type(input, '8');
+    fireEvent.blur(input);
+    expect(onCommit).toHaveBeenCalledWith(8);
+  });
+
+  it('ignores a stale async rejection once a newer commit superseded it', async () => {
+    // First commit: slow rejection. Second commit: fast accept. The late
+    // rejection must not clobber the newer draft or flash the cue.
+    let rejectLate: (v: boolean) => void = () => {};
+    const onCommit = vi
+      .fn<(v: number) => Promise<boolean> | boolean>()
+      .mockImplementationOnce(() => new Promise<boolean>((resolve) => (rejectLate = resolve)))
+      .mockImplementationOnce(() => true);
+    render(<NumberField value={5} onCommit={onCommit} />);
+    const input = screen.getByRole('spinbutton') as HTMLInputElement;
+    type(input, '9');
+    fireEvent.blur(input); // commit 1 — pending
+    type(input, '8');
+    fireEvent.blur(input); // commit 2 — accepted immediately
+    await waitFor(() => expect(onCommit).toHaveBeenCalledTimes(2));
+    rejectLate(false); // commit 1 settles late as a rejection
+    await new Promise((r) => setTimeout(r, 20));
+    expect(input.value).toBe('8'); // not clobbered back to '5'
+    expect(input.className).not.toContain('invalid');
+  });
 });
 
 describe('TextField', () => {
@@ -125,6 +166,35 @@ describe('TextField', () => {
     type(input, 'nope');
     fireEvent.blur(input);
     await waitFor(() => expect(input.value).toBe('keep'));
+  });
+
+  it('rejects a blanked draft when the consumer returns a reason (entity Name style)', async () => {
+    // The Inspector Name field's wiring: blank → reason string, else rename.
+    const rename = vi.fn();
+    const onCommit = (v: string) => {
+      if (!v.trim()) return 'Name can’t be empty.';
+      rename(v.trim());
+    };
+    render(<TextField value="Player" onCommit={onCommit} />);
+    const input = screen.getByRole('textbox') as HTMLInputElement;
+    type(input, '   ');
+    fireEvent.blur(input);
+    await waitFor(() => expect(input.value).toBe('Player'));
+    expect(rename).not.toHaveBeenCalled();
+    expect(screen.getByText('Name can’t be empty.')).toBeTruthy();
+    expect(input.className).toContain('invalid');
+  });
+
+  it("treats a bare '' return as accepted (consumers must return a reason to reject)", async () => {
+    const onCommit = vi.fn(() => '');
+    render(<TextField value="old" onCommit={onCommit} />);
+    const input = screen.getByRole('textbox') as HTMLInputElement;
+    type(input, 'new');
+    fireEvent.blur(input);
+    await new Promise((r) => setTimeout(r, 20));
+    // No revert, no cue — '' means accepted per the contract.
+    expect(input.value).toBe('new');
+    expect(input.className).not.toContain('invalid');
   });
 });
 

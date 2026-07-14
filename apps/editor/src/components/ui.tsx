@@ -60,12 +60,21 @@ async function settleOutcome(
  * the one-shot shake cue. `revert()` puts the field back to server truth and
  * flashes; `clear()` drops the cue when the user resumes typing or a fresh
  * `value` arrives.
+ *
+ * It also owns the commit-staleness guard: an async rejection that settles
+ * after the user has since typed a newer draft (or after a newer commit) must
+ * not clobber that newer state. `beginCommit()` stamps a generation before
+ * awaiting the outcome; `isCurrent(gen)` gates applying it. `clear()` (called
+ * on every keystroke / Escape) and a fresh `value` prop both invalidate any
+ * in-flight generation.
  */
 function useRejectionCue(value: unknown) {
   const [message, setMessage] = useState('');
   const [shaking, setShaking] = useState(false);
+  const genRef = useRef(0);
   // A fresh authoritative value means whatever was rejected is moot.
   useEffect(() => {
+    genRef.current++;
     setMessage('');
     setShaking(false);
   }, [value]);
@@ -74,23 +83,29 @@ function useRejectionCue(value: unknown) {
     setShaking(true);
   }, []);
   const clear = useCallback(() => {
+    genRef.current++;
     setMessage('');
     setShaking(false);
   }, []);
+  const beginCommit = useCallback(() => ++genRef.current, []);
+  const isCurrent = useCallback((gen: number) => gen === genRef.current, []);
   const cueClass = `${shaking ? ' field-reject' : ''}${message || shaking ? ' invalid' : ''}`;
   const onAnimationEnd = useCallback(() => setShaking(false), []);
-  return { message, cueClass, revert, clear, onAnimationEnd };
+  return { message, cueClass, revert, clear, onAnimationEnd, beginCommit, isCurrent };
 }
 
 export function NumberField({
   value,
   min,
   max,
+  integer = false,
   onCommit,
 }: {
   value: number;
   min?: number;
   max?: number;
+  /** Reject non-integer drafts client-side (for schema fields with `.int()`). */
+  integer?: boolean;
   onCommit: CommitFn<number>;
 }) {
   const [draft, setDraft] = useState(String(value));
@@ -98,10 +113,11 @@ export function NumberField({
   const cue = useRejectionCue(value);
   const commit = async () => {
     const parsed = Number(draft.trim());
-    // Empty / non-numeric / out-of-range never commits — revert + flash.
+    // Empty / non-numeric / out-of-range / non-integer never commits — revert + flash.
     const outOfRange =
       (min !== undefined && parsed < min) || (max !== undefined && parsed > max);
-    if (draft.trim() === '' || !Number.isFinite(parsed) || outOfRange) {
+    const notInteger = integer && !Number.isInteger(parsed);
+    if (draft.trim() === '' || !Number.isFinite(parsed) || outOfRange || notInteger) {
       setDraft(String(value));
       cue.revert('');
       return;
@@ -110,7 +126,9 @@ export function NumberField({
       cue.clear();
       return;
     }
+    const gen = cue.beginCommit();
     const settled = await settleOutcome(onCommit(parsed));
+    if (!cue.isCurrent(gen)) return; // a newer draft/commit superseded this one
     if (settled.rejected) {
       setDraft(String(value));
       cue.revert(settled.message);
@@ -122,7 +140,7 @@ export function NumberField({
     <input
       className={`input${cue.cueClass}`}
       type="number"
-      step="any"
+      step={integer ? 1 : 'any'}
       min={min}
       max={max}
       value={draft}
@@ -160,7 +178,9 @@ export function TextField({
       cue.clear();
       return;
     }
+    const gen = cue.beginCommit();
     const settled = await settleOutcome(onCommit(draft));
+    if (!cue.isCurrent(gen)) return; // a newer draft/commit superseded this one
     if (settled.rejected) {
       setDraft(value);
       cue.revert(settled.message);
@@ -211,7 +231,9 @@ export function ColorField({ value, onCommit }: { value: string; onCommit: Commi
       cue.revert('');
       return;
     }
+    const gen = cue.beginCommit();
     const settled = await settleOutcome(onCommit(draft));
+    if (!cue.isCurrent(gen)) return; // a newer draft/commit superseded this one
     if (settled.rejected) {
       setDraft(value);
       cue.revert(settled.message);
@@ -227,7 +249,9 @@ export function ColorField({ value, onCommit }: { value: string; onCommit: Commi
         onChange={(e) => {
           setDraft(e.target.value);
           cue.clear();
+          const gen = cue.beginCommit();
           void settleOutcome(onCommit(e.target.value)).then((s) => {
+            if (!cue.isCurrent(gen)) return;
             if (s.rejected) {
               setDraft(value);
               cue.revert(s.message);

@@ -859,10 +859,12 @@ export function Inspector() {
             <TextField
               key={`name-${entity.id}`}
               value={entity.name}
-              onCommit={(newName) =>
-                newName.trim() &&
-                void exec('renameEntity', { scene: sceneId, entity: entity.id, newName: newName.trim() })
-              }
+              onCommit={(newName) => {
+                // A blank name is rejected with a reason (revert + inline cue)
+                // — a bare `''` return would read as accepted per the contract.
+                if (!newName.trim()) return 'Name can’t be empty.';
+                void exec('renameEntity', { scene: sceneId, entity: entity.id, newName: newName.trim() });
+              }}
             />
           </div>
           <div className="inspector-row">

@@ -37,12 +37,13 @@ export function humanize(type: string): string {
 
 /**
  * Client-side numeric bounds per effect field, mirroring PostEffectSchema's
- * `.min()/.max()` in @hearth/core (schema/components.ts). Keyed `type.field`.
- * Without these the field committed an out-of-range value the server rejected
- * silently, leaving a phantom draft on screen (INSPSPEC-1). Kept in sync with
- * the schema by postEffectsRanges.test.ts.
+ * `.min()/.max()` (and `.int()`) in @hearth/core (schema/components.ts).
+ * Keyed `type.field`. Without these the field committed an out-of-range value
+ * the server rejected silently, leaving a phantom draft on screen
+ * (INSPSPEC-1). postEffectsRanges.test.ts introspects the zod schema and
+ * fails if this map drifts from it.
  */
-export const EFFECT_FIELD_RANGES: Record<string, { min: number; max: number }> = {
+export const EFFECT_FIELD_RANGES: Record<string, { min: number; max: number; int?: boolean }> = {
   'bloom.strength': { min: 0, max: 3 },
   'bloom.threshold': { min: 0, max: 1 },
   'crt.curvature': { min: 0, max: 1 },
@@ -50,7 +51,7 @@ export const EFFECT_FIELD_RANGES: Record<string, { min: number; max: number }> =
   'crt.noise': { min: 0, max: 1 },
   'vignette.intensity': { min: 0, max: 1 },
   'chromaticAberration.offset': { min: 0, max: 20 },
-  'pixelate.size': { min: 1, max: 64 },
+  'pixelate.size': { min: 1, max: 64, int: true },
   'colorGrade.brightness': { min: 0, max: 2 },
   'colorGrade.contrast': { min: 0, max: 2 },
   'colorGrade.saturation': { min: 0, max: 2 },
@@ -70,7 +71,15 @@ function EffectFieldRow({
   let control: React.ReactNode;
   if (typeof value === 'number') {
     const range = EFFECT_FIELD_RANGES[`${effectType}.${field}`];
-    control = <NumberField value={value} min={range?.min} max={range?.max} onCommit={onCommit} />;
+    control = (
+      <NumberField
+        value={value}
+        min={range?.min}
+        max={range?.max}
+        integer={range?.int}
+        onCommit={onCommit}
+      />
+    );
   } else if (typeof value === 'string' && value.startsWith('#')) {
     control = <ColorField value={value} onCommit={onCommit} />;
   } else {
