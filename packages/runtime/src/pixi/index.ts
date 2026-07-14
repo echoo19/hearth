@@ -71,6 +71,7 @@ import { GameSession, type SceneEvent, type SessionStorage } from '../session.js
 import { resolveUiPositions, uiScreenPosition } from '../ui.js';
 import { WebAudioPlayer, routeAudioEvent } from './audio.js';
 import { lerp, lerpColor } from './color.js';
+import { shouldCaptureGameKey } from './keyboardCapture.js';
 import { loadFontFaces } from './fonts.js';
 import {
   createPostEffectFilterState,
@@ -97,6 +98,17 @@ export interface PixiViewOptions {
   autoplay?: boolean;
   /** Listen for keydown/keyup on window (default true). */
   attachKeyboard?: boolean;
+  /**
+   * Root element the game "owns" for keyboard capture. While the game is
+   * receiving input, mapped keys are only captured (preventDefault + routed)
+   * when focus is inside this root, on `<body>`/`<html>` (ambient — the
+   * exported-player case), or nothing is focused; focus in editor chrome
+   * outside this root, or an open modal `<dialog>`, passes keys through
+   * (see keyboardCapture.ts / L-001). Defaults to `container`. Exported
+   * players can leave it as the container — full capture is preserved because
+   * their focus rests on `<body>`.
+   */
+  captureRoot?: HTMLElement;
   onLog?(e: RuntimeLog): void;
   onError?(e: RuntimeError): void;
   /** Fired after a script-requested scene switch completes. */
@@ -543,19 +555,35 @@ export class PixiSceneView {
     // Handlers read this.runtime (the session's CURRENT runtime) at event
     // time, so input keeps routing correctly across scene switches.
     this.keydownFn = (e) => {
-      if (this.runtime.input.isMappedCode(e.code)) {
+      if (this.runtime.input.isMappedCode(e.code) && this.shouldCaptureKey()) {
         e.preventDefault();
         this.runtime.input.handleKeyDown(e.code);
       }
     };
     this.keyupFn = (e) => {
-      if (this.runtime.input.isMappedCode(e.code)) {
-        e.preventDefault();
-        this.runtime.input.handleKeyUp(e.code);
-      }
+      if (!this.runtime.input.isMappedCode(e.code)) return;
+      // Always release a mapped code (a key held when focus left the game must
+      // never stick down), but only preventDefault while actually capturing.
+      if (this.shouldCaptureKey()) e.preventDefault();
+      this.runtime.input.handleKeyUp(e.code);
     };
     window.addEventListener('keydown', this.keydownFn);
     window.addEventListener('keyup', this.keyupFn);
+  }
+
+  /**
+   * L-001 capture gate: should a mapped key be captured by the game right now?
+   * Delegates the focus/dialog/paused decision to the pure
+   * `shouldCaptureGameKey` (unit-tested in keyboard-capture.test.ts).
+   */
+  private shouldCaptureKey(): boolean {
+    if (typeof document === 'undefined') return true; // headless: no chrome to protect
+    return shouldCaptureGameKey({
+      paused: this._paused,
+      dialogOpen: document.querySelector('dialog[open]') !== null,
+      activeElement: document.activeElement,
+      captureRoot: this.opts.captureRoot ?? this.opts.container,
+    });
   }
 
   /**
