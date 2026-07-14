@@ -515,11 +515,23 @@ export function SearchAcross({ focusNonce, onClose, onReplaceApplied }: SearchAc
               >
                 {replaceFlow.status === 'previewing' && replaceFlow.loading ? 'Previewing…' : 'Preview'}
               </Button>
-              {(replaceFlow.status === 'previewing' || replaceFlow.status === 'applying' || replaceFlow.status === 'done') && (
-                <Button size="sm" onClick={cancelReplace} disabled={replaceFlow.status === 'applying'}>
-                  {replaceFlow.status === 'done' ? 'Dismiss' : 'Cancel'}
-                </Button>
-              )}
+              {(replaceFlow.status === 'previewing' || replaceFlow.status === 'applying' || replaceFlow.status === 'done') &&
+                (replaceFlow.status === 'applying' ? (
+                  // A disabled <button> is inert to hover/focus in most browsers, so the
+                  // Tooltip wraps a focusable/hoverable span around it rather than the
+                  // button itself (same reasoning as Menu.tsx's disabledReason pattern).
+                  <Tooltip content="Replace is in progress and cannot be cancelled">
+                    <span tabIndex={0} style={{ display: 'inline-flex' }}>
+                      <Button size="sm" onClick={cancelReplace} disabled>
+                        Cancel
+                      </Button>
+                    </span>
+                  </Tooltip>
+                ) : (
+                  <Button size="sm" onClick={cancelReplace}>
+                    {replaceFlow.status === 'done' ? 'Dismiss' : 'Cancel'}
+                  </Button>
+                ))}
             </div>
 
             {replaceFlow.error && <div className="code-search-error">{replaceFlow.error}</div>}
