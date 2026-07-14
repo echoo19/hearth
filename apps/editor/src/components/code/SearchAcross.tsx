@@ -38,6 +38,7 @@ import { apiCommand } from '../../api';
 import { useEditor } from '../../store';
 import { comboDisplay } from '../../keybinds';
 import { Icon } from '../ui';
+import { Button, IconButton } from '../ui/Button';
 
 // ---------------------------------------------------------------------------
 // Pure helpers — exported for unit tests (searchAcross.test.ts). No DOM, no
@@ -447,37 +448,38 @@ export function SearchAcross({ focusNonce, onClose, onReplaceApplied }: SearchAc
           onChange={(e) => updateQuery(e.target.value)}
           onKeyDown={onQueryKeyDown}
         />
-        <button
-          type="button"
-          className={caseSensitive ? 'btn btn-sm btn-primary code-search-toggle' : 'btn btn-sm code-search-toggle'}
+        <Button
+          size="sm"
+          variant={caseSensitive ? 'primary' : 'default'}
+          className="code-search-toggle"
           aria-pressed={caseSensitive}
           title="Match case"
           onClick={toggleCaseSensitive}
         >
           Aa
-        </button>
-        <button
-          type="button"
-          className={regexMode ? 'btn btn-sm btn-primary code-search-toggle' : 'btn btn-sm code-search-toggle'}
+        </Button>
+        <Button
+          size="sm"
+          variant={regexMode ? 'primary' : 'default'}
+          className="code-search-toggle"
           aria-pressed={regexMode}
           title="Use a regular expression"
           onClick={toggleRegexMode}
         >
           .*
-        </button>
-        <button type="button" className="btn btn-sm" onClick={() => void runSearch()} disabled={searching}>
+        </Button>
+        <Button size="sm" onClick={() => void runSearch()} disabled={searching}>
           {searching ? 'Searching…' : 'Search'}
-        </button>
+        </Button>
         <span style={{ flex: 1 }} />
-        <button
-          type="button"
-          className="btn btn-sm"
+        <IconButton
+          size="sm"
+          icon="cross"
+          iconSize={11}
+          label="Close search"
+          shortcut={comboDisplay('escape')}
           onClick={onClose}
-          title={`Close search (${comboDisplay('escape')})`}
-          aria-label="Close search"
-        >
-          <Icon name="cross" size={11} />
-        </button>
+        />
       </div>
 
       {searchError && <div className="code-search-error">{searchError}</div>}
@@ -503,24 +505,22 @@ export function SearchAcross({ focusNonce, onClose, onReplaceApplied }: SearchAc
               onChange={(e) => updateReplacement(e.target.value)}
             />
             <div className="code-search-replace-actions">
-              <button
-                type="button"
-                className="btn btn-sm"
+              <Button
+                size="sm"
                 onClick={() => void runPreview()}
                 disabled={!query.trim() || (replaceFlow.status === 'previewing' && replaceFlow.loading)}
               >
                 {replaceFlow.status === 'previewing' && replaceFlow.loading ? 'Previewing…' : 'Preview'}
-              </button>
+              </Button>
               {(replaceFlow.status === 'previewing' || replaceFlow.status === 'applying' || replaceFlow.status === 'done') && (
-                <button
-                  type="button"
-                  className="btn btn-sm"
+                <Button
+                  size="sm"
                   onClick={cancelReplace}
                   disabled={replaceFlow.status === 'applying'}
                   title={replaceFlow.status === 'applying' ? 'Replace is already in progress and cannot be cancelled' : undefined}
                 >
                   {replaceFlow.status === 'done' ? 'Dismiss' : 'Cancel'}
-                </button>
+                </Button>
               )}
             </div>
 
@@ -541,9 +541,9 @@ export function SearchAcross({ focusNonce, onClose, onReplaceApplied }: SearchAc
                         </li>
                       ))}
                     </ul>
-                    <button type="button" className="btn btn-sm btn-primary" onClick={() => void runApply()}>
+                    <Button size="sm" variant="primary" onClick={() => void runApply()}>
                       Replace all
-                    </button>
+                    </Button>
                   </>
                 )}
               </div>

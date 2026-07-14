@@ -45,6 +45,7 @@ import { readSheetSize } from '../assetPreview';
 import { overlayStrokeCells, resolveTileVisual, type TileAsset, type TileVisual } from '../tileAutotileVisual';
 import { ERASER_CHAR, TilemapPainter } from './TilemapPainter';
 import { Icon } from './ui';
+import { Button } from './ui/Button';
 import type { AssetItem, SceneEntity, Vec2 } from '../types';
 
 interface ViewTransform {
@@ -1795,12 +1796,12 @@ export function SceneView() {
       {canEditPoints && (
         <div className="scene-edit-points">
           {editingPoints ? (
-            <button className="btn btn-primary btn-sm" onClick={exitPointEditing}>
+            <Button variant="primary" size="sm" onClick={exitPointEditing}>
               Done
-            </button>
+            </Button>
           ) : (
-            <button
-              className="btn btn-sm"
+            <Button
+              size="sm"
               title="Edit the polygon collider's or LineRenderer's points in the scene"
               onClick={() => {
                 if (paintMode) exitPaintMode();
@@ -1808,7 +1809,7 @@ export function SceneView() {
               }}
             >
               Edit points
-            </button>
+            </Button>
           )}
         </div>
       )}
@@ -1826,15 +1827,16 @@ export function SceneView() {
         />
       )}
 
-      <button
-        type="button"
-        className={particlesEnabled ? 'btn btn-primary btn-sm scene-particles-toggle' : 'btn btn-sm scene-particles-toggle'}
+      <Button
+        variant={particlesEnabled ? 'primary' : 'default'}
+        size="sm"
+        className="scene-particles-toggle"
         onClick={() => setParticlesEnabled(!particlesEnabled)}
         title="Toggle the live particle preview for the selected emitter (Scene view only — doesn't affect Play mode)"
         aria-pressed={particlesEnabled}
       >
         <Icon name="particles" size={11} /> Particles
-      </button>
+      </Button>
 
       <div className="scene-hud">
         <span>{Math.round(view.s * 100)}%</span>

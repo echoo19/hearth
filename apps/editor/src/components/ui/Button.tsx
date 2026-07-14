@@ -59,10 +59,12 @@ export interface IconButtonProps extends ButtonHTMLAttributes<HTMLButtonElement>
   side?: TooltipSide;
   variant?: ButtonVariant;
   size?: ButtonSize;
+  /** Glyph size in px, passed through to Icon (defaults to Icon's own 12). */
+  iconSize?: number;
 }
 
 export const IconButton = forwardRef<HTMLButtonElement, IconButtonProps>(function IconButton(
-  { icon, label, shortcut, side, variant = 'default', size = 'md', className, type = 'button', ...rest },
+  { icon, label, shortcut, side, variant = 'default', size = 'md', iconSize, className, type = 'button', ...rest },
   ref,
 ) {
   return (
@@ -74,7 +76,7 @@ export const IconButton = forwardRef<HTMLButtonElement, IconButtonProps>(functio
         className={btnClassName(variant, size, className)}
         {...rest}
       >
-        <Icon name={icon} />
+        <Icon name={icon} size={iconSize} />
       </button>
     </Tooltip>
   );

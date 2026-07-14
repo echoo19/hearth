@@ -17,6 +17,7 @@ import { useEditor } from '../store';
 import { fileUrl } from '../api';
 import { comboDisplay } from '../keybinds';
 import { ConfirmDialog, Icon } from './ui';
+import { Button } from './ui/Button';
 import { decideExternalChange } from './code/externalChange';
 import {
   type Buffer,
@@ -496,15 +497,15 @@ export function CodePanel() {
           ))}
         </select>
         <span style={{ flex: 1 }} />
-        <button
-          type="button"
-          className={searchOpen ? 'btn btn-sm btn-primary' : 'btn btn-sm'}
+        <Button
+          size="sm"
+          variant={searchOpen ? 'primary' : 'default'}
           aria-pressed={searchOpen}
           onClick={() => (searchOpen ? closeSearch() : setSearchOpen(true))}
           title={`Search scripts (${comboDisplay('shift+mod+f')})`}
         >
           Search
-        </button>
+        </Button>
         <label className="input-checkbox-label" title="Format scripts with the project's code style whenever they're saved">
           <input
             type="checkbox"
@@ -515,22 +516,23 @@ export function CodePanel() {
         </label>
         {active && (
           <>
-            <button
-              className="btn btn-sm"
+            <Button
+              size="sm"
               onClick={() => void formatAndSave()}
               disabled={saving}
               title={`Format & save (${comboDisplay('shift+alt+f')})`}
             >
               {saving ? 'Saving…' : 'Format & save'}
-            </button>
-            <button
-              className="btn btn-sm btn-primary"
+            </Button>
+            <Button
+              size="sm"
+              variant="primary"
               onClick={() => void save()}
               disabled={!activeDirty || saving}
               title={`Save (${comboDisplay('mod+s')})`}
             >
               {saving ? 'Saving…' : 'Save'}
-            </button>
+            </Button>
           </>
         )}
       </div>
@@ -610,12 +612,12 @@ export function CodePanel() {
           <Icon name="entity" size={13} />
           <span>This script changed outside the editor — from an agent or another process — while you had unsaved edits here.</span>
           <span style={{ flex: 1 }} />
-          <button className="btn btn-sm" onClick={reloadFromConflict}>
+          <Button size="sm" onClick={reloadFromConflict}>
             Reload
-          </button>
-          <button className="btn btn-sm btn-primary" onClick={keepMine}>
+          </Button>
+          <Button size="sm" variant="primary" onClick={keepMine}>
             Keep mine (overwrite on save)
-          </button>
+          </Button>
         </div>
       )}
 
@@ -627,9 +629,9 @@ export function CodePanel() {
             edits are still here if you want to save them under a new name.
           </span>
           <span style={{ flex: 1 }} />
-          <button className="btn btn-sm btn-primary" onClick={() => void saveAsNewScript()} disabled={savingAsNew}>
+          <Button size="sm" variant="primary" onClick={() => void saveAsNewScript()} disabled={savingAsNew}>
             {savingAsNew ? 'Saving…' : 'Save as new script'}
-          </button>
+          </Button>
         </div>
       )}
 
@@ -640,9 +642,9 @@ export function CodePanel() {
             Couldn't save {scriptLabel(active.path)} — {active.saveError}
           </span>
           <span style={{ flex: 1 }} />
-          <button className="btn btn-sm" onClick={() => void save()}>
+          <Button size="sm" onClick={() => void save()}>
             Retry
-          </button>
+          </Button>
         </div>
       )}
 
@@ -670,9 +672,9 @@ export function CodePanel() {
             </span>
             <span>Couldn't load {scriptLabel(active.path)}</span>
             <span className="hint">{active.loadError}</span>
-            <button className="btn btn-sm" onClick={() => void loadInto(active.path)}>
+            <Button size="sm" onClick={() => void loadInto(active.path)}>
               Retry
-            </button>
+            </Button>
           </div>
         ) : (
           <Suspense fallback={<div className="empty-state">Loading editor…</div>}>

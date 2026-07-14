@@ -142,6 +142,15 @@ describe('IconButton', () => {
     expect(screen.getByRole('button', { name: 'Delete entity' }).className).toContain('field-revert-btn');
   });
 
+  it('defaults the icon glyph to size 12, but honors an explicit iconSize', () => {
+    const { rerender } = render(<IconButton icon="trash" label="Delete entity" />);
+    let svg = screen.getByRole('button', { name: 'Delete entity' }).querySelector('svg');
+    expect(svg!.getAttribute('width')).toBe('12');
+    rerender(<IconButton icon="trash" label="Delete entity" iconSize={11} />);
+    svg = screen.getByRole('button', { name: 'Delete entity' }).querySelector('svg');
+    expect(svg!.getAttribute('width')).toBe('11');
+  });
+
   it('defaults type to "button"', () => {
     render(<IconButton icon="trash" label="Delete entity" />);
     expect(screen.getByRole('button', { name: 'Delete entity' }).getAttribute('type')).toBe('button');
