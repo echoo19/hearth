@@ -1,1 +1,104 @@
-/* tooltip primitive — Wave L */
+/* tooltip primitive — Wave L
+   Quiet, tight hint that floats over everything (portalled to <body>). One
+   short line, optional shortcut chip. Enters with a small translate+fade;
+   leaves instantly (the element just unmounts). */
+
+.tooltip {
+  z-index: var(--z-tooltip);
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  max-width: 260px;
+  padding: 4px 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg-2);
+  color: var(--ink);
+  font-family: var(--font-ui);
+  font-size: var(--text-xs);
+  line-height: 1.4;
+  white-space: nowrap;
+  pointer-events: none;
+  box-shadow: 0 4px 14px oklch(0 0 0 / 0.35);
+  animation: tooltip-in var(--t-fast) var(--ease-out);
+}
+
+.tooltip-label {
+  color: var(--ink);
+}
+
+/* Shortcut chip — same visual grammar as the ShortcutSheet kbd, sized down for
+   an inline hint. */
+.tooltip-kbd {
+  flex: none;
+  padding: 0 5px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--bg-1);
+  color: var(--ink-mute);
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+  line-height: 1.5;
+  white-space: nowrap;
+}
+
+/* Direction of the entrance nudge follows the side the tooltip sits on. */
+@keyframes tooltip-in {
+  from {
+    opacity: 0;
+    transform: translateY(3px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.tooltip[data-side='bottom'] {
+  animation-name: tooltip-in-bottom;
+}
+.tooltip[data-side='left'] {
+  animation-name: tooltip-in-left;
+}
+.tooltip[data-side='right'] {
+  animation-name: tooltip-in-right;
+}
+
+@keyframes tooltip-in-bottom {
+  from {
+    opacity: 0;
+    transform: translateY(-3px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes tooltip-in-left {
+  from {
+    opacity: 0;
+    transform: translateX(3px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes tooltip-in-right {
+  from {
+    opacity: 0;
+    transform: translateX(-3px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tooltip {
+    animation: none;
+  }
+}
