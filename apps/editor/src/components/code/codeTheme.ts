@@ -38,11 +38,11 @@ export const codeEditorTheme = EditorView.theme(
       color: INK,
       backgroundColor: BG_1,
       height: '100%',
-      // Intentionally 13px, not the 12px mono spec used elsewhere (Console,
-      // values/scripts chrome) — a deliberate readability bump for the
-      // editor's primary code-authoring surface, not a drift. See
-      // .superpowers/polish/audit-visual.md P2-6.
-      fontSize: '13px',
+      // Intentionally --text-md (13px), not the --text-sm (12px) mono spec
+      // used elsewhere (Console, values/scripts chrome) — a deliberate
+      // readability bump for the editor's primary code-authoring surface,
+      // not a drift. See .superpowers/polish/audit-visual.md P2-6.
+      fontSize: 'var(--text-md)',
     },
     '.cm-content': {
       fontFamily: FONT_MONO,
@@ -118,7 +118,7 @@ export const codeEditorTheme = EditorView.theme(
       backgroundColor: BG_0,
       color: INK,
       fontFamily: FONT_MONO,
-      fontSize: '12px',
+      fontSize: 'var(--text-sm)',
     },
     '.cm-panel.cm-search .cm-textfield:hover': {
       borderColor: 'oklch(0.48 0.018 285)',
@@ -131,7 +131,7 @@ export const codeEditorTheme = EditorView.theme(
       backgroundColor: BG_2,
       backgroundImage: 'none',
       color: INK,
-      fontSize: '12px',
+      fontSize: 'var(--text-sm)',
       cursor: 'pointer',
     },
     '.cm-panel.cm-search .cm-button:hover': {
@@ -139,7 +139,7 @@ export const codeEditorTheme = EditorView.theme(
     },
     '.cm-panel.cm-search button[name="close"]': {
       color: INK_FAINT,
-      fontSize: '14px',
+      fontSize: 'var(--text-lg)',
       cursor: 'pointer',
     },
     '.cm-panel.cm-search button[name="close"]:hover': {
@@ -163,14 +163,14 @@ export const codeEditorTheme = EditorView.theme(
     },
     '.cm-ctx-hover-signature': {
       fontFamily: FONT_MONO,
-      fontSize: '12px',
+      fontSize: 'var(--text-sm)',
       color: ACCENT,
       whiteSpace: 'pre-wrap',
       wordBreak: 'break-word',
     },
     '.cm-ctx-hover-description': {
       margin: '6px 0 0',
-      fontSize: '12px',
+      fontSize: 'var(--text-sm)',
       lineHeight: '1.5',
       color: INK_MUTE,
     },
@@ -181,7 +181,7 @@ export const codeEditorTheme = EditorView.theme(
       backgroundColor: BG_0,
       border: `1px solid ${BORDER}`,
       fontFamily: FONT_MONO,
-      fontSize: '11px',
+      fontSize: 'var(--text-xs)',
       color: INK,
       whiteSpace: 'pre-wrap',
       wordBreak: 'break-word',

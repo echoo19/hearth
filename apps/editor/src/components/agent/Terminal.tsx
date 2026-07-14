@@ -74,6 +74,7 @@ export function Terminal({ onData, onResize }: TerminalProps) {
 
     const term = new XTerm({
       fontFamily: "'IBM Plex Mono', ui-monospace, Menlo, Consolas, monospace",
+      // xterm requires a numeric pixel size (not a CSS var string) — stays a literal.
       fontSize: 12,
       lineHeight: 1.4,
       cursorBlink: true,
