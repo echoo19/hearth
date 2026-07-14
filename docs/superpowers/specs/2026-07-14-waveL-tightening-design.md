@@ -89,6 +89,26 @@ nothing silently dropped.
   scene-level chrome; tooltips are one line (label + shortcut), never
   instructional prose.
 
+## Phase 2b — Agent UX (Jake steer, 2026-07-14)
+
+Agents are first-class Hearth users; their UX gets tightened like the human
+one. Two commitments:
+
+- **Agents CAN do everything**: capability parity — every game-affecting
+  action reachable in the editor UI must be reachable via CLI/MCP commands
+  (editor-chrome-only concerns like dock layout exempt). The audit ledger is
+  cross-checked for parity gaps in both directions; gaps become defect
+  entries.
+- **Agents KNOW how to do everything**: Hearth ships a Remotion-style
+  best-practices skill — a SKILL.md (Claude Code skill format, plus content
+  reachable via `get_agent_instructions` and scaffolded project AGENTS.md)
+  covering end-to-end workflows (scenes/entities → Lua scripting with the
+  ctx stdlib → playtest asserts → screenshot verification → prefabs / ASM /
+  autotiling / input / audio → export web+desktop), house gotchas (dot-call
+  rule, userdata proxies, seeded determinism, journal/checkpoint review
+  loop), and best practices (probe-derived playtests, validate-before-done).
+  Fact-checked against the real CLI/MCP surface; no invented flags.
+
 ## Phase 3 — Design language
 
 - **Type**: tokenized scale (`--text-*`) replacing all ad-hoc font-size

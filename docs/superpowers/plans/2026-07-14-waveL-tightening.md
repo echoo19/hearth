@@ -214,6 +214,20 @@ still `open`.
 
 - [ ] **Step 1: Run the `impeccable` skill** over the post-migration editor (hierarchy, spacing rhythm, alignment, a11y) and `design-motion-principles` audit over all transitions (tooltip/menu/dialog/panel reveals — purposeful, fast, no AI-slop motion). Apply fixes; suite + typecheck + live pass. Commit.**
 
+### Task 16: Agent enablement — capability parity + shipped best-practices skill
+
+**Files:**
+- Create: `skills/hearth/SKILL.md` (Claude Code skill format: frontmatter name/description + body)
+- Modify: `packages/core` agent-instructions source (whatever backs `get_agent_instructions` — locate it), `packages/templates`/scaffold AGENTS.md content, `docs/agents.md` (or nearest agent-facing doc)
+- Test: a docs-accuracy test that every CLI command/flag referenced in SKILL.md exists in the real CLI surface (parse `hearth --help` output / command registry)
+
+**Interfaces:**
+- Consumes: audit LEDGER.md (parity cross-check), command registry (71 commands), CTX_API.
+
+- [ ] **Step 1: Parity cross-check** — walk the ledger + panel inventory: for every game-affecting editor capability, name the CLI command + MCP tool that achieves it. Editor-chrome-only items exempt. Each gap becomes a ledger defect entry (fix in T8 if command-side work is small; defer-to-M with justification if not — NO new commands beyond parity gap closure, anti-bloat holds).
+- [ ] **Step 2: Write the skill** — SKILL.md teaching end-to-end workflows (project → scenes/entities → Lua ctx stdlib → playtest asserts → screenshot verify → prefabs/ASM/autotile/input/audio → export web+desktop), house gotchas (dot-call, userdata proxies, seeded determinism, journal/checkpoint loop, examples-regen), best practices (probe-derived playtests, validate-before-done). Every command/flag fact-checked against the real registry — the accuracy test enforces the CLI-visible subset.
+- [ ] **Step 3: Wire distribution** — skill content reachable from `get_agent_instructions`, referenced in scaffolded AGENTS.md, and documented. Suite + typecheck. Commit.
+
 ### Task 13: Closing re-audit
 
 - [ ] **Step 1: Re-dispatch auditors** (fresh, smaller: verify every ledger entry's disposition against the live editor; hunt regressions in adjacent controls). FAIL the task if any entry is `open` or any `fixed` doesn't reproduce as fixed.
