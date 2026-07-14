@@ -35,6 +35,10 @@ const MIME: Record<string, string> = {
   '.ico': 'image/x-icon',
   '.json': 'application/json',
   '.woff2': 'font/woff2',
+  '.woff': 'font/woff',
+  // wasm must carry its real MIME or WebAssembly.compileStreaming falls back
+  // to the slow ArrayBuffer path on every Lua project load.
+  '.wasm': 'application/wasm',
   '.map': 'application/json',
 };
 
