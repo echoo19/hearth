@@ -3,7 +3,7 @@
  * scalar field editors (NumberField/TextField/ColorField) every typed
  * Inspector control is built from.
  */
-import React, { useEffect, useRef, useState, type ReactNode } from 'react';
+import React, { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import { Button } from './ui/Button';
 
 // ---------------------------------------------------------------------------
@@ -13,30 +13,131 @@ import { Button } from './ui/Button';
 // Inspector.tsx) so those consumers don't have to import Inspector.tsx just
 // to reach a field primitive, which used to create a circular import between
 // Inspector.tsx and PostEffectsField.tsx.
+//
+// Rejection contract (Wave L / L-108). A field's local `draft` only re-syncs
+// from the `value` prop, so a commit the consumer rejects — one that leaves
+// `value` unchanged — used to leave the bad draft on screen (and, for
+// NumberField, silently commit `0` for an emptied field). To close that gap:
+//   1. Fields validate client-side where the shape is known: empty/NaN/out-of
+//      -range numbers and malformed hex never reach `onCommit`; they revert
+//      the draft to `value` and flash a rejection cue.
+//   2. `onCommit` may signal rejection by returning `false` or a non-empty
+//      reason string (or a Promise / throw thereof). On rejection the draft
+//      reverts to `value`, the input flashes the `field-reject` shake + gets
+//      the `.invalid` border, and (TextField) the reason renders inline.
+//      `void` / `true` / `''` mean accepted, preserving existing call sites.
 // ---------------------------------------------------------------------------
 
-export function NumberField({ value, onCommit }: { value: number; onCommit: (v: number) => void }) {
+/** What a field's `onCommit` may return. See the rejection contract above. */
+export type CommitOutcome = void | boolean | string;
+type CommitFn<T> = (value: T) => CommitOutcome | Promise<CommitOutcome>;
+
+/** Core accepts #rgb, #rrggbb, or #rrggbbaa (schema/components.ts ColorSchema). */
+const HEX_COLOR = /^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})$/;
+
+interface Settled {
+  rejected: boolean;
+  /** Human reason when rejected with a string; '' for a bare `false` reject. */
+  message: string;
+}
+
+/** Interpret an `onCommit` return value (sync or async) per the contract. */
+async function settleOutcome(
+  outcome: CommitOutcome | Promise<CommitOutcome>,
+): Promise<Settled> {
+  try {
+    const out = await outcome;
+    if (out === false) return { rejected: true, message: '' };
+    if (typeof out === 'string' && out !== '') return { rejected: true, message: out };
+    return { rejected: false, message: '' };
+  } catch (err) {
+    return { rejected: true, message: err instanceof Error ? err.message : '' };
+  }
+}
+
+/**
+ * Shared rejection state for the scalar fields: the inline reason (if any) and
+ * the one-shot shake cue. `revert()` puts the field back to server truth and
+ * flashes; `clear()` drops the cue when the user resumes typing or a fresh
+ * `value` arrives.
+ */
+function useRejectionCue(value: unknown) {
+  const [message, setMessage] = useState('');
+  const [shaking, setShaking] = useState(false);
+  // A fresh authoritative value means whatever was rejected is moot.
+  useEffect(() => {
+    setMessage('');
+    setShaking(false);
+  }, [value]);
+  const revert = useCallback((reason: string) => {
+    setMessage(reason);
+    setShaking(true);
+  }, []);
+  const clear = useCallback(() => {
+    setMessage('');
+    setShaking(false);
+  }, []);
+  const cueClass = `${shaking ? ' field-reject' : ''}${message || shaking ? ' invalid' : ''}`;
+  const onAnimationEnd = useCallback(() => setShaking(false), []);
+  return { message, cueClass, revert, clear, onAnimationEnd };
+}
+
+export function NumberField({
+  value,
+  min,
+  max,
+  onCommit,
+}: {
+  value: number;
+  min?: number;
+  max?: number;
+  onCommit: CommitFn<number>;
+}) {
   const [draft, setDraft] = useState(String(value));
   useEffect(() => setDraft(String(value)), [value]);
-  const commit = () => {
-    const parsed = Number(draft);
-    if (!Number.isFinite(parsed)) {
+  const cue = useRejectionCue(value);
+  const commit = async () => {
+    const parsed = Number(draft.trim());
+    // Empty / non-numeric / out-of-range never commits — revert + flash.
+    const outOfRange =
+      (min !== undefined && parsed < min) || (max !== undefined && parsed > max);
+    if (draft.trim() === '' || !Number.isFinite(parsed) || outOfRange) {
       setDraft(String(value));
+      cue.revert('');
       return;
     }
-    if (parsed !== value) onCommit(parsed);
+    if (parsed === value) {
+      cue.clear();
+      return;
+    }
+    const settled = await settleOutcome(onCommit(parsed));
+    if (settled.rejected) {
+      setDraft(String(value));
+      cue.revert(settled.message);
+    } else {
+      cue.clear();
+    }
   };
   return (
     <input
-      className="input"
+      className={`input${cue.cueClass}`}
       type="number"
       step="any"
+      min={min}
+      max={max}
       value={draft}
-      onChange={(e) => setDraft(e.target.value)}
-      onBlur={commit}
+      onChange={(e) => {
+        setDraft(e.target.value);
+        cue.clear();
+      }}
+      onBlur={() => void commit()}
+      onAnimationEnd={cue.onAnimationEnd}
       onKeyDown={(e) => {
         if (e.key === 'Enter') (e.target as HTMLInputElement).blur();
-        if (e.key === 'Escape') setDraft(String(value));
+        if (e.key === 'Escape') {
+          setDraft(String(value));
+          cue.clear();
+        }
       }}
     />
   );
@@ -49,29 +150,75 @@ export function TextField({
 }: {
   value: string;
   placeholder?: string;
-  onCommit: (v: string) => void;
+  onCommit: CommitFn<string>;
 }) {
   const [draft, setDraft] = useState(value);
   useEffect(() => setDraft(value), [value]);
+  const cue = useRejectionCue(value);
+  const commit = async () => {
+    if (draft === value) {
+      cue.clear();
+      return;
+    }
+    const settled = await settleOutcome(onCommit(draft));
+    if (settled.rejected) {
+      setDraft(value);
+      cue.revert(settled.message);
+    } else {
+      cue.clear();
+    }
+  };
   return (
-    <input
-      className="input"
-      placeholder={placeholder}
-      value={draft}
-      onChange={(e) => setDraft(e.target.value)}
-      onBlur={() => draft !== value && onCommit(draft)}
-      onKeyDown={(e) => {
-        if (e.key === 'Enter') (e.target as HTMLInputElement).blur();
-        if (e.key === 'Escape') setDraft(value);
-      }}
-    />
+    <div className="text-field">
+      <input
+        className={`input${cue.cueClass}`}
+        placeholder={placeholder}
+        value={draft}
+        onChange={(e) => {
+          setDraft(e.target.value);
+          cue.clear();
+        }}
+        onBlur={() => void commit()}
+        onAnimationEnd={cue.onAnimationEnd}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') (e.target as HTMLInputElement).blur();
+          if (e.key === 'Escape') {
+            setDraft(value);
+            cue.clear();
+          }
+        }}
+      />
+      {cue.message && <span className="field-error">{cue.message}</span>}
+    </div>
   );
 }
 
-export function ColorField({ value, onCommit }: { value: string; onCommit: (v: string) => void }) {
+export function ColorField({ value, onCommit }: { value: string; onCommit: CommitFn<string> }) {
   const [draft, setDraft] = useState(value);
   useEffect(() => setDraft(value), [value]);
-  const pickerValue = /^#[0-9a-fA-F]{6}$/.test(draft) ? draft : '#ffffff';
+  const cue = useRejectionCue(value);
+  // The native swatch only ever reflects a valid color: while the draft is
+  // being typed (or is invalid) it holds the last valid value rather than
+  // silently snapping to a #ffffff fallback that diverges from what commits.
+  const pickerValue = HEX_COLOR.test(draft) ? draft : HEX_COLOR.test(value) ? value : '#ffffff';
+  const commit = async () => {
+    if (draft === value) {
+      cue.clear();
+      return;
+    }
+    if (!HEX_COLOR.test(draft)) {
+      setDraft(value);
+      cue.revert('');
+      return;
+    }
+    const settled = await settleOutcome(onCommit(draft));
+    if (settled.rejected) {
+      setDraft(value);
+      cue.revert(settled.message);
+    } else {
+      cue.clear();
+    }
+  };
   return (
     <div className="color-pair">
       <input
@@ -79,18 +226,31 @@ export function ColorField({ value, onCommit }: { value: string; onCommit: (v: s
         value={pickerValue}
         onChange={(e) => {
           setDraft(e.target.value);
-          onCommit(e.target.value);
+          cue.clear();
+          void settleOutcome(onCommit(e.target.value)).then((s) => {
+            if (s.rejected) {
+              setDraft(value);
+              cue.revert(s.message);
+            }
+          });
         }}
         aria-label="Pick color"
       />
       <input
-        className="input mono"
+        className={`input mono${cue.cueClass}`}
         value={draft}
-        onChange={(e) => setDraft(e.target.value)}
-        onBlur={() => draft !== value && onCommit(draft)}
+        onChange={(e) => {
+          setDraft(e.target.value);
+          cue.clear();
+        }}
+        onBlur={() => void commit()}
+        onAnimationEnd={cue.onAnimationEnd}
         onKeyDown={(e) => {
           if (e.key === 'Enter') (e.target as HTMLInputElement).blur();
-          if (e.key === 'Escape') setDraft(value);
+          if (e.key === 'Escape') {
+            setDraft(value);
+            cue.clear();
+          }
         }}
       />
     </div>

@@ -133,6 +133,47 @@
   border-color: var(--err);
 }
 
+/* One-shot rejection cue for the scalar fields (L-108): a rejected commit —
+   empty/out-of-range number, bad hex, or a consumer that returned false —
+   reverts the draft and briefly shakes the input so the bounce-back is felt,
+   not silent. The global prefers-reduced-motion rule (base.css) flattens the
+   animation duration, so this respects reduced motion for free. */
+@keyframes field-reject {
+  0%,
+  100% {
+    transform: translateX(0);
+  }
+  20% {
+    transform: translateX(-3px);
+  }
+  40% {
+    transform: translateX(3px);
+  }
+  60% {
+    transform: translateX(-2px);
+  }
+  80% {
+    transform: translateX(2px);
+  }
+}
+
+.input.field-reject {
+  animation: field-reject 0.26s var(--ease-out);
+}
+
+/* TextField wraps its input so a rejected rename can surface an inline reason
+   below the control (matches .int-field / TileCharField). */
+.text-field {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.text-field .input {
+  width: 100%;
+}
+
 .select {
   appearance: none;
   padding-right: 24px;
