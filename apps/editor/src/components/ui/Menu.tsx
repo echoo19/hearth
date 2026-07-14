@@ -2,7 +2,7 @@
  * Menu primitive — Wave L. One implementation of the toolbar dropdown menu
  * (trigger button + popover) whose open/close, click-outside, Escape,
  * focus-return, and arrow-key roving focus were previously copy-pasted into
- * SceneMenu and ViewMenu.
+ * SceneMenu and the toolbar's View menu (now MenuBar).
  *
  * Two behavioral contracts callers depend on (see `installMenuDismiss`):
  *

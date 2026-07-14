@@ -19,11 +19,16 @@ export default function App() {
 
   // Desktop app: compact project-manager window when no project is open,
   // full editor window once one is (Godot-style). No-op in the browser.
+  // The browser tab title (and, harmlessly, the Electron document title —
+  // the native title bar is already driven by setWindowMode above) tracks
+  // the same project name so a browser tab reads "MyGame — Hearth" instead
+  // of a bare "Hearth Editor" once a project is open.
   useEffect(() => {
     void hearthNative()?.setWindowMode(
       projectPath ? 'editor' : 'launcher',
       projectPath ? projectName : undefined,
     );
+    document.title = projectPath && projectName ? `${projectName} — Hearth` : 'Hearth Editor';
   }, [projectPath, projectName]);
 
   return projectPath ? <EditorShell projectPath={projectPath} /> : <Launcher />;

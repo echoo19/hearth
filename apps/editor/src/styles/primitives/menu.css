@@ -1,7 +1,7 @@
 /* Menu primitive — Wave L.
-   The dropdown menu (trigger + popover) shared by SceneMenu / ViewMenu and the
-   MenuButton primitive. Same visual language as before; consolidated here so
-   there is one implementation of the look. */
+   The dropdown menu (trigger + popover) shared by SceneMenu and MenuBar via
+   the MenuButton primitive. Same visual language as before; consolidated
+   here so there is one implementation of the look. */
 
 .menu-root {
   position: relative;

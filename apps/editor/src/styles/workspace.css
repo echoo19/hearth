@@ -309,7 +309,8 @@
 
 /* ---- In-window application menu bar (File / Edit / View / Help) -----------
    Quiet by design: text-only triggers, no border/background at rest, a soft
-   hover/open wash. Hidden on macOS (the native menu takes over). */
+   hover/open wash. Hidden only in Electron on macOS (the native menu takes
+   over there); browsers always render it, including a macOS browser tab. */
 .menubar {
   display: flex;
   align-items: center;

@@ -144,7 +144,8 @@ function findingsFor(absPath: string, content: string): Finding[] {
   }
 
   // (d) Workspace.tsx's PANEL_TITLES record — the dockview tab titles (and,
-  // via ViewMenu.tsx's `PANEL_TITLES[id]`, the View-menu checkbox labels).
+  // via Toolbar.tsx's `PANEL_TITLES[id]` lookup for the View menu section it
+  // hands to buildAppMenu, the View-menu checkbox labels).
   if (relFile === 'workspace/Workspace.tsx') {
     const block = /export const PANEL_TITLES:[^{]*\{([\s\S]*?)\n\};/.exec(content);
     if (block) {
