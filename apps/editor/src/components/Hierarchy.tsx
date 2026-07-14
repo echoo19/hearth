@@ -3,6 +3,7 @@ import { useEditor } from '../store';
 import type { SceneEntity } from '../types';
 import { uniqueName as computeUniqueName } from '../uniqueName';
 import { ConfirmDialog, Icon, entityIcon } from './ui';
+import { Button } from './ui/Button';
 
 // Tree rows are clickable divs, not native buttons — Enter/Space is the
 // keyboard equivalent of the click that selects a row. Exported (module
@@ -226,9 +227,9 @@ export function Hierarchy() {
             </span>
             <span>{scene ? 'This scene is empty.' : 'No scene selected.'}</span>
             {scene && (
-              <button className="btn btn-sm" onClick={() => void addEntity()}>
-                <Icon name="plus" /> Add an entity
-              </button>
+              <Button size="sm" icon="plus" onClick={() => void addEntity()}>
+                Add an entity
+              </Button>
             )}
           </div>
         ) : (

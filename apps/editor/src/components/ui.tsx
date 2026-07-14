@@ -4,6 +4,7 @@
  * Inspector control is built from.
  */
 import React, { useEffect, useRef, useState, type ReactNode } from 'react';
+import { Button } from './ui/Button';
 
 // ---------------------------------------------------------------------------
 // Field editors: value type decides the control. All commit on blur / Enter.
@@ -329,12 +330,10 @@ export function ConfirmDialog({
         <p>{body}</p>
       </div>
       <div className="modal-actions">
-        <button className="btn" onClick={onCancel}>
-          Cancel
-        </button>
-        <button className={danger ? 'btn btn-danger' : 'btn btn-primary'} onClick={onConfirm} autoFocus>
+        <Button onClick={onCancel}>Cancel</Button>
+        <Button variant={danger ? 'danger' : 'primary'} onClick={onConfirm} autoFocus>
           {confirmLabel}
-        </button>
+        </Button>
       </div>
     </Modal>
   );
@@ -349,8 +348,10 @@ export function CodeBlock({ code }: { code: string }) {
   return (
     <div className="code-block">
       <pre>{code}</pre>
-      <button
-        className="btn btn-ghost btn-sm copy-btn"
+      <Button
+        variant="ghost"
+        size="sm"
+        className="copy-btn"
         onClick={() => {
           void navigator.clipboard.writeText(code);
           setCopied(true);
@@ -358,7 +359,7 @@ export function CodeBlock({ code }: { code: string }) {
         }}
       >
         {copied ? 'Copied' : 'Copy'}
-      </button>
+      </Button>
     </div>
   );
 }

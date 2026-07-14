@@ -10,6 +10,7 @@
 import React, { useEffect, useRef } from 'react';
 import { useEditor } from '../store';
 import { comboDisplay, groupedKeybinds } from '../keybinds';
+import { Button } from './ui/Button';
 
 export function ShortcutSheet() {
   const open = useEditor((s) => s.shortcutSheetOpen);
@@ -50,9 +51,9 @@ export function ShortcutSheet() {
         <div className="shortcut-sheet-inner">
           <div className="shortcut-sheet-head">
             <div className="shortcut-sheet-title">Keyboard shortcuts</div>
-            <button className="btn btn-ghost btn-sm" onClick={() => setOpen(false)} aria-label="Close">
+            <Button variant="ghost" size="sm" onClick={() => setOpen(false)} aria-label="Close">
               Close
-            </button>
+            </Button>
           </div>
           <div className="shortcut-sheet-groups">
             {groups.map(({ group, binds }) => (

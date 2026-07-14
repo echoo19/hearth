@@ -13,6 +13,7 @@ import type { TilemapComponent } from '@hearth/core';
 import { fileUrl } from '../api';
 import type { AssetItem } from '../types';
 import { Icon, Modal } from './ui';
+import { Button } from './ui/Button';
 
 /** Reserved chars: always empty, never assignable to an asset. */
 export const ERASER_CHAR = '.';
@@ -59,17 +60,17 @@ export function TilemapPainter({
     <>
       <div className="tilemap-paint-toggle">
         {paintMode ? (
-          <button className="btn btn-primary btn-sm" onClick={onTogglePaintMode}>
+          <Button variant="primary" size="sm" onClick={onTogglePaintMode}>
             Done painting
-          </button>
+          </Button>
         ) : (
-          <button
-            className="btn btn-sm"
+          <Button
+            size="sm"
             title="Paint this tilemap's cells directly in the scene"
             onClick={onTogglePaintMode}
           >
             <Icon name="pencil" size={11} /> Paint tiles
-          </button>
+          </Button>
         )}
       </div>
 
@@ -114,9 +115,9 @@ export function TilemapPainter({
               No tile chars mapped yet — add some via the Inspector&rsquo;s Tilemap fields.
             </div>
           )}
-          <button type="button" className="btn btn-sm" onClick={() => setResizeOpen(true)}>
+          <Button size="sm" onClick={() => setResizeOpen(true)}>
             <Icon name="grid" size={11} /> Resize…
-          </button>
+          </Button>
           <div className="tilemap-palette-hint">shift-drag to fill a rectangle</div>
         </div>
       )}
@@ -150,11 +151,9 @@ export function TilemapPainter({
           </p>
         </div>
         <div className="modal-actions">
-          <button className="btn" onClick={() => setResizeOpen(false)}>
-            Cancel
-          </button>
-          <button
-            className="btn btn-primary"
+          <Button onClick={() => setResizeOpen(false)}>Cancel</Button>
+          <Button
+            variant="primary"
             disabled={widthInvalid || heightInvalid}
             onClick={() => {
               onResize(width, height);
@@ -162,7 +161,7 @@ export function TilemapPainter({
             }}
           >
             Resize
-          </button>
+          </Button>
         </div>
       </Modal>
     </>
