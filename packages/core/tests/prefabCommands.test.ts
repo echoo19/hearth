@@ -55,6 +55,43 @@ describe('createPrefab', () => {
     expect(updatedPlayer.prefab).toEqual({ asset: asset.id, ids: {}, overrides: [] });
   });
 
+  it('warns (never silently re-links) when the source is already a live prefab instance (L-012)', async () => {
+    const { session, store } = await makeSession();
+    const sceneId = store.project.initialScene!;
+    const player = store.getScene(sceneId)!.entities.find((e) => e.name === 'Player')!;
+    const created = await session.execute<any>('createPrefab', {
+      scene: sceneId,
+      entity: player.id,
+      name: 'PlayerPrefab',
+    });
+    expect(created.success).toBe(true);
+    const assetId = created.data.asset.id;
+
+    // Instantiate into a fresh scene → a LIVE instance (populated ids map).
+    const level = await session.execute<any>('createScene', { name: 'Level2' });
+    const inst = await session.execute<any>('instantiatePrefab', {
+      prefab: assetId,
+      scene: level.data.sceneId,
+    });
+    const instRootId = inst.data.entity.id as string;
+    const instMarker = () =>
+      store.getScene(level.data.sceneId)!.entities.find((e) => e.id === instRootId)!.prefab!;
+    expect(instMarker().ids).not.toEqual({});
+
+    // Saving the live instance as a NEW prefab re-links it — the old live link
+    // must be severed with a warning, not silently overwritten.
+    const relink = await session.execute<any>('createPrefab', {
+      scene: level.data.sceneId,
+      entity: instRootId,
+      name: 'ForkedPrefab',
+    });
+    expect(relink.success).toBe(true);
+    expect(relink.warnings.some((w: any) => w.code === 'PREFAB_INSTANCE_RELINKED')).toBe(true);
+    // New marker points at the forked prefab, legacy-detached (empty ids).
+    expect(instMarker().asset).toBe(relink.data.asset.id);
+    expect(instMarker().ids).toEqual({});
+  });
+
   it('enforces unique asset names (duplicate name -> CONFLICT)', async () => {
     const { session, store } = await makeSession();
     const sceneId = store.project.initialScene!;

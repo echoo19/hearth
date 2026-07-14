@@ -13,6 +13,7 @@ import {
   buildMergedInstance,
   revertInstanceOverrides,
   findInstanceMembership,
+  detachInstanceContaining,
 } from '../project/prefabData.js';
 
 import type { CommandContext } from './types.js';
@@ -215,6 +216,19 @@ export const createPrefab = defineCommand({
       path: relPath,
       metadata: { entityCount: data.entities.length },
     });
+
+    // If the source is already a LIVE prefab instance, saving it as a new
+    // prefab re-links it. Sever the old live link explicitly (removing the
+    // stale marker/ids) and warn, rather than silently overwriting the marker
+    // and discarding the instance's overrides against its original prefab —
+    // the row's live-link badge shouldn't quietly re-point (L-012).
+    if (findInstanceMembership(scene, root.id)) {
+      detachInstanceContaining(scene, root.id);
+      ctx.warn(
+        'PREFAB_INSTANCE_RELINKED',
+        `"${root.name}" was a live instance of another prefab; that link was replaced by the new prefab "${params.name}" and its per-instance overrides were dropped.`,
+      );
+    }
 
     // Write the fully-defaulted marker shape (empty ids/overrides) so the live
     // store matches what a save/reload produces. The source keeps an empty ids
