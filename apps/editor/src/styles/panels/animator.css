@@ -119,9 +119,14 @@
   min-width: 0;
 }
 
+/* The "times" multiplier glued to the speed field. Deliberately smaller and
+   fainter than the row's delete "×" so the two similar glyphs don't read as one
+   control group and invite a misclick (ANIMATOR-9). */
 .animator-speed-label {
   color: var(--ink-faint);
-  font-size: var(--text-sm);
+  font-size: var(--text-xs);
+  opacity: 0.7;
+  user-select: none;
 }
 
 .animator-speed .input {
