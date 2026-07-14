@@ -32,7 +32,7 @@ import { InputSettings } from '../components/InputSettings';
 import { GameSettings } from '../components/GameSettings';
 import { LivePanel } from '../components/LivePanel';
 import { AnimatorEditor } from '../components/AnimatorEditor';
-import { restoreLayout, serializeLayout, type PanelId } from './layout';
+import { ensureGroupsActive, restoreLayout, serializeLayout, type PanelId } from './layout';
 
 export const PANEL_TITLES: Record<PanelId, string> = {
   hierarchy: 'Hierarchy',
@@ -258,6 +258,10 @@ export function buildDefaultLayout(api: DockviewApi): void {
     api.addPanel(addPanelOptions(id, { position: { referencePanel: 'assets', direction: 'within' }, inactive: true }));
   }
   scene.api.setActive();
+  // The side/bottom groups are seeded with their leading panel `inactive`, so
+  // dockview leaves those groups with no active panel and paints the watermark
+  // into them. Activate each group's first panel (Scene keeps global focus).
+  ensureGroupsActive(api);
 }
 
 /** A living panel to anchor re-opened panels against. */
@@ -276,6 +280,12 @@ const BOTTOM_PANELS: readonly PanelId[] = ['assets', 'console', 'diff', 'agent',
  * location relative to whatever groups are still alive.
  */
 export function showPanel(api: DockviewApi, id: PanelId): void {
+  // The View menu (and native menu) close over the parent's `dock` state,
+  // which can briefly reference a disposed dockview during a project switch or
+  // a StrictMode remount. Operating on a disposed api throws the uncaught
+  // `Cannot read properties of null (reading 'clear')`-class error that used to
+  // wedge the View menu; a stale toggle is better dropped than fatal.
+  if (!isDockAlive(api)) return;
   const existing = api.getPanel(id);
   if (existing) {
     existing.api.setActive();
@@ -314,8 +324,24 @@ export function showPanel(api: DockviewApi, id: PanelId): void {
   api.addPanel(addPanelOptions(id, extra));
 }
 
+/**
+ * Whether a dockview api still backs a live component. After dispose (project
+ * switch / StrictMode remount) reading through to the underlying grid throws;
+ * treat that as "gone" so callers holding a stale reference no-op instead of
+ * surfacing an uncaught error.
+ */
+function isDockAlive(api: DockviewApi): boolean {
+  try {
+    void api.groups;
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 /** Rebuild the default layout and persist it. */
 export function resetLayout(api: DockviewApi, storageKey: string): void {
+  if (!isDockAlive(api)) return;
   buildDefaultLayout(api);
   writeLayout(api, storageKey);
 }
@@ -339,6 +365,9 @@ function initLayout(api: DockviewApi, storageKey: string): void {
   if (stored) {
     try {
       api.fromJSON(stored as SerializedDockview);
+      // Older saves persisted headless groups (`activeView: null`); heal them
+      // so a restored layout doesn't come back showing the watermark.
+      ensureGroupsActive(api);
       return;
     } catch {
       /* corrupt beyond what validation catches — fall through to default */

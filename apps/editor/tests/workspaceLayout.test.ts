@@ -1,10 +1,12 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import {
   LAYOUT_VERSION,
+  ensureGroupsActive,
   isValidDockviewLayout,
   layoutStorageKey,
   restoreLayout,
   serializeLayout,
+  type GroupsActiveApi,
 } from '../src/workspace/layout';
 
 /** Minimal but structurally honest dockview toJSON() output. */
@@ -67,5 +69,83 @@ describe('workspace layout persistence helpers', () => {
     expect(isValidDockviewLayout({ ...layout, grid: { root: null } })).toBe(false);
     expect(isValidDockviewLayout({ ...layout, panels: 'nope' })).toBe(false);
     expect(isValidDockviewLayout(layout)).toBe(true);
+  });
+});
+
+// A fake dockview panel/group graph for ensureGroupsActive. Each panel records
+// setActive() calls so the tests can assert exactly which panels got activated.
+function fakePanel(id: string, calls: string[]) {
+  return { id, api: { setActive: () => calls.push(id) } };
+}
+
+function fakeApi(
+  groups: Array<{ panels: ReturnType<typeof fakePanel>[]; activeId: string | null }>,
+  activeId: string | null,
+  calls: string[],
+): GroupsActiveApi {
+  const findPanel = (id: string | null) =>
+    id == null ? undefined : groups.flatMap((g) => g.panels).find((p) => p.id === id);
+  return {
+    groups: groups.map((g) => ({
+      panels: g.panels,
+      activePanel: g.panels.find((p) => p.id === g.activeId) ?? null,
+    })),
+    activePanel: findPanel(activeId),
+  };
+}
+
+describe('ensureGroupsActive', () => {
+  it('activates the first panel of a group that has panels but no active one', () => {
+    const calls: string[] = [];
+    // Mirrors the reported bug: a Hierarchy-only side group left headless
+    // renders the "All panels are closed" watermark until its panel is active.
+    const api = fakeApi([{ panels: [fakePanel('hierarchy', calls)], activeId: null }], null, calls);
+    ensureGroupsActive(api);
+    expect(calls).toEqual(['hierarchy']);
+  });
+
+  it('heals every headless group in one pass and restores global focus', () => {
+    const calls: string[] = [];
+    const api = fakeApi(
+      [
+        { panels: [fakePanel('hierarchy', calls)], activeId: null },
+        { panels: [fakePanel('scene', calls), fakePanel('game', calls)], activeId: 'scene' },
+        { panels: [fakePanel('inspector', calls)], activeId: null },
+        { panels: [fakePanel('assets', calls), fakePanel('console', calls)], activeId: null },
+      ],
+      'scene',
+      calls,
+    );
+    ensureGroupsActive(api);
+    // Both headless side groups plus the bottom group are healed, then Scene
+    // is re-activated last so it keeps global focus.
+    expect(calls).toEqual(['hierarchy', 'inspector', 'assets', 'scene']);
+  });
+
+  it('is a no-op when every group already has an active panel', () => {
+    const calls: string[] = [];
+    const api = fakeApi(
+      [
+        { panels: [fakePanel('hierarchy', calls)], activeId: 'hierarchy' },
+        { panels: [fakePanel('scene', calls)], activeId: 'scene' },
+      ],
+      'scene',
+      calls,
+    );
+    ensureGroupsActive(api);
+    // Only the focus-restore touch, no watermark-evicting activations.
+    expect(calls).toEqual(['scene']);
+  });
+
+  it('ignores empty groups', () => {
+    const calls: string[] = [];
+    const setActive = vi.fn();
+    const api: GroupsActiveApi = {
+      groups: [{ panels: [], activePanel: null }],
+      activePanel: { api: { setActive } },
+    };
+    ensureGroupsActive(api);
+    expect(calls).toEqual([]);
+    expect(setActive).toHaveBeenCalledTimes(1); // just the focus restore
   });
 });

@@ -71,6 +71,45 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 /**
+ * The slice of the dockview api that {@link ensureGroupsActive} touches. Kept
+ * structural (not the concrete `DockviewApi`) so this stays a pure, DOM-free
+ * helper the node test suite can exercise directly. The real `DockviewApi`
+ * satisfies it.
+ */
+export interface GroupsActiveApi {
+  readonly groups: ReadonlyArray<{
+    readonly panels: ReadonlyArray<{ readonly api: { setActive(): void } }>;
+    readonly activePanel: unknown;
+  }>;
+  readonly activePanel: { readonly api: { setActive(): void } } | undefined;
+}
+
+/**
+ * Guarantee every non-empty dockview group has an active panel.
+ *
+ * Dockview renders the watermark ("All panels are closed") into any group that
+ * holds panels but has no active one. That state is easy to fall into: a
+ * group whose only/leading panels were all added `inactive` never gets an
+ * active panel, and older persisted layouts saved that condition as
+ * `activeView: null`, so it survives a `fromJSON` restore too. The result was
+ * the watermark showing in the Hierarchy, Inspector, and bottom groups on
+ * essentially every project open even though their tabs existed.
+ *
+ * Activating a headless group's first panel evicts the watermark. We snapshot
+ * and restore the globally-focused panel around the sweep so healing a side
+ * group doesn't steal focus from (e.g.) the Scene.
+ */
+export function ensureGroupsActive(api: GroupsActiveApi): void {
+  const focused = api.activePanel;
+  for (const group of api.groups) {
+    if (group.panels.length > 0 && !group.activePanel) {
+      group.panels[0].api.setActive();
+    }
+  }
+  focused?.api.setActive();
+}
+
+/**
  * Structural sanity check on a serialized dockview layout. Not a full schema:
  * it verifies the pieces `fromJSON` dereferences unconditionally and that
  * every panel maps to a registered panel component.
