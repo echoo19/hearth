@@ -1274,7 +1274,27 @@ high) though it borders on a defect (values unreadable).
   patterns already do this correctly and are the template).
 - Source: INSPECTOR-1, INSPECTOR-2, INSPSPEC-1, INPUT-1, INPUT-2, INPUT-3,
   INPUT-4, GAMESETTINGS-4, ASSETS-2, HIER-7
-- Disposition: open
+- Disposition: fixed 0000dd0 (shared field rejection contract in ui.tsx: client
+  validation + revert + shake/`.invalid` cue) + per-consumer wiring. Sub-items:
+  - INSPECTOR-1 (empty/garbage NumberField → 0): fixed 0000dd0 — empty/NaN
+    reverts, never commits 0.
+  - INSPECTOR-2 (ColorField invalid hex): fixed 0000dd0 — client hex validation
+    (#rgb/#rrggbb/#rrggbbaa), revert + cue, swatch holds last valid.
+  - INSPSPEC-1 (PostEffects/SpriteEffects out-of-range numeric): fixed d37187f —
+    NumberField gains min/max; PostEffectsField wires schema ranges.
+  - INPUT-1 (axis rename keeps rejected text): fixed 6e81559 — rename reverts +
+    names the conflict inline.
+  - INPUT-2 (duplicate action add silent): fixed 6e81559 — inline reason under
+    the add row.
+  - INPUT-3 (duplicate axis add/rename silent): fixed 6e81559.
+  - INPUT-4 (duplicate key capture silent): fixed 6e81559 — brief "already
+    bound here" notice.
+  - GAMESETTINGS-4 (blank title / bad hex committed): fixed 383636b — blank
+    title reverts; color fields inherit ColorField validation.
+  - ASSETS-2 (create-asset CONFLICT silent): fixed 383636b — inline error in the
+    create-sprite/create-tile dialogs.
+  - HIER-7 (save-as-prefab conflict silent): fixed 383636b — input stays open
+    and names the conflict.
 
 ### L-109 · cross-cutting · polish · med
 - Element: accessible names / label associations across shared components and
