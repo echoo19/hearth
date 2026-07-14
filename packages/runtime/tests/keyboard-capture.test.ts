@@ -64,4 +64,21 @@ describe('shouldCaptureGameKey (L-001)', () => {
       shouldCaptureGameKey({ paused: false, dialogOpen: false, activeElement: chromeInput, captureRoot: null }),
     ).toBe(true);
   });
+
+  it('shell contract: a focused sibling button (export fullscreen) blocks capture until blurred', () => {
+    // The export shell renders #hearth-fullscreen as a SIBLING of the mount.
+    // While it holds focus the gate treats it as chrome (capture off) — which
+    // is why the shell MUST blur it after activation; after blur() focus falls
+    // back to <body> (ambient) and full capture resumes.
+    const shellButton = document.createElement('button');
+    document.body.appendChild(shellButton);
+    shellButton.focus();
+    expect(
+      shouldCaptureGameKey({ paused: false, dialogOpen: false, activeElement: document.activeElement, captureRoot: root }),
+    ).toBe(false);
+    shellButton.blur();
+    expect(
+      shouldCaptureGameKey({ paused: false, dialogOpen: false, activeElement: document.activeElement, captureRoot: root }),
+    ).toBe(true);
+  });
 });

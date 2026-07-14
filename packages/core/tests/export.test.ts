@@ -43,6 +43,11 @@ describe('exportWeb (folder output)', () => {
     expect(html).toContain("fetch('project.bundle.json')");
     expect(html).toContain('hearth-player.js');
     expect(html).toContain('hearth-fullscreen');
+    // Shell contract: chrome must not hold focus after activation — the
+    // runtime's keyboard-capture gate treats a focused element outside
+    // #hearth-mount as editor/shell chrome and stops capturing, so a
+    // fullscreen click that left the button focused would go keyboard-dead.
+    expect(html).toMatch(/hearth-fullscreen[\s\S]*?this\.blur\(\)/);
     // No external requests: nothing loaded from another origin.
     expect(html).not.toMatch(/https?:\/\//);
 

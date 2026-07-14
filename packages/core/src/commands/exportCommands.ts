@@ -210,6 +210,11 @@ function renderIndexHtml(opts: {
       document.getElementById('hearth-fullscreen').addEventListener('click', function () {
         if (document.fullscreenElement) document.exitFullscreen();
         else document.documentElement.requestFullscreen();
+        // Drop focus back to <body>: the runtime's keyboard-capture gate
+        // treats a focused element outside the game mount as chrome and stops
+        // capturing, so leaving this button focused would kill game input
+        // until the next canvas click.
+        this.blur();
       });
     }
   </script>
