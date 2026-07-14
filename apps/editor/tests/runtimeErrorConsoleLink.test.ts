@@ -86,4 +86,70 @@ describe('recordRuntimeError -> Console entry (Task 7)', () => {
     });
     expect(useEditor.getState().consoleEntries[0].link).toEqual({ path: 'scripts/x.lua', line: 7 });
   });
+
+  // L-061 (CONSOLE-CHANGES-3): a load-time compile failure carries the line
+  // inline in the message but leaves error.line null; recover it so the link
+  // jumps to the exact line like the reload path does.
+  it('load-time failure: recovers the line from the "<script>:<line>" in the message', () => {
+    const error: RuntimeErrorEntry = {
+      frame: 0,
+      message:
+        "Failed to load script scripts/shake-toggle.lua: scripts/shake-toggle.lua:14: 'end' expected (to close 'function' at line 6) near <eof>",
+      script: 'scripts/shake-toggle.lua',
+      line: null,
+    };
+
+    useEditor.getState().recordRuntimeError(error);
+
+    const entry = useEditor.getState().consoleEntries[0];
+    expect(entry.link).toEqual({ path: 'scripts/shake-toggle.lua', line: 14 });
+    // The message also reflects the recovered line ("in <script>:14 —").
+    expect(entry.message).toContain('scripts/shake-toggle.lua:14 —');
+  });
+
+  it('load-time failure with no line anywhere in the message: link.line stays null', () => {
+    const error: RuntimeErrorEntry = {
+      frame: 0,
+      message: 'Failed to load script scripts/a.lua: some opaque failure',
+      script: 'scripts/a.lua',
+      line: null,
+    };
+
+    useEditor.getState().recordRuntimeError(error);
+
+    expect(useEditor.getState().consoleEntries[0].link).toEqual({ path: 'scripts/a.lua', line: null });
+  });
+
+  // L-062 (CONSOLE-CHANGES-4): a hot-reload compile failure is bridged here by
+  // the runtime (recordError phase:'reload') AND logged by applyReload — so
+  // recordRuntimeError must NOT also log it, or every hot-reload error doubles
+  // in the Console. It still records into runtimeErrors.
+  it('phase "reload": recorded into runtimeErrors but NOT logged again (applyReload owns that line)', () => {
+    const error: RuntimeErrorEntry = {
+      frame: 5,
+      message: "'end' expected",
+      script: 'scripts/resume-button.lua',
+      line: 17,
+      phase: 'reload',
+    };
+
+    useEditor.getState().recordRuntimeError(error);
+
+    expect(useEditor.getState().runtimeErrors).toEqual([error]);
+    expect(useEditor.getState().consoleEntries).toHaveLength(0);
+  });
+
+  it('non-reload phase still logs (a genuine runtime error during play is unaffected)', () => {
+    const error: RuntimeErrorEntry = {
+      frame: 5,
+      message: 'boom',
+      script: 'scripts/a.lua',
+      line: 3,
+      phase: 'onUpdate',
+    };
+
+    useEditor.getState().recordRuntimeError(error);
+
+    expect(useEditor.getState().consoleEntries).toHaveLength(1);
+  });
 });

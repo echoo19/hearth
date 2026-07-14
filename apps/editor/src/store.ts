@@ -264,6 +264,23 @@ function formatRuntimeError(error: RuntimeErrorEntry): string {
   return `${who} hit an error in ${where} — ${error.message}`;
 }
 
+/**
+ * Recover a 1-based source line from a runtime error message that carries it
+ * inline as "<script>:<line>". Load-time compile failures surface the line in
+ * the message ("Failed to load script foo.lua: foo.lua:14: 'end' expected …")
+ * but leave `RuntimeError.line` null — only the reload path populates it — so
+ * the Console link opened the file at the top instead of the failing line
+ * (CONSOLE-CHANGES-3 / L-061). The script path can appear more than once in
+ * the message (a "Failed to load script <path>:" prefix), so match only the
+ * occurrence immediately followed by a line number. Returns null when no such
+ * `<script>:<digits>` pattern is present.
+ */
+function lineFromMessage(script: string, message: string): number | null {
+  const escaped = script.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const match = new RegExp(`${escaped}:(\\d+)`).exec(message);
+  return match ? Number.parseInt(match[1], 10) : null;
+}
+
 const MAX_CONSOLE = 500;
 const MAX_JOURNAL_FEED = 200;
 const MAX_RUNTIME_ERRORS = 200;
@@ -688,6 +705,20 @@ export const useEditor = create<EditorState>((set, get) => {
     resetExportJob();
   }
 
+  /**
+   * Refresh the Changes-panel diff after an undo/redo, but only when a
+   * baseline is actually being tracked — a checkpoint was taken this session
+   * (`snapshotTaken`) or a diff is currently displayed (`diff`). Without the
+   * guard, undo/redo with no checkpoint would call diffProject, hit NOT_FOUND,
+   * and log a "Review changes: no checkpoint …" info line on every keypress.
+   * With a baseline, this keeps the diff body honest immediately after Undo/
+   * Redo instead of after a manual Refresh or a tab blur/refocus
+   * (CONSOLE-CHANGES-6 / L-060).
+   */
+  async function refreshDiffIfTracking(): Promise<void> {
+    if (get().snapshotTaken || get().diff !== null) await get().refreshDiff();
+  }
+
   async function afterOpen(path: string, info: ProjectInfo): Promise<void> {
     // A pending nudge burst belongs to whatever project/scene was open before
     // this call (openProject reopening the same path, or switching to a
@@ -805,6 +836,12 @@ export const useEditor = create<EditorState>((set, get) => {
       const result = await get().exec<{ scenes: number }>('snapshotProject', {}, { quiet: true });
       if (result.success) {
         get().log('info', 'command', 'Checkpoint saved. The Changes panel now compares against this checkpoint.');
+        // Refresh the Changes panel against the just-taken checkpoint so a
+        // focused Changes tab reflects the new baseline immediately, not only
+        // after a manual Refresh or a tab blur/refocus (CONSOLE-CHANGES-5 /
+        // L-060). A snapshot always establishes a baseline, so this never
+        // hits the "no checkpoint" info-log path.
+        await get().refreshDiff();
       }
     },
 
@@ -815,6 +852,7 @@ export const useEditor = create<EditorState>((set, get) => {
       const result = await get().exec<{ undone: string; seq: number }>('undo', {}, { quiet: true });
       if (result.success && result.data) {
         get().log('info', 'command', `Undo: reverted "${result.data.undone}" (#${result.data.seq}).`);
+        await refreshDiffIfTracking();
       }
     },
 
@@ -822,6 +860,7 @@ export const useEditor = create<EditorState>((set, get) => {
       const result = await get().exec<{ redone: string; seq: number }>('redo', {}, { quiet: true });
       if (result.success && result.data) {
         get().log('info', 'command', `Redo: reapplied "${result.data.redone}" (#${result.data.seq}).`);
+        await refreshDiffIfTracking();
       }
     },
 
@@ -999,11 +1038,22 @@ export const useEditor = create<EditorState>((set, get) => {
 
     recordRuntimeError(error) {
       set((state) => ({ runtimeErrors: [...state.runtimeErrors.slice(-MAX_RUNTIME_ERRORS + 1), error] }));
-      // Also surface it in the Console (Task 7): plain-language message, and
-      // a link to the offending script when one is known (line may still be
-      // null — the click just opens the file at the top).
-      const link = error.script ? { path: error.script, line: error.line ?? null } : undefined;
-      get().log('error', 'runtime', formatRuntimeError(error), link);
+      // A hot-reload compile failure is already surfaced as a single
+      // "Hot-reload failed: …" line by applyReload (which logs the {ok:false}
+      // result of view.reloadScript). The runtime ALSO bridges that same error
+      // here — reloadScript calls recordError(phase:'reload') internally, which
+      // reaches onErrorEntry → recordRuntimeError — so logging it again would
+      // double every hot-reload error in the Console (CONSOLE-CHANGES-4 /
+      // L-062). Keep recording it into runtimeErrors, but skip the duplicate
+      // Console line for the reload phase; applyReload owns that line.
+      if (error.phase === 'reload') return;
+      // Recover the failing line from the message when the runtime didn't
+      // populate error.line (load-time compile failures — L-061) so the
+      // Console link jumps to the exact line like the reload path does.
+      const line = error.line ?? (error.script ? lineFromMessage(error.script, error.message) : null);
+      const resolved = error.line == null && line != null ? { ...error, line } : error;
+      const link = error.script ? { path: error.script, line } : undefined;
+      get().log('error', 'runtime', formatRuntimeError(resolved), link);
     },
 
     async applyExternalJournalEntry(entry) {
