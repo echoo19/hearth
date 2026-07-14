@@ -196,6 +196,63 @@ describe('override recording — moveEntity', () => {
     expect(r.warnings.some((w: any) => w.code === 'PREFAB_INSTANCE_DETACHED')).toBe(true);
     expect(store.getScene(sceneId)!.entities.find((e) => e.id === rootId)!.prefab).toBeUndefined();
   });
+
+  it('reparenting a member to the SAME parent is a no-op — does NOT detach (L-013)', async () => {
+    const { session, store, sceneId, rootId, childId } = await makeInstance();
+    // childId is already parented to rootId; "reparenting" it to rootId changes
+    // nothing and must not run the detach policy.
+    const r = await session.execute<any>('moveEntity', { scene: sceneId, entity: childId, parent: rootId });
+    expect(r.success).toBe(true);
+    expect(r.warnings.some((w: any) => w.code === 'PREFAB_INSTANCE_DETACHED')).toBe(false);
+    expect(store.getScene(sceneId)!.entities.find((e) => e.id === rootId)!.prefab).toBeDefined();
+  });
+});
+
+describe('override recording — same-value edit (L-032)', () => {
+  it('setComponentProperty to the field\'s existing value records NO override', async () => {
+    const { session, store, sceneId, childId, rootMarker } = await makeInstance();
+    const currentX =
+      store.getScene(sceneId)!.entities.find((e) => e.id === childId)!.components.Transform!.position.x;
+    const r = await session.execute<any>('setComponentProperty', {
+      scene: sceneId,
+      entity: childId,
+      property: 'Transform.position.x',
+      value: currentX,
+    });
+    expect(r.success).toBe(true);
+    expect(rootMarker().overrides).toEqual([]);
+  });
+
+  it('setComponentProperty to a DIFFERENT value still records the override', async () => {
+    const { session, store, sceneId, childId, rootMarker } = await makeInstance();
+    const currentX =
+      store.getScene(sceneId)!.entities.find((e) => e.id === childId)!.components.Transform!.position.x;
+    const r = await session.execute<any>('setComponentProperty', {
+      scene: sceneId,
+      entity: childId,
+      property: 'Transform.position.x',
+      value: currentX + 10,
+    });
+    expect(r.success).toBe(true);
+    expect(rootMarker().overrides).toHaveLength(1);
+  });
+
+  it('setProperties skips same-value keys but records changed ones', async () => {
+    const { session, store, sceneId, childId, rootMarker } = await makeInstance();
+    const transform =
+      store.getScene(sceneId)!.entities.find((e) => e.id === childId)!.components.Transform!;
+    const sameY = transform.position.y;
+    const r = await session.execute<any>('setProperties', {
+      scene: sceneId,
+      entity: childId,
+      properties: { 'Transform.position.x': transform.position.x + 5, 'Transform.position.y': sameY },
+    });
+    expect(r.success).toBe(true);
+    // Only the changed key (x) records; the unchanged y does not.
+    expect(rootMarker().overrides).toEqual([
+      { entity: childId, component: 'Transform', path: 'position.x', value: transform.position.x + 5 },
+    ]);
+  });
 });
 
 describe('override recording — undo', () => {

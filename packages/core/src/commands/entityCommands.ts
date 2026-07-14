@@ -121,6 +121,22 @@ export const deleteEntity = defineCommand({
   },
 });
 
+/**
+ * A scene-unique entity name derived from `desired`, IGNORING the entity being
+ * renamed (`excludeId`): returns `desired` unchanged when free (including when
+ * the only match is the entity's own current name), else appends the lowest
+ * " 2", " 3", ... suffix that isn't taken — the same convention the create/
+ * instantiate paths use, so rename can't produce two identically-named rows
+ * that name-based command references can't tell apart (L-011).
+ */
+function uniqueEntityName(scene: Scene, desired: string, excludeId: string): string {
+  const taken = new Set(scene.entities.filter((e) => e.id !== excludeId).map((e) => e.name));
+  if (!taken.has(desired)) return desired;
+  let suffix = 2;
+  while (taken.has(`${desired} ${suffix}`)) suffix += 1;
+  return `${desired} ${suffix}`;
+}
+
 export const renameEntity = defineCommand({
   name: 'renameEntity',
   description: 'Rename an entity.',
@@ -135,7 +151,7 @@ export const renameEntity = defineCommand({
     const scene = requireScene(ctx, params.scene);
     const entity = requireEntity(scene, params.entity);
     const previous = entity.name;
-    entity.name = params.newName;
+    entity.name = uniqueEntityName(scene, params.newName, entity.id);
     ctx.changed({ kind: 'entity', id: entity.id, name: entity.name, scene: scene.id, action: 'modified' });
     return { entityId: entity.id, previousName: previous, name: entity.name };
   },
@@ -270,24 +286,29 @@ export const moveEntity = defineCommand({
     }
     if (params.parent !== undefined) {
       const newParentId = params.parent === null ? null : requireEntity(scene, params.parent).id;
-      if (newParentId && wouldCreateCycle(scene, entity.id, newParentId)) {
-        throw new ProjectError(
-          `Cannot parent "${entity.name}" under ${params.parent}: would create a cycle`,
-          'INVALID_INPUT',
-        );
+      // No-op reparent (target parent === current parent) changes nothing, so it
+      // must not run the detach policy — detaching a prefab instance for a move
+      // that didn't move it is a real bug (L-013).
+      if (newParentId !== entity.parentId) {
+        if (newParentId && wouldCreateCycle(scene, entity.id, newParentId)) {
+          throw new ProjectError(
+            `Cannot parent "${entity.name}" under ${params.parent}: would create a cycle`,
+            'INVALID_INPUT',
+          );
+        }
+        entity.parentId = newParentId;
+        // Reparent detach policy: a membership-altering move breaks the live link.
+        // Moving a NON-root member (out of, or within, its subtree) detaches that
+        // member's instance; moving any entity INTO an instance subtree (the new
+        // parent is a member) detaches the target instance. An instance root's own
+        // reparent under a non-instance parent leaves the subtree intact and does
+        // NOT detach.
+        const membership = findInstanceMembership(scene, entity.id);
+        if (membership && membership.rootId !== entity.id) {
+          detachOnStructuralEdit(ctx, scene, entity.id);
+        }
+        if (newParentId) detachOnStructuralEdit(ctx, scene, newParentId);
       }
-      entity.parentId = newParentId;
-      // Reparent detach policy: a membership-altering move breaks the live link.
-      // Moving a NON-root member (out of, or within, its subtree) detaches that
-      // member's instance; moving any entity INTO an instance subtree (the new
-      // parent is a member) detaches the target instance. An instance root's own
-      // reparent under a non-instance parent leaves the subtree intact and does
-      // NOT detach.
-      const membership = findInstanceMembership(scene, entity.id);
-      if (membership && membership.rootId !== entity.id) {
-        detachOnStructuralEdit(ctx, scene, entity.id);
-      }
-      if (newParentId) detachOnStructuralEdit(ctx, scene, newParentId);
     }
     ctx.changed({ kind: 'entity', id: entity.id, name: entity.name, scene: scene.id, action: 'modified' });
     return {

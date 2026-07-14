@@ -95,6 +95,27 @@ export const removeComponent = defineCommand({
   },
 });
 
+/**
+ * Structural equality for JSON-safe post-parse values, used to skip recording
+ * a prefab-instance override when an edit sets a field to the value it already
+ * holds (L-032). Both operands come from schema-parsed component data, so this
+ * only needs to cover primitives, arrays, and plain objects.
+ */
+function valuesEqual(a: unknown, b: unknown): boolean {
+  if (a === b) return true;
+  if (typeof a !== 'object' || typeof b !== 'object' || a === null || b === null) return false;
+  if (Array.isArray(a) || Array.isArray(b)) {
+    if (!Array.isArray(a) || !Array.isArray(b) || a.length !== b.length) return false;
+    return a.every((v, i) => valuesEqual(v, b[i]));
+  }
+  const ao = a as Record<string, unknown>;
+  const bo = b as Record<string, unknown>;
+  const ak = Object.keys(ao);
+  const bk = Object.keys(bo);
+  if (ak.length !== bk.length) return false;
+  return ak.every((k) => Object.prototype.hasOwnProperty.call(bo, k) && valuesEqual(ao[k], bo[k]));
+}
+
 /** Read a nested value by dot path (the post-parse value actually stored). */
 function valueAtPath(data: unknown, path: string[]): unknown {
   let cursor: unknown = data;
@@ -264,6 +285,7 @@ export const setComponentProperty = defineCommand({
       );
     }
     assertValidPath(type, pathParts);
+    const previousValue = valueAtPath(current, pathParts);
     const updated = setByPath(current, pathParts, params.value);
     const parsed = COMPONENT_SCHEMAS[type].safeParse(updated);
     if (!parsed.success) {
@@ -279,8 +301,12 @@ export const setComponentProperty = defineCommand({
     // If this entity lives inside a prefab instance, record the edit as an
     // implicit override on that instance's root marker (same mutation, so undo
     // reverts the record with the value change). Root name/position/enabled are
-    // excluded inside recordInstanceOverride.
-    recordInstanceOverride(scene, entity.id, type, pathParts.join('.'), valueAtPath(parsed.data, pathParts));
+    // excluded inside recordInstanceOverride. A same-value edit (the field
+    // already held this value) changes nothing, so it records no override (L-032).
+    const newValue = valueAtPath(parsed.data, pathParts);
+    if (!valuesEqual(previousValue, newValue)) {
+      recordInstanceOverride(scene, entity.id, type, pathParts.join('.'), newValue);
+    }
     return {
       entityId: entity.id,
       property: params.property,
@@ -314,7 +340,7 @@ export const setProperties = defineCommand({
     // Phase 1: validate every key against a per-type clone before writing
     // anything to the entity, so a bad key anywhere fails the whole batch.
     const drafts = new Map<ComponentType, Record<string, unknown>>();
-    const writes: Array<{ type: ComponentType; pathParts: string[] }> = [];
+    const writes: Array<{ type: ComponentType; pathParts: string[]; previousValue: unknown }> = [];
     for (const [key, value] of Object.entries(params.properties)) {
       const [type, ...pathParts] = key.split('.');
       if (!isComponentType(type)) {
@@ -343,8 +369,11 @@ export const setProperties = defineCommand({
         draft = structuredClone(current);
       }
       assertValidPath(type, pathParts);
+      // Capture the pre-write value now (phase 2 hasn't overwritten the live
+      // component yet) so a same-value key records no override later (L-032).
+      const previousValue = valueAtPath((entity.components as Record<string, unknown>)[type], pathParts);
       drafts.set(type, setByPath(draft, pathParts, value));
-      writes.push({ type, pathParts });
+      writes.push({ type, pathParts, previousValue });
     }
 
     const parsedByType = new Map<ComponentType, Record<string, unknown>>();
@@ -373,14 +402,11 @@ export const setProperties = defineCommand({
 
     // One override per written key on the instance root (if this entity is an
     // instance member). Same command mutation, so a single undo drops them all.
-    for (const { type, pathParts } of writes) {
-      recordInstanceOverride(
-        scene,
-        entity.id,
-        type,
-        pathParts.join('.'),
-        valueAtPath(parsedByType.get(type), pathParts),
-      );
+    // A key whose value didn't actually change records nothing (L-032).
+    for (const { type, pathParts, previousValue } of writes) {
+      const newValue = valueAtPath(parsedByType.get(type), pathParts);
+      if (valuesEqual(previousValue, newValue)) continue;
+      recordInstanceOverride(scene, entity.id, type, pathParts.join('.'), newValue);
     }
 
     return {
