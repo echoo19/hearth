@@ -70,6 +70,16 @@ nothing silently dropped.
 - **Menus**: SceneMenu/ViewMenu duplicated popover logic replaced by one
   shared `Menu` primitive (uniform open/close/click-outside/Escape/focus-
   return behavior).
+- **Scene chrome minimalism (Jake steer, 2026-07-14)**: interactions must be
+  intuitive — no instructional prose overlays. The SceneView persistent hint
+  bar ("scroll to zoom · space+drag…") is REMOVED (the `?` sheet keeps the
+  reference; deeper how-to content goes to the Wave M docs pass). The
+  floating "Particles" scene toggle is REMOVED: particle preview is
+  object-owned — selecting an emitter previews it (Unity/Godot mental
+  model); any necessary control lives on the Inspector's ParticleEmitter
+  card. Standing principle: behaviors belong to objects, never to floating
+  scene-level chrome; tooltips are one line (label + shortcut), never
+  instructional prose.
 
 ## Phase 3 — Design language
 

@@ -185,7 +185,7 @@ still `open`.
 
 **Files:** per ledger entry (`apps/editor` only).
 
-- [ ] **Step 1: Controller batches `friction` entries** by surface. Standing items regardless of audit: every panel gets a real empty state (icon + one-line what-this-is + primary next action button); destructive confirms uniform via `ConfirmDialog`; most-used per-workflow actions surfaced to one click (audit evidence decides which).
+- [ ] **Step 1: Controller batches `friction` entries** by surface. Standing items regardless of audit: every panel gets a real empty state (icon + one-line what-this-is + primary next action button); destructive confirms uniform via `ConfirmDialog`; most-used per-workflow actions surfaced to one click (audit evidence decides which). **Jake steer 2026-07-14 (scene chrome minimalism, mandatory):** delete the SceneView persistent hint bar (SceneView.tsx ~line 1852 — `?` sheet keeps the reference); delete the floating "Particles" toggle + its localStorage pref (SceneView.tsx ~111-131, ~1832) — preview becomes always-on for selected emitters (object-owned, Unity/Godot model); if a control proves necessary it goes on the Inspector ParticleEmitter card. No floating scene-level chrome anywhere; tooltips one line (label + shortcut), never instructional prose.
 - [ ] **Step 2: Per-batch: implement → suite + typecheck → live walkthrough of the changed workflow → review → commit; dispositions updated.**
 
 ### Task 10: Row-grid unification for specialized editors
