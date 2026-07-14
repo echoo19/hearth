@@ -925,7 +925,15 @@ high) though it borders on a defect (values unreadable).
   `draftIssues()` runs the same op-vs-current-type check the server does, so
   the problem is named before Save.
 - Source: ANIMATOR-1 (Wave-K: "setParamType stale-op gate")
-- Disposition: open
+- Disposition: fixed (T8-B6) — `setParamType` now migrates every dependent
+  condition's op/value to a type-appropriate default (mirrors `setConditionParam`);
+  `draftIssues()` runs the server's op-vs-type check (bool → eq/neq only), so an
+  invalid combo is named before Save and the Save button gates on it; save-error
+  render maps zod paths to plain-language field locations via new pure
+  `humanizeSaveError` (never a raw zod dump). Added the missing unit coverage for
+  `setParamType`/`setConditionOp`/`setConditionValue`/`humanizeSaveError`
+  (asmEdit.test.ts, 36 tests pass). Files: asmEdit.ts, AnimatorEditor.tsx,
+  asmEdit.test.ts.
 
 ### L-081 · animator · defect · high
 - Element: global `mod+s` while editing in the Animator.
@@ -938,7 +946,10 @@ high) though it borders on a defect (values unreadable).
   panel (same pattern the Code panel uses), or at least don't claim "no need to
   save" while Unsaved is showing.
 - Source: ANIMATOR-4
-- Disposition: open
+- Disposition: fixed (T8-B6) — the `.animator` root now handles `mod+s` locally
+  (`onKeyDownSave`): it triggers the Animator's own gated `save()` and
+  `stopPropagation`s so the global "saved automatically" keybind (window-bubble)
+  never sees it while the panel is focused. Files: AnimatorEditor.tsx.
 
 ### L-082 · animator · defect · high
 - Element: Save flow vs. a concurrent external edit to the same `.asm.json`.
@@ -953,7 +964,16 @@ high) though it borders on a defect (values unreadable).
   already in `assets`) and offer reload/overwrite before Save, not silent
   last-write-wins.
 - Source: ANIMATOR-8 (Wave-K: "Animator external-edit last-write-wins")
-- Disposition: open
+- Disposition: fixed (T8-B6) — save-time external-change detection (cheapest
+  honest fix): `save()` compares the fresh on-disk parse the file-watcher already
+  carries in `asset.stateMachine` (normalized through the same doc↔draft
+  round-trip as `loadedDoc`, so key-order/default-omission don't false-positive)
+  against what this session loaded; on mismatch it shows a Code-panel-style
+  conflict banner (Reload / Overwrite) and blocks the silent last-write-wins.
+  Reload adopts the on-disk doc; Overwrite proceeds. Behavior: detection is at
+  Save (not live) — an external edit still isn't pulled in mid-edit, but can no
+  longer be destroyed without the user choosing. Files: AnimatorEditor.tsx,
+  animator uses shared `.code-conflict-banner`.
 
 ### L-083 · animator · friction · high
 - Element: "Machine" `<select>` switched while the current draft is dirty.
@@ -964,7 +984,12 @@ high) though it borders on a defect (values unreadable).
 - Expected: confirm before switching (or honoring an `animatorTarget` change)
   when `dirty`.
 - Source: ANIMATOR-2
-- Disposition: open
+- Disposition: fixed (T8-B6) — the Machine `<select>` now routes through
+  `requestSwitch`: when the draft is `dirty` it parks the target and opens the
+  existing `ConfirmDialog` ("Discard unsaved changes? / Discard & switch",
+  danger); confirm applies the switch, cancel keeps editing (the controlled
+  select snaps back). Clean drafts switch immediately as before. Files:
+  AnimatorEditor.tsx.
 
 ### L-084 · animator · friction · high
 - Element: state-machine (and animation) asset creation.
@@ -976,7 +1001,17 @@ high) though it borders on a defect (values unreadable).
 - Expected: a "+ State machine" affordance in the Assets panel (parallel to
   Sprite/Tile). (Relates to the broader create-affordance gap: L-049, L-057.)
 - Source: ANIMATOR-3
-- Disposition: open
+- Disposition: fixed (T8-B6), scoped to the Animator's own surface to avoid
+  colliding with B3's AssetsPanel create-dialog work — a "New state machine…"
+  button in the empty state and a "+ New" toolbar button both open a name-prompt
+  Modal that calls the existing `createStateMachineAsset` command (seeding one
+  `idle` state on the first available animation asset, since the schema requires
+  ≥1 state with a valid animation), surfaces command errors inline, and opens the
+  new machine via `openAnimatorFor`. When no animation assets exist the create is
+  disabled with an explanatory hint. FOLLOWUP (U3): the audit's literal ask — a
+  parallel "+ State machine" button in the AssetsPanel toolbar next to
+  Sprite/Tile — is still open; deferred here to not touch AssetsPanel.tsx while
+  B3 is editing it. Files: AnimatorEditor.tsx.
 
 ### L-085 · animator · friction · high
 - Element: Transitions list (order is load-bearing at runtime).
@@ -999,7 +1034,11 @@ high) though it borders on a defect (values unreadable).
   IconButton adoption is still sparse app-wide.)
 - Expected: swap to `IconButton`.
 - Source: ANIMATOR-7
-- Disposition: open
+- Disposition: fixed (verified T8-B6) — already resolved by the shared-`Button`
+  migration the audit header flagged mid-session: AnimatorEditor's four
+  `icon-btn danger` remove buttons and the `animator-initial` star are all
+  `IconButton` now, each with a required `label` (doubles as aria-label +
+  tooltip). No further change needed. File: AnimatorEditor.tsx.
 
 ### L-087 · animator · polish · low
 - Element: state-row speed control vs. its delete button (`× [1] ×`).
@@ -1008,7 +1047,10 @@ high) though it borders on a defect (values unreadable).
   control group; easy to misclick.
 - Expected: differentiate the multiplier label from the delete affordance.
 - Source: ANIMATOR-9
-- Disposition: open
+- Disposition: fixed (T8-B6) — the speed "×" multiplier label is now smaller
+  (`--text-xs`) and fainter (opacity 0.7, non-selectable) and marked
+  `aria-hidden`, so it no longer reads as a peer of the delete "×" glyph at the
+  row end. Files: AnimatorEditor.tsx, styles/panels/animator.css.
 
 ### L-088 · animator · polish · low
 - Element: transition Exit-time input.
@@ -1314,7 +1356,12 @@ high) though it borders on a defect (values unreadable).
   the tree structural attributes.
 - Source: ANIMATOR-6, GAMESETTINGS-3, EXPORTDIALOG-2, HIER-12 (Wave-K:
   "aria-labels")
-- Disposition: open
+- Disposition: partial — ANIMATOR-6 done (T8-B6): all 7 non-"Machine"
+  `<select>`s in AnimatorEditor now carry `aria-label`s (param type, state
+  animation, transition from/to, condition param/operator/value), so screen
+  readers announce each by role instead of a bare "combobox". The toolbar "New"
+  button also gets an aria-label. GAMESETTINGS-3 / EXPORTDIALOG-2 / HIER-12
+  remain open (other surfaces/waves). File: AnimatorEditor.tsx.
 
 ### L-110 · cross-cutting · polish · low
 - Element: `Icon` component SVG glyph fallback.
