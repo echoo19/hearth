@@ -9,7 +9,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import React from 'react';
 import { render, cleanup, fireEvent, act, screen } from '@testing-library/react';
-import { Tooltip } from '../src/components/ui/Tooltip';
+import { Tooltip, resetTooltipWarmState } from '../src/components/ui/Tooltip';
 
 const WARM_WINDOW = 500; // must match the module-level warm window in Tooltip
 
@@ -26,6 +26,7 @@ const tip = () => screen.queryByRole('tooltip');
 
 beforeEach(() => {
   vi.useFakeTimers();
+  resetTooltipWarmState();
 });
 
 afterEach(() => {

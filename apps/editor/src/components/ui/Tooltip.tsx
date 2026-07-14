@@ -46,6 +46,11 @@ const GAP = 6;
 /** Shared across all tooltips: when did *any* tooltip last hide. */
 let lastHiddenAt = 0;
 
+/** Test-only: clears the shared warm window so tests are order-independent. */
+export function resetTooltipWarmState(): void {
+  lastHiddenAt = 0;
+}
+
 function setRef<T>(ref: Ref<T> | undefined, value: T | null) {
   if (typeof ref === 'function') ref(value);
   else if (ref && typeof ref === 'object') (ref as { current: T | null }).current = value;
