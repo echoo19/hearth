@@ -629,7 +629,18 @@ high) though it borders on a defect (values unreadable).
 - Expected: at minimum document the limitation; ideally an mtime/hash check on
   Save or a filesystem watch on `scripts/` as a backstop.
 - Source: CODE-2
-- Disposition: open
+- Fix: save-time backstop in `CodePanel.runSave` — before writing, re-read the
+  on-disk source and, if it no longer matches the buffer's saved baseline,
+  raise the existing conflict banner instead of overwriting (pure
+  `shouldBlockSaveForDrift` decides). `keepMine` now adopts the on-disk bytes
+  as the new baseline so the next Save knowingly overwrites (and doesn't
+  re-flag the edit the user chose to keep). No server/fs-watcher change needed —
+  a content comparison is cheaper and more precise than mtime.
+- Repro (headless, port 5320, swiftshader, ember-horde): open a dirty buffer,
+  write the script directly on disk via fs.writeFileSync (no journal entry),
+  click Save → conflict banner appears (was: none) and the external marker is
+  still on disk (not clobbered). Editor suite + typecheck green.
+- Disposition: fixed 90191ea
 
 ### L-055 · code · defect · med
 - Element: `ctx.` hover docs (`hoverDocs.ts` `hoverTooltip`).
@@ -671,7 +682,20 @@ high) though it borders on a defect (values unreadable).
   newly opened project instead of resetting.
 - Expected: reset Code-panel buffers on project switch.
 - Source: Wave-K tail ("Code panel carries prior file across project switch")
-- Disposition: open
+- Fix: two parts — (1) CodePanel resets its buffer list / state cache when
+  `projectPath` changes (covers a persisted mount); (2) `afterOpen`/`selectScene`
+  clear the store's `codeOpenRequest`, so a stale "open this script" request
+  from the previous project can't re-open a now-missing script when the Code
+  panel remounts on the layout rebuild. Also, verified the close-project
+  data-loss gap: `closeProject` was an unconfirmed in-place reset, so unsaved
+  script buffers were silently discarded (scripts are the one non-autosave
+  surface). Added a confirm: CodePanel publishes `hasUnsavedScripts`; the
+  "Close project" menu routes through `requestCloseProject()`, which closes
+  immediately when clean but bumps `closeProjectRequest` (Workspace reveals the
+  Code panel, CodePanel shows a "Discard and close" ConfirmDialog) when dirty.
+- Repro (headless, port 5320): open a script in project A via the toolbar
+  dropdown (tab present), switch to project B → Code panel tabs reset to none.
+- Disposition: fixed 90191ea (+ ddae647 stale-request clear)
 
 ## console / changes
 
@@ -689,7 +713,16 @@ high) though it borders on a defect (values unreadable).
   auto-scroll when the user was already at/near the bottom — one change fixes
   both.
 - Source: CONSOLE-CHANGES-1, CONSOLE-CHANGES-2
-- Disposition: open
+- Fix: the auto-scroll effect keys on the last entry's monotonic `id` instead
+  of `entries.length` (so it never goes dormant once the list pins at
+  MAX_CONSOLE), AND only scrolls to the bottom when the user was already parked
+  there — a `stickToBottom` ref updated by the body's own scroll handler (pure
+  `isNearBottom` predicate). One change fixes both symptoms.
+- Repro (headless, port 5320): pump 600 log lines → 500 rendered, view pinned
+  to bottom (scrollTop 10510/10707); scroll to top + pump 20 more → stays at 0
+  (scroll-lock holds); scroll to bottom + pump 1 → resumes following. Editor
+  suite + typecheck green.
+- Disposition: fixed 298c7b5
 
 ### L-060 · console-changes · defect · high
 - Element: Checkpoint (⇧⌘S + toolbar button) and Undo/Redo (Changes-panel +
@@ -704,7 +737,16 @@ high) though it borders on a defect (values unreadable).
 - Expected: every one of these call sites calls `refreshDiff()` on success,
   like `DiffPanel`'s own in-panel Checkpoint already does.
 - Source: CONSOLE-CHANGES-5, CONSOLE-CHANGES-6
-- Disposition: open
+- Fix: `store.checkpoint()` calls `refreshDiff()` on success; `store.undo()`/
+  `store.redo()` call it too, guarded by `refreshDiffIfTracking()` (only when a
+  baseline is tracked — `snapshotTaken` or a diff already on screen — so an
+  undo with no checkpoint doesn't spam a NOT_FOUND info line). DiffPanel's own
+  Undo/Redo/Checkpoint buttons now delegate to these shared store actions (same
+  friendly log line, same refresh) instead of a duplicated local `exec`.
+- Repro (headless, port 5320, Changes tab focused): Checkpoint → diff refreshes
+  with no manual Refresh; move an entity, Undo → diff body updates immediately
+  (was: stale until a manual Refresh / tab blur). Editor suite + typecheck green.
+- Disposition: fixed 9aebc72
 
 ### L-061 · console-changes · defect · med
 - Element: Console error entry for a script load failure at scene start/Play.
@@ -715,7 +757,15 @@ high) though it borders on a defect (values unreadable).
   logic exists, it's just not applied on the initial-load path.
 - Expected: apply the same line-extraction on the load-time path.
 - Source: CONSOLE-CHANGES-3
-- Disposition: open
+- Fix: `recordRuntimeError` recovers the line from the message when the runtime
+  left `error.line` null — a `lineFromMessage(script, message)` helper matches
+  the `<script>:<digits>` occurrence (skipping the "Failed to load script
+  <path>:" prefix) — so the load-time link jumps to the exact line like the
+  reload path already does. Both the Console link and the message text reflect
+  the recovered line.
+- Repro (headless, port 5320): record a load-time compile error with line null
+  but ":14" in the message → console link is `{path, line: 14}` (was: null).
+- Disposition: fixed 62c8e13
 
 ### L-062 · console-changes · defect · med
 - Element: Console entries for a hot-reload compile failure while playing.
@@ -725,7 +775,15 @@ high) though it borders on a defect (values unreadable).
   internally calls `recordError` (which bridges to another log).
 - Expected: one user-visible line per failure.
 - Source: CONSOLE-CHANGES-4
-- Disposition: open
+- Fix: `recordRuntimeError` skips the Console log when `error.phase === 'reload'`
+  (still records it into `runtimeErrors`). A hot-reload compile failure is
+  already surfaced as one "Hot-reload failed: …" line by `applyReload` (which
+  logs the `{ok:false}` result of `view.reloadScript`); the runtime also bridges
+  the same error here via `recordError(phase:'reload')` → `onErrorEntry`, so
+  suppressing that second log leaves exactly one user-visible line per failure.
+- Repro (headless, port 5320): bridge a reload error via recordRuntimeError with
+  phase:'reload' → 0 extra console lines (applyReload owns the single line).
+- Disposition: fixed 62c8e13
 
 ### L-063 · console-changes · friction · med
 - Element: undo/redo History-list rows (`.history-row`).
