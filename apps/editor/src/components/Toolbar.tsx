@@ -1,11 +1,17 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import type { DockviewApi } from 'dockview-react';
 import { useEditor } from '../store';
 import { Icon, Modal } from './ui';
+import { IconButton } from './ui/Button';
+import { Tooltip } from './ui/Tooltip';
 import { ExportDialog } from './ExportDialog';
 import { SceneMenu } from './SceneMenu';
-import { ViewMenu } from '../workspace/ViewMenu';
-import { showPanel } from '../workspace/Workspace';
+import { MenuBar } from '../menu/MenuBar';
+import { useNativeAppMenu, useShowInWindowMenuBar } from '../menu/nativeMenu';
+import { buildAppMenu, DOCS_URL, type AppMenuContext, type AppMenuViewContext } from '../menu/appMenu';
+import { useOpenPanels } from '../workspace/useOpenPanels';
+import { PANEL_TITLES, VIEW_MENU_PANELS, resetLayout, showPanel } from '../workspace/Workspace';
+import type { PanelId } from '../workspace/layout';
 import { useHistoryList } from '../useHistoryList';
 import { comboDisplay } from '../keybinds';
 import { getGameView } from '../gameViewRef';
@@ -23,11 +29,15 @@ function WsStatusDot() {
   const label =
     wsStatus === 'connected' ? 'Connected to project server' : 'Reconnecting to project server…';
   return (
-    <span className={`ws-dot ws-dot-${wsStatus}`} role="status" aria-label={label} title={label} />
+    <Tooltip content={label}>
+      <span className={`ws-dot ws-dot-${wsStatus}`} role="status" aria-label={label} tabIndex={0} />
+    </Tooltip>
   );
 }
 
 export function Toolbar({ dock, storageKey }: { dock: DockviewApi | null; storageKey: string }) {
+  // Subscribed so the toolbar (and the menu model it builds) re-renders when
+  // any of these change.
   const info = useEditor((s) => s.info);
   const sceneId = useEditor((s) => s.sceneId);
   const playing = useEditor((s) => s.playing);
@@ -38,15 +48,19 @@ export function Toolbar({ dock, storageKey }: { dock: DockviewApi | null; storag
   const setPlaying = useEditor((s) => s.setPlaying);
   const restartPlay = useEditor((s) => s.restartPlay);
   const setPaused = useEditor((s) => s.setPaused);
-  const setDebugDraw = useEditor((s) => s.setDebugDraw);
   const refreshDiff = useEditor((s) => s.refreshDiff);
   const exec = useEditor((s) => s.exec);
-  const closeProject = useEditor((s) => s.closeProject);
+  const undo = useEditor((s) => s.undo);
+  const redo = useEditor((s) => s.redo);
   const log = useEditor((s) => s.log);
 
   const [newSceneOpen, setNewSceneOpen] = useState(false);
   const [newSceneName, setNewSceneName] = useState('');
   const [exportOpen, setExportOpen] = useState(false);
+
+  // Shared with DiffPanel.tsx's Undo/Redo buttons — see useHistoryList.ts.
+  const { undoTarget, redoTarget } = useHistoryList();
+  const openPanels = useOpenPanels(dock);
 
   async function createScene() {
     const name = newSceneName.trim();
@@ -59,31 +73,6 @@ export function Toolbar({ dock, storageKey }: { dock: DockviewApi | null; storag
     }
   }
 
-  async function snapshot() {
-    const result = await exec<{ scenes: number }>('snapshotProject', {}, { quiet: true });
-    if (result.success) {
-      log('info', 'command', 'Checkpoint saved. The Changes panel now compares against this checkpoint.');
-    }
-  }
-
-  // Shared with DiffPanel.tsx's Undo/Redo buttons — see useHistoryList.ts.
-  const { undoTarget, redoTarget } = useHistoryList();
-
-  // quiet: the custom log lines below replace exec()'s generic changed-summary.
-  async function undo() {
-    const result = await exec<{ undone: string; seq: number }>('undo', {}, { quiet: true });
-    if (result.success && result.data) {
-      log('info', 'command', `Undo: reverted "${result.data.undone}" (#${result.data.seq}).`);
-    }
-  }
-
-  async function redo() {
-    const result = await exec<{ redone: string; seq: number }>('redo', {}, { quiet: true });
-    if (result.success && result.data) {
-      log('info', 'command', `Redo: reapplied "${result.data.redone}" (#${result.data.seq}).`);
-    }
-  }
-
   async function stepFrame() {
     try {
       await getGameView()?.stepFrame?.();
@@ -91,6 +80,43 @@ export function Toolbar({ dock, storageKey }: { dock: DockviewApi | null; storag
       log('error', 'runtime', `Step failed: ${(err as Error).message}`);
     }
   }
+
+  // ---- Application menu model (File/Edit/View/Help) ----------------------
+  // One model drives both the in-window MenuBar and the native macOS menu.
+  const view: AppMenuViewContext | null = dock
+    ? {
+        panels: VIEW_MENU_PANELS.map((id) => ({ id, label: PANEL_TITLES[id], open: openPanels.has(id) })),
+        togglePanel: (id) => {
+          const panel = dock.getPanel(id as PanelId);
+          if (panel) panel.api.close();
+          else showPanel(dock, id as PanelId);
+        },
+        resetLayout: () => resetLayout(dock, storageKey),
+        canReset: true,
+      }
+    : null;
+
+  const menuCtx: AppMenuContext = {
+    canUndo: !!undoTarget,
+    canRedo: !!redoTarget,
+    onNewScene: () => setNewSceneOpen(true),
+    onExport: () => setExportOpen(true),
+    onReview: () => {
+      if (dock) showPanel(dock, 'diff');
+      void refreshDiff();
+    },
+    openDocs: () => window.open(DOCS_URL, '_blank', 'noopener,noreferrer'),
+    view,
+  };
+
+  const sections = useMemo(
+    () => buildAppMenu(useEditor.getState(), menuCtx),
+    // Rebuild when any input the model reads or depends on changes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [info, debugDraw, playing, undoTarget, redoTarget, openPanels, dock, storageKey],
+  );
+  useNativeAppMenu(sections);
+  const showMenuBar = useShowInWindowMenuBar();
 
   return (
     <header className="toolbar">
@@ -100,19 +126,17 @@ export function Toolbar({ dock, storageKey }: { dock: DockviewApi | null; storag
         </span>
         Hearth
       </span>
-      <span className="project-name" title={info?.description || info?.name}>
-        {info?.name}
-      </span>
+
+      {showMenuBar && <MenuBar sections={sections} />}
 
       <span className="divider" />
 
       <span className="toolbar-group">
         <select
-          className="select select-sm"
+          className="select select-sm scene-picker"
           value={sceneId ?? ''}
           onChange={(e) => void selectScene(e.target.value)}
           aria-label="Scene"
-          style={{ maxWidth: 200 }}
         >
           {(info?.scenes ?? []).map((s) => (
             <option key={s.id} value={s.id}>
@@ -122,121 +146,79 @@ export function Toolbar({ dock, storageKey }: { dock: DockviewApi | null; storag
           ))}
         </select>
         <SceneMenu />
-        <button className="btn btn-sm" onClick={() => setNewSceneOpen(true)} title="New scene">
-          <Icon name="plus" /> Scene
-        </button>
+        <IconButton icon="plus" label="New scene" size="sm" onClick={() => setNewSceneOpen(true)} />
       </span>
 
       <span className="divider" />
 
-      <button
-        className={playing ? 'btn btn-sm btn-stop' : 'btn btn-primary btn-sm btn-play'}
-        onClick={() => setPlaying(!playing)}
-        title={`${playing ? 'Stop the preview' : 'Play the current scene in the Game tab'} (${comboDisplay('mod+enter')})`}
-      >
-        <Icon name={playing ? 'stop' : 'play'} /> {playing ? 'Stop' : 'Play'}
-      </button>
-
-      {/* Persistent restart badge: a structural change (new entity, component,
-          settings…) landed mid-run and can't be live-patched. Announced
-          politely, silent otherwise, cleared on Play/Stop/restart. */}
-      <span className="restart-badge-slot" aria-live="polite">
-        {playing && pendingRestart && (
-          <button className="btn btn-sm btn-restart" onClick={() => restartPlay()} title="Restart the preview to apply changes that can't be live-patched">
-            <Icon name="play" /> Scene changed — Restart
-          </button>
-        )}
-      </span>
-
+      {/* Transport. Play/Stop keeps its label; Pause/Step are icon-only. */}
       <span className="toolbar-group">
-        <button
-          className={paused ? 'btn btn-primary btn-sm' : 'btn btn-sm'}
+        <Tooltip
+          content={playing ? 'Stop the preview' : 'Play the current scene in the Game tab'}
+          shortcut={comboDisplay('mod+enter')}
+        >
+          <button
+            className={playing ? 'btn btn-sm btn-stop' : 'btn btn-primary btn-sm btn-play'}
+            onClick={() => setPlaying(!playing)}
+          >
+            <Icon name={playing ? 'stop' : 'play'} /> {playing ? 'Stop' : 'Play'}
+          </button>
+        </Tooltip>
+        <IconButton
+          icon={paused ? 'play' : 'pause'}
+          label={paused ? 'Resume the running game' : 'Freeze the running game in place'}
+          shortcut={comboDisplay('shift+mod+enter')}
+          variant={paused ? 'primary' : 'default'}
+          size="sm"
           onClick={() => setPaused(!paused)}
           disabled={!playing}
           aria-pressed={paused}
-          title={`${paused ? 'Resume the running game' : 'Freeze the running game in place, without stopping it'} (${comboDisplay('shift+mod+enter')})`}
-        >
-          <Icon name={paused ? 'play' : 'pause'} /> {paused ? 'Resume' : 'Pause'}
-        </button>
-        <button
-          className="btn btn-sm"
+        />
+        <IconButton
+          icon="step"
+          label="Advance one frame"
+          size="sm"
           onClick={() => void stepFrame()}
           disabled={!playing || !paused}
-          title="Advance the paused game by exactly one frame"
-        >
-          <Icon name="step" /> Step
-        </button>
+        />
       </span>
 
+      {/* Undo/Redo: bare arrow icon buttons; the tooltip carries the shortcut. */}
       <span className="toolbar-group">
-        <button
-          className="btn btn-sm"
+        <IconButton
+          icon="undo"
+          label="Undo"
+          shortcut={comboDisplay('mod+z')}
+          size="sm"
           onClick={() => void undo()}
           disabled={!undoTarget}
-          title={`Undo (${comboDisplay('mod+z')})`}
-        >
-          Undo
-        </button>
-        <button
-          className="btn btn-sm"
+        />
+        <IconButton
+          icon="redo"
+          label="Redo"
+          shortcut={comboDisplay('shift+mod+z')}
+          size="sm"
           onClick={() => void redo()}
           disabled={!redoTarget}
-          title={`Redo (${comboDisplay('shift+mod+z')})`}
-        >
-          Redo
-        </button>
+        />
       </span>
 
-      <button
-        className={debugDraw ? 'btn btn-primary btn-sm' : 'btn btn-sm'}
-        onClick={() => setDebugDraw(!debugDraw)}
-        title="Toggle the Game preview's debug overlay (collider outlines, velocity vectors, light radii)"
-        aria-pressed={debugDraw}
-      >
-        Debug
-      </button>
-
-      <span className="divider" />
-
-      <ViewMenu dock={dock} storageKey={storageKey} />
+      {/* Restart badge: a structural change landed mid-run and can't be
+          live-patched. Lives just before the spacer so its appearance only eats
+          spacer width — no other control reflows (TOOLBAR-4). */}
+      <span className="restart-badge-slot" aria-live="polite">
+        {playing && pendingRestart && (
+          <Tooltip content="Restart the preview to apply changes that can't be live-patched">
+            <button className="btn btn-sm btn-restart" onClick={() => restartPlay()}>
+              <Icon name="restart" /> Restart
+            </button>
+          </Tooltip>
+        )}
+      </span>
 
       <span className="spacer" />
 
       <WsStatusDot />
-
-      <span className="toolbar-group">
-        <button
-          className="btn btn-sm"
-          onClick={() => void snapshot()}
-          title={`Save a checkpoint you can review and restore (${comboDisplay('shift+mod+s')})`}
-        >
-          Checkpoint
-        </button>
-        <button
-          className="btn btn-sm"
-          onClick={() => {
-            if (dock) showPanel(dock, 'diff');
-            void refreshDiff();
-          }}
-          title="See what changed since your last checkpoint"
-        >
-          Review
-        </button>
-        <button
-          className="btn btn-sm"
-          onClick={() => setExportOpen(true)}
-          title="Export a playable web build"
-        >
-          Export
-        </button>
-      </span>
-
-      <span className="divider" />
-
-      <span className="save-note">Every change saves automatically</span>
-      <button className="btn btn-ghost btn-sm" onClick={closeProject}>
-        Close project
-      </button>
 
       <ExportDialog open={exportOpen} onClose={() => setExportOpen(false)} />
 

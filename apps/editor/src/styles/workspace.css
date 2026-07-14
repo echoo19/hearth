@@ -245,93 +245,19 @@
 }
 
 /* --------------------------------------------------------------------------
-   Toolbar menus (View)
-   -------------------------------------------------------------------------- */
-
-.menu-root {
-  position: relative;
-  display: inline-flex;
-}
-
-.menu-popover {
-  position: absolute;
-  top: calc(100% + 4px);
-  left: 0;
-  z-index: var(--z-dropdown);
-  min-width: 200px;
-  padding: 4px;
-  background: var(--bg-1);
-  border: 1px solid var(--border-strong);
-  border-radius: var(--radius);
-  box-shadow: 0 8px 24px oklch(0 0 0 / 0.4);
-  display: flex;
-  flex-direction: column;
-}
-
-.menu-item {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  height: var(--ctl-h);
-  padding: 0 10px 0 6px;
-  border: none;
-  border-radius: var(--radius-sm);
-  background: transparent;
-  color: var(--ink);
-  font-size: var(--text-sm);
-  text-align: left;
-  white-space: nowrap;
-  cursor: pointer;
-  transition: background var(--t-fast) var(--ease-out);
-}
-
-.menu-item:hover:not(:disabled) {
-  background: var(--bg-3);
-}
-
-.menu-item:disabled {
-  color: var(--ink-mute);
-  opacity: 0.5;
-  cursor: default;
-}
-
-.menu-item-danger {
-  color: var(--err);
-}
-
-.menu-item-danger:hover:not(:disabled) {
-  background: var(--err-soft);
-}
-
-.menu-check {
-  width: 14px;
-  flex: none;
-  color: var(--accent);
-  font-size: var(--text-xs);
-  text-align: center;
-}
-
-.menu-separator {
-  height: 1px;
-  margin: 4px 6px;
-  background: var(--border);
-}
-
-.menu-shortcut {
-  margin-left: auto;
-  padding-left: 16px;
-  color: var(--ink-mute);
-  font-family: var(--font-mono);
-  font-size: var(--text-xs);
-}
-
-/* --------------------------------------------------------------------------
    Toolbar
+
+   Layout contract (Wave L minimalism): the toolbar never wraps and never
+   reflows. Fixed clusters (wordmark, menu bar, transport, undo/redo) are
+   flex:none; only the scene picker shrinks (truncating with an ellipsis) and
+   the flex:1 spacer absorbs slack — including the restart badge, which sits
+   just before the spacer so its mid-run appearance can't shift any control.
    -------------------------------------------------------------------------- */
 
 .toolbar {
   display: flex;
   align-items: center;
+  flex-wrap: nowrap;
   gap: 10px;
   padding: 0 10px;
   background: var(--bg-1);
@@ -342,6 +268,7 @@
   display: flex;
   align-items: center;
   gap: 7px;
+  flex: none;
   /* Brand moment: Bricolage display face. */
   font-family: var(--font-display);
   font-weight: 700;
@@ -354,15 +281,6 @@
   display: inline-flex;
 }
 
-.toolbar .project-name {
-  color: var(--ink-mute);
-  font-size: var(--text-sm);
-  max-width: 220px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
 .toolbar .divider {
   width: 1px;
   height: 18px;
@@ -371,26 +289,61 @@
 }
 
 .toolbar .spacer {
-  flex: 1;
+  flex: 1 1 0;
+  min-width: 8px;
 }
 
 .toolbar-group {
   display: flex;
   align-items: center;
   gap: 6px;
+  flex: none;
 }
 
-.toolbar .save-note {
-  color: var(--ink-faint);
-  font-size: var(--text-xs);
+/* Scene picker: the one element allowed to shrink; truncates its own text. */
+.toolbar .scene-picker {
+  max-width: 200px;
+  min-width: 92px;
+  flex: 0 1 auto;
+}
+
+/* ---- In-window application menu bar (File / Edit / View / Help) -----------
+   Quiet by design: text-only triggers, no border/background at rest, a soft
+   hover/open wash. Hidden on macOS (the native menu takes over). */
+.menubar {
+  display: flex;
+  align-items: center;
+  gap: 1px;
+  flex: none;
+}
+
+.menubar-btn {
+  height: var(--ctl-h);
+  padding: 0 8px;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--ink-mute);
+  font-size: var(--text-sm);
+  font-weight: 500;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background var(--t-fast) var(--ease-out), color var(--t-fast) var(--ease-out);
+}
+
+.menubar-btn:hover,
+.menubar-btn[aria-expanded='true'] {
+  background: var(--bg-3);
+  color: var(--ink);
 }
 
 /* Restart badge: a structural change landed mid-run. Accent-warm to read as an
-   actionable prompt, not an error; the slot holds width:0 when idle so the
-   toolbar doesn't reflow when it appears. */
+   actionable prompt, not an error. Zero width when idle; when it appears it
+   only consumes the adjacent flex:1 spacer, so no transport control reflows. */
 .restart-badge-slot {
   display: inline-flex;
   align-items: center;
+  flex: none;
 }
 
 .btn-restart {

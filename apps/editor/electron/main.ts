@@ -13,12 +13,14 @@
  * (esbuild, everything inlined except the electron builtin), so the packaged
  * app does not need node_modules.
  */
-import { app, BrowserWindow, dialog, ipcMain, shell } from 'electron';
+import { app, BrowserWindow, Menu, dialog, ipcMain, shell } from 'electron';
 import http from 'node:http';
 import path from 'node:path';
 import fs from 'node:fs';
 import os from 'node:os';
 import { createProjectServerContext, handleApiRequest, attachWebSocket } from '../server/projectServer.js';
+import { applyAppMenu, buildAppMenuTemplate } from './appMenu.js';
+import type { SerializedMenuSection } from '../src/menu/appMenu';
 
 const SMOKE = process.env.HEARTH_SMOKE === '1';
 /** In dev, point the window at the Vite dev server instead of dist/. */
@@ -104,6 +106,12 @@ function registerDialogHandlers(getWindow: () => BrowserWindow | null): void {
     if (typeof target === 'string' && fs.existsSync(target)) shell.showItemInFolder(target);
   });
 
+  // Native application menu: the renderer pushes the serialized File/Edit/View/
+  // Help model (macOS) and null to restore the baseline when the project closes.
+  ipcMain.on('hearth:set-app-menu', (_event, model: SerializedMenuSection[] | null) => {
+    applyAppMenu(model, getWindow());
+  });
+
   // Godot-style window modes: the app opens as a compact project manager;
   // opening a project grows the same window into the full editor (same
   // BrowserWindow, so no state is lost), closing the project shrinks it back.
@@ -181,6 +189,11 @@ async function main(): Promise<void> {
     win = null;
   });
 
+  // Baseline app menu (app menu + system Edit + Window) so Quit/copy-paste work
+  // before a project is open. The renderer replaces it with the full
+  // File/Edit/View/Help model once the editor mounts (macOS).
+  if (process.platform === 'darwin') applyAppMenu(null, win);
+
   // External links open in the system browser, not in the editor window.
   win.webContents.setWindowOpenHandler(({ url: external }) => {
     if (external.startsWith('http://127.0.0.1') || external.startsWith('http://localhost')) {
@@ -202,6 +215,7 @@ async function main(): Promise<void> {
     const meta = await fetch(`${url}/api/meta`).then((r) => r.json());
     console.log('[smoke] /api/meta ok:', JSON.stringify(meta).slice(0, 120));
     console.log('[smoke] window loaded:', win.webContents.getURL());
+    smokeTestMenu();
     await smokeTestPty();
     console.log('[smoke] all checks passed');
     app.quit();
@@ -219,6 +233,38 @@ async function main(): Promise<void> {
  * config), and it's still executable after ad-hoc codesigning on macOS
  * (scripts/afterPack.cjs).
  */
+/**
+ * Verify the native menu path end-to-end on the main side: build the same
+ * template the renderer's model produces, find File → Save checkpoint, and
+ * confirm clicking it dispatches `menu:invoke(checkpoint)`. The renderer half
+ * (model item id → onSelect) is covered by apps/editor/tests/appMenu.test.ts;
+ * this pins the model → native Menu → IPC half that only exists in a real
+ * Electron process. Kept structural (no project needed) so it runs in SMOKE.
+ */
+function smokeTestMenu(): void {
+  const invoked: string[] = [];
+  const sample: SerializedMenuSection[] = [
+    {
+      label: 'File',
+      items: [
+        { id: 'new-scene', label: 'New scene…', enabled: false },
+        { type: 'separator' },
+        { id: 'checkpoint', label: 'Save checkpoint', accelerator: 'Shift+CmdOrCtrl+S', enabled: true },
+      ],
+    },
+  ];
+  const template = buildAppMenuTemplate(sample, (id) => invoked.push(id));
+  const menu = Menu.buildFromTemplate(template);
+  const file = menu.items.find((i) => i.label === 'File');
+  if (!file?.submenu) throw new Error('[smoke] native File menu missing');
+  const checkpoint = file.submenu.items.find((i) => i.id === 'checkpoint');
+  if (!checkpoint) throw new Error('[smoke] native File → Save checkpoint missing');
+  if (!checkpoint.enabled) throw new Error('[smoke] Save checkpoint should be enabled');
+  checkpoint.click();
+  if (!invoked.includes('checkpoint')) throw new Error('[smoke] Checkpoint click did not dispatch menu:invoke');
+  console.log('[smoke] native File → Checkpoint dispatches menu:invoke(checkpoint)');
+}
+
 async function smokeTestPty(): Promise<void> {
   const nodePty = await import('@lydell/node-pty');
   console.log('[smoke] @lydell/node-pty module loaded');

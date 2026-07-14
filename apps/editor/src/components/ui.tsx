@@ -212,6 +212,71 @@ const ICON_PATHS: Record<string, ReactNode> = {
       <path d="M4.5 6V4.2A1.5 1.5 0 0 1 6 2.7v0a1.5 1.5 0 0 1 1.5 1.5V6" />
     </>
   ),
+  // ---- Toolbar / application-menu glyphs (Wave L Task 6) ------------------
+  // Undo / Redo: curved "return" arrows (↩ / ↪), reading as step-back /
+  // step-forward rather than plain page navigation.
+  undo: (
+    <>
+      <path d="M4.2 3.5 1.8 5.8l2.4 2.3" />
+      <path d="M1.8 5.8H7a2.6 2.6 0 0 1 0 5.2H4.5" />
+    </>
+  ),
+  redo: (
+    <>
+      <path d="M7.8 3.5 10.2 5.8l-2.4 2.3" />
+      <path d="M10.2 5.8H5a2.6 2.6 0 0 0 0 5.2H7.5" />
+    </>
+  ),
+  // Export: an arrow lifting up out of an open tray — "send this build out".
+  export: (
+    <>
+      <path d="M6 7.5V2.5M4 4.5 6 2.5l2 2" />
+      <path d="M2.5 7v2.5h7V7" />
+    </>
+  ),
+  // Checkpoint: a planted flag — a marked point you can return to.
+  checkpoint: (
+    <>
+      <path d="M3.2 10V2.2" />
+      <path d="M3.2 2.8h5.2L7 4.6l1.4 1.8H3.2z" />
+    </>
+  ),
+  // Review: an eye — "see what changed since your last checkpoint".
+  review: (
+    <>
+      <path d="M1.5 6S3.5 3 6 3s4.5 3 4.5 3-2 3-4.5 3S1.5 6 1.5 6z" />
+      <circle cx="6" cy="6" r="1.25" />
+    </>
+  ),
+  // Debug: a bug — collider/velocity overlay toggle.
+  debug: (
+    <>
+      <ellipse cx="6" cy="6.4" rx="2.3" ry="2.7" />
+      <path d="M6 3.7V2.4M4.1 4.1 3 3M7.9 4.1 9 3M3.7 6.2H1.9M10.1 6.2H8.3M3.9 8.4 2.6 9.4M8.1 8.4l1.3 1M3.7 6.4h4.6" />
+    </>
+  ),
+  // Close (project): a door with an arrow leaving — "log out" of the editor.
+  close: (
+    <>
+      <path d="M6.5 2.5H3v7h3.5" />
+      <path d="M5.5 6H10M8 4 10 6 8 8" />
+    </>
+  ),
+  // Restart: a near-full circle with an arrowhead — replay the run.
+  restart: (
+    <>
+      <path d="M9.4 6a3.4 3.4 0 1 1-1.05-2.45" />
+      <path d="M9.6 2.6v1.9H7.7" />
+    </>
+  ),
+  // Overflow: horizontal ellipsis (distinct from `more`'s vertical dots).
+  overflow: (
+    <>
+      <circle cx="2.75" cy="6" r="0.9" fill="currentColor" stroke="none" />
+      <circle cx="6" cy="6" r="0.9" fill="currentColor" stroke="none" />
+      <circle cx="9.25" cy="6" r="0.9" fill="currentColor" stroke="none" />
+    </>
+  ),
 };
 
 export function Icon({ name, size = 12 }: { name: string; size?: number }) {

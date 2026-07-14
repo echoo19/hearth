@@ -14,5 +14,13 @@ contextBridge.exposeInMainWorld('hearthNative', {
   revealInFolder: (path) => ipcRenderer.invoke('hearth:reveal-in-folder', path),
   /** Godot-style window sizing: 'launcher' (compact) or 'editor' (full). */
   setWindowMode: (mode, title) => ipcRenderer.invoke('hearth:window-mode', mode, title),
+  /** Push the serialized app-menu model (or null to restore the baseline). */
+  setAppMenu: (model) => ipcRenderer.send('hearth:set-app-menu', model),
+  /** Subscribe to native-menu clicks; returns an unsubscribe function. */
+  onMenuInvoke: (cb) => {
+    const listener = (_event, id) => cb(id);
+    ipcRenderer.on('menu:invoke', listener);
+    return () => ipcRenderer.removeListener('menu:invoke', listener);
+  },
   platform: process.platform,
 });
