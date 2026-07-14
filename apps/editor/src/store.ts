@@ -774,6 +774,10 @@ export const useEditor = create<EditorState>((set, get) => {
       snapshotTaken: false,
       sceneViewCenter: null,
       hasUnsavedScripts: false,
+      // A pending "open this script" request belongs to the project being left;
+      // clearing it stops a stale request from re-opening the prior project's
+      // script in the freshly-opened one when the Code panel remounts (L-058).
+      codeOpenRequest: null,
     });
     get().log('info', 'editor', `Opened project "${info.name}" (${info.scenes.length} scene${info.scenes.length === 1 ? '' : 's'})`);
     connectWs(path);
@@ -1023,6 +1027,7 @@ export const useEditor = create<EditorState>((set, get) => {
         snapshotTaken: false,
         sceneViewCenter: null,
         hasUnsavedScripts: false,
+        codeOpenRequest: null,
       });
     },
 
