@@ -153,6 +153,9 @@
 
 .code-tab-cell:hover .code-tab-close,
 .code-tab-cell-active .code-tab-close,
+/* Keyboard parity: focusing the tab (or its close button) reveals the close
+   affordance, matching the hover reveal — otherwise it's mouse-only. */
+.code-tab-cell:focus-within .code-tab-close,
 .code-tab-close:focus-visible {
   opacity: 1;
 }

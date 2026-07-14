@@ -94,7 +94,11 @@
 }
 
 .tree-row:hover .tree-actions,
-.tree-row.selected .tree-actions {
+.tree-row.selected .tree-actions,
+/* Keyboard parity: tabbing onto the row (or into one of its actions) reveals
+   the cluster so the actions become reachable without a mouse — the focus
+   equivalent of the hover reveal above. */
+.tree-row:focus-within .tree-actions {
   display: inline-flex;
 }
 

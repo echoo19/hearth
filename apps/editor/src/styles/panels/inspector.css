@@ -109,6 +109,9 @@
 }
 
 .inspector-row:hover .field-revert-btn,
+/* Keyboard parity: focusing anywhere in the row (the field control or the
+   revert button itself) reveals the revert action, matching the hover reveal. */
+.inspector-row:focus-within .field-revert-btn,
 .field-revert-btn:focus-visible {
   opacity: 1;
 }
