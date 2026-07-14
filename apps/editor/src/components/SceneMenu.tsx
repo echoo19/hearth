@@ -1,23 +1,22 @@
 /**
  * Toolbar scene actions menu: the ⋯ button next to the scene picker.
  * Duplicate / Rename / Set as initial / Delete for the currently selected
- * scene. Popover mechanics (click-outside / Escape) mirror ViewMenu; the
- * duplicate/rename forms mirror the "+ Scene" modal in Toolbar.tsx.
+ * scene. The popover mechanics (open/close, click-outside, Escape, arrow-key
+ * focus) come from the shared MenuButton primitive; this file only declares the
+ * items and owns the duplicate/rename/delete modals (which mirror the "+ Scene"
+ * modal in Toolbar.tsx).
  */
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useState } from 'react';
 import { useEditor } from '../store';
 import { uniqueName } from '../uniqueName';
 import { Icon, Modal } from './ui';
+import { MenuButton, type MenuItem } from './ui/Menu';
 
 export function SceneMenu() {
   const info = useEditor((s) => s.info);
   const sceneId = useEditor((s) => s.sceneId);
   const selectScene = useEditor((s) => s.selectScene);
   const exec = useEditor((s) => s.exec);
-
-  const [open, setOpen] = useState(false);
-  const rootRef = useRef<HTMLSpanElement>(null);
-  const buttonRef = useRef<HTMLButtonElement>(null);
 
   const [duplicateOpen, setDuplicateOpen] = useState(false);
   const [duplicateName, setDuplicateName] = useState('');
@@ -34,30 +33,6 @@ export function SceneMenu() {
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const [deleting, setDeleting] = useState(false);
 
-  useEffect(() => {
-    if (!open) return;
-    const onPointerDown = (e: PointerEvent) => {
-      if (rootRef.current && e.target instanceof Node && !rootRef.current.contains(e.target)) setOpen(false);
-    };
-    const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        // Stop here: this is a document-level listener, which (per the
-        // keydown bubble path: target -> ... -> document -> window) runs
-        // BEFORE SceneView's window-level Escape-deselect listener. Without
-        // this, closing the popover would also deselect the current entity.
-        e.stopPropagation();
-        setOpen(false);
-        buttonRef.current?.focus();
-      }
-    };
-    document.addEventListener('pointerdown', onPointerDown);
-    document.addEventListener('keydown', onKeyDown);
-    return () => {
-      document.removeEventListener('pointerdown', onPointerDown);
-      document.removeEventListener('keydown', onKeyDown);
-    };
-  }, [open]);
-
   const scenes = info?.scenes ?? [];
   const scene = scenes.find((s) => s.id === sceneId) ?? null;
   const isInitial = scene !== null && info?.initialScene === scene.id;
@@ -69,7 +44,6 @@ export function SceneMenu() {
     setDuplicateWithPlaytests(false);
     setDuplicateError(null);
     setDuplicateOpen(true);
-    setOpen(false);
   }
 
   function openRename() {
@@ -77,11 +51,9 @@ export function SceneMenu() {
     setRenameName(scene.name);
     setRenameError(null);
     setRenameOpen(true);
-    setOpen(false);
   }
 
   async function setInitial() {
-    setOpen(false);
     if (!scene || isInitial) return;
     await exec('setInitialScene', { scene: scene.id });
   }
@@ -142,53 +114,27 @@ export function SceneMenu() {
     }
   }
 
+  const items: MenuItem[] = [
+    { label: 'Duplicate…', onSelect: openDuplicate },
+    { label: 'Rename…', onSelect: openRename },
+    // "This is the initial scene" is exactly what `checked` models; disabled
+    // once it already is, so this reads as a one-way toggle.
+    { label: 'Set as initial', checked: isInitial, disabled: isInitial, onSelect: () => void setInitial() },
+    { separator: true },
+    {
+      label: 'Delete…',
+      danger: true,
+      disabled: onlyScene,
+      onSelect: () => {
+        setDeleteError(null);
+        setDeleteOpen(true);
+      },
+    },
+  ];
+
   return (
-    <span className="menu-root" ref={rootRef}>
-      <button
-        ref={buttonRef}
-        className="btn btn-sm"
-        aria-haspopup="menu"
-        aria-expanded={open}
-        aria-label="Scene actions"
-        title="Scene actions"
-        disabled={!scene}
-        onClick={() => setOpen((v) => !v)}
-      >
-        <Icon name="more" />
-      </button>
-      {open && scene && (
-        <div className="menu-popover" role="menu" aria-label="Scene actions">
-          <button className="menu-item" role="menuitem" onClick={openDuplicate}>
-            <span className="menu-check" aria-hidden="true" />
-            Duplicate…
-          </button>
-          <button className="menu-item" role="menuitem" onClick={openRename}>
-            <span className="menu-check" aria-hidden="true" />
-            Rename…
-          </button>
-          <button className="menu-item" role="menuitem" disabled={isInitial} onClick={() => void setInitial()}>
-            <span className="menu-check" aria-hidden="true">
-              {isInitial ? '★' : ''}
-            </span>
-            Set as initial
-          </button>
-          <div className="menu-separator" role="separator" />
-          <button
-            className="menu-item menu-item-danger"
-            role="menuitem"
-            disabled={onlyScene}
-            title={onlyScene ? 'Cannot delete the only scene in a project' : undefined}
-            onClick={() => {
-              setDeleteError(null);
-              setDeleteOpen(true);
-              setOpen(false);
-            }}
-          >
-            <span className="menu-check" aria-hidden="true" />
-            Delete…
-          </button>
-        </div>
-      )}
+    <>
+      <MenuButton trigger={<Icon name="more" />} label="Scene actions" items={items} disabled={!scene} />
 
       <Modal open={duplicateOpen} title="Duplicate scene" onClose={() => setDuplicateOpen(false)}>
         <div className="modal-body">
@@ -288,6 +234,6 @@ export function SceneMenu() {
           </button>
         </div>
       </Modal>
-    </span>
+    </>
   );
 }

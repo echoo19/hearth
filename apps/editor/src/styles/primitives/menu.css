@@ -1,1 +1,87 @@
-/* menu primitive — Wave L */
+/* Menu primitive — Wave L.
+   The dropdown menu (trigger + popover) shared by SceneMenu / ViewMenu and the
+   MenuButton primitive. Same visual language as before; consolidated here so
+   there is one implementation of the look. */
+
+.menu-root {
+  position: relative;
+  display: inline-flex;
+}
+
+.menu-popover {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  z-index: var(--z-dropdown);
+  min-width: 200px;
+  padding: 4px;
+  background: var(--bg-1);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  box-shadow: 0 8px 24px oklch(0 0 0 / 0.4);
+  display: flex;
+  flex-direction: column;
+}
+
+/* Right-aligned variant: anchor the popover to the trigger's right edge. */
+.menu-popover-right {
+  left: auto;
+  right: 0;
+}
+
+.menu-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: var(--ctl-h);
+  padding: 0 10px 0 6px;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--ink);
+  font-size: var(--text-sm);
+  text-align: left;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background var(--t-fast) var(--ease-out);
+}
+
+.menu-item:hover:not(:disabled) {
+  background: var(--bg-3);
+}
+
+.menu-item:disabled {
+  color: var(--ink-mute);
+  opacity: 0.5;
+  cursor: default;
+}
+
+.menu-item-danger {
+  color: var(--err);
+}
+
+.menu-item-danger:hover:not(:disabled) {
+  background: var(--err-soft);
+}
+
+.menu-check {
+  width: 14px;
+  flex: none;
+  color: var(--accent);
+  font-size: var(--text-xs);
+  text-align: center;
+}
+
+.menu-separator {
+  height: 1px;
+  margin: 4px 6px;
+  background: var(--border);
+}
+
+.menu-shortcut {
+  margin-left: auto;
+  padding-left: 16px;
+  color: var(--ink-mute);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+}

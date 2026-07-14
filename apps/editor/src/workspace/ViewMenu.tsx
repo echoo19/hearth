@@ -1,21 +1,21 @@
 /**
  * Toolbar "View" menu: one checkbox per workspace panel (open/close) plus
- * "Reset layout". Small hand-rolled popover — Escape closes, click-outside
- * closes, aria-expanded/menu roles for assistive tech.
+ * "Reset layout" and "Keyboard shortcuts". Popover mechanics (open/close,
+ * click-outside, Escape, arrow-key focus) come from the shared MenuButton
+ * primitive; this file only declares the items. Panel-toggle items keep the
+ * menu open (closeOnSelect: false) so several panels can be toggled in a row.
  */
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import type { DockviewApi } from 'dockview-react';
 import { PANEL_TITLES, VIEW_MENU_PANELS, resetLayout, showPanel } from './Workspace';
 import type { PanelId } from './layout';
 import { useEditor } from '../store';
 import { comboDisplay } from '../keybinds';
+import { MenuButton, type MenuItem } from '../components/ui/Menu';
 
 export function ViewMenu({ dock, storageKey }: { dock: DockviewApi | null; storageKey: string }) {
   const setShortcutSheet = useEditor((s) => s.setShortcutSheet);
-  const [open, setOpen] = useState(false);
   const [openPanels, setOpenPanels] = useState<ReadonlySet<string>>(new Set());
-  const rootRef = useRef<HTMLSpanElement>(null);
-  const buttonRef = useRef<HTMLButtonElement>(null);
 
   // Track which panels exist so the checkboxes stay honest while the user
   // drags/closes panels with the menu closed.
@@ -32,30 +32,6 @@ export function ViewMenu({ dock, storageKey }: { dock: DockviewApi | null; stora
     };
   }, [dock]);
 
-  useEffect(() => {
-    if (!open) return;
-    const onPointerDown = (e: PointerEvent) => {
-      if (rootRef.current && e.target instanceof Node && !rootRef.current.contains(e.target)) setOpen(false);
-    };
-    const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        // Stop here: this is a document-level listener, which (per the
-        // keydown bubble path: target -> ... -> document -> window) runs
-        // BEFORE SceneView's window-level Escape-deselect listener. Without
-        // this, closing the popover would also deselect the current entity.
-        e.stopPropagation();
-        setOpen(false);
-        buttonRef.current?.focus();
-      }
-    };
-    document.addEventListener('pointerdown', onPointerDown);
-    document.addEventListener('keydown', onKeyDown);
-    return () => {
-      document.removeEventListener('pointerdown', onPointerDown);
-      document.removeEventListener('keydown', onKeyDown);
-    };
-  }, [open]);
-
   function togglePanel(id: PanelId) {
     if (!dock) return;
     const panel = dock.getPanel(id);
@@ -63,66 +39,20 @@ export function ViewMenu({ dock, storageKey }: { dock: DockviewApi | null; stora
     else showPanel(dock, id);
   }
 
-  return (
-    <span className="menu-root" ref={rootRef}>
-      <button
-        ref={buttonRef}
-        className="btn btn-sm"
-        aria-haspopup="menu"
-        aria-expanded={open}
-        disabled={!dock}
-        onClick={() => setOpen((v) => !v)}
-      >
-        View
-      </button>
-      {open && dock && (
-        <div className="menu-popover" role="menu" aria-label="View">
-          {VIEW_MENU_PANELS.map((id) => {
-            const checked = openPanels.has(id);
-            return (
-              <button
-                key={id}
-                className="menu-item"
-                role="menuitemcheckbox"
-                aria-checked={checked}
-                onClick={() => togglePanel(id)}
-              >
-                <span className="menu-check" aria-hidden="true">
-                  {checked ? '✓' : ''}
-                </span>
-                {PANEL_TITLES[id]}
-              </button>
-            );
-          })}
-          <div className="menu-separator" role="separator" />
-          <button
-            className="menu-item"
-            role="menuitem"
-            onClick={() => {
-              resetLayout(dock, storageKey);
-              setOpen(false);
-            }}
-          >
-            <span className="menu-check" aria-hidden="true" />
-            Reset layout
-          </button>
-          <div className="menu-separator" role="separator" />
-          <button
-            className="menu-item"
-            role="menuitem"
-            onClick={() => {
-              setShortcutSheet(true);
-              setOpen(false);
-            }}
-          >
-            <span className="menu-check" aria-hidden="true" />
-            Keyboard shortcuts
-            <span className="menu-shortcut" aria-hidden="true">
-              {comboDisplay('shift+/')}
-            </span>
-          </button>
-        </div>
-      )}
-    </span>
-  );
+  const items: MenuItem[] = [
+    ...VIEW_MENU_PANELS.map(
+      (id): MenuItem => ({
+        label: PANEL_TITLES[id],
+        checked: openPanels.has(id),
+        closeOnSelect: false,
+        onSelect: () => togglePanel(id),
+      }),
+    ),
+    { separator: true },
+    { label: 'Reset layout', onSelect: () => dock && resetLayout(dock, storageKey) },
+    { separator: true },
+    { label: 'Keyboard shortcuts', shortcut: comboDisplay('shift+/'), onSelect: () => setShortcutSheet(true) },
+  ];
+
+  return <MenuButton trigger="View" label="View" items={items} disabled={!dock} />;
 }
