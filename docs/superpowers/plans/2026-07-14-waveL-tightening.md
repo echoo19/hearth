@@ -142,20 +142,24 @@ still `open`.
 - [ ] **Step 2: Implement primitives (thin: render the existing CSS classes — no visual change in this task).**
 - [ ] **Step 3: Migrate call sites file-by-file (behavior-identical), suite green after each file batch. Commit per batch.**
 
-### Task 6: Icon set extension + toolbar redesign
+### Task 6: Application menu + toolbar minimalism + icon extension
 
 **Files:**
-- Modify: `apps/editor/src/components/ui.tsx` (ICON_PATHS), `Toolbar.tsx`, `styles/workspace.css`
-- Test: `apps/editor/tests/toolbar.test.tsx` (+ existing toolbar tests)
+- Create: `apps/editor/src/menu/appMenu.ts` (shared menu model)
+- Modify: `apps/editor/src/components/ui.tsx` (ICON_PATHS), `Toolbar.tsx`, `styles/workspace.css`, `src/workspace/ViewMenu.tsx` (absorbed into View menu), Electron main (`scripts/build-electron.mjs` inputs / `electron/main` source) + preload/IPC bridge
+- Test: `apps/editor/tests/toolbar.test.tsx`, `apps/editor/tests/appMenu.test.ts`
 
 **Interfaces:**
-- Consumes: `IconButton`/`Tooltip`/`MenuButton`.
-- Produces: new glyphs `undo redo export checkpoint review debug close settings keyboard restart search overflow` (12×12 stroke, same grammar as existing set).
+- Consumes: `IconButton`/`Tooltip`/`MenuButton` (T3–T5), keybinds registry (`keybinds.ts`).
+- Produces: `buildAppMenu(store): AppMenuSection[]` — single source of truth: `File` (New scene…, Checkpoint, Review, Export…, Close Project), `Edit` (Undo, Redo, cross-script Find/Replace), `View` (panel toggles, Debug overlay, zoom), `Help` (Keyboard Shortcuts, docs link). Each item: `{ label, keybind?, enabled, onSelect }`.
+- New glyphs: `undo` = back arrow, `redo` = forward arrow, plus `export checkpoint review debug close restart overflow` (12×12 stroke, same grammar as existing set).
 
-- [ ] **Step 1: Add glyphs** (hand-authored paths, stroke-width/joins matching existing set; render sheet in a scratch story/page and eyeball at 12px and 24px).
-- [ ] **Step 2: Toolbar regrouped** into labeled clusters: [scene] [transport: play/pause/step + restart] [history: undo/redo] [view: debug/view-menu] [ship: checkpoint/review/export] [project: ws-dot/close]. Icon+tooltip(+shortcut) for all cluster actions; text label stays ONLY on Play/Stop (primary) and Export. Restart badge → `restart` icon + "Restart" with tooltip carrying the explanation sentence.
-- [ ] **Step 3: Responsive collapse** — below ~1323px the ship+view clusters fold into an overflow `MenuButton` (icon `overflow`); test at 1280 and 1024 widths live.
-- [ ] **Step 4: Suite + typecheck + live screenshots (wide/narrow). Commit.**
+- [ ] **Step 1: Menu model + tests** — `buildAppMenu` returns sections wired to existing store actions/keybinds; test enabled-state logic (e.g. Undo disabled with empty history) and that every item's keybind matches the registry.
+- [ ] **Step 2: Browser menu bar** — slim `MenuButton`-based File/Edit/View/Help strip at the far left of the toolbar row (after wordmark; no extra vertical row). ViewMenu's contents move into View; the standalone View button disappears.
+- [ ] **Step 3: Electron native menu** — build `Menu.setApplicationMenu` from the same model via IPC (menu → `webContents.send('menu:invoke', id)` → renderer dispatch; enabled-state pushed renderer → main on store change). macOS gets the standard app menu first; Windows/Linux get the in-window bar. Verify in packaged app (`HEARTH_SMOKE=1` + manual menu click).
+- [ ] **Step 4: Toolbar slims to essentials** — wordmark, scene picker, transport (Play/Stop primary + Pause/Step), restart badge (`restart` icon + "Restart", tooltip carries the explanation), undo/redo bare arrow IconButtons, WS dot. Checkpoint/Review/Export/Close/Debug/View leave the toolbar (now in menus). Unnecessary labels removed: icon + one-line tooltip is the default.
+- [ ] **Step 5: Narrow widths** — with the slimmed toolbar verify 1280/1024 live; if anything still clips, transport stays, scene picker truncates with ellipsis.
+- [ ] **Step 6: Suite + typecheck + live screenshots (wide/narrow, browser menu open, native menu in packaged app). Commit.**
 
 ### Task 7: Native-title sweep + hover-only discoverability parity
 

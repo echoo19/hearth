@@ -57,9 +57,17 @@ nothing silently dropped.
 
 ## Phase 2 — UX tightening
 
-- **Toolbar**: logical grouping (not just hairline dividers), responsive
-  collapse below ~1323px, restart badge redesigned (icon + short label, not a
-  sentence).
+- **Application menu + toolbar minimalism (Jake steer, 2026-07-14)**: a real
+  File/Edit/View/Help menu — native macOS menu bar / in-window on
+  Windows+Linux (Electron `Menu.setApplicationMenu` from a shared menu
+  model, IPC to renderer), slim in-window menu bar in browser dev mode.
+  Checkpoint/Review/Export/Close-project move to File; Undo/Redo to Edit
+  (plus bare back/forward-arrow icon buttons in the toolbar); panel toggles
+  + Debug to View; shortcut sheet to Help. The toolbar keeps ONLY: wordmark,
+  scene picker, transport (Play/Stop/Pause/Step + restart), undo/redo
+  arrows, WS dot. Unnecessary labels removed everywhere — icon + one-line
+  tooltip is the default; labels only where an icon can't carry the meaning.
+  Restart badge: icon + short label, not a sentence.
 - **Discoverability**: hover-only-visible actions (tree-row actions, field
   revert buttons, tab closes) get keyboard/focus parity and persistent
   affordances where they're primary; nothing important is invisible until
