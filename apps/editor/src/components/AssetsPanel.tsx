@@ -143,11 +143,13 @@ export function AssetsPanel() {
   const [spColor, setSpColor] = useState('#3498db');
   const [spWidth, setSpWidth] = useState(32);
   const [spHeight, setSpHeight] = useState(32);
+  const [spError, setSpError] = useState<string | null>(null);
 
   // tile dialog state
   const [tName, setTName] = useState('');
   const [tColor, setTColor] = useState('#2ecc71');
   const [tSize, setTSize] = useState(32);
+  const [tError, setTError] = useState<string | null>(null);
 
   // file import (button + drag-and-drop)
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -277,6 +279,11 @@ export function AssetsPanel() {
     if (result.success) {
       setSpriteDialog(false);
       setSpName('');
+      setSpError(null);
+    } else {
+      // Surface the failure inline (e.g. a name CONFLICT) instead of only a
+      // Console tab badge — the dialog otherwise looks like a silent no-op.
+      setSpError(result.errors[0]?.message ?? 'Could not create the sprite.');
     }
   }
 
@@ -285,6 +292,9 @@ export function AssetsPanel() {
     if (result.success) {
       setTileDialog(false);
       setTName('');
+      setTError(null);
+    } else {
+      setTError(result.errors[0]?.message ?? 'Could not create the tile.');
     }
   }
 
@@ -712,11 +722,28 @@ export function AssetsPanel() {
       )}
 
       {/* Create sprite */}
-      <Modal open={spriteDialog} title="Create procedural sprite" onClose={() => setSpriteDialog(false)}>
+      <Modal
+        open={spriteDialog}
+        title="Create procedural sprite"
+        onClose={() => {
+          setSpriteDialog(false);
+          setSpError(null);
+        }}
+      >
         <div className="modal-body">
           <div className="form-field">
             <label className="field-label">Name</label>
-            <input className="input" value={spName} onChange={(e) => setSpName(e.target.value)} autoFocus placeholder="coin" />
+            <input
+              className={`input${spError ? ' invalid' : ''}`}
+              value={spName}
+              onChange={(e) => {
+                setSpName(e.target.value);
+                if (spError) setSpError(null);
+              }}
+              autoFocus
+              placeholder="coin"
+            />
+            {spError && <span className="field-error">{spError}</span>}
           </div>
           <div className="form-field">
             <label className="field-label">Shape</label>
@@ -766,11 +793,28 @@ export function AssetsPanel() {
       </Modal>
 
       {/* Create tile */}
-      <Modal open={tileDialog} title="Create procedural tile" onClose={() => setTileDialog(false)}>
+      <Modal
+        open={tileDialog}
+        title="Create procedural tile"
+        onClose={() => {
+          setTileDialog(false);
+          setTError(null);
+        }}
+      >
         <div className="modal-body">
           <div className="form-field">
             <label className="field-label">Name</label>
-            <input className="input" value={tName} onChange={(e) => setTName(e.target.value)} autoFocus placeholder="grass" />
+            <input
+              className={`input${tError ? ' invalid' : ''}`}
+              value={tName}
+              onChange={(e) => {
+                setTName(e.target.value);
+                if (tError) setTError(null);
+              }}
+              autoFocus
+              placeholder="grass"
+            />
+            {tError && <span className="field-error">{tError}</span>}
           </div>
           <div className="inspector-row">
             <label className="field-label">Color</label>

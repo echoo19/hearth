@@ -26,6 +26,7 @@ export function Hierarchy() {
   const [deleting, setDeleting] = useState<SceneEntity | null>(null);
   const [savingPrefab, setSavingPrefab] = useState<string | null>(null);
   const [prefabNameValue, setPrefabNameValue] = useState('');
+  const [prefabError, setPrefabError] = useState<string | null>(null);
 
   function prefabAssetName(assetId: string): string {
     return assets.find((a) => a.id === assetId)?.name ?? assetId;
@@ -77,9 +78,20 @@ export function Hierarchy() {
 
   async function commitSaveAsPrefab(entity: SceneEntity) {
     const name = prefabNameValue.trim();
-    setSavingPrefab(null);
-    if (!sceneId || !name) return;
-    await exec('createPrefab', { scene: sceneId, entity: entity.id, name });
+    if (!sceneId || !name) {
+      setSavingPrefab(null);
+      setPrefabError(null);
+      return;
+    }
+    const result = await exec('createPrefab', { scene: sceneId, entity: entity.id, name });
+    if (result.success) {
+      setSavingPrefab(null);
+      setPrefabError(null);
+    } else {
+      // A silent close reads as success — keep the input open and name the
+      // conflict at the point of use (HIER-7) instead of only a Console badge.
+      setPrefabError(result.errors[0]?.message ?? 'Could not save the prefab.');
+    }
   }
 
   function toggleCollapsed(id: string) {
@@ -147,19 +159,28 @@ export function Hierarchy() {
               onClick={(e) => e.stopPropagation()}
             />
           ) : savingPrefab === entity.id ? (
-            <input
-              className="rename-input"
-              value={prefabNameValue}
-              autoFocus
-              placeholder="Prefab name"
-              onChange={(e) => setPrefabNameValue(e.target.value)}
-              onBlur={() => void commitSaveAsPrefab(entity)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') void commitSaveAsPrefab(entity);
-                if (e.key === 'Escape') setSavingPrefab(null);
-              }}
-              onClick={(e) => e.stopPropagation()}
-            />
+            <span className="prefab-save-field">
+              <input
+                className={`rename-input${prefabError ? ' invalid' : ''}`}
+                value={prefabNameValue}
+                autoFocus
+                placeholder="Prefab name"
+                onChange={(e) => {
+                  setPrefabNameValue(e.target.value);
+                  if (prefabError) setPrefabError(null);
+                }}
+                onBlur={() => void commitSaveAsPrefab(entity)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') void commitSaveAsPrefab(entity);
+                  if (e.key === 'Escape') {
+                    setSavingPrefab(null);
+                    setPrefabError(null);
+                  }
+                }}
+                onClick={(e) => e.stopPropagation()}
+              />
+              {prefabError && <span className="field-error">{prefabError}</span>}
+            </span>
           ) : (
             <span className="tree-name" title={entity.id}>
               {entity.name}

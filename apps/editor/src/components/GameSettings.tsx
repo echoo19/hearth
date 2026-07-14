@@ -229,7 +229,12 @@ export function GameSettings() {
             <TextField
               value={bs.title}
               placeholder="My game"
-              onCommit={(v) => setField('title', v)}
+              onCommit={(v) => {
+                // A blank window title is meaningless — reject client-side
+                // (revert + inline reason) rather than silently commit "".
+                if (!v.trim()) return 'Title can’t be empty.';
+                setField('title', v);
+              }}
             />
           </div>
           <div className="inspector-row">
