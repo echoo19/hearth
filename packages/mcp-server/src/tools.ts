@@ -252,6 +252,29 @@ export const TOOL_SPECS: ToolSpec[] = [
       parent: z.string().nullable().optional(),
     },
   },
+  {
+    name: 'set_entity_enabled',
+    command: 'setEntityEnabled',
+    description: 'Enable or disable an entity (disabled entities are skipped by the runtime). (requires safe-edit)',
+    permission: 'safe-edit',
+    inputShape: {
+      scene: z.string().min(1),
+      entity: z.string().min(1),
+      enabled: z.boolean(),
+    },
+  },
+  {
+    name: 'set_entity_tags',
+    command: 'setEntityTags',
+    description:
+      "Replace an entity's tags (tags support script queries like scene.findByTag). (requires safe-edit)",
+    permission: 'safe-edit',
+    inputShape: {
+      scene: z.string().min(1),
+      entity: z.string().min(1),
+      tags: z.array(z.string()),
+    },
+  },
 
   // ---- components ---------------------------------------------------------------
   {

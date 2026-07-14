@@ -808,6 +808,68 @@ describe('hearth duplicate', () => {
   });
 });
 
+describe('hearth set enabled / set tags', () => {
+  it('set enabled toggles an entity, and set (the property setter) still works unambiguously', async () => {
+    const dir = path.join(tmpRoot, 'set-enabled');
+    await fsp.mkdir(dir, { recursive: true });
+    await runCli(['init', 'Set Enabled', '--dir', dir, '--json'], tmpRoot);
+
+    const disable = await runCli(['set', 'enabled', 'Main', 'Player', 'false', '--json'], dir);
+    expect(disable.code).toBe(0);
+    const disableEnvelope = parseJson(disable.stdout);
+    expect(disableEnvelope.success).toBe(true);
+    expect(disableEnvelope.command).toBe('setEntityEnabled');
+    expect(disableEnvelope.data.enabled).toBe(false);
+
+    const inspected = parseJson((await runCli(['inspect', 'entity', 'Main', 'Player', '--json'], dir)).stdout);
+    expect(inspected.data.enabled).toBe(false);
+
+    const enable = await runCli(['set', 'enabled', 'Main', 'Player', 'true', '--json'], dir);
+    expect(parseJson(enable.stdout).data.enabled).toBe(true);
+
+    // The plain property setter (`hearth set <scene> <entity> <property> <value>`)
+    // must keep working even with the `enabled`/`tags` subcommands registered.
+    const propertySet = await runCli(['set', 'Main', 'Player', 'Transform.position.x', '200', '--json'], dir);
+    expect(propertySet.code).toBe(0);
+    const propertySetEnvelope = parseJson(propertySet.stdout);
+    expect(propertySetEnvelope.success).toBe(true);
+    expect(propertySetEnvelope.command).toBe('setComponentProperty');
+    expect(propertySetEnvelope.data.component.position.x).toBe(200);
+  });
+
+  it('set enabled rejects a non-boolean value', async () => {
+    const dir = path.join(tmpRoot, 'set-enabled-invalid');
+    await fsp.mkdir(dir, { recursive: true });
+    await runCli(['init', 'Set Enabled Invalid', '--dir', dir, '--json'], tmpRoot);
+
+    const result = await runCli(['set', 'enabled', 'Main', 'Player', 'yes', '--json'], dir);
+    expect(result.code).not.toBe(0);
+    const envelope = parseJson(result.stdout);
+    expect(envelope.success).toBe(false);
+    expect(envelope.errors[0].message).toContain('expected "true" or "false"');
+  });
+
+  it('set tags replaces an entity\'s tags with a comma-separated list', async () => {
+    const dir = path.join(tmpRoot, 'set-tags');
+    await fsp.mkdir(dir, { recursive: true });
+    await runCli(['init', 'Set Tags', '--dir', dir, '--json'], tmpRoot);
+
+    const result = await runCli(['set', 'tags', 'Main', 'Player', 'hero,controllable', '--json'], dir);
+    expect(result.code).toBe(0);
+    const envelope = parseJson(result.stdout);
+    expect(envelope.success).toBe(true);
+    expect(envelope.command).toBe('setEntityTags');
+    expect(envelope.data.tags).toEqual(['hero', 'controllable']);
+
+    const inspected = parseJson((await runCli(['inspect', 'entity', 'Main', 'Player', '--json'], dir)).stdout);
+    expect(inspected.data.tags).toEqual(['hero', 'controllable']);
+
+    const cleared = await runCli(['set', 'tags', 'Main', 'Player', '', '--json'], dir);
+    expect(cleared.code).toBe(0);
+    expect(parseJson(cleared.stdout).data.tags).toEqual([]);
+  });
+});
+
 describe('hearth prefab', () => {
   it('prefab create serializes a subtree into a prefab asset and marks the source root', async () => {
     const dir = path.join(tmpRoot, 'prefab-create');

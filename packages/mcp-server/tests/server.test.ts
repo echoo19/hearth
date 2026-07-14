@@ -585,6 +585,53 @@ describe('hearth-mcp server', () => {
     expect(envelope.data.copiedCount).toBe(1);
   });
 
+  it('set_entity_enabled is registered, mirrors every param, and toggles an entity', async () => {
+    ctx = await connectClient();
+    const { tools } = await ctx.client.listTools();
+    const tool = tools.find((t) => t.name === 'set_entity_enabled');
+    expect(tool).toBeDefined();
+    const props = tool!.inputSchema.properties as Record<string, unknown>;
+    expect(Object.keys(props).sort()).toEqual(['enabled', 'entity', 'scene']);
+
+    const sceneId = ctx.store.project.initialScene;
+    const player = ctx.store.getScene(sceneId!)!.entities.find((e) => e.name === 'Player')!;
+
+    const result = await ctx.client.callTool({
+      name: 'set_entity_enabled',
+      arguments: { scene: sceneId, entity: player.id, enabled: false },
+    });
+    expect(result.isError).toBeFalsy();
+    const envelope = toolJson(result);
+    expect(envelope.command).toBe('setEntityEnabled');
+    expect(envelope.data.enabled).toBe(false);
+    expect(ctx.store.getScene(sceneId!)!.entities.find((e) => e.id === player.id)!.enabled).toBe(false);
+  });
+
+  it('set_entity_tags is registered, mirrors every param, and replaces an entity\'s tags', async () => {
+    ctx = await connectClient();
+    const { tools } = await ctx.client.listTools();
+    const tool = tools.find((t) => t.name === 'set_entity_tags');
+    expect(tool).toBeDefined();
+    const props = tool!.inputSchema.properties as Record<string, unknown>;
+    expect(Object.keys(props).sort()).toEqual(['entity', 'scene', 'tags']);
+
+    const sceneId = ctx.store.project.initialScene;
+    const player = ctx.store.getScene(sceneId!)!.entities.find((e) => e.name === 'Player')!;
+
+    const result = await ctx.client.callTool({
+      name: 'set_entity_tags',
+      arguments: { scene: sceneId, entity: player.id, tags: ['hero', 'controllable'] },
+    });
+    expect(result.isError).toBeFalsy();
+    const envelope = toolJson(result);
+    expect(envelope.command).toBe('setEntityTags');
+    expect(envelope.data.tags).toEqual(['hero', 'controllable']);
+    expect(ctx.store.getScene(sceneId!)!.entities.find((e) => e.id === player.id)!.tags).toEqual([
+      'hero',
+      'controllable',
+    ]);
+  });
+
   it('remove_asset is registered, mirrors every param, and unregisters an asset', async () => {
     ctx = await connectClient(['read-only', 'safe-edit', 'asset-edit']);
     const { tools } = await ctx.client.listTools();

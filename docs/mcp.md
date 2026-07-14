@@ -1,12 +1,12 @@
 # MCP Guide
 
 Hearth ships `hearth-mcp` (`packages/mcp-server`), a stdio MCP server that
-exposes the engine command layer as 70 typed tools (68 command tools, plus
+exposes the engine command layer as 72 typed tools (70 command tools, plus
 `screenshot` and `get_agent_instructions`, neither of which wraps a core
-command). The engine's own command registry has 71 commands total — three
-(`setEntityEnabled`, `setEntityTags`, `setAssetMetadata`) are CLI-only
-housekeeping verbs with no MCP wrapper. The full reference (flags,
-registration snippets, permission table, complete tool list) lives in
+command). The engine's own command registry has 71 commands total — one
+(`setAssetMetadata`) has no CLI or MCP wrapper (a housekeeping verb with no
+editor surface either). The full reference (flags, registration snippets,
+permission table, complete tool list) lives in
 [`packages/mcp-server/README.md`](../packages/mcp-server/README.md).
 
 ## Quick start (Claude Code)
@@ -23,14 +23,17 @@ project's AGENTS.md plus your active permission modes.
 
 ## Tool naming
 
-Each MCP tool wraps exactly one core command, named in snake_case (a handful
-of housekeeping commands are CLI-only): `get_project_info`,
+Each MCP tool wraps exactly one core command, named in snake_case (`setAssetMetadata`
+is the one core command with neither a CLI nor an MCP wrapper — see above):
+`get_project_info`,
 `list_scenes`, `inspect_scene`, `inspect_entity`, `list_components`,
 `validate_project`, `create_scene`, `duplicate_scene` (fresh entity ids;
 optionally clones playtests targeting the source scene, retargeted to the
 copy — see [cli.md](./cli.md#command-tour)), `create_entity`,
 `duplicate_entity` (deep-copies an entity and its full descendant subtree
-with fresh ids in one call, offset from the original), `add_component`,
+with fresh ids in one call, offset from the original), `set_entity_enabled`,
+`set_entity_tags` (replace an entity's tags after creation — `create_entity`
+only sets them at creation time), `add_component`,
 `set_component_property` (strict dot-path validation with a did-you-mean
 suggestion on an unknown segment), `set_properties` (batch: multiple
 dot-path properties on one entity in a single undo step, all-or-nothing

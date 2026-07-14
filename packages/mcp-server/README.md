@@ -128,6 +128,8 @@ requires no permission (it's purely informational).
 | `rename_entity` | `renameEntity` | safe-edit |
 | `duplicate_entity` | `duplicateEntity` | safe-edit |
 | `move_entity` | `moveEntity` | safe-edit |
+| `set_entity_enabled` | `setEntityEnabled` | safe-edit |
+| `set_entity_tags` | `setEntityTags` | safe-edit |
 | `add_component` | `addComponent` | safe-edit |
 | `remove_component` | `removeComponent` | safe-edit |
 | `set_component_property` | `setComponentProperty` | safe-edit |

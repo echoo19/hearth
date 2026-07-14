@@ -121,9 +121,10 @@ describe('hearth-mcp export_desktop tool', () => {
     expect(tools.map((t) => t.name)).toContain('export_desktop');
     // TOOL_SPECS is the single source of truth the server registers
     // session.execute-backed tools from; exportDesktop brought it from 67 to
-    // 68 (screenshot and get_agent_instructions are registered separately,
-    // outside TOOL_SPECS, so they're not counted here).
-    expect(TOOL_SPECS.length).toBe(68);
+    // 68, and set_entity_enabled/set_entity_tags (Wave L parity closure)
+    // brought it from 68 to 70 (screenshot and get_agent_instructions are
+    // registered separately, outside TOOL_SPECS, so they're not counted here).
+    expect(TOOL_SPECS.length).toBe(70);
   });
 
   it('mirrors exportDesktop paramsSchema: outDir and platforms', async () => {

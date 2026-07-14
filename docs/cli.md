@@ -88,7 +88,11 @@ relative position unchanged),
 string; the path is validated against the component's actual schema shape
 before writing — an unknown segment, e.g. a typo'd `Transform.postiion.x`,
 is rejected with a did-you-mean suggestion and the full list of valid keys,
-instead of silently succeeding against a throwaway key), `set-many <scene>
+instead of silently succeeding against a throwaway key), `set enabled <scene>
+<entity> <true|false>` (enable/disable an entity — disabled entities are
+skipped by the runtime), `set tags <scene> <entity> <a,b,c>` (replace an
+entity's tags after creation; comma-separated, empty string clears them —
+`create entity --tags` only sets them at creation time), `set-many <scene>
 <entity> --properties '<json>'` (sets multiple dot-path properties, across
 one or several components, as **one undo step** — e.g. `hearth set-many
 Level1 Coin --properties '{"Transform.position.x":100,"SpriteRenderer.width":64}'`;

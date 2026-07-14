@@ -606,13 +606,34 @@ export function buildProgram(): Command {
   // ---------------------------------------------------------------------
   // set / set-input
   // ---------------------------------------------------------------------
-  addGlobalOptions(
+  const set = addGlobalOptions(
     program
       .command('set <scene> <entity> <property> <value>')
       .description('set a component property, e.g. hearth set MyScene Coin Transform.position.x 200'),
-  ).action(async (scene: string, entity: string, property: string, value: string, opts, cmd) => {
+  );
+  set.action(async (scene: string, entity: string, property: string, value: string, opts, cmd) => {
     await guarded(cmd, 'setComponentProperty', () =>
       runAndEmit(cmd, 'setComponentProperty', { scene, entity, property, value: parseValue(value) }),
+    );
+  });
+
+  addGlobalOptions(
+    set
+      .command('enabled <scene> <entity> <enabled>')
+      .description('enable or disable an entity, e.g. hearth set enabled MyScene Coin false'),
+  ).action(async (scene: string, entity: string, enabled: string, opts, cmd) => {
+    await guarded(cmd, 'setEntityEnabled', () =>
+      runAndEmit(cmd, 'setEntityEnabled', { scene, entity, enabled: parseBool(enabled, '<enabled>') }),
+    );
+  });
+
+  addGlobalOptions(
+    set
+      .command('tags <scene> <entity> <tags>')
+      .description("replace an entity's tags (comma-separated), e.g. hearth set tags MyScene Coin pickup,shiny"),
+  ).action(async (scene: string, entity: string, tags: string, opts, cmd) => {
+    await guarded(cmd, 'setEntityTags', () =>
+      runAndEmit(cmd, 'setEntityTags', { scene, entity, tags: parseList(tags) }),
     );
   });
 

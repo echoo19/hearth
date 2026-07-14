@@ -9,7 +9,7 @@ Hearth is an agent-native 2D game engine. Every editor operation is a
 **registered command**, reachable two ways with identical semantics:
 
 - **CLI**: `hearth <command> --json` — best from a shell (Claude Code, Codex).
-- **MCP**: `hearth-mcp --project <path>` over stdio — 68 command tools plus
+- **MCP**: `hearth-mcp --project <path>` over stdio — 70 command tools plus
   `screenshot` and `get_agent_instructions`. Tool names come from the MCP tool
   list, not a mechanical transform of the CLI verb — most are the snake_case of
   the command (`create_entity`, `set_component_property`, `run_playtest`), but

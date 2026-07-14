@@ -107,7 +107,7 @@ journal of every command any session has run). Property writes
 (`set`/`set-many`, MCP `set_component_property`/`set_properties`) validate
 the full dot-path against the component's real schema shape, with a
 did-you-mean suggestion on a typo instead of silently corrupting the write.
-The MCP server exposes 70 typed tools (68 wrapping a core command, plus
+The MCP server exposes 72 typed tools (70 wrapping a core command, plus
 `screenshot`/`get_agent_instructions`) with per-session permission modes.
 Playtests script input (including gamepad axes and pointer drags) and
 assert on game state, events, particles, audio, camera effects, post
