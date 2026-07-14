@@ -35,18 +35,42 @@ export function humanize(type: string): string {
   return type.replace(/([a-z])([A-Z])/g, '$1 $2').replace(/^./, (c) => c.toUpperCase());
 }
 
+/**
+ * Client-side numeric bounds per effect field, mirroring PostEffectSchema's
+ * `.min()/.max()` in @hearth/core (schema/components.ts). Keyed `type.field`.
+ * Without these the field committed an out-of-range value the server rejected
+ * silently, leaving a phantom draft on screen (INSPSPEC-1). Kept in sync with
+ * the schema by postEffectsRanges.test.ts.
+ */
+export const EFFECT_FIELD_RANGES: Record<string, { min: number; max: number }> = {
+  'bloom.strength': { min: 0, max: 3 },
+  'bloom.threshold': { min: 0, max: 1 },
+  'crt.curvature': { min: 0, max: 1 },
+  'crt.scanlineIntensity': { min: 0, max: 1 },
+  'crt.noise': { min: 0, max: 1 },
+  'vignette.intensity': { min: 0, max: 1 },
+  'chromaticAberration.offset': { min: 0, max: 20 },
+  'pixelate.size': { min: 1, max: 64 },
+  'colorGrade.brightness': { min: 0, max: 2 },
+  'colorGrade.contrast': { min: 0, max: 2 },
+  'colorGrade.saturation': { min: 0, max: 2 },
+};
+
 function EffectFieldRow({
+  effectType,
   field,
   value,
   onCommit,
 }: {
+  effectType: string;
   field: string;
   value: number | string;
   onCommit: (v: number | string) => void;
 }) {
   let control: React.ReactNode;
   if (typeof value === 'number') {
-    control = <NumberField value={value} onCommit={onCommit} />;
+    const range = EFFECT_FIELD_RANGES[`${effectType}.${field}`];
+    control = <NumberField value={value} min={range?.min} max={range?.max} onCommit={onCommit} />;
   } else if (typeof value === 'string' && value.startsWith('#')) {
     control = <ColorField value={value} onCommit={onCommit} />;
   } else {
@@ -125,6 +149,7 @@ function EffectCard({
         {fields.map(([field, value]) => (
           <EffectFieldRow
             key={field}
+            effectType={effect.type}
             field={field}
             value={value}
             onCommit={(v) => onCommitField(field, v)}

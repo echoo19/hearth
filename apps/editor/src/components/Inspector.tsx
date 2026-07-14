@@ -720,8 +720,13 @@ export function Inspector() {
     );
   }
 
-  const setProperty = (property: string, value: unknown) =>
-    void exec('setComponentProperty', { scene: sceneId, entity: entity.id, property, value }, { quiet: true });
+  // Returns whether the write was accepted so the scalar fields (NumberField/
+  // ColorField/TextField) can honor the rejection contract and revert their
+  // draft if the server refuses a value (L-108). Most callers ignore it.
+  const setProperty = (property: string, value: unknown): Promise<boolean> =>
+    exec('setComponentProperty', { scene: sceneId, entity: entity.id, property, value }, { quiet: true }).then(
+      (r) => r.success,
+    );
 
   const existingTypes = Object.keys(entity.components);
   const addableTypes = componentDocs.filter((d) => !existingTypes.includes(d.type));
