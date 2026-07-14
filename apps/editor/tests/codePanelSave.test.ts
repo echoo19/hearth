@@ -8,7 +8,7 @@
  * mirrors the style of externalChange.test.ts.
  */
 import { describe, expect, it } from 'vitest';
-import { classifySaveFailure, shouldSave } from '../src/components/CodePanel';
+import { classifySaveFailure, shouldBlockSaveForDrift, shouldSave } from '../src/components/CodePanel';
 
 describe('shouldSave', () => {
   it('allows a save when a script is open, dirty, and not already saving', () => {
@@ -44,5 +44,23 @@ describe('classifySaveFailure', () => {
 
   it('falls back to a generic message when the errors array is empty', () => {
     expect(classifySaveFailure([])).toEqual({ kind: 'error', message: 'Save failed.' });
+  });
+});
+
+describe('shouldBlockSaveForDrift (L-054 save-time external-edit guard)', () => {
+  it('blocks the save when disk drifted from the saved baseline', () => {
+    expect(shouldBlockSaveForDrift({ conflict: false, onDisk: 'external edit', savedSource: 'original' })).toBe(true);
+  });
+
+  it('allows the save when disk still matches the baseline', () => {
+    expect(shouldBlockSaveForDrift({ conflict: false, onDisk: 'same', savedSource: 'same' })).toBe(false);
+  });
+
+  it('does not block when a conflict is already flagged (banner up / kept-mine)', () => {
+    expect(shouldBlockSaveForDrift({ conflict: true, onDisk: 'external edit', savedSource: 'original' })).toBe(false);
+  });
+
+  it('does not block when the on-disk read failed (null → cannot compare)', () => {
+    expect(shouldBlockSaveForDrift({ conflict: false, onDisk: null, savedSource: 'original' })).toBe(false);
   });
 });

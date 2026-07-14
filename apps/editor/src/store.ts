@@ -152,6 +152,23 @@ export interface EditorState {
    * that asset's document. The `nonce` re-fires a repeat open of the same asset.
    */
   animatorTarget: { assetId: string; nonce: number } | null;
+  /**
+   * Whether the Code panel currently holds at least one dirty (unsaved) script
+   * buffer. Published by CodePanel while it's mounted (the buffer list is its
+   * local state); reset on project change/close and when the panel unmounts.
+   * The Code panel is the one surface where auto-save is off, so this is the
+   * only unsaved work a project close could silently discard — `closeProject`
+   * routes through `requestCloseProject()` which consults this flag (L-058).
+   */
+  hasUnsavedScripts: boolean;
+  /**
+   * Bumped by `requestCloseProject()` when a close needs the user to confirm
+   * discarding unsaved scripts. CodePanel watches it (and surfaces a confirm
+   * dialog); Workspace reveals the Code panel on the same signal so the dialog
+   * isn't rendered inside a display:none dock panel. A counter, so a second
+   * close attempt after a cancel still re-triggers.
+   */
+  closeProjectRequest: number;
 
   setAgentMode(mode: AgentPermissionMode): void;
   detectAgent(): Promise<void>;
@@ -198,6 +215,15 @@ export interface EditorState {
     description?: string,
     template?: string,
   ): Promise<{ ok: boolean; error?: string }>;
+  /** Publish whether the Code panel holds unsaved script buffers (see `hasUnsavedScripts`). */
+  setUnsavedScripts(has: boolean): void;
+  /**
+   * Close the project, but guard unsaved script buffers first: with dirty
+   * scripts open, bump `closeProjectRequest` so the Code panel can confirm the
+   * discard; otherwise close immediately. The "Close project" menu item routes
+   * here instead of calling `closeProject()` directly (L-058).
+   */
+  requestCloseProject(): void;
   closeProject(): void;
   selectScene(sceneId: string): Promise<void>;
   select(entityId: string | null): void;
@@ -747,6 +773,7 @@ export const useEditor = create<EditorState>((set, get) => {
       debugDraw: false,
       snapshotTaken: false,
       sceneViewCenter: null,
+      hasUnsavedScripts: false,
     });
     get().log('info', 'editor', `Opened project "${info.name}" (${info.scenes.length} scene${info.scenes.length === 1 ? '' : 's'})`);
     connectWs(path);
@@ -790,6 +817,8 @@ export const useEditor = create<EditorState>((set, get) => {
     codeOpenRequest: null,
     codeSearchRequest: 0,
     animatorTarget: null,
+    hasUnsavedScripts: false,
+    closeProjectRequest: 0,
 
     setAgentMode(mode) {
       set({ agentMode: mode });
@@ -954,6 +983,18 @@ export const useEditor = create<EditorState>((set, get) => {
       return { ok: true };
     },
 
+    setUnsavedScripts(has) {
+      if (get().hasUnsavedScripts !== has) set({ hasUnsavedScripts: has });
+    },
+
+    requestCloseProject() {
+      if (get().hasUnsavedScripts) {
+        set((state) => ({ closeProjectRequest: state.closeProjectRequest + 1 }));
+      } else {
+        get().closeProject();
+      }
+    },
+
     closeProject() {
       // Drop any pending nudge burst without flushing: the project (and its
       // API base) is going away, so a moveEntity fired ~300ms from now would
@@ -981,6 +1022,7 @@ export const useEditor = create<EditorState>((set, get) => {
         debugDraw: false,
         snapshotTaken: false,
         sceneViewCenter: null,
+        hasUnsavedScripts: false,
       });
     },
 

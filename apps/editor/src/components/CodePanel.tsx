@@ -67,6 +67,24 @@ export function classifySaveFailure(
   return { kind: 'error', message: first?.message ?? 'Save failed.' };
 }
 
+/**
+ * L-054: whether a Save must stop and raise the conflict banner because the
+ * file drifted on disk since this buffer's saved baseline — a raw-filesystem
+ * edit (shell/other editor/agent using plain file writes) that never went
+ * through the command layer, so the WS conflict path never fired. Not blocked
+ * when a conflict is already flagged (banner up, or the user chose "Keep mine"
+ * which re-baselines to disk) or when the on-disk read failed (can't compare →
+ * don't block the save). Pure, so it's unit-testable (see codePanelSave.test.ts).
+ */
+export function shouldBlockSaveForDrift(opts: {
+  conflict: boolean;
+  onDisk: string | null;
+  savedSource: string;
+}): boolean {
+  if (opts.conflict || opts.onDisk === null) return false;
+  return opts.onDisk !== opts.savedSource;
+}
+
 export function CodePanel() {
   const projectPath = useEditor((s) => s.projectPath);
   const scripts = useEditor((s) => s.info?.scripts ?? []);
@@ -78,15 +96,21 @@ export function CodePanel() {
   const journalFeed = useEditor((s) => s.journalFeed);
   const codeOpenRequest = useEditor((s) => s.codeOpenRequest);
   const codeSearchRequest = useEditor((s) => s.codeSearchRequest);
+  const closeProjectRequest = useEditor((s) => s.closeProjectRequest);
   const exec = useEditor((s) => s.exec);
   const log = useEditor((s) => s.log);
   const query = useEditor((s) => s.query);
+  const setUnsavedScripts = useEditor((s) => s.setUnsavedScripts);
+  const closeProject = useEditor((s) => s.closeProject);
 
   const [{ buffers, activePath }, setBufferState] = useState<BufferState>({ buffers: [], activePath: null });
   const [saving, setSaving] = useState(false);
   const [savingAsNew, setSavingAsNew] = useState(false);
   /** null = nothing pending; a path = the dirty buffer whose close is waiting on the user's choice. */
   const [pendingClose, setPendingClose] = useState<string | null>(null);
+  /** True while a "Close project" is waiting on the user to confirm discarding
+   * unsaved script buffers (L-058). */
+  const [pendingProjectClose, setPendingProjectClose] = useState(false);
   /** Drives CodeEditor's scroll-to-line + ember flash for openScriptAt. */
   const [focusRequest, setFocusRequest] = useState<{ path: string; line: number; nonce: number } | null>(null);
   /** Drives CodeEditor's full-doc replace with a formatted-on-save result. */
@@ -102,6 +126,7 @@ export function CodePanel() {
 
   const active = activePath !== null ? findBuffer(buffers, activePath) : undefined;
   const activeDirty = active ? isDirty(active) : false;
+  const hasDirtyBuffers = buffers.some(isDirty);
 
   /** Host-owned per-path EditorState cache — the seam that lets a single
    * CodeMirror view carry every open buffer's undo history across switches. */
@@ -212,6 +237,42 @@ export function CodePanel() {
     if (target !== null) doClose(target);
   }
 
+  // Reset every open buffer when the project changes: a newly opened project
+  // must not inherit the previous project's tabs/buffers (Wave-K tail /
+  // L-058). openProject swaps projectPath straight from A to B (no intervening
+  // closeProject), so keying on projectPath catches the switch; on first mount
+  // prevProjectRef already equals projectPath, so this is a no-op then.
+  const prevProjectRef = useRef(projectPath);
+  useEffect(() => {
+    if (prevProjectRef.current === projectPath) return;
+    prevProjectRef.current = projectPath;
+    stateCacheRef.current.clear();
+    lastSeqRef.current = 0;
+    setBufferState({ buffers: [], activePath: null });
+    setPendingClose(null);
+    setPendingProjectClose(false);
+    setSearchOpen(false);
+    setFocusRequest(null);
+    setApplyContent(null);
+  }, [projectPath]);
+
+  // Publish whether any open buffer is dirty so requestCloseProject() can decide
+  // whether a "Close project" needs a discard confirm (L-058). Clear the flag
+  // when the panel unmounts (its buffers, and any unsaved work, go with it).
+  useEffect(() => {
+    setUnsavedScripts(hasDirtyBuffers);
+  }, [hasDirtyBuffers, setUnsavedScripts]);
+  useEffect(() => {
+    return () => setUnsavedScripts(false);
+  }, [setUnsavedScripts]);
+
+  // requestCloseProject() bumps this counter when the close needs to confirm
+  // discarding unsaved scripts; Workspace has already revealed this panel, so
+  // the confirm dialog renders (not inside a display:none dock panel).
+  useEffect(() => {
+    if (closeProjectRequest > 0) setPendingProjectClose(true);
+  }, [closeProjectRequest]);
+
   // openScriptAt(path, line?): open/activate the buffer and, when a line is
   // given, hand CodeEditor a focus request (it scrolls + flashes the line).
   useEffect(() => {
@@ -290,6 +351,25 @@ export function CodePanel() {
     const source = active.source;
     if (!format && !shouldSave({ selectedPath: path, saving, dirty: activeDirty })) return;
     setSaving(true);
+    // L-054 backstop: a raw filesystem edit (a shell, another editor, or an
+    // agent using ordinary file-write tools) never goes through the command
+    // layer, so it produces no journal entry and the WS-driven conflict banner
+    // never fires — a Save would then silently clobber it. Re-read the on-disk
+    // source and, if it no longer matches the baseline this buffer believes is
+    // saved, raise the same conflict banner instead of overwriting. Skipped
+    // when a conflict is already flagged (the banner is up / the user chose
+    // "Keep mine", which re-baselines to disk) so it never fights the WS path.
+    let onDisk: string | null = null;
+    try {
+      onDisk = await readScript(path);
+    } catch {
+      onDisk = null; // can't read (offline/removed) → don't block the save
+    }
+    if (shouldBlockSaveForDrift({ conflict: active.conflict, onDisk, savedSource: active.savedSource })) {
+      patch(path, { conflict: true });
+      setSaving(false);
+      return;
+    }
     patch(path, { saveError: null, scriptMissing: false });
     const result = await exec<{ path: string; source?: string; formatted?: boolean }>('editScript', {
       path,
@@ -431,11 +511,21 @@ export function CodePanel() {
     void reloadBuffer(active.path);
   }
 
-  function keepMine() {
-    // The buffer already holds the edits the user wants to keep; dismissing
-    // the banner is enough — the next Save overwrites the external change,
-    // and that's the whole point of "keep mine" (an explicit, informed choice).
-    if (active) patch(active.path, { conflict: false });
+  async function keepMine() {
+    if (!active) return;
+    const path = active.path;
+    // Adopt the current on-disk bytes as this buffer's saved baseline: the file
+    // on disk really IS the external version now, and recording that as the
+    // baseline is what lets the next Save knowingly overwrite it — and keeps
+    // the save-time drift guard (L-054) from re-flagging the very edit the user
+    // just chose to override. If the read fails, fall back to just clearing the
+    // banner (the pre-L-054 behaviour).
+    try {
+      const onDisk = await readScript(path);
+      patch(path, { savedSource: onDisk, conflict: false });
+    } catch {
+      patch(path, { conflict: false });
+    }
   }
 
   // ---- Tab strip keyboard nav (roving tabindex) --------------------------
@@ -611,7 +701,7 @@ export function CodePanel() {
           <Button size="sm" onClick={reloadFromConflict}>
             Reload
           </Button>
-          <Button size="sm" variant="primary" onClick={keepMine}>
+          <Button size="sm" variant="primary" onClick={() => void keepMine()}>
             Keep mine (overwrite on save)
           </Button>
         </div>
@@ -699,6 +789,19 @@ export function CodePanel() {
         danger
         onCancel={() => setPendingClose(null)}
         onConfirm={confirmPendingClose}
+      />
+
+      <ConfirmDialog
+        open={pendingProjectClose}
+        title="Unsaved script changes"
+        body="Closing the project will discard unsaved changes in your open scripts. Scripts don't auto-save. Close anyway?"
+        confirmLabel="Discard and close"
+        danger
+        onCancel={() => setPendingProjectClose(false)}
+        onConfirm={() => {
+          setPendingProjectClose(false);
+          closeProject();
+        }}
       />
     </div>
   );

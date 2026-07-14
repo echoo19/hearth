@@ -27,6 +27,7 @@ function mockStore(over: Partial<EditorStore> = {}): EditorStore {
     undo: vi.fn(),
     redo: vi.fn(),
     closeProject: vi.fn(),
+    requestCloseProject: vi.fn(),
     requestCodeSearch: vi.fn(),
     setDebugDraw: vi.fn(),
     setShortcutSheet: vi.fn(),

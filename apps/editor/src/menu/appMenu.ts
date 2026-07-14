@@ -91,7 +91,7 @@ export function buildAppMenu(store: EditorStore, ctx: AppMenuContext): AppMenuSe
       { separator: true },
       { id: 'export', label: 'Export…', enabled: hasProject, onSelect: ctx.onExport },
       { separator: true },
-      { id: 'close-project', label: 'Close project', enabled: hasProject, onSelect: () => store.closeProject() },
+      { id: 'close-project', label: 'Close project', enabled: hasProject, onSelect: () => store.requestCloseProject() },
     ],
   };
 

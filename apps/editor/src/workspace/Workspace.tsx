@@ -392,6 +392,7 @@ export function Workspace({
   const codeOpenRequest = useEditor((s) => s.codeOpenRequest);
   const codeSearchRequest = useEditor((s) => s.codeSearchRequest);
   const animatorTarget = useEditor((s) => s.animatorTarget);
+  const closeProjectRequest = useEditor((s) => s.closeProjectRequest);
   const apiRef = useRef<DockviewApi | null>(null);
   const saveTimer = useRef<number | null>(null);
   const disposables = useRef<{ dispose(): void }[]>([]);
@@ -468,6 +469,14 @@ export function Workspace({
   useEffect(() => {
     if (animatorTarget && apiRef.current) showPanel(apiRef.current, 'animator');
   }, [animatorTarget?.nonce]);
+
+  // requestCloseProject() bumps this when a close needs to confirm discarding
+  // unsaved script buffers; reveal the Code panel so its confirm dialog isn't
+  // rendered inside a display:none dock panel (dockview hides inactive panels).
+  // CodePanel reacts to the same counter to open the dialog (L-058).
+  useEffect(() => {
+    if (closeProjectRequest > 0 && apiRef.current) showPanel(apiRef.current, 'code');
+  }, [closeProjectRequest]);
 
   // Flush a pending save and release listeners when the workspace unmounts
   // (project switch or close).
