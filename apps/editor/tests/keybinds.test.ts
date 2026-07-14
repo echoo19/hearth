@@ -48,6 +48,8 @@ function mockStore(over: Partial<EditorStore> = {}) {
     checkpoint: rec('checkpoint'),
     toggleShortcutSheet: rec('toggleShortcutSheet'),
     requestCodeSearch: rec('requestCodeSearch'),
+    undo: rec('undo'),
+    redo: rec('redo'),
     ...over,
   } as unknown as EditorStore;
   return { store, calls };
@@ -117,15 +119,15 @@ describe('resolveBinding + guards', () => {
 });
 
 describe('table dispatch', () => {
-  it('undo/redo run the right exec commands', () => {
+  it('undo/redo route through the store actions (one code path with the toolbar — TOOLBAR-6)', () => {
     const a = mockStore();
     resolveBinding({ combo: 'mod+z', hasSelection: false })!.run(a.store);
-    expect(a.calls).toContainEqual(['exec', 'undo', undefined]);
+    expect(a.calls).toContainEqual(['undo']);
 
     const b = mockStore();
     resolveBinding({ combo: 'shift+mod+z', hasSelection: false })!.run(b.store);
     resolveBinding({ combo: 'mod+y', hasSelection: false })!.run(b.store);
-    expect(b.calls.filter((c) => c[0] === 'exec' && c[1] === 'redo')).toHaveLength(2);
+    expect(b.calls.filter((c) => c[0] === 'redo')).toHaveLength(2);
   });
 
   it('selection bindings call their store actions', () => {

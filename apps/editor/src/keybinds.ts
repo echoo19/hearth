@@ -57,9 +57,12 @@ const noop = (): void => {};
 
 export const KEYBINDS: Keybind[] = [
   // ---- General ----------------------------------------------------------
-  { id: 'undo', combo: 'mod+z', label: 'Undo', group: 'General', when: 'always', run: (s) => void s.exec('undo') },
-  { id: 'redo', combo: 'shift+mod+z', label: 'Redo', group: 'General', when: 'always', run: (s) => void s.exec('redo') },
-  { id: 'redo-y', combo: 'mod+y', label: 'Redo (alternate)', group: 'General', when: 'always', run: (s) => void s.exec('redo') },
+  // Undo/Redo route through the store's undo()/redo() actions (same code path
+  // the toolbar arrows use) so a keyboard-triggered undo gets the same
+  // friendly "reverted …" console line a clicked one does — see TOOLBAR-6.
+  { id: 'undo', combo: 'mod+z', label: 'Undo', group: 'General', when: 'always', run: (s) => void s.undo() },
+  { id: 'redo', combo: 'shift+mod+z', label: 'Redo', group: 'General', when: 'always', run: (s) => void s.redo() },
+  { id: 'redo-y', combo: 'mod+y', label: 'Redo (alternate)', group: 'General', when: 'always', run: (s) => void s.redo() },
   {
     id: 'save',
     combo: 'mod+s',
@@ -265,6 +268,16 @@ export function comboDisplay(combo: string, mac: boolean = isMac): string {
   if (mods.has('shift')) seq.push('Shift');
   seq.push(label);
   return seq.join('+');
+}
+
+/**
+ * The registry entry for a binding id, or undefined if none. The single place
+ * menu models (appMenu.ts) look up a shortcut combo, so menu accelerators can
+ * never drift from the dispatcher/cheat-sheet — the combo string is never
+ * hardcoded at the call site.
+ */
+export function keybindFor(id: string): Keybind | undefined {
+  return KEYBINDS.find((b) => b.id === id);
 }
 
 export type KeybindGroup = { group: Keybind['group']; binds: Keybind[] };

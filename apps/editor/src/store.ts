@@ -172,6 +172,14 @@ export interface EditorState {
   /** Shortcut actions (Task 8), each backed by an exec() where it mutates. */
   togglePlay(): void;
   checkpoint(): Promise<void>;
+  /**
+   * Undo / Redo the last command. Both the toolbar arrows, the Edit menu, and
+   * the ⌘Z / ⇧⌘Z keybinds route through here so every trigger logs the same
+   * friendly "reverted …"/"reapplied …" line (TOOLBAR-6). A no-op at the ends
+   * of history — exec() returns success:false and nothing is logged.
+   */
+  undo(): Promise<void>;
+  redo(): Promise<void>;
   duplicateSelection(): Promise<void>;
   deleteSelection(): Promise<void>;
   /**
@@ -797,6 +805,23 @@ export const useEditor = create<EditorState>((set, get) => {
       const result = await get().exec<{ scenes: number }>('snapshotProject', {}, { quiet: true });
       if (result.success) {
         get().log('info', 'command', 'Checkpoint saved. The Changes panel now compares against this checkpoint.');
+      }
+    },
+
+    // quiet: the friendly log lines below replace exec()'s generic
+    // changed-summary; shared by the toolbar arrows, the Edit menu, and the
+    // ⌘Z/⇧⌘Z keybinds so every trigger reads the same (TOOLBAR-6).
+    async undo() {
+      const result = await get().exec<{ undone: string; seq: number }>('undo', {}, { quiet: true });
+      if (result.success && result.data) {
+        get().log('info', 'command', `Undo: reverted "${result.data.undone}" (#${result.data.seq}).`);
+      }
+    },
+
+    async redo() {
+      const result = await get().exec<{ redone: string; seq: number }>('redo', {}, { quiet: true });
+      if (result.success && result.data) {
+        get().log('info', 'command', `Redo: reapplied "${result.data.redone}" (#${result.data.seq}).`);
       }
     },
 
