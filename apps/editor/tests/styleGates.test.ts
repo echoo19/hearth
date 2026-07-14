@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 
 /**
@@ -42,17 +43,35 @@ const SRC_DIR = path.resolve(__dirname, '../src');
 const COMPONENTS_DIR = path.resolve(__dirname, '../src/components');
 
 /**
- * Gate D's element-aware scope: raw interactive HTML elements. A native
- * `title=` on one of these is a hover-only, keyboard-invisible, un-styled hint —
- * exactly what the Tooltip / IconButton primitives replace. Non-interactive
- * elements (spans/divs/labels/options carrying truncated-text or a field
- * description) are deliberately OUT of scope: a native `title` is the right tool
- * for "show the full value when this text is clipped", and those elements have
- * no focus/hover primitive to migrate to. That carve-out IS the allowlist
+ * Gate D's element-aware scope: raw interactive HTML elements, plus the
+ * capitalized components in TITLE_FORWARDING_COMPONENTS below (which spread
+ * `title` onto one of these same tags under the hood). A native `title=` on
+ * one of these is a hover-only, keyboard-invisible, un-styled hint — exactly
+ * what the Tooltip / IconButton primitives replace. Non-interactive elements
+ * (spans/divs/labels/options carrying truncated-text or a field description)
+ * are deliberately OUT of scope: a native `title` is the right tool for "show
+ * the full value when this text is clipped", and those elements have no
+ * focus/hover primitive to migrate to. That carve-out IS the allowlist
  * policy — there is no per-line pin list because no interactive element is
  * permitted to keep a native title.
  */
 const INTERACTIVE_TAGS = new Set(['button', 'a', 'select', 'input', 'textarea']);
+
+/**
+ * Gate D's other blind spot: `Button`/`IconButton` (ui/Button.tsx) both spread
+ * `{...rest}` onto a raw `<button>` — a `title` prop passed to either one
+ * forwards straight onto the native element exactly like a literal `title=`
+ * on `<button>` would, but the tag-name scan above skips capitalized JSX
+ * elements (`if (tagName[0] !== tagName[0].toLowerCase()) continue`) since
+ * most components manage `title` as their own semantic prop (e.g. `Modal`'s
+ * dialog heading, `ConfirmDialog`'s). Pinned by exact name rather than
+ * inferred structurally — no static check here can tell "spreads onto a raw
+ * element" apart from "consumes title as its own prop", so a new spreading
+ * component must be added to this set deliberately. As of Wave L Task 7,
+ * nothing in the tree passes `title` to either component; this only guards
+ * against a future regression.
+ */
+const TITLE_FORWARDING_COMPONENTS = new Set(['Button', 'IconButton']);
 
 /**
  * Escape hatch for a genuinely-justified native title on an interactive element
@@ -268,8 +287,14 @@ describe('style gates', () => {
     }
   });
 
-  it('Gate D: no native title= on interactive elements under src/components/**', () => {
-    const files = collectFiles(COMPONENTS_DIR, ['.tsx']);
+  /**
+   * Gate D's scan, factored out so it can run both against the real
+   * `src/components/**` tree (the actual gate) and against a throwaway
+   * fixture directory (the regression test below proving the
+   * TITLE_FORWARDING_COMPONENTS blind-spot check actually fires).
+   */
+  function findTitleOffenders(dir: string): string[] {
+    const files = collectFiles(dir, ['.tsx']);
     const offenders: string[] = [];
 
     // Every JSX opening tag: `<` followed by a tag name.
@@ -282,20 +307,30 @@ describe('style gates', () => {
 
       for (const m of content.matchAll(TAG_RE)) {
         const tagName = m[1];
-        // Only raw lowercase HTML tags matter; components (`<Button>`, `<Modal>`)
-        // manage their own semantics and pass `title` as a prop, not a DOM attr.
-        if (tagName[0] !== tagName[0].toLowerCase()) continue;
+        const isForwarding = TITLE_FORWARDING_COMPONENTS.has(tagName);
+        // Lowercase HTML tags always matter; capitalized components only
+        // matter when pinned as a known title-forwarder (Button/IconButton
+        // spread `{...rest}` onto a raw <button> — see the set's comment).
+        // Everything else (`<Modal>`, `<ConfirmDialog>`) treats `title` as
+        // its own semantic prop, not a DOM passthrough.
+        if (tagName[0] !== tagName[0].toLowerCase() && !isForwarding) continue;
 
         const tag = openingTag(content, m.index!);
         if (!/\btitle\s*=/.test(tag)) continue;
 
-        const isInteractive = INTERACTIVE_TAGS.has(tagName) || /\brole\s*=\s*(['"`{]\s*['"`]?)button\b/.test(tag);
+        const isInteractive =
+          isForwarding || INTERACTIVE_TAGS.has(tagName) || /\brole\s*=\s*(['"`{]\s*['"`]?)button\b/.test(tag);
         if (!isInteractive) continue;
         if (allow && [...allow].some((s) => tag.includes(s))) continue;
 
-        offenders.push(`${rel(file, COMPONENTS_DIR)}:${lineAt(content, m.index!)} → <${tagName} … title=…>`);
+        offenders.push(`${rel(file, dir)}:${lineAt(content, m.index!)} → <${tagName} … title=…>`);
       }
     }
+    return offenders;
+  }
+
+  it('Gate D: no native title= on interactive elements under src/components/**', () => {
+    const offenders = findTitleOffenders(COMPONENTS_DIR);
 
     if (offenders.length > 0) {
       expect.fail(
@@ -306,6 +341,33 @@ describe('style gates', () => {
           `A native title is hover-only and invisible to keyboard users. Non-interactive ` +
           `truncated-text elements (spans/divs/labels/options) may keep a native title.`,
       );
+    }
+  });
+
+  it('Gate D catches a title= forwarded through Button/IconButton, not just a raw tag', () => {
+    // Regression fixture for the blind spot: `title` passed to `<Button>` or
+    // `<IconButton>` never shows up as a lowercase tag, but both spread
+    // `{...rest}` onto a raw <button> (ui/Button.tsx), so it forwards to the
+    // DOM exactly like a literal `title=` on `<button>` would.
+    const fixtureDir = fs.mkdtempSync(path.join(os.tmpdir(), 'style-gate-fixture-'));
+    try {
+      fs.writeFileSync(
+        path.join(fixtureDir, 'Fixture.tsx'),
+        `export const Fixture = () => (\n` +
+          `  <div>\n` +
+          `    <Button title="oops">Save</Button>\n` +
+          `    <IconButton icon="cross" label="Close" title="oops too" />\n` +
+          `    <Modal title="Not a DOM title, fine" open onClose={() => {}}>hi</Modal>\n` +
+          `  </div>\n` +
+          `);\n`,
+      );
+      const offenders = findTitleOffenders(fixtureDir);
+      expect(offenders).toHaveLength(2);
+      expect(offenders.some((o) => o.includes('<Button'))).toBe(true);
+      expect(offenders.some((o) => o.includes('<IconButton'))).toBe(true);
+      expect(offenders.some((o) => o.includes('<Modal'))).toBe(false);
+    } finally {
+      fs.rmSync(fixtureDir, { recursive: true, force: true });
     }
   });
 });

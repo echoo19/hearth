@@ -246,9 +246,16 @@ function AutotileRuleFields({
         <label className="field-label" style={{ minWidth: 60 }}>
           Template
         </label>
-        <select className="select" style={{ maxWidth: 180 }} value={rule.template} disabled>
-          <option value="blob47">Blob47 (47-shape)</option>
-        </select>
+        {/* Always disabled today — only one template exists. See Menu.tsx's
+            disabledReason pattern: the Tooltip wraps a focusable/hoverable
+            span since a disabled <select> can't reliably show it itself. */}
+        <Tooltip content="Blob47 is the only template today">
+          <span tabIndex={0} style={{ display: 'inline-flex' }}>
+            <select className="select" style={{ maxWidth: 180 }} value={rule.template} disabled>
+              <option value="blob47">Blob47 (47-shape)</option>
+            </select>
+          </span>
+        </Tooltip>
       </div>
       <details>
         <summary>Advanced mapping</summary>
@@ -305,27 +312,41 @@ function TileRowEditor({
   const assetId = autotile ? '' : (row.value as string);
   const missingAsset = !autotile && assetId !== '' && !imageAssets.some((a) => a.id === assetId);
   const canUseAutotile = autotile || sheetAssets.length > 0;
+  const modeSelect = (
+    <select
+      className="select"
+      style={{ maxWidth: 96, flex: 'none' }}
+      value={autotile ? 'autotile' : 'sprite'}
+      disabled={!canUseAutotile}
+      onChange={(e) => {
+        if (e.target.value === 'autotile') {
+          if (sheetAssets.length === 0) return;
+          onWrite({ sheet: sheetAssets[0].id, template: 'blob47' });
+        } else {
+          onWrite('');
+        }
+      }}
+    >
+      <option value="sprite">Sprite</option>
+      <option value="autotile">Autotile</option>
+    </select>
+  );
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
       <div className="vec2-list-row">
         <TileCharField value={row.char} rows={rows} index={index} onCommit={onRename} />
-        <select
-          className="select"
-          style={{ maxWidth: 96, flex: 'none' }}
-          value={autotile ? 'autotile' : 'sprite'}
-          disabled={!canUseAutotile}
-          onChange={(e) => {
-            if (e.target.value === 'autotile') {
-              if (sheetAssets.length === 0) return;
-              onWrite({ sheet: sheetAssets[0].id, template: 'blob47' });
-            } else {
-              onWrite('');
-            }
-          }}
-        >
-          <option value="sprite">Sprite</option>
-          <option value="autotile">Autotile</option>
-        </select>
+        {canUseAutotile ? (
+          modeSelect
+        ) : (
+          // A disabled <select> is inert to hover/focus in most browsers, so the
+          // Tooltip wraps a focusable/hoverable span around it rather than the
+          // select itself (same reasoning as Menu.tsx's disabledReason pattern).
+          <Tooltip content="Import a sliced spritesheet to enable autotile">
+            <span tabIndex={0} style={{ display: 'inline-flex' }}>
+              {modeSelect}
+            </span>
+          </Tooltip>
+        )}
         {!autotile && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 2, flex: 1, minWidth: 0 }}>
             <select
