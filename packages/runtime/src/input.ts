@@ -138,6 +138,17 @@ export class InputState {
         this.codeToActions.set(code, list);
       }
     }
+    // Axis-only keyboard codes (e.g. WASD bound only to `axes[*].negativeCodes/
+    // positiveCodes`, never to a named action) must still count as "mapped" so
+    // the browser keydown gate (attachKeyboard's isMappedCode) lets them reach
+    // handleKeyDown → downCodes, which axisValue's keyboard fallback reads.
+    // Register them with an empty action list, never clobbering a code that is
+    // ALSO an action binding (that keeps its action list intact).
+    for (const axis of Object.values(this.axesConfig)) {
+      for (const code of [...axis.negativeCodes, ...axis.positiveCodes]) {
+        if (!this.codeToActions.has(code)) this.codeToActions.set(code, []);
+      }
+    }
   }
 
   /** Is the action currently held? */

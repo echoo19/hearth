@@ -324,3 +324,51 @@ describe('InputState.axisValue', () => {
     expect(input.axisValue('nope')).toBe(0);
   });
 });
+
+describe('InputState axis-only keyboard codes (L-002: WASD)', () => {
+  it('isMappedCode is true for a code bound only via axis negative/positive codes', () => {
+    const input = new InputState({
+      actions: {},
+      axes: { moveX: { negativeCodes: ['KeyA'], positiveCodes: ['KeyD'] } },
+    });
+    expect(input.isMappedCode('KeyA')).toBe(true);
+    expect(input.isMappedCode('KeyD')).toBe(true);
+  });
+
+  it('axis-only code drives axisValue through the attachKeyboard isMappedCode gate', () => {
+    const input = new InputState({
+      actions: {},
+      axes: {
+        moveX: { negativeCodes: ['KeyA'], positiveCodes: ['KeyD'] },
+        moveY: { negativeCodes: ['KeyW'], positiveCodes: ['KeyS'] },
+      },
+    });
+    // Mirror attachKeyboard: a code only reaches handleKeyDown when isMappedCode.
+    const press = (code: string) => {
+      if (input.isMappedCode(code)) input.handleKeyDown(code);
+    };
+    const release = (code: string) => {
+      if (input.isMappedCode(code)) input.handleKeyUp(code);
+    };
+
+    press('KeyD');
+    expect(input.axisValue('moveX')).toBe(1);
+    release('KeyD');
+    expect(input.axisValue('moveX')).toBe(0);
+    press('KeyA');
+    expect(input.axisValue('moveX')).toBe(-1);
+
+    press('KeyW');
+    expect(input.axisValue('moveY')).toBe(-1);
+  });
+
+  it('does not clobber an action list for a code bound to both an action and an axis', () => {
+    const input = new InputState({
+      actions: { 'ui-left': ['KeyA'] },
+      axes: { moveX: { negativeCodes: ['KeyA'], positiveCodes: ['KeyD'] } },
+    });
+    input.handleKeyDown('KeyA');
+    expect(input.isDown('ui-left')).toBe(true); // action binding preserved
+    expect(input.axisValue('moveX')).toBe(-1); // axis binding also works
+  });
+});
