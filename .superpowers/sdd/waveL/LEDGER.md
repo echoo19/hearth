@@ -319,7 +319,7 @@ high) though it borders on a defect (values unreadable).
 - Expected: render/select/drag UI-anchored entities at their resolved
   anchor+offset screen position matching `uiScreenPosition`.
 - Source: SCENEVIEW-1
-- Disposition: open
+- Disposition: fixed a8220f5 (worldPos resolves UIElement entities via the runtime's resolveUiPositions — anchor/offset/UILayout — mapped 1:1 over the active camera; selectable, not scene-draggable, with an anchor+offset Inspector hint; live before/after verified in ember-horde)
 
 ### L-025 · sceneview · defect · med
 - Element: entity drag-to-move and tilemap paint while `playing === true`.
@@ -332,7 +332,7 @@ high) though it borders on a defect (values unreadable).
   live — the tab-drag hung the automated session).
 - Expected: guard drag/paint on `playing` for parity with `showHandles`.
 - Source: SCENEVIEW-4
-- Disposition: open
+- Disposition: fixed a8220f5 (startPaint and the entity-drag start now early-return when `playing`, matching showHandles' guard, so a split-layout drag/paint can't mutate the live scene)
 
 ### L-026 · sceneview · friction · med
 - Element: SceneView persistent hint bar (`SceneView.tsx` ~line 1852).
@@ -340,7 +340,7 @@ high) though it borders on a defect (values unreadable).
 - Expected: **[JAKE-STEER 2026-07-14, mandatory]** delete the hint bar; the
   `?` shortcut sheet keeps the reference. No floating scene-level chrome.
 - Source: JAKE-STEER (plan T9 Step 1)
-- Disposition: open
+- Disposition: fixed a8220f5 (`.scene-hint` element + its CSS deleted; pan/zoom/drag reference now lives solely in the ? sheet — pan label notes middle-drag, new "Move the selected entity (Shift snaps to grid)" row added; live-verified gone)
 
 ### L-027 · sceneview · friction · med
 - Element: floating "Particles" toggle + its localStorage pref
@@ -352,9 +352,7 @@ high) though it borders on a defect (values unreadable).
   (object-owned, Unity/Godot model). If a control proves necessary it goes on
   the Inspector ParticleEmitter card, not floating chrome.
 - Source: JAKE-STEER (plan T9 Step 1)
-- Disposition: open
-
-### L-028 · sceneview · friction · low
+- Disposition: fixed a8220f5 (floating Particles toggle + `hearth.scene.particlesPreview` pref + read/write helpers deleted; setToggleEnabled(true) always, render gate is now selection+panel-visible only, so preview is always-on for the selected emitter; toggle-gone live-verified in ember-horde + glow-caves) · sceneview · friction · low
 - Element: toolbar "Debug" button while the Scene tab is active.
 - Observed: toggling Debug has zero effect on the Scene view (pixel-identical);
   SceneView never reads `store.debugDraw` — the flag only affects the Game
@@ -362,7 +360,7 @@ high) though it borders on a defect (values unreadable).
 - Expected: gray out/relabel Debug on the Scene tab, or wire it to the Scene
   gizmo layer so "Debug" means one thing across tabs.
 - Source: SCENEVIEW-2
-- Disposition: open
+- Disposition: by-design a8220f5 (scoped honestly: SceneView renders authoring gizmos — collider/light/particle/camera — unconditionally; Debug governs the Game runtime overlay. A true Scene debug-draw layer isn't "cheap via existing debugDraw data" — debugDraw is a bare boolean, the geometry would duplicate physics/collider rendering — and the toolbar relabel/disable lives in Toolbar.tsx/appMenu.ts, outside this file's serialized scope. Flagged for the Toolbar owner to relabel Debug on the Scene tab.)
 
 ### L-029 · sceneview · friction · low
 - Element: move/resize drag vs. the always-drawn 32px grid.
@@ -372,7 +370,7 @@ high) though it borders on a defect (values unreadable).
 - Expected: a modifier-triggered (or default) snap-to-grid to match the
   expectation the drawn grid sets.
 - Source: SCENEVIEW-3
-- Disposition: open
+- Disposition: fixed a8220f5 (move-drag: hold Shift to snap to the 32px grid — snaps the WORLD position, mapped back through the ancestor offset to the committed local Transform.position; synthetic shift-drag verified snapping Arena to 64,32. Resize keeps Shift = aspect-lock and rotate keeps Shift = 15°, each handle's most useful modifier; resize grid-snap intentionally not added to avoid displacing aspect-lock.)
 
 ### L-030 · sceneview · polish · low
 - Element: polygon Collider / LineRenderer vertex live-drag.
@@ -381,7 +379,7 @@ high) though it borders on a defect (values unreadable).
   brief double-image on thick strokes.
 - Expected: a single consistent live shape during the drag.
 - Source: SCENEVIEW-5
-- Disposition: open
+- Disposition: fixed a8220f5 (renderLineRenderer draws from the live `draftPoints` while a vertex of the selected LineRenderer is being dragged — same local space as lr.points — so the real stroke tracks the orange guide with no stale double-image)
 
 ### L-031 · sceneview · polish · low
 - Element: particle in-scene preview React list keys.
@@ -614,7 +612,7 @@ high) though it borders on a defect (values unreadable).
 - Expected: use the shared `isTypingTarget()` (or check `isContentEditable`)
   in the space-to-pan guard. (Root cause file is SceneView.tsx.)
 - Source: CODE-1
-- Disposition: open
+- Disposition: fixed a8220f5 (space-to-pan guard replaced its narrow INPUT/TEXTAREA/SELECT check with the shared isTypingTarget via a new pure panSpaceKey helper, so it yields to CodeMirror's contenteditable; live-verified "hello world foo bar" types with spaces intact in the Code panel)
 
 ### L-054 · code · defect · high
 - Element: external-edit detection for a script changed directly on disk
