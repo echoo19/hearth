@@ -3,6 +3,7 @@ import { useEditor } from '../store';
 import { apiRecentProjects, apiExampleProjects } from '../api';
 import type { ExampleProject, RecentProject } from '../types';
 import { Icon } from './ui';
+import { Button } from './ui/Button';
 import { TemplatePicker } from './TemplatePicker';
 import { hearthNative } from '../native';
 
@@ -115,9 +116,9 @@ export function Launcher() {
                   placeholder={defaultDir || '/path/to/projects'}
                 />
                 {native && (
-                  <button className="btn" type="button" disabled={busy} onClick={() => void browseCreateDir()}>
+                  <Button disabled={busy} onClick={() => void browseCreateDir()}>
                     Browse…
-                  </button>
+                  </Button>
                 )}
               </div>
             </div>
@@ -140,9 +141,9 @@ export function Launcher() {
             </div>
             {createError && <div className="launcher-error">{createError}</div>}
             <div>
-              <button className="btn btn-primary" type="submit" disabled={busy}>
+              <Button variant="primary" type="submit" disabled={busy}>
                 Create project
-              </button>
+              </Button>
             </div>
           </form>
         </section>
@@ -159,13 +160,13 @@ export function Launcher() {
                 if (e.key === 'Enter') void handleOpen(openPath, setOpenError);
               }}
             />
-            <button className="btn" disabled={busy} onClick={() => void handleOpen(openPath, setOpenError)}>
+            <Button disabled={busy} onClick={() => void handleOpen(openPath, setOpenError)}>
               Open
-            </button>
+            </Button>
             {native && (
-              <button className="btn btn-primary" disabled={busy} onClick={() => void browseOpenProject()}>
+              <Button variant="primary" disabled={busy} onClick={() => void browseOpenProject()}>
                 Open Folder…
-              </button>
+              </Button>
             )}
           </div>
           {openError && <div className="launcher-error">{openError}</div>}

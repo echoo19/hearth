@@ -2,6 +2,7 @@ import React, { useEffect, useRef } from 'react';
 import { useEditor } from '../store';
 import type { ConsoleEntry, ValidationReport } from '../types';
 import { Icon } from './ui';
+import { Button } from './ui/Button';
 
 /**
  * Clickable `path:line` suffix for a Console entry that names an exact
@@ -71,13 +72,13 @@ export function ConsolePanel() {
   return (
     <>
       <div className="panel-toolbar">
-        <button className="btn btn-sm" onClick={() => void validate()}>
+        <Button size="sm" onClick={() => void validate()}>
           Validate project
-        </button>
+        </Button>
         <span style={{ flex: 1 }} />
-        <button className="btn btn-ghost btn-sm" onClick={clearConsole} disabled={entries.length === 0}>
+        <Button variant="ghost" size="sm" onClick={clearConsole} disabled={entries.length === 0}>
           Clear
-        </button>
+        </Button>
       </div>
       <div className="panel-body" ref={bodyRef} style={{ padding: 0 }}>
         {entries.length === 0 ? (

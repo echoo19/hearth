@@ -11,6 +11,7 @@ import { useEditor } from '../store';
 import { fileUrl } from '../api';
 import type { AssetItem } from '../types';
 import { Modal } from './ui';
+import { Button } from './ui/Button';
 import { readSheetGrid } from '../assetPreview';
 
 const MAX_PREVIEW_PX = 360;
@@ -319,12 +320,12 @@ export function SliceDialog({
           )}
         </div>
         <div className="modal-actions">
-          <button type="button" className="btn" onClick={onClose}>
+          <Button type="button" onClick={onClose}>
             Cancel
-          </button>
-          <button type="submit" className="btn btn-primary" disabled={!canConfirm}>
+          </Button>
+          <Button type="submit" variant="primary" disabled={!canConfirm}>
             {submitting ? 'Slicing…' : 'Slice'}
-          </button>
+          </Button>
         </div>
       </form>
     </Modal>

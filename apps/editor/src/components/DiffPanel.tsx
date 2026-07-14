@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useEditor } from '../store';
 import { ConfirmDialog, Icon } from './ui';
+import { Button } from './ui/Button';
 import { useHistoryList } from '../useHistoryList';
 import type { HistoryEntry, ProjectDiff } from '../types';
 
@@ -71,38 +72,39 @@ export function DiffPanel() {
   return (
     <>
       <div className="panel-toolbar">
-        <button className="btn btn-sm" onClick={() => void undo()} disabled={!undoTarget || busy !== null}>
+        <Button size="sm" onClick={() => void undo()} disabled={!undoTarget || busy !== null}>
           {busy === 'undo' ? 'Undoing…' : undoTarget ? `Undo ${undoTarget.command}` : 'Undo'}
-        </button>
-        <button className="btn btn-sm" onClick={() => void redo()} disabled={!redoTarget || busy !== null}>
+        </Button>
+        <Button size="sm" onClick={() => void redo()} disabled={!redoTarget || busy !== null}>
           {busy === 'redo' ? 'Redoing…' : redoTarget ? `Redo ${redoTarget.command}` : 'Redo'}
-        </button>
+        </Button>
         <span className="panel-divider" />
-        <button
-          className="btn btn-sm"
+        <Button
+          size="sm"
           onClick={() => void snapshot()}
           disabled={busy !== null}
           title="Save a checkpoint you can review and restore"
         >
           {busy === 'checkpoint' ? 'Saving…' : 'Checkpoint'}
-        </button>
-        <button
-          className="btn btn-sm"
+        </Button>
+        <Button
+          size="sm"
           onClick={() => void doRefresh()}
           disabled={busy !== null}
           title="See what changed since your last checkpoint"
         >
           {busy === 'refresh' ? 'Refreshing…' : 'Refresh changes'}
-        </button>
+        </Button>
         <span style={{ flex: 1 }} />
-        <button
-          className="btn btn-danger btn-sm"
+        <Button
+          variant="danger"
+          size="sm"
           onClick={() => setConfirmRevert(true)}
           disabled={!diff?.hasChanges || busy !== null}
           title="Restore the project to the last checkpoint"
         >
           {busy === 'restore' ? 'Restoring…' : 'Restore checkpoint'}
-        </button>
+        </Button>
       </div>
 
       <div className="panel-body">
