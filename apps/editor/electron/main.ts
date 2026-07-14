@@ -189,6 +189,10 @@ async function main(): Promise<void> {
     win = null;
   });
 
+  // setWindowMode owns the native title; block document.title from racing it
+  // (the renderer also sets document.title for browser-tab identity).
+  win.webContents.on('page-title-updated', (e) => e.preventDefault());
+
   // Baseline app menu (app menu + system Edit + Window) so Quit/copy-paste work
   // before a project is open. The renderer replaces it with the full
   // File/Edit/View/Help model once the editor mounts (macOS).
