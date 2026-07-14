@@ -182,11 +182,12 @@ export function Launcher() {
                 className="launcher-item"
                 disabled={busy || !r.exists}
                 onClick={() => void handleOpen(r.path, setOpenError)}
-                title={r.exists ? r.path : `${r.path} (moved or deleted)`}
               >
                 <span className="item-text">
                   <span className="item-name">{r.name}</span>
-                  <span className="item-path">{r.exists ? r.path : 'moved or deleted'}</span>
+                  <span className="item-path" title={r.exists ? r.path : `${r.path} (moved or deleted)`}>
+                    {r.exists ? r.path : 'moved or deleted'}
+                  </span>
                 </span>
                 <span className="item-go" aria-hidden="true">
                   <Icon name="chevron" />
@@ -208,10 +209,11 @@ export function Launcher() {
                 className="launcher-item"
                 disabled={busy}
                 onClick={() => void handleOpen(ex.path, setOpenError)}
-                title={ex.path}
               >
                 <span className="item-text">
-                  <span className="item-name">{ex.name}</span>
+                  <span className="item-name" title={ex.path}>
+                    {ex.name}
+                  </span>
                   <span className="item-desc">{ex.description}</span>
                 </span>
                 <span className="item-go" aria-hidden="true">

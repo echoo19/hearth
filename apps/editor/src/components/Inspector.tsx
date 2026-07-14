@@ -15,7 +15,8 @@ import {
   type TileRow,
 } from '../tileAutotileRows';
 import { ColorField, ConfirmDialog, Icon, NumberField, TextField, componentIcon } from './ui';
-import { Button } from './ui/Button';
+import { Button, IconButton } from './ui/Button';
+import { Tooltip } from './ui/Tooltip';
 import {
   countPrefabInstances,
   createSyncPreflight,
@@ -85,18 +86,18 @@ function Vec2ListField({
       {value.map((p, i) => (
         <div className="vec2-list-row" key={i}>
           <Vec2Field value={p} onCommitAxis={(axis, v) => onCommit(setPointAxis(value, i, axis, v))} />
-          <button
-            type="button"
+          <IconButton
+            bare
             className="icon-btn danger"
-            title={atFloor ? `Needs at least ${min} points` : `Remove point ${i + 1}`}
+            icon="cross"
+            iconSize={10}
+            label={atFloor ? `Needs at least ${min} points` : `Remove point ${i + 1}`}
             disabled={atFloor}
             onClick={() => {
               const next = removePoint(value, i, min);
               if (next) onCommit(next);
             }}
-          >
-            <Icon name="cross" size={10} />
-          </button>
+          />
         </div>
       ))}
       <Button size="sm" onClick={() => onCommit(addPoint(value))}>
@@ -134,18 +135,18 @@ function StringListField({
             placeholder="*"
             onCommit={(newVal) => onCommit(setStringAt(value, i, newVal))}
           />
-          <button
-            type="button"
+          <IconButton
+            bare
             className="icon-btn danger"
-            title={atFloor ? `Needs at least ${min} items` : `Remove item ${i + 1}`}
+            icon="cross"
+            iconSize={10}
+            label={atFloor ? `Needs at least ${min} items` : `Remove item ${i + 1}`}
             disabled={atFloor}
             onClick={() => {
               const next = removeString(value, i, min);
               if (next) onCommit(next);
             }}
-          >
-            <Icon name="cross" size={10} />
-          </button>
+          />
         </div>
       ))}
       <Button size="sm" onClick={() => onCommit(addString(value))}>
@@ -245,7 +246,7 @@ function AutotileRuleFields({
         <label className="field-label" style={{ minWidth: 60 }}>
           Template
         </label>
-        <select className="select" style={{ maxWidth: 180 }} value={rule.template} disabled title="Blob47 is the only autotile template today.">
+        <select className="select" style={{ maxWidth: 180 }} value={rule.template} disabled>
           <option value="blob47">Blob47 (47-shape)</option>
         </select>
       </div>
@@ -313,7 +314,6 @@ function TileRowEditor({
           style={{ maxWidth: 96, flex: 'none' }}
           value={autotile ? 'autotile' : 'sprite'}
           disabled={!canUseAutotile}
-          title={canUseAutotile ? undefined : 'Import a spritesheet with sliced frames to use autotile.'}
           onChange={(e) => {
             if (e.target.value === 'autotile') {
               if (sheetAssets.length === 0) return;
@@ -371,9 +371,14 @@ function TileRowEditor({
             </select>
           </div>
         )}
-        <button type="button" className="icon-btn danger" title={`Remove "${row.char}"`} onClick={onRemove}>
-          <Icon name="cross" size={10} />
-        </button>
+        <IconButton
+          bare
+          className="icon-btn danger"
+          icon="cross"
+          iconSize={10}
+          label={`Remove "${row.char}"`}
+          onClick={onRemove}
+        />
       </div>
       {autotile && (
         <AutotileRuleFields rule={row.value as AutotileRule} sheetAssets={sheetAssets} onChange={onWrite} />
@@ -590,7 +595,6 @@ function AnchorGrid({ value, onCommit }: { value: string; onCommit: (v: string) 
           role="radio"
           aria-checked={value === anchor}
           aria-label={anchor}
-          title={anchor}
           onClick={() => value !== anchor && onCommit(anchor)}
         >
           <span className="anchor-dot" aria-hidden="true" />
@@ -902,13 +906,14 @@ export function Inspector() {
                   </span>
                   {type}
                 </span>
-                <button
+                <IconButton
+                  bare
                   className="icon-btn danger"
-                  title={`Remove ${type}`}
+                  icon="cross"
+                  iconSize={10}
+                  label={`Remove ${type}`}
                   onClick={() => setConfirmRemove(type)}
-                >
-                  <Icon name="cross" size={10} />
-                </button>
+                />
               </div>
               <div className="component-body">
                 {Object.entries(component as Record<string, unknown>).map(([field, value]) => {
@@ -956,14 +961,11 @@ export function Inspector() {
                             </option>
                           ))}
                         </select>
-                        <Button
-                          size="sm"
-                          disabled={!value}
-                          title={value ? 'Edit this state machine' : 'Assign a state machine to edit it'}
-                          onClick={() => value && openAnimatorFor(value)}
-                        >
-                          <Icon name="animator" size={11} /> Edit
-                        </Button>
+                        <Tooltip content={value ? 'Edit this state machine' : 'Assign a state machine to edit it'}>
+                          <Button size="sm" disabled={!value} onClick={() => value && openAnimatorFor(value)}>
+                            <Icon name="animator" size={11} /> Edit
+                          </Button>
+                        </Tooltip>
                       </div>
                     );
                   } else if (field === 'assetId' && type === 'SpriteAnimator' && typeof value === 'string') {
@@ -1178,14 +1180,15 @@ export function Inspector() {
                       {prefabInfo != null && (
                         <div className="field-revert-slot">
                           {overridden && (
-                            <Button
-                              size="sm"
-                              className="field-revert-btn"
-                              title={`Revert "${humanizeFieldLabel(field)}" to the prefab's value`}
-                              onClick={() => void handleRevertField(type, field)}
-                            >
-                              Revert
-                            </Button>
+                            <Tooltip content="Revert to the prefab's value">
+                              <Button
+                                size="sm"
+                                className="field-revert-btn"
+                                onClick={() => void handleRevertField(type, field)}
+                              >
+                                Revert
+                              </Button>
+                            </Tooltip>
                           )}
                         </div>
                       )}

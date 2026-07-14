@@ -39,6 +39,60 @@ import path from 'node:path';
 const STYLES_DIR = path.resolve(__dirname, '../src/styles');
 const MANIFEST_CSS = path.resolve(__dirname, '../src/styles.css');
 const SRC_DIR = path.resolve(__dirname, '../src');
+const COMPONENTS_DIR = path.resolve(__dirname, '../src/components');
+
+/**
+ * Gate D's element-aware scope: raw interactive HTML elements. A native
+ * `title=` on one of these is a hover-only, keyboard-invisible, un-styled hint —
+ * exactly what the Tooltip / IconButton primitives replace. Non-interactive
+ * elements (spans/divs/labels/options carrying truncated-text or a field
+ * description) are deliberately OUT of scope: a native `title` is the right tool
+ * for "show the full value when this text is clipped", and those elements have
+ * no focus/hover primitive to migrate to. That carve-out IS the allowlist
+ * policy — there is no per-line pin list because no interactive element is
+ * permitted to keep a native title.
+ */
+const INTERACTIVE_TAGS = new Set(['button', 'a', 'select', 'input', 'textarea']);
+
+/**
+ * Escape hatch for a genuinely-justified native title on an interactive element
+ * (none today — every interactive title was migrated to Tooltip/IconButton in
+ * Wave L Task 7). Keyed by file basename → set of substrings; if a flagged
+ * opening tag contains a listed substring it is exempt. Adding an entry is a
+ * deliberate, reviewed edit.
+ */
+const PINNED_TITLE_ALLOWLIST: Record<string, Set<string>> = {};
+
+/**
+ * Walk from the `<` at `start` to the `>` that ends the opening tag, tracking
+ * brace depth and skipping string literals so a `title={`…${x}…`}` value's
+ * inner braces/quotes don't end the scan early. Returns the opening-tag text.
+ */
+function openingTag(content: string, start: number): string {
+  let depth = 0;
+  let i = start;
+  let quote = '';
+  for (; i < content.length; i++) {
+    const c = content[i];
+    if (quote) {
+      if (c === quote && content[i - 1] !== '\\') quote = '';
+      continue;
+    }
+    // `//` line comments live inside handler bodies (`onDrop={() => { // … }}`)
+    // and their prose can contain lone quotes ("isn't") that would otherwise
+    // open a false string and swallow the rest of the tag. Skip to EOL.
+    if (c === '/' && content[i + 1] === '/') {
+      i = content.indexOf('\n', i);
+      if (i === -1) break;
+      continue;
+    }
+    if (c === '"' || c === "'" || c === '`') quote = c;
+    else if (c === '{') depth++;
+    else if (c === '}') depth--;
+    else if (c === '>' && depth === 0) break;
+  }
+  return content.slice(start, i + 1);
+}
 
 /** Files that may legitimately contain the raw scale / display-face definition. */
 const TOKEN_FILES = new Set(['tokens.css']);
@@ -210,6 +264,47 @@ describe('style gates', () => {
           offenders.map((o) => `  ${o}`).join('\n') +
           `\n\nReplace each with the nearest --text-* token (see styles/tokens.css), or add a ` +
           `justified entry to PINNED_LITERAL_ALLOWLIST if the API genuinely requires a raw value.`,
+      );
+    }
+  });
+
+  it('Gate D: no native title= on interactive elements under src/components/**', () => {
+    const files = collectFiles(COMPONENTS_DIR, ['.tsx']);
+    const offenders: string[] = [];
+
+    // Every JSX opening tag: `<` followed by a tag name.
+    const TAG_RE = /<([A-Za-z][\w-]*)/g;
+
+    for (const file of files) {
+      const content = stripComments(fs.readFileSync(file, 'utf8'));
+      const base = path.basename(file);
+      const allow = PINNED_TITLE_ALLOWLIST[base];
+
+      for (const m of content.matchAll(TAG_RE)) {
+        const tagName = m[1];
+        // Only raw lowercase HTML tags matter; components (`<Button>`, `<Modal>`)
+        // manage their own semantics and pass `title` as a prop, not a DOM attr.
+        if (tagName[0] !== tagName[0].toLowerCase()) continue;
+
+        const tag = openingTag(content, m.index!);
+        if (!/\btitle\s*=/.test(tag)) continue;
+
+        const isInteractive = INTERACTIVE_TAGS.has(tagName) || /\brole\s*=\s*(['"`{]\s*['"`]?)button\b/.test(tag);
+        if (!isInteractive) continue;
+        if (allow && [...allow].some((s) => tag.includes(s))) continue;
+
+        offenders.push(`${rel(file, COMPONENTS_DIR)}:${lineAt(content, m.index!)} → <${tagName} … title=…>`);
+      }
+    }
+
+    if (offenders.length > 0) {
+      expect.fail(
+        `Found ${offenders.length} native title= on interactive element(s):\n` +
+          offenders.map((o) => `  ${o}`).join('\n') +
+          `\n\nInteractive controls must carry their hint via the Tooltip primitive ` +
+          `(or IconButton's required label), which shows on hover AND keyboard focus. ` +
+          `A native title is hover-only and invisible to keyboard users. Non-interactive ` +
+          `truncated-text elements (spans/divs/labels/options) may keep a native title.`,
       );
     }
   });

@@ -17,7 +17,8 @@ import { useEditor } from '../store';
 import { fileUrl } from '../api';
 import { comboDisplay } from '../keybinds';
 import { ConfirmDialog, Icon } from './ui';
-import { Button } from './ui/Button';
+import { Button, IconButton } from './ui/Button';
+import { Tooltip } from './ui/Tooltip';
 import { decideExternalChange } from './code/externalChange';
 import {
   type Buffer,
@@ -479,33 +480,35 @@ export function CodePanel() {
   return (
     <div className="code-panel-root">
       <div className="panel-toolbar">
-        <select
-          className="select"
-          value=""
-          onChange={(e) => {
-            if (e.target.value) activateOrOpen(e.target.value);
-          }}
-          title="Open a script to edit"
-        >
-          <option value="" disabled>
-            {scripts.length === 0 ? 'No scripts in this project' : 'Open a script…'}
-          </option>
-          {scripts.map((path) => (
-            <option key={path} value={path}>
-              {scriptLabel(path)}
+        <Tooltip content="Open a script to edit">
+          <select
+            className="select"
+            value=""
+            onChange={(e) => {
+              if (e.target.value) activateOrOpen(e.target.value);
+            }}
+          >
+            <option value="" disabled>
+              {scripts.length === 0 ? 'No scripts in this project' : 'Open a script…'}
             </option>
-          ))}
-        </select>
+            {scripts.map((path) => (
+              <option key={path} value={path}>
+                {scriptLabel(path)}
+              </option>
+            ))}
+          </select>
+        </Tooltip>
         <span style={{ flex: 1 }} />
-        <Button
-          size="sm"
-          variant={searchOpen ? 'primary' : 'default'}
-          aria-pressed={searchOpen}
-          onClick={() => (searchOpen ? closeSearch() : setSearchOpen(true))}
-          title={`Search scripts (${comboDisplay('shift+mod+f')})`}
-        >
-          Search
-        </Button>
+        <Tooltip content="Search scripts" shortcut={comboDisplay('shift+mod+f')}>
+          <Button
+            size="sm"
+            variant={searchOpen ? 'primary' : 'default'}
+            aria-pressed={searchOpen}
+            onClick={() => (searchOpen ? closeSearch() : setSearchOpen(true))}
+          >
+            Search
+          </Button>
+        </Tooltip>
         <label className="input-checkbox-label" title="Format scripts with the project's code style whenever they're saved">
           <input
             type="checkbox"
@@ -516,23 +519,16 @@ export function CodePanel() {
         </label>
         {active && (
           <>
-            <Button
-              size="sm"
-              onClick={() => void formatAndSave()}
-              disabled={saving}
-              title={`Format & save (${comboDisplay('shift+alt+f')})`}
-            >
-              {saving ? 'Saving…' : 'Format & save'}
-            </Button>
-            <Button
-              size="sm"
-              variant="primary"
-              onClick={() => void save()}
-              disabled={!activeDirty || saving}
-              title={`Save (${comboDisplay('mod+s')})`}
-            >
-              {saving ? 'Saving…' : 'Save'}
-            </Button>
+            <Tooltip content="Format & save" shortcut={comboDisplay('shift+alt+f')}>
+              <Button size="sm" onClick={() => void formatAndSave()} disabled={saving}>
+                {saving ? 'Saving…' : 'Format & save'}
+              </Button>
+            </Tooltip>
+            <Tooltip content="Save" shortcut={comboDisplay('mod+s')}>
+              <Button size="sm" variant="primary" onClick={() => void save()} disabled={!activeDirty || saving}>
+                {saving ? 'Saving…' : 'Save'}
+              </Button>
+            </Tooltip>
           </>
         )}
       </div>
@@ -553,50 +549,50 @@ export function CodePanel() {
                 role="presentation"
                 className={`code-tab-cell${selected ? ' code-tab-cell-active' : ''}`}
               >
-                <button
-                  ref={(el) => {
-                    if (el) tabRefs.current.set(buf.path, el);
-                    else tabRefs.current.delete(buf.path);
-                  }}
-                  type="button"
-                  role="tab"
-                  aria-selected={selected}
-                  tabIndex={selected ? 0 : -1}
-                  className="code-tab"
-                  onClick={() => setBufferState((s) => ({ ...s, activePath: buf.path }))}
-                  onKeyDown={(e) => onTabKeyDown(e, i)}
-                  onAuxClick={(e) => {
-                    if (e.button === 1) {
-                      e.preventDefault();
-                      requestClose(buf.path);
-                    }
-                  }}
-                  title={buf.path}
-                >
-                  <span className="code-tab-name">{scriptLabel(buf.path)}</span>
-                  {buf.conflict && (
-                    <span
-                      className="code-tab-conflict"
-                      aria-label="changed outside the editor"
-                      title={dirty ? 'Changed outside the editor while you have unsaved edits' : 'Changed outside the editor'}
-                    />
-                  )}
-                  {dirty ? (
-                    <span className="code-tab-dot" aria-label="unsaved changes" title="Unsaved changes">
-                      •
-                    </span>
-                  ) : null}
-                </button>
-                <button
-                  type="button"
-                  tabIndex={selected ? 0 : -1}
+                <Tooltip content={buf.path}>
+                  <button
+                    ref={(el) => {
+                      if (el) tabRefs.current.set(buf.path, el);
+                      else tabRefs.current.delete(buf.path);
+                    }}
+                    type="button"
+                    role="tab"
+                    aria-selected={selected}
+                    tabIndex={selected ? 0 : -1}
+                    className="code-tab"
+                    onClick={() => setBufferState((s) => ({ ...s, activePath: buf.path }))}
+                    onKeyDown={(e) => onTabKeyDown(e, i)}
+                    onAuxClick={(e) => {
+                      if (e.button === 1) {
+                        e.preventDefault();
+                        requestClose(buf.path);
+                      }
+                    }}
+                  >
+                    <span className="code-tab-name">{scriptLabel(buf.path)}</span>
+                    {buf.conflict && (
+                      <span
+                        className="code-tab-conflict"
+                        aria-label="changed outside the editor"
+                        title={dirty ? 'Changed outside the editor while you have unsaved edits' : 'Changed outside the editor'}
+                      />
+                    )}
+                    {dirty ? (
+                      <span className="code-tab-dot" aria-label="unsaved changes" title="Unsaved changes">
+                        •
+                      </span>
+                    ) : null}
+                  </button>
+                </Tooltip>
+                <IconButton
+                  bare
                   className="code-tab-close"
-                  aria-label={`Close ${scriptLabel(buf.path)}`}
-                  title="Close"
+                  icon="cross"
+                  iconSize={11}
+                  label={`Close ${scriptLabel(buf.path)}`}
+                  tabIndex={selected ? 0 : -1}
                   onClick={() => requestClose(buf.path)}
-                >
-                  <Icon name="cross" size={11} />
-                </button>
+                />
               </div>
             );
           })}

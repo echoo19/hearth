@@ -13,7 +13,8 @@ import type { CommandIssue } from '@hearth/core';
 import { useEditor } from '../store';
 import type { AssetItem } from '../types';
 import { Icon, NumberField, TextField } from './ui';
-import { Button } from './ui/Button';
+import { Button, IconButton } from './ui/Button';
+import { Tooltip } from './ui/Tooltip';
 import {
   ANY_STATE,
   addCondition,
@@ -179,21 +180,24 @@ export function AnimatorEditor() {
         </select>
         <span style={{ flex: 1 }} />
         {dirty && <span className="animator-dirty">Unsaved</span>}
-        <Button
-          size="sm"
-          variant="primary"
-          disabled={!draft || saving || !dirty || !complete}
-          title={
+        <Tooltip
+          content={
             !complete
               ? 'Resolve the highlighted issues before saving'
               : !dirty
                 ? 'No unsaved changes'
                 : 'Save this state machine'
           }
-          onClick={() => void save()}
         >
-          <Icon name="check" size={11} /> {saving ? 'Saving…' : 'Save'}
-        </Button>
+          <Button
+            size="sm"
+            variant="primary"
+            disabled={!draft || saving || !dirty || !complete}
+            onClick={() => void save()}
+          >
+            <Icon name="check" size={11} /> {saving ? 'Saving…' : 'Save'}
+          </Button>
+        </Tooltip>
       </div>
 
       {!draft ? (
@@ -281,13 +285,14 @@ function ParamsSection({ draft, update }: { draft: AsmDraft; update: (fn: (d: As
                 )}
                 {p.type === 'trigger' && <span className="animator-empty">fires once</span>}
               </div>
-              <button
+              <IconButton
+                bare
                 className="icon-btn danger"
-                title={`Remove ${p.name || 'parameter'}`}
+                icon="cross"
+                iconSize={10}
+                label={`Remove ${p.name || 'parameter'}`}
                 onClick={() => update((d) => removeParam(d, i))}
-              >
-                <Icon name="cross" size={10} />
-              </button>
+              />
             </div>
           ))
         )}
@@ -325,15 +330,16 @@ function StatesSection({
             const isInitial = draft.initial === s.name && s.name !== '';
             return (
               <div className="animator-state-row" key={i}>
-                <button
+                <IconButton
+                  bare
                   className={`animator-initial${isInitial ? ' on' : ''}`}
-                  title={isInitial ? 'Initial state' : 'Make this the initial state'}
+                  icon="star"
+                  iconSize={11}
+                  label={isInitial ? 'Initial state' : 'Make this the initial state'}
                   aria-pressed={isInitial}
                   disabled={s.name === ''}
                   onClick={() => update((d) => setInitialState(d, s.name))}
-                >
-                  <Icon name="star" size={11} />
-                </button>
+                />
                 <TextField value={s.name} placeholder="name" onCommit={(v) => update((d) => renameState(d, i, v))} />
                 <select
                   className="select"
@@ -351,13 +357,14 @@ function StatesSection({
                   <span className="animator-speed-label">×</span>
                   <NumberField value={s.speed} onCommit={(v) => update((d) => setStateSpeed(d, i, v))} />
                 </div>
-                <button
+                <IconButton
+                  bare
                   className="icon-btn danger"
-                  title={`Remove ${s.name || 'state'}`}
+                  icon="cross"
+                  iconSize={10}
+                  label={`Remove ${s.name || 'state'}`}
                   onClick={() => update((d) => removeState(d, i))}
-                >
-                  <Icon name="cross" size={10} />
-                </button>
+                />
               </div>
             );
           })
@@ -377,14 +384,11 @@ function TransitionsSection({ draft, update }: { draft: AsmDraft; update: (fn: (
     <section className="animator-section">
       <header className="component-header animator-section-header">
         <span className="component-title">Transitions</span>
-        <Button
-          size="sm"
-          disabled={draft.states.length === 0}
-          title={draft.states.length === 0 ? 'Add a state first' : 'Add a transition'}
-          onClick={() => update(addTransition)}
-        >
-          <Icon name="plus" size={10} /> Add
-        </Button>
+        <Tooltip content={draft.states.length === 0 ? 'Add a state first' : 'Add a transition'}>
+          <Button size="sm" disabled={draft.states.length === 0} onClick={() => update(addTransition)}>
+            <Icon name="plus" size={10} /> Add
+          </Button>
+        </Tooltip>
       </header>
       <div className="component-body">
         {draft.transitions.length === 0 ? (
@@ -421,13 +425,14 @@ function TransitionsSection({ draft, update }: { draft: AsmDraft; update: (fn: (
                   ))}
                 </select>
                 <span style={{ flex: 1 }} />
-                <button
+                <IconButton
+                  bare
                   className="icon-btn danger"
-                  title="Remove transition"
+                  icon="cross"
+                  iconSize={10}
+                  label="Remove transition"
                   onClick={() => update((d) => removeTransition(d, ti))}
-                >
-                  <Icon name="cross" size={10} />
-                </button>
+                />
               </div>
 
               <label className="animator-check animator-exittime">
@@ -516,13 +521,14 @@ function TransitionsSection({ draft, update }: { draft: AsmDraft; update: (fn: (
                             )}
                           </>
                         )}
-                        <button
+                        <IconButton
+                          bare
                           className="icon-btn danger"
-                          title="Remove condition"
+                          icon="cross"
+                          iconSize={10}
+                          label="Remove condition"
                           onClick={() => update((d) => removeCondition(d, ti, ci))}
-                        >
-                          <Icon name="cross" size={10} />
-                        </button>
+                        />
                       </div>
                     );
                   })

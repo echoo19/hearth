@@ -3,7 +3,7 @@ import { useEditor } from '../store';
 import type { SceneEntity } from '../types';
 import { uniqueName as computeUniqueName } from '../uniqueName';
 import { ConfirmDialog, Icon, entityIcon } from './ui';
-import { Button } from './ui/Button';
+import { Button, IconButton } from './ui/Button';
 
 // Tree rows are clickable divs, not native buttons — Enter/Space is the
 // keyboard equivalent of the click that selects a row. Exported (module
@@ -174,32 +174,44 @@ export function Hierarchy() {
             </span>
           )}
           <span className="tree-actions" onClick={(e) => e.stopPropagation()}>
-            <button
+            <IconButton
+              bare
               className="icon-btn"
-              title="Rename"
+              icon="pencil"
+              iconSize={11}
+              label="Rename"
               onClick={() => {
                 setRenaming(entity.id);
                 setRenameValue(entity.name);
               }}
-            >
-              <Icon name="pencil" size={11} />
-            </button>
-            <button className="icon-btn" title="Duplicate" onClick={() => void duplicate(entity)}>
-              <Icon name="duplicate" size={11} />
-            </button>
-            <button
+            />
+            <IconButton
+              bare
               className="icon-btn"
-              title="Save as prefab"
+              icon="duplicate"
+              iconSize={11}
+              label="Duplicate"
+              onClick={() => void duplicate(entity)}
+            />
+            <IconButton
+              bare
+              className="icon-btn"
+              icon="prefab"
+              iconSize={11}
+              label="Save as prefab"
               onClick={() => {
                 setSavingPrefab(entity.id);
                 setPrefabNameValue(entity.name);
               }}
-            >
-              <Icon name="prefab" size={11} />
-            </button>
-            <button className="icon-btn danger" title="Delete" onClick={() => setDeleting(entity)}>
-              <Icon name="trash" size={11} />
-            </button>
+            />
+            <IconButton
+              bare
+              className="icon-btn danger"
+              icon="trash"
+              iconSize={11}
+              label="Delete"
+              onClick={() => setDeleting(entity)}
+            />
           </span>
         </div>
         {!isCollapsed && children.map((child) => renderRow(child, depth + 1))}
@@ -215,9 +227,14 @@ export function Hierarchy() {
         <span>
           Hierarchy{scene ? <span className="panel-header-detail"> · {scene.name}</span> : null}
         </span>
-        <button className="icon-btn" title="New entity" onClick={() => void addEntity()} disabled={!sceneId}>
-          <Icon name="plus" />
-        </button>
+        <IconButton
+          bare
+          className="icon-btn"
+          icon="plus"
+          label="New entity"
+          onClick={() => void addEntity()}
+          disabled={!sceneId}
+        />
       </div>
       <div className="panel-scroll">
         {roots.length === 0 ? (

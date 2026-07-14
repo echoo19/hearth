@@ -14,6 +14,7 @@ import { fileUrl } from '../api';
 import type { AssetItem } from '../types';
 import { Icon, Modal } from './ui';
 import { Button } from './ui/Button';
+import { Tooltip } from './ui/Tooltip';
 
 /** Reserved chars: always empty, never assignable to an asset. */
 export const ERASER_CHAR = '.';
@@ -64,49 +65,48 @@ export function TilemapPainter({
             Done painting
           </Button>
         ) : (
-          <Button
-            size="sm"
-            title="Paint this tilemap's cells directly in the scene"
-            onClick={onTogglePaintMode}
-          >
-            <Icon name="pencil" size={11} /> Paint tiles
-          </Button>
+          <Tooltip content="Paint this tilemap's cells in the scene">
+            <Button size="sm" onClick={onTogglePaintMode}>
+              <Icon name="pencil" size={11} /> Paint tiles
+            </Button>
+          </Tooltip>
         )}
       </div>
 
       {paintMode && (
         <div className="tilemap-palette">
           <div className="tilemap-palette-swatches">
-            <button
-              type="button"
-              className={`tilemap-swatch${selectedChar === ERASER_CHAR ? ' selected' : ''}`}
-              title="Eraser — clears a cell"
-              onClick={() => onSelectChar(ERASER_CHAR)}
-            >
-              <span className="tilemap-swatch-thumb tilemap-swatch-eraser">
-                <Icon name="cross" size={12} />
-              </span>
-              <span className="tilemap-swatch-label">eraser</span>
-            </button>
+            <Tooltip content="Eraser — clears a cell">
+              <button
+                type="button"
+                className={`tilemap-swatch${selectedChar === ERASER_CHAR ? ' selected' : ''}`}
+                onClick={() => onSelectChar(ERASER_CHAR)}
+              >
+                <span className="tilemap-swatch-thumb tilemap-swatch-eraser">
+                  <Icon name="cross" size={12} />
+                </span>
+                <span className="tilemap-swatch-label">eraser</span>
+              </button>
+            </Tooltip>
             {chars.map(([char, assetId]) => {
               const asset = assets.find((a) => a.id === assetId);
               return (
-                <button
-                  type="button"
-                  key={char}
-                  className={`tilemap-swatch${selectedChar === char ? ' selected' : ''}`}
-                  title={asset ? `"${char}" → ${asset.name}` : `"${char}" (mapped asset not found)`}
-                  onClick={() => onSelectChar(char)}
-                >
-                  <span className="tilemap-swatch-thumb checkerboard-bg">
-                    {asset && projectPath ? (
-                      <img src={fileUrl(projectPath, asset.path)} alt="" />
-                    ) : (
-                      <span className="tilemap-swatch-fallback">{char}</span>
-                    )}
-                  </span>
-                  <span className="tilemap-swatch-label mono">{char}</span>
-                </button>
+                <Tooltip key={char} content={asset ? `"${char}" → ${asset.name}` : `"${char}" (mapped asset not found)`}>
+                  <button
+                    type="button"
+                    className={`tilemap-swatch${selectedChar === char ? ' selected' : ''}`}
+                    onClick={() => onSelectChar(char)}
+                  >
+                    <span className="tilemap-swatch-thumb checkerboard-bg">
+                      {asset && projectPath ? (
+                        <img src={fileUrl(projectPath, asset.path)} alt="" />
+                      ) : (
+                        <span className="tilemap-swatch-fallback">{char}</span>
+                      )}
+                    </span>
+                    <span className="tilemap-swatch-label mono">{char}</span>
+                  </button>
+                </Tooltip>
               );
             })}
           </div>

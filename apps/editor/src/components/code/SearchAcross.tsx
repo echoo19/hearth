@@ -39,6 +39,7 @@ import { useEditor } from '../../store';
 import { comboDisplay } from '../../keybinds';
 import { Icon } from '../ui';
 import { Button, IconButton } from '../ui/Button';
+import { Tooltip } from '../ui/Tooltip';
 
 // ---------------------------------------------------------------------------
 // Pure helpers — exported for unit tests (searchAcross.test.ts). No DOM, no
@@ -448,26 +449,28 @@ export function SearchAcross({ focusNonce, onClose, onReplaceApplied }: SearchAc
           onChange={(e) => updateQuery(e.target.value)}
           onKeyDown={onQueryKeyDown}
         />
-        <Button
-          size="sm"
-          variant={caseSensitive ? 'primary' : 'default'}
-          className="code-search-toggle"
-          aria-pressed={caseSensitive}
-          title="Match case"
-          onClick={toggleCaseSensitive}
-        >
-          Aa
-        </Button>
-        <Button
-          size="sm"
-          variant={regexMode ? 'primary' : 'default'}
-          className="code-search-toggle"
-          aria-pressed={regexMode}
-          title="Use a regular expression"
-          onClick={toggleRegexMode}
-        >
-          .*
-        </Button>
+        <Tooltip content="Match case">
+          <Button
+            size="sm"
+            variant={caseSensitive ? 'primary' : 'default'}
+            className="code-search-toggle"
+            aria-pressed={caseSensitive}
+            onClick={toggleCaseSensitive}
+          >
+            Aa
+          </Button>
+        </Tooltip>
+        <Tooltip content="Use a regular expression">
+          <Button
+            size="sm"
+            variant={regexMode ? 'primary' : 'default'}
+            className="code-search-toggle"
+            aria-pressed={regexMode}
+            onClick={toggleRegexMode}
+          >
+            .*
+          </Button>
+        </Tooltip>
         <Button size="sm" onClick={() => void runSearch()} disabled={searching}>
           {searching ? 'Searching…' : 'Search'}
         </Button>
@@ -513,12 +516,7 @@ export function SearchAcross({ focusNonce, onClose, onReplaceApplied }: SearchAc
                 {replaceFlow.status === 'previewing' && replaceFlow.loading ? 'Previewing…' : 'Preview'}
               </Button>
               {(replaceFlow.status === 'previewing' || replaceFlow.status === 'applying' || replaceFlow.status === 'done') && (
-                <Button
-                  size="sm"
-                  onClick={cancelReplace}
-                  disabled={replaceFlow.status === 'applying'}
-                  title={replaceFlow.status === 'applying' ? 'Replace is already in progress and cannot be cancelled' : undefined}
-                >
+                <Button size="sm" onClick={cancelReplace} disabled={replaceFlow.status === 'applying'}>
                   {replaceFlow.status === 'done' ? 'Dismiss' : 'Cancel'}
                 </Button>
               )}

@@ -18,6 +18,8 @@ import React from 'react';
 import { POST_EFFECT_TYPES, type PostEffect, type PostEffectType } from '@hearth/core';
 import { POST_EFFECTS_MAX, addEffect, moveEffect, removeEffect, updateEffect } from '../postEffectsList';
 import { ColorField, Icon, NumberField } from './ui';
+import { IconButton } from './ui/Button';
+import { Tooltip } from './ui/Tooltip';
 
 /** Effect types whose title case reads as an unfinished word ("Crt") rather
  * than the acronym everyone actually calls it — checked before the generic
@@ -88,35 +90,36 @@ function EffectCard({
       <div className="effect-card-header">
         <span className="effect-card-title">{humanize(effect.type)}</span>
         <span style={{ flex: 1 }} />
-        <button
-          type="button"
-          className="icon-btn"
-          title="Move up"
-          aria-label="Move effect up"
-          disabled={index === 0}
-          onClick={() => onMove(-1)}
-        >
-          <span aria-hidden="true">&uarr;</span>
-        </button>
-        <button
-          type="button"
-          className="icon-btn"
-          title="Move down"
-          aria-label="Move effect down"
-          disabled={index === count - 1}
-          onClick={() => onMove(1)}
-        >
-          <span aria-hidden="true">&darr;</span>
-        </button>
-        <button
-          type="button"
+        <Tooltip content="Move up">
+          <button
+            type="button"
+            className="icon-btn"
+            aria-label="Move effect up"
+            disabled={index === 0}
+            onClick={() => onMove(-1)}
+          >
+            <span aria-hidden="true">&uarr;</span>
+          </button>
+        </Tooltip>
+        <Tooltip content="Move down">
+          <button
+            type="button"
+            className="icon-btn"
+            aria-label="Move effect down"
+            disabled={index === count - 1}
+            onClick={() => onMove(1)}
+          >
+            <span aria-hidden="true">&darr;</span>
+          </button>
+        </Tooltip>
+        <IconButton
+          bare
           className="icon-btn danger"
-          title="Remove effect"
-          aria-label="Remove effect"
+          icon="cross"
+          iconSize={10}
+          label="Remove effect"
           onClick={onRemove}
-        >
-          <Icon name="cross" size={10} />
-        </button>
+        />
       </div>
       <div className="effect-card-body">
         {fields.map(([field, value]) => (

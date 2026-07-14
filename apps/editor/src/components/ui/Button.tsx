@@ -61,21 +61,25 @@ export interface IconButtonProps extends ButtonHTMLAttributes<HTMLButtonElement>
   size?: ButtonSize;
   /** Glyph size in px, passed through to Icon (defaults to Icon's own 12). */
   iconSize?: number;
+  /**
+   * Skip the `.btn` base/variant/size classes and render `className` verbatim.
+   * For icon-only controls that ride an existing bespoke class family (the
+   * `.icon-btn` cluster in Hierarchy / Inspector / Animator / InputSettings /
+   * PostEffects, the code tab close, chip removes) so migrating them to
+   * IconButton keeps the exact same visual while still getting the tooltip +
+   * required aria-label.
+   */
+  bare?: boolean;
 }
 
 export const IconButton = forwardRef<HTMLButtonElement, IconButtonProps>(function IconButton(
-  { icon, label, shortcut, side, variant = 'default', size = 'md', iconSize, className, type = 'button', ...rest },
+  { icon, label, shortcut, side, variant = 'default', size = 'md', iconSize, bare, className, type = 'button', ...rest },
   ref,
 ) {
+  const cls = bare ? (className ?? '') : btnClassName(variant, size, className);
   return (
     <Tooltip content={label} shortcut={shortcut} side={side}>
-      <button
-        ref={ref}
-        type={type}
-        aria-label={label}
-        className={btnClassName(variant, size, className)}
-        {...rest}
-      >
+      <button ref={ref} type={type} aria-label={label} className={cls} {...rest}>
         <Icon name={icon} size={iconSize} />
       </button>
     </Tooltip>

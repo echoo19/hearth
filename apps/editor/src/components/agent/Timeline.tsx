@@ -18,6 +18,7 @@ import { useEditor } from '../../store';
 import type { JournalEntry } from '../../types';
 import { ConfirmDialog, Icon } from '../ui';
 import { Button } from '../ui/Button';
+import { Tooltip } from '../ui/Tooltip';
 
 export interface TimelineRow {
   icon: string;
@@ -201,25 +202,21 @@ export function Timeline() {
   return (
     <div className="agent-timeline">
       <div className="panel-toolbar agent-timeline-toolbar">
-        <Button
-          size="sm"
-          onClick={() => void snapshot()}
-          title="Save a checkpoint you can review and restore"
-        >
-          {snapshotTaken && <span className="timeline-check">✓</span>} Checkpoint
-        </Button>
-        <Button size="sm" onClick={reviewChanges} title="Focus the Changes panel">
-          Review changes
-        </Button>
-        <Button
-          variant="danger"
-          size="sm"
-          onClick={() => setConfirmRevert(true)}
-          disabled={!diff?.hasChanges}
-          title="Restore the project to the last checkpoint"
-        >
-          Restore checkpoint
-        </Button>
+        <Tooltip content="Save a checkpoint you can review and restore">
+          <Button size="sm" onClick={() => void snapshot()}>
+            {snapshotTaken && <span className="timeline-check">✓</span>} Checkpoint
+          </Button>
+        </Tooltip>
+        <Tooltip content="Focus the Changes panel">
+          <Button size="sm" onClick={reviewChanges}>
+            Review changes
+          </Button>
+        </Tooltip>
+        <Tooltip content="Restore the project to the last checkpoint">
+          <Button variant="danger" size="sm" onClick={() => setConfirmRevert(true)} disabled={!diff?.hasChanges}>
+            Restore checkpoint
+          </Button>
+        </Tooltip>
       </div>
 
       <div className="agent-timeline-body" ref={bodyRef} onScroll={handleScroll}>

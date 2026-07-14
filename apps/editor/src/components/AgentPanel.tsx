@@ -5,6 +5,7 @@ import { apiPrepareAgent } from '../api';
 import type { AgentPermissionMode, DetectAgentsResult } from '../../server/agentSetup';
 import { CodeBlock, Icon } from './ui';
 import { Button } from './ui/Button';
+import { Tooltip } from './ui/Tooltip';
 import { Timeline } from './agent/Timeline';
 import { planClaudeStart, useAgentSocket, type AgentSessionSummary } from './agent/useAgentSocket';
 
@@ -188,25 +189,27 @@ export function AgentPanel() {
   return (
     <div className="agent-panel-root">
       <div className="panel-toolbar agent-toolbar">
-        <select
-          className="select"
-          value={agentLauncher}
-          onChange={(e) => {
-            setAgentLauncher(e.target.value as AgentLauncher);
-            setPrepareError(null);
-          }}
-          title="Choose which local agent CLI to launch"
-        >
-          <option value="claude">{AGENT_LAUNCHER_LABELS.claude}</option>
-          <option value="codex">{AGENT_LAUNCHER_LABELS.codex}</option>
-          <option value="shell">{AGENT_LAUNCHER_LABELS.shell}</option>
-        </select>
+        <Tooltip content="Choose which local agent CLI to launch">
+          <select
+            className="select"
+            value={agentLauncher}
+            onChange={(e) => {
+              setAgentLauncher(e.target.value as AgentLauncher);
+              setPrepareError(null);
+            }}
+          >
+            <option value="claude">{AGENT_LAUNCHER_LABELS.claude}</option>
+            <option value="codex">{AGENT_LAUNCHER_LABELS.codex}</option>
+            <option value="shell">{AGENT_LAUNCHER_LABELS.shell}</option>
+          </select>
+        </Tooltip>
 
+        {/* The permission-mode explanation is already shown as visible text
+            below the toolbar (AGENT_MODE_HINTS[agentMode]); no native title. */}
         <select
           className="select"
           value={agentMode}
           onChange={(e) => setAgentMode(e.target.value as AgentPermissionMode)}
-          title={AGENT_MODE_HINTS[agentMode]}
         >
           {AGENT_MODE_LADDER.map((mode) => (
             <option key={mode} value={mode}>
@@ -228,42 +231,33 @@ export function AgentPanel() {
             <Button variant="primary" size="sm" disabled>
               Couldn't check for {AGENT_LAUNCHER_LABELS[agentLauncher]}
             </Button>
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => void detectAgent()}
-              title={`Re-check whether the ${agentLauncher} CLI is on PATH`}
-            >
-              Re-detect
-            </Button>
+            <Tooltip content={`Re-check whether the ${agentLauncher} CLI is on PATH`}>
+              <Button variant="ghost" size="sm" onClick={() => void detectAgent()}>
+                Re-detect
+              </Button>
+            </Tooltip>
           </>
         ) : agentLauncher === 'claude' ? (
           <>
             <Button variant="primary" size="sm" onClick={installClaude} disabled={!projectPath}>
               Install Claude Code
             </Button>
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => void detectAgent()}
-              title="Re-check whether the claude CLI is on PATH"
-            >
-              Re-detect
-            </Button>
+            <Tooltip content="Re-check whether the claude CLI is on PATH">
+              <Button variant="ghost" size="sm" onClick={() => void detectAgent()}>
+                Re-detect
+              </Button>
+            </Tooltip>
           </>
         ) : (
           <>
             <Button variant="primary" size="sm" disabled>
               Codex not found
             </Button>
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => void detectAgent()}
-              title="Re-check whether the codex CLI is on PATH"
-            >
-              Re-detect
-            </Button>
+            <Tooltip content="Re-check whether the codex CLI is on PATH">
+              <Button variant="ghost" size="sm" onClick={() => void detectAgent()}>
+                Re-detect
+              </Button>
+            </Tooltip>
           </>
         )}
 

@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { useEditor } from '../store';
 import { ConfirmDialog, Icon } from './ui';
 import { Button } from './ui/Button';
+import { Tooltip } from './ui/Tooltip';
 import { useHistoryList } from '../useHistoryList';
 import type { HistoryEntry, ProjectDiff } from '../types';
 
@@ -79,32 +80,27 @@ export function DiffPanel() {
           {busy === 'redo' ? 'Redoing…' : redoTarget ? `Redo ${redoTarget.command}` : 'Redo'}
         </Button>
         <span className="panel-divider" />
-        <Button
-          size="sm"
-          onClick={() => void snapshot()}
-          disabled={busy !== null}
-          title="Save a checkpoint you can review and restore"
-        >
-          {busy === 'checkpoint' ? 'Saving…' : 'Checkpoint'}
-        </Button>
-        <Button
-          size="sm"
-          onClick={() => void doRefresh()}
-          disabled={busy !== null}
-          title="See what changed since your last checkpoint"
-        >
-          {busy === 'refresh' ? 'Refreshing…' : 'Refresh changes'}
-        </Button>
+        <Tooltip content="Save a checkpoint you can review and restore">
+          <Button size="sm" onClick={() => void snapshot()} disabled={busy !== null}>
+            {busy === 'checkpoint' ? 'Saving…' : 'Checkpoint'}
+          </Button>
+        </Tooltip>
+        <Tooltip content="See what changed since your last checkpoint">
+          <Button size="sm" onClick={() => void doRefresh()} disabled={busy !== null}>
+            {busy === 'refresh' ? 'Refreshing…' : 'Refresh changes'}
+          </Button>
+        </Tooltip>
         <span style={{ flex: 1 }} />
-        <Button
-          variant="danger"
-          size="sm"
-          onClick={() => setConfirmRevert(true)}
-          disabled={!diff?.hasChanges || busy !== null}
-          title="Restore the project to the last checkpoint"
-        >
-          {busy === 'restore' ? 'Restoring…' : 'Restore checkpoint'}
-        </Button>
+        <Tooltip content="Restore the project to the last checkpoint">
+          <Button
+            variant="danger"
+            size="sm"
+            onClick={() => setConfirmRevert(true)}
+            disabled={!diff?.hasChanges || busy !== null}
+          >
+            {busy === 'restore' ? 'Restoring…' : 'Restore checkpoint'}
+          </Button>
+        </Tooltip>
       </div>
 
       <div className="panel-body">

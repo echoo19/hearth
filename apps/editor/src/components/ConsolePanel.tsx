@@ -3,6 +3,7 @@ import { useEditor } from '../store';
 import type { ConsoleEntry, ValidationReport } from '../types';
 import { Icon } from './ui';
 import { Button } from './ui/Button';
+import { Tooltip } from './ui/Tooltip';
 
 /**
  * Clickable `path:line` suffix for a Console entry that names an exact
@@ -27,14 +28,11 @@ function ConsoleLink({ link }: { link: NonNullable<ConsoleEntry['link']> }) {
   const label = link.line != null ? `${link.path}:${link.line}` : link.path;
 
   return (
-    <button
-      type="button"
-      className="console-link"
-      onClick={() => openConsoleLink(link, openScriptAt)}
-      title={`Open ${label}`}
-    >
-      {label}
-    </button>
+    <Tooltip content={`Open ${label}`}>
+      <button type="button" className="console-link" onClick={() => openConsoleLink(link, openScriptAt)}>
+        {label}
+      </button>
+    </Tooltip>
   );
 }
 

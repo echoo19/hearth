@@ -32,7 +32,7 @@ import { GAMEPAD_BUTTON_NAMES } from '@hearth/core';
 import type { GamepadAxisBinding, InputMappings, VirtualAxis } from '@hearth/core';
 import { useEditor } from '../store';
 import { ConfirmDialog, Icon, NumberField, TextField } from './ui';
-import { Button } from './ui/Button';
+import { Button, IconButton } from './ui/Button';
 
 function withoutKey<T>(map: Record<string, T>, key: string): Record<string, T> {
   const next = { ...map };
@@ -83,15 +83,14 @@ function ChipList({
       {items.map((item, i) => (
         <span className="chip mono" key={`${item}-${i}`}>
           {item}
-          <button
-            type="button"
+          <IconButton
+            bare
             className="chip-remove"
-            aria-label={`Remove ${item}`}
-            title={`Remove ${item}`}
+            icon="cross"
+            iconSize={8}
+            label={`Remove ${item}`}
             onClick={() => onRemove(item, i)}
-          >
-            <Icon name="cross" size={8} />
-          </button>
+          />
         </span>
       ))}
     </div>
@@ -181,9 +180,14 @@ function ActionRow({
     <div className="component-card">
       <div className="component-header">
         <span className="component-title">{name}</span>
-        <button className="icon-btn danger" title={`Delete action "${name}"`} onClick={onDelete}>
-          <Icon name="cross" size={10} />
-        </button>
+        <IconButton
+          bare
+          className="icon-btn danger"
+          icon="cross"
+          iconSize={10}
+          label={`Delete action "${name}"`}
+          onClick={onDelete}
+        />
       </div>
       <div className="component-body">
         <div className="inspector-row">
@@ -280,9 +284,14 @@ function AxisRow({
     <div className="component-card">
       <div className="component-header">
         <TextField key={`axis-name-${name}`} value={name} onCommit={onRename} />
-        <button className="icon-btn danger" title={`Delete axis "${name}"`} onClick={onDelete}>
-          <Icon name="cross" size={10} />
-        </button>
+        <IconButton
+          bare
+          className="icon-btn danger"
+          icon="cross"
+          iconSize={10}
+          label={`Delete axis "${name}"`}
+          onClick={onDelete}
+        />
       </div>
       <div className="component-body">
         <div className="inspector-row">

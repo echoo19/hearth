@@ -46,6 +46,7 @@ import { overlayStrokeCells, resolveTileVisual, type TileAsset, type TileVisual 
 import { ERASER_CHAR, TilemapPainter } from './TilemapPainter';
 import { Icon } from './ui';
 import { Button } from './ui/Button';
+import { Tooltip } from './ui/Tooltip';
 import type { AssetItem, SceneEntity, Vec2 } from '../types';
 
 interface ViewTransform {
@@ -1800,16 +1801,17 @@ export function SceneView() {
               Done
             </Button>
           ) : (
-            <Button
-              size="sm"
-              title="Edit the polygon collider's or LineRenderer's points in the scene"
-              onClick={() => {
-                if (paintMode) exitPaintMode();
-                setEditingPoints(true);
-              }}
-            >
-              Edit points
-            </Button>
+            <Tooltip content="Edit collider / line points in the scene">
+              <Button
+                size="sm"
+                onClick={() => {
+                  if (paintMode) exitPaintMode();
+                  setEditingPoints(true);
+                }}
+              >
+                Edit points
+              </Button>
+            </Tooltip>
           )}
         </div>
       )}
@@ -1827,16 +1829,17 @@ export function SceneView() {
         />
       )}
 
-      <Button
-        variant={particlesEnabled ? 'primary' : 'default'}
-        size="sm"
-        className="scene-particles-toggle"
-        onClick={() => setParticlesEnabled(!particlesEnabled)}
-        title="Toggle the live particle preview for the selected emitter (Scene view only — doesn't affect Play mode)"
-        aria-pressed={particlesEnabled}
-      >
-        <Icon name="particles" size={11} /> Particles
-      </Button>
+      <Tooltip content="Live particle preview (Scene view only)">
+        <Button
+          variant={particlesEnabled ? 'primary' : 'default'}
+          size="sm"
+          className="scene-particles-toggle"
+          onClick={() => setParticlesEnabled(!particlesEnabled)}
+          aria-pressed={particlesEnabled}
+        >
+          <Icon name="particles" size={11} /> Particles
+        </Button>
+      </Tooltip>
 
       <div className="scene-hud">
         <span>{Math.round(view.s * 100)}%</span>

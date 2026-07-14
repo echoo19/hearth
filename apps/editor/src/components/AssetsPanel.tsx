@@ -5,6 +5,7 @@ import { apiImportAssets, fileUrl } from '../api';
 import type { AssetItem } from '../types';
 import { ConfirmDialog, Icon, Modal } from './ui';
 import { Button } from './ui/Button';
+import { Tooltip } from './ui/Tooltip';
 import { frameCrop, parseFrameRef, readSheetSize } from '../assetPreview';
 import { countPrefabInstances, createSyncPreflight, syncConfirmBody } from '../prefabActions';
 import { collectDropEntries, entriesFromDataTransferItems } from '../dropEntries';
@@ -409,17 +410,18 @@ export function AssetsPanel() {
     if (asset.type === 'audio') {
       const playing = playingAssetId === asset.id;
       return (
-        <button
-          className={`audio-preview-btn${playing ? ' playing' : ''}`}
-          title={playing ? 'Stop preview' : 'Play preview'}
-          aria-label={playing ? `Stop ${asset.name}` : `Play ${asset.name}`}
-          onClick={(e) => {
-            e.stopPropagation();
-            togglePreview(asset);
-          }}
-        >
-          <Icon name={playing ? 'stop' : 'play'} size={13} />
-        </button>
+        <Tooltip content={playing ? 'Stop preview' : 'Play preview'}>
+          <button
+            className={`audio-preview-btn${playing ? ' playing' : ''}`}
+            aria-label={playing ? `Stop ${asset.name}` : `Play ${asset.name}`}
+            onClick={(e) => {
+              e.stopPropagation();
+              togglePreview(asset);
+            }}
+          >
+            <Icon name={playing ? 'stop' : 'play'} size={13} />
+          </button>
+        </Tooltip>
       );
     }
     if (projectPath && (asset.type === 'sprite' || asset.type === 'tile')) {
@@ -530,15 +532,11 @@ export function AssetsPanel() {
           Tile
         </Button>
         <span className="divider" style={{ width: 1, height: 16, background: 'var(--border-strong)' }} />
-        <Button
-          size="sm"
-          icon="upload"
-          disabled={importing}
-          title="Import images (png, jpg, svg, webp, gif), audio (wav, mp3, ogg), and fonts (ttf, otf, woff, woff2). You can also drop files onto this panel."
-          onClick={() => fileInputRef.current?.click()}
-        >
-          {importing ? 'Importing…' : 'Import…'}
-        </Button>
+        <Tooltip content="Import images, audio, or fonts">
+          <Button size="sm" icon="upload" disabled={importing} onClick={() => fileInputRef.current?.click()}>
+            {importing ? 'Importing…' : 'Import…'}
+          </Button>
+        </Tooltip>
         <input
           ref={fileInputRef}
           type="file"
@@ -644,14 +642,11 @@ export function AssetsPanel() {
             )}
             {selectedAsset.type === 'prefab' ? (
               <>
-                <Button
-                  size="sm"
-                  disabled={!sceneId}
-                  title={sceneId ? `Instantiate into "${scene?.name}" at the viewport center` : 'Open a scene first'}
-                  onClick={() => void addPrefabToScene(selectedAsset)}
-                >
-                  <Icon name="plus" size={11} /> Add to scene
-                </Button>
+                <Tooltip content={sceneId ? `Instantiate into "${scene?.name}" at the viewport center` : 'Open a scene first'}>
+                  <Button size="sm" disabled={!sceneId} onClick={() => void addPrefabToScene(selectedAsset)}>
+                    <Icon name="plus" size={11} /> Add to scene
+                  </Button>
+                </Tooltip>
                 <Button
                   size="sm"
                   disabled={pendingSyncAssetId === selectedAsset.id}
@@ -666,29 +661,32 @@ export function AssetsPanel() {
                 <Icon name="animator" size={11} /> Edit state machine
               </Button>
             ) : (
-              <Button
-                size="sm"
-                disabled={!canAssign}
-                title={
+              <Tooltip
+                content={
                   canAssign
                     ? `Set ${selectedEntity?.name}'s ${assignProperty}`
                     : selectedAsset.type === 'audio'
                       ? 'Select an entity with an AudioSource to assign'
                       : 'Select an entity with a SpriteRenderer to assign'
                 }
-                onClick={() =>
-                  selectedEntity &&
-                  sceneId &&
-                  void exec('setComponentProperty', {
-                    scene: sceneId,
-                    entity: selectedEntity.id,
-                    property: assignProperty,
-                    value: selectedAsset.id,
-                  })
-                }
               >
-                Assign to {selectedEntity ? `“${selectedEntity.name}”` : 'selection'}
-              </Button>
+                <Button
+                  size="sm"
+                  disabled={!canAssign}
+                  onClick={() =>
+                    selectedEntity &&
+                    sceneId &&
+                    void exec('setComponentProperty', {
+                      scene: sceneId,
+                      entity: selectedEntity.id,
+                      property: assignProperty,
+                      value: selectedAsset.id,
+                    })
+                  }
+                >
+                  Assign to {selectedEntity ? `“${selectedEntity.name}”` : 'selection'}
+                </Button>
+              </Tooltip>
             )}
           </div>
 
