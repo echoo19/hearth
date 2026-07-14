@@ -46,11 +46,12 @@
   transition: background var(--t-fast) var(--ease-out);
 }
 
-.menu-item:hover:not(:disabled) {
+.menu-item:hover:not(:disabled):not([aria-disabled='true']) {
   background: var(--bg-3);
 }
 
-.menu-item:disabled {
+.menu-item:disabled,
+.menu-item[aria-disabled='true'] {
   color: var(--ink-mute);
   opacity: 0.5;
   cursor: default;
@@ -60,7 +61,7 @@
   color: var(--err);
 }
 
-.menu-item-danger:hover:not(:disabled) {
+.menu-item-danger:hover:not(:disabled):not([aria-disabled='true']) {
   background: var(--err-soft);
 }
 

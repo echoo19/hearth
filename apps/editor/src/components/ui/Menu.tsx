@@ -20,6 +20,7 @@
  */
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Icon } from '../ui';
+import { Tooltip } from './Tooltip';
 
 export type MenuItem =
   | {
@@ -28,6 +29,12 @@ export type MenuItem =
       shortcut?: string;
       danger?: boolean;
       disabled?: boolean;
+      /**
+       * One short line explaining why the item is disabled. When set on a
+       * disabled item, the item is wrapped in a Tooltip so hovering/focusing
+       * it explains why instead of just looking greyed out.
+       */
+      disabledReason?: string;
       /** Present (true/false) → renders as a menuitemcheckbox with a ✓ gutter. */
       checked?: boolean;
       /** Defaults to true. Multi-toggle items (e.g. panel visibility) set false. */
@@ -135,19 +142,31 @@ export function MenuItems({
           return <div key={`sep-${i}`} className="menu-separator" role="separator" />;
         }
         const isCheckbox = typeof item.checked === 'boolean';
-        return (
+        // Disabled items with a `disabledReason` stay reachable by pointer and
+        // focus so the explanatory Tooltip can actually show — the native
+        // `disabled` attribute makes an element inert to both. `aria-disabled`
+        // keeps the a11y semantics and the greyed-out look (see menu.css)
+        // while the click handler below still refuses to run `onSelect`, and
+        // `menuNavIndex` already treats any `disabled: true` item as
+        // unfocusable for arrow-key/Home/End roving.
+        const showReason = !!(item.disabled && item.disabledReason);
+        const itemButton = (
           <button
-            key={item.label}
             ref={(el) => {
               if (itemRefs) itemRefs.current[i] = el;
             }}
             className={`menu-item${item.danger ? ' menu-item-danger' : ''}`}
             role={isCheckbox ? 'menuitemcheckbox' : 'menuitem'}
             aria-checked={isCheckbox ? !!item.checked : undefined}
-            disabled={item.disabled}
+            aria-disabled={showReason ? true : undefined}
+            disabled={item.disabled && !showReason}
             tabIndex={i === focusedIndex ? 0 : -1}
-            onFocus={() => onFocusIndex?.(i)}
-            onClick={() => onSelectItem?.(item, i)}
+            onFocus={() => {
+              if (!item.disabled) onFocusIndex?.(i);
+            }}
+            onClick={() => {
+              if (!item.disabled) onSelectItem?.(item, i);
+            }}
           >
             <span className="menu-check" aria-hidden="true">
               {item.checked ? '✓' : ''}
@@ -160,6 +179,13 @@ export function MenuItems({
               </span>
             )}
           </button>
+        );
+        return showReason ? (
+          <Tooltip key={item.label} content={item.disabledReason!}>
+            {itemButton}
+          </Tooltip>
+        ) : (
+          <React.Fragment key={item.label}>{itemButton}</React.Fragment>
         );
       })}
     </>

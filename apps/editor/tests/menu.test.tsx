@@ -1,33 +1,45 @@
+// @vitest-environment jsdom
 /**
  * Menu primitive — Wave L Task 4.
  *
- * This repo runs tests under the `node` environment (no jsdom / RTL, and the
- * vitest glob only collects `*.test.ts`), so — following the same convention as
- * launcher.test.ts / exportDialog.test.ts — the menu's behavioral core is
- * exercised as pure, exported units rather than through a rendered DOM:
- *   - `menuNavIndex`      : arrow/Home/End roving-focus math (skips separators
- *                           and disabled items, wraps).
- *   - `installMenuDismiss`: the click-outside + Escape wiring, driven through
- *                           injected fake event targets so the two behavioral
- *                           contracts are pinned exactly:
- *                             1. Escape stops propagation (SceneView deselect
- *                                contract) via a DOCUMENT keydown listener.
- *                             2. outside-detection is a WINDOW listener in the
- *                                CAPTURE phase, so a canvas pointerdown that
- *                                stopPropagation()s in the bubble phase can't
- *                                leave the menu stuck open.
- *   - `MenuItems`         : render states (danger / checked / disabled /
- *                           separator / shortcut / icon) via static markup.
+ * The vitest config collects `apps/*\/tests/**\/*.test.{ts,tsx}` and defaults
+ * to the `node` environment, but a per-file docblock can opt a `.tsx` file
+ * into jsdom — the same convention tooltip.test.tsx and button.test.tsx use.
+ * This file does both:
+ *   - The menu's pure, exported units (below) are exercised without any DOM,
+ *     following the launcher.test.ts / exportDialog.test.ts convention:
+ *       - `menuNavIndex`      : arrow/Home/End roving-focus math (skips
+ *                               separators and disabled items, wraps).
+ *       - `installMenuDismiss`: the click-outside + Escape wiring, driven
+ *                               through injected fake event targets so the two
+ *                               behavioral contracts are pinned exactly:
+ *                                 1. Escape stops propagation (SceneView
+ *                                    deselect contract) via a DOCUMENT keydown
+ *                                    listener.
+ *                                 2. outside-detection is a WINDOW listener in
+ *                                    the CAPTURE phase, so a canvas
+ *                                    pointerdown that stopPropagation()s in
+ *                                    the bubble phase can't leave the menu
+ *                                    stuck open.
+ *       - `MenuItems`         : render states (danger / checked / disabled /
+ *                               separator / shortcut / icon) via static markup.
+ *   - The `MenuButton — real DOM behavior` block below renders the actual
+ *     component with RTL to pin the wiring end to end: open/close, Escape
+ *     focus-return, real arrow-key DOM focus movement, the disabled-item
+ *     Tooltip, and the checkbox stay-open contract.
  */
-import { describe, expect, it, vi } from 'vitest';
+import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
 import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
+import { render, screen, fireEvent, cleanup, act } from '@testing-library/react';
 import {
+  MenuButton,
   MenuItems,
   installMenuDismiss,
   menuNavIndex,
   type MenuItem,
 } from '../src/components/ui/Menu';
+import { resetTooltipWarmState } from '../src/components/ui/Tooltip';
 
 describe('menuNavIndex — roving focus', () => {
   const items: MenuItem[] = [
@@ -204,5 +216,120 @@ describe('MenuItems — render states', () => {
   it('renders an icon glyph', () => {
     const html = markup([{ label: 'More', icon: 'more', onSelect: () => {} }]);
     expect(html).toContain('<svg');
+  });
+});
+
+describe('MenuButton — real DOM behavior', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    resetTooltipWarmState();
+  });
+
+  afterEach(() => {
+    cleanup();
+    vi.runOnlyPendingTimers();
+    vi.useRealTimers();
+  });
+
+  const trigger = () => screen.getByRole('button', { name: 'Actions' });
+  const menu = () => screen.queryByRole('menu');
+
+  it('opens on trigger click and closes on a second click, without double-toggling', () => {
+    render(<MenuButton label="Actions" trigger="Actions" items={[{ label: 'A', onSelect: () => {} }]} />);
+    expect(menu()).toBeNull();
+    fireEvent.click(trigger());
+    // A single click must open it — a double-toggle bug would leave it closed.
+    expect(menu()).not.toBeNull();
+    fireEvent.click(trigger());
+    expect(menu()).toBeNull();
+  });
+
+  it('Escape closes the menu and returns focus to the trigger', () => {
+    render(
+      <MenuButton
+        label="Actions"
+        trigger="Actions"
+        items={[
+          { label: 'A', onSelect: () => {} },
+          { label: 'B', onSelect: () => {} },
+        ]}
+      />,
+    );
+    fireEvent.click(trigger());
+    expect(menu()).not.toBeNull();
+    expect(document.activeElement?.textContent).toContain('A');
+    act(() => {
+      fireEvent.keyDown(document, { key: 'Escape' });
+    });
+    expect(menu()).toBeNull();
+    expect(document.activeElement).toBe(trigger());
+  });
+
+  it('moves real DOM focus across items with ArrowDown/ArrowUp', () => {
+    render(
+      <MenuButton
+        label="Actions"
+        trigger="Actions"
+        items={[
+          { label: 'A', onSelect: () => {} },
+          { label: 'B', onSelect: () => {} },
+          { label: 'C', onSelect: () => {} },
+        ]}
+      />,
+    );
+    fireEvent.click(trigger());
+    expect(document.activeElement?.textContent).toContain('A');
+    fireEvent.keyDown(menu()!, { key: 'ArrowDown' });
+    expect(document.activeElement?.textContent).toContain('B');
+    fireEvent.keyDown(menu()!, { key: 'ArrowDown' });
+    expect(document.activeElement?.textContent).toContain('C');
+    fireEvent.keyDown(menu()!, { key: 'ArrowUp' });
+    expect(document.activeElement?.textContent).toContain('B');
+  });
+
+  it('skips a disabled item during arrow-key nav and shows its disabledReason on hover', () => {
+    render(
+      <MenuButton
+        label="Actions"
+        trigger="Actions"
+        items={[
+          { label: 'A', onSelect: () => {} },
+          { label: 'Delete', disabled: true, disabledReason: 'Cannot delete the only scene in a project', onSelect: () => {} },
+          { label: 'C', onSelect: () => {} },
+        ]}
+      />,
+    );
+    fireEvent.click(trigger());
+    expect(document.activeElement?.textContent).toContain('A');
+    // ArrowDown from A must skip the disabled item and land on C.
+    fireEvent.keyDown(menu()!, { key: 'ArrowDown' });
+    expect(document.activeElement?.textContent).toContain('C');
+
+    const disabledItem = screen.getByRole('menuitem', { name: /Delete/ });
+    expect(disabledItem.getAttribute('aria-disabled')).toBe('true');
+    expect((disabledItem as HTMLButtonElement).disabled).toBe(false);
+
+    act(() => {
+      fireEvent.pointerEnter(disabledItem);
+      vi.advanceTimersByTime(350);
+    });
+    const tip = screen.getByRole('tooltip');
+    expect(tip.textContent).toContain('Cannot delete the only scene in a project');
+  });
+
+  it('keeps the menu open after selecting a checkbox item with closeOnSelect: false', () => {
+    const onSelect = vi.fn();
+    render(
+      <MenuButton
+        label="View"
+        trigger="View"
+        items={[{ label: 'Inspector', checked: false, closeOnSelect: false, onSelect }]}
+      />,
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'View' }));
+    const checkbox = screen.getByRole('menuitemcheckbox', { name: 'Inspector' });
+    fireEvent.click(checkbox);
+    expect(onSelect).toHaveBeenCalledTimes(1);
+    expect(menu()).not.toBeNull();
   });
 });

@@ -125,6 +125,7 @@ export function SceneMenu() {
       label: 'Delete…',
       danger: true,
       disabled: onlyScene,
+      disabledReason: onlyScene ? 'Cannot delete the only scene in a project' : undefined,
       onSelect: () => {
         setDeleteError(null);
         setDeleteOpen(true);
