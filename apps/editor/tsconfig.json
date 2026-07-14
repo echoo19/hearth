@@ -18,6 +18,7 @@
       "@hearth/runtime": ["../../packages/runtime/src/index.ts"],
       "@hearth/runtime/pixi": ["../../packages/runtime/src/pixi/index.ts"],
       "@hearth/runtime/lua": ["../../packages/runtime/src/lua.ts"],
+      "@hearth/runtime/ui": ["../../packages/runtime/src/ui.ts"],
       "@hearth/playtest": ["../../packages/playtest/src/index.ts"]
     }
   },

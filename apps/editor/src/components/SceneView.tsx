@@ -41,10 +41,10 @@ import {
   type Rect,
   type TileCell,
 } from '../tilemapPaint';
+import { resolveUiPositions } from '@hearth/runtime/ui';
 import { readSheetSize } from '../assetPreview';
 import { overlayStrokeCells, resolveTileVisual, type TileAsset, type TileVisual } from '../tileAutotileVisual';
 import { ERASER_CHAR, TilemapPainter } from './TilemapPainter';
-import { Icon } from './ui';
 import { Button } from './ui/Button';
 import { Tooltip } from './ui/Tooltip';
 import type { AssetItem, SceneEntity, Vec2 } from '../types';
@@ -110,24 +110,40 @@ const MAX_ZOOM = 12;
 /** Multiplicative step for the =/- keyboard-zoom shortcuts (a 25% step per press). */
 const KEY_ZOOM_FACTOR = 1.25;
 
-/** localStorage key for the "Particles" toolbar toggle, alongside the layout/last-project keys. */
-const PARTICLES_PREVIEW_PREF_KEY = 'hearth.scene.particlesPreview';
+/** The scene grid pitch, in world px — matches the drawn `#scene-grid` pattern. Shift-drag move snaps to this (L-029). */
+export const GRID_SIZE = 32;
 
-/** Default ON; only turns off if the user explicitly stored '0'. */
-function readParticlesPreviewPref(): boolean {
-  try {
-    return localStorage.getItem(PARTICLES_PREVIEW_PREF_KEY) !== '0';
-  } catch {
-    return true;
-  }
+/** Snap a world coordinate to the nearest grid multiple (used by shift-drag move). */
+export function snapToGrid(v: number, grid: number = GRID_SIZE): number {
+  return Math.round(v / grid) * grid + 0; // `+ 0` normalizes -0 to 0
 }
 
-function writeParticlesPreviewPref(enabled: boolean): void {
-  try {
-    localStorage.setItem(PARTICLES_PREVIEW_PREF_KEY, enabled ? '1' : '0');
-  } catch {
-    /* private mode / quota — best-effort, like the layout/last-project prefs */
-  }
+/**
+ * Whether a bare Space keydown should begin canvas panning. Yields to any
+ * typing target — input/textarea AND CodeMirror's contenteditable surface
+ * (via the shared isTypingTarget's isContentEditable check) — so Space types
+ * a space in the Code panel instead of being swallowed here (L-053 / CODE-1).
+ */
+export function panSpaceKey(e: { code: string; target: unknown }): boolean {
+  return e.code === 'Space' && !isTypingTarget(e.target);
+}
+
+/**
+ * Map a runtime screen-space UIElement position (0..W, 0..H, top-left origin —
+ * see packages/runtime/src/ui.ts uiScreenPosition/resolveUiPositions) into the
+ * Scene view's world space, placed 1:1 over the active camera's viewport so it
+ * overlays exactly what that camera frames (L-024).
+ *
+ * The runtime draws UIElement entities in a screen-space overlay container that
+ * is fixed to the canvas and ignores camera zoom (packages/runtime/src/pixi
+ * updateNode), so the HUD is represented here at its true 1:1 pixel size,
+ * centered on the camera. With the runtime's default camera (no Camera entity →
+ * center = {W/2, H/2}) this reduces to the identity screen→world mapping, which
+ * is also where `fitView` frames the scene — so a default HUD lands over the
+ * build viewport at world origin, matching the game.
+ */
+export function uiScreenToWorld(screen: Vec2, camCenter: Vec2, size: { w: number; h: number }): Vec2 {
+  return { x: camCenter.x + screen.x - size.w / 2, y: camCenter.y + screen.y - size.h / 2 };
 }
 
 /**
@@ -263,6 +279,27 @@ export function SceneView() {
     return map;
   }, [scene]);
 
+  const buildW = info?.buildSettings.width ?? 0;
+  const buildH = info?.buildSettings.height ?? 0;
+
+  // ---- UIElement placement (L-024) ----------------------------------------
+  // UIElement entities are screen-space (anchor + offset), NOT world-space
+  // Transforms — every HUD entity in a real scene sits at Transform {0,0} and
+  // gets its real position from anchor+offset alone (packages/runtime/src/ui.ts
+  // uiScreenPosition, which never reads Transform.position). Resolving them
+  // through resolveUiPositions — the SAME function the runtime and pixi host
+  // call — reuses the exact anchor/offset/UILayout math, so the Scene view is a
+  // truthful HUD preview instead of a pile of overlapping text at world origin.
+  const uiScreenPositions = useMemo(() => {
+    const entities = scene?.entities;
+    if (!entities || buildW === 0 || buildH === 0) return new Map<string, Vec2>();
+    return resolveUiPositions(
+      entities as unknown as Parameters<typeof resolveUiPositions>[0],
+      buildW,
+      buildH,
+    );
+  }, [scene, buildW, buildH]);
+
   /** Local Transform position, honoring the live drag override. */
   function localPos(e: SceneEntity): Vec2 {
     if (dragRef.current && dragPos && e.id === dragRef.current.entityId) return dragPos;
@@ -270,9 +307,46 @@ export function SceneView() {
     return { x: p?.x ?? 0, y: p?.y ?? 0 };
   }
 
-  /** World position = own local position plus ancestor translation offsets. */
+  /**
+   * The active camera's world center — mirrors runtime.ts's `camera` getter
+   * (isMain wins, else the first Camera entity, else the build-viewport center
+   * {W/2, H/2}). UIElement entities are placed 1:1 over this so the HUD overlays
+   * exactly what the camera frames (see uiScreenToWorld). Cameras never carry a
+   * UIElement, so worldPos(cam) here can't recurse back into UI placement.
+   */
+  function activeCameraCenter(): Vec2 {
+    const cams = (scene?.entities ?? []).filter(
+      (e) => e.enabled !== false && e.components.Camera,
+    );
+    const cam = cams.find((e) => (e.components.Camera as { isMain?: boolean }).isMain) ?? cams[0];
+    if (!cam) return { x: buildW / 2, y: buildH / 2 };
+    return worldPos(cam);
+  }
+
+  /** World position: UIElement entities resolve via anchor+offset over the camera; everyone else walks the Transform parent chain. */
   function worldPos(e: SceneEntity): Vec2 {
+    if (e.components.UIElement) {
+      const screen = uiScreenPositions.get(e.id);
+      if (screen) return uiScreenToWorld(screen, activeCameraCenter(), { w: buildW, h: buildH });
+    }
     let { x, y } = localPos(e);
+    let parentId = e.parentId;
+    let guard = 0;
+    while (parentId && guard++ < 64) {
+      const parent = entityById.get(parentId);
+      if (!parent) break;
+      const p = localPos(parent);
+      x += p.x;
+      y += p.y;
+      parentId = parent.parentId;
+    }
+    return { x, y };
+  }
+
+  /** Summed ancestor translation (world − local), so a world-space grid snap maps back to a local Transform.position. */
+  function ancestorOffset(e: SceneEntity): Vec2 {
+    let x = 0;
+    let y = 0;
     let parentId = e.parentId;
     let guard = 0;
     while (parentId && guard++ < 64) {
@@ -327,19 +401,18 @@ export function SceneView() {
     };
   }, [particlePreview]);
 
-  const [particlesEnabled, setParticlesEnabledState] = useState(readParticlesPreviewPref);
-  function setParticlesEnabled(next: boolean): void {
-    setParticlesEnabledState(next);
-    writeParticlesPreviewPref(next);
-  }
-
   // Re-render on every stepped preview frame (only fires while the ticker is
   // actually gated on — see ParticlePreview.sync/isActive).
   const [, bumpParticleTick] = useState(0);
   useEffect(() => particlePreview.subscribe(() => bumpParticleTick((n) => n + 1)), [particlePreview]);
 
   useEffect(() => particlePreview.setVisible(panelVisible), [particlePreview, panelVisible]);
-  useEffect(() => particlePreview.setToggleEnabled(particlesEnabled), [particlePreview, particlesEnabled]);
+  // Emitter preview is always-on for the selected emitter now (object-owned,
+  // Unity/Godot model) — the floating "Particles" toggle + its localStorage
+  // pref were removed per JAKE-STEER (L-027). Gating is purely panel-visible +
+  // selection (a single target is set below), so the ticker still never runs
+  // for an unselected emitter or a hidden panel.
+  useEffect(() => particlePreview.setToggleEnabled(true), [particlePreview]);
   useEffect(() => {
     const fixedTimestep = info?.buildSettings.fixedTimestep;
     particlePreview.setFixedDt(fixedTimestep && fixedTimestep > 0 ? 1 / fixedTimestep : 1 / 60);
@@ -476,11 +549,13 @@ export function SceneView() {
   }, [info]);
 
   // ---- space-to-pan --------------------------------------------------------
+  // The guard uses the shared isTypingTarget (via panSpaceKey) so it yields to
+  // CodeMirror's contenteditable surface, not just INPUT/TEXTAREA — otherwise
+  // this window-level handler preventDefault's Space over the Code panel and
+  // eats every space typed into a script (L-053 / CODE-1).
   useEffect(() => {
-    const isTyping = (t: EventTarget | null) =>
-      t instanceof HTMLElement && ['INPUT', 'TEXTAREA', 'SELECT'].includes(t.tagName);
     const down = (e: KeyboardEvent) => {
-      if (e.code === 'Space' && !isTyping(e.target)) {
+      if (panSpaceKey(e)) {
         e.preventDefault();
         setSpaceHeld(true);
       }
@@ -622,6 +697,7 @@ export function SceneView() {
   }, [paintMode, selectedTilemap]);
 
   function startPaint(e: React.PointerEvent, entity: SceneEntity) {
+    if (playing) return; // never mutate the scene under a live run (L-025 / SCENEVIEW-4)
     const tm = entity.components.Tilemap as TilemapComponent | undefined;
     if (!tm) return;
     const tileSize = tm.tileSize > 0 ? tm.tileSize : 32;
@@ -743,8 +819,15 @@ export function SceneView() {
   // drag edits (resolveHandleTarget), draws the gizmo, and commits ONE
   // setComponentProperty per gesture on pointer-up (see commitHandleDrag for
   // the one documented exception). Hidden while playing, editing points,
-  // painting tiles, or with nothing selected.
-  const showHandles = !playing && !editingPoints && !paintMode && selectedForRender !== undefined;
+  // painting tiles, with nothing selected, or on a UIElement (screen-space:
+  // position is authored via anchor+offset in the Inspector, not a scene drag —
+  // see L-024 and onEntityPointerDown).
+  const showHandles =
+    !playing &&
+    !editingPoints &&
+    !paintMode &&
+    selectedForRender !== undefined &&
+    !selectedForRender.components.UIElement;
 
   /**
    * The selected entity's resolved drag target plus its world-space
@@ -978,6 +1061,12 @@ export function SceneView() {
     if (e.button !== 0) return;
     e.stopPropagation();
     select(entity.id);
+    // A drag must never start (a) while playing — it would mutate the scene
+    // under the live run (L-025 / SCENEVIEW-4) — or (b) on a UIElement, whose
+    // screen-space position comes from anchor+offset, not Transform.position,
+    // so a scene drag would write a value the runtime never reads (L-024).
+    // Both still select; the UIElement is edited via the Inspector.
+    if (playing || entity.components.UIElement) return;
     const start = localPos(entity);
     dragRef.current = {
       entityId: entity.id,
@@ -1036,7 +1125,18 @@ export function SceneView() {
       const dy = (now.y - drag.startScreen.y) / viewRef.current.s;
       if (!drag.moved && Math.abs(dx) < 0.5 && Math.abs(dy) < 0.5) return;
       drag.moved = true;
-      setDragPos({ x: drag.startLocal.x + dx, y: drag.startLocal.y + dy });
+      let nx = drag.startLocal.x + dx;
+      let ny = drag.startLocal.y + dy;
+      // Hold Shift to snap to the drawn 32px grid (L-029 / SCENEVIEW-3). The
+      // grid is world-space, so snap the WORLD position and map back through
+      // the ancestor offset to the local Transform.position the drag commits.
+      if (e.shiftKey) {
+        const entity = entityById.get(drag.entityId);
+        const off = entity ? ancestorOffset(entity) : { x: 0, y: 0 };
+        nx = snapToGrid(nx + off.x) - off.x;
+        ny = snapToGrid(ny + off.y) - off.y;
+      }
+      setDragPos({ x: nx, y: ny });
       return;
     }
     const paint = paintRef.current;
@@ -1348,7 +1448,15 @@ export function SceneView() {
   function renderLineRenderer(entity: SceneEntity): React.ReactNode {
     const lr = entity.components.LineRenderer as any;
     if (!lr || lr.visible === false) return null;
-    const points: Vec2[] = Array.isArray(lr.points) ? lr.points : [];
+    // Live vertex drag: draw the draft geometry (same local space as lr.points)
+    // so the real stroke tracks the orange guide instead of showing the stale
+    // pre-drag shape underneath — removes the double-image on thick lines
+    // (L-030 / SCENEVIEW-5).
+    const draft =
+      draggingVertex && entity.id === selection && draftPoints && pointsSourceFor(entity)?.component === 'LineRenderer'
+        ? draftPoints
+        : null;
+    const points: Vec2[] = draft ?? (Array.isArray(lr.points) ? lr.points : []);
     if (points.length < 2) return null;
     const attr = points.map((p) => `${p.x},${p.y}`).join(' ');
     // Width is world-space (matching the runtime's Pixi stroke), so it zooms
@@ -1574,7 +1682,14 @@ export function SceneView() {
                 transform={`translate(${wp.x} ${wp.y})`}
                 opacity={entity.enabled ? 1 : 0.35}
                 style={{
-                  cursor: spaceHeld || editingPoints || (paintMode && entity.id !== selection) ? undefined : paintMode ? 'crosshair' : 'move',
+                  cursor:
+                    spaceHeld || editingPoints || (paintMode && entity.id !== selection)
+                      ? undefined
+                      : paintMode
+                        ? 'crosshair'
+                        : entity.components.UIElement
+                          ? 'default' // screen-space UI isn't scene-draggable (L-024)
+                          : 'move',
                 }}
                 onPointerDown={(e) => onEntityPointerDown(e, entity)}
               >
@@ -1591,18 +1706,19 @@ export function SceneView() {
                 {/* Light2D/ParticleEmitter gizmos: world position only, not the
                     entity's own rotation/scale — see their render fns for why.
                     The selected entity's emitter swaps the static cone gizmo
-                    for the live preview while it's actually active (panel
-                    visible + toggle on) AND currently has live particles to
-                    show; every other emitter, the selected one when the
-                    preview isn't active, and the selected one when the
-                    preview IS active but has zero live particles right now
-                    (rate 0 + burst 0, or the runtime chunk hasn't finished
-                    its async import yet) all keep the cone gizmo, so the
-                    emitter is never simply invisible. */}
+                    for the always-on live preview while it's actually active
+                    (Scene panel visible) AND currently has live particles to
+                    show; every other emitter, the selected one when the panel
+                    is hidden, and the selected one when the preview IS active
+                    but has zero live particles right now (rate 0 + burst 0, or
+                    the runtime chunk hasn't finished its async import yet) all
+                    keep the cone gizmo, so the emitter is never simply
+                    invisible. The old floating "Particles" toggle was removed
+                    (L-027); preview is now object-owned per selection. */}
                 {renderLightGizmo(entity)}
                 {(() => {
                   const liveParticles =
-                    entity.id === selection && particlesEnabled && panelVisible
+                    entity.id === selection && panelVisible
                       ? particlePreview.getPreviewParticles(entity.id)
                       : null;
                   return liveParticles && liveParticles.length > 0
@@ -1829,17 +1945,13 @@ export function SceneView() {
         />
       )}
 
-      <Tooltip content="Live particle preview (Scene view only)">
-        <Button
-          variant={particlesEnabled ? 'primary' : 'default'}
-          size="sm"
-          className="scene-particles-toggle"
-          onClick={() => setParticlesEnabled(!particlesEnabled)}
-          aria-pressed={particlesEnabled}
-        >
-          <Icon name="particles" size={11} /> Particles
-        </Button>
-      </Tooltip>
+      {selectedEntity?.components.UIElement && (
+        // UIElement entities are screen-space: their position comes from
+        // anchor + offset (Inspector), not a scene drag (L-024). A one-line,
+        // selection-scoped hint — not persistent chrome (the always-on hint
+        // bar was removed per JAKE-STEER, L-026).
+        <div className="scene-selection-hint">Position via anchor + offset in the Inspector</div>
+      )}
 
       <div className="scene-hud">
         <span>{Math.round(view.s * 100)}%</span>
@@ -1848,13 +1960,6 @@ export function SceneView() {
             {Math.round(worldPos(selectedEntity).x)}, {Math.round(worldPos(selectedEntity).y)}
           </span>
         )}
-      </div>
-      <div className="scene-hint">
-        {editingPoints
-          ? 'drag a point · click an edge midpoint to add one · alt-click a point to delete · esc or Done to finish'
-          : paintMode
-            ? 'click or drag to paint · shift-drag to fill a rect · esc or Done painting to finish'
-            : 'scroll to zoom · space+drag or middle-drag to pan · drag an entity to move it'}
       </div>
     </div>
   );

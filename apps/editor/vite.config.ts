@@ -23,6 +23,11 @@ export default defineConfig({
       // wasmoon at its Vite-served glue.wasm (setLuaWasmUri) — same module
       // instance the runtime dynamically imports for .lua scripts.
       { find: '@hearth/runtime/lua', replacement: src('packages/runtime/src/lua.ts') },
+      // Pure screen-space UI math (anchor/offset/layout resolution). The Scene
+      // view imports it directly so placing UIElement entities never pulls the
+      // heavy runtime barrel (SceneRuntime/Lua/pixi) into the eager main bundle
+      // — same reasoning as particlePreview.ts's dynamic runtime import.
+      { find: '@hearth/runtime/ui', replacement: src('packages/runtime/src/ui.ts') },
       { find: '@hearth/runtime', replacement: src('packages/runtime/src/index.ts') },
       { find: '@hearth/playtest', replacement: src('packages/playtest/src/index.ts') },
     ],

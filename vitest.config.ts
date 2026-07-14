@@ -12,6 +12,10 @@ export default defineConfig({
       '@hearth/core/node': path.resolve(__dirname, 'packages/core/src/node/index.ts'),
       '@hearth/core': pkg('core'),
       '@hearth/runtime/pixi': path.resolve(__dirname, 'packages/runtime/src/pixi/index.ts'),
+      // Pure screen-space UI math (anchor/offset/layout resolution), imported
+      // directly by the editor's Scene view so it never drags the heavy
+      // runtime barrel into the eager bundle — see apps/editor/vite.config.ts.
+      '@hearth/runtime/ui': path.resolve(__dirname, 'packages/runtime/src/ui.ts'),
       '@hearth/runtime': pkg('runtime'),
       '@hearth/playtest': pkg('playtest'),
     },

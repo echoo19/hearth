@@ -24,12 +24,6 @@
   cursor: grabbing;
 }
 
-.scene-particles-toggle {
-  position: absolute;
-  right: 10px;
-  bottom: 44px;
-}
-
 .scene-hud {
   position: absolute;
   right: 10px;
@@ -47,11 +41,19 @@
   pointer-events: none;
 }
 
-.scene-hint {
+/* Selection-scoped hint for a screen-space UIElement (L-024): edited via
+   anchor + offset in the Inspector, not a scene drag. Shown only while such an
+   entity is selected — not the removed persistent hint bar. */
+.scene-selection-hint {
   position: absolute;
   left: 10px;
   bottom: 10px;
-  color: var(--ink-faint);
+  max-width: min(60%, 360px);
+  padding: 3px 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--overlay-bg);
+  color: var(--ink-mute);
   font-size: var(--text-xs);
   pointer-events: none;
 }

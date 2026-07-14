@@ -116,8 +116,11 @@ export const KEYBINDS: Keybind[] = [
   },
   { id: 'focus', combo: 'f', label: 'Focus the selected entity', group: 'Scene', when: 'selection', run: (s) => s.requestFocusSelection() },
   // Display-only: SceneView owns pan + mode-exit + deselect (needs its local
-  // mode state); a native <dialog> owns its own Escape. Documented here.
-  { id: 'pan', combo: 'space', label: 'Pan the canvas (hold)', group: 'Scene', display: true, run: noop },
+  // mode state); a native <dialog> owns its own Escape. Documented here — this
+  // is now the sole home for the pan/zoom/drag reference (the floating Scene
+  // hint bar was removed per JAKE-STEER, L-026).
+  { id: 'pan', combo: 'space', label: 'Pan the canvas (hold, or middle-drag)', group: 'Scene', display: true, run: noop },
+  { id: 'move-drag', combo: 'drag', label: 'Move the selected entity (Shift snaps to grid)', group: 'Scene', display: true, run: noop },
   { id: 'escape', combo: 'escape', label: 'Deselect · exit the current mode', group: 'Scene', display: true, run: noop },
   // Display-only: SceneView owns zoom's local view-transform state (like pan
   // above). Bare keys — Mod+=/Mod+-/Mod+0 collide with the browser's own
@@ -234,6 +237,7 @@ const KEY_LABEL: Record<string, string> = {
   escape: 'Esc',
   delete: 'Del',
   space: 'Space',
+  drag: 'Drag',
   '/': '/',
   '?': '?',
 };
