@@ -28,6 +28,7 @@ import {
   type PlatformSelection,
 } from './exportJob';
 import { Modal } from './ui';
+import { Button } from './ui/Button';
 
 type Mode = 'web' | 'desktop';
 type WebTarget = 'folder' | 'single';
@@ -247,20 +248,20 @@ function WebPane({
               </div>
             )}
             {native && (
-              <button className="btn btn-sm" onClick={() => void native.revealInFolder(absoluteOutDir)}>
+              <Button size="sm" onClick={() => void native.revealInFolder(absoluteOutDir)}>
                 Reveal in folder
-              </button>
+              </Button>
             )}
           </div>
         )}
       </div>
       <div className="modal-actions">
-        <button className="btn" onClick={onClose} disabled={busy}>
+        <Button onClick={onClose} disabled={busy}>
           {done ? 'Close' : 'Cancel'}
-        </button>
-        <button className="btn btn-primary" onClick={() => void runExport()} disabled={busy || !projectPath}>
+        </Button>
+        <Button variant="primary" onClick={() => void runExport()} disabled={busy || !projectPath}>
           {busy ? 'Exporting…' : 'Export'}
-        </button>
+        </Button>
       </div>
     </>
   );
@@ -405,12 +406,12 @@ function DesktopPane({
         )}
       </div>
       <div className="modal-actions">
-        <button className="btn" onClick={onClose} disabled={running}>
+        <Button onClick={onClose} disabled={running}>
           {finished ? 'Close' : 'Cancel'}
-        </button>
-        <button className="btn btn-primary" onClick={() => void runExport()} disabled={!canExport}>
+        </Button>
+        <Button variant="primary" onClick={() => void runExport()} disabled={!canExport}>
           {running ? 'Building…' : finished ? 'Export again' : 'Export'}
-        </button>
+        </Button>
       </div>
     </>
   );
@@ -478,9 +479,9 @@ function RowBadge({ row }: { row: PlatformRow }) {
 function CopyButton({ text }: { text: string }) {
   const [copied, setCopied] = useState(false);
   return (
-    <button
-      type="button"
-      className="btn btn-sm copy-btn"
+    <Button
+      size="sm"
+      className="copy-btn"
       onClick={() => {
         void navigator.clipboard?.writeText(text);
         setCopied(true);
@@ -488,7 +489,7 @@ function CopyButton({ text }: { text: string }) {
       }}
     >
       {copied ? 'Copied' : 'Copy path'}
-    </button>
+    </Button>
   );
 }
 

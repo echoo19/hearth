@@ -4,6 +4,7 @@ import { useEditor } from '../store';
 import { apiImportAssets, fileUrl } from '../api';
 import type { AssetItem } from '../types';
 import { ConfirmDialog, Icon, Modal } from './ui';
+import { Button } from './ui/Button';
 import { frameCrop, parseFrameRef, readSheetSize } from '../assetPreview';
 import { countPrefabInstances, createSyncPreflight, syncConfirmBody } from '../prefabActions';
 import { collectDropEntries, entriesFromDataTransferItems } from '../dropEntries';
@@ -522,21 +523,22 @@ export function AssetsPanel() {
       }}
     >
       <div className="panel-toolbar">
-        <button className="btn btn-sm" onClick={() => setSpriteDialog(true)}>
-          <Icon name="plus" /> Sprite
-        </button>
-        <button className="btn btn-sm" onClick={() => setTileDialog(true)}>
-          <Icon name="plus" /> Tile
-        </button>
+        <Button size="sm" icon="plus" onClick={() => setSpriteDialog(true)}>
+          Sprite
+        </Button>
+        <Button size="sm" icon="plus" onClick={() => setTileDialog(true)}>
+          Tile
+        </Button>
         <span className="divider" style={{ width: 1, height: 16, background: 'var(--border-strong)' }} />
-        <button
-          className="btn btn-sm"
+        <Button
+          size="sm"
+          icon="upload"
           disabled={importing}
           title="Import images (png, jpg, svg, webp, gif), audio (wav, mp3, ogg), and fonts (ttf, otf, woff, woff2). You can also drop files onto this panel."
           onClick={() => fileInputRef.current?.click()}
         >
-          <Icon name="upload" /> {importing ? 'Importing…' : 'Import…'}
-        </button>
+          {importing ? 'Importing…' : 'Import…'}
+        </Button>
         <input
           ref={fileInputRef}
           type="file"
@@ -624,47 +626,48 @@ export function AssetsPanel() {
             <span className="mono" style={{ color: 'var(--ink-faint)' }}>
               {selectedAsset.id}
             </span>
-            <button
-              className="btn btn-ghost btn-sm"
+            <Button
+              variant="ghost"
+              size="sm"
               onClick={() => {
                 void navigator.clipboard.writeText(selectedAsset.id);
                 log('info', 'editor', `Copied asset id ${selectedAsset.id}`);
               }}
             >
               <Icon name="copy" size={11} /> Copy id
-            </button>
+            </Button>
             <span style={{ flex: 1 }} />
             {(selectedAsset.type === 'sprite' || selectedAsset.type === 'tile') && (
-              <button className="btn btn-sm" onClick={() => setSliceDialog(true)}>
+              <Button size="sm" onClick={() => setSliceDialog(true)}>
                 <Icon name="grid" size={11} /> Slice…
-              </button>
+              </Button>
             )}
             {selectedAsset.type === 'prefab' ? (
               <>
-                <button
-                  className="btn btn-sm"
+                <Button
+                  size="sm"
                   disabled={!sceneId}
                   title={sceneId ? `Instantiate into "${scene?.name}" at the viewport center` : 'Open a scene first'}
                   onClick={() => void addPrefabToScene(selectedAsset)}
                 >
                   <Icon name="plus" size={11} /> Add to scene
-                </button>
-                <button
-                  className="btn btn-sm"
+                </Button>
+                <Button
+                  size="sm"
                   disabled={pendingSyncAssetId === selectedAsset.id}
                   onClick={() => void openSyncConfirm(selectedAsset)}
                 >
                   <Icon name="prefab" size={11} />{' '}
                   {pendingSyncAssetId === selectedAsset.id ? 'Syncing…' : 'Sync instances'}
-                </button>
+                </Button>
               </>
             ) : selectedAsset.type === 'stateMachine' ? (
-              <button className="btn btn-sm" onClick={() => openAnimatorFor(selectedAsset.id)}>
+              <Button size="sm" onClick={() => openAnimatorFor(selectedAsset.id)}>
                 <Icon name="animator" size={11} /> Edit state machine
-              </button>
+              </Button>
             ) : (
-              <button
-                className="btn btn-sm"
+              <Button
+                size="sm"
                 disabled={!canAssign}
                 title={
                   canAssign
@@ -685,7 +688,7 @@ export function AssetsPanel() {
                 }
               >
                 Assign to {selectedEntity ? `“${selectedEntity.name}”` : 'selection'}
-              </button>
+              </Button>
             )}
           </div>
 
@@ -757,12 +760,10 @@ export function AssetsPanel() {
           </div>
         </div>
         <div className="modal-actions">
-          <button className="btn" onClick={() => setSpriteDialog(false)}>
-            Cancel
-          </button>
-          <button className="btn btn-primary" disabled={!spName.trim()} onClick={() => void createSprite()}>
+          <Button onClick={() => setSpriteDialog(false)}>Cancel</Button>
+          <Button variant="primary" disabled={!spName.trim()} onClick={() => void createSprite()}>
             Create sprite
-          </button>
+          </Button>
         </div>
       </Modal>
 
@@ -793,12 +794,10 @@ export function AssetsPanel() {
           </div>
         </div>
         <div className="modal-actions">
-          <button className="btn" onClick={() => setTileDialog(false)}>
-            Cancel
-          </button>
-          <button className="btn btn-primary" disabled={!tName.trim()} onClick={() => void createTile()}>
+          <Button onClick={() => setTileDialog(false)}>Cancel</Button>
+          <Button variant="primary" disabled={!tName.trim()} onClick={() => void createTile()}>
             Create tile
-          </button>
+          </Button>
         </div>
       </Modal>
 
