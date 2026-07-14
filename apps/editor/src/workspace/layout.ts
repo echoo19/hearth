@@ -95,9 +95,12 @@ export interface GroupsActiveApi {
  * the watermark showing in the Hierarchy, Inspector, and bottom groups on
  * essentially every project open even though their tabs existed.
  *
- * Activating a headless group's first panel evicts the watermark. We snapshot
- * and restore the globally-focused panel around the sweep so healing a side
- * group doesn't steal focus from (e.g.) the Scene.
+ * Activating a headless group's first panel evicts the watermark. Each
+ * activation also makes that panel's group the dock-wide active one, so we
+ * snapshot the previously active panel and re-activate it last. That's purely
+ * cosmetic — it keeps the expected group (e.g. the Scene) styled as active
+ * instead of whichever group the sweep touched last; editor keybinds are
+ * window-global and don't depend on dockview's active panel.
  */
 export function ensureGroupsActive(api: GroupsActiveApi): void {
   const focused = api.activePanel;

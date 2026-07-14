@@ -118,7 +118,7 @@ describe('ensureGroupsActive', () => {
     );
     ensureGroupsActive(api);
     // Both headless side groups plus the bottom group are healed, then Scene
-    // is re-activated last so it keeps global focus.
+    // is re-activated last so it stays the visually active group.
     expect(calls).toEqual(['hierarchy', 'inspector', 'assets', 'scene']);
   });
 

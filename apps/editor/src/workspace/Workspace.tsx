@@ -260,7 +260,8 @@ export function buildDefaultLayout(api: DockviewApi): void {
   scene.api.setActive();
   // The side/bottom groups are seeded with their leading panel `inactive`, so
   // dockview leaves those groups with no active panel and paints the watermark
-  // into them. Activate each group's first panel (Scene keeps global focus).
+  // into them. Activate each group's first panel; the sweep re-activates the
+  // Scene last so it stays the visually active group (cosmetic only).
   ensureGroupsActive(api);
 }
 
@@ -325,18 +326,18 @@ export function showPanel(api: DockviewApi, id: PanelId): void {
 }
 
 /**
- * Whether a dockview api still backs a live component. After dispose (project
- * switch / StrictMode remount) reading through to the underlying grid throws;
- * treat that as "gone" so callers holding a stale reference no-op instead of
- * surfacing an uncaught error.
+ * Whether a dockview api still backs a live component. `dispose()` (project
+ * switch / StrictMode remount) removes the dockview root element from the
+ * document but leaves the api's groups/panels lists readable, so the only
+ * reliable signal is DOM connectivity: a disposed dock's element is no longer
+ * connected (verified empirically — mutating a disposed instance throws
+ * NotFoundError / "invalid location"). The root element isn't public API, so
+ * reach through the api's `component` field; if dockview ever reshapes those
+ * internals we fail closed (treat as dead → no-op) rather than crash.
  */
 function isDockAlive(api: DockviewApi): boolean {
-  try {
-    void api.groups;
-    return true;
-  } catch {
-    return false;
-  }
+  const element = (api as unknown as { component?: { element?: Element } }).component?.element;
+  return element?.isConnected === true;
 }
 
 /** Rebuild the default layout and persist it. */
@@ -354,7 +355,8 @@ function writeLayout(api: DockviewApi, storageKey: string): void {
   }
 }
 
-function initLayout(api: DockviewApi, storageKey: string): void {
+/** Restore the persisted layout for `storageKey`, or build the default. Exported for tests. */
+export function initLayout(api: DockviewApi, storageKey: string): void {
   let raw: string | null = null;
   try {
     raw = localStorage.getItem(storageKey);
