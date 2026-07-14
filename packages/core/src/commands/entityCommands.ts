@@ -275,6 +275,21 @@ export const moveEntity = defineCommand({
   async run(ctx, params) {
     const scene = requireScene(ctx, params.scene);
     const entity = requireEntity(scene, params.entity);
+    // Full no-op (no position requested, target parent already the current
+    // parent): return current state without mutating or reporting a change —
+    // a reparent that changes nothing must not dirty the scene or pollute the
+    // journal/Changes feed. (Parent ref is still validated above via
+    // requireEntity inside the resolve.)
+    if (params.position === undefined && params.parent !== undefined) {
+      const targetParentId = params.parent === null ? null : requireEntity(scene, params.parent).id;
+      if (targetParentId === entity.parentId) {
+        return {
+          entityId: entity.id,
+          position: entity.components.Transform?.position ?? null,
+          parentId: entity.parentId,
+        };
+      }
+    }
     if (params.position) {
       const transform = entity.components.Transform ?? createComponent('Transform');
       transform.position = { ...params.position };

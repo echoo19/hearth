@@ -206,6 +206,17 @@ describe('override recording — moveEntity', () => {
     expect(r.warnings.some((w: any) => w.code === 'PREFAB_INSTANCE_DETACHED')).toBe(false);
     expect(store.getScene(sceneId)!.entities.find((e) => e.id === rootId)!.prefab).toBeDefined();
   });
+
+  it('a full no-op moveEntity (same parent, no position) emits no changed refs', async () => {
+    const { session, sceneId, rootId, childId } = await makeInstance();
+    const r = await session.execute<any>('moveEntity', { scene: sceneId, entity: childId, parent: rootId });
+    expect(r.success).toBe(true);
+    // Nothing changed, so nothing should be reported as changed (no journal/
+    // Changes-panel noise for a drag that landed back on the same parent).
+    expect(r.changed).toEqual([]);
+    // The response still reports current state.
+    expect(r.data.parentId).toBe(rootId);
+  });
 });
 
 describe('override recording — same-value edit (L-032)', () => {
