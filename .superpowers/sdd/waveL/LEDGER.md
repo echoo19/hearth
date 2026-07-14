@@ -95,7 +95,27 @@ high) though it borders on a defect (values unreadable).
   open; the single highest-frequency issue across the whole audit.
 - Source: TOOLBAR-9, ASSETS-3, INSPECTOR-6 (+ agent/gamesettings/inspector-
   specialized/electron page-error corroboration)
-- Disposition: open
+- Root cause: dockview paints the watermark into any group that has panels but
+  no *active* panel. `buildDefaultLayout` seeds each side/bottom group's
+  leading panel (hierarchy, inspector, assets) with `inactive: true`, so those
+  groups came up headless and showed "All panels are closed" while their tabs
+  existed; `toJSON` persisted the headless state (`activeView: null`) so warm
+  reopens restored it too. Toggling a panel off→on re-added it *active*, which
+  is why that (and only that) unstuck it. The intermittent null-`clear` crash
+  is the same headless condition feeding dockview's fragile watermark/`clear`
+  path, plus a stale-dock race where a View-menu closure calls `clear()` on a
+  dockview disposed by a project switch / StrictMode remount.
+- Fix: `ensureGroupsActive()` activates every headless group's first panel
+  (Scene keeps global focus), called after both `buildDefaultLayout` and
+  `fromJSON` (self-heals old persisted layouts); `resetLayout`/`showPanel`
+  guard against a disposed dock via `isDockAlive`. Regression tests in
+  `workspaceLayout.test.ts` cover the heal + focus-restore logic.
+- Repro (headless, port 5315, swiftshader, fresh profile, ember-horde):
+  before — watermark on 5/5 cold + 5/5 warm opens, only 1/4 group panels
+  mounted. After — 0 watermark and 4/4 panels across 5 cold + 5 warm opens
+  and 6 A↔B project switches; 0 null-`clear` pageerrors (incl. 80 extra
+  reload loops). Full editor suite (798 tests) green.
+- Disposition: fixed 341fcec
 
 ## toolbar + menus
 
@@ -1392,14 +1412,14 @@ contention with T8 once B1–B7 land)
 - Observed: setEntityEnabled exists in the registry but has no CLI subcommand or MCP tool; agents cannot enable/disable entities.
 - Expected: MCP set_entity_enabled + CLI `hearth set enabled` exposing the existing command.
 - Source: PARITY.md
-- Disposition: open
+- Disposition: fixed 4dbfd8b (MCP `set_entity_enabled` tool + CLI `hearth set enabled <scene> <entity> <true|false>`, both dispatching the existing `setEntityEnabled` core command; no core changes)
 
 ### L-112 · parity · defect · med
 - Element: Inspector Tags field ↔ agent surface
 - Observed: setEntityTags unreachable post-create (only `create entity --tags`); no MCP tool, no CLI path.
 - Expected: MCP set_entity_tags + CLI `hearth set tags` exposing the existing command.
 - Source: PARITY.md
-- Disposition: open
+- Disposition: fixed 4dbfd8b (MCP `set_entity_tags` tool + CLI `hearth set tags <scene> <entity> <a,b,c>`, both dispatching the existing `setEntityTags` core command; no core changes)
 
 ### L-113 · investigate · defect · high
 - Element: prefab instance field edit → override recording
