@@ -1386,3 +1386,17 @@ contention with T8 once B1–B7 land)
   parity), L-042/L-043 (PostEffects layout+labels), L-078 (panel header),
   L-050/L-051/L-052 (assets polish), L-110 (icon fallback), remaining `title`→
   Tooltip migrations (L-009, L-086, L-098).
+
+### L-111 · parity · defect · med
+- Element: Inspector "Enabled" toggle ↔ agent surface
+- Observed: setEntityEnabled exists in the registry but has no CLI subcommand or MCP tool; agents cannot enable/disable entities.
+- Expected: MCP set_entity_enabled + CLI `hearth set enabled` exposing the existing command.
+- Source: PARITY.md
+- Disposition: open
+
+### L-112 · parity · defect · med
+- Element: Inspector Tags field ↔ agent surface
+- Observed: setEntityTags unreachable post-create (only `create entity --tags`); no MCP tool, no CLI path.
+- Expected: MCP set_entity_tags + CLI `hearth set tags` exposing the existing command.
+- Source: PARITY.md
+- Disposition: open
