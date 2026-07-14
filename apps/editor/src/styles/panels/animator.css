@@ -1,0 +1,221 @@
+/* Panel: Animator editor */
+
+/* --------------------------------------------------------------------------
+   Animator editor (AnimatorEditor.tsx) — a typed, list-based editor for a
+   state-machine asset. Reuses .component-header / .component-body / .select /
+   .input / .btn so a params/states/transitions section reads as the same kind
+   of surface as the Inspector's component cards. No raw JSON anywhere.
+   -------------------------------------------------------------------------- */
+
+.animator {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+}
+
+.animator-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.animator-toolbar .field-label {
+  flex: 0 0 auto;
+}
+
+.animator-toolbar .select {
+  flex: 0 1 220px;
+  min-width: 0;
+}
+
+.animator-dirty {
+  font-size: var(--text-xs);
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.animator-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 0 0 12px;
+}
+
+.animator-section {
+  border-bottom: 1px solid var(--border);
+}
+
+.animator-section-header {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+}
+
+.animator-empty {
+  color: var(--ink-faint);
+  font-size: var(--text-sm);
+}
+
+/* Parameter rows: name | type | default | remove */
+.animator-param-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 96px minmax(72px, 0.8fr) auto;
+  align-items: center;
+  gap: 6px;
+}
+
+.animator-param-default {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+}
+
+.animator-param-default .input {
+  width: 100%;
+}
+
+/* State rows: initial-star | name | animation | speed | remove */
+.animator-state-row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) minmax(0, 1.2fr) 82px auto;
+  align-items: center;
+  gap: 6px;
+}
+
+.animator-initial {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg-2);
+  color: var(--ink-faint);
+  cursor: pointer;
+}
+
+.animator-initial:hover:not(:disabled) {
+  background: var(--bg-3);
+  color: var(--ink-mute);
+}
+
+.animator-initial.on {
+  color: var(--accent);
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.animator-initial:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.animator-speed {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+
+.animator-speed-label {
+  color: var(--ink-faint);
+  font-size: var(--text-sm);
+}
+
+.animator-speed .input {
+  width: 100%;
+}
+
+.animator-check {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: var(--text-sm);
+  color: var(--ink-mute);
+}
+
+.animator-check input[type='number'] {
+  width: 72px;
+}
+
+/* Transition cards: a header row plus its condition sub-list. */
+.animator-transition-card {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+}
+
+.animator-transition-card + .animator-transition-card {
+  margin-top: 6px;
+}
+
+.animator-transition-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 8px;
+  background: var(--bg-2);
+}
+
+.animator-transition-head .select {
+  flex: 1 1 0;
+  min-width: 0;
+}
+
+.animator-arrow {
+  color: var(--ink-faint);
+  flex: 0 0 auto;
+}
+
+.animator-exittime {
+  padding: 6px 8px 0;
+}
+
+.animator-conditions {
+  padding: 6px 8px 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.animator-conditions-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.animator-condition-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.animator-condition-row .select,
+.animator-condition-row .input {
+  flex: 1 1 0;
+  min-width: 0;
+}
+
+.animator-condition-row .animator-op {
+  flex: 0 0 56px;
+}
+
+.animator-trigger-note {
+  flex: 1;
+}
+
+/* Inspector row that pairs an asset dropdown with an inline Edit button. */
+.asset-with-edit {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.asset-with-edit .select {
+  flex: 1 1 0;
+  min-width: 0;
+}
+

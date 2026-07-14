@@ -1,0 +1,96 @@
+/* Panel: Console */
+
+/* Console */
+.console-list {
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  padding: 6px 0;
+}
+
+.console-line {
+  position: relative;
+  display: flex;
+  gap: 8px;
+  padding: 2px 10px 2px 24px;
+  align-items: baseline;
+}
+
+/* Level gutter: a small semantic dot, color-coded per level. */
+.console-line::before {
+  content: '';
+  position: absolute;
+  left: 10px;
+  top: 8px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--ink-faint);
+  opacity: 0.5;
+}
+
+.console-line:hover {
+  background: var(--bg-2);
+}
+
+.console-time {
+  color: var(--ink-faint);
+  flex: none;
+}
+
+.console-source {
+  flex: none;
+  width: 66px;
+  color: var(--ink-faint);
+}
+
+.console-msg {
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: var(--ink-mute);
+}
+
+.console-line.level-error {
+  background: var(--err-faint);
+}
+
+.console-line.level-error::before {
+  background: var(--err);
+  opacity: 1;
+}
+
+.console-line.level-error .console-msg {
+  color: var(--err);
+}
+
+.console-line.level-warn::before {
+  background: var(--warn);
+  opacity: 1;
+}
+
+.console-line.level-warn .console-msg {
+  color: var(--warn);
+}
+
+/* Clickable path:line link on a runtime-error / hot-reload console row —
+   opens the script at that line in the Code panel. A real <button>, so it
+   inherits the global :focus-visible ring; only base/hover color and the
+   mono type live here. */
+.console-link {
+  flex: none;
+  margin-left: 8px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: var(--ink-faint);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  line-height: 1.4;
+  cursor: pointer;
+  transition: color var(--t-fast) var(--ease-out);
+}
+
+.console-link:hover {
+  color: var(--accent);
+  text-decoration: underline;
+}
+

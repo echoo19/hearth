@@ -495,7 +495,7 @@ function UnsupportedField({ value, property }: { value: unknown; property: strin
   }, [property]);
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
-      <span className="mono" style={{ color: 'var(--ink-faint)', fontSize: 12 }}>
+      <span className="mono" style={{ color: 'var(--ink-faint)', fontSize: 'var(--text-sm)' }}>
         {JSON.stringify(value)}
       </span>
       <span className="field-fallback-note">

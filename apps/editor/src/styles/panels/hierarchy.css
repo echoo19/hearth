@@ -1,0 +1,160 @@
+/* Panel: Hierarchy */
+
+/* --------------------------------------------------------------------------
+   Hierarchy
+   -------------------------------------------------------------------------- */
+
+.tree {
+  padding: 4px 0;
+}
+
+.tree-row {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  height: 24px;
+  padding: 0 8px 0 calc(4px + var(--depth, 0) * 14px);
+  cursor: pointer;
+  user-select: none;
+  color: var(--ink);
+  transition: background var(--t-fast) var(--ease-out);
+}
+
+/* Indent guides: one hairline per ancestor level, aligned under the carets. */
+.tree-row::before {
+  content: '';
+  position: absolute;
+  left: 12px;
+  top: 0;
+  bottom: 0;
+  width: calc(var(--depth, 0) * 14px);
+  background-image: repeating-linear-gradient(
+    to right,
+    var(--guide) 0 1px,
+    transparent 1px 14px
+  );
+  pointer-events: none;
+}
+
+.tree-row:hover {
+  background: var(--bg-2);
+}
+
+.tree-row.selected {
+  background: var(--accent-soft);
+}
+
+.tree-row.selected .entity-icon {
+  color: var(--accent);
+}
+
+.tree-row.disabled-entity .tree-name,
+.tree-row.disabled-entity .entity-icon {
+  color: var(--ink-faint);
+}
+
+.tree-caret {
+  width: 16px;
+  height: 16px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--ink-faint);
+  cursor: pointer;
+  padding: 0;
+  flex: none;
+}
+
+.tree-caret:hover {
+  color: var(--ink);
+}
+
+.tree-caret svg {
+  transition: transform var(--t) var(--ease-out);
+}
+
+.tree-caret.open svg {
+  transform: rotate(90deg);
+}
+
+.tree-name {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tree-actions {
+  display: none;
+  gap: 2px;
+}
+
+.tree-row:hover .tree-actions,
+.tree-row.selected .tree-actions {
+  display: inline-flex;
+}
+
+.icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--ink-mute);
+  cursor: pointer;
+  padding: 0;
+  transition:
+    background var(--t-fast) var(--ease-out),
+    color var(--t-fast) var(--ease-out);
+}
+
+.icon-btn:hover:not(:disabled) {
+  background: var(--bg-3);
+  color: var(--ink);
+}
+
+.icon-btn:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.icon-btn.danger:hover:not(:disabled) {
+  background: var(--err-soft);
+  color: var(--err);
+}
+
+/* Prefab instance marker on a Hierarchy row — icon only, name lives in the
+   title tooltip so the row stays quiet at rest. */
+.prefab-badge {
+  display: inline-flex;
+  align-items: center;
+  flex: none;
+  color: var(--ink-faint);
+}
+
+.tree-row.selected .prefab-badge {
+  color: var(--accent);
+}
+
+.rename-input {
+  flex: 1;
+  padding: 1px 4px;
+  border: 1px solid var(--accent);
+  border-radius: var(--radius-sm);
+  background: var(--bg-0);
+  min-width: 0;
+}
+
+.entity-icon {
+  color: var(--ink-faint);
+  flex: none;
+  display: inline-flex;
+}
+

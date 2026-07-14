@@ -1,0 +1,78 @@
+/* Panel: Changes (diff + history) */
+
+/* Diff */
+.diff-summary {
+  padding: 2px 0 10px;
+  color: var(--ink-mute);
+}
+
+.diff-section {
+  margin-bottom: 14px;
+}
+
+.diff-section h4 {
+  font-size: var(--text-sm);
+  color: var(--ink-mute);
+  margin-bottom: 5px;
+}
+
+.diff-row {
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  line-height: 1.6;
+  padding: 1px 0 1px 12px;
+}
+
+.diff-row.entity-head {
+  padding-left: 0;
+  font-weight: 600;
+}
+
+.diff-added {
+  color: var(--ok);
+}
+
+.diff-removed {
+  color: var(--err);
+}
+
+.diff-modified {
+  color: var(--warn);
+}
+
+.diff-change {
+  color: var(--ink-mute);
+  padding-left: 24px;
+}
+
+.diff-change .arrow {
+  color: var(--ink-faint);
+  padding: 0 4px;
+}
+
+/* History (undo/redo), shown inside the Diff panel */
+.panel-divider {
+  width: 1px;
+  height: 18px;
+  background: var(--border);
+  flex: none;
+}
+
+.history-row {
+  padding-left: 0;
+}
+
+.history-seq {
+  color: var(--ink-faint);
+  font-weight: 600;
+}
+
+.history-row-undone {
+  color: var(--ink-faint);
+}
+
+.history-row-undone .history-seq {
+  color: var(--ink-faint);
+  font-weight: 400;
+}
+

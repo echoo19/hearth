@@ -1,0 +1,352 @@
+/* Panel: Inspector (component editors, prefab overrides, anchor picker) */
+
+/* --------------------------------------------------------------------------
+   Inspector
+   -------------------------------------------------------------------------- */
+
+.inspector-section {
+  padding: 10px;
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+/* "Instance of <prefab>" context banner: sits above the scrollable body so
+   it stays visible while editing the instance's components below. The action
+   buttons wrap onto their own line at narrow panel widths — without this the
+   banner overflows the panel and "Update prefab" / "Sync instances" get
+   clipped out of reach at the default Inspector width. */
+.prefab-banner {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 8px;
+  padding: 8px 10px;
+  background: var(--accent-soft);
+  border-bottom: 1px solid var(--border);
+  font-size: var(--text-sm);
+  color: var(--ink);
+}
+
+.prefab-banner-icon {
+  display: inline-flex;
+  color: var(--accent);
+  flex: none;
+}
+
+.prefab-banner-text strong {
+  font-weight: 600;
+}
+
+/* "N overrides" count next to the banner text — quiet by default, ember only
+   on the dot glyphs it summarizes (see .field-override-dot), not a second
+   loud accent element competing with the banner icon. */
+.prefab-banner-overrides {
+  color: var(--ink-mute);
+  white-space: nowrap;
+}
+
+.inspector-row {
+  display: grid;
+  grid-template-columns: 104px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  min-height: var(--ctl-h);
+}
+
+.inspector-row > .field-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.inspector-row input[type='checkbox'] {
+  justify-self: start;
+}
+
+/* Overridden-field marker: a small ember dot before the label, same accent
+   token as the prefab banner — no separate "override" color vocabulary. */
+.field-override-dot {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  margin-right: 5px;
+  border-radius: 50%;
+  background: var(--accent);
+  flex: none;
+  vertical-align: middle;
+}
+
+/* Fixed-width 3rd grid cell for component-field rows (see the field map in
+   Inspector.tsx). It's rendered on every such row of a prefab instance
+   member — whether or not that field is currently overridden —
+   specifically so .inspector-row's 3rd `auto` track always has a
+   same-sized item to size itself against. An `auto` track only reserves
+   width when a row actually has a 3rd grid item, so previously only
+   overridden rows (which alone rendered the .field-revert-btn) had that
+   track occupied, and their minmax(0, 1fr) control column resolved
+   narrower than plain sibling rows in the same card. Keeping this slot
+   present on every row of an instance, always this width, makes the
+   control column identical across every field row regardless of override
+   state. Non-instance entities never render the slot at all (gated on
+   prefabInfo in Inspector.tsx) — no row of theirs can be overridden, so
+   they keep the full control width. Entity-level rows
+   (Name/Enabled/Tags/Parent) never render this slot either. */
+.field-revert-slot {
+  width: 54px;
+  display: flex;
+  justify-content: flex-end;
+}
+
+/* Per-field "Revert to prefab" action: hidden until the row is hovered or
+   the button itself gets keyboard focus (same hidden-until-hover idiom as
+   .tree-actions, but via opacity so it stays tab-reachable rather than
+   display:none). */
+.field-revert-btn {
+  opacity: 0;
+  transition: opacity var(--t-fast) var(--ease-out);
+}
+
+.inspector-row:hover .field-revert-btn,
+.field-revert-btn:focus-visible {
+  opacity: 1;
+}
+
+.component-card {
+  border-bottom: 1px solid var(--border);
+}
+
+.component-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  padding: 7px 10px;
+  background: var(--bg-2);
+  font-weight: 600;
+  font-size: var(--text-sm);
+  cursor: default;
+}
+
+.component-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.component-title .entity-icon {
+  color: var(--ink-mute);
+}
+
+.component-body {
+  padding: 8px 10px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.vec2-pair {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+}
+
+.vec2-pair .input {
+  width: 100%;
+}
+
+.color-pair {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.color-pair .input {
+  flex: 1;
+}
+
+.field-error {
+  color: var(--err);
+  font-size: var(--text-xs);
+}
+
+/* Game settings: width/height/rate field wraps its input + inline reject hint. */
+.int-field {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.int-field .input {
+  width: 100%;
+}
+
+/* Sprite-asset picker (icon / loading image): optional thumbnail beside the select. */
+.sprite-picker {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.sprite-picker .select {
+  flex: 1;
+  min-width: 0;
+}
+
+.sprite-picker-thumb {
+  width: 32px;
+  height: 32px;
+  flex: none;
+  background: var(--bg-2);
+  color: var(--ink-faint);
+}
+
+/* Helper caption under the app-icon picker — extra top gap off the row above. */
+.game-settings-hint {
+  margin-top: 4px;
+}
+
+/* Quiet caption under a read-only fallback field: a known product gap, not
+   the user's error, so it speaks in the muted ink rather than shouting in
+   var(--err) red (that stays reserved for actual validation failures). */
+.field-fallback-note {
+  color: var(--ink-mute);
+  font-size: var(--text-xs);
+}
+
+/* Vec2[] fields (LineRenderer.points, Collider polygon points): a row per
+   point, reusing .vec2-pair for each row so it matches Vec2Field exactly. */
+.vec2-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.vec2-list-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.vec2-list-row .vec2-pair {
+  flex: 1;
+}
+
+.vec2-list-empty {
+  color: var(--ink-faint);
+  font-size: var(--text-sm);
+}
+
+/* Tilemap.tileAssets autotile row (Inspector.tsx's AutotileRuleFields): the
+   47-shape mapping list is collapsed behind a <details> by default, so this
+   only ever shows once expanded — scrolls instead of dominating the panel. */
+.autotile-mapping-list {
+  max-height: 220px;
+  overflow-y: auto;
+  margin-top: 4px;
+  padding: 6px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg-2);
+}
+
+.add-component-row {
+  padding: 10px;
+}
+
+/* Camera.postEffects (PostEffectsField): a nested card per stacked effect,
+   reusing .component-card's visual language (header + body) at a smaller
+   scale so a stack of effects still reads as "inside" the Camera field
+   rather than as its own top-level component. */
+.effect-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.effect-card {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+}
+
+.effect-card-header {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 4px 4px 4px 8px;
+  background: var(--bg-2);
+  font-weight: 600;
+  font-size: var(--text-xs);
+}
+
+.effect-card-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.effect-card-body {
+  padding: 6px 8px 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+
+/* --------------------------------------------------------------------------
+   Inspector: UIElement anchor picker
+   -------------------------------------------------------------------------- */
+
+.anchor-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 20px);
+  grid-auto-rows: 20px;
+  gap: 2px;
+  width: fit-content;
+  padding: 3px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg-2);
+}
+
+.anchor-cell {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid transparent;
+  border-radius: 3px;
+  background: transparent;
+  cursor: pointer;
+  transition:
+    background 140ms var(--ease-out),
+    border-color 140ms var(--ease-out);
+}
+
+.anchor-cell:hover {
+  background: var(--bg-3);
+}
+
+.anchor-cell .anchor-dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--ink-faint);
+  transition: background 140ms var(--ease-out);
+}
+
+.anchor-cell.selected {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.anchor-cell.selected .anchor-dot {
+  background: var(--accent);
+}
+

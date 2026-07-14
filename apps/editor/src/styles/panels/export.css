@@ -1,0 +1,356 @@
+/* Panel: Export dialog (web + desktop) */
+
+/* --------------------------------------------------------------------------
+   Export dialog
+   -------------------------------------------------------------------------- */
+
+.radio-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 6px 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-2);
+  font-size: var(--text-sm);
+  cursor: pointer;
+  transition:
+    border-color 140ms var(--ease-out),
+    background 140ms var(--ease-out);
+}
+
+.radio-row:hover {
+  border-color: var(--border-strong);
+}
+
+.radio-row:has(input:checked) {
+  border-color: var(--accent);
+  background: var(--accent-faint);
+}
+
+.radio-row input[type='radio'] {
+  margin-top: 2px;
+  accent-color: var(--accent);
+}
+
+.radio-row .radio-detail {
+  display: block;
+  color: var(--ink-faint);
+  font-size: var(--text-xs);
+  margin-top: 1px;
+}
+
+.export-errors {
+  border: 1px solid var(--err);
+  border-radius: var(--radius);
+  background: var(--err-faint);
+  padding: 8px 10px;
+}
+
+.export-errors p {
+  margin: 0;
+  color: var(--err);
+  font-size: var(--text-sm);
+}
+
+.export-errors p + p {
+  margin-top: 4px;
+}
+
+.export-result {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-2);
+  padding: 10px;
+}
+
+.export-result p {
+  margin: 0;
+}
+
+.export-result .export-path {
+  font-size: var(--text-xs);
+  color: var(--ink-mute);
+  word-break: break-all;
+}
+
+.export-result .btn {
+  align-self: flex-start;
+}
+
+.export-result .export-zip-line {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.export-result .export-zip-line .export-path {
+  flex: 1 1 200px;
+}
+
+/* Web / Desktop segmented control ----------------------------------------- */
+
+.segmented {
+  display: flex;
+  gap: 2px;
+  margin: 12px 16px 0;
+  padding: 2px;
+  background: var(--bg-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+.seg-btn {
+  flex: 1;
+  height: var(--ctl-h);
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--ink-mute);
+  font: inherit;
+  font-size: var(--text-sm);
+  font-weight: 500;
+  cursor: pointer;
+  transition:
+    background var(--t) var(--ease-out),
+    color var(--t) var(--ease-out);
+}
+
+.seg-btn:hover:not(.active):not(:disabled) {
+  color: var(--ink);
+  background: var(--bg-3);
+}
+
+.seg-btn.active {
+  background: var(--accent);
+  color: var(--accent-ink);
+}
+
+.seg-btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.seg-btn:disabled {
+  cursor: default;
+  opacity: 0.6;
+}
+
+/* Checkbox rows (web zip + desktop platforms) ----------------------------- */
+
+.check-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  font-size: var(--text-sm);
+  cursor: pointer;
+}
+
+.check-row input[type='checkbox'] {
+  margin-top: 1px;
+  accent-color: var(--accent);
+}
+
+.check-row code {
+  font-family: var(--font-mono);
+  background: var(--bg-3);
+  padding: 1px 4px;
+  border-radius: 3px;
+}
+
+.check-row .radio-detail {
+  display: block;
+  color: var(--ink-faint);
+  font-size: var(--text-xs);
+  margin-top: 1px;
+}
+
+.check-row-compact {
+  align-items: center;
+  padding: 5px 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-2);
+  transition: border-color var(--t) var(--ease-out);
+}
+
+.check-row-compact:hover {
+  border-color: var(--border-strong);
+}
+
+.check-row-compact:has(input:checked) {
+  border-color: var(--accent);
+  background: var(--accent-faint);
+}
+
+.platform-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 6px;
+}
+
+.field-note {
+  margin: 2px 0 0;
+  color: var(--warn);
+  font-size: var(--text-xs);
+}
+
+/* Signing status line ----------------------------------------------------- */
+
+.signing-status {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  color: var(--ink-mute);
+  font-size: var(--text-xs);
+}
+
+.signing-status svg {
+  color: var(--ink-faint);
+  flex-shrink: 0;
+}
+
+/* Desktop export progress ------------------------------------------------- */
+
+.export-global-msg {
+  margin: 0;
+  color: var(--ink-faint);
+  font-size: var(--text-xs);
+}
+
+.export-progress-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.export-row {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-2);
+  transition:
+    border-color var(--t) var(--ease-out),
+    background var(--t) var(--ease-out);
+}
+
+/* The one platform currently building carries the ember accent (full border +
+   soft tint — never a side-stripe). */
+.export-row.active {
+  border-color: var(--accent);
+  background: var(--accent-faint);
+}
+
+.export-row.status-success {
+  border-color: color-mix(in oklch, var(--ok) 45%, var(--border));
+}
+
+.export-row.status-error {
+  border-color: var(--err);
+  background: var(--err-faint);
+}
+
+.export-row-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.export-row-name {
+  font-size: var(--text-sm);
+  font-weight: 500;
+}
+
+.export-badge {
+  font-size: var(--text-2xs);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 1px 6px;
+  border-radius: 999px;
+  white-space: nowrap;
+}
+
+.export-badge .badge-sub {
+  font-weight: 400;
+  text-transform: none;
+  letter-spacing: 0;
+  opacity: 0.85;
+}
+
+.badge-pending {
+  color: var(--ink-faint);
+  background: var(--bg-3);
+}
+
+.badge-running {
+  color: var(--accent-ink);
+  background: var(--accent);
+}
+
+.badge-success {
+  color: var(--ok);
+  background: var(--ok-soft);
+}
+
+.badge-error {
+  color: var(--err);
+  background: var(--err-soft);
+}
+
+.export-row-progress {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  margin: 0;
+  min-width: 0;
+}
+
+.export-row-stage {
+  font-size: var(--text-xs);
+  font-weight: 500;
+  color: var(--ink-mute);
+  flex-shrink: 0;
+}
+
+.export-row-msg {
+  font-size: var(--text-xs);
+  color: var(--ink-faint);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.export-row-error {
+  margin: 0;
+  font-size: var(--text-xs);
+  color: var(--err);
+  word-break: break-word;
+}
+
+.export-row-success {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.export-row-success .export-path {
+  flex: 1 1 200px;
+  font-size: var(--text-xs);
+  color: var(--ink-mute);
+  word-break: break-all;
+}
+

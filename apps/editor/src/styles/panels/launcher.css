@@ -1,0 +1,261 @@
+/* Launcher */
+
+/* --------------------------------------------------------------------------
+   Launcher
+   -------------------------------------------------------------------------- */
+
+.launcher {
+  height: 100%;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 10vh 24px 48px;
+  background:
+    radial-gradient(640px 320px at 50% -80px, var(--accent-faint), transparent 70%),
+    var(--bg-0);
+}
+
+.launcher-brand {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 44px;
+  text-align: center;
+}
+
+.launcher-brand h1 {
+  /* Brand moment: Bricolage display face. */
+  font-family: var(--font-display);
+  font-size: var(--text-3xl);
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  display: flex;
+  align-items: center;
+  gap: 11px;
+}
+
+.launcher-brand .tagline {
+  margin: 0;
+  color: var(--ink-mute);
+  font-size: var(--text-lg);
+}
+
+.launcher-columns {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 420px));
+  gap: 20px;
+  justify-content: center;
+  width: 100%;
+  max-width: 900px;
+  align-items: start;
+}
+
+.launcher-card {
+  background: var(--bg-1);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  box-shadow: 0 1px 2px oklch(0 0 0 / 0.2);
+}
+
+.launcher-card h2 {
+  /* Brand moment: Bricolage display face. */
+  font-family: var(--font-display);
+  font-size: var(--text-lg);
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+.launcher-card .row {
+  display: flex;
+  gap: 8px;
+}
+
+.launcher-card .row .input {
+  flex: 1;
+}
+
+.launcher-section {
+  margin-top: 10px;
+  /* Brand moment: Bricolage display face (uppercase keeps its wider tracking). */
+  font-family: var(--font-display);
+  font-size: var(--text-xs);
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+}
+
+.launcher-error {
+  color: var(--err);
+  font-size: var(--text-sm);
+  white-space: pre-wrap;
+}
+
+.launcher-list {
+  display: flex;
+  flex-direction: column;
+}
+
+.launcher-item {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 10px;
+  margin: 0 -10px;
+  border-radius: var(--radius);
+  border: none;
+  background: none;
+  color: var(--ink);
+  cursor: pointer;
+  text-align: left;
+  transition: background var(--t-fast) var(--ease-out);
+}
+
+.launcher-item:hover:not(:disabled) {
+  background: var(--bg-2);
+}
+
+.launcher-item:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.launcher-item .item-text {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+
+.launcher-item .item-name {
+  font-weight: 600;
+}
+
+.launcher-item .item-path {
+  color: var(--ink-faint);
+  font-size: var(--text-xs);
+  font-family: var(--font-mono);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.launcher-item .item-desc {
+  color: var(--ink-mute);
+  font-size: var(--text-sm);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.launcher-item .item-go {
+  display: inline-flex;
+  color: var(--ink-faint);
+  opacity: 0;
+  transition: opacity var(--t-fast) var(--ease-out);
+}
+
+.launcher-item:hover:not(:disabled) .item-go,
+.launcher-item:focus-visible .item-go {
+  opacity: 1;
+}
+
+.launcher-empty {
+  color: var(--ink-faint);
+  font-size: var(--text-sm);
+  padding: 4px 0;
+}
+
+/* Template picker: radio-group of selectable tiles on the New-project form. */
+.tpl-picker {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+}
+
+/* Narrow enough that four tiles fit one row; drops to two-up on small widths. */
+@media (max-width: 380px) {
+  .tpl-picker {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+.tpl-card {
+  display: grid;
+  grid-template-rows: auto auto auto;
+  gap: 3px;
+  padding: 10px 9px 11px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-2);
+  cursor: pointer;
+  transition:
+    border-color var(--t-fast) var(--ease-out),
+    background var(--t-fast) var(--ease-out);
+}
+
+/* The native radio drives state and keyboard nav, but stays visually hidden
+   (not display:none, so it keeps focus + arrow-key group navigation). */
+.tpl-card input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  border: 0;
+  clip: rect(0 0 0 0);
+  clip-path: inset(50%);
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.tpl-card:hover {
+  border-color: var(--border-strong);
+  background: var(--bg-3);
+}
+
+.tpl-card[data-selected='true'] {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+/* Focus ring follows the (hidden) radio for full keyboard visibility. */
+.tpl-card:has(input:focus-visible) {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.tpl-card-glyph {
+  display: inline-flex;
+  color: var(--ink-mute);
+}
+
+.tpl-card[data-selected='true'] .tpl-card-glyph {
+  color: var(--accent);
+}
+
+.tpl-card-name {
+  font-size: var(--text-sm);
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.tpl-card-desc {
+  font-size: var(--text-xs);
+  line-height: 1.35;
+  color: var(--ink-mute);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tpl-card {
+    transition: none;
+  }
+}
+

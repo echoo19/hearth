@@ -145,7 +145,7 @@ export function TilemapPainter({
               />
             </div>
           </div>
-          <p style={{ color: 'var(--ink-faint)', fontSize: 12 }}>
+          <p style={{ color: 'var(--ink-faint)', fontSize: 'var(--text-sm)' }}>
             Growing pads new cells/rows as empty; shrinking crops from the right and bottom edges.
           </p>
         </div>

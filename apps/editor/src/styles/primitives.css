@@ -1,0 +1,190 @@
+/* Primitives: buttons, inputs, chips, shared controls */
+
+/* --------------------------------------------------------------------------
+   Controls
+   -------------------------------------------------------------------------- */
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  height: var(--ctl-h);
+  padding: 0 12px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  background: var(--bg-2);
+  color: var(--ink);
+  cursor: pointer;
+  white-space: nowrap;
+  user-select: none;
+  transition:
+    background var(--t) var(--ease-out),
+    border-color var(--t) var(--ease-out),
+    color var(--t) var(--ease-out),
+    transform var(--t-fast) var(--ease-out);
+}
+
+.btn:hover:not(:disabled) {
+  background: var(--bg-3);
+}
+
+.btn:active:not(:disabled) {
+  background: var(--bg-1);
+  transform: scale(0.98);
+}
+
+.btn:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.btn-primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-ink);
+  font-weight: 600;
+}
+
+.btn-primary:hover:not(:disabled) {
+  background: var(--accent-hover);
+  border-color: var(--accent-hover);
+}
+
+.btn-primary:active:not(:disabled) {
+  background: var(--accent-down);
+}
+
+/* Quiet-destructive: red reads as a whisper until hovered. */
+.btn-danger {
+  border-color: oklch(0.7 0.17 25 / 0.45);
+  color: var(--err);
+  background: transparent;
+}
+
+.btn-danger:hover:not(:disabled) {
+  background: var(--err-soft);
+  border-color: var(--err);
+}
+
+.btn-ghost {
+  border-color: transparent;
+  background: transparent;
+  color: var(--ink-mute);
+}
+
+.btn-ghost:hover:not(:disabled) {
+  background: var(--bg-3);
+  color: var(--ink);
+}
+
+.btn-sm {
+  height: var(--ctl-h-sm);
+  padding: 0 8px;
+  border-radius: var(--radius-sm);
+  font-size: var(--text-sm);
+}
+
+/* Play/Stop: the one control that owns the toolbar. */
+.btn-play {
+  min-width: 76px;
+}
+
+.btn-stop {
+  min-width: 76px;
+  background: var(--err-soft);
+  border-color: oklch(0.7 0.17 25 / 0.5);
+  color: var(--err);
+  font-weight: 600;
+}
+
+.btn-stop:hover:not(:disabled) {
+  background: oklch(0.7 0.17 25 / 0.22);
+  border-color: var(--err);
+}
+
+.input,
+.select,
+.textarea {
+  height: var(--ctl-h);
+  padding: 0 8px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  background: var(--bg-0);
+  color: var(--ink);
+  min-width: 0;
+  transition: border-color var(--t) var(--ease-out);
+}
+
+.input:hover:not(:disabled),
+.select:hover:not(:disabled),
+.textarea:hover:not(:disabled) {
+  border-color: oklch(0.48 0.018 285);
+}
+
+.input::placeholder,
+.textarea::placeholder {
+  color: var(--ink-faint);
+}
+
+.input.invalid,
+.select.invalid,
+.textarea.invalid {
+  border-color: var(--err);
+}
+
+.select {
+  appearance: none;
+  padding-right: 24px;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' stroke='%23968fa4' fill='none' stroke-width='1.5'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 8px center;
+  cursor: pointer;
+}
+
+/* Compact select variant, metrics matched to .btn-sm (22px / --radius-sm) —
+   use next to btn-sm buttons (e.g. the toolbar) so control heights don't mix. */
+.select-sm {
+  height: var(--ctl-h-sm);
+  padding: 0 24px 0 8px;
+  border-radius: var(--radius-sm);
+  font-size: var(--text-sm);
+}
+
+.textarea {
+  height: auto;
+  padding: 6px 8px;
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  resize: vertical;
+  line-height: 1.5;
+}
+
+input[type='number'] {
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+}
+
+input[type='checkbox'] {
+  accent-color: var(--accent);
+  width: 14px;
+  height: 14px;
+  margin: 0;
+}
+
+input[type='color'] {
+  padding: 0;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--bg-0);
+  width: 30px;
+  height: var(--ctl-h);
+  cursor: pointer;
+  flex: none;
+}
+
+label.field-label {
+  color: var(--ink-mute);
+  font-size: var(--text-sm);
+}
+

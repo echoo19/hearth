@@ -699,7 +699,7 @@ export function AssetsPanel() {
                 Aa Bb 0123 — Hearth
               </span>
             ) : (
-              <span style={{ color: 'var(--ink-faint)', fontSize: 12 }}>Loading font preview…</span>
+              <span style={{ color: 'var(--ink-faint)', fontSize: 'var(--text-sm)' }}>Loading font preview…</span>
             ))}
         </div>
       )}

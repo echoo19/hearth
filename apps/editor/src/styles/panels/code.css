@@ -1,0 +1,398 @@
+/* Panel: Code (editor, tab strip, cross-script search/replace) */
+
+/* --------------------------------------------------------------------------
+   Code panel
+   -------------------------------------------------------------------------- */
+
+.code-panel-root {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+}
+
+.code-dirty-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: transparent;
+  border: 1px solid var(--border-strong);
+  flex: none;
+}
+
+.code-dirty-dot-active {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+.code-conflict-banner {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  background: var(--warn-soft);
+  border-bottom: 1px solid var(--border);
+  color: var(--ink);
+  font-size: var(--text-sm);
+  flex: none;
+}
+
+/* --------------------------------------------------------------------------
+   Code panel tab strip — reuses the .hearth-tab 2px-ember-underline idiom
+   from the dockview tabs, scoped to its own classes so the active-tab bar is
+   driven by aria-selected rather than dockview's own active-tab selector.
+   -------------------------------------------------------------------------- */
+.code-tabs {
+  display: flex;
+  flex: none;
+  align-items: stretch;
+  height: 30px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  background: var(--bg-2);
+  border-bottom: 1px solid var(--border);
+  scrollbar-width: thin;
+}
+
+/* A tab + its close control are two sibling buttons in a presentation cell
+   (never nested — see CodePanel.tsx). The cell is the flex item that carries
+   the divider, the active background, and the ember underline; both buttons
+   sit on top of it transparently. */
+.code-tab-cell {
+  position: relative;
+  display: inline-flex;
+  align-items: stretch;
+  flex: none;
+  border-right: 1px solid var(--border);
+}
+
+.code-tab-cell-active {
+  background: var(--bg-1);
+}
+
+/* Selected-tab indicator: the same 2px ember bar as .hearth-tab::after,
+   spanning the whole cell (tab + close). */
+.code-tab-cell::after {
+  content: '';
+  position: absolute;
+  left: 8px;
+  right: 8px;
+  bottom: 0;
+  height: 2px;
+  border-radius: 1px;
+  background: transparent;
+  transition: background 140ms var(--ease-out);
+}
+
+.code-tab-cell-active::after {
+  background: var(--accent);
+}
+
+.code-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 30px;
+  padding: 0 4px 0 10px;
+  border: none;
+  background: transparent;
+  color: var(--ink-faint);
+  font-size: var(--text-sm);
+  font-weight: 500;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: color 140ms var(--ease-out);
+}
+
+.code-tab-cell:hover .code-tab,
+.code-tab-cell-active .code-tab {
+  color: var(--ink);
+}
+
+.code-tab:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+.code-tab-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 180px;
+}
+
+.code-tab-dot {
+  color: var(--accent);
+  font-size: var(--text-lg);
+  line-height: 1;
+}
+
+.code-tab-conflict {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--warn);
+  flex: none;
+}
+
+.code-tab-close {
+  align-self: center;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  margin-right: 6px;
+  border: none;
+  background: transparent;
+  border-radius: var(--radius-sm);
+  color: var(--ink-faint);
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 140ms var(--ease-out), color 140ms var(--ease-out), background 140ms var(--ease-out);
+}
+
+.code-tab-cell:hover .code-tab-close,
+.code-tab-cell-active .code-tab-close,
+.code-tab-close:focus-visible {
+  opacity: 1;
+}
+
+.code-tab-close:hover {
+  background: var(--bg-3);
+  color: var(--ink);
+}
+
+.code-tab-close:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+/* Transient openScriptAt(path, line) target: an ember wash that fades out. */
+.cm-ember-line {
+  background: var(--accent-soft);
+  animation: code-ember-fade 1500ms var(--ease-out) forwards;
+}
+
+@keyframes code-ember-fade {
+  0% {
+    background: var(--accent-soft);
+  }
+  70% {
+    background: var(--accent-soft);
+  }
+  100% {
+    background: transparent;
+  }
+}
+
+.code-editor-container {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  overflow: hidden;
+}
+
+.code-editor-host {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.code-editor-host .cm-editor {
+  height: 100%;
+}
+
+/* --------------------------------------------------------------------------
+   Code panel — cross-script search/replace (Task 9)
+   -------------------------------------------------------------------------- */
+
+.code-search-bar {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  flex: none;
+  max-height: 45%;
+  padding: 8px 10px;
+  background: var(--bg-1);
+  border-bottom: 1px solid var(--border);
+  overflow-y: auto;
+}
+
+.code-search-inputs {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.code-search-inputs .input {
+  flex: 1;
+  min-width: 0;
+}
+
+.code-search-toggle {
+  font-family: var(--font-mono);
+  min-width: var(--ctl-h-sm);
+  padding: 0 6px;
+}
+
+.code-search-error {
+  color: var(--err);
+  font-size: var(--text-sm);
+  padding: 2px 2px 0;
+}
+
+.code-search-replace {
+  border-top: 1px dashed var(--border);
+  padding-top: 6px;
+}
+
+.code-search-replace-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  background: none;
+  border: none;
+  padding: 0;
+  color: var(--ink-mute);
+  font-family: var(--font-ui);
+  font-size: var(--text-sm);
+  cursor: pointer;
+}
+
+.code-search-replace-toggle:hover {
+  color: var(--ink);
+}
+
+.code-search-replace-toggle svg {
+  transition: transform var(--t-fast) var(--ease-out);
+}
+
+.code-search-replace-toggle[aria-expanded='true'] svg {
+  transform: rotate(90deg);
+}
+
+.code-search-replace-body {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.code-search-replace-actions {
+  display: flex;
+  gap: 6px;
+}
+
+.code-search-replace-preview {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.code-search-replace-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-height: 120px;
+  overflow-y: auto;
+}
+
+.code-search-replace-list li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 3px 6px;
+  border-radius: var(--radius-sm);
+  background: var(--bg-2);
+  font-size: var(--text-sm);
+}
+
+.code-search-replace-count {
+  color: var(--ink-faint);
+  font-family: var(--font-mono);
+  flex: none;
+}
+
+.code-search-summary {
+  color: var(--ink-mute);
+  font-size: var(--text-sm);
+}
+
+.code-search-empty {
+  color: var(--ink-faint);
+  font-size: var(--text-sm);
+  padding: 4px 2px;
+}
+
+.code-search-hint {
+  color: var(--ink-faint);
+  font-size: var(--text-xs);
+}
+
+.code-search-results {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  overflow-y: auto;
+}
+
+.code-search-group {
+  display: flex;
+  flex-direction: column;
+}
+
+.code-search-group-path {
+  color: var(--ink-mute);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  padding: 2px 4px;
+}
+
+.code-search-row {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 3px 6px;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  color: var(--ink-mute);
+}
+
+.code-search-row:hover {
+  background: var(--bg-2);
+  color: var(--ink);
+}
+
+.code-search-row[aria-selected='true'] {
+  background: var(--accent-faint);
+  color: var(--ink);
+}
+
+.code-search-row:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+.code-search-line-no {
+  flex: none;
+  color: var(--ink-faint);
+}
+
+.code-search-preview {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.code-search-preview mark {
+  background: var(--accent-soft);
+  color: var(--ink);
+  border-radius: 2px;
+}
+

@@ -83,6 +83,7 @@
     "@codemirror/lint": "^6.9.7",
     "@codemirror/search": "^6.7.1",
     "@fontsource-variable/archivo": "^5.2.8",
+    "@fontsource-variable/bricolage-grotesque": "^5.2.10",
     "@fontsource/ibm-plex-mono": "^5.2.7",
     "@hearth/core": "*",
     "@hearth/runtime": "*",

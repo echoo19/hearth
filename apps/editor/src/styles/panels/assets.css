@@ -1,0 +1,267 @@
+/* Panel: Assets (grid, slice dialog, import drop target, audio preview) */
+
+/* Assets */
+.asset-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(104px, 1fr));
+  gap: 8px;
+}
+
+.asset-card {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-2);
+  padding: 8px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  transition:
+    border-color var(--t) var(--ease-out),
+    background var(--t) var(--ease-out);
+}
+
+.asset-card:hover {
+  background: var(--bg-3);
+  border-color: var(--border-strong);
+}
+
+.asset-card.selected {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.asset-thumb {
+  width: 48px;
+  height: 48px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+}
+
+.asset-thumb img {
+  max-width: 100%;
+  max-height: 100%;
+  image-rendering: pixelated;
+}
+
+.asset-name {
+  font-size: var(--text-xs);
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.asset-type {
+  font-size: var(--text-2xs);
+  font-weight: 600;
+  color: var(--ink-mute);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  background: var(--bg-3);
+  padding: 1px 7px;
+  border-radius: 99px;
+}
+
+.asset-card.selected .asset-type {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.asset-details {
+  border-top: 1px solid var(--border);
+  padding: 8px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  flex: none;
+  max-height: 240px;
+  overflow-y: auto;
+  background: var(--bg-2);
+}
+
+.asset-details-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.asset-details .mono {
+  color: var(--ink-mute);
+}
+
+/* Count badge on sliced-sheet cards ("8 frames") — a neutral pill, distinct
+   from .asset-type's selection-tinted one so it never reads as a status. */
+.asset-count-badge {
+  font-size: var(--text-2xs);
+  font-weight: 600;
+  color: var(--ink-mute);
+  background: var(--bg-1);
+  border: 1px solid var(--border);
+  padding: 1px 6px;
+  border-radius: 99px;
+  white-space: nowrap;
+}
+
+/* The one checkerboard behind every transparent-image preview: asset-card
+   thumbnails, the Slice dialog's sheet preview, and per-frame crops (sliced
+   sheets, animation thumbnails) all share this rule. */
+.asset-thumb,
+.checkerboard-bg {
+  background: repeating-conic-gradient(var(--checker-a) 0% 25%, var(--checker-b) 0% 50%) 0 0 / 16px 16px;
+}
+
+/* Sliced-sheet frame grid (asset details): one cropped swatch per frame,
+   name beneath — never a raw metadata.frames dump. */
+.frame-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.frame-cell-wrap {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  max-width: 72px;
+}
+
+.frame-cell {
+  position: relative;
+  overflow: hidden;
+  flex: none;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+
+.frame-cell-name {
+  font-size: var(--text-2xs);
+  color: var(--ink-mute);
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.font-thumb-sample {
+  font-size: var(--text-xl);
+  font-weight: 600;
+  color: var(--ink-mute);
+}
+
+.font-sample {
+  font-size: var(--text-xl);
+  color: var(--ink);
+}
+
+/* Slice dialog: live grid-overlay preview. */
+.slice-preview {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 96px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-0);
+}
+
+.slice-preview-status {
+  color: var(--ink-mute);
+  font-size: var(--text-sm);
+}
+
+.slice-preview-canvas {
+  position: relative;
+  flex: none;
+}
+
+.slice-preview-canvas img {
+  display: block;
+}
+
+.slice-grid-overlay {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.slice-grid-cell {
+  fill: var(--accent-soft);
+  stroke: var(--accent);
+  stroke-width: 1;
+}
+
+.slice-readout {
+  color: var(--ink-mute);
+  font-size: var(--text-sm);
+}
+
+/* Quiet aside when the per-cell overlay is capped on huge atlases. */
+.slice-readout-note {
+  color: var(--ink-faint);
+}
+
+
+/* --------------------------------------------------------------------------
+   Assets panel: file import drop target & audio preview
+   -------------------------------------------------------------------------- */
+
+.assets-panel {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+}
+
+.assets-panel .drop-target {
+  position: absolute;
+  inset: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1.5px dashed var(--accent);
+  border-radius: var(--radius);
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-size: var(--text-md);
+  font-weight: 600;
+  pointer-events: none;
+  z-index: 2;
+}
+
+.audio-preview-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border: 1px solid var(--border-strong);
+  border-radius: 50%;
+  background: var(--bg-1);
+  color: var(--ink);
+  cursor: pointer;
+  transition:
+    border-color 140ms var(--ease-out),
+    color 140ms var(--ease-out),
+    background 140ms var(--ease-out);
+}
+
+.audio-preview-btn:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.audio-preview-btn.playing {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+

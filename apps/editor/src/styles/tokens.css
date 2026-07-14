@@ -1,0 +1,100 @@
+/* Hearth editor — design tokens (OKLCH palette, metrics, type scale) */
+
+:root {
+  /* Surfaces: neutral charcoal, not fire-tinted. */
+  --bg-0: oklch(0.115 0.006 285); /* window chrome, deepest */
+  --bg-1: oklch(0.15 0.008 285);  /* panels */
+  --bg-2: oklch(0.19 0.01 285); /* inputs, cards, tab strip */
+  --bg-3: oklch(0.245 0.012 285); /* hover */
+  --border: oklch(0.32 0.014 285);
+  --border-strong: oklch(0.42 0.016 285);
+  --guide: oklch(0.27 0.012 285);
+
+  /* Ink */
+  --ink: oklch(0.95 0.006 85);
+  --ink-mute: oklch(0.74 0.012 85);
+  --ink-faint: oklch(0.58 0.01 85);
+
+  /* Ember command accent — the only place ember hue appears. Surfaces stay
+     neutral (hue 285); accent carries all "ember" meaning. */
+  --accent: oklch(0.684 0.192 42);
+  --accent-hover: oklch(0.785 0.135 55);
+  --accent-down: oklch(0.6 0.19 27);
+  --accent-ink: oklch(0.14 0.02 45);
+  --accent-soft: oklch(0.684 0.192 42 / 0.14);
+  --accent-faint: oklch(0.684 0.192 42 / 0.055);
+
+  /* Wordmark flame: deliberately hotter/brighter than --accent (brand mark,
+     not a UI action color) — named token so it isn't a stray hex. */
+  --flame-brand: #f76b15;
+
+  /* Semantic status */
+  --ok: oklch(0.76 0.14 150);
+  --warn: oklch(0.8 0.13 85);
+  --err: oklch(0.7 0.17 25);
+  --info: oklch(0.75 0.09 230);
+  --err-soft: oklch(0.7 0.17 25 / 0.14);
+  --err-faint: oklch(0.7 0.17 25 / 0.07);
+  --ok-soft: oklch(0.76 0.14 150 / 0.14);
+  --warn-soft: oklch(0.8 0.13 85 / 0.14);
+
+  /* Canvas (scene view) */
+  --canvas-bg: oklch(0.095 0.006 285);
+  --grid-line: oklch(0.22 0.01 285);
+  --grid-axis: oklch(0.34 0.014 285);
+
+  /* Floating overlays/scrims over the canvas (scene HUD, tilemap palette,
+     game-preview badges) — same neutral hue-285 surface family as --bg-*,
+     just translucent so the canvas shows through. Not ember-tinted. */
+  --overlay-bg: oklch(0.15 0.008 285 / 0.92);
+
+  /* Modal backdrop scrim — darker/heavier than --overlay-bg, same neutral hue. */
+  --scrim: oklch(0.1 0.006 285 / 0.6);
+
+  /* Transparent-image checkerboard (asset thumbs, sliced-sheet crops) —
+     neutral hue-285, matching the rest of the surface family. */
+  --checker-a: oklch(0.28 0.008 285);
+  --checker-b: oklch(0.23 0.008 285);
+
+  --radius: 6px;
+  --radius-sm: 4px;
+  /* Larger surfaces (modals, the shortcut cheat sheet, launcher cards) get
+     one shared larger radius rather than each picking its own value. */
+  --radius-lg: 10px;
+
+  /* Control metrics: one height per control size, everywhere. */
+  --ctl-h: 26px;
+  --ctl-h-sm: 22px;
+
+  /* Motion: fast, ease-out, state-conveying only. */
+  --ease-out: cubic-bezier(0.25, 1, 0.4, 1);
+  --t-fast: 100ms;
+  --t: 150ms;
+
+  --font-ui: 'Archivo Variable', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --font-mono: 'IBM Plex Mono', ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+
+  /* Brand display face — Bricolage Grotesque, for brand moments ONLY (wordmark,
+     launcher headings, dialog titles, empty-state headings). Falls back to the
+     UI font so nothing loses legibility if the webfont fails. */
+  --font-display: 'Bricolage Grotesque Variable', var(--font-ui);
+
+  /* Type scale: one ramp for the whole editor. Every font-size references a
+     token below — no ad-hoc literals (enforced by tests/styleGates.test.ts). */
+  --text-2xs: 10px;
+  --text-xs: 11px;
+  --text-sm: 12px;
+  --text-md: 13px;
+  --text-lg: 14px;
+  --text-xl: 18px;
+  --text-2xl: 22px;
+  --text-3xl: 28px;
+
+  /* z scale */
+  --z-dropdown: 100;
+  --z-sticky: 200;
+  --z-modal-backdrop: 300;
+  --z-modal: 400;
+  --z-toast: 500;
+  --z-tooltip: 600;
+}
