@@ -1412,14 +1412,14 @@ contention with T8 once B1–B7 land)
 - Observed: setEntityEnabled exists in the registry but has no CLI subcommand or MCP tool; agents cannot enable/disable entities.
 - Expected: MCP set_entity_enabled + CLI `hearth set enabled` exposing the existing command.
 - Source: PARITY.md
-- Disposition: fixed 4dbfd8b (MCP `set_entity_enabled` tool + CLI `hearth set enabled <scene> <entity> <true|false>`, both dispatching the existing `setEntityEnabled` core command; no core changes)
+- Disposition: fixed 787655b (MCP `set_entity_enabled` tool + CLI `hearth set enabled <scene> <entity> <true|false>`, both dispatching the existing `setEntityEnabled` core command; no core changes)
 
 ### L-112 · parity · defect · med
 - Element: Inspector Tags field ↔ agent surface
 - Observed: setEntityTags unreachable post-create (only `create entity --tags`); no MCP tool, no CLI path.
 - Expected: MCP set_entity_tags + CLI `hearth set tags` exposing the existing command.
 - Source: PARITY.md
-- Disposition: fixed 4dbfd8b (MCP `set_entity_tags` tool + CLI `hearth set tags <scene> <entity> <a,b,c>`, both dispatching the existing `setEntityTags` core command; no core changes)
+- Disposition: fixed 787655b (MCP `set_entity_tags` tool + CLI `hearth set tags <scene> <entity> <a,b,c>`, both dispatching the existing `setEntityTags` core command; no core changes)
 
 ### L-113 · investigate · defect · high
 - Element: prefab instance field edit → override recording
