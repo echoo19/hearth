@@ -13,6 +13,7 @@ import type { CommandIssue } from '@hearth/core';
 import { useEditor } from '../store';
 import type { AssetItem } from '../types';
 import { Icon, NumberField, TextField } from './ui';
+import { Button } from './ui/Button';
 import {
   ANY_STATE,
   addCondition,
@@ -178,8 +179,9 @@ export function AnimatorEditor() {
         </select>
         <span style={{ flex: 1 }} />
         {dirty && <span className="animator-dirty">Unsaved</span>}
-        <button
-          className="btn btn-sm btn-primary"
+        <Button
+          size="sm"
+          variant="primary"
           disabled={!draft || saving || !dirty || !complete}
           title={
             !complete
@@ -191,7 +193,7 @@ export function AnimatorEditor() {
           onClick={() => void save()}
         >
           <Icon name="check" size={11} /> {saving ? 'Saving…' : 'Save'}
-        </button>
+        </Button>
       </div>
 
       {!draft ? (
@@ -238,9 +240,9 @@ function ParamsSection({ draft, update }: { draft: AsmDraft; update: (fn: (d: As
     <section className="animator-section">
       <header className="component-header animator-section-header">
         <span className="component-title">Parameters</span>
-        <button className="btn btn-sm" onClick={() => update(addParam)}>
+        <Button size="sm" onClick={() => update(addParam)}>
           <Icon name="plus" size={10} /> Add
-        </button>
+        </Button>
       </header>
       <div className="component-body">
         {draft.params.length === 0 ? (
@@ -311,9 +313,9 @@ function StatesSection({
     <section className="animator-section">
       <header className="component-header animator-section-header">
         <span className="component-title">States</span>
-        <button className="btn btn-sm" onClick={() => update(addState)}>
+        <Button size="sm" onClick={() => update(addState)}>
           <Icon name="plus" size={10} /> Add
-        </button>
+        </Button>
       </header>
       <div className="component-body">
         {draft.states.length === 0 ? (
@@ -375,14 +377,14 @@ function TransitionsSection({ draft, update }: { draft: AsmDraft; update: (fn: (
     <section className="animator-section">
       <header className="component-header animator-section-header">
         <span className="component-title">Transitions</span>
-        <button
-          className="btn btn-sm"
+        <Button
+          size="sm"
           disabled={draft.states.length === 0}
           title={draft.states.length === 0 ? 'Add a state first' : 'Add a transition'}
           onClick={() => update(addTransition)}
         >
           <Icon name="plus" size={10} /> Add
-        </button>
+        </Button>
       </header>
       <div className="component-body">
         {draft.transitions.length === 0 ? (
@@ -454,9 +456,9 @@ function TransitionsSection({ draft, update }: { draft: AsmDraft; update: (fn: (
               <div className="animator-conditions">
                 <div className="animator-conditions-head">
                   <span className="animator-empty">Conditions</span>
-                  <button className="btn btn-sm btn-ghost" onClick={() => update((d) => addCondition(d, ti))}>
+                  <Button size="sm" variant="ghost" onClick={() => update((d) => addCondition(d, ti))}>
                     <Icon name="plus" size={10} /> Condition
-                  </button>
+                  </Button>
                 </div>
                 {t.conditions.length === 0 ? (
                   <span className="animator-empty">

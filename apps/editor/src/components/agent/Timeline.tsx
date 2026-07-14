@@ -17,6 +17,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { useEditor } from '../../store';
 import type { JournalEntry } from '../../types';
 import { ConfirmDialog, Icon } from '../ui';
+import { Button } from '../ui/Button';
 
 export interface TimelineRow {
   icon: string;
@@ -200,24 +201,25 @@ export function Timeline() {
   return (
     <div className="agent-timeline">
       <div className="panel-toolbar agent-timeline-toolbar">
-        <button
-          className="btn btn-sm"
+        <Button
+          size="sm"
           onClick={() => void snapshot()}
           title="Save a checkpoint you can review and restore"
         >
           {snapshotTaken && <span className="timeline-check">✓</span>} Checkpoint
-        </button>
-        <button className="btn btn-sm" onClick={reviewChanges} title="Focus the Changes panel">
+        </Button>
+        <Button size="sm" onClick={reviewChanges} title="Focus the Changes panel">
           Review changes
-        </button>
-        <button
-          className="btn btn-danger btn-sm"
+        </Button>
+        <Button
+          variant="danger"
+          size="sm"
           onClick={() => setConfirmRevert(true)}
           disabled={!diff?.hasChanges}
           title="Restore the project to the last checkpoint"
         >
           Restore checkpoint
-        </button>
+        </Button>
       </div>
 
       <div className="agent-timeline-body" ref={bodyRef} onScroll={handleScroll}>

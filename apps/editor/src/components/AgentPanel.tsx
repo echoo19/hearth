@@ -4,6 +4,7 @@ import { useEditor } from '../store';
 import { apiPrepareAgent } from '../api';
 import type { AgentPermissionMode, DetectAgentsResult } from '../../server/agentSetup';
 import { CodeBlock, Icon } from './ui';
+import { Button } from './ui/Button';
 import { Timeline } from './agent/Timeline';
 import { planClaudeStart, useAgentSocket, type AgentSessionSummary } from './agent/useAgentSocket';
 
@@ -215,59 +216,62 @@ export function AgentPanel() {
         </select>
 
         {agentDetecting && agentLauncher !== 'shell' ? (
-          <button className="btn btn-primary btn-sm" disabled>
+          <Button variant="primary" size="sm" disabled>
             Checking…
-          </button>
+          </Button>
         ) : launcherFound ? (
-          <button className="btn btn-primary btn-sm" onClick={() => void startAgent()} disabled={!projectPath}>
+          <Button variant="primary" size="sm" onClick={() => void startAgent()} disabled={!projectPath}>
             {agentLauncher === 'shell' ? 'Open Terminal' : 'Start agent'}
-          </button>
+          </Button>
         ) : detectFailed ? (
           <>
-            <button className="btn btn-primary btn-sm" disabled>
+            <Button variant="primary" size="sm" disabled>
               Couldn't check for {AGENT_LAUNCHER_LABELS[agentLauncher]}
-            </button>
-            <button
-              className="btn btn-ghost btn-sm"
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
               onClick={() => void detectAgent()}
               title={`Re-check whether the ${agentLauncher} CLI is on PATH`}
             >
               Re-detect
-            </button>
+            </Button>
           </>
         ) : agentLauncher === 'claude' ? (
           <>
-            <button className="btn btn-primary btn-sm" onClick={installClaude} disabled={!projectPath}>
+            <Button variant="primary" size="sm" onClick={installClaude} disabled={!projectPath}>
               Install Claude Code
-            </button>
-            <button
-              className="btn btn-ghost btn-sm"
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
               onClick={() => void detectAgent()}
               title="Re-check whether the claude CLI is on PATH"
             >
               Re-detect
-            </button>
+            </Button>
           </>
         ) : (
           <>
-            <button className="btn btn-primary btn-sm" disabled>
+            <Button variant="primary" size="sm" disabled>
               Codex not found
-            </button>
-            <button
-              className="btn btn-ghost btn-sm"
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
               onClick={() => void detectAgent()}
               title="Re-check whether the codex CLI is on PATH"
             >
               Re-detect
-            </button>
+            </Button>
           </>
         )}
 
         <span className="panel-divider" />
 
-        <button className="btn btn-danger btn-sm" onClick={() => agent.stop()} disabled={!running}>
+        <Button variant="danger" size="sm" onClick={() => agent.stop()} disabled={!running}>
           Stop
-        </button>
+        </Button>
 
         <span style={{ flex: 1 }} />
 
