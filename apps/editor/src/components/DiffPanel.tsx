@@ -19,7 +19,14 @@ export function DiffPanel() {
   const diff = useEditor((s) => s.diff);
   const refreshDiff = useEditor((s) => s.refreshDiff);
   const exec = useEditor((s) => s.exec);
-  const log = useEditor((s) => s.log);
+  // Undo / Redo / Checkpoint route through the shared store actions (not a
+  // local exec) so this panel's buttons get the same friendly Console line AND
+  // the same post-action refreshDiff() as the toolbar arrows and the ⌘Z/⇧⌘Z/
+  // ⇧⌘S keybinds — the diff body stays honest immediately after the action
+  // (CONSOLE-CHANGES-5/6 / L-060), with no duplicated logging here.
+  const undo = useEditor((s) => s.undo);
+  const redo = useEditor((s) => s.redo);
+  const checkpoint = useEditor((s) => s.checkpoint);
   const [confirmRevert, setConfirmRevert] = useState(false);
   /** Which toolbar action is currently in flight, if any — drives the
    * disabled-state + label swap for Undo/Redo/Checkpoint/Refresh/Restore,
@@ -36,32 +43,20 @@ export function DiffPanel() {
 
   async function snapshot() {
     setBusy('checkpoint');
-    const result = await exec('snapshotProject', {}, { quiet: true });
+    await checkpoint();
     setBusy(null);
-    if (result.success) {
-      log('info', 'command', 'Checkpoint saved. The Changes panel now compares against this checkpoint.');
-      await refreshDiff();
-    }
   }
 
-  // quiet: the custom log lines below replace exec()'s generic changed-summary;
-  // history reloads via the commandSeq effect after the mutation lands.
-  async function undo() {
+  async function doUndo() {
     setBusy('undo');
-    const result = await exec<{ undone: string; seq: number }>('undo', {}, { quiet: true });
+    await undo();
     setBusy(null);
-    if (result.success && result.data) {
-      log('info', 'command', `Undo: reverted "${result.data.undone}" (#${result.data.seq}).`);
-    }
   }
 
-  async function redo() {
+  async function doRedo() {
     setBusy('redo');
-    const result = await exec<{ redone: string; seq: number }>('redo', {}, { quiet: true });
+    await redo();
     setBusy(null);
-    if (result.success && result.data) {
-      log('info', 'command', `Redo: reapplied "${result.data.redone}" (#${result.data.seq}).`);
-    }
   }
 
   async function doRefresh() {
@@ -73,10 +68,10 @@ export function DiffPanel() {
   return (
     <>
       <div className="panel-toolbar">
-        <Button size="sm" onClick={() => void undo()} disabled={!undoTarget || busy !== null}>
+        <Button size="sm" onClick={() => void doUndo()} disabled={!undoTarget || busy !== null}>
           {busy === 'undo' ? 'Undoing…' : undoTarget ? `Undo ${undoTarget.command}` : 'Undo'}
         </Button>
-        <Button size="sm" onClick={() => void redo()} disabled={!redoTarget || busy !== null}>
+        <Button size="sm" onClick={() => void doRedo()} disabled={!redoTarget || busy !== null}>
           {busy === 'redo' ? 'Redoing…' : redoTarget ? `Redo ${redoTarget.command}` : 'Redo'}
         </Button>
         <span className="panel-divider" />
