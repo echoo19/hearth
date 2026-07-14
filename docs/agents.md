@@ -107,6 +107,15 @@ recommended first commands, permission defaults) in every project. The MCP
 server serves the same content via the `get_agent_instructions` tool, so an
 agent that connects cold can bootstrap itself.
 
+Beyond the per-project files, Hearth ships a **coding-agent skill** at
+`skills/hearth/SKILL.md` (Claude Code skill format) that teaches the end-to-end
+workflows in this guide — setup, scenes/entities/components, the `ctx` Lua
+stdlib, prefabs, animation state machines, autotiling, input, audio,
+playtest-driven verification, screenshot checks, the review loop, and export.
+The generated AGENTS.md and `get_agent_instructions` both point at it; install
+it into Claude Code so the agent has the full playbook, not just the
+per-project quick reference.
+
 ## Starting a new project: templates
 
 `init` is pre-project — there's no MCP tool for it, since a session needs an
