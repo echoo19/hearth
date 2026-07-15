@@ -680,17 +680,48 @@ entry dispositioned) and closed by six independent re-audits.
 The end goal, stated so every release aims at it: **a solo dev or an agent
 can take a 2D game from empty project to a polished, distributable game
 without leaving the tool or hitting a wall.** The feature set is complete:
-v0.13's ship-your-game wave closed the last feature gap, and v0.14's
-tightening wave made every surface actually work. Two short steps remain
-before 1.0. Each release completed a loop rather than scattering features;
-anything that didn't serve that loop waited (see Non-goals) and still does.
+v0.13's ship-your-game wave closed the last feature gap, v0.14's tightening
+wave made every surface actually work, and v0.15's game-craft wave sharpened
+how agents make games with those tools. One step remains before 1.0. Each
+release completed a loop rather than scattering features; anything that
+didn't serve that loop waited (see Non-goals) and still does.
 
-### Wave L2 — agent game-craft (mini-wave)
+### Wave L2 — agent game-craft (shipped v0.15.0)
 
-No engine features. A short, focused pass on how well agents actually *make
-games* now that every tool works and each project ships the house skill:
-sharper agent guidance and playbooks, game-craft examples, and the editor/
-website positioning that follows from it.
+No engine features — a focused pass on how well agents actually *make games*
+now that every tool works and each project ships the house skill.
+
+- **A game-craft skill**: a second fact-checked skill,
+  `.claude/skills/hearth-craft/SKILL.md`, teaches juice and game-feel as
+  concrete `ctx` recipes (camera shake/flash/fade/zoom-punch, particle
+  bursts, tweens, layered sound, animation state machines) plus game-UX
+  conventions and an agent quality bar. It scaffolds into every new project
+  and was backfilled into all 13 example/template fixtures — each now
+  carries both `hearth` and `hearth-craft` — drift-gated against the
+  canonical copy.
+- **An asset-sourcing playbook**: where to get sprites, audio, and fonts an
+  agent is licensed to ship — Kenney (CC0), itch.io's CC0 filter,
+  OpenGameArt, Freesound, and OFL/Apache Google Fonts — with the licensing
+  rules and a fetch → import → verify loop. Every source and license claim
+  was fact-checked live.
+- **One-command connectability**: the Agent panel launcher reached parity
+  across Claude Code, Codex, OpenCode + Ollama, and Hermes —
+  detect → prepare → launch with a per-tool native MCP config writer
+  (`.mcp.json`, `opencode.json`, `codex mcp add`, Hermes YAML) and
+  already-configured detection so it never double-writes. Every embedded
+  terminal now guarantees the `hearth` CLI on `PATH` via a shim, so agents
+  run `hearth …` with no setup.
+- **Journey-grouped docs + guides**: the docs reorganized into a
+  journey-grouped IA (get started / build / script / ship / agents /
+  reference), with seven new guides — per-agent connect pages (Claude Code,
+  Codex, OpenCode, Hermes, any agent) and ship-it destination guides (web
+  hosting, desktop, with honest Gatekeeper/SmartScreen notes).
+- **AI-native positioning**: the README and website say what Hearth is — an
+  *AI-native* game engine whose knowledge layer (the house skill, the
+  verification loop, journal review, determinism) is the story; MCP and the
+  CLI are plumbing, one of several front doors.
+- Counts unchanged: **71 commands**, **72 MCP tools** — no new engine
+  commands this wave. No format changes; v0.14 projects open unchanged.
 
 ### Wave M — final hardening & verification (v1.0)
 
@@ -704,9 +735,6 @@ rest of the deferred-M bug tail, and onboarding polish. Then 1.0.
 
 None of these block 1.0; they ride alongside or after it:
 
-- **Codex first-class MCP wiring** (the agent panel launches Codex today;
-  `.mcp.json` auto-preparation is Claude-Code-only — Codex's config story
-  is TOML-based and needs its own path).
 - **Custom chat UI over the agent** — only when it can be built
   API-key-only (Claude Agent SDK) or subscription terms allow a wrapped
   UI; see [agent-panel.md](./agent-panel.md#why-a-terminal-not-a-custom-chat-ui).

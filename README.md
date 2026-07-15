@@ -164,17 +164,22 @@ same asset pipeline: import, probe, slice, animate.
 
 ## Status
 
-Hearth is at **v0.14.0**, a developer preview. This release, "Tightening,"
-adds no new engine features — 129 commits that make the editor work properly
-everywhere, front-load the workflows, and unify the design language. The full
-loop works end to end: project model, editor, runtime preview, CLI, MCP,
-headless playtests, diff review, and web and desktop export. Recent releases
-added desktop game export with a macOS signing ladder, itch.io zip parity
-across CLI/MCP/editor, project templates (`hearth init --template
-platformer|topdown|arcade`), animation state machines, blob47 tilemap
-autotiling, live-linked prefabs, a post-processing system, and published
-performance numbers. The [roadmap](docs/roadmap.md) keeps an honest list of
-what's next.
+Hearth is at **v0.15.0**, a developer preview. This release, "agent
+game-craft," adds no new engine features — it sharpens how coding agents
+actually make games with the tools already there: a second fact-checked
+skill (`hearth-craft`) that teaches juice, game-feel, and asset sourcing and
+scaffolds into every project, one-command connectability for Claude Code,
+Codex, OpenCode + Ollama, and Hermes with the `hearth` CLI guaranteed on
+`PATH` in the embedded terminal, and journey-grouped docs. The prior release,
+"Tightening," made every editor surface work properly (129 commits, a
+16-surface live audit). The full loop works end to end: project model,
+editor, runtime preview, CLI, MCP, headless playtests, diff review, and web
+and desktop export. Recent releases added desktop game export with a macOS
+signing ladder, itch.io zip parity across CLI/MCP/editor, project templates
+(`hearth init --template platformer|topdown|arcade`), animation state
+machines, blob47 tilemap autotiling, live-linked prefabs, a post-processing
+system, and published performance numbers. The [roadmap](docs/roadmap.md)
+keeps an honest list of what's next.
 
 ## Install
 

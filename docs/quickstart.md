@@ -135,6 +135,5 @@ packaged app per platform. See [export.md](./export.md) and
 - [Editor guide](./editor.md): chrome, shortcuts, transform handles
 - [Export](./export.md): web (folder vs single file) and desktop (Electron, signing)
 - [Shipping to itch.io](./shipping-to-itch.md): web zip, desktop channels, butler
-- [Examples](../packages/examples): platformer, top-down, visual novel,
-  Ember Trail (an all-Lua two-scene game), and Glow Caves (an all-Lua
-  lighting/particles/animation showcase)
+- [Connect your agent](./connect-any-agent.md): Claude Code, Codex,
+  OpenCode + Ollama, Hermes, or any MCP-capable CLI — one-command setup
