@@ -168,7 +168,14 @@ high) though it borders on a defect (values unreadable).
   drop the menu roles). May be partly resolved by the T4 Menu primitive;
   verify at T13.
 - Source: TOOLBAR-7
-- Disposition: open
+- Disposition: fixed 2b35b11 (verified T9-U8, no further change needed) — the
+  T4 Menu primitive implements the full contract this asked for
+  (`menuNavIndex`: ArrowUp/Down with wrap, Home/End, separator/disabled
+  skipping, roving tabindex reflected into DOM focus, first item focused on
+  open) and both popovers this finding was filed against now render through
+  it: SceneMenu uses MenuButton directly, and the old toolbar View menu became
+  a MenuBar section (menu/MenuBar.tsx), which is also a MenuButton per
+  section. Unit coverage in menu.test.tsx.
 
 ### L-009 · toolbar · polish · low
 - Element: "View" toolbar button — missing `title`.
@@ -176,7 +183,12 @@ high) though it borders on a defect (values unreadable).
 - Expected: a short tooltip for consistency (may be moot after T6 folds View
   into the menu bar).
 - Source: TOOLBAR-8
-- Disposition: open
+- Disposition: by-design (mooted by 3c1d9c5, verified T9-U8) — the standalone
+  "View" toolbar button this was filed against no longer exists: T6's toolbar
+  rework folded View into the app menu bar, where its trigger is a MenuButton
+  with a visible text label plus `aria-label` (Menu.tsx renders both). A
+  tooltip restating the visible one-word label would be noise; nothing left
+  to fix.
 
 ### L-010 · toolbar · friction · low
 - Element: Scene delete when only one scene exists.
@@ -278,14 +290,27 @@ high) though it borders on a defect (values unreadable).
   selection. Multiplies the cost of L-014/L-015.
 - Expected: Shift/Cmd range- and toggle-select for bulk ops.
 - Source: HIER-6
-- Disposition: open
+- Disposition: deferred-M (T9-U8) — this is a selection-model rework, not a
+  panel patch: `selection` is a single entity id across the store, SceneView
+  (drag/gizmos/outline), Inspector (single-entity contract), Hierarchy
+  (roving tabindex keyed to the one selected row), and the delete/reparent
+  flows. Every consumer needs defined multi-select semantics (what does the
+  Inspector show? what does drag-reparent move? what does the delete confirm
+  name?) before the click modifiers mean anything. Real design work for the
+  editor-ergonomics track / M, not a closing-sweep fix.
 
 ### L-018 · hierarchy · friction · low
 - Element: panel search/filter.
 - Observed: none; fine at 15 entities, unusable at scale.
 - Expected: a filter box / Cmd+F scoping in the header.
 - Source: HIER-9
-- Disposition: open
+- Disposition: deferred-M (T9-U8) — a tree filter is not the Assets panel's
+  flat filter: matches must reveal their collapsed ancestors (or the result
+  reads as missing children), and the filtered row list has to stay coherent
+  with L-016's keyboard nav (`treeNav` walks the full visible-row model) and
+  L-014's drag-reparent targets. That interaction design belongs with the
+  editor-ergonomics track; at the audit's own 15-entity scale nothing is
+  blocked today.
 
 ### L-019 · hierarchy · friction · low
 - Element: tree rows — context menu.
@@ -305,7 +330,10 @@ high) though it borders on a defect (values unreadable).
   document (Live panel holds runtime state).
 - Expected: a subtle play-mode header hint.
 - Source: HIER-15
-- Disposition: open
+- Disposition: fixed b6e4b78 (while `playing`, the Hierarchy header shows a
+  subtle "edit-time" detail chip whose Tooltip explains that this tree is the
+  edit-time scene and runtime-spawned entities appear in the Live panel —
+  keyboard-focusable so the explanation is reachable without a pointer).
 
 ### L-021 · hierarchy · polish · low
 - Element: `.tree-name` native `title` tooltip.
@@ -322,7 +350,12 @@ high) though it borders on a defect (values unreadable).
   first-focusable (Cancel); Cancel-focused is arguably safer but is accidental.
 - Expected: decide which button owns focus and wire it deterministically.
 - Source: HIER-13
-- Disposition: open
+- Disposition: fixed 75de4be (decision made explicit in the shared
+  ConfirmDialog: `danger` dialogs focus Cancel — Enter must never destroy
+  something by reflex — and plain confirms focus the confirm button. Wired
+  with refs + an effect that runs after Modal's showModal(), so the winner is
+  deterministic, not a mount-order race; `autoFocus` removed. Applies to every
+  ConfirmDialog in the app, incl. the Hierarchy delete this was filed on.)
 
 ### L-023 · hierarchy · polish · low
 - Element: `.tree-actions` hidden-until-hover idiom (`display:none`).
@@ -331,7 +364,13 @@ high) though it borders on a defect (values unreadable).
   tab-reachable — the two panels disagree. (T7 hover-only parity target.)
 - Expected: one idiom repo-wide.
 - Source: HIER-14
-- Disposition: open
+- Disposition: deferred-M (T9-U8 → T12) — picking the one idiom is exactly the
+  kind of repo-wide consistency call the T12 design pass owns, and the naive
+  unification (flip `.tree-actions` to the opacity idiom) would re-add ~4 tab
+  stops to every selected row, undoing part of L-016's deliberate roving-
+  tabindex cleanup (action buttons are tabIndex=-1 by design there). The two
+  idioms currently coexist without breaking anything; T12 should decide
+  opacity-vs-display *together with* the tab-order contract. Flagged for T12.
 
 ## sceneview
 
@@ -414,7 +453,15 @@ high) though it borders on a defect (values unreadable).
 - Observed: the particle-circle preview uses array index as the React key.
 - Expected: stable per-particle keys to avoid reconciliation churn.
 - Source: Wave-K tail ("particle circle index keys")
-- Disposition: open
+- Disposition: by-design (T9-U8) — there is no stable identity to key on:
+  runtime `Particle` objects carry no id and are POOLED/reused across spawns
+  (EmitterState's free-list, packages/runtime/src/particles.ts), so object
+  identity is also unstable. Adding an id field means touching the runtime's
+  hot spawn path for an editor-only preview — an engine change the anti-bloat
+  rule bars. And the churn concern doesn't apply here: each particle renders
+  as a stateless leaf `<circle>` (no component state, no CSS transitions),
+  so an index-keyed reconcile is pure attribute patching — exactly the cheap
+  path. Index keys are the deliberate choice.
 
 ## inspector
 
@@ -438,7 +485,16 @@ high) though it borders on a defect (values unreadable).
 - Expected: a dedicated Grid editor, or at least row validation against the
   current `tileAssets` char set + "row"/"Remove row N" copy.
 - Source: INSPSPEC-4
-- Disposition: open
+- Disposition: deferred-M (T9-U8) — the honest fix is the dedicated grid
+  editor (per Jake's direct-manipulation-editors direction, a paint/canvas
+  surface, and the Scene view's TilemapPainter already IS that surface for
+  the same data — the Inspector field is the fallback path). The "at least"
+  half (per-row validation against tileAssets) isn't a small patch either:
+  StringListField is a generic primitive with no access to the sibling
+  tileAssets record, so validation means a bespoke Tilemap-grid branch in the
+  Inspector — a mini-editor that M's real grid editor would immediately
+  replace. Building the throwaway now is churn; belongs to the editor-
+  ergonomics track with the painter as the mitigation in the meantime.
 
 ### L-034 · inspector · friction · med
 - Element: `Script` component — `Script Path` and `Params`.
@@ -462,7 +518,13 @@ high) though it borders on a defect (values unreadable).
 - Expected: the same confirm treatment, ideally naming how many other
   instances exist (`countPrefabInstances` is already available).
 - Source: INSPSPEC-5
-- Disposition: open
+- Disposition: fixed 17c29f1 ("Update prefab" now runs the same
+  countPrefabInstances preflight as Sync (button shows "Checking…", result
+  dropped if selection moved), then a danger ConfirmDialog whose body names
+  the blast radius via new pure `updatePrefabConfirmBody(count)` — "N other
+  instances read this prefab and will follow the update (each keeps its own
+  overrides)", with an honest zero-others variant. prefabActions.ts +
+  Inspector.tsx.)
 
 ### L-036 · inspector · friction · med
 - Element: prefab-instance detach on structural edit (`detachOnStructuralEdit`).
@@ -472,7 +534,13 @@ high) though it borders on a defect (values unreadable).
   watching. One-way from the Inspector's view (no reattach).
 - Expected: a transient inline notice in the Inspector when a detach happens.
 - Source: INSPSPEC-6
-- Disposition: open
+- Disposition: fixed 17c29f1 (the Inspector watches the selected entity's
+  prefab marker: when it goes set → gone while the SAME entity stays
+  selected, a dismissible inline banner appears where the prefab banner was —
+  "Detached from the "<prefab>" prefab — adding or removing a component makes
+  an instance standalone. Undo restores the link." The old asset id is
+  captured before the link vanishes so the notice can name the prefab.
+  Cleared on selection change or Dismiss.)
 
 ### L-037 · inspector · friction · med
 - Element: component cards — collapse/expand.
@@ -500,7 +568,10 @@ high) though it borders on a defect (values unreadable).
   forgets the previously assigned sprite asset, forcing re-selection.
 - Expected: remember the prior asset across mode switches.
 - Source: Wave-K tail ("sprite-mode forgets prior asset")
-- Disposition: open
+- Disposition: fixed 17c29f1 (TileRowEditor keeps per-row refs of the last
+  sprite assetId AND the last autotile rule; switching modes restores the
+  remembered value when its asset/sheet still exists, falling back to the old
+  defaults otherwise — both directions, not just sprite).
 
 ### L-040 · inspector · friction · low
 - Element: prefab-instance revert granularity.
@@ -631,7 +702,15 @@ high) though it borders on a defect (values unreadable).
   nothing; tabbing through 19+ cards is the only keyboard path.
 - Expected: roving-tabindex grid nav (arrows move focus, Home/End).
 - Source: ASSETS-6
-- Disposition: open
+- Disposition: fixed 10747ef (roving tabindex — the selected card, or the
+  first, is the grid's ONE tab stop; ArrowLeft/Right step ±1 clamped,
+  ArrowUp/Down step a whole row (column count read from the grid's computed
+  gridTemplateColumns at keydown, so it tracks panel resizes), Home/End jump
+  to the ends, Down from a full row above a shorter last row lands on the
+  last card. Pure `gridNavIndex` helper unit-tested in assetsGridNav.test.ts
+  incl. degenerate 0/1-column cases. Live-verified headless (port 5343,
+  swiftshader, ember-horde): ArrowRight moved focus card 1→2, End jumped to
+  the last card, exactly one card had tabindex=0.)
 
 ### L-048 · assets · friction · low
 - Element: import error banner (`.export-errors`).
@@ -655,8 +734,16 @@ high) though it borders on a defect (values unreadable).
   Timeline) with no UI affordance — users can only import audio.
 - Expected: a "+ Sound" affordance for parity, or a documented decision.
 - Source: ASSETS-9
-- Disposition: open (out of T9-U3's dispatched bullet list — not touched this
-  pass; the "+ State machine" affordance below was, per L-084's followup)
+- Disposition: fixed 10747ef (a "+ Sound" toolbar Button between Tile and
+  State machine opens a small dialog — name field + a preset `<select>` over
+  the engine's real `SOUND_PRESETS` list (imported from @hearth/core, so the
+  dropdown can never drift from what createSound accepts) — and calls the
+  existing `createSound` command with no seed override, so the editor and an
+  agent produce byte-identical audio for the same preset. On success the new
+  card is selected; a CONFLICT (duplicate name) surfaces inline in the dialog
+  per the L-108 idiom. Live-verified headless: preset list rendered
+  coin…blip, creating "u8-test-blip" produced the audio card, re-creating the
+  same name showed the command's conflict message inline.)
 
 ### L-050 · assets · polish · low
 - Element: import skip-reason copy.
@@ -757,7 +844,17 @@ high) though it borders on a defect (values unreadable).
   unit tests. Needs a real-browser sanity check before treating as confirmed.
 - Expected: `ctx.` hover docs appear on dwell (verify manually).
 - Source: CODE-5 (unconfirmed)
-- Disposition: open
+- Disposition: by-design (verified working, T9-U8 — no code change). Live
+  re-check in a real Chromium (headless shell, swiftshader, port 5343,
+  ember-horde, horde-director.lua): hovering the `vars` segment of
+  `ctx.vars.count` with a real mouse-move sequence produced the
+  `.cm-ctx-hover` tooltip with the signature ("vars: Record<string,
+  unknown>") and description. Two audit-artifact explanations confirmed:
+  (1) synthetic hover-dwell often fails to trip CM6's hoverTooltip, exactly
+  the caveat the auditor flagged; (2) hovering the bare `ctx` token shows
+  nothing BY DESIGN (`ctxChainMatchAt` returns null before the first dot —
+  "ctx" alone isn't a documented path), which a probe aimed at the chain's
+  start would misread as broken.
 
 ### L-056 · code · friction · med
 - Element: ⌘S while the Code panel is open but focus is outside CodeMirror
@@ -769,7 +866,15 @@ high) though it borders on a defect (values unreadable).
 - Expected: the global binding should route to the real save when a dirty
   script buffer is open.
 - Source: CODE-3
-- Disposition: open
+- Disposition: fixed b319cba (the Code panel root claims mod+s: when focus is
+  anywhere in the panel but OUTSIDE CodeMirror it preventDefault+
+  stopPropagations — same pattern as the Animator's L-081 fix, so the global
+  "saved automatically" keybind never sees it — and runs the real `save()`
+  through the existing `shouldSave` guard (no-op when clean/saving). Focus
+  inside `.cm-editor` is explicitly yielded to CM6's own Mod-s keymap so the
+  key can't double-save. Live-verified headless: dirtied a script, focused
+  the toolbar Search button, pressed ⌘S → dirty dot cleared, zero "saved
+  automatically" console lines.)
 
 ### L-057 · code · friction · med
 - Element: Code panel empty state + lack of a "new script" affordance.
@@ -780,7 +885,15 @@ high) though it borders on a defect (values unreadable).
 - Expected: fix the false hint, or add a real "New script" action /
   Script-component path.
 - Source: CODE-4
-- Disposition: open
+- Disposition: fixed b319cba (both halves: a "New script" toolbar button +
+  the same action in the no-scripts empty state open a small dialog — name +
+  Lua/JS language select — that calls the existing `createScript` command
+  (template source) and opens the new file in a tab; command failures (e.g. a
+  name CONFLICT) render inline. The empty-state hint no longer points at a
+  flow that can't create a file: "Scripts drive entity behavior via the
+  Script component. Create one here, or ask an agent." — icon + one-line
+  purpose + primary next action, per the T9 standing item. Live-verified
+  headless: creating "u8 probe" opened u8-probe.lua in a tab.)
 
 ### L-058 · code · friction · med
 - Element: open script buffers across a project switch.
@@ -902,7 +1015,15 @@ high) though it borders on a defect (values unreadable).
 - Expected: make rows clickable (jump the undo cursor), or make them not look
   interactive.
 - Source: CONSOLE-CHANGES-8
-- Disposition: open
+- Disposition: by-design (T9-U8, taking the finding's second branch) — the
+  rows already satisfy "not look interactive": plain divs with NO hover
+  state, no cursor:pointer, no button styling (changes.css `.history-row` is
+  padding + ink colors only); the audit itself noted the missing hover state.
+  Click-to-jump is a real feature, not an affordance patch: the engine has no
+  jump-to-seq command, so it means chaining N undo/redo execs with busy
+  state, partial-failure semantics, and cancel — that belongs to the
+  editor-ergonomics track if history scrubbing is ever wanted. Flagged for
+  T12 as a candidate, not owed by this sweep.
 
 ### L-064 · console-changes · polish · low
 - Element: Console toolbar — no level filter / search.
@@ -910,7 +1031,12 @@ high) though it borders on a defect (values unreadable).
   text search. Compounds L-059/L-062 under a chatty run.
 - Expected: at least a level filter / "errors only" toggle.
 - Source: CONSOLE-CHANGES-9
-- Disposition: open
+- Disposition: fixed 252122a (All/Info/Warn/Errors chips in the Console
+  toolbar — one active at a time, aria-pressed segmented group; pure
+  `filterConsoleEntries` unit-tested in consoleFilterCopy.test.ts. A filter
+  that hides everything shows a "No <level> entries" empty state with a
+  "Show all" reset. Live-verified headless: Errors narrowed the list to
+  level-error rows only, All restored it.)
 
 ### L-065 · console-changes · polish · low
 - Element: Console entries — copy affordance.
@@ -918,7 +1044,14 @@ high) though it borders on a defect (values unreadable).
   cross-span text selection.
 - Expected: a per-row copy icon or "Copy all".
 - Source: CONSOLE-CHANGES-10
-- Disposition: open
+- Disposition: fixed 252122a (a "Copy" toolbar button — the audit's "Copy
+  all" branch — copies the VISIBLE (filtered) entries as plain text, one
+  line per entry incl. timestamp/level/source and the script link location
+  when present (pure `consoleEntriesText`, unit-tested); button flips to
+  "Copied" for 1.2s, disabled when nothing is visible. Composes with the
+  L-064 chips: filter to Errors, Copy, and the clipboard holds just the
+  errors. Live-verified headless with clipboard permission granted: the
+  clipboard held the formatted lines.)
 
 ### L-066 · console-changes · polish · low
 - Element: duplicate console entries from React StrictMode double-mount (dev).
@@ -927,7 +1060,14 @@ high) though it borders on a defect (values unreadable).
 - Expected: guard the mount effect (or accept as dev-only), noted for
   awareness.
 - Source: CONSOLE-CHANGES-11
-- Disposition: open
+- Disposition: by-design (T9-U8, taking the finding's own "accept as
+  dev-only" branch) — StrictMode's double-mount is React's deliberate
+  dev-only probe for effect-cleanup bugs; production builds never
+  double-mount, so no user sees the duplicate line. Guarding the mount
+  effect with a did-run ref is the exact anti-pattern StrictMode exists to
+  flush out (it hides real cleanup bugs instead of fixing them), and the
+  L-062 dedup already collapsed the worst compounding case. Accepted as
+  dev-only noise.
 
 ## play mode / live
 
@@ -979,7 +1119,13 @@ high) though it borders on a defect (values unreadable).
 - Expected: hold near target fps at the documented cap, or degrade linearly.
   Worth a profiling pass.
 - Source: PLAYMODE-4
-- Disposition: open
+- Disposition: deferred-M (T9-U8) — this is a runtime profiling task
+  (candidate: per-frame entity sync in packages/runtime/src/pixi/index.ts),
+  not an editor-UX item this sweep can honestly fix: the SwiftShader numbers
+  the audit itself disclaims aren't a valid optimization target, so the work
+  starts with a real-GPU profile to even confirm the shape of the curve, and
+  any fix lands in the runtime hot path (engine change, anti-bloat gated).
+  Belongs to a dedicated perf pass with before/after captures.
 
 ### L-069 · playmode-live · friction · med
 - Element: input-mapping edits vs. a running preview.
@@ -990,7 +1136,13 @@ high) though it borders on a defect (values unreadable).
 - Expected: a note in the Input panel (or Play UI) when mappings changed since
   the run started.
 - Source: INPUT-6
-- Disposition: open
+- Disposition: fixed d8ffe42 (the Input panel tracks "edited while playing":
+  any applyEdit that lands while `playing` shows a status line under the
+  header — "The running preview keeps the mappings it started with — restart
+  Play to feel these changes." — cleared automatically when the run stops or
+  a new run starts (keyed on playing + runNonce). The underlying snapshot
+  behavior is unchanged and remains reasonable; the panel just stops being
+  silent about it.)
 
 ### L-070 · playmode-live · friction · low
 - Element: toolbar "Pause" (debug pause) — no in-canvas indicator.
@@ -1017,7 +1169,14 @@ high) though it borders on a defect (values unreadable).
 - Expected: likely intentional (needs a live device) — a "Press a gamepad
   button…" counterpart or an explanation of the named-mapping design.
 - Source: INPUT-8
-- Disposition: open
+- Disposition: fixed d8ffe42, taking the finding's second branch (explain the
+  design): the Add-gamepad-button select now carries a Tooltip — "Pick by
+  standard-layout name — works without a controller connected" — naming WHY
+  there's no capture flow: named standard-layout bindings work with no device
+  plugged in, unlike keyboard capture which needs the physical key event. A
+  press-to-capture counterpart (navigator.getGamepads polling) stays
+  deliberately unbuilt: it needs live-device testing this sweep can't do and
+  adds a second binding path for the same result (anti-bloat).
 
 ### L-072 · input · polish · low
 - Element: `.inspector-row` grid reused by InputSettings for multi-line values.
@@ -1046,7 +1205,13 @@ high) though it borders on a defect (values unreadable).
   as a leaky internal error.
 - Expected: friendlier copy ("Threshold must be between 0 and 1").
 - Source: INPUT-7
-- Disposition: open
+- Disposition: fixed d8ffe42 (new pure `friendlyEditError`: a schema-path zod
+  message — "…inputMappings.gamepadAxes.jump.threshold: Number must be less
+  than or equal to 1." — is rewritten to lead with the failing field's own
+  humanized name, "Threshold must be less than or equal to 1."; the internal
+  dot-path never renders. Non-path messages pass through untouched. Wired
+  into `updateSettingsErrorMessage` so every rejected optimistic edit gets
+  it; unit-tested in inputSettingsEdit.test.ts.)
 
 ## game settings
 
@@ -1390,7 +1555,11 @@ high) though it borders on a defect (values unreadable).
   inconsistent with the rest of the editor's field idioms.
 - Expected: align the exitTime input to the standard field idiom.
 - Source: Wave-K tail ("exitTime input idiom")
-- Disposition: open
+- Disposition: fixed 10747ef (the raw live-clamping `<input type=number>` is
+  now the shared `NumberField` with min=0/max=1 — commit on blur/Enter,
+  Escape reverts, out-of-range/non-numeric drafts revert with the L-108
+  rejection cue instead of being silently clamped mid-keystroke; identical to
+  every other numeric field in the editor).
 
 ## agent
 
@@ -1475,7 +1644,14 @@ high) though it borders on a defect (values unreadable).
   config with no on-screen hint the tier didn't carry over.
 - Expected: reflect the selected mode (`--mode <tier>`) in the manual blocks.
 - Source: AGENT-4
-- Disposition: open
+- Disposition: fixed b6e4b78 (both manual blocks — the `claude mcp add`
+  one-liner and the generic .mcp.json — now append `--mode <tokens>` from the
+  live picker selection, expanded through a client-side mirror of
+  agentSetup.ts's MODE_ARGS (a value import would drag the server module into
+  the bundle; the type-only import stays). "Full" correctly expands to
+  `safe-edit,code-edit,asset-edit`, matching what the automatic Prepare flow
+  writes. The stale "This editor grants all modes" note under the table now
+  says the blocks carry the picker's mode.)
 
 ### L-093 · agent · friction · low
 - Element: Timeline empty state ("No activity yet").
@@ -1705,7 +1881,13 @@ high) though it borders on a defect (values unreadable).
   disambiguator.
 - Expected: a styled tooltip / on-focus path reveal.
 - Source: LAUNCHER-3
-- Disposition: open
+- Disposition: fixed b6e4b78 (Recent and Example rows are wrapped in the
+  shared Tooltip primitive — full path as content, shown on hover AND
+  keyboard focus (the primitive's focus-visible contract covers the "on-focus
+  path reveal" ask); the slow native `title`s are removed. Tooltip clones the
+  child, so no wrapper element disturbs the `.launcher-item` layout. Known
+  minor gap: a `moved or deleted` row is a disabled button, which browsers
+  don't fire hover events on — its visible text already states the situation.)
 
 ## electron
 
@@ -1722,7 +1904,9 @@ high) though it borders on a defect (values unreadable).
 - Expected: `.wasm` → `application/wasm` so streaming compile takes the fast
   path.
 - Source: ELECTRON-1
-- Disposition: open
+- Disposition: fixed b0fcb00 (ledger was stale — the entry landed earlier
+  without a ledger update; verified T9-U8: electron/main.ts's MIME table
+  carries `'.wasm': 'application/wasm'` with the streaming-compile comment).
 
 ### L-105 · electron · defect · low
 - Element: Pixi asset loader via the shared `/api/file?project=…&path=…` route
@@ -1735,7 +1919,13 @@ high) though it borders on a defect (values unreadable).
 - Expected: for the assets/sceneview owners to confirm and fix the loader
   format hint. Flagged here for cross-check.
 - Source: ELECTRON-3
-- Disposition: open
+- Disposition: deferred-M (T9-U8) — the fix lives in packages/runtime's Pixi
+  asset-loading path (passing an explicit loadParser/format hint per asset,
+  since `/api/file?…&path=x.svg` hides the extension from Pixi's
+  URL-sniffing), which is an engine-side loader change outside this editor
+  sweep's scope and blast radius (every sprite/tile/font load routes through
+  it — needs its own verification pass across asset types). Impact today is a
+  console warning with graceful fallback, not a functional break.
 
 ### L-106 · electron · defect · low
 - Element: CodeMirror `.cm-content` text input, packaged app (unconfirmed
@@ -1748,7 +1938,14 @@ high) though it borders on a defect (values unreadable).
 - Expected: for the Code-panel owner to confirm against dev mode; if it
   reproduces there it's a narrow (synthetic-typing-speed) data-integrity bug.
 - Source: ELECTRON-4 (unconfirmed)
-- Disposition: open
+- Disposition: deferred-M (T9-U8) — still unconfirmed and unreproducible by a
+  human path: the auditor's own evidence points at rapid SYNTHETIC keydown
+  simulation racing CodeMirror's autocomplete popup (paste-like `insertText`
+  was byte-perfect through the same wiring, and this sweep's live checks
+  typed into CodeMirror headlessly at playwright speed without a dropped
+  character). No fix is targetable until someone reproduces it with real
+  typing on a packaged build; parking it as an M-track manual-repro task
+  rather than guessing at a patch.
 
 ### L-107 · electron · polish · low
 - Element: same packaged MIME table — no `.woff` entry.
@@ -1757,7 +1954,8 @@ high) though it borders on a defect (values unreadable).
   woff2, the `.woff` fallback is never fetched) but a latent completeness gap.
 - Expected: add `'.woff'` in the same edit as L-104.
 - Source: ELECTRON-2
-- Disposition: open
+- Disposition: fixed b0fcb00 (same stale-ledger situation as L-104; verified
+  T9-U8: `'.woff': 'font/woff'` is present in the packaged app's MIME table).
 
 ## cross-cutting patterns
 
@@ -1831,12 +2029,22 @@ high) though it borders on a defect (values unreadable).
   the tree structural attributes.
 - Source: ANIMATOR-6, GAMESETTINGS-3, EXPORTDIALOG-2, HIER-12 (Wave-K:
   "aria-labels")
-- Disposition: partial — ANIMATOR-6 done (T8-B6): all 7 non-"Machine"
-  `<select>`s in AnimatorEditor now carry `aria-label`s (param type, state
-  animation, transition from/to, condition param/operator/value), so screen
-  readers announce each by role instead of a bare "combobox". The toolbar "New"
-  button also gets an aria-label. GAMESETTINGS-3 / EXPORTDIALOG-2 / HIER-12
-  remain open (other surfaces/waves). File: AnimatorEditor.tsx.
+- Disposition: fixed — all four sub-items closed:
+  - ANIMATOR-6 (T8-B6): all 7 non-"Machine" `<select>`s in AnimatorEditor
+    carry `aria-label`s (param type, state animation, transition from/to,
+    condition param/operator/value); the toolbar "New" button too. File:
+    AnimatorEditor.tsx.
+  - HIER-12 (T9-U1, 6a7d9d1): tree rows expose `aria-level`/`aria-expanded`
+    (closed alongside L-016's keyboard-nav work).
+  - GAMESETTINGS-3 (T9-U8, 75de4be): ui.tsx's NumberField/TextField/
+    ColorField (and GameSettings' local IntField + SpriteAssetPicker) accept
+    an `id` rendered on the labellable control; every Game Settings row's
+    `<label htmlFor>` now points at a real id (game-title/-width/-height/
+    -bg/-fps/-timestep/-loading-bg/-loading-image/-icon), so click-to-focus
+    and SR association work on all rows.
+  - EXPORTDIALOG-2 (T9-U8, 75de4be): the shared Modal names its `<dialog>`
+    via `aria-labelledby` pointing at the visible `.modal-title` (useId), so
+    every modal in the app — Export included — announces its title.
 
 ### L-110 · cross-cutting · polish · low
 - Element: `Icon` component SVG glyph fallback.
@@ -1845,7 +2053,12 @@ high) though it borders on a defect (values unreadable).
   broken box).
 - Expected: a deliberate SVG icon fallback for unknown names.
 - Source: Wave-K tail ("SVG icon fallback")
-- Disposition: open
+- Disposition: by-design (verified T9-U8, already implemented) — `Icon`
+  renders `ICON_PATHS[name] ?? ICON_PATHS.entity` (ui.tsx), so an unknown
+  glyph name deliberately falls back to the neutral entity square rather
+  than an empty SVG or broken box. Exactly what this entry asks for; nothing
+  further to add without inventing a distinct "missing icon" glyph nobody
+  should ever see.
 
 ---
 
@@ -2018,4 +2231,43 @@ contention with T8 once B1–B7 land)
 - Observed: U4+U7 reviewer hit "Cannot read properties of null (reading 'clear')" once during live probes (post-B2-fix HEAD); B5 reviewer also saw one during rapid project switching. Intermittent, ~once per session of heavy probing.
 - Expected: zero occurrences; B2's isDockAlive guards cover resetLayout/showPanel but some other path still reaches clear() on a null/disposed target.
 - Source: U4+U7 review aside; B5 review incidental
-- Disposition: open
+- Disposition: INVESTIGATED — root NOT dockview; strongest candidate is Pixi, but exact live stack could not be captured in this environment. Detail below. Remains open pending a foreground real-GPU stack capture.
+
+  Investigation (L-116 investigator, systematic-debugging):
+  1. Isolated which op on a *fully-disposed* dockview throws what, against a real dockview in jsdom (extends B2's workspaceDock.test.ts pattern): `api.clear()`, `addPanel`, `fromJSON`, and `panel.api.close()` all throw **"invalid location"** (NotFoundError-class) — NOT "reading 'clear'". `toJSON`/`setActive` no-op. So B2's isDockAlive guard (which detects the disposed state via element.isConnected) correctly suppresses the disposed-dock case, and the recurring "reading 'clear'" does NOT come from a fully-disposed dock.
+  2. Audited every `.clear()` call site in dockview-core + dockview-react (the exact vite-prebundled bundle the app runs): every receiver is either a constructor-assigned non-null field (`this.gridview`, `this.component`, the `_doClear`→`gridview.clear()` chain) or optional-chained (`target?.clear()`, `dropTargetContainer?.model?.clear()`). None can be a literal `null` receiver. So dockview-core is NOT the thrower of a *null* `.clear()`.
+  3. Found the ONLY code path in the whole codebase that provably yields exactly "Cannot read properties of null (reading 'clear')": **Pixi v8 `Graphics.clear()` after `Graphics.destroy()`** — destroy() sets `this._context = null`; clear() → `_callContextMethod('clear')` → `this.context.clear()` → null.clear(). Verified against the vendored pixi.js source. This fits the two idle-audit clues (gamesettings.md "fires a few seconds after open, idle, zero interaction"; inspector-core.md "looks Scene-view/canvas related, active particles/physics") far better than the dockview attribution (which was auditor *speculation* in agent.md — its "View menu wedges until reload" symptom matches the *pre-B2* L-003, already fixed).
+  4. Could not reproduce/capture the live stack. Built a Playwright stress harness (own vite :5342, real headless Chromium + swiftshader, `page.on('pageerror', …)`, drives open→play→scene-switch→rapid-switch→close via the store) AND instrumented `Graphics.prototype.clear` to record a stack the instant it hits a null `_context`. Ran ~1000+ cycles across 5 regimes: **0 null-context clears out of 30k+ instrumented Graphics.clear calls**, 0 "reading clear" pageerrors. jsdom dockview lifecycle harness (StrictMode + rekey/unmount/toggle + 300ms debounced save): 400 cycles, 0 errors. So the *normal* render/scene-switch/teardown path never clears a destroyed graphics; the race only manifests under real-GPU + foreground-tab timing that this sandbox cannot provide (all real Chrome/headed surfaces here are backgrounded → rAF frozen; headless swiftshader renders but its synchronous teardown doesn't leave the post-destroy tick window a real GPU does).
+  - Ruled out: dockview-core (non-null/guarded receivers; disposed→"invalid location", already guarded). Normal Pixi render loop (instrument-clean). WebGL context-loss nulling `gl` (Pixi v8's GlContextSystem keeps `gl` and flags `isContextLost()`, doesn't null it).
+  - Noise seen during probing (NOT L-116): transient `ReferenceError: copied is not defined` / `smError is not defined` (ConsolePanel/AssetsPanel) with vite HMR `?t=` URLs — both vars ARE defined in source; these were HMR artifacts from *concurrent multi-agent edits* to the shared repo mid-run.
+  - Recommended next step: capture the real stack from a foreground, real-GPU browser session (a reviewer reproducing with devtools "Pause on caught/uncaught exceptions", or a temporary editor-side `window.addEventListener('error')` that logs the full `e.error.stack` for this message). The stack will point at either a runtime `PixiSceneView` redraw helper (`redrawLine`/`redrawSlider`/`redrawToggle`/`updateParticles` in packages/runtime/src/pixi/index.ts, all of which call `g.clear()`) or the teardown ordering in `PixiSceneView.destroy()` / GamePreview unmount — a `g.destroyed`-guard or ticker-ordering fix there is then the root fix. No speculative guard shipped: the fix-validation gate (0 occurrences over 3x repro cycles) is unsatisfiable until the crash can be reproduced, so a blind guard could neither be validated nor safely claimed to resolve it.
+
+---
+
+## T9-U8 closing sweep — standing items (2026-07-14)
+
+Beyond the per-entry dispositions above, the closing sweep landed the plan's
+T9 standing items that weren't tracked as numbered entries:
+
+- **Panel empty states (icon + one-line purpose + primary next action).**
+  Gaps closed: Console ("Console is quiet" gains a Validate project action;
+  a filtered-empty view gets its own state + "Show all"), Changes ("No
+  checkpoint to compare against" gains a Checkpoint action), Live (icon +
+  a Play action added to the not-playing state), Code ("No scripts" gains a
+  New script action + honest copy — see L-057). Hierarchy/Inspector/Assets/
+  Animator/Agent-Timeline/Input already met the bar from earlier batches.
+- **Unread console badge while scrolled up** (B5 review follow-up): the store
+  now mirrors the Console's at-bottom scroll state (`consoleAtBottom` /
+  `setConsoleAtBottom`); errors count as unread when the tab is hidden OR
+  visible-but-scrolled-up, and returning to the bottom clears the badge.
+  Unit-tested against the real store (consoleUnread.test.ts). Commit 252122a.
+- **One state-machine create dialog** (U3-vs-B6 duplication, T12 note):
+  AnimatorEditor's and AssetsPanel's parallel "New state machine" modals are
+  now a single shared `CreateStateMachineDialog` component (one seed payload,
+  one inline-error presentation — the `.invalid` + `.field-error` field
+  idiom). Commit 10747ef.
+
+Flags for the T12 design pass: hover-reveal idiom unification (L-023, with
+the tab-order contract), history click-to-jump candidacy (L-063), hierarchy
+filter + multi-select design (L-017/L-018), Tilemap grid direct-manipulation
+editor (L-033).
