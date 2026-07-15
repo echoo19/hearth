@@ -2418,7 +2418,7 @@ editor (L-033).
   apps/editor/tests/keybinds.test.ts — "unsavedEditsMessage (PANELS-1)" +
   "the \"save\" keybind logs honestly based on dirty panel state" blocks
   (pure-helper + bind.run branch coverage, no DOM/browser needed).
-- Disposition: fixed —
+- Disposition: fixed d0e3688
 
 ### L-121 · sceneview · defect · high
 - Element: Space key on focused buttons (app-wide)
