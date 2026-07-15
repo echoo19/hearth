@@ -16,7 +16,7 @@ import type { EditorState } from '@codemirror/state';
 import { useEditor } from '../store';
 import { fileUrl } from '../api';
 import { comboDisplay } from '../keybinds';
-import { ConfirmDialog, Icon } from './ui';
+import { ConfirmDialog, Icon, Modal } from './ui';
 import { Button, IconButton } from './ui/Button';
 import { Tooltip } from './ui/Tooltip';
 import { decideExternalChange } from './code/externalChange';
@@ -118,6 +118,14 @@ export function CodePanel() {
   const applyNonceRef = useRef(0);
   /** Task 9: whether the cross-script search bar is showing under the tab strip. */
   const [searchOpen, setSearchOpen] = useState(false);
+  // "New script" dialog (L-057 / CODE-4): the first in-editor create path —
+  // previously the only createScript caller was the missing-file recovery,
+  // and the empty-state hint pointed at a flow that couldn't create a file.
+  const [newScriptOpen, setNewScriptOpen] = useState(false);
+  const [newScriptName, setNewScriptName] = useState('');
+  const [newScriptLang, setNewScriptLang] = useState<'lua' | 'js'>('lua');
+  const [newScriptError, setNewScriptError] = useState<string | null>(null);
+  const [creatingScript, setCreatingScript] = useState(false);
   /** Wraps the editor host so closeSearch() can hand focus back to CodeMirror's
    * contenteditable surface (a plain DOM query — CodeEditor.tsx exposes no
    * imperative focus handle, and reaching for `.cm-content` here keeps that
@@ -218,6 +226,38 @@ export function CodePanel() {
       lastSeqRef.current = Math.max(lastSeqRef.current, tail);
       void loadInto(path);
     }
+  }
+
+  /** L-057: create a script from the standard template and open it in a tab. */
+  async function createNewScript() {
+    const name = newScriptName.trim();
+    if (!name || creatingScript) return;
+    setCreatingScript(true);
+    const result = await exec<{ path: string }>('createScript', { name, language: newScriptLang });
+    setCreatingScript(false);
+    if (result.success && result.data) {
+      setNewScriptOpen(false);
+      setNewScriptName('');
+      setNewScriptError(null);
+      activateOrOpen(result.data.path);
+    } else {
+      setNewScriptError(result.errors[0]?.message ?? 'Could not create the script.');
+    }
+  }
+
+  /**
+   * L-056 (CODE-3): ⌘S with focus inside the panel but OUTSIDE CodeMirror
+   * (script picker, checkbox, banner buttons) used to fall through to the
+   * global `save` keybind, which logs "saved automatically" while the dirty
+   * script sat unsaved. Claim the key here and run the real save; yield to
+   * CodeMirror's own Mod-s keymap when focus is inside the editor.
+   */
+  function onPanelKeyDown(e: React.KeyboardEvent) {
+    if (!((e.metaKey || e.ctrlKey) && !e.shiftKey && !e.altKey && (e.key === 's' || e.key === 'S'))) return;
+    if ((e.target as HTMLElement).closest?.('.cm-editor')) return; // CodeMirror owns it there
+    e.preventDefault();
+    e.stopPropagation(); // keep the global "saved automatically" keybind from seeing it
+    if (shouldSave({ selectedPath: activePath, saving, dirty: activeDirty })) void save();
   }
 
   function requestClose(path: string) {
@@ -568,7 +608,7 @@ export function CodePanel() {
       : null;
 
   return (
-    <div className="code-panel-root">
+    <div className="code-panel-root" onKeyDown={onPanelKeyDown}>
       <div className="panel-toolbar">
         <Tooltip content="Open a script to edit">
           <select
@@ -587,6 +627,11 @@ export function CodePanel() {
               </option>
             ))}
           </select>
+        </Tooltip>
+        <Tooltip content="Create a script from the standard template">
+          <Button size="sm" icon="plus" onClick={() => setNewScriptOpen(true)}>
+            New script
+          </Button>
         </Tooltip>
         <span style={{ flex: 1 }} />
         <Tooltip content="Search scripts" shortcut={comboDisplay('shift+mod+f')}>
@@ -743,9 +788,14 @@ export function CodePanel() {
             <span>{scripts.length === 0 ? 'No scripts in this project yet' : 'No script open'}</span>
             <span className="hint">
               {scripts.length === 0
-                ? 'Create one with an agent, or from a Script component in the Inspector.'
+                ? 'Scripts drive entity behavior via the Script component. Create one here, or ask an agent.'
                 : 'Pick a script above to start editing.'}
             </span>
+            {scripts.length === 0 && (
+              <Button size="sm" icon="plus" onClick={() => setNewScriptOpen(true)}>
+                New script
+              </Button>
+            )}
           </div>
         ) : active.loading ? (
           <div className="empty-state">
@@ -790,6 +840,70 @@ export function CodePanel() {
         onCancel={() => setPendingClose(null)}
         onConfirm={confirmPendingClose}
       />
+
+      {/* New script (L-057) */}
+      <Modal
+        open={newScriptOpen}
+        title="New script"
+        onClose={() => {
+          setNewScriptOpen(false);
+          setNewScriptError(null);
+        }}
+      >
+        <div className="modal-body">
+          <div className="form-field">
+            <label className="field-label" htmlFor="new-script-name">
+              Name
+            </label>
+            <input
+              id="new-script-name"
+              className={`input${newScriptError ? ' invalid' : ''}`}
+              value={newScriptName}
+              onChange={(e) => {
+                setNewScriptName(e.target.value);
+                if (newScriptError) setNewScriptError(null);
+              }}
+              autoFocus
+              placeholder="enemy-chase"
+            />
+            {newScriptError && <span className="field-error">{newScriptError}</span>}
+          </div>
+          <div className="form-field">
+            <label className="field-label" htmlFor="new-script-lang">
+              Language
+            </label>
+            <select
+              id="new-script-lang"
+              className="select"
+              value={newScriptLang}
+              onChange={(e) => setNewScriptLang(e.target.value as 'lua' | 'js')}
+            >
+              <option value="lua">Lua (default)</option>
+              <option value="js">JavaScript</option>
+            </select>
+          </div>
+          <p className="field-fallback-note">
+            Starts from the documented template. Attach it to an entity with the Inspector's Script component.
+          </p>
+        </div>
+        <div className="modal-actions">
+          <Button
+            onClick={() => {
+              setNewScriptOpen(false);
+              setNewScriptError(null);
+            }}
+          >
+            Cancel
+          </Button>
+          <Button
+            variant="primary"
+            disabled={!newScriptName.trim() || creatingScript}
+            onClick={() => void createNewScript()}
+          >
+            {creatingScript ? 'Creating…' : 'Create script'}
+          </Button>
+        </div>
+      </Modal>
 
       <ConfirmDialog
         open={pendingProjectClose}
