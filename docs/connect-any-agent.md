@@ -10,7 +10,11 @@ plain-CLI fallback for a shell-only agent.
 Named guides exist for the common cases:
 [Claude Code](./connect-claude-code.md), [Codex](./connect-codex.md),
 [OpenCode + Ollama](./connect-opencode.md), and
-[Hermes](./connect-hermes.md).
+[Hermes](./connect-hermes.md). The editor's Agent panel auto-detects and
+auto-wires all four of those directly — pick one from the launcher dropdown
+and it writes the `hearth` MCP entry into that tool's own config format for
+you. This page is for everything else: any other MCP client, or a
+shell-native agent driven from the panel's plain terminal launcher.
 
 ## Get the server
 

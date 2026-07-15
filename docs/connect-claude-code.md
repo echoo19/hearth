@@ -92,8 +92,9 @@ See [mcp.md](./mcp.md#choosing-modes-per-session) for the full mode reference.
 
 ## Connecting other agents
 
-Codex has its own detection and launcher in the panel plus a manual config —
-see [connect-codex.md](./connect-codex.md). For OpenCode with local models via
-Ollama, see [connect-opencode.md](./connect-opencode.md); for the Hermes model
-family, [connect-hermes.md](./connect-hermes.md); and for any other MCP client
-or shell-native CLI, [connect-any-agent.md](./connect-any-agent.md).
+The same launcher dropdown in the Agent panel also detects and auto-wires
+Codex, OpenCode, and Hermes, each into its own config format — see
+[connect-codex.md](./connect-codex.md), [connect-opencode.md](./connect-opencode.md)
+(with local models via Ollama), and [connect-hermes.md](./connect-hermes.md).
+For any other MCP client or shell-native CLI, use the plain terminal launcher
+plus [connect-any-agent.md](./connect-any-agent.md).

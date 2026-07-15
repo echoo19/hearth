@@ -4,16 +4,20 @@ The Agent panel is the editor's built-in home for a coding agent: a real
 embedded terminal running your own copy of the agent's CLI, next to a live
 timeline of every structured command it runs. The onboarding story it exists
 for is: download Hearth → open a project → choose your agent → describe your
-game. Claude Code gets automatic MCP setup; Codex launches directly when it is
-on `PATH`; OpenCode, Hermes, and other shell-native agents use the project
-terminal plus the same Hearth CLI/MCP surfaces.
+game. Claude Code, Codex, OpenCode, and Hermes all get automatic MCP setup —
+the panel detects each on `PATH`, writes the `hearth` server into that tool's
+own config format, and launches it directly; any other shell-native agent
+uses the project terminal plus the same Hearth CLI/MCP surfaces.
 
 It is not a chat UI, and it does not run any model. Hearth never calls an
 LLM, never holds an API key, and the panel's terminal is exactly the
 official CLI you'd run in any terminal — just spawned inside the editor with
-its working directory set to your project. Everything the panel shows is
-either that CLI's own terminal output, or facts read back from Hearth's own
-on-disk command journal.
+its working directory set to your project, with the `hearth` CLI already
+guaranteed on that terminal's `PATH` (a small shim Hearth writes into a temp
+dir and prepends, so a bare shell or any agent CLI finds a working `hearth`
+with zero manual alias/install step). Everything the panel shows is either
+that CLI's own terminal output, or facts read back from Hearth's own on-disk
+command journal.
 
 ## Why a terminal, not a custom chat UI
 
@@ -30,10 +34,14 @@ Hearth's embedded panel stays on the safe side of that line deliberately:
 - It spawns a genuine, unmodified `claude` binary in a real PTY
   (`@lydell/node-pty`) — the same binary `which claude` finds on your
   machine, not a fork or a wrapped subprocess with a scripted stdin/stdout.
+  (The same holds for Codex, OpenCode, and Hermes when you pick those
+  launchers — real PTY, real binary, no wrapping.)
 - Hearth never touches the CLI's stream, its credentials, or its flags,
   beyond setting the working directory (`cwd`) to your project root and
-  writing standard MCP server configuration (`.mcp.json`) — the same kind of
-  file you'd hand-write to wire up any MCP server yourself.
+  writing standard MCP server configuration in that tool's own format
+  (`.mcp.json` for Claude Code; `opencode.json` for OpenCode; Codex's and
+  Hermes's own global config for those two) — the same kind of file you'd
+  hand-write to wire up any MCP server yourself.
 - There is no token or cost readout anywhere in the panel. Hearth does not
   parse the CLI's stream to extract that information, on purpose — doing so
   would mean depending on the internal shape of output that isn't a
@@ -57,25 +65,44 @@ descriptively — no logos, no implied partnership or endorsement.
 
 ## What's in the panel
 
-- **Agent selector** — choose Claude Code, Codex, or a plain project
-  terminal for OpenCode, Hermes, or any other shell-native CLI agent.
+- **Launcher selector** — choose **Claude Code**, **Codex**, **OpenCode**,
+  **Hermes**, or a plain **Terminal / other CLI**. The panel detects each of
+  the first four on `PATH` (plus a local `ollama`, for OpenCode's provider
+  step) and shows an honest state per tool: ready to start, not found, or
+  still checking.
 - **Permission mode selector** — a 4-tier ladder (`Read-only` / `Safe edit`
   / `Full (no build)` / `All (incl. build)`) above the terminal, defaulting
-  to Safe edit. See [Permission modes](#permission-modes) below.
-- **Start agent** — for Claude Code, writes/merges a `hearth` entry into the
-  project's `.mcp.json` at the selected mode, then spawns `claude` in the
-  terminal pane. Claude Code discovers `.mcp.json` itself, asks you to approve the
-  server on first use, and handles its own login if needed — all inside the
-  terminal.
-- **Start agent: Codex** — spawns `codex` in the same terminal when it is on
-  `PATH`. Codex first-class MCP config wiring is future work, so use the CLI
-  or manual MCP snippets below as needed.
+  to Safe edit. It applies to whichever tool is selected — Claude Code,
+  Codex, OpenCode, and Hermes all write the chosen mode into their own MCP
+  config — and is only inert for the plain terminal, which launches no MCP
+  server. See [Permission modes](#permission-modes) below.
+- **Start agent** — for any of Claude Code / Codex / OpenCode / Hermes, first
+  runs that tool's *prepare* step, then spawns the real CLI in the terminal
+  pane:
+  - **Claude Code** → merges a `hearth` entry into the project's
+    `.mcp.json`.
+  - **Codex** → runs `codex mcp get hearth` to check, then `codex mcp add
+    hearth -- …` if it isn't already correct, writing `~/.codex/config.toml`
+    (a **global** config — see [connect-codex.md](./connect-codex.md)).
+  - **OpenCode** → merges a `hearth` entry into the project's
+    `opencode.json`, and adds an Ollama provider block automatically when
+    local models are found and none is configured yet (see
+    [connect-opencode.md](./connect-opencode.md)).
+  - **Hermes** → merges a `mcp_servers.hearth` entry into
+    `~/.hermes/config.yaml` (also **global** — see
+    [connect-hermes.md](./connect-hermes.md)).
+
+  Every prepare is idempotent (a no-op if the entry is already correct at
+  that mode) and also backfills the project's `.claude/skills/` if missing.
+  Claude Code discovers `.mcp.json` itself, asks you to approve the server
+  on first use, and handles its own login if needed — all inside the
+  terminal; Codex/OpenCode/Hermes do the same in their own way.
 - **Install Claude Code** — shown instead of Start when `claude` isn't found
   on `PATH`. Runs the official install command visibly in the terminal (no
   hidden installs happen anywhere), then re-detects.
 - **Open Terminal** — a plain shell (`$SHELL` on macOS/Linux, PowerShell on
-  Windows) in the project root, for OpenCode, Hermes, any other agent/tool,
-  or manual installs.
+  Windows) in the project root, for any other shell-native agent/tool or
+  manual installs. `hearth` is already on its `PATH`.
 - **Stop** — kills the current terminal session.
 - **Activity timeline** — the right-hand rail: one row per journaled
   command (icon by kind, summary, ok/✗, relative time), newest first.
@@ -89,7 +116,7 @@ descriptively — no logos, no implied partnership or endorsement.
   whole-session revert.
 - **Manual setup** — a collapsible section with the CLI/MCP copy-paste
   snippets and the permission-mode table, for anyone not using the embedded
-  terminal at all (see [Manual setup](#manual-setup-other-agents)).
+  terminal at all (see [Manual setup](#manual-setup-fallback-for-any-tool)).
 
 One PTY session per open project at a time in this release; switching
 projects always kills the old terminal (see
@@ -109,30 +136,40 @@ composed from the tiers they actually grant, not separate claims:
 | Full (no build) | Safe edit, plus create/edit/attach scripts, and import/create/modify assets. Explicitly **not** build/export. |
 | All (incl. build) | Everything above, plus build/export the project. |
 
-Selecting a mode and starting Claude Code rewrites `.mcp.json` with that mode
-and restarts the CLI so the change takes effect immediately.
-Denied tool calls return a structured `PERMISSION_DENIED` error the agent
-can relay to you, rather than failing silently — same behavior as the CLI
-and MCP server outside the panel.
+Selecting a mode and starting an agent rewrites that tool's own config with
+the selected mode and (re)launches the CLI so the change takes effect
+immediately, whichever of the four tools you picked. Denied tool calls return
+a structured `PERMISSION_DENIED` error the agent can relay to you, rather
+than failing silently — same behavior as the CLI and MCP server outside the
+panel.
 
-## Manual setup (other agents)
+## Manual setup (fallback for any tool)
 
-Codex gets detection ("is it on `PATH`") and a direct launcher in the panel,
-but not automatic `.mcp.json` wiring in this release — its configuration story
-is TOML-based and first-class wiring is future work. OpenCode, Hermes, and
-other shell-native agents can run from **Open Terminal**. Use the Manual setup
-section's snippets for:
+Every tool in the launcher dropdown is one-click from the panel now, so
+manual setup is a fallback, not a requirement — useful if you're driving an
+agent outside the editor entirely, want to see exactly what gets written
+before trusting the automatic path, or are wiring up any other MCP-capable
+client. The Manual setup section's snippets cover:
 
 - The plain CLI loop (`hearth snapshot` → `hearth inspect` → edit → `hearth
   validate` → `hearth diff`) for any agent that just gets a shell.
 - `claude mcp add hearth -- node <mcp path> --project <project path>` for
   Claude Code from outside the panel.
-- A raw `.mcp.json` block for any other MCP-capable client.
+- A raw `.mcp.json` block for any other MCP-capable client that reads the
+  same shape (Cursor, Cline, Windsurf, and others — see
+  [connect-any-agent.md](./connect-any-agent.md)).
 - The same permission-mode table as above.
 
-This is exactly the content that used to be the whole Agent panel before
-the embedded terminal shipped; it hasn't gone away, just moved to a
-collapsible section underneath the live terminal.
+Per-tool config formats and exact commands for Codex (`~/.codex/config.toml`
+via `codex mcp add`), OpenCode (`opencode.json` + Ollama provider), and
+Hermes (`~/.hermes/config.yaml`) are in their own connect guides:
+[connect-codex.md](./connect-codex.md), [connect-opencode.md](./connect-opencode.md),
+[connect-hermes.md](./connect-hermes.md).
+
+This manual section is exactly the content that used to be the whole Agent
+panel before the embedded terminal (and, later, per-tool auto-wiring)
+shipped; it hasn't gone away, just moved to a collapsible section
+underneath the live terminal.
 
 ## The external-change model
 
@@ -182,12 +219,15 @@ restart the editor from a shell that has the updated `PATH`.
 
 **"Install Claude Code" hangs or doesn't respond.** Agent detection times out after 3 seconds per CLI. If your shell is slow to start, the detection may fail silently. Click **Re-detect** to try again, or check your shell startup files for expensive operations that might be slowing things down.
 
-**"Agent setup failed: ... exists but is not valid JSON" (409).** The
-project's `.mcp.json` already exists but doesn't parse as JSON. Hearth
-refuses to overwrite a file it can't safely merge into rather than
-clobbering whatever's there — fix or delete the file and start Claude Code
-again. (This surfaces as HTTP 409 from the panel's
-`/api/agent/prepare` call if you're driving it directly.)
+**"Agent setup failed: ... exists but is not valid JSON/YAML" (409).** The
+selected tool's config file already exists but doesn't parse — `.mcp.json` or
+`opencode.json` not valid JSON, or `~/.hermes/config.yaml` not valid YAML (or
+not a mapping). Hearth refuses to overwrite a file it can't safely merge into
+rather than clobbering whatever's there — fix or delete the file and start
+the agent again. (This surfaces as HTTP 409 from the panel's
+`/api/agent/prepare` call if you're driving it directly.) Codex is the one
+exception: it doesn't hand-merge TOML at all, so a config problem there
+instead surfaces as a `codex mcp add` failure with Codex's own error text.
 
 **Terminal shows "Exited" after switching projects.** Expected: this
 release supports one PTY per open project, and switching projects tears
@@ -199,8 +239,8 @@ recorded).
 
 **Nothing happens when I click Start agent.** Check for an inline
 "Agent setup failed: …" message under the toolbar — the panel deliberately
-refuses to launch `claude` if writing `.mcp.json` failed, since a stale
-`.mcp.json` from an earlier session could otherwise grant a more permissive
+refuses to launch the selected tool if writing its config failed, since a
+stale config from an earlier session could otherwise grant a more permissive
 mode than the one you just picked without telling you.
 
 **The terminal looks frozen / stopped updating.** Check the WebSocket
