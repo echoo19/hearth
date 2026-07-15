@@ -22,7 +22,7 @@ import { useEditor } from '../../store';
 import type { WsFrame } from '../../../server/ws';
 import type { PrepareAgentResult } from '../../api';
 
-export type PtyCommand = 'claude' | 'codex' | 'shell';
+export type PtyCommand = 'claude' | 'codex' | 'opencode' | 'hermes' | 'shell';
 export type PtyServerFrame = Extract<WsFrame, { type: 'pty-data' | 'pty-exit' | 'pty-error' }>;
 
 export type AgentStatus = 'idle' | 'running' | 'exited';

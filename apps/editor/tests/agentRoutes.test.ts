@@ -30,13 +30,21 @@ afterAll(async () => {
 });
 
 describe('GET /api/agent/detect (ctx.detectAgents)', () => {
-  it('returns an envelope with claude/codex detection results', async () => {
+  it('returns an envelope with detection results for every launcher + ollama', async () => {
     const result = await ctx.detectAgents();
     expect(result.status).toBe(200);
-    const body = result.body as { ok: boolean; claude: { found: boolean }; codex: { found: boolean } };
+    const body = result.body as {
+      ok: boolean;
+      claude: { found: boolean };
+      codex: { found: boolean };
+      opencode: { found: boolean };
+      hermes: { found: boolean };
+      ollama: { found: boolean };
+    };
     expect(body.ok).toBe(true);
-    expect(typeof body.claude.found).toBe('boolean');
-    expect(typeof body.codex.found).toBe('boolean');
+    for (const tool of ['claude', 'codex', 'opencode', 'hermes', 'ollama'] as const) {
+      expect(typeof body[tool].found).toBe('boolean');
+    }
   });
 });
 
@@ -56,6 +64,22 @@ describe('POST /api/agent/prepare (ctx.prepareAgent)', () => {
     await fsp.mkdir(notAProject, { recursive: true });
     const result = await ctx.prepareAgent(notAProject, 'safe-edit');
     expect(result.status).toBe(400);
+  });
+
+  it('rejects an unknown tool', async () => {
+    const result = await ctx.prepareAgent(projectPath, 'safe-edit', 'notreal');
+    expect(result.status).toBe(400);
+  });
+
+  it('writes opencode.json when tool=opencode', async () => {
+    const result = await ctx.prepareAgent(projectPath, 'safe-edit', 'opencode');
+    expect(result.status).toBe(200);
+    const parsed = JSON.parse(await fsp.readFile(path.join(projectPath, 'opencode.json'), 'utf8'));
+    expect(parsed.mcp.hearth.type).toBe('local');
+    expect(parsed.mcp.hearth.command[0]).toBe('node');
+    expect(parsed.mcp.hearth.command).toContain('--project');
+    expect(parsed.mcp.hearth.enabled).toBe(true);
+    expect(parsed.$schema).toBe('https://opencode.ai/config.json');
   });
 
   it('writes .mcp.json with a hearth entry pointing at the resolved mcp tool path', async () => {

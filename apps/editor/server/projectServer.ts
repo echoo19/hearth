@@ -39,10 +39,10 @@ import { isRequestAllowed } from './originGuard.js';
 import { attachWebSocket, type ExportFrame, type ExportStage, type DesktopExportResult } from './ws.js';
 import {
   detectAgents,
-  prepareMcpConfig,
-  ensureAgentSkill,
+  prepareAgentTool,
   McpConfigParseError,
   type AgentPermissionMode,
+  type AgentTool,
 } from './agentSetup.js';
 
 export { attachWebSocket } from './ws.js';
@@ -242,7 +242,7 @@ async function pathExists(p: string): Promise<boolean> {
  * instead. Shared by `meta()` and the agent/prepare route, which both need
  * to know where hearth-mcp lives.
  */
-async function resolveToolPaths(repoRoot: string): Promise<{ cli: string; mcp: string; bundled: boolean }> {
+export async function resolveToolPaths(repoRoot: string): Promise<{ cli: string; mcp: string; bundled: boolean }> {
   const toolsDir = process.env.HEARTH_TOOLS_DIR;
   const bundledCli = toolsDir ? path.join(toolsDir, 'hearth-cli.mjs') : null;
   const bundledMcp = toolsDir ? path.join(toolsDir, 'hearth-mcp.mjs') : null;
@@ -257,6 +257,7 @@ async function resolveToolPaths(repoRoot: string): Promise<{ cli: string; mcp: s
 }
 
 const AGENT_PERMISSION_MODES = new Set(['read-only', 'safe-edit', 'full', 'all']);
+const AGENT_TOOLS = new Set<AgentTool>(['claude', 'codex', 'opencode', 'hermes']);
 
 function errorEnvelope(command: string, code: string, message: string): CommandResult {
   return {
@@ -1087,18 +1088,24 @@ export function createProjectServerContext(options: ProjectServerOptions = {}) {
       };
     },
 
-    /** GET /api/agent/detect: is `claude` / `codex` on PATH, and what version? */
+    /**
+     * GET /api/agent/detect: which agent CLIs (claude / codex / opencode /
+     * hermes) and ollama are on PATH, their versions, and any local ollama
+     * models. Backs the Agent panel's launcher detect states.
+     */
     async detectAgents(): Promise<JsonResult> {
       const result = await detectAgents();
       return { status: 200, body: { ok: true, ...result } };
     },
 
     /**
-     * POST /api/agent/prepare: merge-write a `hearth` entry into the
-     * project's .mcp.json so a generic MCP-capable agent picks up this
-     * project's Hearth MCP server with the requested permission mode.
+     * POST /api/agent/prepare: write a `hearth` MCP entry into the selected
+     * tool's OWN config format (claude→.mcp.json, opencode→opencode.json,
+     * codex→~/.codex/config.toml, hermes→~/.hermes/config.yaml) with the
+     * requested permission mode, and backfill the project's agent skills.
+     * Never clobbers other servers or an already-correct entry.
      */
-    async prepareAgent(project: unknown, mode: unknown): Promise<JsonResult> {
+    async prepareAgent(project: unknown, mode: unknown, tool?: unknown): Promise<JsonResult> {
       if (typeof project !== 'string' || project.trim() === '') {
         return { status: 400, body: { ok: false, error: 'Missing "project" (absolute project folder).' } };
       }
@@ -1112,17 +1119,32 @@ export function createProjectServerContext(options: ProjectServerOptions = {}) {
           },
         };
       }
+      // Default 'claude' keeps older callers (and the .mcp.json path) working.
+      const toolValue = (typeof tool === 'string' ? tool : 'claude') as AgentTool;
+      if (!AGENT_TOOLS.has(toolValue)) {
+        return {
+          status: 400,
+          body: { ok: false, error: `Unknown tool "${toolValue}". Valid tools: ${[...AGENT_TOOLS].join(', ')}.` },
+        };
+      }
       const root = path.resolve(project.trim());
       if (!(await pathExists(path.join(root, 'hearth.json')))) {
         return { status: 400, body: { ok: false, error: `Not a Hearth project: ${root} has no hearth.json.` } };
       }
       const toolPaths = await resolveToolPaths(repoRoot);
+      // OpenCode's provider block needs the local ollama models; detect only
+      // when it's actually the target tool (keeps other prepares cheap).
+      const ollamaModels =
+        toolValue === 'opencode' ? (await detectAgents()).ollama.models ?? [] : [];
       try {
-        const result = await prepareMcpConfig(root, toolPaths.mcp, modeValue as AgentPermissionMode);
-        // Backfill the project-local best-practices skill for projects created
-        // before it shipped; new projects already have it.
-        const skill = await ensureAgentSkill(root);
-        return { status: 200, body: { ok: true, ...result, skillWritten: skill.written } };
+        const result = await prepareAgentTool({
+          tool: toolValue,
+          root,
+          mcpPath: toolPaths.mcp,
+          mode: modeValue as AgentPermissionMode,
+          ollamaModels,
+        });
+        return { status: 200, body: { ok: true, ...result } };
       } catch (err) {
         const status = err instanceof McpConfigParseError ? 409 : 500;
         return { status, body: { ok: false, error: (err as Error).message } };
@@ -1268,7 +1290,7 @@ async function route(ctx: ProjectServerContext, req: IncomingMessage, res: Serve
     }
     case 'POST /api/agent/prepare': {
       const body = await readJsonBody(req);
-      const result = await ctx.prepareAgent(body.project, body.mode);
+      const result = await ctx.prepareAgent(body.project, body.mode, body.tool);
       return sendJson(res, result.status, result.body);
     }
     default:
