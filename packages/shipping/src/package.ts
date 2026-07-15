@@ -106,6 +106,12 @@ export async function packageDesktop(opts: PackageDesktopOptions): Promise<Deskt
         icon,
         appVersion: '1.0.0',
         name: spec.title,
+        // A project-derived bundle identifier — otherwise @electron/packager
+        // falls back to `com.electron.<name>`, which reads as an unconfigured
+        // template and collides across Hearth-exported games under near-
+        // identical generic ids (a footgun for per-bundle-id OS state:
+        // notification permissions, TCC prompts, etc.).
+        appBundleId: `com.hearth.${spec.slug}`,
         electronVersion: ELECTRON_VERSION,
         overwrite: true,
         prune: true,

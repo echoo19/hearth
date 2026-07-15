@@ -2300,10 +2300,35 @@ editor (L-033).
 - Observed: createZip (packages/shipping/src/zip.ts) encodes Unix mode bits only for symlinks; every executable in the zipped .app unzips as -rw-r--r-- (0 of 15 executables). `open -n` fails "Launchd job spawn failed". All desktop platforms affected (Windows likely unaffected).
 - Expected: unzip → launch works. chmod +x restore confirmed full fix.
 - Source: T13 export-reality D-1
-- Disposition: open
+- Disposition: fixed — `createZip` now encodes every entry's real Unix
+  `st_mode` (from `lstat`) into the central-directory external attributes
+  (upper 16 bits), and tags "version made by" UNIX for all entries, not just
+  symlinks. `zipDirectory` captures each regular file's mode via `lstat`, so
+  the `+x` on a packaged .app's Mach-O binaries and Helper apps survives the
+  zip round-trip (symlinks keep S_IFLNK|0777 unchanged; a missing mode falls
+  back to rw-r--r--). packages/shipping/src/zip.ts. Tests: zip.test.ts
+  "preserves the executable bit through a real system-unzip round-trip"
+  (execFileSync unzip → stat → assert exec/non-exec bits) + the extended
+  byte-layout regression "encodes UNIX modes in the central directory for
+  symlinks AND regular files"; desktop-integration.test.ts now unzips the
+  real produced zip and asserts the main binary + a Helper.app binary are
+  executable. Live proof (drift-cellar spec, darwin-arm64): packageDesktop →
+  fresh `unzip` → main binary mode 755, `open -n` exit 0 with a full Electron
+  process tree (4 PIDs), quit clean — the exact sequence that previously
+  failed "Launchd job spawn failed".
 
 ### L-118 · export-ux · friction · med
 - Element: export result panel + player boot errors (F-1..F-5)
 - Observed: no next-step hosting/itch hint in result panel; folder build under file:// shows raw "Failed to fetch"; Gatekeeper guidance docs-only; generic com.electron.* bundle id; no size context on 254MB zip.
 - Source: T13 export-reality F-1..F-5
-- Disposition: open
+- Disposition: partial —
+  - **F-4 (bundle id): fixed** — `packageDesktop` now passes
+    `appBundleId: com.hearth.<slug>` to `@electron/packager` instead of
+    letting it fall back to the generic `com.electron.<name>`, so two
+    Hearth-exported games no longer collide under near-identical ids (and per-
+    bundle-id OS state — notifications/TCC — is per-game). packages/shipping/
+    src/package.ts. Test: package.test.ts "sets a project-derived bundle
+    identifier instead of the com.electron default (F-4)". Live-verified in
+    Info.plist: `CFBundleIdentifier` = `com.hearth.drift-cellar`.
+  - F-1 (result-panel next-step hint), F-2 (`file://` folder-build error copy),
+    F-3 (in-app Gatekeeper guidance), F-5 (zip-size context): still **open**.

@@ -14,6 +14,7 @@ import { describe, it, expect } from 'vitest';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import * as fsp from 'node:fs/promises';
+import { execFileSync } from 'node:child_process';
 import { packageDesktop } from '../src/package.js';
 import type { DesktopPlatform } from '@hearth/core';
 
@@ -66,6 +67,50 @@ suite('packageDesktop (real packager, host platform only)', () => {
       expect((await fsp.stat(appAbs)).isDirectory()).toBe(true);
       expect((await fsp.stat(zipAbs)).size).toBeGreaterThan(0);
       expect(res[0].zip).toBe(`export/desktop/smoke-${host}.zip`);
+
+      // D-1 regression: the zip the real user downloads must yield a
+      // launchable app — every executable inside a fresh unzip needs its +x
+      // bit. On unix hosts, unzip the produced artifact with the SYSTEM unzip
+      // and assert the packaged executables are still executable.
+      if (host === 'darwin-arm64' || host === 'darwin-x64') {
+        const freshDir = path.join(root, 'fresh-unzip');
+        await fsp.mkdir(freshDir, { recursive: true });
+        execFileSync('unzip', ['-q', '-o', zipAbs, '-d', freshDir]);
+
+        const appName = path.basename(appAbs);
+        const macOsDir = path.join(freshDir, appName, 'Contents', 'MacOS');
+        const bins = await fsp.readdir(macOsDir);
+        expect(bins.length).toBeGreaterThan(0);
+        // The main binary (Contents/MacOS/*) must be executable post-unzip.
+        for (const bin of bins) {
+          const m = (await fsp.stat(path.join(macOsDir, bin))).mode;
+          expect(m & 0o111).not.toBe(0);
+        }
+        // At least one Helper app's binary must be executable too.
+        const helpersDir = path.join(freshDir, appName, 'Contents', 'Frameworks');
+        const frameworks = await fsp.readdir(helpersDir);
+        const helperApp = frameworks.find((f) => f.endsWith('Helper.app'));
+        expect(helperApp).toBeDefined();
+        const helperMacOs = path.join(helpersDir, helperApp!, 'Contents', 'MacOS');
+        const helperBins = await fsp.readdir(helperMacOs);
+        expect(helperBins.length).toBeGreaterThan(0);
+        const helperMode = (await fsp.stat(path.join(helperMacOs, helperBins[0]))).mode;
+        expect(helperMode & 0o111).not.toBe(0);
+      } else if (host === 'linux-x64') {
+        const freshDir = path.join(root, 'fresh-unzip');
+        await fsp.mkdir(freshDir, { recursive: true });
+        execFileSync('unzip', ['-q', '-o', zipAbs, '-d', freshDir]);
+        // At least one top-level file in the unzipped app dir (the Electron
+        // launcher binary) must be executable, or the game can't run.
+        const appRoot = path.join(freshDir, path.basename(appAbs));
+        const top = await fsp.readdir(appRoot, { withFileTypes: true });
+        let anyExec = false;
+        for (const e of top) {
+          if (!e.isFile()) continue;
+          if (((await fsp.stat(path.join(appRoot, e.name))).mode & 0o111) !== 0) anyExec = true;
+        }
+        expect(anyExec).toBe(true);
+      }
     },
     600_000,
   );

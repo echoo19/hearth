@@ -89,6 +89,13 @@ describe('packageDesktop', () => {
     expect((await fsp.stat(zipAbs)).size).toBeGreaterThan(0);
   });
 
+  it('sets a project-derived bundle identifier instead of the com.electron default (F-4)', async () => {
+    const spec = await makeSpec(['darwin-arm64']);
+    await packageDesktop({ spec, env: {}, exec: fakeExec() });
+    const opts = mockPackager.mock.calls[0][0] as any;
+    expect(opts.appBundleId).toBe('com.hearth.game'); // com.hearth.<slug>, not com.electron.*
+  });
+
   it('does not sign non-darwin targets and selects the right icon extension', async () => {
     const win = await packageDesktop({ spec: await makeSpec(['win32-x64']), env: {}, exec: fakeExec() });
     expect(win[0].signed).toBe('none');

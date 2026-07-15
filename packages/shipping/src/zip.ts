@@ -17,11 +17,22 @@ export interface ZipInputEntry {
    * frameworks, so they must be preserved as links, not dereferenced.
    */
   symlink?: boolean;
+  /**
+   * The file's Unix `st_mode` (from `lstat`), encoded into the ZIP
+   * central-directory external attributes so `unzip`/`ditto` restore the
+   * permission bits — crucially the execute bit that a packaged desktop
+   * `.app`'s Mach-O binary and helper apps need to launch (a freshly-unzipped
+   * app is unlaunchable otherwise). Ignored for symlinks (they always encode
+   * {@link SYMLINK_MODE}). Falls back to {@link DEFAULT_FILE_MODE} when absent.
+   */
+  mode?: number;
 }
 
 /** Unix `st_mode` for a symlink with 0777 perms (S_IFLNK | rwxrwxrwx). */
 const SYMLINK_MODE = 0o120777;
-/** "Version made by": low byte = zip spec 2.0, high byte = 3 (UNIX) for symlinks. */
+/** Unix `st_mode` fallback for a regular file (S_IFREG | rw-r--r--). */
+const DEFAULT_FILE_MODE = 0o100644;
+/** "Version made by": low byte = zip spec 2.0, high byte = 3 (UNIX). */
 const MADE_BY_UNIX = (3 << 8) | 20;
 
 // --- CRC-32 (IEEE 802.3) ----------------------------------------------------
@@ -79,7 +90,9 @@ export function createZip(entries: ZipInputEntry[]): Buffer {
     // Central directory header
     const central = Buffer.alloc(46);
     central.writeUInt32LE(0x02014b50, 0); // signature
-    central.writeUInt16LE(entry.symlink ? MADE_BY_UNIX : 20, 4); // version made by
+    // Every entry is UNIX "made by" now, since every entry encodes a real
+    // st_mode below (not just symlinks).
+    central.writeUInt16LE(MADE_BY_UNIX, 4); // version made by
     central.writeUInt16LE(20, 6); // version needed
     central.writeUInt16LE(0x0800, 8); // flags: UTF-8 names
     central.writeUInt16LE(0, 10); // method: STORE
@@ -93,9 +106,13 @@ export function createZip(entries: ZipInputEntry[]): Buffer {
     central.writeUInt16LE(0, 32); // comment length
     central.writeUInt16LE(0, 34); // disk number
     central.writeUInt16LE(0, 36); // internal attrs
-    // External attrs: high 16 bits carry the unix mode for symlinks so that
-    // unzip/ditto recreate them as links rather than plain files.
-    central.writeUInt32LE(entry.symlink ? (SYMLINK_MODE << 16) >>> 0 : 0, 38);
+    // External attrs: high 16 bits carry the unix st_mode. Symlinks encode
+    // S_IFLNK|0777 (so unzip/ditto recreate them as links, not plain files);
+    // regular files encode their real mode from lstat (so the +x on a
+    // packaged .app's binaries survives — without it the unzipped app can't
+    // launch), falling back to a plain rw-r--r-- when no mode was supplied.
+    const unixMode = entry.symlink ? SYMLINK_MODE : (entry.mode ?? DEFAULT_FILE_MODE);
+    central.writeUInt32LE((unixMode << 16) >>> 0, 38);
     central.writeUInt32LE(offset, 42); // local header offset
     centralParts.push(central, name);
 
@@ -142,7 +159,10 @@ export async function zipDirectory(srcDir: string, zipPath: string): Promise<voi
       } else if (entry.isDirectory()) {
         await walk(abs);
       } else {
-        entries.push({ path: rel, data: await fsp.readFile(abs) });
+        // Carry the file's real mode so its permission bits (notably +x on a
+        // packaged app's binaries) survive the zip round-trip.
+        const [data, st] = await Promise.all([fsp.readFile(abs), fsp.lstat(abs)]);
+        entries.push({ path: rel, data, mode: st.mode });
       }
     }
   };

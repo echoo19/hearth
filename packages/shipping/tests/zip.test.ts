@@ -3,6 +3,7 @@ import * as fsp from 'node:fs/promises';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
+import { execFileSync } from 'node:child_process';
 import { zipDirectory } from '../src/zip.js';
 
 /** Minimal zip reader: parses the archive zipDirectory produced. */
@@ -124,10 +125,19 @@ describe('zipDirectory', () => {
     expect(entries).toEqual([]);
   });
 
-  it('marks symlink entries UNIX/0120777 in the central directory, and leaves regular files with ordinary attrs', async () => {
+  it('encodes UNIX modes in the central directory for symlinks AND regular files', async () => {
+    // Byte-layout regression test. Every entry is now UNIX "made by" (high
+    // byte 3) and carries an st_mode in the high 16 bits of external
+    // attributes: symlinks keep S_IFLNK|0777, regular files carry their real
+    // permission bits (so the +x on a packaged .app's binaries survives the
+    // zip round-trip — D-1). Modes are chmod'd explicitly here so the byte
+    // assertions are deterministic regardless of the test host's umask.
     const symDir = path.join(tmpRoot, 'symtest');
     await fsp.mkdir(symDir, { recursive: true });
     await fsp.writeFile(path.join(symDir, 'real.txt'), 'hello');
+    await fsp.chmod(path.join(symDir, 'real.txt'), 0o644);
+    await fsp.writeFile(path.join(symDir, 'run.sh'), '#!/bin/sh\n');
+    await fsp.chmod(path.join(symDir, 'run.sh'), 0o755);
     await fsp.symlink('real.txt', path.join(symDir, 'link.txt'));
 
     const zipPath = path.join(tmpRoot, 'sym.zip');
@@ -138,13 +148,43 @@ describe('zipDirectory', () => {
 
     const link = byName.get('link.txt')!;
     expect(link.madeByHigh).toBe(3); // UNIX
-    expect(link.externalAttrs).toBe((0o120777 << 16) >>> 0);
+    expect(link.externalAttrs).toBe((0o120777 << 16) >>> 0); // S_IFLNK | 0777
     expect(link.data.toString('utf8')).toBe('real.txt'); // content is the link target
 
     const real = byName.get('real.txt')!;
-    expect(real.madeByHigh).toBe(0);
-    expect(real.externalAttrs).toBe(0);
+    expect(real.madeByHigh).toBe(3); // UNIX for every entry now
+    expect(real.externalAttrs).toBe((0o100644 << 16) >>> 0); // S_IFREG | 0644
     expect(real.data.toString('utf8')).toBe('hello');
+
+    const exe = byName.get('run.sh')!;
+    expect(exe.madeByHigh).toBe(3);
+    expect(exe.externalAttrs).toBe((0o100755 << 16) >>> 0); // S_IFREG | 0755 — exec bit preserved
+  });
+
+  it('preserves the executable bit through a real system-unzip round-trip', async () => {
+    // The exact user journey that was broken (D-1): a packaged .app is zipped,
+    // downloaded, and unzipped with the SYSTEM unzip — its Mach-O binary must
+    // still be executable or the app cannot launch. Drive it end-to-end with
+    // the real `unzip`, not by reading the buffer.
+    const src = path.join(tmpRoot, 'bundle');
+    await fsp.mkdir(src, { recursive: true });
+    await fsp.writeFile(path.join(src, 'game-binary'), '#!/bin/sh\necho hi\n');
+    await fsp.chmod(path.join(src, 'game-binary'), 0o755);
+    await fsp.writeFile(path.join(src, 'data.txt'), 'not executable');
+    await fsp.chmod(path.join(src, 'data.txt'), 0o644);
+
+    const zipPath = path.join(tmpRoot, 'bundle.zip');
+    await zipDirectory(src, zipPath);
+
+    const outDir = path.join(tmpRoot, 'unzipped');
+    await fsp.mkdir(outDir, { recursive: true });
+    execFileSync('unzip', ['-q', '-o', zipPath, '-d', outDir]);
+
+    const binMode = (await fsp.stat(path.join(outDir, 'game-binary'))).mode;
+    const dataMode = (await fsp.stat(path.join(outDir, 'data.txt'))).mode;
+    expect(binMode & 0o111).not.toBe(0); // at least one exec bit set — launchable
+    expect(binMode & 0o100).toBe(0o100); // owner-exec specifically
+    expect(dataMode & 0o111).toBe(0); // plain data stays non-executable
   });
 
   it('leaves no partial file behind on a nonexistent srcDir', async () => {
