@@ -5,6 +5,7 @@ import {
   eventCombo,
   resolveBinding,
   isTypingTarget,
+  isInteractiveTarget,
   groupedKeybinds,
   canonicalCombo,
   dispatchDecision,
@@ -111,6 +112,33 @@ describe('resolveBinding + guards', () => {
     expect(isTypingTarget({ isContentEditable: true })).toBe(true);
     expect(isTypingTarget({ tagName: 'DIV' })).toBe(false);
     expect(isTypingTarget(null)).toBe(false);
+  });
+
+  it('recognizes focusable interactive controls as interactive (L-121)', () => {
+    // Superset of isTypingTarget: typing surfaces still count...
+    expect(isInteractiveTarget({ tagName: 'INPUT' })).toBe(true);
+    expect(isInteractiveTarget({ isContentEditable: true })).toBe(true);
+    // ...plus buttons/links/selects and ARIA-role controls (plain-object path).
+    expect(isInteractiveTarget({ tagName: 'BUTTON' })).toBe(true);
+    expect(isInteractiveTarget({ tagName: 'A' })).toBe(true);
+    expect(isInteractiveTarget({ tagName: 'SELECT' })).toBe(true);
+    expect(isInteractiveTarget({ getAttribute: (n: string) => (n === 'role' ? 'button' : null) })).toBe(true);
+    expect(isInteractiveTarget({ getAttribute: (n: string) => (n === 'role' ? 'menuitem' : null) })).toBe(true);
+    // A plain container is NOT interactive → bare-Space shortcuts still fire.
+    expect(isInteractiveTarget({ tagName: 'DIV' })).toBe(false);
+    expect(isInteractiveTarget({ getAttribute: () => null })).toBe(false);
+    expect(isInteractiveTarget(null)).toBe(false);
+  });
+
+  it('resolves interactive controls self-or-ancestor via closest for real DOM (L-121)', () => {
+    // An icon nested inside a <button> reports the icon as the event target;
+    // closest() walks up to the owning button so Space still activates it.
+    const button = { tagName: 'BUTTON', closest: (s: string) => (s.includes('button') ? {} : null) };
+    expect(isInteractiveTarget(button)).toBe(true);
+    const iconInButton = { tagName: 'svg', closest: (_s: string) => ({}) };
+    expect(isInteractiveTarget(iconInButton)).toBe(true);
+    const bareDiv = { tagName: 'DIV', closest: (_s: string) => null };
+    expect(isInteractiveTarget(bareDiv)).toBe(false);
   });
 
   it('gates the "playing" Pause binding on isPlaying, mirroring the selection guard', () => {

@@ -7,7 +7,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import type { ParticleEmitterComponent, TilemapComponent } from '@hearth/core';
 import { useEditor } from '../store';
 import { fileUrl } from '../api';
-import { isTypingTarget } from '../keybinds';
+import { isInteractiveTarget, isTypingTarget } from '../keybinds';
 import { ParticlePreview, particleVisual, type Particle, type PreviewTarget } from '../particlePreview';
 import {
   edgeMidpoints,
@@ -120,12 +120,15 @@ export function snapToGrid(v: number, grid: number = GRID_SIZE): number {
 
 /**
  * Whether a bare Space keydown should begin canvas panning. Yields to any
- * typing target — input/textarea AND CodeMirror's contenteditable surface
- * (via the shared isTypingTarget's isContentEditable check) — so Space types
- * a space in the Code panel instead of being swallowed here (L-053 / CODE-1).
+ * focusable interactive control (via isInteractiveTarget) — input/textarea,
+ * CodeMirror's contenteditable surface (so Space types a space in the Code
+ * panel, L-053 / CODE-1) AND buttons/links/role-controls, so a focused button
+ * still activates on Space anywhere in the app instead of having its native
+ * Space-activation silently preventDefault'd by this window-level handler
+ * (L-121 / CODE-PLAY-1).
  */
 export function panSpaceKey(e: { code: string; target: unknown }): boolean {
-  return e.code === 'Space' && !isTypingTarget(e.target);
+  return e.code === 'Space' && !isInteractiveTarget(e.target);
 }
 
 /**
@@ -205,6 +208,9 @@ export function SceneView() {
 
   const hostRef = useRef<HTMLDivElement>(null);
   const svgRef = useRef<SVGSVGElement>(null);
+  // Whether the pointer is currently over the Scene host — space-to-pan only
+  // engages when this view is the pointer's context (L-121 scoping).
+  const hoverRef = useRef(false);
   const [view, setView] = useState<ViewTransform>({ s: 1, tx: 0, ty: 0 });
   const viewRef = useRef(view);
   viewRef.current = view;
@@ -553,9 +559,19 @@ export function SceneView() {
   // CodeMirror's contenteditable surface, not just INPUT/TEXTAREA — otherwise
   // this window-level handler preventDefault's Space over the Code panel and
   // eats every space typed into a script (L-053 / CODE-1).
+  // Scope the global Space grab to when the Scene view is actually the user's
+  // context: the host must be visible (dockview hides inactive panels via
+  // display:none → offsetParent null) AND either hovered or holding focus.
+  // Otherwise pressing Space while working in another panel (Assets, Console,
+  // etc.) would be a silent over-reach that eats the keystroke (L-121).
+  const pannable = () => {
+    const host = hostRef.current;
+    if (!host || host.offsetParent === null) return false;
+    return hoverRef.current || host.contains(document.activeElement);
+  };
   useEffect(() => {
     const down = (e: KeyboardEvent) => {
-      if (panSpaceKey(e)) {
+      if (panSpaceKey(e) && pannable()) {
         e.preventDefault();
         setSpaceHeld(true);
       }
@@ -569,6 +585,7 @@ export function SceneView() {
       window.removeEventListener('keydown', down);
       window.removeEventListener('keyup', up);
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // ---- point editing ("Edit points" mode) -----------------------------------
@@ -1639,6 +1656,12 @@ export function SceneView() {
     <div
       ref={hostRef}
       className={`scene-view${spaceHeld ? ' panning' : ''}${draggingVertex ? ' vertex-dragging' : ''}${paintMode ? ' painting-tiles' : ''}`}
+      onPointerEnter={() => {
+        hoverRef.current = true;
+      }}
+      onPointerLeave={() => {
+        hoverRef.current = false;
+      }}
     >
       <svg
         ref={svgRef}

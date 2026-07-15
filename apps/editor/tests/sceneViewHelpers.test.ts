@@ -28,6 +28,18 @@ describe('panSpaceKey (L-053 space-to-pan guard)', () => {
     expect(panSpaceKey({ code: 'Space', target: { tagName: 'DIV', isContentEditable: true } })).toBe(false);
   });
 
+  it('yields Space to focused buttons/links/role-controls so they still activate (L-121)', () => {
+    // The universal accessibility regression CODE-PLAY-1 found: a focused
+    // <button> is not a typing target, so the old guard preventDefault'd Space
+    // app-wide and native Space-activation was silently lost. panSpaceKey must
+    // now yield to any focusable interactive control.
+    expect(panSpaceKey({ code: 'Space', target: { tagName: 'BUTTON', closest: () => ({}) } })).toBe(false);
+    expect(panSpaceKey({ code: 'Space', target: { tagName: 'A', closest: () => ({}) } })).toBe(false);
+    expect(panSpaceKey({ code: 'Space', target: { tagName: 'SELECT', closest: () => ({}) } })).toBe(false);
+    // A bare, non-interactive surface (the scene canvas itself) still pans.
+    expect(panSpaceKey({ code: 'Space', target: { tagName: 'DIV', closest: () => null } })).toBe(true);
+  });
+
   it('ignores non-Space keys', () => {
     expect(panSpaceKey({ code: 'KeyA', target: { tagName: 'DIV' } })).toBe(false);
   });

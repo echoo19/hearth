@@ -110,8 +110,14 @@ export function GamePreview() {
     const view = viewRef.current;
     if (!view || status !== 'ready') return;
     try {
-      if (playing) view.play();
-      else view.pause();
+      if (playing) {
+        view.play();
+        // Auto-arm keyboard capture on Play so WASD works immediately without a
+        // click first: focus the capture root (this host). Without this, focus
+        // rests on dockview's own content wrapper (an ancestor of captureRoot),
+        // so shouldCaptureGameKey refuses input (L-122 / CODE-PLAY-2).
+        hostRef.current?.focus({ preventScroll: true });
+      } else view.pause();
     } catch (err) {
       log('error', 'runtime', `play/pause failed: ${(err as Error).message}`);
     }
@@ -160,7 +166,22 @@ export function GamePreview() {
           Paused
         </div>
       )}
-      <div ref={hostRef} className="game-canvas-host" />
+      {/*
+        tabIndex + pointerdown-focus arm keyboard capture on a plain click:
+        clicking the canvas otherwise leaves focus on dockview's content
+        wrapper (an ancestor of this host, the runtime's captureRoot), so
+        shouldCaptureGameKey refuses input and WASD is dead. Focusing this host
+        (preventScroll so the panel doesn't jump) puts activeElement inside the
+        capture root exactly as the capture contract expects (L-122). We do NOT
+        loosen shouldCaptureGameKey's containment rule — the chrome-safety
+        contract (B1) stays; we just make a normal click satisfy it.
+      */}
+      <div
+        ref={hostRef}
+        className="game-canvas-host"
+        tabIndex={-1}
+        onPointerDown={() => hostRef.current?.focus({ preventScroll: true })}
+      />
       {status !== 'ready' && (
         <div className="empty-state" style={{ position: 'absolute', inset: 0 }}>
           {status === 'loading' && <span>Starting the game preview…</span>}

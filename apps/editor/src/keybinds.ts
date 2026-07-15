@@ -241,6 +241,54 @@ export function isTypingTarget(target: unknown): boolean {
   return el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.isContentEditable === true;
 }
 
+/**
+ * CSS selector for focusable interactive controls that own the Space key for
+ * their own activation (native or ARIA). Used by isInteractiveTarget below.
+ */
+const INTERACTIVE_SELECTOR =
+  'a[href], button, input, select, textarea, ' +
+  '[role="button"], [role="link"], [role="checkbox"], [role="switch"], ' +
+  '[role="radio"], [role="tab"], [role="menuitem"], [role="menuitemcheckbox"], ' +
+  '[role="menuitemradio"], [role="option"], [contenteditable="true"]';
+
+/**
+ * Whether an event target is a focusable interactive control that owns Space
+ * for its own activation — a superset of isTypingTarget that also covers
+ * buttons, links, selects, and ARIA-role controls. Bare-Space app shortcuts
+ * (e.g. SceneView's hold-Space-to-pan) MUST yield to these so a focused button
+ * still activates on Space (L-121 / CODE-PLAY-1) — otherwise a window-level
+ * preventDefault silently kills native Space-activation for every keyboard
+ * user, app-wide.
+ *
+ * Resolves self-or-ancestor via `closest` for real DOM nodes (an icon <svg>
+ * inside a <button> reports the svg as the target), and falls back to a
+ * tag/role heuristic for the plain-object events used in unit tests.
+ */
+export function isInteractiveTarget(target: unknown): boolean {
+  if (isTypingTarget(target)) return true;
+  if (!target || typeof target !== 'object') return false;
+  const el = target as {
+    tagName?: string;
+    closest?: (s: string) => unknown;
+    getAttribute?: (n: string) => string | null;
+  };
+  if (typeof el.closest === 'function') {
+    return el.closest(INTERACTIVE_SELECTOR) != null;
+  }
+  const tag = el.tagName;
+  if (tag === 'BUTTON' || tag === 'A' || tag === 'SELECT') return true;
+  const role = typeof el.getAttribute === 'function' ? el.getAttribute('role') : null;
+  return (
+    role === 'button' ||
+    role === 'link' ||
+    role === 'checkbox' ||
+    role === 'switch' ||
+    role === 'tab' ||
+    role === 'menuitem' ||
+    role === 'option'
+  );
+}
+
 const KEY_LABEL: Record<string, string> = {
   up: '↑',
   down: '↓',
