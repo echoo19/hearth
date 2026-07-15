@@ -98,6 +98,26 @@
   max-height: 100%;
 }
 
+/* Debug/tab pause indicator (PLAYMODE-3 / L-070): a frozen game otherwise reads
+   as a hang. Subtle chip, top-right so it doesn't collide with the scene badge. */
+.game-preview-paused {
+  position: absolute;
+  top: 8px;
+  right: 10px;
+  z-index: 2;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border-radius: var(--radius-sm);
+  background: var(--warn-soft);
+  color: var(--warn);
+  font-size: var(--text-xs);
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  pointer-events: none;
+}
+
 
 /* --------------------------------------------------------------------------
    Scene view: polygon collider point editor

@@ -4,6 +4,7 @@
  */
 import React, { useEffect, useRef, useState } from 'react';
 import { useEditor } from '../store';
+import { Icon } from './ui';
 import { setGameView } from '../gameViewRef';
 import type { MountedGameView, RuntimeLogEvent } from '../runtimeBridge';
 
@@ -151,6 +152,12 @@ export function GamePreview() {
       {liveScene && status === 'ready' && (
         <div className="game-preview-scene" title="Current scene (switched by a script)">
           {liveScene}
+        </div>
+      )}
+      {paused && playing && status === 'ready' && (
+        <div className="game-preview-paused" role="status" title="The running game is frozen (debug pause or Game tab hidden)">
+          <Icon name="pause" />
+          Paused
         </div>
       )}
       <div ref={hostRef} className="game-canvas-host" />
