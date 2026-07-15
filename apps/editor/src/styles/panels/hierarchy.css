@@ -41,6 +41,24 @@
   background: var(--bg-2);
 }
 
+/* Drag-to-reparent (HIER-2). The dragged row dims; a valid reparent target
+   gets a ring + soft fill so "drop INTO this row" reads unambiguously (there is
+   no sibling-reorder line — moveEntity has no ordering param, so drops always
+   reparent). The panel background lights up as the drop-to-root target. */
+.tree-row.dragging {
+  opacity: 0.4;
+}
+
+.tree-row.drop-into {
+  background: var(--accent-soft);
+  box-shadow: inset 0 0 0 1px var(--accent);
+  border-radius: var(--radius-sm);
+}
+
+.panel-scroll.drop-root {
+  box-shadow: inset 0 0 0 2px var(--accent-soft);
+}
+
 .tree-row.selected {
   background: var(--accent-soft);
 }
