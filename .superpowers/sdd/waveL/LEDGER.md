@@ -931,18 +931,27 @@ high) though it borders on a defect (values unreadable).
 - Source: PLAYMODE-2, CONSOLE-CHANGES-7
 - Disposition: fixed 2bed8fa (PAUSE semantics, not Stop: `GamePanelHost` now
   drives `setGameTabVisible` — hiding the Game tab sets `paused: true`
-  (halting rAF/audio via the existing debug-pause path) while keeping
-  `playing: true`, so the run and all its state survive; showing the tab
-  auto-resumes UNLESS the user had explicitly paused first (a new
-  `pausedByTab` flag tracks pause ownership, cleared by any explicit
+  (freezing the simulation via the existing debug-pause path and, per review
+  I1, genuinely suspending audio: `PixiSceneView.pause()` →
+  `WebAudioPlayer.suspend()` halts SFX on the audio clock via
+  `AudioContext.suspend()` and pauses the streamed music element at its
+  position; the render ticker and gamepad polling keep running by design)
+  while keeping `playing: true`, so the run and all its state survive;
+  showing the tab auto-resumes UNLESS the user had explicitly paused first
+  (a new `pausedByTab` flag tracks pause ownership, cleared by any explicit
   setPaused/Play/Stop/restart). Because `playing` stays true, the
   hot-reload-on-save path (`if (get().playing)`) is now reachable from the
   default tab stack: Play → Code → edit → save → back to Game resumes with
   new code and preserved state, no manual Code-tab split. Toolbar transport is
   honest for free — the tab-pause flips the same `paused` the Pause/Resume
-  button reads. Store state-machine pinned by `playModeSession.test.ts` (6
-  tests: pause-not-stop, auto-resume, explicit-pause preserved across
-  hide/show, explicit-resume ownership, no-op when stopped, Play/Stop clear).
+  button reads. Review I2: the Workspace surface-Game effect is keyed on
+  runNonce as well as playing, so Restart clicked from another tab brings the
+  restarted run forward instead of leaving it running invisibly. Store
+  state-machine pinned by `playModeSession.test.ts` (pause-not-stop,
+  auto-resume, explicit-pause preserved across hide/show, explicit-resume
+  ownership, no-op when stopped, Play/Stop clear, restart-while-tab-paused,
+  live-patch-while-tab-paused, repeated hide/show cycles); audio suspend
+  semantics pinned in `pixi-audio.test.ts` (+ pause→suspend wiring).
   Chip feedback for the paused state added under L-070.)
 
 ### L-068 · playmode-live · friction · med
@@ -1229,7 +1238,42 @@ high) though it borders on a defect (values unreadable).
 - Expected: group/sort cards by source state and add reorder (drag or
   up/down) so priority is intentional and visible — direct-manipulation bar.
 - Source: ANIMATOR-5
-- Disposition: open
+- Disposition: fixed (T9-U6) — the Transitions list is now grouped and
+  manipulable (short of the long-term node-graph track):
+  - **Grouping.** Cards render under collapsible "From <state>" headers via
+    `groupTransitions()` (any-state group first as the machine-wide fallback,
+    then states in declaration order, orphan sources last). Within a group,
+    order == flat declaration order == the runtime tiebreak order for that
+    source.
+  - **Priority visibility.** Each card shows a badge with its GLOBAL
+    declaration index (1-based) — tooltip "checked in this order, first match
+    wins" — so a source's transitions interleaved in the flat array (e.g. idle
+    at #1 and #3 with walk's #2 between) read honestly.
+  - **Reorder.** Move-earlier/later `IconButton`s per card call the pure
+    `moveTransitionInGroup(draft, flatIndex, targetGroupPos)`. Flat-array
+    mapping rule (documented in asmEdit.ts): a group owns the fixed set of flat
+    slots where `from===group`; a move permutes ONLY those slots (group items
+    re-laid in the new order), so every other source keeps its exact flat
+    position and only this group's runtime priority changes. Edge moves are
+    referential no-ops (never falsely dirty). Keyboard-accessible; buttons
+    disable at group top/bottom.
+  - **At-a-glance summary.** Collapsed cards read as a sentence
+    (`summarizeTransition`): "idle → walk · when moving = true", "· exit 0.5",
+    "· always"; expand to the existing from/to + exit-time + conditions editor.
+  - **State navigation.** Each State row shows an outgoing-count badge ("2 out")
+    that expands + scrolls + flashes that source's group — cheap navigation, no
+    graph canvas.
+  - New pure helpers unit-tested in asmEdit.test.ts (20 cases: grouping order,
+    non-adjacent flat collection, flat-array swap mapping, cross-group
+    preservation, edge no-ops, summary sentences). Full editor suite green
+    (1003) + workspace typecheck clean.
+  - Live-verified (own port 5338, scratch sky-courier seeded with idle/walk/idle
+    interleaved): reorder → Save → on-disk `transitions[]` swapped [0]↔[2] while
+    walk stayed at [1] → runtime `pickTransition` now evaluates idle's exit-0.5
+    edge before its moving==true edge. Grouping/badges/summaries/out-counts all
+    confirmed in the live DOM.
+  - Files: apps/editor/src/asmEdit.ts (+ tests), components/AnimatorEditor.tsx,
+    styles/panels/animator.css.
 
 ### L-086 · animator · polish · low
 - Element: icon-only remove buttons + initial-state star toggle.
@@ -1288,7 +1332,12 @@ high) though it borders on a defect (values unreadable).
   running (new `DisabledHint` wrapper — Tooltip + focusable span, mirroring
   Inspector.tsx's disabledReason pattern — surfaces the reason since a
   disabled native control doesn't reliably show its own hover tooltip).
-  Unit-tested in `agentPanelGuards.test.ts`. File: AgentPanel.tsx.
+  Review follow-up (B7-I1): the "Install Claude Code" button — which spawns
+  a shell pty via the same path — now shares the identical guard, and a new
+  epoch-matched `shouldRedetectAfterInstall` effect re-runs CLI detection
+  automatically when the install session's pty exits, so the button resolves
+  to "Start agent" without a manual Re-detect. Unit-tested in
+  `agentPanelGuards.test.ts`. File: AgentPanel.tsx.
 
 ### L-090 · agent · defect · med
 - Element: "Restore checkpoint" disabled state vs. the live Timeline feed.
@@ -1302,15 +1351,20 @@ high) though it borders on a defect (values unreadable).
   trigger that already updates the Timeline), or don't imply the two are in
   sync.
 - Source: AGENT-2
-- Disposition: fixed (T8-B7) — store.ts's WS `onmessage` handler now calls
-  the existing `refreshDiffIfTracking()` (already used by undo/redo, L-060)
-  right after mirroring external journal entries, so "Restore checkpoint"
-  updates within the same tick the Timeline row appears — only when a
-  baseline is actually tracked (checkpoint taken this session or a diff
-  already on screen), same guard as the undo/redo call sites, so it doesn't
-  spam a "no checkpoint" diffProject call on every external command when
-  nothing is being tracked. New test `agentDiffRefresh.test.ts` drives the
-  real store against a fake WS socket. File: store.ts.
+- Disposition: fixed a5e733f (T8-B7; the store.ts hunk was swept into that
+  commit by a concurrent fixer staging all of store.ts — not 7a02f09, which
+  carries the rest of the B7 agent-panel work) — store.ts's WS `onmessage`
+  handler now calls the existing `refreshDiffIfTracking()` (already used by
+  undo/redo, L-060) right after mirroring external journal entries, so
+  "Restore checkpoint" updates within the same tick the Timeline row appears
+  — only when a baseline is actually tracked (checkpoint taken this session
+  or a diff already on screen), same guard as the undo/redo call sites, so it
+  doesn't spam a "no checkpoint" diffProject call on every external command
+  when nothing is being tracked. Review follow-up (B7-M3): the call is now
+  coalesced — while one diffProject is in flight, a burst of journal frames
+  folds into ONE trailing catch-up instead of N concurrent whole-project
+  diffs. New test `agentDiffRefresh.test.ts` drives the real store against a
+  fake WS socket, incl. the burst case. File: store.ts.
 
 ### L-091 · agent · friction · med
 - Element: permission-mode `<select>` (Read-only / Safe edit / Full / All).
