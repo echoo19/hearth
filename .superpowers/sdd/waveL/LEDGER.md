@@ -2393,6 +2393,49 @@ editor (L-033).
     packages/core/src/commands/exportCommands.ts,
     packages/core/src/commands/types.ts, packages/core/src/index.ts.
 
+### L-119 · scene-hierarchy · defect · high (SH-1)
+- Element: prefab instance banner/badge gating + `findInstanceMembership`
+  callers (`packages/core/src/project/prefabData.ts`,
+  `apps/editor/src/components/Inspector.tsx` / `Hierarchy.tsx`).
+- Observed: an entity carrying a `.prefab` marker whose `ids` map lacks a
+  self-entry (no id resolves back to the root's own id — e.g. an unsynced
+  `createPrefab` source, or the literal empty-`ids` "Enemy" shipped in the
+  ember-horde example) resolves to no membership, so every structural-edit
+  detach check anchored on it silently no-ops — yet the Inspector rendered a
+  full "Instance of <prefab>" banner (Update/Sync/Revert buttons) and the
+  Hierarchy showed the instance badge, both keyed on marker *presence*. The
+  editor claimed a healthy synced instance while the detach safety net was
+  dead and no overrides recorded. Source: T13 re-audit scene-hierarchy.md SH-1.
+- Disposition: fixed bbe62cf. Root cause is presentation + a stale fixture,
+  not the detach logic: an empty-`ids` marker legitimately exists as the
+  transient `createPrefab` "source master" (a structural edit on it must NOT
+  clear the marker, or `updatePrefab`-from-source — how prefab *structure* is
+  evolved — breaks; verified by prefabCommands.test.ts:365/480). So rather
+  than auto-clearing the marker (which regressed that workflow), gate the
+  banner + badge on resolved membership via a shared pure helper
+  `isLivePrefabInstance(entity)` (self-entry in `ids`) — a broken/master
+  marker no longer presents as a live instance. `findInstanceMembership`
+  already treats such markers as non-members; added `isBrokenPrefabMarker` to
+  core as the canonical predicate. Fixture: ember-horde's generator now
+  `syncPrefabInstances` right after `createPrefab`, healing "Enemy" into a real
+  live instance (`ids.pfe_1 -> ent_7ax0y7xc`) instead of shipping the stale
+  empty-`ids` marker; examples regenerated (double-regen byte-identical). The
+  designed convergence path for legacy empty-`ids` data is sync/update (which
+  repopulates `ids`, tested at prefabMergeSync.test.ts:253), not a clear.
+- Live-verified (headless Chrome, uniquely-named scratch projects to dodge the
+  audit's path-cache ambiguity): a broken empty-`ids` "Enemy" shows NO
+  Inspector banner and NO Hierarchy badge, while the healthy "Elite Enemy"
+  still shows its banner; the regenerated healed "Enemy" shows a truthful
+  "Instance of Enemy" banner + badge. Elite-Enemy structural-edit detach
+  unchanged (that code path untouched; prefabOverrides.test.ts covers it).
+- Tests: prefabData.test.ts (isBrokenPrefabMarker, detachInstanceContaining
+  leaves a source-master marker untouched), prefabActions.test.ts
+  (isLivePrefabInstance banner gating with the exact SH-1 shapes).
+- Files: packages/core/src/project/prefabData.ts, packages/core/src/index.ts,
+  apps/editor/src/prefabActions.ts, apps/editor/src/components/Inspector.tsx,
+  apps/editor/src/components/Hierarchy.tsx, packages/examples/generate.mjs,
+  packages/examples/ember-horde/scenes/arena.scene.json.
+
 ### L-120 · animator · friction · med (PANELS-1)
 - Element: global mod+s keybind (apps/editor/src/keybinds.ts) vs. a dirty
   Code-panel script buffer or Animator draft with DOM focus elsewhere.
