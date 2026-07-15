@@ -2482,3 +2482,15 @@ editor (L-033).
 - Observed: clicking the game canvas focuses dockview's dv-content-container (ancestor), not the captureRoot; shouldCaptureGameKey correctly refuses → WASD dead after a normal click on the Game tab. L-002 fix itself proven correct once host is focused.
 - Source: T13 CODE-PLAY-2
 - Disposition: fixed — GamePreview's `.game-canvas-host` (the runtime's captureRoot) now gets `tabIndex={-1}` and an `onPointerDown` that focuses it with `{ preventScroll: true }`, so a plain click puts `document.activeElement` inside the capture root and `shouldCaptureGameKey` engages — its containment rule (the B1 chrome-safety contract) is left untouched. Also auto-focus the host on Play start (in the existing play effect) so WASD works immediately without a click. `.game-canvas-host { outline: none }` suppresses the focus ring on this click-target. Live-verified (drift-cellar, headless Chrome + swiftshader): Play → click canvas → WASD moves the player (the exact CODE-PLAY-2 repro, prior focus outside the root, click re-arms it); Play → WASD immediately (auto-focus, activeElement === host). Tests: gamePreviewFocus.test.tsx (jsdom, pointerdown → activeElement === host). Files: apps/editor/src/components/GamePreview.tsx, apps/editor/src/styles/panels/sceneview.css.
+
+### L-123 · menus · defect · high (JAKE-REPORTED)
+- Element: File menu popover positioning
+- Observed: Jake's screenshot — the File menu popover renders clipped off the LEFT viewport edge (item labels truncated: "checkpoint", "w changes", "t…", "project"). Trigger sits near x=0; popover shifted left out of view.
+- Expected: popover left-aligned to trigger, clamped inside the viewport.
+- Disposition: open
+
+### L-124 · export · defect · high (JAKE-REPORTED)
+- Element: Export dialog placement
+- Observed: Export dialog appears bottom-right instead of centered (likely when opened via the new File menu path — audits exercised the old toolbar-button path).
+- Expected: centered modal via <dialog>.showModal regardless of open path.
+- Disposition: open
