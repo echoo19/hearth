@@ -178,7 +178,9 @@ there's no code path that writes one. The one true exception is the
 instance root's own `Transform.position`: that's per-instance
 **placement**, not an override, so moving the root itself is never
 recorded — a descendant's `Transform.position` *is* recorded like any other
-property write.
+property write. In short: the root's own **name**, **enabled** flag, and
+**`Transform.position`** are all per-instance placement and never record an
+override; every other write, on the root or any descendant, does.
 
 This has a sharp consequence: a merge sync (below) rebuilds every
 non-root entity in the subtree fresh from the prefab's payload, so a

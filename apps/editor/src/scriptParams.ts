@@ -60,15 +60,18 @@ export function removeParamKey(
 /**
  * New record with `oldKey` renamed to `newKey`, preserving insertion order
  * (the renamed entry stays in place rather than jumping to the end). Returns
- * null when the rename is invalid: empty name, unknown source key, or a
- * collision with a different existing key.
+ * null when the rename is invalid: empty name, a '.' (params.<key> is a
+ * single path segment — a dotted key can be created but never scalar-edited,
+ * since setProperty('params.a.b') reads as an over-specified path rather than
+ * a literal key), unknown source key, or a collision with a different
+ * existing key.
  */
 export function renameParamKey(
   params: Record<string, unknown>,
   oldKey: string,
   newKey: string,
 ): Record<string, unknown> | null {
-  if (!newKey || !(oldKey in params)) return null;
+  if (!newKey || newKey.includes('.') || !(oldKey in params)) return null;
   if (newKey === oldKey) return { ...params };
   if (newKey in params) return null;
   const next: Record<string, unknown> = {};

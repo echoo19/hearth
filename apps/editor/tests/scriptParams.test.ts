@@ -67,6 +67,13 @@ describe('renameParamKey', () => {
     expect(renameParamKey(params, 'speed', 'maxHp')).toBeNull();
   });
 
+  it('rejects names containing a dot', () => {
+    const params = { speed: 170 };
+    expect(renameParamKey(params, 'speed', 'a.b')).toBeNull();
+    expect(renameParamKey(params, 'speed', '.leading')).toBeNull();
+    expect(renameParamKey(params, 'speed', 'trailing.')).toBeNull();
+  });
+
   it('is a no-op copy when renaming to the same key', () => {
     const params = { speed: 170 };
     expect(renameParamKey(params, 'speed', 'speed')).toEqual({ speed: 170 });

@@ -762,7 +762,7 @@ export function ScriptParamsField({
   const [newType, setNewType] = useState<NewParamType>('number');
   const keys = Object.keys(value);
   const trimmed = newKey.trim();
-  const addDisabled = trimmed === '' || keys.includes(trimmed);
+  const addDisabled = trimmed === '' || trimmed.includes('.') || keys.includes(trimmed);
   const addParam = () => {
     if (addDisabled) return;
     onWriteAll(setParamKey(value, trimmed, defaultForParamType(newType)));
@@ -779,6 +779,7 @@ export function ScriptParamsField({
               const t = nextKey.trim();
               if (t === key) return;
               if (!t) return 'Name can’t be empty.';
+              if (t.includes('.')) return "Param keys can't contain '.'";
               const renamed = renameParamKey(value, key, t);
               if (!renamed) return `“${t}” already exists.`;
               onWriteAll(renamed);
