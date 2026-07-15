@@ -1974,3 +1974,10 @@ contention with T8 once B1–B7 land)
 - Source: B5 follow-up review (dispatch T8-B5); pre-existing
 - Disposition: deferred-M (pre-existing; out of scope — in-process
   serialization landed this batch, cross-process locking is a separate task)
+
+### L-116 · workspace · defect · high
+- Element: dockview null-'clear' pageerror — RECURRENCE after 68c6def
+- Observed: U4+U7 reviewer hit "Cannot read properties of null (reading 'clear')" once during live probes (post-B2-fix HEAD); B5 reviewer also saw one during rapid project switching. Intermittent, ~once per session of heavy probing.
+- Expected: zero occurrences; B2's isDockAlive guards cover resetLayout/showPanel but some other path still reaches clear() on a null/disposed target.
+- Source: U4+U7 review aside; B5 review incidental
+- Disposition: open
