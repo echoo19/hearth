@@ -312,9 +312,13 @@
 
 .script-param-row {
   display: grid;
-  grid-template-columns: minmax(0, 0.85fr) minmax(0, 1.15fr) auto;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto;
   align-items: center;
   gap: 6px;
+}
+
+.script-param-row > .text-field .input {
+  font-family: var(--font-mono);
 }
 
 .script-param-value {
