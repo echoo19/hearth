@@ -2231,7 +2231,7 @@ contention with T8 once B1–B7 land)
 - Observed: U4+U7 reviewer hit "Cannot read properties of null (reading 'clear')" once during live probes (post-B2-fix HEAD); B5 reviewer also saw one during rapid project switching. Intermittent, ~once per session of heavy probing.
 - Expected: zero occurrences; B2's isDockAlive guards cover resetLayout/showPanel but some other path still reaches clear() on a null/disposed target.
 - Source: U4+U7 review aside; B5 review incidental
-- Disposition: INVESTIGATED — root NOT dockview; strongest candidate is Pixi, but exact live stack could not be captured in this environment. Detail below. Remains open pending a foreground real-GPU stack capture.
+- Disposition: hardened a752c69 — mechanism-targeted guard for the only verified null-clear path (Pixi Graphics teardown race); unreproducible in sandboxed browsers; if it recurs post-hardening, Wave M captures a foreground-GPU stack (window.onerror logger) per the investigation notes. Detail below.
 
   Investigation (L-116 investigator, systematic-debugging):
   1. Isolated which op on a *fully-disposed* dockview throws what, against a real dockview in jsdom (extends B2's workspaceDock.test.ts pattern): `api.clear()`, `addPanel`, `fromJSON`, and `panel.api.close()` all throw **"invalid location"** (NotFoundError-class) — NOT "reading 'clear'". `toJSON`/`setActive` no-op. So B2's isDockAlive guard (which detects the disposed state via element.isConnected) correctly suppresses the disposed-dock case, and the recurring "reading 'clear'" does NOT come from a fully-disposed dock.
