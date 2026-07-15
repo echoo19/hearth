@@ -133,7 +133,9 @@ export function buildAppMenu(store: EditorStore, ctx: AppMenuContext): AppMenuSe
       { separator: true },
       {
         id: 'debug-overlay',
-        label: 'Debug overlay',
+        // Scoped honestly (L-028): this overlay only affects the Game view
+        // runtime (collider/velocity/light draws), not the Scene tab's gizmos.
+        label: 'Game view overlay',
         enabled: hasProject,
         checked: store.debugDraw,
         keepOpen: true,
