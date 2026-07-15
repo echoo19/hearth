@@ -2385,6 +2385,41 @@ editor (L-033).
     packages/core/src/commands/exportCommands.ts,
     packages/core/src/commands/types.ts, packages/core/src/index.ts.
 
+### L-120 · animator · friction · med (PANELS-1)
+- Element: global mod+s keybind (apps/editor/src/keybinds.ts) vs. a dirty
+  Code-panel script buffer or Animator draft with DOM focus elsewhere.
+- Observed: CodePanel and AnimatorEditor each claim mod+s locally via
+  stopPropagation while DOM focus sits inside their own subtree
+  (`.code-panel-root` / `.animator`), and do a real save there. The moment
+  focus is anywhere else — e.g. the user edits a field in the Animator, then
+  clicks the Assets tab in the bottom dock — the keypress falls through to
+  the global handler, which logged "Your changes are saved automatically —
+  no need to save." even though the Animator's "Unsaved" pill (or a dirty
+  script buffer) was still showing on screen. The log actively lied about
+  visible state; the dirty draft itself was never lost (React state survives
+  until the tab is revisited), so this was friction/honesty, not data loss.
+- Expected: an honest message when either panel is actually dirty, without
+  auto-saving from global scope — focus-scoped saving is the deliberate
+  design (see ANIMATOR-4's rationale for owning mod+s locally).
+- Source: Wave-L T13 re-audit, panels.md — "L-081 · animator · defect · high
+  (mod+s override) — VERIFIED, with a new gap found", filed as PANELS-1.
+- Fix: `hasUnsavedAnimatorDraft` published by AnimatorEditor (mirrors
+  `hasUnsavedScripts` from L-058) via a new store setter
+  `setUnsavedAnimatorDraft`, reset on unmount/project close/switch like its
+  Code-panel counterpart. The global `save` keybind's `run` now calls a new
+  pure `unsavedEditsMessage({ hasUnsavedScripts, hasUnsavedAnimatorDraft })`
+  helper (apps/editor/src/keybinds.ts) that names whichever panel(s) are
+  dirty ("You have unsaved edits in the Code panel — click into it and press
+  ⌘S to save.", pluralized to "one of them" when both are dirty) and returns
+  null (→ the normal autosave line) only when neither is dirty. Global mod+s
+  still never saves either panel itself.
+- Files: apps/editor/src/keybinds.ts, apps/editor/src/store.ts,
+  apps/editor/src/components/AnimatorEditor.tsx. Tests:
+  apps/editor/tests/keybinds.test.ts — "unsavedEditsMessage (PANELS-1)" +
+  "the \"save\" keybind logs honestly based on dirty panel state" blocks
+  (pure-helper + bind.run branch coverage, no DOM/browser needed).
+- Disposition: fixed —
+
 ### L-121 · sceneview · defect · high
 - Element: Space key on focused buttons (app-wide)
 - Observed: SceneView's window-level space-to-pan handler preventDefaults Space for any non-typing target regardless of visible tab — Space never activates a focused button anywhere (Enter works).

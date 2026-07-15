@@ -9,6 +9,7 @@ import {
   canonicalCombo,
   dispatchDecision,
   isMac,
+  unsavedEditsMessage,
   type KeyLike,
   type DispatchEventLike,
 } from '../src/keybinds';
@@ -34,6 +35,8 @@ function mockStore(over: Partial<EditorStore> = {}) {
     selection: null,
     playing: false,
     paused: false,
+    hasUnsavedScripts: false,
+    hasUnsavedAnimatorDraft: false,
     exec: vi.fn((name: string, params?: unknown) => {
       calls.push(['exec', name, params]);
       return Promise.resolve({ success: true });
@@ -372,5 +375,63 @@ describe('no-drift: cheat sheet is generated from KEYBINDS', () => {
     for (const g of groups) {
       for (const b of g.binds) expect(b.group).toBe(g.group);
     }
+  });
+});
+
+describe('unsavedEditsMessage (PANELS-1)', () => {
+  it('returns null when nothing is dirty, so the caller falls back to the autosave line', () => {
+    expect(unsavedEditsMessage({ hasUnsavedScripts: false, hasUnsavedAnimatorDraft: false })).toBeNull();
+  });
+
+  it('names the Code panel when only a script buffer is dirty', () => {
+    const msg = unsavedEditsMessage({ hasUnsavedScripts: true, hasUnsavedAnimatorDraft: false });
+    expect(msg).toContain('the Code panel');
+    expect(msg).not.toContain('Animator');
+    expect(msg).toContain('click into it');
+  });
+
+  it('names the Animator when only its draft is dirty', () => {
+    const msg = unsavedEditsMessage({ hasUnsavedScripts: false, hasUnsavedAnimatorDraft: true });
+    expect(msg).toContain('the Animator');
+    expect(msg).not.toContain('Code panel');
+    expect(msg).toContain('click into it');
+  });
+
+  it('names both panels when both are dirty, without implying a single target', () => {
+    const msg = unsavedEditsMessage({ hasUnsavedScripts: true, hasUnsavedAnimatorDraft: true });
+    expect(msg).toContain('the Code panel');
+    expect(msg).toContain('the Animator');
+    expect(msg).toContain('one of them');
+  });
+
+  it('never tells the user to save from the global shortcut itself (no auto-save promise)', () => {
+    const msg = unsavedEditsMessage({ hasUnsavedScripts: true, hasUnsavedAnimatorDraft: true })!;
+    expect(msg).not.toMatch(/automatically/i);
+  });
+});
+
+describe('the "save" keybind logs honestly based on dirty panel state', () => {
+  const save = KEYBINDS.find((b) => b.id === 'save')!;
+
+  it('claims autosave only when neither the Code panel nor the Animator is dirty', () => {
+    const { store, calls } = mockStore({ hasUnsavedScripts: false, hasUnsavedAnimatorDraft: false });
+    save.run(store);
+    expect(calls).toEqual([['log', 'info', 'editor', 'Your changes are saved automatically — no need to save.']]);
+  });
+
+  it('points at the Code panel instead of claiming autosave when a script buffer is dirty', () => {
+    const { store, calls } = mockStore({ hasUnsavedScripts: true, hasUnsavedAnimatorDraft: false });
+    save.run(store);
+    const [, , , msg] = calls[0];
+    expect(msg).toContain('the Code panel');
+    expect(msg).not.toMatch(/automatically/i);
+  });
+
+  it('points at the Animator instead of claiming autosave when its draft is dirty', () => {
+    const { store, calls } = mockStore({ hasUnsavedScripts: false, hasUnsavedAnimatorDraft: true });
+    save.run(store);
+    const [, , , msg] = calls[0];
+    expect(msg).toContain('the Animator');
+    expect(msg).not.toMatch(/automatically/i);
   });
 });

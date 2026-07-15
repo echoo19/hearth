@@ -187,6 +187,18 @@ export interface EditorState {
    */
   hasUnsavedScripts: boolean;
   /**
+   * Whether the Animator editor currently holds a dirty (unsaved) draft for
+   * the state-machine asset it has open. Published by AnimatorEditor while
+   * mounted (its `dirty` derivation is local state); reset on project
+   * change/close and when the panel unmounts. Like `hasUnsavedScripts`, the
+   * Animator is a deliberate non-autosave surface (ANIMATOR-4) with its own
+   * scoped mod+s save — this flag lets the *global* mod+s keybind give an
+   * honest "you have unsaved edits" message instead of claiming autosave
+   * when DOM focus is outside the Animator at keypress time (PANELS-1),
+   * rather than auto-saving from global scope (which stays out of bounds).
+   */
+  hasUnsavedAnimatorDraft: boolean;
+  /**
    * Bumped by `requestCloseProject()` when a close needs the user to confirm
    * discarding unsaved scripts. CodePanel watches it (and surfaces a confirm
    * dialog); Workspace reveals the Code panel on the same signal so the dialog
@@ -248,6 +260,8 @@ export interface EditorState {
   ): Promise<{ ok: boolean; error?: string }>;
   /** Publish whether the Code panel holds unsaved script buffers (see `hasUnsavedScripts`). */
   setUnsavedScripts(has: boolean): void;
+  /** Publish whether the Animator holds a dirty draft (see `hasUnsavedAnimatorDraft`). */
+  setUnsavedAnimatorDraft(has: boolean): void;
   /**
    * Close the project, but guard unsaved script buffers first: with dirty
    * scripts open, bump `closeProjectRequest` so the Code panel can confirm the
@@ -874,6 +888,7 @@ export const useEditor = create<EditorState>((set, get) => {
       snapshotTaken: false,
       sceneViewCenter: null,
       hasUnsavedScripts: false,
+      hasUnsavedAnimatorDraft: false,
       // A pending "open this script" request belongs to the project being left;
       // clearing it stops a stale request from re-opening the prior project's
       // script in the freshly-opened one when the Code panel remounts (L-058).
@@ -925,6 +940,7 @@ export const useEditor = create<EditorState>((set, get) => {
     codeSearchRequest: 0,
     animatorTarget: null,
     hasUnsavedScripts: false,
+    hasUnsavedAnimatorDraft: false,
     closeProjectRequest: 0,
 
     setAgentMode(mode) {
@@ -1108,6 +1124,10 @@ export const useEditor = create<EditorState>((set, get) => {
       if (get().hasUnsavedScripts !== has) set({ hasUnsavedScripts: has });
     },
 
+    setUnsavedAnimatorDraft(has) {
+      if (get().hasUnsavedAnimatorDraft !== has) set({ hasUnsavedAnimatorDraft: has });
+    },
+
     requestCloseProject() {
       if (get().hasUnsavedScripts) {
         set((state) => ({ closeProjectRequest: state.closeProjectRequest + 1 }));
@@ -1145,6 +1165,7 @@ export const useEditor = create<EditorState>((set, get) => {
         snapshotTaken: false,
         sceneViewCenter: null,
         hasUnsavedScripts: false,
+        hasUnsavedAnimatorDraft: false,
         codeOpenRequest: null,
       });
     },

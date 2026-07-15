@@ -70,10 +70,23 @@ export const KEYBINDS: Keybind[] = [
     group: 'General',
     when: 'always',
     // Intercept the browser's Save dialog; the project autosaves every change.
-    // The Code panel's own Mod-s keymap (CodeEditor.tsx, Prec.highest) owns
-    // this key while it has focus and does a real save there — see
-    // isTypingTarget's contentEditable guard below, which yields to it.
-    run: (s) => s.log('info', 'editor', 'Your changes are saved automatically — no need to save.'),
+    // The Code panel's own Mod-s keymap (CodeEditor.tsx, Prec.highest) and the
+    // Animator's own onKeyDownSave (AnimatorEditor.tsx) each own this key
+    // while DOM focus is inside their subtree and do a real save there — see
+    // isTypingTarget's contentEditable guard below, which yields to CodeMirror.
+    // When focus is elsewhere (e.g. another dock tab) this global handler is
+    // the one that fires instead, so it must not claim "no need to save"
+    // while either panel actually holds unsaved edits (PANELS-1) — it still
+    // never auto-saves them itself, since focus-scoped saving is deliberate.
+    run: (s) =>
+      s.log(
+        'info',
+        'editor',
+        unsavedEditsMessage({
+          hasUnsavedScripts: s.hasUnsavedScripts,
+          hasUnsavedAnimatorDraft: s.hasUnsavedAnimatorDraft,
+        }) ?? 'Your changes are saved automatically — no need to save.',
+      ),
   },
   {
     id: 'checkpoint',
@@ -272,6 +285,28 @@ export function comboDisplay(combo: string, mac: boolean = isMac): string {
   if (mods.has('shift')) seq.push('Shift');
   seq.push(label);
   return seq.join('+');
+}
+
+/**
+ * Honest copy for the global mod+s keybind (PANELS-1): when a Code-panel
+ * script buffer or an Animator draft is dirty, the global handler isn't
+ * "nothing to save" — it just isn't the thing that fires the real save
+ * (CodePanel / AnimatorEditor each claim mod+s locally while focus is inside
+ * their own subtree). Returns null when neither is dirty, so the caller
+ * falls back to the normal "saved automatically" line; never triggers a save
+ * itself — focus-scoped saving stays the deliberate design.
+ */
+export function unsavedEditsMessage(flags: {
+  hasUnsavedScripts: boolean;
+  hasUnsavedAnimatorDraft: boolean;
+}): string | null {
+  const panels: string[] = [];
+  if (flags.hasUnsavedScripts) panels.push('the Code panel');
+  if (flags.hasUnsavedAnimatorDraft) panels.push('the Animator');
+  if (panels.length === 0) return null;
+  const key = comboDisplay('mod+s');
+  const target = panels.length === 1 ? 'it' : 'one of them';
+  return `You have unsaved edits in ${panels.join(' and ')} — click into ${target} and press ${key} to save.`;
 }
 
 /**

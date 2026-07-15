@@ -82,6 +82,7 @@ export function AnimatorEditor() {
   const exec = useEditor((s) => s.exec);
   const animatorTarget = useEditor((s) => s.animatorTarget);
   const projectPath = useEditor((s) => s.projectPath);
+  const setUnsavedAnimatorDraft = useEditor((s) => s.setUnsavedAnimatorDraft);
 
   const stateMachineAssets = useMemo(() => assets.filter((a) => a.type === 'stateMachine'), [assets]);
   const animationAssets = useMemo(() => assets.filter((a) => a.type === 'animation'), [assets]);
@@ -160,6 +161,20 @@ export function AnimatorEditor() {
   const issues = draft ? draftIssues(draft) : [];
   const complete = draft ? isDraftComplete(draft) : false;
   const dirty = draft !== null && JSON.stringify(draftToDoc(draft)) !== loadedDoc;
+
+  // Publish dirty state to the store: PANELS-1 — the global mod+s keybind
+  // otherwise has no way to tell a dirty draft apart from a clean one when
+  // the keypress lands at the window level (DOM focus outside `.animator`,
+  // e.g. the user clicked another dock tab), and was logging "no need to
+  // save" while an edit sat unsaved on screen. Global mod+s still never
+  // auto-saves the draft itself — that stays scoped to `onKeyDownSave`
+  // below (ANIMATOR-4) — this only makes the fallback log message honest.
+  useEffect(() => {
+    setUnsavedAnimatorDraft(dirty);
+  }, [dirty, setUnsavedAnimatorDraft]);
+  useEffect(() => {
+    return () => setUnsavedAnimatorDraft(false);
+  }, [setUnsavedAnimatorDraft]);
 
   const canSave = !!draft && !saving && dirty && complete;
 
