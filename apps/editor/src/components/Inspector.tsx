@@ -32,6 +32,7 @@ import {
   instanceOverrideCount,
   revertAllConfirmBody,
   syncConfirmBody,
+  updatePrefabConfirmBody,
 } from '../prefabActions';
 import {
   isFieldOverridden,
@@ -334,6 +335,16 @@ function TileRowEditor({
   const assetId = autotile ? '' : (row.value as string);
   const missingAsset = !autotile && assetId !== '' && !imageAssets.some((a) => a.id === assetId);
   const canUseAutotile = autotile || sheetAssets.length > 0;
+  // Mode-switch memory (L-039): remember the last value each mode held so
+  // toggling sprite ↔ autotile and back restores the prior assignment
+  // instead of forcing a re-pick. Refs (not state) — they only matter at the
+  // moment of the switch, never for rendering.
+  const lastSpriteRef = useRef<string>('');
+  const lastAutotileRef = useRef<AutotileRule | null>(null);
+  useEffect(() => {
+    if (autotile) lastAutotileRef.current = row.value as AutotileRule;
+    else if (assetId !== '') lastSpriteRef.current = assetId;
+  }, [autotile, assetId, row.value]);
   const modeSelect = (
     <select
       className="select"
@@ -343,9 +354,17 @@ function TileRowEditor({
       onChange={(e) => {
         if (e.target.value === 'autotile') {
           if (sheetAssets.length === 0) return;
-          onWrite({ sheet: sheetAssets[0].id, template: 'blob47' });
+          // Restore the remembered rule if its sheet still exists.
+          const remembered = lastAutotileRef.current;
+          if (remembered && sheetAssets.some((a) => a.id === remembered.sheet)) {
+            onWrite(remembered);
+          } else {
+            onWrite({ sheet: sheetAssets[0].id, template: 'blob47' });
+          }
         } else {
-          onWrite('');
+          // Restore the remembered sprite if the asset still exists.
+          const remembered = lastSpriteRef.current;
+          onWrite(remembered && imageAssets.some((a) => a.id === remembered) ? remembered : '');
         }
       }}
     >
@@ -919,6 +938,9 @@ export function Inspector() {
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [confirmRemove, setConfirmRemove] = useState<string | null>(null);
   const [syncAllTarget, setSyncAllTarget] = useState<{ asset: string; count: number } | null>(null);
+  // "Update prefab" confirm (L-035): parked count + in-flight preflight marker.
+  const [updatePrefabTarget, setUpdatePrefabTarget] = useState<{ asset: string; count: number } | null>(null);
+  const [pendingUpdateFor, setPendingUpdateFor] = useState<string | null>(null);
   // "Sync all"'s instance-count preflight (countPrefabInstances) is a
   // multi-scene round-trip — while it's in flight the user can click Sync
   // all again or select a different entity. The token guards "no newer
@@ -938,6 +960,17 @@ export function Inspector() {
   const [prefabInfo, setPrefabInfo] = useState<EntityPrefabInfo | null>(null);
   const [confirmRevertAll, setConfirmRevertAll] = useState(false);
   const [revertingAll, setRevertingAll] = useState(false);
+  // L-036 (INSPSPEC-6): a structural edit (add/remove component) silently
+  // detaches a prefab instance — banner and badge just vanish, with the
+  // explanation buried in a Console line. Watch for the prefab marker
+  // disappearing while the SAME entity stays selected and surface a
+  // dismissible inline notice naming what happened. Cleared on selection
+  // change or dismiss.
+  const [detachNotice, setDetachNotice] = useState<{ prefabName: string } | null>(null);
+  const prevPrefabRef = useRef<{ selection: string | null; prefabAsset: string | null }>({
+    selection: null,
+    prefabAsset: null,
+  });
 
   // Collapsed component cards, persisted per project (keyed by component type
   // — see inspectorCollapse.ts). Reloaded when the open project changes.
@@ -956,6 +989,23 @@ export function Inspector() {
     () => scene?.entities.find((e) => e.id === selection),
     [scene, selection],
   );
+
+  // Detect a prefab detach on the selected entity (L-036): same selection,
+  // prefab marker went from set → gone. Capturing the OLD asset id lets the
+  // notice name the prefab even though the link no longer exists.
+  const entityPrefabAsset = entity?.prefab?.asset ?? null;
+  useEffect(() => {
+    const prev = prevPrefabRef.current;
+    if (prev.selection !== selection) {
+      setDetachNotice(null);
+    } else if (entity && prev.prefabAsset && entityPrefabAsset === null) {
+      const oldAsset = assets.find((a) => a.id === prev.prefabAsset);
+      setDetachNotice({ prefabName: oldAsset?.name ?? prev.prefabAsset });
+    }
+    prevPrefabRef.current = { selection, prefabAsset: entityPrefabAsset };
+    // `assets` is deliberately not a dep: it only names the notice.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selection, entityPrefabAsset, entity]);
 
   useEffect(() => {
     let cancelled = false;
@@ -1013,6 +1063,26 @@ export function Inspector() {
   // extra fields are the real runtime shape (schema/scene.ts EntitySchema).
   const instanceOverrides = (entity.prefab as { overrides?: RawPrefabOverride[] } | undefined)?.overrides ?? [];
   const overrideCount = instanceOverrideCount(instanceOverrides);
+
+  // "Update prefab" now confirms with its blast radius (INSPSPEC-5 / L-035),
+  // like its Sync/Revert-all neighbors — it's the broadest-blast action of
+  // the three (rewrites the shared asset every other instance reads). Same
+  // preflight-count + selection-still-current guard as openSyncAllConfirm.
+  const openUpdatePrefabConfirm = async () => {
+    if (!prefabAssetId) return;
+    const requestEntityId = entity.id;
+    setPendingUpdateFor(requestEntityId);
+    try {
+      const count = await countPrefabInstances(exec, info?.scenes.map((s) => s.id) ?? [], prefabAssetId);
+      if (selectionRef.current === requestEntityId) {
+        setUpdatePrefabTarget({ asset: prefabAssetId, count });
+      }
+    } catch (err) {
+      log('error', 'editor', `Could not count prefab instances: ${(err as Error).message}`);
+    } finally {
+      setPendingUpdateFor((id) => (id === requestEntityId ? null : id));
+    }
+  };
 
   const handleUpdatePrefab = async () => {
     if (!prefabAssetId) return;
@@ -1094,6 +1164,19 @@ export function Inspector() {
           />
         )}
       </div>
+      {!entity.prefab && detachNotice && (
+        <div className="code-conflict-banner" role="status">
+          <Icon name="warning" size={13} />
+          <span>
+            Detached from the “{detachNotice.prefabName}” prefab — adding or removing a component makes an
+            instance standalone. Undo restores the link.
+          </span>
+          <span style={{ flex: 1 }} />
+          <Button size="sm" onClick={() => setDetachNotice(null)}>
+            Dismiss
+          </Button>
+        </div>
+      )}
       {entity.prefab && (
         <div className="prefab-banner">
           <span className="prefab-banner-icon">
@@ -1113,8 +1196,12 @@ export function Inspector() {
               {revertingAll ? 'Reverting…' : 'Revert all'}
             </Button>
           )}
-          <Button size="sm" onClick={() => void handleUpdatePrefab()}>
-            Update prefab
+          <Button
+            size="sm"
+            disabled={pendingUpdateFor === entity.id}
+            onClick={() => void openUpdatePrefabConfirm()}
+          >
+            {pendingUpdateFor === entity.id ? 'Checking…' : 'Update prefab'}
           </Button>
           <Button
             size="sm"
@@ -1645,6 +1732,19 @@ export function Inspector() {
         onConfirm={() => {
           setConfirmRevertAll(false);
           void handleRevertAll();
+        }}
+      />
+      {/* L-035 (INSPSPEC-5): Update prefab confirms with its blast radius. */}
+      <ConfirmDialog
+        open={updatePrefabTarget !== null}
+        title="Update the shared prefab?"
+        body={updatePrefabConfirmBody(updatePrefabTarget?.count ?? 0)}
+        confirmLabel="Update prefab"
+        danger
+        onCancel={() => setUpdatePrefabTarget(null)}
+        onConfirm={() => {
+          setUpdatePrefabTarget(null);
+          void handleUpdatePrefab();
         }}
       />
     </>

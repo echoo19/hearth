@@ -60,6 +60,22 @@ export function revertAllConfirmBody(count: number): string {
 }
 
 /**
+ * Confirm-dialog copy for the banner's "Update prefab" (INSPSPEC-5 / L-035) —
+ * the broadest-blast prefab action (it rewrites the shared asset every other
+ * instance reads), so it names its blast radius like its Sync/Revert-all
+ * neighbors do. `count` is the total instance count across scenes, including
+ * the one being written from.
+ */
+export function updatePrefabConfirmBody(count: number): string {
+  const others = Math.max(0, count - 1);
+  const reach =
+    others === 0
+      ? 'No other instances exist right now, but anything instantiated later starts from the updated prefab.'
+      : `${others} other instance${others === 1 ? '' : 's'} read${others === 1 ? 's' : ''} this prefab and will follow the update (each keeps its own overrides).`;
+  return `Rewrites the shared prefab asset from this instance's current state. ${reach}`;
+}
+
+/**
  * Guards a countPrefabInstances preflight against races: AssetsPanel's
  * "Sync instances" and Inspector's "Sync all" both `await
  * countPrefabInstances(...)` (a multi-scene inspectScene round-trip) before
