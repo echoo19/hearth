@@ -1,5 +1,5 @@
 import React, { Suspense, lazy, useEffect, useMemo, useRef, useState } from 'react';
-import { getSheetFrames } from '@hearth/core';
+import { getSheetFrames, SOUND_PRESETS } from '@hearth/core';
 import { useEditor } from '../store';
 import { apiImportAssets, fileUrl } from '../api';
 import type { AssetItem } from '../types';
@@ -10,6 +10,7 @@ import { ContextMenu, type MenuItem } from './ui/Menu';
 import { frameCrop, parseFrameRef, readSheetSize } from '../assetPreview';
 import { countPrefabInstances, createSyncPreflight, syncConfirmBody } from '../prefabActions';
 import { collectDropEntries, entriesFromDataTransferItems } from '../dropEntries';
+import { CreateStateMachineDialog } from './CreateStateMachineDialog';
 
 /** One animation asset's resolved first-frame thumbnail (fetched from its
  * .anim.json), or null once we've tried and found nothing showable. */
@@ -53,6 +54,43 @@ function extensionOf(name: string): string {
 // scope, not a closure) so it's unit-testable without a DOM.
 export function isActivationKey(key: string): boolean {
   return key === 'Enter' || key === ' ';
+}
+
+/**
+ * Roving-tabindex grid navigation (L-047 / ASSETS-6): the index an arrow /
+ * Home / End keydown moves focus to, given the rendered card count and the
+ * grid's current column count. Left/Right step ±1 clamped at the ends;
+ * Up/Down step a whole row (Down from a full row above a shorter last row
+ * lands on the last card). Pure — exported for unit tests.
+ */
+export function gridNavIndex(
+  count: number,
+  columns: number,
+  current: number,
+  key: 'ArrowLeft' | 'ArrowRight' | 'ArrowUp' | 'ArrowDown' | 'Home' | 'End',
+): number {
+  if (count <= 0) return 0;
+  const cols = Math.max(1, columns);
+  const last = count - 1;
+  switch (key) {
+    case 'Home':
+      return 0;
+    case 'End':
+      return last;
+    case 'ArrowLeft':
+      return Math.max(0, current - 1);
+    case 'ArrowRight':
+      return Math.min(last, current + 1);
+    case 'ArrowUp':
+      return current - cols >= 0 ? current - cols : current;
+    case 'ArrowDown': {
+      if (current + cols <= last) return current + cols;
+      // On a row above a shorter final row: land on the last card. Already on
+      // the last row (nothing below): stay put.
+      const lastRowStart = Math.floor(last / cols) * cols;
+      return current >= lastRowStart ? current : last;
+    }
+  }
 }
 
 /** Search-filter predicate for the panel's name/type filter box — matches
@@ -186,14 +224,16 @@ export function AssetsPanel() {
   const [tSize, setTSize] = useState(32);
   const [tError, setTError] = useState<string | null>(null);
 
-  // state machine create dialog (T9-U3 bullet 4) — mirrors AnimatorEditor's
-  // own "New state machine" modal (not exported, so this is a local copy of
-  // the same seed-an-idle-state pattern).
+  // state machine create dialog — the shared CreateStateMachineDialog
+  // (T9-U8 unified this with AnimatorEditor's copy; it owns its own state).
   const [smDialog, setSmDialog] = useState(false);
-  const [smName, setSmName] = useState('');
-  const [smError, setSmError] = useState<string | null>(null);
-  const [smCreating, setSmCreating] = useState(false);
-  const animationAssets = useMemo(() => assets.filter((a) => a.type === 'animation'), [assets]);
+
+  // "+ Sound" create dialog (L-049 / ASSETS-9): name + preset over the
+  // engine's real createSound presets.
+  const [soundDialog, setSoundDialog] = useState(false);
+  const [sndName, setSndName] = useState('');
+  const [sndPreset, setSndPreset] = useState<string>(SOUND_PRESETS[0]);
+  const [sndError, setSndError] = useState<string | null>(null);
 
   // name/type filter (ASSETS-4)
   const [filterQuery, setFilterQuery] = useState('');
@@ -202,6 +242,23 @@ export function AssetsPanel() {
     () => assets.filter((a) => matchesAssetQuery(a, filterQuery)),
     [assets, filterQuery],
   );
+
+  // Arrow-key grid navigation (L-047): roving tabindex — one card is the tab
+  // stop, arrows/Home/End move DOM focus between cards. The column count is
+  // read from the grid's computed style at keydown time so it tracks panel
+  // resizes for free.
+  const gridRef = useRef<HTMLDivElement>(null);
+  const cardRefs = useRef<Map<string, HTMLDivElement>>(new Map());
+  function onCardNavKey(e: React.KeyboardEvent, index: number) {
+    const key = e.key as 'ArrowLeft' | 'ArrowRight' | 'ArrowUp' | 'ArrowDown' | 'Home' | 'End';
+    if (!['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Home', 'End'].includes(key)) return false;
+    e.preventDefault();
+    const grid = gridRef.current;
+    const columns = grid ? getComputedStyle(grid).gridTemplateColumns.split(' ').length : 1;
+    const target = filteredAssets[gridNavIndex(filteredAssets.length, columns, index, key)];
+    if (target) cardRefs.current.get(target.id)?.focus();
+    return true;
+  }
 
   // delete (ASSETS-1): a confirm step, then — on a referenced-by CONFLICT —
   // the command's own message surfaced verbatim in a second dialog rather
@@ -373,31 +430,21 @@ export function AssetsPanel() {
     }
   }
 
-  // "+ State machine" (T9-U3 bullet 4) — same seed-an-idle-state payload as
-  // AnimatorEditor's own in-panel create dialog (createStateMachineAsset
-  // requires >=1 state whose animation resolves to a real animation asset).
-  async function createStateMachine() {
-    const name = smName.trim();
-    const firstAnim = animationAssets[0];
-    if (!name || !firstAnim) return;
-    setSmCreating(true);
-    const result = await exec<{ assetId: string }>('createStateMachineAsset', {
-      name,
-      data: {
-        params: {},
-        states: [{ name: 'idle', animation: firstAnim.id, speed: 1 }],
-        initial: 'idle',
-        transitions: [],
-      },
+  // "+ Sound" (L-049): a procedural sound from the engine's createSound
+  // command — name + preset, nothing more (the seed stays the command's
+  // deterministic default so the editor and an agent produce identical audio).
+  async function createSound() {
+    const result = await exec<{ asset: { id: string } }>('createSound', {
+      name: sndName.trim(),
+      preset: sndPreset,
     });
-    setSmCreating(false);
-    if (result.success && result.data) {
-      setSmDialog(false);
-      setSmName('');
-      setSmError(null);
-      openAnimatorFor(result.data.assetId);
+    if (result.success) {
+      setSoundDialog(false);
+      setSndName('');
+      setSndError(null);
+      if (result.data) setSelectedAssetId(result.data.asset.id);
     } else {
-      setSmError(result.errors[0]?.message ?? 'Could not create the state machine.');
+      setSndError(result.errors[0]?.message ?? 'Could not create the sound.');
     }
   }
 
@@ -772,6 +819,9 @@ export function AssetsPanel() {
         <Button size="sm" icon="plus" onClick={() => setTileDialog(true)}>
           Tile
         </Button>
+        <Button size="sm" icon="plus" onClick={() => setSoundDialog(true)}>
+          Sound
+        </Button>
         <Button size="sm" icon="plus" onClick={() => setSmDialog(true)}>
           State machine
         </Button>
@@ -860,18 +910,29 @@ export function AssetsPanel() {
             </Button>
           </div>
         ) : (
-          <div className="asset-grid">
-            {filteredAssets.map((asset) => {
+          <div className="asset-grid" ref={gridRef}>
+            {filteredAssets.map((asset, index) => {
               const isSheet = asset.type === 'sprite' || asset.type === 'tile';
               const frameCount = isSheet ? getSheetFrames(asset).length : 0;
               const prefabEntityCount = asset.type === 'prefab' ? (asset.prefab?.entityCount ?? null) : null;
+              // Roving tabindex (L-047): the selected card is the grid's one
+              // tab stop (the first card when nothing is selected); arrows
+              // move focus between cards.
+              const tabbableId =
+                selectedAssetId && filteredAssets.some((a) => a.id === selectedAssetId)
+                  ? selectedAssetId
+                  : filteredAssets[0]?.id;
               return (
                 <div
                   key={asset.id}
+                  ref={(el) => {
+                    if (el) cardRefs.current.set(asset.id, el);
+                    else cardRefs.current.delete(asset.id);
+                  }}
                   className={`asset-card${selectedAssetId === asset.id ? ' selected' : ''}`}
                   role="button"
                   aria-pressed={selectedAssetId === asset.id}
-                  tabIndex={0}
+                  tabIndex={asset.id === tabbableId ? 0 : -1}
                   onClick={() => setSelectedAssetId(asset.id === selectedAssetId ? null : asset.id)}
                   onDoubleClick={() => {
                     // Always end up selected (never the select/deselect
@@ -886,6 +947,7 @@ export function AssetsPanel() {
                     setContextMenu({ asset, x: e.clientX, y: e.clientY, returnFocus: e.currentTarget });
                   }}
                   onKeyDown={(e) => {
+                    if (onCardNavKey(e, index)) return;
                     if (isActivationKey(e.key)) {
                       e.preventDefault();
                       setSelectedAssetId(asset.id === selectedAssetId ? null : asset.id);
@@ -1138,57 +1200,69 @@ export function AssetsPanel() {
         </Suspense>
       )}
 
-      {/* Create state machine (T9-U3 bullet 4) */}
+      {/* Create state machine — the shared dialog (T9-U8 unification) */}
+      <CreateStateMachineDialog open={smDialog} onClose={() => setSmDialog(false)} />
+
+      {/* Create sound (L-049): name + preset over the engine's real preset list */}
       <Modal
-        open={smDialog}
-        title="New state machine"
+        open={soundDialog}
+        title="Create procedural sound"
         onClose={() => {
-          setSmDialog(false);
-          setSmError(null);
+          setSoundDialog(false);
+          setSndError(null);
         }}
       >
         <div className="modal-body">
           <div className="form-field">
-            <label className="field-label">Name</label>
+            <label className="field-label" htmlFor="create-sound-name">
+              Name
+            </label>
             <input
-              className={`input${smError ? ' invalid' : ''}`}
-              value={smName}
+              id="create-sound-name"
+              className={`input${sndError ? ' invalid' : ''}`}
+              value={sndName}
               onChange={(e) => {
-                setSmName(e.target.value);
-                if (smError) setSmError(null);
+                setSndName(e.target.value);
+                if (sndError) setSndError(null);
               }}
               autoFocus
-              placeholder="courier-motion"
+              placeholder="coin-pickup"
             />
-            {smError && <span className="field-error">{smError}</span>}
+            {sndError && <span className="field-error">{sndError}</span>}
           </div>
-          {animationAssets.length === 0 ? (
-            <p className="animator-empty">
-              A state machine needs at least one animation asset to drive. Create an animation first, then come
-              back.
-            </p>
-          ) : (
-            <p className="animator-empty">
-              Seeds one “idle” state on “{animationAssets[0].name}”. Add params, states, and transitions after it
-              opens in the Animator.
-            </p>
-          )}
+          <div className="form-field">
+            <label className="field-label" htmlFor="create-sound-preset">
+              Preset
+            </label>
+            <select
+              id="create-sound-preset"
+              className="select"
+              value={sndPreset}
+              onChange={(e) => setSndPreset(e.target.value)}
+            >
+              {SOUND_PRESETS.map((p) => (
+                <option key={p} value={p}>
+                  {p}
+                </option>
+              ))}
+            </select>
+          </div>
+          <p className="animator-empty">
+            Generates a deterministic WAV — the same preset always sounds the same. Preview it from the new
+            card's play button.
+          </p>
         </div>
         <div className="modal-actions">
           <Button
             onClick={() => {
-              setSmDialog(false);
-              setSmError(null);
+              setSoundDialog(false);
+              setSndError(null);
             }}
           >
             Cancel
           </Button>
-          <Button
-            variant="primary"
-            disabled={!smName.trim() || animationAssets.length === 0 || smCreating}
-            onClick={() => void createStateMachine()}
-          >
-            {smCreating ? 'Creating…' : 'Create'}
+          <Button variant="primary" disabled={!sndName.trim()} onClick={() => void createSound()}>
+            Create sound
           </Button>
         </div>
       </Modal>

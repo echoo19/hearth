@@ -13,9 +13,10 @@ import type { CommandIssue, StateMachineData } from '@hearth/core';
 import { fileUrl } from '../api';
 import { useEditor } from '../store';
 import type { AssetItem } from '../types';
-import { ConfirmDialog, Icon, Modal, NumberField, TextField } from './ui';
+import { ConfirmDialog, Icon, NumberField, TextField } from './ui';
 import { Button, IconButton } from './ui/Button';
 import { Tooltip } from './ui/Tooltip';
+import { CreateStateMachineDialog } from './CreateStateMachineDialog';
 import {
   ANY_STATE,
   addCondition,
@@ -80,7 +81,6 @@ export function AnimatorEditor() {
   const assets = useEditor((s) => s.assets);
   const exec = useEditor((s) => s.exec);
   const animatorTarget = useEditor((s) => s.animatorTarget);
-  const openAnimatorFor = useEditor((s) => s.openAnimatorFor);
   const projectPath = useEditor((s) => s.projectPath);
 
   const stateMachineAssets = useMemo(() => assets.filter((a) => a.type === 'stateMachine'), [assets]);
@@ -104,11 +104,9 @@ export function AnimatorEditor() {
   // section to expand + scroll to that source's group (cheap navigation, no
   // graph canvas). The nonce lets the same group be re-focused repeatedly.
   const [groupFocus, setGroupFocus] = useState<{ from: string; nonce: number } | null>(null);
-  // ANIMATOR-3: in-editor "New state machine" create dialog.
+  // ANIMATOR-3: in-editor "New state machine" create dialog — the shared
+  // CreateStateMachineDialog (unified with AssetsPanel's copy, T9-U8).
   const [createOpen, setCreateOpen] = useState(false);
-  const [newName, setNewName] = useState('');
-  const [creating, setCreating] = useState(false);
-  const [createErrors, setCreateErrors] = useState<CommandIssue[]>([]);
   // The asset id whose document is currently mirrored in `draft`. Guards the
   // load effect from clobbering in-progress edits when an unrelated refresh
   // (e.g. the post-save refresh) hands us a new `assets` array.
@@ -237,93 +235,8 @@ export function AnimatorEditor() {
     }
   }
 
-  // ANIMATOR-3: create a new state-machine asset from the editor itself. The
-  // schema requires ≥1 state whose animation resolves to a real animation
-  // asset, so we seed a single `idle` state on the first available animation.
-  async function createMachine() {
-    const name = newName.trim();
-    const firstAnim = animationAssets[0];
-    if (!name || !firstAnim) return;
-    setCreating(true);
-    const result = await exec<{ assetId: string }>('createStateMachineAsset', {
-      name,
-      data: {
-        params: {},
-        states: [{ name: 'idle', animation: firstAnim.id, speed: 1 }],
-        initial: 'idle',
-        transitions: [],
-      },
-    });
-    setCreating(false);
-    if (result.success && result.data) {
-      setCreateOpen(false);
-      setNewName('');
-      setCreateErrors([]);
-      openAnimatorFor(result.data.assetId);
-    } else {
-      setCreateErrors(result.errors);
-    }
-  }
-
-  const createDialog = (
-    <Modal
-      open={createOpen}
-      title="New state machine"
-      onClose={() => {
-        setCreateOpen(false);
-        setCreateErrors([]);
-      }}
-    >
-      <div className="modal-body">
-        <div className="form-field">
-          <label className="field-label" htmlFor="animator-new-name">
-            Name
-          </label>
-          <input
-            id="animator-new-name"
-            className="input"
-            value={newName}
-            onChange={(e) => setNewName(e.target.value)}
-            autoFocus
-            placeholder="courier-motion"
-          />
-        </div>
-        {animationAssets.length === 0 ? (
-          <p className="animator-empty">
-            A state machine needs at least one animation asset to drive. Create an animation first, then come back.
-          </p>
-        ) : (
-          <p className="animator-empty">
-            Seeds one “idle” state on “{animationAssets[0].name}”. Add params, states, and transitions after it opens.
-          </p>
-        )}
-        {createErrors.length > 0 && (
-          <div className="export-errors" role="alert">
-            {createErrors.map((e, i) => (
-              <p key={i}>{e.message}</p>
-            ))}
-          </div>
-        )}
-      </div>
-      <div className="modal-actions">
-        <Button
-          onClick={() => {
-            setCreateOpen(false);
-            setCreateErrors([]);
-          }}
-        >
-          Cancel
-        </Button>
-        <Button
-          variant="primary"
-          disabled={!newName.trim() || animationAssets.length === 0 || creating}
-          onClick={() => void createMachine()}
-        >
-          {creating ? 'Creating…' : 'Create'}
-        </Button>
-      </div>
-    </Modal>
-  );
+  // The shared "New state machine" dialog (owns its own name/error state).
+  const createDialog = <CreateStateMachineDialog open={createOpen} onClose={() => setCreateOpen(false)} />;
 
   // -------------------------------------------------------------------------
   // Empty / loading states
@@ -875,17 +788,14 @@ function TransitionCard({
             />
             <span>Exit time</span>
             {t.exitTime !== undefined && (
-              <input
-                className="input"
-                type="number"
+              // The standard commit-on-blur/Enter field idiom (L-088): an
+              // out-of-range or non-numeric draft reverts with the shared
+              // rejection cue instead of being live-clamped mid-keystroke.
+              <NumberField
+                value={t.exitTime}
                 min={0}
                 max={1}
-                step={0.05}
-                value={t.exitTime}
-                onChange={(e) => {
-                  const v = Number(e.target.value);
-                  update((d) => setTransitionExitTime(d, ti, Number.isFinite(v) ? Math.min(1, Math.max(0, v)) : 0));
-                }}
+                onCommit={(v) => update((d) => setTransitionExitTime(d, ti, v))}
               />
             )}
           </label>
