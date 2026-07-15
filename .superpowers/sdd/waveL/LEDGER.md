@@ -388,7 +388,7 @@ high) though it borders on a defect (values unreadable).
 - Expected: gray out/relabel Debug on the Scene tab, or wire it to the Scene
   gizmo layer so "Debug" means one thing across tabs.
 - Source: SCENEVIEW-2
-- Disposition: by-design a8220f5 (scoped honestly: SceneView renders authoring gizmos — collider/light/particle/camera — unconditionally; Debug governs the Game runtime overlay. A true Scene debug-draw layer isn't "cheap via existing debugDraw data" — debugDraw is a bare boolean, the geometry would duplicate physics/collider rendering — and the toolbar relabel/disable lives in Toolbar.tsx/appMenu.ts, outside this file's serialized scope. Flagged for the Toolbar owner to relabel Debug on the Scene tab.)
+- Disposition: by-design a8220f5 (scoped honestly: SceneView renders authoring gizmos — collider/light/particle/camera — unconditionally; Debug governs the Game runtime overlay. A true Scene debug-draw layer isn't "cheap via existing debugDraw data" — debugDraw is a bare boolean, the geometry would duplicate physics/collider rendering — and the toolbar relabel/disable lives in Toolbar.tsx/appMenu.ts, outside this file's serialized scope. Flagged for the Toolbar owner to relabel Debug on the Scene tab.) · Handoff resolved b2d701b (L-028, from B4): the toolbar Debug button was folded into the View menu during the T6 toolbar rework, so the honest-scope fix landed there — the View menu's "Debug overlay" item is relabeled "Game view overlay", naming exactly what it governs (the Game runtime overlay) and no longer implying a Scene effect. Existing `debug-overlay` id/checkbox tests unaffected (they key on id, not label).
 
 ### L-029 · sceneview · friction · low
 - Element: move/resize drag vs. the always-drawn 32px grid.
@@ -836,7 +836,10 @@ high) though it borders on a defect (values unreadable).
 - Repro (headless, port 5320, Changes tab focused): Checkpoint → diff refreshes
   with no manual Refresh; move an entity, Undo → diff body updates immediately
   (was: stale until a manual Refresh / tab blur). Editor suite + typecheck green.
-- Disposition: fixed 9aebc72
+- Disposition: fixed 62c8e13 (the store.ts fix — `checkpoint()`'s `refreshDiff`,
+  `refreshDiffIfTracking()`, and undo/redo call sites — landed here; the
+  follow-up 9aebc72 only migrated DiffPanel's own Undo/Redo/Checkpoint buttons
+  to delegate to those shared store actions)
 
 ### L-061 · console-changes · defect · med
 - Element: Console error entry for a script load failure at scene start/Play.
@@ -926,7 +929,21 @@ high) though it borders on a defect (values unreadable).
   signal when Play stops from a tab switch; ideally don't couple hot-reload to
   Game-tab visibility.
 - Source: PLAYMODE-2, CONSOLE-CHANGES-7
-- Disposition: open
+- Disposition: fixed 2bed8fa (PAUSE semantics, not Stop: `GamePanelHost` now
+  drives `setGameTabVisible` — hiding the Game tab sets `paused: true`
+  (halting rAF/audio via the existing debug-pause path) while keeping
+  `playing: true`, so the run and all its state survive; showing the tab
+  auto-resumes UNLESS the user had explicitly paused first (a new
+  `pausedByTab` flag tracks pause ownership, cleared by any explicit
+  setPaused/Play/Stop/restart). Because `playing` stays true, the
+  hot-reload-on-save path (`if (get().playing)`) is now reachable from the
+  default tab stack: Play → Code → edit → save → back to Game resumes with
+  new code and preserved state, no manual Code-tab split. Toolbar transport is
+  honest for free — the tab-pause flips the same `paused` the Pause/Resume
+  button reads. Store state-machine pinned by `playModeSession.test.ts` (6
+  tests: pause-not-stop, auto-resume, explicit-pause preserved across
+  hide/show, explicit-resume ownership, no-op when stopped, Play/Stop clear).
+  Chip feedback for the paused state added under L-070.)
 
 ### L-068 · playmode-live · friction · med
 - Element: Game-preview frame pacing under load (ember-horde, 300 enemies).
@@ -957,7 +974,13 @@ high) though it borders on a defect (values unreadable).
   can read as a hang/crash.
 - Expected: a subtle "PAUSED" overlay/border tint while debug-paused.
 - Source: PLAYMODE-3
-- Disposition: open
+- Disposition: fixed 18d04d6 (GamePreview renders a subtle warn-toned "Paused"
+  chip (pause glyph + label) in the Game view top-right corner whenever
+  `paused && playing`, so a frozen frame no longer reads as a hang. Covers
+  both the toolbar debug pause and the new tab-hidden pause (L-067), since both
+  drive the same `paused` flag. Design-token styled (`--warn`/`--warn-soft`,
+  `--radius-sm`, `--text-xs`); positioned opposite the scene badge so they
+  don't collide; `pointer-events: none`.)
 
 ## input
 
@@ -1706,3 +1729,46 @@ contention with T8 once B1–B7 land)
 - Expected: field edits on prefab instances record overrides with revert affordance (Wave I behavior).
 - Source: T7 report
 - Disposition: open
+
+### L-114 · electron · defect · med
+- Element: Electron native window-close (window title-bar close button, Cmd+Q,
+  `app` before-quit) vs. the editor's unsaved-script guard.
+- Observed: the in-app "Close project" menu routes through
+  `requestCloseProject()`, which confirms discarding dirty Code-panel buffers
+  before closing (L-058). A native window close or Cmd+Q bypasses that path
+  entirely — the renderer is torn down with no `beforeunload`/close-intercept —
+  so unsaved script edits (the one non-autosave surface) are silently lost with
+  no confirm. The web build has the same gap via the tab close/refresh, but the
+  packaged desktop app is where a window-close feels like a safe, routine action.
+- Expected: intercept the native close (Electron `win.on('close')` +
+  `app.on('before-quit')`, and a renderer `beforeunload`) to run the same
+  unsaved-scripts confirm before the window is destroyed, including the Cmd+Q
+  quit-all path.
+- Source: B5 follow-up review (dispatch T8-B5)
+- Disposition: deferred-M (needs a native close-intercept design spanning the
+  Electron main process (`win.on('close')` / `app.on('before-quit')`, which must
+  round-trip to the renderer to read `hasUnsavedScripts` and show the dialog
+  before allowing the destroy) AND the Cmd+Q quit-all case — out of scope for a
+  renderer-only console/store fix batch; belongs with an Electron-shell task)
+
+### L-115 · console-changes · defect · low
+- Element: cross-process undo-history race — a CLI/MCP agent running in a
+  SEPARATE process concurrently with the editor, both mutating the same
+  project's undo history.
+- Observed: this batch serializes mutating dispatch at two IN-PROCESS layers —
+  the editor store chains undo/redo (queueHistoryOp), and the editor server
+  holds a per-project async mutex over mutating `/api/command` dispatch
+  (projectServer.ts `withMutationLock`). Neither reaches a `hearth` CLI or MCP
+  server running as its own OS process: those hold no share of the server mutex,
+  so an external `hearth undo` interleaving with an editor undo can still race
+  the on-disk history cursor / journal seq (the pre-existing dup-journal-seq
+  tail item — getSession already has a self-healing reload for external edits,
+  but no cross-process WRITE lock).
+- Expected: a cross-process advisory lock (e.g. an OS file lock on
+  `.hearth/history/index.json`) so any process serializes its history
+  read-modify-write. Explicitly NOT attempted here — cross-process locking is a
+  distinct mechanism from the in-process promise chains and warrants its own
+  design.
+- Source: B5 follow-up review (dispatch T8-B5); pre-existing
+- Disposition: deferred-M (pre-existing; out of scope — in-process
+  serialization landed this batch, cross-process locking is a separate task)
