@@ -198,7 +198,7 @@ high) though it borders on a defect (values unreadable).
 - Expected: reject/auto-suffix duplicate renames (or stop uniquifying on
   create) — one consistent invariant.
 - Source: HIER-4
-- Disposition: fixed 5a9e079 (renameEntity auto-suffixes a colliding rename, matching the create/instantiate uniqueness invariant)
+- Disposition: fixed 5a9e079 (renameEntity auto-suffixes a colliding rename, matching the create/instantiate uniqueness invariant) · 6a7d9d1 (editor cue: the Hierarchy now logs a one-line console info — `Renamed to "X 2" — "X" is already taken.` — when a rename settles to a different name than typed, so the auto-suffix isn't silent. Live-verified: renaming a row to "Main Camera" settled to "Main Camera 2".)
 
 ### L-012 · hierarchy · defect · med
 - Element: "Save as prefab" on rows that are already prefab instances.
@@ -229,7 +229,17 @@ high) though it borders on a defect (values unreadable).
   is purely a missing UI affordance; table stakes vs. Unity/Godot/Unreal.
 - Expected: drag-to-reparent in the Hierarchy.
 - Source: HIER-2
-- Disposition: open
+- Disposition: fixed 6a7d9d1 (rows are draggable; drop ON a row reparents into
+  it via moveEntity, drop on the panel background reparents to scene root.
+  Drop-into highlight, a UI cycle-guard that refuses self/own-subtree drops
+  before the drop, hover-dwell auto-expand of a collapsed target, and
+  Escape/dragend clearing all drag state. Prefab-instance detach warnings ride
+  moveEntity's own console output. Command GAP: moveEntity exposes no ordering
+  (index) param, so between-rows sibling REORDER is not implemented — every
+  drop reparents; reorder needs a core-command change. Inspector Parent
+  dropdown remains as the keyboard-only reparent path. Live-verified in
+  ember-horde: reparent, into-collapsed dwell-expand, drop-into highlight,
+  Escape-cancel.)
 
 ### L-015 · hierarchy · friction · med
 - Element: Delete/Backspace keybind vs. row trash button.
@@ -238,7 +248,13 @@ high) though it borders on a defect (values unreadable).
   about exactly that. Two different deletion contracts.
 - Expected: one deletion contract (both confirm, or neither).
 - Source: HIER-3
-- Disposition: open
+- Disposition: fixed a5e733f (the Delete/Backspace keybind now bumps a
+  `deleteSelectionRequest` counter instead of calling deleteSelection()
+  directly; the Hierarchy observes it and opens the SAME ConfirmDialog as the
+  row trash button. Both paths confirm. Live-verified: Delete on a selected row
+  opens "Delete "…"?". Note: the dialog is Hierarchy-owned, so a keyboard delete
+  while the Hierarchy panel is closed is a no-op rather than a silent delete —
+  an acceptable trade for one honest contract.)
 
 ### L-016 · hierarchy · friction · med
 - Element: tree keyboard navigation.
@@ -248,7 +264,13 @@ high) though it borders on a defect (values unreadable).
   entities).
 - Expected: roving tabindex, arrow nav, Left/Right expand-collapse, F2 rename.
 - Source: HIER-5
-- Disposition: open
+- Disposition: fixed 6a7d9d1 (roving tabindex — only the selected row (or first
+  row) is a tab stop, action buttons are tabIndex=-1; ArrowUp/Down move
+  selection, ArrowRight expands then steps into, ArrowLeft collapses then steps
+  out to the parent, Home/End jump to the ends, F2 opens rename. Also closes
+  HIER-12: rows now expose aria-level and aria-expanded. Nav logic is a pure
+  `treeNav` helper with unit tests. Live-verified: arrow nav + collapse/expand
+  in ember-horde.)
 
 ### L-017 · hierarchy · friction · med
 - Element: row selection — multi-select.
@@ -270,7 +292,11 @@ high) though it borders on a defect (values unreadable).
 - Observed: right-click shows nothing; all row ops live in the hover cluster.
 - Expected: right-click menu mirroring row actions.
 - Source: HIER-10
-- Disposition: open
+- Disposition: fixed 6a7d9d1 (right-click on a row opens a ContextMenu — a new
+  cursor-anchored primitive in components/ui/Menu.tsx reusing MenuItems +
+  dismiss contracts — with Rename / Duplicate / New child entity / Save as
+  prefab / Delete (danger). Right-click on empty panel area offers New entity.
+  Live-verified both in ember-horde.)
 
 ### L-020 · hierarchy · friction · low
 - Element: tree contents during play mode.
@@ -286,7 +312,9 @@ high) though it borders on a defect (values unreadable).
 - Observed: hovering an entity name shows the raw internal id (`ent_7ltyzbrz`).
 - Expected: show the (truncated) name; ids belong in the Inspector header.
 - Source: HIER-11
-- Disposition: open
+- Disposition: fixed 6a7d9d1 (`.tree-name` title is now `entity.name` — useful
+  when the name is truncated with ellipsis; the id stays an Inspector/CLI
+  concern. Live-verified: hovering a row shows "Main Camera", not `ent_…`.)
 
 ### L-022 · hierarchy · polish · low
 - Element: Delete confirm dialog — initial focus.
@@ -911,7 +939,12 @@ high) though it borders on a defect (values unreadable).
   asset's type — a hard, silent capability gap vs. the rest of the editor.
 - Expected: both pickers accept `sprite || tile`, matching Inspector parity.
 - Source: GAMESETTINGS-2 (Wave-K: "tile-in-pickers")
-- Disposition: open
+- Disposition: fixed (T8-B7) — `spriteAssets()` now filters
+  `a.type === 'sprite' || a.type === 'tile'`, matching Inspector's assetId
+  pickers exactly; both the Loading→Image and Shipping→Icon pickers list
+  tile-typed assets. Updated `gameSettingsEdit.test.ts`'s picker-options test
+  (now asserts `['hero', 'ground', 'logo']` incl. the tile asset) plus a new
+  exclusion test for non-image kinds. File: GameSettings.tsx.
 
 ### L-075 · gamesettings · friction · med
 - Element: `.panel-body` (Window/Loop/Loading/Shipping sections).
@@ -921,7 +954,12 @@ high) though it borders on a defect (values unreadable).
   no scroll-shadow/fade cue.
 - Expected: a scroll affordance so the below-fold content is discoverable.
 - Source: GAMESETTINGS-6
-- Disposition: open
+- Disposition: fixed (T8-B7) — added a `game-settings-body` class (on top of
+  the shared, already-scrolling `.panel-body`) with a CSS-only scroll-shadow
+  (two `background-attachment: local/scroll` gradient pairs) that fades in a
+  dark edge at top/bottom whenever there's more content in that direction, no
+  JS scroll listener. New file `styles/panels/gamesettings.css`, imported
+  from styles.css. File: GameSettings.tsx.
 
 ### L-076 · gamesettings · friction · low
 - Element: Loading→Image picker vs. Shipping→Icon picker thumbnails.
@@ -951,7 +989,13 @@ high) though it borders on a defect (values unreadable).
   user skimming headers sees two unrelated panels both titled "Game".
 - Expected: the in-panel header should read "Game Settings" to match its tab.
 - Source: GAMESETTINGS-1 (Wave-K: "'Game' panel header")
-- Disposition: open
+- Disposition: fixed (T8-B7) — both `.panel-header` renders (the mounted
+  panel and the `!info` "No project open" branch) now read "Game Settings",
+  matching the dockview tab/View-menu title. `PANEL_TITLES.gameSettings` in
+  Workspace.tsx was already `'Game Settings'` (no change needed there — only
+  the component's own hardcoded header string was wrong). Also fixed the
+  empty-state icon while in this branch (see L-079 below — same lines).
+  File: GameSettings.tsx.
 
 ### L-079 · gamesettings · polish · low
 - Element: `if (!info)` "No project open" branch (`GameSettings.tsx:193-207`).
@@ -962,7 +1006,13 @@ high) though it borders on a defect (values unreadable).
 - Expected: confirm intent (harmless dead code) or fix the icon/header if a
   real path hits it.
 - Source: GAMESETTINGS-8
-- Disposition: open
+- Disposition: fixed (T8-B7) — fixed the icon/header as a byproduct of
+  L-078's header fix (same branch, same edit): header now reads
+  "Game Settings"; the "run" `play` glyph swapped for `grid` (the settings
+  glyph this editor already uses for the `updateSettings` command in
+  Timeline.tsx's `commandIcon`) — no new icon added since ui.tsx is
+  off-limits this wave. Left as still-unreachable defensive code (not worth
+  deleting outside this wave's scope). File: GameSettings.tsx.
 
 ## animator
 
@@ -1132,7 +1182,14 @@ high) though it borders on a defect (values unreadable).
 - Expected: disable (or confirm) the primary action and the launcher/mode
   selects whenever `agent.session.status === 'running'`.
 - Source: AGENT-1
-- Disposition: open
+- Disposition: fixed (T8-B7) — new pure `startDisabledReason(running,
+  projectPath)` gates the Start/Open-Terminal button (disable+reason,
+  "Stop the current session first." takes precedence over the no-project
+  reason); the launcher and mode `<select>`s are now also disabled while
+  running (new `DisabledHint` wrapper — Tooltip + focusable span, mirroring
+  Inspector.tsx's disabledReason pattern — surfaces the reason since a
+  disabled native control doesn't reliably show its own hover tooltip).
+  Unit-tested in `agentPanelGuards.test.ts`. File: AgentPanel.tsx.
 
 ### L-090 · agent · defect · med
 - Element: "Restore checkpoint" disabled state vs. the live Timeline feed.
@@ -1146,7 +1203,15 @@ high) though it borders on a defect (values unreadable).
   trigger that already updates the Timeline), or don't imply the two are in
   sync.
 - Source: AGENT-2
-- Disposition: open
+- Disposition: fixed (T8-B7) — store.ts's WS `onmessage` handler now calls
+  the existing `refreshDiffIfTracking()` (already used by undo/redo, L-060)
+  right after mirroring external journal entries, so "Restore checkpoint"
+  updates within the same tick the Timeline row appears — only when a
+  baseline is actually tracked (checkpoint taken this session or a diff
+  already on screen), same guard as the undo/redo call sites, so it doesn't
+  spam a "no checkpoint" diffProject call on every external command when
+  nothing is being tracked. New test `agentDiffRefresh.test.ts` drives the
+  real store against a fake WS socket. File: store.ts.
 
 ### L-091 · agent · friction · med
 - Element: permission-mode `<select>` (Read-only / Safe edit / Full / All).
@@ -1158,7 +1223,12 @@ high) though it borders on a defect (values unreadable).
 - Expected: disable/hide the mode picker for non-Claude launchers, or mark it
   informational-only there.
 - Source: AGENT-3
-- Disposition: open
+- Disposition: fixed (T8-B7) — new pure `modePickerDisabledReason(launcher)`
+  returns null for `claude`, a reason string for `codex`/`shell`; the mode
+  `<select>` is disabled with that reason (via the same `DisabledHint`
+  wrapper as AGENT-1) whenever it's inert OR a session is running. Kept
+  fully enabled (with the existing visible-text hint, no redundant tooltip)
+  for Claude. Unit-tested in `agentPanelGuards.test.ts`. File: AgentPanel.tsx.
 
 ### L-092 · agent · friction · med
 - Element: "Manual setup" MCP code blocks (`mcpClaudeBlock`, `mcpJsonBlock`).
@@ -1241,7 +1311,17 @@ high) though it borders on a defect (values unreadable).
 - Expected: `onCancel` also checks `jobRunning` (mirroring the Cancel button),
   or make clear Escape still works.
 - Source: EXPORTDIALOG-1
-- Disposition: open
+- Disposition: fixed (T8-B7) — ExportDialog.tsx now passes its own
+  `guardedClose` (not the raw `onClose` prop) into `Modal`'s `onClose`, which
+  Modal wires to both the `<dialog>`'s `cancel` and `close` events; when a
+  desktop job is running it calls `event.preventDefault()` on the native
+  event instead of the real `onClose` — necessary because Escape's default
+  action closes a `<dialog>` regardless of whether the app calls its own
+  close callback, so skipping the callback alone isn't enough. Decision
+  pulled to a pure, exported `blocksDialogCancel(jobRunning)`, unit-tested in
+  new `exportDialogGuard.test.ts` (the DOM-facing preventDefault plumbing
+  itself isn't testable — no jsdom/RTL in this repo). No Modal (ui.tsx)
+  changes needed. File: ExportDialog.tsx.
 
 ## launcher
 
@@ -1276,7 +1356,12 @@ high) though it borders on a defect (values unreadable).
   on a slow filesystem the user gets no feedback anything is happening.
 - Expected: swap in "Creating…"/"Opening…" (or an inline spinner) while busy.
 - Source: LAUNCHER-2
-- Disposition: open
+- Disposition: fixed (T8-B7) — replaced the plain `busy` boolean with a
+  `busyAction: 'create' | 'open' | null` (derived `busy = busyAction !==
+  null` keeps every existing disabled check unchanged); new pure
+  `launcherButtonLabel(action, kind, idleLabel)` swaps "Create project" →
+  "Creating…" / "Open" → "Opening…" only for the button matching the
+  in-flight action. Unit-tested in `launcher.test.ts`. File: Launcher.tsx.
 
 ### L-103 · launcher · polish · low
 - Element: Recent/Examples rows — full path only via native `title`.
