@@ -305,6 +305,62 @@ describe('getSession self-healing (no websocket/watcher involved)', () => {
   });
 });
 
+/**
+ * B5 follow-up (undo/redo serialization, server layer): a mutating command
+ * dispatch is a read-modify-write on the per-project undo cursor. Two clients
+ * (the editor and an embedded agent CLI) hitting /api/command concurrently —
+ * or a single client mashing ⌘Z — must not interleave that read-modify-write.
+ * runCommand serializes mutating dispatches per project root through an async
+ * mutex; read-only commands stay concurrent.
+ */
+describe('per-project mutation mutex (concurrent undo/redo)', () => {
+  let projectPath: string;
+  let sceneId: string;
+
+  beforeAll(async () => {
+    const created = await ctx.createNewProject(path.join(tmpDir, 'projects'), 'Mutex Game');
+    projectPath = (created.body as { path: string }).path;
+    const info = await ctx.runCommand(projectPath, 'inspectProject', {});
+    sceneId = (info.body as { data: { scenes: { id: string }[] } }).data.scenes[0].id;
+  });
+
+  async function entityCount(): Promise<number> {
+    const scene = await ctx.runCommand(projectPath, 'inspectScene', { scene: sceneId, full: true });
+    return (scene.body as { data: { entities: unknown[] } }).data.entities.length;
+  }
+
+  it('serializes concurrent undo requests so none are lost (ordering probe)', async () => {
+    const baseline = await entityCount();
+
+    // Build six discrete history steps (each createEntity is one undoable entry).
+    const N = 6;
+    for (let i = 0; i < N; i++) {
+      const r = await ctx.runCommand(projectPath, 'createEntity', { scene: sceneId, name: `MutexEnt${i}` });
+      expect((r.body as { success: boolean }).success).toBe(true);
+    }
+    expect(await entityCount()).toBe(baseline + N);
+
+    // Fire all six undos AT ONCE. Without the mutex these interleave on the
+    // shared session + history cursor and duplicate/lose steps; with it they
+    // run strictly in dispatch order, undoing the newest entry first.
+    const results = await Promise.all(
+      Array.from({ length: N }, () => ctx.runCommand(projectPath, 'undo', {})),
+    );
+
+    const seqs = results.map((r) => (r.body as { success: boolean; data: { seq: number } }));
+    expect(seqs.every((s) => s.success)).toBe(true);
+    const seqNums = seqs.map((s) => s.data.seq);
+    // Distinct + strictly descending in array (= dispatch) order — the ordering
+    // probe: a raced dispatch would repeat a seq or return them out of order.
+    expect(new Set(seqNums).size).toBe(N);
+    const sortedDesc = [...seqNums].sort((a, b) => b - a);
+    expect(seqNums).toEqual(sortedDesc);
+
+    // All six steps came back off; the scene is at its pre-edit baseline.
+    expect(await entityCount()).toBe(baseline);
+  });
+});
+
 describe('misc endpoints', () => {
   it('examples returns an empty list when packages/examples is missing', async () => {
     const result = await ctx.exampleProjects();

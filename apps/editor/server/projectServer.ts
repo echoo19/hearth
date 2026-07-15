@@ -21,6 +21,7 @@ import { randomUUID } from 'node:crypto';
 import { promises as fsp, accessSync } from 'node:fs';
 import {
   HearthSession,
+  getCommand,
   createProject,
   slugify,
   PERMISSION_MODES,
@@ -256,6 +257,32 @@ export function createProjectServerContext(options: ProjectServerOptions = {}) {
   // The on-disk journal seq each cached session had seen, last time we
   // checked or updated it — see getSession's self-healing reload below.
   const seenSeq = new Map<string, number>();
+  // Per-project mutation mutex. A mutating command dispatch (open/reopen the
+  // session → session.execute → sync the seen seq) is a read-modify-write on
+  // shared per-project state — the undo-history cursor most acutely: undo/redo
+  // read a `before` snapshot and advance index.json, so two dispatches that
+  // interleave at an await point lose steps (the exact "rapid ⌘Z drops undos"
+  // defect, and its cross-client twin: the editor and an embedded agent CLI
+  // both POSTing /api/command at once). Chaining every mutating dispatch for a
+  // given root through one promise serializes them; read-only commands skip the
+  // lock and stay concurrent. In-process only — a CLI/MCP agent in a SEPARATE
+  // process shares no part of this lock (that cross-process history race is the
+  // pre-existing dup-journal-seq tail item, out of scope here).
+  const mutationLocks = new Map<string, Promise<unknown>>();
+  function withMutationLock<T>(root: string, task: () => Promise<T>): Promise<T> {
+    const prev = mutationLocks.get(root) ?? Promise.resolve();
+    // Run after the current tail regardless of its outcome; keep the chain
+    // alive past a rejection so one failed dispatch doesn't wedge the queue.
+    const run = prev.then(task, task);
+    const tail = run.catch(() => undefined);
+    mutationLocks.set(root, tail);
+    // Drop the entry once this dispatch is the tail, so the map doesn't grow
+    // one permanent promise per project touched this session.
+    void tail.then(() => {
+      if (mutationLocks.get(root) === tail) mutationLocks.delete(root);
+    });
+    return run;
+  }
   const recentsFile =
     options.recentsFile ?? path.join(os.homedir(), '.hearth', 'recent-projects.json');
   const repoRoot = options.repoRoot ?? findRepoRoot(process.cwd());
@@ -432,18 +459,28 @@ export function createProjectServerContext(options: ProjectServerOptions = {}) {
     if (typeof name !== 'string' || name.trim() === '') {
       return { status: 200, body: errorEnvelope('(unknown)', 'NO_COMMAND', 'Missing command name.') };
     }
-    let session: HearthSession;
-    try {
-      session = await getSession(project);
-    } catch (err) {
-      return {
-        status: 200,
-        body: errorEnvelope(commandName, 'NO_PROJECT', (err as Error).message),
-      };
-    }
-    const result = await session.execute(name, params ?? {});
-    await syncSeenSeq(path.resolve(project));
-    return { status: 200, body: result };
+    const root = path.resolve(project);
+    const dispatch = async (): Promise<JsonResult> => {
+      let session: HearthSession;
+      try {
+        session = await getSession(project);
+      } catch (err) {
+        return {
+          status: 200,
+          body: errorEnvelope(commandName, 'NO_PROJECT', (err as Error).message),
+        };
+      }
+      const result = await session.execute(name, params ?? {});
+      await syncSeenSeq(root);
+      return { status: 200, body: result };
+    };
+    // Serialize mutating dispatches per project root (read-modify-write on undo
+    // history / project state); read-only queries stay concurrent. An unknown
+    // command name is treated as mutating — a conservative default; core rejects
+    // it inside the lock anyway.
+    const def = getCommand(name);
+    if (def && !def.mutates) return dispatch();
+    return withMutationLock(root, dispatch);
   }
 
   const ctx = {
