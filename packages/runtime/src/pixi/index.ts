@@ -444,6 +444,10 @@ export class PixiSceneView {
 
   /** Force one render pass so the canvas reflects current state right now, without waiting for the next ticker/rAF tick (manual-stepping hosts call this before taking a screenshot). */
   renderOnce(): void {
+    // Render-after-destroy guard (L-116 hardening): stepFrame awaits before
+    // calling this, so the view can be destroyed mid-await; rendering a
+    // destroyed app would throw deep inside Pixi.
+    if (this.destroyed) return;
     this.app.render();
   }
 
@@ -539,7 +543,19 @@ export class PixiSceneView {
     // default false), so we must explicitly destroy the uniquely-owned GPU resources.
     this.lightmapRT.destroy(true);
     this.lightGradientTexture.destroy(true);
-    this.app.destroy(true, { children: true });
+    // rendererDestroyOptions MUST be `{ removeView: true }`, never `true`
+    // (L-116). Passing `true` also sets releaseGlobalResources, which calls
+    // GlobalResourceRegistry.release() and destroys Pixi's MODULE-GLOBAL
+    // batch pool — a pool shared by every Application on the page. The pool
+    // array keeps stale references to batches checked out by OTHER live
+    // renderers (getBatchFromPool never nulls the slot), so releasing it
+    // nulls `batch.textures` on batches another view is still using; that
+    // view's next render then throws "Cannot read properties of null
+    // (reading 'clear')" inside Batcher.break. This is exactly what happened
+    // when React StrictMode's double-mounted GamePreview destroyed its
+    // cancelled view while the surviving view was rendering. removeView
+    // keeps the only behavior we wanted from `true`: detaching the canvas.
+    this.app.destroy({ removeView: true }, { children: true });
   }
 
   // ---------------------------------------------------------------------------
