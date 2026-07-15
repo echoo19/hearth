@@ -2294,3 +2294,16 @@ Flags for the T12 design pass: hover-reveal idiom unification (L-023, with
 the tab-order contract), history click-to-jump candidacy (L-063), hierarchy
 filter + multi-select design (L-017/L-018), Tilemap grid direct-manipulation
 editor (L-033).
+
+### L-117 · shipping · defect · high (SHIP-BLOCKING)
+- Element: desktop export zip → fresh unzip → launch
+- Observed: createZip (packages/shipping/src/zip.ts) encodes Unix mode bits only for symlinks; every executable in the zipped .app unzips as -rw-r--r-- (0 of 15 executables). `open -n` fails "Launchd job spawn failed". All desktop platforms affected (Windows likely unaffected).
+- Expected: unzip → launch works. chmod +x restore confirmed full fix.
+- Source: T13 export-reality D-1
+- Disposition: open
+
+### L-118 · export-ux · friction · med
+- Element: export result panel + player boot errors (F-1..F-5)
+- Observed: no next-step hosting/itch hint in result panel; folder build under file:// shows raw "Failed to fetch"; Gatekeeper guidance docs-only; generic com.electron.* bundle id; no size context on 254MB zip.
+- Source: T13 export-reality F-1..F-5
+- Disposition: open
