@@ -258,10 +258,16 @@ function AutotileRuleFields({
   const frames = sheetAsset ? getSheetFrames(sheetAsset) : [];
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 4, paddingLeft: 46 }}>
-      <div className="vec2-list-row">
-        <label className="field-label" style={{ minWidth: 60 }}>
-          Template
-        </label>
+      {/* Nested-row grid (T10 shared row-grid system): this row sits inside
+          Tilemap.tileAssets' own control column, same as PostEffectsField's
+          per-effect rows, so it uses the same compact-label nested variant
+          instead of a one-off flex row. This row is nested a level deeper
+          than PostEffects' (inside a single char row, itself inside the
+          Tilemap field), so it dials the label track down further via
+          --nested-label-w — the default 84px would starve the select down
+          to an unreadable sliver in this narrower context. */}
+      <div className="inspector-row editor-row--nested" style={{ '--nested-label-w': '56px' } as React.CSSProperties}>
+        <label className="field-label">Template</label>
         {/* Always disabled today — only one template exists. See Menu.tsx's
             disabledReason pattern: the Tooltip wraps a focusable/hoverable
             span since a disabled <select> can't reliably show it itself. */}

@@ -91,9 +91,12 @@ function EffectFieldRow({
     );
   }
   return (
-    <div className="inspector-row" key={field}>
+    <div className="inspector-row editor-row--nested" key={field}>
       {/* Humanized like every other Inspector label (INSPSPEC-2 / L-043); the
-          raw camelCase schema key stays in the title tooltip. */}
+          raw camelCase schema key stays in the title tooltip. Nested-row grid
+          (T10 shared row-grid system) — see primitives.css's
+          .editor-row--nested for why effect fields need the compact label
+          track. */}
       <label className="field-label" title={field}>
         {humanize(field)}
       </label>

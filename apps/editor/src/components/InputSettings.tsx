@@ -211,14 +211,17 @@ function ActionRow({
         />
       </div>
       <div className="component-body">
-        <div className="inspector-row">
+        {/* editor-row--top (T10 / INPUT-5 / L-072): the control column is a
+            vertical stack (chip list + capture button), so the label aligns
+            to its first line instead of centering against the whole stack. */}
+        <div className="inspector-row editor-row--top">
           <label className="field-label">Keys</label>
           <div className="input-binding-col">
             <ChipList items={codes} onRemove={onRemoveCode} empty="No keys bound" />
             <CaptureButton armed={capturing} label="Press a key…" onArm={onArmCapture} onCancel={onCancelCapture} />
           </div>
         </div>
-        <div className="inspector-row">
+        <div className="inspector-row editor-row--top">
           <label className="field-label">Gamepad</label>
           <div className="input-binding-col">
             <ChipList items={gamepadNames} onRemove={onRemoveGamepadButton} empty="No buttons bound" />
@@ -315,7 +318,8 @@ function AxisRow({
         />
       </div>
       <div className="component-body">
-        <div className="inspector-row">
+        {/* editor-row--top (T10 / INPUT-5 / L-072): see the Keys row above. */}
+        <div className="inspector-row editor-row--top">
           <label className="field-label">Gamepad axis</label>
           <div className="input-binding-col">
             <label className="input-checkbox-label">
@@ -334,21 +338,21 @@ function AxisRow({
             )}
           </div>
         </div>
-        <div className="inspector-row">
+        <div className="inspector-row editor-row--top">
           <label className="field-label">Negative key</label>
           <div className="input-binding-col">
             <ChipList items={axis.negativeCodes} onRemove={onRemoveNegCode} empty="No keys bound" />
             <CaptureButton armed={capturingNeg} label="Press a key…" onArm={onArmNeg} onCancel={onCancelCapture} />
           </div>
         </div>
-        <div className="inspector-row">
+        <div className="inspector-row editor-row--top">
           <label className="field-label">Positive key</label>
           <div className="input-binding-col">
             <ChipList items={axis.positiveCodes} onRemove={onRemovePosCode} empty="No keys bound" />
             <CaptureButton armed={capturingPos} label="Press a key…" onArm={onArmPos} onCancel={onCancelCapture} />
           </div>
         </div>
-        <div className="inspector-row">
+        <div className="inspector-row editor-row--top">
           <label className="field-label">Deadzone</label>
           <div className="input-binding-col">
             <label className="input-checkbox-label">

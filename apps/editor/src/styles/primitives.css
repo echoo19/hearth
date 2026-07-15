@@ -229,3 +229,76 @@ label.field-label {
   font-size: var(--text-sm);
 }
 
+/* --------------------------------------------------------------------------
+   Shared row-grid system (T10)
+
+   Canonical label / control / trailing-slot 3-track grid for a plain field
+   row, wherever it renders. `.inspector-row` (the Inspector's own name for
+   it — kept as an alias since field-revert-slot/field-override-dot and a
+   dozen other panels already reference it by that name) and the newer
+   `.editor-row` name share one definition, so specialized editors stop
+   inventing their own label-column width and everything lines up
+   column-for-column: InputSettings' action/axis rows, the Inspector's
+   autotile Template row, and — via the modifiers below — PostEffectsField's
+   per-effect fields and Animator's param/state data rows.
+   -------------------------------------------------------------------------- */
+.editor-row,
+.inspector-row {
+  display: grid;
+  grid-template-columns: 104px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  min-height: var(--ctl-h);
+}
+
+.editor-row > .field-label,
+.inspector-row > .field-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.editor-row input[type='checkbox'],
+.inspector-row input[type='checkbox'] {
+  justify-self: start;
+}
+
+/* Multi-line control column variant (INPUT-5 / L-072): some rows' control
+   column is a vertical stack — a chip list plus a capture button, or a
+   checkbox plus a conditionally-shown number field (InputSettings' Keys/
+   Gamepad/Negative key/Positive key/Deadzone rows all do this via
+   `.input-binding-col`). `align-items: center` (the default above) centers
+   the label against the WHOLE stack, so it floats instead of sitting beside
+   the first line. This variant aligns the label to the top instead, and
+   nudges it down a touch to optically match the first line's text. */
+.editor-row--top {
+  align-items: start;
+}
+
+.editor-row--top > .field-label {
+  padding-top: 6px;
+}
+
+/* Nested-row variant: a row rendered inside another row's own control
+   column — PostEffectsField's per-effect fields sit inside Camera's control
+   column, and the Inspector's autotile Template row sits inside
+   Tilemap.tileAssets' control column (itself nested inside a single char
+   row, so it's narrower still). The outer row already spent 104px of label
+   track on its own label; a nested row repeating that width would starve
+   its control column down to an unreadable sliver (INSPSPEC-3 / L-042).
+   Give it a compact label track instead and let the control fill the rest.
+   This replaces the old page-specific `.effect-card-body .inspector-row`
+   override with one named, reusable variant any nested row can opt into.
+   The label width is a custom property (default 84px, PostEffects' fit) so
+   a more tightly nested consumer — like the autotile Template row — can
+   dial it down instead of starving its own control column in turn. */
+.editor-row--nested {
+  grid-template-columns: minmax(0, var(--nested-label-w, 84px)) minmax(0, 1fr);
+  gap: 6px;
+}
+
+.editor-row--nested .input,
+.editor-row--nested .select {
+  width: 100%;
+}
+

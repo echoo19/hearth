@@ -47,23 +47,9 @@
   white-space: nowrap;
 }
 
-.inspector-row {
-  display: grid;
-  grid-template-columns: 104px minmax(0, 1fr) auto;
-  align-items: center;
-  gap: 8px;
-  min-height: var(--ctl-h);
-}
-
-.inspector-row > .field-label {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.inspector-row input[type='checkbox'] {
-  justify-self: start;
-}
+/* The base grid (.inspector-row / .editor-row) and its --top/--nested
+   variants live in primitives.css (T10 shared row-grid system) — every
+   other panel that renders a plain field row shares that one definition. */
 
 /* Overridden-field marker: a small ember dot before the label, same accent
    token as the prefab banner — no separate "override" color vocabulary. */
@@ -389,21 +375,10 @@
   gap: 4px;
 }
 
-/* An effect card already lives inside the Camera field's own narrow control
-   column, so a nested .inspector-row inheriting the top-level 104px label
-   track left its value input collapsed to a ~36px unreadable square
-   (INSPSPEC-3 / L-042). Give the nested rows a compact label track and let
-   the control stretch to fill the rest, so bloom.strength etc. read as wide
-   as any other field. (T10 row-grid unification may fold this in — minimal
-   local fix for now.) */
-.effect-card-body .inspector-row {
-  grid-template-columns: minmax(0, 84px) minmax(0, 1fr);
-  gap: 6px;
-}
-
-.effect-card-body .inspector-row .input {
-  width: 100%;
-}
+/* Per-effect field rows use the shared `.editor-row--nested` variant
+   (primitives.css, T10) directly in PostEffectsField.tsx's EffectFieldRow —
+   see that variant's comment for why a nested row needs a compact label
+   track (INSPSPEC-3 / L-042). */
 
 
 /* --------------------------------------------------------------------------

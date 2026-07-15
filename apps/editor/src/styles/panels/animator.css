@@ -57,12 +57,13 @@
   font-size: var(--text-sm);
 }
 
-/* Parameter rows: name | type | default | remove */
+/* Parameter rows: name | type | default | remove. Shares the base grid
+   metrics (display/align-items/gap/min-height) with every other panel's
+   plain field row via `.editor-row` (T10 shared row-grid system,
+   primitives.css) — only the column count/widths are bespoke here, since a
+   param row is a 4-up data row rather than a single label+control field. */
 .animator-param-row {
-  display: grid;
   grid-template-columns: minmax(0, 1fr) 96px minmax(72px, 0.8fr) auto;
-  align-items: center;
-  gap: 6px;
 }
 
 .animator-param-default {
@@ -75,12 +76,10 @@
   width: 100%;
 }
 
-/* State rows: initial-star | name | animation | outgoing-count | speed | remove */
+/* State rows: initial-star | name | animation | outgoing-count | speed |
+   remove. Same `.editor-row` base as the param rows above. */
 .animator-state-row {
-  display: grid;
   grid-template-columns: auto minmax(0, 1fr) minmax(0, 1.2fr) auto 82px auto;
-  align-items: center;
-  gap: 6px;
 }
 
 /* Outgoing-transition count on a state row — a click jumps to that source's
