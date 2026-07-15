@@ -75,12 +75,41 @@
   width: 100%;
 }
 
-/* State rows: initial-star | name | animation | speed | remove */
+/* State rows: initial-star | name | animation | outgoing-count | speed | remove */
 .animator-state-row {
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr) minmax(0, 1.2fr) 82px auto;
+  grid-template-columns: auto minmax(0, 1fr) minmax(0, 1.2fr) auto 82px auto;
   align-items: center;
   gap: 6px;
+}
+
+/* Outgoing-transition count on a state row — a click jumps to that source's
+   transition group (L-085 cheap navigation). */
+.animator-out-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  height: 22px;
+  padding: 0 8px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--bg-2);
+  color: var(--ink-mute);
+  font-size: var(--text-xs);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.animator-out-badge:hover:not(:disabled) {
+  background: var(--bg-3);
+  color: var(--ink);
+  border-color: var(--accent);
+}
+
+.animator-out-badge:disabled {
+  opacity: 0.4;
+  cursor: default;
 }
 
 .animator-initial {
@@ -145,15 +174,161 @@
   width: 72px;
 }
 
-/* Transition cards: a header row plus its condition sub-list. */
-.animator-transition-card {
+/* Transition groups: one collapsible "From <state>" section per source state,
+   turning the runtime's load-bearing declaration order into a visible, grouped
+   order (L-085). The `any` group sorts first as a machine-wide fallback. */
+.animator-tgroup {
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   overflow: hidden;
 }
 
-.animator-transition-card + .animator-transition-card {
-  margin-top: 6px;
+.animator-tgroup + .animator-tgroup {
+  margin-top: 8px;
+}
+
+/* Brief highlight when a State card's count badge navigates here. */
+.animator-tgroup.flash {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent-soft);
+  transition: box-shadow 0.2s ease, border-color 0.2s ease;
+}
+
+.animator-tgroup-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: 6px 8px;
+  background: var(--bg-3);
+  border: none;
+  color: var(--ink);
+  font-size: var(--text-sm);
+  font-weight: 600;
+  cursor: pointer;
+  text-align: left;
+}
+
+.animator-tgroup-header:hover {
+  background: var(--bg-2);
+}
+
+.animator-tgroup-caret {
+  display: inline-flex;
+  color: var(--ink-faint);
+  transition: transform 0.12s ease;
+}
+
+.animator-tgroup-caret.open {
+  transform: rotate(90deg);
+}
+
+.animator-tgroup-title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.animator-tgroup-count {
+  margin-left: auto;
+  color: var(--ink-faint);
+  font-weight: 400;
+  font-size: var(--text-xs);
+  font-variant-numeric: tabular-nums;
+}
+
+.animator-tgroup-note {
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: var(--bg-2);
+  border: 1px solid var(--border);
+  color: var(--ink-mute);
+  font-weight: 400;
+  font-size: var(--text-xs);
+}
+
+.animator-tgroup-body {
+  padding: 6px 8px 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+/* Transition cards: a collapsed one-line summary row that expands to the full
+   from/to + exit-time + conditions editor. */
+.animator-transition-card {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  background: var(--bg-1);
+}
+
+/* Collapsed summary row: [priority] [caret + sentence] … [up/down] [remove] */
+.animator-transition-summary {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 6px;
+}
+
+.animator-priority {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 4px;
+  border-radius: var(--radius-sm);
+  background: var(--bg-3);
+  color: var(--ink-mute);
+  font-size: var(--text-xs);
+  font-variant-numeric: tabular-nums;
+  cursor: help;
+}
+
+.animator-summary-toggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  padding: 2px 4px;
+  border: none;
+  background: none;
+  color: var(--ink);
+  font-size: var(--text-sm);
+  cursor: pointer;
+  text-align: left;
+}
+
+.animator-summary-toggle:hover .animator-summary-text {
+  color: var(--accent);
+}
+
+.animator-summary-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.animator-reorder {
+  display: inline-flex;
+  gap: 2px;
+}
+
+.animator-move-up {
+  transform: rotate(-90deg);
+}
+
+.animator-move-down {
+  transform: rotate(90deg);
+}
+
+.animator-transition-edit {
+  border-top: 1px solid var(--border);
 }
 
 .animator-transition-head {

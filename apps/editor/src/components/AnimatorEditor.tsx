@@ -25,9 +25,12 @@ import {
   docToDraft,
   draftIssues,
   draftToDoc,
+  groupTransitions,
   humanizeSaveError,
   isDraftComplete,
+  moveTransitionInGroup,
   opsForParamType,
+  outgoingCount,
   removeCondition,
   removeParam,
   removeState,
@@ -47,8 +50,10 @@ import {
   setTransitionExitTime,
   setTransitionFrom,
   setTransitionTo,
+  summarizeTransition,
   type AsmDraft,
   type ConditionOp,
+  type DraftTransition,
   type ParamType,
 } from '../asmEdit';
 
@@ -87,6 +92,10 @@ export function AnimatorEditor() {
   // exactly what Save compared against (the store's `asset.stateMachine` only
   // refreshes via the command journal and can be stale for raw fs edits).
   const [conflictDoc, setConflictDoc] = useState<StateMachineData | null>(null);
+  // L-085: a click on a State card's outgoing-count badge asks the Transitions
+  // section to expand + scroll to that source's group (cheap navigation, no
+  // graph canvas). The nonce lets the same group be re-focused repeatedly.
+  const [groupFocus, setGroupFocus] = useState<{ from: string; nonce: number } | null>(null);
   // ANIMATOR-3: in-editor "New state machine" create dialog.
   const [createOpen, setCreateOpen] = useState(false);
   const [newName, setNewName] = useState('');
@@ -412,8 +421,13 @@ export function AnimatorEditor() {
       ) : (
         <div className="panel-body animator-body">
           <ParamsSection draft={draft} update={update} />
-          <StatesSection draft={draft} update={update} animationAssets={animationAssets} />
-          <TransitionsSection draft={draft} update={update} />
+          <StatesSection
+            draft={draft}
+            update={update}
+            animationAssets={animationAssets}
+            onNavigateToGroup={(from) => setGroupFocus({ from, nonce: Date.now() })}
+          />
+          <TransitionsSection draft={draft} update={update} focus={groupFocus} />
 
           {issues.length > 0 && (
             <div className="animator-issues" role="status">
@@ -514,10 +528,12 @@ function StatesSection({
   draft,
   update,
   animationAssets,
+  onNavigateToGroup,
 }: {
   draft: AsmDraft;
   update: (fn: (d: AsmDraft) => AsmDraft) => void;
   animationAssets: AssetItem[];
+  onNavigateToGroup: (from: string) => void;
 }) {
   return (
     <section className="animator-section">
@@ -533,6 +549,7 @@ function StatesSection({
         ) : (
           draft.states.map((s, i) => {
             const isInitial = draft.initial === s.name && s.name !== '';
+            const out = s.name ? outgoingCount(draft, s.name) : 0;
             return (
               <div className="animator-state-row" key={i}>
                 <IconButton
@@ -559,6 +576,23 @@ function StatesSection({
                     </option>
                   ))}
                 </select>
+                <Tooltip
+                  content={
+                    out === 0
+                      ? 'No transitions leave this state'
+                      : `${out} outgoing transition${out === 1 ? '' : 's'} — jump to them`
+                  }
+                >
+                  <button
+                    type="button"
+                    className="animator-out-badge"
+                    disabled={out === 0 || s.name === ''}
+                    onClick={() => onNavigateToGroup(s.name)}
+                    aria-label={`${out} outgoing transition${out === 1 ? '' : 's'} from ${s.name || 'this state'}`}
+                  >
+                    {out} out
+                  </button>
+                </Tooltip>
                 <div className="animator-speed" title="Playback speed">
                   <span className="animator-speed-label" aria-hidden="true">
                     ×
@@ -586,14 +620,70 @@ function StatesSection({
 // Transitions
 // ---------------------------------------------------------------------------
 
-function TransitionsSection({ draft, update }: { draft: AsmDraft; update: (fn: (d: AsmDraft) => AsmDraft) => void }) {
-  const stateNames = draft.states.map((s) => s.name).filter(Boolean);
+function TransitionsSection({
+  draft,
+  update,
+  focus,
+}: {
+  draft: AsmDraft;
+  update: (fn: (d: AsmDraft) => AsmDraft) => void;
+  focus: { from: string; nonce: number } | null;
+}) {
+  const groups = useMemo(() => groupTransitions(draft), [draft]);
+  // Card expansion is keyed by flat declaration index; collapsed by default so
+  // the list reads as a scannable set of one-line summaries. A group collapse
+  // set hides an entire source's cards behind its "From <state>" header.
+  const [expanded, setExpanded] = useState<Set<number>>(new Set());
+  const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
+  const [flashGroup, setFlashGroup] = useState<string | null>(null);
+  const groupRefs = useRef(new Map<string, HTMLDivElement | null>());
+
+  const toggleCard = (idx: number) =>
+    setExpanded((prev) => {
+      const next = new Set(prev);
+      if (next.has(idx)) next.delete(idx);
+      else next.add(idx);
+      return next;
+    });
+  const toggleGroup = (from: string) =>
+    setCollapsedGroups((prev) => {
+      const next = new Set(prev);
+      if (next.has(from)) next.delete(from);
+      else next.add(from);
+      return next;
+    });
+
+  // A newly added transition is appended at the end — expand it so the user can
+  // edit the fresh (from=to, conditionless) row immediately.
+  function addAndExpand() {
+    const idx = draft.transitions.length;
+    update(addTransition);
+    setExpanded((prev) => new Set(prev).add(idx));
+  }
+
+  // React to a State-card navigation request: un-collapse the group, scroll it
+  // into view, and briefly flash it so the eye lands on the right section.
+  useEffect(() => {
+    if (!focus) return;
+    setCollapsedGroups((prev) => {
+      if (!prev.has(focus.from)) return prev;
+      const next = new Set(prev);
+      next.delete(focus.from);
+      return next;
+    });
+    const el = groupRefs.current.get(focus.from);
+    el?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+    setFlashGroup(focus.from);
+    const timer = window.setTimeout(() => setFlashGroup(null), 1200);
+    return () => window.clearTimeout(timer);
+  }, [focus?.nonce, focus?.from]);
+
   return (
     <section className="animator-section">
       <header className="component-header animator-section-header">
         <span className="component-title">Transitions</span>
         <Tooltip content={draft.states.length === 0 ? 'Add a state first' : 'Add a transition'}>
-          <Button size="sm" disabled={draft.states.length === 0} onClick={() => update(addTransition)}>
+          <Button size="sm" disabled={draft.states.length === 0} onClick={addAndExpand}>
             <Icon name="plus" size={10} /> Add
           </Button>
         </Tooltip>
@@ -602,155 +692,266 @@ function TransitionsSection({ draft, update }: { draft: AsmDraft; update: (fn: (
         {draft.transitions.length === 0 ? (
           <span className="animator-empty">No transitions. Add one to move between states.</span>
         ) : (
-          draft.transitions.map((t, ti) => (
-            <div className="animator-transition-card" key={ti}>
-              <div className="animator-transition-head">
-                <select
-                  className="select"
-                  aria-label="Transition source state"
-                  value={t.from}
-                  onChange={(e) => update((d) => setTransitionFrom(d, ti, e.target.value))}
+          groups.map((g) => {
+            const collapsed = collapsedGroups.has(g.from);
+            const label = g.from === ANY_STATE ? 'Any state' : g.from || '(no source)';
+            return (
+              <div
+                key={g.from}
+                className={`animator-tgroup${flashGroup === g.from ? ' flash' : ''}`}
+                ref={(el) => groupRefs.current.set(g.from, el)}
+              >
+                <button
+                  type="button"
+                  className="animator-tgroup-header"
+                  aria-expanded={!collapsed}
+                  onClick={() => toggleGroup(g.from)}
                 >
-                  <option value={ANY_STATE}>Any</option>
-                  {stateNames.map((n) => (
-                    <option key={n} value={n}>
-                      {n}
-                    </option>
-                  ))}
-                </select>
-                <span className="animator-arrow" aria-hidden="true">
-                  →
-                </span>
-                <select
-                  className="select"
-                  aria-label="Transition target state"
-                  value={t.to}
-                  onChange={(e) => update((d) => setTransitionTo(d, ti, e.target.value))}
-                >
-                  <option value="">(to)</option>
-                  {stateNames.map((n) => (
-                    <option key={n} value={n}>
-                      {n}
-                    </option>
-                  ))}
-                </select>
-                <span style={{ flex: 1 }} />
-                <IconButton
-                  bare
-                  className="icon-btn danger"
-                  icon="cross"
-                  iconSize={10}
-                  label="Remove transition"
-                  onClick={() => update((d) => removeTransition(d, ti))}
-                />
-              </div>
-
-              <label className="animator-check animator-exittime">
-                <input
-                  type="checkbox"
-                  checked={t.exitTime !== undefined}
-                  onChange={(e) => update((d) => setTransitionExitTime(d, ti, e.target.checked ? 0.5 : undefined))}
-                />
-                <span>Exit time</span>
-                {t.exitTime !== undefined && (
-                  <input
-                    className="input"
-                    type="number"
-                    min={0}
-                    max={1}
-                    step={0.05}
-                    value={t.exitTime}
-                    onChange={(e) => {
-                      const v = Number(e.target.value);
-                      update((d) => setTransitionExitTime(d, ti, Number.isFinite(v) ? Math.min(1, Math.max(0, v)) : 0));
-                    }}
-                  />
-                )}
-              </label>
-
-              <div className="animator-conditions">
-                <div className="animator-conditions-head">
-                  <span className="animator-empty">Conditions</span>
-                  <Button size="sm" variant="ghost" onClick={() => update((d) => addCondition(d, ti))}>
-                    <Icon name="plus" size={10} /> Condition
-                  </Button>
-                </div>
-                {t.conditions.length === 0 ? (
-                  <span className="animator-empty">
-                    {t.from === ANY_STATE ? 'An “Any” transition needs a condition.' : 'No conditions (uses exit time only).'}
+                  <span className={`animator-tgroup-caret${collapsed ? '' : ' open'}`} aria-hidden="true">
+                    <Icon name="chevron" size={10} />
                   </span>
-                ) : (
-                  t.conditions.map((c, ci) => {
-                    const type = draft.params.find((p) => p.name === c.param)?.type;
-                    const ops = type ? opsForParamType(type) : [];
-                    return (
-                      <div className="animator-condition-row" key={ci}>
-                        <select
-                          className="select"
-                          aria-label="Condition parameter"
-                          value={c.param}
-                          onChange={(e) => update((d) => setConditionParam(d, ti, ci, e.target.value))}
-                        >
-                          <option value="">(param)</option>
-                          {draft.params.map((p) => (
-                            <option key={p.name} value={p.name}>
-                              {p.name}
-                            </option>
-                          ))}
-                        </select>
-                        {type === 'trigger' ? (
-                          <span className="animator-empty animator-trigger-note">on trigger</span>
-                        ) : (
-                          <>
-                            <select
-                              className="select animator-op"
-                              aria-label="Condition operator"
-                              value={c.op ?? ''}
-                              disabled={ops.length === 0}
-                              onChange={(e) => update((d) => setConditionOp(d, ti, ci, e.target.value as ConditionOp))}
-                            >
-                              {c.op === undefined && <option value="">op</option>}
-                              {ops.map((op) => (
-                                <option key={op} value={op}>
-                                  {OP_LABELS[op]}
-                                </option>
-                              ))}
-                            </select>
-                            {type === 'bool' ? (
-                              <select
-                                className="select"
-                                aria-label="Condition value"
-                                value={c.value === true ? 'true' : 'false'}
-                                onChange={(e) => update((d) => setConditionValue(d, ti, ci, e.target.value === 'true'))}
-                              >
-                                <option value="true">true</option>
-                                <option value="false">false</option>
-                              </select>
-                            ) : (
-                              <NumberField
-                                value={typeof c.value === 'number' ? c.value : 0}
-                                onCommit={(v) => update((d) => setConditionValue(d, ti, ci, v))}
-                              />
-                            )}
-                          </>
-                        )}
-                        <IconButton
-                          bare
-                          className="icon-btn danger"
-                          icon="cross"
-                          iconSize={10}
-                          label="Remove condition"
-                          onClick={() => update((d) => removeCondition(d, ti, ci))}
-                        />
-                      </div>
-                    );
-                  })
+                  <span className="animator-tgroup-title">From {label}</span>
+                  <span className="animator-tgroup-count">
+                    {g.items.length} transition{g.items.length === 1 ? '' : 's'}
+                  </span>
+                  {g.from === ANY_STATE && (
+                    <Tooltip content="Checked after a state's own transitions — a machine-wide fallback">
+                      <span className="animator-tgroup-note">fallback</span>
+                    </Tooltip>
+                  )}
+                </button>
+                {!collapsed && (
+                  <div className="animator-tgroup-body">
+                    {g.items.map((item) => (
+                      <TransitionCard
+                        key={item.index}
+                        draft={draft}
+                        update={update}
+                        item={item}
+                        groupSize={g.items.length}
+                        expanded={expanded.has(item.index)}
+                        onToggle={() => toggleCard(item.index)}
+                      />
+                    ))}
+                  </div>
                 )}
               </div>
-            </div>
-          ))
+            );
+          })
         )}
       </div>
     </section>
+  );
+}
+
+function TransitionCard({
+  draft,
+  update,
+  item,
+  groupSize,
+  expanded,
+  onToggle,
+}: {
+  draft: AsmDraft;
+  update: (fn: (d: AsmDraft) => AsmDraft) => void;
+  item: { transition: DraftTransition; index: number; groupPos: number };
+  groupSize: number;
+  expanded: boolean;
+  onToggle: () => void;
+}) {
+  const { transition: t, index: ti, groupPos } = item;
+  const stateNames = draft.states.map((s) => s.name).filter(Boolean);
+  const atTop = groupPos === 0;
+  const atBottom = groupPos === groupSize - 1;
+
+  return (
+    <div className="animator-transition-card">
+      <div className="animator-transition-summary">
+        <Tooltip content="Global declaration order — transitions are checked in this order, first match wins">
+          <span className="animator-priority" aria-label={`Priority ${ti + 1} (checked in declaration order, first match wins)`}>
+            {ti + 1}
+          </span>
+        </Tooltip>
+        <button
+          type="button"
+          className="animator-summary-toggle"
+          aria-expanded={expanded}
+          onClick={onToggle}
+        >
+          <span className={`animator-tgroup-caret${expanded ? ' open' : ''}`} aria-hidden="true">
+            <Icon name="chevron" size={9} />
+          </span>
+          <span className="animator-summary-text">{summarizeTransition(draft, t)}</span>
+        </button>
+        <span style={{ flex: 1 }} />
+        <div className="animator-reorder" role="group" aria-label="Reorder within this source">
+          <IconButton
+            bare
+            className="icon-btn animator-move-up"
+            icon="chevron"
+            iconSize={10}
+            label="Move earlier (higher priority)"
+            disabled={atTop}
+            onClick={() => update((d) => moveTransitionInGroup(d, ti, groupPos - 1))}
+          />
+          <IconButton
+            bare
+            className="icon-btn animator-move-down"
+            icon="chevron"
+            iconSize={10}
+            label="Move later (lower priority)"
+            disabled={atBottom}
+            onClick={() => update((d) => moveTransitionInGroup(d, ti, groupPos + 1))}
+          />
+        </div>
+        <IconButton
+          bare
+          className="icon-btn danger"
+          icon="cross"
+          iconSize={10}
+          label="Remove transition"
+          onClick={() => update((d) => removeTransition(d, ti))}
+        />
+      </div>
+
+      {expanded && (
+        <div className="animator-transition-edit">
+          <div className="animator-transition-head">
+            <select
+              className="select"
+              aria-label="Transition source state"
+              value={t.from}
+              onChange={(e) => update((d) => setTransitionFrom(d, ti, e.target.value))}
+            >
+              <option value={ANY_STATE}>Any</option>
+              {stateNames.map((n) => (
+                <option key={n} value={n}>
+                  {n}
+                </option>
+              ))}
+            </select>
+            <span className="animator-arrow" aria-hidden="true">
+              →
+            </span>
+            <select
+              className="select"
+              aria-label="Transition target state"
+              value={t.to}
+              onChange={(e) => update((d) => setTransitionTo(d, ti, e.target.value))}
+            >
+              <option value="">(to)</option>
+              {stateNames.map((n) => (
+                <option key={n} value={n}>
+                  {n}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <label className="animator-check animator-exittime">
+            <input
+              type="checkbox"
+              checked={t.exitTime !== undefined}
+              onChange={(e) => update((d) => setTransitionExitTime(d, ti, e.target.checked ? 0.5 : undefined))}
+            />
+            <span>Exit time</span>
+            {t.exitTime !== undefined && (
+              <input
+                className="input"
+                type="number"
+                min={0}
+                max={1}
+                step={0.05}
+                value={t.exitTime}
+                onChange={(e) => {
+                  const v = Number(e.target.value);
+                  update((d) => setTransitionExitTime(d, ti, Number.isFinite(v) ? Math.min(1, Math.max(0, v)) : 0));
+                }}
+              />
+            )}
+          </label>
+
+          <div className="animator-conditions">
+            <div className="animator-conditions-head">
+              <span className="animator-empty">Conditions</span>
+              <Button size="sm" variant="ghost" onClick={() => update((d) => addCondition(d, ti))}>
+                <Icon name="plus" size={10} /> Condition
+              </Button>
+            </div>
+            {t.conditions.length === 0 ? (
+              <span className="animator-empty">
+                {t.from === ANY_STATE ? 'An “Any” transition needs a condition.' : 'No conditions (uses exit time only).'}
+              </span>
+            ) : (
+              t.conditions.map((c, ci) => {
+                const type = draft.params.find((p) => p.name === c.param)?.type;
+                const ops = type ? opsForParamType(type) : [];
+                return (
+                  <div className="animator-condition-row" key={ci}>
+                    <select
+                      className="select"
+                      aria-label="Condition parameter"
+                      value={c.param}
+                      onChange={(e) => update((d) => setConditionParam(d, ti, ci, e.target.value))}
+                    >
+                      <option value="">(param)</option>
+                      {draft.params.map((p) => (
+                        <option key={p.name} value={p.name}>
+                          {p.name}
+                        </option>
+                      ))}
+                    </select>
+                    {type === 'trigger' ? (
+                      <span className="animator-empty animator-trigger-note">on trigger</span>
+                    ) : (
+                      <>
+                        <select
+                          className="select animator-op"
+                          aria-label="Condition operator"
+                          value={c.op ?? ''}
+                          disabled={ops.length === 0}
+                          onChange={(e) => update((d) => setConditionOp(d, ti, ci, e.target.value as ConditionOp))}
+                        >
+                          {c.op === undefined && <option value="">op</option>}
+                          {ops.map((op) => (
+                            <option key={op} value={op}>
+                              {OP_LABELS[op]}
+                            </option>
+                          ))}
+                        </select>
+                        {type === 'bool' ? (
+                          <select
+                            className="select"
+                            aria-label="Condition value"
+                            value={c.value === true ? 'true' : 'false'}
+                            onChange={(e) => update((d) => setConditionValue(d, ti, ci, e.target.value === 'true'))}
+                          >
+                            <option value="true">true</option>
+                            <option value="false">false</option>
+                          </select>
+                        ) : (
+                          <NumberField
+                            value={typeof c.value === 'number' ? c.value : 0}
+                            onCommit={(v) => update((d) => setConditionValue(d, ti, ci, v))}
+                          />
+                        )}
+                      </>
+                    )}
+                    <IconButton
+                      bare
+                      className="icon-btn danger"
+                      icon="cross"
+                      iconSize={10}
+                      label="Remove condition"
+                      onClick={() => update((d) => removeCondition(d, ti, ci))}
+                    />
+                  </div>
+                );
+              })
+            )}
+          </div>
+        </div>
+      )}
+    </div>
   );
 }
