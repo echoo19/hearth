@@ -1,6 +1,6 @@
 {
   "formatVersion": 1,
-  "hearthVersion": "0.13.0",
+  "hearthVersion": "0.14.0",
   "id": "prj_was98kwz",
   "name": "Mini Platformer",
   "description": "Jump between platforms, collect coins, avoid spikes and the patrolling enemy.",
