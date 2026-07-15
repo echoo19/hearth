@@ -1,4 +1,4 @@
-import React, { Suspense, lazy, useEffect, useRef, useState } from 'react';
+import React, { Suspense, lazy, useEffect, useRef, useState, type ReactElement } from 'react';
 import { PERMISSION_DOCS, PERMISSION_MODES } from '@hearth/core';
 import { useEditor } from '../store';
 import { apiPrepareAgent } from '../api';
@@ -64,6 +64,33 @@ export function detectionFailed(
   return wasDetecting && !isDetecting && result === null;
 }
 
+/**
+ * Why the primary launch action (Start agent / Open Terminal) — and the
+ * launcher/mode selects that feed it — must be disabled right now, or null
+ * when it's safe to click. `startPty` unconditionally kills any existing pty
+ * before spawning the new one, so once a session is running, switching the
+ * launcher dropdown must not silently re-enable a clickable button that
+ * would kill the live session with no confirmation (AGENT-1 / L-089).
+ */
+export function startDisabledReason(running: boolean, projectPath: string | null): string | null {
+  if (running) return 'Stop the current session first.';
+  if (!projectPath) return 'Open a project first.';
+  return null;
+}
+
+/**
+ * The permission-mode picker only matters for the Claude launcher — the
+ * server's `startPty` never reads `mode` for codex/shell (it's passed on the
+ * pty-start frame purely for the server's own logging). Presenting it fully
+ * enabled for those two launchers looks actionable but is inert
+ * (AGENT-3 / L-091); this names why so the picker can be disabled with a
+ * reason instead of silently doing nothing.
+ */
+export function modePickerDisabledReason(launcher: AgentLauncher): string | null {
+  if (launcher === 'claude') return null;
+  return `${AGENT_LAUNCHER_LABELS[launcher]} doesn't read a permission mode — this only applies to Claude Code.`;
+}
+
 function statusLabel(session: AgentSessionSummary): string {
   switch (session.status) {
     case 'idle':
@@ -76,6 +103,24 @@ function statusLabel(session: AgentSessionSummary): string {
     default:
       return '';
   }
+}
+
+/**
+ * Wraps a disabled control in a Tooltip + focusable span, matching
+ * Inspector.tsx's `AutotileRuleFields` "disabledReason" pattern — a disabled
+ * native control (`<select disabled>`, `<button disabled>`) doesn't
+ * reliably surface hover/focus for its own Tooltip, so the wrapper carries
+ * it instead. Renders `children` bare when there's no reason.
+ */
+function DisabledHint({ reason, children }: { reason: string | null; children: ReactElement }) {
+  if (!reason) return children;
+  return (
+    <Tooltip content={reason}>
+      <span tabIndex={0} style={{ display: 'inline-flex' }}>
+        {children}
+      </span>
+    </Tooltip>
+  );
 }
 
 export function AgentPanel() {
@@ -114,6 +159,14 @@ export function AgentPanel() {
   const claudeFound = agentDetect?.claude.found ?? false;
   const codexFound = agentDetect?.codex.found ?? false;
   const launcherFound = agentLauncher === 'shell' || (agentLauncher === 'claude' ? claudeFound : codexFound);
+  // Switching launcher/mode while a session runs must never re-enable a
+  // clickable Start action that would silently kill the live pty
+  // (AGENT-1 / L-089) — so the selects that feed it are disabled too.
+  const launcherSwitchReason = running ? 'Stop the current session first to switch launcher.' : null;
+  const startReason = startDisabledReason(running, projectPath);
+  const modeReason = running
+    ? 'Stop the current session first to change mode.'
+    : modePickerDisabledReason(agentLauncher);
   const launcherHint =
     agentLauncher === 'claude'
       ? 'Claude Code sets up its Hearth connection automatically.'
@@ -189,43 +242,54 @@ export function AgentPanel() {
   return (
     <div className="agent-panel-root">
       <div className="panel-toolbar agent-toolbar">
-        <Tooltip content="Choose which local agent CLI to launch">
-          <select
-            className="select"
-            value={agentLauncher}
-            onChange={(e) => {
-              setAgentLauncher(e.target.value as AgentLauncher);
-              setPrepareError(null);
-            }}
-          >
-            <option value="claude">{AGENT_LAUNCHER_LABELS.claude}</option>
-            <option value="codex">{AGENT_LAUNCHER_LABELS.codex}</option>
-            <option value="shell">{AGENT_LAUNCHER_LABELS.shell}</option>
-          </select>
+        <Tooltip content={launcherSwitchReason ?? 'Choose which local agent CLI to launch'}>
+          <span tabIndex={running ? 0 : -1} style={{ display: 'inline-flex' }}>
+            <select
+              className="select"
+              value={agentLauncher}
+              disabled={running}
+              onChange={(e) => {
+                setAgentLauncher(e.target.value as AgentLauncher);
+                setPrepareError(null);
+              }}
+            >
+              <option value="claude">{AGENT_LAUNCHER_LABELS.claude}</option>
+              <option value="codex">{AGENT_LAUNCHER_LABELS.codex}</option>
+              <option value="shell">{AGENT_LAUNCHER_LABELS.shell}</option>
+            </select>
+          </span>
         </Tooltip>
 
         {/* The permission-mode explanation is already shown as visible text
-            below the toolbar (AGENT_MODE_HINTS[agentMode]); no native title. */}
-        <select
-          className="select"
-          value={agentMode}
-          onChange={(e) => setAgentMode(e.target.value as AgentPermissionMode)}
-        >
-          {AGENT_MODE_LADDER.map((mode) => (
-            <option key={mode} value={mode}>
-              {AGENT_MODE_LABELS[mode]}
-            </option>
-          ))}
-        </select>
+            below the toolbar (AGENT_MODE_HINTS[agentMode]); no native title
+            unless it's disabled (AGENT-3 / L-091 non-Claude launchers, or a
+            running session — see modeReason above), in which case that
+            reason IS the tooltip. */}
+        <DisabledHint reason={modeReason}>
+          <select
+            className="select"
+            value={agentMode}
+            disabled={modeReason !== null}
+            onChange={(e) => setAgentMode(e.target.value as AgentPermissionMode)}
+          >
+            {AGENT_MODE_LADDER.map((mode) => (
+              <option key={mode} value={mode}>
+                {AGENT_MODE_LABELS[mode]}
+              </option>
+            ))}
+          </select>
+        </DisabledHint>
 
         {agentDetecting && agentLauncher !== 'shell' ? (
           <Button variant="primary" size="sm" disabled>
             Checking…
           </Button>
         ) : launcherFound ? (
-          <Button variant="primary" size="sm" onClick={() => void startAgent()} disabled={!projectPath}>
-            {agentLauncher === 'shell' ? 'Open Terminal' : 'Start agent'}
-          </Button>
+          <DisabledHint reason={startReason}>
+            <Button variant="primary" size="sm" onClick={() => void startAgent()} disabled={startReason !== null}>
+              {agentLauncher === 'shell' ? 'Open Terminal' : 'Start agent'}
+            </Button>
+          </DisabledHint>
         ) : detectFailed ? (
           <>
             <Button variant="primary" size="sm" disabled>

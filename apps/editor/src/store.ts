@@ -782,6 +782,25 @@ export const useEditor = create<EditorState>((set, get) => {
     if (get().snapshotTaken || get().diff !== null) await get().refreshDiff();
   }
 
+  // --- Undo/redo serialization --------------------------------------------
+  // Rapid ⌘Z / ⇧⌘Z mashing fires one /api/command per keypress. Undo/redo is a
+  // read-modify-write on the on-disk history cursor (session.execute reads a
+  // `before` snapshot and the HistoryStore reads/advances index.json), so two
+  // in-flight requests race and some presses are silently lost. Chain every
+  // undo/redo through one per-store promise so a request never departs before
+  // the previous one has fully landed (executed + refreshed): mashing 10× then
+  // applies 10 undos in order, UI reflecting the final position. The server
+  // also holds a per-project mutex (projectServer.ts) so a concurrent embedded
+  // agent CLI can't interleave either; the two layers are complementary.
+  let historyChain: Promise<void> = Promise.resolve();
+  function queueHistoryOp(task: () => Promise<void>): Promise<void> {
+    // Run after the tail regardless of its outcome, and keep the chain alive
+    // past a rejection so one failed op doesn't wedge the queue.
+    const run = historyChain.then(task, task);
+    historyChain = run.catch(() => undefined);
+    return run;
+  }
+
   async function afterOpen(path: string, info: ProjectInfo): Promise<void> {
     // A pending nudge burst belongs to whatever project/scene was open before
     // this call (openProject reopening the same path, or switching to a
@@ -927,19 +946,25 @@ export const useEditor = create<EditorState>((set, get) => {
     // changed-summary; shared by the toolbar arrows, the Edit menu, and the
     // ⌘Z/⇧⌘Z keybinds so every trigger reads the same (TOOLBAR-6).
     async undo() {
-      const result = await get().exec<{ undone: string; seq: number }>('undo', {}, { quiet: true });
-      if (result.success && result.data) {
-        get().log('info', 'command', `Undo: reverted "${result.data.undone}" (#${result.data.seq}).`);
-        await refreshDiffIfTracking();
-      }
+      // Queued so a burst of ⌘Z applies each undo sequentially (see queueHistoryOp).
+      await queueHistoryOp(async () => {
+        const result = await get().exec<{ undone: string; seq: number }>('undo', {}, { quiet: true });
+        if (result.success && result.data) {
+          get().log('info', 'command', `Undo: reverted "${result.data.undone}" (#${result.data.seq}).`);
+          await refreshDiffIfTracking();
+        }
+      });
     },
 
     async redo() {
-      const result = await get().exec<{ redone: string; seq: number }>('redo', {}, { quiet: true });
-      if (result.success && result.data) {
-        get().log('info', 'command', `Redo: reapplied "${result.data.redone}" (#${result.data.seq}).`);
-        await refreshDiffIfTracking();
-      }
+      // Shares undo's queue so interleaved ⌘Z/⇧⌘Z presses stay strictly ordered.
+      await queueHistoryOp(async () => {
+        const result = await get().exec<{ redone: string; seq: number }>('redo', {}, { quiet: true });
+        if (result.success && result.data) {
+          get().log('info', 'command', `Redo: reapplied "${result.data.redone}" (#${result.data.seq}).`);
+          await refreshDiffIfTracking();
+        }
+      });
     },
 
     async duplicateSelection() {
