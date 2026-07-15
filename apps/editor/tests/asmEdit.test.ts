@@ -21,6 +21,7 @@ import {
   draftIssues,
   isDraftComplete,
   humanizeSaveError,
+  shouldBlockAsmSave,
   type AsmDraft,
 } from '../src/asmEdit';
 
@@ -277,6 +278,49 @@ describe('completeness gating', () => {
   });
 });
 
+describe('shouldBlockAsmSave (external-edit gate, L-082)', () => {
+  // The session's baseline: what the Animator loaded, normalized the same way
+  // AnimatorEditor computes `loadedDoc`.
+  const loadedDoc = JSON.stringify(draftToDoc(docToDraft(SAMPLE)));
+
+  it('blocks when a raw fs write (no journal/exec) changed the doc on disk', () => {
+    // Simulate `echo`/agent editing the .asm.json directly: same doc but
+    // idle speed bumped to 9.9 — exactly the audit's live repro.
+    const external = JSON.parse(JSON.stringify(SAMPLE)) as StateMachineData;
+    external.states[0].speed = 9.9;
+    const onDiskJson = JSON.stringify(external, null, 2);
+    expect(shouldBlockAsmSave({ overwrite: false, onDiskJson, loadedDoc })).toBe(true);
+  });
+
+  it('does not block when the on-disk text is the same doc with different formatting/key order', () => {
+    // Re-serialize with different whitespace and reordered keys — must
+    // normalize equal through the doc<->draft round-trip.
+    const reordered = {
+      transitions: SAMPLE.transitions,
+      initial: SAMPLE.initial,
+      states: SAMPLE.states,
+      params: SAMPLE.params,
+    };
+    const onDiskJson = JSON.stringify(reordered, null, 4);
+    expect(shouldBlockAsmSave({ overwrite: false, onDiskJson, loadedDoc })).toBe(false);
+  });
+
+  it('does not block when the user already chose Overwrite', () => {
+    const external = JSON.parse(JSON.stringify(SAMPLE)) as StateMachineData;
+    external.states[0].speed = 9.9;
+    const onDiskJson = JSON.stringify(external);
+    expect(shouldBlockAsmSave({ overwrite: true, onDiskJson, loadedDoc })).toBe(false);
+  });
+
+  it('does not block when the on-disk read failed (cannot compare)', () => {
+    expect(shouldBlockAsmSave({ overwrite: false, onDiskJson: null, loadedDoc })).toBe(false);
+  });
+
+  it('does not block on unparseable on-disk content', () => {
+    expect(shouldBlockAsmSave({ overwrite: false, onDiskJson: '{not json', loadedDoc })).toBe(false);
+  });
+});
+
 describe('humanizeSaveError', () => {
   it('translates a zod transition/condition path into a plain-language location', () => {
     const raw =
@@ -289,6 +333,12 @@ describe('humanizeSaveError', () => {
   it('translates a state path', () => {
     const raw = 'Invalid parameters for updateStateMachineAsset: data.states.0.animation: Required';
     expect(humanizeSaveError(raw)).toBe('State 1: Required');
+  });
+
+  it('keeps the param name for a params-record path', () => {
+    const raw =
+      'Invalid parameters for updateStateMachineAsset: data.params.spd.default: Expected boolean, received number';
+    expect(humanizeSaveError(raw)).toBe('Parameter "spd": Expected boolean, received number');
   });
 
   it('strips the command prefix even when there is no data path', () => {

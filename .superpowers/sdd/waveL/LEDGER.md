@@ -1157,16 +1157,21 @@ high) though it borders on a defect (values unreadable).
   already in `assets`) and offer reload/overwrite before Save, not silent
   last-write-wins.
 - Source: ANIMATOR-8 (Wave-K: "Animator external-edit last-write-wins")
-- Disposition: fixed (T8-B6) — save-time external-change detection (cheapest
-  honest fix): `save()` compares the fresh on-disk parse the file-watcher already
-  carries in `asset.stateMachine` (normalized through the same doc↔draft
-  round-trip as `loadedDoc`, so key-order/default-omission don't false-positive)
-  against what this session loaded; on mismatch it shows a Code-panel-style
-  conflict banner (Reload / Overwrite) and blocks the silent last-write-wins.
-  Reload adopts the on-disk doc; Overwrite proceeds. Behavior: detection is at
-  Save (not live) — an external edit still isn't pulled in mid-edit, but can no
-  longer be destroyed without the user choosing. Files: AnimatorEditor.tsx,
-  animator uses shared `.code-conflict-banner`.
+- Disposition: fixed (T8-B6, reworked after review) — save-time external-change
+  detection mirroring CodePanel's L-054 backstop: `save()` RE-READS the
+  .asm.json from disk (`fetch(fileUrl(project, asset.path))`) — NOT the store's
+  `asset.stateMachine`, which only refreshes via the command journal and is
+  stale for raw fs edits — normalizes the on-disk text through the same
+  doc↔draft round-trip as `loadedDoc` (pure `shouldBlockAsmSave` in asmEdit.ts,
+  unit-tested incl. the raw-fs-write case), and on drift shows the
+  Reload/Overwrite conflict banner instead of writing. Reload adopts the exact
+  doc Save compared against (captured at detection); Overwrite proceeds; a
+  failed read never blocks the save. Live-verified end-to-end with a raw
+  `python` write (no journal): Save → banner, file untouched; Reload → adopts
+  disk; second raw write + Save → banner → Overwrite → deliberate write lands.
+  Behavior: detection is at Save (not live) — an external edit still isn't
+  pulled in mid-edit, but can no longer be destroyed without the user choosing.
+  Files: asmEdit.ts, AnimatorEditor.tsx (shared `.code-conflict-banner`).
 
 ### L-083 · animator · friction · high
 - Element: "Machine" `<select>` switched while the current draft is dirty.

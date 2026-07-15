@@ -9,7 +9,8 @@
  * Inspector's AnimationStateMachine row) via the store's `animatorTarget` seam.
  */
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import type { CommandIssue } from '@hearth/core';
+import type { CommandIssue, StateMachineData } from '@hearth/core';
+import { fileUrl } from '../api';
 import { useEditor } from '../store';
 import type { AssetItem } from '../types';
 import { ConfirmDialog, Icon, Modal, NumberField, TextField } from './ui';
@@ -34,6 +35,7 @@ import {
   renameParam,
   renameState,
   savePayload,
+  shouldBlockAsmSave,
   setConditionOp,
   setConditionParam,
   setConditionValue,
@@ -66,6 +68,7 @@ export function AnimatorEditor() {
   const exec = useEditor((s) => s.exec);
   const animatorTarget = useEditor((s) => s.animatorTarget);
   const openAnimatorFor = useEditor((s) => s.openAnimatorFor);
+  const projectPath = useEditor((s) => s.projectPath);
 
   const stateMachineAssets = useMemo(() => assets.filter((a) => a.type === 'stateMachine'), [assets]);
   const animationAssets = useMemo(() => assets.filter((a) => a.type === 'animation'), [assets]);
@@ -79,8 +82,11 @@ export function AnimatorEditor() {
   // parked behind a discard confirm rather than clobbering unsaved edits.
   const [pendingAssetId, setPendingAssetId] = useState<string | null>(null);
   // ANIMATOR-8: set when Save detects the file changed on disk since we loaded
-  // (an agent/CLI edit while the machine was open) — surfaces reload/overwrite.
-  const [conflict, setConflict] = useState(false);
+  // (an agent/CLI/raw-fs edit while the machine was open) — holds the fresh
+  // on-disk parse captured at detection time, so the banner's Reload adopts
+  // exactly what Save compared against (the store's `asset.stateMachine` only
+  // refreshes via the command journal and can be stale for raw fs edits).
+  const [conflictDoc, setConflictDoc] = useState<StateMachineData | null>(null);
   // ANIMATOR-3: in-editor "New state machine" create dialog.
   const [createOpen, setCreateOpen] = useState(false);
   const [newName, setNewName] = useState('');
@@ -131,7 +137,7 @@ export function AnimatorEditor() {
     setDraft(next);
     setLoadedDoc(JSON.stringify(draftToDoc(next)));
     setSaveErrors([]);
-    setConflict(false);
+    setConflictDoc(null);
   }, [asset]);
 
   const update = (fn: (d: AsmDraft) => AsmDraft) => setDraft((d) => (d ? fn(d) : d));
@@ -144,38 +150,51 @@ export function AnimatorEditor() {
 
   async function save(overwrite = false) {
     if (!asset || !draft) return;
-    // ANIMATOR-8: the file-watcher keeps the fresh on-disk parse in
-    // `asset.stateMachine`. If it no longer matches what this session loaded,
-    // an external process (agent/CLI) edited the file while it was open here —
-    // saving now would silently last-write-wins over their change. Normalize
-    // both through the same doc<->draft round-trip so key-order/default-omission
-    // differences don't read as a false conflict.
-    if (!overwrite && asset.stateMachine) {
-      const onDisk = JSON.stringify(draftToDoc(docToDraft(asset.stateMachine)));
-      if (onDisk !== loadedDoc) {
-        setConflict(true);
+    setSaving(true);
+    // ANIMATOR-8 backstop (same shape as CodePanel's L-054): a raw filesystem
+    // edit never goes through the command layer, so the store's
+    // `asset.stateMachine` parse can be stale — the only honest check is to
+    // RE-READ the .asm.json from disk right now and compare (normalized
+    // through the same doc<->draft round-trip as `loadedDoc`, so formatting/
+    // key-order differences never read as a false conflict). On drift, stop
+    // and show Reload/Overwrite instead of silently last-write-winning.
+    if (!overwrite && projectPath) {
+      let onDiskJson: string | null = null;
+      try {
+        const res = await fetch(fileUrl(projectPath, asset.path));
+        onDiskJson = res.ok ? await res.text() : null;
+      } catch {
+        onDiskJson = null; // can't read (offline/removed) → don't block the save
+      }
+      if (shouldBlockAsmSave({ overwrite, onDiskJson, loadedDoc })) {
+        try {
+          setConflictDoc(JSON.parse(onDiskJson!) as StateMachineData);
+        } catch {
+          setConflictDoc(null);
+        }
+        setSaving(false);
         return;
       }
     }
-    setSaving(true);
     const result = await exec('updateStateMachineAsset', savePayload(asset.id, draft));
     setSaving(false);
     if (result.success) {
       setSaveErrors([]);
-      setConflict(false);
+      setConflictDoc(null);
       setLoadedDoc(JSON.stringify(draftToDoc(draft)));
     } else {
       setSaveErrors(result.errors);
     }
   }
 
-  // ANIMATOR-8: adopt the on-disk version, discarding this session's edits.
+  // ANIMATOR-8: adopt the on-disk version (the exact doc Save compared
+  // against, captured at detection), discarding this session's edits.
   function reloadFromDisk() {
-    if (!asset?.stateMachine) return;
-    const next = docToDraft(asset.stateMachine);
+    if (!conflictDoc) return;
+    const next = docToDraft(conflictDoc);
     setDraft(next);
     setLoadedDoc(JSON.stringify(draftToDoc(next)));
-    setConflict(false);
+    setConflictDoc(null);
     setSaveErrors([]);
   }
 
@@ -354,7 +373,7 @@ export function AnimatorEditor() {
         </Tooltip>
       </div>
 
-      {conflict && (
+      {conflictDoc !== null && (
         <div className="code-conflict-banner" role="alert">
           <Icon name="warning" size={13} />
           <span>

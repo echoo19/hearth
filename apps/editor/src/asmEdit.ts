@@ -422,6 +422,38 @@ export function isDraftComplete(draft: AsmDraft): boolean {
 }
 
 /**
+ * Save-time external-change gate (mirrors CodePanel's `shouldBlockSaveForDrift`
+ * / L-054 backstop). A raw filesystem edit (shell, another editor, an agent
+ * using plain file-write tools) never goes through the command layer, so the
+ * store's `asset.stateMachine` parse can be stale — the only honest check is to
+ * re-read the .asm.json from disk at Save time and compare it here. The on-disk
+ * text is normalized through the same doc→draft→doc round-trip as the session's
+ * `loadedDoc` baseline, so formatting/key-order/omitted-default differences
+ * never read as a false conflict. Returns true when Save must stop and show the
+ * Reload/Overwrite banner instead of writing.
+ *
+ * Skips (returns false) when the caller already chose to overwrite, when the
+ * read failed (`onDiskJson === null` — can't compare, don't block), or when the
+ * on-disk text isn't a parseable state-machine doc (a malformed external edit
+ * can't be merged anyway; the save will replace it with a valid doc, and
+ * blocking on it would wedge Save with no banner action that helps).
+ */
+export function shouldBlockAsmSave(opts: {
+  overwrite: boolean;
+  onDiskJson: string | null;
+  loadedDoc: string;
+}): boolean {
+  if (opts.overwrite || opts.onDiskJson === null) return false;
+  let normalized: string;
+  try {
+    normalized = JSON.stringify(draftToDoc(docToDraft(JSON.parse(opts.onDiskJson) as StateMachineData)));
+  } catch {
+    return false;
+  }
+  return normalized !== opts.loadedDoc;
+}
+
+/**
  * Turn a raw `updateStateMachineAsset` rejection into a human, field-located
  * message. The command surfaces zod paths verbatim, e.g.
  *   `Invalid parameters for updateStateMachineAsset: data.transitions.2.conditions.0.op: bool param "spd" conditions only support eq/neq`
@@ -450,7 +482,15 @@ export function humanizeSaveError(message: string): string {
       labels.push(`State ${idx + 1}`);
       i++;
     } else if (seg === 'params') {
-      labels.push('Parameter');
+      // params is a Record keyed by name — keep the name in the location
+      // (data.params.spd.default → `Parameter "spd"`).
+      const name = parts[i + 1];
+      if (name !== undefined) {
+        labels.push(`Parameter "${name}"`);
+        i++;
+      } else {
+        labels.push('Parameter');
+      }
     } else if (seg === 'initial') {
       labels.push('Initial state');
     }
