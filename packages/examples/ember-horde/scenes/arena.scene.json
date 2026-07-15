@@ -224,9 +224,7 @@
       }
     },
     {
-      "id": "ent_7ax0y7xc",
       "name": "Enemy",
-      "parentId": null,
       "enabled": true,
       "tags": [
         "enemy"
@@ -306,9 +304,13 @@
           }
         }
       },
+      "id": "ent_7ax0y7xc",
+      "parentId": null,
       "prefab": {
         "asset": "ast_l2xgfckm",
-        "ids": {},
+        "ids": {
+          "pfe_1": "ent_7ax0y7xc"
+        },
         "overrides": []
       }
     },

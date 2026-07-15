@@ -28,6 +28,7 @@ export {
   instantiatePrefabData,
   validatePrefabLocalIds,
   findInstanceMembership,
+  isBrokenPrefabMarker,
   recordInstanceOverride,
   buildMergedInstance,
   revertInstanceOverrides,

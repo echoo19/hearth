@@ -3502,6 +3502,12 @@ return script
     scene, entity: 'Enemy', script: 'scripts/enemy-chase.lua', params: { speed: 90 },
   });
   const enemyPrefab = (await run(session, 'createPrefab', { scene, entity: 'Enemy', name: 'Enemy' })).asset;
+  // createPrefab leaves the source root "legacy-detached" (an empty-ids marker
+  // that is NOT a live instance). Sync the prefab once so "Enemy" is LINKED as
+  // a real instance (its ids map gains a self-entry) instead of shipping a
+  // stale marker that lies to the Inspector's "Instance of…" banner and no-ops
+  // the structural-edit detach safety net (SH-1 / L-119).
+  await run(session, 'syncPrefabInstances', { prefab: enemyPrefab.id });
 
   // Elite Enemy: a second placed instance of the same prefab, tinted and
   // scaled up via a per-field override. setProperties on an instance member

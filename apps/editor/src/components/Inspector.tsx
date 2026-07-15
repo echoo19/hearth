@@ -30,6 +30,7 @@ import {
   countPrefabInstances,
   createSyncPreflight,
   instanceOverrideCount,
+  isLivePrefabInstance,
   revertAllConfirmBody,
   syncConfirmBody,
   updatePrefabConfirmBody,
@@ -1056,6 +1057,13 @@ export function Inspector() {
 
   const prefabAssetId = entity.prefab?.asset;
   const prefabAsset = prefabAssetId ? assets.find((a) => a.id === prefabAssetId) : undefined;
+  // Gate the "Instance of…" banner on resolved membership (a self-entry in the
+  // marker's `ids` map), not on marker presence — a marker without a self-entry
+  // (empty `ids`, e.g. an unsynced createPrefab source master or stale legacy
+  // data) is not a live instance and must not present as a healthy one (SH-1).
+  const isPrefabInstance = isLivePrefabInstance(
+    entity as { id: string; prefab?: { ids?: Record<string, string> } },
+  );
   // The raw scene marker (root entities only) carries the FULL override list
   // for the whole instance — every member entity's overrides, not just the
   // root's own (unlike the per-entity `prefabInfo.overridden` used for field
@@ -1177,13 +1185,13 @@ export function Inspector() {
           </Button>
         </div>
       )}
-      {entity.prefab && (
+      {isPrefabInstance && (
         <div className="prefab-banner">
           <span className="prefab-banner-icon">
             <Icon name="prefab" size={12} />
           </span>
           <span className="prefab-banner-text">
-            Instance of <strong>{prefabAsset?.name ?? entity.prefab.asset}</strong>
+            Instance of <strong>{prefabAsset?.name ?? prefabAssetId}</strong>
           </span>
           {overrideCount > 0 && (
             <span className="prefab-banner-overrides">

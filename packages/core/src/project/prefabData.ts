@@ -235,6 +235,22 @@ export function findInstanceMembership(scene: Scene, entityId: string): Instance
 }
 
 /**
+ * A root carries a BROKEN prefab marker when it has a `.prefab` link but no
+ * self-entry in its own `ids` map — i.e. no id in the map resolves back to the
+ * root itself (an empty `ids: {}` is the common case, e.g. a `createPrefab`
+ * source that was never synced/healed). Such a marker looks like a live
+ * instance to the UI but resolves to no membership, so every structural-edit
+ * detach check anchored on it silently no-ops (SH-1). It is not a live
+ * instance: treat it as a non-member and repair it away rather than trusting it.
+ */
+export function isBrokenPrefabMarker(entity: Entity): boolean {
+  const marker = entity.prefab;
+  if (!marker) return false;
+  const ids = marker.ids ?? {};
+  return !Object.values(ids).includes(entity.id);
+}
+
+/**
  * Record (or replace) an implicit override on the instance root that owns
  * `entityId`. No-op when `entityId` is not an instance member. `value` must be
  * the post-parse, JSON-safe written value (what the component now holds); it is
@@ -471,6 +487,15 @@ export function revertInstanceOverrides(
  * removing its root marker and return the detach info; otherwise a no-op. Used
  * by structural edits (adding/removing an entity or component inside an
  * instance) that break the live link between an instance and its prefab.
+ *
+ * A root with a BROKEN marker (a `.prefab` link but no self-entry in its `ids`
+ * map — see `isBrokenPrefabMarker`) resolves to no membership and is left
+ * untouched here: it is not a live instance, and the createPrefab "source
+ * master" (an unsynced empty-ids marker) intentionally survives structural
+ * edits so `updatePrefab` can push the evolved subtree back to the asset. Such
+ * markers converge by being synced/updated (which repopulates `ids`), not by
+ * being cleared. The editor gates its "instance" banner on membership so a
+ * broken marker never presents as a healthy live instance (SH-1).
  */
 export function detachInstanceContaining(
   scene: Scene,

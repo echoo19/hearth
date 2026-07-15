@@ -3,10 +3,34 @@ import {
   countPrefabInstances,
   createSyncPreflight,
   instanceOverrideCount,
+  isLivePrefabInstance,
   revertAllConfirmBody,
   syncConfirmBody,
 } from '../src/prefabActions';
 import type { CommandResult } from '../src/types';
+
+describe('isLivePrefabInstance — Inspector banner gating (SH-1)', () => {
+  it('is true for a healthy instance root (ids has a self-entry)', () => {
+    expect(
+      isLivePrefabInstance({ id: 'ent_a', prefab: { ids: { pfe_1: 'ent_a', pfe_2: 'ent_b' } } }),
+    ).toBe(true);
+  });
+
+  it('is false for a marker with an empty ids map (unsynced createPrefab source / legacy-detached)', () => {
+    // The exact shape SH-1 flagged: a `.prefab` marker present but ids: {} — the
+    // banner must NOT render, or it lies about a healthy synced instance.
+    expect(isLivePrefabInstance({ id: 'ent_a', prefab: { ids: {} } })).toBe(false);
+  });
+
+  it('is false when ids maps only OTHER entities (no self-entry on this root)', () => {
+    expect(isLivePrefabInstance({ id: 'ent_a', prefab: { ids: { pfe_2: 'ent_b' } } })).toBe(false);
+  });
+
+  it('is false for a plain entity with no marker', () => {
+    expect(isLivePrefabInstance({ id: 'ent_a' })).toBe(false);
+    expect(isLivePrefabInstance(null)).toBe(false);
+  });
+});
 
 describe('syncConfirmBody', () => {
   it('renders merge-semantics copy with the count substituted', () => {

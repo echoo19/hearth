@@ -49,6 +49,24 @@ export function syncConfirmBody(count: number): string {
   return `Syncs ${count} instances with this prefab. Overrides you've made on each instance are kept; any that no longer apply to the updated prefab are dropped. Names and positions are kept.`;
 }
 
+/**
+ * Whether `entity` is a LIVE prefab instance root — i.e. it carries a `.prefab`
+ * marker whose `ids` map has a self-entry (some local id resolves back to the
+ * entity's own id). A marker without a self-entry (an empty `ids: {}`, e.g. an
+ * unsynced `createPrefab` source master, or genuinely stale legacy data) is NOT
+ * a live instance: it resolves to no membership and its detach/override
+ * machinery no-ops, so the Inspector must gate its "Instance of…" banner on
+ * THIS, not on marker presence, or it lies about a healthy synced instance
+ * (SH-1). A live instance re-links (repopulates `ids`) on the next sync/update.
+ */
+export function isLivePrefabInstance(
+  entity: { id: string; prefab?: { ids?: Record<string, string> } } | null | undefined,
+): boolean {
+  const ids = entity?.prefab?.ids;
+  if (!ids) return false;
+  return Object.values(ids).includes(entity!.id);
+}
+
 /** Total override count across a prefab instance, from the root marker's raw `overrides` list (each entry already scoped to whichever member entity it was recorded on — root or a descendant). */
 export function instanceOverrideCount(overrides: readonly { entity: string }[]): number {
   return overrides.length;

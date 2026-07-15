@@ -5,6 +5,8 @@ import {
   instantiatePrefabData,
   validatePrefabLocalIds,
   findInstanceMembership,
+  isBrokenPrefabMarker,
+  detachInstanceContaining,
   PrefabDataSchema,
   EntitySchema,
   createComponent,
@@ -345,6 +347,69 @@ describe('findInstanceMembership', () => {
     expect(findInstanceMembership(scene, 'ent_plain')).toBeNull();
     // legacy instance has no ids -> not resolvable as a member of itself
     expect(findInstanceMembership(scene, 'ent_legacy')).toBeNull();
+  });
+});
+
+describe('isBrokenPrefabMarker', () => {
+  it('is false for a plain entity and for a healthy instance root (self-entry present)', () => {
+    const plain = makeEntity('ent_plain', null, { name: 'Plain' });
+    const healthy = makeEntity('ent_root', null, {
+      name: 'Root',
+      prefab: { asset: 'ast_p', ids: { pfe_1: 'ent_root', pfe_2: 'ent_child' }, overrides: [] } as any,
+    });
+    expect(isBrokenPrefabMarker(plain)).toBe(false);
+    expect(isBrokenPrefabMarker(healthy)).toBe(false);
+  });
+
+  it('is true for a marker with no self-entry in its ids map (empty or child-only)', () => {
+    const empty = makeEntity('ent_legacy', null, {
+      name: 'Legacy',
+      prefab: { asset: 'ast_p', ids: {}, overrides: [] } as any,
+    });
+    // ids present but no value maps back to the root's own id
+    const childOnly = makeEntity('ent_root', null, {
+      name: 'Root',
+      prefab: { asset: 'ast_p', ids: { pfe_2: 'ent_child' }, overrides: [] } as any,
+    });
+    expect(isBrokenPrefabMarker(empty)).toBe(true);
+    expect(isBrokenPrefabMarker(childOnly)).toBe(true);
+  });
+});
+
+describe('detachInstanceContaining', () => {
+  function makeScene(entities: Entity[]): Scene {
+    return { formatVersion: 1, id: 'scn_x', name: 'S', entities };
+  }
+
+  it('detaches a healthy live instance (marker removed)', () => {
+    const healthy = makeEntity('ent_root', null, {
+      name: 'Root',
+      prefab: { asset: 'ast_p', ids: { pfe_1: 'ent_root' }, overrides: [] } as any,
+    });
+    const scene = makeScene([healthy]);
+    const result = detachInstanceContaining(scene, 'ent_root');
+    expect(result.detached).toBe(true);
+    expect(scene.entities[0].prefab).toBeUndefined();
+  });
+
+  it('leaves a broken/source-master marker untouched (a non-member: not a live instance to detach)', () => {
+    // The createPrefab "source master" ships with an empty-ids marker so a
+    // structural edit followed by updatePrefab can push the evolved subtree
+    // back to the asset — detach must NOT clear it (it resolves to no
+    // membership and is not a live instance).
+    const master = makeEntity('ent_legacy', null, {
+      name: 'Enemy',
+      prefab: { asset: 'ast_p', ids: {}, overrides: [] } as any,
+    });
+    const scene = makeScene([master]);
+    expect(detachInstanceContaining(scene, 'ent_legacy')).toEqual({ detached: false });
+    expect(scene.entities[0].prefab).toBeDefined();
+  });
+
+  it('is a pure no-op for a plain entity (no marker)', () => {
+    const plain = makeEntity('ent_plain', null, { name: 'Plain' });
+    const scene = makeScene([plain]);
+    expect(detachInstanceContaining(scene, 'ent_plain')).toEqual({ detached: false });
   });
 });
 

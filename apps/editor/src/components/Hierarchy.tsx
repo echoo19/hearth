@@ -6,6 +6,7 @@ import { ConfirmDialog, Icon, entityIcon } from './ui';
 import { Button, IconButton } from './ui/Button';
 import { ContextMenu, type MenuItem } from './ui/Menu';
 import { Tooltip } from './ui/Tooltip';
+import { isLivePrefabInstance } from '../prefabActions';
 
 // Tree rows are clickable divs, not native buttons — Enter/Space is the
 // keyboard equivalent of the click that selects a row. Exported (module
@@ -484,7 +485,12 @@ export function Hierarchy() {
             {entity.name}
           </span>
         )}
-        {entity.prefab && (
+        {/* Gate on resolved membership, not marker presence: a marker without a
+            self-entry in its ids map (an unsynced createPrefab source master or
+            stale legacy data) is not a live instance and must not wear the
+            instance badge (SH-1). */}
+        {isLivePrefabInstance(entity as { id: string; prefab?: { ids?: Record<string, string> } }) &&
+          entity.prefab && (
           <span
             className="prefab-badge"
             title={`Instance of ${prefabAssetName(entity.prefab.asset)}`}
