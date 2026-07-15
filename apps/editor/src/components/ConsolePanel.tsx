@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useLayoutEffect, useRef } from 'react';
 import { useEditor } from '../store';
 import type { ConsoleEntry, ValidationReport } from '../types';
 import { Icon } from './ui';
@@ -35,6 +35,23 @@ export function isNearBottom(metrics: { scrollHeight: number; scrollTop: number;
   return metrics.scrollHeight - metrics.scrollTop - metrics.clientHeight < slack;
 }
 
+/**
+ * The scrollTop to reapply when the Console panel is revealed after dockview
+ * detached its DOM (a sibling tab activating detaches the panel element, which
+ * resets the browser's scrollTop to 0 — so on reveal the view silently sits at
+ * the top even with zero new entries). Restores the user's intent: snap to the
+ * bottom when they were parked there (auto-follow), else restore the saved
+ * offset. Pure (no DOM) so the reveal-restore decision is unit-testable without
+ * a real layout — jsdom reports zero metrics, same reason isNearBottom is pure.
+ */
+export function scrollRestoreTop(
+  metrics: { scrollHeight: number },
+  stickToBottom: boolean,
+  savedScrollTop: number,
+): number {
+  return stickToBottom ? metrics.scrollHeight : savedScrollTop;
+}
+
 function ConsoleLink({ link }: { link: NonNullable<ConsoleEntry['link']> }) {
   const openScriptAt = useEditor((s) => s.openScriptAt);
   const label = link.line != null ? `${link.path}:${link.line}` : link.path;
@@ -53,6 +70,9 @@ export function ConsolePanel() {
   const clearConsole = useEditor((s) => s.clearConsole);
   const exec = useEditor((s) => s.exec);
   const log = useEditor((s) => s.log);
+  // Whether the Console tab is currently visible (dockview mirrors this into
+  // the store via ConsolePanelHost). Used below to restore scroll on reveal.
+  const consoleOpen = useEditor((s) => s.consoleOpen);
   const bodyRef = useRef<HTMLDivElement>(null);
   /**
    * Scroll-lock: only auto-scroll when the user was already parked at (or
@@ -63,6 +83,13 @@ export function ConsolePanel() {
    * "at the bottom").
    */
   const stickToBottomRef = useRef(true);
+  /**
+   * The last user-intended scroll offset, retained across a dockview
+   * detach/reveal (the browser resets the live element's scrollTop to 0 when
+   * the panel DOM is detached). Paired with `stickToBottomRef`, this is the
+   * scroll INTENT we restore on reveal — see the layout effect below.
+   */
+  const lastScrollTopRef = useRef(0);
 
   // Key on the last entry's id, NOT entries.length: the list is capped at
   // MAX_CONSOLE, so once the cap is hit length pins forever and a
@@ -77,12 +104,31 @@ export function ConsolePanel() {
     if (el && stickToBottomRef.current) el.scrollTop = el.scrollHeight;
   }, [lastEntryId]);
 
+  /**
+   * Restore the scroll intent on (re)mount and whenever the Console tab is
+   * revealed. Dockview keeps the panel component mounted but DETACHES its DOM
+   * when a sibling tab activates; the browser resets the reattached element's
+   * scrollTop to 0, so without this the view sat at the top on every reveal
+   * even with no new entries. A layout effect (before paint, no flash) keyed on
+   * `consoleOpen` — the visibility signal dockview already feeds the store —
+   * covers both the initial mount and every hide→reveal.
+   */
+  useLayoutEffect(() => {
+    const el = bodyRef.current;
+    if (!el || !consoleOpen) return;
+    el.scrollTop = scrollRestoreTop(el, stickToBottomRef.current, lastScrollTopRef.current);
+  }, [consoleOpen]);
+
   function handleScroll() {
     const el = bodyRef.current;
-    if (!el) return;
+    // A detached/hidden panel reports clientHeight 0; ignore the scroll events
+    // that fire around a dockview hide/reveal (scrollTop reset to 0) so they
+    // don't clobber the saved intent we're about to restore.
+    if (!el || el.clientHeight === 0) return;
     // Within ~24px of the bottom counts as "parked at the bottom" so a
     // sub-pixel rounding or a short overscroll doesn't unstick auto-follow.
     stickToBottomRef.current = isNearBottom(el);
+    lastScrollTopRef.current = el.scrollTop;
   }
 
   async function validate() {
