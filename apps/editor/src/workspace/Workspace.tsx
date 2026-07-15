@@ -99,9 +99,11 @@ function panelHost(Content: React.ComponentType, canvas = false): React.Function
  * Game panel: pause (not stop) the running preview when its tab is hidden, and
  * auto-resume when it's shown again (L-067). Hiding used to hard-Stop the run —
  * losing all play state — which made the "open Code, edit, hot-reload while
- * playing" workflow unreachable by default. Now hiding just halts rAF/audio via
- * the store's tab-pause, so the run (and its state) survives a trip to the Code
- * tab; an explicit toolbar Pause is preserved across the round trip.
+ * playing" workflow unreachable by default. Now hiding tab-pauses via the
+ * store: the simulation freezes and audio suspends (the render ticker and
+ * gamepad polling keep running by design — see PixiSceneView.pause), so the
+ * run and its state survive a trip to the Code tab; an explicit toolbar Pause
+ * is preserved across the round trip.
  */
 function GamePanelHost(props: IDockviewPanelProps) {
   const setGameTabVisible = useEditor((s) => s.setGameTabVisible);
@@ -396,6 +398,7 @@ export function Workspace({
   onReady?: (api: DockviewApi | null) => void;
 }) {
   const playing = useEditor((s) => s.playing);
+  const runNonce = useEditor((s) => s.runNonce);
   const diffFocusRequest = useEditor((s) => s.diffFocusRequest);
   const codeOpenRequest = useEditor((s) => s.codeOpenRequest);
   const codeSearchRequest = useEditor((s) => s.codeSearchRequest);
@@ -433,9 +436,15 @@ export function Workspace({
   );
 
   // Pressing Play surfaces the Game panel (re-opening it if it was closed).
+  // Keyed on runNonce as well as playing: restartPlay() keeps `playing` true
+  // but bumps runNonce, so clicking Restart from another tab (e.g. Code, with
+  // the run tab-paused) also brings the Game tab forward — the user asked to
+  // restart, show them the restarted run. Surfacing the tab fires the panel's
+  // visibility handler, which clears any tab-pause, so a restart never comes
+  // up paused-and-hidden.
   useEffect(() => {
     if (playing && apiRef.current) showPanel(apiRef.current, 'game');
-  }, [playing]);
+  }, [playing, runNonce]);
 
   // The Agent panel's "Review changes" action asks for the Diff panel the
   // same way: bump a counter in the store, react here (diffFocusRequest

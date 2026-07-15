@@ -74,4 +74,62 @@ describe('play-mode session continuity — setGameTabVisible', () => {
     expect(useEditor.getState().pausedByTab).toBe(false);
     expect(useEditor.getState().paused).toBe(false);
   });
+
+  it('restartPlay while tab-paused restarts unpaused and bumps runNonce (the Workspace surface trigger)', () => {
+    // Restart clicked from another tab (e.g. Code) while the run is tab-paused:
+    // the new run must come up unpaused, and runNonce must bump — Workspace's
+    // surface-Game effect keys on [playing, runNonce], so the bump is what
+    // brings the Game tab forward (review I2).
+    useEditor.getState().setGameTabVisible(false);
+    expect(useEditor.getState().pausedByTab).toBe(true);
+    const before = useEditor.getState().runNonce;
+    useEditor.getState().restartPlay();
+    const s = useEditor.getState();
+    expect(s.playing).toBe(true);
+    expect(s.paused).toBe(false);
+    expect(s.pausedByTab).toBe(false);
+    expect(s.runNonce).toBe(before + 1);
+  });
+
+  it('live dispatch still applies while tab-paused (playing-gate passes)', async () => {
+    // The hot-reload/live-patch path is gated on `playing`, not `paused`: a
+    // tab-paused run must still receive journal entries (this is what makes
+    // edit-on-the-Code-tab-then-return work). A structural external entry is
+    // the cheapest network-free probe — it must raise the restart badge.
+    useEditor.setState({ pendingRestart: false });
+    useEditor.getState().setGameTabVisible(false); // tab-paused, still playing
+    await useEditor.getState().applyExternalJournalEntry({
+      seq: 1,
+      ts: new Date().toISOString(),
+      source: 'cli',
+      command: 'createEntity',
+      summary: 'created entity',
+      ok: true,
+    });
+    expect(useEditor.getState().pendingRestart).toBe(true);
+    // Contrast: when stopped, the same entry is ignored.
+    useEditor.setState({ playing: false, paused: false, pausedByTab: false, pendingRestart: false });
+    await useEditor.getState().applyExternalJournalEntry({
+      seq: 2,
+      ts: new Date().toISOString(),
+      source: 'cli',
+      command: 'createEntity',
+      summary: 'created entity',
+      ok: true,
+    });
+    expect(useEditor.getState().pendingRestart).toBe(false);
+  });
+
+  it('repeated hide/show cycles stay consistent (no ownership drift)', () => {
+    const s = () => useEditor.getState();
+    s().setGameTabVisible(false);
+    expect([s().paused, s().pausedByTab]).toEqual([true, true]);
+    s().setGameTabVisible(true);
+    expect([s().paused, s().pausedByTab]).toEqual([false, false]);
+    s().setGameTabVisible(false);
+    expect([s().paused, s().pausedByTab]).toEqual([true, true]);
+    s().setGameTabVisible(true);
+    expect([s().paused, s().pausedByTab]).toEqual([false, false]);
+    expect(s().playing).toBe(true); // never stopped across the cycles
+  });
 });

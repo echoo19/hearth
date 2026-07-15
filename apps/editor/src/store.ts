@@ -268,10 +268,11 @@ export interface EditorState {
   setPaused(paused: boolean): void;
   /**
    * Sync the Game tab's visibility into the play session (L-067). Hiding the
-   * tab pauses a running preview (halting rAF/audio) instead of stopping it,
-   * so switching to Code to hot-reload no longer tears the run down; showing
-   * it again auto-resumes UNLESS the user had explicitly paused first. A no-op
-   * when not playing.
+   * tab pauses a running preview — freezing the simulation and suspending
+   * audio (the render ticker and gamepad polling continue by design; see
+   * PixiSceneView.pause) — instead of stopping it, so switching to Code to
+   * hot-reload no longer tears the run down; showing it again auto-resumes
+   * UNLESS the user had explicitly paused first. A no-op when not playing.
    */
   setGameTabVisible(visible: boolean): void;
   setDebugDraw(on: boolean): void;
