@@ -97,9 +97,18 @@
   white-space: pre-wrap;
 }
 
+/* An independent scroll region per list (LAUNCHER-1 / L-100): with a full
+   Recent list + several examples, the unbounded page could stretch well past
+   a typical viewport with no way to see "Examples" without scrolling past a
+   lopsided Open-a-project card. Capping each list's own height keeps the
+   Open card roughly balanced against the New-project card and keeps
+   Examples reachable near the fold regardless of how many Recent entries
+   accumulate. */
 .launcher-list {
   display: flex;
   flex-direction: column;
+  max-height: 220px;
+  overflow-y: auto;
 }
 
 .launcher-item {
