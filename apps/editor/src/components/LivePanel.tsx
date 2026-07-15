@@ -10,6 +10,8 @@ import React, { useEffect, useRef, useState } from 'react';
 import { useEditor } from '../store';
 import { getGameView } from '../gameViewRef';
 import type { RuntimeEntityHandle, RuntimeEventRecord, RuntimeSchedulerSnapshot } from '../runtimeBridge';
+import { Icon } from './ui';
+import { Button } from './ui/Button';
 
 const POLL_MS = 100;
 const MAX_EVENTS = 10;
@@ -30,6 +32,7 @@ function fmtNum(n: number): string {
 
 export function LivePanel({ visible }: { visible: boolean }) {
   const playing = useEditor((s) => s.playing);
+  const setPlaying = useEditor((s) => s.setPlaying);
   const storeSelection = useEditor((s) => s.selection);
   const [entityId, setEntityId] = useState<string | null>(null);
   const [snapshot, setSnapshot] = useState<LiveSnapshot | null>(null);
@@ -98,11 +101,17 @@ export function LivePanel({ visible }: { visible: boolean }) {
         </div>
         <div className="panel-body">
           <div className="empty-state">
-            <span>Press Play to inspect the running game.</span>
+            <span className="empty-icon" aria-hidden="true">
+              <Icon name="play" size={16} />
+            </span>
+            <span>Nothing running to inspect.</span>
             <span className="hint">
               Shows the live transform, velocity, timers, tweens, and recent events of any entity in the running
               scene, including ones spawned at runtime.
             </span>
+            <Button size="sm" icon="play" onClick={() => setPlaying(true)}>
+              Play
+            </Button>
           </div>
         </div>
       </>

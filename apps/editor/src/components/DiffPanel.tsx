@@ -112,6 +112,9 @@ export function DiffPanel() {
               Refresh changes to see exactly what changed: scenes, entities, component properties, scripts, and
               assets. Restore checkpoint undoes it all.
             </span>
+            <Button size="sm" icon="checkpoint" disabled={busy !== null} onClick={() => void snapshot()}>
+              {busy === 'checkpoint' ? 'Saving…' : 'Checkpoint'}
+            </Button>
           </div>
         ) : !diff.hasChanges ? (
           <div className="empty-state">

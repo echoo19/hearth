@@ -39,6 +39,19 @@ const AGENT_MODE_HINTS: Record<AgentPermissionMode, string> = {
   all: PERMISSION_MODES.map((mode) => PERMISSION_DOCS[mode]).join(' '),
 };
 
+/**
+ * Client-side mirror of agentSetup.ts's MODE_ARGS (a type-only import keeps
+ * that server module out of the bundle): the `--mode` tokens each picker tier
+ * expands to. Used by the manual-setup blocks (L-092) so a copied command
+ * grants exactly what the picker shows.
+ */
+const AGENT_MODE_ARGS: Record<AgentPermissionMode, string> = {
+  'read-only': 'read-only',
+  'safe-edit': 'safe-edit',
+  full: 'safe-edit,code-edit,asset-edit',
+  all: 'all',
+};
+
 const INSTALL_COMMAND = 'npm install -g @anthropic-ai/claude-code';
 type AgentLauncher = 'claude' | 'codex' | 'shell';
 
@@ -259,14 +272,17 @@ export function AgentPanel() {
     `hearth diff                        # review what changed`,
   ].join('\n');
 
-  const mcpClaudeBlock = `claude mcp add hearth -- node ${mcpPath} --project ${manualProjectPath}`;
+  // L-092 (AGENT-4): the manual blocks carry the SAME --mode the picker above
+  // selects — copying the command instead of clicking Start must not silently
+  // downgrade the chosen tier to the server default.
+  const mcpClaudeBlock = `claude mcp add hearth -- node ${mcpPath} --project ${manualProjectPath} --mode ${AGENT_MODE_ARGS[agentMode]}`;
 
   const mcpJsonBlock = JSON.stringify(
     {
       mcpServers: {
         hearth: {
           command: 'node',
-          args: [mcpPath, '--project', manualProjectPath],
+          args: [mcpPath, '--project', manualProjectPath, '--mode', AGENT_MODE_ARGS[agentMode]],
         },
       },
     },
@@ -424,7 +440,8 @@ export function AgentPanel() {
             <h4>Permission modes</h4>
             <p>
               Sessions are granted an escalating set of modes (CLI <code>--allow</code>, MCP server{' '}
-              <code>--mode</code>). This editor grants all modes; narrow an agent's grant to what its task needs.
+              <code>--mode</code>). The blocks above carry the mode selected in the toolbar picker; narrow an
+              agent's grant to what its task needs.
             </p>
             <table className="perm-table">
               <thead>

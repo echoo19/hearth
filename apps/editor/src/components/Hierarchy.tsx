@@ -5,6 +5,7 @@ import { uniqueName as computeUniqueName } from '../uniqueName';
 import { ConfirmDialog, Icon, entityIcon } from './ui';
 import { Button, IconButton } from './ui/Button';
 import { ContextMenu, type MenuItem } from './ui/Menu';
+import { Tooltip } from './ui/Tooltip';
 
 // Tree rows are clickable divs, not native buttons — Enter/Space is the
 // keyboard equivalent of the click that selects a row. Exported (module
@@ -121,6 +122,7 @@ export function Hierarchy() {
   const log = useEditor((s) => s.log);
   const assets = useEditor((s) => s.assets);
   const deleteSelectionRequest = useEditor((s) => s.deleteSelectionRequest);
+  const playing = useEditor((s) => s.playing);
 
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
   const [renaming, setRenaming] = useState<string | null>(null);
@@ -540,6 +542,17 @@ export function Hierarchy() {
         <span>
           Hierarchy{scene ? <span className="panel-header-detail"> · {scene.name}</span> : null}
         </span>
+        {playing && (
+          // L-020 (HIER-15): during Play this tree keeps showing the
+          // edit-time document while runtime-spawned entities live in the
+          // running game — say so instead of letting the mismatch read as
+          // missing rows. Runtime state lives in the Live panel.
+          <Tooltip content="This is the edit-time scene — entities spawned during Play appear in the Live panel">
+            <span className="panel-header-detail" tabIndex={0} style={{ cursor: 'help' }}>
+              edit-time
+            </span>
+          </Tooltip>
+        )}
         <IconButton
           bare
           className="icon-btn"

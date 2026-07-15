@@ -4,6 +4,7 @@ import { apiRecentProjects, apiExampleProjects } from '../api';
 import type { ExampleProject, RecentProject } from '../types';
 import { Icon } from './ui';
 import { Button } from './ui/Button';
+import { Tooltip } from './ui/Tooltip';
 import { TemplatePicker } from './TemplatePicker';
 import { hearthNative } from '../native';
 
@@ -204,23 +205,26 @@ export function Launcher() {
             {recents.length === 0 && (
               <div className="launcher-empty">Projects you open will show up here.</div>
             )}
+            {/* Styled tooltip (L-103 / LAUNCHER-3): the CSS-truncated path's
+                full form — often the only disambiguator between same-named
+                projects — shows on hover AND keyboard focus, instead of the
+                slow native title. */}
             {recents.map((r) => (
-              <button
-                key={r.path}
-                className="launcher-item"
-                disabled={busy || !r.exists}
-                onClick={() => void handleOpen(r.path, setOpenError)}
-              >
-                <span className="item-text">
-                  <span className="item-name">{r.name}</span>
-                  <span className="item-path" title={r.exists ? r.path : `${r.path} (moved or deleted)`}>
-                    {r.exists ? r.path : 'moved or deleted'}
+              <Tooltip key={r.path} content={r.exists ? r.path : `${r.path} (moved or deleted)`}>
+                <button
+                  className="launcher-item"
+                  disabled={busy || !r.exists}
+                  onClick={() => void handleOpen(r.path, setOpenError)}
+                >
+                  <span className="item-text">
+                    <span className="item-name">{r.name}</span>
+                    <span className="item-path">{r.exists ? r.path : 'moved or deleted'}</span>
                   </span>
-                </span>
-                <span className="item-go" aria-hidden="true">
-                  <Icon name="chevron" />
-                </span>
-              </button>
+                  <span className="item-go" aria-hidden="true">
+                    <Icon name="chevron" />
+                  </span>
+                </button>
+              </Tooltip>
             ))}
           </div>
 
@@ -232,22 +236,21 @@ export function Launcher() {
               </div>
             )}
             {examples.map((ex) => (
-              <button
-                key={ex.path}
-                className="launcher-item"
-                disabled={busy}
-                onClick={() => void handleOpen(ex.path, setOpenError)}
-              >
-                <span className="item-text">
-                  <span className="item-name" title={ex.path}>
-                    {ex.name}
+              <Tooltip key={ex.path} content={ex.path}>
+                <button
+                  className="launcher-item"
+                  disabled={busy}
+                  onClick={() => void handleOpen(ex.path, setOpenError)}
+                >
+                  <span className="item-text">
+                    <span className="item-name">{ex.name}</span>
+                    <span className="item-desc">{ex.description}</span>
                   </span>
-                  <span className="item-desc">{ex.description}</span>
-                </span>
-                <span className="item-go" aria-hidden="true">
-                  <Icon name="chevron" />
-                </span>
-              </button>
+                  <span className="item-go" aria-hidden="true">
+                    <Icon name="chevron" />
+                  </span>
+                </button>
+              </Tooltip>
             ))}
           </div>
         </section>
