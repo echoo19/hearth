@@ -8,10 +8,14 @@
   display: inline-flex;
 }
 
+/* Both consumers (MenuButton dropdowns and the ContextMenu) render into a
+   <body> portal and set their own `position: fixed; left; top` inline — the
+   coords are measured and clamped into the viewport in JS (see
+   menuDropdownPosition / clampMenuOrigin) so a popover can never spill off a
+   viewport edge (L-123) or be clipped by a panel's overflow. This rule owns
+   only the look; the inline styles own placement. */
 .menu-popover {
-  position: absolute;
-  top: calc(100% + 4px);
-  left: 0;
+  position: fixed;
   z-index: var(--z-dropdown);
   min-width: 200px;
   padding: 4px;
@@ -21,19 +25,6 @@
   box-shadow: 0 8px 24px oklch(0 0 0 / 0.4);
   display: flex;
   flex-direction: column;
-}
-
-/* Right-aligned variant: anchor the popover to the trigger's right edge. */
-.menu-popover-right {
-  left: auto;
-  right: 0;
-}
-
-/* Cursor-anchored context menu: positioned by inline fixed coords (set by the
-   ContextMenu component), so it drops the absolute/top offset of the dropdown
-   variant. z-index sits above panels via the shared dropdown layer. */
-.context-menu {
-  top: auto;
 }
 
 .menu-item {

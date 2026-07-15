@@ -12,7 +12,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import { renderHook } from '@testing-library/react';
 
-let nativeMock: { platform: string } | null = null;
+let nativeMock: { platform: string; setAppMenu?: () => void } | null = null;
 
 vi.mock('../src/native', () => ({
   hearthNative: () => nativeMock,
@@ -27,10 +27,19 @@ describe('useShowInWindowMenuBar', () => {
     expect(result.current).toBe(true);
   });
 
-  it('hides the in-window bar on Electron macOS (native menu takes over)', () => {
-    nativeMock = { platform: 'darwin' };
+  it('hides the in-window bar on a healthy Electron macOS build (native menu takes over)', () => {
+    // Healthy build: the preload exposes setAppMenu, so the native menu owns it.
+    nativeMock = { platform: 'darwin', setAppMenu: () => {} };
     const { result } = renderHook(() => useShowInWindowMenuBar());
     expect(result.current).toBe(false);
+  });
+
+  it('shows the in-window bar on macOS when the preload lacks setAppMenu (stale preload, L-123 hardening)', () => {
+    // A stale/failed preload can't install the native menu — fall back to the
+    // in-window bar instead of stranding the user with no menu at all.
+    nativeMock = { platform: 'darwin' };
+    const { result } = renderHook(() => useShowInWindowMenuBar());
+    expect(result.current).toBe(true);
   });
 
   it('shows the in-window bar on Electron Windows', () => {

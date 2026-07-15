@@ -213,6 +213,50 @@ export function clampMenuOrigin(
 }
 
 /**
+ * Clamp a single axis so a `size`-long popover starting at `desiredStart` stays
+ * fully inside `[margin, viewport - margin]`. Unlike `clampMenuOrigin` (which
+ * only pulls back an element overflowing the FAR edge), this also refuses a
+ * negative/too-small start — the exact failure behind L-123, where a dropdown
+ * anchored to a trigger near x=0 rendered shifted a full popover-width off the
+ * LEFT edge. When the popover is wider than the viewport it pins to `margin`
+ * (near/start edge stays visible). Pure so it is testable without a DOM.
+ */
+export function clampAxis(desiredStart: number, size: number, viewport: number, margin = 4): number {
+  const maxStart = viewport - size - margin;
+  if (maxStart < margin) return margin;
+  return Math.min(Math.max(desiredStart, margin), maxStart);
+}
+
+/**
+ * Position a trigger-anchored dropdown popover (MenuButton). Anchors the
+ * popover's start edge to the trigger (left edge for `align:'left'`, right edge
+ * for `'right'`), opens `gap` px below the trigger, and CLAMPS both axes into
+ * the viewport so it can never render off any edge (L-123). Flips above the
+ * trigger when opening below would overflow the bottom and there is more room
+ * above. Pure — the flip/clamp math is unit-tested without a live DOM.
+ */
+export function menuDropdownPosition(
+  trigger: { left: number; right: number; top: number; bottom: number },
+  size: { w: number; h: number },
+  viewport: { w: number; h: number },
+  align: 'left' | 'right' = 'left',
+  gap = 4,
+  margin = 4,
+): { left: number; top: number } {
+  const desiredLeft = align === 'right' ? trigger.right - size.w : trigger.left;
+  const left = clampAxis(desiredLeft, size.w, viewport.w, margin);
+  const below = trigger.bottom + gap;
+  const above = trigger.top - gap - size.h;
+  let top: number;
+  if (below + size.h + margin > viewport.h && above >= margin) {
+    top = above; // flip above the trigger — more room there
+  } else {
+    top = clampAxis(below, size.h, viewport.h, margin);
+  }
+  return { left, top };
+}
+
+/**
  * Cursor-anchored context menu. Reuses the same item markup, roving-focus math
  * and dismiss contracts as MenuButton (see file header) — the only difference
  * is it opens at a point (right-click) instead of below a trigger, and renders
@@ -332,8 +376,14 @@ export function MenuButton({
 }: MenuButtonProps) {
   const [open, setOpen] = useState(false);
   const [focused, setFocused] = useState(-1);
+  // null until measured. The popover is portaled to <body> and positioned with
+  // clamped `fixed` coords (see the layout effect) so it can never render off a
+  // viewport edge — the L-123 failure — and escapes any ancestor overflow
+  // clip, the same reason ContextMenu portals.
+  const [pos, setPos] = useState<{ left: number; top: number } | null>(null);
   const rootRef = useRef<HTMLSpanElement>(null);
   const buttonRef = useRef<HTMLButtonElement>(null);
+  const popoverRef = useRef<HTMLDivElement>(null);
   const itemRefs = useRef<(HTMLButtonElement | null)[]>([]);
 
   const closeAndFocusTrigger = useCallback(() => {
@@ -342,14 +392,49 @@ export function MenuButton({
   }, []);
 
   // Dismiss wiring (click-outside + Escape). See file header for the contracts.
+  // The popover now lives in a body portal, so an inside-click is inside EITHER
+  // the trigger root or the popover — checking only the root would treat every
+  // menu-item click as "outside" and slam the menu shut before it selects.
   useEffect(() => {
     if (!open) return;
     return installMenuDismiss({
-      isOutside: (target) => !(rootRef.current && target instanceof Node && rootRef.current.contains(target)),
+      isOutside: (target) => {
+        const node = target instanceof Node ? target : null;
+        const inRoot = !!(rootRef.current && node && rootRef.current.contains(node));
+        const inPopover = !!(popoverRef.current && node && popoverRef.current.contains(node));
+        return !inRoot && !inPopover;
+      },
       close: () => setOpen(false),
       onEscape: closeAndFocusTrigger,
     });
   }, [open, closeAndFocusTrigger]);
+
+  // Measure the trigger + popover and clamp the popover into the viewport before
+  // paint (useLayoutEffect runs pre-paint, so there is no first-frame flash at
+  // the wrong spot). Recompute on resize while open so a window resize can't
+  // strand the popover off-screen.
+  useLayoutEffect(() => {
+    if (!open) {
+      setPos(null);
+      return;
+    }
+    const place = () => {
+      const trigger = buttonRef.current?.getBoundingClientRect();
+      const pop = popoverRef.current?.getBoundingClientRect();
+      if (!trigger || !pop) return;
+      setPos(
+        menuDropdownPosition(
+          trigger,
+          { w: pop.width, h: pop.height },
+          { w: window.innerWidth, h: window.innerHeight },
+          align,
+        ),
+      );
+    };
+    place();
+    window.addEventListener('resize', place);
+    return () => window.removeEventListener('resize', place);
+  }, [open, align, items]);
 
   // On open, move focus to the first focusable item.
   useEffect(() => {
@@ -392,16 +477,27 @@ export function MenuButton({
       >
         {trigger}
       </button>
-      {open && (
-        <div
-          className={`menu-popover${align === 'right' ? ' menu-popover-right' : ''}`}
-          role="menu"
-          aria-label={label}
-          onKeyDown={onKeyDown}
-        >
-          <MenuItems items={items} focusedIndex={focused} onFocusIndex={setFocused} onSelectItem={selectItem} itemRefs={itemRefs} />
-        </div>
-      )}
+      {open &&
+        createPortal(
+          <div
+            ref={popoverRef}
+            className="menu-popover"
+            role="menu"
+            aria-label={label}
+            onKeyDown={onKeyDown}
+            // Fixed + clamped coords; hidden for the one pre-measure frame so it
+            // never flashes at 0,0. useLayoutEffect sets `pos` before paint.
+            style={{
+              position: 'fixed',
+              left: pos ? pos.left : 0,
+              top: pos ? pos.top : 0,
+              visibility: pos ? 'visible' : 'hidden',
+            }}
+          >
+            <MenuItems items={items} focusedIndex={focused} onFocusIndex={setFocused} onSelectItem={selectItem} itemRefs={itemRefs} />
+          </div>,
+          document.body,
+        )}
     </span>
   );
 }

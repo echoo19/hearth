@@ -36,7 +36,9 @@ import {
   ContextMenu,
   MenuButton,
   MenuItems,
+  clampAxis,
   installMenuDismiss,
+  menuDropdownPosition,
   menuNavIndex,
   type MenuItem,
 } from '../src/components/ui/Menu';
@@ -78,6 +80,56 @@ describe('menuNavIndex — roving focus', () => {
   it('returns current when nothing is focusable', () => {
     const none: MenuItem[] = [{ separator: true }, { label: 'X', disabled: true, onSelect: () => {} }];
     expect(menuNavIndex(none, 0, 'ArrowDown')).toBe(0);
+  });
+});
+
+describe('clampAxis — keep a popover fully on one axis (L-123)', () => {
+  it('leaves an already-fitting start untouched', () => {
+    expect(clampAxis(100, 200, 1000)).toBe(100);
+  });
+
+  it('pulls back a start that overflows the far edge', () => {
+    // start 900 + width 200 = 1100 > 1000 → clamp to 1000 - 200 - 4.
+    expect(clampAxis(900, 200, 1000)).toBe(796);
+  });
+
+  it('refuses a negative start — the exact L-123 left-clip', () => {
+    // A right-anchored popover on a trigger near x=0 wants a negative start;
+    // it must snap to the margin, never render off the left edge.
+    expect(clampAxis(-150, 200, 1000)).toBe(4);
+  });
+
+  it('pins to the margin when the popover is wider than the viewport', () => {
+    expect(clampAxis(-50, 500, 300)).toBe(4);
+  });
+});
+
+describe('menuDropdownPosition — trigger-anchored + viewport-clamped (L-123)', () => {
+  const vp = { w: 1000, h: 800 };
+
+  it('left-anchors below the trigger when there is room', () => {
+    const trigger = { left: 100, right: 140, top: 10, bottom: 30 };
+    expect(menuDropdownPosition(trigger, { w: 200, h: 150 }, vp, 'left')).toEqual({ left: 100, top: 34 });
+  });
+
+  it('clamps a left-anchored popover that would overflow the right edge', () => {
+    // Trigger near the right edge; popover would run to 950+200=1150 > 1000.
+    const trigger = { left: 950, right: 990, top: 10, bottom: 30 };
+    const { left } = menuDropdownPosition(trigger, { w: 200, h: 150 }, vp, 'left');
+    expect(left).toBe(1000 - 200 - 4);
+  });
+
+  it('right-anchored on a trigger near x=0 clamps to the margin, not off-screen', () => {
+    // The Jake screenshot geometry: right edge ~= trigger.right (35), so the
+    // desired left is 35 - 200 = -165. Must snap to the margin.
+    const trigger = { left: 5, right: 35, top: 10, bottom: 30 };
+    expect(menuDropdownPosition(trigger, { w: 200, h: 150 }, vp, 'right').left).toBe(4);
+  });
+
+  it('flips above the trigger when opening below would overflow the bottom', () => {
+    const trigger = { left: 100, right: 140, top: 700, bottom: 780 };
+    // below = 784; 784 + 150 + 4 > 800 → flip above: 700 - 4 - 150 = 546.
+    expect(menuDropdownPosition(trigger, { w: 200, h: 150 }, vp, 'left').top).toBe(546);
   });
 });
 

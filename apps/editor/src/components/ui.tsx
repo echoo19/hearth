@@ -549,6 +549,21 @@ export function entityIcon(components: Record<string, unknown>): string {
 // Modal
 // ---------------------------------------------------------------------------
 
+/**
+ * Is the dialog currently a live top-layer modal? A dialog opened with
+ * showModal() matches `:modal`; one that has `open` set but is NOT in the top
+ * layer (e.g. after a remount stranded it) does not. jsdom has no `:modal`
+ * support and throws on the selector, so fall back to the plain `open` flag
+ * there — best-effort, and enough for the unit tests to exercise the reopen.
+ */
+export function isModalOpen(dialog: HTMLDialogElement): boolean {
+  try {
+    return dialog.matches(':modal');
+  } catch {
+    return dialog.open;
+  }
+}
+
 export function Modal({
   open,
   title,
@@ -568,8 +583,21 @@ export function Modal({
   useEffect(() => {
     const dialog = ref.current;
     if (!dialog) return;
-    if (open && !dialog.open) dialog.showModal();
-    if (!open && dialog.open) dialog.close();
+    if (open) {
+      // Center-with-backdrop only holds while the dialog is in the top layer
+      // (`:modal`). A dialog whose DOM node is remounted/reparented while open
+      // keeps `dialog.open === true` but silently drops out of the top layer —
+      // it then lays out in normal flow (bottom-right of its parent), the
+      // L-124 symptom. Recover by re-showing: close any stale open state first
+      // (showModal throws if the dialog is already open) then showModal to
+      // re-enter the top layer.
+      if (dialog.isConnected && !isModalOpen(dialog)) {
+        if (dialog.open) dialog.close();
+        dialog.showModal();
+      }
+    } else if (dialog.open) {
+      dialog.close();
+    }
   }, [open]);
 
   return (

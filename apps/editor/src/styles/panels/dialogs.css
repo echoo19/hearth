@@ -5,6 +5,18 @@
    -------------------------------------------------------------------------- */
 
 dialog.modal {
+  /* Viewport-center explicitly instead of leaning only on the UA `:modal`
+     centering. A dialog that loses top-layer status while still `open` (a
+     remount/reparent) otherwise falls back to normal-flow `position: absolute`
+     and lands bottom-right of its DOM parent — the L-124 symptom. Pinning
+     `fixed + inset:0 + margin:auto` with fit-content sizing keeps it centered
+     no matter the top-layer state; the JS in ui.tsx additionally re-shows it to
+     restore the backdrop. min/max-width clamp the fit-content width. */
+  position: fixed;
+  inset: 0;
+  margin: auto;
+  width: fit-content;
+  height: fit-content;
   border: 1px solid var(--border-strong);
   border-radius: var(--radius-lg);
   background: var(--bg-1);
@@ -80,6 +92,12 @@ dialog.modal[open]::backdrop {
    -------------------------------------------------------------------------- */
 
 dialog.shortcut-sheet {
+  /* Same explicit viewport-centering as dialog.modal (see there) so a lost
+     top-layer state can't drop the sheet into normal flow. */
+  position: fixed;
+  inset: 0;
+  margin: auto;
+  height: fit-content;
   border: 1px solid var(--border-strong);
   border-radius: var(--radius-lg);
   background: var(--bg-1);

@@ -51,8 +51,16 @@ export function useNativeAppMenu(sections: AppMenuSection[]): void {
   }, [isMac, native]);
 }
 
-/** Whether the in-window menu bar should render: browser, or non-macOS Electron. */
+/**
+ * Whether the in-window menu bar should render: browser, non-macOS Electron, or
+ * a macOS build whose preload does NOT expose the native-menu API. That last
+ * case (e.g. a stale preload after an app update) can't install the native
+ * macOS menu via `setAppMenu`, so the in-window bar must take over — otherwise
+ * the user is stranded with no File/Edit/View/Help at all. This is also the
+ * path that surfaces the in-window popover on a packaged macOS app, so its
+ * dropdowns must be viewport-clamped (see MenuButton/menuDropdownPosition).
+ */
 export function useShowInWindowMenuBar(): boolean {
   const native = hearthNative();
-  return !native || native.platform !== 'darwin';
+  return !native || native.platform !== 'darwin' || !native.setAppMenu;
 }
