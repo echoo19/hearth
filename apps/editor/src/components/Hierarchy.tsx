@@ -129,7 +129,13 @@ export function Hierarchy() {
   const [savingPrefab, setSavingPrefab] = useState<string | null>(null);
   const [prefabNameValue, setPrefabNameValue] = useState('');
   const [prefabError, setPrefabError] = useState<string | null>(null);
-  const [menu, setMenu] = useState<{ x: number; y: number; entity: SceneEntity | null } | null>(null);
+  const [menu, setMenu] = useState<{
+    x: number;
+    y: number;
+    entity: SceneEntity | null;
+    /** The invoking row, so dismissing the menu restores roving-tabindex focus. */
+    returnFocus: HTMLElement | null;
+  } | null>(null);
 
   // Drag-to-reparent state (HIER-2). `dragId` is the entity being dragged;
   // `dropId` is the current drop target (a row id, or ROOT_DROP for the
@@ -369,7 +375,7 @@ export function Hierarchy() {
           e.preventDefault();
           e.stopPropagation();
           select(entity.id);
-          setMenu({ x: e.clientX, y: e.clientY, entity });
+          setMenu({ x: e.clientX, y: e.clientY, entity, returnFocus: e.currentTarget });
         }}
         onKeyDown={(e) => {
           if (isActivationKey(e.key)) {
@@ -547,7 +553,8 @@ export function Hierarchy() {
         className={`panel-scroll${isRootDrop ? ' drop-root' : ''}`}
         onContextMenu={(e) => {
           e.preventDefault();
-          setMenu({ x: e.clientX, y: e.clientY, entity: null });
+          // No returnFocus: the panel background is not a tab stop.
+          setMenu({ x: e.clientX, y: e.clientY, entity: null, returnFocus: null });
         }}
         onDragOver={(e) => {
           if (!dragId) return;
@@ -588,6 +595,7 @@ export function Hierarchy() {
           y={menu.y}
           label={menu.entity ? menu.entity.name : 'Hierarchy'}
           items={menu.entity ? buildRowMenu(menu.entity) : emptyMenu}
+          returnFocus={menu.returnFocus}
           onClose={() => setMenu(null)}
         />
       )}

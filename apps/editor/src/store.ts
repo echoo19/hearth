@@ -222,7 +222,6 @@ export interface EditorState {
   undo(): Promise<void>;
   redo(): Promise<void>;
   duplicateSelection(): Promise<void>;
-  deleteSelection(): Promise<void>;
   /**
    * Move the selection by (dx, dy) scene pixels. Arrow-key presses accumulate
    * and are debounced (~300ms) into ONE moveEntity exec per burst, so a run
@@ -910,6 +909,15 @@ export const useEditor = create<EditorState>((set, get) => {
 
     requestDeleteSelection() {
       if (!get().selection) return;
+      // The confirm dialog is Hierarchy-owned: with the panel closed there is
+      // no consumer, and a silently swallowed keypress is a mystery. Name the
+      // reason instead. (DOM probe mirrors installKeybinds' dialog[open] check;
+      // with a selection the scene has entities, so a mounted Hierarchy always
+      // renders its tree.)
+      if (typeof document !== 'undefined' && !document.querySelector('[aria-label="Scene hierarchy"]')) {
+        get().log('info', 'editor', 'Open the Hierarchy panel to delete entities.');
+        return;
+      }
       set((state) => ({ deleteSelectionRequest: state.deleteSelectionRequest + 1 }));
     },
 
@@ -973,12 +981,6 @@ export const useEditor = create<EditorState>((set, get) => {
       const result = await get().exec<{ entityId: string }>('duplicateEntity', { scene: sceneId, entity: selection });
       // Select the fresh copy so a follow-up nudge/duplicate acts on it.
       if (result.success && result.data) get().select(result.data.entityId);
-    },
-
-    async deleteSelection() {
-      const { selection, sceneId } = get();
-      if (!selection || !sceneId) return;
-      await get().exec('deleteEntity', { scene: sceneId, entity: selection });
     },
 
     nudgeSelection(dx, dy) {

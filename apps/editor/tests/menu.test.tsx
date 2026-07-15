@@ -33,6 +33,7 @@ import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { render, screen, fireEvent, cleanup, act } from '@testing-library/react';
 import {
+  ContextMenu,
   MenuButton,
   MenuItems,
   installMenuDismiss,
@@ -331,5 +332,120 @@ describe('MenuButton — real DOM behavior', () => {
     fireEvent.click(checkbox);
     expect(onSelect).toHaveBeenCalledTimes(1);
     expect(menu()).not.toBeNull();
+  });
+});
+
+describe('ContextMenu — real DOM behavior', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    resetTooltipWarmState();
+  });
+
+  afterEach(() => {
+    cleanup();
+    vi.runOnlyPendingTimers();
+    vi.useRealTimers();
+  });
+
+  /**
+   * Mirrors the Hierarchy's usage: a focusable row opens the menu via
+   * right-click and passes itself as `returnFocus`; a sibling input stands in
+   * for the rename field an action might move focus to.
+   */
+  function Harness({ items }: { items: MenuItem[] }) {
+    const [menu, setMenu] = React.useState<{ el: HTMLElement } | null>(null);
+    return (
+      <div>
+        <div
+          tabIndex={0}
+          data-testid="row"
+          onContextMenu={(e) => {
+            e.preventDefault();
+            setMenu({ el: e.currentTarget });
+          }}
+        >
+          Row
+        </div>
+        <input data-testid="rename" aria-label="rename" />
+        {menu && (
+          <ContextMenu
+            x={5}
+            y={5}
+            label="Row menu"
+            items={items}
+            returnFocus={menu.el}
+            onClose={() => setMenu(null)}
+          />
+        )}
+      </div>
+    );
+  }
+
+  const row = () => screen.getByTestId('row');
+  const menu = () => screen.queryByRole('menu');
+
+  it('opens on contextmenu and focuses the first item', () => {
+    render(<Harness items={[{ label: 'A', onSelect: () => {} }]} />);
+    expect(menu()).toBeNull();
+    fireEvent.contextMenu(row());
+    expect(menu()).not.toBeNull();
+    expect(document.activeElement?.textContent).toContain('A');
+  });
+
+  it('Escape closes the menu and returns focus to the invoking row', () => {
+    render(<Harness items={[{ label: 'A', onSelect: () => {} }]} />);
+    fireEvent.contextMenu(row());
+    expect(menu()).not.toBeNull();
+    act(() => {
+      fireEvent.keyDown(document, { key: 'Escape' });
+    });
+    expect(menu()).toBeNull();
+    expect(document.activeElement).toBe(row());
+  });
+
+  it('an outside pointerdown closes the menu and returns focus to the row', () => {
+    render(<Harness items={[{ label: 'A', onSelect: () => {} }]} />);
+    fireEvent.contextMenu(row());
+    expect(menu()).not.toBeNull();
+    act(() => {
+      fireEvent.pointerDown(document.body);
+    });
+    expect(menu()).toBeNull();
+    expect(document.activeElement).toBe(row());
+  });
+
+  it('selecting an item restores focus to the row after the action settles', () => {
+    const onSelect = vi.fn();
+    render(<Harness items={[{ label: 'Duplicate', onSelect }]} />);
+    fireEvent.contextMenu(row());
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Duplicate' }));
+    expect(onSelect).toHaveBeenCalledTimes(1);
+    expect(menu()).toBeNull();
+    // The restore is deferred past the action's render; flush it.
+    act(() => {
+      vi.advanceTimersByTime(0);
+    });
+    expect(document.activeElement).toBe(row());
+  });
+
+  it('an item action that moves focus itself keeps that focus (no reclaim)', () => {
+    render(
+      <Harness
+        items={[
+          {
+            label: 'Rename',
+            onSelect: () => {
+              (document.querySelector('[data-testid="rename"]') as HTMLInputElement).focus();
+            },
+          },
+        ]}
+      />,
+    );
+    fireEvent.contextMenu(row());
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Rename' }));
+    act(() => {
+      vi.advanceTimersByTime(0);
+    });
+    expect(document.activeElement).toBe(screen.getByTestId('rename'));
   });
 });

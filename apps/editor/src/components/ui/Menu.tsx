@@ -226,26 +226,42 @@ export function ContextMenu({
   items,
   label,
   onClose,
+  returnFocus,
 }: {
   x: number;
   y: number;
   items: MenuItem[];
   label: string;
   onClose: () => void;
+  /**
+   * Element to restore focus to when the menu dismisses — the invoking row in
+   * a roving-tabindex tree, where losing focus to the body strands keyboard
+   * users. Escape/outside-click restore immediately; item-select restores
+   * AFTER the action settles and only if focus fell through to the body (an
+   * action that moves focus itself, e.g. rename's autoFocus input, keeps it).
+   */
+  returnFocus?: HTMLElement | null;
 }) {
   const ref = useRef<HTMLDivElement>(null);
   const itemRefs = useRef<(HTMLButtonElement | null)[]>([]);
   const [focused, setFocused] = useState(() => menuNavIndex(items, -1, 'Home'));
   const [pos, setPos] = useState({ x, y });
 
+  const closeAndRestore = useCallback(() => {
+    onClose();
+    // Outside-click: pointerdown-capture runs before the click target's own
+    // focus behavior, so a click on a focusable element still wins afterwards.
+    returnFocus?.focus();
+  }, [onClose, returnFocus]);
+
   // Dismiss wiring (click-outside + Escape), identical contracts to MenuButton.
   useEffect(() => {
     return installMenuDismiss({
       isOutside: (target) => !(ref.current && target instanceof Node && ref.current.contains(target)),
-      close: onClose,
-      onEscape: onClose,
+      close: closeAndRestore,
+      onEscape: closeAndRestore,
     });
-  }, [onClose]);
+  }, [closeAndRestore]);
 
   // Keep the menu on-screen: measure once mounted and clamp to the viewport.
   useLayoutEffect(() => {
@@ -268,8 +284,16 @@ export function ContextMenu({
   }
 
   function selectItem(item: MenuItemAction) {
+    const target = returnFocus ?? null;
     item.onSelect();
     onClose();
+    // Restore focus AFTER the action's render settles: unmounting the menu
+    // drops focus to the body unless the action claimed it (rename's autoFocus
+    // input must keep it), so only reclaim focus that fell through.
+    setTimeout(() => {
+      const active = document.activeElement;
+      if (!active || active === document.body) target?.focus();
+    }, 0);
   }
 
   return createPortal(

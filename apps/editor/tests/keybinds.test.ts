@@ -40,7 +40,6 @@ function mockStore(over: Partial<EditorStore> = {}) {
     }),
     log: rec('log'),
     duplicateSelection: rec('duplicateSelection'),
-    deleteSelection: rec('deleteSelection'),
     requestDeleteSelection: rec('requestDeleteSelection'),
     nudgeSelection: rec('nudgeSelection'),
     requestFocusSelection: rec('requestFocusSelection'),
