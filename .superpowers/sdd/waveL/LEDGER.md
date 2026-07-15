@@ -371,6 +371,20 @@ high) though it borders on a defect (values unreadable).
   tabindex cleanup (action buttons are tabIndex=-1 by design there). The two
   idioms currently coexist without breaking anything; T12 should decide
   opacity-vs-display *together with* the tab-order contract. Flagged for T12.
+- Resolution (T12, design pass): kept BOTH idioms — each is correct for its
+  context — and made the governing rule explicit instead of forcing one.
+  Canonical rule documented as a "Reveal idiom" block in primitives.css:
+  `display:none` for action CLUSTERS inside a roving-tabindex container
+  (tree rows `.tree-actions`, asset cards `.asset-card-actions`; buttons are
+  tabIndex=-1, so hiding costs no tab stop and preserves L-016's work), and
+  `opacity:0` for STANDALONE tab-order controls that must stay Tab-reachable
+  (`.field-revert-btn`, `.hearth-tab-close`, `.code-tab-close`). All five sites
+  now carry a one-line back-reference to that note. The two opacity reveals were
+  unified to the shared reveal timing `var(--t-fast)` (the tab-closes were on a
+  stray 140ms literal). Focus parity verified at every site; added the missing
+  `.dv-tab:focus-within .hearth-tab-close` so a keyboard-focused dockview tab
+  reveals its close like the Code tab-cell already did. No idiom flipped, so no
+  tab stops were re-added. Verified live (hover + focus reveal both fire).
 
 ## sceneview
 
@@ -1024,6 +1038,15 @@ high) though it borders on a defect (values unreadable).
   state, partial-failure semantics, and cancel — that belongs to the
   editor-ergonomics track if history scrubbing is ever wanted. Flagged for
   T12 as a candidate, not owed by this sweep.
+- Resolution (T12, design pass): NOT implemented — by-design stands. Judged
+  live against the goal ("reads as one deliberately designed product", quiet >
+  loud): the history rows already read correctly as a non-interactive log
+  (plain mono, no hover, no pointer cursor), so there is no affordance
+  mismatch to fix. Click-to-jump remains a genuine feature (needs a
+  jump-to-seq mechanism: chained undo/redo execs with busy + partial-failure +
+  cancel), which belongs to the editor-ergonomics track, not a design-language
+  pass. Adding it would introduce a loud new interaction the wave's scope
+  explicitly defers. Coherence is better served by leaving the rows quiet.
 
 ### L-064 · console-changes · polish · low
 - Element: Console toolbar — no level filter / search.
