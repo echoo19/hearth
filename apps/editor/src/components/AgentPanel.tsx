@@ -53,12 +53,24 @@ const AGENT_MODE_ARGS: Record<AgentPermissionMode, string> = {
 };
 
 const INSTALL_COMMAND = 'npm install -g @anthropic-ai/claude-code';
-type AgentLauncher = 'claude' | 'codex' | 'shell';
+type AgentLauncher = 'claude' | 'codex' | 'opencode' | 'hermes' | 'shell';
+/** The launchers that wire up a Hearth MCP config (everything except shell). */
+type AgentToolLauncher = Exclude<AgentLauncher, 'shell'>;
 
 const AGENT_LAUNCHER_LABELS: Record<AgentLauncher, string> = {
   claude: 'Claude Code',
   codex: 'Codex',
+  opencode: 'OpenCode',
+  hermes: 'Hermes',
   shell: 'Terminal / other CLI',
+};
+
+/** Where each tool's Hearth MCP config is written, for the setup hint. */
+const AGENT_LAUNCHER_CONFIG: Record<AgentToolLauncher, string> = {
+  claude: '.mcp.json',
+  codex: '~/.codex/config.toml',
+  opencode: 'opencode.json',
+  hermes: '~/.hermes/config.yaml',
 };
 
 /**
@@ -92,16 +104,42 @@ export function startDisabledReason(running: boolean, projectPath: string | null
 }
 
 /**
- * The permission-mode picker only matters for the Claude launcher — the
- * server's `startPty` never reads `mode` for codex/shell (it's passed on the
- * pty-start frame purely for the server's own logging). Presenting it fully
- * enabled for those two launchers looks actionable but is inert
- * (AGENT-3 / L-091); this names why so the picker can be disabled with a
+ * The permission-mode picker feeds prepare's `--mode`, which is written into
+ * every agent tool's Hearth MCP config (claude/codex/opencode/hermes). Only the
+ * bare shell consumes no mode — it launches no MCP server — so the picker is
+ * inert there (AGENT-3 / L-091). This names why so it can be disabled with a
  * reason instead of silently doing nothing.
  */
 export function modePickerDisabledReason(launcher: AgentLauncher): string | null {
-  if (launcher === 'claude') return null;
-  return `${AGENT_LAUNCHER_LABELS[launcher]} doesn't read a permission mode — this only applies to Claude Code.`;
+  if (launcher !== 'shell') return null;
+  return "The plain terminal doesn't launch an MCP server, so a permission mode has nothing to apply to.";
+}
+
+/**
+ * One honest, one-line setup hint per launcher. Codex/Hermes read a single
+ * GLOBAL config, so we say Hearth points it at THIS project on launch; OpenCode
+ * additionally surfaces whether local Ollama models were found. Pure (no store
+ * access) so it's unit-testable.
+ */
+export function describeLauncher(launcher: AgentLauncher, ollamaModels: string[]): string {
+  switch (launcher) {
+    case 'claude':
+      return 'Claude Code connects automatically — Hearth is written to this project’s .mcp.json.';
+    case 'codex':
+      return 'Codex reads a global config (~/.codex/config.toml); Hearth points it at this project on launch.';
+    case 'opencode':
+      return ollamaModels.length > 0
+        ? `OpenCode connects via opencode.json, with an Ollama provider for your ${ollamaModels.length} local model${ollamaModels.length === 1 ? '' : 's'}.`
+        : 'OpenCode connects via opencode.json. Install Ollama and pull a model to run fully local.';
+    case 'hermes':
+      return 'Hermes reads a global config (~/.hermes/config.yaml); Hearth points it at this project on launch.';
+    case 'shell':
+      return 'Plain terminal for any other shell-native agent — the hearth CLI is already on PATH.';
+    default: {
+      const never: never = launcher;
+      return String(never);
+    }
+  }
 }
 
 /**
@@ -187,9 +225,9 @@ export function AgentPanel() {
   }, [agentDetecting, agentDetect]);
 
   const running = agent.session.status === 'running';
-  const claudeFound = agentDetect?.claude.found ?? false;
-  const codexFound = agentDetect?.codex.found ?? false;
-  const launcherFound = agentLauncher === 'shell' || (agentLauncher === 'claude' ? claudeFound : codexFound);
+  const ollamaModels = agentDetect?.ollama.models ?? [];
+  const launcherFound =
+    agentLauncher === 'shell' ? true : (agentDetect?.[agentLauncher].found ?? false);
   // Switching launcher/mode while a session runs must never re-enable a
   // clickable Start action that would silently kill the live pty
   // (AGENT-1 / L-089) — so the selects that feed it are disabled too.
@@ -198,37 +236,33 @@ export function AgentPanel() {
   const modeReason = running
     ? 'Stop the current session first to change mode.'
     : modePickerDisabledReason(agentLauncher);
-  const launcherHint =
-    agentLauncher === 'claude'
-      ? 'Claude Code sets up its Hearth connection automatically.'
-      : agentLauncher === 'codex'
-        ? 'Codex launches in this project — see Manual setup below for other clients.'
-        : 'Use the project terminal for OpenCode, Hermes, or any other shell-native agent.';
+  const launcherHint = describeLauncher(agentLauncher, ollamaModels);
 
   async function startAgent() {
     if (!projectPath) return;
-    if (agentLauncher !== 'claude') {
+    if (agentLauncher === 'shell') {
       setPrepareError(null);
-      agent.start(agentLauncher);
+      agent.start('shell');
       return;
     }
 
-    // Permissioning happens here, not in the spawn: prepare writes the
-    // hearth entry (with --mode) into .mcp.json, which the bare interactive
-    // `claude` picks up itself. The mode rides along on pty-start only so
-    // the server sees what was requested.
-    const result = await apiPrepareAgent(projectPath, agentMode);
+    // Permissioning happens here, not in the spawn: prepare writes the hearth
+    // entry (with --mode) into the tool's OWN config (.mcp.json / opencode.json
+    // / ~/.codex/config.toml / ~/.hermes/config.yaml), which the bare
+    // interactive CLI picks up itself. The mode rides along on pty-start only
+    // so the server sees what was requested.
+    const result = await apiPrepareAgent(projectPath, agentMode, agentLauncher);
     const decision = planClaudeStart(result);
     if (!decision.shouldStart) {
-      // Do NOT fall through to agent.start(): a corrupted/stale .mcp.json
-      // from a previous session could carry a MORE permissive mode than the
-      // one just selected, and that stale grant must never silently win.
+      // Do NOT fall through to agent.start(): a corrupted/stale config from a
+      // previous session could carry a MORE permissive mode than the one just
+      // selected, and that stale grant must never silently win.
       setPrepareError(decision.errorMessage);
       log('error', 'command', `Agent setup failed: ${decision.errorMessage}`);
       return;
     }
     setPrepareError(null);
-    agent.start('claude', agentMode);
+    agent.start(agentLauncher, agentMode);
   }
 
   function installClaude() {
@@ -306,6 +340,8 @@ export function AgentPanel() {
             >
               <option value="claude">{AGENT_LAUNCHER_LABELS.claude}</option>
               <option value="codex">{AGENT_LAUNCHER_LABELS.codex}</option>
+              <option value="opencode">{AGENT_LAUNCHER_LABELS.opencode}</option>
+              <option value="hermes">{AGENT_LAUNCHER_LABELS.hermes}</option>
               <option value="shell">{AGENT_LAUNCHER_LABELS.shell}</option>
             </select>
           </span>
@@ -313,9 +349,9 @@ export function AgentPanel() {
 
         {/* The permission-mode explanation is already shown as visible text
             below the toolbar (AGENT_MODE_HINTS[agentMode]); no native title
-            unless it's disabled (AGENT-3 / L-091 non-Claude launchers, or a
-            running session — see modeReason above), in which case that
-            reason IS the tooltip. */}
+            unless it's disabled (AGENT-3 / L-091: the plain shell launches no
+            MCP server, or a running session — see modeReason above), in which
+            case that reason IS the tooltip. */}
         <DisabledHint reason={modeReason}>
           <select
             className="select"
@@ -371,9 +407,9 @@ export function AgentPanel() {
         ) : (
           <>
             <Button variant="primary" size="sm" disabled>
-              Codex not found
+              {AGENT_LAUNCHER_LABELS[agentLauncher]} not found
             </Button>
-            <Tooltip content="Re-check whether the codex CLI is on PATH">
+            <Tooltip content={`Re-check whether the ${agentLauncher} CLI is on PATH`}>
               <Button variant="ghost" size="sm" onClick={() => void detectAgent()}>
                 Re-detect
               </Button>
@@ -423,9 +459,10 @@ export function AgentPanel() {
           <div className="agent-manual-body agent-panel">
             <p>
               Hearth is agent-native: everything this editor does goes through the same command system that the{' '}
-              <code>hearth</code> CLI and the MCP server expose. Start Claude Code or Codex here, or open the terminal
-              for OpenCode, Hermes, and other shell-native agents. New projects also get AGENTS.md / CLAUDE.md with
-              these instructions baked in.
+              <code>hearth</code> CLI and the MCP server expose. Pick a launcher above — Claude Code, Codex, OpenCode
+              (with local Ollama models), or Hermes — and Start; Hearth writes the MCP config into that tool’s own
+              format and the <code>hearth</code> CLI is already on the terminal’s PATH. Or open the plain terminal for
+              any other shell-native agent. New projects also get AGENTS.md / CLAUDE.md with these instructions baked in.
             </p>
 
             <h4>CLI (any agent with a shell)</h4>

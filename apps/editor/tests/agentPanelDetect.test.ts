@@ -9,8 +9,16 @@
  */
 import { describe, expect, it } from 'vitest';
 import { detectionFailed } from '../src/components/AgentPanel';
+import type { DetectAgentsResult } from '../server/agentSetup';
 
-const FOUND = { claude: { found: true }, codex: { found: false } };
+const NONE: DetectAgentsResult = {
+  claude: { found: false },
+  codex: { found: false },
+  opencode: { found: false },
+  hermes: { found: false },
+  ollama: { found: false },
+};
+const FOUND: DetectAgentsResult = { ...NONE, claude: { found: true } };
 
 describe('detectionFailed', () => {
   it('is false while a detect is still in flight', () => {
@@ -26,7 +34,7 @@ describe('detectionFailed', () => {
   });
 
   it('is false when a detect attempt just completed successfully, even if nothing was found', () => {
-    expect(detectionFailed(true, false, { claude: { found: false }, codex: { found: false } })).toBe(false);
+    expect(detectionFailed(true, false, NONE)).toBe(false);
   });
 
   it('is false when a detect attempt just completed and found an agent', () => {

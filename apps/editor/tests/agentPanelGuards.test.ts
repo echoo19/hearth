@@ -7,14 +7,16 @@
  *    re-enables a clickable button that would silently kill a live pty
  *    (`startPty` unconditionally kills the existing one before spawning).
  *  - AGENT-3 (L-091): `modePickerDisabledReason` — the permission-mode
- *    picker is only consumed by the server when the launcher is Claude;
- *    for codex/shell it's inert and should say why.
+ *    picker feeds prepare's `--mode` for every agent tool (claude/codex/
+ *    opencode/hermes); only the bare shell launches no MCP server, so the
+ *    picker is inert there and should say why.
  *
  * Mirrors agentPanelDetect.test.ts's style: exercise the exported pure
  * functions directly (no jsdom/RTL in this repo's test toolchain).
  */
 import { describe, expect, it } from 'vitest';
 import {
+  describeLauncher,
   modePickerDisabledReason,
   shouldRedetectAfterInstall,
   startDisabledReason,
@@ -75,19 +77,34 @@ describe('shouldRedetectAfterInstall — auto re-detect when the install session
 });
 
 describe('modePickerDisabledReason', () => {
-  it('is null (enabled) for the Claude launcher', () => {
+  it('is null (enabled) for every agent tool that writes an MCP config', () => {
     expect(modePickerDisabledReason('claude')).toBeNull();
+    expect(modePickerDisabledReason('codex')).toBeNull();
+    expect(modePickerDisabledReason('opencode')).toBeNull();
+    expect(modePickerDisabledReason('hermes')).toBeNull();
   });
 
-  it('names why for Codex — the server never reads mode for it', () => {
-    const reason = modePickerDisabledReason('codex');
-    expect(reason).not.toBeNull();
-    expect(reason).toMatch(/Codex/);
-  });
-
-  it('names why for the shell/other-CLI launcher', () => {
+  it('names why for the shell/other-CLI launcher — it launches no MCP server', () => {
     const reason = modePickerDisabledReason('shell');
     expect(reason).not.toBeNull();
-    expect(reason).toMatch(/Terminal/);
+    expect(reason).toMatch(/MCP server/);
+  });
+});
+
+describe('describeLauncher', () => {
+  it('gives every launcher a one-line hint', () => {
+    for (const l of ['claude', 'codex', 'opencode', 'hermes', 'shell'] as const) {
+      expect(describeLauncher(l, [])).toMatch(/\S/);
+    }
+  });
+
+  it('surfaces local ollama models for OpenCode when present', () => {
+    expect(describeLauncher('opencode', ['llama3', 'qwen2'])).toMatch(/2 local models/);
+    expect(describeLauncher('opencode', [])).toMatch(/Install Ollama/);
+  });
+
+  it('flags codex/hermes as using a global config pointed at this project', () => {
+    expect(describeLauncher('codex', [])).toMatch(/global config/);
+    expect(describeLauncher('hermes', [])).toMatch(/global config/);
   });
 });
