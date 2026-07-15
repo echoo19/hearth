@@ -104,9 +104,12 @@ suite('packageDesktop (real packager, host platform only)', () => {
         const freshDir = path.join(root, 'fresh-unzip');
         await fsp.mkdir(freshDir, { recursive: true });
         execFileSync('unzip', ['-q', '-o', zipAbs, '-d', freshDir]);
-        // At least one top-level file in the unzipped app dir (the Electron
-        // launcher binary) must be executable, or the game can't run.
-        const appRoot = path.join(freshDir, path.basename(appAbs));
+        // zipDirectory flattens the packaged app dir's CONTENTS to the zip
+        // root (same as web export's "index.html at root"), so the Electron
+        // launcher binary lands directly in freshDir — not under a
+        // <productName>-linux-x64 wrapper. At least one top-level file must be
+        // executable, or the game can't run.
+        const appRoot = freshDir;
         const top = await fsp.readdir(appRoot, { withFileTypes: true });
         let anyExec = false;
         for (const e of top) {
