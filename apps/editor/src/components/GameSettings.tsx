@@ -56,9 +56,16 @@ export function parsePositiveInt(raw: string, min = 1): number | null {
   return n;
 }
 
-/** The sprite assets an icon/loading-image picker offers (thumbnails resolve from these). */
+/**
+ * The image-like assets an icon/loading-image picker offers (thumbnails
+ * resolve from these) — sprite OR tile, matching the Inspector's own
+ * assetId pickers (`a.type === 'sprite' || a.type === 'tile'`); a
+ * tile-typed image (e.g. an autotile sheet reused as a loading image or
+ * app icon) must not be a silent, unreachable capability gap here
+ * (GAMESETTINGS-2 / L-074).
+ */
 export function spriteAssets(assets: AssetItem[]): AssetItem[] {
-  return assets.filter((a) => a.type === 'sprite');
+  return assets.filter((a) => a.type === 'sprite' || a.type === 'tile');
 }
 
 /** A picker's raw <select> value → asset id, mapping the empty "None" option to null. */
@@ -194,11 +201,17 @@ export function GameSettings() {
     return (
       <>
         <div className="panel-header">
-          <span>Game</span>
+          <span>Game Settings</span>
         </div>
+        {/* "grid" is the settings glyph this editor already uses for the
+            updateSettings command (see Timeline.tsx's commandIcon) — a
+            "play" triangle here read as an unrelated live-preview affordance
+            (GAMESETTINGS-1 / L-078, L-079). No new icon added (ui.tsx is
+            off-limits this wave); reusing the existing settings glyph keeps
+            parity without touching the shared icon set. */}
         <div className="empty-state">
           <span className="empty-icon" aria-hidden="true">
-            <Icon name="play" size={16} />
+            <Icon name="grid" size={16} />
           </span>
           <span>No project open</span>
         </div>
@@ -217,9 +230,14 @@ export function GameSettings() {
   return (
     <>
       <div className="panel-header">
-        <span>Game</span>
+        <span>Game Settings</span>
       </div>
-      <div className="panel-body">
+      {/* game-settings-body layers a CSS-only scroll shadow on top of the
+          shared .panel-body scroll (GAMESETTINGS-6 / L-075): at default dock
+          height only Window + part of Loop are visible, with Fixed timestep,
+          Loading, and all of Shipping (incl. the Icon field) below the fold
+          and no other cue that there's more to scroll to. */}
+      <div className="panel-body game-settings-body">
         <div className="diff-section">
           <h4>Window</h4>
           <div className="inspector-row">

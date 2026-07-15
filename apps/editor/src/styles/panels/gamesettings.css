@@ -1,0 +1,29 @@
+/* Game Settings panel (GameSettings.tsx). */
+
+/*
+ * GAMESETTINGS-6 / L-075: at the panel's default docked height only Window +
+ * part of Loop show; Fixed timestep, all of Loading, and all of Shipping
+ * (including the Icon field — the whole reason to open this panel for a
+ * shippable build) sit below the fold with no cue that there's more content.
+ * `.panel-body` already scrolls (overflow-y: auto in common.css); this layers
+ * a CSS-only "scroll shadow" on top of that scroll, so a soft dark fade
+ * appears at the bottom (and top, once scrolled down) whenever there's more
+ * content in that direction — no JS scroll listener needed. The two
+ * `background-attachment: local` layers scroll with the content and mask the
+ * shadow flush against `--bg-1` near the edges; the two `scroll` layers stay
+ * fixed to the viewport and paint the actual shadow.
+ */
+.game-settings-body {
+  background:
+    linear-gradient(var(--bg-1) 30%, transparent) center top,
+    linear-gradient(transparent, var(--bg-1) 70%) center bottom,
+    radial-gradient(farthest-side at 50% 0, rgba(0, 0, 0, 0.35), transparent) center top,
+    radial-gradient(farthest-side at 50% 100%, rgba(0, 0, 0, 0.35), transparent) center bottom;
+  background-repeat: no-repeat;
+  background-size:
+    100% 24px,
+    100% 24px,
+    100% 10px,
+    100% 10px;
+  background-attachment: local, local, scroll, scroll;
+}

@@ -82,7 +82,7 @@ describe('parsePositiveInt — client-side width/height rejection', () => {
   });
 });
 
-describe('sprite picker — lists sprite assets plus None', () => {
+describe('sprite picker — lists sprite AND tile assets plus None (GAMESETTINGS-2 / L-074)', () => {
   const assets: AssetItem[] = [
     asset('hero', 'sprite'),
     asset('theme', 'audio'),
@@ -91,12 +91,18 @@ describe('sprite picker — lists sprite assets plus None', () => {
     asset('logo', 'sprite'),
   ];
 
-  it('offers only sprite assets as options', () => {
-    expect(spriteAssets(assets).map((a) => a.id)).toEqual(['hero', 'logo']);
+  it('offers sprite AND tile assets as options — parity with the Inspector\'s assetId pickers', () => {
+    expect(spriteAssets(assets).map((a) => a.id)).toEqual(['hero', 'ground', 'logo']);
+  });
+
+  it('excludes non-image asset kinds (audio, font)', () => {
+    const ids = spriteAssets(assets).map((a) => a.id);
+    expect(ids).not.toContain('theme');
+    expect(ids).not.toContain('title-font');
   });
 
   it('preserves the incoming order', () => {
-    const ordered = [asset('b', 'sprite'), asset('a', 'sprite')];
+    const ordered = [asset('b', 'sprite'), asset('a', 'tile')];
     expect(spriteAssets(ordered).map((a) => a.id)).toEqual(['b', 'a']);
   });
 
