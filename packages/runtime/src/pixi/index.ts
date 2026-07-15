@@ -80,6 +80,7 @@ import {
 } from './postEffects.js';
 import { syncSpriteEffectsFilter } from './spriteEffectsFilter.js';
 import { buildTilemapContainer } from './tilemapRender.js';
+import { clearGraphics } from './graphicsGuard.js';
 
 export { localStorageAdapter, type WebStorageLike } from './storage.js';
 
@@ -459,7 +460,7 @@ export class PixiSceneView {
   setDebugDraw(on: boolean): void {
     this._debugDraw = on;
     this.debugLayer.visible = on;
-    if (!on) this.debugGraphics.clear();
+    if (!on) clearGraphics(this.debugGraphics);
   }
 
   /**
@@ -798,7 +799,7 @@ export class PixiSceneView {
    */
   private redrawDebug(): void {
     const g = this.debugGraphics;
-    g.clear();
+    if (!clearGraphics(g)) return;
     for (const entity of this.runtime.getEntities()) {
       if (!entity.enabled) continue;
       const worldPos = this.runtime.getWorldPosition(entity);
@@ -891,7 +892,7 @@ export class PixiSceneView {
 
     const channel = Math.round(cam.ambientLight * 255);
     const ambientColor = (channel << 16) | (channel << 8) | channel;
-    this.ambientGraphics.clear();
+    if (!clearGraphics(this.ambientGraphics)) return;
     this.ambientGraphics.rect(0, 0, width, height).fill(ambientColor);
 
     while (this.lightSprites.length < lights.length) {
@@ -935,7 +936,7 @@ export class PixiSceneView {
     const snapshot = `${color}|${width}x${height}`;
     if (this.backgroundSnapshot === snapshot) return;
     this.backgroundSnapshot = snapshot;
-    this.backgroundRect.clear();
+    if (!clearGraphics(this.backgroundRect)) return;
     this.backgroundRect.rect(0, 0, width, height).fill(color);
   }
 
@@ -946,7 +947,7 @@ export class PixiSceneView {
    * rect); skips the fill entirely at alpha 0 so idle scenes pay nothing.
    */
   private syncFxOverlay(overlay: { color: string; alpha: number }, width: number, height: number): void {
-    this.fxOverlay.clear();
+    if (!clearGraphics(this.fxOverlay)) return;
     if (overlay.alpha <= 0) return;
     this.fxOverlay.rect(0, 0, width, height).fill({ color: overlay.color, alpha: overlay.alpha });
   }
@@ -1281,7 +1282,7 @@ export class PixiSceneView {
     if (this.lineSnapshots.get(entityId) === snapshot) return;
     this.lineSnapshots.set(entityId, snapshot);
 
-    g.clear();
+    if (!clearGraphics(g)) return;
     if (line.points.length < 2) return;
     if (line.closed) {
       g.poly(
@@ -1323,7 +1324,7 @@ export class PixiSceneView {
     if (this.sliderSnapshots.get(entityId) === snapshot) return;
     this.sliderSnapshots.set(entityId, snapshot);
 
-    g.clear();
+    if (!clearGraphics(g)) return;
     const halfW = slider.width / 2;
     const trackH = 6;
     g.rect(-halfW, -trackH / 2, slider.width, trackH).fill(slider.trackColor);
@@ -1353,7 +1354,7 @@ export class PixiSceneView {
     if (this.toggleSnapshots.get(entityId) === snapshot) return;
     this.toggleSnapshots.set(entityId, snapshot);
 
-    g.clear();
+    if (!clearGraphics(g)) return;
     const half = toggle.size / 2;
     const radius = Math.min(6, half);
     g.roundRect(-half, -half, toggle.size, toggle.size, radius).fill(toggle.color);
@@ -1376,7 +1377,7 @@ export class PixiSceneView {
   ): void {
     g.zIndex = emitter.layer;
     g.visible = entity.enabled;
-    g.clear();
+    if (!clearGraphics(g)) return;
     if (!entity.enabled) return;
 
     for (const p of this.runtime.getParticles(entity.id)) {
