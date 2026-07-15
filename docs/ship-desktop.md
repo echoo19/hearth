@@ -1,7 +1,7 @@
 # Distributing a Downloadable Desktop Game
 
-`hearth export desktop` packages your game as a native app — one zipped app
-per platform — that a player downloads and double-clicks. This page is about
+`hearth export desktop` packages your game as a native app (one zipped app
+per platform) that a player downloads and double-clicks. This page is about
 getting those builds to players and being honest with them about what an
 *unsigned* build looks like on first launch. For the export command itself
 (flags, platforms, the signing ladder, icons), see
@@ -9,7 +9,7 @@ getting those builds to players and being honest with them about what an
 itch.io specifically, see [shipping-to-itch.md](./shipping-to-itch.md).
 
 > This page is about signing and shipping **games you make with Hearth**. It
-> is a different thing from signing the **Hearth editor app itself** — that's
+> is a different thing from signing the **Hearth editor app itself**: that's
 > [desktop-app.md](./desktop-app.md). The environment variables and workflows
 > are separate.
 
@@ -29,10 +29,10 @@ You get one zip per platform, named `<project-slug>-<platform>.zip`:
 | `<slug>-linux-x64.zip` | Linux 64-bit |
 
 Each zip contains the packaged app with its executable bit preserved, so the
-binary inside runs straight after the player unzips it — no `chmod` needed on
+binary inside runs straight after the player unzips it: no `chmod` needed on
 macOS or Linux. (The editor's Export dialog shows each zip's path with a copy
 button and next-step hints once the export finishes.) Narrow the set with
-repeated `--platform` flags if you only want to ship some — but read the
+repeated `--platform` flags if you only want to ship some, but read the
 [honest verification limits](./export.md#honest-verification-limits) first: a
 build packaged from a Mac for Windows or Linux is packaging-verified, not
 execution-verified. Smoke-test on real hardware for any platform you can't
@@ -41,7 +41,7 @@ launch yourself before you publish it.
 ## The unsigned-build reality
 
 **Preview Hearth builds are unsigned by default** (ad-hoc on macOS, nothing
-on Windows or Linux). Unsigned builds run fine — but the OS shows a scary
+on Windows or Linux). Unsigned builds run fine, but the OS shows a scary
 warning on first launch, because from its point of view an unknown developer
 is shipping an app it can't verify. This is not a Hearth bug and not
 something wrong with your game; it's what every unsigned app triggers. You
@@ -50,7 +50,7 @@ have two honest choices: **tell your players how to get past the warning**
 ([signing, below](#signing-to-remove-the-warnings)).
 
 Whichever you pick, be upfront on your download page. A one-line "this build
-isn't code-signed yet — here's how to open it" note next to the download
+isn't code-signed yet, here's how to open it" note next to the download
 buys more trust than a player hitting an unexpected "damaged app" dialog.
 
 ### macOS: what your players will see
@@ -82,7 +82,7 @@ An unsigned `.exe` trips **SmartScreen**: a blue *"Windows protected your
 PC"* dialog that only shows a **Don't run** button at first. Tell players to
 click **More info**, then the **Run anyway** button that appears. SmartScreen
 reputation also builds with download volume, so the warning softens over time
-for a build that many people fetch — but a fresh unsigned build always starts
+for a build that many people fetch, but a fresh unsigned build always starts
 with it.
 
 ### Linux: what your players will see
@@ -94,7 +94,7 @@ the whole friction.
 
 ## Signing to remove the warnings
 
-Signing is the only way to make the warnings actually go away — no amount of
+Signing is the only way to make the warnings actually go away: no amount of
 instructions removes them, it just teaches players to click through. If you
 have (or are willing to get) developer credentials, `hearth export desktop`
 reads signing config from environment variables at export time:
@@ -103,18 +103,18 @@ reads signing config from environment variables at export time:
   `HEARTH_MAC_IDENTITY` to your *Developer ID Application* identity for a
   signed build, and add `HEARTH_APPLE_ID` + `HEARTH_APPLE_PASSWORD` +
   `HEARTH_TEAM_ID` to also **notarize** it. A notarized build opens with
-  **zero** warnings — no Open Anyway, no `xattr`. See
+  **zero** warnings: no Open Anyway, no `xattr`. See
   [export.md#signing-macos-only](./export.md#signing-macos-only) for the full
   table and what each variable does.
 - **Windows.** Authenticode signing (an OV/EV certificate, or Azure Trusted
   Signing) removes the SmartScreen prompt as reputation builds. Hearth's
-  `export desktop` doesn't wire up Windows signing yet — it's on the
-  [roadmap](./roadmap.md) — so today a Windows game ships unsigned and you
+  `export desktop` doesn't wire up Windows signing yet; it's on the
+  [roadmap](./roadmap.md), so today a Windows game ships unsigned and you
   rely on the "More info → Run anyway" instructions above.
 - **Linux.** Nothing to sign.
 
 If you have no signing setup, that's a legitimate way to ship a preview or a
-jam game — just lead with the honesty note and the per-platform instructions
+jam game: just lead with the honesty note and the per-platform instructions
 above.
 
 ## Where to host the downloads
@@ -122,7 +122,7 @@ above.
 The zips are ordinary files; host them like any download:
 
 - **itch.io** classifies each platform zip with a checkbox and shows players
-  the right download button — the smoothest path for a game. See
+  the right download button, the smoothest path for a game. See
   [shipping-to-itch.md](./shipping-to-itch.md#desktop-one-channel-per-platform).
 - **GitHub Releases** attach the four zips to a tagged release; players pick
   their platform. Good for open-source or repo-hosted games.
@@ -138,6 +138,6 @@ The zips are ordinary files; host them like any download:
    one manual launch on real hardware/VM for any you can't (see
    [honest verification limits](./export.md#honest-verification-limits)).
 3. Your download page states the builds are unsigned (if they are) and gives
-   the per-OS "how to open" steps — or you signed/notarized and can drop that
+   the per-OS "how to open" steps, or you signed/notarized and can drop that
    note.
 4. Filenames make the platform obvious to a player choosing a download.

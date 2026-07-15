@@ -1,6 +1,6 @@
 # Hosting a Web Build on Your Own Site
 
-A Hearth web export is a static, self-contained folder — no server code, no
+A Hearth web export is a static, self-contained folder: no server code, no
 build step on the player's machine, no external requests. That means you can
 host it anywhere that serves plain files: your own domain, a static host, a
 subfolder of an existing site, or a shared link. This page covers everything
@@ -24,7 +24,7 @@ hearth export web --allow build          # folder build → export/web/
 
 Upload that folder as-is. The game boots straight into your first scene with
 no Hearth branding, letterbox-scaled to whatever space it's given. There is
-nothing to configure on the host — any static file server works.
+nothing to configure on the host. Any static file server works.
 
 > **One catch: don't double-click `index.html`.** Because the boot page
 > `fetch`es `project.bundle.json`, browsers block it when opened from a
@@ -33,19 +33,19 @@ nothing to configure on the host — any static file server works.
 > `hearth export web --single-file --allow build` inlines the player and every
 > asset into one `index.html` that runs from anywhere. It's a bigger file but
 > needs zero requests. For a hosted site the folder build is smaller and
-> loads faster — the `file://` limit only bites local double-clicks.
+> loads faster. The `file://` limit only bites local double-clicks.
 
 ## Hosting options
 
 ### Any static host (Netlify, Cloudflare Pages, GitHub Pages, Vercel, S3…)
 
 Point the host at `export/web/` as the publish directory (or drag-and-drop
-the folder into their dashboard). No framework preset, no build command —
+the folder into their dashboard). No framework preset, no build command:
 it's already built. A few host-specific notes:
 
 - **GitHub Pages**: push `export/web/`'s contents to a `gh-pages` branch or a
   `/docs` folder on `main`. Because the game lives at a subpath
-  (`username.github.io/repo/`), confirm it still boots — Hearth's export uses
+  (`username.github.io/repo/`), confirm it still boots. Hearth's export uses
   only relative paths (`./hearth-player.js`, `./project.bundle.json`,
   `./assets/…`), so a subpath is fine as long as you upload the whole folder
   together.
@@ -58,8 +58,8 @@ it's already built. A few host-specific notes:
 
 ### A subfolder of an existing site
 
-Drop the whole `export/web/` folder somewhere under your web root — say
-`yourdomain.com/games/star-catcher/` — and link to it. Everything the export
+Drop the whole `export/web/` folder somewhere under your web root, say
+`yourdomain.com/games/star-catcher/`, and link to it. Everything the export
 references is relative, so it doesn't care what path it lives at. Keep the
 four items together; don't split `assets/` off from `index.html`.
 
@@ -82,7 +82,7 @@ Match `width`/`height` to your project's `buildSettings.width`/`height`
 a mismatched frame. The `allow` attribute matters: `gamepad` lets controller
 input reach the game across the frame boundary, and `autoplay` lets music
 start on the first player interaction. (Hearth's player resumes audio
-silently on the first pointer/key/touch — browsers block sound until then, so
+silently on the first pointer/key/touch. Browsers block sound until then, so
 there's always at least one gesture before audio.)
 
 ## Custom domain & HTTPS
@@ -96,7 +96,7 @@ or your CDN) rather than serving `http://`.
 ## Loading screen
 
 While the bundle and assets download, players see only what you set in
-`buildSettings.loading` — a background color, an optional centered image, and
+`buildSettings.loading`: a background color, an optional centered image, and
 an optional minimal spinner. Set them with `updateSettings` (or the editor's
 **Game Settings → Loading** section); no hand-editing of `hearth.json`. See
 [export.md](./export.md#loading-visuals-buildsettingsloading) for the fields.
@@ -107,7 +107,7 @@ an optional minimal spinner. Set them with `updateSettings` (or the editor's
    errors, but check first).
 2. You uploaded the **whole** `export/web/` folder, together.
 3. The page is served over **HTTPS**.
-4. You opened the hosted URL yourself and it booted into your first scene —
+4. You opened the hosted URL yourself and it booted into your first scene:
    itch.io-style preview isn't available on a bare host, so this manual boot
    is your smoke test.
 5. If you embedded it, the iframe `allow` list includes `gamepad` and

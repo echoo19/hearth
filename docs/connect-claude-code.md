@@ -1,9 +1,9 @@
 # Connect Claude Code
 
-Claude Code is the smoothest agent to point at a Hearth project, because the
+Claude Code is the easiest agent to point at a Hearth project, because the
 editor wires it up for you. This page covers both paths: the one-click Agent
 panel, and manual setup for a terminal outside the editor. Either way, what
-Claude Code gets is the whole engine as typed, permission-checked commands —
+Claude Code gets is the whole engine as typed, permission-checked commands,
 plus the per-project skill that teaches it *how* to use them well. Hearth
 never runs a model or holds an API key; you're running your own `claude` CLI
 against your own subscription. See
@@ -22,13 +22,13 @@ panel:
    missing, and spawns your real `claude` binary in an embedded terminal with
    its working directory set to the project.
 3. Claude Code discovers `.mcp.json` on its own, asks you to approve the
-   `hearth` server the first time, and handles its own login if needed — all
+   `hearth` server the first time, and handles its own login if needed, all
    inside the terminal.
 
 If `claude` isn't on your `PATH`, the panel shows **Install Claude Code**
 instead, which runs the official installer visibly in the terminal (nothing
-hidden), then re-detects. Full panel behavior — the activity timeline,
-Checkpoint / Review / Revert, the external-change model — is in
+hidden), then re-detects. Full panel behavior (the activity timeline,
+Checkpoint / Review / Revert, the external-change model) is in
 [agent-panel.md](./agent-panel.md).
 
 ## The manual path (any terminal)
@@ -70,8 +70,8 @@ remove hearth`.
 Have Claude call **`get_agent_instructions`** before anything else. It returns
 the project's `AGENTS.md` house rules plus the active permission modes, so the
 agent orients itself instead of guessing. The per-project skills under
-`.claude/skills/` teach the working loop —
-snapshot → inspect → edit → validate → playtest → diff — and the game-craft
+`.claude/skills/` teach the working loop
+(snapshot → inspect → edit → validate → playtest → diff) and the game-craft
 recipes on top of it.
 
 ## Permission modes
@@ -93,7 +93,7 @@ See [mcp.md](./mcp.md#choosing-modes-per-session) for the full mode reference.
 ## Connecting other agents
 
 The same launcher dropdown in the Agent panel also detects and auto-wires
-Codex, OpenCode, and Hermes, each into its own config format — see
+Codex, OpenCode, and Hermes, each into its own config format. See
 [connect-codex.md](./connect-codex.md), [connect-opencode.md](./connect-opencode.md)
 (with local models via Ollama), and [connect-hermes.md](./connect-hermes.md).
 For any other MCP client or shell-native CLI, use the plain terminal launcher

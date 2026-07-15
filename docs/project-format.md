@@ -82,7 +82,7 @@ normative; this page is descriptive. Every file carries `formatVersion: 1`.
 
 Change settings with the `updateSettings` command (partial deep-merge)
 rather than hand-editing, or the editor's **Game Settings** panel for a
-typed UI over every field above — see
+typed UI over every field above. See
 [export.md#editor-game-settings-panel](./export.md#editor-game-settings-panel).
 
 ## Scene files (`scenes/*.scene.json`)
@@ -129,7 +129,7 @@ and property, or run `hearth inspect components --json`.
 
 `Camera.postEffects` (a stack of screen-space post-processing filters) and
 `SpriteEffects` (per-sprite outline/flash/dissolve) round-trip through
-scene files like any other component data — see
+scene files like any other component data. See
 [effects.md](./effects.md) for the full catalog.
 
 ## assets.json + asset files
@@ -151,7 +151,7 @@ Asset types: `sprite`, `tile`, `audio`, `animation`, `font`, `prefab`,
 bytes). No AI, no network. Animation assets are JSON: `{ "frames":
 ["ast_…", …], "frameDuration": 0.15, "loop": true }` referencing sprite
 assets. Prefab assets are JSON too (`{ "name", "entities": [...] }`,
-normalized local ids, root-first) — see [prefabs.md](./prefabs.md) for the
+normalized local ids, root-first). See [prefabs.md](./prefabs.md) for the
 full shape and the four commands that read/write it.
 
 ## Playtests (`playtests/*.playtest.json`)
@@ -180,7 +180,7 @@ Step types: `wait`, `press`, `release`, `click` (screen coordinates),
 `assertEntityExists`, `assertProperty` (`equals` / `greaterThan` /
 `lessThan`), `assertPositionNear`, `assertScene`, `assertNoErrors`.
 Playtests also carry a `seed` (default `0`) for the script RNG
-(`ctx.random` / Lua `math.random`) — same seed, same run.
+(`ctx.random` / Lua `math.random`): same seed, same run.
 
 ## Scripts (`scripts/*.lua`, `scripts/*.js`)
 
@@ -193,7 +193,7 @@ one part of the project agents are encouraged to edit as code (via
 ## .hearth/log/commands.jsonl
 
 An append-only, newline-delimited JSON log of commands run through *any*
-session against this project (CLI, MCP, or the editor) — independent of
+session against this project (CLI, MCP, or the editor), independent of
 `.hearth/history/`'s undo/redo stack. Unlike history, the journal also
 records read-only-but-meaningful runs (`runPlaytest`, `validateProject`)
 and failed commands, and it is never rewound by `undo`/`redo`. It's the
@@ -220,23 +220,23 @@ Notes:
 
 - **What gets journaled**: every `mutates: true` command, plus a small
   fixed allowlist of meaningful non-mutating ones (`runPlaytest`,
-  `validateProject`). Plain `inspect*`/`list*` reads are not journaled —
+  `validateProject`). Plain `inspect*`/`list*` reads are not journaled;
   the editor calls those constantly and they carry no news.
 - **No params, no snapshots.** `detail` carries only a few small,
   defensively-extracted facts (e.g. `runPlaytest`'s pass/fail and assertion
-  counts, `validateProject`'s error/warning counts) — the journal is a
+  counts, `validateProject`'s error/warning counts). The journal is a
   feed, not a backup. Undo history and `snapshot`/`diff`/`revert` remain
   the separate mechanisms for that.
 - **Rotation.** Once the file exceeds 4000 lines it's rewritten down to
   the newest 2000, preserving `seq` continuity. A journal-write failure
-  never fails the command it's recording — it's isolated exactly like
+  never fails the command it's recording; it's isolated exactly like
   history-record failures.
 - **`seq` is monotonic per project**, read from the last line on disk at
   append time; exact cross-process collisions under concurrent writers are
   tolerable (the journal is informational, never load-bearing for
   correctness) and ties break by `ts`.
 - Joins the `.gitignore`-managed engine-state convention alongside
-  `.hearth/history/` and `.hearth/baseline.json` — this file is local
+  `.hearth/history/` and `.hearth/baseline.json`. This file is local
   session state, not part of the project's tracked format.
 
 ## Versioning & compatibility

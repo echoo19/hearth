@@ -1,8 +1,8 @@
 # UI Guide
 
 Hearth's game UI (HUDs, menus, settings screens) is built from ordinary
-entities and components — `UIElement`, `UILayout`, `UISlider`, `UIToggle`
-— not a parallel widget tree. Visuals still come from `Text` and
+entities and components (`UIElement`, `UILayout`, `UISlider`, `UIToggle`),
+not a parallel widget tree. Visuals still come from `Text` and
 `SpriteRenderer`; `UIElement` just repositions an entity into screen space
 and, optionally, wires it into pointer and focus input. Everything here
 works identically in the editor preview, headless playtests, and exported
@@ -28,19 +28,19 @@ click-family events (see [Focus and `ctx.ui`](#focus-and-ctxui) below).
 
 Z-order (both for rendering and for which element wins a pointer hit when
 two overlap) comes from `layer` on whichever visual/widget component the
-entity has — `SpriteRenderer.layer`, `Text.layer`, `UISlider.layer`, or
-`UIToggle.layer` — not from `UIElement` itself, which has no `layer`
+entity has (`SpriteRenderer.layer`, `Text.layer`, `UISlider.layer`, or
+`UIToggle.layer`), not from `UIElement` itself, which has no `layer`
 field. Full schema defaults for every component: [components.md](./components.md).
 
 ## UILayout: stacking containers
 
-A `UILayout` entity has no visuals of its own — give it a `UIElement` for
+A `UILayout` entity has no visuals of its own: give it a `UIElement` for
 its own anchor/offset, then parent the widgets you want stacked to it.
-The runtime reflows its `UIElement` children on demand — pointer events,
-focus navigation, and (in the pixi host) every render tick — along
-`direction` (`vertical`/`horizontal`), spaced by `gap`, inset by
+The runtime reflows its `UIElement` children on demand, on pointer
+events, focus navigation, and (in the pixi host) every render tick,
+along `direction` (`vertical`/`horizontal`), spaced by `gap`, inset by
 `padding`, cross-aligned by `align` (`start`/`center`/`end`). A stacked
-child's own `anchor`/`offset` are ignored — its position comes entirely
+child's own `anchor`/`offset` are ignored. Its position comes entirely
 from the layout:
 
 ```jsonc
@@ -61,7 +61,7 @@ you'd hand-placed the same coordinates.
 ## UISlider
 
 A draggable value widget the runtime renders and hit-tests itself (track
-+ fill + handle) — no `SpriteRenderer` needed. Put it on an entity with
++ fill + handle). No `SpriteRenderer` needed. Put it on an entity with
 `UIElement{interactive: true}` (and usually `focusable: true`):
 
 | Field | Default | Meaning |
@@ -111,8 +111,8 @@ end
 ## Focus and `ctx.ui`
 
 `focusable: true` on a `UIElement` lets it participate in keyboard/gamepad
-navigation, driven entirely from scripts — Hearth has no built-in
-controller-to-menu wiring, you write it with `ctx.ui` and your own input
+navigation, driven entirely from scripts. Hearth has no built-in
+controller-to-menu wiring; you write it with `ctx.ui` and your own input
 actions:
 
 | Member | What it is |
@@ -124,15 +124,15 @@ actions:
 | `ctx.ui.adjust(delta)` | Nudge a focused `UISlider`'s value |
 
 `moveFocus` picks the nearest candidate strictly in that direction (by
-screen position) from the current focus — or the top-left-most candidate
-if nothing is focused yet — with no wraparound: moving off an edge with
+screen position) from the current focus (or the top-left-most candidate
+if nothing is focused yet), with no wraparound: moving off an edge with
 nothing further that way is a no-op. `activate` replays a full
 press/release/click at the focused element (so it fires the same
-`onUiEvent`s a real click would — a focused `UIToggle` flips, a focused
+`onUiEvent`s a real click would: a focused `UIToggle` flips, a focused
 button's script runs its click handler); it warns and does nothing if the
 focused element isn't `interactive`. `adjust(delta)` only affects a
 focused `UISlider` (moves `value` by `delta` steps, or a tenth of its
-range if `step` is `0`) — it's a no-op on anything else, including a
+range if `step` is `0`). It's a no-op on anything else, including a
 focused `UIToggle` (use `activate` to flip one).
 
 ```lua
@@ -152,7 +152,7 @@ return script
 
 A menu that opens should focus its first control explicitly
 (`ctx.ui.focus("Resume")`) and a menu that closes should clear it
-(`ctx.ui.focus(nil)`) — focus doesn't move or clear itself.
+(`ctx.ui.focus(nil)`). Focus doesn't move or clear itself.
 
 ## `onUiEvent` reference
 
@@ -171,7 +171,7 @@ and/or `focusable` `UIElement`. `event` is `{ type, x, y, value? }`:
 `x`/`y` are always screen coordinates in the `buildSettings` width×height
 space; for `focus`/`blur` (which have no real pointer position behind
 them) they're the element's own resolved screen position. `value` is only
-present on the event object when it applies — check `event.value ~= nil`
+present on the event object when it applies: check `event.value ~= nil`
 (Lua) / `event.value !== undefined` (JS) rather than assuming a type.
 
 ## Playtests
@@ -197,11 +197,11 @@ two steps exercise widgets and focus directly:
 ## HUD vs. menu patterns
 
 A **HUD** element (score label, health bar) is typically `UIElement` with
-`interactive: false` and no `focusable` — it's positioned in screen space
+`interactive: false` and no `focusable`: it's positioned in screen space
 and updated from scripts (`ctx.getComponent("Text").content = tostring(score)`),
 never clicked. A **menu** control is `interactive: true` (and usually
 `focusable: true`) so it responds to both a mouse/touch click and
-controller/keyboard focus navigation — build one `UILayout` per menu
+controller/keyboard focus navigation. Build one `UILayout` per menu
 screen, parent its buttons/sliders/toggles to it, and drive focus from a
 single script the way [Focus and `ctx.ui`](#focus-and-ctxui) shows above.
 See `packages/examples/drift-cellar` for a complete pause menu (a

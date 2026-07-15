@@ -24,8 +24,8 @@ cd star_catcher
 You get a `Main` scene with a camera, ground, and a blue player box that
 already falls and lands (dynamic physics body + static ground), plus
 `AGENTS.md`/`CLAUDE.md` for any agent that visits. `hearth init --template
-platformer|topdown|arcade` starts from a genre skeleton instead of blank —
-see [cli.md](./cli.md#project-templates).
+platformer|topdown|arcade` starts from a genre skeleton instead of blank.
+See [cli.md](./cli.md#project-templates).
 
 ## 3. Make the player move
 
@@ -102,7 +102,7 @@ hearth test                              # validate + all playtests
 From the hearth repo: `npm run dev`, open http://localhost:5173, open your
 project folder in the launcher, press **Play**. The Changes panel (toolbar:
 **Review**) shows exactly what you (or an agent) changed since the last
-checkpoint (`hearth snapshot`) — see [docs/editor.md](./editor.md) for the
+checkpoint (`hearth snapshot`). See [docs/editor.md](./editor.md) for the
 rest of the editor's chrome and shortcuts.
 
 ## 7. Hand it to an agent
@@ -136,4 +136,4 @@ packaged app per platform. See [export.md](./export.md) and
 - [Export](./export.md): web (folder vs single file) and desktop (Electron, signing)
 - [Shipping to itch.io](./shipping-to-itch.md): web zip, desktop channels, butler
 - [Connect your agent](./connect-any-agent.md): Claude Code, Codex,
-  OpenCode + Ollama, Hermes, or any MCP-capable CLI — one-command setup
+  OpenCode + Ollama, Hermes, or any MCP-capable CLI (one-command setup)

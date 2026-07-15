@@ -48,13 +48,13 @@ Defaults:
 [assets.md](./assets.md#slicing-a-spritesheet)) to draw as a
 sub-rectangle of the texture instead of the whole image; `null` (the
 default) always draws the whole image, sliced or not. `SpriteAnimator`
-sets this automatically for sheet-backed clips — see
+sets this automatically for sheet-backed clips. See
 [SpriteAnimator](#spriteanimator) below. An unresolvable `frame` logs a
 warning once and falls back to the whole texture (also flagged by
 `hearth validate` as `FRAME_NOT_FOUND`).
 
 `color` doubles as a **tint** on textured sprites (an asset is set), not
-just the primitive fallback's fill — edits take effect immediately. The
+just the primitive fallback's fill. Edits take effect immediately. The
 default `#ffffff` is a no-op tint, so existing projects render
 unchanged; set it to anything else to recolor real art (a damage flash,
 a grayed-out disabled state) without a second sprite asset.
@@ -96,10 +96,10 @@ respect the entity's scale and rotation.
 it will contact (`"*"` matches any layer). **Both sides must list the
 other**: two colliders only interact when A's `collidesWith` includes B's
 `layer` (or `"*"`) *and* B's `collidesWith` includes A's `layer` (or
-`"*"`) — a one-sided list is a no-op. A solid `Tilemap`'s auto-generated
+`"*"`). A one-sided list is a no-op. A solid `Tilemap`'s auto-generated
 colliders are always `layer: "default"`, `collidesWith: ["*"]`. `oneWay:
 true` makes a **non-trigger** collider only block movers landing on top
-of it while moving downward — approaching from below or the side always
+of it while moving downward. Approaching from below or the side always
 passes through; a `oneWay` **trigger** collider is unaffected by this
 (triggers already never block, and report contact from every side).
 
@@ -124,7 +124,7 @@ Defaults:
 }
 ```
 
-`mass` only matters between two `dynamic` bodies pushing on each other —
+`mass` only matters between two `dynamic` bodies pushing on each other:
 the overlap resolution splits proportionally, so a heavier body shoves a
 lighter one further than it gets shoved back (a `static`/`kinematic`
 obstacle is treated as infinitely heavy regardless of `mass`).
@@ -135,16 +135,16 @@ sides**: a bouncy `Ball` (`restitution: 0.85`) still bounces off a plain
 `static` floor with `restitution: 0` (`max(0.85, 0) = 0.85`); a floor with
 its own `friction: 1` slows anything that touches it regardless of that
 body's own `friction`. A `Tilemap`'s solid tiles have no material of their
-own — they're always an effective `(restitution: 0, friction: 0)` contact
+own. They're always an effective `(restitution: 0, friction: 0)` contact
 partner, so give a floor real friction by adding a separate `static`
 entity with its own `Collider` + `PhysicsBody{friction}`, not by editing
 the tilemap. Restitution is suppressed below a **20 px/s** incoming
-contact speed (no micro-bounce jitter as a body comes to rest) — below
+contact speed (no micro-bounce jitter as a body comes to rest). Below
 that, a bounce settles into a stop instead of jittering forever.
 
 ## Script
 
-Attaches a behavior script from scripts/ (scriptPath) — Lua (`.lua`, the default) or JavaScript (`.js`). params are passed to the script as ctx.params.
+Attaches a behavior script from scripts/ (scriptPath): Lua (`.lua`, the default) or JavaScript (`.js`). params are passed to the script as ctx.params.
 
 Defaults:
 
@@ -172,16 +172,16 @@ Defaults:
 ```
 
 `ambientLight` sets scene brightness with no lights present: `1` is fully
-lit — lighting is disabled entirely and the renderer skips the lightmap pass,
+lit (lighting is disabled entirely and the renderer skips the lightmap pass,
 so existing projects with no `Light2D`s render exactly as before this
-feature existed — down to `0`, black except inside a `Light2D`'s radius.
+feature existed), down to `0`, black except inside a `Light2D`'s radius.
 Lower it (e.g. `0.15`) for a dark scene lit by torches/lanterns placed as
 `Light2D` entities.
 
 `postEffects` is a stack of up to 8 screen-space post-processing filters
 (bloom, CRT, vignette, chromatic aberration, pixelate, color grade),
 rendered in array order. The empty-array default is what keeps a fresh
-`Camera` a no-op — any non-empty entry always changes pixels, since each
+`Camera` a no-op. Any non-empty entry always changes pixels, since each
 effect's own field defaults are visually reasonable starting points, not
 off/neutral values. See [effects.md](./effects.md) for the full param
 catalog, ranges, order semantics, and determinism notes.
@@ -227,7 +227,7 @@ Create sound assets with `hearth create sound <name> --preset coin`
 
 `music: true` routes scene-start `autoplay` onto the single shared music
 channel (`ctx.audio.playMusic`) instead of a regular one-shot/looping
-playback — use it for a soundtrack entity that should start on its own
+playback: use it for a soundtrack entity that should start on its own
 and survive `ctx.scenes.load` scene switches. See
 [assets.md](./assets.md#music) for the full `playMusic`/`stopMusic`/
 `setMusicVolume` semantics, including the streaming-vs-single-file-export
@@ -251,20 +251,20 @@ Defaults:
 }
 ```
 
-Anchors: `top-left`, `top`, `top-right`, `left`, `center`, `right`,
-`bottom-left`, `bottom`, `bottom-right` — points in the game's
+Anchors (`top-left`, `top`, `top-right`, `left`, `center`, `right`,
+`bottom-left`, `bottom`, `bottom-right`) are points in the game's
 `buildSettings` width×height space; `offset` is pixels from there.
 `Transform.position` is ignored (scale and rotation still apply). UI
 renders above all world layers; within UI, `layer` (on `SpriteRenderer`,
-`Text`, `UISlider`, or `UIToggle` — `UIElement` has no `layer` of its own)
+`Text`, `UISlider`, or `UIToggle`; `UIElement` has no `layer` of its own)
 orders elements, both for rendering and for which element wins a pointer
 hit under overlapping widgets. Interactive elements are hit-tested against
 the SpriteRenderer's rect and/or the measured Text bounds; pointer/focus
 events are `click`, `press`, `release`, `enter`, `exit`, `drag`, `change`,
-`focus`, `blur` — see [scripting.md](./scripting.md#the-ctx-api) for the
+`focus`, `blur`. See [scripting.md](./scripting.md#the-ctx-api) for the
 `onUiEvent` payload shape and [ui.md](./ui.md) for the full reference,
 including `UILayout` (which reflows every `UIElement` child parented to
-it — an entity's own `anchor`/`offset` are ignored once it has a
+it; an entity's own `anchor`/`offset` are ignored once it has a
 `UILayout` parent).
 
 ## UILayout
@@ -283,11 +283,11 @@ Defaults:
 ```
 
 Give the container entity its own `UIElement` (for its `anchor`/`offset`)
-and parent the widgets you want stacked to it — a `UILayout` entity has no
-visuals, it only positions children. `direction` picks the stacking axis;
+and parent the widgets you want stacked to it. A `UILayout` entity has no
+visuals; it only positions children. `direction` picks the stacking axis;
 `gap` is the pixel space between consecutive children; `padding` insets
 the whole stack from the container's anchor point; `align` positions
-children on the cross axis (`start`/`center`/`end` — e.g. for a vertical
+children on the cross axis (`start`/`center`/`end`; e.g. for a vertical
 stack, left/center/right). Hit-testing and focus navigation both use the
 reflowed position, not each child's bare `anchor`/`offset`.
 
@@ -313,12 +313,12 @@ Defaults:
 
 Dragging the handle (pointer down + move) maps the pointer position onto
 the track and writes `value`, snapped to `step` when it's above `0`
-(`step: 0` is the default — no snapping, any value in `[min, max]`).
+(`step: 0` is the default, meaning no snapping and any value in `[min, max]`).
 Every value change fires `onUiEvent {type: 'change', value}` on the same
 entity, in the slider's own `min`-`max` range (not normalized to `0..1`
 unless that happens to be the range). Focused via `UIElement.focusable`
-and nudged with `ctx.ui.adjust(delta)` — see
-[scripting.md](./scripting.md#ui-focus) — which uses `step` when set, or
+and nudged with `ctx.ui.adjust(delta)` (see
+[scripting.md](./scripting.md#ui-focus)), which uses `step` when set, or
 a tenth of `max - min` otherwise, so keyboard/gamepad control feels
 reasonable even with `step: 0`.
 
@@ -358,15 +358,15 @@ Defaults:
 }
 ```
 
-(This `layer` is the rendering z-order — the same numeric layer every
-other `SpriteRenderer`/`Text`/etc. uses — not a `Collider.layer` physics
+(This `layer` is the rendering z-order, the same numeric layer every
+other `SpriteRenderer`/`Text`/etc. uses, not a `Collider.layer` physics
 layer name. A solid Tilemap's generated colliders are always physics
 `layer: "default"`, `collidesWith: ["*"]`; see [Collider](#collider)
 above.)
 
 A `tileAssets` entry is either a plain asset id (a fixed sprite/tile for
-that char) or an **autotile rule** — `{ sheet, template: "blob47",
-mapping? }` — that picks the char's on-screen frame from its 8 neighbours
+that char) or an **autotile rule** (`{ sheet, template: "blob47",
+mapping? }`) that picks the char's on-screen frame from its 8 neighbours
 at render time instead of drawing the same tile everywhere. Set with
 `setTileAutotile`/`hearth autotile set`, never with
 `setComponentProperty` directly (it rejects the rule shape). See
@@ -395,10 +395,10 @@ the light from the lightmap without deleting the entity. Every enabled
 `Light2D` in the scene is composited into one lightmap alongside `Camera.
 ambientLight`, so a dark `ambientLight` (e.g. `0.15`) plus a handful of
 lights reads as torches/lanterns punching pools of visibility out of the
-dark — see [architecture.md](./architecture.md#rendering) for how the
+dark. See [architecture.md](./architecture.md#rendering) for how the
 lightmap is built. Lights ignore the entity's rotation/scale (only position
 matters); parent a light to a moving entity (e.g. the player) to make a
-"torch" that follows them — children inherit only their parent's
+"torch" that follows them. Children inherit only their parent's
 translation, so a fixed local offset stays put relative to the parent.
 
 ## LineRenderer
@@ -419,7 +419,7 @@ Defaults:
 }
 ```
 
-`points` are `Vec2`s in local space — the entity's `Transform`
+`points` are `Vec2`s in local space. The entity's `Transform`
 (position/rotation/scale) applies to the whole line, so you can move or
 rotate a line by moving its entity rather than rewriting every point.
 `closed: true` connects the last point back to the first, turning a
@@ -455,20 +455,20 @@ Defaults:
 
 Particles spawn continuously at `rate` per second while `emitting` is true,
 plus a one-time `burst` count when the scene starts (scripts can trigger
-more at runtime with `ctx.particles.burst(count)` — see
+more at runtime with `ctx.particles.burst(count)`; see
 [scripting.md](./scripting.md#particles)). Each particle interpolates from
 `startColor`/`startSize` to `endColor`/`endSize` over its `lifetime`
 seconds, launched within `spread` degrees of `direction` (`0` = +x, `90` =
 +y/down) at `speed` px/s, then accelerated by `gravity` px/s². `maxParticles`
-is a hard cap — the oldest particles die first when exceeded, so a runaway
+is a hard cap: the oldest particles die first when exceeded, so a runaway
 emitter can't grow unbounded. `seed` makes the emitter's RNG stream
 independent of every other emitter and of `ctx.random`: the same seed spawns
 the exact same particles (position jitter within the cone, per-particle
 timing) on every run, which is what makes `assertParticleCount` in playtests
-reliable — see [scripting.md](./scripting.md#determinism) for the exact
+reliable. See [scripting.md](./scripting.md#determinism) for the exact
 spawn-timing rule (spawns land on whole fixed frames, not fractional ones).
 
-A **trail** recipe (a short-lived, tightly-focused stream — sparks off a
+A **trail** recipe (a short-lived, tightly-focused stream: sparks off a
 grinder, water dripping from a ceiling) is a high `rate`, zero `spread`, and
 `endSize: 0` so each particle shrinks to nothing right at the end of its
 short `lifetime`:
@@ -505,17 +505,17 @@ Defaults:
 
 Create the animation asset first: either `hearth create animation <name>
 --frames f1 f2 …` (frame args are existing sprite/tile asset ids or
-names, in playback order — see [`hearth create
+names, in playback order; see [`hearth create
 animation`](./cli.md#command-tour)) or, for a sliced spritesheet, `hearth
 create asset anim-from-sheet <name> --sheet <asset> --frames a,b,c` (see
 [assets.md](./assets.md#animations-from-a-sliced-sheet)). Each fixed
 frame, `SpriteAnimator` writes the current frame's asset id into the
-sibling `SpriteRenderer.assetId` — and, for a sheet-backed clip, the
-frame name into `SpriteRenderer.frame` too (`null` for a plain
+sibling `SpriteRenderer.assetId`, and for a sheet-backed clip also writes
+the frame name into `SpriteRenderer.frame` (`null` for a plain
 sprite-asset clip); `fps: 0` uses the animation asset's own
 `frameDuration`, otherwise `fps` overrides it. `loop: false` stops on
 the last frame and flips `playing` to false. Scripts switch clips (and
-restart at frame 0) with `ctx.animate(assetRef)` — see
+restart at frame 0) with `ctx.animate(assetRef)`. See
 [scripting.md](./scripting.md#sprite-animation).
 
 ## AnimationStateMachine
@@ -536,13 +536,13 @@ Defaults:
 `assetId` references a state machine asset at
 `assets/statemachines/*.asm.json`, created with `createStateMachineAsset`
 (CLI `hearth create asset state-machine`) or edited with
-`updateStateMachineAsset` (CLI `hearth set-state-machine`) — see
+`updateStateMachineAsset` (CLI `hearth set-state-machine`). See
 [scripting.md](./scripting.md#animation-state-machines) for the asset's
 `{ params, states, initial, transitions }` shape and the full
 `ctx.animator` scripting API, or the editor's [Animator
 editor](./editor.md#animator-editor) for a typed authoring UI.
-`playing: false` freezes the current frame — no transitions evaluated, no
-clip advance.
+`playing: false` freezes the current frame. No transitions are evaluated
+and the clip doesn't advance.
 
 ## SpriteEffects
 
@@ -565,11 +565,11 @@ Defaults:
 
 `flashStrength` decays linearly to `0` over `flashDuration` seconds once
 triggered (by `ctx.effects.flash(color?, seconds?)` or a direct
-`setComponentProperty` write) — deterministic, no RNG, same-frame decay
+`setComponentProperty` write): deterministic, no RNG, same-frame decay
 applies (see [effects.md](./effects.md#determinism) for the exact first-read
 value). `dissolveAmount` masks sprite texels by a per-texel hash of pixel
 position + `dissolveSeed`, not randomness, so the same seed dissolves the
-same texels every run — tween it with `ctx.tweens.to('SpriteEffects.
+same texels every run. Tween it with `ctx.tweens.to('SpriteEffects.
 dissolveAmount', 1, 0.6)` for a reproducible death/spawn effect. See
 [effects.md](./effects.md) for the full field reference, the `ctx.effects`
 scripting surface, and the `assertPostEffect` playtest step's sibling
@@ -581,4 +581,4 @@ coverage of `Camera.postEffects`.
 - Colors are hex strings (`#rgb`, `#rrggbb`, `#rrggbbaa`).
 - Positions/sizes are pixels; rotation is degrees; +y is down.
 - `SpriteRenderer` with `assetId: null` draws its primitive `shape`/`color`, so you can build a whole game before any art exists.
-- An entity can also carry an optional `prefab: { asset, ids, overrides }` field — not a component, so it never shows up in `hearth inspect components` or the list above, but it round-trips through scenes, snapshots, and undo history like any other entity field. It marks the entity as a live-linked instance of a prefab asset; `overrides` records the instance's own per-field edits so a later sync can re-apply them. See [prefabs.md](./prefabs.md).
+- An entity can also carry an optional `prefab: { asset, ids, overrides }` field, not a component, so it never shows up in `hearth inspect components` or the list above, but it round-trips through scenes, snapshots, and undo history like any other entity field. It marks the entity as a live-linked instance of a prefab asset; `overrides` records the instance's own per-field edits so a later sync can re-apply them. See [prefabs.md](./prefabs.md).

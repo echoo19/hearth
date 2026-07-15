@@ -52,21 +52,21 @@ hearth diff                              # what changed, for human review
 
 **Project**: `init <name> [--dir path] [--description text] [--template
 platformer|topdown|arcade] [--list-templates] [--no-starter] [--width n]
-[--height n]` (new project + agent files; default is a blank project with a
-starter scene — camera, ground, a player that falls and lands; `--template`
-scaffolds from a genre skeleton instead — see [Templates](#project-templates)
-below; `--list-templates` prints the available ones and exits; `--no-starter`
+[--height n]` (new project + agent files. Default is a blank project with a
+starter scene: camera, ground, a player that falls and lands. `--template`
+scaffolds from a genre skeleton instead; see [Templates](#project-templates)
+below. `--list-templates` prints the available ones and exits. `--no-starter`
 skips the starter scene and only applies to blank projects, rejected
-alongside `--template`; `--width`/`--height` likewise apply to blank projects
-only and are rejected with `--template` — templates set their own build size,
-adjust it afterwards with `set-settings`), `doctor` (health report), `commands` (dump the full
+alongside `--template`. `--width`/`--height` likewise apply to blank projects
+only and are rejected with `--template`, since templates set their own build
+size; adjust it afterwards with `set-settings`), `doctor` (health report), `commands` (dump the full
 engine command registry; agents can discover every operation from this).
 
 **Inspect** (read-only): `inspect project|scenes|components|assets|scripts`,
 `inspect scene <scene> [--full]`, `inspect entity <scene> <entity>`,
 `inspect api` (the full script `ctx` reference with Lua + JS examples),
 `inspect path <scene> --from x,y --to x,y [--diagonals]` (grid A\* over
-the scene's solid geometry — see [Pathfinding](#pathfinding) below),
+the scene's solid geometry; see [Pathfinding](#pathfinding) below),
 `validate` (includes per-script syntax checks with file + line, both
 languages).
 
@@ -75,26 +75,26 @@ languages).
 [--components '<json>']`, `rename scene|entity`, `delete scene|entity`,
 `duplicate scene <scene> <new-name> [--with-playtests]` (fresh entity ids;
 `--with-playtests` also clones every playtest targeting the source scene,
-retargeted to the copy — see [the envelope below](#tilemap-editing) for the
+retargeted to the copy; see [the envelope below](#tilemap-editing) for the
 sibling tilemap verbs' example format), `duplicate entity <scene> <entity>
 [--name n] [--offset x,y]` (deep-copies the entity and its full descendant
 subtree with fresh ids in one command; default offset `16,16` so the copy
-doesn't sit exactly on top of the original — descendants keep their cloned
+doesn't sit exactly on top of the original. Descendants keep their cloned
 relative position unchanged),
 `move entity <scene> <entity> [--position x,y] [--parent ref | --to-root]`,
 `add component <scene> <entity> <Type> [--properties '<json>']`,
 `remove component`, `set <scene> <entity> <Type.path.to.prop> <value>`
 (value parses as JSON: `100` is a number, `true` a boolean, `#ff0000` a
 string; the path is validated against the component's actual schema shape
-before writing — an unknown segment, e.g. a typo'd `Transform.postiion.x`,
+before writing. An unknown segment, e.g. a typo'd `Transform.postiion.x`,
 is rejected with a did-you-mean suggestion and the full list of valid keys,
 instead of silently succeeding against a throwaway key), `set enabled <scene>
-<entity> <true|false>` (enable/disable an entity — disabled entities are
+<entity> <true|false>` (enable/disable an entity; disabled entities are
 skipped by the runtime), `set tags <scene> <entity> <a,b,c>` (replace an
-entity's tags after creation; comma-separated, empty string clears them —
+entity's tags after creation; comma-separated, empty string clears them;
 `create entity --tags` only sets them at creation time), `set-many <scene>
 <entity> --properties '<json>'` (sets multiple dot-path properties, across
-one or several components, as **one undo step** — e.g. `hearth set-many
+one or several components, as **one undo step**, e.g. `hearth set-many
 Level1 Coin --properties '{"Transform.position.x":100,"SpriteRenderer.width":64}'`;
 all-or-nothing: every key is validated before anything is written, and
 when two keys target the same nested path the later one wins), `set-input
@@ -102,17 +102,17 @@ when two keys target the same nested path the later one wins), `set-input
 `set-settings [--build-settings '<json>'] [--initial-scene s]
 [--input-actions '<json>'] [--input-gamepad-buttons '<json>']
 [--input-gamepad-axes '<json>'] [--input-axes '<json>']
-[--input-deadzone n]` (partial, deep-merged — this is how you set
+[--input-deadzone n]` (partial, deep-merged: this is how you set
 `buildSettings.loading` for exported games, the initial scene, and every
 input mapping). `--input-gamepad-buttons` maps action names to gamepad
-button name lists (e.g. `'{"jump":["a"]}'` — named buttons: `a`, `b`, `x`,
+button name lists (e.g. `'{"jump":["a"]}'`; named buttons: `a`, `b`, `x`,
 `y`, `lb`, `rb`, `lt`, `rt`, `back`, `start`, `ls`, `rs`, `dpad-up`,
 `dpad-down`, `dpad-left`, `dpad-right`); `--input-gamepad-axes` maps
 actions to a digital axis-crossed-a-threshold binding (e.g.
 `'{"right":{"axis":0,"direction":1,"threshold":0.5}}'`); `--input-axes`
 defines **virtual analog axes** read via `ctx.input.axis(name)` (e.g.
-`'{"horizontal":{"gamepadAxis":0,"negativeCodes":["ArrowLeft"],"positiveCodes":["ArrowRight"]}}'`
-— see [input.md](./input.md) for the full field reference and how
+`'{"horizontal":{"gamepadAxis":0,"negativeCodes":["ArrowLeft"],"positiveCodes":["ArrowRight"]}}'`;
+see [input.md](./input.md) for the full field reference and how
 keyboard/gamepad reads combine); `--input-deadzone` sets the project-wide
 default stick deadzone (`0`-`1`, default `0.15`), overridable per axis. See
 [input.md](./input.md) for the whole input system, including the editor's
@@ -123,7 +123,7 @@ read-only): `create script <name> [--language lua|js] [--source-file f]
 [--no-format]` (Lua is the default; `--no-format` skips format-on-save for
 this write, saving the source verbatim), `attach script <scene> <entity>
 <path> [--params '<json>']`, plus the `script edit|check|format|search|replace`
-group — see [The `script` group](#the-script-group) below.
+group; see [The `script` group](#the-script-group) below.
 
 **Assets** (asset-edit): `create asset sprite <name> --shape circle --color
 gold --width 24 --height 24` (shapes: rectangle, circle, triangle, diamond,
@@ -132,33 +132,33 @@ star, capsule, polygon, character, enemy, coin, heart), `create asset tile
 (deterministic WAV; presets: coin, jump, hit, laser, powerup, explosion,
 blip), `create animation <name> --frames f1 f2`, `import asset <path...>
 [--name n] [--type t] [--recursive]` (a single path with no `--recursive`
-runs `importAsset` unchanged — probes image dimensions for sprites/tiles
+runs `importAsset` unchanged: it probes image dimensions for sprites/tiles
 into `metadata`, `.woff`/`.woff2`/`.ttf`/`.otf` import as `font` assets;
-**multiple paths, or `--recursive`, run `importAssets` instead** — one
+**multiple paths, or `--recursive`, run `importAssets` instead**: one
 atomic batch, collision-safe auto-suffixed naming, bad paths reported in
 `skipped` rather than failing the whole call; `--recursive` expands any
 directory argument into the files under it, recursively, before
-importing — `--name` isn't valid in batch mode, `--type` applies to every
+importing. `--name` isn't valid in batch mode, and `--type` applies to every
 file in the batch), `create asset slice <asset> --frame-size WxH
 [--margin N] [--spacing N] [--prefix NAME]` (cuts an imported spritesheet
 into named frames, stored in the asset's own `metadata`), `create asset
 anim-from-sheet <name> --sheet <asset> --frames a,b,c [--duration S]
 [--no-loop]` (an animation asset whose frames are
 `<sheetAssetId>#<frameName>` refs), `create asset state-machine <name>
---data <json|@file>` (an animation state machine asset — see
+--data <json|@file>` (an animation state machine asset; see
 [scripting.md](./scripting.md#animation-state-machines) for the document
 shape and `ctx.animator`), `delete asset <asset> [--keep-file]`
 (unregisters the asset; also deletes its file unless `--keep-file` is
-passed — note this CLI verb's default is the *opposite* of the underlying
+passed. Note this CLI verb's default is the *opposite* of the underlying
 `removeAsset` command's own `deleteFile` default, since every other CLI
-delete verb removes its target outright and this closes that parity gap)
-— see [assets.md](./assets.md) for the full pipeline, worked examples,
+delete verb removes its target outright and this closes that parity gap).
+See [assets.md](./assets.md) for the full pipeline, worked examples,
 and the music/font/`assertAudioCount` side of things.
 
 **State machines** (asset-edit): `create asset state-machine <name> --data
 <json|@file>` (above) creates one; `set-state-machine <assetId> --data
 <json|@file>` replaces an existing one's document wholesale, in place
-(same asset id/path) — both take the full `{ params, states, initial,
+(same asset id/path); both take the full `{ params, states, initial,
 transitions }` document either as inline JSON or `@path/to/file.json`. See
 [scripting.md](./scripting.md#animation-state-machines) for the schema and
 [editor.md](./editor.md#animator-editor) for the typed editor UI.
@@ -171,16 +171,16 @@ prefab's first live-linked instance), `prefab place <prefab> <scene>
 [--position x,y] [--name n]` (instantiates a prefab into a scene as a fresh
 entity subtree with new ids), `prefab update <prefab> <scene> <entity>`
 (re-serializes a modified instance's subtree back over the prefab asset's
-payload, then auto-syncs every other tracked instance in the same command —
+payload, then auto-syncs every other tracked instance in the same command.
 `entity` must already be a tracked instance of that exact prefab), `prefab
 sync <prefab> [--scene s]` (force a merge sync of every tracked instance
-from the current payload, all scenes or just one — preserves each
+from the current payload, all scenes or just one; preserves each
 instance's id/name/position/enabled state and re-applies its recorded
 per-field overrides on top of the rebuilt subtree; a stale override that no
 longer applies is dropped with a `PREFAB_OVERRIDE_STALE` warning), `prefab
 revert <scene> <entity> [component] [path]` (reverts per-instance overrides
 on an instance member back to the prefab's values; scope narrows with the
-optional `component`/`path` args — neither reverts every override on that
+optional `component`/`path` args: neither reverts every override on that
 entity, `component` alone reverts that whole component, both revert one
 field). See [prefabs.md](./prefabs.md) for the full data model, live-link
 merge/detach semantics, validation codes, and `ctx.scene.spawnPrefab`.
@@ -193,22 +193,22 @@ disk-backed, 25-entry bound stack under `.hearth/history/`, captured
 around every mutating command except `undo`/`redo`/`revertProject`/
 `snapshotProject` themselves (those operate on undo history or the
 separate diff-baseline, not as undoable entries of their own). This is
-independent of `snapshot`/`revert`'s single diff baseline — undo/redo
-steps through every individual change one at a time, `revert` jumps
+independent of `snapshot`/`revert`'s single diff baseline: undo/redo
+steps through every individual change one at a time, while `revert` jumps
 straight back to the last snapshot. See [architecture.md](./architecture.md)
 for the on-disk layout and the trash-backed asset-file semantics (undoing
 `removeAsset` never touches disk; **redoing** a `removeAsset` called with
-`deleteFile: false` — so the file was left on disk the first time — does
+`deleteFile: false` (so the file was left on disk the first time) does
 delete the file, moving it into `.hearth/trash/` rather than erasing it
 outright, so it's still recoverable).
 
-**Command journal** (read-only): `log [--since seq] [--limit n]` — lists
+**Command journal** (read-only): `log [--since seq] [--limit n]`: lists
 recorded entries from `.hearth/log/commands.jsonl` (see
 [project-format.md](./project-format.md#hearthlogcommandsjsonl) for the
 on-disk shape), the same feed the editor's Agent panel timeline reads. With
 no `--since`, returns the newest `--limit` entries (default 50, max 500);
 with `--since <seq>` (including `--since 0`, an explicit from-the-start
-cursor), pages forward oldest-first from just after that seq — a poller
+cursor), pages forward oldest-first from just after that seq, so a poller
 bookmarking the last seq it saw never misses or re-fetches an entry. Unlike
 `history`, the journal also records read-only `validate`/`playtest` runs
 and *failed* commands, and it's never rewound by `undo`/`redo`. See
@@ -228,7 +228,7 @@ example.
 
 **Autotile** (safe-edit): `autotile set <scene> <entity> --char c --sheet
 <asset> [--template blob47] [--mapping '<json>']` (binds a tile char to a
-47-blob autotile rule instead of a fixed asset — the char's per-cell
+47-blob autotile rule instead of a fixed asset: the char's per-cell
 frame is picked from its 8 neighbours at render time; `--sheet` must be a
 sliced spritesheet, `--template` defaults to and today only supports
 `blob47`, `--mapping` overrides individual shape keys with custom frame
@@ -242,19 +242,19 @@ ASCII diagram of the neighbour bitmask.
 `playtest [name] [--all]`,
 `create playtest <name> --scene s --steps-file steps.json [--max-frames n]
 [--seed n]` (`--seed` makes `ctx.random` / Lua `math.random` reproducible;
-steps cover input — `wait`, `press`, `release`, `click {x,y}`,
+steps cover input: `wait`, `press`, `release`, `click {x,y}`,
 `setAxis {axis, value, frames?}` (sticky virtual-axis override for
-`ctx.input.axis` — see [input.md](./input.md#playtest-input)),
+`ctx.input.axis`; see [input.md](./input.md#playtest-input)),
 `drag {from, to, frames?}` (pointer down at `from`, interpolated moves,
-up at `to` — see [ui.md](./ui.md#playtests)) — and
-assertions — `assertEntityExists`, `assertProperty`, `assertPositionNear`,
+up at `to`; see [ui.md](./ui.md#playtests)); and
+assertions: `assertEntityExists`, `assertProperty`, `assertPositionNear`,
 `assertScene`, `assertParticleCount`, `assertEventCount`,
 `assertAudioCount` (filter by `asset`/`action`/`music`, checked against
-`equals`/`min`/`max` — see [assets.md](./assets.md#testing-audio-assertaudiocount)),
+`equals`/`min`/`max`; see [assets.md](./assets.md#testing-audio-assertaudiocount)),
 `assertCameraEffect` (`effect: shake|flash|fade|zoomPunch`, counted against
 `equals`/`min`/`max`; results also expose `cameraEffects` and
 `cameraOverlayAlpha`), `assertPostEffect` (`effect` one of the 6
-`Camera.postEffects` types, `active: true|false` — checks presence in the
+`Camera.postEffects` types, `active: true|false`; checks presence in the
 main camera's stack, not param values; see
 [effects.md](./effects.md#playtests-assertposteffect)), `assertFocus`
 (`entity` name/id, or `null` for nothing focused; results expose
@@ -262,23 +262,23 @@ main camera's stack, not param values; see
 CI command).
 
 **Export** (requires `--allow build`): `export web [--out dir]
-[--single-file] [--zip]` — a static playable web build; `--zip` writes an
+[--single-file] [--zip]`: a static playable web build; `--zip` writes an
 itch.io-ready `<project-slug>-web.zip` (see [export.md](./export.md)).
-`export desktop [--out dir] [--platform p]...` — native Electron builds,
+`export desktop [--out dir] [--platform p]...`: native Electron builds,
 one zipped app per platform; `--platform` repeats (valid ids:
 `darwin-arm64`, `darwin-x64`, `win32-x64`, `linux-x64`; default is all
-four) — see [export.md#desktop-export-electron](./export.md#desktop-export-electron)
+four); see [export.md#desktop-export-electron](./export.md#desktop-export-electron)
 for the signing ladder, the icon setting, and honest cross-platform
 verification limits. `build [--out dir]` still exports a portable project
 folder.
 
 **Screenshot** (requires `--allow build`): `screenshot [scene] [--frame n]
-[--seed n] [--size WxH] [--debug] [--out path]` — a deterministic PNG of a
+[--seed n] [--size WxH] [--debug] [--out path]`: a deterministic PNG of a
 scene, so an agent can *see* its work instead of only reading state. Scene
 defaults to the project's initial scene; `--frame` steps that many fixed
 frames before capturing (default 0); `--debug` draws the same collider/
 velocity/light debug overlay the editor's preview toggle uses (never on by
-default, never in exports — see [export.md](./export.md#debug-overlay)).
+default, never in exports; see [export.md](./export.md#debug-overlay)).
 Needs a real Chromium: Google Chrome or Microsoft Edge on the machine, a
 `CHROMIUM_PATH` environment variable pointing at one, or
 `npx playwright install chromium`; without any of those it fails with a
@@ -288,16 +288,16 @@ message telling you exactly that.
 
 `hearth script edit|check|format|search|replace` is the forward surface
 for every script-editing operation; the older top-level `edit-script` and
-`check-script` verbs still work — they're aliases into the exact same
+`check-script` verbs still work: they're aliases into the exact same
 handlers, kept because agents have them memorized.
 
 - **`script edit <path> --source-file f`** (or pipe stdin): replace a
   script's full source. Reformats to Hearth house style on save unless
   `--no-format` is passed or the project's `codeStyle.formatOnSave` is
-  `false` — StyLua (2-space indent, 100-column) for `.lua`, Prettier
+  `false`; StyLua (2-space indent, 100-column) for `.lua`, Prettier
   defaults for `.js`. Same command as `edit-script`/MCP `edit_script`.
 - **`script check <path> [--source text] [--language lua|js]`**:
-  syntax-checks a script without saving it — a pre-flight before `script
+  syntax-checks a script without saving it, a pre-flight before `script
   edit`. With `--source`, checks that text as if it would be saved to
   `<path>`; otherwise reads `<path>` from the project. Human output is one
   `path:line message` line per diagnostic, same shape as `validate`'s
@@ -310,18 +310,18 @@ handlers, kept because agents have them memorized.
   `script replace`, which writes verbatim without reformatting.
 - **`script search <query> [--regex] [--case] [--glob g]`**: search script
   source for a plain-text or regex query, printing `path:line:col
-  preview` per match. Matching is line-based — a regex can't span multiple
+  preview` per match. Matching is line-based, so a regex can't span multiple
   lines. Case-insensitive by default; `--case` for case-sensitive.
   `--glob` restricts to scripts matching a glob (e.g.
   `"scripts/enemies/*"`). Read-only; MCP `search_scripts`. **CRLF files**:
-  a matched line's preview keeps its trailing `\r` — a cosmetic artifact
+  a matched line's preview keeps its trailing `\r`, a cosmetic artifact
   of line-based reading, not a matching bug.
 - **`script replace <query> <replacement> [--regex] [--case] [--glob g]
   [--dry-run]`**: find-and-replace across every script file matching the
   query (and `--glob`, if given). `--regex` enables `$1`-style capture
   groups in `<replacement>`; matching is line-based, same caveat as
-  `search`. Results are written **verbatim, not reformatted** — this is a
-  surgical text operation, not a save-through-the-formatter — run `script
+  `search`. Results are written **verbatim, not reformatted** (this is a
+  surgical text operation, not a save-through-the-formatter); run `script
   format --all` afterward if you want house style restored. Always
   `--dry-run` first: it previews per-file match counts without writing
   anything, the same workflow the editor's cross-script search panel
@@ -366,15 +366,15 @@ hearth inspect path Arena --from 680,500 --to 200,500 --json
 
 `data.path` is `null` (not an empty array) when `from`/`to` sits in a
 solid cell or no route exists; `--diagonals` allows 8-directional
-movement (off by default — four-directional only). `data.cells` is the
+movement (off by default; four-directional only). `data.cells` is the
 grid's total cell count, useful for sanity-checking a level isn't
 accidentally enormous (grids over 512×512 are rejected).
 
 ## Tilemap editing
 
 `paint tiles`, `fill tiles`, and `resize tilemap` edit a `Tilemap`
-component's grid in batches — one undo entry per call, instead of one per
-cell — and are what the editor's Scene View paint tool and the MCP
+component's grid in batches (one undo entry per call, instead of one per
+cell) and are what the editor's Scene View paint tool and the MCP
 `paint_tiles`/`fill_tilemap_rect`/`resize_tilemap` tools both wrap:
 
 ```bash
@@ -399,14 +399,14 @@ instead of a rectangle (`x`/`y` are 0-based column/row); `resize tilemap`
 takes `--size w,h` and an optional `--anchor` (only `top-left` is
 supported today). All three validate `char` against the Tilemap's
 `tileAssets` keys (plus `.`/space for empty) and reject out-of-bounds
-cells as command errors rather than silently clamping — the error
+cells as command errors rather than silently clamping; the error
 `suggestions` field points you at `resize tilemap` first if that's what's
 needed.
 
 ## Project templates
 
 `hearth init <name> --template <t>` scaffolds a new project from a small,
-playable genre skeleton instead of the blank default — one scene, a camera,
+playable genre skeleton instead of the blank default: one scene, a camera,
 a player with a comment-annotated movement script, a few obstacles, and a
 `smoke` playtest asserting the player moves. Pick whichever genre is
 closest to what you're building and grow it from there; none of them are
@@ -424,18 +424,18 @@ hearth init --list-templates          # names + descriptions, no project created
 ```
 
 An unknown `--template` name fails and lists the valid ones. `--template`
-and `--no-starter` don't compose — `--no-starter` only makes sense against
+and `--no-starter` don't compose: `--no-starter` only makes sense against
 the blank default, since every template already ships its own starter
 content. `--width`/`--height` are rejected with `--template` for the same
 reason: each template sets its own build size (change it afterwards with
 `hearth set-settings --width ... --height ...` or the Game Settings panel). This is pre-project setup, so it's CLI/editor-only (the editor's
 Launcher has the same picker as cards, blank preselected); there is no MCP
-tool for it — an MCP agent runs `hearth init` as a shell/CLI step, or asks
+tool for it; an MCP agent runs `hearth init` as a shell/CLI step, or asks
 the human to.
 
 ## Command journal
 
-`log` reads `.hearth/log/commands.jsonl` — an append-only record of every
+`log` reads `.hearth/log/commands.jsonl`, an append-only record of every
 mutating command (plus a small allowlist of meaningful read-only ones:
 `runPlaytest`, `validateProject`) run through *any* session against this
 project (CLI, MCP, or the editor), independent of undo/redo history. It's
@@ -473,8 +473,8 @@ hearth log --limit 5 --json
 }
 ```
 
-Human (non-`--json`) output is one compact line per entry —
-`#<seq> [<source>] <summary>`, with `(<error code>)` appended on failure —
+Human (non-`--json`) output is one compact line per entry:
+`#<seq> [<source>] <summary>`, with `(<error code>)` appended on failure,
 since `summary` already leads with the command name. `--since <seq>`
 (including `--since 0`, an explicit from-the-start cursor) switches to
 oldest-first forward paging from just after that seq, for polling clients

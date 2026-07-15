@@ -3,17 +3,17 @@
 Behavior lives in script files under `scripts/`, attached to entities
 through a `Script` component. **Lua is Hearth's default scripting
 language** (`hearth create script` emits `.lua`); JavaScript is fully
-supported too — see [JavaScript scripts](#javascript-scripts). Both
+supported too. See [JavaScript scripts](#javascript-scripts). Both
 languages receive the *same* `ctx` API, and the same engine runs in the
 editor preview (browser), in headless playtests (Node), and in the
-exported web player — so what you test is what ships.
+exported web player, so what you test is what ships.
 
 The machine-readable version of everything on this page:
 `hearth inspect api --json` (every `ctx` member with signature,
 description, and a Lua + JS example). This same `CTX_API` array drives the
 editor's [Code panel](./editor.md#code-panel) `ctx.` autocomplete, so the
 suggestions you see while typing and this page can never silently drift
-apart — both read the identical source of truth.
+apart. Both read the identical source of truth.
 
 ## A Lua script
 
@@ -51,7 +51,7 @@ A Lua script builds a table of lifecycle hooks and `return`s it:
   [Game UI](#game-ui-screen-space) below for what each type means and when
   `value` is set).
 - `onEvent(ctx, name, data)`: every event emitted anywhere in the scene via
-  `ctx.events.emit`, scene-wide — filter by `name` yourself. See
+  `ctx.events.emit`, scene-wide. Filter by `name` yourself. See
   [Events](#events) below.
 
 ### The dot-call rule (important)
@@ -77,7 +77,7 @@ Scripts run Lua 5.4 (via wasmoon) with `os`, `io`, `package`, `require`,
 `print(...)` routes to the Hearth console, and `math.random` is backed
 by the engine's **seeded** stream (the integer forms `math.random(m)`
 and `math.random(m, n)` keep their Lua semantics); `math.randomseed` is
-a no-op that warns once — the seed comes from the session — so no wall
+a no-op that warns once (the seed comes from the session), so no wall
 clock or unseeded randomness can leak into game logic. `string`,
 `table`, and `math` are otherwise all available.
 
@@ -97,7 +97,7 @@ Lua sees `nil`; where JS takes an object literal Lua passes a table.
 | `ctx.vars` | Persistent per-entity state, survives across frames (not across scene switches — use `ctx.save`) |
 | `ctx.destroySelf()` | Remove this entity |
 
-**Component mutation contract:** Live component data (returned by `ctx.getComponent()` or accessed via `ctx.transform`) must be mutated by replacement, not in place, to take effect on the current frame. Specifically, `ctx.getComponent('Tilemap').grid` is cached for collider performance — reassign it to a new array (`tilemap.grid = [...]`) for changes to take effect this frame. In-place edits to the same array (e.g. `grid[0] = '####'`) are not detected and will silently use stale collision boxes until the next frame. Always use whole-array assignment for runtime grid changes.
+**Component mutation contract:** Live component data (returned by `ctx.getComponent()` or accessed via `ctx.transform`) must be mutated by replacement, not in place, to take effect on the current frame. Specifically, `ctx.getComponent('Tilemap').grid` is cached for collider performance: reassign it to a new array (`tilemap.grid = [...]`) for changes to take effect this frame. In-place edits to the same array (e.g. `grid[0] = '####'`) are not detected and will silently use stale collision boxes until the next frame. Always use whole-array assignment for runtime grid changes.
 
 ### Input
 
@@ -130,12 +130,12 @@ virtual axes are configured (CLI, MCP, and the editor's Input panel) and
 
 `findPath` builds its grid from every solid `Tilemap` and every
 non-trigger `static` `Collider` currently in the scene (a `dynamic` or
-`kinematic` body, or no `PhysicsBody` at all, is never a nav obstacle —
-only `static` bodies are) — the same geometry a `hearth inspect path`
+`kinematic` body, or no `PhysicsBody` at all, is never a nav obstacle;
+only `static` bodies are), the same geometry a `hearth inspect path`
 call or the `inspect_path` MCP tool would see, but read live off the
 running scene rather than the authored one. `from`/`to` are plain
 `{ x, y }` world positions; `opts` is `{ diagonals? }` (`false` by
-default — four-directional movement only). Each waypoint is the center
+default, four-directional movement only). Each waypoint is the center
 of a grid cell, not the exact input point, so walk toward each waypoint
 and advance once you're within a few pixels rather than expecting an
 exact match. The grid is conservative: one-way platforms and
@@ -161,7 +161,7 @@ if (path) {
 }
 ```
 
-Re-running `findPath` every frame is wasteful for most AI — the
+Re-running `findPath` every frame is wasteful for most AI: the
 `bounce-patrol` example (`packages/examples/bounce-patrol`) only
 recomputes every 30 frames and walks the cached path waypoint-to-waypoint
 in between.
@@ -170,14 +170,14 @@ in between.
 `hearth prefab create`, or the editor's "Save as prefab") as a live entity
 subtree: every entity in the payload gets a fresh id, parent/child links
 within the spawned set are preserved, and spawned children register their
-scripts exactly like the root does. Spawning is deterministic — ids come
+scripts exactly like the root does. Spawning is deterministic: ids come
 from the engine's id generator, never the seeded RNG stream, so it doesn't
 perturb `ctx.random`. Two things to know before you rely on it:
 
 - An unknown prefab name/id returns `nil` (with a `warn`-level log), the
-  same tolerance-for-bad-input contract as `ctx.scene.spawn` — it never
+  same tolerance-for-bad-input contract as `ctx.scene.spawn`. It never
   throws.
-- **Destroying the returned root does NOT cascade to its children** —
+- **Destroying the returned root does NOT cascade to its children**:
   `ctx.scene.destroy` is always per-entity, so a spawned subtree's children
   outlive a destroyed root unless you destroy each of them too.
 
@@ -234,7 +234,7 @@ logs a warning and returns an empty id.
 
 ### Math helpers
 
-`ctx.math` is a table of small, pure vec2/color helpers — no mutation, no
+`ctx.math` is a table of small, pure vec2/color helpers: no mutation, no
 engine state, identical in Lua and JS. `Vec2` is always a plain `{x, y}`;
 angles are degrees (`0` = +x, `90` = +y/down).
 
@@ -298,7 +298,7 @@ end)
 ```
 
 `ParticleEmitter` has its own `seed` field, independent of both `ctx.random`
-and every other emitter in the scene — see [Determinism](#determinism)
+and every other emitter in the scene. See [Determinism](#determinism)
 below for exactly how that makes particle counts assertable in playtests.
 
 ### Sprite animation
@@ -312,9 +312,9 @@ ctx.animate("torch-flare")
 ```
 
 `SpriteAnimator` writes the current frame's asset id (and, for a
-spritesheet-backed clip, the sheet frame name into `SpriteRenderer.frame`
-— see [assets.md](./assets.md#animations-from-a-sliced-sheet)) into the
-sibling `SpriteRenderer` every fixed frame on its own — most animations
+spritesheet-backed clip, the sheet frame name into `SpriteRenderer.frame`;
+see [assets.md](./assets.md#animations-from-a-sliced-sheet)) into the
+sibling `SpriteRenderer` every fixed frame on its own. Most animations
 need no script at all. Reach for `ctx.animate` only to switch clips at
 runtime (a torch flaring up, a character starting to run).
 
@@ -329,7 +329,7 @@ runtime (a torch flaring up, a character starting to run).
 
 An `AnimationStateMachine` component (`assetId`, `playing`) drives a
 sibling `SpriteRenderer` from a state machine asset instead of a single
-looping clip — a state machine asset lives at
+looping clip: a state machine asset lives at
 `assets/statemachines/<slug>.asm.json`, is created with `createStateMachineAsset`
 (CLI `hearth create asset state-machine <name> --data <json|@file>`) and
 edited whole with `updateStateMachineAsset` (CLI `hearth set-state-machine
@@ -337,13 +337,13 @@ edited whole with `updateStateMachineAsset` (CLI `hearth set-state-machine
 [Animator editor](./editor.md#animator-editor). When both an
 `AnimationStateMachine` and a `SpriteAnimator` are present on the same
 entity, the state machine wins (the runtime warns once). `playing: false`
-freezes the current frame — no transitions evaluated, no clip advance.
+freezes the current frame: no transitions evaluated, no clip advance.
 
 Unlike most of `ctx`, every `ctx.animator` method takes an explicit
 `entityRef` (id, or a unique name) rather than always acting on this
-entity — it can drive any entity's machine, including itself via
+entity: it can drive any entity's machine, including itself via
 `ctx.entity.id`/`ctx.entity.name`. All four throw a script error (with a
-source line, same as any other runtime error — see [Errors and
+source line, same as any other runtime error; see [Errors and
 validation](#errors-and-validation)) when `entityRef` doesn't resolve,
 the entity has no `AnimationStateMachine`, its asset is missing, or
 `name` doesn't name a real param on that asset.
@@ -375,25 +375,25 @@ A state machine asset's document:
 - **`transitions`**: each has a `from` (a state name, or the literal
   `'any'` to match from every state), a `to`, zero or more `conditions`,
   and an optional `exitTime` (`0..1`, gates on the current clip's
-  playback progress — `1` means "only once the clip has finished"). Every
-  transition needs at least one condition or an `exitTime` — there's no
+  playback progress; `1` means "only once the clip has finished"). Every
+  transition needs at least one condition or an `exitTime`. There's no
   unconditional/always-on transition. A condition's `op` is one of `eq |
   neq | gt | gte | lt | lte` for a `number` param, `eq | neq` for a
   `bool` param, and omitted entirely for a `trigger` param (a trigger
-  condition is just `{ "param": "attack" }` — true exactly when that
+  condition is just `{ "param": "attack" }`, true exactly when that
   trigger is currently latched).
 
 **Per fixed step**, at most one transition is taken: explicit `from:
 <current state>` transitions are checked first (in declaration order),
 then `from: 'any'` ones, first eligible wins. A taken transition resets
 the clip to frame 0 and consumes only the trigger(s) its own conditions
-reference — any other latched trigger keeps waiting. Unconsumed triggers
+reference. Any other latched trigger keeps waiting. Unconsumed triggers
 never expire or auto-reset on their own; `fire`d once, a trigger stays
 latched across as many frames as it takes for an eligible transition to
 consume it (or forever, if none ever does).
 
 The `sky-courier` example (`packages/examples/sky-courier`) drives its
-walk-cycle this way — `courier-move.lua` sets a `moving` bool every frame
+walk-cycle this way. `courier-move.lua` sets a `moving` bool every frame
 regardless of whether it actually changed:
 
 ```lua
@@ -412,10 +412,10 @@ if (ctx.input.justPressed('attack')) {
 ```
 
 **Hot-reload note**: saving a *script* while the machine is running
-[hot-reloads](#hot-reload-during-play) exactly like any other script —
+[hot-reloads](#hot-reload-during-play) exactly like any other script:
 the machine's live state (current state, param values, latched triggers,
 clip position) survives untouched. Swapping the *state machine asset
-itself* (`updateStateMachineAsset`, live-patched the same way — see
+itself* (`updateStateMachineAsset`, live-patched the same way; see
 [editor.md](./editor.md#live-iteration-during-play)) is a different,
 deliberate operation: every entity currently on that asset resets to the
 new document's `initial` state with params back at their defaults, so
@@ -448,9 +448,9 @@ use in-memory storage scoped to the run.
 | `ctx.camera.zoomPunch(scale, seconds)` | A zoom kick that eases back to `1x` over `seconds` |
 
 All four effects are **last-call-wins per kind**: calling `shake` again
-while one is running replaces it outright (one live entry per kind — a
+while one is running replaces it outright (one live entry per kind; a
 shake in flight doesn't stop a flash, and vice versa). `shake`'s `opts` is
-`{ seed? }` — a seeded run (explicit `seed`, or one deterministically
+`{ seed? }`: a seeded run (explicit `seed`, or one deterministically
 drawn from the session's own RNG stream when omitted) always produces the
 same offsets, so shakes are reproducible in playtests without passing a
 seed by hand.
@@ -458,11 +458,11 @@ seed by hand.
 `fade`'s `opts` is `{ color?, onComplete? }`. Unlike the other three,
 `fade` is **persistent**: the overlay level and color it reaches outlive
 the fade itself and carry across a `ctx.scenes.load` scene switch (the new
-scene starts at whatever alpha/color the old one held — a fade in flight
+scene starts at whatever alpha/color the old one held; a fade in flight
 at switch time is cut short, its animation discarded, not continued).
 Calling `fade` again while one is still easing **supersedes** it: the new
 fade continues smoothly from the current level toward its own target, and
-the superseded fade's `onComplete` is dropped — never fired — so a stale
+the superseded fade's `onComplete` is dropped, never fired, so a stale
 completion can't double-trigger something like a scene transition. Only
 the fade that actually finishes runs its `onComplete`, exactly once.
 
@@ -479,14 +479,14 @@ ctx.camera.flash('#ffffff', 0.15);
 ctx.camera.fade(1, 0.6, { color: '#000000', onComplete: () => ctx.scenes.load('Menu') });
 ```
 
-There's no `ctx.camera.getShake()`/equivalent — effects are write-only
+There's no `ctx.camera.getShake()`/equivalent: effects are write-only
 from a script's point of view. Headless playtests can still see what
 happened: results expose `cameraEffects` (every shake/flash/fade/zoomPunch
 call made during the run, each tagged with the frame it was called on and
 its params) and `cameraOverlayAlpha` (the combined flash-over-fade alpha
 at the end of the run). The `assertCameraEffect` playtest step asserts
-against a **count** of calls to one effect kind, not a live intensity —
-see [cli.md](./cli.md#command-tour).
+against a **count** of calls to one effect kind, not a live intensity.
+See [cli.md](./cli.md#command-tour).
 
 ### Effects
 
@@ -496,9 +496,9 @@ see [cli.md](./cli.md#command-tour).
 
 Sets this entity's `SpriteEffects.flashColor`/`flashStrength: 1`/
 `flashDuration` (adding a `SpriteEffects` component if the entity doesn't
-have one yet — authored scene data is untouched, the component is created
+have one yet; authored scene data is untouched, the component is created
 purely at runtime). `flashStrength` then decays linearly back to `0` over
-`seconds` (default `0.15`, clamped to `[0.01, 10]`), deterministically —
+`seconds` (default `0.15`, clamped to `[0.01, 10]`), deterministically:
 same-frame decay applies exactly like `ctx.camera.shake`/`flash`/`fade`/
 `zoomPunch` above, so the first read after triggering is already slightly
 below `1`, not exactly `1`. No RNG anywhere in the decay.
@@ -535,7 +535,7 @@ entity that isn't focusable, disabled, or unknown.
 
 `moveFocus` picks the nearest focusable candidate strictly in that
 direction from the current focus's screen position (or, with nothing
-focused, the top-left-most candidate) — straight-line distance, no
+focused, the top-left-most candidate): straight-line distance, no
 wraparound, so moving off an edge with nothing further that way is a
 no-op. This is what a controller or arrow-key-driven pause menu wires up:
 `moveFocus` on d-pad/arrow input, `activate` on a confirm button.
@@ -544,14 +544,14 @@ no-op. This is what a controller or arrow-key-driven pause menu wires up:
 `click` on `onUiEvent`) at the focused element's own position, so a
 focused button fires its click handler, a focused `UIToggle` flips, and a
 focused `UISlider`'s value is left alone (activating a slider isn't how
-you move it — use `adjust` for that). Warns and does nothing if the
+you move it; use `adjust` for that). Warns and does nothing if the
 focused element isn't `interactive`.
 
 `adjust(delta)` only does something for a focused `UISlider`: it moves
 `value` by `delta * step` (falling back to a tenth of the slider's range
 when `step` is `0`), clamped to `[min, max]`, firing `onUiEvent
 {type:'change', value}` only when the clamped value actually changes. It
-no-ops for a focused `UIToggle` or anything else — use `activate` to flip
+no-ops for a focused `UIToggle` or anything else. Use `activate` to flip
 a toggle instead.
 
 ```lua
@@ -601,7 +601,7 @@ behavior, streaming vs. single-file exports).
 
 `ctx.events.emit` delivers in a fixed order: every `ctx.events.on`
 subscriber for that `name` first (in subscription order), then every
-entity's `onEvent(ctx, name, data)` hook (in creation order, unfiltered —
+entity's `onEvent(ctx, name, data)` hook (in creation order, unfiltered;
 it sees *every* event, not just ones it subscribed to). Both are plain
 synchronous function calls, so an emit inside a handler runs its
 listeners before the outer emit continues.
@@ -635,7 +635,7 @@ Two safety rules keep this from turning into a runaway or a leak:
   another, not nested) aren't affected.
 - **Auto-cleanup**: `ctx.events.on` subscriptions belong to the entity
   that created them and are removed automatically when that entity is
-  destroyed — no manual `ctx.events.off` bookkeeping needed on teardown.
+  destroyed. No manual `ctx.events.off` bookkeeping needed on teardown.
   A script disabled after repeated errors (see
   [Errors and validation](#errors-and-validation)) stops receiving events
   too, both via `onEvent` and its own subscriptions.
@@ -648,7 +648,7 @@ pickup, the score label increments purely from `onEvent`, no
 Event payloads (and other JS-side objects) reach Lua as proxies, not
 plain Lua tables: `data.value` field access works as expected, but
 `type(data)` reports `"userdata"` rather than `"table"`, and `pairs(data)`
-does not enumerate its fields — guard with `type(data.value) == "number"`
+does not enumerate its fields. Guard with `type(data.value) == "number"`
 (or similar direct field checks), never `type(data) == "table"`.
 
 ### Collisions, time, logging
@@ -666,7 +666,7 @@ read/steer other entities (e.g. update a score `Text`).
 
 ## Building a start screen / menu
 
-Shipped Hearth games have **no engine chrome** — the exported player boots
+Shipped Hearth games have **no engine chrome**: the exported player boots
 straight into the project's initial scene. A start screen is therefore
 just a scene you build: some `Text`, an interactive `UIElement` button,
 and one line of Lua.
@@ -699,14 +699,14 @@ playtested, all-Lua game built exactly this way: menu scene → level scene
 
 ## Determinism
 
-With the same inputs and the same seed, a scene advances identically —
+With the same inputs and the same seed, a scene advances identically:
 that's what makes playtests trustworthy. The runtime is fixed-timestep;
 timers, tweens, and RNG are all deterministic; and the Lua sandbox blocks
 every source of nondeterminism (wall clock, unseeded random). If you keep
 your logic inside `ctx`, determinism is free.
 
 This guarantee is same-seed, same-machine: a given seed replays bit-for-bit
-on the same platform. It is not a cross-platform bit-equality claim — code
+on the same platform. It is not a cross-platform bit-equality claim: code
 that uses transcendental math (`Math.cos`, `Math.sin`, `Math.pow`, and the
 like, including the velocity spread of `ParticleEmitter`) can differ by a
 floating-point ULP between CPU architectures and JS-engine builds, because
@@ -717,15 +717,15 @@ Seeded RNG and ordinary `+ - * / sqrt` arithmetic are exact everywhere.
 RNG stream (separate from `ctx.random` and every other emitter), so the same
 project always spawns the same particles. Spawning itself lands on whole
 fixed frames via an accumulator (`rate` per second × `dt` added every fixed
-step, one particle spawned each time the accumulator crosses `1.0`) — and
+step, one particle spawned each time the accumulator crosses `1.0`), and
 because most `rate`/`dt` products aren't exactly representable in binary
 floating point, the first crossing can land one frame later than the naive
 `60 / rate` arithmetic suggests. For example `rate: 10` at 60fps spawns on
-frames 7, 13, 19, 25, 31 — not 6, 12, 18, 24, 30 — because `10 * (1/60)`
+frames 7, 13, 19, 25, 31 (not 6, 12, 18, 24, 30) because `10 * (1/60)`
 summed six times lands a hair under `1.0`. `assertParticleCount` playtest
 steps (and `ctx.particles.count()`) always read the true live count, so
 write expected numbers from a real run rather than hand arithmetic when it
-matters — see `packages/playtest/tests/particles.test.ts` for the fully
+matters. See `packages/playtest/tests/particles.test.ts` for the fully
 worked example.
 
 ## Physics interplay
@@ -749,16 +749,16 @@ Give an entity a `UIElement` component and it renders in screen space:
 positioned by `anchor` (nine positions, `top-left` through `bottom-right`)
 plus a pixel `offset`, unaffected by camera position or zoom. Visuals come
 from the same `Text` / `SpriteRenderer` components as any other entity.
-Set `interactive: true` and the entity's script receives `onUiEvent` —
+Set `interactive: true` and the entity's script receives `onUiEvent`:
 that's all a menu button is. Set `focusable: true` and the same entity can
 receive keyboard/gamepad focus via `ctx.ui` (see [UI focus](#ui-focus)
-above) — a menu button is typically both. `UILayout` (stack containers),
+above). A menu button is typically both. `UILayout` (stack containers),
 `UISlider`, and `UIToggle` build real menus and settings screens out of
 the same component system; see [ui.md](./ui.md) for the full reference.
 
 ## JavaScript scripts
 
-`.js` scripts remain fully supported with the exact same `ctx` — nothing
+`.js` scripts remain fully supported with the exact same `ctx`. Nothing
 was removed. Create one with `hearth create script <name> --language js`.
 A JS script `export default`s its hooks:
 
@@ -787,7 +787,7 @@ JS-specific rules:
 - **No `import`/`require`.** Scripts are single-file, evaluated in a
   function scope with `module.exports` semantics behind the scenes.
   Helper functions in the same file are fine.
-- Don't use `Math.random()` or `Date.now()` — use `ctx.random` and
+- Don't use `Math.random()` or `Date.now()`: use `ctx.random` and
   `ctx.time` so playtests stay deterministic (Lua scripts get this
   protection automatically; JS scripts are on the honor system).
 - Mixed projects work: some entities can run `.lua` scripts and others
@@ -799,11 +799,11 @@ JS-specific rules:
   errors the script is disabled for that entity (the game keeps running).
   Lua errors carry `scripts/foo.lua:LINE` so you can jump to the line.
 - `hearth validate` syntax-checks every script (both languages) and
-  reports `SCRIPT_SYNTAX_ERROR` with the file and line — agents can fix
+  reports `SCRIPT_SYNTAX_ERROR` with the file and line. Agents can fix
   scripts without booting the game.
 - `hearth check-script <path> [--source text]` (MCP `check_script`)
-  pre-flights a single script — source text you haven't saved yet, or an
-  existing file — without writing anything: read-only, same diagnostics
+  pre-flights a single script (source text you haven't saved yet, or an
+  existing file) without writing anything: read-only, same diagnostics
   shape as `validate`'s per-script check. Useful before `edit-script`/
   `edit_script` when you want to confirm a draft is syntactically valid
   first. This is also what the editor's Code panel runs on every edit to
@@ -812,7 +812,7 @@ JS-specific rules:
 ## Hot-reload during play
 
 Saving a script while the editor is playing hot-reloads it into the
-running scene instead of requiring a Stop/Play round-trip — whether the
+running scene instead of requiring a Stop/Play round-trip: whether the
 save comes from the editor's own [Code panel](./editor.md#code-panel) or
 from `edit_script`/`edit-script` run by a CLI or MCP agent against the
 same project (the editor picks up the external edit over the command
@@ -822,22 +822,22 @@ journal and reloads it the same way; see
 
 **What survives a reload:** every live entity already running that
 script keeps its `ctx.vars`, pending `ctx.timers`, running `ctx.tweens`,
-and `ctx.entity`/`ctx.params` — only the compiled hook functions
+and `ctx.entity`/`ctx.params`. Only the compiled hook functions
 (`onStart`/`onUpdate`/`onCollision`/`onUiEvent`/`onEvent`) are swapped
-for the new code. **`onStart` does NOT re-run** on reload — it only runs
+for the new code. **`onStart` does NOT re-run** on reload. It only runs
 once, the first time an entity starts. A script that had been
 error-disabled (three consecutive errors, see
 [Errors and validation](#errors-and-validation) below) re-enables on a
 successful reload. Future spawns of the script (e.g. via
 `ctx.scene.spawn`) pick up the new code too. If the edited source fails
 to compile, the reload is rejected and every entity keeps running the
-**old** code unchanged — a bad save during play never breaks a running
+**old** code unchanged. A bad save during play never breaks a running
 game.
 
-**Pinned caveat — `ctx.events.on` subscriptions do not re-bind.** A
+**Pinned caveat: `ctx.events.on` subscriptions do not re-bind.** A
 subscription registered with `ctx.events.on(name, fn)` closes over the
 `fn` that existed at the time it was called; reloading the script
-recompiles the module but cannot — and does not — re-register existing
+recompiles the module but cannot, and does not, re-register existing
 subscriptions against the new code, so an already-subscribed callback
 keeps running its **old** closure until the entity restarts (Stop/Play).
 The `onEvent(ctx, name, data)` hook has no such caveat: it always
@@ -851,8 +851,8 @@ tested, pinned behavior, not a bug.
 during play is clickable: clicking it jumps the [Code
 panel](./editor.md#code-panel) to the failing line. Lua errors always
 carry a line (`scripts/foo.lua:LINE`, the same format `hearth validate`
-and `checkScript` use); JS errors resolve a line on a best-effort basis
-— some JS runtime errors (e.g. ones thrown from inside a callback with
+and `checkScript` use); JS errors resolve a line on a best-effort basis:
+some JS runtime errors (e.g. ones thrown from inside a callback with
 no useful stack frame in the script itself) have no extractable line, in
 which case the Console entry isn't clickable.
 

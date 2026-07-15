@@ -51,7 +51,7 @@ Notes:
   yet; an afterPack hook re-signs with `codesign -s -` so the bundle's
   signature is valid). First launch of a downloaded build on **macOS 15
   Sequoia or later**: Gatekeeper says "Apple could not verify 'Hearth' is
-  free of malware" and only offers Move to Trash / Done — the old
+  free of malware" and only offers Move to Trash / Done. The old
   right-click → Open bypass no longer works there. Click **Done** (not
   Move to Trash), open **System Settings → Privacy & Security**, scroll
   down to the **"'Hearth' was blocked"** row, click **Open Anyway**, and
@@ -74,12 +74,12 @@ Notes:
 packaged app (or in an exported game) carries a known advisory.
 
 `npm audit` (full, including dev tooling): **11 advisories** (1 moderate, 10
-high), all in the packaging toolchain — `electron` (bundled dev version
+high), all in the packaging toolchain: `electron` (bundled dev version
 33.x, fix requires 43.x), `electron-builder` (25.x → 26.x) and its
 `app-builder-lib`/`dmg-builder`/`tar` dependency chain, and `esbuild` (0.24.x
 → 0.28.x, used by Vite/vitest, not shipped). Every fix `npm audit fix
 --force` offers is a breaking major bump, and none of the flagged code paths
-run in the built app — Electron's advisories are renderer/IPC bugs in
+run in the built app: Electron's advisories are renderer/IPC bugs in
 Chromium versions this project isn't shipping, and esbuild's is a dev-server
 CORS issue that doesn't exist once `dist/` is built. Consciously deferred
 rather than force-bumped mid-wave; revisit alongside the next toolchain
@@ -90,7 +90,7 @@ bump of `electron-builder` alongside them).
 
 This section is about signing **the Hearth editor app itself** (the
 `.dmg`/`.exe`/`.AppImage` you'd distribute from this repo's releases) via
-`electron-builder` and CI secrets — a separate pipeline from signing *games
+`electron-builder` and CI secrets, a separate pipeline from signing *games
 made with Hearth*, which `hearth export desktop` handles with its own,
 differently-named environment variables (`HEARTH_MAC_IDENTITY` and
 friends) read locally at export time; see

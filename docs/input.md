@@ -1,6 +1,6 @@
 # Input Guide
 
-Scripts never read raw keys or gamepad state directly — everything goes
+Scripts never read raw keys or gamepad state directly: everything goes
 through named **actions** (digital: pressed or not) and named **virtual
 axes** (analog, `-1..1`), both defined once in `hearth.json`'s
 `inputMappings` and shared by keyboard, gamepad, and playtests alike. This
@@ -27,13 +27,13 @@ end
 
 `isDown` is true every frame the action is held; `justPressed` is true
 only on the frame it went down. Rebinding an action's keys or gamepad
-buttons never touches scripts — they keep working unchanged.
+buttons never touches scripts. They keep working unchanged.
 
 ## Keyboard bindings
 
 `inputMappings.actions` maps an action name to a list of
 `KeyboardEvent.code` strings (`"ArrowLeft"`, `"KeyA"`, `"Space"`, …, not
-`KeyboardEvent.key` — codes are layout-independent). Any code in the list
+`KeyboardEvent.key`: codes are layout-independent). Any code in the list
 satisfies the action:
 
 ```bash
@@ -43,10 +43,10 @@ hearth set-input jump                # no keys: removes the action entirely
 
 ## Gamepad
 
-Gamepad support is **browser-only** — it polls the
+Gamepad support is **browser-only**: it polls the
 [Gamepad API](https://developer.mozilla.org/en-US/docs/Web/API/Gamepad_API),
 so it works in the editor preview and exported web games, not in headless
-Node (playtests drive actions and axes directly instead — see
+Node (playtests drive actions and axes directly instead; see
 [Playtest input](#playtest-input) below).
 
 ### Named buttons
@@ -62,14 +62,14 @@ codes), using the W3C standard gamepad mapping:
 hearth set-settings --input-gamepad-buttons '{"jump":["a"],"attack":["x","rt"]}'
 ```
 
-Keyboard and gamepad bindings for the same action combine — either
+Keyboard and gamepad bindings for the same action combine: either
 satisfies `isDown`/`justPressed`.
 
 ### Digital axis bindings
 
 A stick or trigger can also drive a digital action directly:
 `inputMappings.gamepadAxes` maps an action name to one
-`{ axis, direction, threshold }` binding — `axis` is the raw gamepad axis
+`{ axis, direction, threshold }` binding: `axis` is the raw gamepad axis
 index, `direction` is `1` or `-1` (which side of center counts), and
 `threshold` (default `0.5`) is how far past center it must cross. This is
 for actions that only care about "pressed or not" (e.g. a trigger mapped
@@ -85,7 +85,7 @@ floored by the deadzone), but only releases once the axis drops at least
 `0.05` back below that same threshold. This keeps stick noise sitting
 right on the line from flapping the action on and off and re-firing
 `justPressed` every frame. Each connected pad tracks its own latch per
-binding, so the per-pad-OR behavior above still holds — one pad releasing
+binding, so the per-pad-OR behavior above still holds. One pad releasing
 doesn't affect another pad's hold on the same action.
 
 ### Virtual axes (analog)
@@ -137,20 +137,20 @@ the rest of the `ctx` API.
 
 The editor's Input settings panel (Settings → Input) has three sections:
 
-- **Actions** — one row per action: a key-capture control (click, then
+- **Actions**. One row per action: a key-capture control (click, then
   press a key; Escape cancels) adds/removes bound codes as chips, plus a
   gamepad-button dropdown (populated from the named-button list above,
   already-bound buttons excluded) and an optional digital gamepad-axis
   binding (axis index, direction, threshold).
-- **Virtual axes** — one row per axis: a renamable name, an optional
+- **Virtual axes**. One row per axis: a renamable name, an optional
   gamepad axis index (checkbox + number field), key-capture rows for
   `negativeCodes`/`positiveCodes`, and a per-axis deadzone override
   (checkbox + number field, defaulting to the global value when first
   enabled).
-- **Global** — the project-wide default deadzone.
+- **Global**. The project-wide default deadzone.
 
 Every edit round-trips through `updateSettings`, same as the CLI/MCP path
-below — the panel is a UI over the identical command, not a separate code
+below. The panel is a UI over the identical command, not a separate code
 path.
 
 ## CLI / MCP configuration
@@ -163,10 +163,10 @@ path.
 `actions` merges **per action**, on every surface: `set-input`/
 `set_input_mapping` touch exactly one action (empty keys removes it), and
 `set-settings --input-actions`/`update_settings`'s `actions` field does
-the same for each action you list — a listed action's key list is
+the same for each action you list: a listed action's key list is
 replaced (or, with `[]`, the action is deleted), and every unlisted
-action is left untouched. The other four `inputMappings` fields —
-`gamepadButtons`, `gamepadAxes`, `axes`, `deadzone` — are each **replaced
+action is left untouched. The other four `inputMappings` fields
+(`gamepadButtons`, `gamepadAxes`, `axes`, `deadzone`) are each **replaced
 wholesale** when provided: passing `gamepadButtons` replaces the entire
 map, so include every action you want bound, not just the one you're
 changing. See [cli.md](./cli.md#command-tour) and [mcp.md](./mcp.md) for
@@ -193,8 +193,8 @@ drive actions and axes directly:
 ```
 
 `setAxis` bypasses gamepad/keyboard reads entirely for that axis for the
-rest of the playtest (or until overwritten) — `ctx.input.axis(name)`
+rest of the playtest (or until overwritten): `ctx.input.axis(name)`
 returns exactly the value you set. See [cli.md](./cli.md#command-tour) for
 `press`/`release`/`click`/`drag` and the full assertion-step list, and
-[ui.md](./ui.md#playtests) for `drag`/`assertFocus` — the widget-focused
-counterparts of `press`/`setAxis`.
+[ui.md](./ui.md#playtests) for `drag`/`assertFocus` (the widget-focused
+counterparts of `press`/`setAxis`).

@@ -1,7 +1,7 @@
 # Connect OpenCode (and local models via Ollama)
 
 [OpenCode](https://opencode.ai) is an open-source, terminal-based coding
-agent that speaks stdio MCP and can run against local models — so it's the
+agent that speaks stdio MCP and can run against local models, so it's the
 path to driving Hearth entirely on your own machine, no cloud account, no API
 key, with a model served by [Ollama](https://ollama.com). Everything stays
 local: the engine already runs no model and holds no key, and with Ollama the
@@ -15,7 +15,7 @@ provider step below, whatever models a local `ollama` has pulled). Pick
 
 1. Prepare writes the `hearth` server into `<project>/opencode.json` under
    the top-level `mcp` key, as `{"type": "local", "command": [...],
-   "enabled": true}` — the same shape shown in step 1 below — without
+   "enabled": true}` (the same shape shown in step 1 below), without
    touching any other keys already in that file.
 2. If it detects local Ollama models **and** you don't already have a
    `provider.ollama` block configured, it also writes one for you (step 2
@@ -29,8 +29,8 @@ provider step below, whatever models a local `ollama` has pulled). Pick
 Unlike Codex/Hermes, OpenCode's config is per-project (`opencode.json` at the
 project root), so nothing here bleeds across projects.
 
-> **Honesty note.** This prepare path — the `opencode.json` write and the
-> Ollama provider block — is covered by unit tests asserting the exact
+> **Honesty note.** This prepare path (the `opencode.json` write and the
+> Ollama provider block) is covered by unit tests asserting the exact
 > config shape, but it has not been live-tested end-to-end against a real
 > installed OpenCode + Ollama on the machine this shipped from. If something
 > looks off, the manual steps below produce the identical config by hand so
@@ -60,7 +60,7 @@ Grab the standalone `hearth-mcp.mjs` (Node 20+) from the
 [latest release](https://github.com/echoo19/hearth/releases/latest), or use
 `packages/mcp-server/dist/main.js` from a source checkout. The `--mode` value
 is the permission grant (`read-only` / `safe-edit` /
-`safe-edit,code-edit,asset-edit` / `all`) — see
+`safe-edit,code-edit,asset-edit` / `all`). See
 [mcp.md](./mcp.md#choosing-modes-per-session).
 
 ## 2. Run a local model with Ollama
@@ -93,14 +93,14 @@ adapter:
 Merge this `provider` block with the `mcp` block from step 1 into the same
 `opencode.json`. Then select the Ollama model inside OpenCode. (This is
 exactly what the panel's prepare step does for you when it finds pulled
-models and no existing provider — see above.)
+models and no existing provider, as described above.)
 
 ### Local-model gotchas
 
 - **Use the `/v1` path.** `http://localhost:11434/v1`, not Ollama's native
   API path. On Windows prefer `http://127.0.0.1:11434/v1` to dodge
   IPv6/localhost resolution issues.
-- **Pick a tool-calling model.** MCP is function calling — the model must
+- **Pick a tool-calling model.** MCP is function calling. The model must
   support tools, or it can't invoke Hearth's commands at all. Coder-tuned and
   Hermes models are good picks (see [connect-hermes.md](./connect-hermes.md));
   many small general models are not.
@@ -114,21 +114,21 @@ models and no existing provider — see above.)
 > **Honesty note.** Local-model quality varies a lot by model and hardware.
 > A small local model will follow the snapshot → inspect → edit → validate →
 > playtest → diff loop far less reliably than a frontier model. The safety
-> rails don't change — permission modes, the command journal, and
+> rails don't change: permission modes, the command journal, and
 > snapshot/diff/revert all work identically regardless of which model is
-> driving — so a weak local run is *recoverable*, just slower and more
+> driving. So a weak local run is *recoverable*, just slower and more
 > hand-held. Treat local models as a private, offline option, not a drop-in
 > equal to a hosted frontier agent.
 
 ## First thing in a session
 
 Point OpenCode at the project and have it call **`get_agent_instructions`**
-first — it returns the `AGENTS.md` house rules and active permission modes.
+first. It returns the `AGENTS.md` house rules and active permission modes.
 The working loop and game-craft recipes are in the project skills under
 `.claude/skills/`.
 
 ## See also
 
-- [connect-hermes.md](./connect-hermes.md) — using a Hermes model locally
-- [connect-any-agent.md](./connect-any-agent.md) — any other MCP client
-- [mcp.md](./mcp.md) — the full tool list, envelope, and permission modes
+- [connect-hermes.md](./connect-hermes.md): using a Hermes model locally
+- [connect-any-agent.md](./connect-any-agent.md): any other MCP client
+- [mcp.md](./mcp.md): the full tool list, envelope, and permission modes

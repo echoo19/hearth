@@ -2,7 +2,7 @@
 
 [Codex](https://github.com/openai/codex) is OpenAI's coding-agent CLI, and it
 speaks stdio MCP, so it reads the exact same Hearth command surface Claude
-Code does — the same 70 typed tools, the same `CommandResult` envelope, the
+Code does: the same 70 typed tools, the same `CommandResult` envelope, the
 same permission modes. This page covers launching it from the editor and
 wiring it up manually.
 
@@ -15,8 +15,8 @@ does the whole setup for you:
 1. The panel runs `codex mcp get hearth` first; if Codex already has a
    `hearth` entry pointed at this project and mode, nothing is rewritten.
 2. Otherwise it runs `codex mcp add hearth -- node <mcp path> --project
-   <project path> --mode <mode>` for you — Codex's own writer for its TOML
-   config, not a hand-merge — which lands as a clean `[mcp_servers.hearth]`
+   <project path> --mode <mode>` for you (Codex's own writer for its TOML
+   config, not a hand-merge), which lands as a clean `[mcp_servers.hearth]`
    table in `~/.codex/config.toml`.
 3. It backfills the project's `.claude/skills/` if they're missing, then
    spawns `codex` in the embedded terminal, working directory set to your
@@ -24,7 +24,7 @@ does the whole setup for you:
    writes a small shim into every embedded session), and Codex handles its
    own login in the terminal exactly as it would in any shell.
 
-Codex's config is **global**, not per-project — `~/.codex/config.toml` holds
+Codex's config is **global**, not per-project: `~/.codex/config.toml` holds
 one `hearth` entry, and it's rewritten to point at whichever project you most
 recently prepared. In practice that's always the project you're launching
 from, since prepare runs immediately before Codex spawns; just know that
@@ -66,7 +66,7 @@ args = ["/abs/path/to/hearth-mcp.mjs", "--project", "/abs/path/to/my-game", "--m
 ```
 
 Codex only supports local stdio MCP servers, which is exactly what Hearth's
-server is — so no remote/URL transport is involved.
+server is, so no remote/URL transport is involved.
 
 ## First thing in a session
 
@@ -93,6 +93,6 @@ mode. See [mcp.md](./mcp.md#choosing-modes-per-session) for the full reference.
 
 ## See also
 
-- [connect-claude-code.md](./connect-claude-code.md) — the one-click path
-- [connect-any-agent.md](./connect-any-agent.md) — any other MCP client
-- [mcp.md](./mcp.md) — the full tool list and envelope
+- [connect-claude-code.md](./connect-claude-code.md): the one-click path
+- [connect-any-agent.md](./connect-any-agent.md): any other MCP client
+- [mcp.md](./mcp.md): the full tool list and envelope
