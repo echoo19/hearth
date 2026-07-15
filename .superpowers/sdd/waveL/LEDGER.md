@@ -520,7 +520,17 @@ high) though it borders on a defect (values unreadable).
 - Expected: reclaim the revert-slot width when the entity isn't a prefab
   instance / has no revertable field on that row.
 - Source: Wave-K tail ("field-revert-slot width reclaim"), INSPSPEC verified-list
-- Disposition: open
+- Disposition: by-design (fixed 5e7b54e, pre-T10; re-verified during T10's
+  row-grid unification, no further change needed). The slot is gated on
+  `prefabInfo != null` (Inspector.tsx) — per-entity, not per-row: a
+  non-instance entity reclaims the full control width on every row, exactly
+  as this entry asks. A prefab instance always reserves the slot on every one
+  of its rows even when that specific row isn't overridden, by deliberate
+  choice (see the in-code comment above `.field-revert-slot`'s render site):
+  gating per-row instead would make sibling rows in the same instance's card
+  disagree on control width depending on each row's own override state,
+  which reads worse than a consistently-reserved slot across the whole
+  instance. T10 did not change this file's revert-slot logic.
 
 ### L-042 · inspector · polish · high
 - Element: `PostEffectsField` `EffectFieldRow` number/color inputs.
@@ -531,7 +541,13 @@ high) though it borders on a defect (values unreadable).
 - Expected: the input should stretch to fill its grid column like every other
   `.inspector-row`.
 - Source: INSPSPEC-3
-- Disposition: fixed 9a095c5 (effect cards sit inside the Camera field's own narrow control column; the nested .inspector-row now gets a compact label track (minmax(0,84px)) and its input stretches to fill the rest, so bloom.strength etc. read full-width like every other row. Minimal local fix — noted for T10's row-grid unification to fold in if it wishes.)
+- Disposition: fixed 9a095c5, folded into the shared system by T10 (superseding
+  commit 15b2169). The page-specific `.effect-card-body .inspector-row`
+  override is gone; `EffectFieldRow` now applies a named, reusable
+  `.editor-row--nested` class (primitives.css) that any nested row can opt
+  into — same 84px compact label track and full-width control as before, just
+  no longer scoped to PostEffects by a descendant selector. The Inspector's
+  autotile Template row (L-043-adjacent, see below) now uses the same variant.
 
 ### L-043 · inspector · polish · med
 - Element: `PostEffectsField` `EffectFieldRow` labels.
@@ -1012,7 +1028,15 @@ high) though it borders on a defect (values unreadable).
 - Expected: `align-items: start` (or a label top-margin) for multi-line-value
   rows.
 - Source: INPUT-5
-- Disposition: open
+- Disposition: fixed 15b2169 (T10 row-grid unification). Added
+  `.editor-row--top` to the shared row-grid system in primitives.css
+  (`align-items: start` + a small label top-padding so it optically lines up
+  with the control's first line) and applied it alongside `.inspector-row` on
+  every row whose control is `.input-binding-col` (always a vertical stack,
+  1 or 2 lines): ActionRow's Keys/Gamepad rows and AxisRow's Gamepad
+  axis/Negative key/Positive key/Deadzone rows. Live-verified: the label now
+  sits flush with the first chip/checkbox line instead of floating centered
+  against the whole stack.
 
 ### L-073 · input · polish · low
 - Element: error banner after a rejected numeric edit (deadzone/threshold).
