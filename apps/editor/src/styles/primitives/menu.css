@@ -29,6 +29,13 @@
   right: 0;
 }
 
+/* Cursor-anchored context menu: positioned by inline fixed coords (set by the
+   ContextMenu component), so it drops the absolute/top offset of the dropdown
+   variant. z-index sits above panels via the shared dropdown layer. */
+.context-menu {
+  top: auto;
+}
+
 .menu-item {
   display: flex;
   align-items: center;

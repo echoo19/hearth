@@ -18,7 +18,8 @@
  *     click that lands on the scene canvas, leaving the menu stuck open.
  *     Capture runs top-down (window first), before any handler can stop it.
  */
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { Icon } from '../ui';
 import { Tooltip } from './Tooltip';
 
@@ -189,6 +190,100 @@ export function MenuItems({
         );
       })}
     </>
+  );
+}
+
+/**
+ * Clamp a menu's top-left origin so the popover stays inside the viewport.
+ * Pure so the flip math is testable without a DOM. When the menu would overflow
+ * the right/bottom edge it is shifted back by the overflow (or flipped above/
+ * left of the cursor when that reads better), never off the top/left.
+ */
+export function clampMenuOrigin(
+  cursor: { x: number; y: number },
+  size: { w: number; h: number },
+  viewport: { w: number; h: number },
+  margin = 4,
+): { x: number; y: number } {
+  let x = cursor.x;
+  let y = cursor.y;
+  if (x + size.w + margin > viewport.w) x = Math.max(margin, viewport.w - size.w - margin);
+  if (y + size.h + margin > viewport.h) y = Math.max(margin, viewport.h - size.h - margin);
+  return { x, y };
+}
+
+/**
+ * Cursor-anchored context menu. Reuses the same item markup, roving-focus math
+ * and dismiss contracts as MenuButton (see file header) — the only difference
+ * is it opens at a point (right-click) instead of below a trigger, and renders
+ * into a body portal so it escapes any panel's overflow clipping. The opener
+ * owns the open/closed state; `onClose` is called on select, Escape, or an
+ * outside click.
+ */
+export function ContextMenu({
+  x,
+  y,
+  items,
+  label,
+  onClose,
+}: {
+  x: number;
+  y: number;
+  items: MenuItem[];
+  label: string;
+  onClose: () => void;
+}) {
+  const ref = useRef<HTMLDivElement>(null);
+  const itemRefs = useRef<(HTMLButtonElement | null)[]>([]);
+  const [focused, setFocused] = useState(() => menuNavIndex(items, -1, 'Home'));
+  const [pos, setPos] = useState({ x, y });
+
+  // Dismiss wiring (click-outside + Escape), identical contracts to MenuButton.
+  useEffect(() => {
+    return installMenuDismiss({
+      isOutside: (target) => !(ref.current && target instanceof Node && ref.current.contains(target)),
+      close: onClose,
+      onEscape: onClose,
+    });
+  }, [onClose]);
+
+  // Keep the menu on-screen: measure once mounted and clamp to the viewport.
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const rect = el.getBoundingClientRect();
+    setPos(clampMenuOrigin({ x, y }, { w: rect.width, h: rect.height }, { w: window.innerWidth, h: window.innerHeight }));
+  }, [x, y]);
+
+  // Focus the first item on open, then reflect the roving index into DOM focus.
+  useEffect(() => {
+    itemRefs.current[focused]?.focus();
+  }, [focused]);
+
+  function onKeyDown(e: React.KeyboardEvent) {
+    if (e.key === 'ArrowDown' || e.key === 'ArrowUp' || e.key === 'Home' || e.key === 'End') {
+      e.preventDefault();
+      setFocused((cur) => menuNavIndex(items, cur, e.key as 'ArrowDown' | 'ArrowUp' | 'Home' | 'End'));
+    }
+  }
+
+  function selectItem(item: MenuItemAction) {
+    item.onSelect();
+    onClose();
+  }
+
+  return createPortal(
+    <div
+      ref={ref}
+      className="menu-popover context-menu"
+      role="menu"
+      aria-label={label}
+      style={{ position: 'fixed', left: pos.x, top: pos.y }}
+      onKeyDown={onKeyDown}
+    >
+      <MenuItems items={items} focusedIndex={focused} onFocusIndex={setFocused} onSelectItem={selectItem} itemRefs={itemRefs} />
+    </div>,
+    document.body,
   );
 }
 
