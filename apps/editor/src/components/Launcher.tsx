@@ -21,6 +21,26 @@ export function launcherButtonLabel(action: LauncherBusyAction, kind: 'create' |
   return kind === 'create' ? 'Creating…' : 'Opening…';
 }
 
+/**
+ * Run one busy action with a guaranteed reset: `setBusy(kind)` before, and
+ * `setBusy(null)` in a `finally` — a thrown/rejected `fn` (network drop
+ * inside openProject/createProject) must never leave the whole launcher
+ * stuck disabled on a stale "Creating…"/"Opening…". Exported for the same
+ * DOM-free unit-test treatment as launcherButtonLabel.
+ */
+export async function withBusyAction<T>(
+  kind: Exclude<LauncherBusyAction, null>,
+  setBusy: (action: LauncherBusyAction) => void,
+  fn: () => Promise<T>,
+): Promise<T> {
+  setBusy(kind);
+  try {
+    return await fn();
+  } finally {
+    setBusy(null);
+  }
+}
+
 export function Launcher() {
   const meta = useEditor((s) => s.meta);
   const openProject = useEditor((s) => s.openProject);
@@ -65,15 +85,10 @@ export function Launcher() {
       setCreateError('Give the project a name.');
       return;
     }
-    setBusyAction('create');
     setCreateError('');
-    const res = await createProject(
-      dir.trim() || defaultDir,
-      name.trim(),
-      description.trim() || undefined,
-      template || undefined,
+    const res = await withBusyAction('create', setBusyAction, () =>
+      createProject(dir.trim() || defaultDir, name.trim(), description.trim() || undefined, template || undefined),
     );
-    setBusyAction(null);
     if (!res.ok) setCreateError(res.error ?? 'Failed to create project.');
   }
 
@@ -82,10 +97,8 @@ export function Launcher() {
       setError('Enter the path of a folder containing hearth.json.');
       return;
     }
-    setBusyAction('open');
     setError('');
-    const res = await openProject(path.trim());
-    setBusyAction(null);
+    const res = await withBusyAction('open', setBusyAction, () => openProject(path.trim()));
     if (!res.ok) setError(res.error ?? 'Failed to open project.');
   }
 

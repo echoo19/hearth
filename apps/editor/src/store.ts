@@ -728,8 +728,11 @@ export const useEditor = create<EditorState>((set, get) => {
             // Keep "Restore checkpoint" (bound to diff?.hasChanges) honest as
             // soon as the Timeline shows the new row, not only after a manual
             // refreshDiff() — an external `hearth create entity` etc. must not
-            // leave the button stale (AGENT-2 / L-090).
-            await refreshDiffIfTracking();
+            // leave the button stale (AGENT-2 / L-090). Coalesced: an agent
+            // bursting commands lands many journal frames close together, and
+            // diffProject walks the whole project — one in-flight request plus
+            // one trailing catch-up beats a pile-up of N concurrent diffs.
+            await coalescedDiffRefresh();
           })();
         }
         return;
@@ -780,6 +783,32 @@ export const useEditor = create<EditorState>((set, get) => {
    */
   async function refreshDiffIfTracking(): Promise<void> {
     if (get().snapshotTaken || get().diff !== null) await get().refreshDiff();
+  }
+
+  // Coalescing wrapper for the WS journal handler (AGENT-2 / L-090): an agent
+  // bursting commands lands many journal frames back-to-back, each wanting a
+  // diff refresh, and diffProject walks the whole project. While one request
+  // is in flight, further calls just mark a trailing catch-up — when the
+  // in-flight one settles, exactly one more runs (picking up everything that
+  // arrived meanwhile). N bursts cost at most 2 diffs, and the last one always
+  // reflects the final on-disk state.
+  let diffRefreshInFlight = false;
+  let diffRefreshQueued = false;
+  async function coalescedDiffRefresh(): Promise<void> {
+    if (diffRefreshInFlight) {
+      diffRefreshQueued = true;
+      return;
+    }
+    diffRefreshInFlight = true;
+    try {
+      await refreshDiffIfTracking();
+    } finally {
+      diffRefreshInFlight = false;
+      if (diffRefreshQueued) {
+        diffRefreshQueued = false;
+        void coalescedDiffRefresh();
+      }
+    }
   }
 
   // --- Undo/redo serialization --------------------------------------------

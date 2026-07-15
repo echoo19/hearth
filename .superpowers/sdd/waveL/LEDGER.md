@@ -1041,6 +1041,17 @@ high) though it borders on a defect (values unreadable).
   tile-typed assets. Updated `gameSettingsEdit.test.ts`'s picker-options test
   (now asserts `['hero', 'ground', 'logo']` incl. the tile asset) plus a new
   exclusion test for non-image kinds. File: GameSettings.tsx.
+  Review follow-up (B7-I2): the core side now matches the widened picker —
+  `exportDesktop` accepts a sprite OR tile icon (exportCommands.ts; error
+  message + BuildSettingsSchema doc updated), png2icons was verified to
+  consume a real tile-fixture PNG end-to-end (core exportDesktop.test.ts
+  imports it as a `tile` asset and asserts byte-identical iconPng;
+  shipping icon.test.ts converts the same bytes to a real .icns), and
+  `validateProject` gained MISSING_ICON_ASSET / ICON_ASSET_NOT_IMAGE
+  warnings so Validate names a bad icon before an export is attempted
+  (warning, not error, so exportDesktop's more specific messages stay
+  reachable). Files: packages/core/src/commands/exportCommands.ts,
+  packages/core/src/schema/project.ts, packages/core/src/validate.ts.
 
 ### L-075 · gamesettings · friction · med
 - Element: `.panel-body` (Window/Loop/Loading/Shipping sections).
@@ -1643,7 +1654,10 @@ high) though it borders on a defect (values unreadable).
   null` keeps every existing disabled check unchanged); new pure
   `launcherButtonLabel(action, kind, idleLabel)` swaps "Create project" →
   "Creating…" / "Open" → "Opening…" only for the button matching the
-  in-flight action. Unit-tested in `launcher.test.ts`. File: Launcher.tsx.
+  in-flight action. Review follow-up (B7-M4): both actions now run through
+  `withBusyAction`, which resets `busyAction` in a `finally` — a thrown
+  create/open can no longer strand the launcher on a stale "Creating…".
+  Unit-tested in `launcher.test.ts`. File: Launcher.tsx.
 
 ### L-103 · launcher · polish · low
 - Element: Recent/Examples rows — full path only via native `title`.

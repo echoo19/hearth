@@ -7,7 +7,7 @@ import { CodeBlock, Icon } from './ui';
 import { Button } from './ui/Button';
 import { Tooltip } from './ui/Tooltip';
 import { Timeline } from './agent/Timeline';
-import { planClaudeStart, useAgentSocket, type AgentSessionSummary } from './agent/useAgentSocket';
+import { getAgentSessionSummary, planClaudeStart, useAgentSocket, type AgentSessionSummary } from './agent/useAgentSocket';
 
 // xterm (+ its addon and css) is a heavy dependency that only the Agent
 // panel needs; keeping it out of the main chunk mirrors CodePanel's lazy
@@ -91,6 +91,21 @@ export function modePickerDisabledReason(launcher: AgentLauncher): string | null
   return `${AGENT_LAUNCHER_LABELS[launcher]} doesn't read a permission mode — this only applies to Claude Code.`;
 }
 
+/**
+ * True when the install-Claude shell session just finished — time to
+ * re-detect automatically so the "Install Claude Code" button resolves to
+ * "Start agent" (or an honest failure) without a manual Re-detect click.
+ * `installEpoch` is the pty epoch captured when the install session was
+ * started (null when no install is pending); the epoch match ensures a
+ * LATER unrelated session's exit doesn't trigger a spurious re-detect.
+ */
+export function shouldRedetectAfterInstall(
+  installEpoch: number | null,
+  session: Pick<AgentSessionSummary, 'epoch' | 'status'>,
+): boolean {
+  return installEpoch !== null && session.epoch === installEpoch && session.status === 'exited';
+}
+
 function statusLabel(session: AgentSessionSummary): string {
   switch (session.status) {
     case 'idle':
@@ -138,6 +153,9 @@ export function AgentPanel() {
   const [agentLauncher, setAgentLauncher] = useState<AgentLauncher>('claude');
   const [detectFailed, setDetectFailed] = useState(false);
   const wasDetecting = useRef(agentDetecting);
+  // Epoch of a pending install-Claude shell session (null = none pending);
+  // when THAT session exits, re-detect automatically (see the effect below).
+  const installEpoch = useRef<number | null>(null);
 
   useEffect(() => {
     void detectAgent();
@@ -203,8 +221,25 @@ export function AgentPanel() {
   function installClaude() {
     // Run the official install visibly in the terminal; if the shell could
     // not start (socket down), don't fire the command into the void.
-    if (agent.start('shell')) agent.sendInput(`${INSTALL_COMMAND}\r`);
+    if (agent.start('shell')) {
+      agent.sendInput(`${INSTALL_COMMAND}\r`);
+      // Capture the just-started session's epoch (agent.start committed it
+      // synchronously to the external store; this render's `agent.session`
+      // is still the pre-start snapshot, so read the store directly).
+      installEpoch.current = getAgentSessionSummary().epoch;
+    }
   }
+
+  // When the install-Claude session exits, re-detect automatically so the
+  // Install button resolves to "Start agent" (or an honest failure) without
+  // a manual Re-detect click. Epoch-matched: a later unrelated session's
+  // exit never triggers a spurious re-detect.
+  useEffect(() => {
+    if (shouldRedetectAfterInstall(installEpoch.current, agent.session)) {
+      installEpoch.current = null;
+      void detectAgent();
+    }
+  }, [agent.session, detectAgent]);
 
   // --- Manual-setup content (unchanged from the pre-terminal panel) --------
   // In the packaged desktop app these are self-contained single-file bundles
@@ -303,9 +338,14 @@ export function AgentPanel() {
           </>
         ) : agentLauncher === 'claude' ? (
           <>
-            <Button variant="primary" size="sm" onClick={installClaude} disabled={!projectPath}>
-              Install Claude Code
-            </Button>
+            {/* Same AGENT-1 guard as Start agent: installClaude() spawns a
+                shell pty, so an unguarded click while ANY session runs —
+                including the install session itself — would silently kill it. */}
+            <DisabledHint reason={startReason}>
+              <Button variant="primary" size="sm" onClick={installClaude} disabled={startReason !== null}>
+                Install Claude Code
+              </Button>
+            </DisabledHint>
             <Tooltip content="Re-check whether the claude CLI is on PATH">
               <Button variant="ghost" size="sm" onClick={() => void detectAgent()}>
                 Re-detect

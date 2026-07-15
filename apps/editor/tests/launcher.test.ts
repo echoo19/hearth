@@ -10,7 +10,7 @@ import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { TemplatePicker, TEMPLATE_OPTIONS } from '../src/components/TemplatePicker';
 import { apiCreateProject } from '../src/api';
-import { launcherButtonLabel } from '../src/components/Launcher';
+import { launcherButtonLabel, withBusyAction, type LauncherBusyAction } from '../src/components/Launcher';
 
 function render(value: string): string {
   return renderToStaticMarkup(
@@ -119,5 +119,39 @@ describe('launcherButtonLabel — busy feedback (LAUNCHER-2 / L-102)', () => {
   it('a busy Create action does not relabel the Open button, and vice versa', () => {
     expect(launcherButtonLabel('create', 'open', 'Open')).toBe('Open');
     expect(launcherButtonLabel('open', 'create', 'Create project')).toBe('Create project');
+  });
+});
+
+describe('withBusyAction — busy state always resets (LAUNCHER-2 follow-up)', () => {
+  function track() {
+    const calls: LauncherBusyAction[] = [];
+    return { calls, setBusy: (a: LauncherBusyAction) => calls.push(a) };
+  }
+
+  it('marks busy for the duration and resets on success, passing the result through', async () => {
+    const { calls, setBusy } = track();
+    const result = await withBusyAction('create', setBusy, async () => ({ ok: true }));
+    expect(result).toEqual({ ok: true });
+    expect(calls).toEqual(['create', null]);
+  });
+
+  it('resets to null even when the action rejects (no stuck "Creating…")', async () => {
+    const { calls, setBusy } = track();
+    await expect(
+      withBusyAction('open', setBusy, async () => {
+        throw new Error('network down');
+      }),
+    ).rejects.toThrow('network down');
+    expect(calls).toEqual(['open', null]);
+  });
+
+  it('resets to null when the action throws synchronously', async () => {
+    const { calls, setBusy } = track();
+    await expect(
+      withBusyAction('create', setBusy, () => {
+        throw new Error('boom');
+      }),
+    ).rejects.toThrow('boom');
+    expect(calls).toEqual(['create', null]);
   });
 });

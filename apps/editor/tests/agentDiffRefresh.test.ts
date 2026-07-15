@@ -147,6 +147,34 @@ describe('AGENT-2 (L-090): external journal entries refresh the Restore-checkpoi
     expect(useEditor.getState().journalFeed.some((e) => e.command === 'createEntity')).toBe(true);
   });
 
+  it('coalesces a burst of external entries into at most one in-flight diff plus one trailing catch-up', async () => {
+    // diffProject resolves on a real timer so the three journal frames below
+    // land while the first diff is still in flight — the coalescer must fold
+    // frames 2 and 3 into ONE trailing refresh instead of stacking three
+    // concurrent whole-project diffs.
+    apiCommand.mockImplementation(async (_project: string, name: string) => {
+      if (name === 'diffProject') {
+        await new Promise((r) => setTimeout(r, 30));
+        return ok(DIFF);
+      }
+      return makeApi()(_project, name);
+    });
+    await useEditor.getState().openProject('/tmp/proj');
+    await useEditor.getState().checkpoint();
+    const before = diffCalls();
+
+    const socket = latestSocket();
+    socket.onmessage?.({ data: externalJournalMessage() });
+    socket.onmessage?.({ data: externalJournalMessage() });
+    socket.onmessage?.({ data: externalJournalMessage() });
+    // Let the whole chain (refresh + mirror + first diff + trailing diff) settle.
+    await new Promise((r) => setTimeout(r, 150));
+
+    const calls = diffCalls() - before;
+    expect(calls).toBeGreaterThanOrEqual(1); // the refresh happened
+    expect(calls).toBeLessThanOrEqual(2); // 1 in-flight + at most 1 trailing — never 3
+  });
+
   it('does NOT call diffProject for an external entry when no baseline is tracked', async () => {
     apiCommand.mockImplementation(makeApi());
     await useEditor.getState().openProject('/tmp/proj');
