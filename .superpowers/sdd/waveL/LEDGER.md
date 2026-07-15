@@ -554,7 +554,23 @@ high) though it borders on a defect (values unreadable).
 - Expected: card context menu / details-row Rename·Delete·Duplicate, delete
   surfacing the referenced-by conflict in a dialog.
 - Source: ASSETS-1
-- Disposition: open
+- Disposition: fixed a4fe855 (T9-U3), scoped to delete only — rename/
+  duplicate need new core commands (`renameAsset`/`duplicateAsset` don't
+  exist yet) and are deferred so the editor never does something an agent
+  can't mirror through a command. Delete ships as a per-card hover/focus
+  trash `IconButton` (the `.tree-actions` idiom) plus a right-click context
+  menu (Menu primitive) with Delete/Copy id/Assign to selection/Add to scene/
+  a type-appropriate Edit item (Slice… for sheets, Edit state machine for
+  asm, Play/Stop preview for audio). Delete confirms via `ConfirmDialog`,
+  then calls `removeAsset({ deleteFile: true })`; a referenced-by CONFLICT
+  opens a dedicated error dialog showing the command's own message verbatim
+  (no summarizing). Live-verified headless (port 5328, sky-courier scratch):
+  deleting a referenced sprite (`courier-sheet`) surfaced "Asset
+  "courier-sheet" is still referenced by: Courier (ent_e11krpgv) in scene
+  scn_85roa0bz. Remove references first." verbatim and left the card in
+  place; deleting an unreferenced asset (`delivery-sound`) removed the card,
+  moved the file into `.hearth/trash/<id>/`, and Cmd+Z undo restored both the
+  card and the file to disk. Files: AssetsPanel.tsx.
 
 ### L-045 · assets · friction · med
 - Element: asset grid — search / filter / sort.
@@ -563,7 +579,15 @@ high) though it borders on a defect (values unreadable).
 - Expected: at least a name search; ideally a type filter (label already on
   every card).
 - Source: ASSETS-4
-- Disposition: open
+- Disposition: fixed a4fe855 (T9-U3) — a filter input at the panel top
+  matches name OR type substrings (so typing "stateMachine" filters by type),
+  instant on every keystroke, Escape clears it, and Cmd/Ctrl+F focuses it
+  whenever a card or the panel itself has focus. Sorting deferred (not asked
+  for; insertion order is stable and the filter covers the "hundreds of
+  assets" case the audit raised). Live-verified: "courier" narrowed 11 cards
+  to 4, "stateMachine" to 1 (`courier-motion`), Escape restored all 11, and
+  Cmd+F while a card was focused moved focus to the filter box. Files:
+  AssetsPanel.tsx.
 
 ### L-046 · assets · friction · med
 - Element: asset card — double-click.
@@ -573,7 +597,17 @@ high) though it borders on a defect (values unreadable).
 - Expected: double-click performs the asset's primary action (or at least
   doesn't undo the selection).
 - Source: ASSETS-5
-- Disposition: open
+- Disposition: fixed a4fe855 (T9-U3) — double-click now explicitly selects
+  the card (never a toggle) and runs a type-appropriate primary action:
+  stateMachine opens the Animator, audio toggles its preview, prefab adds an
+  instance to the current scene, everything else (sprite/tile/font/
+  animation/data/other) assigns to the selected entity when a compatible
+  component is present. Slice… was deliberately NOT made the sheet
+  double-click action per the dispatch's judgment call — Slice is a heavier,
+  less-frequent operation than Assign, and stays reachable via the details
+  row / context menu. Documented per-card via the (non-interactive, Gate-D-
+  exempt) `.asset-name` title rather than a Tooltip wrapper on every grid
+  cell. Files: AssetsPanel.tsx.
 
 ### L-047 · assets · friction · low
 - Element: asset grid — keyboard navigation.
@@ -589,7 +623,14 @@ high) though it borders on a defect (values unreadable).
   (no dismiss); it only clears when the next import starts.
 - Expected: a dismiss ✕ (or auto-expiry once acknowledged).
 - Source: ASSETS-7
-- Disposition: open
+- Disposition: fixed a4fe855 (T9-U3) — a corner ✕ (`.export-errors-dismiss`)
+  clears `importErrors` on click; the pre-existing clear-at-next-import-start
+  behavior (verified in the original audit) is unchanged. Scoped as
+  `.export-errors-dismissible`, not the shared `.export-errors` base class, so
+  Animator/export's own error banners (which have no dismiss control) are
+  untouched. Live-verified: importing an unsupported `.xyz` file showed the
+  banner; clicking ✕ removed it. Files: AssetsPanel.tsx, styles/panels/
+  assets.css.
 
 ### L-049 · assets · friction · low
 - Element: toolbar create affordances vs. `createSound`.
@@ -598,7 +639,8 @@ high) though it borders on a defect (values unreadable).
   Timeline) with no UI affordance — users can only import audio.
 - Expected: a "+ Sound" affordance for parity, or a documented decision.
 - Source: ASSETS-9
-- Disposition: open
+- Disposition: open (out of T9-U3's dispatched bullet list — not touched this
+  pass; the "+ State machine" affordance below was, per L-084's followup)
 
 ### L-050 · assets · polish · low
 - Element: import skip-reason copy.
@@ -606,7 +648,12 @@ high) though it borders on a defect (values unreadable).
   never states the actual problem ("`.xyz` files aren't supported").
 - Expected: lead with the problem, supported list secondary.
 - Source: ASSETS-8
-- Disposition: open
+- Disposition: fixed a4fe855 (T9-U3) — `unsupportedExtensionReason()` now
+  returns just `".xyz" files aren't supported` (or "files without an
+  extension aren't supported"), dropping the images/audio/fonts capability
+  list entirely per the audit's own alternative ("or in the Import button's
+  tooltip only, where it already lives"). Live-verified banner text:
+  `unsupported.xyz: ".xyz" files aren't supported`. Files: AssetsPanel.tsx.
 
 ### L-051 · assets · polish · low
 - Element: prefab / stateMachine / unresolved-animation card thumbnails.
@@ -616,7 +663,14 @@ high) though it borders on a defect (values unreadable).
 - Expected: higher-contrast glyph on a flat tile; reserve the checkerboard for
   real image previews.
 - Source: ASSETS-10
-- Disposition: open
+- Disposition: fixed a4fe855 (T9-U3) — a new `.asset-thumb-glyph` span (22px
+  icon, `--ink-mute`, `position: absolute; inset: 0` on a flat `--bg-3` tile)
+  fully covers the checkerboard for these three cases; every other thumbnail
+  kind (sprite/tile image, resolved animation crop, audio button, font
+  sample) is unchanged. Live-verified via a card screenshot: the stateMachine
+  card now shows a clearly-visible animator glyph on a flat dark tile instead
+  of a barely-visible icon on the transparency pattern. Files: AssetsPanel.tsx,
+  styles/panels/assets.css.
 
 ### L-052 · assets · polish · low
 - Element: audio asset details row.
@@ -624,7 +678,17 @@ high) though it borders on a defect (values unreadable).
   duration/format (sheets get a FrameGrid, fonts a live sample; audio nothing).
 - Expected: details-row play/stop + duration/format.
 - Source: ASSETS-11
-- Disposition: open
+- Disposition: by-design (T9-U3) — duration/format scoped down to "if cheaply
+  available from probe metadata (skip if not stored)" per the dispatch;
+  `assetCommands.ts`'s import path only runs `probeImage` (dimensions), never
+  an audio probe — `asset.metadata` never carries a duration/format field to
+  read. Reading `HTMLAudioElement.duration` client-side would mean creating a
+  real `<audio>` element per audio card just to show a number, which isn't
+  "cheap" at the "hundreds of assets" scale the audit itself raised (L-045).
+  Deferred to whichever phase adds an audio-metadata probe to the import
+  command; the details-row play/stop control this entry also asks for
+  already exists (the card's play button plus the existing Assign row) and
+  was out of this pass's scope. Not touched.
 
 ## code
 
@@ -1118,6 +1182,13 @@ high) though it borders on a defect (values unreadable).
   parallel "+ State machine" button in the AssetsPanel toolbar next to
   Sprite/Tile — is still open; deferred here to not touch AssetsPanel.tsx while
   B3 is editing it. Files: AnimatorEditor.tsx.
+  FOLLOWUP CLOSED a4fe855 (T9-U3): a "State machine" toolbar `Button` now sits
+  next to Sprite/Tile in AssetsPanel.tsx, opening a local name-prompt `Modal`
+  (AnimatorEditor's own dialog isn't exported, so this is a parallel copy of
+  the same seed-an-idle-state payload/pattern) that calls
+  `createStateMachineAsset` and then `openAnimatorFor` the new asset. Live-
+  verified: creating "courier-motion-2" opened the Animator on the new
+  machine and the asset card appeared in the grid.
 
 ### L-085 · animator · friction · high
 - Element: Transitions list (order is load-bearing at runtime).
