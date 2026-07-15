@@ -68,6 +68,14 @@ const OP_LABELS: Record<ConditionOp, string> = {
   lte: '≤',
 };
 
+/** 1 → "1st", 2 → "2nd", 11 → "11th" — for the per-group priority tooltip. */
+function ordinal(n: number): string {
+  const rem100 = n % 100;
+  if (rem100 >= 11 && rem100 <= 13) return `${n}th`;
+  const rem10 = n % 10;
+  return `${n}${rem10 === 1 ? 'st' : rem10 === 2 ? 'nd' : rem10 === 3 ? 'rd' : 'th'}`;
+}
+
 export function AnimatorEditor() {
   const assets = useEditor((s) => s.assets);
   const exec = useEditor((s) => s.exec);
@@ -427,7 +435,9 @@ export function AnimatorEditor() {
             animationAssets={animationAssets}
             onNavigateToGroup={(from) => setGroupFocus({ from, nonce: Date.now() })}
           />
-          <TransitionsSection draft={draft} update={update} focus={groupFocus} />
+          {/* Keyed per machine so per-card expand + per-group collapse state
+              (keyed by flat index / source name) never leaks across a switch. */}
+          <TransitionsSection key={assetId ?? 'none'} draft={draft} update={update} focus={groupFocus} />
 
           {issues.length > 0 && (
             <div className="animator-issues" role="status">
@@ -471,7 +481,7 @@ function ParamsSection({ draft, update }: { draft: AsmDraft; update: (fn: (d: As
           <span className="animator-empty">No parameters. Add one to gate transitions on game state.</span>
         ) : (
           draft.params.map((p, i) => (
-            <div className="animator-param-row" key={i}>
+            <div className="editor-row animator-param-row" key={i}>
               <TextField value={p.name} placeholder="name" onCommit={(v) => update((d) => renameParam(d, i, v))} />
               <select
                 className="select"
@@ -551,7 +561,7 @@ function StatesSection({
             const isInitial = draft.initial === s.name && s.name !== '';
             const out = s.name ? outgoingCount(draft, s.name) : 0;
             return (
-              <div className="animator-state-row" key={i}>
+              <div className="editor-row animator-state-row" key={i}>
                 <IconButton
                   bare
                   className={`animator-initial${isInitial ? ' on' : ''}`}
@@ -763,13 +773,22 @@ function TransitionCard({
   const stateNames = draft.states.map((s) => s.name).filter(Boolean);
   const atTop = groupPos === 0;
   const atBottom = groupPos === groupSize - 1;
+  // Priority badge: the ordinal WITHIN this source group — the only order the
+  // runtime actually honors. pickTransition evaluates two strict tiers (the
+  // current state's own transitions first, then `any` transitions), each in
+  // relative declaration order; a global flat index would overstate what the
+  // order means across tiers, so we never show one.
+  const isAny = t.from === ANY_STATE;
+  const priorityTip = isAny
+    ? `Fallback #${groupPos + 1} — checked after the state's own transitions`
+    : `Checked ${ordinal(groupPos + 1)} among ${t.from || 'this state'}'s own transitions — first match wins`;
 
   return (
     <div className="animator-transition-card">
       <div className="animator-transition-summary">
-        <Tooltip content="Global declaration order — transitions are checked in this order, first match wins">
-          <span className="animator-priority" aria-label={`Priority ${ti + 1} (checked in declaration order, first match wins)`}>
-            {ti + 1}
+        <Tooltip content={priorityTip}>
+          <span className="animator-priority" aria-label={priorityTip}>
+            {groupPos + 1}
           </span>
         </Tooltip>
         <button

@@ -1290,10 +1290,20 @@ high) though it borders on a defect (values unreadable).
     then states in declaration order, orphan sources last). Within a group,
     order == flat declaration order == the runtime tiebreak order for that
     source.
-  - **Priority visibility.** Each card shows a badge with its GLOBAL
-    declaration index (1-based) — tooltip "checked in this order, first match
-    wins" — so a source's transitions interleaved in the flat array (e.g. idle
-    at #1 and #3 with walk's #2 between) read honestly.
+  - **Priority visibility.** Each card shows a badge with its ordinal WITHIN
+    its source group (1-based) — the only order the runtime actually honors.
+    `pickTransition` evaluates two strict tiers (the current state's own
+    transitions first, then `any` transitions), each in relative declaration
+    order; a global flat index would overstate what the order means across
+    tiers (review caught the first cut doing exactly that), so none is shown.
+    State-group tooltip: "Checked <n>th among <state>'s own transitions —
+    first match wins"; any-group tooltip: "Fallback #<n> — checked after the
+    state's own transitions" (the group header carries the same fallback note).
+    A runtime-parity suite in asmEdit.test.ts executes the REAL
+    `stepStateMachine` against mixed machines to pin the badge claim: a
+    state-tier transition beats a flat-earlier any-transition, tier-internal
+    order follows the group ordinal across non-contiguous flat slots, and a
+    `moveTransitionInGroup` reorder flips the actual runtime outcome.
   - **Reorder.** Move-earlier/later `IconButton`s per card call the pure
     `moveTransitionInGroup(draft, flatIndex, targetGroupPos)`. Flat-array
     mapping rule (documented in asmEdit.ts): a group owns the fixed set of flat
@@ -1308,15 +1318,19 @@ high) though it borders on a defect (values unreadable).
   - **State navigation.** Each State row shows an outgoing-count badge ("2 out")
     that expands + scrolls + flashes that source's group — cheap navigation, no
     graph canvas.
-  - New pure helpers unit-tested in asmEdit.test.ts (20 cases: grouping order,
-    non-adjacent flat collection, flat-array swap mapping, cross-group
-    preservation, edge no-ops, summary sentences). Full editor suite green
-    (1003) + workspace typecheck clean.
+  - New pure helpers unit-tested in asmEdit.test.ts (25 cases: grouping order,
+    non-adjacent flat collection, flat-array swap mapping incl. an any-group
+    spread across non-contiguous slots, cross-group preservation, edge no-ops,
+    summary sentences, runtime-parity vs the real stepper). TransitionsSection
+    is keyed per machine so expand/collapse state (keyed by flat index / source
+    name) resets on a Machine switch. Full editor suite green + workspace
+    typecheck clean.
   - Live-verified (own port 5338, scratch sky-courier seeded with idle/walk/idle
     interleaved): reorder → Save → on-disk `transitions[]` swapped [0]↔[2] while
     walk stayed at [1] → runtime `pickTransition` now evaluates idle's exit-0.5
     edge before its moving==true edge. Grouping/badges/summaries/out-counts all
-    confirmed in the live DOM.
+    confirmed in the live DOM (per-group badges re-verified on a mixed
+    state+any machine after the review fix).
   - Files: apps/editor/src/asmEdit.ts (+ tests), components/AnimatorEditor.tsx,
     styles/panels/animator.css.
 

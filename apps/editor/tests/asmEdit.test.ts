@@ -28,6 +28,13 @@ import {
   summarizeTransition,
   type AsmDraft,
 } from '../src/asmEdit';
+// The real runtime stepper (not re-exported from the runtime index): the
+// parity suite below executes it directly to pin the priority-badge claim.
+import {
+  createSmState,
+  setSmParam,
+  stepStateMachine,
+} from '../../../packages/runtime/src/stateMachine';
 
 const SAMPLE: StateMachineData = {
   params: {
@@ -262,6 +269,32 @@ describe('moveTransitionInGroup (L-085 flat-array mapping)', () => {
     expect(moveTransitionInGroup(draft, 1, 3)).toBe(draft); // lone walk transition can't move
   });
 
+  it('reorders the any group across non-contiguous flat slots without moving state transitions', () => {
+    // any transitions sit at flat slots 0, 2, 4 with state transitions between.
+    const mixed: AsmDraft = {
+      ...draft,
+      transitions: [
+        { from: 'any', to: 'idle', conditions: [], exitTime: 0.1 }, // 0  any pos 0
+        { from: 'idle', to: 'walk', conditions: [], exitTime: 0.2 }, // 1  idle pos 0
+        { from: 'any', to: 'walk', conditions: [], exitTime: 0.3 }, // 2  any pos 1
+        { from: 'walk', to: 'idle', conditions: [], exitTime: 0.4 }, // 3  walk pos 0
+        { from: 'any', to: 'idle', conditions: [], exitTime: 0.5 }, // 4  any pos 2
+      ],
+    };
+    // Move the last any transition (flat 4, group pos 2) to the front of its group.
+    const next = moveTransitionInGroup(mixed, 4, 0);
+    // any's slots {0, 2, 4} re-lay in the new order 0.5, 0.1, 0.3 …
+    expect(next.transitions[0].exitTime).toBe(0.5);
+    expect(next.transitions[2].exitTime).toBe(0.1);
+    expect(next.transitions[4].exitTime).toBe(0.3);
+    // … while both state transitions keep their exact flat positions.
+    expect(next.transitions[1]).toBe(mixed.transitions[1]);
+    expect(next.transitions[3]).toBe(mixed.transitions[3]);
+    // And the any group now reads in the moved order.
+    const any = groupTransitions(next).find((g) => g.from === 'any')!;
+    expect(any.items.map((i) => i.transition.exitTime)).toEqual([0.5, 0.1, 0.3]);
+  });
+
   it('does not disturb a third group when reordering another', () => {
     const three: AsmDraft = {
       ...draft,
@@ -476,6 +509,107 @@ describe('shouldBlockAsmSave (external-edit gate, L-082)', () => {
 
   it('does not block on unparseable on-disk content', () => {
     expect(shouldBlockAsmSave({ overwrite: false, onDiskJson: '{not json', loadedDoc })).toBe(false);
+  });
+});
+
+describe('runtime parity: priority badges vs pickTransition tiers (L-085)', () => {
+  // The Animator's priority badge shows a transition's ordinal WITHIN its
+  // source group, and the UI claims: state-tier first, then the any-tier, each
+  // in group-ordinal order. These tests execute the REAL runtime stepper
+  // against mixed machines to pin that claim — if pickTransition's tier or
+  // ordering semantics ever change, this fails before the badge can lie.
+  const MIXED: StateMachineData = {
+    params: { go: { type: 'bool', default: false } },
+    states: [
+      { name: 'idle', animation: 'anim-a', speed: 1 },
+      { name: 'walk', animation: 'anim-b', speed: 1 },
+      { name: 'run', animation: 'anim-c', speed: 1 },
+    ],
+    initial: 'idle',
+    transitions: [
+      // Flat order deliberately interleaves the tiers: the any transition is
+      // FIRST in the flat array, yet must lose to idle's own transition.
+      { from: 'any', to: 'walk', conditions: [{ param: 'go', op: 'eq', value: true }] }, // any pos 0
+      { from: 'idle', to: 'run', conditions: [{ param: 'go', op: 'eq', value: true }] }, // idle pos 0
+    ],
+  };
+
+  /** One playing step with `go` set; returns the state the machine lands in. */
+  function stepWithGo(doc: StateMachineData, go: boolean): string {
+    const sm = createSmState(doc, 'asm-test');
+    setSmParam(sm, doc, 'go', go);
+    stepStateMachine(sm, { assetId: 'asm-test', playing: true }, doc, new Map(), 1 / 60);
+    return sm.current;
+  }
+
+  /**
+   * The winner the badges imply: first eligible in the current state's own
+   * group (by group ordinal), else first eligible in the any group. Eligibility
+   * mirror is bool-eq only — every machine in this suite gates purely on
+   * `go == <bool>` so the mirror cannot drift from the runtime's evaluator.
+   */
+  function badgeImpliedTarget(doc: StateMachineData, current: string, go: boolean): string | null {
+    const groups = groupTransitions(docToDraft(doc));
+    const eligible = (t: { conditions: { value?: boolean | number }[] }) =>
+      t.conditions.every((c) => c.value === go);
+    for (const from of [current, 'any']) {
+      const g = groups.find((x) => x.from === from);
+      const hit = g?.items.find((i) => eligible(i.transition));
+      if (hit) return hit.transition.to;
+    }
+    return null;
+  }
+
+  it('a state-tier transition beats an any-transition that is EARLIER in the flat array', () => {
+    // Under a global-declaration-index reading, any→walk (flat #1) would win.
+    // The real runtime gives idle's own transition (flat #2) strict priority.
+    expect(stepWithGo(MIXED, true)).toBe('run');
+    expect(badgeImpliedTarget(MIXED, 'idle', true)).toBe('run');
+  });
+
+  it('the any tier only fires when the state tier has no eligible transition', () => {
+    // From run (which has no own transitions), the any transition fires.
+    const fromRun: StateMachineData = { ...MIXED, initial: 'run' };
+    expect(stepWithGo(fromRun, true)).toBe('walk');
+    expect(badgeImpliedTarget(fromRun, 'run', true)).toBe('walk');
+  });
+
+  it('within the state tier, the group ordinal decides — and moveTransitionInGroup changes the actual runtime outcome', () => {
+    const twoIdle: StateMachineData = {
+      ...MIXED,
+      transitions: [
+        { from: 'idle', to: 'walk', conditions: [{ param: 'go', op: 'eq', value: true }] }, // idle pos 0
+        { from: 'walk', to: 'idle', conditions: [{ param: 'go', op: 'eq', value: false }] }, // interleaved
+        { from: 'idle', to: 'run', conditions: [{ param: 'go', op: 'eq', value: true }] }, // idle pos 1
+      ],
+    };
+    // Both idle transitions are eligible; group ordinal 1 (→walk) wins.
+    expect(stepWithGo(twoIdle, true)).toBe('walk');
+    expect(badgeImpliedTarget(twoIdle, 'idle', true)).toBe('walk');
+
+    // Reorder exactly as the editor's move buttons do: idle's 2nd → group pos 0.
+    const reordered = draftToDoc(moveTransitionInGroup(docToDraft(twoIdle), 2, 0));
+    expect(stepWithGo(reordered, true)).toBe('run');
+    expect(badgeImpliedTarget(reordered, 'idle', true)).toBe('run');
+  });
+
+  it('within the any tier, the group ordinal decides across non-contiguous flat slots', () => {
+    const twoAny: StateMachineData = {
+      ...MIXED,
+      initial: 'walk', // walk has no own transitions → any tier decides
+      transitions: [
+        { from: 'any', to: 'idle', conditions: [{ param: 'go', op: 'eq', value: true }] }, // any pos 0
+        { from: 'idle', to: 'run', conditions: [{ param: 'go', op: 'eq', value: true }] }, // interleaved
+        { from: 'any', to: 'run', conditions: [{ param: 'go', op: 'eq', value: true }] }, // any pos 1
+      ],
+    };
+    expect(stepWithGo(twoAny, true)).toBe('idle');
+    expect(badgeImpliedTarget(twoAny, 'walk', true)).toBe('idle');
+
+    // Move the second any transition to the front of its group (flat 2 → pos 0).
+    const reordered = draftToDoc(moveTransitionInGroup(docToDraft(twoAny), 2, 0));
+    expect(stepWithGo(reordered, true)).toBe('run');
+    expect(badgeImpliedTarget(reordered, 'walk', true)).toBe('run');
   });
 });
 
