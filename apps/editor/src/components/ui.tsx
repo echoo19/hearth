@@ -3,7 +3,7 @@
  * scalar field editors (NumberField/TextField/ColorField) every typed
  * Inspector control is built from.
  */
-import React, { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
+import React, { useCallback, useEffect, useId, useRef, useState, type ReactNode } from 'react';
 import { Button } from './ui/Button';
 
 // ---------------------------------------------------------------------------
@@ -99,6 +99,7 @@ export function NumberField({
   min,
   max,
   integer = false,
+  id,
   onCommit,
 }: {
   value: number;
@@ -106,6 +107,8 @@ export function NumberField({
   max?: number;
   /** Reject non-integer drafts client-side (for schema fields with `.int()`). */
   integer?: boolean;
+  /** DOM id for the input, so a `<label htmlFor>` can associate with it (L-109). */
+  id?: string;
   onCommit: CommitFn<number>;
 }) {
   const [draft, setDraft] = useState(String(value));
@@ -138,6 +141,7 @@ export function NumberField({
   };
   return (
     <input
+      id={id}
       className={`input${cue.cueClass}`}
       type="number"
       step={integer ? 1 : 'any'}
@@ -164,10 +168,13 @@ export function NumberField({
 export function TextField({
   value,
   placeholder,
+  id,
   onCommit,
 }: {
   value: string;
   placeholder?: string;
+  /** DOM id for the input, so a `<label htmlFor>` can associate with it (L-109). */
+  id?: string;
   onCommit: CommitFn<string>;
 }) {
   const [draft, setDraft] = useState(value);
@@ -191,6 +198,7 @@ export function TextField({
   return (
     <div className="text-field">
       <input
+        id={id}
         className={`input${cue.cueClass}`}
         placeholder={placeholder}
         value={draft}
@@ -213,7 +221,16 @@ export function TextField({
   );
 }
 
-export function ColorField({ value, onCommit }: { value: string; onCommit: CommitFn<string> }) {
+export function ColorField({
+  value,
+  id,
+  onCommit,
+}: {
+  value: string;
+  /** DOM id for the hex text input (the labellable control), so `htmlFor` works (L-109). */
+  id?: string;
+  onCommit: CommitFn<string>;
+}) {
   const [draft, setDraft] = useState(value);
   useEffect(() => setDraft(value), [value]);
   const cue = useRejectionCue(value);
@@ -261,6 +278,7 @@ export function ColorField({ value, onCommit }: { value: string; onCommit: Commi
         aria-label="Pick color"
       />
       <input
+        id={id}
         className={`input mono${cue.cueClass}`}
         value={draft}
         onChange={(e) => {
@@ -543,6 +561,9 @@ export function Modal({
   children: ReactNode;
 }) {
   const ref = useRef<HTMLDialogElement>(null);
+  // L-109 (EXPORTDIALOG-2): name the dialog after its visible title so screen
+  // readers announce "Export game, dialog" instead of a bare "dialog".
+  const titleId = useId();
 
   useEffect(() => {
     const dialog = ref.current;
@@ -552,10 +573,12 @@ export function Modal({
   }, [open]);
 
   return (
-    <dialog className="modal" ref={ref} onCancel={onClose} onClose={onClose}>
+    <dialog className="modal" ref={ref} onCancel={onClose} onClose={onClose} aria-labelledby={titleId}>
       {open && (
         <>
-          <div className="modal-title">{title}</div>
+          <div className="modal-title" id={titleId}>
+            {title}
+          </div>
           {children}
         </>
       )}
@@ -580,14 +603,28 @@ export function ConfirmDialog({
   onConfirm: () => void;
   onCancel: () => void;
 }) {
+  // Deterministic initial focus (L-022 / HIER-13): React's `autoFocus` on the
+  // confirm button raced showModal()'s own focus-the-first-focusable (Cancel)
+  // and the winner was accidental. The decision is now explicit: a `danger`
+  // confirm focuses Cancel (Enter must not destroy anything by reflex), a
+  // plain confirm focuses the confirm button. The effect runs after Modal's
+  // child effect calls showModal(), so it always lands last.
+  const cancelRef = useRef<HTMLButtonElement>(null);
+  const confirmRef = useRef<HTMLButtonElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    (danger ? cancelRef : confirmRef).current?.focus();
+  }, [open, danger]);
   return (
     <Modal open={open} title={title} onClose={onCancel}>
       <div className="modal-body">
         <p>{body}</p>
       </div>
       <div className="modal-actions">
-        <Button onClick={onCancel}>Cancel</Button>
-        <Button variant={danger ? 'danger' : 'primary'} onClick={onConfirm} autoFocus>
+        <Button ref={cancelRef} onClick={onCancel}>
+          Cancel
+        </Button>
+        <Button ref={confirmRef} variant={danger ? 'danger' : 'primary'} onClick={onConfirm}>
           {confirmLabel}
         </Button>
       </div>

@@ -86,7 +86,18 @@ const MISSING_ASSET = '__missing__';
  * non-integer / below-min draft client-side: it reverts to the committed value
  * and shows an inline hint instead of committing (used for width/height/rates).
  */
-function IntField({ value, min = 1, onCommit }: { value: number; min?: number; onCommit: (v: number) => void }) {
+function IntField({
+  value,
+  min = 1,
+  id,
+  onCommit,
+}: {
+  value: number;
+  min?: number;
+  /** DOM id for the input, so a `<label htmlFor>` can associate with it (L-109). */
+  id?: string;
+  onCommit: (v: number) => void;
+}) {
   const [draft, setDraft] = useState(String(value));
   const [error, setError] = useState('');
   useEffect(() => {
@@ -106,6 +117,7 @@ function IntField({ value, min = 1, onCommit }: { value: number; min?: number; o
   return (
     <div className="int-field">
       <input
+        id={id}
         className={`input${error ? ' invalid' : ''}`}
         type="number"
         min={min}
@@ -139,6 +151,7 @@ function SpriteAssetPicker({
   showThumbnail = false,
   noneLabel = '(none)',
   ariaLabel,
+  id,
   onCommit,
 }: {
   value: string | null;
@@ -147,6 +160,8 @@ function SpriteAssetPicker({
   showThumbnail?: boolean;
   noneLabel?: string;
   ariaLabel?: string;
+  /** DOM id for the select, so a `<label htmlFor>` can associate with it (L-109). */
+  id?: string;
   onCommit: (id: string | null) => void;
 }) {
   const selected = value != null ? options.find((a) => a.id === value) : undefined;
@@ -163,6 +178,7 @@ function SpriteAssetPicker({
         </span>
       )}
       <select
+        id={id}
         className={`select${missing ? ' invalid' : ''}`}
         aria-label={ariaLabel}
         value={missing ? MISSING_ASSET : (value ?? '')}
@@ -229,6 +245,7 @@ export function GameSettings() {
               Title
             </label>
             <TextField
+              id="game-title"
               value={bs.title}
               placeholder="My game"
               onCommit={(v) => {
@@ -240,47 +257,59 @@ export function GameSettings() {
             />
           </div>
           <div className="inspector-row">
-            <label className="field-label">Width</label>
-            <IntField value={bs.width} min={1} onCommit={(v) => setField('width', v)} />
+            <label className="field-label" htmlFor="game-width">
+              Width
+            </label>
+            <IntField id="game-width" value={bs.width} min={1} onCommit={(v) => setField('width', v)} />
           </div>
           <div className="inspector-row">
-            <label className="field-label">Height</label>
-            <IntField value={bs.height} min={1} onCommit={(v) => setField('height', v)} />
+            <label className="field-label" htmlFor="game-height">
+              Height
+            </label>
+            <IntField id="game-height" value={bs.height} min={1} onCommit={(v) => setField('height', v)} />
           </div>
           <div className="inspector-row">
-            <label className="field-label">Background</label>
-            <ColorField value={bs.backgroundColor} onCommit={(v) => setField('backgroundColor', v)} />
+            <label className="field-label" htmlFor="game-bg">
+              Background
+            </label>
+            <ColorField id="game-bg" value={bs.backgroundColor} onCommit={(v) => setField('backgroundColor', v)} />
           </div>
         </div>
 
         <div className="diff-section">
           <h4>Loop</h4>
           <div className="inspector-row">
-            <label className="field-label" title="Target frames per second">
+            <label className="field-label" htmlFor="game-fps" title="Target frames per second">
               Target FPS
             </label>
-            <IntField value={bs.targetFps} min={1} onCommit={(v) => setField('targetFps', v)} />
+            <IntField id="game-fps" value={bs.targetFps} min={1} onCommit={(v) => setField('targetFps', v)} />
           </div>
           <div className="inspector-row">
-            <label className="field-label" title="Fixed physics/update timestep in Hz">
+            <label className="field-label" htmlFor="game-timestep" title="Fixed physics/update timestep in Hz">
               Fixed timestep
             </label>
-            <IntField value={bs.fixedTimestep} min={1} onCommit={(v) => setField('fixedTimestep', v)} />
+            <IntField id="game-timestep" value={bs.fixedTimestep} min={1} onCommit={(v) => setField('fixedTimestep', v)} />
           </div>
         </div>
 
         <div className="diff-section">
           <h4>Loading</h4>
           <div className="inspector-row">
-            <label className="field-label">Background</label>
+            <label className="field-label" htmlFor="game-loading-bg">
+              Background
+            </label>
             <ColorField
+              id="game-loading-bg"
               value={bs.loading.backgroundColor}
               onCommit={(v) => setLoading('backgroundColor', v)}
             />
           </div>
           <div className="inspector-row">
-            <label className="field-label">Image</label>
+            <label className="field-label" htmlFor="game-loading-image">
+              Image
+            </label>
             <SpriteAssetPicker
+              id="game-loading-image"
               value={bs.loading.image}
               options={sprites}
               projectPath={projectPath}
@@ -305,8 +334,11 @@ export function GameSettings() {
         <div className="diff-section">
           <h4>Shipping</h4>
           <div className="inspector-row">
-            <label className="field-label">Icon</label>
+            <label className="field-label" htmlFor="game-icon">
+              Icon
+            </label>
             <SpriteAssetPicker
+              id="game-icon"
               value={bs.icon}
               options={sprites}
               projectPath={projectPath}
