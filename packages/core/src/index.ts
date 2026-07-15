@@ -130,7 +130,12 @@ export {
 
 // Agent integration files
 export { generateAgentsMd, generateClaudeMd, generateAgentConfig } from './agentFiles.js';
-export { AGENT_SKILL_CONTENT, AGENT_SKILL_FILE } from './agentSkillContent.js';
+export {
+  AGENT_SKILL_CONTENT,
+  AGENT_SKILL_FILE,
+  AGENT_CRAFT_SKILL_CONTENT,
+  AGENT_CRAFT_SKILL_FILE,
+} from './agentSkillContent.js';
 
 // Autotile (blob47 resolver)
 export {

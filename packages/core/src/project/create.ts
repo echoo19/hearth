@@ -21,7 +21,12 @@ import {
 import { SceneSchema } from '../schema/scene.js';
 import { createComponent } from '../schema/components.js';
 import { generateAgentsMd, generateClaudeMd, generateAgentConfig } from '../agentFiles.js';
-import { AGENT_SKILL_CONTENT, AGENT_SKILL_FILE } from '../agentSkillContent.js';
+import {
+  AGENT_SKILL_CONTENT,
+  AGENT_SKILL_FILE,
+  AGENT_CRAFT_SKILL_CONTENT,
+  AGENT_CRAFT_SKILL_FILE,
+} from '../agentSkillContent.js';
 import { writeJson, ProjectError, ProjectStore } from './store.js';
 
 export interface CreateProjectOptions {
@@ -169,11 +174,14 @@ export async function createProject(
   files.push('AGENTS.md');
   await fs.writeFile(joinPath(root, 'CLAUDE.md'), generateClaudeMd(options.name));
   files.push('CLAUDE.md');
-  // The best-practices skill travels with the project so Claude Code (and any
-  // agent that reads project-local skills) gets it without a repo-scoped
-  // install. Content is embedded from the canonical skills/hearth/SKILL.md.
+  // The two coding-agent skills travel with the project so Claude Code (and any
+  // agent that reads project-local skills) gets them without a repo-scoped
+  // install. Content is embedded from the canonical skills/*/SKILL.md: `hearth`
+  // teaches operating the engine, `hearth-craft` teaches making the game good.
   await fs.writeFile(joinPath(root, AGENT_SKILL_FILE), AGENT_SKILL_CONTENT);
   files.push(AGENT_SKILL_FILE);
+  await fs.writeFile(joinPath(root, AGENT_CRAFT_SKILL_FILE), AGENT_CRAFT_SKILL_CONTENT);
+  files.push(AGENT_CRAFT_SKILL_FILE);
   await writeJson(fs, joinPath(root, AGENT_CONFIG_FILE), generateAgentConfig(options.name, projectId));
   files.push(AGENT_CONFIG_FILE);
   await fs.writeFile(joinPath(root, '.gitignore'), PROJECT_GITIGNORE);
