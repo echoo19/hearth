@@ -451,7 +451,7 @@ high) though it borders on a defect (values unreadable).
 - Expected: a dropdown/picker for `scriptPath`, and a typed key/value editor
   (string→TextField, number→NumberField, bool→checkbox) for `params`.
 - Source: INSPECTOR-5, INSPSPEC-8 (Wave-K: "Script.params raw-JSON fallback")
-- Disposition: open
+- Disposition: fixed 41cc00d (scriptPath → dropdown of the project's scripts/* with a Custom… free-text fallback; params → typed key/value editor — one row per param by inferred kind (number/boolean/string/color, lists + nested objects recursively), add/remove/rename keys, NO JSON textarea. Scalar edits write Script.params.<key> honoring the CommitOutcome rejection contract; add/remove/rename write the whole record. Record helpers in scriptParams.ts (0d87b21 widened the key column + monospaced keys). Live-verified in ember-horde: Player speed 170→250 round-tripped to the scene file and into the running game via Play with 0 runtime errors; added a param; no textarea/JSON dump renders. The last raw-JSON surface in the Inspector is closed.)
 
 ### L-035 · inspector · friction · med
 - Element: Prefab-instance banner — "Update prefab" button.
@@ -481,7 +481,7 @@ high) though it borders on a defect (values unreadable).
 - Expected: per-card collapse (chevron by the remove button, state persisted
   at least per session).
 - Source: INSPECTOR-4
-- Disposition: open
+- Disposition: fixed 41cc00d (per-card collapse chevron on the header — a keyboard-reachable disclosure button, aria-expanded — plus a panel-header collapse-all/expand-all toggle; collapsed set persisted per project in localStorage, keyed by component type, via inspectorCollapse.ts (713b03d). Live-verified: collapsing Transform persisted across a full page reload; collapse-all folded all six of Player's cards to headers.)
 
 ### L-038 · inspector · friction · med
 - Element: component remove confirm for `Transform`.
@@ -492,7 +492,7 @@ high) though it borders on a defect (values unreadable).
 - Expected: a stronger, Transform-specific confirm mirroring what the command
   layer already knows.
 - Source: INSPECTOR-3
-- Disposition: open
+- Disposition: fixed 41cc00d (removing Transform now shows Transform-specific confirm copy — "Without a Transform, '<entity>' will no longer be positioned or rendered in the scene." — mirroring the command layer's REMOVED_TRANSFORM warning; every other component keeps the generic copy.)
 
 ### L-039 · inspector · friction · med
 - Element: `TileRowEditor` sprite-mode row.
@@ -509,7 +509,7 @@ high) though it borders on a defect (values unreadable).
   Elite Enemy overrides live on SpriteRenderer, reverted one field at a time).
 - Expected: a "Revert component" affordance in the component header.
 - Source: INSPSPEC-7
-- Disposition: open
+- Disposition: fixed 41cc00d (a "Revert" button appears on a component card's header whenever any field in it is overridden on a prefab instance; it calls revertPrefabOverride with `component` and no `path`, which clears every override on that component at once — the Wave-I command granularity was already there. Live-verified: reverting Elite Enemy's SpriteRenderer card cleared all its overrides in one click.)
 
 ### L-041 · inspector · friction · low
 - Element: `.field-revert-slot` column width on instances with zero overrides.
@@ -531,7 +531,7 @@ high) though it borders on a defect (values unreadable).
 - Expected: the input should stretch to fill its grid column like every other
   `.inspector-row`.
 - Source: INSPSPEC-3
-- Disposition: open
+- Disposition: fixed 9a095c5 (effect cards sit inside the Camera field's own narrow control column; the nested .inspector-row now gets a compact label track (minmax(0,84px)) and its input stretches to fill the rest, so bloom.strength etc. read full-width like every other row. Minimal local fix — noted for T10's row-grid unification to fold in if it wishes.)
 
 ### L-043 · inspector · polish · med
 - Element: `PostEffectsField` `EffectFieldRow` labels.
@@ -541,7 +541,7 @@ high) though it borders on a defect (values unreadable).
 - Expected: route `field` through the same humanize transform ("Scanline
   Intensity", not "scanlineIntensity").
 - Source: INSPSPEC-2
-- Disposition: open
+- Disposition: fixed 9a095c5 (EffectFieldRow routes the field key through PostEffectsField's existing humanize() — "scanlineIntensity" → "Scanline Intensity" — matching every other Inspector label; the raw camelCase key stays in the row's title tooltip. Render test in postEffectsFieldRow.test.tsx.)
 
 ## assets
 
@@ -1733,7 +1733,7 @@ contention with T8 once B1–B7 land)
 - Observed: T7 live walkthrough: component-field edit (Position.x 7→123) committed but recorded NO override (no dot, no revert affordance). Possibly scene/entity-context (non-instance?) or a real recording regression.
 - Expected: field edits on prefab instances record overrides with revert affordance (Wave I behavior).
 - Source: T7 report
-- Disposition: open
+- Disposition: by-design (T9-U2 investigation). Not a regression — override recording works correctly. Root cause of T7's observation: **editing `Transform.position.x` on a prefab-instance ROOT records no override by design**, because the root's own position is per-instance placement, not an override (recordInstanceOverride's explicit root exclusion in prefabData.ts:260; asserted by the core test "never records a write to the ROOT Transform.position", prefabOverrides.test.ts — 19/19 green). T7 almost certainly edited Position.x on a single-entity instance root (ember-horde's "Elite Enemy" is exactly this shape) or on the legacy-detached "Enemy" instance (empty `ids: {}` → not a live member → records nothing for ANY field). Live-verified in ember-horde: editing Elite Enemy's SpriteRenderer.opacity (a non-position field on the root) DID record an override — the ember dot appeared and the banner went 3→4 overrides; editing the same root's Transform.position.x changed the value (680→999 in the scene file) but correctly recorded NO override. The B1 same-value equality guard (L-032) does not over-suppress: a changed value still records (valuesEqual(680,999)=false; core test "replaces on repeat write" is green). No code change; L-113 closed.
 
 ### L-114 · electron · defect · med
 - Element: Electron native window-close (window title-bar close button, Cmd+Q,
