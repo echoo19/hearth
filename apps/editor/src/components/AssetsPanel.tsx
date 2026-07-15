@@ -4,8 +4,9 @@ import { useEditor } from '../store';
 import { apiImportAssets, fileUrl } from '../api';
 import type { AssetItem } from '../types';
 import { ConfirmDialog, Icon, Modal } from './ui';
-import { Button } from './ui/Button';
+import { Button, IconButton } from './ui/Button';
 import { Tooltip } from './ui/Tooltip';
+import { installMenuDismiss, menuNavIndex, MenuItems, type MenuItem, type MenuItemAction } from './ui/Menu';
 import { frameCrop, parseFrameRef, readSheetSize } from '../assetPreview';
 import { countPrefabInstances, createSyncPreflight, syncConfirmBody } from '../prefabActions';
 import { collectDropEntries, entriesFromDataTransferItems } from '../dropEntries';
@@ -52,6 +53,40 @@ function extensionOf(name: string): string {
 // scope, not a closure) so it's unit-testable without a DOM.
 export function isActivationKey(key: string): boolean {
   return key === 'Enter' || key === ' ';
+}
+
+/** Search-filter predicate for the panel's name/type filter box — matches
+ * substrings of either the asset's name or its type label, case-insensitive.
+ * Exported (module scope) for unit tests. */
+export function matchesAssetQuery(asset: Pick<AssetItem, 'name' | 'type'>, query: string): boolean {
+  const q = query.trim().toLowerCase();
+  if (!q) return true;
+  return asset.name.toLowerCase().includes(q) || asset.type.toLowerCase().includes(q);
+}
+
+/** Humanized skip-reason for an unsupported import extension (ASSETS-8):
+ * lead with the actual problem instead of the full images/audio/fonts
+ * capability list — that list already lives in the Import button's tooltip. */
+export function unsupportedExtensionReason(filename: string): string {
+  const ext = extensionOf(filename);
+  return ext ? `".${ext}" files aren't supported` : "files without an extension aren't supported";
+}
+
+/** What assigning `asset` to `entity` would set — `null` when the asset type
+ * and the entity's components aren't a compatible pair. One shared rule for
+ * the details-row Assign button, double-click, and the card's context menu. */
+export function assignTarget(
+  asset: Pick<AssetItem, 'type'> | null | undefined,
+  entity: { components: Record<string, unknown> } | null | undefined,
+): { property: string } | null {
+  if (!asset || !entity) return null;
+  if ((asset.type === 'sprite' || asset.type === 'tile') && entity.components.SpriteRenderer !== undefined) {
+    return { property: 'SpriteRenderer.assetId' };
+  }
+  if (asset.type === 'audio' && entity.components.AudioSource !== undefined) {
+    return { property: 'AudioSource.assetId' };
+  }
+  return null;
 }
 
 function fileToBase64(file: File): Promise<string> {
@@ -150,6 +185,35 @@ export function AssetsPanel() {
   const [tColor, setTColor] = useState('#2ecc71');
   const [tSize, setTSize] = useState(32);
   const [tError, setTError] = useState<string | null>(null);
+
+  // state machine create dialog (T9-U3 bullet 4) — mirrors AnimatorEditor's
+  // own "New state machine" modal (not exported, so this is a local copy of
+  // the same seed-an-idle-state pattern).
+  const [smDialog, setSmDialog] = useState(false);
+  const [smName, setSmName] = useState('');
+  const [smError, setSmError] = useState<string | null>(null);
+  const [smCreating, setSmCreating] = useState(false);
+  const animationAssets = useMemo(() => assets.filter((a) => a.type === 'animation'), [assets]);
+
+  // name/type filter (ASSETS-4)
+  const [filterQuery, setFilterQuery] = useState('');
+  const filterInputRef = useRef<HTMLInputElement>(null);
+  const filteredAssets = useMemo(
+    () => assets.filter((a) => matchesAssetQuery(a, filterQuery)),
+    [assets, filterQuery],
+  );
+
+  // delete (ASSETS-1): a confirm step, then — on a referenced-by CONFLICT —
+  // the command's own message surfaced verbatim in a second dialog rather
+  // than summarized away.
+  const [deletingAsset, setDeletingAsset] = useState<AssetItem | null>(null);
+  const [deleteError, setDeleteError] = useState<{ name: string; message: string } | null>(null);
+
+  // right-click context menu (ASSETS-1)
+  const [contextMenu, setContextMenu] = useState<{ asset: AssetItem; x: number; y: number } | null>(null);
+  const [contextFocused, setContextFocused] = useState(-1);
+  const contextMenuRef = useRef<HTMLDivElement>(null);
+  const contextItemRefs = useRef<(HTMLButtonElement | null)[]>([]);
 
   // file import (button + drag-and-drop)
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -257,16 +321,22 @@ export function AssetsPanel() {
     () => scene?.entities.find((e) => e.id === selection),
     [scene, selection],
   );
-  const canAssignSprite =
-    selectedAsset !== null &&
-    (selectedAsset.type === 'sprite' || selectedAsset.type === 'tile') &&
-    selectedEntity?.components.SpriteRenderer !== undefined;
-  const canAssignAudio =
-    selectedAsset !== null &&
-    selectedAsset.type === 'audio' &&
-    selectedEntity?.components.AudioSource !== undefined;
-  const canAssign = canAssignSprite || canAssignAudio;
-  const assignProperty = canAssignAudio ? 'AudioSource.assetId' : 'SpriteRenderer.assetId';
+  const assignment = assignTarget(selectedAsset, selectedEntity);
+
+  /** Assign `asset` to the currently selected entity's matching component —
+   * shared by the details-row Assign button, double-click, and the
+   * context-menu's "Assign to selection" item so all three agree on exactly
+   * one compatibility rule (`assignTarget`). */
+  function assignAssetToSelection(asset: AssetItem) {
+    const target = assignTarget(asset, selectedEntity);
+    if (!target || !selectedEntity || !sceneId) return;
+    void exec('setComponentProperty', {
+      scene: sceneId,
+      entity: selectedEntity.id,
+      property: target.property,
+      value: asset.id,
+    });
+  }
 
   async function createSprite() {
     const result = await exec('createSpriteAsset', {
@@ -295,6 +365,34 @@ export function AssetsPanel() {
       setTError(null);
     } else {
       setTError(result.errors[0]?.message ?? 'Could not create the tile.');
+    }
+  }
+
+  // "+ State machine" (T9-U3 bullet 4) — same seed-an-idle-state payload as
+  // AnimatorEditor's own in-panel create dialog (createStateMachineAsset
+  // requires >=1 state whose animation resolves to a real animation asset).
+  async function createStateMachine() {
+    const name = smName.trim();
+    const firstAnim = animationAssets[0];
+    if (!name || !firstAnim) return;
+    setSmCreating(true);
+    const result = await exec<{ assetId: string }>('createStateMachineAsset', {
+      name,
+      data: {
+        params: {},
+        states: [{ name: 'idle', animation: firstAnim.id, speed: 1 }],
+        initial: 'idle',
+        transitions: [],
+      },
+    });
+    setSmCreating(false);
+    if (result.success && result.data) {
+      setSmDialog(false);
+      setSmName('');
+      setSmError(null);
+      openAnimatorFor(result.data.assetId);
+    } else {
+      setSmError(result.errors[0]?.message ?? 'Could not create the state machine.');
     }
   }
 
@@ -331,6 +429,145 @@ export function AssetsPanel() {
     }
   }
 
+  // Delete (ASSETS-1). removeAsset's delete-while-referenced protection
+  // already produces an excellent message ("Asset "X" is still referenced
+  // by: …") — on failure it's shown verbatim in deleteError, not summarized.
+  async function confirmDelete() {
+    const asset = deletingAsset;
+    setDeletingAsset(null);
+    if (!asset) return;
+    const result = await exec('removeAsset', { asset: asset.id, deleteFile: true });
+    if (result.success) {
+      setSelectedAssetId((cur) => (cur === asset.id ? null : cur));
+    } else {
+      setDeleteError({ name: asset.name, message: result.errors[0]?.message ?? `Could not delete "${asset.name}".` });
+    }
+  }
+
+  // Double-click (ASSETS-5): perform the asset's primary action instead of
+  // toggling selection twice (which used to read as a select/deselect
+  // flicker). Judged per type — stateMachine opens the Animator, audio
+  // toggles its preview, a prefab drops into the current scene, and
+  // everything else (sprite/tile/font/animation/data/other) assigns to the
+  // selected entity when a compatible component is present.
+  function primaryAction(asset: AssetItem) {
+    if (asset.type === 'stateMachine') {
+      openAnimatorFor(asset.id);
+      return;
+    }
+    if (asset.type === 'audio') {
+      togglePreview(asset);
+      return;
+    }
+    if (asset.type === 'prefab') {
+      if (sceneId) void addPrefabToScene(asset);
+      return;
+    }
+    assignAssetToSelection(asset);
+  }
+
+  /** One-line summary of what double-click does for this asset — the card's
+   * native `title`, since every card getting a full Tooltip would be one
+   * mount per card in a grid that can hold hundreds of assets. */
+  function primaryActionHint(asset: AssetItem): string {
+    switch (asset.type) {
+      case 'stateMachine':
+        return 'Double-click to edit in the Animator';
+      case 'audio':
+        return 'Double-click to play/stop the preview';
+      case 'prefab':
+        return sceneId ? 'Double-click to add to the current scene' : 'Open a scene, then double-click to add an instance';
+      default:
+        return 'Double-click to assign to the selected entity';
+    }
+  }
+
+  /** Right-click menu (ASSETS-1): the same actions as the details row, laid
+   * out per the Menu primitive so Delete/Copy id/Assign/Add to scene/Edit
+   * are reachable without first selecting the card and hunting the row. */
+  function buildContextMenuItems(asset: AssetItem): MenuItem[] {
+    const items: MenuItem[] = [];
+    if (asset.type === 'stateMachine') {
+      items.push({ label: 'Edit state machine', icon: 'animator', onSelect: () => openAnimatorFor(asset.id) });
+    } else if (asset.type === 'sprite' || asset.type === 'tile') {
+      items.push({
+        label: 'Slice…',
+        icon: 'grid',
+        onSelect: () => {
+          setSelectedAssetId(asset.id);
+          setSliceDialog(true);
+        },
+      });
+    } else if (asset.type === 'audio') {
+      const playing = playingAssetId === asset.id;
+      items.push({
+        label: playing ? 'Stop preview' : 'Play preview',
+        icon: playing ? 'stop' : 'play',
+        onSelect: () => togglePreview(asset),
+      });
+    }
+    if (asset.type === 'prefab') {
+      items.push({
+        label: 'Add to scene',
+        icon: 'plus',
+        disabled: !sceneId,
+        disabledReason: sceneId ? undefined : 'Open a scene first',
+        onSelect: () => void addPrefabToScene(asset),
+      });
+    }
+    if (asset.type !== 'stateMachine' && asset.type !== 'prefab') {
+      const target = assignTarget(asset, selectedEntity);
+      items.push({
+        label: 'Assign to selection',
+        icon: 'check',
+        disabled: !target,
+        disabledReason: target
+          ? undefined
+          : asset.type === 'audio'
+            ? 'Select an entity with an AudioSource to assign'
+            : 'Select an entity with a SpriteRenderer to assign',
+        onSelect: () => assignAssetToSelection(asset),
+      });
+    }
+    items.push({ separator: true });
+    items.push({
+      label: 'Copy id',
+      icon: 'copy',
+      onSelect: () => {
+        void navigator.clipboard.writeText(asset.id);
+        log('info', 'editor', `Copied asset id ${asset.id}`);
+      },
+    });
+    items.push({ separator: true });
+    items.push({ label: 'Delete…', icon: 'trash', danger: true, onSelect: () => setDeletingAsset(asset) });
+    return items;
+  }
+
+  const contextMenuItems = useMemo(
+    () => (contextMenu ? buildContextMenuItems(contextMenu.asset) : []),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [contextMenu, selectedEntity, sceneId, playingAssetId],
+  );
+
+  // Dismiss wiring + initial focus, mirroring MenuButton's own open effects
+  // (see ./ui/Menu's file header for the two dismiss contracts this reuses).
+  useEffect(() => {
+    if (!contextMenu) return;
+    setContextFocused(menuNavIndex(contextMenuItems, -1, 'Home'));
+    return installMenuDismiss({
+      isOutside: (target) =>
+        !(contextMenuRef.current && target instanceof Node && contextMenuRef.current.contains(target)),
+      close: () => setContextMenu(null),
+      onEscape: () => setContextMenu(null),
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [contextMenu]);
+
+  useEffect(() => {
+    if (!contextMenu || contextFocused < 0) return;
+    contextItemRefs.current[contextFocused]?.focus();
+  }, [contextMenu, contextFocused]);
+
   /** Group skip reasons for the summary line: "unsupported type ×2, missing (...)" reads at a glance instead of one entry per file. */
   function summarizeSkipReasons(failed: { name: string; reason: string }[]): string {
     const counts = new Map<string, number>();
@@ -352,7 +589,9 @@ export function AssetsPanel() {
       for (const file of fileList) {
         const ext = extensionOf(file.name);
         if (!IMPORT_EXTENSIONS.includes(ext)) {
-          const reason = `images (${IMAGE_EXTENSIONS.join(', ')}), audio (${AUDIO_EXTENSIONS.join(', ')}), and fonts (${FONT_EXTENSIONS.join(', ')}) can be imported`;
+          // ASSETS-8: lead with the problem, not the full capability list —
+          // that list already lives in the Import button's tooltip.
+          const reason = unsupportedExtensionReason(file.name);
           log('warn', 'editor', `Skipped "${file.name}": ${reason}.`);
           failed.push({ name: file.name, reason });
           continue;
@@ -460,23 +699,27 @@ export function AssetsPanel() {
           );
         }
       }
+      // Unresolved (no thumb-worthy first frame yet, or resolution failed):
+      // a flat glyph tile, not a near-invisible icon on the checkerboard
+      // (ASSETS-10 — the checkerboard implies "transparent image", which this
+      // isn't).
       return (
-        <span style={{ color: 'var(--ink-faint)' }}>
-          <Icon name="play" size={20} />
+        <span className="asset-thumb-glyph">
+          <Icon name="play" size={22} />
         </span>
       );
     }
     if (asset.type === 'prefab') {
       return (
-        <span style={{ color: 'var(--ink-faint)' }}>
-          <Icon name="prefab" size={20} />
+        <span className="asset-thumb-glyph">
+          <Icon name="prefab" size={22} />
         </span>
       );
     }
     if (asset.type === 'stateMachine') {
       return (
-        <span style={{ color: 'var(--ink-faint)' }}>
-          <Icon name="animator" size={20} />
+        <span className="asset-thumb-glyph">
+          <Icon name="animator" size={22} />
         </span>
       );
     }
@@ -533,6 +776,14 @@ export function AssetsPanel() {
           void importFiles(Array.from(e.dataTransfer.files));
         }
       }}
+      onKeyDown={(e) => {
+        // Cmd/Ctrl+F while the panel is focused jumps to the filter box
+        // (ASSETS-4) — cheap since it's just a ref focus, no global listener.
+        if ((e.metaKey || e.ctrlKey) && !e.shiftKey && !e.altKey && e.key.toLowerCase() === 'f') {
+          e.preventDefault();
+          filterInputRef.current?.focus();
+        }
+      }}
     >
       <div className="panel-toolbar">
         <Button size="sm" icon="plus" onClick={() => setSpriteDialog(true)}>
@@ -540,6 +791,9 @@ export function AssetsPanel() {
         </Button>
         <Button size="sm" icon="plus" onClick={() => setTileDialog(true)}>
           Tile
+        </Button>
+        <Button size="sm" icon="plus" onClick={() => setSmDialog(true)}>
+          State machine
         </Button>
         <span className="divider" style={{ width: 1, height: 16, background: 'var(--border-strong)' }} />
         <Tooltip content="Import images, audio, or fonts">
@@ -561,8 +815,40 @@ export function AssetsPanel() {
         />
       </div>
 
+      {assets.length > 0 && (
+        <div className="assets-filter-row">
+          <Icon name="search" size={11} />
+          <input
+            ref={filterInputRef}
+            className="input assets-filter-input"
+            placeholder="Filter by name or type…"
+            value={filterQuery}
+            onChange={(e) => setFilterQuery(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Escape' && filterQuery !== '') {
+                e.stopPropagation();
+                setFilterQuery('');
+              }
+            }}
+            aria-label="Filter assets by name or type"
+          />
+          {filterQuery !== '' && (
+            <button className="assets-filter-clear" aria-label="Clear filter" onClick={() => setFilterQuery('')}>
+              <Icon name="cross" size={9} />
+            </button>
+          )}
+        </div>
+      )}
+
       {importErrors.length > 0 && (
-        <div className="export-errors" role="alert" style={{ margin: '8px 10px 0' }}>
+        <div className="export-errors export-errors-dismissible" role="alert" style={{ margin: '8px 10px 0' }}>
+          <button
+            className="export-errors-dismiss"
+            aria-label="Dismiss import errors"
+            onClick={() => setImportErrors([])}
+          >
+            <Icon name="cross" size={9} />
+          </button>
           {importErrors.map((f, i) => (
             <p key={i}>
               {f.name}: {f.reason}
@@ -583,9 +869,19 @@ export function AssetsPanel() {
               your own images, sounds, and fonts with Import… Dropping files onto this panel works as well.
             </span>
           </div>
+        ) : filteredAssets.length === 0 ? (
+          <div className="empty-state">
+            <span className="empty-icon" aria-hidden="true">
+              <Icon name="search" size={16} />
+            </span>
+            <span>No assets match “{filterQuery}”</span>
+            <Button size="sm" onClick={() => setFilterQuery('')}>
+              Clear filter
+            </Button>
+          </div>
         ) : (
           <div className="asset-grid">
-            {assets.map((asset) => {
+            {filteredAssets.map((asset) => {
               const isSheet = asset.type === 'sprite' || asset.type === 'tile';
               const frameCount = isSheet ? getSheetFrames(asset).length : 0;
               const prefabEntityCount = asset.type === 'prefab' ? (asset.prefab?.entityCount ?? null) : null;
@@ -597,6 +893,18 @@ export function AssetsPanel() {
                   aria-pressed={selectedAssetId === asset.id}
                   tabIndex={0}
                   onClick={() => setSelectedAssetId(asset.id === selectedAssetId ? null : asset.id)}
+                  onDoubleClick={() => {
+                    // Always end up selected (never the select/deselect
+                    // flicker toggling twice would otherwise produce), then
+                    // run the type-appropriate primary action.
+                    setSelectedAssetId(asset.id);
+                    primaryAction(asset);
+                  }}
+                  onContextMenu={(e) => {
+                    e.preventDefault();
+                    setSelectedAssetId(asset.id);
+                    setContextMenu({ asset, x: e.clientX, y: e.clientY });
+                  }}
                   onKeyDown={(e) => {
                     if (isActivationKey(e.key)) {
                       e.preventDefault();
@@ -605,7 +913,11 @@ export function AssetsPanel() {
                   }}
                 >
                   <div className="asset-thumb">{preview(asset)}</div>
-                  <span className="asset-name" title={asset.name}>
+                  {/* Non-interactive span — the name (truncated by CSS) plus
+                      the double-click hint (ASSETS-5), both fine as a native
+                      title here (Gate D only bars titles on interactive
+                      elements; the card itself carries no title). */}
+                  <span className="asset-name" title={`${asset.name} — ${primaryActionHint(asset)}`}>
                     {asset.name}
                   </span>
                   <span className="asset-type">{asset.type}</span>
@@ -619,6 +931,16 @@ export function AssetsPanel() {
                       {prefabEntityCount} entit{prefabEntityCount === 1 ? 'y' : 'ies'}
                     </span>
                   )}
+                  <span className="asset-card-actions" onClick={(e) => e.stopPropagation()}>
+                    <IconButton
+                      bare
+                      className="icon-btn danger"
+                      icon="trash"
+                      iconSize={11}
+                      label="Delete"
+                      onClick={() => setDeletingAsset(asset)}
+                    />
+                  </span>
                 </div>
               );
             })}
@@ -673,27 +995,14 @@ export function AssetsPanel() {
             ) : (
               <Tooltip
                 content={
-                  canAssign
-                    ? `Set ${selectedEntity?.name}'s ${assignProperty}`
+                  assignment
+                    ? `Set ${selectedEntity?.name}'s ${assignment.property}`
                     : selectedAsset.type === 'audio'
                       ? 'Select an entity with an AudioSource to assign'
                       : 'Select an entity with a SpriteRenderer to assign'
                 }
               >
-                <Button
-                  size="sm"
-                  disabled={!canAssign}
-                  onClick={() =>
-                    selectedEntity &&
-                    sceneId &&
-                    void exec('setComponentProperty', {
-                      scene: sceneId,
-                      entity: selectedEntity.id,
-                      property: assignProperty,
-                      value: selectedAsset.id,
-                    })
-                  }
-                >
+                <Button size="sm" disabled={!assignment} onClick={() => assignAssetToSelection(selectedAsset)}>
                   Assign to {selectedEntity ? `“${selectedEntity.name}”` : 'selection'}
                 </Button>
               </Tooltip>
@@ -849,6 +1158,61 @@ export function AssetsPanel() {
         </Suspense>
       )}
 
+      {/* Create state machine (T9-U3 bullet 4) */}
+      <Modal
+        open={smDialog}
+        title="New state machine"
+        onClose={() => {
+          setSmDialog(false);
+          setSmError(null);
+        }}
+      >
+        <div className="modal-body">
+          <div className="form-field">
+            <label className="field-label">Name</label>
+            <input
+              className={`input${smError ? ' invalid' : ''}`}
+              value={smName}
+              onChange={(e) => {
+                setSmName(e.target.value);
+                if (smError) setSmError(null);
+              }}
+              autoFocus
+              placeholder="courier-motion"
+            />
+            {smError && <span className="field-error">{smError}</span>}
+          </div>
+          {animationAssets.length === 0 ? (
+            <p className="animator-empty">
+              A state machine needs at least one animation asset to drive. Create an animation first, then come
+              back.
+            </p>
+          ) : (
+            <p className="animator-empty">
+              Seeds one “idle” state on “{animationAssets[0].name}”. Add params, states, and transitions after it
+              opens in the Animator.
+            </p>
+          )}
+        </div>
+        <div className="modal-actions">
+          <Button
+            onClick={() => {
+              setSmDialog(false);
+              setSmError(null);
+            }}
+          >
+            Cancel
+          </Button>
+          <Button
+            variant="primary"
+            disabled={!smName.trim() || animationAssets.length === 0 || smCreating}
+            onClick={() => void createStateMachine()}
+          >
+            {smCreating ? 'Creating…' : 'Create'}
+          </Button>
+        </div>
+      </Modal>
+
       <ConfirmDialog
         open={syncTarget !== null}
         title={`Sync "${syncTarget?.asset.name ?? ''}" instances?`}
@@ -862,6 +1226,63 @@ export function AssetsPanel() {
           if (target) void exec('syncPrefabInstances', { prefab: target.asset.id });
         }}
       />
+
+      {/* Delete (ASSETS-1) */}
+      <ConfirmDialog
+        open={deletingAsset !== null}
+        title={`Delete “${deletingAsset?.name ?? ''}”?`}
+        body="Its file moves to the project trash and every reference to it stops resolving. This shows up in your undo history, so Ctrl/Cmd+Z brings it back."
+        confirmLabel="Delete asset"
+        danger
+        onCancel={() => setDeletingAsset(null)}
+        onConfirm={() => void confirmDelete()}
+      />
+
+      {/* removeAsset's own referenced-by message, shown verbatim rather than
+          summarized away — the command-side messaging is already excellent. */}
+      <Modal
+        open={deleteError !== null}
+        title={`Can't delete “${deleteError?.name ?? ''}”`}
+        onClose={() => setDeleteError(null)}
+      >
+        <div className="modal-body">
+          <p>{deleteError?.message}</p>
+        </div>
+        <div className="modal-actions">
+          <Button variant="primary" onClick={() => setDeleteError(null)} autoFocus>
+            OK
+          </Button>
+        </div>
+      </Modal>
+
+      {contextMenu && (
+        <div
+          ref={contextMenuRef}
+          className="menu-popover asset-context-menu"
+          role="menu"
+          aria-label={`${contextMenu.asset.name} actions`}
+          style={{ top: contextMenu.y, left: contextMenu.x }}
+          onKeyDown={(e) => {
+            if (e.key === 'ArrowDown' || e.key === 'ArrowUp' || e.key === 'Home' || e.key === 'End') {
+              e.preventDefault();
+              setContextFocused((cur) =>
+                menuNavIndex(contextMenuItems, cur, e.key as 'ArrowDown' | 'ArrowUp' | 'Home' | 'End'),
+              );
+            }
+          }}
+        >
+          <MenuItems
+            items={contextMenuItems}
+            focusedIndex={contextFocused}
+            onFocusIndex={setContextFocused}
+            onSelectItem={(item: MenuItemAction) => {
+              item.onSelect();
+              setContextMenu(null);
+            }}
+            itemRefs={contextItemRefs}
+          />
+        </div>
+      )}
     </div>
   );
 }

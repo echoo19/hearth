@@ -8,6 +8,7 @@
 }
 
 .asset-card {
+  position: relative;
   border: 1px solid var(--border);
   border-radius: var(--radius);
   background: var(--bg-2);
@@ -32,7 +33,23 @@
   background: var(--accent-soft);
 }
 
+/* Per-card delete affordance (ASSETS-1) — same hover/focus-reveal idiom as
+   Hierarchy's `.tree-actions`, just corner-anchored since the card is a
+   vertical stack rather than a row. */
+.asset-card-actions {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  display: none;
+}
+
+.asset-card:hover .asset-card-actions,
+.asset-card:focus-within .asset-card-actions {
+  display: inline-flex;
+}
+
 .asset-thumb {
+  position: relative;
   width: 48px;
   height: 48px;
   display: flex;
@@ -40,6 +57,20 @@
   justify-content: center;
   border-radius: var(--radius-sm);
   overflow: hidden;
+}
+
+/* Non-image thumbnails (prefab / stateMachine / unresolved animation,
+   ASSETS-10): a higher-contrast glyph on a flat tile that fully covers the
+   checkerboard beneath — the checkerboard means "transparent image", which
+   these assets aren't. */
+.asset-thumb-glyph {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg-3);
+  color: var(--ink-mute);
 }
 
 .asset-thumb img {
@@ -263,5 +294,86 @@
   border-color: var(--accent);
   background: var(--accent-soft);
   color: var(--accent);
+}
+
+/* --------------------------------------------------------------------------
+   Assets panel: name/type filter (ASSETS-4)
+   -------------------------------------------------------------------------- */
+
+.assets-filter-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--border);
+  color: var(--ink-faint);
+  flex: none;
+}
+
+.assets-filter-input {
+  flex: 1;
+  border: none;
+  background: transparent;
+  padding: 2px 0;
+  color: var(--ink);
+  font-size: var(--text-sm);
+}
+
+.assets-filter-input:focus {
+  outline: none;
+}
+
+.assets-filter-clear {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--ink-mute);
+  cursor: pointer;
+}
+
+.assets-filter-clear:hover {
+  background: var(--bg-3);
+  color: var(--ink);
+}
+
+/* Import-error banner dismiss (ASSETS-7). `.export-errors` is shared with
+   other panels' error banners (Animator create errors, export errors) that
+   have no dismiss control, so the corner button is scoped to this modifier
+   rather than the base class. */
+.export-errors-dismissible {
+  position: relative;
+  padding-right: 26px;
+}
+
+.export-errors-dismiss {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--err);
+  cursor: pointer;
+}
+
+.export-errors-dismiss:hover {
+  background: var(--err-soft);
+}
+
+/* The right-click card context menu (ASSETS-1) reuses the Menu primitive's
+   popover look (`.menu-popover`) but anchors to the click point instead of a
+   trigger button. */
+.asset-context-menu {
+  position: fixed;
 }
 

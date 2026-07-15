@@ -461,6 +461,13 @@ const ICON_PATHS: Record<string, ReactNode> = {
       <circle cx="9.25" cy="6" r="0.9" fill="currentColor" stroke="none" />
     </>
   ),
+  // Search: magnifying glass — the Assets panel's name/type filter (Wave L T9).
+  search: (
+    <>
+      <circle cx="5.1" cy="5.1" r="3.1" />
+      <path d="M7.5 7.5L10.2 10.2" />
+    </>
+  ),
 };
 
 export function Icon({ name, size = 12 }: { name: string; size?: number }) {
