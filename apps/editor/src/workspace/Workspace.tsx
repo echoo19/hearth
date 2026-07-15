@@ -95,15 +95,21 @@ function panelHost(Content: React.ComponentType, canvas = false): React.Function
   return Host;
 }
 
-/** Game panel: pause the preview when its tab is hidden (parity with the old tab strip). */
+/**
+ * Game panel: pause (not stop) the running preview when its tab is hidden, and
+ * auto-resume when it's shown again (L-067). Hiding used to hard-Stop the run —
+ * losing all play state — which made the "open Code, edit, hot-reload while
+ * playing" workflow unreachable by default. Now hiding just halts rAF/audio via
+ * the store's tab-pause, so the run (and its state) survives a trip to the Code
+ * tab; an explicit toolbar Pause is preserved across the round trip.
+ */
 function GamePanelHost(props: IDockviewPanelProps) {
-  const setPlaying = useEditor((s) => s.setPlaying);
+  const setGameTabVisible = useEditor((s) => s.setGameTabVisible);
   useEffect(() => {
-    const disposable = props.api.onDidVisibilityChange(({ isVisible }) => {
-      if (!isVisible) setPlaying(false);
-    });
+    setGameTabVisible(props.api.isVisible);
+    const disposable = props.api.onDidVisibilityChange(({ isVisible }) => setGameTabVisible(isVisible));
     return () => disposable.dispose();
-  }, [props.api, setPlaying]);
+  }, [props.api, setGameTabVisible]);
   return (
     <div className="workspace-panel workspace-panel-canvas">
       <GamePreview />
