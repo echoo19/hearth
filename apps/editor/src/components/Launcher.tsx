@@ -7,6 +7,20 @@ import { Button } from './ui/Button';
 import { TemplatePicker } from './TemplatePicker';
 import { hearthNative } from '../native';
 
+/** Which of Launcher's two primary actions (if any) is currently in flight. */
+export type LauncherBusyAction = 'create' | 'open' | null;
+
+/**
+ * Label for the Create-project / Open buttons while busy (LAUNCHER-2 /
+ * L-102) — previously they only went `disabled` (opacity 0.45) with a static
+ * label, so a slow filesystem gave no feedback that anything was happening.
+ * Pure, so it's unit-tested without a DOM (this repo has no jsdom/RTL).
+ */
+export function launcherButtonLabel(action: LauncherBusyAction, kind: 'create' | 'open', idleLabel: string): string {
+  if (action !== kind) return idleLabel;
+  return kind === 'create' ? 'Creating…' : 'Opening…';
+}
+
 export function Launcher() {
   const meta = useEditor((s) => s.meta);
   const openProject = useEditor((s) => s.openProject);
@@ -21,7 +35,8 @@ export function Launcher() {
   const [openPath, setOpenPath] = useState('');
   const [createError, setCreateError] = useState('');
   const [openError, setOpenError] = useState('');
-  const [busy, setBusy] = useState(false);
+  const [busyAction, setBusyAction] = useState<LauncherBusyAction>(null);
+  const busy = busyAction !== null;
 
   useEffect(() => {
     void apiRecentProjects().then(setRecents);
@@ -50,7 +65,7 @@ export function Launcher() {
       setCreateError('Give the project a name.');
       return;
     }
-    setBusy(true);
+    setBusyAction('create');
     setCreateError('');
     const res = await createProject(
       dir.trim() || defaultDir,
@@ -58,7 +73,7 @@ export function Launcher() {
       description.trim() || undefined,
       template || undefined,
     );
-    setBusy(false);
+    setBusyAction(null);
     if (!res.ok) setCreateError(res.error ?? 'Failed to create project.');
   }
 
@@ -67,10 +82,10 @@ export function Launcher() {
       setError('Enter the path of a folder containing hearth.json.');
       return;
     }
-    setBusy(true);
+    setBusyAction('open');
     setError('');
     const res = await openProject(path.trim());
-    setBusy(false);
+    setBusyAction(null);
     if (!res.ok) setError(res.error ?? 'Failed to open project.');
   }
 
@@ -142,7 +157,7 @@ export function Launcher() {
             {createError && <div className="launcher-error">{createError}</div>}
             <div>
               <Button variant="primary" type="submit" disabled={busy}>
-                Create project
+                {launcherButtonLabel(busyAction, 'create', 'Create project')}
               </Button>
             </div>
           </form>
@@ -161,7 +176,7 @@ export function Launcher() {
               }}
             />
             <Button disabled={busy} onClick={() => void handleOpen(openPath, setOpenError)}>
-              Open
+              {launcherButtonLabel(busyAction, 'open', 'Open')}
             </Button>
             {native && (
               <Button variant="primary" disabled={busy} onClick={() => void browseOpenProject()}>

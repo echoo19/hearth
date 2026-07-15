@@ -10,6 +10,7 @@ import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { TemplatePicker, TEMPLATE_OPTIONS } from '../src/components/TemplatePicker';
 import { apiCreateProject } from '../src/api';
+import { launcherButtonLabel } from '../src/components/Launcher';
 
 function render(value: string): string {
   return renderToStaticMarkup(
@@ -98,5 +99,25 @@ describe('apiCreateProject template plumbing', () => {
     const [, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
     const body = JSON.parse(init.body as string);
     expect(body.template).toBeUndefined();
+  });
+});
+
+describe('launcherButtonLabel — busy feedback (LAUNCHER-2 / L-102)', () => {
+  it('shows the idle label when nothing is in flight', () => {
+    expect(launcherButtonLabel(null, 'create', 'Create project')).toBe('Create project');
+    expect(launcherButtonLabel(null, 'open', 'Open')).toBe('Open');
+  });
+
+  it('shows "Creating…" only while the create action is the one in flight', () => {
+    expect(launcherButtonLabel('create', 'create', 'Create project')).toBe('Creating…');
+  });
+
+  it('shows "Opening…" only while the open action is the one in flight', () => {
+    expect(launcherButtonLabel('open', 'open', 'Open')).toBe('Opening…');
+  });
+
+  it('a busy Create action does not relabel the Open button, and vice versa', () => {
+    expect(launcherButtonLabel('create', 'open', 'Open')).toBe('Open');
+    expect(launcherButtonLabel('open', 'create', 'Create project')).toBe('Create project');
   });
 });

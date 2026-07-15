@@ -33,6 +33,18 @@ import { Button } from './ui/Button';
 type Mode = 'web' | 'desktop';
 type WebTarget = 'folder' | 'single';
 
+/**
+ * Whether the dialog's native `cancel` event (Escape) should be blocked —
+ * mirrors the disabled Cancel button, so keyboard and mouse users get the
+ * same "can't dismiss mid-export" contract instead of Escape silently
+ * closing the one place a live desktop build's progress is shown
+ * (EXPORTDIALOG-1 / L-099). Pulled to module scope, pure, so the decision is
+ * unit-tested without a DOM (this repo has no jsdom/RTL).
+ */
+export function blocksDialogCancel(jobRunning: boolean): boolean {
+  return jobRunning;
+}
+
 export function ExportDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
   const projectPath = useEditor((s) => s.projectPath);
   const jobRunning = useExportJob().running;
@@ -47,8 +59,26 @@ export function ExportDialog({ open, onClose }: { open: boolean; onClose: () => 
     setMode(reopenMode(getExportJobSnapshot()));
   }, [open]);
 
+  // The segmented control and the panes' own Cancel/Close button are already
+  // disabled while a desktop export runs (see DesktopPane below), but Escape
+  // fires the native `<dialog>` `cancel` event, which Modal wires straight to
+  // onClose — unguarded, that dismisses the dialog out from under a live
+  // build with no confirmation, inconsistent with mouse users being blocked
+  // (EXPORTDIALOG-1 / L-099). Just as important: since this handler runs as
+  // the dialog's `cancel` listener, declining to call the real `onClose`
+  // ISN'T enough on its own — the native default action still closes the
+  // `<dialog>` element regardless, so `preventDefault()` on the event is
+  // what actually stops it.
+  function guardedClose(e?: React.SyntheticEvent) {
+    if (blocksDialogCancel(jobRunning)) {
+      e?.preventDefault();
+      return;
+    }
+    onClose();
+  }
+
   return (
-    <Modal open={open} title="Export" onClose={onClose}>
+    <Modal open={open} title="Export" onClose={guardedClose}>
       {/* A running desktop job locks the tab so its progress can't be navigated away from. */}
       <ModeSwitch mode={mode} onChange={setMode} disabled={jobRunning} />
       <div role="tabpanel" id={`export-pane-${mode}`} aria-labelledby={`export-tab-${mode}`}>
