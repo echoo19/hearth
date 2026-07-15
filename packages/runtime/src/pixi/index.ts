@@ -390,11 +390,20 @@ export class PixiSceneView {
 
   play(): void {
     this._paused = false;
+    // Resume any audio pause() suspended (a context still waiting on its
+    // autoplay-unlock gesture is left alone — see WebAudioPlayer.resume).
+    this.audio?.resume();
   }
 
   pause(): void {
     this._paused = true;
     this.accumulator = 0;
+    // Freeze audio with the simulation: suspend the context (halts SFX buffer
+    // sources on the audio clock) and hold the music element at its position.
+    // The render ticker and gamepad polling keep running by design — only
+    // session.step() is gated on `_paused` — so pause is a sim+audio freeze,
+    // not a render freeze.
+    this.audio?.suspend();
   }
 
   /** Advance exactly one fixed frame while paused. */

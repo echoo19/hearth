@@ -135,6 +135,16 @@ export class WebAudioPlayer {
   private musicReleases = new Set<{ timer: ReturnType<typeof setTimeout>; finish: () => void }>();
   private unlockFn: (() => void) | null = null;
   private destroyed = false;
+  /** True while the host (editor pause / hidden Game tab) has us suspended. */
+  private hostSuspended = false;
+  /** We called `ctx.suspend()` ourselves — as opposed to the context sitting
+   * suspended waiting for its autoplay-unlock gesture, which resume() must
+   * never touch (a programmatic resume outside a gesture would either fail or
+   * defeat the unlock bookkeeping). */
+  private ctxSuspendedByHost = false;
+  /** The music element was mid-playback when suspend() hit; resume() restarts
+   * it from the position `pause()` froze it at. */
+  private musicWasPlaying = false;
 
   constructor(
     /** Maps an asset id to a fetchable URL (or null when unknown). */
@@ -227,6 +237,45 @@ export class WebAudioPlayer {
     if (this.destroyed || !WebAudioPlayer.musicSupported()) return;
     if (!this.musicGain) return;
     this.fadeGain(this.musicGain, volume, fade);
+  }
+
+  /**
+   * Host pause: actually halt all audio in place (not just the simulation).
+   * SFX buffer sources are frozen on the audio clock via
+   * `AudioContext.suspend()` — they pick up mid-buffer on resume(). The
+   * streamed music `<audio>` element is paused directly and its position
+   * remembered: suspending the context only silences the element's OUTPUT
+   * while the element itself keeps advancing, so without the explicit
+   * `.pause()` the track would resume seconds ahead of where it "stopped".
+   * A context still waiting for its autoplay-unlock gesture is left alone
+   * (`ctxSuspendedByHost` stays false), so the unlock path is unaffected.
+   */
+  suspend(): void {
+    if (this.destroyed || this.hostSuspended) return;
+    this.hostSuspended = true;
+    const el = this.musicEl;
+    this.musicWasPlaying = el != null && !el.paused;
+    if (el && this.musicWasPlaying) el.pause();
+    if (this.ctx && this.ctx.state === 'running') {
+      this.ctxSuspendedByHost = true;
+      void this.ctx.suspend().catch(() => {});
+    }
+  }
+
+  /**
+   * Host resume: undo suspend() — resume the context we suspended (never one
+   * still waiting on its unlock gesture) and restart the music element from
+   * the position suspend() froze it at.
+   */
+  resume(): void {
+    if (this.destroyed || !this.hostSuspended) return;
+    this.hostSuspended = false;
+    if (this.ctxSuspendedByHost) {
+      this.ctxSuspendedByHost = false;
+      void this.ctx?.resume().catch(() => {});
+    }
+    if (this.musicWasPlaying && this.musicEl) void this.musicEl.play().catch(() => {});
+    this.musicWasPlaying = false;
   }
 
   /** Master stop: silence and drop every active and queued playback. */

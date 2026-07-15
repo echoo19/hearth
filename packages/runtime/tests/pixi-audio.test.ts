@@ -1,8 +1,10 @@
 /**
  * Silent audio unlock queueing policy (pure logic; the WebAudioPlayer
- * itself needs a real AudioContext and is exercised in the browser).
+ * itself needs a real AudioContext and is exercised in the browser), plus
+ * host suspend/resume semantics against a stubbed AudioContext + `<audio>`
+ * element (review I1: pause must actually halt audio).
  */
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, afterEach } from 'vitest';
 import type { AudioPlaybackEvent } from '@hearth/runtime';
 import {
   PENDING_ONESHOT_MAX_AGE_MS,
@@ -92,6 +94,162 @@ describe('WebAudioPlayer music methods without Audio support (headless)', () => 
     const player = new WebAudioPlayer(() => null);
     expect(() => player.stopAll()).not.toThrow();
     expect(() => player.destroy()).not.toThrow();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Host suspend/resume (review I1): editor pause / hidden Game tab must halt
+// audio for real — AudioContext.suspend() freezes SFX buffer sources on the
+// audio clock, and the streamed music element is paused directly (suspending
+// the context alone only silences its output while the element keeps
+// advancing), remembering its position for resume.
+// ---------------------------------------------------------------------------
+
+class StubGainNode {
+  gain = { value: 1, setValueAtTime: vi.fn(), linearRampToValueAtTime: vi.fn() };
+  connect = vi.fn();
+  disconnect = vi.fn();
+}
+
+class StubAudioContext {
+  state: 'running' | 'suspended' | 'closed' = 'running';
+  currentTime = 0;
+  destination = {};
+  suspend = vi.fn(async () => {
+    this.state = 'suspended';
+  });
+  resume = vi.fn(async () => {
+    this.state = 'running';
+  });
+  close = vi.fn(async () => {
+    this.state = 'closed';
+  });
+  addEventListener = vi.fn();
+  createGain = vi.fn(() => new StubGainNode());
+  createMediaElementSource = vi.fn(() => ({ connect: vi.fn(), disconnect: vi.fn() }));
+}
+
+interface StubMusicEl {
+  preload: string;
+  crossOrigin: string;
+  loop: boolean;
+  src: string;
+  paused: boolean;
+  currentTime: number;
+  play: ReturnType<typeof vi.fn>;
+  pause: ReturnType<typeof vi.fn>;
+}
+
+function stubMusicEl(): StubMusicEl {
+  const el: StubMusicEl = {
+    preload: '',
+    crossOrigin: '',
+    loop: false,
+    src: '',
+    paused: true,
+    currentTime: 0,
+    play: vi.fn(async () => {
+      el.paused = false;
+    }),
+    pause: vi.fn(() => {
+      el.paused = true;
+    }),
+  };
+  return el;
+}
+
+/** Stub the browser audio surface, returning the context/element the player will use. */
+function stubAudioGlobals(opts: { initialState?: 'running' | 'suspended' } = {}) {
+  const el = stubMusicEl();
+  let ctx: StubAudioContext | null = null;
+  const Ctor = function (this: unknown) {
+    ctx = new StubAudioContext();
+    if (opts.initialState) ctx.state = opts.initialState;
+    return ctx;
+  };
+  vi.stubGlobal('AudioContext', Ctor);
+  vi.stubGlobal('Audio', function AudioStub() {});
+  vi.stubGlobal('document', { createElement: vi.fn(() => el) });
+  return { el, ctx: () => ctx! };
+}
+
+describe('WebAudioPlayer suspend/resume (host pause)', () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  it('suspend() suspends a running context and pauses the music element; resume() undoes both at the held position', () => {
+    const { el, ctx } = stubAudioGlobals();
+    const player = new WebAudioPlayer(() => 'https://example.test/music.mp3');
+    player.playMusic('snd_m', 'ast_music', { volume: 1, loop: true, fadeIn: 0 });
+    expect(el.paused).toBe(false); // track is playing
+    el.currentTime = 42.5; // simulate mid-track playback
+
+    player.suspend();
+    expect(ctx().suspend).toHaveBeenCalledTimes(1);
+    expect(el.pause).toHaveBeenCalledTimes(1);
+    expect(el.paused).toBe(true);
+    expect(el.currentTime).toBe(42.5); // position preserved, never reset
+
+    player.resume();
+    expect(ctx().resume).toHaveBeenCalledTimes(1);
+    expect(el.play).toHaveBeenCalledTimes(2); // startMusic + resume
+    expect(el.currentTime).toBe(42.5); // resumes from where pause froze it
+    player.destroy();
+  });
+
+  it('resume() does not restart music that was not playing at suspend()', () => {
+    const { el, ctx } = stubAudioGlobals();
+    const player = new WebAudioPlayer(() => 'https://example.test/music.mp3');
+    player.playMusic('snd_m', 'ast_music', { volume: 1, loop: true, fadeIn: 0 });
+    el.paused = true; // the element ended / was paused out-of-band
+
+    player.suspend();
+    expect(el.pause).not.toHaveBeenCalled(); // nothing to pause
+    player.resume();
+    expect(el.play).toHaveBeenCalledTimes(1); // only startMusic's original play
+    expect(ctx().resume).toHaveBeenCalledTimes(1); // context still resumes
+    player.destroy();
+  });
+
+  it('leaves an autoplay-locked context alone: no suspend() on pause, no resume() on play', () => {
+    // A context still waiting for its first user gesture must not be touched:
+    // suspending is redundant and resuming programmatically would defeat the
+    // unlock bookkeeping (or fail outright in a real browser).
+    const { ctx } = stubAudioGlobals({ initialState: 'suspended' });
+    const player = new WebAudioPlayer(() => null);
+    player.suspend();
+    expect(ctx().suspend).not.toHaveBeenCalled();
+    player.resume();
+    expect(ctx().resume).not.toHaveBeenCalled();
+    player.destroy();
+  });
+
+  it('suspend() and resume() are idempotent', () => {
+    const { ctx } = stubAudioGlobals();
+    const player = new WebAudioPlayer(() => null);
+    player.suspend();
+    player.suspend();
+    expect(ctx().suspend).toHaveBeenCalledTimes(1);
+    player.resume();
+    player.resume();
+    expect(ctx().resume).toHaveBeenCalledTimes(1);
+    player.destroy();
+  });
+
+  it('no-ops safely after destroy() and without Web Audio support', () => {
+    const { ctx } = stubAudioGlobals();
+    const player = new WebAudioPlayer(() => null);
+    player.destroy();
+    expect(() => {
+      player.suspend();
+      player.resume();
+    }).not.toThrow();
+    expect(ctx().suspend).not.toHaveBeenCalled();
+    vi.unstubAllGlobals();
+    const bare = new WebAudioPlayer(() => null); // node env: no AudioContext at all
+    expect(() => {
+      bare.suspend();
+      bare.resume();
+    }).not.toThrow();
   });
 });
 
