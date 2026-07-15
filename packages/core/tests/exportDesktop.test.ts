@@ -13,6 +13,16 @@ import {
 const STUB_PLAYER = 'window.HearthPlayer={boot(){}}';
 const ALL: any = ['read-only', 'safe-edit', 'code-edit', 'asset-edit', 'build'];
 
+/**
+ * A real, decodable 16x16 RGB checkerboard PNG (the "tile fixture"). The same
+ * bytes are exercised against png2icons in @hearth/shipping/tests/icon.test.ts,
+ * proving the full tile-icon → .icns/.ico pipeline, not just the plumbing.
+ */
+const TILE_FIXTURE_PNG = Buffer.from(
+  'iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAIAAACQkWg2AAAAIUlEQVR4nGPojtLGii5t6cGKGEY10EQDLglcBo1qoIkGAIIKkRBR+B0EAAAAAElFTkSuQmCC',
+  'base64',
+);
+
 /** A packageDesktop that captures the spec it was handed and returns one build. */
 function captureResources(): {
   resources: CommandResources;
@@ -176,6 +186,31 @@ describe('exportDesktop', () => {
     expect(spec!.iconPng!.length).toBeGreaterThan(0);
   });
 
+  it('accepts a tile asset as the icon and hands its exact PNG bytes to the packager', async () => {
+    // Icon-picker parity (GAMESETTINGS-2 / L-074): the editor's icon picker
+    // offers sprite AND tile assets, so exportDesktop must accept both. A
+    // real PNG imported as a `tile` asset flows through byte-for-byte —
+    // the packager's icon conversion is agnostic to asset type (the same
+    // fixture is proven against png2icons in @hearth/shipping's icon tests).
+    const { resources, captured } = captureResources();
+    const { fs, session } = await makeSession(resources);
+    await fs.writeFile('/fixtures/wall-tile.png', TILE_FIXTURE_PNG);
+    const imported = await session.execute<any>('importAsset', {
+      sourcePath: '/fixtures/wall-tile.png',
+      type: 'tile',
+    });
+    expect(imported.success).toBe(true);
+    expect(imported.data.asset.type).toBe('tile');
+    const tileId = imported.data.asset.id as string;
+
+    await session.execute('updateSettings', { buildSettings: { icon: tileId } });
+    const result = await session.execute<any>('exportDesktop', {});
+    expect(result.success).toBe(true);
+    const spec = captured();
+    expect(spec!.iconPng).toBeInstanceOf(Uint8Array);
+    expect(Buffer.from(spec!.iconPng!)).toEqual(Buffer.from(TILE_FIXTURE_PNG));
+  });
+
   it('errors, naming the asset id, when the icon asset is missing', async () => {
     const { resources } = captureResources();
     const { session } = await makeSession(resources);
@@ -185,13 +220,14 @@ describe('exportDesktop', () => {
     expect(result.errors[0].message).toContain('ast_missing');
   });
 
-  it('errors, naming the asset id, when the icon asset is not a sprite', async () => {
+  it('errors, naming the asset id, when the icon asset is not an image (sprite/tile)', async () => {
     const { resources } = captureResources();
     const { session, soundId } = await makeSession(resources);
     await session.execute('updateSettings', { buildSettings: { icon: soundId } });
     const result = await session.execute('exportDesktop', {});
     expect(result.success).toBe(false);
     expect(result.errors[0].message).toContain(soundId);
+    expect(result.errors[0].message).toContain('sprite or tile');
   });
 
   it('rejects unsafe outDir', async () => {

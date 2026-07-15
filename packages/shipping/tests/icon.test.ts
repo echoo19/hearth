@@ -55,4 +55,23 @@ describe('resolveIcons', () => {
     expect(r).toEqual(defaultIconPaths());
     expect(onProgress).toHaveBeenCalled();
   });
+
+  it('converts the tile-fixture PNG (a tile asset used as buildSettings.icon)', async () => {
+    // The same 16x16 checkerboard PNG that @hearth/core's exportDesktop test
+    // imports as a `tile` asset and hands to the packager — proving png2icons
+    // genuinely consumes a tile asset's image bytes end-to-end (exportDesktop
+    // accepts sprite OR tile icons; the converter only sees bytes).
+    const tileFixturePng = Buffer.from(
+      'iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAIAAACQkWg2AAAAIUlEQVR4nGPojtLGii5t6cGKGEY10EQDLglcBo1qoIkGAIIKkRBR+B0EAAAAAElFTkSuQmCC',
+      'base64',
+    );
+    const wd = await workDir();
+    const onProgress = vi.fn();
+    const r = await resolveIcons({ iconPng: tileFixturePng, workDir: wd, onProgress });
+    // Converted (not the bundled fallback), with a real .icns out the other side.
+    expect(r.icns.startsWith(wd)).toBe(true);
+    const icns = await fsp.readFile(r.icns);
+    expect(icns.subarray(0, 4).toString('ascii')).toBe('icns');
+    expect(onProgress).not.toHaveBeenCalled();
+  });
 });

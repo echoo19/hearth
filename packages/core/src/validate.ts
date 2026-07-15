@@ -315,6 +315,31 @@ export async function validateProject(store: ProjectStore): Promise<ValidationRe
     }
   }
 
+  // buildSettings.icon: must reference an existing sprite/tile (image) asset,
+  // mirroring exportDesktop's own gate so Validate names the problem before
+  // an export is attempted. Warning (not error) severity on purpose:
+  // exportDesktop refuses to export when validation has ERRORS, and its own
+  // icon checks carry more specific messages — an error here would mask them
+  // behind the generic "N validation error(s)" refusal.
+  const iconId = project.buildSettings.icon;
+  if (iconId) {
+    const iconAsset = assetsById.get(iconId);
+    if (!iconAsset) {
+      push({
+        severity: 'warning',
+        code: 'MISSING_ICON_ASSET',
+        message: `buildSettings.icon references an unknown asset: ${iconId}; exportDesktop will fail until it is fixed or cleared`,
+      });
+    } else if (iconAsset.type !== 'sprite' && iconAsset.type !== 'tile') {
+      push({
+        severity: 'warning',
+        code: 'ICON_ASSET_NOT_IMAGE',
+        message: `buildSettings.icon must be a sprite or tile asset, but "${iconAsset.name}" (${iconId}) is a "${iconAsset.type}" asset; exportDesktop will fail until it is fixed or cleared`,
+        asset: iconId,
+      });
+    }
+  }
+
   // Pre-pass: animation assets' frame refs ("<sheetAssetId>#<frameName>").
   // Plain (no-'#') entries are sprite-asset ids, already covered above.
   for (const asset of store.assets.assets) {

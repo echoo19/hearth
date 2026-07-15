@@ -216,3 +216,67 @@ describe('UNKNOWN_COMPONENT_KEY validation (pre-fix projects must still load)', 
     expect(report.warnings.some((w) => w.code === 'UNKNOWN_COMPONENT_KEY')).toBe(false);
   });
 });
+
+describe('buildSettings.icon validation', () => {
+  const ALL: any = ['read-only', 'safe-edit', 'code-edit', 'asset-edit', 'build'];
+
+  async function makeIconSession() {
+    const fs = new MemoryFileSystem();
+    const { store } = await createProject(fs, '/proj', { name: 'Icon Game' });
+    const session = HearthSession.fromStore(store, { granted: ALL });
+    return { fs, session, store };
+  }
+
+  it('warns MISSING_ICON_ASSET when the icon references an unknown asset', async () => {
+    const { store } = await makeIconSession();
+    store.project.buildSettings.icon = 'ast_gone';
+
+    const report = await validateProject(store);
+    const warning = report.warnings.find((w) => w.code === 'MISSING_ICON_ASSET');
+    expect(warning).toBeTruthy();
+    expect(warning?.message).toContain('ast_gone');
+    // Warning severity on purpose: an ERROR would trip exportDesktop's
+    // "project has N validation error(s)" gate and mask its more specific
+    // icon error messages. valid stays true.
+    expect(report.valid).toBe(true);
+  });
+
+  it('warns ICON_ASSET_NOT_IMAGE when the icon references a non-image asset', async () => {
+    const { session, store } = await makeIconSession();
+    const sound = await session.execute<any>('createSound', { name: 'ding', preset: 'coin' });
+    expect(sound.success).toBe(true);
+    store.project.buildSettings.icon = sound.data.asset.id;
+
+    const report = await validateProject(store);
+    const warning = report.warnings.find((w) => w.code === 'ICON_ASSET_NOT_IMAGE');
+    expect(warning).toBeTruthy();
+    expect(warning?.asset).toBe(sound.data.asset.id);
+    expect(warning?.message).toContain('sprite or tile');
+  });
+
+  it('accepts a sprite icon with no icon issues', async () => {
+    const { session, store } = await makeIconSession();
+    const sprite = await session.execute<any>('createSpriteAsset', { name: 'badge', shape: 'coin' });
+    expect(sprite.success).toBe(true);
+    store.project.buildSettings.icon = sprite.data.asset.id;
+
+    const report = await validateProject(store);
+    expect([...report.errors, ...report.warnings].some((i) => i.code.includes('ICON'))).toBe(false);
+  });
+
+  it('accepts a tile icon with no icon issues (picker parity)', async () => {
+    const { session, store } = await makeIconSession();
+    const tile = await session.execute<any>('createTileAsset', { name: 'wall' });
+    expect(tile.success).toBe(true);
+    store.project.buildSettings.icon = tile.data.asset.id;
+
+    const report = await validateProject(store);
+    expect([...report.errors, ...report.warnings].some((i) => i.code.includes('ICON'))).toBe(false);
+  });
+
+  it('no icon issues when buildSettings.icon is null (default)', async () => {
+    const { store } = await makeIconSession();
+    const report = await validateProject(store);
+    expect([...report.errors, ...report.warnings].some((i) => i.code.includes('ICON'))).toBe(false);
+  });
+});

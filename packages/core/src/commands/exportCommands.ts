@@ -416,7 +416,10 @@ export const exportDesktop = defineCommand({
 
     const { files, slug, title } = await assembleWebBuild(ctx, { inlineAssets: false, inlinePlayer: false });
 
-    // Resolve + decode the project icon (a sprite asset) when set.
+    // Resolve + decode the project icon (a sprite or tile image asset) when
+    // set. Both types reference plain image files; the packager's icon
+    // conversion (png2icons in @hearth/shipping) reads the raw bytes and is
+    // agnostic to which asset type they came from.
     let iconPng: Uint8Array | undefined;
     const iconId = ctx.store.project.buildSettings.icon;
     if (iconId) {
@@ -424,9 +427,9 @@ export const exportDesktop = defineCommand({
       if (!asset) {
         throw new ProjectError(`buildSettings.icon references an unknown asset: ${iconId}`, 'NOT_FOUND');
       }
-      if (asset.type !== 'sprite') {
+      if (asset.type !== 'sprite' && asset.type !== 'tile') {
         throw new ProjectError(
-          `buildSettings.icon must be a sprite asset, but ${iconId} is a "${asset.type}" asset`,
+          `buildSettings.icon must be a sprite or tile asset, but ${iconId} is a "${asset.type}" asset`,
           'INVALID_INPUT',
         );
       }

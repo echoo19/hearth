@@ -64,9 +64,11 @@ export const BuildSettingsSchema = z.object({
   fixedTimestep: z.number().int().positive().default(60),
   title: z.string().default(''),
   /**
-   * Sprite asset id used as the app/window icon for native (desktop) exports,
-   * or null for none. Web export ignores it; `exportDesktop` decodes it to a
-   * PNG for the packaged shell.
+   * Sprite or tile (image) asset id used as the app/window icon for native
+   * (desktop) exports, or null for none. Web export ignores it;
+   * `exportDesktop` reads the asset's image bytes for the packaged shell's
+   * icon conversion, which is agnostic to which of the two types they came
+   * from.
    */
   icon: z.string().nullable().default(null),
   loading: LoadingSettingsSchema.default({}),
