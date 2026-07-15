@@ -14,9 +14,18 @@ import {
   type TileAsset,
   type TileRow,
 } from '../tileAutotileRows';
-import { ColorField, ConfirmDialog, Icon, NumberField, TextField, componentIcon } from './ui';
+import { ColorField, ConfirmDialog, Icon, NumberField, TextField, componentIcon, type CommitOutcome } from './ui';
 import { Button, IconButton } from './ui/Button';
 import { Tooltip } from './ui/Tooltip';
+import {
+  appendArrayItem,
+  defaultForParamType,
+  inferParamKind,
+  removeParamKey,
+  renameParamKey,
+  setParamKey,
+  type NewParamType,
+} from '../scriptParams';
 import {
   countPrefabInstances,
   createSyncPreflight,
@@ -31,6 +40,13 @@ import {
   type EntityPrefabInfo,
   type RawPrefabOverride,
 } from '../prefabOverrides';
+import {
+  allCollapsed,
+  loadCollapsed,
+  saveCollapsed,
+  setAllCollapsed,
+  toggleCollapsed,
+} from '../inspectorCollapse';
 
 // ---------------------------------------------------------------------------
 // Field editors: value type decides the control. All commit on blur / Enter.
@@ -595,6 +611,220 @@ function FontFamilyField({
   );
 }
 
+/**
+ * Script.scriptPath: a dropdown of the project's `scripts/*` files (from the
+ * project store) with a "Custom…" escape hatch that reveals a plain TextField
+ * for a path that doesn't exist yet (a new script the user is about to
+ * create). Replaces the bare TextField (INSPECTOR-5 / L-034) so the common
+ * case — point a Script at an existing file — is a pick, not blind typing.
+ */
+export function ScriptPathField({
+  value,
+  scripts,
+  onCommit,
+}: {
+  value: string;
+  scripts: string[];
+  onCommit: (v: string) => CommitOutcome | Promise<CommitOutcome>;
+}) {
+  const known = scripts.includes(value);
+  const [forceCustom, setForceCustom] = useState(() => value !== '' && !known);
+  const showCustom = forceCustom || (value !== '' && !known);
+  const CUSTOM = '__custom__';
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+      <select
+        className="select"
+        value={showCustom ? CUSTOM : value}
+        onChange={(e) => {
+          if (e.target.value === CUSTOM) {
+            setForceCustom(true);
+          } else {
+            setForceCustom(false);
+            void onCommit(e.target.value);
+          }
+        }}
+      >
+        <option value="">(none)</option>
+        {scripts.map((path) => (
+          <option key={path} value={path}>
+            {path.replace(/^scripts\//, '')}
+          </option>
+        ))}
+        <option value={CUSTOM}>Custom…</option>
+      </select>
+      {showCustom && <TextField value={value} placeholder="scripts/enemy.lua" onCommit={onCommit} />}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Script.params: a typed key/value editor. The last field that used to fall
+// back to a read-only raw-JSON dump (INSPECTOR-5 / INSPSPEC-8 / L-034) — Jake:
+// no raw JSON for a typed field, ever. Each value renders by its inferred kind
+// (number/boolean/string/color, with lists and nested objects handled
+// recursively); add/remove/rename keys write through Script.params via the
+// normal property-path commands. Record-editing logic lives in ../scriptParams
+// so it stays unit-testable without a DOM.
+// ---------------------------------------------------------------------------
+
+/**
+ * Recursive typed editor for one param value. `onCommit(next)` writes the new
+ * value for THIS node; container nodes (array/object) rebuild themselves and
+ * bubble the whole new container up, so every edit — however deep — resolves
+ * to a single write of the owning top-level `Script.params.<key>` and honors
+ * the field rejection contract (a server-rejected write reverts the scalar).
+ */
+function ParamValueEditor({
+  value,
+  onCommit,
+}: {
+  value: unknown;
+  onCommit: (next: unknown) => CommitOutcome | Promise<CommitOutcome>;
+}): React.ReactElement {
+  const kind = inferParamKind(value);
+  if (kind === 'number') {
+    return <NumberField value={value as number} onCommit={(v) => onCommit(v)} />;
+  }
+  if (kind === 'boolean') {
+    return (
+      <input
+        type="checkbox"
+        checked={value as boolean}
+        onChange={(e) => void onCommit(e.target.checked)}
+      />
+    );
+  }
+  if (kind === 'color') {
+    return <ColorField value={value as string} onCommit={(v) => onCommit(v)} />;
+  }
+  if (kind === 'array') {
+    const arr = value as unknown[];
+    return (
+      <div className="vec2-list">
+        {arr.length === 0 && <span className="vec2-list-empty">Empty list</span>}
+        {arr.map((item, i) => (
+          <div className="vec2-list-row" key={i}>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <ParamValueEditor
+                value={item}
+                onCommit={(next) => onCommit(arr.map((e, j) => (j === i ? next : e)))}
+              />
+            </div>
+            <IconButton
+              bare
+              className="icon-btn danger"
+              icon="cross"
+              iconSize={10}
+              label={`Remove item ${i + 1}`}
+              onClick={() => void onCommit(arr.filter((_, j) => j !== i))}
+            />
+          </div>
+        ))}
+        <Button size="sm" onClick={() => void onCommit(appendArrayItem(arr))}>
+          <Icon name="plus" size={10} /> Add item
+        </Button>
+      </div>
+    );
+  }
+  if (kind === 'object') {
+    const obj = value as Record<string, unknown>;
+    return (
+      <div className="script-params-nested">
+        {Object.entries(obj).map(([k, v]) => (
+          <div className="inspector-row" key={k}>
+            <label className="field-label" title={k}>
+              {k}
+            </label>
+            <ParamValueEditor value={v} onCommit={(next) => onCommit({ ...obj, [k]: next })} />
+          </div>
+        ))}
+      </div>
+    );
+  }
+  // null / undefined: edit as a string (commits a string value). Rare in
+  // practice; keeps every value reachable without a JSON escape hatch.
+  return <TextField value={value == null ? '' : String(value)} onCommit={(v) => onCommit(v)} />;
+}
+
+export function ScriptParamsField({
+  value,
+  onWriteKey,
+  onWriteAll,
+}: {
+  value: Record<string, unknown>;
+  /** Write one key via Script.params.<key> (returns server acceptance). */
+  onWriteKey: (key: string, next: unknown) => Promise<boolean>;
+  /** Write the whole Script.params record (add/remove/rename a key). */
+  onWriteAll: (next: Record<string, unknown>) => void;
+}) {
+  const [newKey, setNewKey] = useState('');
+  const [newType, setNewType] = useState<NewParamType>('number');
+  const keys = Object.keys(value);
+  const trimmed = newKey.trim();
+  const addDisabled = trimmed === '' || keys.includes(trimmed);
+  const addParam = () => {
+    if (addDisabled) return;
+    onWriteAll(setParamKey(value, trimmed, defaultForParamType(newType)));
+    setNewKey('');
+  };
+  return (
+    <div className="script-params">
+      {keys.length === 0 && <span className="vec2-list-empty">No parameters</span>}
+      {keys.map((key) => (
+        <div className="script-param-row" key={key}>
+          <TextField
+            value={key}
+            onCommit={(nextKey) => {
+              const t = nextKey.trim();
+              if (t === key) return;
+              if (!t) return 'Name can’t be empty.';
+              const renamed = renameParamKey(value, key, t);
+              if (!renamed) return `“${t}” already exists.`;
+              onWriteAll(renamed);
+            }}
+          />
+          <div className="script-param-value">
+            <ParamValueEditor value={value[key]} onCommit={(next) => onWriteKey(key, next)} />
+          </div>
+          <IconButton
+            bare
+            className="icon-btn danger"
+            icon="cross"
+            iconSize={10}
+            label={`Remove “${key}”`}
+            onClick={() => onWriteAll(removeParamKey(value, key))}
+          />
+        </div>
+      ))}
+      <div className="script-param-add">
+        <input
+          className="input"
+          placeholder="New parameter"
+          value={newKey}
+          onChange={(e) => setNewKey(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') addParam();
+          }}
+        />
+        <select
+          className="select"
+          value={newType}
+          aria-label="New parameter type"
+          onChange={(e) => setNewType(e.target.value as NewParamType)}
+        >
+          <option value="number">Number</option>
+          <option value="string">Text</option>
+          <option value="boolean">Checkbox</option>
+        </select>
+        <Button size="sm" disabled={addDisabled} onClick={addParam}>
+          <Icon name="plus" size={10} /> Add
+        </Button>
+      </div>
+    </div>
+  );
+}
+
 // ---------------------------------------------------------------------------
 // UIElement.anchor: a 3×3 grid picker instead of a raw enum dropdown.
 // ---------------------------------------------------------------------------
@@ -664,9 +894,14 @@ function resolveAsset(assets: AssetItem[], assetId: unknown): AssetItem | undefi
 export function Inspector() {
   const scene = useEditor((s) => s.scene);
   const sceneId = useEditor((s) => s.sceneId);
+  const projectPath = useEditor((s) => s.projectPath);
   const selection = useEditor((s) => s.selection);
   const assets = useEditor((s) => s.assets);
   const info = useEditor((s) => s.info);
+  // scriptPath picker options — the project's scripts/*, from the same store
+  // field the Code panel lists (derived from the already-selected `info` to
+  // avoid an extra subscription returning a fresh [] each render).
+  const scripts = info?.scripts ?? [];
   const componentDocs = useEditor((s) => s.componentDocs);
   const exec = useEditor((s) => s.exec);
   const query = useEditor((s) => s.query);
@@ -696,6 +931,15 @@ export function Inspector() {
   const [prefabInfo, setPrefabInfo] = useState<EntityPrefabInfo | null>(null);
   const [confirmRevertAll, setConfirmRevertAll] = useState(false);
   const [revertingAll, setRevertingAll] = useState(false);
+
+  // Collapsed component cards, persisted per project (keyed by component type
+  // — see inspectorCollapse.ts). Reloaded when the open project changes.
+  const [collapsed, setCollapsed] = useState<Set<string>>(() => loadCollapsed(projectPath));
+  useEffect(() => setCollapsed(loadCollapsed(projectPath)), [projectPath]);
+  const persistCollapsed = (next: Set<string>) => {
+    setCollapsed(next);
+    saveCollapsed(projectPath, next);
+  };
 
   useEffect(() => {
     selectionRef.current = selection;
@@ -750,6 +994,7 @@ export function Inspector() {
     );
 
   const existingTypes = Object.keys(entity.components);
+  const everyCollapsed = allCollapsed(collapsed, existingTypes);
   const addableTypes = componentDocs.filter((d) => !existingTypes.includes(d.type));
 
   const prefabAssetId = entity.prefab?.asset;
@@ -776,6 +1021,15 @@ export function Inspector() {
     for (const path of overriddenPathsUnder(prefabInfo, component, field)) {
       await exec('revertPrefabOverride', { scene: sceneId, entity: entity.id, component, path });
     }
+  };
+
+  // Revert every override on one component of the inspected instance member in
+  // a single call (INSPSPEC-7 / L-040). revertPrefabOverride with `component`
+  // and no `path` clears all of that component's overrides at once (per Wave I
+  // — see revertInstanceOverrides), so unlike handleRevertField this needs no
+  // per-path fan-out.
+  const handleRevertComponent = async (component: string) => {
+    await exec('revertPrefabOverride', { scene: sceneId, entity: entity.id, component });
   };
 
   const handleRevertAll = async () => {
@@ -819,6 +1073,19 @@ export function Inspector() {
       <div className="panel-header">
         <span>Inspector</span>
         <span className="mono panel-header-detail">{entity.id}</span>
+        <span style={{ flex: 1 }} />
+        {existingTypes.length > 0 && (
+          <IconButton
+            bare
+            className={`icon-btn inspector-collapse-all${everyCollapsed ? ' expanded' : ''}`}
+            icon="chevron"
+            iconSize={11}
+            label={everyCollapsed ? 'Expand all components' : 'Collapse all components'}
+            onClick={() =>
+              persistCollapsed(setAllCollapsed(collapsed, existingTypes, !everyCollapsed))
+            }
+          />
+        )}
       </div>
       {entity.prefab && (
         <div className="prefab-banner">
@@ -925,15 +1192,42 @@ export function Inspector() {
         {/* components */}
         {Object.entries(entity.components).map(([type, component]) => {
           const doc = componentDocs.find((d) => d.type === type);
+          const isCollapsed = collapsed.has(type);
+          // Any recorded override on this component (of the inspected member)
+          // enables a card-level "Revert component" action (INSPSPEC-7).
+          const componentOverridden =
+            prefabInfo != null && prefabInfo.overridden.some((o) => o.component === type);
           return (
             <div className="component-card" key={type}>
               <div className="component-header" title={doc?.description}>
-                <span className="component-title">
-                  <span className="entity-icon">
-                    <Icon name={componentIcon(type)} />
+                <button
+                  type="button"
+                  className="component-collapse"
+                  aria-expanded={!isCollapsed}
+                  aria-label={`${isCollapsed ? 'Expand' : 'Collapse'} ${type}`}
+                  onClick={() => persistCollapsed(toggleCollapsed(collapsed, type))}
+                >
+                  <span className="component-chevron" aria-hidden="true">
+                    <Icon name="chevron" size={11} />
                   </span>
-                  {type}
-                </span>
+                  <span className="component-title">
+                    <span className="entity-icon">
+                      <Icon name={componentIcon(type)} />
+                    </span>
+                    {type}
+                  </span>
+                </button>
+                {componentOverridden && (
+                  <Tooltip content={`Revert every ${type} override to the prefab's values`}>
+                    <Button
+                      size="sm"
+                      className="component-revert-btn"
+                      onClick={() => void handleRevertComponent(type)}
+                    >
+                      Revert
+                    </Button>
+                  </Tooltip>
+                )}
                 <IconButton
                   bare
                   className="icon-btn danger"
@@ -943,6 +1237,7 @@ export function Inspector() {
                   onClick={() => setConfirmRemove(type)}
                 />
               </div>
+              {!isCollapsed && (
               <div className="component-body">
                 {Object.entries(component as Record<string, unknown>).map(([field, value]) => {
                   // Collider.points only means anything for a polygon shape
@@ -1075,6 +1370,33 @@ export function Inspector() {
                         value={value}
                         fontAssets={fontAssets}
                         onCommit={(v) => setProperty(property, v)}
+                      />
+                    );
+                  } else if (type === 'Script' && field === 'scriptPath' && typeof value === 'string') {
+                    control = (
+                      <ScriptPathField
+                        key={rowKey}
+                        value={value}
+                        scripts={scripts}
+                        onCommit={(v) => setProperty(property, v)}
+                      />
+                    );
+                  } else if (
+                    type === 'Script' &&
+                    field === 'params' &&
+                    typeof value === 'object' &&
+                    value !== null &&
+                    !Array.isArray(value)
+                  ) {
+                    // The last raw-JSON surface, now a typed key/value editor
+                    // (L-034). Scalar writes go through Script.params.<key>;
+                    // add/remove/rename write the whole Script.params record.
+                    control = (
+                      <ScriptParamsField
+                        key={rowKey}
+                        value={value as Record<string, unknown>}
+                        onWriteKey={(k, next) => setProperty(`${property}.${k}`, next)}
+                        onWriteAll={(next) => void setProperty(property, next)}
                       />
                     );
                   } else if (typeof value === 'string' && (doc?.enums[field]?.length ?? 0) > 0) {
@@ -1224,6 +1546,7 @@ export function Inspector() {
                   );
                 })}
               </div>
+              )}
             </div>
           );
         })}
@@ -1275,7 +1598,14 @@ export function Inspector() {
       <ConfirmDialog
         open={confirmRemove !== null}
         title={`Remove ${confirmRemove ?? ''}?`}
-        body={`The ${confirmRemove ?? ''} component and its settings are removed from “${entity.name}”.`}
+        // Transform is structurally special — every entity has exactly one, and
+        // the command layer emits its own REMOVED_TRANSFORM warning. Surface
+        // that stronger consequence here instead of the generic copy (L-038).
+        body={
+          confirmRemove === 'Transform'
+            ? `Without a Transform, “${entity.name}” will no longer be positioned or rendered in the scene.`
+            : `The ${confirmRemove ?? ''} component and its settings are removed from “${entity.name}”.`
+        }
         confirmLabel="Remove component"
         danger
         onCancel={() => setConfirmRemove(null)}
