@@ -146,8 +146,8 @@
   /* Sash: invisible at rest, soft ember when grabbed/hovered. */
   --dv-sash-color: transparent;
   --dv-active-sash-color: var(--accent-soft);
-  --dv-active-sash-transition-duration: 140ms;
-  --dv-active-sash-transition-delay: 150ms;
+  --dv-active-sash-transition-duration: var(--t);
+  --dv-active-sash-transition-delay: var(--t);
 
   /* Drag & drop: ember accent (same token as .drop-target below) with a 1px accent border. */
   --dv-drag-over-background-color: var(--accent-soft);
@@ -176,7 +176,7 @@
 .dockview-theme-hearth .dv-tab {
   padding: 0;
   min-width: 0;
-  transition: color 140ms var(--ease-out), background 140ms var(--ease-out);
+  transition: color var(--t) var(--ease-out), background var(--t) var(--ease-out);
 }
 
 .dockview-theme-hearth .dv-tab:hover {
@@ -205,7 +205,7 @@
   height: 2px;
   border-radius: 1px;
   background: transparent;
-  transition: background 140ms var(--ease-out);
+  transition: background var(--t) var(--ease-out);
 }
 
 .dv-tab.dv-active-tab .hearth-tab::after {
@@ -225,11 +225,17 @@
   color: var(--ink-faint);
   cursor: pointer;
   opacity: 0;
-  transition: opacity 140ms var(--ease-out), color 140ms var(--ease-out), background 140ms var(--ease-out);
+  /* Hover/focus reveal — see the "Reveal idiom" note in primitives.css. This
+     is the opacity variant (stays in layout + tab order); var(--t-fast) keeps
+     the reveal timing identical to the Inspector's .field-revert-btn. */
+  transition: opacity var(--t-fast) var(--ease-out), color var(--t-fast) var(--ease-out), background var(--t-fast) var(--ease-out);
 }
 
 .dv-tab:hover .hearth-tab-close,
 .dv-tab.dv-active-tab .hearth-tab-close,
+/* Keyboard parity: focusing anywhere on the tab reveals its close, matching
+   the code-tab-cell:focus-within reveal. */
+.dv-tab:focus-within .hearth-tab-close,
 .hearth-tab-close:focus-visible {
   opacity: 1;
 }
@@ -354,7 +360,7 @@
   white-space: nowrap;
   /* Subtle entrance so the badge doesn't pop abruptly; flattened by the
      global prefers-reduced-motion rule. */
-  animation: restart-badge-in 160ms var(--ease-out);
+  animation: restart-badge-in var(--t) var(--ease-out);
 }
 
 @keyframes restart-badge-in {

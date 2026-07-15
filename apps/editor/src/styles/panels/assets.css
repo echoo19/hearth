@@ -33,9 +33,10 @@
   background: var(--accent-soft);
 }
 
-/* Per-card delete affordance (ASSETS-1) — same hover/focus-reveal idiom as
-   Hierarchy's `.tree-actions`, just corner-anchored since the card is a
-   vertical stack rather than a row. */
+/* Per-card delete affordance (ASSETS-1) — Reveal idiom, display variant: the
+   card is a roving-tabindex container (role=button, tabIndex 0/-1) like a tree
+   row, so display:none is right (see primitives.css "Reveal idiom"). Just
+   corner-anchored since the card is a vertical stack rather than a row. */
 .asset-card-actions {
   position: absolute;
   top: 4px;
@@ -280,9 +281,9 @@
   color: var(--ink);
   cursor: pointer;
   transition:
-    border-color 140ms var(--ease-out),
-    color 140ms var(--ease-out),
-    background 140ms var(--ease-out);
+    border-color var(--t) var(--ease-out),
+    color var(--t) var(--ease-out),
+    background var(--t) var(--ease-out);
 }
 
 .audio-preview-btn:hover {

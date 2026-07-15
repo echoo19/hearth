@@ -15,8 +15,8 @@
   font-size: var(--text-sm);
   cursor: pointer;
   transition:
-    border-color 140ms var(--ease-out),
-    background 140ms var(--ease-out);
+    border-color var(--t) var(--ease-out),
+    background var(--t) var(--ease-out);
 }
 
 .radio-row:hover {

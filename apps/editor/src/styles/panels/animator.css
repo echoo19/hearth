@@ -190,7 +190,7 @@
 .animator-tgroup.flash {
   border-color: var(--accent);
   box-shadow: 0 0 0 1px var(--accent-soft);
-  transition: box-shadow 0.2s ease, border-color 0.2s ease;
+  transition: box-shadow var(--t) var(--ease-out), border-color var(--t) var(--ease-out);
 }
 
 .animator-tgroup-header {
@@ -215,7 +215,7 @@
 .animator-tgroup-caret {
   display: inline-flex;
   color: var(--ink-faint);
-  transition: transform 0.12s ease;
+  transition: transform var(--t-fast) var(--ease-out);
 }
 
 .animator-tgroup-caret.open {

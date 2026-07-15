@@ -81,7 +81,7 @@
   height: 2px;
   border-radius: 1px;
   background: transparent;
-  transition: background 140ms var(--ease-out);
+  transition: background var(--t) var(--ease-out);
 }
 
 .code-tab-cell-active::after {
@@ -101,7 +101,7 @@
   font-weight: 500;
   white-space: nowrap;
   cursor: pointer;
-  transition: color 140ms var(--ease-out);
+  transition: color var(--t) var(--ease-out);
 }
 
 .code-tab-cell:hover .code-tab,
@@ -148,7 +148,9 @@
   color: var(--ink-faint);
   cursor: pointer;
   opacity: 0;
-  transition: opacity 140ms var(--ease-out), color 140ms var(--ease-out), background 140ms var(--ease-out);
+  /* Hover/focus reveal — opacity variant, see primitives.css "Reveal idiom".
+     var(--t-fast) matches .field-revert-btn / .hearth-tab-close. */
+  transition: opacity var(--t-fast) var(--ease-out), color var(--t-fast) var(--ease-out), background var(--t-fast) var(--ease-out);
 }
 
 .code-tab-cell:hover .code-tab-close,

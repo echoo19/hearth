@@ -66,7 +66,14 @@
   --ctl-h: 26px;
   --ctl-h-sm: 22px;
 
-  /* Motion: fast, ease-out, state-conveying only. */
+  /* Motion: fast, ease-out, state-conveying only. One easing curve for the
+     whole editor. Two durations cover every micro-transition — use --t-fast for
+     the snappy stuff (hover-reveals, small-control press/hover, chevron/caret
+     rotation) and --t for everything else (control hover/border, tab activation,
+     overlay + badge entrances). The only durations that step outside this pair
+     are three deliberate, singular cues, each commented at its site: the
+     field-reject shake, the openScriptAt ember-line fade, and the WS-dot
+     reconnect pulse. New motion references these tokens — no ad-hoc ms literals. */
   --ease-out: cubic-bezier(0.25, 1, 0.4, 1);
   --t-fast: 100ms;
   --t: 150ms;

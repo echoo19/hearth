@@ -85,10 +85,11 @@
   justify-content: flex-end;
 }
 
-/* Per-field "Revert to prefab" action: hidden until the row is hovered or
-   the button itself gets keyboard focus (same hidden-until-hover idiom as
-   .tree-actions, but via opacity so it stays tab-reachable rather than
-   display:none). */
+/* Per-field "Revert to prefab" action: hidden until the row is hovered or the
+   button itself gets keyboard focus. Reveal idiom, opacity variant — the revert
+   button is its own tab stop, so it stays in layout + tab order rather than
+   display:none (see primitives.css "Reveal idiom"). var(--t-fast) is the shared
+   reveal timing. */
 .field-revert-btn {
   opacity: 0;
   transition: opacity var(--t-fast) var(--ease-out);
@@ -406,8 +407,8 @@
   background: transparent;
   cursor: pointer;
   transition:
-    background 140ms var(--ease-out),
-    border-color 140ms var(--ease-out);
+    background var(--t) var(--ease-out),
+    border-color var(--t) var(--ease-out);
 }
 
 .anchor-cell:hover {
@@ -419,7 +420,7 @@
   height: 5px;
   border-radius: 50%;
   background: var(--ink-faint);
-  transition: background 140ms var(--ease-out);
+  transition: background var(--t) var(--ease-out);
 }
 
 .anchor-cell.selected {

@@ -16,7 +16,7 @@ dialog.modal {
 }
 
 dialog.modal[open] {
-  animation: modal-in 160ms var(--ease-out);
+  animation: modal-in var(--t) var(--ease-out);
 }
 
 @keyframes modal-in {
@@ -31,7 +31,7 @@ dialog.modal::backdrop {
 }
 
 dialog.modal[open]::backdrop {
-  animation: backdrop-in 160ms var(--ease-out);
+  animation: backdrop-in var(--t) var(--ease-out);
 }
 
 @keyframes backdrop-in {
@@ -91,7 +91,7 @@ dialog.shortcut-sheet {
 }
 
 dialog.shortcut-sheet[open] {
-  animation: modal-in 160ms var(--ease-out);
+  animation: modal-in var(--t) var(--ease-out);
 }
 
 dialog.shortcut-sheet::backdrop {
@@ -99,7 +99,7 @@ dialog.shortcut-sheet::backdrop {
 }
 
 dialog.shortcut-sheet[open]::backdrop {
-  animation: backdrop-in 160ms var(--ease-out);
+  animation: backdrop-in var(--t) var(--ease-out);
 }
 
 .shortcut-sheet-inner {

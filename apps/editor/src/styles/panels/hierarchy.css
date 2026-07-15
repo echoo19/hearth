@@ -106,6 +106,8 @@
   white-space: nowrap;
 }
 
+/* Reveal idiom: display variant (roving-tabindex cluster, buttons are
+   tabIndex=-1) — see the "Reveal idiom" note in primitives.css. */
 .tree-actions {
   display: none;
   gap: 2px;

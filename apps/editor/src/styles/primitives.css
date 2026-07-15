@@ -1,6 +1,33 @@
 /* Primitives: buttons, inputs, chips, shared controls */
 
 /* --------------------------------------------------------------------------
+   Reveal idiom (L-023) — the one rule for hover/focus-revealed secondary
+   actions (row/card action clusters, per-field revert, tab closes).
+
+   Two variants, chosen by ONE question: is the revealed control its own tab
+   stop, or is it reached by roving-tabindex arrow keys inside a focusable
+   container?
+
+   • display:none  — for action CLUSTERS inside a roving-tabindex container
+     (Hierarchy `.tree-actions`, Assets `.asset-card-actions`). The buttons are
+     tabIndex=-1 and reached with arrow keys, so hiding them fully costs no tab
+     stop and keeps the resting row/card clean. The container's own
+     `:focus-within` re-shows them for keyboard users. Flipping these to opacity
+     would re-add ~N tab stops per row and undo the roving-tabindex work (L-016).
+
+   • opacity:0  — for a STANDALONE control that must stay Tab-reachable
+     (Inspector `.field-revert-btn`, dockview `.hearth-tab-close`, Code
+     `.code-tab-close`). It keeps its place in layout and the tab order; the
+     reveal is purely visual. Timing is always var(--t-fast) so every opacity
+     reveal fades in at the same speed.
+
+   Both variants MUST provide focus parity: reveal on the container's
+   `:focus-within` and/or the control's own `:focus-visible`, so nothing
+   important is keyboard-invisible. Each site carries a one-line back-reference
+   to this note rather than re-deriving the choice.
+   -------------------------------------------------------------------------- */
+
+/* --------------------------------------------------------------------------
    Controls
    -------------------------------------------------------------------------- */
 
