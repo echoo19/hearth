@@ -22,6 +22,10 @@ import {
   isDraftComplete,
   humanizeSaveError,
   shouldBlockAsmSave,
+  groupTransitions,
+  moveTransitionInGroup,
+  outgoingCount,
+  summarizeTransition,
   type AsmDraft,
 } from '../src/asmEdit';
 
@@ -170,6 +174,160 @@ describe('transitions & conditions', () => {
   it('removeCondition drops a single condition row', () => {
     const draft = removeCondition(docToDraft(SAMPLE), 0, 0);
     expect(draft.transitions[0].conditions).toHaveLength(0);
+  });
+});
+
+describe('groupTransitions (L-085 source grouping)', () => {
+  // A machine whose flat order interleaves two idle-sourced transitions around
+  // an unrelated one — the exact confusing shape the audit reproduced.
+  const INTERLEAVED: AsmDraft = {
+    params: [{ name: 'moving', type: 'bool', default: false }],
+    states: [
+      { name: 'idle', animation: 'a', speed: 1 },
+      { name: 'walk', animation: 'b', speed: 1 },
+    ],
+    initial: 'idle',
+    transitions: [
+      { from: 'idle', to: 'walk', conditions: [{ param: 'moving', op: 'eq', value: true }] }, // 0
+      { from: 'walk', to: 'idle', conditions: [{ param: 'moving', op: 'eq', value: false }] }, // 1
+      { from: 'idle', to: 'idle', conditions: [], exitTime: 0.5 }, // 2
+      { from: 'any', to: 'idle', conditions: [{ param: 'moving', op: 'eq', value: false }] }, // 3
+    ],
+  };
+
+  it('puts the any group first, then states in declaration order', () => {
+    const groups = groupTransitions(INTERLEAVED);
+    expect(groups.map((g) => g.from)).toEqual(['any', 'idle', 'walk']);
+  });
+
+  it('collects a source’s transitions across non-adjacent flat positions, preserving global index + group position', () => {
+    const groups = groupTransitions(INTERLEAVED);
+    const idle = groups.find((g) => g.from === 'idle')!;
+    expect(idle.items.map((i) => i.index)).toEqual([0, 2]); // flat indices 0 and 2
+    expect(idle.items.map((i) => i.groupPos)).toEqual([0, 1]);
+    expect(idle.items[0].transition.to).toBe('walk');
+    expect(idle.items[1].transition.to).toBe('idle');
+  });
+
+  it('lists orphan sources (from a renamed/removed state) after the known states', () => {
+    const draft: AsmDraft = {
+      ...INTERLEAVED,
+      transitions: [...INTERLEAVED.transitions, { from: 'ghost', to: 'idle', conditions: [], exitTime: 0.2 }],
+    };
+    expect(groupTransitions(draft).map((g) => g.from)).toEqual(['any', 'idle', 'walk', 'ghost']);
+  });
+
+  it('outgoingCount matches the group size for each source', () => {
+    expect(outgoingCount(INTERLEAVED, 'idle')).toBe(2);
+    expect(outgoingCount(INTERLEAVED, 'walk')).toBe(1);
+    expect(outgoingCount(INTERLEAVED, 'any')).toBe(1);
+    expect(outgoingCount(INTERLEAVED, 'missing')).toBe(0);
+  });
+});
+
+describe('moveTransitionInGroup (L-085 flat-array mapping)', () => {
+  const draft: AsmDraft = {
+    params: [{ name: 'moving', type: 'bool', default: false }],
+    states: [
+      { name: 'idle', animation: 'a', speed: 1 },
+      { name: 'walk', animation: 'b', speed: 1 },
+    ],
+    initial: 'idle',
+    transitions: [
+      { from: 'idle', to: 'walk', conditions: [], exitTime: 0.1 }, // 0  idle pos 0
+      { from: 'walk', to: 'idle', conditions: [], exitTime: 0.2 }, // 1  walk pos 0
+      { from: 'idle', to: 'idle', conditions: [], exitTime: 0.3 }, // 2  idle pos 1
+    ],
+  };
+
+  it('moving idle[1] up to group-pos 0 swaps the two idle slots, leaving the walk transition put', () => {
+    const next = moveTransitionInGroup(draft, 2, 0); // flat idx 2 is idle's 2nd; move to group pos 0
+    // idle's flat slots are [0, 2]; the two idle transitions swap into those slots.
+    expect(next.transitions[0].exitTime).toBe(0.3); // was flat 2 (idle→idle)
+    expect(next.transitions[2].exitTime).toBe(0.1); // was flat 0 (idle→walk)
+    // the walk transition at flat 1 is untouched (cross-group order preserved).
+    expect(next.transitions[1]).toBe(draft.transitions[1]);
+  });
+
+  it('the reordered group reads in the new declaration order via groupTransitions', () => {
+    const next = moveTransitionInGroup(draft, 2, 0);
+    const idle = groupTransitions(next).find((g) => g.from === 'idle')!;
+    expect(idle.items.map((i) => i.transition.to)).toEqual(['idle', 'walk']);
+    expect(idle.items.map((i) => i.index)).toEqual([0, 2]); // same flat slots, contents swapped
+  });
+
+  it('is a referential no-op at the group edges (never marks the draft dirty)', () => {
+    expect(moveTransitionInGroup(draft, 0, -1)).toBe(draft); // idle pos 0 up → clamped, unchanged
+    expect(moveTransitionInGroup(draft, 2, 5)).toBe(draft); // idle pos 1 down → clamped, unchanged
+    expect(moveTransitionInGroup(draft, 1, 3)).toBe(draft); // lone walk transition can't move
+  });
+
+  it('does not disturb a third group when reordering another', () => {
+    const three: AsmDraft = {
+      ...draft,
+      states: [...draft.states, { name: 'run', animation: 'c', speed: 1 }],
+      transitions: [
+        { from: 'idle', to: 'walk', conditions: [], exitTime: 0.1 }, // 0 idle
+        { from: 'run', to: 'idle', conditions: [], exitTime: 0.9 }, // 1 run
+        { from: 'idle', to: 'run', conditions: [], exitTime: 0.2 }, // 2 idle
+      ],
+    };
+    const next = moveTransitionInGroup(three, 2, 0);
+    expect(next.transitions[1]).toBe(three.transitions[1]); // run transition unmoved
+    expect(next.transitions[0].to).toBe('run');
+    expect(next.transitions[2].to).toBe('walk');
+  });
+});
+
+describe('summarizeTransition (L-085 at-a-glance sentence)', () => {
+  const draft: AsmDraft = {
+    params: [
+      { name: 'speed', type: 'number', default: 0 },
+      { name: 'moving', type: 'bool', default: false },
+      { name: 'jump', type: 'trigger' },
+    ],
+    states: [
+      { name: 'walk', animation: 'a', speed: 1 },
+      { name: 'run', animation: 'b', speed: 1 },
+    ],
+    initial: 'walk',
+    transitions: [],
+  };
+
+  it('renders condition + exit time as a sentence', () => {
+    expect(summarizeTransition(draft, { from: 'walk', to: 'run', conditions: [{ param: 'speed', op: 'gt', value: 5 }], exitTime: 0.8 })).toBe(
+      'walk → run · when speed > 5 (exit 0.8)',
+    );
+  });
+
+  it('joins multiple conditions with "and"', () => {
+    expect(
+      summarizeTransition(draft, {
+        from: 'walk',
+        to: 'run',
+        conditions: [
+          { param: 'speed', op: 'gte', value: 3 },
+          { param: 'moving', op: 'eq', value: true },
+        ],
+      }),
+    ).toBe('walk → run · when speed ≥ 3 and moving = true');
+  });
+
+  it('describes a trigger condition as "fires"', () => {
+    expect(summarizeTransition(draft, { from: 'walk', to: 'run', conditions: [{ param: 'jump' }] })).toBe(
+      'walk → run · when jump fires',
+    );
+  });
+
+  it('reads "always" for a conditionless, exit-timeless transition and "· exit" for exit-only', () => {
+    expect(summarizeTransition(draft, { from: 'walk', to: 'run', conditions: [] })).toBe('walk → run · always');
+    expect(summarizeTransition(draft, { from: 'walk', to: 'run', conditions: [], exitTime: 0.5 })).toBe('walk → run · exit 0.5');
+  });
+
+  it('labels the any source as "Any"', () => {
+    expect(summarizeTransition(draft, { from: 'any', to: 'walk', conditions: [{ param: 'jump' }] })).toBe(
+      'Any → walk · when jump fires',
+    );
   });
 });
 

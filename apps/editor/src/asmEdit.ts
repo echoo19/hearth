@@ -271,6 +271,148 @@ export function removeTransition(draft: AsmDraft, index: number): AsmDraft {
   return { ...draft, transitions: draft.transitions.filter((_, i) => i !== index) };
 }
 
+// ---------------------------------------------------------------------------
+// grouping + reorder (L-085 / ANIMATOR-5)
+//
+// The on-disk transitions array is FLAT and declaration order is load-bearing:
+// `stateMachine.ts:pickTransition` evaluates `from: current` transitions in
+// declaration order first, then `from: 'any'` in declaration order, taking the
+// first eligible. So the runtime tiebreak between two transitions is decided by
+// their array position *only when they share the same `from`* (a `from: X` edge
+// always beats a `from: 'any'` edge regardless of position). That is exactly
+// what makes grouping-by-source honest: within one group, list order == runtime
+// priority; across groups, relative order carries no runtime meaning.
+// ---------------------------------------------------------------------------
+
+export interface TransitionGroupItem {
+  transition: DraftTransition;
+  /** 0-based position in the flat `draft.transitions` array (the global declaration index). */
+  index: number;
+  /** 0-based position within this source group (the runtime tiebreak order for this `from`). */
+  groupPos: number;
+}
+
+export interface TransitionGroup {
+  /** A state name, or `ANY_STATE`. */
+  from: string;
+  items: TransitionGroupItem[];
+}
+
+/**
+ * Group transitions by source state for display, preserving each transition's
+ * flat declaration index (for the priority badge) and its position within the
+ * group (its runtime tiebreak rank). Group order: the `any` group first (the
+ * machine-wide fallbacks), then one group per state in state-declaration order,
+ * then any orphan `from` values (a source whose state was renamed/removed) in
+ * first-appearance order. Within a group, items stay in flat declaration order.
+ */
+export function groupTransitions(draft: AsmDraft): TransitionGroup[] {
+  const order: string[] = [];
+  const seen = new Set<string>();
+  const push = (from: string) => {
+    if (!seen.has(from)) {
+      seen.add(from);
+      order.push(from);
+    }
+  };
+  if (draft.transitions.some((t) => t.from === ANY_STATE)) push(ANY_STATE);
+  for (const s of draft.states) {
+    if (s.name && draft.transitions.some((t) => t.from === s.name)) push(s.name);
+  }
+  for (const t of draft.transitions) push(t.from); // orphan sources, in first-appearance order
+  const byFrom = new Map<string, TransitionGroup>(order.map((from) => [from, { from, items: [] }]));
+  draft.transitions.forEach((t, index) => {
+    const g = byFrom.get(t.from)!;
+    g.items.push({ transition: t, index, groupPos: g.items.length });
+  });
+  return order.map((from) => byFrom.get(from)!);
+}
+
+/** Outgoing-transition count for a given source state (for the State-card badge). */
+export function outgoingCount(draft: AsmDraft, from: string): number {
+  return draft.transitions.reduce((n, t) => (t.from === from ? n + 1 : n), 0);
+}
+
+/**
+ * Reorder a transition WITHIN its source group, mapping the move back onto the
+ * flat declaration array honestly.
+ *
+ * Mapping rule: a group owns a fixed set of flat slots — the positions where
+ * `from === group`. Moving the transition to `targetGroupPos` permutes ONLY
+ * those slots (the group's transitions are re-laid into the same slots in the
+ * new order); every transition of a different source keeps its exact flat
+ * position. Because the runtime tiebreak is decided by declaration order within
+ * each `from`-set, this changes exactly this group's priority and nothing else —
+ * so what the user reorders on screen is precisely what changes at runtime, and
+ * no cross-group relative order is silently disturbed.
+ *
+ * `targetGroupPos` is clamped to the group; a no-op move returns the draft
+ * unchanged (referentially) so it never marks the draft dirty.
+ */
+export function moveTransitionInGroup(draft: AsmDraft, flatIndex: number, targetGroupPos: number): AsmDraft {
+  const target = draft.transitions[flatIndex];
+  if (!target) return draft;
+  const slots: number[] = [];
+  draft.transitions.forEach((t, i) => {
+    if (t.from === target.from) slots.push(i);
+  });
+  const cur = slots.indexOf(flatIndex);
+  if (cur === -1) return draft;
+  const dest = Math.max(0, Math.min(slots.length - 1, targetGroupPos));
+  if (dest === cur) return draft;
+  const groupItems = slots.map((i) => draft.transitions[i]);
+  const [moved] = groupItems.splice(cur, 1);
+  groupItems.splice(dest, 0, moved);
+  const transitions = draft.transitions.slice();
+  slots.forEach((flatI, k) => {
+    transitions[flatI] = groupItems[k];
+  });
+  return { ...draft, transitions };
+}
+
+// ---------------------------------------------------------------------------
+// at-a-glance summary (L-085 / ANIMATOR-5)
+// ---------------------------------------------------------------------------
+
+/** Comparison-operator glyphs, shared so the collapsed summary and the op picker read alike. */
+export const OP_SYMBOLS: Record<ConditionOp, string> = {
+  eq: '=',
+  neq: '≠',
+  gt: '>',
+  gte: '≥',
+  lt: '<',
+  lte: '≤',
+};
+
+function conditionClause(draft: AsmDraft, c: DraftCondition): string {
+  const type = draft.params.find((p) => p.name === c.param)?.type;
+  const name = c.param || '(param)';
+  if (type === 'trigger') return `${name} fires`;
+  const op = c.op ? OP_SYMBOLS[c.op] : '?';
+  const value = typeof c.value === 'boolean' ? (c.value ? 'true' : 'false') : (c.value ?? '?');
+  return `${name} ${op} ${value}`;
+}
+
+/**
+ * A one-line, sentence-like summary of a transition for the collapsed card,
+ * e.g. `walk → run · when speed > 5 (exit 0.8)`. A conditionless, exit-timeless
+ * transition reads `· always`; an exit-time-only transition reads `· exit 0.8`.
+ */
+export function summarizeTransition(draft: AsmDraft, t: DraftTransition): string {
+  const from = t.from === ANY_STATE ? 'Any' : t.from || '(from)';
+  const to = t.to || '(to)';
+  let s = `${from} → ${to}`;
+  if (t.conditions.length > 0) {
+    s += ' · when ' + t.conditions.map((c) => conditionClause(draft, c)).join(' and ');
+  }
+  if (t.exitTime !== undefined) {
+    s += t.conditions.length > 0 ? ` (exit ${t.exitTime})` : ' · exit ' + t.exitTime;
+  } else if (t.conditions.length === 0) {
+    s += ' · always';
+  }
+  return s;
+}
+
 function mapTransition(
   draft: AsmDraft,
   index: number,
