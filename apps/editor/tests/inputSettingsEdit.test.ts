@@ -6,7 +6,7 @@
  * explanation. No DOM, no store — mirrors externalChange.test.ts's style.
  */
 import { describe, expect, it } from 'vitest';
-import { nameConflictMessage, updateSettingsErrorMessage } from '../src/components/InputSettings';
+import { friendlyEditError, nameConflictMessage, updateSettingsErrorMessage } from '../src/components/InputSettings';
 
 describe('updateSettingsErrorMessage', () => {
   it('returns null on success — nothing to show', () => {
@@ -21,6 +21,36 @@ describe('updateSettingsErrorMessage', () => {
 
   it('falls back to a generic message when the errors array is empty', () => {
     expect(updateSettingsErrorMessage({ success: false, errors: [] })).toBe("That didn't save.");
+  });
+
+  it('rewrites a schema-path zod message via friendlyEditError (L-073)', () => {
+    expect(
+      updateSettingsErrorMessage({
+        success: false,
+        errors: [
+          { message: 'updateSettings failed: settings.inputMappings.gamepadAxes.jump.threshold: Number must be less than or equal to 1.' },
+        ],
+      }),
+    ).toBe('Threshold must be less than or equal to 1.');
+  });
+});
+
+describe('friendlyEditError (L-073 / INPUT-7)', () => {
+  it('replaces the schema path with the failing field name', () => {
+    expect(
+      friendlyEditError('settings.inputMappings.gamepadAxes.jump.threshold: Number must be less than or equal to 1.'),
+    ).toBe('Threshold must be less than or equal to 1.');
+  });
+
+  it('humanizes camelCase field names', () => {
+    expect(friendlyEditError('settings.inputMappings.deadzone.someValue: Number must be greater than 0.')).toBe(
+      'Some Value must be greater than 0.',
+    );
+  });
+
+  it('passes through messages without a schema path untouched', () => {
+    expect(friendlyEditError('Action name already in use')).toBe('Action name already in use');
+    expect(friendlyEditError("That didn't save.")).toBe("That didn't save.");
   });
 });
 

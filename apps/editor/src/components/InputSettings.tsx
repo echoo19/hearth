@@ -33,6 +33,7 @@ import type { GamepadAxisBinding, InputMappings, VirtualAxis } from '@hearth/cor
 import { useEditor } from '../store';
 import { ConfirmDialog, Icon, NumberField, TextField } from './ui';
 import { Button, IconButton } from './ui/Button';
+import { Tooltip } from './ui/Tooltip';
 
 function withoutKey<T>(map: Record<string, T>, key: string): Record<string, T> {
   const next = { ...map };
@@ -55,7 +56,27 @@ const DEFAULT_AXIS_BINDING: GamepadAxisBinding = { axis: 0, direction: 1, thresh
  */
 export function updateSettingsErrorMessage(result: { success: boolean; errors: { message: string }[] }): string | null {
   if (result.success) return null;
-  return result.errors[0]?.message ?? "That didn't save.";
+  return friendlyEditError(result.errors[0]?.message ?? "That didn't save.");
+}
+
+/**
+ * Humanize a rejected-edit message (L-073 / INPUT-7): the command layer's
+ * zod errors lead with the full internal path
+ * ("…settings.inputMappings.gamepadAxes.jump.threshold: Number must be less
+ * than or equal to 1."). Rewrite that as "Threshold must be less than or
+ * equal to 1." — the failing field's own name plus the constraint, no
+ * schema-path dump. Anything that doesn't match the path-prefixed shape
+ * passes through untouched. Exported for unit tests.
+ */
+export function friendlyEditError(message: string): string {
+  const match = /(?:^|\s)((?:[A-Za-z0-9_-]+\.)+([A-Za-z0-9_-]+)):\s*(.+)$/.exec(message);
+  if (!match) return message;
+  const [, , field, detail] = match;
+  const label = field.replace(/([a-z0-9])([A-Z])/g, '$1 $2').replace(/^./, (c) => c.toUpperCase());
+  // Zod's scalar messages lead with the value's type ("Number must be…",
+  // "String must contain…") — replace that subject with the field's name.
+  const constraint = detail.replace(/^(Number|String|Value|Array)\s+/, '');
+  return `${label} ${constraint}`;
 }
 
 /**
@@ -142,23 +163,29 @@ function CaptureButton({
 function GamepadButtonAdd({ bound, onAdd }: { bound: string[]; onAdd: (name: string) => void }) {
   const options = GAMEPAD_BUTTON_NAMES.filter((n) => !bound.includes(n));
   return (
-    <select
-      className="select"
-      value=""
-      disabled={options.length === 0}
-      onChange={(e) => {
-        if (e.target.value) onAdd(e.target.value);
-      }}
-    >
-      <option value="" disabled>
-        {options.length === 0 ? 'All buttons bound' : 'Add gamepad button…'}
-      </option>
-      {options.map((n) => (
-        <option key={n} value={n}>
-          {n}
+    // L-071 (INPUT-8): gamepad bindings are by standard-layout NAME, by
+    // design — a named pick works with no controller plugged in (unlike the
+    // keyboard's press-to-capture, which needs the physical key event). The
+    // tooltip explains why there's no "press a button…" counterpart.
+    <Tooltip content="Pick by standard-layout name — works without a controller connected">
+      <select
+        className="select"
+        value=""
+        disabled={options.length === 0}
+        onChange={(e) => {
+          if (e.target.value) onAdd(e.target.value);
+        }}
+      >
+        <option value="" disabled>
+          {options.length === 0 ? 'All buttons bound' : 'Add gamepad button…'}
         </option>
-      ))}
-    </select>
+        {options.map((n) => (
+          <option key={n} value={n}>
+            {n}
+          </option>
+        ))}
+      </select>
+    </Tooltip>
   );
 }
 
@@ -388,10 +415,18 @@ type CaptureTarget =
 export function InputSettings() {
   const info = useEditor((s) => s.info);
   const exec = useEditor((s) => s.exec);
+  const playing = useEditor((s) => s.playing);
+  const runNonce = useEditor((s) => s.runNonce);
 
   const serverMappings = info?.inputMappings ?? null;
 
   const [capture, setCapture] = useState<CaptureTarget | null>(null);
+  // L-069 (INPUT-6): the running preview snapshots InputState at Play, so a
+  // mapping edit mid-run doesn't reach it — a reasonable limitation the panel
+  // never mentioned. Track "edited while playing" and say so; a new run (or
+  // Stop) clears the note.
+  const [editedDuringPlay, setEditedDuringPlay] = useState(false);
+  useEffect(() => setEditedDuringPlay(false), [playing, runNonce]);
   const [newActionName, setNewActionName] = useState('');
   const [newAxisName, setNewAxisName] = useState('');
   const [draftActionNames, setDraftActionNames] = useState<string[]>([]);
@@ -433,6 +468,8 @@ export function InputSettings() {
     localRef.current = result.next;
     setLocal(result.next);
     setEditError(null);
+    // Mid-play edits don't reach the running preview (L-069) — note it.
+    if (useEditor.getState().playing) setEditedDuringPlay(true);
     pendingWrites.current += 1;
     exec('updateSettings', { inputMappings: result.patch }, { quiet: true }).then(
       (settled) => setEditError(updateSettingsErrorMessage(settled)),
@@ -731,6 +768,11 @@ export function InputSettings() {
         </div>
       )}
       {captureNotice && <div className="capture-notice">{captureNotice}</div>}
+      {playing && editedDuringPlay && (
+        <div className="capture-notice" role="status">
+          The running preview keeps the mappings it started with — restart Play to feel these changes.
+        </div>
+      )}
       <div className="panel-body">
         <div className="diff-section">
           <h4>Actions</h4>
