@@ -92,8 +92,10 @@ function EffectFieldRow({
   }
   return (
     <div className="inspector-row" key={field}>
+      {/* Humanized like every other Inspector label (INSPSPEC-2 / L-043); the
+          raw camelCase schema key stays in the title tooltip. */}
       <label className="field-label" title={field}>
-        {field}
+        {humanize(field)}
       </label>
       {control}
     </div>

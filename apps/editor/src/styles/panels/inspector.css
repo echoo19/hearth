@@ -132,6 +132,48 @@
   cursor: default;
 }
 
+/* Collapse toggle wrapping the chevron + title (INSPECTOR-4 / L-037): a
+   transparent button so the whole title area is a keyboard-reachable
+   disclosure control, sitting flush with the remove button on its right. */
+.component-collapse {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  flex: 1;
+  min-width: 0;
+  padding: 0;
+  margin: 0;
+  border: none;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.component-chevron {
+  display: inline-flex;
+  flex: none;
+  color: var(--ink-faint);
+  transition: transform var(--t-fast) var(--ease-out);
+}
+
+/* Chevron points right when collapsed, rotates down when expanded. */
+.component-collapse[aria-expanded='true'] .component-chevron {
+  transform: rotate(90deg);
+}
+
+/* Panel-header collapse-all toggle: same rotate-on-open cue as the per-card
+   chevron. `.expanded` (all cards folded) points right; default points down. */
+.inspector-collapse-all svg {
+  transition: transform var(--t-fast) var(--ease-out);
+  transform: rotate(90deg);
+}
+
+.inspector-collapse-all.expanded svg {
+  transform: rotate(0deg);
+}
+
 .component-title {
   display: inline-flex;
   align-items: center;
@@ -259,6 +301,47 @@
   background: var(--bg-2);
 }
 
+/* Script.params key/value editor (L-034): a row per param (editable key,
+   typed value control, remove) plus an add row (name + type + Add). Replaces
+   the last read-only raw-JSON fallback in the whole Inspector. */
+.script-params {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.script-param-row {
+  display: grid;
+  grid-template-columns: minmax(0, 0.85fr) minmax(0, 1.15fr) auto;
+  align-items: center;
+  gap: 6px;
+}
+
+.script-param-value {
+  min-width: 0;
+}
+
+.script-param-value > .input {
+  width: 100%;
+}
+
+.script-param-add {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 6px;
+  margin-top: 2px;
+}
+
+/* Nested object params: indented, with a quiet rule marking the sub-scope. */
+.script-params-nested {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding-left: 8px;
+  border-left: 2px solid var(--border);
+}
+
 .add-component-row {
   padding: 10px;
 }
@@ -300,6 +383,22 @@
   display: flex;
   flex-direction: column;
   gap: 4px;
+}
+
+/* An effect card already lives inside the Camera field's own narrow control
+   column, so a nested .inspector-row inheriting the top-level 104px label
+   track left its value input collapsed to a ~36px unreadable square
+   (INSPSPEC-3 / L-042). Give the nested rows a compact label track and let
+   the control stretch to fill the rest, so bloom.strength etc. read as wide
+   as any other field. (T10 row-grid unification may fold this in — minimal
+   local fix for now.) */
+.effect-card-body .inspector-row {
+  grid-template-columns: minmax(0, 84px) minmax(0, 1fr);
+  gap: 6px;
+}
+
+.effect-card-body .inspector-row .input {
+  width: 100%;
 }
 
 
