@@ -18,15 +18,20 @@ import {
   ALL_DESKTOP_PLATFORMS,
   defaultPlatformSelection,
   desktopExportPlatforms,
+  desktopMacGatekeeperNote,
+  desktopNextStepHint,
+  formatBytes,
   initialExportJob,
   platformLabel,
   reduceExportJob,
   reopenMode,
   resolveOutDir,
+  SHIPPING_GUIDE_URL,
   signingStatusLabel,
   stageLabel,
   startResultMessage,
   webExportArgs,
+  webNextStepHint,
 } from '../src/components/exportJob';
 
 describe('platform model — four platforms, all preselected', () => {
@@ -148,7 +153,7 @@ describe('reduceExportJob — success rows carry each build zip path', () => {
     outDir: 'export/desktop',
     slug: 'my-game',
     builds: [
-      { platform: 'darwin-arm64', appDir: 'export/desktop/my-game-darwin-arm64', zip: 'export/desktop/my-game-darwin-arm64.zip', signed: 'adhoc', notarized: false },
+      { platform: 'darwin-arm64', appDir: 'export/desktop/my-game-darwin-arm64', zip: 'export/desktop/my-game-darwin-arm64.zip', signed: 'adhoc', notarized: false, zipBytes: 254_312_448 },
       { platform: 'win32-x64', appDir: 'export/desktop/my-game-win32-x64', zip: 'export/desktop/my-game-win32-x64.zip', signed: 'none', notarized: false },
     ],
   };
@@ -163,6 +168,12 @@ describe('reduceExportJob — success rows carry each build zip path', () => {
     expect(s.rows['darwin-arm64'].signed).toBe('adhoc');
     expect(s.rows['win32-x64'].zip).toBe('export/desktop/my-game-win32-x64.zip');
     expect(s.result).toEqual(result);
+  });
+
+  it('carries each build zipBytes through to its row (F-5), leaving it unset when the server could not stat it', () => {
+    const s = reduceExportJob(started, { type: 'frame', frame: { type: 'export-done', jobId: 'job-1', result } });
+    expect(s.rows['darwin-arm64'].zipBytes).toBe(254_312_448);
+    expect(s.rows['win32-x64'].zipBytes).toBeUndefined();
   });
 });
 
@@ -381,5 +392,44 @@ describe('startResultMessage — a second export while one runs is surfaced', ()
 
   it('prefers a server-supplied reason when present', () => {
     expect(startResultMessage({ ok: false, error: 'busy: try later' })).toBe('busy: try later');
+  });
+});
+
+describe('next-step hints (F-1 / F-3, L-118 export-friction reaudit)', () => {
+  it('points the web pane at getting the build in front of a player', () => {
+    expect(webNextStepHint()).toBe('Upload the zip to itch.io or any static host');
+    expect(SHIPPING_GUIDE_URL).toBe('https://hearth-engine.vercel.app/docs/shipping-to-itch');
+  });
+
+  it('tells the desktop pane the build just needs unzipping and double-clicking', () => {
+    expect(desktopNextStepHint()).toBe('Unzip and share — players double-click the app.');
+  });
+
+  it('adds a Gatekeeper note only when a finished build targets macOS', () => {
+    expect(desktopMacGatekeeperNote(['win32-x64', 'linux-x64'])).toBeNull();
+    expect(desktopMacGatekeeperNote(['darwin-arm64'])).toMatch(/Gatekeeper/);
+    expect(desktopMacGatekeeperNote(['win32-x64', 'darwin-x64'])).toMatch(/right-click/);
+  });
+
+  it('has no macOS note at all when nothing finished', () => {
+    expect(desktopMacGatekeeperNote([])).toBeNull();
+  });
+});
+
+describe('formatBytes (F-5, L-118 export-friction reaudit)', () => {
+  it('renders a near-empty example project zip in MB, not a raw byte count', () => {
+    expect(formatBytes(254_312_448)).toBe('242.5 MB');
+  });
+
+  it('handles small sizes below 1KB', () => {
+    expect(formatBytes(512)).toBe('512 B');
+  });
+
+  it('handles GB-scale sizes', () => {
+    expect(formatBytes(1_610_612_736)).toBe('1.5 GB');
+  });
+
+  it('returns null when the server could not stat the zip', () => {
+    expect(formatBytes(undefined)).toBeNull();
   });
 });

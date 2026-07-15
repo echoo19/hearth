@@ -92,6 +92,24 @@
   flex: 1 1 200px;
 }
 
+/* Next-step hints (F-1 / F-3) — quiet, one line, same register as
+   .radio-detail: never competes with the result path or actions above it. */
+.export-hint {
+  margin: 0;
+  color: var(--ink-faint);
+  font-size: var(--text-xs);
+}
+
+.export-hint a {
+  color: inherit;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.export-hint a:hover {
+  color: var(--ink-mute);
+}
+
 /* Web / Desktop segmented control ----------------------------------------- */
 
 .segmented {
@@ -352,5 +370,12 @@
   font-size: var(--text-xs);
   color: var(--ink-mute);
   word-break: break-all;
+}
+
+/* Zip byte size (F-5) — quiet, never competes with the path. */
+.export-zip-size {
+  font-size: var(--text-xs);
+  color: var(--ink-faint);
+  white-space: nowrap;
 }
 

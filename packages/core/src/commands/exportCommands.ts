@@ -103,6 +103,23 @@ function safeCssColor(color: string, fallback: string): string {
   return /^[#(),.%a-zA-Z0-9\s-]+$/.test(color) ? color : fallback;
 }
 
+/**
+ * F-2 (L-118 export-friction reaudit): a folder build's `fetch('project.
+ * bundle.json')` always fails when `index.html` is opened straight via
+ * `file://` (the single most natural first click after "Export finished",
+ * before anyone's read the docs) — browsers refuse the fetch, and the raw
+ * error (`err.message`) is just "Failed to fetch", with no mention of why or
+ * what to do instead. Pure so it's unit-testable without a browser; its
+ * *source* (via `.toString()`, see `renderIndexHtml` below) is inlined
+ * verbatim into every exported folder build's boot script, so the shipped
+ * behavior and this test exercise the exact same function — not a
+ * hand-copied duplicate that could drift.
+ */
+export function fileProtocolBootMessage(protocol: string): string | null {
+  if (protocol !== 'file:') return null;
+  return 'This build needs a web server — run one locally (e.g. npx serve) or use the single-file export for direct opening.';
+}
+
 /** Legible neutral foreground for error text on the loading background. */
 function loadingForeground(backgroundColor: string): string {
   const hex = /^#([0-9a-f]{6})$/i.exec(backgroundColor.trim())?.[1]
@@ -141,8 +158,14 @@ function renderIndexHtml(opts: {
         '  </script>',
       ].join('\n')
     : [
+        // fileProtocolBootMessage's own source, inlined verbatim (see its doc
+        // comment above) so the shipped check is byte-identical to the
+        // unit-tested function, not a hand-copied duplicate.
+        `  <script>${fileProtocolBootMessage.toString()}</script>`,
         '  <script>',
         "    hearthBoot(function (ready, fail) {",
+        '      var fileMsg = fileProtocolBootMessage(location.protocol);',
+        '      if (fileMsg) { fail(fileMsg); return; }',
         "      fetch('project.bundle.json')",
         "        .then(function (res) { if (!res.ok) throw new Error('HTTP ' + res.status); return res.json(); })",
         '        .then(function (bundle) {',

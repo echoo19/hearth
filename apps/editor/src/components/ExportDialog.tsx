@@ -14,16 +14,21 @@ import {
   ALL_DESKTOP_PLATFORMS,
   defaultPlatformSelection,
   desktopExportPlatforms,
+  desktopMacGatekeeperNote,
+  desktopNextStepHint,
+  formatBytes,
   getExportJobSnapshot,
   platformLabel,
   reopenMode,
   resolveOutDir,
+  SHIPPING_GUIDE_URL,
   signingStatusLabel,
   stageLabel,
   startExportJob,
   startResultMessage,
   useExportJob,
   webExportArgs,
+  webNextStepHint,
   type PlatformRow,
   type PlatformSelection,
 } from './exportJob';
@@ -282,6 +287,12 @@ function WebPane({
                 Reveal in folder
               </Button>
             )}
+            <p className="export-hint">
+              {webNextStepHint()} — see the{' '}
+              <a href={SHIPPING_GUIDE_URL} target="_blank" rel="noreferrer">
+                shipping guide
+              </a>
+            </p>
           </div>
         )}
       </div>
@@ -434,6 +445,18 @@ function DesktopPane({
             ))}
           </ul>
         )}
+
+        {finished && rows.some((row) => row.status === 'success') && (
+          <p className="export-hint">
+            {desktopNextStepHint()}
+            {(() => {
+              const note = desktopMacGatekeeperNote(
+                rows.filter((row) => row.status === 'success').map((row) => row.platform),
+              );
+              return note ? ` ${note}` : null;
+            })()}
+          </p>
+        )}
       </div>
       <div className="modal-actions">
         <Button onClick={onClose} disabled={running}>
@@ -475,6 +498,7 @@ function ProgressRow({
             <span className="mono export-path" title={zipAbs}>
               {zipAbs}
             </span>
+            {formatBytes(row.zipBytes) && <span className="export-zip-size">{formatBytes(row.zipBytes)}</span>}
             <CopyButton text={zipAbs} />
           </div>
         )

@@ -3,6 +3,7 @@ import {
   MemoryFileSystem,
   createProject,
   HearthSession,
+  fileProtocolBootMessage,
   type CommandResources,
   type WebExportBundle,
 } from '@hearth/core';
@@ -43,6 +44,12 @@ describe('exportWeb (folder output)', () => {
     expect(html).toContain("fetch('project.bundle.json')");
     expect(html).toContain('hearth-player.js');
     expect(html).toContain('hearth-fullscreen');
+    // F-2 (L-118): the folder build's boot script inlines
+    // fileProtocolBootMessage and checks it before ever calling fetch, so a
+    // file:// open gets a human message instead of a raw "Failed to fetch".
+    expect(html).toContain('function fileProtocolBootMessage(protocol)');
+    expect(html).toContain('fileProtocolBootMessage(location.protocol)');
+    expect(html).toContain('This build needs a web server');
     // Shell contract: chrome must not hold focus after activation — the
     // runtime's keyboard-capture gate treats a focused element outside
     // #hearth-mount as editor/shell chrome and stops capturing, so a
@@ -98,6 +105,23 @@ describe('exportWeb (single file)', () => {
     expect(html).not.toContain("fetch('project.bundle.json')");
     expect(await fs.exists('/proj/export/web/hearth-player.js')).toBe(false);
     expect(await fs.exists('/proj/export/web/project.bundle.json')).toBe(false);
+    // Single-file builds never fetch anything, so the file:// check (which
+    // only guards the fetch-based folder build's boot path) has nothing to
+    // guard here and is not inlined.
+    expect(html).not.toContain('fileProtocolBootMessage');
+  });
+});
+
+describe('fileProtocolBootMessage (F-2, L-118 export-friction reaudit)', () => {
+  it('returns the human message for a file:// open', () => {
+    expect(fileProtocolBootMessage('file:')).toBe(
+      'This build needs a web server — run one locally (e.g. npx serve) or use the single-file export for direct opening.',
+    );
+  });
+
+  it('returns null for a normal hosted protocol', () => {
+    expect(fileProtocolBootMessage('http:')).toBeNull();
+    expect(fileProtocolBootMessage('https:')).toBeNull();
   });
 });
 

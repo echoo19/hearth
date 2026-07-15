@@ -113,6 +113,30 @@ function extractFailingPlatform(message: string | undefined): DesktopPlatform | 
   return DESKTOP_PLATFORMS.find((p) => p === m?.[1]);
 }
 
+/**
+ * F-5 (L-118 export friction reaudit): the finished export-done result already
+ * names each build's zip path but not its size — a near-empty example
+ * project's darwin-arm64 zip weighs 254MB (almost entirely the bundled
+ * Electron runtime), and the dialog gave a first-time exporter zero context
+ * for that number. Stat each build's zip here, server-side, right before the
+ * result goes out over the export bus, and attach the byte count so the
+ * dialog can show it next to the path. A stat failure (disk hiccup, or a test
+ * double's packageDesktop that never actually wrote the file) must not turn a
+ * real success into an error — just leave that build's size unset.
+ */
+async function attachZipSizes(root: string, builds: DesktopBuildResult[]): Promise<void> {
+  await Promise.all(
+    builds.map(async (build) => {
+      try {
+        const stat = await fsp.stat(path.resolve(root, build.zip));
+        build.zipBytes = stat.size;
+      } catch {
+        /* leave zipBytes unset — the row still renders fine without it */
+      }
+    }),
+  );
+}
+
 interface RecentEntry {
   path: string;
   name: string;
@@ -715,7 +739,9 @@ export function createProjectServerContext(options: ProjectServerOptions = {}) {
           const result = await session.execute('exportDesktop', params);
           await syncSeenSeq(root);
           if (result.success) {
-            emitExport(root, { type: 'export-done', jobId, result: result.data as DesktopExportResult });
+            const data = result.data as DesktopExportResult;
+            await attachZipSizes(root, data.builds);
+            emitExport(root, { type: 'export-done', jobId, result: data });
           } else {
             const message = result.errors[0]?.message ?? 'Desktop export failed.';
             const platform = extractFailingPlatform(message);

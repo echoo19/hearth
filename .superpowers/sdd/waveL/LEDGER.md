@@ -2321,7 +2321,7 @@ editor (L-033).
 - Element: export result panel + player boot errors (F-1..F-5)
 - Observed: no next-step hosting/itch hint in result panel; folder build under file:// shows raw "Failed to fetch"; Gatekeeper guidance docs-only; generic com.electron.* bundle id; no size context on 254MB zip.
 - Source: T13 export-reality F-1..F-5
-- Disposition: partial —
+- Disposition: fixed —
   - **F-4 (bundle id): fixed** — `packageDesktop` now passes
     `appBundleId: com.hearth.<slug>` to `@electron/packager` instead of
     letting it fall back to the generic `com.electron.<name>`, so two
@@ -2330,5 +2330,57 @@ editor (L-033).
     src/package.ts. Test: package.test.ts "sets a project-derived bundle
     identifier instead of the com.electron default (F-4)". Live-verified in
     Info.plist: `CFBundleIdentifier` = `com.hearth.drift-cellar`.
-  - F-1 (result-panel next-step hint), F-2 (`file://` folder-build error copy),
-    F-3 (in-app Gatekeeper guidance), F-5 (zip-size context): still **open**.
+  - **F-1 (result-panel next-step hint): fixed** — the finished web-export
+    result gains a one-line quiet hint ("Upload the zip to itch.io or any
+    static host — see the shipping guide", linking
+    docs/shipping-to-itch.md's hosted URL) and the finished desktop result
+    gains its own ("Unzip and share — players double-click the app.").
+    Pure copy helpers (`webNextStepHint`, `desktopNextStepHint`,
+    `SHIPPING_GUIDE_URL`) in apps/editor/src/components/exportJob.ts,
+    rendered in ExportDialog.tsx's WebPane/DesktopPane under a new
+    `.export-hint` class (quiet: `--ink-faint`, `--text-xs`, matching
+    `.radio-detail`'s register). Tests: exportDialog.test.ts "next-step
+    hints" block.
+  - **F-2 (`file://` folder-build error copy): fixed** — the exported
+    folder build's boot script now detects `location.protocol === 'file:'`
+    before ever calling `fetch('project.bundle.json')` and shows "This
+    build needs a web server — run one locally (e.g. npx serve) or use the
+    single-file export for direct opening." instead of the raw "Failed to
+    fetch". New pure `fileProtocolBootMessage(protocol)` in
+    packages/core/src/commands/exportCommands.ts; its own source (via
+    `.toString()`) is inlined verbatim into `renderIndexHtml`'s folder-build
+    script so the shipped check and the unit test exercise the exact same
+    function, not a hand-copied duplicate. Single-file builds don't inline
+    it (they never fetch anything). Tests: export.test.ts
+    "fileProtocolBootMessage" block + folder/single-file assertions. Live-
+    verified: opening `export/web/index.html` via `file://` in real Chrome
+    now shows the friendly message in `#hearth-status-text`.
+  - **F-3 (in-app Gatekeeper guidance): fixed** — the finished desktop
+    result's hint line appends a short Gatekeeper note — "First launch on
+    macOS: right-click the app and choose Open (Gatekeeper)." — whenever at
+    least one finished build in the job targets macOS (pure
+    `desktopMacGatekeeperNote(platforms)`, exportJob.ts). Windows/Linux-only
+    jobs get no macOS note. Live-verified in the export dialog after a real
+    darwin-arm64 packageDesktop run.
+  - **F-5 (zip-size context): fixed** — the finished desktop result now
+    shows the produced zip's byte size next to its path (e.g. "243.1 MB"),
+    quiet-styled (`.export-zip-size`, `--ink-faint`/`--text-xs`). The
+    server stats each build's zip right before the export-done frame goes
+    out (`attachZipSizes` in apps/editor/server/projectServer.ts, using
+    `fs.stat` — a stat failure just leaves that build's size unset rather
+    than turning a real export success into an error) and threads it
+    through a new optional `DesktopBuildResult.zipBytes` field
+    (packages/core/src/commands/types.ts) to the dialog's `PlatformRow`.
+    Pure `formatBytes(bytes)` (exportJob.ts) renders the human size. Tests:
+    desktopExportRoute.test.ts "stats the produced zip..." (writes a real
+    file and asserts the stated byte count survives the export-done frame),
+    exportDialog.test.ts "formatBytes" + zipBytes-through-the-reducer
+    blocks. Live-verified: a real darwin-arm64 export of drift-cellar
+    reported "243.1 MB" next to the zip path, matching `ls -la` on the
+    actual produced file.
+  - Files: apps/editor/src/components/ExportDialog.tsx,
+    apps/editor/src/components/exportJob.ts,
+    apps/editor/src/styles/panels/export.css,
+    apps/editor/server/projectServer.ts,
+    packages/core/src/commands/exportCommands.ts,
+    packages/core/src/commands/types.ts, packages/core/src/index.ts.

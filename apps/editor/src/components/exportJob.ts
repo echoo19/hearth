@@ -97,6 +97,63 @@ export function signingStatusLabel(capability: { mode: SigningMode; identity?: s
 }
 
 // ---------------------------------------------------------------------------
+// Next-step hints (L-118 export-friction reaudit, F-1 / F-3) — the finished
+// result panel used to show only a raw path with a copy button and nothing
+// telling the user what to actually do with it (upload it? double-click it?
+// does it need a server?), despite docs/shipping-to-itch.md covering exactly
+// that. Pure so the copy is unit-tested without a DOM.
+// ---------------------------------------------------------------------------
+
+export const SHIPPING_GUIDE_URL = 'https://hearth-engine.vercel.app/docs/shipping-to-itch';
+
+/** F-1: one-line next-step hint under a finished web export, minus the
+ * "see the shipping guide" link (the dialog renders that part as an actual
+ * `<a>` to SHIPPING_GUIDE_URL). Same line regardless of folder/single-file/
+ * zip — the destination is the same either way (get it in front of a
+ * player); the guide covers the per-format detail. */
+export function webNextStepHint(): string {
+  return 'Upload the zip to itch.io or any static host';
+}
+
+/** F-1: one-line next-step hint under a finished desktop export. */
+export function desktopNextStepHint(): string {
+  return 'Unzip and share — players double-click the app.';
+}
+
+/** F-3: a short Gatekeeper note, shown only when at least one *finished*
+ * build in this job targets macOS (ad-hoc-signed exports are unsigned as far
+ * as Gatekeeper is concerned, so a downloaded build needs this on first
+ * launch — see docs/shipping-to-itch.md's signing table). */
+export function desktopMacGatekeeperNote(finishedPlatforms: DesktopPlatform[]): string | null {
+  return finishedPlatforms.some((p) => p.startsWith('darwin'))
+    ? 'First launch on macOS: right-click the app and choose Open (Gatekeeper).'
+    : null;
+}
+
+// ---------------------------------------------------------------------------
+// Zip size (L-118 export-friction reaudit, F-5) — a near-empty example
+// project's darwin-arm64 zip is 254MB (almost entirely the bundled Electron
+// runtime), and the row showed only the path with no context for that
+// number. The server stats the produced zip (see projectServer.ts's
+// attachZipSizes) and this formats it for display.
+// ---------------------------------------------------------------------------
+
+const BYTE_UNITS = ['KB', 'MB', 'GB', 'TB'] as const;
+
+/** Human-readable byte size, or null when unknown (server couldn't stat it). */
+export function formatBytes(bytes: number | undefined): string | null {
+  if (bytes === undefined || !Number.isFinite(bytes) || bytes < 0) return null;
+  if (bytes < 1024) return `${bytes} B`;
+  let value = bytes / 1024;
+  let unitIndex = 0;
+  while (value >= 1024 && unitIndex < BYTE_UNITS.length - 1) {
+    value /= 1024;
+    unitIndex++;
+  }
+  return `${value.toFixed(1)} ${BYTE_UNITS[unitIndex]}`;
+}
+
+// ---------------------------------------------------------------------------
 // Arg shaping
 // ---------------------------------------------------------------------------
 
@@ -141,6 +198,8 @@ export interface PlatformRow {
   status: PlatformRowStatus;
   /** Set on success (from the export-done build result). */
   zip?: string;
+  /** Byte size of `zip`, when the server managed to stat it (F-5). */
+  zipBytes?: number;
   appDir?: string;
   signed?: 'adhoc' | 'identity' | 'none';
   notarized?: boolean;
@@ -241,6 +300,7 @@ export function reduceExportJob(state: ExportJobState, action: ExportJobAction):
             ...prev,
             status: 'success',
             zip: build.zip,
+            zipBytes: build.zipBytes,
             appDir: build.appDir,
             signed: build.signed,
             notarized: build.notarized,

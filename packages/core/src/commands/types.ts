@@ -79,6 +79,14 @@ export interface DesktopBuildResult {
   zip: string; // project-relative
   signed: 'adhoc' | 'identity' | 'none';
   notarized: boolean;
+  /**
+   * Size in bytes of `zip`, filled in by the host (e.g. the editor's export
+   * route, see projectServer.ts's `attachZipSizes`) after packaging — not
+   * `packageDesktop`'s own job, since a stat happens after the zip is
+   * already on disk. Undefined when unknown (host didn't stat it, or the
+   * stat failed).
+   */
+  zipBytes?: number;
 }
 
 export interface CommandResources {

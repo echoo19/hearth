@@ -124,6 +124,44 @@ describe('POST /api/export/desktop (ctx.startDesktopExport)', () => {
     expect(done!.result.builds[0].platform).toBe('darwin-arm64');
   });
 
+  it('stats the produced zip and attaches its byte size to the result (F-5, L-118 export-friction reaudit)', async () => {
+    // The stub packager above never actually writes a zip (its result path
+    // is fictional), so build.zipBytes stays undefined for it (asserted
+    // elsewhere) — this test uses a packager stub that writes a REAL file at
+    // the reported zip path, mirroring what @hearth/shipping's zipDirectory
+    // actually does, so attachZipSizes has something real to stat.
+    const zipContents = Buffer.from('x'.repeat(12_345));
+    const writingPackageDesktop: PackageDesktopFn = async (opts) => {
+      const [platform] = opts.spec.platforms;
+      const zipRel = `export/desktop/${platform}-sized.zip`;
+      await fsp.mkdir(path.dirname(path.join(opts.spec.projectRoot, zipRel)), { recursive: true });
+      await fsp.writeFile(path.join(opts.spec.projectRoot, zipRel), zipContents);
+      return [{ platform, appDir: `export/desktop/${platform}/App.app`, zip: zipRel, signed: 'adhoc', notarized: false }];
+    };
+
+    const sizedCtx = createProjectServerContext({
+      recentsFile: path.join(tmpDir, 'recent-projects-sized.json'),
+      repoRoot: tmpDir,
+      packageDesktop: writingPackageDesktop,
+    });
+
+    const frames: WsFrame[] = [];
+    const listener = (payload: { root: string; frame: WsFrame }) => frames.push(payload.frame);
+    sizedCtx.exportBus.on('frame', listener);
+
+    const start = await sizedCtx.startDesktopExport(projectPath, undefined, ['darwin-arm64']);
+    expect(start.status).toBe(200);
+
+    for (let i = 0; i < 100 && !frames.some((f) => f.type === 'export-done'); i++) await wait(10);
+    sizedCtx.exportBus.off('frame', listener);
+
+    const done = frames.find((f) => f.type === 'export-done') as
+      | { type: 'export-done'; result: { builds: DesktopBuildResult[] } }
+      | undefined;
+    expect(done).toBeDefined();
+    expect(done!.result.builds[0].zipBytes).toBe(zipContents.length);
+  });
+
   it('rejects a second start while one is running (409-style), then allows a new one after it finishes', async () => {
     let release!: () => void;
     hold = new Promise<void>((resolve) => {
