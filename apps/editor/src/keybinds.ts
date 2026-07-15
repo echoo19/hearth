@@ -132,7 +132,7 @@ export const KEYBINDS: Keybind[] = [
 
   // ---- Selection --------------------------------------------------------
   { id: 'duplicate', combo: 'mod+d', label: 'Duplicate', group: 'Selection', when: 'selection', run: (s) => void s.duplicateSelection() },
-  { id: 'delete', combo: 'delete', label: 'Delete', group: 'Selection', when: 'selection', run: (s) => void s.deleteSelection() },
+  { id: 'delete', combo: 'delete', label: 'Delete', group: 'Selection', when: 'selection', run: (s) => s.requestDeleteSelection() },
   { id: 'nudge-up', combo: 'up', label: 'Nudge up (1px)', group: 'Selection', when: 'selection', run: (s) => s.nudgeSelection(0, -1) },
   { id: 'nudge-down', combo: 'down', label: 'Nudge down (1px)', group: 'Selection', when: 'selection', run: (s) => s.nudgeSelection(0, 1) },
   { id: 'nudge-left', combo: 'left', label: 'Nudge left (1px)', group: 'Selection', when: 'selection', run: (s) => s.nudgeSelection(-1, 0) },

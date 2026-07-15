@@ -78,6 +78,15 @@ export interface EditorState {
    * down. Only meaningful while `playing`; Play/Stop both reset it to false.
    */
   paused: boolean;
+  /**
+   * True when the current `paused` state was entered automatically because the
+   * Game tab was hidden (switching to Code/Scene), NOT by an explicit toolbar
+   * Pause. Distinguishes the two so switching back to Game auto-resumes a
+   * tab-paused run while preserving an explicit user pause. Only meaningful
+   * while `playing && paused`; any explicit setPaused, Play/Stop, or restart
+   * clears it. See setGameTabVisible (L-067).
+   */
+  pausedByTab: boolean;
   /** Bumped every time playback starts, so the preview restarts from the current scene state. */
   runNonce: number;
   /**
@@ -127,6 +136,14 @@ export interface EditorState {
    * mirrors the `diffFocusRequest` seam above.
    */
   focusSelectionRequest: number;
+  /**
+   * Bumped to ask the Hierarchy to open its delete-confirm dialog for the
+   * current selection. The Delete/Backspace keybind routes through here so the
+   * keyboard path and the row trash button share ONE deletion contract — both
+   * confirm (HIER-3). A counter (not a boolean) so a repeat request re-opens
+   * even when the selection hasn't changed; mirrors `focusSelectionRequest`.
+   */
+  deleteSelectionRequest: number;
   /**
    * Imperative "open this script in the Code panel" request, mirroring the
    * `diffFocusRequest` seam. Any panel (Inspector's Script component,
@@ -179,6 +196,13 @@ export interface EditorState {
   setShortcutSheet(open: boolean): void;
   toggleShortcutSheet(): void;
   requestFocusSelection(): void;
+  /**
+   * Ask the Hierarchy to confirm deleting the current selection (bumps
+   * `deleteSelectionRequest`). Used by the Delete/Backspace keybind so it opens
+   * the same ConfirmDialog as the row trash button instead of deleting
+   * silently (HIER-3).
+   */
+  requestDeleteSelection(): void;
   /** Open (and surface) a script in the Code panel, optionally scrolling to
    * a 1-based line. See `codeOpenRequest`. */
   openScriptAt(path: string, line?: number): void;
@@ -243,6 +267,14 @@ export interface EditorState {
    */
   applyExternalJournalEntry(entry: JournalEntry): Promise<void>;
   setPaused(paused: boolean): void;
+  /**
+   * Sync the Game tab's visibility into the play session (L-067). Hiding the
+   * tab pauses a running preview (halting rAF/audio) instead of stopping it,
+   * so switching to Code to hot-reload no longer tears the run down; showing
+   * it again auto-resumes UNLESS the user had explicitly paused first. A no-op
+   * when not playing.
+   */
+  setGameTabVisible(visible: boolean): void;
   setDebugDraw(on: boolean): void;
   /** `link` (Task 7): when present, ConsolePanel renders a clickable `path:line` suffix that jumps to it via `openScriptAt`. */
   log(level: ConsoleLevel, source: ConsoleSource, message: string, link?: ConsoleEntry['link']): void;
@@ -693,6 +725,11 @@ export const useEditor = create<EditorState>((set, get) => {
             // halts the mirroring) — a fresh Play picks up the
             // already-refreshed authored scene instead.
             for (const entry of external) await get().applyExternalJournalEntry(entry);
+            // Keep "Restore checkpoint" (bound to diff?.hasChanges) honest as
+            // soon as the Timeline shows the new row, not only after a manual
+            // refreshDiff() — an external `hearth create entity` etc. must not
+            // leave the button stale (AGENT-2 / L-090).
+            await refreshDiffIfTracking();
           })();
         }
         return;
@@ -770,6 +807,7 @@ export const useEditor = create<EditorState>((set, get) => {
       pendingRestart: false,
       runtimeErrors: [],
       paused: false,
+      pausedByTab: false,
       debugDraw: false,
       snapshotTaken: false,
       sceneViewCenter: null,
@@ -806,6 +844,7 @@ export const useEditor = create<EditorState>((set, get) => {
     pendingRestart: false,
     runtimeErrors: [],
     paused: false,
+    pausedByTab: false,
     runNonce: 0,
     debugDraw: false,
 
@@ -818,6 +857,7 @@ export const useEditor = create<EditorState>((set, get) => {
     sceneViewCenter: null,
     shortcutSheetOpen: false,
     focusSelectionRequest: 0,
+    deleteSelectionRequest: 0,
     codeOpenRequest: null,
     codeSearchRequest: 0,
     animatorTarget: null,
@@ -847,6 +887,11 @@ export const useEditor = create<EditorState>((set, get) => {
     requestFocusSelection() {
       if (!get().selection) return;
       set((state) => ({ focusSelectionRequest: state.focusSelectionRequest + 1 }));
+    },
+
+    requestDeleteSelection() {
+      if (!get().selection) return;
+      set((state) => ({ deleteSelectionRequest: state.deleteSelectionRequest + 1 }));
     },
 
     openScriptAt(path, line) {
@@ -1023,6 +1068,7 @@ export const useEditor = create<EditorState>((set, get) => {
         pendingRestart: false,
         runtimeErrors: [],
         paused: false,
+        pausedByTab: false,
         debugDraw: false,
         snapshotTaken: false,
         sceneViewCenter: null,
@@ -1038,7 +1084,7 @@ export const useEditor = create<EditorState>((set, get) => {
       nudgeQueue.flush();
       // A center measured against the previous scene's viewport doesn't apply
       // here; SceneView re-measures and pushes a fresh one once mounted.
-      set({ sceneId, selection: null, playing: false, pendingRestart: false, runtimeErrors: [], paused: false, debugDraw: false, sceneViewCenter: null });
+      set({ sceneId, selection: null, playing: false, pendingRestart: false, runtimeErrors: [], paused: false, pausedByTab: false, debugDraw: false, sceneViewCenter: null });
       await get().refresh();
     },
 
@@ -1060,6 +1106,7 @@ export const useEditor = create<EditorState>((set, get) => {
       set((state) => ({
         playing,
         paused: false,
+        pausedByTab: false,
         // Either direction clears a pending restart: Play/Stop both remount or
         // tear down the preview, so a queued "restart to apply" is moot. The
         // fresh run also starts with a clean runtime-error list.
@@ -1076,6 +1123,7 @@ export const useEditor = create<EditorState>((set, get) => {
       set((state) => ({
         playing: true,
         paused: false,
+        pausedByTab: false,
         pendingRestart: false,
         runtimeErrors: [],
         runNonce: state.runNonce + 1,
@@ -1111,7 +1159,28 @@ export const useEditor = create<EditorState>((set, get) => {
     },
 
     setPaused(paused) {
-      set({ paused });
+      // An explicit toolbar Pause/Resume makes the user the owner of the pause
+      // state: clear pausedByTab so a later Game-tab hide/show won't auto-resume
+      // (or re-pause) against their intent.
+      set({ paused, pausedByTab: false });
+    },
+
+    setGameTabVisible(visible) {
+      const state = get();
+      // Only a live run has anything to pause/resume; ignore visibility churn
+      // (StrictMode remounts, layout restores) while stopped.
+      if (!state.playing) return;
+      if (!visible) {
+        // Hiding the Game tab pauses a running preview so switching to Code to
+        // edit/hot-reload no longer stops the run (L-067). If the user already
+        // paused explicitly, leave it alone — pausedByTab stays false so we
+        // won't auto-resume it on return.
+        if (!state.paused) set({ paused: true, pausedByTab: true });
+      } else {
+        // Back on the Game tab: auto-resume only the pause WE introduced on
+        // hide; an explicit user pause (pausedByTab === false) is preserved.
+        if (state.pausedByTab) set({ paused: false, pausedByTab: false });
+      }
     },
 
     setDebugDraw(on) {

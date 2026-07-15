@@ -41,6 +41,7 @@ function mockStore(over: Partial<EditorStore> = {}) {
     log: rec('log'),
     duplicateSelection: rec('duplicateSelection'),
     deleteSelection: rec('deleteSelection'),
+    requestDeleteSelection: rec('requestDeleteSelection'),
     nudgeSelection: rec('nudgeSelection'),
     requestFocusSelection: rec('requestFocusSelection'),
     togglePlay: rec('togglePlay'),
@@ -136,7 +137,7 @@ describe('table dispatch', () => {
     resolveBinding({ combo: 'delete', hasSelection: true })!.run(store);
     resolveBinding({ combo: 'f', hasSelection: true })!.run(store);
     expect(calls).toContainEqual(['duplicateSelection']);
-    expect(calls).toContainEqual(['deleteSelection']);
+    expect(calls).toContainEqual(['requestDeleteSelection']);
     expect(calls).toContainEqual(['requestFocusSelection']);
   });
 
