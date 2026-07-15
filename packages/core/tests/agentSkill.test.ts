@@ -9,11 +9,17 @@ import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { AGENT_SKILL_CONTENT, AGENT_SKILL_FILE } from '@hearth/core';
+import {
+  AGENT_SKILL_CONTENT,
+  AGENT_SKILL_FILE,
+  AGENT_CRAFT_SKILL_CONTENT,
+  AGENT_CRAFT_SKILL_FILE,
+} from '@hearth/core';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(__dirname, '../../..');
 const SKILL_PATH = path.join(REPO_ROOT, 'skills', 'hearth', 'SKILL.md');
+const CRAFT_SKILL_PATH = path.join(REPO_ROOT, 'skills', 'hearth-craft', 'SKILL.md');
 
 describe('embedded agent skill', () => {
   it('byte-matches the canonical skills/hearth/SKILL.md', () => {
@@ -26,5 +32,19 @@ describe('embedded agent skill', () => {
 
   it('scaffolds to the project-local .claude path', () => {
     expect(AGENT_SKILL_FILE).toBe('.claude/skills/hearth/SKILL.md');
+  });
+});
+
+describe('embedded game-craft skill', () => {
+  it('byte-matches the canonical skills/hearth-craft/SKILL.md', () => {
+    const canonical = readFileSync(CRAFT_SKILL_PATH, 'utf8');
+    expect(
+      AGENT_CRAFT_SKILL_CONTENT,
+      'Embedded craft skill has drifted from skills/hearth-craft/SKILL.md — run node scripts/sync-agent-skill.mjs',
+    ).toBe(canonical);
+  });
+
+  it('scaffolds to the project-local .claude path', () => {
+    expect(AGENT_CRAFT_SKILL_FILE).toBe('.claude/skills/hearth-craft/SKILL.md');
   });
 });

@@ -1,9 +1,10 @@
 /**
- * Accuracy gate for the shipped Hearth best-practices skill
- * (`skills/hearth/SKILL.md`). Every `hearth <command> [--flags]` invocation in
- * the skill's bash blocks must resolve against the REAL commander program —
- * a fake command path or a flag that no command declares fails this test. This
- * keeps the agent-facing playbook from drifting out of sync with the CLI.
+ * Accuracy gate for the shipped Hearth coding-agent skills
+ * (`skills/hearth/SKILL.md` and `skills/hearth-craft/SKILL.md`). Every
+ * `hearth <command> [--flags]` invocation in a skill's bash blocks must resolve
+ * against the REAL commander program — a fake command path or a flag that no
+ * command declares fails this test. This keeps the agent-facing playbooks from
+ * drifting out of sync with the CLI.
  */
 import { describe, it, expect } from 'vitest';
 import path from 'node:path';
@@ -15,6 +16,7 @@ import { buildProgram } from '../src/program.js';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(__dirname, '../../..');
 const SKILL_PATH = path.join(REPO_ROOT, 'skills', 'hearth', 'SKILL.md');
+const CRAFT_SKILL_PATH = path.join(REPO_ROOT, 'skills', 'hearth-craft', 'SKILL.md');
 
 // --- Model the real CLI surface from the commander program -----------------
 
@@ -151,33 +153,42 @@ function validate(inv: Invocation): string[] {
 
 // --- Tests -----------------------------------------------------------------
 
-const skill = readFileSync(SKILL_PATH, 'utf8');
-const invocations = extractInvocations(skill);
+const SKILLS: { label: string; path: string; minInvocations: number }[] = [
+  { label: 'skills/hearth/SKILL.md', path: SKILL_PATH, minInvocations: 30 },
+  // The craft skill is prose-heavy (game feel, UX, licensing) but still carries
+  // real CLI: sound presets, imports, slices, screenshots, playtests.
+  { label: 'skills/hearth-craft/SKILL.md', path: CRAFT_SKILL_PATH, minInvocations: 8 },
+];
 
-describe('SKILL.md hearth invocations', () => {
-  it('extracts a meaningful number of invocations', () => {
-    expect(invocations.length).toBeGreaterThan(30);
-  });
+for (const skillFile of SKILLS) {
+  const skill = readFileSync(skillFile.path, 'utf8');
+  const invocations = extractInvocations(skill);
 
-  it('every command path resolves to a real command', () => {
-    const bad: string[] = [];
-    for (const inv of invocations) {
-      const firstPositional = inv.tokens.find((t) => !t.startsWith('-'));
-      if (resolve(inv.tokens) === root && firstPositional) {
-        bad.push(`${inv.line}  ->  unknown command "${firstPositional}"`);
+  describe(`${skillFile.label} hearth invocations`, () => {
+    it('extracts a meaningful number of invocations', () => {
+      expect(invocations.length).toBeGreaterThan(skillFile.minInvocations);
+    });
+
+    it('every command path resolves to a real command', () => {
+      const bad: string[] = [];
+      for (const inv of invocations) {
+        const firstPositional = inv.tokens.find((t) => !t.startsWith('-'));
+        if (resolve(inv.tokens) === root && firstPositional) {
+          bad.push(`${inv.line}  ->  unknown command "${firstPositional}"`);
+        }
       }
-    }
-    expect(bad, `unknown commands:\n${bad.join('\n')}`).toEqual([]);
-  });
+      expect(bad, `unknown commands:\n${bad.join('\n')}`).toEqual([]);
+    });
 
-  it('every flag exists on its resolved command', () => {
-    const bad: string[] = [];
-    for (const inv of invocations) {
-      for (const problem of validate(inv)) bad.push(`${inv.line}  ->  ${problem}`);
-    }
-    expect(bad, `invalid flags:\n${bad.join('\n')}`).toEqual([]);
+    it('every flag exists on its resolved command', () => {
+      const bad: string[] = [];
+      for (const inv of invocations) {
+        for (const problem of validate(inv)) bad.push(`${inv.line}  ->  ${problem}`);
+      }
+      expect(bad, `invalid flags:\n${bad.join('\n')}`).toEqual([]);
+    });
   });
-});
+}
 
 // Red-green: the validator must actually reject bad input, or the tests above
 // prove nothing.

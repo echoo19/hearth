@@ -9,7 +9,14 @@ import { describe, it, expect, afterEach } from 'vitest';
 import { mkdtemp, rm, readFile, access } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import { ProjectStore, validateProject, AGENT_SKILL_CONTENT, AGENT_SKILL_FILE } from '@hearth/core';
+import {
+  ProjectStore,
+  validateProject,
+  AGENT_SKILL_CONTENT,
+  AGENT_SKILL_FILE,
+  AGENT_CRAFT_SKILL_CONTENT,
+  AGENT_CRAFT_SKILL_FILE,
+} from '@hearth/core';
 import { NodeFileSystem } from '@hearth/core/node';
 import { getTemplatePath, scaffoldFromTemplate, type TemplateName } from '../src/index.js';
 
@@ -77,10 +84,14 @@ describe('scaffoldFromTemplate', () => {
       expect(files).toContain('.gitignore');
       expect(files).toContain('.hearth/agent-config.json');
 
-      // The project-local best-practices skill is written from core's embedded
-      // canonical copy, so the scaffolded project carries it.
+      // Both project-local coding-agent skills are written from core's embedded
+      // canonical copies, so the scaffolded project carries them.
       expect(files).toContain(AGENT_SKILL_FILE);
       expect(await readFile(path.join(target, AGENT_SKILL_FILE), 'utf8')).toBe(AGENT_SKILL_CONTENT);
+      expect(files).toContain(AGENT_CRAFT_SKILL_FILE);
+      expect(await readFile(path.join(target, AGENT_CRAFT_SKILL_FILE), 'utf8')).toBe(
+        AGENT_CRAFT_SKILL_CONTENT,
+      );
 
       // Template gameplay content is preserved: scene(s) and Lua script(s).
       expect(files.some((f) => f.startsWith('scripts/') && f.endsWith('.lua'))).toBe(true);
