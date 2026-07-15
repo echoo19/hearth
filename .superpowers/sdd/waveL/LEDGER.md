@@ -2384,3 +2384,15 @@ editor (L-033).
     apps/editor/server/projectServer.ts,
     packages/core/src/commands/exportCommands.ts,
     packages/core/src/commands/types.ts, packages/core/src/index.ts.
+
+### L-121 · sceneview · defect · high
+- Element: Space key on focused buttons (app-wide)
+- Observed: SceneView's window-level space-to-pan handler preventDefaults Space for any non-typing target regardless of visible tab — Space never activates a focused button anywhere (Enter works).
+- Source: T13 CODE-PLAY-1
+- Disposition: open
+
+### L-122 · playmode · defect · high
+- Element: Game canvas click → keyboard capture activation
+- Observed: clicking the game canvas focuses dockview's dv-content-container (ancestor), not the captureRoot; shouldCaptureGameKey correctly refuses → WASD dead after a normal click on the Game tab. L-002 fix itself proven correct once host is focused.
+- Source: T13 CODE-PLAY-2
+- Disposition: open
