@@ -18,7 +18,13 @@ import http from 'node:http';
 import path from 'node:path';
 import fs from 'node:fs';
 import os from 'node:os';
-import { createProjectServerContext, handleApiRequest, attachWebSocket } from '../server/projectServer.js';
+import {
+  createProjectServerContext,
+  handleApiRequest,
+  attachWebSocket,
+  resolveToolPaths,
+} from '../server/projectServer.js';
+import { ensureHearthShim, hearthPtyEnv } from '../server/hearthShim.js';
 import { applyAppMenu, buildAppMenuTemplate } from './appMenu.js';
 import type { SerializedMenuSection } from '../src/menu/appMenu';
 
@@ -225,6 +231,7 @@ async function main(): Promise<void> {
     console.log('[smoke] window loaded:', win.webContents.getURL());
     smokeTestMenu();
     await smokeTestPty();
+    await smokeTestHearthShim();
     console.log('[smoke] all checks passed');
     app.quit();
   }
@@ -306,6 +313,55 @@ async function smokeTestPty(): Promise<void> {
   });
 
   console.log('[smoke] pty spawn + echo round-trip ok');
+}
+
+/**
+ * Prove the packaged PATH shim works end-to-end: build the `hearth` shim for
+ * the bundled CLI (resolveToolPaths finds hearth-cli.mjs via HEARTH_TOOLS_DIR),
+ * spawn a shell with the shim'd PATH, and confirm `hearth --version` runs
+ * successfully. The `&&` gate means the marker only prints if `hearth` was
+ * found AND exited 0 — a missing shim or broken CLI fails this loudly, which is
+ * the whole point of running it in the packaged smoke build.
+ */
+async function smokeTestHearthShim(): Promise<void> {
+  const toolPaths = await resolveToolPaths(process.cwd());
+  const shimDir = await ensureHearthShim(toolPaths.cli);
+  const nodePty = await import('@lydell/node-pty');
+  const shell = process.env.SHELL || (process.platform === 'win32' ? 'powershell.exe' : '/bin/bash');
+  const marker = 'hearth-shim-ok';
+  const pty = nodePty.spawn(shell, [], {
+    cwd: os.homedir(),
+    cols: 80,
+    rows: 24,
+    env: hearthPtyEnv(process.env, shimDir),
+  });
+
+  await new Promise<void>((resolve, reject) => {
+    let buffer = '';
+    const timer = setTimeout(() => {
+      pty.kill();
+      reject(new Error(`[smoke] hearth shim did not respond within 5s (got: ${JSON.stringify(buffer.slice(-200))})`));
+    }, 5000);
+
+    pty.onData((data: string) => {
+      buffer += data;
+      if (/not found|No such file|not recognized/.test(buffer)) {
+        clearTimeout(timer);
+        pty.kill();
+        reject(new Error(`[smoke] hearth not on PATH via shim (got: ${JSON.stringify(buffer.slice(-200))})`));
+        return;
+      }
+      if (buffer.includes(marker)) {
+        clearTimeout(timer);
+        pty.kill();
+        resolve();
+      }
+    });
+
+    pty.write(`hearth --version && echo ${marker}\r`);
+  });
+
+  console.log('[smoke] hearth CLI reachable via PATH shim');
 }
 
 app.on('window-all-closed', () => {

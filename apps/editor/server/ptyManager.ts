@@ -13,7 +13,12 @@
  * module must NEVER add `-p`/`--print` or any other flag that would change
  * it from an interactive session, and it never parses or injects into the
  * pty's byte stream beyond raw piping between the child process and the
- * browser terminal. Same rule for `codex`.
+ * browser terminal. Same rule for the other agent CLIs ('codex', 'opencode',
+ * 'hermes'): each runs bare and interactive, PATH-resolved.
+ *
+ * The pty's environment is whatever the caller passes as `opts.env` (ws.ts
+ * hands it a PATH with the `hearth` CLI shim prepended — see hearthShim.ts —
+ * so every session finds a working `hearth`); it defaults to process.env.
  */
 import os from 'node:os';
 
@@ -33,10 +38,10 @@ export interface PtyHandle {
   kill(): void;
 }
 
-export type PtyCommand = 'claude' | 'codex' | 'shell';
+export type PtyCommand = 'claude' | 'codex' | 'opencode' | 'hermes' | 'shell';
 
-/** Resolve the (file, args) to spawn for a given pty command. No args ever
- * for claude/codex: they run bare and interactive, PATH-resolved. */
+/** Resolve the (file, args) to spawn for a given pty command. No args ever for
+ * the agent CLIs: they run bare and interactive, PATH-resolved. */
 function resolveCommand(command: PtyCommand): { file: string; args: string[] } {
   if (command === 'shell') {
     const file = process.env.SHELL || (os.platform() === 'win32' ? 'powershell.exe' : '/bin/bash');
@@ -155,15 +160,21 @@ export class PtyManager {
     this.backend = backend ?? createDefaultBackend();
   }
 
-  /** Starts a pty for `root`, killing any existing one for that root first. */
-  start(root: string, command: PtyCommand, opts: { cols: number; rows: number }): PtyHandle {
+  /** Starts a pty for `root`, killing any existing one for that root first.
+   * `opts.env` overrides the child environment (defaults to process.env); ws.ts
+   * passes a PATH with the `hearth` shim dir prepended. */
+  start(
+    root: string,
+    command: PtyCommand,
+    opts: { cols: number; rows: number; env?: NodeJS.ProcessEnv },
+  ): PtyHandle {
     this.kill(root);
     const { file, args } = resolveCommand(command);
     const handle = this.backend.spawn(file, args, {
       cwd: root,
       cols: opts.cols,
       rows: opts.rows,
-      env: process.env,
+      env: opts.env ?? process.env,
     });
     this.ptys.set(root, handle);
     handle.onExit(() => {

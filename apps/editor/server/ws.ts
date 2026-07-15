@@ -23,8 +23,9 @@ import path from 'node:path';
 import { type JournalEntry, type DesktopPlatform, type DesktopBuildResult } from '@hearth/core';
 import { NodeFileSystem } from '@hearth/core/node';
 import { startJournalWatcher } from './journalWatcher.js';
-import type { ProjectServerContext } from './projectServer.js';
+import { type ProjectServerContext, resolveToolPaths } from './projectServer.js';
 import { PtyManager, type PtyBackend, type PtyHandle } from './ptyManager.js';
+import { ensureHearthShim, hearthPtyEnv } from './hearthShim.js';
 import { isRequestAllowed } from './originGuard.js';
 
 /** Desktop-packaging stages, mirroring @hearth/shipping's PackageStage. */
@@ -54,7 +55,7 @@ export type WsFrame =
   | { type: 'pty-exit'; code: number }
   | { type: 'pty-input'; data: string } // client -> server
   | { type: 'pty-resize'; cols: number; rows: number }
-  | { type: 'pty-start'; command: 'claude' | 'codex' | 'shell'; mode?: string }
+  | { type: 'pty-start'; command: 'claude' | 'codex' | 'opencode' | 'hermes' | 'shell'; mode?: string }
   | { type: 'pty-stop' } // client -> server: explicit kill (the panel's Stop button)
   | { type: 'pty-error'; message: string }
   | ExportFrame;
@@ -92,6 +93,28 @@ export function attachWebSocket(httpServer: HttpServer, ctx: ProjectServerContex
   // that replaced it.
   const liveHandles = new Map<string, PtyHandle>();
 
+  // The pty environment, resolved once and memoized: process.env with the
+  // `hearth` CLI shim dir prepended to PATH, so every embedded-terminal session
+  // (bare shell or agent CLI) finds a working `hearth`. If the shim can't be
+  // built we fall back to process.env — the terminal still works, `hearth` just
+  // isn't guaranteed. Resolution is async (locate the packaged/standalone CLI +
+  // write the shim), so callers await it before spawning.
+  let ptyEnvPromise: Promise<NodeJS.ProcessEnv> | null = null;
+  function getPtyEnv(): Promise<NodeJS.ProcessEnv> {
+    if (!ptyEnvPromise) {
+      ptyEnvPromise = (async () => {
+        try {
+          const toolPaths = await resolveToolPaths(ctx.repoRoot);
+          const shimDir = await ensureHearthShim(toolPaths.cli);
+          return hearthPtyEnv(process.env, shimDir);
+        } catch {
+          return process.env;
+        }
+      })();
+    }
+    return ptyEnvPromise;
+  }
+
   function send(socket: WebSocket, frame: WsFrame): void {
     if (socket.readyState === WebSocket.OPEN) socket.send(JSON.stringify(frame));
   }
@@ -113,14 +136,22 @@ export function attachWebSocket(httpServer: HttpServer, ctx: ProjectServerContex
   ctx.exportBus.on('frame', onExportFrame);
 
   /** Starts a pty for `root` and routes its output back to `socket` only. */
-  function startPty(root: string, socket: WebSocket, command: 'claude' | 'codex' | 'shell'): void {
+  async function startPty(
+    root: string,
+    socket: WebSocket,
+    command: 'claude' | 'codex' | 'opencode' | 'hermes' | 'shell',
+  ): Promise<void> {
+    // Resolve the shim'd env before touching pty state — awaiting here can't
+    // race the supersession logic: stale callbacks are dropped by the
+    // liveHandles comparison below regardless of when the old pty exits.
+    const env = await getPtyEnv();
     // Supersede the previous pty's callbacks BEFORE killing it (inside
     // ptyManager.start), so an exit that fires during/after the kill can't
     // masquerade as this new session's exit.
     liveHandles.delete(root);
     let handle: PtyHandle;
     try {
-      handle = ptyManager.start(root, command, { cols: DEFAULT_PTY_COLS, rows: DEFAULT_PTY_ROWS });
+      handle = ptyManager.start(root, command, { cols: DEFAULT_PTY_COLS, rows: DEFAULT_PTY_ROWS, env });
     } catch (err) {
       send(socket, { type: 'pty-error', message: (err as Error).message });
       return;
@@ -225,7 +256,9 @@ export function attachWebSocket(httpServer: HttpServer, ctx: ProjectServerContex
             // A new pty-start always kills whatever pty this root already
             // has (PtyManager.start's contract) and re-homes ownership to
             // this socket, so a stale socket stops receiving output.
-            startPty(root, ws, frame.command);
+            // startPty is async (it resolves the hearth-shim env first); fire
+            // and forget — any spawn error is surfaced as a pty-error frame.
+            void startPty(root, ws, frame.command);
             break;
           case 'pty-input':
             if (isPtyOwner(root, ws)) ptyManager.write(root, frame.data);

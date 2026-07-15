@@ -86,6 +86,26 @@ describe('PtyManager', () => {
     expect(backend.spawns[0].args).toEqual([]);
   });
 
+  it('spawns "opencode" and "hermes" bare (PATH-resolved), no args', () => {
+    manager.start('/proj/oc', 'opencode', { cols: 80, rows: 24 });
+    manager.start('/proj/hm', 'hermes', { cols: 80, rows: 24 });
+    expect(backend.spawns[0].file).toBe('opencode');
+    expect(backend.spawns[0].args).toEqual([]);
+    expect(backend.spawns[1].file).toBe('hermes');
+    expect(backend.spawns[1].args).toEqual([]);
+  });
+
+  it('passes a caller-supplied env to the backend (the hearth-shim PATH)', () => {
+    const env = { PATH: '/shim:/usr/bin' } as NodeJS.ProcessEnv;
+    manager.start('/proj/env', 'shell', { cols: 80, rows: 24, env });
+    expect(backend.spawns[0].opts.env).toBe(env);
+  });
+
+  it('defaults env to process.env when none is supplied', () => {
+    manager.start('/proj/env2', 'shell', { cols: 80, rows: 24 });
+    expect(backend.spawns[0].opts.env).toBe(process.env);
+  });
+
   it('write() forwards to the active pty for that root', () => {
     manager.start('/proj', 'shell', { cols: 80, rows: 24 });
     manager.write('/proj', 'echo hi\r');
