@@ -41,6 +41,14 @@ export interface EditorState {
   consoleUnread: number;
   /** Whether the Console panel is currently visible in the workspace (its tab selected). */
   consoleOpen: boolean;
+  /**
+   * Whether the Console view is parked at (or near) the bottom of its scroll —
+   * mirrored from ConsolePanel's own scroll handler. While the user is
+   * scrolled up rereading earlier output they can't see new lines, so errors
+   * arriving then count toward `consoleUnread` even with the tab visible
+   * (B5 review follow-up on the unread badge).
+   */
+  consoleAtBottom: boolean;
   diff: ProjectDiff | null;
   /**
    * Bumped after every successful mutating exec(). A lightweight "something
@@ -251,6 +259,12 @@ export interface EditorState {
   selectScene(sceneId: string): Promise<void>;
   select(entityId: string | null): void;
   setConsoleOpen(open: boolean): void;
+  /**
+   * Mirror whether the Console view is scrolled to the bottom (see
+   * `consoleAtBottom`). Returning to the bottom while the tab is visible
+   * clears the unread badge — the new lines are now on screen.
+   */
+  setConsoleAtBottom(atBottom: boolean): void;
   setPlaying(playing: boolean): void;
   /** Restart the running preview from the current scene, clearing the restart badge (the badge's action). */
   restartPlay(): void;
@@ -884,6 +898,7 @@ export const useEditor = create<EditorState>((set, get) => {
     consoleEntries: [],
     consoleUnread: 0,
     consoleOpen: false,
+    consoleAtBottom: true,
     diff: null,
     commandSeq: 0,
     journalFeed: [],
@@ -1154,6 +1169,16 @@ export const useEditor = create<EditorState>((set, get) => {
       set(open ? { consoleOpen: true, consoleUnread: 0 } : { consoleOpen: false });
     },
 
+    setConsoleAtBottom(atBottom) {
+      set((state) => ({
+        consoleAtBottom: atBottom,
+        // Scrolling back down to the live tail while the tab is visible means
+        // the reader has now seen the newest lines; a hidden tab keeps its
+        // badge until it's actually revealed.
+        consoleUnread: atBottom && state.consoleOpen ? 0 : state.consoleUnread,
+      }));
+    },
+
     setPlaying(playing) {
       // Play always runs the scene as it is now (Godot-style); Stop freezes it.
       // Starting a run remounts the preview (see GamePreview's runNonce effect),
@@ -1247,8 +1272,13 @@ export const useEditor = create<EditorState>((set, get) => {
     log(level, source, message, link) {
       set((state) => ({
         consoleEntries: [...state.consoleEntries.slice(-MAX_CONSOLE + 1), makeEntry(level, source, message, link)],
+        // An error is "unread" when the reader can't currently see the live
+        // tail: the tab is hidden, OR it's visible but scrolled up rereading
+        // earlier output (consoleAtBottom mirrors the panel's scroll-lock).
         consoleUnread:
-          level === 'error' && !state.consoleOpen ? state.consoleUnread + 1 : state.consoleUnread,
+          level === 'error' && (!state.consoleOpen || !state.consoleAtBottom)
+            ? state.consoleUnread + 1
+            : state.consoleUnread,
       }));
     },
 

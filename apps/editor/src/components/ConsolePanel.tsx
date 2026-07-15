@@ -1,9 +1,35 @@
-import React, { useEffect, useLayoutEffect, useRef } from 'react';
+import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { useEditor } from '../store';
 import type { ConsoleEntry, ValidationReport } from '../types';
 import { Icon } from './ui';
 import { Button } from './ui/Button';
 import { Tooltip } from './ui/Tooltip';
+
+/**
+ * Level-filter chips (L-064 / CONSOLE-CHANGES-9): 'all' or a single level.
+ * Kept as a plain union (not a Set) — one chip active at a time reads better
+ * than combinable toggles for a three-level console.
+ */
+export type ConsoleFilter = 'all' | ConsoleEntry['level'];
+
+/** Apply a level filter — pure so the chip logic is unit-testable. */
+export function filterConsoleEntries(entries: readonly ConsoleEntry[], filter: ConsoleFilter): ConsoleEntry[] {
+  return filter === 'all' ? [...entries] : entries.filter((e) => e.level === filter);
+}
+
+/**
+ * Plain-text form of the visible entries for the Copy affordance (L-065 /
+ * CONSOLE-CHANGES-10): one line per entry, script location appended when the
+ * entry links one.
+ */
+export function consoleEntriesText(entries: readonly ConsoleEntry[]): string {
+  return entries
+    .map((e) => {
+      const loc = e.link ? ` (${e.link.line != null ? `${e.link.path}:${e.link.line}` : e.link.path})` : '';
+      return `${e.time} [${e.level}] ${e.source}: ${e.message}${loc}`;
+    })
+    .join('\n');
+}
 
 /**
  * Clickable `path:line` suffix for a Console entry that names an exact
@@ -73,6 +99,10 @@ export function ConsolePanel() {
   // Whether the Console tab is currently visible (dockview mirrors this into
   // the store via ConsolePanelHost). Used below to restore scroll on reveal.
   const consoleOpen = useEditor((s) => s.consoleOpen);
+  const setConsoleAtBottom = useEditor((s) => s.setConsoleAtBottom);
+  const [filter, setFilter] = useState<ConsoleFilter>('all');
+  const [copied, setCopied] = useState(false);
+  const visible = filterConsoleEntries(entries, filter);
   const bodyRef = useRef<HTMLDivElement>(null);
   /**
    * Scroll-lock: only auto-scroll when the user was already parked at (or
@@ -127,7 +157,12 @@ export function ConsolePanel() {
     if (!el || el.clientHeight === 0) return;
     // Within ~24px of the bottom counts as "parked at the bottom" so a
     // sub-pixel rounding or a short overscroll doesn't unstick auto-follow.
-    stickToBottomRef.current = isNearBottom(el);
+    const atBottom = isNearBottom(el);
+    // Mirror the scroll-lock into the store only on change — errors landing
+    // while scrolled up count toward the unread badge (see store.log), and
+    // returning to the bottom clears it.
+    if (atBottom !== stickToBottomRef.current) setConsoleAtBottom(atBottom);
+    stickToBottomRef.current = atBottom;
     lastScrollTopRef.current = el.scrollTop;
   }
 
@@ -150,13 +185,46 @@ export function ConsolePanel() {
     }
   }
 
+  function copyVisible() {
+    void navigator.clipboard.writeText(consoleEntriesText(visible));
+    setCopied(true);
+    window.setTimeout(() => setCopied(false), 1200);
+  }
+
+  const FILTERS: { id: ConsoleFilter; label: string }[] = [
+    { id: 'all', label: 'All' },
+    { id: 'info', label: 'Info' },
+    { id: 'warn', label: 'Warn' },
+    { id: 'error', label: 'Errors' },
+  ];
+
   return (
     <>
       <div className="panel-toolbar">
         <Button size="sm" onClick={() => void validate()}>
           Validate project
         </Button>
+        <span className="panel-divider" />
+        {/* Level filter chips (L-064) — one active at a time, like a segmented control. */}
+        <span role="group" aria-label="Filter console by level" style={{ display: 'inline-flex', gap: 2 }}>
+          {FILTERS.map((f) => (
+            <Button
+              key={f.id}
+              size="sm"
+              variant={filter === f.id ? 'primary' : 'ghost'}
+              aria-pressed={filter === f.id}
+              onClick={() => setFilter(f.id)}
+            >
+              {f.label}
+            </Button>
+          ))}
+        </span>
         <span style={{ flex: 1 }} />
+        <Tooltip content="Copy the visible entries as text">
+          <Button variant="ghost" size="sm" onClick={copyVisible} disabled={visible.length === 0}>
+            {copied ? 'Copied' : 'Copy'}
+          </Button>
+        </Tooltip>
         <Button variant="ghost" size="sm" onClick={clearConsole} disabled={entries.length === 0}>
           Clear
         </Button>
@@ -172,10 +240,23 @@ export function ConsolePanel() {
               Command results, warnings, validation reports, and runtime logs from the Game preview show up
               here with timestamps.
             </span>
+            <Button size="sm" onClick={() => void validate()}>
+              Validate project
+            </Button>
+          </div>
+        ) : visible.length === 0 ? (
+          <div className="empty-state">
+            <span className="empty-icon" aria-hidden="true">
+              <Icon name="script" size={16} />
+            </span>
+            <span>No {filter} entries</span>
+            <Button size="sm" onClick={() => setFilter('all')}>
+              Show all
+            </Button>
           </div>
         ) : (
           <div className="console-list">
-            {entries.map((entry) => (
+            {visible.map((entry) => (
               <div key={entry.id} className={`console-line level-${entry.level}`}>
                 <span className="console-time">{entry.time}</span>
                 <span className="console-source">{entry.source}</span>
