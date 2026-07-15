@@ -4,7 +4,7 @@
  * store — mirrors the style of useAgentSocket.test.ts's pure-reducer tests.
  */
 import { describe, expect, it } from 'vitest';
-import { commandIcon, entryToRow, relativeTime } from '../src/components/agent/Timeline';
+import { commandIcon, entryToRow, humanizeLabel, relativeTime } from '../src/components/agent/Timeline';
 import type { JournalEntry } from '../src/types';
 
 function entry(overrides: Partial<JournalEntry> = {}): JournalEntry {
@@ -123,6 +123,84 @@ describe('entryToRow', () => {
         Date.now(),
       ),
     ).not.toThrow();
+  });
+});
+
+describe('humanizeLabel', () => {
+  it('setComponentProperty: entity + property from detail, not the raw scene-only summary', () => {
+    const label = humanizeLabel(
+      entry({
+        command: 'setComponentProperty',
+        summary: 'setComponentProperty mainScene',
+        detail: { scene: 'mainScene', entity: 'Player', property: 'Transform.position' },
+      }),
+    );
+    expect(label).toBe('setComponentProperty Player.Transform.position');
+  });
+
+  it('setProperties: a single changed key reads the same as setComponentProperty', () => {
+    const label = humanizeLabel(
+      entry({
+        command: 'setProperties',
+        summary: 'setProperties mainScene',
+        detail: { scene: 'mainScene', entity: 'Player', properties: ['Transform.position'] },
+      }),
+    );
+    expect(label).toBe('setProperties Player.Transform.position');
+  });
+
+  it('setProperties: multiple changed keys collapse to a count, staying one line', () => {
+    const label = humanizeLabel(
+      entry({
+        command: 'setProperties',
+        summary: 'setProperties mainScene',
+        detail: {
+          scene: 'mainScene',
+          entity: 'Player',
+          properties: ['Transform.position.x', 'Transform.position.y'],
+        },
+      }),
+    );
+    expect(label).toBe('setProperties Player (2 properties)');
+  });
+
+  it('falls back to summary when detail has no entity (e.g. renameEntity today)', () => {
+    const label = humanizeLabel(entry({ command: 'renameEntity', summary: 'renameEntity mainScene' }));
+    expect(label).toBe('renameEntity mainScene');
+  });
+
+  it('is defensive about a malformed detail bag — never throws, falls back to summary', () => {
+    expect(() =>
+      humanizeLabel(
+        entry({
+          command: 'setComponentProperty',
+          detail: { entity: 42, property: 'Transform.position' } as unknown as Record<string, unknown>,
+        }),
+      ),
+    ).not.toThrow();
+    expect(
+      humanizeLabel(
+        entry({
+          command: 'setComponentProperty',
+          summary: 'setComponentProperty mainScene',
+          detail: { entity: 42 } as unknown as Record<string, unknown>,
+        }),
+      ),
+    ).toBe('setComponentProperty mainScene');
+  });
+});
+
+describe('entryToRow uses the humanized label', () => {
+  it('routes through humanizeLabel for the row label', () => {
+    const row = entryToRow(
+      entry({
+        command: 'setComponentProperty',
+        summary: 'setComponentProperty mainScene',
+        detail: { scene: 'mainScene', entity: 'Player', property: 'Transform.position' },
+      }),
+      Date.parse('2026-07-03T12:00:00.000Z'),
+    );
+    expect(row.label).toBe('setComponentProperty Player.Transform.position');
   });
 });
 

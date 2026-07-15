@@ -140,6 +140,17 @@ export function initialWriteCursor(): TerminalWriteCursor {
 export interface TerminalWritePlan {
   /** True when the caller should clear its terminal view before writing `text` (a new epoch). */
   reset: boolean;
+  /**
+   * True exactly when this replay starts truncated: the buffer already had
+   * bytes evicted by the scrollback cap before this (re)mount, so what's
+   * about to be written can't be the session's full history — a fresh/
+   * reattached terminal would otherwise show a shortened scrollback with no
+   * cue that anything's missing (AGENT-6 / L-094). Only meaningful on
+   * `reset`: once a terminal instance is caught up, a later live trim can't
+   * retroactively hide anything it already rendered, so it doesn't need a
+   * repeat notice.
+   */
+  truncated: boolean;
   text: string;
   cursor: TerminalWriteCursor;
 }
@@ -156,7 +167,8 @@ export function planTerminalWrite(cursor: TerminalWriteCursor, state: Scrollback
   // off the front), there's nothing to do but replay whatever tail remains.
   const sliceStart = pos < state.droppedBytes ? 0 : pos - state.droppedBytes;
   const text = state.scrollback.slice(sliceStart);
-  return { reset, text, cursor: { epoch: state.epoch, pos: total } };
+  const truncated = reset && state.droppedBytes > 0;
+  return { reset, truncated, text, cursor: { epoch: state.epoch, pos: total } };
 }
 
 // ---------------------------------------------------------------------------

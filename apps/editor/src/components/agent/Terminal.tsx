@@ -112,6 +112,11 @@ export function Terminal({ onData, onResize }: TerminalProps) {
     function drain(): void {
       const plan = planTerminalWrite(cursor, getAgentSocketSnapshot());
       if (plan.reset) term.reset();
+      // A subtle one-line cue when the replay can't be the full session
+      // history — the scrollback cap already evicted earlier bytes before
+      // this (re)mount saw them (AGENT-6 / L-094). Dim, so it reads as a
+      // system note rather than real program output.
+      if (plan.truncated) term.write('\x1b[2m[hearth] Older output trimmed\x1b[0m\r\n');
       if (plan.text) term.write(plan.text);
       cursor = plan.cursor;
     }

@@ -117,6 +117,34 @@ function detailMeta(entry: JournalEntry): string | undefined {
   return undefined;
 }
 
+/**
+ * Humanized one-line row label. `entry.summary` (session.ts's
+ * `summarizeCommand`) only ever falls back to params.name/id/scene, so a
+ * `setComponentProperty`/`setProperties` row renders as just the command +
+ * scene name — not which entity or property changed, the single most common
+ * mutation an unattended agent makes (AGENT-8 / L-096). Prefer the journal's
+ * own per-property detail (`extractJournalDetail` in @hearth/core's
+ * session.ts) when it names an entity: `"setComponentProperty Player.
+ * Transform.position"` instead of the raw command + scene. Falls back to the
+ * existing summary/command for every other shape — never throws on a
+ * malformed detail bag.
+ */
+export function humanizeLabel(entry: JournalEntry): string {
+  const fallback = entry.summary || entry.command;
+  const detail = entry.detail;
+  const entityRef = detail?.entity;
+  if (typeof entityRef !== 'string' || !entityRef) return fallback;
+  if (typeof detail?.property === 'string' && detail.property) {
+    return `${entry.command} ${entityRef}.${detail.property}`;
+  }
+  if (Array.isArray(detail?.properties)) {
+    const props = detail.properties.filter((p): p is string => typeof p === 'string');
+    if (props.length === 1) return `${entry.command} ${entityRef}.${props[0]}`;
+    if (props.length > 1) return `${entry.command} ${entityRef} (${props.length} properties)`;
+  }
+  return fallback;
+}
+
 /** A tiny local "2m ago" formatter — no new deps. `now` defaults to
  * `Date.now()` but is a parameter so it's exercised deterministically in
  * tests. */
@@ -139,7 +167,7 @@ export function entryToRow(entry: JournalEntry, now: number = Date.now()): Timel
   const status: 'ok' | 'error' = entry.ok ? 'ok' : 'error';
   return {
     icon: commandIcon(entry.command),
-    label: entry.summary || entry.command,
+    label: humanizeLabel(entry),
     status,
     meta: entry.ok ? detailMeta(entry) : entry.error,
     time: relativeTime(entry.ts, now),
@@ -161,8 +189,14 @@ export function Timeline() {
   const snapshotTaken = useEditor((s) => s.snapshotTaken);
   const diff = useEditor((s) => s.diff);
   const exec = useEditor((s) => s.exec);
+  const checkpoint = useEditor((s) => s.checkpoint);
   const refreshDiff = useEditor((s) => s.refreshDiff);
   const requestDiffFocus = useEditor((s) => s.requestDiffFocus);
+  // The WS journal channel is what backs this feed at all — while it's still
+  // connecting there's no way yet to tell "no history" from "history hasn't
+  // arrived", so the empty state must say so rather than claim "no activity"
+  // (AGENT-5 / L-093).
+  const wsStatus = useEditor((s) => s.wsStatus);
   const [confirmRevert, setConfirmRevert] = useState(false);
   const [, setTick] = useState(0);
   const bodyRef = useRef<HTMLDivElement>(null);
@@ -188,10 +222,6 @@ export function Timeline() {
     if (el) pinnedRef.current = el.scrollTop <= PIN_TOLERANCE_PX;
   }
 
-  async function snapshot() {
-    await exec('snapshotProject', {}, { quiet: true });
-  }
-
   function reviewChanges() {
     // Workspace.tsx's diffFocusRequest effect owns both the panel focus and
     // the refreshDiff() call, so this fires it exactly once whether or not
@@ -203,7 +233,7 @@ export function Timeline() {
     <div className="agent-timeline">
       <div className="panel-toolbar agent-timeline-toolbar">
         <Tooltip content="Save a checkpoint you can review and restore">
-          <Button size="sm" onClick={() => void snapshot()}>
+          <Button size="sm" onClick={() => void checkpoint()}>
             {snapshotTaken && <span className="timeline-check">✓</span>} Checkpoint
           </Button>
         </Tooltip>
@@ -225,11 +255,17 @@ export function Timeline() {
             <span className="empty-icon" aria-hidden="true">
               <Icon name="script" size={16} />
             </span>
-            <span>No activity yet</span>
-            <span className="hint">
-              Every structured command shows up here as it runs — from this editor, the CLI, or an MCP
-              agent — even without the terminal above open.
-            </span>
+            {wsStatus !== 'connected' ? (
+              <span>Loading activity…</span>
+            ) : (
+              <>
+                <span>No agent activity in this project yet — activity from CLI/MCP commands appears here.</span>
+                <span className="hint">
+                  Every structured command shows up here as it runs — from this editor, the CLI, or an MCP
+                  agent — even without the terminal above open.
+                </span>
+              </>
+            )}
           </div>
         ) : (
           entries.map((entry) => {

@@ -1064,7 +1064,10 @@ high) though it borders on a defect (values unreadable).
   visual confirmation.
 - Expected: both equally-visual picks get a thumbnail (or neither).
 - Source: GAMESETTINGS-5
-- Disposition: open
+- Disposition: fixed (T9-U4) — `SpriteAssetPicker` for the Loading→Image row
+  now passes `showThumbnail`, same as the Shipping→Icon row. One-line change.
+  Live-verified (headless, port 5335, swiftshader): selecting a Loading image
+  renders its thumbnail next to the picker. File: GameSettings.tsx.
 
 ### L-077 · gamesettings · friction · low
 - Element: any Game Settings field edited during Play.
@@ -1075,7 +1078,29 @@ high) though it borders on a defect (values unreadable).
 - Expected: classify cosmetic settings fields as live-patchable (app-wide
   classification gap, most visible here).
 - Source: GAMESETTINGS-7
-- Disposition: open
+- Disposition: fixed (T9-U4) — `livePatch.ts` had no case for `updateSettings`
+  at all, so every settings edit fell through to the generic `fallback()` and
+  raised the badge. Added `classifyUpdateSettings()`: a patch touching only
+  `title` and/or `loading.*` buildSettings keys classifies `none` (the window
+  title isn't drawn into the canvas, and the loading screen has already shown
+  and been dismissed by the time Play is running, so neither can change what's
+  on screen right now); any other buildSettings field (width/height/
+  backgroundColor/targetFps/fixedTimestep/icon) still falls back to
+  `structural` — conservative, only carves out fields proven cosmetic, never
+  guesses one in. Scoped to the LOCAL edit path only (`classifyLocal`, which
+  has the real params in hand); an external CLI/MCP-sourced `updateSettings`
+  journal entry still has no `extractJournalDetail` case in core's
+  session.ts recording which keys changed, so `classifyJournal` still falls
+  back to `structural` for that path — extending the journal detail shape is
+  a cross-package change, deferred rather than guessed at. Unit-tested
+  (7 new cases in livePatch.test.ts: title-only, each loading.* field alone,
+  each non-cosmetic field alone, a mixed cosmetic+non-cosmetic patch, and an
+  empty/malformed patch). Live-verified (headless, port 5335, swiftshader,
+  ember-horde): entered Play, edited Title — no restart badge
+  (`badgeAfterTitleEdit: ""`); edited Width on the same running session —
+  badge appeared (`badgeAfterWidthEdit: "Restart"`), confirming the
+  classifier actually discriminates live, not just in unit tests. File:
+  livePatch.ts.
 
 ### L-078 · gamesettings · polish · high
 - Element: `.panel-header` of the Game Settings panel — renders "Game".
@@ -1109,6 +1134,15 @@ high) though it borders on a defect (values unreadable).
   Timeline.tsx's `commandIcon`) — no new icon added since ui.tsx is
   off-limits this wave. Left as still-unreachable defensive code (not worth
   deleting outside this wave's scope). File: GameSettings.tsx.
+  FOLLOWUP CLOSED (T9-U4): re-verified unreachability directly —
+  App.tsx only mounts `<Workspace>` (and GameSettings with it) once
+  `projectPath` is truthy, and store.ts's `afterOpen`/`closeProject` always
+  set `projectPath` and `info` together in the same `set()` call, so there is
+  no render where this panel is mounted with `info` null. Deleted the
+  `if (!info)` branch entirely rather than keeping it as dead code; `bs` now
+  reads `info!.buildSettings` with a comment naming the invariant. No test
+  referenced the removed branch (gameSettingsEdit.test.ts). File:
+  GameSettings.tsx.
 
 ## animator
 
@@ -1402,7 +1436,18 @@ high) though it borders on a defect (values unreadable).
   this project", which isn't true.
 - Expected: scope the copy ("No activity yet this session").
 - Source: AGENT-5
-- Disposition: open
+- Disposition: fixed (T9-U4) — replaced the single misleading "No activity
+  yet" with two honest states keyed off the store's existing `wsStatus`
+  (the WS journal channel is what backs this feed at all): while
+  `wsStatus !== 'connected'` it shows "Loading activity…"; once connected
+  and still empty, "No agent activity in this project yet — activity from
+  CLI/MCP commands appears here." (plus the existing longer hint below).
+  This doesn't fix the underlying `journalWatcher` no-backfill gap itself
+  (that needs a WS protocol change to ship history on connect — deferred,
+  cross-package, out of scope for an editor-only fix) but the copy no longer
+  claims something false. Live-verified (headless, port 5335, swiftshader):
+  a fresh ember-horde open renders the new empty-state text exactly. File:
+  agent/Timeline.tsx.
 
 ### L-094 · agent · friction · low
 - Element: terminal scrollback cap (`SCROLLBACK_CAP_BYTES` = 200KB).
@@ -1410,7 +1455,28 @@ high) though it borders on a defect (values unreadable).
   past 200KB silently loses its earliest lines with no cue.
 - Expected: surface `droppedBytes` near the terminal when non-zero.
 - Source: AGENT-6
-- Disposition: open
+- Disposition: fixed (T9-U4) — `planTerminalWrite` (useAgentSocket.ts) gains a
+  `truncated` field: true exactly when a replay is a reset (fresh/reattached
+  terminal mount) AND the buffer already had bytes evicted by the cap before
+  that mount, i.e. the replay can't be the full session history. Terminal.tsx
+  writes a dim one-line `[hearth] Older output trimmed` notice via
+  `term.write()` right after `term.reset()` and before replaying `plan.text`,
+  so it lands at the top of the replayed scrollback. Only fires on
+  reset — once an instance is caught up, a later live trim can't retroactively
+  hide anything it already rendered, so no repeat notice. Unit-tested (3 new
+  cases in useAgentSocket.test.ts: no notice on a fresh untrimmed replay,
+  notice on a (re)mount that inherits already-dropped bytes, no notice on a
+  later live trim once already caught up). Live-verified the replay mechanics
+  end-to-end (headless, port 5335, swiftshader): flooded the embedded shell
+  past the 200KB cap, closed/reopened the Agent tab via the View menu, and
+  confirmed the remounted terminal replays only the capped tail (not the full
+  flood) — matching `truncated`'s reset+dropped-bytes precondition; could not
+  visually confirm the notice glyph itself in headless xterm (its scrollback
+  is virtualized into `.xterm-screen`, and scripting `scrollTop` on
+  `.xterm-viewport` doesn't trigger xterm's own re-render of off-screen rows
+  the way a real user scroll/wheel event does), so that specific rendering is
+  covered by code review + the unit tests above rather than a pixel-level
+  live check. Files: agent/useAgentSocket.ts, agent/Terminal.tsx.
 
 ### L-095 · agent · friction · low
 - Element: "Checkpoint" button in the Agent Timeline.
@@ -1419,7 +1485,17 @@ high) though it borders on a defect (values unreadable).
   Console feedback — unlike the identical action from the Toolbar/Diff panel.
 - Expected: add the matching `log()` call (same action, same feedback).
 - Source: AGENT-7
-- Disposition: open
+- Disposition: fixed (T9-U4) — the actual sibling with matching feedback is
+  DiffPanel.tsx (the standalone Toolbar Checkpoint button no longer exists
+  post-T5/T6 toolbar slimming; see L-098 below), which already routes through
+  the shared `store.checkpoint()` action (log line + `refreshDiff()`).
+  Timeline's own local `snapshot()` wrapper (a bare `exec('snapshotProject',
+  {}, {quiet:true})`) is now removed in favor of calling `checkpoint()`
+  directly — same action, same feedback, and a bonus: Timeline's Checkpoint
+  now also refreshes the Changes panel baseline immediately, like DiffPanel's
+  already does. `snapshotTaken` (the ✓ badge) is set centrally in `exec()`
+  keyed on the command name, so the badge behavior is unaffected. File:
+  agent/Timeline.tsx.
 
 ### L-096 · agent · friction · low
 - Element: Timeline row labels for per-entity mutations.
@@ -1430,7 +1506,23 @@ high) though it borders on a defect (values unreadable).
   least legible.
 - Expected: include entity name (and ideally property path) in the label/meta.
 - Source: AGENT-8
-- Disposition: open
+- Disposition: fixed (T9-U4) — new pure `humanizeLabel(entry)`: when the
+  journal detail names an entity (`setComponentProperty`'s `{scene, entity,
+  property}`, or `setProperties`' `{scene, entity, properties}`), the label
+  becomes `"<command> <entity>.<property>"` (a single changed property) or
+  `"<command> <entity> (N properties)"` (a batch), staying one line; anything
+  else (no detail, or no entity in it — e.g. `renameEntity`/`setEntityTags`,
+  which core's `extractJournalDetail` doesn't record a detail shape for at
+  all today) falls back to the existing `summary || command`, unchanged.
+  Defensive against a malformed detail bag (never throws). Unit-tested (5 new
+  cases in timeline.test.ts). Live-verified (headless, port 5335,
+  swiftshader): editing Player's Transform.position.x in the Inspector
+  produced the Timeline row label `setComponentProperty
+  ent_4j8c5wgb.Transform.position.x` — the entity renders as whatever ref the
+  command actually carried (here an id, since the Inspector calls
+  `setComponentProperty` by id) rather than a guaranteed display name; that's
+  a `journal detail` limitation (documented in the research for this task),
+  not something this fix papers over. File: agent/Timeline.tsx.
 
 ### L-097 · agent · polish · low
 - Element: Agent panel default docked height (`.agent-body`).
@@ -1439,7 +1531,14 @@ high) though it borders on a defect (values unreadable).
   default feels cramped enough to read as a bug.
 - Expected: a taller default initial height for the bottom group / Agent panel.
 - Source: AGENT-9
-- Disposition: open
+- Disposition: fixed (T9-U4) — the bottom dockview group (Assets/Console/
+  Diff/Agent/Input/Game Settings/Live all share it — there's no per-panel
+  default height in dockview, only the group's) bumped from
+  `BOTTOM_HEIGHT = 260` to `340`. Live-verified (headless, port 5335,
+  swiftshader, fresh layout): `.agent-body` measured 223px tall (up from the
+  ~143px the audit measured at 260), a linear ~+80px matching the height
+  bump exactly, since the fixed-height toolbar/hint rows above it don't grow.
+  File: workspace/Workspace.tsx.
 
 ### L-098 · agent · polish · low
 - Element: "Checkpoint" button tooltip — Agent Timeline vs. Toolbar.
@@ -1447,7 +1546,18 @@ high) though it borders on a defect (values unreadable).
   Timeline's identical button omits it.
 - Expected: both mention the shortcut, or neither.
 - Source: AGENT-10
-- Disposition: open
+- Disposition: deferred-M (stale finding, needs an out-of-scope file) — the
+  standalone Toolbar Checkpoint button this compared against no longer exists:
+  T5/T6's toolbar-slimming rework (L-005/L-006, `3c1d9c5`) removed it. The
+  only two Checkpoint tooltips left are DiffPanel.tsx ("Save a checkpoint you
+  can review and restore") and Timeline.tsx (same text, see L-095) — neither
+  mentions the shortcut today, so the original "one has it, one doesn't"
+  finding no longer applies as stated (it's "neither does," which the audit's
+  own "or neither" acceptance criterion already allows). Making both mention
+  ⇧⌘S for extra clarity would require editing DiffPanel.tsx, which is outside
+  this wave's file scope (Files: AgentPanel.tsx + agent/*, Launcher.tsx,
+  GameSettings.tsx) and risks colliding with concurrent work on that panel;
+  left open for whichever future pass next touches DiffPanel.tsx.
 
 ## export
 
@@ -1488,7 +1598,14 @@ high) though it borders on a defect (values unreadable).
 - Expected: cap/scroll the Recent and/or Examples lists independently so the
   launcher reads as one balanced screen.
 - Source: LAUNCHER-1
-- Disposition: open
+- Disposition: fixed (T9-U7) — `.launcher-list` gets `max-height: 220px;
+  overflow-y: auto`, giving Recent and Examples each their own bounded scroll
+  region instead of letting the page grow unbounded. Live-verified (headless,
+  port 5335, swiftshader): both lists measured `max-height: 220px` /
+  `overflow-y: auto`; the Examples list's bounding box sat at y≈607–827 in a
+  950px-tall viewport (comfortably above the fold) and the two cards read as
+  balanced instead of a 3x-taller Open card. File:
+  styles/panels/launcher.css.
 
 ### L-101 · launcher · friction · med
 - Element: Recent-projects storage (`~/.hearth/recent-projects.json`).
@@ -1501,7 +1618,19 @@ high) though it borders on a defect (values unreadable).
 - Expected: a product decision — intentional per-machine MRU vs. per-instance
   scoping — and at minimum guard the concurrent read-modify-write.
 - Source: LAUNCHER-4
-- Disposition: open
+- Disposition: by-design (product decision, T9-U7) — a single per-machine MRU
+  file is the standard, expected shape for "recent projects" (every editor
+  with this feature — VS Code, JetBrains IDEs, etc. — shares one list across
+  windows by design; that's the point of "recent," not a per-window log).
+  Cross-contamination between concurrent editor windows on the SAME machine
+  is a real but narrow edge case (most sessions are one editor per machine at
+  a time), and the current `addRecent` read-modify-write (see
+  projectServer.ts) is already an acceptable last-write-wins for that case: a
+  lost entry just means a project takes one more open to resurface in Recent,
+  never data loss or corruption. No code change made — `projectServer.ts`
+  (where `addRecent`/`readRecents` live) is outside this wave's file scope
+  (Files: AgentPanel.tsx + agent/*, Launcher.tsx, GameSettings.tsx) and the
+  existing behavior is judged fine as-is per the dispatch's own framing.
 
 ### L-102 · launcher · friction · low
 - Element: "Create project" / "Open" buttons while `busy`.

@@ -233,6 +233,40 @@ describe('planTerminalWrite', () => {
     expect(plan.text).toBe(state.scrollback); // but the cursor missed evicted bytes, so replay the whole tail
     expect(plan.cursor).toEqual({ epoch: state.epoch, pos: state.droppedBytes + state.scrollback.length });
   });
+
+  // --- truncated flag (AGENT-6 / L-094: the scrollback cap silently drops
+  // the earliest bytes with no cue) ------------------------------------------
+
+  it('truncated is false on a fresh replay with nothing evicted yet', () => {
+    let state = reduceAgentSocket(initialAgentSocketState(), { type: 'start', command: 'shell' });
+    state = reduceAgentSocket(state, { type: 'frame', frame: { type: 'pty-data', data: 'abc' } as PtyServerFrame });
+    expect(planTerminalWrite(initialWriteCursor(), state).truncated).toBe(false);
+  });
+
+  it('truncated is true on a (re)mount whose buffer already had bytes evicted by the cap', () => {
+    let state = reduceAgentSocket(initialAgentSocketState(), { type: 'start', command: 'shell' });
+    const overflow = 'x'.repeat(SCROLLBACK_CAP_BYTES + SCROLLBACK_TRIM_SLACK_BYTES + 1);
+    state = reduceAgentSocket(state, { type: 'frame', frame: { type: 'pty-data', data: overflow } as PtyServerFrame });
+    expect(state.droppedBytes).toBeGreaterThan(0);
+
+    // A fresh mount (initialWriteCursor) replaying this state is a reset with dropped bytes.
+    const plan = planTerminalWrite(initialWriteCursor(), state);
+    expect(plan.reset).toBe(true);
+    expect(plan.truncated).toBe(true);
+  });
+
+  it('truncated is false once a terminal instance is caught up, even after a later live trim', () => {
+    let state = reduceAgentSocket(initialAgentSocketState(), { type: 'start', command: 'shell' });
+    state = reduceAgentSocket(state, { type: 'frame', frame: { type: 'pty-data', data: 'abc' } as PtyServerFrame });
+    const caughtUp = planTerminalWrite(initialWriteCursor(), state);
+    expect(caughtUp.truncated).toBe(false);
+
+    const overflow = 'z'.repeat(SCROLLBACK_CAP_BYTES + SCROLLBACK_TRIM_SLACK_BYTES + 500);
+    state = reduceAgentSocket(state, { type: 'frame', frame: { type: 'pty-data', data: overflow } as PtyServerFrame });
+    const later = planTerminalWrite(caughtUp.cursor, state);
+    expect(later.reset).toBe(false);
+    expect(later.truncated).toBe(false); // no reset — this instance already rendered what came before the trim
+  });
 });
 
 describe('the external agent-socket store (survives the panel component unmounting)', () => {

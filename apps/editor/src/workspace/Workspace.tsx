@@ -77,7 +77,14 @@ const HEARTH_THEME: DockviewTheme = {
 const SAVE_DEBOUNCE_MS = 300;
 const LEFT_WIDTH = 260;
 const RIGHT_WIDTH = 300;
-const BOTTOM_HEIGHT = 260;
+// The bottom group is shared by every bottom-docked panel (Assets, Console,
+// Diff, Agent, Input, Game Settings, Live) — there's no per-panel default
+// height in dockview, only this group's. 260px left the Agent panel's
+// terminal/timeline at ~6 rows on first open, cramped enough to read as a
+// bug for what's meant to be a primary, high-attention surface (AGENT-9 /
+// L-097); 340px gives it real breathing room without pushing the Scene view
+// too short at a typical laptop height.
+const BOTTOM_HEIGHT = 340;
 
 // ---------------------------------------------------------------------------
 // Panel content wrappers — existing panels rendered inside a dockview panel.
