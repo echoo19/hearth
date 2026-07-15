@@ -136,6 +136,39 @@ function fallback(command: string): LiveAction[] {
 }
 
 /**
+ * `updateSettings` patches buildSettings field-by-field, but the classifier
+ * had no case for it at all, so every settings edit fell through to
+ * `fallback()` and raised the restart badge — even a cosmetic one made
+ * during Play, like retyping the window Title (GAMESETTINGS-7 / L-077).
+ *
+ * A buildSettings field only warrants the badge if it could change what the
+ * ALREADY-RUNNING scene looks like. `title` (window-chrome text, not drawn
+ * into the canvas) and everything under `loading` (the loading screen has
+ * already shown and been dismissed by the time Play is running, so editing
+ * it can't retroactively change anything on screen) never can — so a patch
+ * that touches only those is a genuine no-op for the live preview. Anything
+ * else here (width/height/backgroundColor/targetFps/fixedTimestep/icon) can
+ * plausibly affect what's rendered or how the loop runs, so it stays
+ * structural via the normal fallback (conservative: this only carves out
+ * fields proven cosmetic, never guesses one in).
+ *
+ * Only classifies the LOCAL edit path (this panel's own `exec` calls, which
+ * carry the real patch shape in `params`). An external CLI/MCP-sourced
+ * `updateSettings` journal entry still falls back to structural: the journal
+ * doesn't record which buildSettings keys changed (no `extractJournalDetail`
+ * case for this command in core's session.ts), and adding one is a
+ * cross-package change out of scope here — documented as deferred rather
+ * than guessed at.
+ */
+function classifyUpdateSettings(buildSettings: unknown): LiveAction | null {
+  if (!buildSettings || typeof buildSettings !== 'object') return null;
+  const keys = Object.keys(buildSettings as Record<string, unknown>);
+  if (keys.length === 0) return null;
+  const cosmeticOnly = keys.every((k) => k === 'title' || k === 'loading');
+  return cosmeticOnly ? { kind: 'none' } : null;
+}
+
+/**
  * Classify a just-succeeded local exec. `params` are always present for a
  * local command, so property edits carry their value directly (no post-refresh
  * resolution needed) and local live-patching works fully regardless of what the
@@ -143,6 +176,13 @@ function fallback(command: string): LiveAction[] {
  */
 export function classifyLocal(command: string, params: Record<string, unknown>, data: unknown): LiveAction[] {
   if (EXPORT_ONLY.has(command)) return [{ kind: 'none' }];
+  if (command === 'updateSettings') {
+    const action = classifyUpdateSettings(params.buildSettings);
+    if (action) return [action];
+    // Falls through to the generic `fallback()` below for anything that
+    // touches a non-cosmetic buildSettings field (or an empty/malformed
+    // patch) — still the restart badge.
+  }
   if (command === 'setComponentProperty') {
     return [
       {

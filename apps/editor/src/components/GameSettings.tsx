@@ -197,29 +197,13 @@ export function GameSettings() {
   const projectPath = useEditor((s) => s.projectPath);
   const exec = useEditor((s) => s.exec);
 
-  if (!info) {
-    return (
-      <>
-        <div className="panel-header">
-          <span>Game Settings</span>
-        </div>
-        {/* "grid" is the settings glyph this editor already uses for the
-            updateSettings command (see Timeline.tsx's commandIcon) — a
-            "play" triangle here read as an unrelated live-preview affordance
-            (GAMESETTINGS-1 / L-078, L-079). No new icon added (ui.tsx is
-            off-limits this wave); reusing the existing settings glyph keeps
-            parity without touching the shared icon set. */}
-        <div className="empty-state">
-          <span className="empty-icon" aria-hidden="true">
-            <Icon name="grid" size={16} />
-          </span>
-          <span>No project open</span>
-        </div>
-      </>
-    );
-  }
-
-  const bs = info.buildSettings;
+  // No `if (!info)` guard here: App.tsx only mounts the Workspace (and this
+  // panel with it) once `projectPath` is set, and store.ts's `afterOpen`/
+  // `closeProject` always set `projectPath` and `info` together in the same
+  // `set()` call — there is no render where this panel is mounted with
+  // `info` null. Confirmed unreachable and removed rather than kept as dead
+  // defensive code (GAMESETTINGS-8 / L-079).
+  const bs = info!.buildSettings;
   const sprites = spriteAssets(assets);
 
   const setField = (field: BuildField, value: string | number | null) =>
@@ -300,6 +284,7 @@ export function GameSettings() {
               value={bs.loading.image}
               options={sprites}
               projectPath={projectPath}
+              showThumbnail
               ariaLabel="Loading image"
               onCommit={(id) => setLoading('image', id)}
             />

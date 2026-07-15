@@ -139,6 +139,42 @@ describe('classifyLocal', () => {
     }
   });
 
+  // --- updateSettings: cosmetic buildSettings fields skip the restart badge
+  // (GAMESETTINGS-7 / L-077) ---------------------------------------------
+
+  it('updateSettings: a title-only patch → none (cosmetic, no runtime effect)', () => {
+    expect(kinds(classifyLocal('updateSettings', { buildSettings: { title: 'My Game' } }, {}))).toEqual(['none']);
+  });
+
+  it('updateSettings: any loading.* field alone → none (loading screen already dismissed by Play)', () => {
+    expect(
+      kinds(classifyLocal('updateSettings', { buildSettings: { loading: { backgroundColor: '#000' } } }, {})),
+    ).toEqual(['none']);
+    expect(kinds(classifyLocal('updateSettings', { buildSettings: { loading: { image: 'ast_1' } } }, {}))).toEqual([
+      'none',
+    ]);
+    expect(kinds(classifyLocal('updateSettings', { buildSettings: { loading: { spinner: true } } }, {}))).toEqual([
+      'none',
+    ]);
+  });
+
+  it('updateSettings: a non-cosmetic field (width/height/backgroundColor/targetFps/fixedTimestep/icon) → structural', () => {
+    for (const field of ['width', 'height', 'backgroundColor', 'targetFps', 'fixedTimestep', 'icon']) {
+      expect(kinds(classifyLocal('updateSettings', { buildSettings: { [field]: 1 } }, {}))).toEqual(['structural']);
+    }
+  });
+
+  it('updateSettings: a mixed patch (cosmetic + non-cosmetic in one call) → structural, not none', () => {
+    expect(
+      kinds(classifyLocal('updateSettings', { buildSettings: { title: 'x', width: 800 } }, {})),
+    ).toEqual(['structural']);
+  });
+
+  it('updateSettings: an empty/malformed buildSettings patch → structural (fail safe)', () => {
+    expect(kinds(classifyLocal('updateSettings', { buildSettings: {} }, {}))).toEqual(['structural']);
+    expect(kinds(classifyLocal('updateSettings', {}, {}))).toEqual(['structural']);
+  });
+
   // --- Wave I commands -------------------------------------------------------
 
   it('updateStateMachineAsset → an asm-reload carrying the asset id (from result data)', () => {
