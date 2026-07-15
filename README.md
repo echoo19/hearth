@@ -147,10 +147,16 @@ same asset pipeline: import, probe, slice, animate.
 
 ## Status
 
-Hearth is at **v0.13.0**, a developer preview. The full loop works end to
+Hearth is at **v0.14.0**, a developer preview. This release, "Tightening,"
+adds no new engine features — 129 commits that make the editor work properly
+everywhere, front-load the workflows, and unify the design language (game
+keyboard capture scoped to the game, an auto-pause/resume iteration loop, a
+real application menu, executable-bit-preserving desktop zips, trustworthy
+prefab edits, a fact-checked per-project agent skill, and a root-caused fix
+for the intermittent editor crash). The full loop works end to
 end: project model, editor, runtime preview, CLI, MCP, headless playtests,
-diff review, web and desktop export. This release, "Ship Your Game," stops
-exports from being web-only: **desktop game export** (`hearth export
+diff review, web and desktop export. The prior release, "Ship Your Game,"
+stopped exports from being web-only: **desktop game export** (`hearth export
 desktop` wraps a project's web build in a hardened Electron shell and zips
 a native app per platform — macOS arm64/x64, Windows, Linux — via a new
 `@hearth/shipping` package shared by the CLI, MCP server, and editor), a

@@ -1,32 +1,33 @@
 # Hearth Roadmap
 
-v0.13 is the current milestone. Its first release, v0.13.0 (shipped,
-below, "ship your game"), stops exports from being web-only: **desktop
-game export** (`exportDesktop`/`hearth export desktop`/MCP `export_desktop`
-wraps a project's web build in a hardened Electron shell and zips one
-packaged app per platform — `darwin-arm64`, `darwin-x64`, `win32-x64`,
-`linux-x64`, all four by default — via a new `@hearth/shipping` package
-the CLI, MCP server, and editor all share), a **macOS signing ladder**
-(ad-hoc `codesign` by default; `HEARTH_MAC_IDENTITY` for a real identity;
-plus `HEARTH_APPLE_ID`/`HEARTH_APPLE_PASSWORD`/`HEARTH_TEAM_ID` to notarize
-and staple — Windows/Linux ship unsigned this release, honestly
-documented), a shippable **app icon** (`buildSettings.icon`, a sprite
-asset converted to `.icns`/`.ico`, falling back to a bundled default — the
-wave's only new settings field, and the occasion for a new typed **Game
-Settings** editor panel covering every build setting, not just this one),
-**itch.io zip parity everywhere** (`export web --zip` was CLI-only; the
-MCP `export_web` tool and the editor's Export dialog both gained it,
-alongside a new [Shipping to itch.io](./shipping-to-itch.md) guide), and
-**project templates** (`hearth init --template platformer|topdown|arcade`
-scaffolds a small playable genre skeleton instead of an empty scene, with
-a matching picker in the editor's Launcher). Registry grew 70 → 71
-commands; MCP grew 67 → 68 command tools (70 tools total, including
-`screenshot`/`get_agent_instructions`). See
-[export.md](./export.md#desktop-export-electron),
-[shipping-to-itch.md](./shipping-to-itch.md), and
-[cli.md](./cli.md#project-templates).
+v0.14 is the current milestone. Its release, v0.14.0 (shipped, below,
+"Tightening"), adds no new engine features — 129 commits that make the
+editor *work properly everywhere*, front-load the workflows, and unify the
+design language, driven by a 16-surface live audit (a 121-entry ledger, 100
+fixed, every entry dispositioned) and closed by six independent re-audits.
+Game keyboard capture is now scoped to the game, so editor dialogs, buttons,
+and fields never lose Escape/Enter/Space again and WASD/axis-only bindings
+work in play mode *and* exports; switching to the Code panel auto-pauses the
+run (simulation *and* audio) and switching back auto-resumes; desktop-export
+zips preserve executable bits so unzip-and-launch just works; a real
+File/Edit/View/Help application menu, a minimal toolbar that holds up at
+1024px, a hand-authored icon set, keyboard-accessible tooltips, and real
+empty states retire the last raw-JSON Inspector fields; prefab edits are
+trustworthy (same-value edits record no override, no-op reparents don't
+detach, broken markers self-repair); the intermittent editor batch-pool
+crash is root-caused and fixed for good (0 crashes in 250 stress sessions);
+and every project now ships a fact-checked best-practices skill
+(`.claude/skills/hearth/SKILL.md`, drift-gated against the canonical copy)
+that agents can read. Registry is unchanged at **71 commands**; MCP grew
+68 → 70 command tools (72 tools total, including `screenshot`/
+`get_agent_instructions`, adding `set_entity_enabled`/`set_entity_tags`).
+v0.13 projects open byte-non-destructively. See
+[Shipped in v0.14.0](#shipped-in-v0140) below.
 
-On top of v0.12's **animation state machines** (an `AnimationStateMachine`
+On top of v0.13's **ship-your-game wave** — desktop game export (Electron),
+a macOS signing ladder, itch.io zip parity everywhere, and project
+templates (see [Shipped in v0.13.0](#shipped-in-v0130) below) — v0.12's
+**animation state machines** (an `AnimationStateMachine`
 component drives a sibling `SpriteRenderer` from a params/states/
 transitions asset — `assets/statemachines/*.asm.json`,
 `createStateMachineAsset`/`updateStateMachineAsset`,
@@ -109,6 +110,55 @@ what's deliberately missing.
 The standing rule for everything below: **agent-native first**. Each system
 ships as schemas + commands (inspectable via `hearth … --json`, exposed as
 MCP tools, testable in headless playtests) before it gets editor UI.
+
+## Shipped in v0.14.0
+
+**"Tightening."** No new engine features. 129 commits making the editor
+*work properly
+everywhere*, front-loading the workflows, and unifying the design language —
+driven by a 16-surface live audit (a 121-entry ledger, 100 fixed, every
+entry dispositioned) and closed by six independent re-audits.
+
+- **Every control works**: game keyboard capture is scoped to the game, so
+  editor dialogs, buttons, and fields never lose Escape/Enter/Space again;
+  WASD and all axis-only bindings work in play mode *and* exports; Space
+  activates the focused button app-wide; clicking the canvas arms game input
+  and releases it cleanly afterward.
+- **A tighter iteration loop**: switching to the Code panel auto-pauses the
+  run — simulation *and* audio freeze in place — and switching back
+  auto-resumes without stopping it; hot-reload never tears the session down;
+  undo/redo is burst-safe, serialized, and narrates what it reverted;
+  checkpoints refresh the Changes panel instantly; console errors deep-link
+  to the failing line and the unread badge respects your scroll position.
+- **Honest shipping**: desktop-export zips now preserve executable bits, so
+  unzip-and-launch just works (silently broken for every shipped zip
+  before); per-game macOS bundle ids; folder web builds explain the
+  `file://` limitation instead of failing cryptically; window icons accept a
+  sprite or tile asset and are validated before export.
+- **One deliberate product**: a real File/Edit/View/Help application menu
+  (native on macOS in the desktop app, a slim in-window strip in the
+  browser), a minimal toolbar (transport, scene picker, undo/redo arrows)
+  that holds up at 1024px, a hand-authored icon set, a keyboard-accessible
+  tooltip primitive replacing every native `title`, shared Menu/Button
+  primitives, a tokenized type scale with Bricolage Grotesque brand moments,
+  and real empty states in every panel. No raw-JSON Inspector fields remain.
+- **Prefab trust**: same-value edits no longer record overrides, no-op
+  reparents no longer detach instances, renames stay unique, saving an
+  instance as a new prefab warns before re-linking, and broken markers are
+  repaired instead of masquerading as live instances.
+- **Agents are first-class**: full editor↔agent capability parity — new
+  `set_entity_enabled`/`set_entity_tags` close the last gaps (Registry
+  unchanged at 71 commands; MCP grew 68 → 70 command tools, 72 tools total).
+  Every project now ships a fact-checked best-practices skill
+  (`.claude/skills/hearth/SKILL.md`, drift-gated against the canonical copy)
+  plus a pointer in AGENTS.md and `get_agent_instructions` — agents don't
+  just *have* the tools, they know the house playbook.
+- **Stability**: the intermittent editor crash ("Cannot read properties of
+  null (reading 'clear')") was root-caused to Pixi's global batch pool being
+  released by scene-view teardown and fixed for good (0 crashes in 250
+  stress sessions); saved dockview layouts from earlier versions self-heal;
+  v0.13 projects open byte-non-destructively.
+- Upgrade note: no format changes; v0.13 projects open unchanged.
 
 ## Shipped in v0.13.0
 
@@ -629,18 +679,26 @@ MCP tools, testable in headless playtests) before it gets editor UI.
 
 The end goal, stated so every release aims at it: **a solo dev or an agent
 can take a 2D game from empty project to a polished, distributable game
-without leaving the tool or hitting a wall.** One phase remains — v0.13's
-ship-your-game wave (desktop export, signing, itch.io parity, project
-templates — see [Shipped in v0.13.0](#shipped-in-v0130) above) closed the
-last feature gap. Each release completed a loop rather than scattering
-features; anything that didn't serve that loop waited (see Non-goals) and
-still does.
+without leaving the tool or hitting a wall.** The feature set is complete:
+v0.13's ship-your-game wave closed the last feature gap, and v0.14's
+tightening wave made every surface actually work. Two short steps remain
+before 1.0. Each release completed a loop rather than scattering features;
+anything that didn't serve that loop waited (see Non-goals) and still does.
 
-### v1.0 — hardening
+### Wave L2 — agent game-craft (mini-wave)
 
-No features. Project-format stability guarantee (documented migrations,
-upgrade tests), docs completeness, performance regression fences,
-onboarding polish, and a bug-tail burn-down. Then 1.0.
+No engine features. A short, focused pass on how well agents actually *make
+games* now that every tool works and each project ships the house skill:
+sharper agent guidance and playbooks, game-craft examples, and the editor/
+website positioning that follows from it.
+
+### Wave M — final hardening & verification (v1.0)
+
+No features. A project-format stability guarantee (documented migrations,
+upgrade tests — including advancing the `hearthVersion` stamp when older
+projects are edited), docs completeness, performance regression fences, the
+deferred L-114 native window-close/Cmd+Q unsaved-scripts intercept and the
+rest of the deferred-M bug tail, and onboarding polish. Then 1.0.
 
 ## Parallel track / post-1.0
 
