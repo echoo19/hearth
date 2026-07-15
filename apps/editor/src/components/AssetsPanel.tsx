@@ -6,7 +6,7 @@ import type { AssetItem } from '../types';
 import { ConfirmDialog, Icon, Modal } from './ui';
 import { Button, IconButton } from './ui/Button';
 import { Tooltip } from './ui/Tooltip';
-import { installMenuDismiss, menuNavIndex, MenuItems, type MenuItem, type MenuItemAction } from './ui/Menu';
+import { ContextMenu, type MenuItem } from './ui/Menu';
 import { frameCrop, parseFrameRef, readSheetSize } from '../assetPreview';
 import { countPrefabInstances, createSyncPreflight, syncConfirmBody } from '../prefabActions';
 import { collectDropEntries, entriesFromDataTransferItems } from '../dropEntries';
@@ -209,11 +209,16 @@ export function AssetsPanel() {
   const [deletingAsset, setDeletingAsset] = useState<AssetItem | null>(null);
   const [deleteError, setDeleteError] = useState<{ name: string; message: string } | null>(null);
 
-  // right-click context menu (ASSETS-1)
-  const [contextMenu, setContextMenu] = useState<{ asset: AssetItem; x: number; y: number } | null>(null);
-  const [contextFocused, setContextFocused] = useState(-1);
-  const contextMenuRef = useRef<HTMLDivElement>(null);
-  const contextItemRefs = useRef<(HTMLButtonElement | null)[]>([]);
+  // right-click context menu (ASSETS-1), rendered via the shared ContextMenu
+  // primitive (viewport clamping + dismiss + focus-restore contracts).
+  // `returnFocus` is the invoking card so dismissal doesn't strand keyboard
+  // focus on the body.
+  const [contextMenu, setContextMenu] = useState<{
+    asset: AssetItem;
+    x: number;
+    y: number;
+    returnFocus: HTMLElement | null;
+  } | null>(null);
 
   // file import (button + drag-and-drop)
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -542,31 +547,6 @@ export function AssetsPanel() {
     items.push({ label: 'Delete…', icon: 'trash', danger: true, onSelect: () => setDeletingAsset(asset) });
     return items;
   }
-
-  const contextMenuItems = useMemo(
-    () => (contextMenu ? buildContextMenuItems(contextMenu.asset) : []),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [contextMenu, selectedEntity, sceneId, playingAssetId],
-  );
-
-  // Dismiss wiring + initial focus, mirroring MenuButton's own open effects
-  // (see ./ui/Menu's file header for the two dismiss contracts this reuses).
-  useEffect(() => {
-    if (!contextMenu) return;
-    setContextFocused(menuNavIndex(contextMenuItems, -1, 'Home'));
-    return installMenuDismiss({
-      isOutside: (target) =>
-        !(contextMenuRef.current && target instanceof Node && contextMenuRef.current.contains(target)),
-      close: () => setContextMenu(null),
-      onEscape: () => setContextMenu(null),
-    });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [contextMenu]);
-
-  useEffect(() => {
-    if (!contextMenu || contextFocused < 0) return;
-    contextItemRefs.current[contextFocused]?.focus();
-  }, [contextMenu, contextFocused]);
 
   /** Group skip reasons for the summary line: "unsupported type ×2, missing (...)" reads at a glance instead of one entry per file. */
   function summarizeSkipReasons(failed: { name: string; reason: string }[]): string {
@@ -903,7 +883,7 @@ export function AssetsPanel() {
                   onContextMenu={(e) => {
                     e.preventDefault();
                     setSelectedAssetId(asset.id);
-                    setContextMenu({ asset, x: e.clientX, y: e.clientY });
+                    setContextMenu({ asset, x: e.clientX, y: e.clientY, returnFocus: e.currentTarget });
                   }}
                   onKeyDown={(e) => {
                     if (isActivationKey(e.key)) {
@@ -1256,32 +1236,14 @@ export function AssetsPanel() {
       </Modal>
 
       {contextMenu && (
-        <div
-          ref={contextMenuRef}
-          className="menu-popover asset-context-menu"
-          role="menu"
-          aria-label={`${contextMenu.asset.name} actions`}
-          style={{ top: contextMenu.y, left: contextMenu.x }}
-          onKeyDown={(e) => {
-            if (e.key === 'ArrowDown' || e.key === 'ArrowUp' || e.key === 'Home' || e.key === 'End') {
-              e.preventDefault();
-              setContextFocused((cur) =>
-                menuNavIndex(contextMenuItems, cur, e.key as 'ArrowDown' | 'ArrowUp' | 'Home' | 'End'),
-              );
-            }
-          }}
-        >
-          <MenuItems
-            items={contextMenuItems}
-            focusedIndex={contextFocused}
-            onFocusIndex={setContextFocused}
-            onSelectItem={(item: MenuItemAction) => {
-              item.onSelect();
-              setContextMenu(null);
-            }}
-            itemRefs={contextItemRefs}
-          />
-        </div>
+        <ContextMenu
+          x={contextMenu.x}
+          y={contextMenu.y}
+          items={buildContextMenuItems(contextMenu.asset)}
+          label={`${contextMenu.asset.name} actions`}
+          onClose={() => setContextMenu(null)}
+          returnFocus={contextMenu.returnFocus}
+        />
       )}
     </div>
   );

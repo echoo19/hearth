@@ -370,10 +370,3 @@
   background: var(--err-soft);
 }
 
-/* The right-click card context menu (ASSETS-1) reuses the Menu primitive's
-   popover look (`.menu-popover`) but anchors to the click point instead of a
-   trigger button. */
-.asset-context-menu {
-  position: fixed;
-}
-
