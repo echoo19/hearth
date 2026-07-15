@@ -1,17 +1,60 @@
 # Wave L final gate review — v0.14.0 (T14)
 
-Reviewer: fable, 2026-07-14. Scope: 129 commits, `6582e4c..d599b1b` (HEAD at
-review time). Method: targeted deep-read of the highest-blast-radius diffs,
+Reviewer: fable, 2026-07-14. Scope: 129 commits, `6582e4c..d599b1b`; during
+the review `51df21f` landed on main (files L-123/L-124 — folded into the
+verdict below). Method: targeted deep-read of the highest-blast-radius diffs,
 five live integration probes (own scratch projects, own ports 5360/5361,
 playwright + swiftshader, packaged app, real unzip-launch), ledger honesty
 sampling, and a full release-mechanics dry-run executed in an isolated
 worktree at HEAD.
 
-## VERDICT: READY TO RELEASE
+## VERDICT: NOT READY — two Jake-reported HIGH defects filed mid-gate
 
-No mandatory code fixes. The release itself carries four mandatory
-**release-commit / process** items (§6). Everything else found is recorded
-as non-blocking notes (§7).
+Everything this gate examined is green (§1–§5) and the wave would otherwise
+be READY. But commit `51df21f` (landed during this review) filed **L-123**
+(File-menu popover clipped off the left viewport edge) and **L-124** (Export
+dialog placed bottom-right instead of centered) as **open** ledger entries
+with Jake's screenshots as evidence — and the release criterion is 0 open
+entries / zero known broken controls in the flagship Wave L surface (the app
+menu). Mandatory before release:
+
+1. **Fix L-123 and L-124** — root-cause with Jake's environment details
+   (see §0 repro evidence: they do NOT reproduce in dev-mode Chrome, so the
+   fixer needs browser/surface/window specifics), disposition them, and
+   re-verify live in the environment that showed them.
+2. Then the four release-commit items in §6 apply unchanged.
+
+Nothing else blocks; post-fix turnaround needs only the two re-verifications
+plus suite+typecheck — the release mechanics in §5 remain fully proven.
+
+### §0. L-123 / L-124 repro evidence for the fixer (this gate's own probes)
+
+Live measurement, dev editor (vite :5360), headed system Chrome +
+swiftshader, scratch ember-horde opened via the launcher:
+
+- **File popover** (`.menu-popover`): anchored exactly at its trigger
+  (popX == trigX == 89, width 200, computed `left: 0px`, position:absolute
+  inside `position:relative` `.menu-root`) at viewport widths **700 / 800 /
+  900 / 1024 / 1280 / 1440**, idle AND during play. Never clipped;
+  `scrollX` 0. CSS audit: no `.menu-popover` overrides outside
+  `primitives/menu.css`, MenuBar passes no `align` (default left), no
+  toolbar media queries.
+- **Export dialog via File → Export…** (the exact path L-124 suspects):
+  centered (x=550/w=340 at vw=1440; y=252) and `:modal` true, idle AND
+  during play.
+- Earlier this session, the full live-session probe also ran the complete
+  export checklist through this dialog with no placement anomaly, and the
+  keyboard tour drove all four menus.
+
+Implications: (a) the defect condition is environmental — different browser
+(Safari's `<dialog>`/top-layer handling is the prime suspect for L-124's
+"in-flow bottom-right" signature), browser zoom, a packaged-app fallback
+in-window menubar (it renders whenever `native.setAppMenu` is absent — a
+stale preload in a packaged build would do it), or a state my sweeps didn't
+hit; (b) note `Modal`'s guard `if (open && !dialog.open) showModal()` —
+any DOM move of an open modal dialog evicts it from the top layer while
+keeping `open`, and the guard then blocks re-modaling: that failure mode
+renders exactly as L-124 describes. Get the environment from Jake first.
 
 ---
 
@@ -19,8 +62,9 @@ as non-blocking notes (§7).
 
 - Full suite at HEAD: **2591 passed + 1 skipped (205 files)**, `npm run
   typecheck` clean — matches the claimed wave-gate numbers.
-- Ledger: **121 entries, 0 open** (100 fixed / 11 by-design / 10 deferred-M);
-  every entry has a disposition.
+- Ledger: 121 entries dispositioned at review start (100 fixed / 11
+  by-design / 10 deferred-M, 0 open); **L-123/L-124 (51df21f) arrived
+  mid-gate and are open** — see verdict.
 - Working tree clean except two untracked scratch dirs (`.waveL-scratch-shell/`,
   `.claude/`) — delete `.waveL-scratch-shell/` before tagging (hygiene only).
 
