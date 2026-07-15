@@ -36,6 +36,10 @@ const suite = ENABLED && host ? describe : describe.skip;
 suite('packageDesktop (real packager, host platform only)', () => {
   it(
     `packages ${host} into an app dir + zip`,
+    // Retry: the first attempt may race @electron/get's ~100MB binary download;
+    // a retry runs against the now-warm cache. Generous timeout for the cold
+    // download.
+    { timeout: 600_000, retry: 2 },
     async () => {
       const root = await fsp.mkdtemp(path.join(os.tmpdir(), 'hearth-desktop-int-'));
       const spec = {
@@ -112,6 +116,5 @@ suite('packageDesktop (real packager, host platform only)', () => {
         expect(anyExec).toBe(true);
       }
     },
-    600_000,
   );
 });

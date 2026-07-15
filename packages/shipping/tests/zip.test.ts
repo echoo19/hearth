@@ -125,7 +125,11 @@ describe('zipDirectory', () => {
     expect(entries).toEqual([]);
   });
 
-  it('encodes UNIX modes in the central directory for symlinks AND regular files', async () => {
+  // UNIX-only: asserts exact st_mode bits and uses symlinks/chmod that have no
+  // faithful Windows equivalent (Windows lacks per-file exec bits). The
+  // production zip code still runs on Windows; only these mode assertions are
+  // platform-specific.
+  it.skipIf(process.platform === 'win32')('encodes UNIX modes in the central directory for symlinks AND regular files', async () => {
     // Byte-layout regression test. Every entry is now UNIX "made by" (high
     // byte 3) and carries an st_mode in the high 16 bits of external
     // attributes: symlinks keep S_IFLNK|0777, regular files carry their real
@@ -161,7 +165,9 @@ describe('zipDirectory', () => {
     expect(exe.externalAttrs).toBe((0o100755 << 16) >>> 0); // S_IFREG | 0755 — exec bit preserved
   });
 
-  it('preserves the executable bit through a real system-unzip round-trip', async () => {
+  // UNIX-only: relies on the system `unzip` restoring the +x bit, which Windows
+  // has no equivalent for.
+  it.skipIf(process.platform === 'win32')('preserves the executable bit through a real system-unzip round-trip', async () => {
     // The exact user journey that was broken (D-1): a packaged .app is zipped,
     // downloaded, and unzipped with the SYSTEM unzip — its Mach-O binary must
     // still be executable or the app cannot launch. Drive it end-to-end with

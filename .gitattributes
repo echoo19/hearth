@@ -1,0 +1,5 @@
+# Normalize line endings to LF on checkout for every platform. The embedded
+# agent-skill drift gate (packages/core/tests/agentSkill.test.ts) and the
+# generated fixtures byte-compare against files on disk, so a Windows CRLF
+# checkout would spuriously fail. No .bat/.cmd/.ps1 files exist that need CRLF.
+* text=auto eol=lf
