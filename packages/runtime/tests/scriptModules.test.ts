@@ -61,3 +61,51 @@ describe('ScriptModuleRegistry.load', () => {
     expect([...r.dependentsOf('scripts/lib/noise.lua')]).toContain('scripts/player.lua');
   });
 });
+
+describe('ScriptModuleRegistry hot-reload seams', () => {
+  it('recordEdge records a dependent without loading (the Lua path)', () => {
+    const r = new ScriptModuleRegistry(sources);
+    r.recordEdge('scripts/lib/noise.lua', 'scripts/player.lua');
+    expect([...r.dependentsOf('scripts/lib/noise.lua')]).toEqual(['scripts/player.lua']);
+    expect([...r.transitiveDependentsOf('scripts/lib/noise.lua')]).toEqual(['scripts/player.lua']);
+  });
+
+  it('clearEdgesFrom drops only the given paths\' OUTGOING edges', () => {
+    const r = new ScriptModuleRegistry(sources);
+    r.recordEdge('scripts/lib/noise.lua', 'scripts/player.lua');
+    r.recordEdge('scripts/lib/noise.lua', 'scripts/enemy.lua');
+    r.clearEdgesFrom(['scripts/player.lua']);
+    expect([...r.dependentsOf('scripts/lib/noise.lua')]).toEqual(['scripts/enemy.lua']);
+  });
+
+  it('stageFor shares memoized values except the invalidated paths and never mutates the parent', () => {
+    const r = new ScriptModuleRegistry(sources);
+    let libRuns = 0;
+    const lib = r.load('scripts/lib/noise.lua', () => { libRuns++; return { n: 1 }; });
+    r.load('scripts/player.lua', () => ({ p: 1 }));
+
+    const stagedSources = new Map(sources);
+    const staging = r.stageFor(stagedSources, ['scripts/player.lua']);
+    // Unaffected module: memo shared, body does NOT re-run, same instance.
+    expect(staging.load('scripts/lib/noise.lua', () => { libRuns++; return { n: 2 }; })).toBe(lib);
+    expect(libRuns).toBe(1);
+    // Invalidated path recompiles in staging...
+    const newPlayer = staging.load('scripts/player.lua', () => ({ p: 2 }));
+    expect(newPlayer).toEqual({ p: 2 });
+    // ...without touching the parent's memo or graph.
+    expect(r.load('scripts/player.lua', () => ({ p: 3 }))).toEqual({ p: 1 });
+    staging.recordEdge('scripts/lib/noise.lua', 'scripts/player.lua');
+    expect(r.dependentsOf('scripts/lib/noise.lua').size).toBe(0);
+  });
+
+  it('absorbEdges merges a staging graph; setExport replaces a memoized value', () => {
+    const r = new ScriptModuleRegistry(sources);
+    const staging = r.stageFor(new Map(sources), []);
+    staging.recordEdge('scripts/lib/noise.lua', 'scripts/player.lua');
+    r.absorbEdges(staging);
+    expect([...r.dependentsOf('scripts/lib/noise.lua')]).toEqual(['scripts/player.lua']);
+
+    r.setExport('scripts/lib/noise.lua', { n: 9 });
+    expect(r.load('scripts/lib/noise.lua', () => ({ n: 0 }))).toEqual({ n: 9 });
+  });
+});

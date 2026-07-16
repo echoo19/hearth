@@ -88,6 +88,7 @@ import { createCtxMath } from './ctxMath.js';
 import { EventBus, type GameEventRecord } from './events.js';
 import { LuaScriptEngine, isLuaPath } from './lua.js';
 import { EmitterState, type Particle } from './particles.js';
+import { ScriptModuleRegistry } from './scriptModules.js';
 import { MemorySessionStorage, type SessionStorage } from './session.js';
 import { EASINGS, EntityScheduler, createRng, resolveNumericTarget } from './stdlib.js';
 import { rectAtPosition, resolveUiPositions } from './ui.js';
@@ -330,6 +331,22 @@ export class SceneRuntime {
   private readonly obstacleBroadphase = new SpatialHash(32);
   private readonly moverBroadphase = new SpatialHash(32);
   private scriptModules = new Map<string, ScriptHooks | null>();
+  /**
+   * Phase-1 result of loadScripts: every script path's source text, read up
+   * front because `require` is synchronous while store.readScript is async.
+   * Hot reload updates entries in place (the registry shares this map).
+   */
+  private scriptSources = new Map<string, string>();
+  /** Module registry: memoized module values + the require dependents graph. */
+  private moduleRegistry: ScriptModuleRegistry | null = null;
+  /**
+   * During a hot-reload staging pass, Lua require edges (reported through the
+   * Lua engine's resolveModule callback) are recorded here instead of the
+   * live registry, so a failed reload never mutates the live graph and a
+   * successful one commits FRESH edges (a require removed by an edit drops
+   * its edge). Null outside reloadScript.
+   */
+  private moduleEdgeSink: ScriptModuleRegistry | null = null;
   private scriptStates = new Map<string, ScriptState>();
   private handles = new Map<string, EntityHandle>();
   private prevContactPairs = new Set<string>();
@@ -500,28 +517,89 @@ export class SceneRuntime {
   ): Promise<
     { ok: true; entities: number } | { ok: false; message: string; line: number | null }
   > {
-    let hooks: ScriptHooks | null;
+    // Everything the edit invalidates: the script itself plus every module
+    // that (transitively) requires it — recompiling only the edited path
+    // would leave dependents running stale code, the exact bug class hot
+    // reload exists to prevent.
+    if (!this.moduleRegistry) this.moduleRegistry = new ScriptModuleRegistry(this.scriptSources);
+    const registry = this.moduleRegistry;
+    const dependents = [...registry.transitiveDependentsOf(path)];
+    const affected = [path, ...dependents];
+
+    // Stage EVERYTHING first; commit only on full success, so a compile
+    // failure anywhere leaves the entire previous module graph in place
+    // (the old "compile failure keeps old code running" contract must not
+    // become "half the graph swapped"). Unaffected modules stay memoized in
+    // the staging registry — their bodies never re-run and every requirer
+    // keeps the one live instance.
+    const stagedSources = new Map(this.scriptSources);
+    stagedSources.set(path, source);
+    const staging = registry.stageFor(stagedSources, affected);
+    const staged = new Map<string, ScriptHooks>();
+    const luaEngine = this.options.luaEngine ?? this.ownedLuaEngine;
+    let failedPath = path;
+    // Route Lua require edges (reported via the engine's resolveModule
+    // callback while staged bodies run) into the staging graph.
+    this.moduleEdgeSink = staging;
     try {
-      if (isLuaPath(path)) {
-        const engine = this.options.luaEngine ?? this.ownedLuaEngine;
-        if (!engine) throw new Error('Lua engine unavailable');
-        hooks = engine.compile(path, source);
-      } else {
-        hooks = compileScript(source);
+      // The edited module compiles first: if it fails, nothing at all has
+      // mutated (the Lua engine keeps the previous module on a failed
+      // re-run of changed text; the staging registry is thrown away).
+      staged.set(path, this.moduleHooks(path, staging, stagedSources));
+      // Dependents' sources are unchanged, so the Lua engine's path+source
+      // memo would return their OLD bodies — drop those memos first so each
+      // body re-runs against the new module, then recompile them all.
+      if (luaEngine) {
+        for (const dep of dependents) {
+          if (isLuaPath(dep)) luaEngine.invalidateModule(dep);
+        }
+      }
+      for (const dep of dependents) {
+        failedPath = dep;
+        staged.set(dep, this.moduleHooks(dep, staging, stagedSources));
       }
     } catch (err) {
+      // For JS this is a pure no-op failure (only the staging registry saw
+      // the new code). For Lua, a DEPENDENT failing after the edited module
+      // already replaced its value inside the VM needs a best-effort reset:
+      // drop every affected Lua memo so future requires lazily re-run from
+      // the unchanged scriptSources text. Live hooks were never swapped, so
+      // the prior graph keeps running either way.
+      if (luaEngine && staged.has(path)) {
+        for (const p of affected) {
+          if (isLuaPath(p)) luaEngine.invalidateModule(p);
+        }
+      }
       const message = (err as Error)?.message ?? String(err);
-      const line = extractScriptErrorLine(path, err);
-      this.recordError({ frame: this._frame, message, script: path, phase: 'reload', line });
+      const line = extractScriptErrorLine(failedPath, err);
+      this.recordError({ frame: this._frame, message, script: failedPath, phase: 'reload', line });
       return { ok: false, message, line };
+    } finally {
+      this.moduleEdgeSink = null;
     }
-    // Swap the module (so future spawns compile against it) and re-point every
-    // live entity already bound to this path at the fresh hooks.
-    this.scriptModules.set(path, hooks);
+
+    // Full success — commit. Fresh edges replace the affected paths'
+    // outgoing edges (a require REMOVED by the edit drops its edge here).
+    // One exception: a Lua reload with byte-identical text is a VM memo hit
+    // whose body (and requires) never re-ran, so no staging edges were
+    // recorded for it — keep its old edges (same text means same requires).
+    const editedBodyReran = !(isLuaPath(path) && this.scriptSources.get(path) === source);
+    this.scriptSources.set(path, source); // the registry shares this map
+    registry.clearEdgesFrom(editedBodyReran ? affected : dependents);
+    registry.absorbEdges(staging);
+    for (const p of affected) {
+      registry.setExport(p, staged.get(p));
+    }
+    // Swap the modules (so future spawns compile against them) and re-point
+    // every live entity bound to an affected path at its fresh hooks.
+    const affectedSet = new Set(affected);
     let entities = 0;
+    for (const p of affected) {
+      this.scriptModules.set(p, staged.get(p) ?? null);
+    }
     for (const state of this.scriptStates.values()) {
-      if (state.path !== path) continue;
-      state.hooks = hooks;
+      if (!affectedSet.has(state.path)) continue;
+      state.hooks = staged.get(state.path) ?? null;
       state.disabled = false;
       state.consecutiveErrors = 0;
       entities++;
@@ -1581,6 +1659,23 @@ export class SceneRuntime {
       const path = entity.components.Script?.scriptPath;
       if (path) paths.add(path);
     }
+    // PHASE 1 (async): read every source up front. `require` is synchronous
+    // while store.readScript is async, so compilation (phase 2) must resolve
+    // requires purely from this map and never touch I/O.
+    for (const path of paths) {
+      try {
+        this.scriptSources.set(path, await this.store.readScript(path));
+      } catch (err) {
+        this.scriptModules.set(path, null);
+        this.recordError({
+          frame: this._frame,
+          message: `Failed to load script ${path}: ${(err as Error).message}`,
+          script: path,
+          phase: 'load',
+        });
+      }
+    }
+    this.moduleRegistry = new ScriptModuleRegistry(this.scriptSources);
     // Dispatch by extension: .lua → shared Lua engine, else JS compile.
     // The engine is created on demand when the options did not provide one
     // (standalone SceneRuntime use; GameSession shares one per session).
@@ -1600,15 +1695,57 @@ export class SceneRuntime {
         });
       }
     }
+    if (luaEngine) {
+      // Bind require to THIS runtime's registry/sources — on BOTH engine
+      // paths. A provided (GameSession) engine outlives scene switches while
+      // the registry is per scene, so every scene load must rebind here;
+      // binding only at engine creation is exactly the bug that made
+      // `require` work in standalone SceneRuntimes (unit tests) but fail in
+      // every real host (player, playtest, editor preview all share one
+      // engine through GameSession).
+      luaEngine.setModuleResolver({
+        // Lua resolves requires INSIDE the VM (it never calls
+        // registry.load), so this callback is the ONLY place the registry
+        // learns about Lua require edges — skip the recordEdge and hot
+        // reload never sees Lua dependents (the stale-code bug this whole
+        // design exists to prevent). During a reload staging pass the edge
+        // goes to the staging sink instead of the live graph.
+        resolveModule: (spec, fromPath) => {
+          const registry = this.moduleRegistry;
+          if (!registry) throw new Error('script module registry unavailable');
+          const resolved = registry.resolve(spec, fromPath);
+          (this.moduleEdgeSink ?? registry).recordEdge(resolved, fromPath);
+          return resolved;
+        },
+        readModule: (path) => {
+          const source = this.scriptSources.get(path);
+          if (source === undefined) throw new Error(`module not found: ${path}`);
+          return source;
+        },
+      });
+      // Drop the shared VM's memo for every path this scene is loading. On a
+      // shared engine a previous scene already ran these bodies, so phase 2
+      // below would be all memo hits: requires would never fire and THIS
+      // scene's registry would record no dependents edges — hot-reloading a
+      // library after a scene switch would then recompile nobody (stale
+      // code). Re-running bodies once per scene load also matches JS module
+      // semantics exactly (the JS registry is rebuilt per scene). On a
+      // fresh owned engine this is a no-op.
+      for (const path of paths) {
+        if (isLuaPath(path)) luaEngine.invalidateModule(path);
+      }
+    }
+    // PHASE 2 (sync): obtain hooks THROUGH the registry so a module body
+    // runs exactly once per session whether it is reached eagerly here or by
+    // a require — compiling directly would run a library's body twice, a
+    // silent determinism break.
     for (const path of paths) {
+      if (!this.scriptSources.has(path)) continue; // read failed above; error already recorded
       try {
-        const source = await this.store.readScript(path);
-        if (isLuaPath(path)) {
-          if (!luaEngine) throw new Error('Lua engine unavailable');
-          this.scriptModules.set(path, luaEngine.compile(path, source));
-        } else {
-          this.scriptModules.set(path, compileScript(source));
-        }
+        this.scriptModules.set(
+          path,
+          this.moduleHooks(path, this.moduleRegistry, this.scriptSources),
+        );
       } catch (err) {
         this.scriptModules.set(path, null);
         this.recordError({
@@ -1622,6 +1759,33 @@ export class SceneRuntime {
     for (const entity of this.entities) {
       this.registerScript(entity);
     }
+  }
+
+  /**
+   * The single compile path for both eager loads and hot-reload staging:
+   * obtain a script's hooks through `registry` (memoized — the module body
+   * runs at most once per registry), resolving its requires from `sources`.
+   * JS requires recurse through registry.load (which records the dependents
+   * edge); Lua requires resolve inside the VM via the engine's callbacks.
+   */
+  private moduleHooks(
+    path: string,
+    registry: ScriptModuleRegistry,
+    sources: Map<string, string>,
+  ): ScriptHooks {
+    const compile = (p: string): unknown => {
+      const source = sources.get(p);
+      if (source === undefined) throw new Error(`module not found: ${p}`);
+      if (isLuaPath(p)) {
+        const engine = this.options.luaEngine ?? this.ownedLuaEngine;
+        if (!engine) throw new Error('Lua engine unavailable');
+        return engine.compile(p, source);
+      }
+      return compileScript(source, (spec) =>
+        registry.load(registry.resolve(spec, p), compile, p),
+      );
+    };
+    return registry.load(path, compile) as ScriptHooks;
   }
 
   private registerScript(entity: RuntimeEntity): void {

@@ -280,6 +280,12 @@ export class GameSession {
    * Create the shared Lua engine once per session, lazily, when the
    * project contains any .lua script. Scenes recompile their own chunks
    * but share this one VM (and its seeded math.random stream).
+   *
+   * Deliberately NO resolveModule/readModule here: module resolution must
+   * close over the PER-SCENE ScriptModuleRegistry, which does not exist yet.
+   * Every SceneRuntime.loadScripts rebinds this engine to its own registry
+   * via setModuleResolver — binding (or omitting) callbacks at creation is
+   * what once made `require` fail in every GameSession host.
    */
   private async ensureLuaEngine(): Promise<void> {
     if (this.luaEngine) return;
