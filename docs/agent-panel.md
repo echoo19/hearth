@@ -1,13 +1,14 @@
 # Agent Panel
 
 The Agent panel is the editor's built-in home for a coding agent: a real
-embedded terminal running your own copy of the agent's CLI, next to a live
-timeline of every structured command it runs. The onboarding story it exists
-for is: download Hearth → open a project → choose your agent → describe your
-game. Claude Code, Codex, OpenCode, and Hermes all get automatic MCP setup:
-the panel detects each on `PATH`, writes the `hearth` server into that tool's
-own config format, and launches it directly; any other shell-native agent
-uses the project terminal plus the same Hearth CLI/MCP surfaces.
+embedded terminal running your own copy of the agent's CLI, with a live
+timeline of every structured command it runs underneath. The onboarding
+story it exists for is: download Hearth → open a project → click a tile →
+describe your game. Claude Code, Codex, OpenCode, and Hermes all get
+automatic MCP setup: the panel detects each on `PATH`, writes the `hearth`
+server into that tool's own config format, and launches it directly; any
+other shell-native agent uses the project terminal plus the same Hearth
+CLI/MCP surfaces.
 
 It is not a chat UI, and it does not run any model. Hearth never calls an
 LLM, never holds an API key, and the panel's terminal is exactly the
@@ -63,22 +64,38 @@ clarifies that subscription use through a wrapped UI is fine. Until then,
 this doc and the panel itself describe things as "works with Claude Code"
 descriptively: no logos, no implied partnership or endorsement.
 
-## What's in the panel
+## Where it lives
 
-- **Launcher selector**: choose **Claude Code**, **Codex**, **OpenCode**,
-  **Hermes**, or a plain **Terminal / other CLI**. The panel detects each of
-  the first four on `PATH` (plus a local `ollama`, for OpenCode's provider
-  step) and shows an honest state per tool: ready to start, not found, or
-  still checking.
-- **Permission mode selector**: a 4-tier ladder (`Read-only` / `Safe edit`
-  / `Full (no build)` / `All (incl. build)`) above the terminal, defaulting
-  to Safe edit. It applies to whichever tool is selected: Claude Code,
-  Codex, OpenCode, and Hermes all write the chosen mode into their own MCP
-  config. It's only inert for the plain terminal, which launches no MCP
-  server. See [Permission modes](#permission-modes) below.
-- **Start agent**: for any of Claude Code / Codex / OpenCode / Hermes, first
-  runs that tool's *prepare* step, then spawns the real CLI in the terminal
-  pane:
+The Agent panel has its own full-height dock at the right edge of the
+window, next to the Inspector (380px wide by default, resizable like any
+other dock). It used to live as a tab in the bottom dock alongside Assets
+and Console; that changed so the terminal gets real vertical room instead
+of fighting the Assets browser for tab space. If you saved a layout before
+this change, the editor migrates it automatically the first time you open
+it: only the Agent panel moves to the new right-hand dock, everything else
+about your layout (panel sizes, which tabs are open, where you put
+Hierarchy/Inspector/Assets) is left exactly as you had it.
+
+## First run: launch your agent
+
+With no session running, the panel shows a "Launch your agent" screen: one
+tile per agent CLI (**Claude Code**, **Codex**, **OpenCode**, **Hermes**),
+plus an **Open a plain terminal** row underneath. Whichever tools are
+already installed sort to the top, so the common case is one click on the
+first tile.
+
+- **Tile states**: a tile reads **Checking…** until the first PATH detect
+  finishes (so a slow detect never flashes "not installed" for a tool that
+  actually is), then either becomes a clickable launch tile, or shows
+  **Install** (for Claude Code, Codex, and OpenCode, which each have a known
+  install command) or **Not installed** (Hermes has no single blessed
+  installer; see [connect-hermes.md](./connect-hermes.md) for both the
+  `hermes` CLI and model-only paths).
+- **Clicking a ready tile** does the whole setup in one action: it runs that
+  tool's *prepare* step invisibly, then spawns the real CLI in the terminal.
+  There's no separate "Start agent" button anymore, the tile click is prepare
+  and launch together, all at the permission mode set in the gear menu (see
+  below):
   - **Claude Code** → merges a `hearth` entry into the project's
     `.mcp.json`.
   - **Codex** → runs `codex mcp get hearth` to check, then `codex mcp add
@@ -97,30 +114,59 @@ descriptively: no logos, no implied partnership or endorsement.
   Claude Code discovers `.mcp.json` itself, asks you to approve the server
   on first use, and handles its own login if needed, all inside the
   terminal; Codex/OpenCode/Hermes do the same in their own way.
-- **Install Claude Code**: shown instead of Start when `claude` isn't found
-  on `PATH`. Runs the official install command visibly in the terminal (no
-  hidden installs happen anywhere), then re-detects.
-- **Open Terminal**: a plain shell (`$SHELL` on macOS/Linux, PowerShell on
-  Windows) in the project root, for any other shell-native agent/tool or
-  manual installs. `hearth` is already on its `PATH`.
-- **Stop**: kills the current terminal session.
-- **Activity timeline**: the right-hand rail, one row per journaled
-  command (icon by kind, summary, ok/✗, relative time), newest first.
-  Playtest rows show pass/fail and assertion counts; validate rows show
-  error/warning counts.
-- **Checkpoint / Review changes / Revert session**, the timeline's header
-  actions: `snapshotProject` (`Checkpoint`), focusing the Changes panel
-  (`Review changes`), and `revertProject` with a confirm dialog (`Revert
-  session`, disabled when there's nothing to revert). A link to the
-  History panel covers granular per-command undo instead of a
-  whole-session revert.
-- **Manual setup**: a collapsible section with the CLI/MCP copy-paste
-  snippets and the permission-mode table, for anyone not using the embedded
-  terminal at all (see [Manual setup](#manual-setup-fallback-for-any-tool)).
+- **Install**: for Claude Code, Codex, and OpenCode, runs that tool's
+  official install command (`npm install -g …`) visibly in the terminal, no
+  hidden installs happen anywhere, then re-detects automatically once the
+  install session exits, so the tile flips from Install to a ready launch
+  tile without a manual re-detect.
+- **Open a plain terminal**: a plain shell (`$SHELL` on macOS/Linux,
+  PowerShell on Windows) in the project root, for any other shell-native
+  agent/tool, or to run an install command by hand. `hearth` is already on
+  its `PATH`.
+- **Footer**: shows the current permission mode and the gear menu.
 
-One PTY session per open project at a time in this release; switching
-projects always kills the old terminal (see
+## Permission mode, gear menu, and manual setup
+
+Permission mode defaults to **Safe edit** and isn't picked from the launcher
+tiles themselves. It lives behind the gear icon (in the launcher's footer,
+or the session header once an agent is running):
+
+- The 4-tier mode ladder (`Read-only` / `Safe edit` / `Full (no build)` /
+  `All (incl. build)`), see [Permission modes](#permission-modes) below.
+  It's locked while a session is running (stop the agent first to change
+  it), since rewriting the tool's config out from under a live session could
+  silently grant it a different mode than the one you started it with.
+- **Re-detect agents**: re-runs the PATH scan, useful right after installing
+  something outside the editor.
+- **Manual setup**: toggles the collapsible section with the CLI/MCP
+  copy-paste snippets and the permission-mode table, for anyone not using
+  the embedded terminal at all (see
+  [Manual setup](#manual-setup-fallback-for-any-tool)).
+
+## Once a session is running
+
+The panel switches to a session view: a header with a status dot, the
+running tool's name, a live status line (running / exited / failed to
+start), a **Stop** button, and the gear. Below that, the live terminal.
+Below the terminal, a collapsible **Activity** section holding the
+timeline described next.
+
+When a session exits, the terminal's scrollback and exit code stay on
+screen as the record of what happened; the header gains **Launch again**
+(relaunch the same tool at the current mode) and **Switch agent** (go back
+to the launcher tiles). One PTY session per open project at a time in this
+release; switching projects always kills the old terminal (see
 [Troubleshooting](#troubleshooting)).
+
+### Activity
+
+One row per journaled command (icon by kind, summary, ok/✗, relative time),
+newest first. Playtest rows show pass/fail and assertion counts; validate
+rows show error/warning counts. Its header carries three actions:
+**Checkpoint** (`snapshotProject`), **Review changes** (focuses the Changes
+panel), and **Restore checkpoint** (`revertProject` with a confirm dialog,
+disabled when there's nothing to revert). A link to the History panel
+covers granular per-command undo instead of a whole-session revert.
 
 ## Permission modes
 
@@ -136,17 +182,17 @@ composed from the tiers they actually grant, not separate claims:
 | Full (no build) | Safe edit, plus create/edit/attach scripts, and import/create/modify assets. Explicitly **not** build/export. |
 | All (incl. build) | Everything above, plus build/export the project. |
 
-Selecting a mode and starting an agent rewrites that tool's own config with
-the selected mode and (re)launches the CLI so the change takes effect
-immediately, whichever of the four tools you picked. Denied tool calls return
-a structured `PERMISSION_DENIED` error the agent can relay to you, rather
-than failing silently. That's the same behavior as the CLI and MCP server
-outside the panel.
+Picking a mode in the gear menu and then clicking a tile rewrites that
+tool's own config with the selected mode before it launches, whichever of
+the four tools you picked. Denied tool calls return a structured
+`PERMISSION_DENIED` error the agent can relay to you, rather than failing
+silently. That's the same behavior as the CLI and MCP server outside the
+panel.
 
 ## Manual setup (fallback for any tool)
 
-Every tool in the launcher dropdown is one-click from the panel now, so
-manual setup is a fallback, not a requirement. It's useful if you're driving
+Every tool in the launcher is one click from the panel now, so manual
+setup is a fallback, not a requirement. It's useful if you're driving
 an agent outside the editor entirely, want to see exactly what gets written
 before trusting the automatic path, or are wiring up any other MCP-capable
 client. The Manual setup section's snippets cover:
@@ -168,8 +214,8 @@ Hermes (`~/.hermes/config.yaml`) are in their own connect guides:
 
 This manual section is exactly the content that used to be the whole Agent
 panel before the embedded terminal (and, later, per-tool auto-wiring)
-shipped; it hasn't gone away, just moved to a collapsible section
-underneath the live terminal.
+shipped; it hasn't gone away, just moved behind the gear menu's "Manual
+setup" toggle.
 
 ## The external-change model
 
@@ -209,15 +255,21 @@ you, not this refresh mechanism.
 
 ## Troubleshooting
 
-**"Install Claude Code" instead of "Start agent."** The panel didn't find
-`claude` on `PATH`. Click **Install Claude Code** (runs the official
-install command in the terminal so you can see exactly what it does), then
-**Re-detect** once it finishes. If you installed it in a way that doesn't
-land on the `PATH` the editor's process sees (e.g. a shell-specific rc file
-change, or a version manager) `Re-detect` still won't see it until you
-restart the editor from a shell that has the updated `PATH`.
+**Claude Code's tile shows "Install" instead of a launch button.** The panel
+didn't find `claude` on `PATH`. Click **Install** (runs the official install
+command in the terminal so you can see exactly what it does); the panel
+re-detects on its own once the install session exits. If you installed it
+in a way that doesn't land on the `PATH` the editor's process sees (e.g. a
+shell-specific rc file change, or a version manager), it still won't show
+up until you restart the editor from a shell that has the updated `PATH` —
+use **Re-detect agents** in the gear menu to try again without restarting
+first.
 
-**"Install Claude Code" hangs or doesn't respond.** Agent detection times out after 3 seconds per CLI. If your shell is slow to start, the detection may fail silently. Click **Re-detect** to try again, or check your shell startup files for expensive operations that might be slowing things down.
+**A tile is stuck on "Checking…" or never resolves.** Agent detection times
+out after 3 seconds per CLI. If your shell is slow to start, the detection
+may fail silently. Use **Re-detect agents** in the gear menu to try again,
+or check your shell startup files for expensive operations that might be
+slowing things down.
 
 **"Agent setup failed: ... exists but is not valid JSON/YAML" (409).** The
 selected tool's config file already exists but doesn't parse: `.mcp.json` or
@@ -237,11 +289,12 @@ old session isn't recoverable, but nothing about it was silently lost either
 (its work is exactly what's on disk plus whatever the timeline/journal
 recorded).
 
-**Nothing happens when I click Start agent.** Check for an inline
-"Agent setup failed: …" message under the toolbar. The panel deliberately
-refuses to launch the selected tool if writing its config failed, since a
-stale config from an earlier session could otherwise grant a more permissive
-mode than the one you just picked without telling you.
+**Nothing happens when I click a tile.** Check for an inline "Agent setup
+failed: …" message under that tile (or under the session header, if it was
+a "Launch again" click). The panel deliberately refuses to launch the
+selected tool if writing its config failed, since a stale config from an
+earlier session could otherwise grant a more permissive mode than the one
+you just picked without telling you.
 
 **The terminal looks frozen / stopped updating.** Check the WebSocket
 status implicitly via whether other live panels (Hierarchy, Console) are

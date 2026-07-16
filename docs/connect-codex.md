@@ -9,8 +9,7 @@ wiring it up manually.
 ## From the Agent panel
 
 If `codex` is on your `PATH`, the editor's **Agent** panel detects it, and
-picking **Codex** from the launcher dropdown then clicking **Start agent**
-does the whole setup for you:
+clicking the **Codex** tile does the whole setup for you in one click:
 
 1. The panel runs `codex mcp get hearth` first; if Codex already has a
    `hearth` entry pointed at this project and mode, nothing is rewritten.

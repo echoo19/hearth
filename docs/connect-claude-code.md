@@ -13,22 +13,24 @@ that distinction matters.
 ## The one-click path (Agent panel)
 
 In the desktop app or `npm run dev`, open a project and go to the **Agent**
-panel:
+panel, which lives in its own dock next to the Inspector. First run shows a
+row of tiles, one per agent CLI:
 
-1. Pick a **permission mode** (defaults to Safe edit; see
-   [Permission modes](#permission-modes)).
-2. Click **Start agent**. The panel merge-writes a `hearth` entry into the
-   project's `.mcp.json` at that mode, backfills the project skill if it's
-   missing, and spawns your real `claude` binary in an embedded terminal with
-   its working directory set to the project.
+1. Optionally change the **permission mode** from the gear menu (defaults
+   to Safe edit; see [Permission modes](#permission-modes)) before you click.
+2. Click the **Claude Code** tile. The panel merge-writes a `hearth` entry
+   into the project's `.mcp.json` at that mode, backfills the project skill
+   if it's missing, and spawns your real `claude` binary in an embedded
+   terminal with its working directory set to the project, all in one click.
 3. Claude Code discovers `.mcp.json` on its own, asks you to approve the
    `hearth` server the first time, and handles its own login if needed, all
    inside the terminal.
 
-If `claude` isn't on your `PATH`, the panel shows **Install Claude Code**
-instead, which runs the official installer visibly in the terminal (nothing
-hidden), then re-detects. Full panel behavior (the activity timeline,
-Checkpoint / Review / Revert, the external-change model) is in
+If `claude` isn't on your `PATH`, the tile shows **Install** instead of a
+launch button. Clicking it runs the official installer visibly in the
+terminal (nothing hidden), then the panel re-detects on its own once the
+install finishes. Full panel behavior (the launcher, the Activity timeline,
+Checkpoint / Review / Restore, the external-change model) is in
 [agent-panel.md](./agent-panel.md).
 
 ## The manual path (any terminal)
@@ -92,7 +94,7 @@ See [mcp.md](./mcp.md#choosing-modes-per-session) for the full mode reference.
 
 ## Connecting other agents
 
-The same launcher dropdown in the Agent panel also detects and auto-wires
+The same launcher tiles in the Agent panel also detect and auto-wire
 Codex, OpenCode, and Hermes, each into its own config format. See
 [connect-codex.md](./connect-codex.md), [connect-opencode.md](./connect-opencode.md)
 (with local models via Ollama), and [connect-hermes.md](./connect-hermes.md).

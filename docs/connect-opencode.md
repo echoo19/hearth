@@ -10,8 +10,8 @@ local: the engine already runs no model and holds no key, and with Ollama the
 ## Launching from the editor
 
 The editor's **Agent** panel detects `opencode` on your `PATH` (and, for the
-provider step below, whatever models a local `ollama` has pulled). Pick
-**OpenCode** from the launcher dropdown and click **Start agent**:
+provider step below, whatever models a local `ollama` has pulled). Click the
+**OpenCode** tile:
 
 1. Prepare writes the `hearth` server into `<project>/opencode.json` under
    the top-level `mcp` key, as `{"type": "local", "command": [...],

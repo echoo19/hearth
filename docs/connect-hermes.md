@@ -10,8 +10,7 @@ path applies to you depends on what you've actually installed.
 ## From the Agent panel (a `hermes` CLI on PATH)
 
 If a `hermes` binary is on your `PATH`, the Agent panel detects it, and
-picking **Hermes** from the launcher dropdown then **Start agent** wires it
-up automatically:
+clicking the **Hermes** tile wires it up automatically in one click:
 
 1. Hearth merges a `mcp_servers.hearth` entry (`command`/`args` for the
    stdio launch) into `~/.hermes/config.yaml`, preserving every other
