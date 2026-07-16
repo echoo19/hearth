@@ -263,13 +263,7 @@ export function buildDefaultLayout(api: DockviewApi): void {
       inactive: true,
     }),
   );
-  api.addPanel(
-    addPanelOptions('agent', {
-      position: { referencePanel: 'inspector', direction: 'right' },
-      initialWidth: AGENT_WIDTH,
-      inactive: true,
-    }),
-  );
+  addAgentPanelRight(api, { inactive: true });
   api.addPanel(
     addPanelOptions('assets', {
       position: { referencePanel: 'scene', direction: 'below' },
@@ -298,6 +292,56 @@ function findReference(api: DockviewApi, preferred: readonly PanelId[]): PanelId
 
 const CENTER_PANELS: readonly PanelId[] = ['scene', 'game', 'code', 'animator'];
 const BOTTOM_PANELS: readonly PanelId[] = ['assets', 'console', 'diff', 'input', 'gameSettings', 'live'];
+
+/**
+ * Add the Agent panel in its own full-height dock at the right edge, then undo
+ * the collateral damage that placement does to the Inspector.
+ *
+ * dockview carves `initialWidth` out of the *reference* panel's split, so
+ * adding the agent `direction: 'right'` of the inspector steals its 380px from
+ * the Inspector's own column — the Inspector rendered ~100px wide, "Nothing
+ * selected" wrapping vertically (observed live at 1485–1512px windows). We
+ * re-assert the widths afterwards: `setSize` on a splitview panel pulls its
+ * delta from the immediate neighbour, so growing the inspector back to
+ * RIGHT_WIDTH shrinks the agent, and then shrinking the center panel by that
+ * same deficit hands the room to the agent — netting inspector ≈ RIGHT_WIDTH,
+ * agent ≈ AGENT_WIDTH, with the center group absorbing the difference. All
+ * three placement paths (default layout, v1→v2 migration, showPanel reopen)
+ * funnel through here so the correction lives in one place.
+ */
+function addAgentPanelRight(api: DockviewApi, extra?: { inactive?: boolean }): void {
+  const ref = findReference(api, ['inspector']);
+  api.addPanel(
+    addPanelOptions('agent', {
+      position: ref ? { referencePanel: ref, direction: 'right' } : { direction: 'right' },
+      initialWidth: AGENT_WIDTH,
+      ...extra,
+    }),
+  );
+  reassertInspectorWidth(api);
+}
+
+/**
+ * Restore the Inspector to ~RIGHT_WIDTH after the Agent panel's placement
+ * squeezed it, letting the center group (not the Inspector) give up the room
+ * the agent needs. No-op when there's no inspector to protect. See
+ * {@link addAgentPanelRight} for why this two-step dance is needed.
+ */
+function reassertInspectorWidth(api: DockviewApi): void {
+  const inspector = api.getPanel('inspector');
+  if (!inspector) return;
+  // Grow the inspector back; the delta comes out of its right neighbour (agent).
+  inspector.api.setSize({ width: RIGHT_WIDTH });
+  const agent = api.getPanel('agent');
+  if (!agent) return;
+  const grow = AGENT_WIDTH - agent.group.width;
+  if (grow <= 0) return;
+  // Give the agent its width back by shrinking the center panel by the same
+  // amount, so the correction is paid by the center, not the inspector.
+  const centerId = findReference(api, CENTER_PANELS);
+  const center = centerId ? api.getPanel(centerId) : undefined;
+  if (center) center.api.setSize({ width: center.group.width - grow });
+}
 
 /**
  * Show a panel: activate it when open, otherwise re-open it in a sensible
@@ -334,11 +378,8 @@ export function showPanel(api: DockviewApi, id: PanelId): void {
     );
     if (sibling) extra = { position: { referencePanel: sibling, direction: 'within' } };
   } else if (id === 'agent') {
-    const ref = findReference(api, ['inspector']);
-    extra = {
-      position: ref ? { referencePanel: ref, direction: 'right' } : { direction: 'right' },
-      initialWidth: AGENT_WIDTH,
-    };
+    addAgentPanelRight(api);
+    return;
   } else {
     const sibling = findReference(
       api,
@@ -367,13 +408,7 @@ export function relocateAgentPanel(api: DockviewApi): void {
   if (!agent) return;
   if (agent.group.panels.length === 1) return;
   api.removePanel(agent);
-  const ref = findReference(api, ['inspector']);
-  api.addPanel(
-    addPanelOptions('agent', {
-      position: ref ? { referencePanel: ref, direction: 'right' } : { direction: 'right' },
-      initialWidth: AGENT_WIDTH,
-    }),
-  );
+  addAgentPanelRight(api);
 }
 
 /**

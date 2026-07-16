@@ -269,3 +269,59 @@ describe('agent right dock (v1.2 layout)', () => {
     expect(persisted.version).toBe(2);
   });
 });
+
+// Regression: adding the Agent panel `direction: 'right'` of the inspector
+// carved its 380px out of the inspector's split, crushing the Inspector to
+// ~100px ("Nothing selected" wrapping vertically). Each placement path must
+// re-assert the inspector's width so it keeps ~RIGHT_WIDTH while the agent
+// keeps ~AGENT_WIDTH and the center group absorbs the difference.
+describe('agent dock does not crush the inspector', () => {
+  // Not exact-pixel: dockview rounds and the center-absorb math can drift a
+  // pixel or two. RIGHT_WIDTH is 300; a healthy inspector sits comfortably
+  // above 280, a crushed one was ~100.
+  const MIN_INSPECTOR = 280;
+
+  function inspectorWidth(api: DockviewApi): number {
+    return api.getPanel('inspector')!.group.width;
+  }
+  function agentWidth(api: DockviewApi): number {
+    return api.getPanel('agent')!.group.width;
+  }
+
+  it('buildDefaultLayout leaves the inspector wide and the agent at its full width', () => {
+    const api = makeDock();
+    buildDefaultLayout(api);
+    api.layout(1280, 720);
+    expect(inspectorWidth(api)).toBeGreaterThanOrEqual(MIN_INSPECTOR);
+    // Agent keeps roughly its intended 380 (center, not inspector, gave the room).
+    expect(agentWidth(api)).toBeGreaterThanOrEqual(340);
+  });
+
+  it('showPanel reopening a closed agent does not crush the inspector', () => {
+    const api = makeDock();
+    buildDefaultLayout(api);
+    api.removePanel(api.getPanel('agent')!);
+    showPanel(api, 'agent');
+    api.layout(1280, 720);
+    expect(inspectorWidth(api)).toBeGreaterThanOrEqual(MIN_INSPECTOR);
+    expect(agentWidth(api)).toBeGreaterThanOrEqual(340);
+  });
+
+  it('initLayout migrating a v1 save does not crush the inspector', () => {
+    // v1 default: agent tabbed inside the bottom (assets) group, inspector on the right.
+    const source = makeDock();
+    source.clear();
+    source.addPanel({ id: 'scene', component: 'scene', title: 'Scene' });
+    source.addPanel({ id: 'inspector', component: 'inspector', title: 'Inspector', position: { referencePanel: 'scene', direction: 'right' }, initialWidth: 300 });
+    source.addPanel({ id: 'assets', component: 'assets', title: 'Assets', position: { referencePanel: 'scene', direction: 'below' }, initialHeight: 340 });
+    source.addPanel({ id: 'agent', component: 'agent', title: 'Agent', position: { referencePanel: 'assets', direction: 'within' } });
+    const key = 'hearth.layout.migrate-width';
+    localStorage.setItem(key, JSON.stringify({ version: 1, layout: source.toJSON() }));
+
+    const api = makeDock();
+    initLayout(api, key);
+    api.layout(1280, 720);
+    expect(inspectorWidth(api)).toBeGreaterThanOrEqual(MIN_INSPECTOR);
+    expect(agentWidth(api)).toBeGreaterThanOrEqual(340);
+  });
+});
