@@ -86,10 +86,17 @@ export const INSTALL_COMMANDS: Record<AgentToolLauncher, string | null> = {
   claude: 'npm install -g @anthropic-ai/claude-code',
   codex: 'npm install -g @openai/codex',
   opencode: 'npm install -g opencode-ai',
-  // No single blessed installer; the tile shows "Not installed" and the
-  // manual-setup disclosure / docs/connect-hermes.md cover it.
+  // No single blessed installer; the tile links out to the connect guide
+  // instead of an Install button — see CONNECT_HERMES_URL below.
   hermes: null,
 };
+
+/**
+ * Where the Hermes tile's "Setup guide" link points — same docs-site
+ * convention as ExportDialog's SHIPPING_GUIDE_URL (exportJob.ts), rendered
+ * from docs/connect-hermes.md in this repo.
+ */
+export const CONNECT_HERMES_URL = 'https://hearth-engine.vercel.app/docs/connect-hermes';
 
 export type TileStatus = 'ready' | 'missing' | 'checking';
 
@@ -200,7 +207,17 @@ export function Launcher({
                           Install
                         </Button>
                       ) : (
-                        <span className="agent-tile-state">Not installed</span>
+                        // No blessed installer for this launcher (Hermes) —
+                        // point at the connect guide instead of a dead-end
+                        // "Not installed" label.
+                        <a
+                          className="agent-tile-state agent-tile-link"
+                          href={CONNECT_HERMES_URL}
+                          target="_blank"
+                          rel="noreferrer"
+                        >
+                          Setup guide
+                        </a>
                       )}
                     </div>
                   </Tooltip>

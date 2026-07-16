@@ -4,7 +4,9 @@
  * no DOM.
  */
 import { describe, expect, it } from 'vitest';
-import { INSTALL_COMMANDS, launcherTiles } from '../src/components/agent/Launcher';
+import React from 'react';
+import { renderToStaticMarkup } from 'react-dom/server';
+import { CONNECT_HERMES_URL, INSTALL_COMMANDS, Launcher, launcherTiles } from '../src/components/agent/Launcher';
 import type { DetectAgentsResult } from '../server/agentSetup';
 
 function detect(found: Partial<Record<'claude' | 'codex' | 'opencode' | 'hermes', boolean>>): DetectAgentsResult {
@@ -47,5 +49,30 @@ describe('launcherTiles', () => {
     const tiles = launcherTiles(detect({ opencode: true }), false, ['llama3']);
     const opencode = tiles.find((t) => t.id === 'opencode')!;
     expect(opencode.hint).toContain('opencode.json');
+  });
+});
+
+describe('Launcher — Hermes tile (no blessed installer)', () => {
+  it('links to the connect guide instead of a dead-end "Not installed" label', () => {
+    const tiles = launcherTiles(detect({}), false, []);
+    const html = renderToStaticMarkup(
+      React.createElement(Launcher, {
+        tiles,
+        detectFailed: false,
+        disabledReason: null,
+        pending: null,
+        errors: {},
+        modeLabel: 'Safe edit',
+        gear: null,
+        onLaunch: () => {},
+        onInstall: () => {},
+        onRetryDetect: () => {},
+      }),
+    );
+    expect(html).toContain(`href="${CONNECT_HERMES_URL}"`);
+    expect(html).toContain('target="_blank"');
+    expect(html).toContain('rel="noreferrer"');
+    expect(html).toContain('Setup guide');
+    expect(html).not.toContain('Not installed');
   });
 });

@@ -401,6 +401,19 @@
   white-space: nowrap;
 }
 
+/* Hermes's "Setup guide" link (no blessed installer) — same quiet register
+   as the plain "Not installed" text it replaces, underlined only to signal
+   it's a link, brightening on hover/focus like export.css's .export-hint a. */
+.agent-tile-link {
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.agent-tile-link:hover,
+.agent-tile-link:focus-visible {
+  color: var(--ink-mute);
+}
+
 .agent-tile-error {
   padding: 4px 12px 8px;
   color: var(--err);
