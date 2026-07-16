@@ -15,8 +15,8 @@
  * functions directly (no jsdom/RTL in this repo's test toolchain).
  */
 import { describe, expect, it } from 'vitest';
+import { describeLauncher } from '../src/components/agent/Launcher';
 import {
-  describeLauncher,
   modePickerDisabledReason,
   shouldRedetectAfterInstall,
   startDisabledReason,

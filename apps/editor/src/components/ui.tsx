@@ -488,6 +488,13 @@ const ICON_PATHS: Record<string, ReactNode> = {
       <path d="M7.5 7.5L10.2 10.2" />
     </>
   ),
+  // Gear: Agent panel's settings menu trigger (mode ladder / re-detect / manual setup).
+  gear: (
+    <>
+      <circle cx="6" cy="6" r="1.7" />
+      <path d="M6 1.5v1.6M6 8.9v1.6M1.5 6h1.6M8.9 6h1.6M2.8 2.8l1.1 1.1M8.1 8.1l1.1 1.1M9.2 2.8L8.1 3.9M3.9 8.1L2.8 9.2" />
+    </>
+  ),
 };
 
 export function Icon({ name, size = 12 }: { name: string; size?: number }) {

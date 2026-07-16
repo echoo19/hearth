@@ -333,3 +333,125 @@
   padding: 10px;
 }
 
+/* Launcher hero (first-run / no session) --------------------------------- */
+.agent-launcher {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 20px 14px 10px;
+}
+
+.agent-launcher-hero h3 {
+  margin: 0 0 2px;
+  font-size: var(--text-lg);
+}
+
+.agent-launcher-sub {
+  margin: 0;
+  color: var(--ink-faint);
+  font-size: var(--text-sm);
+}
+
+.agent-tiles {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.agent-tile {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-1);
+  overflow: hidden;
+}
+
+.agent-tile-launch,
+.agent-tile-static {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 10px 12px;
+  border: none;
+  background: none;
+  color: var(--ink);
+  font-size: var(--text-md);
+  text-align: left;
+}
+
+.agent-tile-launch {
+  cursor: pointer;
+}
+
+.agent-tile-launch:hover:not(:disabled) {
+  background: var(--bg-2);
+}
+
+.agent-tile-launch:disabled {
+  color: var(--ink-faint);
+  cursor: default;
+}
+
+.agent-tile-launch .agent-tile-label {
+  flex: 1;
+}
+
+.agent-tile-static .agent-tile-label {
+  flex: 1;
+  color: var(--ink-mute);
+}
+
+.agent-tile-missing .agent-tile-label {
+  color: var(--ink-faint);
+}
+
+.agent-tile-state {
+  color: var(--ink-faint);
+  font-size: var(--text-xs);
+  white-space: nowrap;
+}
+
+.agent-tile-error {
+  padding: 4px 12px 8px;
+  color: var(--err);
+  font-size: var(--text-xs);
+  white-space: pre-wrap;
+}
+
+.agent-detect-failed {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 2px;
+  color: var(--ink-mute);
+  font-size: var(--text-sm);
+}
+
+.agent-terminal-row {
+  border: none;
+  background: none;
+  padding: 4px 2px;
+  color: var(--ink-faint);
+  font-size: var(--text-sm);
+  text-align: left;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+
+.agent-terminal-row:hover:not(:disabled) {
+  color: var(--ink);
+}
+
+.agent-launcher-foot {
+  margin-top: auto;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--ink-faint);
+  font-size: var(--text-xs);
+}
+

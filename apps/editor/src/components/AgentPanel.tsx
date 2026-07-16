@@ -6,6 +6,7 @@ import type { AgentPermissionMode, DetectAgentsResult } from '../../server/agent
 import { CodeBlock, Icon } from './ui';
 import { Button } from './ui/Button';
 import { Tooltip } from './ui/Tooltip';
+import { AGENT_LAUNCHER_LABELS, describeLauncher, type AgentLauncher } from './agent/Launcher';
 import { Timeline } from './agent/Timeline';
 import { getAgentSessionSummary, planClaudeStart, useAgentSocket, type AgentSessionSummary } from './agent/useAgentSocket';
 
@@ -66,25 +67,6 @@ const AGENT_MODE_ARGS: Record<AgentPermissionMode, string> = {
 };
 
 const INSTALL_COMMAND = 'npm install -g @anthropic-ai/claude-code';
-type AgentLauncher = 'claude' | 'codex' | 'opencode' | 'hermes' | 'shell';
-/** The launchers that wire up a Hearth MCP config (everything except shell). */
-type AgentToolLauncher = Exclude<AgentLauncher, 'shell'>;
-
-const AGENT_LAUNCHER_LABELS: Record<AgentLauncher, string> = {
-  claude: 'Claude Code',
-  codex: 'Codex',
-  opencode: 'OpenCode',
-  hermes: 'Hermes',
-  shell: 'Terminal / other CLI',
-};
-
-/** Where each tool's Hearth MCP config is written, for the setup hint. */
-const AGENT_LAUNCHER_CONFIG: Record<AgentToolLauncher, string> = {
-  claude: '.mcp.json',
-  codex: '~/.codex/config.toml',
-  opencode: 'opencode.json',
-  hermes: '~/.hermes/config.yaml',
-};
 
 /**
  * True when a just-completed detect attempt failed outright (network error,
@@ -126,33 +108,6 @@ export function startDisabledReason(running: boolean, projectPath: string | null
 export function modePickerDisabledReason(launcher: AgentLauncher): string | null {
   if (launcher !== 'shell') return null;
   return "The plain terminal doesn't launch an MCP server, so a permission mode has nothing to apply to.";
-}
-
-/**
- * One honest, one-line setup hint per launcher. Codex/Hermes read a single
- * GLOBAL config, so we say Hearth points it at THIS project on launch; OpenCode
- * additionally surfaces whether local Ollama models were found. Pure (no store
- * access) so it's unit-testable.
- */
-export function describeLauncher(launcher: AgentLauncher, ollamaModels: string[]): string {
-  switch (launcher) {
-    case 'claude':
-      return 'Claude Code connects automatically — Hearth is written to this project’s .mcp.json.';
-    case 'codex':
-      return 'Codex reads a global config (~/.codex/config.toml); Hearth points it at this project on launch.';
-    case 'opencode':
-      return ollamaModels.length > 0
-        ? `OpenCode connects via opencode.json, with an Ollama provider for your ${ollamaModels.length} local model${ollamaModels.length === 1 ? '' : 's'}.`
-        : 'OpenCode connects via opencode.json. Install Ollama and pull a model to run fully local.';
-    case 'hermes':
-      return 'Hermes reads a global config (~/.hermes/config.yaml); Hearth points it at this project on launch.';
-    case 'shell':
-      return 'Plain terminal for any other shell-native agent — the hearth CLI is already on PATH.';
-    default: {
-      const never: never = launcher;
-      return String(never);
-    }
-  }
 }
 
 /**
