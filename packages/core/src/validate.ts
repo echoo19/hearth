@@ -6,7 +6,7 @@ import { z } from 'zod';
 import luaparse from 'luaparse';
 import { readJson, type ProjectStore } from './project/store.js';
 import { joinPath } from './fs.js';
-import { AnimationDataSchema, PrefabDataSchema, type PrefabData } from './schema/project.js';
+import { AnimationDataSchema, PrefabDataSchema, SCRIPTS_DIR, type PrefabData } from './schema/project.js';
 import { findSheetFrame } from './assets/sheetFrames.js';
 import { validatePrefabLocalIds } from './project/prefabData.js';
 import { COMPONENT_SCHEMAS, isComponentType } from './schema/components.js';
@@ -117,6 +117,7 @@ export interface ScriptDiagnostic {
   line: number | null;
   message: string;
   severity: 'error' | 'warning';
+  code?: 'SCRIPT_REQUIRE_NOT_FOUND' | 'SCRIPT_REQUIRE_CYCLE';
 }
 
 /**
@@ -150,6 +151,82 @@ export function checkScriptSource(language: 'lua' | 'js', source: string): Scrip
   }
 }
 
+function scriptExtension(scriptPath: string): string {
+  const filename = scriptPath.slice(scriptPath.lastIndexOf('/') + 1);
+  const dot = filename.lastIndexOf('.');
+  return dot === -1 ? '' : filename.slice(dot);
+}
+
+function lineAt(source: string, index: number): number {
+  let line = 1;
+  for (let i = 0; i < index; i++) {
+    if (source.charCodeAt(i) === 10) line++;
+  }
+  return line;
+}
+
+function findLiteralRequires(source: string): Array<{ spec: string; line: number }> {
+  const requires: Array<{ spec: string; line: number }> = [];
+  const requirePattern = /\brequire\s*\(\s*(['"])(.*?)\1\s*\)/g;
+  for (const match of source.matchAll(requirePattern)) {
+    requires.push({ spec: match[2], line: lineAt(source, match.index ?? 0) });
+  }
+  return requires;
+}
+
+function resolveRequireSpec(spec: string, fromPath: string): string {
+  const fromExt = scriptExtension(fromPath);
+  const specExt = scriptExtension(spec);
+  return joinPath(SCRIPTS_DIR, specExt ? spec : `${spec}${fromExt}`);
+}
+
+export function checkScriptRequires(
+  fromPath: string,
+  sources: Map<string, string>,
+  sourceOverride?: string,
+): ScriptDiagnostic[] {
+  const diagnostics: ScriptDiagnostic[] = [];
+  const seen = new Set<string>();
+  const stack: string[] = [];
+
+  const visit = (path: string, source: string) => {
+    if (seen.has(path)) return;
+    seen.add(path);
+    stack.push(path);
+
+    for (const req of findLiteralRequires(source)) {
+      const resolved = resolveRequireSpec(req.spec, path);
+      if (!resolved.startsWith(`${SCRIPTS_DIR}/`) || scriptExtension(resolved) !== scriptExtension(path) || !sources.has(resolved)) {
+        diagnostics.push({
+          severity: 'error',
+          code: 'SCRIPT_REQUIRE_NOT_FOUND',
+          line: req.line,
+          message: `module not found: ${resolved}`,
+        });
+        continue;
+      }
+
+      const cycleStart = stack.indexOf(resolved);
+      if (cycleStart !== -1) {
+        diagnostics.push({
+          severity: 'error',
+          code: 'SCRIPT_REQUIRE_CYCLE',
+          line: req.line,
+          message: `require cycle: ${[...stack.slice(cycleStart), resolved].join(' -> ')}`,
+        });
+        continue;
+      }
+
+      visit(resolved, sources.get(resolved)!);
+    }
+
+    stack.pop();
+  };
+
+  visit(fromPath, sourceOverride ?? sources.get(fromPath) ?? '');
+  return diagnostics;
+}
+
 /**
  * Per-script syntax check across the whole project: thin wrapper around
  * `checkScriptSource` that maps its diagnostics into `ValidationIssue`
@@ -157,14 +234,27 @@ export function checkScriptSource(language: 'lua' | 'js', source: string): Scrip
  * extraction).
  */
 async function validateScriptSyntax(store: ProjectStore, push: (issue: ValidationIssue) => void): Promise<void> {
+  const sources = new Map<string, string>();
   for (const scriptPath of await store.listScripts()) {
-    const source = await store.readScript(scriptPath);
+    sources.set(scriptPath, await store.readScript(scriptPath));
+  }
+
+  for (const [scriptPath, source] of sources) {
     if (scriptPath.endsWith('.js') || scriptPath.endsWith('.lua')) {
       const language = scriptPath.endsWith('.js') ? 'js' : 'lua';
       for (const diag of checkScriptSource(language, source)) {
         push({
           severity: diag.severity,
           code: 'SCRIPT_SYNTAX_ERROR',
+          message: `Script ${scriptPath}${diag.line ? `:${diag.line}` : ''}: ${diag.message}`,
+          script: scriptPath,
+          ...(diag.line !== null ? { line: diag.line } : {}),
+        });
+      }
+      for (const diag of checkScriptRequires(scriptPath, sources)) {
+        push({
+          severity: diag.severity,
+          code: diag.code ?? 'SCRIPT_REQUIRE_NOT_FOUND',
           message: `Script ${scriptPath}${diag.line ? `:${diag.line}` : ''}: ${diag.message}`,
           script: scriptPath,
           ...(diag.line !== null ? { line: diag.line } : {}),

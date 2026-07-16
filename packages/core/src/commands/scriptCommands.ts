@@ -6,7 +6,7 @@ import { ProjectError } from '../project/store.js';
 import { joinPath, isSafeRelativePath } from '../fs.js';
 import { slugify } from '../ids.js';
 import { SCRIPTS_DIR } from '../schema/project.js';
-import { checkScriptSource } from '../validate.js';
+import { checkScriptRequires, checkScriptSource } from '../validate.js';
 import { formatSource, FormatError } from '../format.js';
 
 export const SCRIPT_TEMPLATE = `/**
@@ -290,8 +290,9 @@ export const checkScript = defineCommand({
 
     let source: string;
     let language: 'lua' | 'js';
+    let path: string | undefined;
     if (params.path !== undefined) {
-      const path = resolveScriptsPath(params.path);
+      path = resolveScriptsPath(params.path);
       const absPath = joinPath(ctx.store.root, path);
       if (!(await ctx.fs.exists(absPath))) {
         throw new ProjectError(`Script not found: ${path}`, 'NOT_FOUND');
@@ -304,6 +305,13 @@ export const checkScript = defineCommand({
     }
 
     const diagnostics = checkScriptSource(language, source);
+    if (path) {
+      const sources = new Map<string, string>();
+      for (const scriptPath of await ctx.store.listScripts()) {
+        sources.set(scriptPath, scriptPath === path ? source : await ctx.store.readScript(scriptPath));
+      }
+      diagnostics.push(...checkScriptRequires(path, sources, source).map(({ code, ...diag }) => diag));
+    }
     return {
       valid: diagnostics.every((d) => d.severity !== 'error'),
       language,
