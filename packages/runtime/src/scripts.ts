@@ -261,11 +261,19 @@ export interface ScriptContext {
  * Compile script source into its exported hooks object.
  * Throws when the source fails to evaluate or exports the wrong shape.
  */
-export function compileScript(source: string): ScriptHooks {
+export function compileScript(
+  source: string,
+  require?: (spec: string) => unknown,
+): ScriptHooks {
   const body = source.replace(/export\s+default/, 'module.exports =');
-  const factory = new Function('module', 'exports', body);
+  const factory = new Function('module', 'exports', 'require', body);
   const module = { exports: {} as unknown };
-  factory(module, module.exports);
+  const resolver =
+    require ??
+    ((spec: string): never => {
+      throw new Error(`require('${spec}') is unavailable in this context`);
+    });
+  factory(module, module.exports, resolver);
   const hooks = module.exports;
   if (hooks === null || typeof hooks !== 'object') {
     throw new Error('script must `export default` an object with lifecycle hooks');
