@@ -753,6 +753,24 @@ None of these block 1.0; they ride alongside or after it:
   SDK; multiplayer-friendly determinism research (input serialization +
   rollback).
 
+Further out — directional, no dates, none of it before 1.0:
+
+- **AI asset generation integrations** — generate sprites, UI elements
+  (buttons, panels, icons), and sounds on request. These would be optional
+  integrations that agents and the editor call from outside, same shape as
+  the agent panel: the engine core stays model-agnostic and fully usable
+  offline (the no-built-in-LLM-calls non-goal stands).
+- **Community asset marketplace** — a place to sell or share sprites,
+  sounds, fonts, prefabs, and templates, with a structured CLI/MCP-first
+  interface so agents can search it, check licenses, and pull assets
+  straight into a project as smoothly as they import local files. A natural
+  Hearth Cloud surface; the local engine never depends on it.
+- **Multiplayer games** — building on the determinism research above
+  (input serialization + rollback).
+- **Hearth Cloud** — hosted services on top of the free local core
+  (builds, collaboration, the managed agent, the marketplace). Nothing
+  local ever gets gated behind it.
+
 ## Non-goals
 
 - **A visual logic editor.** Cut, not deferred: agents write code, and
@@ -762,6 +780,8 @@ None of these block 1.0; they ride alongside or after it:
 - Competing with Unity/Godot on 3D, shaders, or console targets.
 - Built-in AI/LLM API calls. Agents connect **from outside** via MCP/CLI;
   the engine stays model-agnostic and fully usable offline.
-- Cloud project storage. Projects are local files; use git.
+- Cloud project storage. Projects are local files; use git. (A hosted
+  Hearth Cloud may exist far down the road — see "Further out" above — but
+  the local engine never requires it.)
 - Concave polygon decomposition (split concave colliders into convex
   pieces yourself) and audio mixing buses.
