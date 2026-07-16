@@ -18,16 +18,21 @@
  * (Lua integer semantics preserved) and `math.randomseed` is a warn-once
  * no-op, so no wall clock or Math.random can leak into game logic.
  *
- * Modules: when the engine is created with `resolveModule`/`readModule`,
+ * Modules: when the engine has `resolveModule`/`readModule` callbacks —
+ * given at creation or (re)bound later via `setModuleResolver()` —
  * `require(spec)` is a sandboxed shim: it resolves the spec via the host,
  * fetches source via the host, and compiles/runs the module INSIDE Lua with
  * a private pre-nil reference to `load` (held as an upvalue user chunks
  * cannot reach; `debug`, which could reach upvalues, is nil'd). Module
  * values are memoized per path in a Lua-side cache, so a module's top-level
- * body runs exactly once per session whether it is reached by an eager
- * `compile()` or by `require` — and the module table never round-trips
+ * body runs exactly once per compile generation whether it is reached by an
+ * eager `compile()` or by `require` — and the module table never round-trips
  * through JS (avoiding the userdata-proxy pitfall for cross-boundary
- * payloads). Without the callbacks, `require` stays nil as before.
+ * payloads). Rebinding matters because GameSession shares ONE engine across
+ * every scene the session runs, while module resolution closes over the
+ * PER-SCENE registry: each SceneRuntime.loadScripts rebinds the shared
+ * engine to its own registry. Until callbacks are bound, `require` stays nil
+ * as before.
  */
 import {
   LuaFactory,
@@ -56,23 +61,38 @@ export function setLuaWasmUri(uri: string): void {
   luaWasmUri = uri;
 }
 
+/**
+ * Host callbacks backing the sandbox's `require`. Bindable at creation
+ * (LuaEngineOptions) or afterwards via setModuleResolver(); rebinding
+ * replaces both callbacks atomically.
+ */
+export interface LuaModuleCallbacks {
+  /**
+   * Resolve a `require(spec)` from the script at `fromPath` to a script
+   * path (e.g. 'lib/noise' from 'scripts/player.lua' →
+   * 'scripts/lib/noise.lua'). Throw to reject the spec.
+   */
+  resolveModule(spec: string, fromPath: string): string;
+  /**
+   * Return the source text for a resolved module path. Called at most once
+   * per path per compile generation — module values are memoized inside
+   * Lua. Throw when the path has no source.
+   */
+  readModule(path: string): string;
+}
+
 export interface LuaEngineOptions {
   /** Seeded stream backing Lua's math.random. */
   random(): number;
   /** Sink for Lua print() and engine-level warnings. */
   log(level: 'info' | 'warn', message: string): void;
   /**
-   * Resolve a `require(spec)` from the script at `fromPath` to a script
-   * path (e.g. 'lib/noise' from 'scripts/player.lua' →
-   * 'scripts/lib/noise.lua'). Throw to reject the spec. When omitted (along
-   * with readModule), `require` is nil in the sandbox as before.
+   * See LuaModuleCallbacks.resolveModule. When omitted (along with
+   * readModule), `require` is nil in the sandbox until setModuleResolver
+   * binds callbacks.
    */
   resolveModule?(spec: string, fromPath: string): string;
-  /**
-   * Return the source text for a resolved module path. Called at most once
-   * per path per session — module values are memoized inside Lua. Throw when
-   * the path has no source.
-   */
+  /** See LuaModuleCallbacks.readModule. */
   readModule?(path: string): string;
 }
 
@@ -86,6 +106,14 @@ type LuaFunction = (...args: unknown[]) => unknown;
  * control table (held privately by the JS engine, never stored in a Lua
  * global) whose `run(path, source?)` is the single, memoized module
  * execution path shared by compile() and `require`.
+ *
+ * `resolve_module`/`read_module` are JS trampolines that delegate to the
+ * engine's CURRENT module callbacks (rebindable via setModuleResolver), so
+ * they are captured once here and never replaced. The global `require` stays
+ * nil until the JS side calls control.set_require_enabled(true) — done
+ * exactly when callbacks are bound — preserving "no callbacks → require is
+ * nil". The shim itself is a local upvalue of set_require_enabled, so user
+ * chunks can never reach it (or its raw_load upvalue) while it is disabled.
  */
 const SANDBOX_CHUNK = `
 local print_sink = __hearth_print
@@ -181,9 +209,7 @@ local function run_module(path, source)
     end
   end
   if source == nil then
-    if read_module == nil then
-      raw_error("require('" .. path .. "'): script modules are not available in this engine", 0)
-    end
+    -- read_module is a JS trampoline; it raises when no callbacks are bound.
     source = read_module(path)
   end
   local chunk, load_err = raw_load(source, '@' .. path, 't')
@@ -203,24 +229,31 @@ local function run_module(path, source)
   return value
 end
 
-if resolve_module ~= nil then
-  require = function(spec)
-    local from = path_stack[#path_stack]
-    if from == nil then
-      raw_error(
-        "require('" .. raw_tostring(spec) .. "') is only available while a script is " ..
-        'loading; require at the top of the file and keep the result in a local',
-        2
-      )
-    end
-    return run_module(resolve_module(spec, from))
+-- Held as a local so a DISABLED require is truly unreachable from user
+-- chunks (require is nil in globals until set_require_enabled installs it).
+local require_shim = function(spec)
+  local from = path_stack[#path_stack]
+  if from == nil then
+    raw_error(
+      "require('" .. raw_tostring(spec) .. "') is only available while a script is " ..
+      'loading; require at the top of the file and keep the result in a local',
+      2
+    )
   end
+  return run_module(resolve_module(spec, from))
 end
 
 return {
   run = run_module,
   invalidate = function(path)
     module_cache[path] = nil
+  end,
+  set_require_enabled = function(enabled)
+    if enabled then
+      require = require_shim
+    else
+      require = nil
+    end
   end,
 }
 `;
@@ -279,16 +312,29 @@ class NullToNilTypeExtension extends LuaTypeExtension<null> {
 interface SandboxControl {
   run(path: string, source?: string): unknown;
   invalidate(path: string): unknown;
+  set_require_enabled(enabled: boolean): unknown;
 }
 
 export class LuaScriptEngine {
   private engine: LuaEngine;
   private control: SandboxControl;
   private disposed = false;
+  /**
+   * The CURRENT module callbacks; the sandbox's trampolines read through
+   * this holder on every call, which is what makes setModuleResolver a pure
+   * JS-side swap (the Lua-side shim never changes). Null until bound;
+   * `require` is only installed in the sandbox while callbacks exist.
+   */
+  private readonly moduleCallbacks: { current: LuaModuleCallbacks | null };
 
-  private constructor(engine: LuaEngine, control: SandboxControl) {
+  private constructor(
+    engine: LuaEngine,
+    control: SandboxControl,
+    moduleCallbacks: { current: LuaModuleCallbacks | null },
+  ) {
     this.engine = engine;
     this.control = control;
+    this.moduleCallbacks = moduleCallbacks;
   }
 
   /** Boot a wasmoon VM, install the sandbox, and return a ready engine. */
@@ -299,25 +345,69 @@ export class LuaScriptEngine {
       injectObjects: false,
       enableProxy: true,
     });
+    const moduleCallbacks: { current: LuaModuleCallbacks | null } = {
+      current:
+        opts.resolveModule && opts.readModule
+          ? { resolveModule: opts.resolveModule, readModule: opts.readModule }
+          : null,
+    };
     let control: SandboxControl;
     try {
       engine.global.registerTypeExtension(10, new NullToNilTypeExtension(engine.global));
       engine.global.set('__hearth_print', (message: string) => opts.log('info', message));
       engine.global.set('__hearth_warn', (message: string) => opts.log('warn', message));
       engine.global.set('__hearth_random', () => opts.random());
-      // Null (→ nil via the extension) when absent: the sandbox chunk keeps
-      // `require` nil'd unless a resolver exists.
-      engine.global.set('__hearth_resolve_module', opts.resolveModule ?? null);
-      engine.global.set('__hearth_read_module', opts.readModule ?? null);
+      // Trampolines to the CURRENT callbacks: captured once by the sandbox
+      // chunk, they survive setModuleResolver rebinds unchanged. They throw
+      // (→ a Lua error) if reached while unbound — normally unreachable,
+      // since `require` is only installed while callbacks exist.
+      engine.global.set('__hearth_resolve_module', (spec: string, fromPath: string) => {
+        const callbacks = moduleCallbacks.current;
+        if (!callbacks) throw new Error('script modules are not available in this engine');
+        return callbacks.resolveModule(spec, fromPath);
+      });
+      engine.global.set('__hearth_read_module', (path: string) => {
+        const callbacks = moduleCallbacks.current;
+        if (!callbacks) {
+          throw new Error(
+            `require('${path}'): script modules are not available in this engine`,
+          );
+        }
+        return callbacks.readModule(path);
+      });
       control = runChunkSync(engine, '=[hearth sandbox]', SANDBOX_CHUNK) as SandboxControl;
-      if (typeof control?.run !== 'function' || typeof control?.invalidate !== 'function') {
+      if (
+        typeof control?.run !== 'function' ||
+        typeof control?.invalidate !== 'function' ||
+        typeof control?.set_require_enabled !== 'function'
+      ) {
         throw new Error('Lua sandbox did not yield its module control table');
       }
+      if (moduleCallbacks.current) control.set_require_enabled(true);
     } catch (err) {
       engine.global.close();
       throw err;
     }
-    return new LuaScriptEngine(engine, control);
+    return new LuaScriptEngine(engine, control, moduleCallbacks);
+  }
+
+  /**
+   * (Re)bind the host callbacks behind `require`. Safe to call repeatedly;
+   * each call replaces both callbacks atomically and (first time) installs
+   * the sandbox's require shim. GameSession shares one engine across every
+   * scene of a session while module resolution must close over the
+   * PER-SCENE registry — so every SceneRuntime.loadScripts rebinds the
+   * engine it was handed to its own registry. The Lua-side module memo is
+   * intentionally untouched here; loadScripts invalidates the paths it is
+   * (re)loading so bodies re-run against the new registry.
+   */
+  setModuleResolver(callbacks: LuaModuleCallbacks): void {
+    if (this.disposed) {
+      throw new Error('cannot bind module callbacks: Lua engine has been disposed');
+    }
+    const firstBind = this.moduleCallbacks.current === null;
+    this.moduleCallbacks.current = callbacks;
+    if (firstBind) this.control.set_require_enabled(true);
   }
 
   /**

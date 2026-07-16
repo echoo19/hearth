@@ -53,14 +53,25 @@ export class ScriptModuleRegistry {
     return resolved;
   }
 
+  /**
+   * Record that `fromPath` depends on (requires) `path` without loading
+   * anything. The Lua engine resolves requires INSIDE the VM and never calls
+   * load(), so the runtime's resolveModule callback records Lua edges here —
+   * without this seam the dependents graph stays empty for Lua and hot
+   * reload never recompiles Lua dependents.
+   */
+  recordEdge(path: string, fromPath: string): void {
+    let directDependents = this.dependents.get(path);
+    if (!directDependents) {
+      directDependents = new Set();
+      this.dependents.set(path, directDependents);
+    }
+    directDependents.add(fromPath);
+  }
+
   load(path: string, compile: CompileScriptModule, fromPath?: string): unknown {
     if (fromPath) {
-      let directDependents = this.dependents.get(path);
-      if (!directDependents) {
-        directDependents = new Set();
-        this.dependents.set(path, directDependents);
-      }
-      directDependents.add(fromPath);
+      this.recordEdge(path, fromPath);
     }
 
     if (this.exports.has(path)) {
@@ -112,6 +123,53 @@ export class ScriptModuleRegistry {
     for (const path of paths) {
       this.exports.delete(path);
     }
+  }
+
+  /**
+   * Drop every OUTGOING edge of the given paths (i.e. remove them from every
+   * dependents set). Hot reload calls this before absorbing the freshly
+   * recorded edges of a recompiled module, so a require REMOVED by an edit
+   * drops its edge instead of accumulating stale graph entries forever.
+   */
+  clearEdgesFrom(fromPaths: Iterable<string>): void {
+    const from = new Set(fromPaths);
+    for (const [path, directDependents] of this.dependents) {
+      for (const dependent of from) directDependents.delete(dependent);
+      if (directDependents.size === 0) this.dependents.delete(path);
+    }
+  }
+
+  /**
+   * A throwaway registry for hot-reload staging: it shares this registry's
+   * memoized module values EXCEPT for `invalidated` paths (so an unaffected
+   * library keeps its single live instance instead of re-running its body),
+   * resolves over the given sources snapshot, and starts with an empty edge
+   * graph (staging compiles record the fresh edges). Loading through the
+   * staged registry never mutates this one.
+   */
+  stageFor(sources: Map<string, string>, invalidated: Iterable<string>): ScriptModuleRegistry {
+    const staging = new ScriptModuleRegistry(sources);
+    for (const [path, value] of this.exports) {
+      staging.exports.set(path, value);
+    }
+    for (const path of invalidated) {
+      staging.exports.delete(path);
+    }
+    return staging;
+  }
+
+  /** Merge every edge recorded in `other` into this registry (reload commit). */
+  absorbEdges(other: ScriptModuleRegistry): void {
+    for (const [path, directDependents] of other.dependents) {
+      for (const dependent of directDependents) {
+        this.recordEdge(path, dependent);
+      }
+    }
+  }
+
+  /** Replace a path's memoized module value (hot-reload commit). */
+  setExport(path: string, value: unknown): void {
+    this.exports.set(path, value);
   }
 }
 
