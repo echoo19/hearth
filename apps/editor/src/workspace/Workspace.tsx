@@ -77,14 +77,15 @@ const HEARTH_THEME: DockviewTheme = {
 const SAVE_DEBOUNCE_MS = 300;
 const LEFT_WIDTH = 260;
 const RIGHT_WIDTH = 300;
+/** The Agent panel's own full-height dock at the right edge (v1.2): a
+ * terminal wants height, and the Inspector stays visible while an agent
+ * works. Wide enough for ~80 mono columns at the editor's terminal size. */
+export const AGENT_WIDTH = 380;
 // The bottom group is shared by every bottom-docked panel (Assets, Console,
-// Diff, Agent, Input, Game Settings, Live) — there's no per-panel default
-// height in dockview, only this group's. 260px left the Agent panel's
-// terminal/timeline at ~6 rows on first open, cramped enough to read as a
-// bug for what's meant to be a primary, high-attention surface (AGENT-9 /
-// L-097); 340px gives it real breathing room without pushing the Scene view
-// too short at a typical laptop height.
-const BOTTOM_HEIGHT = 340;
+// Diff, Input, Game Settings, Live). 260px suits log/asset surfaces; the
+// Agent panel that once needed more height here lives in its own right-hand
+// dock now.
+const BOTTOM_HEIGHT = 260;
 
 // ---------------------------------------------------------------------------
 // Panel content wrappers — existing panels rendered inside a dockview panel.
@@ -263,13 +264,20 @@ export function buildDefaultLayout(api: DockviewApi): void {
     }),
   );
   api.addPanel(
+    addPanelOptions('agent', {
+      position: { referencePanel: 'inspector', direction: 'right' },
+      initialWidth: AGENT_WIDTH,
+      inactive: true,
+    }),
+  );
+  api.addPanel(
     addPanelOptions('assets', {
       position: { referencePanel: 'scene', direction: 'below' },
       initialHeight: BOTTOM_HEIGHT,
       inactive: true,
     }),
   );
-  for (const id of ['console', 'diff', 'agent', 'input', 'gameSettings'] as const) {
+  for (const id of ['console', 'diff', 'input', 'gameSettings'] as const) {
     api.addPanel(addPanelOptions(id, { position: { referencePanel: 'assets', direction: 'within' }, inactive: true }));
   }
   scene.api.setActive();
@@ -289,7 +297,7 @@ function findReference(api: DockviewApi, preferred: readonly PanelId[]): PanelId
 }
 
 const CENTER_PANELS: readonly PanelId[] = ['scene', 'game', 'code', 'animator'];
-const BOTTOM_PANELS: readonly PanelId[] = ['assets', 'console', 'diff', 'agent', 'input', 'gameSettings', 'live'];
+const BOTTOM_PANELS: readonly PanelId[] = ['assets', 'console', 'diff', 'input', 'gameSettings', 'live'];
 
 /**
  * Show a panel: activate it when open, otherwise re-open it in a sensible
@@ -325,6 +333,12 @@ export function showPanel(api: DockviewApi, id: PanelId): void {
       CENTER_PANELS.filter((p) => p !== id),
     );
     if (sibling) extra = { position: { referencePanel: sibling, direction: 'within' } };
+  } else if (id === 'agent') {
+    const ref = findReference(api, ['inspector']);
+    extra = {
+      position: ref ? { referencePanel: ref, direction: 'right' } : { direction: 'right' },
+      initialWidth: AGENT_WIDTH,
+    };
   } else {
     const sibling = findReference(
       api,
@@ -338,6 +352,28 @@ export function showPanel(api: DockviewApi, id: PanelId): void {
   }
 
   api.addPanel(addPanelOptions(id, extra));
+}
+
+/**
+ * v1→v2 layout migration: v1 saves docked the Agent panel as a tab in the
+ * bottom group; v2 gives it its own full-height dock at the right edge.
+ * Relocates ONLY the agent panel — the rest of the user's layout is kept.
+ * A v1 agent already alone in its own group was placed there deliberately
+ * by the user; respect it. A closed agent panel needs no move (showPanel
+ * places it correctly when reopened).
+ */
+export function relocateAgentPanel(api: DockviewApi): void {
+  const agent = api.getPanel('agent');
+  if (!agent) return;
+  if (agent.group.panels.length === 1) return;
+  api.removePanel(agent);
+  const ref = findReference(api, ['inspector']);
+  api.addPanel(
+    addPanelOptions('agent', {
+      position: ref ? { referencePanel: ref, direction: 'right' } : { direction: 'right' },
+      initialWidth: AGENT_WIDTH,
+    }),
+  );
 }
 
 /**
@@ -382,6 +418,12 @@ export function initLayout(api: DockviewApi, storageKey: string): void {
   if (stored) {
     try {
       api.fromJSON(stored.layout as SerializedDockview);
+      if (stored.migrateAgentDock) {
+        relocateAgentPanel(api);
+        // Persist as v2 right away so the migration runs exactly once even
+        // if the user never touches the layout again this session.
+        writeLayout(api, storageKey);
+      }
       // Older saves persisted headless groups (`activeView: null`); heal them
       // so a restored layout doesn't come back showing the watermark.
       ensureGroupsActive(api);

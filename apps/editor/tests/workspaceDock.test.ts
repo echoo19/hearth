@@ -73,6 +73,7 @@ afterEach(() => {
   for (const p of parents) p.remove();
   docks = [];
   parents = [];
+  localStorage.clear();
 });
 
 function headlessGroups(api: DockviewApi): number {
@@ -172,5 +173,79 @@ describe('headless-group healing wiring', () => {
     expect(api.getPanel('scene')).toBeDefined();
     expect(headlessGroups(api)).toBe(0);
     expect(vi.mocked(ensureGroupsActive)).toHaveBeenCalled();
+  });
+});
+
+describe('agent right dock (v1.2 layout)', () => {
+  it('default layout puts agent in its own group beside the inspector, not the bottom group', () => {
+    const api = makeDock();
+    buildDefaultLayout(api);
+    const agent = api.getPanel('agent')!;
+    const assets = api.getPanel('assets')!;
+    expect(agent.group.panels.map((p) => p.id)).toEqual(['agent']);
+    expect(agent.group).not.toBe(assets.group);
+  });
+
+  it('showPanel reopens a closed agent panel into its own group, not the bottom dock', () => {
+    const api = makeDock();
+    buildDefaultLayout(api);
+    api.removePanel(api.getPanel('agent')!);
+    showPanel(api, 'agent');
+    const agent = api.getPanel('agent')!;
+    expect(agent.group.panels.map((p) => p.id)).toEqual(['agent']);
+  });
+
+  // Replicates the v1 default: agent tabbed inside the bottom (assets) group.
+  function buildV1Layout(api: DockviewApi): void {
+    api.clear();
+    api.addPanel({ id: 'scene', component: 'scene', title: 'Scene' });
+    api.addPanel({ id: 'inspector', component: 'inspector', title: 'Inspector', position: { referencePanel: 'scene', direction: 'right' }, initialWidth: 300 });
+    api.addPanel({ id: 'assets', component: 'assets', title: 'Assets', position: { referencePanel: 'scene', direction: 'below' }, initialHeight: 340 });
+    api.addPanel({ id: 'agent', component: 'agent', title: 'Agent', position: { referencePanel: 'assets', direction: 'within' } });
+  }
+
+  it('initLayout migrates a v1 save: agent relocates to its own right group, rest preserved, persisted as v2', () => {
+    const source = makeDock();
+    buildV1Layout(source);
+    const key = 'hearth.layout.migrate-test';
+    localStorage.setItem(key, JSON.stringify({ version: 1, layout: source.toJSON() }));
+
+    const api = makeDock();
+    initLayout(api, key);
+    const agent = api.getPanel('agent')!;
+    expect(agent.group.panels.map((p) => p.id)).toEqual(['agent']);
+    expect(api.getPanel('assets')).toBeTruthy();
+    expect(api.getPanel('inspector')).toBeTruthy();
+    const persisted = JSON.parse(localStorage.getItem(key)!) as { version: number };
+    expect(persisted.version).toBe(2);
+  });
+
+  it('initLayout leaves a v1 agent panel alone when the user had already given it its own group', () => {
+    const source = makeDock();
+    source.clear();
+    source.addPanel({ id: 'scene', component: 'scene', title: 'Scene' });
+    source.addPanel({ id: 'agent', component: 'agent', title: 'Agent', position: { referencePanel: 'scene', direction: 'left' } });
+    const key = 'hearth.layout.solo-test';
+    localStorage.setItem(key, JSON.stringify({ version: 1, layout: source.toJSON() }));
+
+    const api = makeDock();
+    initLayout(api, key);
+    const agent = api.getPanel('agent')!;
+    expect(agent.group.panels.map((p) => p.id)).toEqual(['agent']);
+    // Still stamped v2 so the migration never re-runs.
+    expect((JSON.parse(localStorage.getItem(key)!) as { version: number }).version).toBe(2);
+  });
+
+  it('initLayout of a v1 save with agent closed adds nothing but still re-stamps v2', () => {
+    const source = makeDock();
+    source.clear();
+    source.addPanel({ id: 'scene', component: 'scene', title: 'Scene' });
+    const key = 'hearth.layout.closed-test';
+    localStorage.setItem(key, JSON.stringify({ version: 1, layout: source.toJSON() }));
+
+    const api = makeDock();
+    initLayout(api, key);
+    expect(api.getPanel('agent')).toBeUndefined();
+    expect((JSON.parse(localStorage.getItem(key)!) as { version: number }).version).toBe(2);
   });
 });
