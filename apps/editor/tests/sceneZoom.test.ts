@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { fitView, sceneZoomKey, zoomBy } from '../src/components/SceneView';
+import { fitView, sceneWheelAction, sceneZoomKey, zoomBy } from '../src/components/SceneView';
 
 /**
  * Pure logic tests for SceneView's keyboard zoom (=/-/0): the zoom/fit math
@@ -68,5 +68,41 @@ describe('sceneZoomKey', () => {
     expect(sceneZoomKey({ key: '=', metaKey: true, ctrlKey: false, altKey: false, target: null })).toBeNull();
     expect(sceneZoomKey({ key: '-', metaKey: false, ctrlKey: true, altKey: false, target: null })).toBeNull();
     expect(sceneZoomKey({ key: '0', metaKey: false, ctrlKey: false, altKey: true, target: null })).toBeNull();
+  });
+});
+
+describe('sceneWheelAction', () => {
+  const wheel = (o: Partial<{ deltaX: number; deltaY: number; ctrlKey: boolean; metaKey: boolean }>) => ({
+    deltaX: 0,
+    deltaY: 0,
+    ctrlKey: false,
+    metaKey: false,
+    ...o,
+  });
+
+  // The bug this pins: a plain wheel used to zoom, which left a trackpad with
+  // NO pan gesture — two-finger scroll zoomed the canvas instead of moving it.
+  it('pans on a plain two-finger scroll, honoring both axes', () => {
+    expect(sceneWheelAction(wheel({ deltaX: 12, deltaY: 30 }))).toEqual({ kind: 'pan', dx: -12, dy: -30 });
+  });
+
+  it('zooms on pinch (browsers synthesize ctrlKey) and on ctrl+wheel', () => {
+    const pinch = sceneWheelAction(wheel({ deltaY: -10, ctrlKey: true }));
+    expect(pinch.kind).toBe('zoom');
+    if (pinch.kind === 'zoom') expect(pinch.factor).toBeGreaterThan(1); // scroll up = zoom in
+  });
+
+  it('zooms on meta+wheel', () => {
+    expect(sceneWheelAction(wheel({ deltaY: 10, metaKey: true })).kind).toBe('zoom');
+  });
+
+  // Direction, stated separately from the two-axis case above: a scroll down
+  // (positive deltaY) moves the view down, i.e. content travels up, the way a
+  // scrolled document behaves.
+  it('scrolling down moves the view down; scrolling up moves it up', () => {
+    const down = sceneWheelAction(wheel({ deltaY: 50 }));
+    const up = sceneWheelAction(wheel({ deltaY: -50 }));
+    expect(down.kind === 'pan' && down.dy).toBe(-50);
+    expect(up.kind === 'pan' && up.dy).toBe(50);
   });
 });

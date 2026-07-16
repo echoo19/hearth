@@ -132,13 +132,15 @@ export const KEYBINDS: Keybind[] = [
   // mode state); a native <dialog> owns its own Escape. Documented here — this
   // is now the sole home for the pan/zoom/drag reference (the floating Scene
   // hint bar was removed per JAKE-STEER, L-026).
-  { id: 'pan', combo: 'space', label: 'Pan the canvas (hold, or middle-drag)', group: 'Scene', display: true, run: noop },
+  { id: 'pan-scroll', combo: 'scroll', label: 'Pan the canvas (two-finger scroll)', group: 'Scene', display: true, run: noop },
+  { id: 'pan', combo: 'space', label: 'Pan the canvas (hold Space and drag, or middle-drag)', group: 'Scene', display: true, run: noop },
   { id: 'move-drag', combo: 'drag', label: 'Move the selected entity (Shift snaps to grid)', group: 'Scene', display: true, run: noop },
   { id: 'escape', combo: 'escape', label: 'Deselect · exit the current mode', group: 'Scene', display: true, run: noop },
   // Display-only: SceneView owns zoom's local view-transform state (like pan
   // above). Bare keys — Mod+=/Mod+-/Mod+0 collide with the browser's own
   // page-zoom shortcuts, which preventDefault() can't reliably suppress
   // across browsers, so this deliberately skips the modifier.
+  { id: 'zoom-pinch', combo: 'pinch', label: 'Zoom (pinch, or ⌘/Ctrl + scroll)', group: 'Scene', display: true, run: noop },
   { id: 'zoom-in', combo: '=', label: 'Zoom in', group: 'Scene', display: true, run: noop },
   { id: 'zoom-out', combo: '-', label: 'Zoom out', group: 'Scene', display: true, run: noop },
   { id: 'zoom-fit', combo: '0', label: 'Zoom to fit the scene', group: 'Scene', display: true, run: noop },

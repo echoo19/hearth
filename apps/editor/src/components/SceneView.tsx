@@ -162,6 +162,35 @@ export function zoomBy(view: ViewTransform, factor: number, center: Vec2): ViewT
   return { s, tx: center.x - wx * s, ty: center.y - wy * s };
 }
 
+/**
+ * What a wheel event means over the Scene view. Pure so it can be tested
+ * without a canvas, mirroring `sceneZoomKey` below.
+ *
+ * A trackpad two-finger scroll and a mouse wheel both arrive as `wheel`, and
+ * telling the devices apart is only ever a guess (deltaMode and delta
+ * magnitudes vary by browser and OS), so this maps the GESTURE, not the
+ * device — the 2D-canvas convention Figma and Sketch use:
+ *
+ *  - ctrl/meta held -> zoom. Browsers synthesize `ctrlKey` for a trackpad
+ *    PINCH, so pinch-to-zoom lands here for free, as does ctrl+wheel on a
+ *    mouse.
+ *  - otherwise -> pan, honoring `deltaX` so a trackpad's horizontal axis
+ *    works instead of being dropped on the floor.
+ *
+ * Zooming on a plain wheel (what this used to do) left a trackpad with no pan
+ * gesture at all: two-finger scroll zoomed, and panning meant holding Space.
+ * Mouse users zoom with ctrl+wheel, the =/- keys, or 0 to fit.
+ */
+export function sceneWheelAction(e: {
+  deltaX: number;
+  deltaY: number;
+  ctrlKey: boolean;
+  metaKey: boolean;
+}): { kind: 'zoom'; factor: number } | { kind: 'pan'; dx: number; dy: number } {
+  if (e.ctrlKey || e.metaKey) return { kind: 'zoom', factor: Math.exp(-e.deltaY * 0.0015) };
+  return { kind: 'pan', dx: -e.deltaX, dy: -e.deltaY };
+}
+
 /** Scale + center a `buildSize`-sized scene inside a `hostSize`-sized viewport, with padding. */
 export function fitView(hostSize: { w: number; h: number }, buildSize: { w: number; h: number }): ViewTransform {
   const s = Math.min(hostSize.w / (buildSize.w + 160), hostSize.h / (buildSize.h + 120), 1.5);
@@ -512,15 +541,21 @@ export function SceneView() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [editingPoints, paintMode, selection]);
 
-  // ---- wheel zoom (non-passive so we can preventDefault) -------------------
+  // ---- wheel: pan, or zoom while ctrl/meta is held (see sceneWheelAction) --
+  // Non-passive so we can preventDefault.
   useEffect(() => {
     const host = hostRef.current;
     if (!host) return;
     const onWheel = (e: WheelEvent) => {
       e.preventDefault();
-      const rect = host.getBoundingClientRect();
-      const center = { x: e.clientX - rect.left, y: e.clientY - rect.top };
-      setView((v) => zoomBy(v, Math.exp(-e.deltaY * 0.0015), center));
+      const action = sceneWheelAction(e);
+      if (action.kind === 'zoom') {
+        const rect = host.getBoundingClientRect();
+        const center = { x: e.clientX - rect.left, y: e.clientY - rect.top };
+        setView((v) => zoomBy(v, action.factor, center));
+        return;
+      }
+      setView((v) => ({ ...v, tx: v.tx + action.dx, ty: v.ty + action.dy }));
     };
     host.addEventListener('wheel', onWheel, { passive: false });
     return () => host.removeEventListener('wheel', onWheel);
