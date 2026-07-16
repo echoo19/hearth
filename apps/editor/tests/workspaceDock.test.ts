@@ -248,4 +248,24 @@ describe('agent right dock (v1.2 layout)', () => {
     expect(api.getPanel('agent')).toBeUndefined();
     expect((JSON.parse(localStorage.getItem(key)!) as { version: number }).version).toBe(2);
   });
+
+  // No 'inspector' panel at all: relocateAgentPanel's reference falls through
+  // to the reference-less `{ direction: 'right' }` position. Pins that
+  // dockview-core accepts that fallback instead of throwing.
+  it('initLayout migrates a v1 save with a non-solo agent when the inspector panel is absent', () => {
+    const source = makeDock();
+    source.clear();
+    source.addPanel({ id: 'scene', component: 'scene', title: 'Scene' });
+    source.addPanel({ id: 'assets', component: 'assets', title: 'Assets', position: { referencePanel: 'scene', direction: 'below' }, initialHeight: 340 });
+    source.addPanel({ id: 'agent', component: 'agent', title: 'Agent', position: { referencePanel: 'assets', direction: 'within' } });
+    const key = 'hearth.layout.no-inspector-test';
+    localStorage.setItem(key, JSON.stringify({ version: 1, layout: source.toJSON() }));
+
+    const api = makeDock();
+    initLayout(api, key);
+    const agent = api.getPanel('agent')!;
+    expect(agent.group.panels.map((p) => p.id)).toEqual(['agent']);
+    const persisted = JSON.parse(localStorage.getItem(key)!) as { version: number };
+    expect(persisted.version).toBe(2);
+  });
 });
