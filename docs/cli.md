@@ -119,11 +119,13 @@ default stick deadzone (`0`-`1`, default `0.15`), overridable per axis. See
 Input panel.
 
 **Scripts** (code-edit, except `check-script`/`script search` which are
-read-only): `create script <name> [--language lua|js] [--source-file f]
-[--no-format]` (Lua is the default; `--no-format` skips format-on-save for
-this write, saving the source verbatim), `attach script <scene> <entity>
-<path> [--params '<json>']`, plus the `script edit|check|format|search|replace`
-group; see [The `script` group](#the-script-group) below.
+read-only): `create script <name> [--dir subdir] [--language lua|js]
+[--source-file f] [--no-format]` (Lua is the default; `--dir lib` writes
+under `scripts/lib/`, useful for required helper modules; `--no-format`
+skips format-on-save for this write, saving the source verbatim), `attach
+script <scene> <entity> <path> [--params '<json>']`, plus the
+`script edit|check|format|search|replace` group; see
+[The `script` group](#the-script-group) below.
 
 **Assets** (asset-edit): `create asset sprite <name> --shape circle --color
 gold --width 24 --height 24` (shapes: rectangle, circle, triangle, diamond,
@@ -301,8 +303,9 @@ handlers, kept because agents have them memorized.
   edit`. With `--source`, checks that text as if it would be saved to
   `<path>`; otherwise reads `<path>` from the project. Human output is one
   `path:line message` line per diagnostic, same shape as `validate`'s
-  script-error reporting; this is what the editor's Code panel runs on
-  every edit to power its inline lint. Same command as `check-script`/MCP
+  script-error reporting. Broken and cyclic `require(...)` calls are
+  reported here too; this is what the editor's Code panel runs on every
+  edit to power its inline lint. Same command as `check-script`/MCP
   `check_script`.
 - **`script format [path] [--all]`**: reformat one script, or every
   `.lua`/`.js` script under `scripts/` with `--all`, to Hearth house style
@@ -522,6 +525,8 @@ for severity:
 `POLYGON_DUPLICATE_POINT`, `POLYGON_NOT_CONVEX`,
 `POLYGON_TOO_FEW_POINTS`, `PREFAB_ASSET_NOT_FOUND`,
 `PREFAB_DATA_INVALID`, `PREFAB_INSTANCE_ORPHANED`,
-`PREFAB_SCRIPT_NOT_FOUND`, `RAGGED_TILEMAP`, `SCRIPT_SYNTAX_ERROR`,
-`SCRIPT_UNKNOWN_EXTENSION`, `SPRITE_ANIMATOR_MISSING_RENDERER`,
+`PREFAB_SCRIPT_NOT_FOUND`, `RAGGED_TILEMAP`,
+`SCRIPT_REQUIRE_CYCLE`, `SCRIPT_REQUIRE_NOT_FOUND`,
+`SCRIPT_SYNTAX_ERROR`, `SCRIPT_UNKNOWN_EXTENSION`,
+`SPRITE_ANIMATOR_MISSING_RENDERER`,
 `UNKNOWN_COMPONENT_KEY`.

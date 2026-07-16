@@ -72,14 +72,99 @@ objects by value.
 
 ### The Lua sandbox
 
-Scripts run Lua 5.4 (via wasmoon) with `os`, `io`, `package`, `require`,
-`dofile`, `load`, `loadstring`, `debug`, and `collectgarbage` removed.
+Scripts run Lua 5.4 (via wasmoon) with `os`, `io`, `package`, `dofile`,
+`load`, `loadstring`, `debug`, and `collectgarbage` removed.
+`require` is Hearth's script-module loader, described below.
 `print(...)` routes to the Hearth console, and `math.random` is backed
 by the engine's **seeded** stream (the integer forms `math.random(m)`
 and `math.random(m, n)` keep their Lua semantics); `math.randomseed` is
 a no-op that warns once (the seed comes from the session), so no wall
 clock or unseeded randomness can leak into game logic. `string`,
 `table`, and `math` are otherwise all available.
+
+## Script modules
+
+Scripts can share helper code with `require`, resolved from the project
+`scripts/` directory:
+
+```lua
+local noise = require("lib/noise")
+```
+
+```js
+const noise = require('lib/noise');
+```
+
+The requiring script's extension is inferred when the spec has none, so
+`scripts/enemy.lua` requiring `lib/noise` loads `scripts/lib/noise.lua`.
+An explicit extension also works (`require("lib/noise.lua")`). Resolution
+cannot escape `scripts/`; `require("../assets/secret")` is rejected.
+
+A library is just another script. It usually has no lifecycle hooks and
+returns reusable values:
+
+```lua
+-- scripts/lib/noise.lua
+local noise = {}
+
+function noise.value(x, y)
+  return math.sin(x * 12.9898 + y * 78.233) % 1
+end
+
+return noise
+```
+
+```lua
+-- scripts/cave.lua
+local noise = require("lib/noise")
+local script = {}
+
+function script.onStart(ctx)
+  ctx.vars.density = noise.value(ctx.transform.position.x, ctx.transform.position.y)
+end
+
+return script
+```
+
+```js
+// scripts/lib/noise.js
+function value(x, y) {
+  return Math.sin(x * 12.9898 + y * 78.233) % 1;
+}
+
+module.exports = { value };
+```
+
+```js
+// scripts/cave.js
+const noise = require('lib/noise');
+
+export default {
+  onStart(ctx) {
+    ctx.vars.density = noise.value(ctx.transform.position.x, ctx.transform.position.y);
+  },
+};
+```
+
+Module rules:
+
+- **Same language only.** A `.lua` script can require `.lua` modules; a
+  `.js` script can require `.js` modules. Cross-language requires are a
+  clear load error.
+- **Load-time only.** Call `require` at the top of the file and keep the
+  result in a local/const. Calling `require` from inside a lifecycle hook
+  errors.
+- **No cycles.** Cyclic requires are rejected and the error names the full
+  chain. Hearth does not expose partial exports.
+- **Runs once per scene load.** A module body runs once, then its return
+  value is memoized for the rest of that scene load.
+- **Hot reload is graph-wide.** Editing a library recompiles every
+  dependent script. If any compile fails, the entire previous graph keeps
+  running unchanged.
+
+One caveat: module top-level state resets on hot reload because the module
+body re-runs. Put gameplay state that must survive reload in `ctx.vars`
+or another `ctx` storage surface, not in a module-level local.
 
 ## The `ctx` API
 
@@ -97,7 +182,7 @@ Lua sees `nil`; where JS takes an object literal Lua passes a table.
 | `ctx.vars` | Persistent per-entity state, survives across frames (not across scene switches — use `ctx.save`) |
 | `ctx.destroySelf()` | Remove this entity |
 
-**Component mutation contract:** Live component data (returned by `ctx.getComponent()` or accessed via `ctx.transform`) must be mutated by replacement, not in place, to take effect on the current frame. Specifically, `ctx.getComponent('Tilemap').grid` is cached for collider performance: reassign it to a new array (`tilemap.grid = [...]`) for changes to take effect this frame. In-place edits to the same array (e.g. `grid[0] = '####'`) are not detected and will silently use stale collision boxes until the next frame. Always use whole-array assignment for runtime grid changes.
+**Component mutation contract:** Live component data (returned by `ctx.getComponent()` or accessed via `ctx.transform`) must be mutated by replacement, not in place, to take effect on the current frame. Specifically, `ctx.getComponent('Tilemap').grid` is cached for collider performance: reassign it to a new array (`tilemap.grid = [...]`) for changes to take effect this frame. In-place same-length edits to the same array (e.g. `grid[0] = '####'`) are not detected because the cache keys on the grid array's reference identity, so collision boxes can stay stale indefinitely. Always use whole-array assignment for runtime grid changes.
 
 ### Input
 
@@ -785,9 +870,9 @@ export default {
 
 JS-specific rules:
 
-- **No `import`/`require`.** Scripts are single-file, evaluated in a
-  function scope with `module.exports` semantics behind the scenes.
-  Helper functions in the same file are fine.
+- **No ESM `import`.** Hearth scripts still run in a synchronous sandbox,
+  not a browser/Node ESM graph. Use Hearth's load-time `require` for
+  same-language script modules, or keep helpers in the same file.
 - Don't use `Math.random()` or `Date.now()`: use `ctx.random` and
   `ctx.time` so playtests stay deterministic (Lua scripts get this
   protection automatically; JS scripts are on the honor system).
@@ -800,8 +885,9 @@ JS-specific rules:
   errors the script is disabled for that entity (the game keeps running).
   Lua errors carry `scripts/foo.lua:LINE` so you can jump to the line.
 - `hearth validate` syntax-checks every script (both languages) and
-  reports `SCRIPT_SYNTAX_ERROR` with the file and line. Agents can fix
-  scripts without booting the game.
+  reports `SCRIPT_SYNTAX_ERROR` with the file and line. Broken or cyclic
+  script modules are reported as `SCRIPT_REQUIRE_NOT_FOUND` and
+  `SCRIPT_REQUIRE_CYCLE`. Agents can fix scripts without booting the game.
 - `hearth check-script <path> [--source text]` (MCP `check_script`)
   pre-flights a single script (source text you haven't saved yet, or an
   existing file) without writing anything: read-only, same diagnostics
@@ -820,6 +906,9 @@ same project (the editor picks up the external edit over the command
 journal and reloads it the same way; see
 [editor.md](./editor.md#live-iteration-during-play)). `formatScript` and
 `replaceInScripts` reload every script file they touch the same way.
+If the edited file is a required library, Hearth recompiles every script
+that depends on it. A compile failure anywhere in that dependent graph
+leaves the entire previous graph running unchanged.
 
 **What survives a reload:** every live entity already running that
 script keeps its `ctx.vars`, pending `ctx.timers`, running `ctx.tweens`,
@@ -834,6 +923,10 @@ successful reload. Future spawns of the script (e.g. via
 to compile, the reload is rejected and every entity keeps running the
 **old** code unchanged. A bad save during play never breaks a running
 game.
+
+Required modules have one extra caveat: their top-level body runs again
+after a successful hot reload, so module-local caches or counters reset.
+Keep reload-surviving state in `ctx.vars`, not in module top-level locals.
 
 **Pinned caveat: `ctx.events.on` subscriptions do not re-bind.** A
 subscription registered with `ctx.events.on(name, fn)` closes over the

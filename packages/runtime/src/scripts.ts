@@ -3,12 +3,12 @@
  *
  * Scripts are plain JavaScript files of the shape
  * `export default { onStart(ctx), onUpdate(ctx, dt), onCollision(ctx, other) }`.
- * They are compiled with `new Function('module', 'exports', source)` after
- * rewriting `export default` to `module.exports =`, so they run identically
- * in Node and the browser without dynamic import.
+ * They are compiled with `new Function('module', 'exports', 'require', source)`
+ * after rewriting `export default` to `module.exports =`, so they run
+ * identically in Node and the browser without dynamic import.
  *
- * v1 limitation: scripts cannot use `import` (there is no module graph);
- * everything a script needs comes through its `ctx`.
+ * ESM `import` is not supported. Hearth provides a synchronous, same-language
+ * script-module `require` resolver for shared code under scripts/.
  */
 import type { ComponentMap, ComponentType, TransformComponent, Vec2 } from '@hearth/core';
 

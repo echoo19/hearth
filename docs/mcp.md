@@ -42,12 +42,14 @@ suggestion on an unknown segment), `set_properties` (batch: multiple
 dot-path properties on one entity in a single undo step, all-or-nothing
 validated; see [cli.md](./cli.md#command-tour)), `set_input_mapping`,
 `paint_tiles`, `fill_tilemap_rect`, `resize_tilemap` (batched Tilemap edits, see
-[cli.md](./cli.md#tilemap-editing)), `create_script`, `edit_script`,
+[cli.md](./cli.md#tilemap-editing)), `create_script` (optional `dir`, e.g.
+`"lib"`, creates under `scripts/lib/` for required helper modules), `edit_script`,
 `format_script` (reformat a script, or every script with `all: true`, to
 Hearth house style (StyLua/Prettier), see
 [cli.md](./cli.md#the-script-group)), `check_script` (syntax-check source
 or an existing script file without saving: read-only, a pre-flight
-before `edit_script`), `attach_script`, `search_scripts` (plain-text or
+before `edit_script`; also reports broken/cyclic `require(...)` calls),
+`attach_script`, `search_scripts` (plain-text or
 regex search across script source, read-only; see
 [cli.md](./cli.md#the-script-group)), `replace_in_scripts` (find-and-replace
 across script files; always run with `dryRun: true` first to preview
