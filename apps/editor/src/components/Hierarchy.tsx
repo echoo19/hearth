@@ -65,14 +65,22 @@ export type TreeNavAction =
   | { type: 'collapse'; id: string }
   | null;
 
+/** The minimum a row's node must expose for treeNav — generic so the Code
+ * panel's script tree (folders + scripts, not scene entities) shares this
+ * exact keyboard contract instead of growing a second tree idiom. */
+export interface TreeNavNode {
+  id: string;
+  parentId?: string | null;
+}
+
 /**
  * Standard ARIA tree keyboard contract, as a pure function of the visible rows.
  * Up/Down move by one visible row; Home/End jump to the ends; Right expands a
  * collapsed parent then steps into it; Left collapses an expanded parent then
  * steps out to the parent row. Returns the action to apply, or null for a no-op.
  */
-export function treeNav(
-  rows: FlatRow[],
+export function treeNav<E extends TreeNavNode>(
+  rows: ReadonlyArray<{ entity: E; hasChildren: boolean }>,
   collapsed: Set<string>,
   currentId: string | null,
   key: string,

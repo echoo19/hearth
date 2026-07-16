@@ -97,4 +97,39 @@ describe('ScriptPathField', () => {
     const text = screen.getByRole('textbox') as HTMLInputElement;
     expect(text.value).toBe('scripts/new.lua');
   });
+
+  // Wave N (script modules): libraries — hookless scripts — must not be
+  // offered as attachable behaviors; attaching one silently does nothing.
+  it('excludes library scripts from the pick list', () => {
+    render(
+      <ScriptPathField
+        value="scripts/player.lua"
+        scripts={['scripts/player.lua', 'scripts/lib/noise.lua']}
+        libraries={new Set(['scripts/lib/noise.lua'])}
+        onCommit={vi.fn()}
+      />,
+    );
+    expect(screen.queryByRole('option', { name: 'lib/noise.lua' })).toBeNull();
+    expect(screen.getByRole('option', { name: 'player.lua' })).toBeTruthy();
+  });
+
+  it('keeps an already-attached library visible but disabled, with an inline warning', () => {
+    render(
+      <ScriptPathField
+        value="scripts/lib/noise.lua"
+        scripts={['scripts/player.lua', 'scripts/lib/noise.lua']}
+        libraries={new Set(['scripts/lib/noise.lua'])}
+        onCommit={vi.fn()}
+      />,
+    );
+    const select = screen.getByRole('combobox') as HTMLSelectElement;
+    // The value still shows (not blanked) but is marked and unattachable…
+    expect(select.value).toBe('scripts/lib/noise.lua');
+    const marked = screen.getByRole('option', { name: 'lib/noise.lua — library' }) as HTMLOptionElement;
+    expect(marked.disabled).toBe(true);
+    // …and the trap is named at the point of use.
+    expect(screen.getByText(/does nothing on an entity/)).toBeTruthy();
+    // No Custom free-text fallback — the path IS a known script.
+    expect(screen.queryByRole('textbox')).toBeNull();
+  });
 });

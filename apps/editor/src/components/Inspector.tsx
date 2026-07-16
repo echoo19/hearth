@@ -26,6 +26,7 @@ import {
   setParamKey,
   type NewParamType,
 } from '../scriptParams';
+import { useLibraryScripts } from '../scriptKinds';
 import {
   countPrefabInstances,
   createSyncPreflight,
@@ -643,17 +644,28 @@ function FontFamilyField({
  * for a path that doesn't exist yet (a new script the user is about to
  * create). Replaces the bare TextField (INSPECTOR-5 / L-034) so the common
  * case — point a Script at an existing file — is a pick, not blind typing.
+ *
+ * Libraries (hookless scripts — see scriptKinds.ts) are NOT offered:
+ * attaching one silently does nothing, which is a trap, not an option. A
+ * value that already points at a library (attached before it lost its hooks,
+ * or by an agent) stays visible as a disabled pick with an inline warning —
+ * clearly marked rather than blanked, but not re-selectable.
  */
 export function ScriptPathField({
   value,
   scripts,
+  libraries,
   onCommit,
 }: {
   value: string;
   scripts: string[];
+  /** Paths excluded from the pick list (hookless library scripts). */
+  libraries?: ReadonlySet<string>;
   onCommit: (v: string) => CommitOutcome | Promise<CommitOutcome>;
 }) {
   const known = scripts.includes(value);
+  const isLibrary = known && (libraries?.has(value) ?? false);
+  const attachable = scripts.filter((path) => !(libraries?.has(path) ?? false));
   const [forceCustom, setForceCustom] = useState(() => value !== '' && !known);
   const showCustom = forceCustom || (value !== '' && !known);
   const CUSTOM = '__custom__';
@@ -672,13 +684,24 @@ export function ScriptPathField({
         }}
       >
         <option value="">(none)</option>
-        {scripts.map((path) => (
+        {isLibrary && (
+          <option value={value} disabled>
+            {value.replace(/^scripts\//, '')} — library
+          </option>
+        )}
+        {attachable.map((path) => (
           <option key={path} value={path}>
             {path.replace(/^scripts\//, '')}
           </option>
         ))}
         <option value={CUSTOM}>Custom…</option>
       </select>
+      {isLibrary && (
+        <span className="field-error">
+          This script is a library — it has no lifecycle hooks, so it does nothing on an entity. require() it from a
+          behavior script instead.
+        </span>
+      )}
       {showCustom && <TextField value={value} placeholder="scripts/enemy.lua" onCommit={onCommit} />}
     </div>
   );
@@ -929,6 +952,9 @@ export function Inspector() {
   // field the Code panel lists (derived from the already-selected `info` to
   // avoid an extra subscription returning a fresh [] each render).
   const scripts = info?.scripts ?? [];
+  // Hookless scripts are kept out of the picker: attaching a library does
+  // nothing. Shared classification with the Code panel's script tree.
+  const libraries = useLibraryScripts();
   const componentDocs = useEditor((s) => s.componentDocs);
   const exec = useEditor((s) => s.exec);
   const query = useEditor((s) => s.query);
@@ -1480,6 +1506,7 @@ export function Inspector() {
                         key={rowKey}
                         value={value}
                         scripts={scripts}
+                        libraries={libraries}
                         onCommit={(v) => setProperty(property, v)}
                       />
                     );

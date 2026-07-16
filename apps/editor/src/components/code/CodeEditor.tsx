@@ -34,7 +34,7 @@ import { search, searchKeymap } from '@codemirror/search';
 import { codeTheme } from './codeTheme';
 import { ctxCompletionSource } from './completion';
 import { ctxHoverExtension } from './hoverDocs';
-import { makeCheckScriptLinter, type ScriptDiagnostic } from './lint';
+import { makeCheckScriptLinter, requestLintRefresh, type ScriptDiagnostic } from './lint';
 import { languageForPath, type ScriptLanguage } from './scriptLanguage';
 
 const luaLanguage = StreamLanguage.define(lua);
@@ -178,6 +178,11 @@ export interface CodeEditorProps {
    * failed/offline command). Debounced ~500ms by the lint extension itself.
    */
   checkScript: (source: string) => Promise<ScriptDiagnostic[]>;
+  /** Bumped after a successful save: re-run the linter without a doc change,
+   * so require diagnostics (path mode — only sound when the buffer matches
+   * disk, see CodePanel's checkScript wrapper) refresh at the moment the
+   * buffer becomes clean. */
+  lintNonce?: number;
   /** When the nonce changes, scroll to `line` (1-based) and flash it. */
   focusRequest?: { line: number; nonce: number } | null;
   /** When the nonce changes, replace the whole doc with `text` (preserving
@@ -195,6 +200,7 @@ export default function CodeEditor({
   onSave,
   onFormatSave,
   checkScript,
+  lintNonce,
   focusRequest,
   applyContent,
 }: CodeEditorProps) {
@@ -326,6 +332,17 @@ export default function CodeEditor({
     shownPathRef.current = path;
     shownRevRef.current = revision;
   }, [path, revision, stateCache]);
+
+  // Post-save lint refresh: the doc didn't change, but checkScript's answer
+  // did (the wrapper gains require diagnostics once the buffer matches disk).
+  // Skip the mount run — the linter's own initial pass covers it.
+  const lintNonceRef = useRef(lintNonce);
+  useEffect(() => {
+    const view = viewRef.current;
+    if (lintNonce === lintNonceRef.current) return;
+    lintNonceRef.current = lintNonce;
+    if (view) requestLintRefresh(view);
+  }, [lintNonce]);
 
   // Formatted-on-save: replace the whole doc in ONE transaction so undo
   // history and selection mapping are preserved (a fresh setState would drop
