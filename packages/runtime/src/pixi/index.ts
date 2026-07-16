@@ -81,6 +81,7 @@ import {
 import { syncSpriteEffectsFilter } from './spriteEffectsFilter.js';
 import { buildTilemapContainer } from './tilemapRender.js';
 import { clearGraphics } from './graphicsGuard.js';
+import { pixiTextureAssetDescriptor } from './assetDescriptor.js';
 
 export { localStorageAdapter, type WebStorageLike } from './storage.js';
 
@@ -742,7 +743,7 @@ export class PixiSceneView {
       const asset = this.opts.store.getAsset(id);
       if (!asset) continue;
       try {
-        const texture = await Assets.load<Texture>(this.opts.resolveAssetUrl(asset));
+        const texture = await Assets.load<Texture>(pixiTextureAssetDescriptor(asset, this.opts.resolveAssetUrl(asset)));
         this.textures.set(id, texture);
       } catch (err) {
         this.opts.onLog?.({
