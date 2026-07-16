@@ -41,7 +41,7 @@ normative; this page is descriptive. Every file carries `formatVersion: 1`.
 ```jsonc
 {
   "formatVersion": 1,
-  "hearthVersion": "0.10.0",
+  "hearthVersion": "0.15.0",
   "id": "prj_a1b2c3d4",
   "name": "My Game",
   "description": "",
@@ -243,6 +243,29 @@ Notes:
 
 - `formatVersion` is a strict literal (`1`); loaders reject unknown versions
   rather than guessing.
+- `hearthVersion` records the Hearth engine version that last wrote the
+  project manifest. It is not a second format counter; it is a compatibility
+  stamp for diagnostics and migrations.
 - Unknown component types are rejected by the scene schema (strict map),
   which keeps agent-written files honest.
 - IDs must match their prefix patterns (`^ent_[a-z0-9]+$` etc.).
+
+## Format stability and migrations
+
+The v1.0 promise is that opening a project never writes to disk. Loading an
+older project is byte-non-destructive: Hearth validates and migrates the
+in-memory document it needs to run, but it does not rewrite `hearth.json`,
+scenes, assets, scripts, or playtests just because they were opened.
+
+The first undoable edit made through the command system advances
+`hearthVersion` to the running engine version as part of that edit's normal
+save. There is no separate stamp-only write. Undoing that edit restores the
+previous snapshot, including the older `hearthVersion` stamp.
+
+Hearth currently verifies this compatibility floor with projects stamped
+`0.13.0` and `0.14.0`: they open without disk writes, validate, and advance
+to the current stamp on first edit. Projects stamped newer than the running
+engine fail loudly instead of being silently modified.
+
+After 1.0, project-format changes that would otherwise break old projects
+must ship with automatic migrations and release notes describing the change.

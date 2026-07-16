@@ -21,6 +21,7 @@ import {
 import { SceneSchema, type Scene } from '../schema/scene.js';
 import { joinPath, type FsLike } from '../fs.js';
 import { slugify } from '../ids.js';
+import { applyProjectMigrations } from './migrate.js';
 
 export interface ProjectSnapshot {
   project: ProjectFile;
@@ -66,6 +67,7 @@ export class ProjectError extends Error {
       | 'ASM_ANIMATION_NOT_FOUND'
       | 'AUTOTILE_SHEET_NOT_FOUND'
       | 'AUTOTILE_FRAME_MISSING'
+      | 'UNSUPPORTED_PROJECT_VERSION'
       | 'DESKTOP_EXPORT_UNSUPPORTED' = 'INVALID_INPUT',
   ) {
     super(message);
@@ -103,7 +105,7 @@ export class ProjectStore {
         'NOT_FOUND',
       );
     }
-    const project = ProjectFileSchema.parse(await readJson(fs, projectPath));
+    const project = ProjectFileSchema.parse(applyProjectMigrations(await readJson(fs, projectPath)));
 
     let assets: AssetIndex = { formatVersion: 1, assets: [] };
     const assetIndexPath = joinPath(root, ASSET_INDEX_FILE);

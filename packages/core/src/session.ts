@@ -12,6 +12,7 @@ import { HISTORY_EXEMPT } from './commands/historyCommands.js';
 import { getCommand, listCommands } from './commands/registry.js';
 import type { ChangedRef, CommandIssue, CommandResources, CommandResult, RuntimeHooks } from './commands/types.js';
 import { hasPermission, PermissionError, type PermissionMode, DEFAULT_MODES } from './permissions.js';
+import { HEARTH_VERSION } from './schema/project.js';
 
 /**
  * A short human-readable label for a history entry: the command name plus
@@ -272,6 +273,9 @@ export class HearthSession {
     try {
       data = (await def.run(ctx, params2 as any)) as T;
       if (def.mutates) {
+        if (capturesHistory && this.store.project.hearthVersion !== HEARTH_VERSION) {
+          this.store.project.hearthVersion = HEARTH_VERSION;
+        }
         files = await this.store.save();
       }
       if (capturesHistory && before) {
