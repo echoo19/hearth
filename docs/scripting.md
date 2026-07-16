@@ -156,6 +156,11 @@ Module rules:
   errors.
 - **No cycles.** Cyclic requires are rejected and the error names the full
   chain. Hearth does not expose partial exports.
+- **The global `require` is read-only (Lua).** Every script in a session
+  shares one Lua VM, so assigning to `require` would silently hijack module
+  loading for every script compiled after it — Hearth raises an error at the
+  assignment instead. A `local require = require` shadow inside one script
+  is fine.
 - **Runs once per scene load.** A module body runs once, then its return
   value is memoized for the rest of that scene load.
 - **Hot reload is graph-wide.** Editing a library recompiles every
@@ -888,6 +893,9 @@ JS-specific rules:
   reports `SCRIPT_SYNTAX_ERROR` with the file and line. Broken or cyclic
   script modules are reported as `SCRIPT_REQUIRE_NOT_FOUND` and
   `SCRIPT_REQUIRE_CYCLE`. Agents can fix scripts without booting the game.
+  Requires inside comments or string literals are ignored (commenting one
+  out is safe), and each problem is reported once, against the file that
+  contains the offending require — never against its dependents.
 - `hearth check-script <path> [--source text]` (MCP `check_script`)
   pre-flights a single script (source text you haven't saved yet, or an
   existing file) without writing anything: read-only, same diagnostics

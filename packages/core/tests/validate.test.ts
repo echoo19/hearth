@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { MemoryFileSystem, createProject, HearthSession, readJson } from '@hearth/core';
-import { validateProject } from '../src/validate.js';
+import { validateProject, checkScriptRequires } from '../src/validate.js';
 
 async function makeSession() {
   const fs = new MemoryFileSystem();
@@ -253,6 +253,147 @@ describe('script require validation', () => {
     const report = await validateProject(store);
 
     expect(report.errors.filter((e) => e.code.startsWith('SCRIPT_REQUIRE_'))).toEqual([]);
+  });
+
+  it('ignores a require in a Lua line comment (commenting one out must not block export)', async () => {
+    const { session, store } = await makeSession();
+    await session.execute('createScript', {
+      name: 'player',
+      language: 'lua',
+      source: "-- we used to require('lib/removed') here\nreturn { onStart = function(ctx) end }\n",
+    });
+
+    const report = await validateProject(store);
+
+    expect(report.errors.filter((e) => e.code.startsWith('SCRIPT_REQUIRE_'))).toEqual([]);
+    expect(report.valid).toBe(true);
+  });
+
+  it('ignores a require in a JS line comment and a JS string literal', async () => {
+    const { session, store } = await makeSession();
+    await session.execute('createScript', {
+      name: 'player',
+      language: 'js',
+      source:
+        "// require('lib/old')\nexport default { onStart(ctx) { ctx.log(\"call require('lib/x') to load\"); } };\n",
+    });
+
+    const report = await validateProject(store);
+
+    expect(report.errors.filter((e) => e.code.startsWith('SCRIPT_REQUIRE_'))).toEqual([]);
+    expect(report.valid).toBe(true);
+  });
+
+  it('attributes a broken require in a library to the LIBRARY, once, not to each dependent', async () => {
+    const { session, store } = await makeSession();
+    await session.execute('createScript', {
+      name: 'a',
+      dir: 'lib',
+      language: 'lua',
+      source: 'local t = {}\nt.value = 1\nlocal gone = require("lib/nope")\nreturn t\n',
+    });
+    await session.execute('createScript', {
+      name: 'player',
+      language: 'lua',
+      source: 'local a = require("lib/a")\nreturn {}\n',
+    });
+    await session.execute('createScript', {
+      name: 'enemy',
+      language: 'lua',
+      source: 'local a = require("lib/a")\nreturn {}\n',
+    });
+
+    const report = await validateProject(store);
+
+    const issues = report.errors.filter((e) => e.code === 'SCRIPT_REQUIRE_NOT_FOUND');
+    expect(issues).toHaveLength(1);
+    expect(issues[0].script).toBe('scripts/lib/a.lua');
+    expect(issues[0].line).toBe(3);
+    expect(issues[0].message).toContain('scripts/lib/a.lua:3');
+    expect(issues[0].message).toContain('scripts/lib/nope.lua');
+  });
+});
+
+describe('checkScriptRequires scanner (comment/string awareness)', () => {
+  const lua = (path: string, source: string, extra: Record<string, string> = {}) =>
+    checkScriptRequires(path, new Map([[path, source], ...Object.entries(extra)]));
+
+  it('skips Lua --[[ ]] block comments and long strings', () => {
+    const source = [
+      '--[[',
+      "require('lib/gone')",
+      ']]',
+      "local s = [[ require('lib/also-gone') ]]",
+      'return {}',
+    ].join('\n');
+    expect(lua('scripts/a.lua', source)).toEqual([]);
+  });
+
+  it('skips Lua leveled long-bracket comments (--[==[ ]==])', () => {
+    const source = "--[==[ require('lib/gone') ]==]\nreturn {}\n";
+    expect(lua('scripts/a.lua', source)).toEqual([]);
+  });
+
+  it("skips a require inside a Lua string literal, including escaped quotes", () => {
+    const source = 'local s = "say \\"require(\'lib/gone\')\\" out loud"\nreturn {}\n';
+    expect(lua('scripts/a.lua', source)).toEqual([]);
+  });
+
+  it('skips JS /* */ block comments and template literals', () => {
+    const path = 'scripts/a.js';
+    const source = [
+      '/*',
+      "const old = require('lib/gone');",
+      '*/',
+      "const msg = `try require('lib/also-gone')`;",
+      'export default {};',
+    ].join('\n');
+    expect(checkScriptRequires(path, new Map([[path, source]]))).toEqual([]);
+  });
+
+  it('still reports a real require after a comment, at the right line', () => {
+    const source = "-- require('lib/decoy')\nlocal ok = 1\nlocal x = require('lib/nope')\nreturn {}\n";
+    const diags = lua('scripts/a.lua', source);
+    expect(diags).toHaveLength(1);
+    expect(diags[0].line).toBe(3);
+    expect(diags[0].message).toContain('scripts/lib/nope.lua');
+  });
+
+  it('still reports a real require after a multi-line block comment, at the right line', () => {
+    const source = "--[[\nfiller\nfiller\n]]\nlocal x = require('lib/nope')\nreturn {}\n";
+    const diags = lua('scripts/a.lua', source);
+    expect(diags).toHaveLength(1);
+    expect(diags[0].line).toBe(5);
+  });
+
+  it('reports only the checked script own requires, never a required library problems', () => {
+    const sources = new Map([
+      ['scripts/player.lua', 'local a = require("lib/a")\nreturn {}\n'],
+      ['scripts/lib/a.lua', 'local t = {}\nt.v = 1\nlocal gone = require("lib/nope")\nreturn t\n'],
+    ]);
+    expect(checkScriptRequires('scripts/player.lua', sources)).toEqual([]);
+    const own = checkScriptRequires('scripts/lib/a.lua', sources);
+    expect(own).toHaveLength(1);
+    expect(own[0].line).toBe(3);
+  });
+
+  it('still reports a cycle through the checked script, at its own require line', () => {
+    const sources = new Map([
+      ['scripts/a.lua', '-- header\nlocal b = require("b")\nreturn {}\n'],
+      ['scripts/b.lua', 'local a = require("a")\nreturn {}\n'],
+    ]);
+    const diags = checkScriptRequires('scripts/a.lua', sources);
+    expect(diags).toHaveLength(1);
+    expect(diags[0].code).toBe('SCRIPT_REQUIRE_CYCLE');
+    expect(diags[0].line).toBe(2);
+    expect(diags[0].message).toContain('scripts/a.lua -> scripts/b.lua -> scripts/a.lua');
+  });
+
+  it('reports a self-require as a cycle', () => {
+    const sources = new Map([['scripts/a.lua', 'local me = require("a")\nreturn {}\n']]);
+    const diags = checkScriptRequires('scripts/a.lua', sources);
+    expect(diags).toHaveLength(1);
+    expect(diags[0].code).toBe('SCRIPT_REQUIRE_CYCLE');
   });
 });
 

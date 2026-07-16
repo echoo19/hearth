@@ -69,7 +69,40 @@ describe('createScript language', () => {
 
   it('rejects traversal payloads in dir', async () => {
     const { session } = await makeSession();
-    const created = await session.execute<any>('createScript', { name: 'noise', dir: '../..', language: 'lua' });
+    for (const dir of ['../..', '..', 'lib/../../x']) {
+      const created = await session.execute<any>('createScript', { name: 'noise', dir, language: 'lua' });
+      expect(created.success).toBe(false);
+      expect(created.errors[0].code).toBe('INVALID_INPUT');
+    }
+  });
+
+  it('normalizes "./lib" to "lib" instead of slugifying "." into "unnamed"', async () => {
+    const { session, fs } = await makeSession();
+    const created = await session.execute<any>('createScript', { name: 'noise', dir: './lib', language: 'lua' });
+    expect(created.success).toBe(true);
+    expect(created.data.path).toBe('scripts/lib/noise.lua');
+    expect(await fs.exists('/proj/scripts/lib/noise.lua')).toBe(true);
+  });
+
+  it('normalizes internal ".." segments that stay inside scripts/', async () => {
+    const { session, fs } = await makeSession();
+    const created = await session.execute<any>('createScript', { name: 'noise', dir: 'lib/../lib', language: 'lua' });
+    expect(created.success).toBe(true);
+    expect(created.data.path).toBe('scripts/lib/noise.lua');
+    expect(await fs.exists('/proj/scripts/lib/noise.lua')).toBe(true);
+  });
+
+  it('treats dir "." as the scripts root', async () => {
+    const { session, fs } = await makeSession();
+    const created = await session.execute<any>('createScript', { name: 'noise', dir: '.', language: 'lua' });
+    expect(created.success).toBe(true);
+    expect(created.data.path).toBe('scripts/noise.lua');
+    expect(await fs.exists('/proj/scripts/noise.lua')).toBe(true);
+  });
+
+  it('rejects an absolute dir instead of silently relativizing it', async () => {
+    const { session } = await makeSession();
+    const created = await session.execute<any>('createScript', { name: 'noise', dir: '/etc', language: 'lua' });
     expect(created.success).toBe(false);
     expect(created.errors[0].code).toBe('INVALID_INPUT');
   });
