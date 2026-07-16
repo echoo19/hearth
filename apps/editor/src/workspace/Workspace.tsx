@@ -381,7 +381,7 @@ export function initLayout(api: DockviewApi, storageKey: string): void {
   const stored = restoreLayout(raw);
   if (stored) {
     try {
-      api.fromJSON(stored as SerializedDockview);
+      api.fromJSON(stored.layout as SerializedDockview);
       // Older saves persisted headless groups (`activeView: null`); heal them
       // so a restored layout doesn't come back showing the watermark.
       ensureGroupsActive(api);

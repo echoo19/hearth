@@ -2,12 +2,14 @@
  * Pure helpers for persisting the dockview workspace layout.
  *
  * The serialized dockview layout is wrapped in a small versioned envelope so
- * a future layout rework can bump LAYOUT_VERSION and stale saves fall back to
- * the default layout instead of crashing `fromJSON`. Everything here is
- * side-effect free (no localStorage, no DOM) so it can be unit tested in node.
+ * a future layout rework can bump LAYOUT_VERSION. Stale saves from unknown
+ * versions fall back to the default layout instead of crashing `fromJSON`;
+ * v1 envelopes are migrated rather than discarded (see `RestoredLayout`).
+ * Everything here is side-effect free (no localStorage, no DOM) so it can be
+ * unit tested in node.
  */
 
-export const LAYOUT_VERSION = 1;
+export const LAYOUT_VERSION = 2;
 
 export const PANEL_IDS = [
   'hierarchy',
@@ -46,12 +48,25 @@ export function serializeLayout(layout: unknown): string {
   return JSON.stringify({ version: LAYOUT_VERSION, layout } satisfies StoredLayout);
 }
 
+export interface RestoredLayout {
+  layout: unknown;
+  /**
+   * True when the envelope predates v2 — the Agent panel's move from the
+   * bottom dock to its own right-hand dock. After `fromJSON` the caller must
+   * relocate the agent panel (Workspace's `relocateAgentPanel`) so a v1 save
+   * keeps the user's layout but the agent lands in the new dock.
+   */
+  migrateAgentDock: boolean;
+}
+
 /**
  * Parse and validate a stored layout string. Returns the dockview layout
- * object, or null when the value is missing, malformed, from a different
- * layout version, or references panels this editor doesn't know about.
+ * object plus a migration flag, or null when the value is missing,
+ * malformed, from an unknown layout version, or references panels this
+ * editor doesn't know about. v1 envelopes are accepted (not discarded) with
+ * `migrateAgentDock: true` so the caller can relocate the Agent panel.
  */
-export function restoreLayout(raw: string | null | undefined): unknown | null {
+export function restoreLayout(raw: string | null | undefined): RestoredLayout | null {
   if (!raw) return null;
   let parsed: unknown;
   try {
@@ -61,9 +76,9 @@ export function restoreLayout(raw: string | null | undefined): unknown | null {
   }
   if (!isRecord(parsed)) return null;
   const stored = parsed as Partial<StoredLayout>;
-  if (stored.version !== LAYOUT_VERSION) return null;
+  if (stored.version !== 1 && stored.version !== LAYOUT_VERSION) return null;
   if (!isValidDockviewLayout(stored.layout)) return null;
-  return stored.layout;
+  return { layout: stored.layout, migrateAgentDock: stored.version === 1 };
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

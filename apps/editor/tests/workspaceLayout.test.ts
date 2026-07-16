@@ -36,12 +36,20 @@ describe('workspace layout persistence helpers', () => {
   it('round-trips a layout through serialize/restore', () => {
     const layout = sampleLayout();
     const restored = restoreLayout(serializeLayout(layout));
-    expect(restored).toEqual(layout);
+    expect(restored).toEqual({ layout, migrateAgentDock: false });
   });
 
   it('stamps the current layout version', () => {
     const stored = JSON.parse(serializeLayout(sampleLayout())) as { version: number };
-    expect(stored.version).toBe(LAYOUT_VERSION);
+    expect(stored.version).toBe(2);
+  });
+
+  it('accepts a version-1 envelope and flags it for the agent-dock migration', () => {
+    const v1 = JSON.stringify({ version: 1, layout: sampleLayout(['scene', 'agent']) });
+    const restored = restoreLayout(v1);
+    expect(restored).not.toBeNull();
+    expect(restored!.migrateAgentDock).toBe(true);
+    expect(restored!.layout).toEqual(sampleLayout(['scene', 'agent']));
   });
 
   it('returns null for missing or malformed values', () => {
@@ -53,9 +61,10 @@ describe('workspace layout persistence helpers', () => {
     expect(restoreLayout('[1,2,3]')).toBeNull();
   });
 
-  it('rejects a version-stamped envelope from a different layout version', () => {
+  it('rejects a version-stamped envelope from an unknown layout version', () => {
     const stale = JSON.stringify({ version: LAYOUT_VERSION + 1, layout: sampleLayout() });
     expect(restoreLayout(stale)).toBeNull();
+    expect(restoreLayout(JSON.stringify({ version: 0, layout: sampleLayout() }))).toBeNull();
   });
 
   it('rejects layouts referencing unknown panels', () => {
