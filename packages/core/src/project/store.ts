@@ -211,9 +211,18 @@ export class ProjectStore {
     const dir = joinPath(this.root, 'scripts');
     if (!(await this.fs.exists(dir))) return [];
     const out: string[] = [];
-    for (const f of await this.fs.readdir(dir)) {
-      if (f.endsWith('.lua') || f.endsWith('.js') || f.endsWith('.ts')) out.push(joinPath('scripts', f));
-    }
+    const walk = async (absDir: string, relDir: string): Promise<void> => {
+      for (const f of await this.fs.readdir(absDir)) {
+        const absPath = joinPath(absDir, f);
+        const relPath = joinPath(relDir, f);
+        if ((await this.fs.stat(absPath)).isDirectory) {
+          await walk(absPath, relPath);
+        } else if (f.endsWith('.lua') || f.endsWith('.js') || f.endsWith('.ts')) {
+          out.push(relPath);
+        }
+      }
+    };
+    await walk(dir, 'scripts');
     return out.sort();
   }
 
