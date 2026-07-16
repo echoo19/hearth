@@ -17,7 +17,7 @@
  */
 import { describe, expect, it } from 'vitest';
 import { describeLauncher } from '../src/components/agent/Launcher';
-import { shouldRedetectAfterInstall, startDisabledReason } from '../src/components/AgentPanel';
+import { describePrepareFailure, shouldRedetectAfterInstall, startDisabledReason } from '../src/components/AgentPanel';
 
 describe('startDisabledReason', () => {
   it('is null (enabled) when idle with a project open', () => {
@@ -88,5 +88,20 @@ describe('describeLauncher', () => {
   it('flags codex/hermes as using a global config pointed at this project', () => {
     expect(describeLauncher('codex', [])).toMatch(/global config/);
     expect(describeLauncher('hermes', [])).toMatch(/global config/);
+  });
+});
+
+describe('describePrepareFailure — thrown prepare failures get a readable message, not a raw stack', () => {
+  it('reads the message off a thrown Error', () => {
+    expect(describePrepareFailure(new Error('fetch failed'))).toBe('fetch failed');
+  });
+
+  it('stringifies a non-Error throw (e.g. a rejected postJson on bad JSON)', () => {
+    expect(describePrepareFailure('Unexpected token < in JSON')).toBe('Unexpected token < in JSON');
+  });
+
+  it('falls back to String() for something with neither a message nor string form', () => {
+    expect(describePrepareFailure(undefined)).toBe('undefined');
+    expect(describePrepareFailure(null)).toBe('null');
   });
 });

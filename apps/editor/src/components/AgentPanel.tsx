@@ -38,6 +38,19 @@ const AGENT_MODE_LABELS: Record<AgentPermissionMode, string> = {
 };
 
 /**
+ * Turns a thrown prepare failure into the same readable, one-line message the
+ * non-thrown `decision.errorMessage` path already shows — never a raw Error
+ * stack. `postJson` throws on a network failure or a non-JSON response (the
+ * MCP-config write never even started), which is a distinct failure mode from
+ * `apiPrepareAgent` resolving with `{ ok: false }`, but the tile's error
+ * surface doesn't need to tell them apart: both mean "couldn't set up this
+ * launcher, don't start it."
+ */
+export function describePrepareFailure(err: unknown): string {
+  return String((err as Error)?.message ?? err);
+}
+
+/**
  * True when a just-completed detect attempt failed outright (network error,
  * malformed response) rather than succeeding and genuinely finding neither
  * CLI on PATH — `apiDetectAgents` returns `null` for both cases, but they
@@ -176,6 +189,15 @@ export function AgentPanel() {
         return;
       }
       if (agent.start(launcher, agentMode)) setBackToLauncher(false);
+    } catch (err) {
+      // Network failure / non-JSON response from postJson — the config write
+      // never confirmed, so this must land on the same inline surface as a
+      // failed prepare decision rather than leave the tile silently stuck on
+      // "Preparing…" with nothing to show for it. Never fall through to
+      // agent.start() here either.
+      const message = describePrepareFailure(err);
+      setTileErrors({ [launcher]: message });
+      log('error', 'command', `Agent setup failed: ${message}`);
     } finally {
       setPending(null);
     }
