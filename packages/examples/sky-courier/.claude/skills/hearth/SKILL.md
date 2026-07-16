@@ -161,12 +161,35 @@ emits `.lua`); JS is equally supported (`--language js`). Both get the identical
 ```bash
 hearth create script coin-spin                 # Lua
 hearth create script boss-ai --language js
+hearth create script noise --dir lib           # scripts/lib/noise.lua helper
 hearth attach script "Level 1" Coin scripts/coin-spin.lua
 ```
 
 A Lua script returns a table of lifecycle hooks; JS `export default`s an object
 with the same hooks: `onStart(ctx)`, `onUpdate(ctx, dt)`,
 `onCollision(ctx, other)`, `onUiEvent(ctx, event)`, `onEvent(ctx, name, data)`.
+
+### Script modules
+
+Share helpers with load-time `require` from the top of the file:
+
+```lua
+local noise = require("lib/noise") -- scripts/lib/noise.lua
+```
+
+```js
+const noise = require('lib/noise'); // scripts/lib/noise.js
+```
+
+A library is just a script that returns a table (Lua) or exports an object
+(JS), usually with no lifecycle hooks. No new asset type. Rules that matter:
+same-language only (`.lua` requires `.lua`, `.js` requires `.js`), resolution
+cannot escape `scripts/`, cycles are errors, and `require` is load-time only.
+Call it at the top of the file, not inside `onUpdate` or another hook.
+
+Hot reload recompiles dependents when a library changes. If any compile fails,
+the old graph keeps running. Module top-level state resets on successful reload,
+so put state that must survive in `ctx.vars`.
 
 **The dot-call rule (critical).** `ctx` is a live JS object proxied into Lua,
 not a Lua object. Call everything with a **dot**, never a colon — a colon passes
@@ -185,7 +208,7 @@ checks (`type(data.value) == "number"`), never `type(data) == "table"`.
 
 **Component mutation is by replacement.** Reassign whole arrays for a live
 effect — `tilemap.grid = {...}` takes this frame; `grid[0] = "####"` is not
-detected until next frame.
+detected and can leave stale collision boxes indefinitely.
 
 What `ctx` gives you (read `hearth inspect api --json` for exact signatures):
 
