@@ -173,16 +173,21 @@ export function parseLoginShellPath(stdout: string): string | null {
  * the process was launched with keeps winning — dev-server overrides stay
  * intact), then any login-shell entries not already present. Exported for
  * unit testing.
+ *
+ * The delimiter is a literal ':' — this merges LOGIN-SHELL PATHs, which are
+ * POSIX by definition, and `loginShellPathEnv` never runs on win32. Using
+ * `path.delimiter` here made the function (and its POSIX-shaped tests) break
+ * on Windows CI while never changing real behavior on any platform.
  */
 export function mergePathStrings(current: string, fromShell: string): string {
   const seen = new Set<string>();
   const merged: string[] = [];
-  for (const entry of [...current.split(path.delimiter), ...fromShell.split(path.delimiter)]) {
+  for (const entry of [...current.split(':'), ...fromShell.split(':')]) {
     if (!entry || seen.has(entry)) continue;
     seen.add(entry);
     merged.push(entry);
   }
-  return merged.join(path.delimiter);
+  return merged.join(':');
 }
 
 let loginShellPathEnvPromise: Promise<NodeJS.ProcessEnv | null> | null = null;
