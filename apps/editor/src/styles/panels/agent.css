@@ -120,6 +120,16 @@
   background: var(--ink-mute);
 }
 
+/* Prepare failure on "Launch again" (the launcher isn't mounted to show its
+   own tile error) — mirrors .agent-tile-error's tokens. */
+.agent-session-error {
+  flex: none;
+  padding: 4px 10px;
+  color: var(--err);
+  font-size: var(--text-xs);
+  white-space: pre-wrap;
+}
+
 .agent-status {
   font-size: var(--text-sm);
   color: var(--ink-faint);

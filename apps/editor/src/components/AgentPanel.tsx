@@ -184,6 +184,7 @@ export function AgentPanel() {
   function install(tile: LauncherTile) {
     // Run the official install visibly in the terminal; if the shell could
     // not start (socket down), don't fire the command into the void.
+    if (!projectPath || pending !== null) return;
     if (!tile.installCommand) return;
     if (agent.start('shell')) {
       agent.sendInput(`${tile.installCommand}\r`);
@@ -258,7 +259,7 @@ export function AgentPanel() {
                 <Button
                   size="sm"
                   onClick={() => agent.session.command && void launch(agent.session.command)}
-                  disabled={pending !== null}
+                  disabled={pending !== null || !projectPath}
                 >
                   Launch again
                 </Button>
@@ -272,6 +273,14 @@ export function AgentPanel() {
             </Button>
             {gear}
           </div>
+          {/* A failed "Launch again" (prepare error) sets tileErrors but the
+              launcher isn't mounted to show it — surface the current session's
+              launcher error here. launch() clears tileErrors at the start of
+              the next attempt, so a failed relaunch's message stays up until
+              then. */}
+          {agent.session.command && tileErrors[agent.session.command] && (
+            <div className="agent-session-error">Agent setup failed: {tileErrors[agent.session.command]}</div>
+          )}
           <div className="agent-terminal-pane">
             <Suspense fallback={<div className="empty-state">Loading terminal…</div>}>
               <Terminal onData={agent.sendInput} onResize={agent.sendResize} />
