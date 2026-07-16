@@ -357,6 +357,34 @@ A two-script fixture (`scripts/lib/math.lua` returning `{two=...}`, `scripts/pla
 
 Run: `npx vitest run packages/runtime/tests/scriptModules-runtime.test.ts` → FAIL.
 
+**CRITICAL integration detail (Task 3 landed differently than assumed).** The
+Lua engine resolves requires *inside Lua* — its `require` closure calls the
+host's `resolveModule(spec, fromPath)` / `readModule(path)` callbacks and
+memoizes in a Lua-side cache. It never calls `ScriptModuleRegistry.load()`.
+So **the registry's dependents graph will be EMPTY for Lua unless you record
+the edge yourself inside the `resolveModule` callback** — which receives both
+`spec` and `fromPath` precisely so you can. If you skip this, Task 6's
+`transitiveDependentsOf` returns nothing for Lua, dependents never recompile
+on hot reload, and the feature silently ships the exact stale-code bug this
+design exists to prevent. Wire it as:
+
+```ts
+resolveModule: (spec, fromPath) => {
+  const resolved = registry.resolve(spec, fromPath);
+  registry.recordEdge(resolved, fromPath); // dependents graph
+  return resolved;
+},
+readModule: (path) => sources.get(path)!,
+```
+
+Add `recordEdge(path, fromPath)` to the registry if `load`'s `fromPath` param
+is the only way to record today — the Lua path needs edge recording
+*without* going through `load`. Keep JS going through `registry.load`.
+
+Also note the Lua engine memoizes on **path+source**, so its cache self-heals
+when text changes; it also exposes `requireModule(path)` and
+`invalidateModule(path)` for Task 6.
+
 - [ ] **Step 3: Implement**
 
 Restructure `loadScripts()`:
