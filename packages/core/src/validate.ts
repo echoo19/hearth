@@ -157,19 +157,171 @@ function scriptExtension(scriptPath: string): string {
   return dot === -1 ? '' : filename.slice(dot);
 }
 
-function lineAt(source: string, index: number): number {
-  let line = 1;
-  for (let i = 0; i < index; i++) {
-    if (source.charCodeAt(i) === 10) line++;
-  }
-  return line;
+/** The scripting language of a path, inferred the same way the runtime does. */
+function scriptLanguageOf(scriptPath: string): 'lua' | 'js' {
+  return scriptPath.endsWith('.js') ? 'js' : 'lua';
 }
 
-function findLiteralRequires(source: string): Array<{ spec: string; line: number }> {
+/**
+ * Scan source text for literal `require('...')` calls that would actually
+ * execute — i.e. NOT inside a comment or a string literal. This is a small
+ * lexical scanner, deliberately not a parser. What it understands:
+ *
+ * - Lua: `--` line comments, `--[[ ]]` / `--[==[ ]==]` long-bracket block
+ *   comments, `[[ ]]` / `[==[ ]==]` long strings, and single/double-quoted
+ *   strings with backslash escapes.
+ * - JS: line comments, block comments, single/double-quoted
+ *   strings with backslash escapes, and template literals.
+ *
+ * Known blind spots, each chosen so a mistake here fails SAFE (a require we
+ * miss is still caught by the runtime resolver at load; a phantom require we
+ * invent would falsely fail `hearth validate` and block export):
+ *
+ * - A require inside a JS template-literal `${...}` interpolation is treated
+ *   as string content and not reported (and a nested template inside `${}`
+ *   can end the outer template early).
+ * - JS regex literals are not recognized (telling `/` division from a regex
+ *   needs a real parser), so a require-shaped pattern inside one would be
+ *   reported. Astronomically unlikely in practice.
+ * - Dynamic specs (`require(name)`) are invisible, as ever — only quoted
+ *   string specs are found.
+ * - `foo.require('x')` / `foo:require('x')` are property accesses, not the
+ *   global require, and are skipped.
+ */
+function findLiteralRequires(
+  language: 'lua' | 'js',
+  source: string,
+): Array<{ spec: string; line: number }> {
   const requires: Array<{ spec: string; line: number }> = [];
-  const requirePattern = /\brequire\s*\(\s*(['"])(.*?)\1\s*\)/g;
-  for (const match of source.matchAll(requirePattern)) {
-    requires.push({ spec: match[2], line: lineAt(source, match.index ?? 0) });
+  const n = source.length;
+  const wordChar = /[A-Za-z0-9_$]/;
+  let i = 0;
+  let line = 1;
+
+  /** Skip a quoted string starting at i (the opening quote). Handles
+   * backslash escapes; a raw newline ends a non-template string (it was
+   * unterminated — a syntax error — so bail rather than eat the file). */
+  const skipQuoted = (quote: string): void => {
+    i++;
+    while (i < n) {
+      const c = source[i];
+      if (c === '\\') {
+        if (source[i + 1] === '\n') line++;
+        i += 2;
+        continue;
+      }
+      if (c === '\n') {
+        line++;
+        i++;
+        if (quote !== '`') return;
+        continue;
+      }
+      i++;
+      if (c === quote) return;
+    }
+  };
+
+  /** Lua long-bracket level at position p (`[`, then `=`*level, then `[`),
+   * or null when p does not open a long bracket. */
+  const luaLongBracketLevel = (p: number): number | null => {
+    if (source[p] !== '[') return null;
+    let q = p + 1;
+    while (source[q] === '=') q++;
+    return source[q] === '[' ? q - p - 1 : null;
+  };
+
+  /** Skip a Lua long bracket ([[..]], [==[..]==]) with i at its opening `[`. */
+  const skipLuaLongBracket = (level: number): void => {
+    i += level + 2;
+    const close = ']' + '='.repeat(level) + ']';
+    while (i < n) {
+      if (source[i] === '\n') {
+        line++;
+        i++;
+        continue;
+      }
+      if (source[i] === ']' && source.startsWith(close, i)) {
+        i += close.length;
+        return;
+      }
+      i++;
+    }
+  };
+
+  while (i < n) {
+    const c = source[i];
+    if (c === '\n') {
+      line++;
+      i++;
+      continue;
+    }
+
+    if (language === 'lua') {
+      if (c === '-' && source[i + 1] === '-') {
+        const level = luaLongBracketLevel(i + 2);
+        if (level !== null) {
+          i += 2;
+          skipLuaLongBracket(level);
+        } else {
+          while (i < n && source[i] !== '\n') i++;
+        }
+        continue;
+      }
+      if (c === '[') {
+        const level = luaLongBracketLevel(i);
+        if (level !== null) {
+          skipLuaLongBracket(level);
+          continue;
+        }
+      }
+      if (c === '"' || c === "'") {
+        skipQuoted(c);
+        continue;
+      }
+    } else {
+      if (c === '/' && source[i + 1] === '/') {
+        while (i < n && source[i] !== '\n') i++;
+        continue;
+      }
+      if (c === '/' && source[i + 1] === '*') {
+        i += 2;
+        while (i < n && !(source[i] === '*' && source[i + 1] === '/')) {
+          if (source[i] === '\n') line++;
+          i++;
+        }
+        i = Math.min(i + 2, n);
+        continue;
+      }
+      if (c === '"' || c === "'" || c === '`') {
+        skipQuoted(c);
+        continue;
+      }
+    }
+
+    if (c === 'r' && source.startsWith('require', i)) {
+      const prev = i > 0 ? source[i - 1] : '';
+      const next = source[i + 7] ?? '';
+      const bareIdentifier =
+        (prev === '' || (!wordChar.test(prev) && prev !== '.' && prev !== ':')) &&
+        (next === '' || !wordChar.test(next));
+      if (bareIdentifier) {
+        // `\s` may span newlines (require(\n'x')); count them below when
+        // advancing so line tracking stays exact.
+        const call = /^\s*\(\s*(['"])((?:(?!\1)[^\n])*)\1\s*\)/.exec(source.slice(i + 7));
+        if (call) {
+          requires.push({ spec: call[2], line });
+          const end = i + 7 + call[0].length;
+          for (let k = i; k < end; k++) {
+            if (source[k] === '\n') line++;
+          }
+          i = end;
+          continue;
+        }
+      }
+      i += 7;
+      continue;
+    }
+    i++;
   }
   return requires;
 }
@@ -180,50 +332,86 @@ function resolveRequireSpec(spec: string, fromPath: string): string {
   return joinPath(SCRIPTS_DIR, specExt ? spec : `${spec}${fromExt}`);
 }
 
+/** True when `resolved`, required from a script at `fromPath`, points at a
+ * real, same-language module inside the scripts root. */
+function isResolvableRequire(resolved: string, fromPath: string, sources: Map<string, string>): boolean {
+  return (
+    resolved.startsWith(`${SCRIPTS_DIR}/`) &&
+    scriptExtension(resolved) === scriptExtension(fromPath) &&
+    sources.has(resolved)
+  );
+}
+
+/**
+ * Static require diagnostics for ONE script: `fromPath`'s own unresolvable
+ * requires, and cycles that pass through `fromPath` — each attributed to
+ * `fromPath` at the line of the require in THIS file.
+ *
+ * Attribution rule (same as the runtime's, per the design spec): a problem
+ * inside a required module belongs to that module's own path and line, so a
+ * broken require in `lib/a.lua` is reported when `lib/a.lua` itself is
+ * checked — never against its dependents. `validateProject` checks every
+ * script, so nothing is lost project-wide and each fault is reported exactly
+ * once, however many scripts depend on the broken file. (Before this rule,
+ * one typo in a shared library produced N+1 issues, N of them stamped with
+ * the wrong path.)
+ */
 export function checkScriptRequires(
   fromPath: string,
   sources: Map<string, string>,
   sourceOverride?: string,
 ): ScriptDiagnostic[] {
   const diagnostics: ScriptDiagnostic[] = [];
-  const seen = new Set<string>();
-  const stack: string[] = [];
+  const topSource = sourceOverride ?? sources.get(fromPath) ?? '';
 
-  const visit = (path: string, source: string) => {
-    if (seen.has(path)) return;
-    seen.add(path);
-    stack.push(path);
-
-    for (const req of findLiteralRequires(source)) {
-      const resolved = resolveRequireSpec(req.spec, path);
-      if (!resolved.startsWith(`${SCRIPTS_DIR}/`) || scriptExtension(resolved) !== scriptExtension(path) || !sources.has(resolved)) {
-        diagnostics.push({
-          severity: 'error',
-          code: 'SCRIPT_REQUIRE_NOT_FOUND',
-          line: req.line,
-          message: `module not found: ${resolved}`,
-        });
-        continue;
+  /**
+   * DFS from an already-resolved module looking for a require chain leading
+   * back to fromPath (i.e. a cycle through fromPath). Returns the chain
+   * [start, ..., fromPath] or null. Unresolvable requires met along the way
+   * are skipped silently — they are that file's own diagnostics, reported
+   * when it is checked.
+   */
+  const findChainBackToSelf = (start: string): string[] | null => {
+    const visited = new Set<string>();
+    const walk = (path: string, trail: string[]): string[] | null => {
+      if (path === fromPath) return trail;
+      if (visited.has(path)) return null;
+      visited.add(path);
+      const source = sources.get(path);
+      if (source === undefined) return null;
+      for (const req of findLiteralRequires(scriptLanguageOf(path), source)) {
+        const resolved = resolveRequireSpec(req.spec, path);
+        if (!isResolvableRequire(resolved, path, sources)) continue;
+        const chain = walk(resolved, [...trail, resolved]);
+        if (chain) return chain;
       }
-
-      const cycleStart = stack.indexOf(resolved);
-      if (cycleStart !== -1) {
-        diagnostics.push({
-          severity: 'error',
-          code: 'SCRIPT_REQUIRE_CYCLE',
-          line: req.line,
-          message: `require cycle: ${[...stack.slice(cycleStart), resolved].join(' -> ')}`,
-        });
-        continue;
-      }
-
-      visit(resolved, sources.get(resolved)!);
-    }
-
-    stack.pop();
+      return null;
+    };
+    return walk(start, [start]);
   };
 
-  visit(fromPath, sourceOverride ?? sources.get(fromPath) ?? '');
+  for (const req of findLiteralRequires(scriptLanguageOf(fromPath), topSource)) {
+    const resolved = resolveRequireSpec(req.spec, fromPath);
+    if (!isResolvableRequire(resolved, fromPath, sources)) {
+      diagnostics.push({
+        severity: 'error',
+        code: 'SCRIPT_REQUIRE_NOT_FOUND',
+        line: req.line,
+        message: `module not found: ${resolved}`,
+      });
+      continue;
+    }
+
+    const chain = resolved === fromPath ? [resolved] : findChainBackToSelf(resolved);
+    if (chain) {
+      diagnostics.push({
+        severity: 'error',
+        code: 'SCRIPT_REQUIRE_CYCLE',
+        line: req.line,
+        message: `require cycle: ${[fromPath, ...chain].join(' -> ')}`,
+      });
+    }
+  }
   return diagnostics;
 }
 

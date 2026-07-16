@@ -163,15 +163,26 @@ export const createScript = defineCommand({
   }),
   async run(ctx, params) {
     const filename = slugify(params.name).replace(/_/g, '-') + '.' + params.language;
+    // Normalize dir FIRST, then slugify only the real name segments that
+    // survive normalization. Slugifying raw segments mangled paths silently:
+    // slugify('.') === slugify('..') === 'unnamed', so `--dir ./lib` used to
+    // create scripts/unnamed/lib/. Absolute dirs and traversal that escapes
+    // scripts/ (isSafeRelativePath checks the normalized form) are rejected
+    // outright; internal '..' that stays inside (lib/../lib) normalizes away.
+    let dirSegments: string[] = [];
     if (params.dir !== undefined) {
-      resolveScriptsPath(`${SCRIPTS_DIR}/${params.dir}/${filename}`);
+      if (!isSafeRelativePath(params.dir)) {
+        throw new ProjectError(
+          `Script dir must be a relative path inside ${SCRIPTS_DIR}/ (got: ${params.dir})`,
+          'INVALID_INPUT',
+        );
+      }
+      const normalizedDir = joinPath(params.dir);
+      dirSegments =
+        normalizedDir === '.'
+          ? []
+          : normalizedDir.split('/').map((segment) => slugify(segment).replace(/_/g, '-'));
     }
-    const dirSegments = params.dir
-      ? params.dir
-          .split('/')
-          .filter((segment) => segment.length > 0)
-          .map((segment) => slugify(segment).replace(/_/g, '-'))
-      : [];
     const relPath = resolveScriptsPath(joinPath(SCRIPTS_DIR, ...dirSegments, filename));
     const absPath = joinPath(ctx.store.root, relPath);
     if (await ctx.fs.exists(absPath)) {

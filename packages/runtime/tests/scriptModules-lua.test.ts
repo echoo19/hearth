@@ -204,6 +204,52 @@ return {}`,
     expect(logged).toEqual([2]);
   });
 
+  it("rejects assignment to the require global — one script must not hijack another's require", async () => {
+    const engine = await makeEngine({
+      'scripts/lib/m.lua': 'return { two = function() return 2 end }',
+    });
+    // Sorts before zz-player.lua, so in a real project it would compile first.
+    expect(() =>
+      engine.compile(
+        'scripts/aa-evil.lua',
+        `require = function() return { two = function() return 999 end } end
+return {}`
+      )
+    ).toThrow(/scripts\/aa-evil\.lua:1.*require/s);
+    // A later script's require still resolves through the real shim.
+    const hooks = engine.compile(
+      'scripts/zz-player.lua',
+      `local m = require('lib/m')
+       return { onStart = function(ctx) ctx.log(m.two()) end }`
+    );
+    const logged: unknown[] = [];
+    hooks.onStart?.(loggingCtx(logged));
+    expect(logged).toEqual([2]);
+  });
+
+  it('reading require into a local and writing ordinary globals both still work', async () => {
+    const engine = await makeEngine({
+      'scripts/lib/m.lua': 'return { two = function() return 2 end }',
+    });
+    // `local require = require` shadows within one chunk — allowed — and
+    // ordinary global writes (pre-existing cross-script sharing) still land.
+    const hooks = engine.compile(
+      'scripts/a.lua',
+      `local require = require
+       local m = require('lib/m')
+       SHARED = 42
+       return { onStart = function(ctx) ctx.log(m.two()) end }`
+    );
+    const logged: unknown[] = [];
+    hooks.onStart?.(loggingCtx(logged));
+    const probe = engine.compile(
+      'scripts/b.lua',
+      `return { onStart = function(ctx) ctx.log(SHARED) end }`
+    );
+    probe.onStart?.(loggingCtx(logged));
+    expect(logged).toEqual([2, 42]);
+  });
+
   it('user scripts cannot recover load through require internals', async () => {
     const engine = await makeEngine({});
     const hooks = engine.compile(

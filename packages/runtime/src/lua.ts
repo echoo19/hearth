@@ -109,11 +109,14 @@ type LuaFunction = (...args: unknown[]) => unknown;
  *
  * `resolve_module`/`read_module` are JS trampolines that delegate to the
  * engine's CURRENT module callbacks (rebindable via setModuleResolver), so
- * they are captured once here and never replaced. The global `require` stays
- * nil until the JS side calls control.set_require_enabled(true) — done
+ * they are captured once here and never replaced. `require` is never a real
+ * entry in _G: reads go through an _G __index metamethod that serves the
+ * shim only after the JS side calls control.set_require_enabled(true) — done
  * exactly when callbacks are bound — preserving "no callbacks → require is
- * nil". The shim itself is a local upvalue of set_require_enabled, so user
- * chunks can never reach it (or its raw_load upvalue) while it is disabled.
+ * nil"; assignments to it are rejected by __newindex (one script must not
+ * hijack every later script's require in the shared VM). The shim itself is
+ * a local upvalue of the metamethods, so user chunks can never reach it (or
+ * its raw_load upvalue) while it is disabled.
  */
 const SANDBOX_CHUNK = `
 local print_sink = __hearth_print
@@ -243,17 +246,44 @@ local require_shim = function(spec)
   return run_module(resolve_module(spec, from))
 end
 
+-- require must not be an ordinary mutable global: every script in a session
+-- shares this VM's _G, so \`require = anything\` in one script would silently
+-- hijack module loading for every script compiled after it. Instead the key
+-- NEVER exists in the raw globals table (the nil-out above removed the
+-- package library's): reads are served by __index — the shim while enabled,
+-- nil otherwise, preserving "no callbacks -> require is nil" — and writes
+-- are rejected by __newindex. Because the key is never present in the raw
+-- table, both metamethods always fire for it. Honest limits: rawset(_G,
+-- 'require', ...) bypasses the guard — a deliberate act, not the accidental
+-- shadowing this prevents, and it grants nothing the sandbox does not
+-- already allow — and __metatable locks the metatable itself, so
+-- getmetatable(_G) now returns a sentinel string instead of nil and
+-- setmetatable(_G, ...) raises.
+local require_enabled = false
+local raw_rawset = rawset
+setmetatable(_G, {
+  __index = function(_, key)
+    if key == 'require' and require_enabled then
+      return require_shim
+    end
+    return nil
+  end,
+  __newindex = function(globals, key, value)
+    if key == 'require' then
+      raw_error("cannot assign to 'require' (a shared Hearth sandbox global); use a different name", 2)
+    end
+    raw_rawset(globals, key, value)
+  end,
+  __metatable = 'hearth sandbox',
+})
+
 return {
   run = run_module,
   invalidate = function(path)
     module_cache[path] = nil
   end,
   set_require_enabled = function(enabled)
-    if enabled then
-      require = require_shim
-    else
-      require = nil
-    end
+    require_enabled = not not enabled
   end,
 }
 `;

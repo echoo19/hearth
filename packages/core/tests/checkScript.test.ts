@@ -152,6 +152,51 @@ describe('checkScript', () => {
     });
   });
 
+  it('path mode does not blame the checked script for a broken require inside a required library', async () => {
+    const { session } = await makeSession();
+    await session.execute('createScript', {
+      name: 'a',
+      dir: 'lib',
+      language: 'lua',
+      source: 'local t = {}\nt.v = 1\nlocal gone = require("lib/nope")\nreturn t\n',
+    });
+    await session.execute('createScript', {
+      name: 'player',
+      language: 'lua',
+      source: 'local a = require("lib/a")\nreturn {}\n',
+    });
+
+    // player.lua's own require resolves fine; the fault lives in lib/a.lua:3
+    // and is reported when THAT file is checked (spec: a problem inside a
+    // required module carries the library's path and line).
+    const player = await session.execute<any>('checkScript', { path: 'scripts/player.lua' });
+    expect(player.success).toBe(true);
+    expect(player.data.valid).toBe(true);
+    expect(player.data.diagnostics).toEqual([]);
+
+    const lib = await session.execute<any>('checkScript', { path: 'scripts/lib/a.lua' });
+    expect(lib.success).toBe(true);
+    expect(lib.data.valid).toBe(false);
+    expect(lib.data.diagnostics).toEqual([
+      { severity: 'error', line: 3, message: expect.stringContaining('scripts/lib/nope.lua') },
+    ]);
+  });
+
+  it('path mode ignores a commented-out require', async () => {
+    const { session } = await makeSession();
+    await session.execute('createScript', {
+      name: 'player',
+      language: 'lua',
+      source: "-- we used to require('lib/removed') here\nreturn {}\n",
+    });
+
+    const result = await session.execute<any>('checkScript', { path: 'scripts/player.lua' });
+
+    expect(result.success).toBe(true);
+    expect(result.data.valid).toBe(true);
+    expect(result.data.diagnostics).toEqual([]);
+  });
+
   it('path mode accepts a valid require', async () => {
     const { session } = await makeSession();
     await session.execute('createScript', {
