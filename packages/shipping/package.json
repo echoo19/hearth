@@ -1,6 +1,6 @@
 {
   "name": "@hearth/shipping",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Hearth ship-your-game tooling: Electron shell generator and zip packaging helper (Node-only)",
   "license": "MIT",
   "type": "module",

@@ -47,7 +47,7 @@ import {
 // than a version bump justifies here. Keep this in sync with package.json's
 // "version" on every release — see the version-bump checklist in
 // .superpowers/sdd/task-12-report.md.
-const VERSION = '1.0.0';
+const VERSION = '1.1.0';
 
 /** The genre template names `init --template` accepts, in menu order. */
 const TEMPLATE_NAMES: string[] = listTemplates().map((t) => t.name);
