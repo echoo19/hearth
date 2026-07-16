@@ -16,6 +16,8 @@ contextBridge.exposeInMainWorld('hearthNative', {
   setWindowMode: (mode, title) => ipcRenderer.invoke('hearth:window-mode', mode, title),
   /** Push the serialized app-menu model (or null to restore the baseline). */
   setAppMenu: (model) => ipcRenderer.send('hearth:set-app-menu', model),
+  /** Mirror Code-panel dirty script state for native close/quit guards. */
+  setUnsavedScripts: (has) => ipcRenderer.send('hearth:set-unsaved-scripts', !!has),
   /** Subscribe to native-menu clicks; returns an unsubscribe function. */
   onMenuInvoke: (cb) => {
     const listener = (_event, id) => cb(id);

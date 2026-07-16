@@ -14,6 +14,7 @@
  * app does not need node_modules.
  */
 import { app, BrowserWindow, Menu, dialog, ipcMain, shell } from 'electron';
+import type { MessageBoxSyncOptions } from 'electron';
 import http from 'node:http';
 import path from 'node:path';
 import fs from 'node:fs';
@@ -147,6 +148,21 @@ function registerDialogHandlers(getWindow: () => BrowserWindow | null): void {
   });
 }
 
+function confirmDiscardUnsavedScripts(win: BrowserWindow | null): boolean {
+  const options: MessageBoxSyncOptions = {
+    type: 'warning',
+    buttons: ['Discard and close', 'Cancel'],
+    defaultId: 1,
+    cancelId: 1,
+    title: 'Unsaved script changes',
+    message: 'Discard unsaved script changes?',
+    detail: "Closing Hearth will discard unsaved changes in your open scripts. Scripts don't auto-save.",
+    noLink: true,
+  };
+  const choice = win ? dialog.showMessageBoxSync(win, options) : dialog.showMessageBoxSync(options);
+  return choice === 0;
+}
+
 async function main(): Promise<void> {
   await app.whenReady();
 
@@ -161,7 +177,20 @@ async function main(): Promise<void> {
   process.env.HEARTH_TOOLS_DIR = toolsDir;
 
   let win: BrowserWindow | null = null;
+  let hasUnsavedScripts = false;
   registerDialogHandlers(() => win);
+  ipcMain.on('hearth:set-unsaved-scripts', (_event, has: boolean) => {
+    hasUnsavedScripts = has === true;
+  });
+
+  app.on('before-quit', (event) => {
+    if (!hasUnsavedScripts) return;
+    if (confirmDiscardUnsavedScripts(win)) {
+      hasUnsavedScripts = false;
+      return;
+    }
+    event.preventDefault();
+  });
 
   let url = START_URL;
   if (!url) {
@@ -194,6 +223,14 @@ async function main(): Promise<void> {
       contextIsolation: true,
       nodeIntegration: false,
     },
+  });
+  win.on('close', (event) => {
+    if (!hasUnsavedScripts) return;
+    if (confirmDiscardUnsavedScripts(win)) {
+      hasUnsavedScripts = false;
+      return;
+    }
+    event.preventDefault();
   });
   win.on('closed', () => {
     win = null;

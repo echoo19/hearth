@@ -16,6 +16,8 @@ export interface HearthNative {
    * menu). Pass `null` to restore the baseline app-only menu (project closed).
    */
   setAppMenu(model: SerializedMenuSection[] | null): void;
+  /** Mirror whether dirty Code-panel script buffers exist for native close/quit guards. */
+  setUnsavedScripts(has: boolean): void;
   /** Subscribe to native-menu clicks (menu:invoke). Returns an unsubscribe fn. */
   onMenuInvoke(cb: (id: string) => void): () => void;
   platform: string;

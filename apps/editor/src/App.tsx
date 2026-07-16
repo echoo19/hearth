@@ -8,6 +8,7 @@ import { ShortcutSheet } from './components/ShortcutSheet';
 import { Workspace } from './workspace/Workspace';
 import { layoutStorageKey } from './workspace/layout';
 import { installKeybinds } from './keybinds';
+import { useUnsavedScriptsCloseGuard } from './unsavedScriptsCloseGuard';
 
 export default function App() {
   const projectPath = useEditor((s) => s.projectPath);
@@ -36,6 +37,7 @@ export default function App() {
 
 function EditorShell({ projectPath }: { projectPath: string }) {
   const projectId = useEditor((s) => s.info?.id);
+  const hasUnsavedScripts = useEditor((s) => s.hasUnsavedScripts);
   const [dock, setDock] = useState<DockviewApi | null>(null);
   const storageKey = layoutStorageKey(projectId ?? projectPath);
 
@@ -43,6 +45,7 @@ function EditorShell({ projectPath }: { projectPath: string }) {
   // undo/redo, duplicate/delete/nudge, focus, play, checkpoint, and the `?`
   // cheat sheet. One window listener, installed once for the editor session.
   useEffect(() => installKeybinds(() => useEditor.getState()), []);
+  useUnsavedScriptsCloseGuard(hasUnsavedScripts);
 
   return (
     <div className="shell">
