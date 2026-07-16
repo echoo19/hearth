@@ -190,8 +190,40 @@
   }
 }
 
+/* --------------------------------------------------------------------------
+   Code panel body — script tree rail + editor, side by side (Wave N script
+   modules). The rail reuses the Hierarchy panel's .tree/.tree-row idiom.
+   -------------------------------------------------------------------------- */
+.code-body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+}
+
+.code-script-list {
+  width: 200px;
+  flex: none;
+  overflow-y: auto;
+  overflow-x: hidden;
+  background: var(--bg-1);
+  border-right: 1px solid var(--border);
+}
+
+/* Hookless helper marker on a script row — plain visible text, since telling
+   libraries from behaviors at a glance is the whole point of the label. */
+.script-library-badge {
+  flex: none;
+  padding: 0 5px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  color: var(--ink-faint);
+  font-size: var(--text-xs);
+  line-height: 1.5;
+}
+
 .code-editor-container {
   flex: 1;
+  min-width: 0;
   min-height: 0;
   display: flex;
   overflow: hidden;

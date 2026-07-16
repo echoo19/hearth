@@ -33,6 +33,8 @@ import {
 import type { CommandResult, ScriptDiagnostic } from '../types';
 import { languageForPath } from './code/scriptLanguage';
 import { SearchAcross } from './code/SearchAcross';
+import { ScriptTree } from './code/ScriptTree';
+import { useLibraryScripts } from '../scriptKinds';
 
 const CodeEditor = lazy(() => import('./code/CodeEditor'));
 
@@ -85,6 +87,24 @@ export function shouldBlockSaveForDrift(opts: {
   return opts.onDisk !== opts.savedSource;
 }
 
+/**
+ * Whether a lint pass may use checkScript's PATH mode (the engine reads the
+ * file itself), which adds require diagnostics — module-not-found and
+ * require-cycle, with lines — that source mode cannot compute (resolution
+ * needs the whole project's script graph, which only the engine has). Only
+ * sound while the buffer matches its on-disk baseline: path mode lints the
+ * FILE, and mapping its lines onto a diverged buffer would mark the wrong
+ * text. A dirty buffer falls back to source mode (live syntax check) until
+ * the next save re-syncs it (see the lintNonce bump in runSave). Pure,
+ * exported for unit testing (codePanelSave.test.ts).
+ */
+export function shouldLintViaPath(
+  source: string,
+  buf: { loading: boolean; loadError: string | null; savedSource: string } | undefined,
+): boolean {
+  return buf !== undefined && !buf.loading && buf.loadError === null && source === buf.savedSource;
+}
+
 export function CodePanel() {
   const projectPath = useEditor((s) => s.projectPath);
   const scripts = useEditor((s) => s.info?.scripts ?? []);
@@ -102,6 +122,10 @@ export function CodePanel() {
   const query = useEditor((s) => s.query);
   const setUnsavedScripts = useEditor((s) => s.setUnsavedScripts);
   const closeProject = useEditor((s) => s.closeProject);
+  // Hookless scripts (libraries) — the tree labels them so helpers read
+  // differently from behaviors. Shared classification with the Inspector's
+  // Script picker (see scriptKinds.ts).
+  const libraries = useLibraryScripts();
 
   const [{ buffers, activePath }, setBufferState] = useState<BufferState>({ buffers: [], activePath: null });
   const [saving, setSaving] = useState(false);
@@ -116,6 +140,9 @@ export function CodePanel() {
   /** Drives CodeEditor's full-doc replace with a formatted-on-save result. */
   const [applyContent, setApplyContent] = useState<{ path: string; text: string; nonce: number } | null>(null);
   const applyNonceRef = useRef(0);
+  /** Bumped after every successful save — tells CodeEditor to re-lint without
+   * a doc change, so path-mode require diagnostics refresh (see checkScript). */
+  const [lintNonce, setLintNonce] = useState(0);
   /** Task 9: whether the cross-script search bar is showing under the tab strip. */
   const [searchOpen, setSearchOpen] = useState(false);
   // "New script" dialog (L-057 / CODE-4): the first in-editor create path —
@@ -181,13 +208,21 @@ export function CodePanel() {
    * a failed/offline command) and unwraps to just the diagnostics array, so
    * the lint extension never has to special-case a missing result itself.
    * Uses the active buffer's path to pick the language.
+   *
+   * Two modes (see shouldLintViaPath): a buffer that matches disk lints by
+   * PATH, which is the only way the engine reports broken requires (missing
+   * module / require cycle) inline; a dirty buffer lints its live source,
+   * syntax-only, until the next save (runSave bumps lintNonce so the require
+   * pass re-runs the moment the buffer is clean again).
    */
   async function checkScript(source: string): Promise<ScriptDiagnostic[]> {
     const path = activePathRef.current;
     if (!path) return [];
+    const buf = findBuffer(bufferStateRef.current.buffers, path);
+    const params = shouldLintViaPath(source, buf) ? { path } : { source, language: languageForPath(path) };
     const result = await query<{ valid: boolean; language: 'lua' | 'js'; diagnostics: ScriptDiagnostic[] }>(
       'checkScript',
-      { source, language: languageForPath(path) },
+      params,
     );
     return result?.diagnostics ?? [];
   }
@@ -431,6 +466,9 @@ export function CodePanel() {
       } else {
         patch(path, { savedSource: source, conflict: false });
       }
+      // The buffer now matches disk → checkScript switches to path mode,
+      // which is what surfaces broken requires; re-lint without a doc change.
+      setLintNonce((n) => n + 1);
     } else {
       const outcome = classifySaveFailure(result.errors);
       if (outcome.kind === 'missing') patch(path, { scriptMissing: true });
@@ -610,24 +648,6 @@ export function CodePanel() {
   return (
     <div className="code-panel-root" onKeyDown={onPanelKeyDown}>
       <div className="panel-toolbar">
-        <Tooltip content="Open a script to edit">
-          <select
-            className="select"
-            value=""
-            onChange={(e) => {
-              if (e.target.value) activateOrOpen(e.target.value);
-            }}
-          >
-            <option value="" disabled>
-              {scripts.length === 0 ? 'No scripts in this project' : 'Open a script…'}
-            </option>
-            {scripts.map((path) => (
-              <option key={path} value={path}>
-                {scriptLabel(path)}
-              </option>
-            ))}
-          </select>
-        </Tooltip>
         <Tooltip content="Create a script from the standard template">
           <Button size="sm" icon="plus" onClick={() => setNewScriptOpen(true)}>
             New script
@@ -779,56 +799,67 @@ export function CodePanel() {
         </div>
       )}
 
-      <div className="code-editor-container" ref={editorContainerRef}>
-        {!active ? (
-          <div className="empty-state">
-            <span className="empty-icon" aria-hidden="true">
-              <Icon name="script" size={16} />
-            </span>
-            <span>{scripts.length === 0 ? 'No scripts in this project yet' : 'No script open'}</span>
-            <span className="hint">
-              {scripts.length === 0
-                ? 'Scripts drive entity behavior via the Script component. Create one here, or ask an agent.'
-                : 'Pick a script above to start editing.'}
-            </span>
-            {scripts.length === 0 && (
-              <Button size="sm" icon="plus" onClick={() => setNewScriptOpen(true)}>
-                New script
-              </Button>
-            )}
+      <div className="code-body">
+        {/* The script list, as a tree: nested paths (scripts/lib/…) group
+            under their folder, and hookless libraries are labeled. Hidden for
+            a script-less project — the empty state alongside owns that case. */}
+        {scripts.length > 0 && (
+          <div className="code-script-list">
+            <ScriptTree scripts={scripts} libraries={libraries} activePath={activePath} onOpen={activateOrOpen} />
           </div>
-        ) : active.loading ? (
-          <div className="empty-state">
-            <span>Loading {scriptLabel(active.path)}…</span>
-          </div>
-        ) : active.loadError ? (
-          <div className="empty-state">
-            <span className="empty-icon" aria-hidden="true">
-              <Icon name="cross" size={16} />
-            </span>
-            <span>Couldn't load {scriptLabel(active.path)}</span>
-            <span className="hint">{active.loadError}</span>
-            <Button size="sm" onClick={() => void loadInto(active.path)}>
-              Retry
-            </Button>
-          </div>
-        ) : (
-          <Suspense fallback={<div className="empty-state">Loading editor…</div>}>
-            <CodeEditor
-              path={active.path}
-              value={active.source}
-              revision={active.revision}
-              stateCache={stateCacheRef.current}
-              shouldCacheState={shouldCacheState}
-              onChange={(v) => patch(active.path, { source: v })}
-              onSave={() => void save()}
-              onFormatSave={() => void formatAndSave()}
-              checkScript={checkScript}
-              focusRequest={focusForActive}
-              applyContent={applyForActive}
-            />
-          </Suspense>
         )}
+        <div className="code-editor-container" ref={editorContainerRef}>
+          {!active ? (
+            <div className="empty-state">
+              <span className="empty-icon" aria-hidden="true">
+                <Icon name="script" size={16} />
+              </span>
+              <span>{scripts.length === 0 ? 'No scripts in this project yet' : 'No script open'}</span>
+              <span className="hint">
+                {scripts.length === 0
+                  ? 'Scripts drive entity behavior via the Script component. Create one here, or ask an agent.'
+                  : 'Pick a script from the list to start editing.'}
+              </span>
+              {scripts.length === 0 && (
+                <Button size="sm" icon="plus" onClick={() => setNewScriptOpen(true)}>
+                  New script
+                </Button>
+              )}
+            </div>
+          ) : active.loading ? (
+            <div className="empty-state">
+              <span>Loading {scriptLabel(active.path)}…</span>
+            </div>
+          ) : active.loadError ? (
+            <div className="empty-state">
+              <span className="empty-icon" aria-hidden="true">
+                <Icon name="cross" size={16} />
+              </span>
+              <span>Couldn't load {scriptLabel(active.path)}</span>
+              <span className="hint">{active.loadError}</span>
+              <Button size="sm" onClick={() => void loadInto(active.path)}>
+                Retry
+              </Button>
+            </div>
+          ) : (
+            <Suspense fallback={<div className="empty-state">Loading editor…</div>}>
+              <CodeEditor
+                path={active.path}
+                value={active.source}
+                revision={active.revision}
+                stateCache={stateCacheRef.current}
+                shouldCacheState={shouldCacheState}
+                onChange={(v) => patch(active.path, { source: v })}
+                onSave={() => void save()}
+                onFormatSave={() => void formatAndSave()}
+                checkScript={checkScript}
+                lintNonce={lintNonce}
+                focusRequest={focusForActive}
+                applyContent={applyForActive}
+              />
+            </Suspense>
+          )}
+        </div>
       </div>
 
       <ConfirmDialog

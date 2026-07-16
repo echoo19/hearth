@@ -8,7 +8,7 @@
  * mirrors the style of externalChange.test.ts.
  */
 import { describe, expect, it } from 'vitest';
-import { classifySaveFailure, shouldBlockSaveForDrift, shouldSave } from '../src/components/CodePanel';
+import { classifySaveFailure, shouldBlockSaveForDrift, shouldLintViaPath, shouldSave } from '../src/components/CodePanel';
 
 describe('shouldSave', () => {
   it('allows a save when a script is open, dirty, and not already saving', () => {
@@ -62,5 +62,23 @@ describe('shouldBlockSaveForDrift (L-054 save-time external-edit guard)', () => 
 
   it('does not block when the on-disk read failed (null → cannot compare)', () => {
     expect(shouldBlockSaveForDrift({ conflict: false, onDisk: null, savedSource: 'original' })).toBe(false);
+  });
+});
+
+describe('shouldLintViaPath (require diagnostics only against a disk-matching buffer)', () => {
+  const clean = { loading: false, loadError: null, savedSource: 'return {}' };
+
+  it('uses path mode when the buffer matches its on-disk baseline', () => {
+    expect(shouldLintViaPath('return {}', clean)).toBe(true);
+  });
+
+  it('falls back to source mode for a dirty buffer (path mode would lint the FILE, not the edits)', () => {
+    expect(shouldLintViaPath('return { edited = true }', clean)).toBe(false);
+  });
+
+  it('falls back to source mode while loading, after a load error, or with no buffer', () => {
+    expect(shouldLintViaPath('return {}', { ...clean, loading: true, savedSource: 'return {}' })).toBe(false);
+    expect(shouldLintViaPath('return {}', { ...clean, loadError: 'boom' })).toBe(false);
+    expect(shouldLintViaPath('return {}', undefined)).toBe(false);
   });
 });

@@ -333,6 +333,8 @@ const ICON_PATHS: Record<string, ReactNode> = {
   ),
   grid: <path d="M2 4.5h8M2 7.5h8M4.5 2v8M7.5 2v8" />,
   script: <path d="M4 3.5L2 6l2 2.5M8 3.5L10 6 8 8.5" />,
+  // Folder: a script-tree directory (Code panel's nested scripts/ listing).
+  folder: <path d="M1.5 9V3.5a1 1 0 0 1 1-1h2.3l1 1.2h3.7a1 1 0 0 1 1 1V9a1 1 0 0 1-1 1h-7a1 1 0 0 1-1-1z" />,
   play: <path d="M3.5 2.5l6 3.5-6 3.5z" fill="currentColor" />,
   stop: <rect x="3" y="3" width="6" height="6" fill="currentColor" stroke="none" />,
   pause: (
