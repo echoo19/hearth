@@ -22,7 +22,7 @@ only the UI labels read differently:
 | Toolbar | **Undo** / **Redo** | `undo` / `redo` — step through individual recorded changes |
 | Changes panel | **Restore checkpoint** | `revertProject` — restore the project to the last checkpoint (confirm dialog) |
 | Changes panel | **Refresh changes** | `diffProject` — recompute the diff against the last checkpoint |
-| Agent panel timeline | **Checkpoint** / **Review changes** / **Revert session** | Same three operations, scoped to one agent session's activity |
+| Agent panel timeline | **Checkpoint** / **Review changes** / **Restore checkpoint** | Same three operations, scoped to one agent session's activity |
 
 "Checkpoint" and "Review" are the same operations documented elsewhere as
 `hearth snapshot`/`hearth diff`. This page and the CLI/MCP docs are talking
