@@ -1,9 +1,15 @@
 # Hearth Roadmap
 
-**v1.1.0 is the current release.** It adds script modules: `require` for
-same-language Lua and JavaScript helpers under `scripts/`, recursive script
-discovery/export, whole-graph hot reload, and validation for broken or cyclic
-requires. v1.0.0 closed the road to 1.0 with the final hardening wave: a
+**v1.2.0 is the current release.** It reworks the editor's Agent panel: the
+panel now lives in its own full-height dock beside the Inspector, first open
+is a one-click "Launch your agent" screen (Claude Code, Codex, OpenCode,
+Hermes, or a plain terminal), missing CLIs can be installed inline, and the
+permission mode, re-detect, and manual setup moved behind a settings menu.
+Saved layouts migrate automatically. v1.1.0 added script modules: `require`
+for same-language Lua and JavaScript helpers under `scripts/`, recursive
+script discovery/export, whole-graph hot reload, and validation for broken
+or cyclic requires. v1.0.0 closed the road to 1.0 with the final hardening
+wave: a
 project-format stability guarantee (an automatic migration rail, strict
 version-stamp rules, upgrade tests against 0.13/0.14 projects), a native
 close guard for unsaved script edits, a performance regression fence in CI,
@@ -120,6 +126,24 @@ what's deliberately missing.
 The standing rule for everything below: **agent-native first**. Each system
 ships as schemas + commands (inspectable via `hearth … --json`, exposed as
 MCP tools, testable in headless playtests) before it gets editor UI.
+
+## Shipped in v1.2.0 — Agent panel
+
+- **Own right-hand dock**: the Agent panel moved out of the bottom dock into
+  a full-height column beside the Inspector, so the terminal gets height and
+  the Inspector stays visible while an agent works. Existing saved layouts
+  migrate automatically; only the agent panel relocates.
+- **One-click launch**: first open shows "Launch your agent" with one tile
+  per detected CLI (Claude Code, Codex, OpenCode, Hermes), installed ones
+  first. Clicking a tile writes the tool's MCP config and starts it — no
+  setup screen. A plain terminal stays available for any other CLI.
+- **Inline install**: agents with a known installer (Claude Code, Codex,
+  OpenCode) install from the tile, visibly in the terminal; Hermes links to
+  its connect guide.
+- **Progressive disclosure**: the permission mode (default: safe edit),
+  re-detect, and manual setup live behind a settings menu. Mode changes lock
+  while a session runs. The activity timeline sits under the terminal as a
+  collapsible section with Checkpoint / Review changes / Restore checkpoint.
 
 ## Shipped in v1.1.0
 
