@@ -20,6 +20,73 @@ broken mechanic just hides the bug. Every effect you add should be
 playtest-observable (`assertCameraEffect`, `assertParticleCount`,
 `assertAudioCount`) so "it feels good" rests on evidence, not vibes.
 
+## Recipe: shared feel libraries
+
+When two or more scripts need the same tuning, easing helper, procgen function,
+or score formula, put it in `scripts/lib/` and require it at load time. Do this
+before copy-pasting helpers between enemies.
+
+```bash
+hearth create script feel --dir lib
+```
+
+Lua library:
+
+```lua
+-- scripts/lib/feel.lua
+local feel = {}
+
+function feel.shakeForDamage(damage)
+  return math.min(8, 2 + damage * 0.4)
+end
+
+return feel
+```
+
+Lua behavior:
+
+```lua
+local feel = require("lib/feel")
+local script = {}
+
+function script.onCollision(ctx, other)
+  if not other.tags then return end
+  ctx.camera.shake(feel.shakeForDamage(ctx.params.damage or 1), 0.16, { seed = 1 })
+end
+
+return script
+```
+
+JavaScript library:
+
+```js
+// scripts/lib/feel.js
+function shakeForDamage(damage) {
+  return Math.min(8, 2 + damage * 0.4);
+}
+
+module.exports = { shakeForDamage };
+```
+
+JavaScript behavior:
+
+```js
+const feel = require('lib/feel');
+
+export default {
+  onCollision(ctx, other) {
+    if (!other.tags?.includes('bullet')) return;
+    ctx.camera.shake(feel.shakeForDamage(ctx.params.damage ?? 1), 0.16, { seed: 1 });
+  },
+};
+```
+
+Rules: require only same-language modules, call `require` at the top of the
+file, and keep state that must survive hot reload in `ctx.vars`. A module's
+top-level locals reset when the library hot-reloads. Cycles are errors, so keep
+libraries leaf-like: data/functions in `lib/`, gameplay lifecycle hooks in
+attached behavior scripts.
+
 ## Game feel: the juice stack
 
 Every meaningful moment (a hit, a pickup, a jump, a death, a level clear) should
