@@ -440,7 +440,8 @@ use in-memory storage scoped to the run.
 | --- | --- |
 | `ctx.camera.getPosition()` | Main camera position `{ x, y }` |
 | `ctx.camera.setPosition(x, y)` | Move the main camera |
-| `ctx.camera.getZoom()` / `setZoom(zoom)` | Camera zoom |
+| `ctx.camera.getZoom()` | Main camera zoom |
+| `ctx.camera.setZoom(zoom)` | Set the main camera zoom |
 | `ctx.camera.follow(idOrName)` | Follow an entity each frame (nil/null stops); applied at end of frame after physics |
 | `ctx.camera.shake(intensity, seconds, opts?)` | Screen shake: offset decays from `intensity` (world units) to 0 over `seconds` |
 | `ctx.camera.flash(color, seconds)` | A color pulse over the screen, fading from full alpha to 0 over `seconds` |

@@ -69,7 +69,7 @@ node hearth-cli.mjs init "Star Catcher" --template platformer
 Or connect any agent by hand:
 
 ```bash
-claude mcp add hearth -- node $PWD/hearth-mcp.mjs --project $PWD/star-catcher
+claude mcp add hearth -- node $PWD/hearth-mcp.mjs --project $PWD/star_catcher
 ```
 
 Then describe the game. The agent calls `get_agent_instructions`, follows the
@@ -81,8 +81,9 @@ hands you changes to review. Per-agent walkthroughs:
 [any MCP client or CLI](docs/connect-any-agent.md).
 
 **4. See it and ship it.** Open the folder in the editor, press **Play**, then
-`hearth export web --zip` for an itch.io-ready build or `hearth export desktop`
-for a native app. See the [Quickstart](docs/quickstart.md) for the full
+`hearth export web --zip --allow build` for an itch.io-ready build or
+`hearth export desktop --allow build` for a native app. See the
+[Quickstart](docs/quickstart.md) for the full
 ten-minute version.
 
 ## What's in the engine

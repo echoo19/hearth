@@ -232,7 +232,7 @@ export function Timeline() {
   return (
     <div className="agent-timeline">
       <div className="panel-toolbar agent-timeline-toolbar">
-        <Tooltip content="Save a checkpoint you can review and restore">
+        <Tooltip content="Save a checkpoint you can review and restore (⇧⌘S)">
           <Button size="sm" onClick={() => void checkpoint()}>
             {snapshotTaken && <span className="timeline-check">✓</span>} Checkpoint
           </Button>

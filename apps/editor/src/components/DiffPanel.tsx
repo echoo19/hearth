@@ -75,7 +75,7 @@ export function DiffPanel() {
           {busy === 'redo' ? 'Redoing…' : redoTarget ? `Redo ${redoTarget.command}` : 'Redo'}
         </Button>
         <span className="panel-divider" />
-        <Tooltip content="Save a checkpoint you can review and restore">
+        <Tooltip content="Save a checkpoint you can review and restore (⇧⌘S)">
           <Button size="sm" onClick={() => void snapshot()} disabled={busy !== null}>
             {busy === 'checkpoint' ? 'Saving…' : 'Checkpoint'}
           </Button>

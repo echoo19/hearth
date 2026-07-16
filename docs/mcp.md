@@ -27,18 +27,21 @@ Each MCP tool wraps exactly one core command, named in snake_case (`setAssetMeta
 is the one core command with neither a CLI nor an MCP wrapper, see above):
 `get_project_info`,
 `list_scenes`, `inspect_scene`, `inspect_entity`, `list_components`,
-`validate_project`, `create_scene`, `duplicate_scene` (fresh entity ids;
+`list_assets`, `list_scripts`, `read_script`, `validate_project`,
+`create_scene`, `delete_scene`, `duplicate_scene` (fresh entity ids;
 optionally clones playtests targeting the source scene, retargeted to the
-copy, see [cli.md](./cli.md#command-tour)), `create_entity`,
+copy, see [cli.md](./cli.md#command-tour)), `rename_scene`,
+`set_initial_scene`, `create_entity`, `delete_entity`,
 `duplicate_entity` (deep-copies an entity and its full descendant subtree
-with fresh ids in one call, offset from the original), `set_entity_enabled`,
+with fresh ids in one call, offset from the original), `rename_entity`,
+`move_entity`, `set_entity_enabled`,
 `set_entity_tags` (replace an entity's tags after creation; `create_entity`
-only sets them at creation time), `add_component`,
+only sets them at creation time), `add_component`, `remove_component`,
 `set_component_property` (strict dot-path validation with a did-you-mean
 suggestion on an unknown segment), `set_properties` (batch: multiple
 dot-path properties on one entity in a single undo step, all-or-nothing
-validated; see [cli.md](./cli.md#command-tour)), `paint_tiles`,
-`fill_tilemap_rect`, `resize_tilemap` (batched Tilemap edits, see
+validated; see [cli.md](./cli.md#command-tour)), `set_input_mapping`,
+`paint_tiles`, `fill_tilemap_rect`, `resize_tilemap` (batched Tilemap edits, see
 [cli.md](./cli.md#tilemap-editing)), `create_script`, `edit_script`,
 `format_script` (reformat a script, or every script with `all: true`, to
 Hearth house style (StyLua/Prettier), see
@@ -72,7 +75,7 @@ undo/redo, independent of `snapshot_project`/`revert_project`'s single
 diff baseline; see [cli.md](./cli.md#command-tour)), `list_journal`
 (the command journal backing `hearth log` and the editor's Agent panel
 timeline, see [cli.md](./cli.md#command-journal)), `snapshot_project`,
-`get_diff`, `revert_project`, `create_playtest`, `run_playtest`,
+`get_diff`, `revert_project`, `create_playtest`, `list_playtests`, `run_playtest`,
 `run_scene`, `update_settings` (build settings, initial scene, and every
 input mapping: actions, gamepad buttons/axes, virtual axes, deadzone;
 see [input.md](./input.md)), `inspect_api` (the script `ctx` reference),
