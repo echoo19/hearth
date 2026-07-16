@@ -43,6 +43,45 @@ describe('createScript language', () => {
     expect(read.data.source).toContain('dot, not a colon');
   });
 
+  it('creates a Lua script in a nested scripts directory', async () => {
+    const { session, fs } = await makeSession();
+    const created = await session.execute<any>('createScript', { name: 'noise', dir: 'lib', language: 'lua' });
+    expect(created.success).toBe(true);
+    expect(created.data.path).toBe('scripts/lib/noise.lua');
+    expect(await fs.exists('/proj/scripts/lib/noise.lua')).toBe(true);
+  });
+
+  it('keeps dir optional and creates flat Lua scripts by default', async () => {
+    const { session, fs } = await makeSession();
+    const created = await session.execute<any>('createScript', { name: 'player' });
+    expect(created.success).toBe(true);
+    expect(created.data.path).toBe('scripts/player.lua');
+    expect(await fs.exists('/proj/scripts/player.lua')).toBe(true);
+  });
+
+  it('slugifies dir segments like script names', async () => {
+    const { session, fs } = await makeSession();
+    const created = await session.execute<any>('createScript', { name: 'noise', dir: 'My Libs', language: 'lua' });
+    expect(created.success).toBe(true);
+    expect(created.data.path).toBe('scripts/my-libs/noise.lua');
+    expect(await fs.exists('/proj/scripts/my-libs/noise.lua')).toBe(true);
+  });
+
+  it('rejects traversal payloads in dir', async () => {
+    const { session } = await makeSession();
+    const created = await session.execute<any>('createScript', { name: 'noise', dir: '../..', language: 'lua' });
+    expect(created.success).toBe(false);
+    expect(created.errors[0].code).toBe('INVALID_INPUT');
+  });
+
+  it('rejects creating over an existing nested script path', async () => {
+    const { session } = await makeSession();
+    await session.execute<any>('createScript', { name: 'noise', dir: 'lib', language: 'lua' });
+    const duplicate = await session.execute<any>('createScript', { name: 'noise', dir: 'lib', language: 'lua' });
+    expect(duplicate.success).toBe(false);
+    expect(duplicate.errors[0].code).toBe('CONFLICT');
+  });
+
   it('emits a .js script from the JS template with language "js"', async () => {
     const { session } = await makeSession();
     const created = await session.execute<any>('createScript', { name: 'Coin Spin', language: 'js' });

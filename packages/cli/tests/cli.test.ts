@@ -269,6 +269,16 @@ describe('hearth create script / inspect api / set-settings', () => {
     await fsp.rm(path.join(projectDir, 'scripts', 'spin-js.js'));
   });
 
+  it('creates a script in a nested scripts directory with --dir', async () => {
+    const result = await runCli(['create', 'script', 'noise', '--dir', 'lib', '--json'], projectDir);
+    expect(result.code).toBe(0);
+    const envelope = parseJson(result.stdout);
+    expect(envelope.data.path).toBe('scripts/lib/noise.lua');
+    const source = await fsp.readFile(path.join(projectDir, 'scripts', 'lib', 'noise.lua'), 'utf8');
+    expect(source).toContain('local script = {}');
+    await fsp.rm(path.join(projectDir, 'scripts', 'lib'), { recursive: true, force: true });
+  });
+
   it('creates a script formatted by default, and verbatim with --no-format', async () => {
     const formatted = await runCli(['create', 'script', 'spin-fmt', '--json'], projectDir);
     expect(formatted.code).toBe(0);

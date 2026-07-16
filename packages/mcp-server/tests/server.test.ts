@@ -186,6 +186,15 @@ describe('hearth-mcp server', () => {
     expect(js.data.path).toBe('scripts/mover-js.js');
   });
 
+  it('create_script accepts a nested dir', async () => {
+    ctx = await connectClient();
+    const result = await ctx.client.callTool({ name: 'create_script', arguments: { name: 'noise', dir: 'lib' } });
+    expect(result.isError).toBeFalsy();
+    const envelope = toolJson(result);
+    expect(envelope.data.path).toBe('scripts/lib/noise.lua');
+    expect(await ctx.fs.exists('/proj/scripts/lib/noise.lua')).toBe(true);
+  });
+
   it('check_script is registered, mirrors every param, and pre-flights bare source without saving', async () => {
     ctx = await connectClient();
     const { tools } = await ctx.client.listTools();

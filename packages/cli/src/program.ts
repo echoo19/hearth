@@ -400,17 +400,18 @@ export function buildProgram(): Command {
   addGlobalOptions(
     create
       .command('script <name>')
-      .description('create a script from the standard template (Lua by default; reformats on save unless --no-format)')
+      .description('create a script under scripts/ from the standard template (Lua by default; reformats on save unless --no-format)')
+      .option('--dir <dir>', 'subdirectory under scripts/, e.g. lib')
       .option('--language <language>', 'scripting language: lua (default) or js')
       .option('--source-file <path>', 'read initial source from a file instead of the template')
       .option('--no-format', 'save verbatim, without reformatting to Hearth house style'),
-  ).action(async (name: string, opts: { language?: string; sourceFile?: string; format?: boolean }, cmd) => {
+  ).action(async (name: string, opts: { dir?: string; language?: string; sourceFile?: string; format?: boolean }, cmd) => {
     await guarded(cmd, 'createScript', async () => {
       const source = opts.sourceFile ? await fsp.readFile(path.resolve(opts.sourceFile), 'utf8') : undefined;
       // commander's --no-format sets opts.format=false; absent means "use
       // the project's codeStyle.formatOnSave" (send nothing).
       const format = opts.format === false ? false : undefined;
-      await runAndEmit(cmd, 'createScript', { name, language: opts.language, source, format });
+      await runAndEmit(cmd, 'createScript', { name, dir: opts.dir, language: opts.language, source, format });
     });
   });
 
