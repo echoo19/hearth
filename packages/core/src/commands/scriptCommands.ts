@@ -147,11 +147,13 @@ return script
 export const createScript = defineCommand({
   name: 'createScript',
   description:
-    'Create a new script file in scripts/ from the standard template (or custom source). Lua by default; language "js" for JavaScript. Returns its path.',
+    'Create a new script file under scripts/ from the standard template (or custom source). Lua by default; language "js" for JavaScript. Returns its path.',
   permission: 'code-edit',
   mutates: true,
   paramsSchema: z.object({
     name: z.string().min(1),
+    /** Optional subdirectory under scripts/; each path segment is slugified. */
+    dir: z.string().optional(),
     /** Scripting language; Lua is the Hearth default. */
     language: z.enum(['lua', 'js']).default('lua'),
     /** Full source; omit to use the documented template. */
@@ -161,7 +163,16 @@ export const createScript = defineCommand({
   }),
   async run(ctx, params) {
     const filename = slugify(params.name).replace(/_/g, '-') + '.' + params.language;
-    const relPath = joinPath(SCRIPTS_DIR, filename);
+    if (params.dir !== undefined) {
+      resolveScriptsPath(`${SCRIPTS_DIR}/${params.dir}/${filename}`);
+    }
+    const dirSegments = params.dir
+      ? params.dir
+          .split('/')
+          .filter((segment) => segment.length > 0)
+          .map((segment) => slugify(segment).replace(/_/g, '-'))
+      : [];
+    const relPath = resolveScriptsPath(joinPath(SCRIPTS_DIR, ...dirSegments, filename));
     const absPath = joinPath(ctx.store.root, relPath);
     if (await ctx.fs.exists(absPath)) {
       throw new ProjectError(`Script already exists: ${relPath}. Use editScript to modify it.`, 'CONFLICT');

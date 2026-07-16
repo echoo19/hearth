@@ -473,10 +473,11 @@ export const TOOL_SPECS: ToolSpec[] = [
     name: 'create_script',
     command: 'createScript',
     description:
-      'Create a new script file in scripts/ from the standard template (or custom source). Lua by default; language "js" for JavaScript. Reformats to Hearth house style on save unless format:false. Returns its path. (requires code-edit)',
+      'Create a new script file under scripts/ from the standard template (or custom source). Lua by default; language "js" for JavaScript. Pass dir to create under a subdirectory such as lib. Reformats to Hearth house style on save unless format:false. Returns its path. (requires code-edit)',
     permission: 'code-edit',
     inputShape: {
       name: z.string().min(1),
+      dir: z.string().optional(),
       language: z.enum(['lua', 'js']).optional(),
       source: z.string().optional(),
       format: z.boolean().optional(),
