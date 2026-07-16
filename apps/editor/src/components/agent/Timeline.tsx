@@ -251,21 +251,17 @@ export function Timeline() {
 
       <div className="agent-timeline-body" ref={bodyRef} onScroll={handleScroll}>
         {entries.length === 0 ? (
-          <div className="empty-state">
-            <span className="empty-icon" aria-hidden="true">
-              <Icon name="script" size={16} />
+          // Not the shared .empty-state hero: the rail is a ~220px column
+          // beside the terminal, and the icon + display heading + prose
+          // treatment overfilled and clipped there (v1.1.1). A quiet caption
+          // in the panel-header label vocabulary is all this column can carry.
+          <div className="timeline-empty">
+            <span className="timeline-empty-label">Activity</span>
+            <span className="timeline-empty-hint">
+              {wsStatus !== 'connected'
+                ? 'Loading history…'
+                : 'Editor, CLI, and agent commands appear here as they run.'}
             </span>
-            {wsStatus !== 'connected' ? (
-              <span>Loading activity…</span>
-            ) : (
-              <>
-                <span>No agent activity in this project yet — activity from CLI/MCP commands appears here.</span>
-                <span className="hint">
-                  Every structured command shows up here as it runs — from this editor, the CLI, or an MCP
-                  agent — even without the terminal above open.
-                </span>
-              </>
-            )}
           </div>
         ) : (
           entries.map((entry) => {

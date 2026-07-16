@@ -29,6 +29,11 @@
   gap: 8px;
   height: 100%;
   min-height: 80px;
+  /* Fill row-flex parents too (e.g. .code-editor-container): as a
+     non-growing flex item the whole block hugged the container's left edge
+     instead of centering like every block/column-parent empty state. */
+  flex: 1;
+  width: 100%;
   color: var(--ink-mute);
   text-align: center;
   padding: 16px;
@@ -53,10 +58,13 @@
 }
 
 /* The empty-state heading (the primary one-line message; the icon and the
-   optional .hint detail are excluded). Brand moment: Bricolage display face. */
+   optional .hint detail are excluded). Brand moment: Bricolage display face.
+   Same 52ch measure cap as .hint — the block now spans wide containers. */
 .empty-state > span:not(.empty-icon):not(.hint) {
   font-family: var(--font-display);
   font-weight: 600;
   letter-spacing: -0.01em;
+  max-width: 52ch;
+  text-wrap: balance;
 }
 

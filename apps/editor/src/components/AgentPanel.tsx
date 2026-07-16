@@ -40,6 +40,19 @@ const AGENT_MODE_HINTS: Record<AgentPermissionMode, string> = {
 };
 
 /**
+ * One-line summary per tier, shown as the always-visible mode hint. The full
+ * capability enumeration (AGENT_MODE_HINTS above) re-reading on every mode
+ * change dominated the panel (v1.1.1), so it now sits behind the Details
+ * disclosure next to the summary — same information, on demand.
+ */
+const AGENT_MODE_SUMMARIES: Record<AgentPermissionMode, string> = {
+  'read-only': 'The agent can inspect and validate the project, but not change it.',
+  'safe-edit': 'The agent can edit scenes, entities, and components — not scripts or assets.',
+  full: 'The agent can edit scenes, scripts, and assets — everything except build/export.',
+  all: 'The agent can do everything, including build/export.',
+};
+
+/**
  * Client-side mirror of agentSetup.ts's MODE_ARGS (a type-only import keeps
  * that server module out of the bundle): the `--mode` tokens each picker tier
  * expands to. Used by the manual-setup blocks (L-092) so a copied command
@@ -200,6 +213,7 @@ export function AgentPanel() {
   const log = useEditor((s) => s.log);
   const agent = useAgentSocket();
   const [manualOpen, setManualOpen] = useState(false);
+  const [modeDetailsOpen, setModeDetailsOpen] = useState(false);
   const [prepareError, setPrepareError] = useState<string | null>(null);
   const [agentLauncher, setAgentLauncher] = useState<AgentLauncher>('claude');
   const [detectFailed, setDetectFailed] = useState(false);
@@ -327,7 +341,11 @@ export function AgentPanel() {
   return (
     <div className="agent-panel-root">
       <div className="panel-toolbar agent-toolbar">
-        <Tooltip content={launcherSwitchReason ?? 'Choose which local agent CLI to launch'}>
+        {/* The launcher's connection reassurance (describeLauncher — where its
+            Hearth MCP config is written) rides on the select that picks it,
+            not on the permission hint below: it's about connection, not
+            permissions (v1.1.1). */}
+        <Tooltip content={launcherSwitchReason ?? launcherHint}>
           <span tabIndex={running ? 0 : -1} style={{ display: 'inline-flex' }}>
             <select
               className="select"
@@ -348,10 +366,10 @@ export function AgentPanel() {
         </Tooltip>
 
         {/* The permission-mode explanation is already shown as visible text
-            below the toolbar (AGENT_MODE_HINTS[agentMode]); no native title
-            unless it's disabled (AGENT-3 / L-091: the plain shell launches no
-            MCP server, or a running session — see modeReason above), in which
-            case that reason IS the tooltip. */}
+            below the toolbar (AGENT_MODE_SUMMARIES + the Details disclosure);
+            no native title unless it's disabled (AGENT-3 / L-091: the plain
+            shell launches no MCP server, or a running session — see
+            modeReason above), in which case that reason IS the tooltip. */}
         <DisabledHint reason={modeReason}>
           <select
             className="select"
@@ -430,8 +448,26 @@ export function AgentPanel() {
 
       {prepareError && <div className="agent-prepare-error">Agent setup failed: {prepareError}</div>}
 
+      {/* One line, not the whole grant enumeration. The plain shell launches
+          no MCP server (AGENT-3 / L-091), so a permission summary would be
+          false there — it gets the launcher description instead. */}
       <div className="agent-mode-hint">
-        {AGENT_MODE_HINTS[agentMode]} {launcherHint}
+        {agentLauncher === 'shell' ? (
+          <span>{launcherHint}</span>
+        ) : (
+          <>
+            <span>{AGENT_MODE_SUMMARIES[agentMode]}</span>{' '}
+            <button
+              type="button"
+              className="agent-mode-details-toggle"
+              aria-expanded={modeDetailsOpen}
+              onClick={() => setModeDetailsOpen((open) => !open)}
+            >
+              {modeDetailsOpen ? 'Hide details' : 'Details'}
+            </button>
+            {modeDetailsOpen && <span className="agent-mode-details">{AGENT_MODE_HINTS[agentMode]}</span>}
+          </>
+        )}
       </div>
 
       <div className="agent-body">
