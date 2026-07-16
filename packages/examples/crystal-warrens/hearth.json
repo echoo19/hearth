@@ -1,6 +1,6 @@
 {
   "formatVersion": 1,
-  "hearthVersion": "1.1.0",
+  "hearthVersion": "1.2.0",
   "id": "prj_pbxy6xka",
   "name": "Crystal Warrens",
   "description": "A seeded value-noise cave, carved and crystal-lit by two behaviors sharing one scripts/lib module.",

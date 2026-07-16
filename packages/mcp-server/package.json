@@ -1,6 +1,6 @@
 {
   "name": "@hearth/mcp-server",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "description": "Hearth MCP server: structured engine operations for coding agents (Claude Code, Codex, any MCP client)",
   "license": "MIT",
   "type": "module",
