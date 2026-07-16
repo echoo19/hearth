@@ -500,6 +500,65 @@ git commit -m "Show script libraries as a tree and keep them out of the behavior
 
 ---
 
+### Task 8b: `createScript` must be able to make a library (CLI/MCP-first)
+
+**Files:**
+- Modify: `packages/core/src/commands/scriptCommands.ts:150-177` (`createScript`)
+- Modify: the CLI `create script` verb (`packages/cli/src`) and the MCP
+  `create_script` tool (`packages/mcp-server/src`)
+- Test: alongside the existing script-command tests
+
+**Why (blocking):** `createScript` builds `slugify(name) + '.' + language` joined
+to `SCRIPTS_DIR`. There is NO way to create `scripts/lib/noise.lua`. Without
+this, an agent cannot author a library through the CLI/MCP surface at all —
+the standing repo rule is that every system ships CLI/MCP-first — and
+`packages/examples/generate.mjs` (which dogfoods the command system) cannot
+build Task 9's example.
+
+- [ ] **Step 1: Write the failing tests**
+
+```
+- createScript({ name: 'noise', dir: 'lib', language: 'lua' })
+    → path 'scripts/lib/noise.lua', file exists on disk.
+- dir is optional: createScript({ name: 'player' }) → 'scripts/player.lua'
+    (unchanged behavior — existing tests must stay green).
+- dir segments are slugified the same way names are: dir 'My Libs' → 'my-libs'.
+- A traversal payload is rejected: dir '../..' → INVALID_INPUT.
+- Creating over an existing nested path → CONFLICT (same as flat today).
+```
+
+- [ ] **Step 2: Run to verify it fails**
+
+- [ ] **Step 3: Implement**
+
+Add an optional `dir: z.string().optional()` to `createScript`'s
+`paramsSchema`. Build the path as `SCRIPTS_DIR` + slugified dir segments +
+filename, then run the result through the **existing**
+`resolveScriptsPath()` (scriptCommands.ts:186) — do NOT hand-roll a
+traversal check; that helper exists precisely because a raw
+`startsWith('scripts/')` passes payloads like `scripts/../hearth.json`.
+Create parent directories as needed. Note `slugify` converts hyphens to
+underscores in this repo, and `createScript` then maps `_` back to `-`;
+apply the same treatment per dir segment so `lib` stays `lib`.
+
+Surface it on both adapters: CLI `hearth create script noise --dir lib`, MCP
+`create_script` gains `dir`. Update the command's `description` string (it
+says "in scripts/") and its `ctx.suggest(...)` line if affected.
+
+- [ ] **Step 4: Run to verify pass**
+
+Run: `npx vitest run packages/core` → PASS.
+`npm run build --workspace=@hearth/core` (CLI/MCP suites read core's dist).
+Run: `npx vitest run` → PASS. `npm run typecheck` → PASS.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git commit -m "Let createScript author scripts in a subdirectory"
+```
+
+---
+
 ### Task 9: The proof — a procgen example on modules
 
 **Files:**
@@ -538,6 +597,13 @@ git commit -m "Add a procgen example built on a shared script library"
 - [ ] **Step 1: Write the docs**
 
 `docs/scripting.md` gains a **Script modules** section: `require('lib/noise')`, resolution rules, a library is just a script returning a table/object, same-language only, cycles error, the module-state-resets-on-reload caveat, and both a Lua and a JS example. Voice: plain and honest, no marketing. House tell to avoid: **em-dash overuse** — vary to periods/commas/parens.
+
+- [ ] **Step 1b: Update the agent-facing command surface docs**
+
+`docs/cli.md` (the `create script --dir` flag) and `docs/mcp.md` (the
+`create_script` `dir` param) must reflect Task 8b. An agent reads these to
+learn the surface exists; if `--dir` is undocumented, libraries are
+effectively invisible to it.
 
 - [ ] **Step 2: Teach the agents**
 
