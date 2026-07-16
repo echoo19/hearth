@@ -97,48 +97,27 @@
   min-height: 0;
 }
 
-.agent-toolbar .select {
-  min-width: 148px;
-}
-
-.agent-mode-hint {
-  padding: 0 10px 6px;
-  color: var(--ink-faint);
-  font-size: var(--text-xs);
-  border-bottom: 1px solid var(--border);
-  flex: none;
-}
-
-/* Quiet inline disclosure for the full permission enumeration — a real
-   button (keyboard reachable, global :focus-visible ring), styled as a
-   link so it reads as part of the hint line, not a control. */
-.agent-mode-details-toggle {
-  border: none;
-  background: none;
-  padding: 0;
-  color: var(--ink-faint);
-  font-size: var(--text-xs);
-  text-decoration: underline;
-  text-underline-offset: 2px;
-  cursor: pointer;
-}
-
-.agent-mode-details-toggle:hover {
-  color: var(--ink);
-}
-
-.agent-mode-details {
-  display: block;
-  margin-top: 2px;
-  max-width: 72ch;
-}
-
-.agent-prepare-error {
-  padding: 4px 10px;
-  color: var(--err);
+/* Session header (running / exited state): status dot + agent name + label,
+   then the "Launch again" / "Switch agent" / Stop / gear controls. */
+.agent-header .agent-header-title {
+  font-weight: 600;
   font-size: var(--text-sm);
-  white-space: pre-wrap;
+}
+
+.agent-status-dot {
   flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--ink-faint);
+}
+
+.agent-status-dot.agent-status-running {
+  background: var(--ok);
+}
+
+.agent-status-dot.agent-status-exited {
+  background: var(--ink-mute);
 }
 
 .agent-status {
@@ -155,16 +134,9 @@
   color: var(--ink-mute);
 }
 
-.agent-body {
-  display: flex;
-  flex: 1;
-  min-height: 0;
-  overflow: hidden;
-}
-
 .agent-terminal-pane {
-  flex: 1 1 65%;
-  min-width: 0;
+  flex: 1 1 auto;
+  min-height: 0;
   display: flex;
   background: var(--bg-0);
   padding: 6px 8px;
@@ -181,18 +153,9 @@
 }
 
 /* Task 6's activity timeline: the trust layer over the journal feed, plus
-   session controls (Snapshot / Review changes / Revert session). Works with
-   the terminal idle too — it's fed by the WS journal channel, not the pty. */
-.agent-side-rail {
-  flex: 0 0 35%;
-  max-width: 35%;
-  min-width: 220px;
-  min-height: 0;
-  display: flex;
-  border-left: 1px solid var(--border);
-  background: var(--bg-1);
-}
-
+   session controls (Snapshot / Review changes / Revert session). Lives under
+   the terminal in the collapsible Activity section (.agent-activity); it's fed
+   by the WS journal channel, not the pty, so it works with the terminal idle. */
 .agent-timeline {
   display: flex;
   flex-direction: column;
@@ -201,9 +164,8 @@
   width: 100%;
 }
 
-/* Three buttons don't fit on one line at the rail's own 220px minimum width
-   (unlike .agent-toolbar, which lives in a much wider row) — let them wrap
-   rather than clip under `.agent-body`'s overflow: hidden. */
+/* Three buttons don't always fit on one line in the ~380px agent dock — let
+   them wrap rather than clip. */
 .agent-timeline-toolbar {
   flex-wrap: wrap;
 }
@@ -291,15 +253,22 @@
   margin-right: 1px;
 }
 
-.agent-manual-setup {
+/* Collapsible Activity section under the terminal: the journal timeline plus
+   Checkpoint / Review / Restore. Collapsing hands its height to the terminal. */
+.agent-activity {
   flex: none;
-  border-top: 1px solid var(--border);
-  max-height: 40%;
   display: flex;
   flex-direction: column;
+  min-height: 0;
+  border-top: 1px solid var(--border);
+  background: var(--bg-1);
 }
 
-.agent-manual-toggle {
+.agent-activity:has(.agent-timeline) {
+  flex: 0 1 40%;
+}
+
+.agent-activity-toggle {
   display: flex;
   align-items: center;
   gap: 6px;
@@ -315,17 +284,25 @@
   flex: none;
 }
 
-.agent-manual-toggle:hover {
+.agent-activity-toggle:hover {
   background: var(--bg-2);
   color: var(--ink);
 }
 
-.agent-manual-toggle svg {
+.agent-activity-toggle svg {
   transition: transform var(--t) var(--ease-out);
 }
 
-.agent-manual-toggle[aria-expanded='true'] svg {
+.agent-activity-toggle[aria-expanded='true'] svg {
   transform: rotate(90deg);
+}
+
+.agent-manual-setup {
+  flex: none;
+  border-top: 1px solid var(--border);
+  max-height: 45%;
+  display: flex;
+  flex-direction: column;
 }
 
 .agent-manual-body {
