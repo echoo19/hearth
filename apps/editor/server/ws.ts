@@ -26,6 +26,7 @@ import { startJournalWatcher } from './journalWatcher.js';
 import { type ProjectServerContext, resolveToolPaths } from './projectServer.js';
 import { PtyManager, type PtyBackend, type PtyHandle } from './ptyManager.js';
 import { ensureHearthShim, hearthPtyEnv } from './hearthShim.js';
+import { loginShellPathEnv } from './agentSetup.js';
 import { isRequestAllowed } from './originGuard.js';
 
 /** Desktop-packaging stages, mirroring @hearth/shipping's PackageStage. */
@@ -93,22 +94,27 @@ export function attachWebSocket(httpServer: HttpServer, ctx: ProjectServerContex
   // that replaced it.
   const liveHandles = new Map<string, PtyHandle>();
 
-  // The pty environment, resolved once and memoized: process.env with the
-  // `hearth` CLI shim dir prepended to PATH, so every embedded-terminal session
-  // (bare shell or agent CLI) finds a working `hearth`. If the shim can't be
-  // built we fall back to process.env — the terminal still works, `hearth` just
-  // isn't guaranteed. Resolution is async (locate the packaged/standalone CLI +
+  // The pty environment, resolved once and memoized: process.env with PATH
+  // widened by the user's login-shell PATH (a Finder/GUI-launched app only
+  // gets the minimal system PATH — without this, spawning `claude`/`codex`
+  // in the pty ENOENTs even though the user has them installed; see
+  // loginShellPathEnv in agentSetup.ts) and with the `hearth` CLI shim dir
+  // prepended, so every embedded-terminal session (bare shell or agent CLI)
+  // finds a working `hearth`. Each half degrades independently to process.env
+  // — the terminal always works, `hearth`/agent CLIs just aren't guaranteed.
+  // Resolution is async (login shell + locate the packaged/standalone CLI +
   // write the shim), so callers await it before spawning.
   let ptyEnvPromise: Promise<NodeJS.ProcessEnv> | null = null;
   function getPtyEnv(): Promise<NodeJS.ProcessEnv> {
     if (!ptyEnvPromise) {
       ptyEnvPromise = (async () => {
+        const baseEnv = (await loginShellPathEnv()) ?? process.env; // never throws
         try {
           const toolPaths = await resolveToolPaths(ctx.repoRoot);
           const shimDir = await ensureHearthShim(toolPaths.cli);
-          return hearthPtyEnv(process.env, shimDir);
+          return hearthPtyEnv(baseEnv, shimDir);
         } catch {
-          return process.env;
+          return baseEnv;
         }
       })();
     }

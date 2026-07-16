@@ -37,6 +37,13 @@ import {
 const DETECT_TIMEOUT_MS = 3000;
 /** `codex mcp add` and `ollama list` shell out; give them a bit more room. */
 const PREPARE_TIMEOUT_MS = 15000;
+/**
+ * One-time login-shell spawn to learn the user's real PATH (see
+ * loginShellPathEnv). Heavier rc setups (nvm, mise, oh-my-zsh) can take
+ * seconds to initialize, so this gets more room than a `--version` probe;
+ * it runs at most once per server process and falls back cleanly on timeout.
+ */
+const LOGIN_SHELL_TIMEOUT_MS = 10000;
 
 export interface AgentDetection {
   found: boolean;
@@ -59,11 +66,14 @@ export interface DetectAgentsResult {
 /** The agent stacks the launcher can wire up (everything except a bare shell). */
 export type AgentTool = 'claude' | 'codex' | 'opencode' | 'hermes';
 
-/** Runs `bin args...`, capturing stdout, killing it if it outlives `timeoutMs`. */
+/** Runs `bin args...`, capturing stdout, killing it if it outlives `timeoutMs`.
+ * `env`, when given, replaces the child's environment (defaults to inheriting
+ * process.env) — used to re-run detection under the login-shell PATH. */
 function runWithTimeout(
   bin: string,
   args: string[],
   timeoutMs: number,
+  env?: NodeJS.ProcessEnv,
 ): Promise<{ code: number | null; stdout: string }> {
   return new Promise((resolve) => {
     let child;
@@ -74,7 +84,11 @@ function runWithTimeout(
       // opt in on win32. `bin`/`args` here are either hardcoded ('which'/'where'
       // /'--version'/'mcp add') or a path resolved from `where`/`which`'s own
       // output, never attacker input.
-      child = spawn(bin, args, { stdio: ['ignore', 'pipe', 'ignore'], shell: process.platform === 'win32' });
+      child = spawn(bin, args, {
+        stdio: ['ignore', 'pipe', 'ignore'],
+        shell: process.platform === 'win32',
+        ...(env ? { env } : {}),
+      });
     } catch {
       // Belt-and-suspenders: some spawn failures (invalid options, ENOENT in
       // certain Node/OS combos) throw synchronously instead of surfacing via
@@ -109,10 +123,113 @@ function runWithTimeout(
   });
 }
 
-/** Locates a binary on PATH the way a shell would (`which`/`where`). */
-async function whichBinary(name: string): Promise<string | null> {
+// ---------------------------------------------------------------------------
+// Login-shell PATH resolution
+// ---------------------------------------------------------------------------
+//
+// A GUI-launched app (Electron from Finder/.desktop) never sources the user's
+// shell rc files, so on macOS its PATH is just /usr/bin:/bin:/usr/sbin:/sbin —
+// which is missing ~/.local/bin (Claude Code's default install location),
+// /opt/homebrew/bin, nvm/mise/volta shims, etc. `which claude` under that PATH
+// reports "not installed" to a user who has it. The dev server (`npm run dev`)
+// runs from a terminal and never hits this, which is why it hides from tests.
+//
+// Fix (same approach as VS Code/Zed): once per process, ask the user's login
+// shell for its PATH and merge it into the env used to locate agent binaries.
+// Only consulted when a binary is NOT already findable on the current PATH,
+// so terminal-launched dev servers never pay for the shell spawn.
+
+const SHELL_ENV_BEGIN = '__HEARTH_SHELL_ENV_BEGIN__';
+const SHELL_ENV_END = '__HEARTH_SHELL_ENV_END__';
+// Hardcoded — nothing user-controlled is ever interpolated into this command.
+// `/usr/bin/env` (an absolute path, present on every POSIX system) prints
+// `PATH=...` in a shell-syntax-independent way, so this works under zsh, bash,
+// fish, etc. The markers fence our output off from rc-file banners/motd noise.
+const SHELL_ENV_COMMAND = `echo ${SHELL_ENV_BEGIN}; /usr/bin/env; echo ${SHELL_ENV_END}`;
+
+/**
+ * Extracts the PATH value from a login shell's (noisy) output: rc files may
+ * print banners before/after our block, so only lines between the last
+ * BEGIN marker and its matching END marker are considered. Exported for
+ * unit testing. Returns null when the markers or PATH line are missing.
+ */
+export function parseLoginShellPath(stdout: string): string | null {
+  const start = stdout.lastIndexOf(SHELL_ENV_BEGIN);
+  if (start === -1) return null;
+  const end = stdout.indexOf(SHELL_ENV_END, start + SHELL_ENV_BEGIN.length);
+  if (end === -1) return null;
+  const block = stdout.slice(start + SHELL_ENV_BEGIN.length, end);
+  for (const line of block.split(/\r?\n/)) {
+    if (line.startsWith('PATH=')) {
+      const value = line.slice('PATH='.length).trim();
+      return value || null;
+    }
+  }
+  return null;
+}
+
+/**
+ * Merges two PATH strings: every entry of `current` (in order, so anything
+ * the process was launched with keeps winning — dev-server overrides stay
+ * intact), then any login-shell entries not already present. Exported for
+ * unit testing.
+ */
+export function mergePathStrings(current: string, fromShell: string): string {
+  const seen = new Set<string>();
+  const merged: string[] = [];
+  for (const entry of [...current.split(path.delimiter), ...fromShell.split(path.delimiter)]) {
+    if (!entry || seen.has(entry)) continue;
+    seen.add(entry);
+    merged.push(entry);
+  }
+  return merged.join(path.delimiter);
+}
+
+let loginShellPathEnvPromise: Promise<NodeJS.ProcessEnv | null> | null = null;
+
+/** Test hook: clears the per-process login-shell PATH cache. */
+export function resetLoginShellPathCacheForTests(): void {
+  loginShellPathEnvPromise = null;
+}
+
+async function fetchLoginShellPathEnv(): Promise<NodeJS.ProcessEnv | null> {
+  // $SHELL is the user's own configured shell (same trust level as PATH
+  // itself; ptyManager already spawns it for the embedded terminal). GUI
+  // launchd/systemd sessions normally set it; fall back to the platform
+  // default login shell when absent.
+  const shell = process.env.SHELL || (process.platform === 'darwin' ? '/bin/zsh' : '/bin/bash');
+  // -i -l -c: interactive login shell, so BOTH profile files (.zprofile/
+  // .bash_profile — where PATH usually lives) and rc files (.zshrc — where
+  // version managers usually live) are sourced. Bounded by a hard timeout;
+  // any failure degrades to "no extra PATH" (today's behavior), never worse.
+  const { code, stdout } = await runWithTimeout(shell, ['-ilc', SHELL_ENV_COMMAND], LOGIN_SHELL_TIMEOUT_MS);
+  if (code !== 0) return null;
+  const shellPath = parseLoginShellPath(stdout);
+  if (!shellPath) return null;
+  const currentPath = process.env.PATH ?? '';
+  const merged = mergePathStrings(currentPath, shellPath);
+  if (merged === currentPath) return null; // nothing the current PATH doesn't already have
+  return { ...process.env, PATH: merged };
+}
+
+/**
+ * The process env with PATH widened by the user's login-shell PATH, or null
+ * when that adds nothing (or can't be resolved: Windows, timeout, no $SHELL
+ * binary, unparseable output). Cached for the process lifetime — the login
+ * shell is spawned at most once. Never throws.
+ */
+export function loginShellPathEnv(): Promise<NodeJS.ProcessEnv | null> {
+  if (process.platform === 'win32') return Promise.resolve(null); // GUI PATH is already correct there
+  if (!loginShellPathEnvPromise) {
+    loginShellPathEnvPromise = fetchLoginShellPathEnv().catch(() => null);
+  }
+  return loginShellPathEnvPromise;
+}
+
+/** Runs `which`/`where` for `name` under `env` (or the inherited env). */
+async function whichIn(name: string, env?: NodeJS.ProcessEnv): Promise<string | null> {
   const whichCmd = process.platform === 'win32' ? 'where' : 'which';
-  const { code, stdout } = await runWithTimeout(whichCmd, [name], DETECT_TIMEOUT_MS);
+  const { code, stdout } = await runWithTimeout(whichCmd, [name], DETECT_TIMEOUT_MS, env);
   if (code !== 0) return null;
   const first = stdout
     .split(/\r?\n/)
@@ -121,10 +238,28 @@ async function whichBinary(name: string): Promise<string | null> {
   return first ?? null;
 }
 
+/**
+ * Locates a binary the way the user's shell would: first on the process's own
+ * PATH (always sufficient for terminal-launched dev servers — no login shell
+ * is spawned in that case), then on the login-shell PATH for GUI-launched
+ * apps. Also returns the env that found it, so follow-up spawns of the binary
+ * (e.g. `--version`, `ollama list`, npm-shim launchers that need `node` on
+ * PATH) run under a PATH where the binary and its runtime actually resolve.
+ */
+async function whichBinaryWithEnv(
+  name: string,
+): Promise<{ bin: string | null; env?: NodeJS.ProcessEnv }> {
+  const direct = await whichIn(name);
+  if (direct) return { bin: direct };
+  const shellEnv = await loginShellPathEnv();
+  if (!shellEnv) return { bin: null };
+  return { bin: await whichIn(name, shellEnv), env: shellEnv };
+}
+
 async function detectOne(bin: string): Promise<AgentDetection> {
-  const resolved = await whichBinary(bin);
+  const { bin: resolved, env } = await whichBinaryWithEnv(bin);
   if (!resolved) return { found: false };
-  const { code, stdout } = await runWithTimeout(resolved, ['--version'], DETECT_TIMEOUT_MS);
+  const { code, stdout } = await runWithTimeout(resolved, ['--version'], DETECT_TIMEOUT_MS, env);
   if (code !== 0) return { found: true };
   const version = stdout.trim();
   return { found: true, version: version || undefined };
@@ -148,13 +283,13 @@ export function parseOllamaModels(stdout: string): string[] {
 }
 
 async function detectOllama(): Promise<OllamaDetection> {
-  const resolved = await whichBinary('ollama');
+  const { bin: resolved, env } = await whichBinaryWithEnv('ollama');
   if (!resolved) return { found: false };
-  const { code, stdout } = await runWithTimeout(resolved, ['--version'], DETECT_TIMEOUT_MS);
+  const { code, stdout } = await runWithTimeout(resolved, ['--version'], DETECT_TIMEOUT_MS, env);
   const version = code === 0 ? stdout.trim() || undefined : undefined;
   // `ollama list` needs the daemon; if it's down this errors/empties out —
   // that's fine, we still report ollama as installed, just with no models.
-  const listed = await runWithTimeout(resolved, ['list'], DETECT_TIMEOUT_MS);
+  const listed = await runWithTimeout(resolved, ['list'], DETECT_TIMEOUT_MS, env);
   const models = listed.code === 0 ? parseOllamaModels(listed.stdout) : [];
   return { found: true, version, models };
 }
@@ -362,15 +497,15 @@ export async function prepareCodexConfig(
   mode: AgentPermissionMode,
 ): Promise<PrepareToolResult> {
   const configPath = path.join(os.homedir(), '.codex', 'config.toml');
-  const bin = await whichBinary('codex');
+  const { bin, env } = await whichBinaryWithEnv('codex');
   if (!bin) {
     throw new Error('codex is not on PATH — install Codex or pick another launcher.');
   }
-  const existing = await runWithTimeout(bin, ['mcp', 'get', 'hearth'], DETECT_TIMEOUT_MS);
+  const existing = await runWithTimeout(bin, ['mcp', 'get', 'hearth'], DETECT_TIMEOUT_MS, env);
   if (existing.code === 0 && codexAlreadyConfigured(existing.stdout, mcpPath, root, mode)) {
     return { written: false, alreadyConfigured: true, configPath, note: '~/.codex/config.toml already configured.' };
   }
-  const add = await runWithTimeout(bin, codexAddArgv(mcpPath, root, mode), PREPARE_TIMEOUT_MS);
+  const add = await runWithTimeout(bin, codexAddArgv(mcpPath, root, mode), PREPARE_TIMEOUT_MS, env);
   if (add.code !== 0) {
     throw new Error(`codex mcp add failed (exit ${add.code ?? 'timeout'}).`);
   }

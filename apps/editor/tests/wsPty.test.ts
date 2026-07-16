@@ -14,6 +14,7 @@ import { createProject } from '@hearth/core';
 import { NodeFileSystem } from '@hearth/core/node';
 import { createProjectServerContext, type ProjectServerContext } from '../server/projectServer';
 import { attachWebSocket, type WsFrame } from '../server/ws';
+import { resetLoginShellPathCacheForTests } from '../server/agentSetup';
 import type { PtyBackend, PtyHandle } from '../server/ptyManager';
 
 function wait(ms: number): Promise<void> {
@@ -51,7 +52,12 @@ class FakePtyHandle implements PtyHandle {
 }
 
 class FakeBackend implements PtyBackend {
-  spawns: Array<{ file: string; args: string[]; opts: { cwd: string }; handle: FakePtyHandle }> = [];
+  spawns: Array<{
+    file: string;
+    args: string[];
+    opts: { cwd: string; cols: number; rows: number; env: NodeJS.ProcessEnv };
+    handle: FakePtyHandle;
+  }> = [];
   spawn(file: string, args: string[], opts: { cwd: string; cols: number; rows: number; env: NodeJS.ProcessEnv }): PtyHandle {
     const handle = new FakePtyHandle();
     this.spawns.push({ file, args, opts, handle });
@@ -66,7 +72,17 @@ let server: http.Server;
 let baseUrl: string;
 let backend: FakeBackend;
 
+let savedShell: string | undefined;
+
 beforeAll(async () => {
+  // The pty env now consults the user's login shell for its PATH (the
+  // GUI-launched-app fix in ws.ts/agentSetup.ts). Keep this suite hermetic
+  // and timing-stable: point $SHELL at an inert binary so no real rc files
+  // ever run here, and clear the per-process cache.
+  savedShell = process.env.SHELL;
+  process.env.SHELL = '/usr/bin/false';
+  resetLoginShellPathCacheForTests();
+
   tmpDir = await fsp.mkdtemp(path.join(os.tmpdir(), 'hearth-ws-pty-test-'));
   const nodeFs = new NodeFileSystem();
   projectRoot = path.join(tmpDir, 'proj');
@@ -91,6 +107,9 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
+  if (savedShell === undefined) delete process.env.SHELL;
+  else process.env.SHELL = savedShell;
+  resetLoginShellPathCacheForTests();
   await new Promise<void>((resolve) => server.close(() => resolve()));
   await fsp.rm(tmpDir, { recursive: true, force: true });
 });
@@ -255,4 +274,71 @@ describe('pty-* frame routing over /api/ws', () => {
     client.close();
     await wait(50);
   });
+});
+
+describe('pty env under a GUI-app (minimal) PATH', () => {
+  // A Finder-launched Electron app gets only the system PATH; the pty must be
+  // spawned with the login-shell PATH merged in, or `claude`/`codex`/`hearth`
+  // ENOENT for every real desktop user. Own server instance: getPtyEnv is
+  // memoized per attachWebSocket, and the login-shell cache is per-process.
+  it.skipIf(process.platform === 'win32')(
+    'merges the login-shell PATH into the env the pty is spawned with',
+    async () => {
+      const fakeBinDir = path.join(tmpDir, 'login-only-bin');
+      await fsp.mkdir(fakeBinDir, { recursive: true });
+      const fakeShell = path.join(tmpDir, 'fake-login-shell');
+      await fsp.writeFile(
+        fakeShell,
+        '#!/bin/sh\n' +
+          'echo "rc banner noise"\n' +
+          `PATH="${fakeBinDir}:$PATH"\n` +
+          'export PATH\n' +
+          'for last in "$@"; do :; done\n' +
+          'eval "$last"\n',
+      );
+      await fsp.chmod(fakeShell, 0o755);
+
+      const prevShell = process.env.SHELL;
+      process.env.SHELL = fakeShell;
+      resetLoginShellPathCacheForTests();
+
+      const ownBackend = new FakeBackend();
+      const ownServer = http.createServer((_req, res) => {
+        res.statusCode = 404;
+        res.end();
+      });
+      attachWebSocket(ownServer, ctx, ownBackend);
+      await new Promise<void>((resolve) => ownServer.listen(0, '127.0.0.1', resolve));
+      const address = ownServer.address();
+      const port = typeof address === 'object' && address ? address.port : 0;
+
+      try {
+        const client = await new Promise<WebSocket>((resolve, reject) => {
+          const c = new WebSocket(
+            `ws://127.0.0.1:${port}/api/ws?project=${encodeURIComponent(projectRoot)}`,
+          );
+          c.on('open', () => resolve(c));
+          c.on('error', reject);
+        });
+        client.send(JSON.stringify({ type: 'pty-start', command: 'claude' }));
+        // The first pty-start resolves the login shell + hearth shim; poll
+        // instead of a fixed wait so a slow spawn can't flake this.
+        let spawned = ownBackend.spawns.length > 0;
+        for (let i = 0; i < 100 && !spawned; i++) {
+          await wait(50);
+          spawned = ownBackend.spawns.length > 0;
+        }
+        expect(spawned).toBe(true);
+        const env = ownBackend.spawns[0].opts.env;
+        expect(env.PATH?.split(path.delimiter)).toContain(fakeBinDir);
+        client.close();
+        await wait(50);
+      } finally {
+        if (prevShell === undefined) delete process.env.SHELL;
+        else process.env.SHELL = prevShell;
+        resetLoginShellPathCacheForTests();
+        await new Promise<void>((resolve) => ownServer.close(() => resolve()));
+      }
+    },
+  );
 });

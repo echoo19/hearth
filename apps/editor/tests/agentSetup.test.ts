@@ -18,6 +18,10 @@ import {
   codexAddArgv,
   codexAlreadyConfigured,
   parseOllamaModels,
+  parseLoginShellPath,
+  mergePathStrings,
+  loginShellPathEnv,
+  resetLoginShellPathCacheForTests,
   ensureAgentSkill,
   McpConfigParseError,
 } from '../server/agentSetup';
@@ -26,15 +30,26 @@ import { AGENT_SKILL_CONTENT, AGENT_SKILL_FILE, AGENT_CRAFT_SKILL_FILE } from '@
 
 let tmpDir: string;
 let savedPath: string | undefined;
+let savedShell: string | undefined;
 
 beforeEach(async () => {
   tmpDir = await fsp.mkdtemp(path.join(os.tmpdir(), 'hearth-agentsetup-'));
   savedPath = process.env.PATH;
+  savedShell = process.env.SHELL;
+  // Hermetic by default: detection now consults the user's login shell as a
+  // PATH fallback (the GUI-launched-app fix), which on a dev machine would
+  // find the REAL installed CLIs. Point $SHELL at an inert binary so only
+  // tests that opt in (with a fake login shell) exercise that fallback, and
+  // clear the per-process cache so no test sees another's resolved PATH.
+  process.env.SHELL = '/usr/bin/false';
+  resetLoginShellPathCacheForTests();
 });
 
 afterEach(async () => {
   if (savedPath === undefined) delete process.env.PATH;
   else process.env.PATH = savedPath;
+  if (savedShell === undefined) delete process.env.SHELL;
+  else process.env.SHELL = savedShell;
   await fsp.rm(tmpDir, { recursive: true, force: true });
 });
 
@@ -111,6 +126,178 @@ describe('detectAgents', () => {
       expect(result.codex.found).toBe(false);
     },
   );
+});
+
+describe('login-shell PATH fallback (GUI-launched app environment)', () => {
+  // Simulates the Finder-launched Electron case: the server process has the
+  // minimal macOS GUI PATH (/usr/bin:/bin:/usr/sbin:/sbin) and the agent CLI
+  // lives somewhere only the user's login shell knows about (~/.local/bin,
+  // /opt/homebrew/bin, ...). Detection must consult the login shell ($SHELL)
+  // for the real PATH instead of reporting "not installed".
+  it.skipIf(process.platform === 'win32')(
+    'finds a binary that is only on the login-shell PATH, not the process PATH',
+    async () => {
+      // A fake `claude` in a dir that is NOT on the (minimal) process PATH.
+      const outsideBin = path.join(tmpDir, 'outside-bin');
+      await fsp.mkdir(outsideBin, { recursive: true });
+      const claude = path.join(outsideBin, 'claude');
+      await fsp.writeFile(
+        claude,
+        '#!/bin/sh\nif [ "$1" = "--version" ]; then echo "claude-fake 9.9.9"; exit 0; fi\nexit 1\n',
+      );
+      await fsp.chmod(claude, 0o755);
+
+      // A fake login shell: prints rc-file banner noise, then exposes a PATH
+      // containing outsideBin, then evals the command it was given (the last
+      // argument, whatever flag spelling the resolver uses).
+      const fakeShell = path.join(tmpDir, 'fake-login-shell');
+      await fsp.writeFile(
+        fakeShell,
+        '#!/bin/sh\n' +
+          'echo "Last login: Tue Jul 15 09:00:00 on ttys001"\n' +
+          'echo "some .zshrc banner noise"\n' +
+          `PATH="${outsideBin}:${SYSTEM_DIRS.join(':')}"\n` +
+          'export PATH\n' +
+          'for last in "$@"; do :; done\n' +
+          'eval "$last"\n',
+      );
+      await fsp.chmod(fakeShell, 0o755);
+
+      process.env.PATH = SYSTEM_DIRS.join(path.delimiter); // GUI-app minimal PATH
+      process.env.SHELL = fakeShell;
+
+      const result = await detectAgents();
+      expect(result.claude.found).toBe(true);
+      expect(result.claude.version).toBe('claude-fake 9.9.9');
+    },
+  );
+
+  it.skipIf(process.platform === 'win32')(
+    'spawns the login shell at most once per process (cached across detects)',
+    async () => {
+      const countFile = path.join(tmpDir, 'shell-spawn-count');
+      const fakeShell = path.join(tmpDir, 'counting-shell');
+      await fsp.writeFile(
+        fakeShell,
+        '#!/bin/sh\n' +
+          `echo x >> "${countFile}"\n` +
+          'for last in "$@"; do :; done\n' +
+          'eval "$last"\n',
+      );
+      await fsp.chmod(fakeShell, 0o755);
+
+      process.env.PATH = SYSTEM_DIRS.join(path.delimiter);
+      process.env.SHELL = fakeShell;
+
+      // Two full detects: 5 tools each, all missing → every probe hits the
+      // login-shell fallback. The shell must still only ever run once.
+      await detectAgents();
+      await detectAgents();
+      const spawns = (await fsp.readFile(countFile, 'utf8')).split('\n').filter(Boolean);
+      expect(spawns.length).toBe(1);
+    },
+  );
+
+  it.skipIf(process.platform === 'win32')(
+    'degrades to plain PATH detection when the login shell fails (no throw, no hang)',
+    async () => {
+      process.env.PATH = SYSTEM_DIRS.join(path.delimiter);
+      process.env.SHELL = path.join(tmpDir, 'does-not-exist-shell');
+      const result = await detectAgents();
+      expect(result.claude.found).toBe(false);
+    },
+  );
+
+  it.skipIf(process.platform === 'win32')(
+    'never spawns the login shell when the binary is already on the process PATH (dev-server case)',
+    async () => {
+      const binDir = path.join(tmpDir, 'bin');
+      await fsp.mkdir(binDir, { recursive: true });
+      const claude = path.join(binDir, 'claude');
+      await fsp.writeFile(
+        claude,
+        '#!/bin/sh\nif [ "$1" = "--version" ]; then echo "dev 1.0.0"; exit 0; fi\nexit 1\n',
+      );
+      await fsp.chmod(claude, 0o755);
+
+      const countFile = path.join(tmpDir, 'shell-spawn-count');
+      const fakeShell = path.join(tmpDir, 'counting-shell');
+      await fsp.writeFile(
+        fakeShell,
+        '#!/bin/sh\n' +
+          `echo x >> "${countFile}"\n` +
+          'for last in "$@"; do :; done\n' +
+          'eval "$last"\n',
+      );
+      await fsp.chmod(fakeShell, 0o755);
+
+      process.env.PATH = [binDir, ...SYSTEM_DIRS].join(path.delimiter);
+      process.env.SHELL = fakeShell;
+
+      // claude resolves directly; only the four missing tools may fall back.
+      const { claude: detected } = await detectAgents();
+      expect(detected.found).toBe(true);
+      expect(detected.version).toBe('dev 1.0.0');
+      // Direct-hit probes must not have consulted the shell for claude — but
+      // proving "zero shell spawns for found binaries" needs a PATH where
+      // EVERY tool resolves directly:
+      resetLoginShellPathCacheForTests();
+      for (const tool of ['codex', 'opencode', 'hermes', 'ollama']) {
+        await fsp.copyFile(claude, path.join(binDir, tool));
+        await fsp.chmod(path.join(binDir, tool), 0o755);
+      }
+      await fsp.rm(countFile, { force: true });
+      const all = await detectAgents();
+      expect(all.codex.found).toBe(true);
+      await expect(fsp.readFile(countFile, 'utf8')).rejects.toThrow(); // shell never ran
+    },
+  );
+
+  it('loginShellPathEnv returns null when the shell PATH adds nothing new', async () => {
+    if (process.platform === 'win32') return;
+    const fakeShell = path.join(tmpDir, 'same-path-shell');
+    await fsp.writeFile(
+      fakeShell,
+      '#!/bin/sh\nfor last in "$@"; do :; done\neval "$last"\n', // inherits our PATH unchanged
+    );
+    await fsp.chmod(fakeShell, 0o755);
+    process.env.PATH = SYSTEM_DIRS.join(path.delimiter);
+    process.env.SHELL = fakeShell;
+    resetLoginShellPathCacheForTests();
+    expect(await loginShellPathEnv()).toBeNull();
+  });
+});
+
+describe('parseLoginShellPath', () => {
+  const BEGIN = '__HEARTH_SHELL_ENV_BEGIN__';
+  const END = '__HEARTH_SHELL_ENV_END__';
+
+  it('extracts PATH from marker-fenced env output surrounded by rc banner noise', () => {
+    const out =
+      'Last login: Tue Jul 15\nsome motd\n' +
+      `${BEGIN}\nHOME=/Users/x\nPATH=/opt/homebrew/bin:/usr/bin:/bin\nTERM=dumb\n${END}\n` +
+      'trailing rc noise\n';
+    expect(parseLoginShellPath(out)).toBe('/opt/homebrew/bin:/usr/bin:/bin');
+  });
+
+  it('returns null when markers or the PATH line are missing', () => {
+    expect(parseLoginShellPath('')).toBeNull();
+    expect(parseLoginShellPath('PATH=/usr/bin\n')).toBeNull(); // unfenced
+    expect(parseLoginShellPath(`${BEGIN}\nHOME=/Users/x\n${END}\n`)).toBeNull(); // no PATH line
+    expect(parseLoginShellPath(`${BEGIN}\nPATH=/usr/bin\n`)).toBeNull(); // END never printed
+  });
+});
+
+describe('mergePathStrings', () => {
+  it('keeps current-PATH entries first and appends shell-only entries, deduped', () => {
+    expect(mergePathStrings('/usr/bin:/bin', '/opt/homebrew/bin:/usr/bin:/Users/x/.local/bin')).toBe(
+      '/usr/bin:/bin:/opt/homebrew/bin:/Users/x/.local/bin',
+    );
+  });
+
+  it('drops empty entries', () => {
+    expect(mergePathStrings('/usr/bin::', ':/bin:')).toBe('/usr/bin:/bin');
+  });
 });
 
 describe('prepareMcpConfig', () => {
