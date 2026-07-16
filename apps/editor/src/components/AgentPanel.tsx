@@ -1,4 +1,4 @@
-import React, { Suspense, lazy, useEffect, useRef, useState, type ReactElement } from 'react';
+import React, { Suspense, lazy, useEffect, useRef, useState } from 'react';
 import { PERMISSION_DOCS, PERMISSION_MODES } from '@hearth/core';
 import { useEditor } from '../store';
 import { apiPrepareAgent } from '../api';
@@ -6,7 +6,7 @@ import type { AgentPermissionMode, DetectAgentsResult } from '../../server/agent
 import { CodeBlock, Icon } from './ui';
 import { Button } from './ui/Button';
 import { Tooltip } from './ui/Tooltip';
-import { AGENT_LAUNCHER_LABELS, describeLauncher, type AgentLauncher } from './agent/Launcher';
+import { AGENT_LAUNCHER_LABELS, DisabledHint, describeLauncher, type AgentLauncher } from './agent/Launcher';
 import { Timeline } from './agent/Timeline';
 import { getAgentSessionSummary, planClaudeStart, useAgentSocket, type AgentSessionSummary } from './agent/useAgentSocket';
 
@@ -137,24 +137,6 @@ function statusLabel(session: AgentSessionSummary): string {
     default:
       return '';
   }
-}
-
-/**
- * Wraps a disabled control in a Tooltip + focusable span, matching
- * Inspector.tsx's `AutotileRuleFields` "disabledReason" pattern — a disabled
- * native control (`<select disabled>`, `<button disabled>`) doesn't
- * reliably surface hover/focus for its own Tooltip, so the wrapper carries
- * it instead. Renders `children` bare when there's no reason.
- */
-function DisabledHint({ reason, children }: { reason: string | null; children: ReactElement }) {
-  if (!reason) return children;
-  return (
-    <Tooltip content={reason}>
-      <span tabIndex={0} style={{ display: 'inline-flex' }}>
-        {children}
-      </span>
-    </Tooltip>
-  );
 }
 
 export function AgentPanel() {

@@ -3,11 +3,37 @@
  * Presentational — AgentPanel owns the store wiring, detection, prepare and
  * pty calls, and passes state down. Pure helpers exported for unit tests.
  */
-import React from 'react';
+import React, { type ReactElement } from 'react';
 import type { DetectAgentsResult } from '../../../server/agentSetup';
 import { Icon } from '../ui';
 import { Button } from '../ui/Button';
 import { Tooltip } from '../ui/Tooltip';
+
+/**
+ * Wraps a disabled control in a Tooltip + focusable span, matching
+ * Inspector.tsx's `AutotileRuleFields` "disabledReason" pattern — a disabled
+ * native control (`<select disabled>`, `<button disabled>`) doesn't
+ * reliably surface hover/focus for its own Tooltip, so the wrapper carries
+ * it instead. Renders `children` bare when there's no reason (the caller is
+ * expected to give the control its OWN Tooltip for the enabled case, since
+ * this helper has nothing useful to show then).
+ *
+ * Moved here (was AgentPanel.tsx-local) so the ready-tile launch button and
+ * the plain-terminal row can share it: both wrap a natively `disabled`
+ * button, which never surfaces hover/focus for its own Tooltip, so the
+ * "why" (e.g. "Open a project first.") would otherwise silently never show.
+ * AgentPanel.tsx imports it back from here rather than keeping its own copy.
+ */
+export function DisabledHint({ reason, children }: { reason: string | null; children: ReactElement }) {
+  if (!reason) return children;
+  return (
+    <Tooltip content={reason}>
+      <span tabIndex={0} style={{ display: 'inline-flex' }}>
+        {children}
+      </span>
+    </Tooltip>
+  );
+}
 
 export type AgentLauncher = 'claude' | 'codex' | 'opencode' | 'hermes' | 'shell';
 /** The launchers that wire up a Hearth MCP config (everything except shell). */
@@ -116,6 +142,16 @@ export function Launcher({
   onLaunch, onInstall, onRetryDetect,
 }: LauncherProps) {
   const busy = pending !== null;
+  const terminalButton = (
+    <button
+      type="button"
+      className="agent-terminal-row"
+      disabled={disabledReason !== null || busy}
+      onClick={() => onLaunch('shell')}
+    >
+      Open a plain terminal
+    </button>
+  );
   return (
     <div className="agent-launcher">
       <div className="agent-launcher-hero">
@@ -132,53 +168,55 @@ export function Launcher({
         </div>
       ) : (
         <div className="agent-tiles">
-          {tiles.map((tile) => (
-            <div key={tile.id} className={`agent-tile agent-tile-${tile.status}`}>
-              {tile.status === 'ready' ? (
-                <Tooltip content={disabledReason ?? tile.hint}>
-                  <button
-                    type="button"
-                    className="agent-tile-launch"
-                    disabled={disabledReason !== null || busy}
-                    onClick={() => onLaunch(tile.id)}
-                  >
-                    <Icon name="play" size={12} />
-                    <span className="agent-tile-label">{tile.label}</span>
-                    <span className="agent-tile-state">{pending === tile.id ? 'Preparing…' : ''}</span>
-                  </button>
-                </Tooltip>
-              ) : (
-                <Tooltip content={tile.hint}>
-                  <div className="agent-tile-static" tabIndex={0}>
-                    <span className="agent-tile-label">{tile.label}</span>
-                    {tile.status === 'checking' ? (
-                      <span className="agent-tile-state">Checking…</span>
-                    ) : tile.installCommand ? (
-                      <Button size="sm" onClick={() => onInstall(tile)} disabled={disabledReason !== null || busy}>
-                        Install
-                      </Button>
-                    ) : (
-                      <span className="agent-tile-state">Not installed</span>
-                    )}
-                  </div>
-                </Tooltip>
-              )}
-              {errors[tile.id] && <div className="agent-tile-error">{errors[tile.id]}</div>}
-            </div>
-          ))}
+          {tiles.map((tile) => {
+            const launchButton = (
+              <button
+                type="button"
+                className="agent-tile-launch"
+                disabled={disabledReason !== null || busy}
+                onClick={() => onLaunch(tile.id)}
+              >
+                <Icon name="play" size={12} />
+                <span className="agent-tile-label">{tile.label}</span>
+                <span className="agent-tile-state">{pending === tile.id ? 'Preparing…' : ''}</span>
+              </button>
+            );
+            return (
+              <div key={tile.id} className={`agent-tile agent-tile-${tile.status}`}>
+                {tile.status === 'ready' ? (
+                  disabledReason !== null ? (
+                    <DisabledHint reason={disabledReason}>{launchButton}</DisabledHint>
+                  ) : (
+                    <Tooltip content={tile.hint}>{launchButton}</Tooltip>
+                  )
+                ) : (
+                  <Tooltip content={tile.hint}>
+                    <div className="agent-tile-static" tabIndex={0}>
+                      <span className="agent-tile-label">{tile.label}</span>
+                      {tile.status === 'checking' ? (
+                        <span className="agent-tile-state">Checking…</span>
+                      ) : tile.installCommand ? (
+                        <Button size="sm" onClick={() => onInstall(tile)} disabled={disabledReason !== null || busy}>
+                          Install
+                        </Button>
+                      ) : (
+                        <span className="agent-tile-state">Not installed</span>
+                      )}
+                    </div>
+                  </Tooltip>
+                )}
+                {errors[tile.id] && <div className="agent-tile-error">{errors[tile.id]}</div>}
+              </div>
+            );
+          })}
         </div>
       )}
 
-      <Tooltip content={describeLauncher('shell', [])}>
-        <button
-          type="button"
-          className="agent-terminal-row"
-          disabled={disabledReason !== null || busy}
-          onClick={() => onLaunch('shell')}
-        >
-          Open a plain terminal
-        </button>
-      </Tooltip>
+      {disabledReason !== null ? (
+        <DisabledHint reason={disabledReason}>{terminalButton}</DisabledHint>
+      ) : (
+        <Tooltip content={describeLauncher('shell', [])}>{terminalButton}</Tooltip>
+      )}
       {errors.shell && <div className="agent-tile-error">{errors.shell}</div>}
 
       <div className="agent-launcher-foot">
