@@ -1,7 +1,15 @@
 # Hearth Roadmap
 
-v0.14 is the current milestone. Its release, v0.14.0 (shipped, below,
-"Tightening"), adds no new engine features — 129 commits that make the
+**v1.0.0 is the current release.** It closes the road to 1.0 with the final
+hardening wave: a project-format stability guarantee (an automatic migration
+rail, strict version-stamp rules, upgrade tests against 0.13/0.14 projects),
+a native close guard for unsaved script edits, a performance regression
+fence in CI, and a docs completeness pass — see
+[Wave M](#wave-m--final-hardening--verification-shipped-v100) below. Before
+it, v0.15.0's agent game-craft wave (Wave L2, below) sharpened how agents
+actually make games. What follows is the running history.
+
+v0.14.0 ("Tightening", below) added no new engine features — 129 commits that make the
 editor *work properly everywhere*, front-load the workflows, and unify the
 design language, driven by a 16-surface live audit (a 121-entry ledger, 100
 fixed, every entry dispositioned) and closed by six independent re-audits.
@@ -681,10 +689,11 @@ The end goal, stated so every release aims at it: **a solo dev or an agent
 can take a 2D game from empty project to a polished, distributable game
 without leaving the tool or hitting a wall.** The feature set is complete:
 v0.13's ship-your-game wave closed the last feature gap, v0.14's tightening
-wave made every surface actually work, and v0.15's game-craft wave sharpened
-how agents make games with those tools. One step remains before 1.0. Each
-release completed a loop rather than scattering features; anything that
-didn't serve that loop waited (see Non-goals) and still does.
+wave made every surface actually work, v0.15's game-craft wave sharpened
+how agents make games with those tools, and v1.0.0's hardening wave sealed
+the guarantees. Each release completed a loop rather than scattering
+features; anything that didn't serve that loop waited (see Non-goals) and
+still does.
 
 ### Wave L2 — agent game-craft (shipped v0.15.0)
 
@@ -723,13 +732,30 @@ now that every tool works and each project ships the house skill.
 - Counts unchanged: **71 commands**, **72 MCP tools** — no new engine
   commands this wave. No format changes; v0.14 projects open unchanged.
 
-### Wave M — final hardening & verification (v1.0)
+### Wave M — final hardening & verification (shipped v1.0.0)
 
-No features. A project-format stability guarantee (documented migrations,
-upgrade tests — including advancing the `hearthVersion` stamp when older
-projects are edited), docs completeness, performance regression fences, the
-deferred L-114 native window-close/Cmd+Q unsaved-scripts intercept and the
-rest of the deferred-M bug tail, and onboarding polish. Then 1.0.
+No features. The format-stability guarantee is now real and documented (see
+[project-format.md](./project-format.md#format-stability-and-migrations)):
+projects load through an automatic migration rail (empty today, by design —
+the point is the tested mechanism 1.0 promises), a project stamped newer
+than the engine is rejected with `UNSUPPORTED_PROJECT_VERSION` instead of
+being silently mangled, opening an older project never writes to disk, and
+the first edit advances its `hearthVersion` stamp — all covered by upgrade
+tests against real 0.13.0 and 0.14.0 fixtures. Closing the window (or Cmd+Q,
+or the browser tab) with unsaved script edits now confirms before discarding
+— the one non-autosave surface no longer loses work silently. CI gained a
+performance regression fence: the bench harness's two heaviest scenarios run
+three times and fail the build if the median exceeds loose absolute budgets,
+a tripwire for order-of-magnitude losses (like losing the spatial-hash
+broadphase), not a profiling target. A docs completeness pass closed real
+gaps: twelve MCP tool names were missing from [mcp.md](./mcp.md),
+[cli.md](./cli.md) gained the full validation-code list, and the README's
+getting-started commands were re-verified against the shipping CLI. The Pixi
+loader also gets an explicit format hint for the editor's extensionless
+asset URLs, retiring a long-standing console warning. Remaining editor
+ergonomics ideas (hierarchy multi-select, tree filtering, a dedicated
+tilemap-grid editor) moved to the parallel track below rather than blocking
+1.0.
 
 ## Parallel track / post-1.0
 
