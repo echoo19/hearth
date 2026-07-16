@@ -402,7 +402,7 @@ describe('next-step hints (F-1 / F-3, L-118 export-friction reaudit)', () => {
   });
 
   it('tells the desktop pane the build just needs unzipping and double-clicking', () => {
-    expect(desktopNextStepHint()).toBe('Unzip and share — players double-click the app.');
+    expect(desktopNextStepHint()).toBe('Unzip and share. Players double-click the app.');
   });
 
   it('adds a Gatekeeper note only when a finished build targets macOS', () => {

@@ -338,7 +338,7 @@ export const syncPrefabInstances = defineCommand({
     'Rebuild every marked instance of a prefab (all scenes, or one scene via `scene`) from the current prefab ' +
     "asset payload: each instance root keeps its id, name, Transform.position, and enabled state; the root's " +
     'descendants are deleted and rebuilt from the payload. If one instance is nested inside another instance of ' +
-    'the same prefab, only the outermost is rebuilt as an instance — the nested one is rebuilt as a plain child ' +
+    'the same prefab, only the outermost is rebuilt as an instance. The nested one is rebuilt as a plain child ' +
     'of the outer instance (it loses its own marker).',
   permission: 'asset-edit',
   mutates: true,

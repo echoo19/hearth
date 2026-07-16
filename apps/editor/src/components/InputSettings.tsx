@@ -94,9 +94,9 @@ export function nameConflictMessage(
 ): string | null {
   const name = rawName.trim();
   if (currentName !== undefined && name === currentName) return null;
-  if (!name) return 'Name can’t be empty.';
+  if (!name) return "Name can't be empty.";
   if (taken.some((map) => has(map, name)))
-    return `${kind === 'action' ? 'An action' : 'An axis'} named “${name}” already exists.`;
+    return `${kind === 'action' ? 'An action' : 'An axis'} named "${name}" already exists.`;
   return null;
 }
 
@@ -155,7 +155,7 @@ function CaptureButton({
       <Button size="sm" className={armed ? 'btn-capture-armed' : undefined} onClick={armed ? onCancel : onArm}>
         {armed ? 'Press any key…' : label}
       </Button>
-      {armed && <span className="capture-hint">Esc cancels — Escape itself can't be bound here.</span>}
+      {armed && <span className="capture-hint">Esc cancels. Escape itself can't be bound here.</span>}
     </>
   );
 }
@@ -167,7 +167,7 @@ function GamepadButtonAdd({ bound, onAdd }: { bound: string[]; onAdd: (name: str
     // design — a named pick works with no controller plugged in (unlike the
     // keyboard's press-to-capture, which needs the physical key event). The
     // tooltip explains why there's no "press a button…" counterpart.
-    <Tooltip content="Pick by standard-layout name — works without a controller connected">
+    <Tooltip content="Pick by standard-layout name. Works without a controller connected">
       <select
         className="select"
         value=""
@@ -473,7 +473,7 @@ export function InputSettings() {
     pendingWrites.current += 1;
     exec('updateSettings', { inputMappings: result.patch }, { quiet: true }).then(
       (settled) => setEditError(updateSettingsErrorMessage(settled)),
-      () => setEditError("That change didn't save — check your connection."),
+      () => setEditError("That change didn't save. Check your connection."),
     ).finally(() => {
       pendingWrites.current -= 1;
       if (pendingWrites.current === 0) {
@@ -770,14 +770,14 @@ export function InputSettings() {
       {captureNotice && <div className="capture-notice">{captureNotice}</div>}
       {playing && editedDuringPlay && (
         <div className="capture-notice" role="status">
-          The running preview keeps the mappings it started with — restart Play to feel these changes.
+          The running preview keeps the mappings it started with. Restart Play to feel these changes.
         </div>
       )}
       <div className="panel-body">
         <div className="diff-section">
           <h4>Actions</h4>
           {actionNames.length === 0 && (
-            <div className="chip-list-empty">No actions yet — add one below and bind a key or gamepad button to it.</div>
+            <div className="chip-list-empty">No actions yet. Add one below and bind a key or gamepad button to it.</div>
           )}
           {actionNames.map((name) => (
             <ActionRow
@@ -825,7 +825,7 @@ export function InputSettings() {
           <h4>Virtual axes</h4>
           {axisNames.length === 0 && (
             <div className="chip-list-empty">
-              No virtual axes yet — add one below for analog movement, like a joystick or WASD pair.
+              No virtual axes yet. Add one below for analog movement, like a joystick or WASD pair.
             </div>
           )}
           {axisNames.map((name) => (

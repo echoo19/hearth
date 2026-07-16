@@ -266,7 +266,7 @@ export function AnimatorEditor() {
           </span>
           <span>No state machines yet</span>
           <span className="hint">
-            State machine assets drive the AnimationStateMachine component. Create one here, or ask an agent — then
+            State machine assets drive the AnimationStateMachine component. Create one here, or ask an agent, then
             edit its params, states, and transitions.
           </span>
           <Button variant="primary" size="sm" onClick={() => setCreateOpen(true)}>
@@ -322,7 +322,7 @@ export function AnimatorEditor() {
         <div className="code-conflict-banner" role="alert">
           <Icon name="warning" size={13} />
           <span>
-            This state machine changed on disk — from an agent or another process — since you opened it. Saving now
+            This state machine changed on disk (from an agent or another process) since you opened it. Saving now
             overwrites that change.
           </span>
           <span style={{ flex: 1 }} />
@@ -352,7 +352,7 @@ export function AnimatorEditor() {
       {!draft ? (
         <div className="empty-state">
           <span>Could not load this state machine.</span>
-          <span className="hint">The asset file may be missing or invalid — check the Console / validation.</span>
+          <span className="hint">The asset file may be missing or invalid. Check the Console or validation.</span>
         </div>
       ) : (
         <div className="panel-body animator-body">
@@ -518,7 +518,7 @@ function StatesSection({
                   content={
                     out === 0
                       ? 'No transitions leave this state'
-                      : `${out} outgoing transition${out === 1 ? '' : 's'} — jump to them`
+                      : `${out} outgoing transition${out === 1 ? '' : 's'}: jump to them`
                   }
                 >
                   <button
@@ -653,7 +653,7 @@ function TransitionsSection({
                     {g.items.length} transition{g.items.length === 1 ? '' : 's'}
                   </span>
                   {g.from === ANY_STATE && (
-                    <Tooltip content="Checked after a state's own transitions — a machine-wide fallback">
+                    <Tooltip content="Checked after a state's own transitions: a machine-wide fallback">
                       <span className="animator-tgroup-note">fallback</span>
                     </Tooltip>
                   )}
@@ -708,8 +708,8 @@ function TransitionCard({
   // order means across tiers, so we never show one.
   const isAny = t.from === ANY_STATE;
   const priorityTip = isAny
-    ? `Fallback #${groupPos + 1} — checked after the state's own transitions`
-    : `Checked ${ordinal(groupPos + 1)} among ${t.from || 'this state'}'s own transitions — first match wins`;
+    ? `Fallback #${groupPos + 1}: checked after the state's own transitions`
+    : `Checked ${ordinal(groupPos + 1)} among ${t.from || 'this state'}'s own transitions: first match wins`;
 
   return (
     <div className="animator-transition-card">
@@ -824,7 +824,7 @@ function TransitionCard({
             </div>
             {t.conditions.length === 0 ? (
               <span className="animator-empty">
-                {t.from === ANY_STATE ? 'An “Any” transition needs a condition.' : 'No conditions (uses exit time only).'}
+                {t.from === ANY_STATE ? 'An "Any" transition needs a condition.' : 'No conditions (uses exit time only).'}
               </span>
             ) : (
               t.conditions.map((c, ci) => {

@@ -98,7 +98,7 @@ export function CreateStateMachineDialog({ open, onClose }: { open: boolean; onC
           </p>
         ) : (
           <p className="animator-empty">
-            Seeds one “idle” state on “{animationAssets[0].name}”. Add params, states, and transitions after it
+            Seeds one "idle" state on "{animationAssets[0].name}". Add params, states, and transitions after it
             opens in the Animator.
           </p>
         )}

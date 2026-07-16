@@ -117,7 +117,7 @@ function safeCssColor(color: string, fallback: string): string {
  */
 export function fileProtocolBootMessage(protocol: string): string | null {
   if (protocol !== 'file:') return null;
-  return 'This build needs a web server — run one locally (e.g. npx serve) or use the single-file export for direct opening.';
+  return 'This build needs a web server: run one locally (e.g. npx serve) or use the single-file export for direct opening.';
 }
 
 /** Legible neutral foreground for error text on the loading background. */

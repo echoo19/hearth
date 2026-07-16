@@ -283,7 +283,7 @@ export function Timeline() {
       <ConfirmDialog
         open={confirmRevert}
         title="Restore checkpoint?"
-        body="All scene, script, and asset-index changes since the last checkpoint are discarded — including anything the agent just did. A revert isn't recorded in the undo history, so it can't be reversed with Undo."
+        body="All scene, script, and asset-index changes since the last checkpoint are discarded, including anything the agent just did. A revert isn't recorded in the undo history, so it can't be reversed with Undo."
         confirmLabel="Revert everything"
         danger
         onCancel={() => setConfirmRevert(false)}

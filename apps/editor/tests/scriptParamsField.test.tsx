@@ -52,7 +52,7 @@ describe('ScriptParamsField', () => {
 
   it('removes a param by writing the whole record', () => {
     const { onWriteAll } = paramsField({ speed: 170, maxHp: 100 });
-    fireEvent.click(screen.getByRole('button', { name: 'Remove “maxHp”' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Remove "maxHp"' }));
     expect(onWriteAll).toHaveBeenCalledWith({ speed: 170 });
   });
 
@@ -125,7 +125,7 @@ describe('ScriptPathField', () => {
     const select = screen.getByRole('combobox') as HTMLSelectElement;
     // The value still shows (not blanked) but is marked and unattachable…
     expect(select.value).toBe('scripts/lib/noise.lua');
-    const marked = screen.getByRole('option', { name: 'lib/noise.lua — library' }) as HTMLOptionElement;
+    const marked = screen.getByRole('option', { name: 'lib/noise.lua (library)' }) as HTMLOptionElement;
     expect(marked.disabled).toBe(true);
     // …and the trap is named at the point of use.
     expect(screen.getByText(/does nothing on an entity/)).toBeTruthy();

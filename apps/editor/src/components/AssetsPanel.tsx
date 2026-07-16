@@ -895,8 +895,8 @@ export function AssetsPanel() {
             </span>
             <span>No assets yet</span>
             <span className="hint">
-              Create a procedural placeholder sprite or tile above — agents can generate these too — or bring
-              your own images, sounds, and fonts with Import… Dropping files onto this panel works as well.
+              Create a procedural placeholder sprite or tile above (agents can generate these too), or bring
+              your own images, sounds, and fonts with Import. You can also drop files onto this panel.
             </span>
           </div>
         ) : filteredAssets.length === 0 ? (
@@ -904,7 +904,7 @@ export function AssetsPanel() {
             <span className="empty-icon" aria-hidden="true">
               <Icon name="search" size={16} />
             </span>
-            <span>No assets match “{filterQuery}”</span>
+            <span>No assets match "{filterQuery}"</span>
             <Button size="sm" onClick={() => setFilterQuery('')}>
               Clear filter
             </Button>
@@ -959,7 +959,7 @@ export function AssetsPanel() {
                       the double-click hint (ASSETS-5), both fine as a native
                       title here (Gate D only bars titles on interactive
                       elements; the card itself carries no title). */}
-                  <span className="asset-name" title={`${asset.name} — ${primaryActionHint(asset)}`}>
+                  <span className="asset-name" title={`${asset.name}: ${primaryActionHint(asset)}`}>
                     {asset.name}
                   </span>
                   <span className="asset-type">{asset.type}</span>
@@ -1045,7 +1045,7 @@ export function AssetsPanel() {
                 }
               >
                 <Button size="sm" disabled={!assignment} onClick={() => assignAssetToSelection(selectedAsset)}>
-                  Assign to {selectedEntity ? `“${selectedEntity.name}”` : 'selection'}
+                  Assign to {selectedEntity ? `"${selectedEntity.name}"` : 'selection'}
                 </Button>
               </Tooltip>
             )}
@@ -1058,7 +1058,7 @@ export function AssetsPanel() {
           {selectedAsset.type === 'font' &&
             (loadedFontNames.has(selectedAsset.name) ? (
               <span className="font-sample" style={{ fontFamily: `"${selectedAsset.name}"` }}>
-                Aa Bb 0123 — Hearth
+                Aa Bb 0123 · Hearth
               </span>
             ) : (
               <span style={{ color: 'var(--ink-faint)', fontSize: 'var(--text-sm)' }}>Loading font preview…</span>
@@ -1248,7 +1248,7 @@ export function AssetsPanel() {
             </select>
           </div>
           <p className="animator-empty">
-            Generates a deterministic WAV — the same preset always sounds the same. Preview it from the new
+            Generates a deterministic WAV: the same preset always sounds the same. Preview it from the new
             card's play button.
           </p>
         </div>
@@ -1284,7 +1284,7 @@ export function AssetsPanel() {
       {/* Delete (ASSETS-1) */}
       <ConfirmDialog
         open={deletingAsset !== null}
-        title={`Delete “${deletingAsset?.name ?? ''}”?`}
+        title={`Delete "${deletingAsset?.name ?? ''}"?`}
         body="Its file moves to the project trash and every reference to it stops resolving. This shows up in your undo history, so Ctrl/Cmd+Z brings it back."
         confirmLabel="Delete asset"
         danger
@@ -1296,7 +1296,7 @@ export function AssetsPanel() {
           summarized away — the command-side messaging is already excellent. */}
       <Modal
         open={deleteError !== null}
-        title={`Can't delete “${deleteError?.name ?? ''}”`}
+        title={`Can't delete "${deleteError?.name ?? ''}"`}
         onClose={() => setDeleteError(null)}
       >
         <div className="modal-body">

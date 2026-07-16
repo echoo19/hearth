@@ -159,7 +159,7 @@ async function runImportAssetCommand(
     if (stat?.isDirectory()) {
       throw new CliError(
         'INVALID_INPUT',
-        `"${sourcePaths[0]}" is a directory — pass --recursive to import the files under it.`,
+        `"${sourcePaths[0]}" is a directory. Pass --recursive to import the files under it.`,
       );
     }
     await runAndEmit(cmd, 'importAsset', { sourcePath: sourcePaths[0], name: opts.name, type: opts.type });
@@ -190,7 +190,7 @@ export function buildProgram(): Command {
   const program = new Command();
   program
     .name('hearth')
-    .description('hearth — the Hearth engine command-line interface for humans and coding agents')
+    .description('hearth: the Hearth engine command-line interface for humans and coding agents')
     .version(VERSION)
     .showHelpAfterError(true);
   addGlobalOptions(program);
@@ -538,7 +538,7 @@ export function buildProgram(): Command {
     createAsset
       .command('state-machine <name>')
       .description(
-        'create an animation state machine asset (params/states/transitions) — every state.animation must be an existing animation asset',
+        'create an animation state machine asset (params/states/transitions). Every state.animation must be an existing animation asset.',
       )
       .requiredOption('--data <json|@file>', 'the state machine document: inline JSON, or @path/to/file.json'),
   ).action(async (name: string, opts, cmd) => {
@@ -804,7 +804,7 @@ export function buildProgram(): Command {
       .command('replace <query> <replacement>')
       .description(
         'find-and-replace across script files (line-based matching; $1-style capture groups with --regex). ' +
-          'Results are written verbatim, not reformatted — run "script format --all" after. Use --dry-run to ' +
+          'Results are written verbatim, not reformatted. Run "script format --all" after. Use --dry-run to ' +
           'preview counts before writing.',
       )
       .option('--regex', 'treat <query> as a regular expression')
@@ -833,9 +833,9 @@ export function buildProgram(): Command {
       .description(
         'import one or more external files into assets/ and register them. ' +
           'A single path (without --recursive) runs importAsset; anything else (multiple paths, or --recursive) ' +
-          'runs importAssets as one atomic batch — see `skipped` in the JSON output for any per-file skip reasons.',
+          'runs importAssets as one atomic batch. See `skipped` in the JSON output for any per-file skip reasons.',
       )
-      .option('--name <name>', 'asset name — only valid when importing a single file (default: filename without extension)')
+      .option('--name <name>', 'asset name, only valid when importing a single file (default: filename without extension)')
       .option('--type <type>', 'asset type override (sprite, tile, audio, animation, font, data, other), applied to every file')
       .option('--recursive', 'expand any directory arguments into the files under them (recursively) before importing'),
   ).action(async (sourcePaths: string[], opts: { name?: string; type?: string; recursive?: boolean }, cmd) => {
@@ -1010,7 +1010,7 @@ export function buildProgram(): Command {
           'A char is a single character: "." or a literal space (empty), or a tileAssets key. ' +
           'To paint a space, quote it explicitly, e.g. --cells "0,0, " (a comma is not usable as a char).',
       )
-      .requiredOption('--cells <spec>', '"x,y,c;x,y,c" — semicolon-separated cells, x/y are 0-based column/row'),
+      .requiredOption('--cells <spec>', '"x,y,c;x,y,c": semicolon-separated cells, x/y are 0-based column/row'),
   ).action(async (scene: string, entity: string, opts, cmd) => {
     await guarded(cmd, 'paintTiles', () =>
       runAndEmit(cmd, 'paintTiles', { scene, entity, cells: parseCells(opts.cells) }),
@@ -1221,7 +1221,7 @@ export function buildProgram(): Command {
       .option('--out <dir>', 'output directory (project-relative)', 'export/desktop')
       .option(
         '--platform <id>',
-        `target platform id (repeatable; default: all four — ${DESKTOP_PLATFORMS.join(', ')})`,
+        `target platform id (repeatable; default: all four: ${DESKTOP_PLATFORMS.join(', ')})`,
         (val: string, prev: string[]) => [...prev, val],
         [] as string[],
       ),
@@ -1574,7 +1574,7 @@ async function runSearchScriptsCommand(
   }
   if (result.data!.capped) {
     console.log(
-      `  (capped at ${result.data!.matches.length} of ${result.data!.total} matches — narrow with --glob)`,
+      `  (capped at ${result.data!.matches.length} of ${result.data!.total} matches; narrow with --glob)`,
     );
   }
   // A search finding zero matches is not a failure — exit 0 regardless.
@@ -1613,7 +1613,7 @@ async function runReplaceScriptsCommand(
     process.exitCode = 1;
     return;
   }
-  console.log(result.data!.applied ? '✓ replaceInScripts' : '✓ replaceInScripts (dry run — nothing written)');
+  console.log(result.data!.applied ? '✓ replaceInScripts' : '✓ replaceInScripts (dry run: nothing written)');
   for (const c of result.data!.changes) {
     console.log(`  ${c.path}: ${c.count} replacement${c.count === 1 ? '' : 's'}`);
   }

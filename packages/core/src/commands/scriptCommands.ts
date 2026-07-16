@@ -10,7 +10,7 @@ import { checkScriptRequires, checkScriptSource } from '../validate.js';
 import { formatSource, FormatError } from '../format.js';
 
 export const SCRIPT_TEMPLATE = `/**
- * {{NAME}} — a Hearth behavior script.
+ * {{NAME}} - a Hearth behavior script.
  *
  * Lifecycle hooks receive a context (ctx) with:
  *   ctx.entity        - { id, name, tags }
@@ -70,12 +70,12 @@ export default {
   onUiEvent(ctx, event) {
     // Pointer/focus events on this entity's interactive UIElement
     // (event.type: click|press|release|enter|exit|drag|change|focus|blur;
-    // event.value is set on "change" — the slider/toggle's new value).
+    // event.value is set on "change", the slider/toggle's new value).
   },
 };
 `;
 
-export const LUA_SCRIPT_TEMPLATE = `-- {{NAME}} — a Hearth behavior script (Lua).
+export const LUA_SCRIPT_TEMPLATE = `-- {{NAME}} - a Hearth behavior script (Lua).
 --
 -- IMPORTANT: call ctx with a dot, not a colon: ctx.log("hi"), never ctx:log("hi").
 --
@@ -280,7 +280,7 @@ export const checkScript = defineCommand({
   name: 'checkScript',
   description:
     'Check a script for syntax errors without saving it: pass source text directly, or path to check an ' +
-    'existing project script. Read-only, never writes — pre-flight a script before editScript.',
+    'existing project script. Read-only, never writes. Pre-flight a script before editScript.',
   permission: 'read-only',
   mutates: false,
   paramsSchema: z.object({
@@ -335,7 +335,7 @@ export const formatScript = defineCommand({
   name: 'formatScript',
   description:
     'Reformat one script (path) or every .lua/.js script under scripts/ (all: true) to Hearth house style. ' +
-    'Agents normally do not need this — createScript/editScript format automatically unless format:false.',
+    'Agents normally do not need this: createScript/editScript format automatically unless format:false.',
   permission: 'code-edit',
   mutates: true,
   paramsSchema: z.object({
@@ -484,10 +484,10 @@ export const searchScripts = defineCommand({
   name: 'searchScripts',
   description:
     'Search script source across scripts/ for a plain-text or regex query, returning 1-based line/column plus ' +
-    'a preview (≤120 chars, centered on the match) per hit. Matching is line-based — patterns never span ' +
+    'a preview (≤120 chars, centered on the match) per hit. Matching is line-based. Patterns never span ' +
     'multiple lines. Case-insensitive by default; set caseSensitive:true to narrow. Narrow the file set with ' +
     'pathGlob (e.g. "scripts/enemies/*"). Capped at 500 matches; capped:true means more exist beyond what was ' +
-    'returned — narrow with pathGlob or a more specific query.',
+    'returned. Narrow with pathGlob or a more specific query.',
   permission: 'read-only',
   mutates: false,
   paramsSchema: z.object({
@@ -526,7 +526,7 @@ export const searchScripts = defineCommand({
 
     const capped = total > SEARCH_CAP;
     if (capped) {
-      ctx.suggest(`narrow with pathGlob (e.g. "scripts/enemies/*") — ${total} matches found, only the first ${SEARCH_CAP} are returned`);
+      ctx.suggest(`narrow with pathGlob (e.g. "scripts/enemies/*"): ${total} matches found, only the first ${SEARCH_CAP} are returned`);
     }
     return { matches, total, capped };
   },
@@ -536,9 +536,9 @@ export const replaceInScripts = defineCommand({
   name: 'replaceInScripts',
   description:
     'Find-and-replace across script files: plain-text or regex query, with $1-style capture-group references ' +
-    'in the replacement when regex:true. Matching is line-based — patterns never span multiple lines. Case-' +
+    'in the replacement when regex:true. Matching is line-based. Patterns never span multiple lines. Case-' +
     'insensitive by default; set caseSensitive:true to narrow. Narrow the file set with pathGlob. Surgical: the ' +
-    'result is written verbatim, NOT re-formatted — call formatScript afterward for cleanup. Pass dryRun:true ' +
+    'result is written verbatim, NOT re-formatted. Call formatScript afterward for cleanup. Pass dryRun:true ' +
     'first to preview per-file counts with nothing written (recommended agent workflow: dryRun, inspect, then a ' +
     'real call).',
   permission: 'code-edit',

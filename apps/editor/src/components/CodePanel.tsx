@@ -404,7 +404,7 @@ export function CodePanel() {
         patch(path, { conflict: true });
       } else if (action === 'reload') {
         void reloadBuffer(path).then(() => {
-          log('info', 'editor', `${scriptLabel(path)} was updated by a cross-script replace — reloaded.`);
+          log('info', 'editor', `${scriptLabel(path)} was updated by a cross-script replace and reloaded.`);
         });
       }
     }
@@ -578,7 +578,7 @@ export function CodePanel() {
     for (const p of toReload) {
       if (toBanner.has(p)) continue; // a dirty buffer bannered this pass; never also reload it
       void reloadBuffer(p).then(() => {
-        log('info', 'editor', `${scriptLabel(p)} was updated outside the editor — reloaded.`);
+        log('info', 'editor', `${scriptLabel(p)} was updated outside the editor and reloaded.`);
       });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -664,7 +664,7 @@ export function CodePanel() {
             Search
           </Button>
         </Tooltip>
-        <label className="input-checkbox-label" title="Format scripts with the project's code style whenever they're saved">
+        <label className="input-checkbox-label" title="Format scripts with the project's code style on save">
           <input
             type="checkbox"
             checked={formatOnSave}
@@ -761,7 +761,7 @@ export function CodePanel() {
       {active?.conflict && (
         <div className="code-conflict-banner">
           <Icon name="entity" size={13} />
-          <span>This script changed outside the editor — from an agent or another process — while you had unsaved edits here.</span>
+          <span>This script changed outside the editor, from an agent or another process, while you had unsaved edits here.</span>
           <span style={{ flex: 1 }} />
           <Button size="sm" onClick={reloadFromConflict}>
             Reload
@@ -776,7 +776,7 @@ export function CodePanel() {
         <div className="code-conflict-banner">
           <Icon name="cross" size={13} />
           <span>
-            {scriptLabel(active.path)} no longer exists in the project — it may have been undone or reverted. Your
+            {scriptLabel(active.path)} no longer exists in the project. It may have been undone or reverted. Your
             edits are still here if you want to save them under a new name.
           </span>
           <span style={{ flex: 1 }} />
@@ -790,7 +790,7 @@ export function CodePanel() {
         <div className="code-conflict-banner">
           <Icon name="cross" size={13} />
           <span>
-            Couldn't save {scriptLabel(active.path)} — {active.saveError}
+            Couldn't save {scriptLabel(active.path)}: {active.saveError}
           </span>
           <span style={{ flex: 1 }} />
           <Button size="sm" onClick={() => void save()}>

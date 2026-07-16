@@ -117,7 +117,7 @@ export const CTX_API: readonly CtxApiEntry[] = [
     signature:
       'spawnPrefab(name: string, opts?: { position?: Vec2; name?: string }): EntityHandle | null',
     description:
-      "Spawn a prefab asset (by name or id) as a fresh entity subtree at runtime: every entity gets a new id, parent/child links are preserved among the spawned set, opts.position overrides the root's position and opts.name its name. Spawned children are registered for scripts just like the root. Returns the root's EntityHandle, or null (with a warn log) when no prefab by that name exists. Note: destroying the returned root does NOT cascade to its children — destroy is per-entity, so destroy each child yourself if you want the whole subtree gone.",
+      "Spawn a prefab asset (by name or id) as a fresh entity subtree at runtime: every entity gets a new id, parent/child links are preserved among the spawned set, opts.position overrides the root's position and opts.name its name. Spawned children are registered for scripts just like the root. Returns the root's EntityHandle, or null (with a warn log) when no prefab by that name exists. Note: destroying the returned root does NOT cascade to its children. Destroy is per-entity, so destroy each child yourself if you want the whole subtree gone.",
     example: {
       js: "const coin = ctx.scene.spawnPrefab('Coin', { position: { x: 100, y: 50 } })",
       lua: 'local coin = ctx.scene.spawnPrefab("Coin", { position = { x = 100, y = 50 } })',
@@ -264,7 +264,7 @@ export const CTX_API: readonly CtxApiEntry[] = [
     kind: 'method',
     signature: 'setParam(entityRef: string, name: string, value: boolean | number): void',
     description:
-      "Set a bool or number param on entityRef's AnimationStateMachine (id or unique name — not always this entity). Persists until changed again. Throws a script error if entityRef has no AnimationStateMachine, name isn't a param on its asset, name is a trigger param (use ctx.animator.fire instead), or value's type doesn't match the param's declared type.",
+      "Set a bool or number param on entityRef's AnimationStateMachine (id or unique name, not always this entity). Persists until changed again. Throws a script error if entityRef has no AnimationStateMachine, name isn't a param on its asset, name is a trigger param (use ctx.animator.fire instead), or value's type doesn't match the param's declared type.",
     example: {
       js: "ctx.animator.setParam(ctx.entity.name, 'moving', Math.abs(vx) > 1)",
       lua: 'ctx.animator.setParam(ctx.entity.name, "moving", math.abs(vx) > 1)',
@@ -286,7 +286,7 @@ export const CTX_API: readonly CtxApiEntry[] = [
     kind: 'method',
     signature: 'fire(entityRef: string, name: string): void',
     description:
-      "Latch a trigger param on entityRef's AnimationStateMachine. Stays latched — surviving as many fixed frames as it takes — until a transition whose conditions name it is actually taken, at which point only that trigger is consumed; other latched triggers are untouched. A paused machine (component.playing = false) never consumes it. Throws if entityRef has no AnimationStateMachine, name isn't a param on its asset, or name isn't a trigger param.",
+      "Latch a trigger param on entityRef's AnimationStateMachine. Stays latched (surviving as many fixed frames as it takes) until a transition whose conditions name it is actually taken, at which point only that trigger is consumed; other latched triggers are untouched. A paused machine (component.playing = false) never consumes it. Throws if entityRef has no AnimationStateMachine, name isn't a param on its asset, or name isn't a trigger param.",
     example: {
       js: "ctx.animator.fire(ctx.entity.name, 'attack')",
       lua: 'ctx.animator.fire(ctx.entity.name, "attack")',
@@ -315,21 +315,21 @@ export const CTX_API: readonly CtxApiEntry[] = [
     path: 'math.add',
     kind: 'method',
     signature: 'add(a: Vec2, b: Vec2): Vec2',
-    description: 'Vector addition. Pure — returns a new value without mutating inputs.',
+    description: 'Vector addition. Pure. Returns a new value without mutating inputs.',
     example: { js: 'const sum = ctx.math.add(a, b)', lua: 'local sum = ctx.math.add(a, b)' },
   },
   {
     path: 'math.sub',
     kind: 'method',
     signature: 'sub(a: Vec2, b: Vec2): Vec2',
-    description: 'Vector subtraction. Pure — returns a new value without mutating inputs.',
+    description: 'Vector subtraction. Pure. Returns a new value without mutating inputs.',
     example: { js: 'const diff = ctx.math.sub(target, me)', lua: 'local diff = ctx.math.sub(target, me)' },
   },
   {
     path: 'math.scale',
     kind: 'method',
     signature: 'scale(v: Vec2, s: number): Vec2',
-    description: 'Scale a vector by a scalar. Pure — returns a new value.',
+    description: 'Scale a vector by a scalar. Pure. Returns a new value.',
     example: { js: 'const big = ctx.math.scale(v, 2)', lua: 'local big = ctx.math.scale(v, 2)' },
   },
   {
@@ -357,7 +357,7 @@ export const CTX_API: readonly CtxApiEntry[] = [
     path: 'math.normalize',
     kind: 'method',
     signature: 'normalize(v: Vec2): Vec2',
-    description: 'Unit vector in the direction of v ({x:0,y:0} for the zero vector). Pure — returns a new value.',
+    description: 'Unit vector in the direction of v ({x:0,y:0} for the zero vector). Pure. Returns a new value.',
     example: { js: 'const dir = ctx.math.normalize(ctx.math.sub(target, me))', lua: 'local dir = ctx.math.normalize(ctx.math.sub(target, me))' },
   },
   {
@@ -385,7 +385,7 @@ export const CTX_API: readonly CtxApiEntry[] = [
     path: 'math.lerpVec',
     kind: 'method',
     signature: 'lerpVec(a: Vec2, b: Vec2, t: number): Vec2',
-    description: 'Linear interpolation between two vectors. Does not clamp t. Pure — returns a new value.',
+    description: 'Linear interpolation between two vectors. Does not clamp t. Pure. Returns a new value.',
     example: { js: 'const halfway = ctx.math.lerpVec(a, b, 0.5)', lua: 'local halfway = ctx.math.lerpVec(a, b, 0.5)' },
   },
   {
@@ -406,7 +406,7 @@ export const CTX_API: readonly CtxApiEntry[] = [
     path: 'math.rgbToHex',
     kind: 'method',
     signature: 'rgbToHex(r: number, g: number, b: number): string',
-    description: 'Convert RGB channels (0–255) to a hex color string. Clamps and rounds channel values.',
+    description: 'Convert RGB channels (0-255) to a hex color string. Clamps and rounds channel values.',
     example: { js: 'const hex = ctx.math.rgbToHex(255, 136, 0)', lua: 'local hex = ctx.math.rgbToHex(255, 136, 0)' },
   },
   {
@@ -480,7 +480,7 @@ export const CTX_API: readonly CtxApiEntry[] = [
     kind: 'method',
     signature: 'shake(intensity: number, seconds: number, opts?: { seed?: number }): void',
     description:
-      "Screen shake: offset decays linearly from `intensity` (world units) to 0 over `seconds`. Deterministic — same seed (explicit or scene-derived) reproduces the same offsets.",
+      "Screen shake: offset decays linearly from `intensity` (world units) to 0 over `seconds`. Deterministic: same seed (explicit or scene-derived) reproduces the same offsets.",
     example: { js: 'ctx.camera.shake(8, 0.3)', lua: 'ctx.camera.shake(8, 0.3)' },
   },
   {
@@ -496,7 +496,7 @@ export const CTX_API: readonly CtxApiEntry[] = [
     signature:
       'fade(alpha: number, seconds: number, opts?: { color?: string; onComplete?: () => void }): void',
     description:
-      "Ease the persistent screen overlay toward `alpha` over `seconds`, then hold at that level. Survives scene switches (ctx.scenes.load). Last call wins: a new fade replaces an in-flight one (starting from the current level), and the superseded fade's onComplete is dropped, never fired — only the winning fade's onComplete runs, once.",
+      "Ease the persistent screen overlay toward `alpha` over `seconds`, then hold at that level. Survives scene switches (ctx.scenes.load). Last call wins: a new fade replaces an in-flight one (starting from the current level), and the superseded fade's onComplete is dropped, never fired. Only the winning fade's onComplete runs, once.",
     example: {
       js: "ctx.camera.fade(1, 0.5, { color: '#000000', onComplete: () => ctx.scenes.load('NextLevel') })",
       lua: 'ctx.camera.fade(1, 0.5, { color = "#000000" })',
@@ -574,7 +574,7 @@ export const CTX_API: readonly CtxApiEntry[] = [
     path: 'vars',
     kind: 'property',
     signature: 'vars: Record<string, unknown>',
-    description: 'Persistent per-entity state, survives across frames (not across scene switches — use ctx.save).',
+    description: 'Persistent per-entity state, survives across frames (not across scene switches: use ctx.save).',
     example: { js: 'ctx.vars.score = (ctx.vars.score ?? 0) + 1', lua: 'ctx.vars.score = (ctx.vars.score or 0) + 1' },
   },
   {
@@ -670,7 +670,7 @@ export const CTX_API: readonly CtxApiEntry[] = [
     kind: 'method',
     signature: "moveFocus(direction: 'up' | 'down' | 'left' | 'right'): void",
     description:
-      "Move focus among focusable UIElement entities: picks the nearest candidate strictly in `direction` from the current focus position (or the top-left-most candidate when nothing is focused). No wrap — a no-op when nothing lies further that way.",
+      "Move focus among focusable UIElement entities: picks the nearest candidate strictly in `direction` from the current focus position (or the top-left-most candidate when nothing is focused). No wrap: a no-op when nothing lies further that way.",
     example: { js: "ctx.ui.moveFocus('down')", lua: 'ctx.ui.moveFocus("down")' },
   },
   {
@@ -678,7 +678,7 @@ export const CTX_API: readonly CtxApiEntry[] = [
     kind: 'method',
     signature: 'activate(): void',
     description:
-      'Synthesizes a press+release (a click) at the focused element’s center, through the normal pointer path — so slider/toggle behavior fires exactly as a real click would. Warns (no-op) when the focused entity is not interactive; no-op when nothing is focused.',
+      "Synthesizes a press+release (a click) at the focused element's center, through the normal pointer path, so slider/toggle behavior fires exactly as a real click would. Warns (no-op) when the focused entity is not interactive; no-op when nothing is focused.",
     example: { js: 'ctx.ui.activate()', lua: 'ctx.ui.activate()' },
   },
   {

@@ -217,12 +217,12 @@ export function SceneMenu() {
         </div>
       </Modal>
 
-      <Modal open={deleteOpen} title={`Delete “${scene?.name ?? ''}”?`} onClose={() => setDeleteOpen(false)}>
+      <Modal open={deleteOpen} title={`Delete "${scene?.name ?? ''}"?`} onClose={() => setDeleteOpen(false)}>
         <div className="modal-body">
           <p>This removes the scene file from the project. It shows up in your undo history, so Ctrl/Cmd+Z brings it back.</p>
           {deleteError && (
             <span className="field-error">
-              Couldn't delete “{scene?.name ?? ''}”: {deleteError}
+              Couldn't delete "{scene?.name ?? ''}": {deleteError}
             </span>
           )}
         </div>

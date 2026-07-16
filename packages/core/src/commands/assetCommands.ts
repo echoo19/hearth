@@ -165,7 +165,7 @@ export const importAssets = defineCommand({
         skipped.push({
           path: sourcePath,
           code: 'IS_DIRECTORY',
-          message: `${sourcePath} is a directory, not a file — pass individual file paths.`,
+          message: `${sourcePath} is a directory, not a file. Pass individual file paths.`,
         });
         continue;
       }
@@ -176,7 +176,7 @@ export const importAssets = defineCommand({
         skipped.push({
           path: sourcePath,
           code: 'UNKNOWN_TYPE',
-          message: `Cannot infer an asset type for "${filename}" (unknown extension "${ext}") — pass "type" to override.`,
+          message: `Cannot infer an asset type for "${filename}" (unknown extension "${ext}"). Pass "type" to override.`,
         });
         continue;
       }
@@ -620,7 +620,7 @@ export const createAnimationFromSheet = defineCommand({
 
     if (getSheetFrames(sheet).length === 0) {
       throw new ProjectError(
-        `Sheet "${sheet.name}" has no frames — run sliceSpritesheet first`,
+        `Sheet "${sheet.name}" has no frames. Run sliceSpritesheet first`,
         'INVALID_INPUT',
       );
     }

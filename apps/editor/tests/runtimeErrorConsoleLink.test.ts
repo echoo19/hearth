@@ -30,7 +30,7 @@ describe('recordRuntimeError -> Console entry (Task 7)', () => {
     expect(entries[0]).toMatchObject({
       level: 'error',
       source: 'runtime',
-      message: 'Enemy hit an error in scripts/enemy.lua:12 — attempt to index a nil value',
+      message: 'Enemy hit an error in scripts/enemy.lua:12: attempt to index a nil value',
       link: { path: 'scripts/enemy.lua', line: 12 },
     });
   });
@@ -47,7 +47,7 @@ describe('recordRuntimeError -> Console entry (Task 7)', () => {
 
     const entry = useEditor.getState().consoleEntries[0];
     expect(entry.link).toEqual({ path: 'scripts/player.lua', line: null });
-    expect(entry.message).toBe('Player hit an error in scripts/player.lua — boom');
+    expect(entry.message).toBe('Player hit an error in scripts/player.lua: boom');
   });
 
   it('no script at all: no link', () => {
@@ -57,7 +57,7 @@ describe('recordRuntimeError -> Console entry (Task 7)', () => {
 
     const entry = useEditor.getState().consoleEntries[0];
     expect(entry.link).toBeUndefined();
-    expect(entry.message).toBe('Script hit an error — boom');
+    expect(entry.message).toBe('Script hit an error: boom');
   });
 
   it('falls back to "Script" when no entity name is given', () => {
@@ -65,7 +65,7 @@ describe('recordRuntimeError -> Console entry (Task 7)', () => {
 
     useEditor.getState().recordRuntimeError(error);
 
-    expect(useEditor.getState().consoleEntries[0].message).toBe('Script hit an error in scripts/a.lua:3 — boom');
+    expect(useEditor.getState().consoleEntries[0].message).toBe('Script hit an error in scripts/a.lua:3: boom');
   });
 
   it('still records the raw error into runtimeErrors (existing Task-9 behavior, unchanged)', () => {
@@ -104,7 +104,7 @@ describe('recordRuntimeError -> Console entry (Task 7)', () => {
     const entry = useEditor.getState().consoleEntries[0];
     expect(entry.link).toEqual({ path: 'scripts/shake-toggle.lua', line: 14 });
     // The message also reflects the recovered line ("in <script>:14 —").
-    expect(entry.message).toContain('scripts/shake-toggle.lua:14 —');
+    expect(entry.message).toContain('scripts/shake-toggle.lua:14:');
   });
 
   it('load-time failure with no line anywhere in the message: link.line stays null', () => {

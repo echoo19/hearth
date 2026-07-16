@@ -29,7 +29,7 @@ export default function App() {
       projectPath ? 'editor' : 'launcher',
       projectPath ? projectName : undefined,
     );
-    document.title = projectPath && projectName ? `${projectName} — Hearth` : 'Hearth Editor';
+    document.title = projectPath && projectName ? `${projectName} · Hearth` : 'Hearth Editor';
   }, [projectPath, projectName]);
 
   return projectPath ? <EditorShell projectPath={projectPath} /> : <Launcher />;

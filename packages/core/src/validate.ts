@@ -70,8 +70,8 @@ function validatePolygonPoints(points: { x: number; y: number }[]): { code: stri
     issues.push({
       code: 'POLYGON_NOT_CONVEX',
       message:
-        'polygon Collider is not convex. Hearth supports convex polygons only — ' +
-        'split concave shapes into multiple entities, each with its own convex polygon Collider',
+        'polygon Collider is not convex. Hearth supports convex polygons only. ' +
+        'Split concave shapes into multiple entities, each with its own convex polygon Collider',
     });
   }
   return issues;

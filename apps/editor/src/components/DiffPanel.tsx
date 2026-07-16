@@ -132,7 +132,7 @@ export function DiffPanel() {
       <ConfirmDialog
         open={confirmRevert}
         title="Restore checkpoint?"
-        body="All scene, script, and asset-index changes since the last checkpoint are discarded. A revert isn't recorded in the undo history, so it can't be reversed with Undo — unlike other edits."
+        body="All scene, script, and asset-index changes since the last checkpoint are discarded. A revert isn't recorded in the undo history, so it can't be reversed with Undo, unlike other edits."
         confirmLabel="Revert everything"
         danger
         onCancel={() => setConfirmRevert(false)}
@@ -154,7 +154,7 @@ function HistorySection({ entries }: { entries: HistoryEntry[] }) {
       <h4>History</h4>
       {entries.length === 0 ? (
         <div className="diff-row" style={{ color: 'var(--ink-faint)' }}>
-          No recorded changes yet — this fills up as you edit the project.
+          No recorded changes yet. This fills up as you edit the project.
         </div>
       ) : (
         entries.map((entry) => (

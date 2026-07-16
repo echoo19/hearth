@@ -415,14 +415,14 @@ describe('unsavedEditsMessage (PANELS-1)', () => {
     const msg = unsavedEditsMessage({ hasUnsavedScripts: true, hasUnsavedAnimatorDraft: false });
     expect(msg).toContain('the Code panel');
     expect(msg).not.toContain('Animator');
-    expect(msg).toContain('click into it');
+    expect(msg).toContain('Click into it');
   });
 
   it('names the Animator when only its draft is dirty', () => {
     const msg = unsavedEditsMessage({ hasUnsavedScripts: false, hasUnsavedAnimatorDraft: true });
     expect(msg).toContain('the Animator');
     expect(msg).not.toContain('Code panel');
-    expect(msg).toContain('click into it');
+    expect(msg).toContain('Click into it');
   });
 
   it('names both panels when both are dirty, without implying a single target', () => {
@@ -444,7 +444,7 @@ describe('the "save" keybind logs honestly based on dirty panel state', () => {
   it('claims autosave only when neither the Code panel nor the Animator is dirty', () => {
     const { store, calls } = mockStore({ hasUnsavedScripts: false, hasUnsavedAnimatorDraft: false });
     save.run(store);
-    expect(calls).toEqual([['log', 'info', 'editor', 'Your changes are saved automatically — no need to save.']]);
+    expect(calls).toEqual([['log', 'info', 'editor', 'Your changes save automatically. There is nothing else to save here.']]);
   });
 
   it('points at the Code panel instead of claiming autosave when a script buffer is dirty', () => {

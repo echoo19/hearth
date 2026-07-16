@@ -166,7 +166,7 @@ async function reconcileAssetFiles(
     } else {
       ctx.warn?.(
         'ASSET_TRASH_MISSING',
-        `Asset "${asset.id}" was restored to the project but its file is not in trash (${asset.path}) — the model is back but the file is gone.`,
+        `Asset "${asset.id}" was restored to the project but its file is not in trash (${asset.path}). The model is back but the file is gone.`,
       );
     }
   }

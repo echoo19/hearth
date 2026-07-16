@@ -67,10 +67,10 @@ export function ManualSetup() {
       <div className="agent-manual-body agent-panel">
         <p>
           Hearth is agent-native: everything this editor does goes through the same command system that the{' '}
-          <code>hearth</code> CLI and the MCP server expose. Pick a launcher above — Claude Code, Codex, OpenCode
-          (with local Ollama models), or Hermes — and Start; Hearth writes the MCP config into that tool’s own
-          format and the <code>hearth</code> CLI is already on the terminal’s PATH. Or open the plain terminal for
-          any other shell-native agent. New projects also get AGENTS.md / CLAUDE.md with these instructions baked in.
+          <code>hearth</code> CLI and the MCP server expose. Pick a launcher above (Claude Code, Codex, OpenCode
+          with local Ollama models, or Hermes) and hit Start. Hearth writes the MCP config into that tool's own
+          format, and the <code>hearth</code> CLI is already on the terminal's PATH. Or open the plain terminal for
+          any other shell-native agent. New projects also get AGENTS.md and CLAUDE.md with these instructions baked in.
         </p>
 
         <h4>CLI (any agent with a shell)</h4>

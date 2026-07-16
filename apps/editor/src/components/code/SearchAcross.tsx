@@ -89,7 +89,7 @@ const RESULT_CAP = 500;
 
 export function cappedHintText(capped: boolean): string | null {
   if (!capped) return null;
-  return `Showing the first ${RESULT_CAP} matches — narrow your search text to see the rest.`;
+  return `Showing the first ${RESULT_CAP} matches. Narrow your search text to see the rest.`;
 }
 
 /**

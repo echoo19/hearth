@@ -345,9 +345,9 @@ function makeEntry(level: ConsoleLevel, source: ConsoleSource, message: string, 
  */
 function formatRuntimeError(error: RuntimeErrorEntry): string {
   const who = error.entity ?? 'Script';
-  if (!error.script) return `${who} hit an error — ${error.message}`;
+  if (!error.script) return `${who} hit an error: ${error.message}`;
   const where = error.line != null ? `${error.script}:${error.line}` : error.script;
-  return `${who} hit an error in ${where} — ${error.message}`;
+  return `${who} hit an error in ${where}: ${error.message}`;
 }
 
 /**
@@ -485,7 +485,7 @@ export const useEditor = create<EditorState>((set, get) => {
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       return await res.text();
     } catch (err) {
-      get().log('error', 'runtime', `Hot-reload failed: ${path} — ${(err as Error).message}`, {
+      get().log('error', 'runtime', `Hot-reload failed: ${path}: ${(err as Error).message}`, {
         path,
         line: null,
       });
@@ -505,7 +505,7 @@ export const useEditor = create<EditorState>((set, get) => {
       get().log('info', 'runtime', `Hot-reloaded ${path} (${n} ${n === 1 ? 'entity' : 'entities'})`);
     } else {
       const at = result.line != null ? `${path}:${result.line}` : path;
-      get().log('error', 'runtime', `Hot-reload failed: ${at} — ${result.message}`, {
+      get().log('error', 'runtime', `Hot-reload failed: ${at}: ${result.message}`, {
         path,
         line: result.line,
       });

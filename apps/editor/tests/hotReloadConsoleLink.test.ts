@@ -131,7 +131,7 @@ describe('hot-reload notices get a Console link (Task 7)', () => {
       .consoleEntries.find((e) => e.message.startsWith('Hot-reload failed'));
     expect(entry).toMatchObject({
       level: 'error',
-      message: 'Hot-reload failed: scripts/enemy.lua:7 — unexpected symbol',
+      message: 'Hot-reload failed: scripts/enemy.lua:7: unexpected symbol',
       link: { path: 'scripts/enemy.lua', line: 7 },
     });
   });
@@ -180,7 +180,7 @@ describe('hot-reload notices get a Console link (Task 7)', () => {
       .consoleEntries.find((e) => e.message.startsWith('Hot-reload failed'));
     expect(entry).toMatchObject({
       level: 'error',
-      message: 'Hot-reload failed: scripts/enemy.lua — network down',
+      message: 'Hot-reload failed: scripts/enemy.lua: network down',
       link: { path: 'scripts/enemy.lua', line: null },
     });
     expect(reload).not.toHaveBeenCalled();

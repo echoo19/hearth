@@ -171,7 +171,7 @@ export function SliceDialog({
   if (!asset) return null;
 
   return (
-    <Modal open={open} title={`Slice “${asset.name}”`} onClose={onClose}>
+    <Modal open={open} title={`Slice "${asset.name}"`} onClose={onClose}>
       <form
         onSubmit={(e) => {
           e.preventDefault();
@@ -183,7 +183,7 @@ export function SliceDialog({
             {imgProbe === 'loading' && <span className="slice-preview-status">Loading image…</span>}
             {imgProbe === 'error' && (
               <span className="field-error">
-                Can&rsquo;t determine this image&rsquo;s pixel dimensions, so it can&rsquo;t be sliced.
+                Can't determine this image's pixel dimensions, so it can't be sliced.
               </span>
             )}
             <div
@@ -251,7 +251,7 @@ export function SliceDialog({
                 ? `Sheet is ${(imgProbe as { width: number }).width}×${(imgProbe as { height: number }).height}px`
                 : `${grid.frameCount} frame${grid.frameCount === 1 ? '' : 's'} (${grid.columns} × ${grid.rows})`}
               {!grid.error && grid.cellsOmitted && (
-                <span className="slice-readout-note"> — grid preview hidden above {MAX_OVERLAY_CELLS} frames</span>
+                <span className="slice-readout-note">, grid preview hidden above {MAX_OVERLAY_CELLS} frames</span>
               )}
             </div>
           )}

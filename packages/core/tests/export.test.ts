@@ -115,7 +115,7 @@ describe('exportWeb (single file)', () => {
 describe('fileProtocolBootMessage (F-2, L-118 export-friction reaudit)', () => {
   it('returns the human message for a file:// open', () => {
     expect(fileProtocolBootMessage('file:')).toBe(
-      'This build needs a web server — run one locally (e.g. npx serve) or use the single-file export for direct opening.',
+      'This build needs a web server: run one locally (e.g. npx serve) or use the single-file export for direct opening.',
     );
   });
 

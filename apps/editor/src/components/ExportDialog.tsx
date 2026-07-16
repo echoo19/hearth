@@ -288,7 +288,7 @@ function WebPane({
               </Button>
             )}
             <p className="export-hint">
-              {webNextStepHint()} — see the{' '}
+              {webNextStepHint()}. See the{' '}
               <a href={SHIPPING_GUIDE_URL} target="_blank" rel="noreferrer">
                 shipping guide
               </a>
@@ -420,7 +420,7 @@ function DesktopPane({
           {capability === undefined
             ? 'Checking signing…'
             : capability === null
-              ? 'Signing status unavailable — builds will be ad-hoc signed.'
+              ? 'Signing status unavailable. Builds will be ad-hoc signed.'
               : signingStatusLabel(capability.capability)}
         </p>
 

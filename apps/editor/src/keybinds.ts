@@ -85,7 +85,7 @@ export const KEYBINDS: Keybind[] = [
         unsavedEditsMessage({
           hasUnsavedScripts: s.hasUnsavedScripts,
           hasUnsavedAnimatorDraft: s.hasUnsavedAnimatorDraft,
-        }) ?? 'Your changes are saved automatically — no need to save.',
+        }) ?? 'Your changes save automatically. There is nothing else to save here.',
       ),
   },
   {
@@ -356,7 +356,7 @@ export function unsavedEditsMessage(flags: {
   if (panels.length === 0) return null;
   const key = comboDisplay('mod+s');
   const target = panels.length === 1 ? 'it' : 'one of them';
-  return `You have unsaved edits in ${panels.join(' and ')} — click into ${target} and press ${key} to save.`;
+  return `You have unsaved edits in ${panels.join(' and ')}. Click into ${target} and press ${key} to save.`;
 }
 
 /**

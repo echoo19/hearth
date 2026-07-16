@@ -230,7 +230,7 @@ export function GameSettings() {
   return (
     <>
       <div className="panel-header">
-        <span>Game Settings</span>
+        <span>Game settings</span>
       </div>
       {/* game-settings-body layers a CSS-only scroll shadow on top of the
           shared .panel-body scroll (GAMESETTINGS-6 / L-075): at default dock
@@ -251,7 +251,7 @@ export function GameSettings() {
               onCommit={(v) => {
                 // A blank window title is meaningless — reject client-side
                 // (revert + inline reason) rather than silently commit "".
-                if (!v.trim()) return 'Title can’t be empty.';
+                if (!v.trim()) return "Title can't be empty.";
                 setField('title', v);
               }}
             />

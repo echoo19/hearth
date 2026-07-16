@@ -64,7 +64,7 @@ const AGENT_LAUNCHER_CONFIG: Record<AgentToolLauncher, string> = {
 export function describeLauncher(launcher: AgentLauncher, ollamaModels: string[]): string {
   switch (launcher) {
     case 'claude':
-      return 'Claude Code connects automatically — Hearth is written to this project’s .mcp.json.';
+      return 'Claude Code connects automatically. Hearth writes the MCP config to .mcp.json in this project.';
     case 'codex':
       return 'Codex reads a global config (~/.codex/config.toml); Hearth points it at this project on launch.';
     case 'opencode':
@@ -74,7 +74,7 @@ export function describeLauncher(launcher: AgentLauncher, ollamaModels: string[]
     case 'hermes':
       return 'Hermes reads a global config (~/.hermes/config.yaml); Hearth points it at this project on launch.';
     case 'shell':
-      return 'Plain terminal for any other shell-native agent — the hearth CLI is already on PATH.';
+      return 'Plain terminal for any other shell-native agent. The hearth CLI is already on PATH.';
     default: {
       const never: never = launcher;
       return String(never);
@@ -164,7 +164,7 @@ export function Launcher({
       <div className="agent-launcher-hero">
         <h3>Launch your agent</h3>
         <p className="agent-launcher-sub">
-          One click — Hearth connects it to this project automatically.
+          One click. Hearth connects it to this project automatically.
         </p>
       </div>
 

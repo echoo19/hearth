@@ -117,7 +117,7 @@ export function webNextStepHint(): string {
 
 /** F-1: one-line next-step hint under a finished desktop export. */
 export function desktopNextStepHint(): string {
-  return 'Unzip and share — players double-click the app.';
+  return 'Unzip and share. Players double-click the app.';
 }
 
 /** F-3: a short Gatekeeper note, shown only when at least one *finished*

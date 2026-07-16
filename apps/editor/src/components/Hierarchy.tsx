@@ -254,7 +254,7 @@ export function Hierarchy() {
     // the actual name via scene state; name why it differs so the settle isn't
     // silent (the field would otherwise look like it "changed the name on you").
     if (result.success && result.data && result.data.name !== newName) {
-      log('info', 'editor', `Renamed to “${result.data.name}” — “${newName}” is already taken.`);
+      log('info', 'editor', `Renamed to "${result.data.name}": "${newName}" is already taken.`);
     }
   }
 
@@ -561,7 +561,7 @@ export function Hierarchy() {
           // edit-time document while runtime-spawned entities live in the
           // running game — say so instead of letting the mismatch read as
           // missing rows. Runtime state lives in the Live panel.
-          <Tooltip content="This is the edit-time scene — entities spawned during Play appear in the Live panel">
+          <Tooltip content="This is the edit-time scene. Entities spawned during Play appear in the Live panel">
             <span className="panel-header-detail" tabIndex={0} style={{ cursor: 'help' }}>
               edit-time
             </span>
@@ -629,7 +629,7 @@ export function Hierarchy() {
 
       <ConfirmDialog
         open={deleting !== null}
-        title={`Delete “${deleting?.name ?? ''}”?`}
+        title={`Delete "${deleting?.name ?? ''}"?`}
         body="Its children are kept and re-parented one level up. This shows up in your undo history, so Ctrl/Cmd+Z brings it back."
         confirmLabel="Delete entity"
         danger

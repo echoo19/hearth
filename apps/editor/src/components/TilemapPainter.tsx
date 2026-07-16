@@ -76,7 +76,7 @@ export function TilemapPainter({
       {paintMode && (
         <div className="tilemap-palette">
           <div className="tilemap-palette-swatches">
-            <Tooltip content="Eraser — clears a cell">
+            <Tooltip content="Erase a cell">
               <button
                 type="button"
                 className={`tilemap-swatch${selectedChar === ERASER_CHAR ? ' selected' : ''}`}
@@ -112,7 +112,7 @@ export function TilemapPainter({
           </div>
           {chars.length === 0 && (
             <div className="tilemap-palette-hint">
-              No tile chars mapped yet — add some via the Inspector&rsquo;s Tilemap fields.
+              No tile chars mapped yet. Add some in the Inspector's Tilemap fields.
             </div>
           )}
           <Button size="sm" onClick={() => setResizeOpen(true)}>

@@ -62,18 +62,18 @@ describe('nameConflictMessage', () => {
   });
 
   it('rejects a blank name', () => {
-    expect(nameConflictMessage('axis', '   ', [axes])).toBe('Name can’t be empty.');
+    expect(nameConflictMessage('axis', '   ', [axes])).toBe("Name can't be empty.");
   });
 
   it('rejects a duplicate axis name (INPUT-3)', () => {
-    expect(nameConflictMessage('axis', 'moveY', [axes])).toBe('An axis named “moveY” already exists.');
+    expect(nameConflictMessage('axis', 'moveY', [axes])).toBe('An axis named "moveY" already exists.');
   });
 
   it('rejects a duplicate action across multiple name maps (INPUT-2)', () => {
     const actions = { jump: [] };
     const gamepadButtons = { dash: [] };
     expect(nameConflictMessage('action', 'dash', [actions, gamepadButtons])).toBe(
-      'An action named “dash” already exists.',
+      'An action named "dash" already exists.',
     );
   });
 
@@ -83,7 +83,7 @@ describe('nameConflictMessage', () => {
 
   it('still rejects a rename onto a different existing name', () => {
     expect(nameConflictMessage('axis', 'moveY', [axes], 'moveX')).toBe(
-      'An axis named “moveY” already exists.',
+      'An axis named "moveY" already exists.',
     );
   });
 });

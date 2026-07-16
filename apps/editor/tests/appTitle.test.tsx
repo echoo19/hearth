@@ -69,7 +69,7 @@ describe('App — document.title tracks the open project', () => {
     await act(async () => {
       render(<App />);
     });
-    expect(document.title).toBe('Ember Quest — Hearth');
+    expect(document.title).toBe('Ember Quest · Hearth');
   });
 
   it('restores the baseline again after the project is closed', async () => {
@@ -77,7 +77,7 @@ describe('App — document.title tracks the open project', () => {
     await act(async () => {
       render(<App />);
     });
-    expect(document.title).toBe('Ember Quest — Hearth');
+    expect(document.title).toBe('Ember Quest · Hearth');
 
     await act(async () => {
       useEditor.setState({ projectPath: null, info: null } as any);
@@ -92,6 +92,6 @@ describe('App — document.title tracks the open project', () => {
       render(<App />);
     });
     expect(setWindowMode).toHaveBeenCalledWith('editor', 'Ember Quest');
-    expect(document.title).toBe('Ember Quest — Hearth');
+    expect(document.title).toBe('Ember Quest · Hearth');
   });
 });

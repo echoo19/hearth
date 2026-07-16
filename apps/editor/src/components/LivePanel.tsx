@@ -27,7 +27,7 @@ interface LiveSnapshot {
 }
 
 function fmtNum(n: number): string {
-  return Number.isFinite(n) ? n.toFixed(2) : '—';
+  return Number.isFinite(n) ? n.toFixed(2) : '-';
 }
 
 export function LivePanel({ visible }: { visible: boolean }) {
@@ -168,7 +168,7 @@ export function LivePanel({ visible }: { visible: boolean }) {
               </div>
               <div className="inspector-row">
                 <label className="field-label">Tags</label>
-                <span>{entity.tags.length > 0 ? entity.tags.join(', ') : '—'}</span>
+                <span>{entity.tags.length > 0 ? entity.tags.join(', ') : '-'}</span>
               </div>
               <div className="inspector-row">
                 <label className="field-label">Enabled</label>

@@ -80,7 +80,7 @@ describe('polygon collider validation', () => {
     ]);
     const err = errors.find((e) => e.code === 'POLYGON_NOT_CONVEX');
     expect(err).toBeDefined();
-    expect(err!.message).toContain('split concave shapes into multiple entities');
+    expect(err!.message).toContain('Split concave shapes into multiple entities');
   });
 
   it('does not apply polygon checks to box/circle colliders', async () => {

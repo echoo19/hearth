@@ -231,9 +231,7 @@ export function Launcher() {
           <h3 className="launcher-section">Examples</h3>
           <div className="launcher-list">
             {examples.length === 0 && (
-              <div className="launcher-empty">
-                No example projects found (packages/examples is on its way).
-              </div>
+              <div className="launcher-empty">No example projects yet.</div>
             )}
             {examples.map((ex) => (
               <Tooltip key={ex.path} content={ex.path}>

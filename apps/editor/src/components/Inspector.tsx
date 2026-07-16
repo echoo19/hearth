@@ -412,7 +412,7 @@ function TileRowEditor({
                 </option>
               ))}
             </select>
-            {missingAsset && <span className="field-error">Referenced asset was deleted — pick a replacement.</span>}
+            {missingAsset && <span className="field-error">Referenced asset was deleted. Pick a replacement.</span>}
           </div>
         )}
         {autotile && (
@@ -565,7 +565,7 @@ function UnsupportedField({ value, property }: { value: unknown; property: strin
         {JSON.stringify(value)}
       </span>
       <span className="field-fallback-note">
-        No typed control for this field yet — shown read-only. Edit it through your agent or the
+        No typed control for this field yet, so it's read-only here. Edit it through your agent or the
         hearth CLI.
       </span>
     </div>
@@ -686,7 +686,7 @@ export function ScriptPathField({
         <option value="">(none)</option>
         {isLibrary && (
           <option value={value} disabled>
-            {value.replace(/^scripts\//, '')} — library
+            {value.replace(/^scripts\//, '')} (library)
           </option>
         )}
         {attachable.map((path) => (
@@ -698,7 +698,7 @@ export function ScriptPathField({
       </select>
       {isLibrary && (
         <span className="field-error">
-          This script is a library — it has no lifecycle hooks, so it does nothing on an entity. require() it from a
+          This script is a library: it has no lifecycle hooks, so it does nothing on an entity. require() it from a
           behavior script instead.
         </span>
       )}
@@ -827,10 +827,10 @@ export function ScriptParamsField({
             onCommit={(nextKey) => {
               const t = nextKey.trim();
               if (t === key) return;
-              if (!t) return 'Name can’t be empty.';
+              if (!t) return "Name can't be empty.";
               if (t.includes('.')) return "Param keys can't contain '.'";
               const renamed = renameParamKey(value, key, t);
-              if (!renamed) return `“${t}” already exists.`;
+              if (!renamed) return `"${t}" already exists.`;
               onWriteAll(renamed);
             }}
           />
@@ -842,7 +842,7 @@ export function ScriptParamsField({
             className="icon-btn danger"
             icon="cross"
             iconSize={10}
-            label={`Remove “${key}”`}
+            label={`Remove "${key}"`}
             onClick={() => onWriteAll(removeParamKey(value, key))}
           />
         </div>
@@ -1202,8 +1202,8 @@ export function Inspector() {
         <div className="code-conflict-banner" role="status">
           <Icon name="warning" size={13} />
           <span>
-            Detached from the “{detachNotice.prefabName}” prefab — adding or removing a component makes an
-            instance standalone. Undo restores the link.
+            Detached from the "{detachNotice.prefabName}" prefab. Adding or removing a component makes an
+            instance standalone; undo restores the link.
           </span>
           <span style={{ flex: 1 }} />
           <Button size="sm" onClick={() => setDetachNotice(null)}>
@@ -1257,7 +1257,7 @@ export function Inspector() {
               onCommit={(newName) => {
                 // A blank name is rejected with a reason (revert + inline cue)
                 // — a bare `''` return would read as accepted per the contract.
-                if (!newName.trim()) return 'Name can’t be empty.';
+                if (!newName.trim()) return "Name can't be empty.";
                 void exec('renameEntity', { scene: sceneId, entity: entity.id, newName: newName.trim() });
               }}
             />
@@ -1713,7 +1713,7 @@ export function Inspector() {
 
       <ConfirmDialog
         open={confirmDelete}
-        title={`Delete “${entity.name}”?`}
+        title={`Delete "${entity.name}"?`}
         body="Its children are kept and re-parented one level up. This shows up in your undo history, so Ctrl/Cmd+Z brings it back."
         confirmLabel="Delete entity"
         danger
@@ -1732,8 +1732,8 @@ export function Inspector() {
         // that stronger consequence here instead of the generic copy (L-038).
         body={
           confirmRemove === 'Transform'
-            ? `Without a Transform, “${entity.name}” will no longer be positioned or rendered in the scene.`
-            : `The ${confirmRemove ?? ''} component and its settings are removed from “${entity.name}”.`
+            ? `Without a Transform, "${entity.name}" will no longer be positioned or rendered in the scene.`
+            : `The ${confirmRemove ?? ''} component and its settings are removed from "${entity.name}".`
         }
         confirmLabel="Remove component"
         danger

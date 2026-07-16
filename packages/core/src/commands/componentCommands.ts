@@ -239,7 +239,7 @@ function assertNotAutotileWrite(type: ComponentType, pathParts: string[], parsed
     if (val !== null && typeof val === 'object') {
       throw new ProjectError(
         `Tilemap.tileAssets["${ch}"] is an autotile rule (object arm). setComponentProperty/setProperties ` +
-          'cannot write autotile rules — use the setTileAutotile command (with clear:true to remove one).',
+          'cannot write autotile rules. Use the setTileAutotile command (with clear:true to remove one).',
         'INVALID_INPUT',
       );
     }

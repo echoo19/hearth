@@ -240,7 +240,7 @@ export function Toolbar({ dock, storageKey }: { dock: DockviewApi | null; storag
               }}
             />
           </div>
-          <p>A “Main Camera” entity is added automatically.</p>
+          <p>A "Main Camera" entity is added automatically.</p>
         </div>
         <div className="modal-actions">
           <button className="btn" onClick={() => setNewSceneOpen(false)}>
