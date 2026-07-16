@@ -1,0 +1,325 @@
+{
+  "formatVersion": 1,
+  "id": "scn_90d1ji2g",
+  "name": "Warrens",
+  "entities": [
+    {
+      "id": "ent_2dfrkmut",
+      "name": "Main Camera",
+      "parentId": null,
+      "enabled": true,
+      "tags": [],
+      "components": {
+        "Transform": {
+          "position": {
+            "x": 400,
+            "y": 304
+          },
+          "rotation": 0,
+          "scale": {
+            "x": 1,
+            "y": 1
+          }
+        },
+        "Camera": {
+          "zoom": 1,
+          "isMain": true,
+          "backgroundColor": "#0d0b14",
+          "ambientLight": 0.45,
+          "postEffects": []
+        }
+      }
+    },
+    {
+      "id": "ent_xf7vbv6i",
+      "name": "Caverns",
+      "parentId": null,
+      "enabled": true,
+      "tags": [
+        "wall"
+      ],
+      "components": {
+        "Transform": {
+          "position": {
+            "x": 0,
+            "y": 0
+          },
+          "rotation": 0,
+          "scale": {
+            "x": 1,
+            "y": 1
+          }
+        },
+        "Tilemap": {
+          "tileSize": 32,
+          "tileAssets": {
+            "#": "ast_8i9dphuw"
+          },
+          "grid": [
+            "#########################",
+            "#########################",
+            "#########################",
+            "#########################",
+            "#########################",
+            "#########################",
+            "#########################",
+            "#########################",
+            "#########################",
+            "#########################",
+            "#########################",
+            "#########################",
+            "#########################",
+            "#########################",
+            "#########################",
+            "#########################",
+            "#########################",
+            "#########################",
+            "#########################"
+          ],
+          "solid": true,
+          "layer": -10
+        },
+        "Script": {
+          "scriptPath": "scripts/cave-carver.lua",
+          "params": {}
+        }
+      }
+    },
+    {
+      "id": "ent_ay21abze",
+      "name": "Player",
+      "parentId": null,
+      "enabled": true,
+      "tags": [
+        "player"
+      ],
+      "components": {
+        "Transform": {
+          "position": {
+            "x": 112,
+            "y": 496
+          },
+          "rotation": 0,
+          "scale": {
+            "x": 1,
+            "y": 1
+          }
+        },
+        "SpriteRenderer": {
+          "assetId": "ast_jlxog0q4",
+          "frame": null,
+          "shape": "rectangle",
+          "color": "#ffffff",
+          "width": 24,
+          "height": 30,
+          "opacity": 1,
+          "flipX": false,
+          "flipY": false,
+          "layer": 0,
+          "visible": true
+        },
+        "Collider": {
+          "shape": "box",
+          "width": 22,
+          "height": 26,
+          "radius": 16,
+          "points": [
+            {
+              "x": 0,
+              "y": -16
+            },
+            {
+              "x": 16,
+              "y": 16
+            },
+            {
+              "x": -16,
+              "y": 16
+            }
+          ],
+          "offset": {
+            "x": 0,
+            "y": 0
+          },
+          "isTrigger": false,
+          "layer": "default",
+          "collidesWith": [
+            "*"
+          ],
+          "oneWay": false
+        },
+        "PhysicsBody": {
+          "bodyType": "dynamic",
+          "velocity": {
+            "x": 0,
+            "y": 0
+          },
+          "gravityScale": 0,
+          "drag": 0,
+          "mass": 1,
+          "restitution": 0,
+          "friction": 0
+        },
+        "Light2D": {
+          "radius": 110,
+          "color": "#cfe8ff",
+          "intensity": 0.7,
+          "enabled": true
+        },
+        "Script": {
+          "scriptPath": "scripts/player-move.lua",
+          "params": {
+            "speed": 150
+          }
+        }
+      }
+    },
+    {
+      "id": "ent_zol1nssk",
+      "name": "Exit Gate",
+      "parentId": null,
+      "enabled": true,
+      "tags": [
+        "exit"
+      ],
+      "components": {
+        "Transform": {
+          "position": {
+            "x": 688,
+            "y": 112
+          },
+          "rotation": 0,
+          "scale": {
+            "x": 1,
+            "y": 1
+          }
+        },
+        "SpriteRenderer": {
+          "assetId": null,
+          "frame": null,
+          "shape": "rectangle",
+          "color": "#ffb347",
+          "width": 22,
+          "height": 26,
+          "opacity": 1,
+          "flipX": false,
+          "flipY": false,
+          "layer": 5,
+          "visible": true
+        },
+        "Light2D": {
+          "radius": 90,
+          "color": "#ffcf6b",
+          "intensity": 1,
+          "enabled": true
+        }
+      }
+    },
+    {
+      "id": "ent_6wdhm1sq",
+      "name": "Crystal Mother",
+      "parentId": null,
+      "enabled": true,
+      "tags": [
+        "manager"
+      ],
+      "components": {
+        "Transform": {
+          "position": {
+            "x": 0,
+            "y": 0
+          },
+          "rotation": 0,
+          "scale": {
+            "x": 1,
+            "y": 1
+          }
+        },
+        "Script": {
+          "scriptPath": "scripts/crystal-grower.lua",
+          "params": {}
+        }
+      }
+    },
+    {
+      "id": "ent_ufbh0yrg",
+      "name": "Warrens HUD",
+      "parentId": null,
+      "enabled": true,
+      "tags": [
+        "ui"
+      ],
+      "components": {
+        "Transform": {
+          "position": {
+            "x": 0,
+            "y": 0
+          },
+          "rotation": 0,
+          "scale": {
+            "x": 1,
+            "y": 1
+          }
+        },
+        "UIElement": {
+          "anchor": "top-left",
+          "offset": {
+            "x": 24,
+            "y": 28
+          },
+          "interactive": false,
+          "focusable": false
+        },
+        "Text": {
+          "content": "Exit path: ?",
+          "fontSize": 18,
+          "color": "#ffffff",
+          "align": "left",
+          "fontFamily": "monospace",
+          "layer": 10,
+          "visible": true
+        }
+      }
+    },
+    {
+      "id": "ent_f8skdz4d",
+      "name": "Crystal HUD",
+      "parentId": null,
+      "enabled": true,
+      "tags": [
+        "ui"
+      ],
+      "components": {
+        "Transform": {
+          "position": {
+            "x": 0,
+            "y": 0
+          },
+          "rotation": 0,
+          "scale": {
+            "x": 1,
+            "y": 1
+          }
+        },
+        "UIElement": {
+          "anchor": "top-right",
+          "offset": {
+            "x": -24,
+            "y": 28
+          },
+          "interactive": false,
+          "focusable": false
+        },
+        "Text": {
+          "content": "Crystals: 0",
+          "fontSize": 18,
+          "color": "#7ee8fa",
+          "align": "right",
+          "fontFamily": "monospace",
+          "layer": 10,
+          "visible": true
+        }
+      }
+    }
+  ]
+}

@@ -3,7 +3,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { ProjectStore, validateProject, AUTOTILE_SHAPES } from '@hearth/core';
 import { NodeFileSystem } from '@hearth/core/node';
-import { SceneRuntime } from '@hearth/runtime';
+import { GameSession, SceneRuntime } from '@hearth/runtime';
 import { runPlaytest, runSceneSmoke } from '@hearth/playtest';
 
 const examplesDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -18,6 +18,7 @@ const EXAMPLES = [
   'drift-cellar',
   'ember-horde',
   'ember-arcade',
+  'crystal-warrens',
 ];
 
 function loadStore(name: string) {
@@ -767,6 +768,153 @@ describe('ember-horde v0.7 showcase (Wave E spatial-hash horde scale)', () => {
 
   it('the smoke playtest passes with no script errors', async () => {
     const store = await loadStore('ember-horde');
+    const result = await runPlaytest(store, 'smoke');
+    expect(result.passed).toBe(true);
+  });
+});
+
+// Crystal Warrens is the script-modules (v1.1) showcase: a hand-rolled
+// value-noise library in scripts/lib/noise.lua is require()d by TWO Lua
+// behaviors — cave-carver.lua carves the solid Tilemap from the noise field
+// (whole-array grid replacement; the runtime detects grid changes by
+// reference identity) and proves spawn→exit connectivity with
+// ctx.scene.findPath, while crystal-grower.lua re-derives the same field
+// from the carver's seed to plant crystals inside open tunnel cells. The
+// exported-build twin of these assertions lives in export-web-boot.test.ts.
+describe('crystal-warrens v1.1 showcase (script modules + seeded procgen)', () => {
+  const TILE = 32;
+
+  /** Tile cell of a world position (the Caverns tilemap sits at (0, 0)). */
+  const cellOf = (pos: { x: number; y: number }) => ({
+    c: Math.floor(pos.x / TILE),
+    r: Math.floor(pos.y / TILE),
+  });
+
+  /** 4-neighbor BFS reachability over grid rows — independent of findPath. */
+  function bfsConnected(grid: string[], from: { c: number; r: number }, to: { c: number; r: number }): boolean {
+    const open = (c: number, r: number) =>
+      r >= 0 && r < grid.length && c >= 0 && c < grid[r].length && grid[r][c] === '.';
+    if (!open(from.c, from.r) || !open(to.c, to.r)) return false;
+    const seen = new Set([`${from.c},${from.r}`]);
+    const queue = [from];
+    while (queue.length > 0) {
+      const { c, r } = queue.shift()!;
+      if (c === to.c && r === to.r) return true;
+      for (const [dc, dr] of [[0, -1], [1, 0], [0, 1], [-1, 0]] as const) {
+        const key = `${c + dc},${r + dr}`;
+        if (open(c + dc, r + dr) && !seen.has(key)) {
+          seen.add(key);
+          queue.push({ c: c + dc, r: r + dr });
+        }
+      }
+    }
+    return false;
+  }
+
+  it('is scripted entirely in Lua, with the library discovered in scripts/lib/', async () => {
+    const store = await loadStore('crystal-warrens');
+    const scripts = await store.listScripts();
+    expect(scripts.every((p) => p.endsWith('.lua'))).toBe(true);
+    // Recursive listScripts is what makes a scripts/lib/ module loadable
+    // (and exportable — exportCommands bundles this same listing).
+    expect(scripts).toContain('scripts/lib/noise.lua');
+  });
+
+  it('two different behaviors require the same shared library', async () => {
+    const store = await loadStore('crystal-warrens');
+    const carver = await store.readScript('scripts/cave-carver.lua');
+    const grower = await store.readScript('scripts/crystal-grower.lua');
+    expect(carver).toMatch(/require\("lib\/noise"\)/);
+    expect(grower).toMatch(/require\("lib\/noise"\)/);
+    // The library itself is hookless — a pure module, not a behavior.
+    const lib = await store.readScript('scripts/lib/noise.lua');
+    expect(lib).not.toMatch(/onStart|onUpdate|onCollision/);
+  });
+
+  it('the authored grid is fully solid; the carver replaces it whole-array at runtime', async () => {
+    const store = await loadStore('crystal-warrens');
+    const scene = store.getScene('Warrens')!;
+    const authored = scene.entities.find((e) => e.name === 'Caverns')!.components.Tilemap!.grid;
+    // Authored fully solid on purpose: only the carve opens it, so a broken
+    // require/carve is unmissable.
+    expect(authored.every((row) => !row.includes('.'))).toBe(true);
+
+    const runtime = await SceneRuntime.create(store, scene.id);
+    runtime.run(5);
+    const live = runtime.getEntities().find((e) => e.name === 'Caverns')!.components.Tilemap!.grid;
+    expect(live.join('\n')).not.toBe(authored.join('\n'));
+    expect(live.some((row) => row.includes('.'))).toBe(true);
+    expect(runtime.errors).toEqual([]);
+  });
+
+  it('the carved warrens are connected: in-engine findPath proof and an independent BFS agree', async () => {
+    const store = await loadStore('crystal-warrens');
+    // In-engine: the carver's own ctx.scene.findPath proof (plus HUD copy
+    // and crystal growth), asserted by the probe-baked playtest.
+    const result = await runPlaytest(store, 'warrens-carved-and-connected');
+    expect(result.passed).toBe(true);
+    expect(result.eventCounts['warrens-connected']).toBe(1);
+
+    // Out-of-engine: BFS the live grid from the Player to the Exit Gate
+    // without trusting findPath at all.
+    const runtime = await SceneRuntime.create(store, store.project.initialScene);
+    runtime.run(5);
+    const entities = runtime.getEntities();
+    const grid = entities.find((e) => e.name === 'Caverns')!.components.Tilemap!.grid;
+    const player = entities.find((e) => e.name === 'Player')!;
+    const gate = entities.find((e) => e.name === 'Exit Gate')!;
+    expect(bfsConnected(grid, cellOf(player.transform.position), cellOf(gate.transform.position))).toBe(true);
+    expect(runtime.errors).toEqual([]);
+  });
+
+  it('crystals grow from the carver seed, only inside open tunnel cells', async () => {
+    const store = await loadStore('crystal-warrens');
+    const runtime = await SceneRuntime.create(store, store.project.initialScene);
+    runtime.run(5);
+    const entities = runtime.getEntities();
+    const grid = entities.find((e) => e.name === 'Caverns')!.components.Tilemap!.grid;
+    const crystals = entities.filter((e) => e.tags.includes('crystal'));
+    expect(crystals.length).toBeGreaterThan(0);
+    for (const crystal of crystals) {
+      const { c, r } = cellOf(crystal.transform.position);
+      expect(grid[r][c], `${crystal.name} at cell (${c}, ${r})`).toBe('.');
+    }
+    const hud = entities.find((e) => e.name === 'Crystal HUD')!;
+    expect(hud.components.Text!.content).toBe(`Crystals: ${crystals.length}`);
+    expect(runtime.errors).toEqual([]);
+  });
+
+  it('same seed, same warrens: two playtest runs produce identical logs', async () => {
+    const store = await loadStore('crystal-warrens');
+    const first = await runPlaytest(store, 'warrens-carved-and-connected');
+    const second = await runPlaytest(store, 'warrens-carved-and-connected');
+    expect(first.passed).toBe(true);
+    expect(second.logs.map((l) => [l.frame, l.message])).toEqual(
+      first.logs.map((l) => [l.frame, l.message]),
+    );
+  });
+
+  it('a different session seed carves a different map', async () => {
+    const store = await loadStore('crystal-warrens');
+    const grids: string[] = [];
+    for (const seed of [0, 7]) {
+      const session = await GameSession.create(store, { seed });
+      for (let i = 0; i < 5; i++) await session.stepAsync();
+      grids.push(session.runtime.find('Caverns')!.components.Tilemap!.grid.join('\n'));
+      expect(session.errors).toEqual([]);
+      session.destroy();
+    }
+    expect(grids[0]).not.toBe(grids[1]);
+  });
+
+  it('the movement playtest walks the miner through the carved tunnels', async () => {
+    const store = await loadStore('crystal-warrens');
+    const result = await runPlaytest(store, 'movement');
+    expect(result.passed).toBe(true);
+  });
+
+  it('the smoke playtest passes with no script errors', async () => {
+    const store = await loadStore('crystal-warrens');
     const result = await runPlaytest(store, 'smoke');
     expect(result.passed).toBe(true);
   });

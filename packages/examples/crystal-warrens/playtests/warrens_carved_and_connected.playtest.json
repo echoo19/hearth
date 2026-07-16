@@ -1,0 +1,54 @@
+{
+  "formatVersion": 1,
+  "id": "ptt_t6oq5j9y",
+  "name": "warrens-carved-and-connected",
+  "scene": "scn_90d1ji2g",
+  "steps": [
+    {
+      "type": "wait",
+      "frames": 10
+    },
+    {
+      "type": "assertEventCount",
+      "event": "warrens-carved",
+      "equals": 1
+    },
+    {
+      "type": "assertEventCount",
+      "event": "warrens-connected",
+      "equals": 1
+    },
+    {
+      "type": "assertEventCount",
+      "event": "crystals-grown",
+      "equals": 1
+    },
+    {
+      "type": "assertProperty",
+      "entity": "Warrens HUD",
+      "property": "Text.content",
+      "equals": "Exit path: 31 steps"
+    },
+    {
+      "type": "assertProperty",
+      "entity": "Crystal HUD",
+      "property": "Text.content",
+      "equals": "Crystals: 12"
+    },
+    {
+      "type": "assertEntityExists",
+      "entity": "Crystal 1",
+      "exists": true
+    },
+    {
+      "type": "assertEntityExists",
+      "entity": "Crystal 12",
+      "exists": true
+    },
+    {
+      "type": "assertNoErrors"
+    }
+  ],
+  "maxFrames": 100,
+  "seed": 0
+}

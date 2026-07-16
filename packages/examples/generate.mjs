@@ -4178,6 +4178,488 @@ return script
 }
 
 // ---------------------------------------------------------------------------
+// Example 11: Crystal Warrens (the script-modules proof)
+// ---------------------------------------------------------------------------
+// A seeded procgen cave whose generator lives in scripts/lib/noise.lua — a
+// hand-rolled value-noise module (ctx.math has no noise primitive, which is
+// exactly the argument for script modules) required by TWO behaviors:
+// cave-carver.lua carves the Tilemap from the noise field and PROVES the
+// result is connected with ctx.scene.findPath (spawn → exit), and
+// crystal-grower.lua re-derives the same field from the carver's seed to
+// plant glow crystals inside open tunnel cells. The carve replaces the
+// authored all-wall grid with ONE whole-array assignment (tilemap.grid =
+// rows) — the runtime detects grid changes by reference identity
+// (docs/scripting.md's component-mutation contract), so an in-place edit
+// would silently keep stale collision boxes and a stale render. Authoring
+// the initial grid fully solid makes that failure mode loud: if the carve
+// (or the require chain behind it) ever breaks, the map stays a wall slab,
+// findPath returns nil, and the playtests below fail. All scripts are Lua;
+// every playtest expectation is read back from a probe run, never
+// hand-computed.
+async function generateCrystalWarrens() {
+  const session = await freshProject('crystal-warrens', {
+    name: 'Crystal Warrens',
+    description: 'A seeded value-noise cave, carved and crystal-lit by two behaviors sharing one scripts/lib module.',
+  });
+
+  const scene = (await run(session, 'createScene', { name: 'Warrens', withCamera: false })).sceneId;
+
+  // --- assets ---
+  const miner = (await run(session, 'createSpriteAsset', {
+    name: 'miner', shape: 'character', color: '#9fd8ff', width: 24, height: 30,
+  })).asset;
+  const rockTile = (await run(session, 'createTileAsset', { name: 'warren-rock', color: '#3d3a52', size: 32 })).asset;
+
+  await run(session, 'updateSettings', { buildSettings: { title: 'Crystal Warrens' } });
+
+  // Grid geometry shared by the generator below, both Lua behaviors, and the
+  // probes: 25x19 cells at 32px = 800x608, same arena footprint as
+  // bounce-patrol (the camera at (400, 304) frames the whole map).
+  const TILE = 32;
+  const COLS = 25;
+  const ROWS = 19;
+  const SPAWN_CELL = { c: 3, r: 15 };
+  const EXIT_CELL = { c: 21, r: 3 };
+  const cellCenter = (cell) => ({ x: cell.c * TILE + TILE / 2, y: cell.r * TILE + TILE / 2 });
+
+  // --- scripts (all Lua) ---
+  // The shared library. createScript's `dir` param is how a library is
+  // authored through the command surface (scripts/lib/noise.lua).
+  await run(session, 'createScript', {
+    name: 'noise',
+    dir: 'lib',
+    language: 'lua',
+    source: `-- Value noise from scratch. ctx.math has no noise primitive, so the
+-- warrens carve their tunnels with this hand-rolled lattice noise — and
+-- because it lives in scripts/lib/, BOTH behaviors (cave-carver.lua,
+-- crystal-grower.lua) require() the exact same field math instead of
+-- copy-pasting it. That reuse is what script modules are for.
+--
+-- Everything here is a pure function of (x, y, seed): no ctx, no state.
+-- Callers derive the lattice seed from the seeded ctx.random stream, so a
+-- session seed pins the entire cave layout.
+local noise = {}
+
+-- Deterministic lattice hash -> [0, 1). Lua 5.4 integer mixing, identical
+-- on every platform the wasm Lua engine runs on.
+function noise.hash2(x, y, seed)
+  local h = (x * 374761393 + y * 668265263 + seed * 1442695041) % 4294967296
+  h = ((h ~ (h >> 13)) * 1274126177) % 4294967296
+  return ((h ~ (h >> 16)) % 65536) / 65536.0
+end
+
+local function smooth(t)
+  return t * t * (3.0 - 2.0 * t)
+end
+
+-- Smoothly interpolated value noise over the integer lattice, in [0, 1).
+function noise.value2(x, y, seed)
+  local x0 = math.floor(x)
+  local y0 = math.floor(y)
+  local fx = x - x0
+  local fy = y - y0
+  local a = noise.hash2(x0, y0, seed)
+  local b = noise.hash2(x0 + 1, y0, seed)
+  local c = noise.hash2(x0, y0 + 1, seed)
+  local d = noise.hash2(x0 + 1, y0 + 1, seed)
+  local u = smooth(fx)
+  local v = smooth(fy)
+  local top = a + (b - a) * u
+  local bottom = c + (d - c) * u
+  return top + (bottom - top) * v
+end
+
+-- Two-octave fractal value noise, still in [0, 1).
+function noise.fbm2(x, y, seed)
+  return (noise.value2(x, y, seed) * 2.0 + noise.value2(x * 2.0, y * 2.0, seed + 101)) / 3.0
+end
+
+-- The cave rule both behaviors share: is interior cell (col, row) open
+-- tunnel for this seed? Borders are always wall; callers clamp.
+function noise.caveOpen(col, row, seed)
+  return noise.fbm2(col * 0.35, row * 0.35, seed) < 0.56
+end
+
+-- One integer lattice seed drawn from the seeded ctx.random stream.
+function noise.seedFrom(random)
+  return math.floor(random.next() * 1048576)
+end
+
+return noise
+`,
+  });
+
+  await run(session, 'createScript', {
+    name: 'cave-carver',
+    language: 'lua',
+    source: `-- Carves the warrens at level start. Seeded value noise (the shared
+-- lib/noise module) decides which cells are tunnel, 3x3 clearings are kept
+-- open around the Player and the Exit Gate, and the grid is REPLACED with
+-- one whole-array assignment: the runtime detects grid changes by
+-- reference identity (docs/scripting.md), so tilemap.grid = rows is the
+-- contract — editing the old rows in place would silently keep stale
+-- collision boxes and a stale render.
+--
+-- Connectivity is then PROVEN, not assumed: ctx.scene.findPath must route
+-- from the Player to the Exit Gate through the carved tunnels. If the
+-- noise happened to wall them apart, an L-corridor is cut and the proof
+-- re-run ON THE NEXT FRAME: the runtime rebuilds its findPath nav grid at
+-- most once per frame, so a second findPath in the same frame would still
+-- see the pre-corridor walls. Emits "warrens-carved" at start (with the
+-- lattice seed, so crystal-grower.lua can sample the same field) and
+-- "warrens-connected" once the path is proven.
+local noise = require("lib/noise")
+
+local script = {}
+
+local TILE = 32
+local COLS = 25
+local ROWS = 19
+
+local function cellOf(pos)
+  return { c = math.floor(pos.x / TILE), r = math.floor(pos.y / TILE) }
+end
+
+-- Build the rows for this seed: noise tunnels, plus 3x3 clearings around
+-- each of \`clearings\`, plus every \`corridor\` cell. Returns a FRESH table
+-- every call (see the reference-identity contract above).
+local function buildRows(seed, clearings, corridor)
+  local open = {}
+  local function mark(c, r)
+    if c > 0 and c < COLS - 1 and r > 0 and r < ROWS - 1 then
+      open[r * COLS + c] = true
+    end
+  end
+  for r = 1, ROWS - 2 do
+    for c = 1, COLS - 2 do
+      if noise.caveOpen(c, r, seed) then mark(c, r) end
+    end
+  end
+  for _, cell in ipairs(clearings) do
+    for dr = -1, 1 do
+      for dc = -1, 1 do
+        mark(cell.c + dc, cell.r + dr)
+      end
+    end
+  end
+  for _, cell in ipairs(corridor) do
+    mark(cell.c, cell.r)
+  end
+  local rows = {}
+  for r = 0, ROWS - 1 do
+    local chars = {}
+    for c = 0, COLS - 1 do
+      chars[#chars + 1] = open[r * COLS + c] and "." or "#"
+    end
+    rows[#rows + 1] = table.concat(chars)
+  end
+  return rows
+end
+
+-- L-shaped corridor between two cells (only used when the noise walled
+-- spawn and exit apart at this seed).
+local function corridorBetween(a, b)
+  local cells = {}
+  local step = a.c <= b.c and 1 or -1
+  for c = a.c, b.c, step do cells[#cells + 1] = { c = c, r = a.r } end
+  step = a.r <= b.r and 1 or -1
+  for r = a.r, b.r, step do cells[#cells + 1] = { c = b.c, r = r } end
+  return cells
+end
+
+local function provePath(ctx)
+  local player = ctx.scene.find("Player")
+  local gate = ctx.scene.find("Exit Gate")
+  return ctx.scene.findPath(player.transform.position, gate.transform.position)
+end
+
+local function announce(ctx, path)
+  local hud = ctx.scene.find("Warrens HUD").getComponent("Text")
+  if path then
+    ctx.events.emit("warrens-connected", { waypoints = #path })
+    hud.content = string.format("Exit path: %d steps", #path)
+    ctx.log(string.format("warrens carved (seed %d): exit reachable in %d steps", ctx.vars.seed, #path))
+  else
+    hud.content = "Exit path: blocked!"
+    ctx.log("warrens carved but the exit is unreachable - corridor fallback failed")
+  end
+end
+
+function script.onStart(ctx)
+  local player = ctx.scene.find("Player")
+  local gate = ctx.scene.find("Exit Gate")
+  local spawn = cellOf(player.transform.position)
+  local exitCell = cellOf(gate.transform.position)
+  local seed = noise.seedFrom(ctx.random)
+  ctx.vars.seed = seed
+
+  local tilemap = ctx.getComponent("Tilemap")
+  tilemap.grid = buildRows(seed, { spawn, exitCell }, {})
+  ctx.events.emit("warrens-carved", { seed = seed })
+
+  local path = provePath(ctx)
+  if path then
+    announce(ctx, path)
+  else
+    -- Walled apart at this seed: cut the corridor now (a fresh array again)
+    -- and re-prove on the NEXT frame. findPath's nav grid rebuilds at most
+    -- once per frame (and onStart shares a frame with the first onUpdate),
+    -- so re-asking on the carve frame would still see pre-corridor walls.
+    tilemap.grid = buildRows(seed, { spawn, exitCell }, corridorBetween(spawn, exitCell))
+    ctx.vars.carveFrame = ctx.time.frame
+    ctx.vars.reprove = true
+  end
+end
+
+function script.onUpdate(ctx, dt)
+  if not ctx.vars.reprove or ctx.time.frame <= ctx.vars.carveFrame then return end
+  ctx.vars.reprove = false
+  announce(ctx, provePath(ctx))
+end
+
+return script
+`,
+  });
+
+  await run(session, 'createScript', {
+    name: 'crystal-grower',
+    language: 'lua',
+    source: `-- Grows glow crystals once the warrens exist. Listens for the carver's
+-- "warrens-carved" event, re-derives the SAME cave field from the shared
+-- lib/noise module using the seed in the payload (derive-from-seed instead
+-- of reading the grid back), and plants a crystal wherever a second noise
+-- field peaks inside an open tunnel cell. Same library, second consumer —
+-- the code reuse script modules exist for.
+local noise = require("lib/noise")
+
+local script = {}
+
+local TILE = 32
+local COLS = 25
+local ROWS = 19
+local MAX_CRYSTALS = 12
+local PEAK = 0.72
+
+function script.onEvent(ctx, name, data)
+  if name ~= "warrens-carved" or ctx.vars.grown then return end
+  ctx.vars.grown = true
+  local seed = data.seed
+  local count = 0
+  for r = 1, ROWS - 2 do
+    for c = 1, COLS - 2 do
+      if count < MAX_CRYSTALS
+        and noise.caveOpen(c, r, seed)
+        and noise.value2(c * 0.9, r * 0.9, seed + 777) > PEAK then
+        count = count + 1
+        ctx.scene.spawn({
+          name = "Crystal " .. count,
+          position = { x = c * TILE + TILE / 2, y = r * TILE + TILE / 2 },
+          tags = { "crystal" },
+          components = {
+            SpriteRenderer = { shape = "triangle", color = "#7ee8fa", width = 16, height = 20, layer = 5 },
+            Light2D = { radius = 70, color = "#7ee8fa", intensity = 0.9 },
+          },
+        })
+      end
+    end
+  end
+  ctx.scene.find("Crystal HUD").getComponent("Text").content = string.format("Crystals: %d", count)
+  ctx.events.emit("crystals-grown", { count = count })
+  ctx.log(string.format("crystals grown: %d", count))
+end
+
+return script
+`,
+  });
+
+  await run(session, 'createScript', {
+    name: 'player-move',
+    language: 'lua',
+    source: `-- Player: four-direction movement through the warrens (no gravity).
+-- The solid Tilemap the carver generates is what stops the miner.
+local script = {}
+
+function script.onUpdate(ctx, dt)
+  local body = ctx.getComponent("PhysicsBody")
+  local speed = ctx.params.speed or 150
+  local vx, vy = 0, 0
+  if ctx.input.isDown("left") then vx = vx - speed end
+  if ctx.input.isDown("right") then vx = vx + speed end
+  if ctx.input.isDown("up") then vy = vy - speed end
+  if ctx.input.isDown("down") then vy = vy + speed end
+  body.velocity.x = vx
+  body.velocity.y = vy
+end
+
+return script
+`,
+  });
+
+  // --- entities ---
+  await run(session, 'createEntity', {
+    scene, name: 'Main Camera', position: { x: 400, y: 304 },
+    components: { Camera: { backgroundColor: '#0d0b14', ambientLight: 0.45 } },
+  });
+
+  // Caverns: authored FULLY SOLID on purpose — the carver's whole-array
+  // grid replacement is the only thing that opens it up, so a broken
+  // require/carve renders as an unmissable wall slab and fails findPath.
+  const solidRows = Array.from({ length: ROWS }, () => '#'.repeat(COLS));
+  await run(session, 'createEntity', {
+    scene, name: 'Caverns', tags: ['wall'], position: { x: 0, y: 0 },
+    components: {
+      Tilemap: { tileSize: TILE, tileAssets: { '#': rockTile.id }, grid: solidRows, solid: true },
+    },
+  });
+  await run(session, 'attachScript', { scene, entity: 'Caverns', script: 'scripts/cave-carver.lua' });
+
+  const spawnPos = cellCenter(SPAWN_CELL);
+  await run(session, 'createEntity', {
+    scene, name: 'Player', tags: ['player'], position: spawnPos,
+    components: {
+      SpriteRenderer: { assetId: miner.id, width: 24, height: 30 },
+      Collider: { shape: 'box', width: 22, height: 26 },
+      PhysicsBody: { bodyType: 'dynamic', gravityScale: 0 },
+      Light2D: { radius: 110, color: '#cfe8ff', intensity: 0.7 },
+    },
+  });
+  await run(session, 'attachScript', {
+    scene, entity: 'Player', script: 'scripts/player-move.lua', params: { speed: 150 },
+  });
+
+  await run(session, 'createEntity', {
+    scene, name: 'Exit Gate', tags: ['exit'], position: cellCenter(EXIT_CELL),
+    components: {
+      SpriteRenderer: { shape: 'rectangle', color: '#ffb347', width: 22, height: 26, layer: 5 },
+      Light2D: { radius: 90, color: '#ffcf6b', intensity: 1.0 },
+    },
+  });
+
+  // Crystal Mother: the invisible manager the grower behavior runs on.
+  await run(session, 'createEntity', { scene, name: 'Crystal Mother', tags: ['manager'], position: { x: 0, y: 0 } });
+  await run(session, 'attachScript', { scene, entity: 'Crystal Mother', script: 'scripts/crystal-grower.lua' });
+
+  await run(session, 'createEntity', {
+    scene, name: 'Warrens HUD', tags: ['ui'],
+    components: {
+      UIElement: { anchor: 'top-left', offset: { x: 24, y: 28 } },
+      Text: { content: 'Exit path: ?', fontSize: 18, color: '#ffffff' },
+    },
+  });
+  await run(session, 'createEntity', {
+    scene, name: 'Crystal HUD', tags: ['ui'],
+    components: {
+      UIElement: { anchor: 'top-right', offset: { x: -24, y: 28 } },
+      Text: { content: 'Crystals: 0', fontSize: 18, color: '#7ee8fa', align: 'right' },
+    },
+  });
+
+  // --- playtests ---
+  // Every expected value below is read back from an actual probe run of
+  // this exact scene (GameSession.stepAsync — the same engine path
+  // runPlaytest uses), never hand-computed.
+
+  // Probe 1: the carve at seed 0 — connectivity, HUD copy, crystal count.
+  const CARVE_FRAMES = 10;
+  let probe = await GameSession.create(session.store, { scene, seed: 0 });
+  for (let i = 0; i < CARVE_FRAMES; i++) await probe.stepAsync();
+  const carvedGrid = probe.runtime.find('Caverns').components.Tilemap.grid;
+  const openCells = carvedGrid.join('').split('').filter((ch) => ch === '.').length;
+  // Threshold-drift fence: the authored grid has zero open cells, a healthy
+  // carve opens a meaningful fraction of the 23x17 interior without turning
+  // it into an empty box.
+  if (openCells < 80 || openCells > 340) {
+    throw new Error(`crystal-warrens: carve opened ${openCells} cells at seed 0 — retune noise.caveOpen's threshold`);
+  }
+  if ((probe.eventCounts.get('warrens-connected') ?? 0) !== 1) {
+    throw new Error('crystal-warrens: the carver never proved spawn→exit connectivity at seed 0');
+  }
+  const expectedWarrensHud = probe.runtime.find('Warrens HUD').components.Text.content;
+  const expectedCrystalHud = probe.runtime.find('Crystal HUD').components.Text.content;
+  const crystalCount = probe.runtime.getEntities().filter((e) => e.tags.includes('crystal')).length;
+  if (crystalCount < 1 || expectedCrystalHud !== `Crystals: ${crystalCount}`) {
+    throw new Error(`crystal-warrens: expected grown crystals with a matching HUD (got ${crystalCount}, "${expectedCrystalHud}")`);
+  }
+  if (probe.errors.length > 0) {
+    throw new Error('crystal-warrens: carve probe recorded errors: ' + JSON.stringify(probe.errors));
+  }
+  probe.destroy();
+
+  // Probe 2: seed sensitivity — a different session seed must carve a
+  // different map (this is what makes the export boot proof in
+  // tests/export-web-boot.test.ts causal: a dead require would render the
+  // authored wall slab identically at every seed).
+  probe = await GameSession.create(session.store, { scene, seed: 7 });
+  for (let i = 0; i < CARVE_FRAMES; i++) await probe.stepAsync();
+  const gridSeed7 = probe.runtime.find('Caverns').components.Tilemap.grid;
+  if (gridSeed7.join('\n') === carvedGrid.join('\n')) {
+    throw new Error('crystal-warrens: seeds 0 and 7 carved identical maps — ctx.random is not reaching the carve');
+  }
+  probe.destroy();
+
+  // Probe 3: movement — walk right out of the spawn clearing and read back
+  // where the carved tunnels actually let the miner stop.
+  const MOVE_FRAMES = 30;
+  probe = await GameSession.create(session.store, { scene, seed: 0 });
+  probe.runtime.input.setActionDown('right');
+  for (let i = 0; i < MOVE_FRAMES; i++) await probe.stepAsync();
+  probe.runtime.input.setActionUp('right');
+  const movedPlayer = probe.runtime.find('Player').transform.position;
+  const expectedPlayerX = movedPlayer.x;
+  const expectedPlayerY = movedPlayer.y;
+  if (expectedPlayerX - spawnPos.x < 20) {
+    throw new Error(`crystal-warrens: movement probe barely moved (x ${spawnPos.x} → ${expectedPlayerX}) — spawn clearing blocked?`);
+  }
+  probe.destroy();
+
+  await run(session, 'createPlaytest', {
+    name: 'warrens-carved-and-connected',
+    scene,
+    steps: [
+      { type: 'wait', frames: CARVE_FRAMES },
+      { type: 'assertEventCount', event: 'warrens-carved', equals: 1 },
+      { type: 'assertEventCount', event: 'warrens-connected', equals: 1 },
+      { type: 'assertEventCount', event: 'crystals-grown', equals: 1 },
+      { type: 'assertProperty', entity: 'Warrens HUD', property: 'Text.content', equals: expectedWarrensHud },
+      { type: 'assertProperty', entity: 'Crystal HUD', property: 'Text.content', equals: expectedCrystalHud },
+      { type: 'assertEntityExists', entity: 'Crystal 1', exists: true },
+      { type: 'assertEntityExists', entity: `Crystal ${crystalCount}`, exists: true },
+      { type: 'assertNoErrors' },
+    ],
+    maxFrames: 100,
+  });
+  await run(session, 'createPlaytest', {
+    name: 'movement',
+    scene,
+    steps: [
+      { type: 'press', action: 'right', frames: MOVE_FRAMES },
+      { type: 'assertPositionNear', entity: 'Player', x: expectedPlayerX, y: expectedPlayerY, tolerance: 3 },
+      { type: 'assertNoErrors' },
+    ],
+    maxFrames: 100,
+  });
+  await run(session, 'createPlaytest', {
+    name: 'smoke',
+    scene,
+    steps: [
+      { type: 'wait', frames: 60 },
+      { type: 'assertEntityExists', entity: 'Player', exists: true },
+      { type: 'assertEntityExists', entity: 'Caverns', exists: true },
+      { type: 'assertEntityExists', entity: 'Exit Gate', exists: true },
+      { type: 'assertEntityExists', entity: 'Crystal Mother', exists: true },
+      { type: 'assertEntityExists', entity: 'Warrens HUD', exists: true },
+      { type: 'assertEntityExists', entity: 'Crystal HUD', exists: true },
+      { type: 'assertNoErrors' },
+    ],
+    maxFrames: 200,
+  });
+
+  const report = await run(session, 'validateProject', {});
+  if (report.errors.length > 0) throw new Error('crystal-warrens validation failed: ' + JSON.stringify(report.errors));
+  console.log('✓ crystal-warrens generated');
+}
+
+// ---------------------------------------------------------------------------
 await generatePlatformer();
 await generateTopDown();
 await generateVisualNovel();
@@ -4188,4 +4670,5 @@ await generateSkyCourier();
 await generateDriftCellar();
 await generateEmberHorde();
 await generateEmberArcade();
+await generateCrystalWarrens();
 console.log('All example projects generated.');
