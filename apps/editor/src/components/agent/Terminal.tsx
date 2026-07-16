@@ -16,11 +16,12 @@
  * the pty: hiding/closing the Agent panel's dockview tab must not kill a
  * running `claude`/`codex`/shell session, only stop rendering it.
  */
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useSyncExternalStore } from 'react';
 import { Terminal as XTerm } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import '@xterm/xterm/css/xterm.css';
 import {
+  getAgentSessionSummary,
   getAgentSocketSnapshot,
   initialWriteCursor,
   planTerminalWrite,
@@ -60,12 +61,23 @@ export interface TerminalProps {
 
 export function Terminal({ onData, onResize }: TerminalProps) {
   const containerRef = useRef<HTMLDivElement>(null);
+  // The live xterm instance, so the epoch effect below can focus it without
+  // re-creating it — the one-xterm-per-lifetime contract stays intact.
+  const termRef = useRef<XTerm | null>(null);
   // Always read the latest callbacks without re-creating the xterm instance;
   // assigning during render is fine for this always-read-latest pattern.
   const onDataRef = useRef(onData);
   const onResizeRef = useRef(onResize);
   onDataRef.current = onData;
   onResizeRef.current = onResize;
+
+  // The session epoch bumps on every start/reset (see useAgentSocket). We watch
+  // it — not the whole summary — so a relaunch ("Launch again" keeps this
+  // component mounted) can move keyboard focus back into the terminal, without
+  // re-focusing on unrelated re-renders (onData/onResize prop churn, status
+  // ticks). Subscribed via useSyncExternalStore so this is the ONLY reactive
+  // dependency that can trigger the focus effect.
+  const epoch = useSyncExternalStore(subscribeAgentSocket, () => getAgentSessionSummary().epoch);
 
   // Create the xterm instance once for this component's lifetime.
   useEffect(() => {
@@ -123,12 +135,34 @@ export function Terminal({ onData, onResize }: TerminalProps) {
     drain();
     const unsubscribe = subscribeAgentSocket(drain);
 
+    // Take keyboard focus now that the instance is open, fitted, and its
+    // scrollback has replayed — so keystrokes land in the terminal the moment
+    // a launch tile (or "Open a plain terminal") reveals this view, instead of
+    // going nowhere until the user clicks inside it. Relaunch focus is handled
+    // by the epoch effect below (this mount effect runs once per lifetime).
+    termRef.current = term;
+    term.focus();
+
     return () => {
       unsubscribe();
       resizeObserver.disconnect();
       term.dispose();
+      termRef.current = null;
     };
   }, []);
+
+  // Relaunch ("Launch again") bumps the epoch while this component stays
+  // mounted; pull focus back into the terminal so the user can type into the
+  // fresh session without clicking first. Skips the initial mount (the mount
+  // effect already focused there) so this only fires on a genuine epoch change.
+  const mounted = useRef(false);
+  useEffect(() => {
+    if (!mounted.current) {
+      mounted.current = true;
+      return;
+    }
+    termRef.current?.focus();
+  }, [epoch]);
 
   return <div className="agent-xterm" ref={containerRef} />;
 }
