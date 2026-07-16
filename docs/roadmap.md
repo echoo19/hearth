@@ -1,13 +1,15 @@
 # Hearth Roadmap
 
-**v1.0.0 is the current release.** It closes the road to 1.0 with the final
-hardening wave: a project-format stability guarantee (an automatic migration
-rail, strict version-stamp rules, upgrade tests against 0.13/0.14 projects),
-a native close guard for unsaved script edits, a performance regression
-fence in CI, and a docs completeness pass — see
-[Wave M](#wave-m--final-hardening--verification-shipped-v100) below. Before
-it, v0.15.0's agent game-craft wave (Wave L2, below) sharpened how agents
-actually make games. What follows is the running history.
+**v1.1.0 is the current release.** It adds script modules: `require` for
+same-language Lua and JavaScript helpers under `scripts/`, recursive script
+discovery/export, whole-graph hot reload, and validation for broken or cyclic
+requires. v1.0.0 closed the road to 1.0 with the final hardening wave: a
+project-format stability guarantee (an automatic migration rail, strict
+version-stamp rules, upgrade tests against 0.13/0.14 projects), a native
+close guard for unsaved script edits, a performance regression fence in CI,
+and a docs completeness pass. Before it, v0.15.0's agent game-craft wave
+(Wave L2, below) sharpened how agents actually make games. What follows is
+the running history.
 
 v0.14.0 ("Tightening", below) added no new engine features — 129 commits that make the
 editor *work properly everywhere*, front-load the workflows, and unify the
@@ -118,6 +120,29 @@ what's deliberately missing.
 The standing rule for everything below: **agent-native first**. Each system
 ships as schemas + commands (inspectable via `hearth … --json`, exposed as
 MCP tools, testable in headless playtests) before it gets editor UI.
+
+## Shipped in v1.1.0
+
+- **Script modules**: scripts can now share code with load-time
+  `require("lib/noise")`, resolved against `scripts/` with the requiring
+  script's extension inferred. Explicit extensions work too. Lua requires
+  Lua, JS requires JS, and ESM `import` remains unsupported.
+- **Libraries are just scripts**: no new asset type or schema change. A
+  helper is a script that returns a table (Lua) or exports an object (JS)
+  and usually has no lifecycle hooks.
+- **Deterministic module graph**: module bodies run once per scene load and
+  are memoized. Cycles are errors that name the full chain, and resolution
+  cannot escape `scripts/`.
+- **Graph-aware validation and reload**: `checkScript`, `hearth validate`,
+  and `validate_project` report broken or cyclic requires
+  (`SCRIPT_REQUIRE_NOT_FOUND`, `SCRIPT_REQUIRE_CYCLE`). Editing a library
+  hot-reloads its dependents; a compile failure anywhere leaves the entire
+  previous graph running. Module top-level state resets on reload, so
+  reload-surviving state still belongs in `ctx.vars`.
+- **Scripts are a tree**: `listScripts` recurses, `scripts/lib/*` appears in
+  CLI/MCP/editor script lists, and nested scripts ship in exports. CLI
+  `hearth create script noise --dir lib` and MCP `create_script`'s `dir`
+  parameter create helpers in subdirectories.
 
 ## Shipped in v0.14.0
 

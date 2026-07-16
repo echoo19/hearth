@@ -20,7 +20,8 @@ my-game/
 │   ├── animations/idle.anim.json
 │   └── prefabs/ember_grub.prefab.json  # reusable entity-subtree templates
 ├── scripts/
-│   └── player-controller.lua    # behavior scripts (Lua by default; .js works too)
+│   ├── player-controller.lua    # behavior scripts (Lua by default; .js works too)
+│   └── lib/noise.lua            # required helpers; scripts/ is recursive
 ├── playtests/
 │   └── smoke.playtest.json      # headless scripted tests
 ├── .hearth/
@@ -182,13 +183,19 @@ Step types: `wait`, `press`, `release`, `click` (screen coordinates),
 Playtests also carry a `seed` (default `0`) for the script RNG
 (`ctx.random` / Lua `math.random`): same seed, same run.
 
-## Scripts (`scripts/*.lua`, `scripts/*.js`)
+## Scripts (`scripts/**/*.lua`, `scripts/**/*.js`)
 
 Plain Lua (default) or JavaScript files defining lifecycle hooks (see
 [scripting.md](./scripting.md)); both languages get the identical `ctx`
 API. Scripts are referenced by path from `Script` components and are the
 one part of the project agents are encouraged to edit as code (via
 `hearth create script` / `hearth edit-script`).
+
+`scripts/` is a tree. `store.listScripts()`, CLI/MCP script listing,
+validation, hot reload, and exports all recurse into subdirectories such as
+`scripts/lib/`. Script modules are not a separate asset type: a helper is
+just a `.lua` or `.js` script required by another script and, usually, not
+attached to an entity.
 
 ## .hearth/log/commands.jsonl
 
