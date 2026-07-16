@@ -217,6 +217,45 @@ describe('UNKNOWN_COMPONENT_KEY validation (pre-fix projects must still load)', 
   });
 });
 
+describe('script require validation', () => {
+  it('SCRIPT_REQUIRE_NOT_FOUND: script requires a missing module', async () => {
+    const { session, store } = await makeSession();
+    await session.execute('createScript', {
+      name: 'player',
+      language: 'lua',
+      source: 'local script = {}\nlocal noise = require("lib/missing")\nreturn script\n',
+    });
+
+    const report = await validateProject(store);
+
+    const issue = report.errors.find((e) => e.code === 'SCRIPT_REQUIRE_NOT_FOUND');
+    expect(issue).toBeTruthy();
+    expect(issue?.script).toBe('scripts/player.lua');
+    expect(issue?.line).toBe(2);
+    expect(issue?.message).toContain('scripts/lib/missing.lua');
+    expect(report.valid).toBe(false);
+  });
+
+  it('does not report script require issues for a valid require', async () => {
+    const { session, store } = await makeSession();
+    await session.execute('createScript', {
+      name: 'noise',
+      dir: 'lib',
+      language: 'lua',
+      source: 'return { value = 1 }\n',
+    });
+    await session.execute('createScript', {
+      name: 'player',
+      language: 'lua',
+      source: 'local script = {}\nlocal noise = require("lib/noise")\nreturn script\n',
+    });
+
+    const report = await validateProject(store);
+
+    expect(report.errors.filter((e) => e.code.startsWith('SCRIPT_REQUIRE_'))).toEqual([]);
+  });
+});
+
 describe('buildSettings.icon validation', () => {
   const ALL: any = ['read-only', 'safe-edit', 'code-edit', 'asset-edit', 'build'];
 

@@ -107,6 +107,72 @@ describe('checkScript', () => {
     expect(result.data.diagnostics.length).toBe(1);
   });
 
+  it('path mode reports a missing required module with attempted path and line', async () => {
+    const { session } = await makeSession();
+    await session.execute('createScript', {
+      name: 'player',
+      language: 'lua',
+      source: 'local script = {}\nlocal noise = require("lib/missing")\nreturn script\n',
+    });
+
+    const result = await session.execute<any>('checkScript', { path: 'scripts/player.lua' });
+
+    expect(result.success).toBe(true);
+    expect(result.data.valid).toBe(false);
+    expect(result.data.diagnostics).toEqual([
+      {
+        severity: 'error',
+        line: 2,
+        message: expect.stringContaining('scripts/lib/missing.lua'),
+      },
+    ]);
+  });
+
+  it('path mode reports a require cycle naming the cycle', async () => {
+    const { session } = await makeSession();
+    await session.execute('createScript', {
+      name: 'a',
+      language: 'lua',
+      source: 'local b = require("b")\nreturn {}\n',
+    });
+    await session.execute('createScript', {
+      name: 'b',
+      language: 'lua',
+      source: 'local a = require("a")\nreturn {}\n',
+    });
+
+    const result = await session.execute<any>('checkScript', { path: 'scripts/a.lua' });
+
+    expect(result.success).toBe(true);
+    expect(result.data.valid).toBe(false);
+    expect(result.data.diagnostics[0]).toMatchObject({
+      severity: 'error',
+      line: 1,
+      message: expect.stringContaining('require cycle: scripts/a.lua -> scripts/b.lua -> scripts/a.lua'),
+    });
+  });
+
+  it('path mode accepts a valid require', async () => {
+    const { session } = await makeSession();
+    await session.execute('createScript', {
+      name: 'noise',
+      dir: 'lib',
+      language: 'lua',
+      source: 'return { value = 1 }\n',
+    });
+    await session.execute('createScript', {
+      name: 'player',
+      language: 'lua',
+      source: 'local script = {}\nlocal noise = require("lib/noise")\nreturn script\n',
+    });
+
+    const result = await session.execute<any>('checkScript', { path: 'scripts/player.lua' });
+
+    expect(result.success).toBe(true);
+    expect(result.data.valid).toBe(true);
+    expect(result.data.diagnostics).toEqual([]);
+  });
+
   it('path mode never writes anything (read-only) even for a broken script', async () => {
     const { session, fs } = await makeSession();
     await session.execute('createScript', { name: 'bad-lua', language: 'lua', source: 'if x then\n' });
