@@ -1,0 +1,47 @@
+{
+  "formatVersion": 1,
+  "id": "ptt_b3tdvs8d",
+  "name": "smoke",
+  "scene": "scn_90d1ji2g",
+  "steps": [
+    {
+      "type": "wait",
+      "frames": 60
+    },
+    {
+      "type": "assertEntityExists",
+      "entity": "Player",
+      "exists": true
+    },
+    {
+      "type": "assertEntityExists",
+      "entity": "Caverns",
+      "exists": true
+    },
+    {
+      "type": "assertEntityExists",
+      "entity": "Exit Gate",
+      "exists": true
+    },
+    {
+      "type": "assertEntityExists",
+      "entity": "Crystal Mother",
+      "exists": true
+    },
+    {
+      "type": "assertEntityExists",
+      "entity": "Warrens HUD",
+      "exists": true
+    },
+    {
+      "type": "assertEntityExists",
+      "entity": "Crystal HUD",
+      "exists": true
+    },
+    {
+      "type": "assertNoErrors"
+    }
+  ],
+  "maxFrames": 200,
+  "seed": 0
+}

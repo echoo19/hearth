@@ -1,0 +1,25 @@
+{
+  "formatVersion": 1,
+  "id": "ptt_4vpbhzra",
+  "name": "movement",
+  "scene": "scn_90d1ji2g",
+  "steps": [
+    {
+      "type": "press",
+      "action": "right",
+      "frames": 30
+    },
+    {
+      "type": "assertPositionNear",
+      "entity": "Player",
+      "x": 187,
+      "y": 496,
+      "tolerance": 3
+    },
+    {
+      "type": "assertNoErrors"
+    }
+  ],
+  "maxFrames": 100,
+  "seed": 0
+}

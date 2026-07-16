@@ -1,0 +1,29 @@
+{
+  "formatVersion": 1,
+  "assets": [
+    {
+      "id": "ast_jlxog0q4",
+      "name": "miner",
+      "type": "sprite",
+      "path": "assets/sprites/miner.svg",
+      "metadata": {
+        "procedural": true,
+        "shape": "character",
+        "color": "#9fd8ff",
+        "width": 24,
+        "height": 30
+      }
+    },
+    {
+      "id": "ast_8i9dphuw",
+      "name": "warren-rock",
+      "type": "tile",
+      "path": "assets/tiles/warren_rock.svg",
+      "metadata": {
+        "procedural": true,
+        "color": "#3d3a52",
+        "size": 32
+      }
+    }
+  ]
+}
