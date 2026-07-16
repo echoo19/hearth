@@ -19,7 +19,8 @@ rewritten to reflect what's actually left.
 
 ```sh
 npm run bench            # full run: 120 warmup + 1000 timed frames per scenario
-npm run bench -- --smoke # fast harness check: 10 + 10 frames, no thresholds (this is what CI runs)
+npm run bench -- --smoke # fast harness check: 10 + 10 frames, no thresholds
+npm run bench -- --check # CI regression fence: median of key scenarios vs loose budgets
 npm run bench -- --json  # machine-readable output instead of the aligned table
 ```
 
@@ -28,6 +29,27 @@ npm run bench -- --json  # machine-readable output instead of the aligned table
 `@hearth/core`/`@hearth/runtime` from their compiled `dist` output, so once
 packages are built it can also be run directly with
 `node packages/runtime/bench/bench.mjs`.
+
+## Regression fences
+
+CI runs `node packages/runtime/bench/bench.mjs --check` after
+`build:packages`, reusing the compiled package output instead of rebuilding.
+The fence runs three full benchmark passes for the scenarios most likely to
+catch an accidentally-lost broadphase and compares the **median mean
+ms/frame** against loose absolute budgets:
+
+| scenario | fenced budget |
+|---|---:|
+| colliders-1500 | 15ms median mean |
+| mixed-horde | 14ms median mean |
+
+Those budgets are intentionally generous: they are roughly 5x the Apple M3
+Pro reference means below (2.912ms and 2.717ms), because GitHub-hosted
+runners are slower and noisier than the reference machine. The fence is a
+tripwire for order-of-magnitude regressions, such as losing the spatial-hash
+broadphase (colliders-1500 was ~13.5x slower before Wave E), not a profiling
+target. Real performance numbers still come from the reference-machine full
+bench run documented below, not from CI.
 
 Every scenario (`packages/runtime/bench/scenarios.mjs`) builds a fully
 in-memory project (`MemoryFileSystem`, never touches disk) with a seeded

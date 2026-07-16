@@ -38,6 +38,8 @@ jobs:
           HEARTH_DESKTOP_INTEGRATION: '1'
       - name: Bench harness smoke test (catches harness rot, not perf regressions)
         run: node packages/runtime/bench/bench.mjs --smoke
+      - name: Bench regression fence
+        run: node packages/runtime/bench/bench.mjs --check
       - name: Regenerate examples (dogfoods the command system)
         run: node packages/examples/generate.mjs
       - name: Examples are clean (byte-identical regen)

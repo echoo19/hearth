@@ -10,6 +10,7 @@
  * Usage:
  *   node packages/runtime/bench/bench.mjs            full run: 120 warmup + 1000 timed frames
  *   node packages/runtime/bench/bench.mjs --smoke     fast harness check: 10 + 10 frames, no thresholds
+ *   node packages/runtime/bench/bench.mjs --check     CI regression fence: median of key scenarios vs loose budgets
  *   node packages/runtime/bench/bench.mjs --json       machine-readable output instead of the table
  *
  * Requires @hearth/core and @hearth/runtime's compiled `dist` output (run
@@ -31,7 +32,9 @@ try {
 
 const args = process.argv.slice(2);
 const smoke = args.includes('--smoke');
+const check = args.includes('--check');
 const json = args.includes('--json');
+const { FENCE_BUDGETS_MS, FENCE_RUNS, FENCE_SCENARIOS, evaluateFenceResults } = await import('./fence.mjs');
 
 const WARMUP_FRAMES = smoke ? 10 : 120;
 const TIMED_FRAMES = smoke ? 10 : 1000;
@@ -91,10 +94,19 @@ function formatTable(results) {
 }
 
 async function main() {
+  const scenarios = check ? SCENARIOS.filter((scenario) => FENCE_SCENARIOS.includes(scenario.name)) : SCENARIOS;
   const results = [];
   let failed = false;
 
-  for (const scenario of SCENARIOS) {
+  if (check && scenarios.length !== FENCE_SCENARIOS.length) {
+    const found = new Set(scenarios.map((scenario) => scenario.name));
+    for (const name of FENCE_SCENARIOS) {
+      if (!found.has(name)) console.error(`bench check scenario "${name}" was not found`);
+    }
+    failed = true;
+  }
+
+  for (const scenario of scenarios) {
     try {
       const result = await runScenario(scenario);
       results.push(result);
@@ -108,16 +120,48 @@ async function main() {
     }
   }
 
+  if (check) {
+    const fenceEntries = [];
+    for (const scenario of scenarios) {
+      const firstRun = results.find((result) => result.name === scenario.name);
+      if (!firstRun) continue;
+      const runs = [firstRun];
+      for (let i = 1; i < FENCE_RUNS; i++) {
+        try {
+          const result = await runScenario(scenario);
+          runs.push(result);
+          results.push(result);
+          if (result.errors > 0) {
+            failed = true;
+            console.error(`scenario "${scenario.name}" produced ${result.errors} runtime error(s)`);
+          }
+        } catch (err) {
+          failed = true;
+          console.error(`scenario "${scenario.name}" failed: ${err?.stack ?? err}`);
+        }
+      }
+      fenceEntries.push({
+        scenario: scenario.name,
+        budgetMeanMs: FENCE_BUDGETS_MS[scenario.name],
+        runs,
+      });
+    }
+
+    const outcome = evaluateFenceResults(fenceEntries);
+    failed ||= outcome.failed;
+    if (!json) console.log(`\n${outcome.message}`);
+  }
+
   if (json) {
-    console.log(JSON.stringify({ node: process.version, smoke, warmupFrames: WARMUP_FRAMES, timedFrames: TIMED_FRAMES, results }, null, 2));
+    console.log(JSON.stringify({ node: process.version, smoke, check, warmupFrames: WARMUP_FRAMES, timedFrames: TIMED_FRAMES, results }, null, 2));
   } else {
     console.log(
-      `node ${process.version}, ${smoke ? 'smoke' : 'full'} mode (${WARMUP_FRAMES} warmup / ${TIMED_FRAMES} timed frames)\n`,
+      `node ${process.version}, ${check ? 'check' : smoke ? 'smoke' : 'full'} mode (${WARMUP_FRAMES} warmup / ${TIMED_FRAMES} timed frames)\n`,
     );
     console.log(formatTable(results));
   }
 
-  if (failed || results.length !== SCENARIOS.length) {
+  if (failed || (!check && results.length !== SCENARIOS.length)) {
     process.exitCode = 1;
   }
 }
