@@ -686,7 +686,9 @@ Update `agentPanelDetect.test.ts` to import `describeLauncher` from `../src/comp
 
 - [ ] **Step 6: Commit** — `git commit -am "Add the agent launcher tile model and presentational component"`
 
----### Task 4: AgentPanel three-state rework (launcher | running | exited)
+---
+
+### Task 4: AgentPanel three-state rework (launcher | running | exited)
 
 **Files:**
 - Create: `apps/editor/src/components/agent/ManualSetup.tsx`
