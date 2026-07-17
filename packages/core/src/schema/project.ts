@@ -71,6 +71,14 @@ export const BuildSettingsSchema = z.object({
    * from.
    */
   icon: z.string().nullable().default(null),
+  /**
+   * Pixel-art rendering default for the whole project. When true (the
+   * default), textures scale with NEAREST-neighbour filtering so upscaled
+   * pixel art stays crisp instead of going blurry (linear). A single asset
+   * can override this via its own `pixelArt` flag. Turning it off restores
+   * linear filtering everywhere (smoother for photographic/gradient art).
+   */
+  pixelPerfect: z.boolean().default(true),
   loading: LoadingSettingsSchema.default({}),
 });
 export type BuildSettings = z.infer<typeof BuildSettingsSchema>;
@@ -119,6 +127,15 @@ export const AssetSchema = z.object({
   type: z.enum(ASSET_TYPES),
   /** Project-relative path, e.g. "assets/sprites/coin.svg". */
   path: z.string(),
+  /**
+   * Per-asset override of the project's `buildSettings.pixelPerfect` filtering
+   * default for this texture. Absent/`null` inherits the project setting;
+   * `true` forces NEAREST (crisp pixel art), `false` forces linear (smooth).
+   * Only meaningful for image assets (sprite/tile). Left optional (no default)
+   * so existing assets round-trip byte-for-byte — the field only appears once
+   * an author sets an explicit override.
+   */
+  pixelArt: z.boolean().nullable().optional(),
   metadata: z.record(z.string(), z.unknown()).default({}),
 });
 export type Asset = z.infer<typeof AssetSchema>;

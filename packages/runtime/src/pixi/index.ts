@@ -80,6 +80,7 @@ import {
 } from './postEffects.js';
 import { syncSpriteEffectsFilter } from './spriteEffectsFilter.js';
 import { buildTilemapContainer } from './tilemapRender.js';
+import { buildSpriteRenderable, pixelArtScaleMode, resolvePixelArt } from './spriteRender.js';
 import { clearGraphics } from './graphicsGuard.js';
 import { pixiTextureAssetDescriptor } from './assetDescriptor.js';
 
@@ -739,11 +740,18 @@ export class PixiSceneView {
       }
     }
 
+    const pixelPerfect = this.opts.store.project.buildSettings.pixelPerfect;
     for (const id of assetIds) {
       const asset = this.opts.store.getAsset(id);
       if (!asset) continue;
       try {
         const texture = await Assets.load<Texture>(pixiTextureAssetDescriptor(asset, this.opts.resolveAssetUrl(asset)));
+        // Pixel-art projects (the default) upscale with NEAREST-neighbour
+        // filtering so magnified sprites/tiles stay crisp instead of blurring
+        // (linear). A single asset can opt out via its own `pixelArt` flag.
+        // Set on the shared source so every Sprite/TilingSprite/NineSliceSprite
+        // and every cropped frame sub-texture drawing this asset inherits it.
+        texture.source.scaleMode = pixelArtScaleMode(resolvePixelArt(asset.pixelArt, pixelPerfect));
         this.textures.set(id, texture);
       } catch (err) {
         this.opts.onLog?.({
@@ -1072,7 +1080,13 @@ export class PixiSceneView {
     return node;
   }
 
-  /** Identity of a sprite's drawn visual: assetId+frame (texture/sub-rect) plus the primitive fallback fields. */
+  /**
+   * Identity of a sprite's drawn visual: assetId+frame (texture/sub-rect),
+   * the primitive fallback fields, AND the fill fields (renderMode/slice)
+   * that pick between a Sprite / TilingSprite / NineSliceSprite — a change to
+   * any of these rebuilds the child in `updateNode` (the different display
+   * classes can't be reconfigured into each other in place).
+   */
   private spriteSnapshotKey(sprite: SpriteRendererComponent): string {
     return JSON.stringify([
       sprite.assetId,
@@ -1081,56 +1095,24 @@ export class PixiSceneView {
       sprite.color,
       sprite.width,
       sprite.height,
+      sprite.renderMode,
+      sprite.slice,
     ]);
   }
 
-  private buildSpriteRenderable(sprite: SpriteRendererComponent): Container | null {
-    const texture = sprite.assetId ? this.textures.get(sprite.assetId) : undefined;
-    if (texture) {
-      const s = new Sprite(this.resolveSpriteTexture(sprite, texture));
-      s.anchor.set(0.5);
-      s.width = sprite.width;
-      s.height = sprite.height;
-      // Pixi v8 tint accepts '#rrggbb' strings directly (see updateLightmap's
-      // `sprite.tint = light.color` above) — default '#ffffff' is Pixi's own
-      // default tint, so untouched sprites render identically to before this
-      // was wired up.
-      s.tint = sprite.color;
-      return s;
-    }
-    if (sprite.shape === 'none' && !sprite.assetId) return null;
-    const g = new Graphics();
-    const w = sprite.width;
-    const h = sprite.height;
-    switch (sprite.shape) {
-      case 'circle':
-        g.circle(0, 0, Math.min(w, h) / 2).fill(sprite.color);
-        break;
-      case 'triangle':
-        g.poly([-w / 2, h / 2, w / 2, h / 2, 0, -h / 2]).fill(sprite.color);
-        break;
-      case 'none':
-        // Asset was set but its texture failed to load: visible placeholder.
-        g.rect(-w / 2, -h / 2, w, h).stroke({ width: 1, color: sprite.color });
-        break;
-      default:
-        g.rect(-w / 2, -h / 2, w, h).fill(sprite.color);
-        break;
-    }
-    return g;
-  }
-
   /**
-   * Resolves the texture to draw for a textured SpriteRenderer: the whole
-   * base texture when `frame` is null, or a cached sub-texture cropped to
-   * the named sheet frame — delegates the actual crop/cache/fallback-warn
-   * logic to `resolveFrameTexture`, shared with Tilemap autotile rendering
-   * (see `buildTilemap` below), since both are "asset id + named sheet
-   * frame -> cropped Texture".
+   * Builds the sprite child via the pure ./spriteRender.js builder, injecting
+   * this view's preloaded texture set and cached frame cropper (the same
+   * `resolveFrameTexture` Tilemap autotiling uses). Pixi v8 tint accepts
+   * '#rrggbb' strings directly; default '#ffffff' is Pixi's own default tint,
+   * so untouched stretch sprites render identically to before render modes
+   * existed.
    */
-  private resolveSpriteTexture(sprite: SpriteRendererComponent, base: Texture): Texture {
-    if (!sprite.frame || !sprite.assetId) return base;
-    return this.resolveFrameTexture(sprite.assetId, sprite.frame, base);
+  private buildSpriteRenderable(sprite: SpriteRendererComponent): Container | null {
+    return buildSpriteRenderable(sprite, {
+      getTexture: (assetId) => this.textures.get(assetId),
+      resolveFrameTexture: (assetId, frame, base) => this.resolveFrameTexture(assetId, frame, base),
+    });
   }
 
   /**
