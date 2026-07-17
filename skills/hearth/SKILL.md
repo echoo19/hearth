@@ -152,6 +152,19 @@ hearth autotile set Arena Ground --char G --clear   # remove the rule
 The preview and any export re-render live the moment the rule changes. Full
 47-key shape table: [docs/editor.md](https://hearthengine.com/docs/editor).
 
+**Firm rule — surfaces must connect.** Any multi-tile surface, platform, floor,
+wall, or built structure MUST use a **connective tileset** whose edge, corner,
+interior, and end-cap tiles are chosen by their neighbours — via a `Tilemap`
+with a blob47 `autotile` rule (the default), or a hand-authored neighbour-aware
+tile choice (left-cap / middle / right-cap, top / mid / bottom). **Never** build
+a surface from a single tile repeated with autotile OFF, and **never** from a
+row/column of individual `SpriteRenderer` entities each holding one tile — both
+read as disconnected mismatched blocks, each with its own outline, instead of
+one cohesive object. If the source art is not already a blob47 layout, slice it
+and pass `autotile set --mapping` a full 47-shape-key map (every resolved frame
+must exist), or compose a blob47-arranged sheet. This is the difference between
+"tiles that render" and "a surface that looks real."
+
 ## Never stretch pixel art — tile or slice it
 
 A `SpriteRenderer` fills its `width`×`height` box one of three ways, set by
