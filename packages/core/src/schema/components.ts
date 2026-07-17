@@ -25,6 +25,21 @@ export const TransformSchema = z.object({
   scale: Vec2Schema.default({ x: 1, y: 1 }),
 });
 
+/**
+ * Nine-slice inset (pixels of the source texture) kept un-stretched at each
+ * edge when `renderMode === 'sliced'`: the four corners stay their native
+ * size, the four edges stretch/tile along one axis, and the center fills the
+ * rest. Ignored for `stretch`/`tile`. All-zero (the default) makes a sliced
+ * sprite behave like a plain stretch, so a mode switch alone never distorts.
+ */
+export const SpriteSliceSchema = z.object({
+  top: z.number().min(0).default(0),
+  right: z.number().min(0).default(0),
+  bottom: z.number().min(0).default(0),
+  left: z.number().min(0).default(0),
+});
+export type SpriteSlice = z.infer<typeof SpriteSliceSchema>;
+
 export const SpriteRendererSchema = z.object({
   assetId: z.string().nullable().default(null),
   /** Name of a sliced sheet frame on `assetId` to draw; null draws the whole image. */
@@ -34,6 +49,20 @@ export const SpriteRendererSchema = z.object({
   color: ColorSchema.default('#ffffff'),
   width: z.number().positive().default(32),
   height: z.number().positive().default(32),
+  /**
+   * How the texture fills width×height:
+   *   - `stretch` (default, back-compat): scale the single texture to the box —
+   *     distorts pixel art when the box aspect ≠ the texture's.
+   *   - `tile`: repeat the texture at its NATIVE pixel size to fill the box, so
+   *     a wide platform built from one 18px tile reads as connected tiles, not
+   *     a smear. Use for surfaces/floors/walls.
+   *   - `sliced`: 9-slice — `slice` insets keep the corners un-stretched while
+   *     edges/center scale. Use for panels/platforms with distinct ends.
+   * In `tile`/`sliced` the native texels are always preserved (never distorted).
+   */
+  renderMode: z.enum(['stretch', 'tile', 'sliced']).default('stretch'),
+  /** Nine-slice insets (px) used only when renderMode === 'sliced'. */
+  slice: SpriteSliceSchema.default({ top: 0, right: 0, bottom: 0, left: 0 }),
   opacity: z.number().min(0).max(1).default(1),
   flipX: z.boolean().default(false),
   flipY: z.boolean().default(false),
@@ -457,7 +486,7 @@ export function createComponent<T extends ComponentType>(
 export const COMPONENT_DOCS: Record<ComponentType, string> = {
   Transform: 'Position (pixels), rotation (degrees), and scale of an entity. Almost every entity needs one.',
   SpriteRenderer:
-    'Renders a sprite asset (assetId) or a colored primitive (shape/color/width/height) when no asset is set. frame: name of a sliced sheet frame to draw (null = whole image).',
+    "Renders a sprite asset (assetId) or a colored primitive (shape/color/width/height) when no asset is set. frame: name of a sliced sheet frame to draw (null = whole image). renderMode controls how the texture fills width×height: 'stretch' (default, scales/distorts one image), 'tile' (repeats the texture at its native pixel size — use for wide platforms/floors/walls so they read as connected tiles, not a smear), or 'sliced' (9-slice via `slice` insets, keeps corners un-stretched — use for panels/bars with distinct ends). NEVER stretch pixel art: use tile/sliced or a Tilemap.",
   Collider:
     'Box, circle, or convex polygon collision shape (polygon uses points, local space, min 3 convex vertices). isTrigger=true reports overlaps without blocking movement. layer/collidesWith control which layers interact. oneWay=true makes one-way platforms.',
   PhysicsBody:

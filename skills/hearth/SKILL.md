@@ -152,6 +152,35 @@ hearth autotile set Arena Ground --char G --clear   # remove the rule
 The preview and any export re-render live the moment the rule changes. Full
 47-key shape table: [docs/editor.md](https://hearthengine.com/docs/editor).
 
+## Never stretch pixel art — tile or slice it
+
+A `SpriteRenderer` fills its `width`×`height` box one of three ways, set by
+`renderMode` (default `stretch`):
+
+- `stretch` — scales one texture to the box. **Only correct when the box keeps
+  the texture's own aspect ratio at a whole-number scale** (e.g. an 18×18 tile
+  at 18×18, 36×36, 54×54). Any other size *distorts* the art — a smear.
+- `tile` — repeats the texture at its **native pixel size** to fill the box.
+  This is how a wide platform/floor/wall built from one small tile should
+  render: connected tiles, no smear. `hearth set "Level 1" Ground SpriteRenderer.renderMode tile`.
+- `sliced` — 9-slice: `slice` insets (`{top,right,bottom,left}` px) keep the
+  corners un-stretched while edges/center scale. For panels, bars, and
+  platforms with distinct end-caps.
+
+Firm rules for surfaces and pixel art:
+
+1. **Never** make a wide/tall surface by stretching a single small tile in
+   `stretch` mode. Use a `Tilemap` (best for grids/terrain, supports
+   autotiling) or `renderMode: 'tile'`.
+2. In `stretch` mode use **integer** scales only, and keep the box aspect equal
+   to the texture's — otherwise texels go rectangular/blurry.
+3. **Snap positions and sizes to the tile grid** so neighbouring tiles connect
+   with no gaps, seams, or overlaps.
+4. Pixel art stays crisp automatically: projects render with
+   `buildSettings.pixelPerfect: true` (NEAREST filtering) by default. Leave it
+   on for pixel art; a single non-pixel asset can opt out with its own
+   `pixelArt: false`.
+
 ## Scripting: the ctx stdlib
 
 Behavior lives in `scripts/`. **Lua is the default** (`hearth create script`

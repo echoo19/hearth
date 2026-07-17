@@ -14,3 +14,8 @@ apps/editor/src-tauri/target/
 apps/editor/dist-electron/
 apps/editor/release-app/
 apps/editor/release/
+
+# agent/automation scratch (never commit to the public repo)
+.scratch-audit/
+.hearth-tmp/
+scratch/
