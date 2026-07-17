@@ -7,7 +7,7 @@
 
 **An AI-native 2D game engine — a real editor for humans, and the whole engine as commands your coding agent already knows how to use.**
 
-[Website](https://hearth-engine.vercel.app) · [Download](https://github.com/echoo19/hearth/releases/latest) · [Quickstart](docs/quickstart.md) · [Docs](#documentation)
+[Website](https://hearthengine.com) · [Download](https://github.com/echoo19/hearth/releases/latest) · [Quickstart](docs/quickstart.md) · [Docs](#documentation) · [Feedback](https://hearthengine.com/feedback)
 
 [![CI](https://img.shields.io/github/actions/workflow/status/echoo19/hearth/ci.yml?label=CI)](https://github.com/echoo19/hearth/actions/workflows/ci.yml)
 [![Release](https://img.shields.io/github/v/release/echoo19/hearth)](https://github.com/echoo19/hearth/releases/latest)
@@ -20,7 +20,7 @@
 Hearth is a real engine, not an AI game generator. Humans get a normal visual
 editor. Coding agents (Claude Code, Codex, OpenCode with local models, any MCP
 client) get the entire editor surface as structured, validated,
-permission-checked commands — and they arrive already knowing how to use it:
+permission-checked commands, and they arrive already knowing how to use it:
 a per-project skill teaches the working loop and game-feel craft, headless
 playtests and screenshots let an agent *prove* its work runs, and every
 command lands in a disk-backed journal you can read and revert. No AI runs
@@ -37,11 +37,11 @@ The connection is plumbing; the point is the loop it enables. An agent
 snapshots the project, inspects what's there, builds a level, wires input,
 writes behavior scripts, imports and slices art, runs a deterministic headless
 playtest to check it actually works, and hands you a structural diff to review
-in the editor — all without guessing at file formats. You stay in charge:
+in the editor, all without guessing at file formats. You stay in charge:
 permission modes gate what agents may touch, every session can be snapshotted,
-diffed, and reverted, and every command any agent runs — CLI, MCP, or the
-editor's embedded terminal — is journaled (`hearth log`, or live in the
-editor's Agent panel).
+diffed, and reverted, and every command any agent runs, whether from the CLI,
+MCP, or the editor's embedded terminal, is journaled (`hearth log`, or live in
+the editor's Agent panel).
 
 ## Coding with your agent in minutes
 
@@ -56,8 +56,8 @@ curl -LO https://github.com/echoo19/hearth/releases/latest/download/hearth-mcp.m
 ```
 
 **2. Scaffold a game.** `hearth init` (or `node hearth-cli.mjs init`) writes a
-small playable project — a scene with a camera, ground, and a player that
-already falls and lands — plus an `AGENTS.md` and a project skill any agent
+small playable project (a scene with a camera, ground, and a player that
+already falls and lands) plus an `AGENTS.md` and a project skill any agent
 that visits will read:
 
 ```bash
@@ -65,7 +65,7 @@ node hearth-cli.mjs init "Star Catcher" --template platformer
 ```
 
 **3. Point your agent at it.** In the desktop app, open the project and click
-**Start agent** in the Agent panel — it wires up Claude Code over MCP for you.
+**Start agent** in the Agent panel. It wires up Claude Code over MCP for you.
 Or connect any agent by hand:
 
 ```bash
@@ -99,8 +99,8 @@ with layout containers, sliders, toggles, and focus navigation. Physics covers
 mass, restitution, friction, named collision layers, one-way platforms, and
 box/circle/convex-polygon colliders. Audio includes sound effects, procedural
 synthesis, and a streamed music channel that survives scene switches. The same
-runtime runs in the editor preview, headlessly in Node, and in exported games —
-including every post-processing/sprite effect, see
+runtime runs in the editor preview, headlessly in Node, and in exported games,
+including every post-processing/sprite effect. See
 [docs/effects.md](docs/effects.md).
 
 **Scripting.** Lua by default (sandboxed, seed-deterministic), JavaScript
@@ -114,7 +114,7 @@ and `check-script` syntax-checks a draft before you save it. See
 
 **Editor.** A dockable workspace: scene view with tilemap paint tool and
 direct-manipulation transform handles, hierarchy with "Save as prefab", a
-schema-driven inspector (typed pickers and enum dropdowns for every field — no
+schema-driven inspector (typed pickers and enum dropdowns for every field, no
 raw JSON textareas), an Animator editor for state-machine assets, an asset
 browser with spritesheet slicing and whole-folder drag-drop import, live
 preview with Pause/Step, a Code panel, a read-only Live runtime inspector,
@@ -123,9 +123,9 @@ plain-language Checkpoint/Review/Changes loop for agent sessions, and an
 **Agent panel**: a real embedded terminal running your own agent CLI, wired to
 the project over MCP, with a live activity timeline and Checkpoint/Review/Revert
 one click away (see [docs/agent-panel.md](docs/agent-panel.md)). The editor
-live-follows changes from any *external* agent session — CLI, MCP, or another
-editor — reloading automatically instead of going stale, and its local project
-server enforces Origin/Host on every request. Runs in the browser during
+live-follows changes from any *external* agent session, whether CLI, MCP, or
+another editor, reloading automatically instead of going stale, and its local
+project server enforces Origin/Host on every request. Runs in the browser during
 development or as a packaged desktop app (see [docs/editor.md](docs/editor.md)).
 
 **Agent tooling.** The `hearth` CLI wraps every command with `--json`
@@ -133,8 +133,8 @@ envelopes, including `undo`/`redo`/`history` and `log` (the disk-backed command
 journal). Property writes validate the full dot-path against the component's
 real schema, with a did-you-mean suggestion on a typo instead of silently
 corrupting the write. The engine's command registry has **71 commands**; the
-MCP server exposes **72 typed tools** — **70 wrapping a core command**, plus
-`screenshot` and `get_agent_instructions` — with per-session permission modes.
+MCP server exposes **72 typed tools** with per-session permission modes:
+**70 wrapping a core command**, plus `screenshot` and `get_agent_instructions`.
 Playtests script input (including gamepad axes and pointer drags) and assert on
 game state, events, particles, audio, camera effects, post effects, and UI
 focus, entirely headless and CI-friendly. `hearth screenshot` renders real
@@ -165,22 +165,18 @@ same asset pipeline: import, probe, slice, animate.
 
 ## Status
 
-Hearth is at **v0.15.0**, a developer preview. This release, "agent
-game-craft," adds no new engine features — it sharpens how coding agents
-actually make games with the tools already there: a second fact-checked
-skill (`hearth-craft`) that teaches juice, game-feel, and asset sourcing and
-scaffolds into every project, one-command connectability for Claude Code,
-Codex, OpenCode + Ollama, and Hermes with the `hearth` CLI guaranteed on
-`PATH` in the embedded terminal, and journey-grouped docs. The prior release,
-"Tightening," made every editor surface work properly (129 commits, a
-16-surface live audit). The full loop works end to end: project model,
+Hearth is at **v1.2.0**. Version 1.0 shipped on 2026-07-15, so this is no
+longer a developer preview. The whole loop works end to end: project model,
 editor, runtime preview, CLI, MCP, headless playtests, diff review, and web
-and desktop export. Recent releases added desktop game export with a macOS
-signing ladder, itch.io zip parity across CLI/MCP/editor, project templates
-(`hearth init --template platformer|topdown|arcade`), animation state
-machines, blob47 tilemap autotiling, live-linked prefabs, a post-processing
-system, and published performance numbers. The [roadmap](docs/roadmap.md)
-keeps an honest list of what's next.
+and desktop export. Everything since 1.0 has been additive. v1.1.0 added
+script modules, so scripts can `require()` each other in both Lua and
+JavaScript; a library is just a script that returns a table or exports an
+object, and hot-reload recompiles whatever depended on the file you changed.
+v1.2.0 reworked the Agent panel, which now has its own full-height dock on the
+right beside the Inspector. A first run opens on a "Launch your agent" tile.
+Permission mode (safe-edit by default), Re-detect, and Manual setup sit behind
+a gear menu, and the Activity timeline collapses under the terminal. The
+[roadmap](docs/roadmap.md) keeps an honest list of what's next.
 
 ## Install
 
@@ -191,7 +187,7 @@ keeps an honest list of what's next.
 `Hearth-linux-amd64.deb`). On macOS, first launch is right-click → Open (macOS
 14 and earlier) or System Settings → Privacy & Security → Open Anyway (macOS
 15+); if macOS claims the app is damaged, run `xattr -cr /Applications/Hearth.app`
-(preview builds are ad-hoc signed, not notarized yet — see
+(desktop builds are ad-hoc signed, not notarized yet, see
 [docs/desktop-app.md](docs/desktop-app.md)).
 
 **Agent tools, no install.** The CLI and MCP server ship as single files that
@@ -232,8 +228,8 @@ agent may do; see [docs/mcp.md](docs/mcp.md).
 
 ## Documentation
 
-Organized as a journey — get started, build, script, ship, connect an agent,
-reference:
+Organized as a journey: get started, build, script, ship, connect an agent,
+reference.
 
 | | |
 | --- | --- |
@@ -271,6 +267,7 @@ reference:
 | [Performance](docs/performance.md) | Benchmark harness, published numbers |
 | [Roadmap](docs/roadmap.md) | What's next, and what's honestly missing |
 | [Contributing](CONTRIBUTING.md) | Dev setup and the AI contribution policy |
+| [Feedback](https://hearthengine.com/feedback) | Report a bug, request a feature, ask a question |
 
 ## Design principles
 
@@ -291,17 +288,18 @@ Requires Node 20+.
 ```bash
 git clone https://github.com/echoo19/hearth.git && cd hearth
 npm install
-npm run build:packages     # core → runtime → playtest → cli → mcp-server
+npm run build:packages     # core → runtime → playtest → shipping → templates → cli → mcp-server
 npm test                   # full suite, headless
+npm run typecheck          # vitest does not typecheck; run this too
 npm run dev                # editor at http://localhost:5173
 ```
 
 Open an example from the launcher (try **Mini Platformer**) and press **Play**
 (arrows/WASD to move, Space to jump). For the desktop app, `npm run app`
 launches it and `npm run app:dist` packages an installer; see
-[docs/desktop-app.md](docs/desktop-app.md). Ten example projects live in
+[docs/desktop-app.md](docs/desktop-app.md). Eleven example projects live in
 `packages/examples`, every one generated through the command system itself and
-covered by playtests in CI — they double as reference projects for everything
+covered by playtests in CI. They double as reference projects for everything
 the docs describe. Ground rules and the AI contribution policy are in
 [CONTRIBUTING.md](CONTRIBUTING.md).
 

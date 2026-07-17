@@ -96,7 +96,7 @@ export const INSTALL_COMMANDS: Record<AgentToolLauncher, string | null> = {
  * convention as ExportDialog's SHIPPING_GUIDE_URL (exportJob.ts), rendered
  * from docs/connect-hermes.md in this repo.
  */
-export const CONNECT_HERMES_URL = 'https://hearth-engine.vercel.app/docs/connect-hermes';
+export const CONNECT_HERMES_URL = 'https://hearthengine.com/docs/connect-hermes';
 
 export type TileStatus = 'ready' | 'missing' | 'checking';
 

@@ -71,8 +71,8 @@ hearth inspect entity "Level 1" Player --json
 ```
 
 `hearth inspect api` is the canonical `ctx` reference and the source of the
-editor's autocomplete — trust it over memory. See [docs/cli.md](https://hearth-engine.vercel.app/docs/cli)
-and [docs/agents.md](https://hearth-engine.vercel.app/docs/agents).
+editor's autocomplete — trust it over memory. See [docs/cli.md](https://hearthengine.com/docs/cli)
+and [docs/agents.md](https://hearthengine.com/docs/agents).
 
 ## Permission modes
 
@@ -101,7 +101,7 @@ hearth init "My Game" --width 960 --height 540
 
 Each template is a small playable skeleton (one scene, a commented movement
 script, a `smoke` playtest), not a demo to keep or delete. See
-[docs/cli.md](https://hearth-engine.vercel.app/docs/cli#project-templates).
+[docs/cli.md](https://hearthengine.com/docs/cli#project-templates).
 
 ## Scenes, entities, components
 
@@ -125,7 +125,7 @@ hearth rename entity "Level 1" Coin Gem
 `set`/`set-many` validate the full dot-path against the component's real schema
 and suggest a fix on a typo. `Collider` polygons must be convex with ≥3 points —
 split concave shapes across entities. All 19 component types:
-[docs/components.md](https://hearth-engine.vercel.app/docs/components).
+[docs/components.md](https://hearthengine.com/docs/components).
 
 ## Tilemaps and autotiling
 
@@ -150,7 +150,7 @@ hearth autotile set Arena Ground --char G --clear   # remove the rule
 ```
 
 The preview and any export re-render live the moment the rule changes. Full
-47-key shape table: [docs/editor.md](https://hearth-engine.vercel.app/docs/editor).
+47-key shape table: [docs/editor.md](https://hearthengine.com/docs/editor).
 
 ## Scripting: the ctx stdlib
 
@@ -238,7 +238,7 @@ What `ctx` gives you (read `hearth inspect api --json` for exact signatures):
 Determinism is free if you stay inside `ctx`: fixed timestep, seeded RNG, no
 wall clock. Same seed, same machine → bit-identical replay (transcendental math
 can differ by a ULP across CPUs — see
-[docs/scripting.md](https://hearth-engine.vercel.app/docs/scripting#determinism)).
+[docs/scripting.md](https://hearthengine.com/docs/scripting#determinism)).
 
 ### Iterating on scripts
 
@@ -255,7 +255,7 @@ hearth script format --all
 `--no-format`. If the human has the editor open and playing, script edits
 hot-reload live — but `ctx.events.on` subscriptions keep their old closure until
 Stop/Play; prefer the `onEvent` hook for anything you iterate on during play.
-See [docs/scripting.md](https://hearth-engine.vercel.app/docs/scripting#hot-reload-during-play).
+See [docs/scripting.md](https://hearthengine.com/docs/scripting#hot-reload-during-play).
 
 ## Assets: import, slice, animate, sound
 
@@ -273,7 +273,7 @@ Procedural sprites/sounds make a game playable and audible before real art
 exists. Fonts: import a `.ttf/.otf/.woff` and reference it from `Text.fontFamily`
 by the asset's **name** verbatim. Music is a separate channel — set
 `AudioSource.music:true, autoplay:true` for a soundtrack that survives scene
-switches. Full pipeline: [docs/assets.md](https://hearth-engine.vercel.app/docs/assets).
+switches. Full pipeline: [docs/assets.md](https://hearthengine.com/docs/assets).
 
 ## Prefabs
 
@@ -292,7 +292,7 @@ hearth prefab revert Arena "Elite Enemy"          # revert every override on thi
 Editing an instance records overrides automatically; `update`/`sync` merge the
 asset payload with each instance's own overrides. A structural edit inside an
 instance detaches it. Scripts spawn prefabs with `ctx.scene.spawnPrefab(name,
-opts?)`. See [docs/prefabs.md](https://hearth-engine.vercel.app/docs/prefabs).
+opts?)`. See [docs/prefabs.md](https://hearthengine.com/docs/prefabs).
 
 ## Animation state machines
 
@@ -318,7 +318,7 @@ hearth set-state-machine ast_... --data @machine.json     # replace the document
 
 Drive it from a script with `ctx.animator.setParam/getParam/fire/state`.
 Triggers latch until consumed; params are bool/number/trigger. Full transition
-semantics: [docs/scripting.md](https://hearth-engine.vercel.app/docs/scripting#animation-state-machines).
+semantics: [docs/scripting.md](https://hearthengine.com/docs/scripting#animation-state-machines).
 
 ## Input actions and axes
 
@@ -333,7 +333,7 @@ hearth set-settings --input-deadzone 0.2
 ```
 
 Read them with `ctx.input.isDown("jump")` / `ctx.input.axis("horizontal")`. See
-[docs/input.md](https://hearth-engine.vercel.app/docs/input).
+[docs/input.md](https://hearthengine.com/docs/input).
 
 ## Playtest-driven verification
 
@@ -357,7 +357,7 @@ Steps cover waits, key presses, pointer drags, and asserts (`assertScene`,
 whole fixed frames via floating-point accumulators — `rate: 10` at 60fps spawns
 on frames 7,13,19,25,31, not 6,12,18,24,30. Derive expected numbers from a real
 run (read the run report), then assert them. Details:
-[docs/scripting.md](https://hearth-engine.vercel.app/docs/scripting#determinism).
+[docs/scripting.md](https://hearthengine.com/docs/scripting#determinism).
 
 ## Screenshot verification
 
@@ -385,7 +385,7 @@ hearth log                      # disk-backed journal of every command any sessi
 
 The human sees the same diff in the editor's Changes panel and can revert. An
 unreviewable session is a failed session — always snapshot, always summarize the
-diff when done. See [docs/agent-panel.md](https://hearth-engine.vercel.app/docs/agent-panel).
+diff when done. See [docs/agent-panel.md](https://hearthengine.com/docs/agent-panel).
 
 ## Export and ship
 
@@ -403,8 +403,8 @@ Desktop is ad-hoc signed on macOS by default; `HEARTH_MAC_IDENTITY` /
 `HEARTH_APPLE_ID` / `HEARTH_APPLE_PASSWORD` / `HEARTH_TEAM_ID` env vars sign and
 notarize a real release. `buildSettings.icon` (a sprite asset id, set via
 `hearth set-settings --build-settings '{"icon":"ast_x"}'`) becomes the app icon.
-See [docs/export.md](https://hearth-engine.vercel.app/docs/export) and
-[docs/shipping-to-itch.md](https://hearth-engine.vercel.app/docs/shipping-to-itch).
+See [docs/export.md](https://hearthengine.com/docs/export) and
+[docs/shipping-to-itch.md](https://hearthengine.com/docs/shipping-to-itch).
 
 ## House best practices
 

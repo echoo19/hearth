@@ -69,7 +69,7 @@ export interface AppMenuContext {
 }
 
 /** Where Help → Documentation points. */
-export const DOCS_URL = 'https://hearth-engine.vercel.app';
+export const DOCS_URL = 'https://hearthengine.com';
 
 export function buildAppMenu(store: EditorStore, ctx: AppMenuContext): AppMenuSection[] {
   const hasProject = store.info != null;

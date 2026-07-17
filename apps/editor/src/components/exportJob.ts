@@ -104,7 +104,7 @@ export function signingStatusLabel(capability: { mode: SigningMode; identity?: s
 // that. Pure so the copy is unit-tested without a DOM.
 // ---------------------------------------------------------------------------
 
-export const SHIPPING_GUIDE_URL = 'https://hearth-engine.vercel.app/docs/shipping-to-itch';
+export const SHIPPING_GUIDE_URL = 'https://hearthengine.com/docs/shipping-to-itch';
 
 /** F-1: one-line next-step hint under a finished web export, minus the
  * "see the shipping guide" link (the dialog renders that part as an actual

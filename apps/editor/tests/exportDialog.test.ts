@@ -398,7 +398,7 @@ describe('startResultMessage — a second export while one runs is surfaced', ()
 describe('next-step hints (F-1 / F-3, L-118 export-friction reaudit)', () => {
   it('points the web pane at getting the build in front of a player', () => {
     expect(webNextStepHint()).toBe('Upload the zip to itch.io or any static host');
-    expect(SHIPPING_GUIDE_URL).toBe('https://hearth-engine.vercel.app/docs/shipping-to-itch');
+    expect(SHIPPING_GUIDE_URL).toBe('https://hearthengine.com/docs/shipping-to-itch');
   });
 
   it('tells the desktop pane the build just needs unzipping and double-clicking', () => {
