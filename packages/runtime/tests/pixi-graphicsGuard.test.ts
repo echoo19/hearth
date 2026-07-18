@@ -1,7 +1,7 @@
 /**
- * clearGraphics: the L-116 hardening guard around Pixi v8's destroy-then-
- * clear race (see ../src/pixi/graphicsGuard.ts's header, and L-116 in
- * .superpowers/sdd/waveL/LEDGER.md for the investigation). Uses a REAL
+ * clearGraphics: the hardening guard around Pixi v8's destroy-then-clear
+ * race (see ../src/pixi/graphicsGuard.ts's header for the investigation).
+ * Uses a REAL
  * pixi.js Graphics — constructing and destroying one needs no canvas/WebGL
  * (same reason pixi-tilemapRender.test.ts runs in this workspace's default
  * "node" environment), so this reproduces the actual throw

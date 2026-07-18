@@ -5,13 +5,13 @@ rendering. It steps a `GameSession` (`packages/runtime/src/session.ts`)
 wall-clock-free via `session.step()`, so timings measure script/physics/
 particle/event simulation only, not pixi, the DOM, or `setTimeout`/rAF jitter.
 
-This doc exists to give Wave E's perf work (broadphase, caching, pooling) an
+This doc exists to give the broadphase/caching/pooling perf work an
 honest **before** so later tasks have something concrete to compare against.
 Tasks 9-11 re-run the harness and update the table below with **after**
 numbers. The "Current bottlenecks" section is expected to shrink or change
 as they land.
 
-**Status: Wave E (Tasks 9-11) complete.** See "After Wave E" below for the
+**Status: the optimization pass is complete.** See "After the optimization pass" below for the
 final numbers and what each task contributed; "Current bottlenecks" has been
 rewritten to reflect what's actually left.
 
@@ -47,7 +47,7 @@ Those budgets are intentionally generous: they are roughly 5x the Apple M3
 Pro reference means below (2.912ms and 2.717ms), because GitHub-hosted
 runners are slower and noisier than the reference machine. The fence is a
 tripwire for order-of-magnitude regressions, such as losing the spatial-hash
-broadphase (colliders-1500 was ~13.5x slower before Wave E), not a profiling
+broadphase (colliders-1500 was ~13.5x slower before the broadphase fix), not a profiling
 target. Real performance numbers still come from the reference-machine full
 bench run documented below, not from CI.
 
@@ -77,7 +77,7 @@ mixed-horde     14.317   15.367  17.678   804       0
 on a dev laptop under thermal/scheduler noise. Treat single-digit-percent
 deltas between before/after runs as inconclusive, not a regression.)
 
-**Fix round 1** (see `.superpowers/sdd/task-8-report.md`): the first baseline
+**Fix round 1**: the first baseline
 had two scenario bugs that made its numbers untrustworthy. `mixed-horde`'s
 per-layer `collidesWith` lists never included the arena walls' `default`
 layer, so `layersInteract` (which requires both sides to match) never let
@@ -132,13 +132,13 @@ decaying average.
   large spike: the cost is high but steady, not bursty. `ember-horde`
   (`packages/examples/ember-horde`) is this scenario's playable companion,
   a real, scripted, all-Lua game that spawns waves of enemies up to 300
-  concurrent and stays well under budget on the "After Wave E" numbers
+  concurrent and stays well under budget on the "After the optimization pass" numbers
   below.
 
-## After Wave E (Tasks 9-11)
+## After the optimization pass
 
 **Machine:** same Apple M3 Pro dev machine. **Node:** v22.17.0. **Mode:**
-full (120 warmup / 1000 timed frames). Two consecutive runs at Task 11's
+full (120 warmup / 1000 timed frames). Two consecutive runs at the final
 HEAD agreed within noise; the table below is the second (representative).
 
 ```
@@ -170,21 +170,22 @@ after, and their small deltas are within the ±10-20% run-to-run noise band
 called out above (still directionally consistent with pooling/caching
 removing *some* cost, just not a dominant one).
 
-**What each task contributed:**
+**What each change contributed:**
 
-- **Task 9** (`packages/runtime/src/runtime.ts`): cached `getEntities()`
+- **Entity and tilemap caching** (`packages/runtime/src/runtime.ts`): cached
+  `getEntities()`
   (invalidated only when entities/destroyedIds actually change, instead of
   a fresh `.filter()` on every call) and a per-Tilemap collider cache
   (`tilemapBoxes` computed once at load instead of rebuilt from scratch
   every frame). This is most of tilemap-arena's win (4.1 -> ~0.4ms once
-  combined with Task 10) and a baseline improvement felt by every scenario.
-- **Task 10** (`packages/runtime/src/broadphase.ts`, new): replaced the
+  combined with the broadphase) and a baseline improvement felt by every scenario.
+- **Spatial-hash broadphase** (`packages/runtime/src/broadphase.ts`, new): replaced the
   O(n²) mover-vs-obstacle and mover-vs-mover sweeps with a spatial-hash
   broadphase (`SpatialHash.query()`), order-preserving so surviving pairs
   are still visited in the exact naive order (ascending, deduped). This is
   the overwhelming majority of colliders-1500's and mixed-horde's win. Two
   deliberate deviations from the original brief, both required and both
-  test-proven (see `.superpowers/sdd/task-10-report.md`):
+  test-proven:
   - **Cell size from the 90th-percentile shape extent, not the max.** Using
     the max degenerates when one giant collider (e.g. arena walls) is far
     larger than everything else. It forces a cellSize so large the whole
@@ -207,7 +208,7 @@ removing *some* cost, just not a dominant one).
     (`MAX_INSERT_CELL_SPAN`), routing pathologically large finite AABBs to
     the same always-candidate list non-finite AABBs already used, closing
     a freeze/OOM the naive loops never had.
-- **Task 11** (this task): `EmitterState` (`packages/runtime/src/particles.ts`)
+- **Particle pooling**: `EmitterState` (`packages/runtime/src/particles.ts`)
   now keeps a per-emitter free-list (`pool: Particle[]`); `spawnOne` reuses
   a detached object (overwriting every field) instead of allocating, and
   both expiry (`splice`) and cap-eviction (`shift`) release the removed
@@ -225,11 +226,11 @@ removing *some* cost, just not a dominant one).
   in the headless bench numbers above (bench never touches the pixi layer),
   but removes redundant UI-position resolution work from real browser
   input; the headless `sendPointer`/playtest path in `runtime.ts` is
-  untouched, so drag semantics (UISlider, Wave D playtests) are unaffected.
+  untouched, so drag semantics (UISlider playtests) are unaffected.
 
 ## Current bottlenecks
 
-Wave E removed every bottleneck identified in the original baseline below
+The optimization pass removed every bottleneck identified in the original baseline below
 (O(n²) collision, per-frame tilemap rebuild, `getEntities()` churn, unpooled
 particles); none of those costs exist in the current implementation. What's
 left, roughly in order of remaining cost:
@@ -267,9 +268,9 @@ were the only two scenarios over budget in the original baseline.
 
 ## Bundle sizes
 
-Wave G Task 12 code-split the editor's eagerly-bundled Terminal (`@xterm/xterm`
+A later pass code-split the editor's eagerly-bundled Terminal (`@xterm/xterm`
 + `addon-fit` + `xterm.css`) and `SliceDialog` behind `React.lazy`, alongside
-Task 7's already-lazy `CodeEditor` (CodeMirror). Both now load only when the
+the already-lazy `CodeEditor` (CodeMirror). Both now load only when the
 Agent panel actually mounts a terminal or a spritesheet asset opens Slice…,
 instead of shipping in the editor's main chunk on every load.
 
@@ -278,20 +279,20 @@ instead of shipping in the editor's main chunk on every load.
 
 | | raw | gzip |
 |---|---|---|
-| before (pre-split, Wave G code included) | 1,251,480 B | 331,466 B |
+| before (pre-split) | 1,251,480 B | 331,466 B |
 | after (Terminal + SliceDialog lazy) | 910,263 B | 244,444 B |
 | delta | -341,217 B (-27.3%) | -87,022 B (-26.3%) |
 
 The removed weight now lives in its own on-demand chunks: `Terminal-*.js`
 (335,759 B, xterm + the fit addon) plus a small `Terminal-*.css` (5,240 B,
 `xterm.css`), and `SliceDialog-*.js` (5,390 B). `CodeEditor-*.js` (519,856 B,
-already lazy since Task 7) is unchanged by this task.
+already lazy) is unchanged by the split.
 
 **`hearth-player.js`** (`packages/runtime/player/hearth-player.js`, the
 standalone player every exported game ships): 1,366,476 B, +16,827 B (~1.2%)
-over the pre-post-effects 0.10 baseline of 1,349,649 B, from the Wave G
-hand-written Pixi post-effect + SpriteEffects filters (final numbers from
-Task 6's fix). Stays well under the 1.45 MB budget enforced by
+over the pre-post-effects 0.10 baseline of 1,349,649 B, from the
+hand-written Pixi post-effect + SpriteEffects filters. Stays well under the
+1.45 MB budget enforced by
 `packages/runtime/tests/player-bundle.test.ts`'s `stays under the 1.45 MB
 player budget` test.
 

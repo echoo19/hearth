@@ -19,3 +19,8 @@ apps/editor/release/
 .scratch-audit/
 .hearth-tmp/
 scratch/
+# Internal SDD/agent workflow artifacts — root only, so example projects'
+# own .claude/skills scaffolding stays tracked.
+/.superpowers/
+/docs/superpowers/
+/.claude/

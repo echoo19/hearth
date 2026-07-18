@@ -145,7 +145,7 @@ human starting a project by hand.
 
 ## Recipes
 
-Four common Wave I ("the content ceiling") workflows, worked end to end on
+Four common workflows, worked end to end on
 the CLI. Every command has an MCP equivalent (see [mcp.md](./mcp.md#tool-naming)).
 
 ### Build an animation state machine from scratch

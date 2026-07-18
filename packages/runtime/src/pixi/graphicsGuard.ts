@@ -1,7 +1,7 @@
 /**
- * Guard against Pixi v8's destroy-then-clear race (see L-116 in
- * .superpowers/sdd/waveL/LEDGER.md): `Graphics.destroy()` sets its internal
- * `_context` to null, but — unlike most of Pixi's post-destroy API, which
+ * Guard against Pixi v8's destroy-then-clear race: `Graphics.destroy()` sets
+ * its internal `_context` to null, but — unlike most of Pixi's post-destroy
+ * API, which
  * quietly no-ops — `clear()` (and every other draw call) happily dereferences
  * it, throwing "Cannot read properties of null (reading 'clear')". The
  * investigation could not reproduce the live crash (it only manifests under

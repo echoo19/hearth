@@ -45,8 +45,7 @@ import {
 // apps/editor/scripts/build-electron.mjs), and a JSON import needs an
 // import-attribute syntax (`with { type: 'json' }`) that's a bigger change
 // than a version bump justifies here. Keep this in sync with package.json's
-// "version" on every release — see the version-bump checklist in
-// .superpowers/sdd/task-12-report.md.
+// "version" on every release.
 const VERSION = '1.2.0';
 
 /** The genre template names `init --template` accepts, in menu order. */

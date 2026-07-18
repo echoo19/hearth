@@ -14,13 +14,13 @@ project-format stability guarantee (an automatic migration rail, strict
 version-stamp rules, upgrade tests against 0.13/0.14 projects), a native
 close guard for unsaved script edits, a performance regression fence in CI,
 and a docs completeness pass. Before it, v0.15.0's agent game-craft wave
-(Wave L2, below) sharpened how agents actually make games. What follows is
+(below) sharpened how agents actually make games. What follows is
 the running history.
 
 v0.14.0 ("Tightening", below) added no new engine features — 129 commits that make the
 editor *work properly everywhere*, front-load the workflows, and unify the
-design language, driven by a 16-surface live audit (a 121-entry ledger, 100
-fixed, every entry dispositioned) and closed by six independent re-audits.
+design language, driven by a 16-surface UI audit (100 of 121 findings
+fixed, every one dispositioned) and closed by six independent re-audits.
 Game keyboard capture is now scoped to the game, so editor dialogs, buttons,
 and fields never lose Escape/Enter/Space again and WASD/axis-only bindings
 work in play mode *and* exports; switching to the Code panel auto-pauses the
@@ -173,8 +173,8 @@ MCP tools, testable in headless playtests) before it gets editor UI.
 **"Tightening."** No new engine features. 129 commits making the editor
 *work properly
 everywhere*, front-loading the workflows, and unifying the design language —
-driven by a 16-surface live audit (a 121-entry ledger, 100 fixed, every
-entry dispositioned) and closed by six independent re-audits.
+driven by a 16-surface UI audit (100 of 121 findings fixed, every one
+dispositioned) and closed by six independent re-audits.
 
 - **Every control works**: game keyboard capture is scoped to the game, so
   editor dialogs, buttons, and fields never lose Escape/Enter/Space again;
@@ -349,7 +349,7 @@ entry dispositioned) and closed by six independent re-audits.
   the whole panel accepts folder drag-and-drop, both funneling through the
   same command and summarized in one toast. See
   [editor.md](./editor.md#bulk-import).
-- **Ledger fixes**: `create script` gains `--no-format` (parity with
+- **Follow-up fixes**: `create script` gains `--no-format` (parity with
   `edit-script`'s existing flag — CLI-created scripts could not
   previously opt out of house-style reformatting), and `set-settings`'s
   boolean-flag parsing (`--format-on-save`, etc.) is now strict instead of
@@ -744,7 +744,7 @@ the guarantees. Each release completed a loop rather than scattering
 features; anything that didn't serve that loop waited (see Non-goals) and
 still does.
 
-### Wave L2 — agent game-craft (shipped v0.15.0)
+### Agent game-craft (shipped v0.15.0)
 
 No engine features — a focused pass on how well agents actually *make games*
 now that every tool works and each project ships the house skill.
@@ -781,7 +781,7 @@ now that every tool works and each project ships the house skill.
 - Counts unchanged: **71 commands**, **72 MCP tools** — no new engine
   commands this wave. No format changes; v0.14 projects open unchanged.
 
-### Wave M — final hardening & verification (shipped v1.0.0)
+### Final hardening & verification (shipped v1.0.0)
 
 No features. The format-stability guarantee is now real and documented (see
 [project-format.md](./project-format.md#format-stability-and-migrations)):

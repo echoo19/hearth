@@ -41,7 +41,7 @@ export const codeEditorTheme = EditorView.theme(
       // Intentionally --text-md (13px), not the --text-sm (12px) mono spec
       // used elsewhere (Console, values/scripts chrome) — a deliberate
       // readability bump for the editor's primary code-authoring surface,
-      // not a drift. See .superpowers/polish/audit-visual.md P2-6.
+      // not a drift.
       fontSize: 'var(--text-md)',
     },
     '.cm-content': {

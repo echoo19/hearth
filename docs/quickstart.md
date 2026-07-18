@@ -8,7 +8,7 @@ works for a coding agent. That's the point.
 Node ≥ 20 (macOS, Linux, Windows).
 
 ```bash
-git clone <repo> hearth && cd hearth
+git clone https://github.com/echoo19/hearth.git && cd hearth
 npm install
 npm run build:packages
 alias hearth="node $PWD/packages/cli/dist/main.js"   # or: npm link -w @hearth/cli

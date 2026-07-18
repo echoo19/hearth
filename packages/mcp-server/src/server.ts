@@ -22,7 +22,7 @@ import { TOOL_SPECS } from './tools.js';
 const SERVER_NAME = 'hearth-mcp';
 // Hardcoded for the same reason as @hearth/cli's VERSION constant (see that
 // file's comment) — keep in sync with package.json's "version" on every
-// release; see the version-bump checklist in .superpowers/sdd/task-12-report.md.
+// release.
 const SERVER_VERSION = '1.2.0';
 
 /** Project-relative path to a project's own agent instructions, if present. */

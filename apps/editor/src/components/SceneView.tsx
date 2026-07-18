@@ -202,8 +202,7 @@ export function fitView(hostSize: { w: number; h: number }, buildSize: { w: numb
  * shortcuts: null when it's not a zoom key, a typing target has focus (the
  * same guard the global registry's isTypingTarget enforces), or a modifier
  * is held — bare keys only, since Mod+=/Mod+-/Mod+0 are the browser's own
- * page-zoom shortcuts and this app also ships in the browser (see
- * .superpowers/polish/audit-hotkeys.md F7's collision analysis). Pure and
+ * page-zoom shortcuts and this app also ships in the browser. Pure and
  * DOM-free so it's unit-testable without mounting SceneView.
  */
 export function sceneZoomKey(e: {

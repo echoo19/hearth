@@ -80,8 +80,7 @@ function wall(cx, cy, w, h) {
  * settling), restitution 1.0 and friction 0 so kinetic energy is conserved
  * across contacts and the scenario stays live for the entire timed window
  * instead of decaying toward rest (restitution 0.9 measurably drained speed
- * frame-over-frame — see packages/runtime/bench/README or task-8-report.md
- * fix round 1 for the before/after numbers).
+ * frame-over-frame).
  */
 function mover(x, y, vx, vy, shape, size, opts = {}) {
   const collider =
