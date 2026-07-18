@@ -7,7 +7,6 @@ vi.mock('../src/api', () => ({
   apiMeta: vi.fn(async () => null),
   apiOpenProject: vi.fn(),
   apiCreateProject: vi.fn(),
-  apiDetectAgents: vi.fn(async () => ({ agents: [] })),
   fileUrl: (project: string, path: string) =>
     `/api/file?project=${encodeURIComponent(project)}&path=${encodeURIComponent(path)}`,
 }));

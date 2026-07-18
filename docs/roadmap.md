@@ -1,10 +1,10 @@
 # Hearth Roadmap
 
 **v1.2.0 is the current release.** It reworks the editor's Agent panel: the
-panel now lives in its own full-height dock beside the Inspector, first open
-is a one-click "Launch your agent" screen (Claude Code, Codex, OpenCode,
-Hermes, or a plain terminal), missing CLIs can be installed inline, and the
-permission mode, re-detect, and manual setup moved behind a settings menu.
+panel now lives in its own full-height dock beside the Inspector and
+automatically starts a shell at the project root. Type `claude`, `codex`,
+`opencode`, `hermes`, or any other terminal agent; a dismissible per-project
+guide explains the workflow without detecting, installing, or configuring it.
 Saved layouts migrate automatically. v1.1.0 added script modules: `require`
 for same-language Lua and JavaScript helpers under `scripts/`, recursive
 script discovery/export, whole-graph hot reload, and validation for broken
@@ -133,17 +133,16 @@ MCP tools, testable in headless playtests) before it gets editor UI.
   a full-height column beside the Inspector, so the terminal gets height and
   the Inspector stays visible while an agent works. Existing saved layouts
   migrate automatically; only the agent panel relocates.
-- **One-click launch**: first open shows "Launch your agent" with one tile
-  per detected CLI (Claude Code, Codex, OpenCode, Hermes), installed ones
-  first. Clicking a tile writes the tool's MCP config and starts it — no
-  setup screen. A plain terminal stays available for any other CLI.
-- **Inline install**: agents with a known installer (Claude Code, Codex,
-  OpenCode) install from the tile, visibly in the terminal; Hermes links to
-  its connect guide.
-- **Progressive disclosure**: the permission mode (default: safe edit),
-  re-detect, and manual setup live behind a settings menu. Mode changes lock
-  while a session runs. The activity timeline sits under the terminal as a
-  collapsible section with Checkpoint / Review changes / Restore checkpoint.
+- **Project shell on open**: once a project and its WebSocket are ready, the
+  panel starts the user's shell at the project root and keeps normal terminal
+  focus, resize, scrollback, Stop, and Restart behavior.
+- **Any terminal agent**: type `claude`, `codex`, `opencode`, `hermes`, or any
+  other CLI. A compact, dismissible per-project guide explains the workflow.
+- **No hidden setup**: Hearth does not detect or install agents and does not
+  rewrite their configuration. The `hearth` shim remains on `PATH` so an agent
+  launched in the shell can use the CLI immediately.
+- **Activity remains visible**: the collapsible timeline under the terminal
+  retains Checkpoint / Review changes / Restore checkpoint actions.
 
 ## Shipped in v1.1.0
 

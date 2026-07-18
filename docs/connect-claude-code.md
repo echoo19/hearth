@@ -1,8 +1,7 @@
 # Connect Claude Code
 
-Claude Code is the easiest agent to point at a Hearth project, because the
-editor wires it up for you. This page covers both paths: the one-click Agent
-panel, and manual setup for a terminal outside the editor. Either way, what
+Claude Code works directly from Hearth's embedded project terminal. This page
+covers launching the CLI there and optional MCP setup. Either way, what
 Claude Code gets is the whole engine as typed, permission-checked commands,
 plus the per-project skill that teaches it *how* to use them well. Hearth
 never runs a model or holds an API key; you're running your own `claude` CLI
@@ -10,27 +9,16 @@ against your own subscription. See
 [agent-panel.md](./agent-panel.md#why-a-terminal-not-a-custom-chat-ui) for why
 that distinction matters.
 
-## The one-click path (Agent panel)
+## From the Agent panel
 
-In the desktop app or `npm run dev`, open a project and go to the **Agent**
-panel, which lives in its own dock next to the Inspector. First run shows a
-row of tiles, one per agent CLI:
+Open a project and focus the **Agent** panel, then type `claude`. The embedded
+shell starts at the project root, `hearth` is already on PATH, and Claude Code
+owns its normal login and update flow. Hearth does not detect or install it.
+New projects already contain Claude instructions and project-local skills.
 
-1. Optionally change the **permission mode** from the gear menu (defaults
-   to Safe edit; see [Permission modes](#permission-modes)) before you click.
-2. Click the **Claude Code** tile. The panel merge-writes a `hearth` entry
-   into the project's `.mcp.json` at that mode, backfills the project skill
-   if it's missing, and spawns your real `claude` binary in an embedded
-   terminal with its working directory set to the project, all in one click.
-3. Claude Code discovers `.mcp.json` on its own, asks you to approve the
-   `hearth` server the first time, and handles its own login if needed, all
-   inside the terminal.
-
-If `claude` isn't on your `PATH`, the tile shows **Install** instead of a
-launch button. Clicking it runs the official installer visibly in the
-terminal (nothing hidden), then the panel re-detects on its own once the
-install finishes. Full panel behavior (the launcher, the Activity timeline,
-Checkpoint / Review / Restore, the external-change model) is in
+If you configured project-scoped MCP using the steps below, Claude Code finds
+`.mcp.json` normally and asks you to approve the server. Full terminal,
+Activity, Checkpoint, Review, and Restore behavior is in
 [agent-panel.md](./agent-panel.md).
 
 ## The manual path (any terminal)
@@ -80,23 +68,22 @@ recipes on top of it.
 
 The MCP server enforces a permission grant per session; a denied tool call
 returns a structured `PERMISSION_DENIED` naming the missing mode, which the
-agent can relay to you rather than retrying. The panel's 4-tier picker maps
-onto the server's real `--mode` tokens:
+agent can relay to you rather than retrying. Choose the server's `--mode` when
+registering MCP:
 
-| Panel label | `--mode` value | Grants |
-| --- | --- | --- |
-| Read-only | `read-only` | Inspect, validate, diff, run non-mutating playtests |
-| Safe edit | `safe-edit` | Scenes, entities, components, tilemaps, snapshots |
-| Full (no build) | `safe-edit,code-edit,asset-edit` | Above, plus scripts and assets — not build/export |
-| All (incl. build) | `all` | Everything, including build/export |
+| `--mode` value | Grants |
+| --- | --- |
+| `read-only` | Inspect, validate, diff, run non-mutating playtests |
+| `safe-edit` | Scenes, entities, components, tilemaps, snapshots |
+| `safe-edit,code-edit,asset-edit` | Above, plus scripts and assets — not build/export |
+| `all` | Everything, including build/export |
 
 See [mcp.md](./mcp.md#choosing-modes-per-session) for the full mode reference.
 
 ## Connecting other agents
 
-The same launcher tiles in the Agent panel also detect and auto-wire
-Codex, OpenCode, and Hermes, each into its own config format. See
+The same embedded terminal can run Codex, OpenCode, and Hermes. See
 [connect-codex.md](./connect-codex.md), [connect-opencode.md](./connect-opencode.md)
 (with local models via Ollama), and [connect-hermes.md](./connect-hermes.md).
-For any other MCP client or shell-native CLI, use the plain terminal launcher
-plus [connect-any-agent.md](./connect-any-agent.md).
+For any other MCP client or shell-native CLI, see
+[connect-any-agent.md](./connect-any-agent.md).

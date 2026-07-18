@@ -11,7 +11,6 @@ import type {
   ServerMeta,
   StartDesktopExportResult,
 } from './types';
-import type { AgentPermissionMode, AgentTool, DetectAgentsResult } from '../server/agentSetup';
 
 async function postJson<T>(url: string, body: unknown): Promise<T> {
   const res = await fetch(url, {
@@ -153,42 +152,4 @@ export async function apiExportCapability(): Promise<ExportCapability | null> {
 /** URL for a raw project file (sprites, scripts, scene JSON...). */
 export function fileUrl(project: string, relPath: string): string {
   return `/api/file?project=${encodeURIComponent(project)}&path=${encodeURIComponent(relPath)}`;
-}
-
-/** Which agent CLIs (+ ollama) are on PATH? Backs the Agent panel's launch flow. */
-export async function apiDetectAgents(): Promise<DetectAgentsResult | null> {
-  try {
-    const res = await fetch('/api/agent/detect');
-    const body = await res.json();
-    return body.ok ? (body as DetectAgentsResult) : null;
-  } catch (err) {
-    // A `null` here is read by AgentPanel as "couldn't check" (distinct from
-    // a successful check that found nothing) — log so a network hiccup
-    // isn't completely invisible even though the UI already recovers.
-    console.error('apiDetectAgents: request failed', err);
-    return null;
-  }
-}
-
-export interface PrepareAgentResult {
-  ok: boolean;
-  written?: boolean;
-  alreadyConfigured?: boolean;
-  configPath?: string;
-  note?: string;
-  skillWritten?: boolean;
-  error?: string;
-}
-
-/**
- * Writes the selected tool's Hearth MCP config in its native format for the
- * given permission mode. `tool` defaults server-side to 'claude' (the
- * .mcp.json path) when omitted.
- */
-export function apiPrepareAgent(
-  project: string,
-  mode: AgentPermissionMode,
-  tool: AgentTool,
-): Promise<PrepareAgentResult> {
-  return postJson<PrepareAgentResult>('/api/agent/prepare', { project, mode, tool });
 }

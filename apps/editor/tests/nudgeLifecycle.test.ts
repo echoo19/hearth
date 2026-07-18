@@ -10,12 +10,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { CommandResult } from '../src/types';
 
-const { apiCommand, apiOpenProject, apiCreateProject, apiMeta, apiDetectAgents } = vi.hoisted(() => ({
+const { apiCommand, apiOpenProject, apiCreateProject, apiMeta } = vi.hoisted(() => ({
   apiCommand: vi.fn(),
   apiOpenProject: vi.fn(),
   apiCreateProject: vi.fn(),
   apiMeta: vi.fn(async () => null),
-  apiDetectAgents: vi.fn(async () => null),
 }));
 
 vi.mock('../src/api', () => ({
@@ -23,7 +22,6 @@ vi.mock('../src/api', () => ({
   apiOpenProject,
   apiCreateProject,
   apiMeta,
-  apiDetectAgents,
 }));
 
 // afterOpen() opens a WebSocket and reads location.host; neither is

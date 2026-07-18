@@ -20,9 +20,8 @@
 import { useCallback, useSyncExternalStore } from 'react';
 import { useEditor } from '../../store';
 import type { WsFrame } from '../../../server/ws';
-import type { PrepareAgentResult } from '../../api';
 
-export type PtyCommand = 'claude' | 'codex' | 'opencode' | 'hermes' | 'shell';
+export type PtyCommand = 'shell';
 export type PtyServerFrame = Extract<WsFrame, { type: 'pty-data' | 'pty-exit' | 'pty-error' }>;
 
 export type AgentStatus = 'idle' | 'running' | 'exited';
@@ -264,31 +263,6 @@ subscribeAgentSocket(() => {
 });
 
 // ---------------------------------------------------------------------------
-// Start-Claude gate — pure decision, DOM/WS-free (AgentPanel.tsx's startClaude).
-// ---------------------------------------------------------------------------
-
-export interface ClaudeStartDecision {
-  /** False iff prepare failed — the caller must NOT spawn `claude` in this case. */
-  shouldStart: boolean;
-  /** Present iff shouldStart is false: why prepare failed, for display next to the header actions. */
-  errorMessage: string | null;
-}
-
-/**
- * Prepare writes the hearth entry (with --mode) into .mcp.json; the bare
- * interactive `claude` picks that up itself, so this gate is the only thing
- * standing between a failed/corrupted prepare and actually spawning the
- * process. A stale .mcp.json from a previous session can carry a MORE
- * permissive mode than the one just selected — if prepare fails, that stale
- * grant must never silently win, so the caller must not fall through to
- * agent.start() on failure.
- */
-export function planClaudeStart(prepareResult: Pick<PrepareAgentResult, 'ok' | 'error'>): ClaudeStartDecision {
-  if (prepareResult.ok) return { shouldStart: true, errorMessage: null };
-  return { shouldStart: false, errorMessage: prepareResult.error ?? 'failed to write .mcp.json' };
-}
-
-// ---------------------------------------------------------------------------
 // React seam
 // ---------------------------------------------------------------------------
 
@@ -299,7 +273,7 @@ export interface AgentSocket {
    * Returns false (and logs to the Console) without touching state when the
    * socket is down — a session must never claim to run when nothing was sent.
    */
-  start(command: PtyCommand, mode?: string): boolean;
+  start(): boolean;
   /** Sends pty-stop over the shared WS socket and marks the session exited. */
   stop(): void;
   sendInput(data: string): void;
@@ -311,13 +285,13 @@ const NOT_CONNECTED_MSG = 'Agent terminal: the editor connection is down; wait a
 export function useAgentSocket(): AgentSocket {
   const session = useSyncExternalStore(subscribeAgentSocket, getAgentSessionSummary, getAgentSessionSummary);
 
-  const start = useCallback((command: PtyCommand, mode?: string) => {
+  const start = useCallback(() => {
     const editor = useEditor.getState();
-    if (!editor.sendAgentFrame({ type: 'pty-start', command, mode })) {
+    if (!editor.sendAgentFrame({ type: 'pty-start' })) {
       editor.log('error', 'editor', NOT_CONNECTED_MSG);
       return false;
     }
-    markAgentStarted(command);
+    markAgentStarted('shell');
     return true;
   }, []);
 

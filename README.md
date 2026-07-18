@@ -64,9 +64,10 @@ that visits will read:
 node hearth-cli.mjs init "Star Catcher" --template platformer
 ```
 
-**3. Point your agent at it.** In the desktop app, open the project and click
-**Start agent** in the Agent panel. It wires up Claude Code over MCP for you.
-Or connect any agent by hand:
+**3. Point your agent at it.** In the desktop app, open the project, focus the
+Agent panel, and type `claude`, `codex`, `opencode`, `hermes`, or another agent
+command. The terminal starts at the project root with `hearth` already on PATH.
+MCP is optional; connect it by hand when you want typed tools:
 
 ```bash
 claude mcp add hearth -- node $PWD/hearth-mcp.mjs --project $PWD/star_catcher
@@ -120,9 +121,10 @@ browser with spritesheet slicing and whole-folder drag-drop import, live
 preview with Pause/Step, a Code panel, a read-only Live runtime inspector,
 console, Input and Game Settings panels, undo/redo with a history panel, a
 plain-language Checkpoint/Review/Changes loop for agent sessions, and an
-**Agent panel**: a real embedded terminal running your own agent CLI, wired to
-the project over MCP, with a live activity timeline and Checkpoint/Review/Revert
-one click away (see [docs/agent-panel.md](docs/agent-panel.md)). The editor
+**Agent panel**: a real embedded project terminal where you run your own agent
+CLI, with `hearth` already on PATH, a live activity timeline, and
+Checkpoint/Review/Revert one click away (see
+[docs/agent-panel.md](docs/agent-panel.md)). The editor
 live-follows changes from any *external* agent session, whether CLI, MCP, or
 another editor, reloading automatically instead of going stale, and its local
 project server enforces Origin/Host on every request. Runs in the browser during
@@ -172,10 +174,10 @@ and desktop export. Everything since 1.0 has been additive. v1.1.0 added
 script modules, so scripts can `require()` each other in both Lua and
 JavaScript; a library is just a script that returns a table or exports an
 object, and hot-reload recompiles whatever depended on the file you changed.
-v1.2.0 reworked the Agent panel, which now has its own full-height dock on the
-right beside the Inspector. A first run opens on a "Launch your agent" tile.
-Permission mode (safe-edit by default), Re-detect, and Manual setup sit behind
-a gear menu, and the Activity timeline collapses under the terminal. The
+v1.2.0 gave the Agent panel its own full-height dock on the right beside the
+Inspector. It now opens a project shell directly; a compact first-project guide
+explains how to type an agent command and can be dismissed. The Activity
+timeline collapses under the terminal. The
 [roadmap](docs/roadmap.md) keeps an honest list of what's next.
 
 ## Install
@@ -256,7 +258,7 @@ reference.
 | [Agent workflow](docs/agents.md) | How agents should operate, and why |
 | [CLI guide](docs/cli.md) | Every command, plus the JSON envelope |
 | [MCP guide](docs/mcp.md) | Connecting agents, permission modes |
-| [Connect Claude Code](docs/connect-claude-code.md) | One-click panel + manual setup |
+| [Connect Claude Code](docs/connect-claude-code.md) | Project shell + manual MCP setup |
 | [Connect Codex](docs/connect-codex.md) | `codex mcp add`, `config.toml` |
 | [Connect OpenCode + Ollama](docs/connect-opencode.md) | Local models, end to end |
 | [Connect Hermes](docs/connect-hermes.md) | Running a Hermes model against Hearth |

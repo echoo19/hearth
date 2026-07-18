@@ -8,6 +8,11 @@ scene tools. For panel-by-panel content (Inspector fields, Assets browser,
 etc.) see the component and asset guides linked from each section below; for
 the embedded agent terminal see [agent-panel.md](./agent-panel.md).
 
+The Agent panel starts a platform shell at the open project's root as soon as
+the editor connection is ready. Type `claude`, `codex`, `opencode`, `hermes`,
+or another installed agent command yourself; `hearth` is already on PATH.
+Hearth does not detect agents or rewrite their configuration.
+
 ## Plain-language chrome
 
 Human-facing editor copy avoids engine jargon; the underlying commands and

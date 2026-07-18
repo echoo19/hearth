@@ -8,35 +8,19 @@ wiring it up manually.
 
 ## From the Agent panel
 
-If `codex` is on your `PATH`, the editor's **Agent** panel detects it, and
-clicking the **Codex** tile does the whole setup for you in one click:
+Open a project, focus the **Agent** panel, and type `codex`. The shell starts at
+the project root with `hearth` already on PATH; Codex owns its normal login and
+update flow. Hearth does not detect Codex or rewrite its global config.
 
-1. The panel runs `codex mcp get hearth` first; if Codex already has a
-   `hearth` entry pointed at this project and mode, nothing is rewritten.
-2. Otherwise it runs `codex mcp add hearth -- node <mcp path> --project
-   <project path> --mode <mode>` for you (Codex's own writer for its TOML
-   config, not a hand-merge), which lands as a clean `[mcp_servers.hearth]`
-   table in `~/.codex/config.toml`.
-3. It backfills the project's `.claude/skills/` if they're missing, then
-   spawns `codex` in the embedded terminal, working directory set to your
-   project. The `hearth` CLI is already on that terminal's `PATH` (Hearth
-   writes a small shim into every embedded session), and Codex handles its
-   own login in the terminal exactly as it would in any shell.
-
-Codex's config is **global**, not per-project: `~/.codex/config.toml` holds
-one `hearth` entry, and it's rewritten to point at whichever project you most
-recently prepared. In practice that's always the project you're launching
-from, since prepare runs immediately before Codex spawns; just know that
-opening a different project and starting Codex there repoints the same
-global entry.
-
-If you'd rather not use the panel, the manual steps below produce the exact
-same config by hand.
+New projects already include `AGENTS.md` and the Hearth skills, so the CLI path
+works immediately. To add typed MCP tools, register the server once using the
+manual steps below. Codex's MCP config is global, so remember that a `hearth`
+entry containing one absolute project path must be updated when you switch
+projects.
 
 ## Manual setup
 
-The steps below are what the panel's prepare step does for you automatically
-(and the fallback if you're driving Codex outside the editor entirely). Grab
+Grab
 the standalone `hearth-mcp.mjs` (Node 20+) from the
 [latest release](https://github.com/echoo19/hearth/releases/latest), or use
 `packages/mcp-server/dist/main.js` from a source checkout.
@@ -92,6 +76,6 @@ mode. See [mcp.md](./mcp.md#choosing-modes-per-session) for the full reference.
 
 ## See also
 
-- [connect-claude-code.md](./connect-claude-code.md): the one-click path
+- [connect-claude-code.md](./connect-claude-code.md): Claude Code setup
 - [connect-any-agent.md](./connect-any-agent.md): any other MCP client
 - [mcp.md](./mcp.md): the full tool list and envelope

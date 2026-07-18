@@ -10,11 +10,9 @@ plain-CLI fallback for a shell-only agent.
 Named guides exist for the common cases:
 [Claude Code](./connect-claude-code.md), [Codex](./connect-codex.md),
 [OpenCode + Ollama](./connect-opencode.md), and
-[Hermes](./connect-hermes.md). The editor's Agent panel auto-detects and
-auto-wires all four of those directly: click one of the launch tiles and it
-writes the `hearth` MCP entry into that tool's own config format for you.
-This page is for everything else: any other MCP client, or a shell-native
-agent driven from the panel's "Open a plain terminal" tile.
+[Hermes](./connect-hermes.md). The editor's Agent panel is a general project
+terminal: type any installed agent command there. Hearth does not rewrite the
+agent's MCP configuration; use this page or a named guide when MCP is wanted.
 
 ## Get the server
 

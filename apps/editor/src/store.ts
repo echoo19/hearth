@@ -4,7 +4,7 @@
  * a core command and refreshes the model from the source of truth.
  */
 import { create } from 'zustand';
-import { apiCommand, apiMeta, apiOpenProject, apiCreateProject, apiDetectAgents, fileUrl } from './api';
+import { apiCommand, apiMeta, apiOpenProject, apiCreateProject, fileUrl } from './api';
 import { classifyLocal, classifyJournal } from './livePatch';
 import { getGameView } from './gameViewRef';
 import type {
@@ -23,7 +23,6 @@ import type {
 } from './types';
 import type { WsFrame } from '../server/ws';
 import type { RuntimeErrorEntry } from './runtimeBridge';
-import type { AgentPermissionMode, DetectAgentsResult } from '../server/agentSetup';
 import { ingestPtyFrame, resetAgentSocket, type AgentStatus } from './components/agent/useAgentSocket';
 import { ingestExportFrame, resetExportJob } from './components/exportJob';
 import { createNudgeQueue } from './nudgeQueue';
@@ -105,7 +104,7 @@ export interface EditorState {
    */
   debugDraw: boolean;
 
-  /** Embedded agent terminal (Agent panel): high-level status/mode/detect state.
+  /** Embedded agent terminal (Agent panel): high-level status.
    * The pty session itself (scrollback and all) lives outside zustand (see
    * components/agent/useAgentSocket.ts) so it survives that panel's own
    * component tree unmounting; `agentStatus` is mirrored from that store by
@@ -113,9 +112,6 @@ export interface EditorState {
    * other panels (and Task 6's activity timeline) can select it without a
    * second source of truth. */
   agentStatus: AgentStatus;
-  agentMode: AgentPermissionMode;
-  agentDetect: DetectAgentsResult | null;
-  agentDetecting: boolean;
   /** Whether `snapshotProject` has succeeded at least once this editor session
    * (any panel — DiffPanel's Snapshot button and the Agent panel's Timeline
    * both funnel through `exec()`, which is what flips this). Resets when the
@@ -207,8 +203,6 @@ export interface EditorState {
    */
   closeProjectRequest: number;
 
-  setAgentMode(mode: AgentPermissionMode): void;
-  detectAgent(): Promise<void>;
   /** Sends a pty-* frame over the shared WS socket; a no-op (returns false) when disconnected. */
   sendAgentFrame(frame: WsFrame): boolean;
   requestDiffFocus(): void;
@@ -927,9 +921,6 @@ export const useEditor = create<EditorState>((set, get) => {
     debugDraw: false,
 
     agentStatus: 'idle',
-    agentMode: 'safe-edit',
-    agentDetect: null,
-    agentDetecting: false,
     snapshotTaken: false,
     diffFocusRequest: 0,
     sceneViewCenter: null,
@@ -942,10 +933,6 @@ export const useEditor = create<EditorState>((set, get) => {
     hasUnsavedScripts: false,
     hasUnsavedAnimatorDraft: false,
     closeProjectRequest: 0,
-
-    setAgentMode(mode) {
-      set({ agentMode: mode });
-    },
 
     requestDiffFocus() {
       set((state) => ({ diffFocusRequest: state.diffFocusRequest + 1 }));
@@ -1062,12 +1049,6 @@ export const useEditor = create<EditorState>((set, get) => {
       // (nudgeQueue's flush callback) persists it and refresh() reconciles
       // against the source of truth.
       set((state) => ({ scene: state.scene ? withEntityPosition(state.scene, selection, next) : state.scene }));
-    },
-
-    async detectAgent() {
-      set({ agentDetecting: true });
-      const result = await apiDetectAgents();
-      set({ agentDetect: result, agentDetecting: false });
     },
 
     sendAgentFrame(frame) {

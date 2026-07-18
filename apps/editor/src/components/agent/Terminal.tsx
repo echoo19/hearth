@@ -14,7 +14,7 @@
  *
  * Disposing this component tears down the xterm instance but never touches
  * the pty: hiding/closing the Agent panel's dockview tab must not kill a
- * running `claude`/`codex`/shell session, only stop rendering it.
+ * running shell session, only stop rendering it.
  */
 import React, { useEffect, useRef, useSyncExternalStore } from 'react';
 import { Terminal as XTerm } from '@xterm/xterm';
@@ -59,6 +59,14 @@ export interface TerminalProps {
   onResize: (cols: number, rows: number) => void;
 }
 
+export function resendTerminalSizeThenFocus(
+  term: Pick<XTerm, 'cols' | 'rows' | 'focus'>,
+  onResize: (cols: number, rows: number) => void,
+): void {
+  onResize(term.cols, term.rows);
+  term.focus();
+}
+
 export function Terminal({ onData, onResize }: TerminalProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   // The live xterm instance, so the epoch effect below can focus it without
@@ -72,8 +80,8 @@ export function Terminal({ onData, onResize }: TerminalProps) {
   onResizeRef.current = onResize;
 
   // The session epoch bumps on every start/reset (see useAgentSocket). We watch
-  // it — not the whole summary — so a relaunch ("Launch again" keeps this
-  // component mounted) can move keyboard focus back into the terminal, without
+  // it — not the whole summary — so a restart (which keeps this component
+  // mounted) can move keyboard focus back into the terminal, without
   // re-focusing on unrelated re-renders (onData/onResize prop churn, status
   // ticks). Subscribed via useSyncExternalStore so this is the ONLY reactive
   // dependency that can trigger the focus effect.
@@ -137,8 +145,8 @@ export function Terminal({ onData, onResize }: TerminalProps) {
 
     // Take keyboard focus now that the instance is open, fitted, and its
     // scrollback has replayed — so keystrokes land in the terminal the moment
-    // a launch tile (or "Open a plain terminal") reveals this view, instead of
-    // going nowhere until the user clicks inside it. Relaunch focus is handled
+    // the project shell appears, instead of going nowhere until the user clicks
+    // inside it. Restart focus is handled
     // by the epoch effect below (this mount effect runs once per lifetime).
     termRef.current = term;
     term.focus();
@@ -151,7 +159,7 @@ export function Terminal({ onData, onResize }: TerminalProps) {
     };
   }, []);
 
-  // Relaunch ("Launch again") bumps the epoch while this component stays
+  // Restarting the shell bumps the epoch while this component stays
   // mounted; pull focus back into the terminal so the user can type into the
   // fresh session without clicking first. Skips the initial mount (the mount
   // effect already focused there) so this only fires on a genuine epoch change.
@@ -161,7 +169,8 @@ export function Terminal({ onData, onResize }: TerminalProps) {
       mounted.current = true;
       return;
     }
-    termRef.current?.focus();
+    const term = termRef.current;
+    if (term) resendTerminalSizeThenFocus(term, onResizeRef.current);
   }, [epoch]);
 
   return <div className="agent-xterm" ref={containerRef} />;

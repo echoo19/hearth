@@ -5,11 +5,12 @@
  * native modules).
  */
 import { describe, it, expect, beforeEach } from 'vitest';
-import { PtyManager, type PtyBackend, type PtyHandle } from '../server/ptyManager';
+import { createLazyHandle, PtyManager, resolveShell, type PtyBackend, type PtyHandle } from '../server/ptyManager';
 
 class FakePtyHandle implements PtyHandle {
   dataCbs: Array<(d: string) => void> = [];
   exitCbs: Array<(e: { exitCode: number }) => void> = [];
+  errorCbs: Array<(error: Error) => void> = [];
   writes: string[] = [];
   resizes: Array<{ cols: number; rows: number }> = [];
   killed = false;
@@ -19,6 +20,9 @@ class FakePtyHandle implements PtyHandle {
   }
   onExit(cb: (e: { exitCode: number }) => void): void {
     this.exitCbs.push(cb);
+  }
+  onError(cb: (error: Error) => void): void {
+    this.errorCbs.push(cb);
   }
   write(d: string): void {
     this.writes.push(d);
@@ -56,12 +60,21 @@ beforeEach(() => {
   manager = new PtyManager(backend);
 });
 
+describe('resolveShell', () => {
+  it('uses powershell.exe on Windows even when SHELL is set', () => {
+    expect(resolveShell('win32', { SHELL: '/bin/zsh' })).toEqual({
+      file: 'powershell.exe',
+      args: [],
+    });
+  });
+});
+
 describe('PtyManager', () => {
   it('spawns "shell" as $SHELL (or /bin/bash) with no args and cwd=root', () => {
     const savedShell = process.env.SHELL;
     process.env.SHELL = '/bin/zsh';
     try {
-      manager.start('/proj/a', 'shell', { cols: 80, rows: 24 });
+      manager.start('session-a', '/proj/a', { cols: 80, rows: 24 });
       expect(backend.spawns).toHaveLength(1);
       expect(backend.spawns[0].file).toBe('/bin/zsh');
       expect(backend.spawns[0].args).toEqual([]);
@@ -74,41 +87,20 @@ describe('PtyManager', () => {
     }
   });
 
-  it('spawns "claude" bare (PATH-resolved), no args, never -p/--print', () => {
-    manager.start('/proj/b', 'claude', { cols: 80, rows: 24 });
-    expect(backend.spawns[0].file).toBe('claude');
-    expect(backend.spawns[0].args).toEqual([]);
-  });
-
-  it('spawns "codex" bare, no args', () => {
-    manager.start('/proj/c', 'codex', { cols: 80, rows: 24 });
-    expect(backend.spawns[0].file).toBe('codex');
-    expect(backend.spawns[0].args).toEqual([]);
-  });
-
-  it('spawns "opencode" and "hermes" bare (PATH-resolved), no args', () => {
-    manager.start('/proj/oc', 'opencode', { cols: 80, rows: 24 });
-    manager.start('/proj/hm', 'hermes', { cols: 80, rows: 24 });
-    expect(backend.spawns[0].file).toBe('opencode');
-    expect(backend.spawns[0].args).toEqual([]);
-    expect(backend.spawns[1].file).toBe('hermes');
-    expect(backend.spawns[1].args).toEqual([]);
-  });
-
   it('passes a caller-supplied env to the backend (the hearth-shim PATH)', () => {
     const env = { PATH: '/shim:/usr/bin' } as NodeJS.ProcessEnv;
-    manager.start('/proj/env', 'shell', { cols: 80, rows: 24, env });
+    manager.start('session', '/proj/env', { cols: 80, rows: 24, env });
     expect(backend.spawns[0].opts.env).toBe(env);
   });
 
   it('defaults env to process.env when none is supplied', () => {
-    manager.start('/proj/env2', 'shell', { cols: 80, rows: 24 });
+    manager.start('session', '/proj/env2', { cols: 80, rows: 24 });
     expect(backend.spawns[0].opts.env).toBe(process.env);
   });
 
   it('write() forwards to the active pty for that root', () => {
-    manager.start('/proj', 'shell', { cols: 80, rows: 24 });
-    manager.write('/proj', 'echo hi\r');
+    manager.start('session', '/proj', { cols: 80, rows: 24 });
+    manager.write('session', 'echo hi\r');
     expect(backend.spawns[0].handle.writes).toEqual(['echo hi\r']);
   });
 
@@ -117,17 +109,17 @@ describe('PtyManager', () => {
   });
 
   it('resize() forwards cols/rows to the active pty', () => {
-    manager.start('/proj', 'shell', { cols: 80, rows: 24 });
-    manager.resize('/proj', 120, 40);
+    manager.start('session', '/proj', { cols: 80, rows: 24 });
+    manager.resize('session', 120, 40);
     expect(backend.spawns[0].handle.resizes).toEqual([{ cols: 120, rows: 40 }]);
   });
 
   it('kill() kills the active pty and clears it', () => {
-    manager.start('/proj', 'shell', { cols: 80, rows: 24 });
-    manager.kill('/proj');
+    manager.start('session', '/proj', { cols: 80, rows: 24 });
+    manager.kill('session');
     expect(backend.spawns[0].handle.killed).toBe(true);
     // Further writes are now no-ops (nothing to forward to).
-    manager.write('/proj', 'x');
+    manager.write('session', 'x');
     expect(backend.spawns[0].handle.writes).toEqual([]);
   });
 
@@ -136,48 +128,48 @@ describe('PtyManager', () => {
   });
 
   it('a second start() for the same root kills the first pty before spawning the second', () => {
-    manager.start('/proj', 'shell', { cols: 80, rows: 24 });
+    manager.start('session', '/proj', { cols: 80, rows: 24 });
     const first = backend.spawns[0].handle;
     expect(first.killed).toBe(false);
 
-    manager.start('/proj', 'claude', { cols: 80, rows: 24 });
+    manager.start('session', '/proj', { cols: 80, rows: 24 });
     expect(first.killed).toBe(true);
     expect(backend.spawns).toHaveLength(2);
 
     // Writes now go to the second pty only.
-    manager.write('/proj', 'y');
+    manager.write('session', 'y');
     expect(first.writes).toEqual([]);
     expect(backend.spawns[1].handle.writes).toEqual(['y']);
   });
 
-  it('starting ptys for different roots does not interfere with each other', () => {
-    manager.start('/a', 'shell', { cols: 80, rows: 24 });
-    manager.start('/b', 'shell', { cols: 80, rows: 24 });
-    manager.write('/a', 'to-a');
-    manager.write('/b', 'to-b');
+  it('starting distinct session keys in the same cwd does not interfere', () => {
+    manager.start('a', '/same-project', { cols: 80, rows: 24 });
+    manager.start('b', '/same-project', { cols: 80, rows: 24 });
+    manager.write('a', 'to-a');
+    manager.write('b', 'to-b');
     expect(backend.spawns[0].handle.writes).toEqual(['to-a']);
     expect(backend.spawns[1].handle.writes).toEqual(['to-b']);
   });
 
   it('when the pty exits on its own, the manager forgets it (no double-kill on close)', () => {
-    manager.start('/proj', 'shell', { cols: 80, rows: 24 });
+    manager.start('session', '/proj', { cols: 80, rows: 24 });
     const handle = backend.spawns[0].handle;
     handle.emitExit(0);
     // kill() on an already-exited pty must not call kill() again.
-    manager.kill('/proj');
+    manager.kill('session');
     expect(handle.killed).toBe(false);
   });
 
   it('killAll() tears down every live pty', () => {
-    manager.start('/a', 'shell', { cols: 80, rows: 24 });
-    manager.start('/b', 'shell', { cols: 80, rows: 24 });
+    manager.start('a', '/a', { cols: 80, rows: 24 });
+    manager.start('b', '/b', { cols: 80, rows: 24 });
     manager.killAll();
     expect(backend.spawns[0].handle.killed).toBe(true);
     expect(backend.spawns[1].handle.killed).toBe(true);
   });
 
   it('routes backend data/exit events through onData/onExit registered by the caller', () => {
-    const handle = manager.start('/proj', 'shell', { cols: 80, rows: 24 });
+    const handle = manager.start('session', '/proj', { cols: 80, rows: 24 });
     const seenData: string[] = [];
     let seenExit: number | null = null;
     handle.onData((d) => seenData.push(d));
@@ -188,5 +180,17 @@ describe('PtyManager', () => {
 
     expect(seenData).toEqual(['hello\n']);
     expect(seenExit).toBe(0);
+  });
+});
+
+describe('createLazyHandle', () => {
+  it('retains an early async spawn error for a late subscriber', async () => {
+    const handle = createLazyHandle(Promise.reject(new Error('native pty unavailable')));
+    await Promise.resolve();
+
+    const errors: string[] = [];
+    handle.onError((error) => errors.push(error.message));
+
+    expect(errors).toEqual(['native pty unavailable']);
   });
 });

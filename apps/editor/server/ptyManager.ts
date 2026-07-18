@@ -1,20 +1,17 @@
 /**
- * PtyManager: spawns a real pseudo-terminal per project root for the
+ * PtyManager: spawns a real pseudo-terminal per session key for the
  * embedded agent panel's terminal (ws.ts multiplexes pty-* frames over the
  * per-project WebSocket channel; see attachWebSocket).
  *
- * Exactly one pty lives per root at a time: starting a new one for a root
+ * Exactly one pty lives per key at a time: starting a new one for a key
  * that already has one kills the old one first (no orphaned processes), and
  * `kill()` is available for explicit teardown (socket close, project
  * switch).
  *
- * SUBSCRIPTION-SAFETY: when `command` is 'claude', this spawns the genuine
- * `claude` binary interactively — PATH-resolved, bare, no arguments. This
- * module must NEVER add `-p`/`--print` or any other flag that would change
- * it from an interactive session, and it never parses or injects into the
- * pty's byte stream beyond raw piping between the child process and the
- * browser terminal. Same rule for the other agent CLIs ('codex', 'opencode',
- * 'hermes'): each runs bare and interactive, PATH-resolved.
+ * It always spawns the user's platform shell. Users launch `claude`, `codex`,
+ * or any other CLI by typing into that shell, so normal shell resolution also
+ * handles Windows `.cmd` shims. Hearth never parses or injects into the byte
+ * stream beyond raw piping between the child process and browser terminal.
  *
  * The pty's environment is whatever the caller passes as `opts.env` (ws.ts
  * hands it a PATH with the `hearth` CLI shim prepended — see hearthShim.ts —
@@ -33,21 +30,18 @@ export interface PtyBackend {
 export interface PtyHandle {
   onData(cb: (d: string) => void): void;
   onExit(cb: (e: { exitCode: number }) => void): void;
+  onError(cb: (error: Error) => void): void;
   write(d: string): void;
   resize(c: number, r: number): void;
   kill(): void;
 }
 
-export type PtyCommand = 'claude' | 'codex' | 'opencode' | 'hermes' | 'shell';
-
-/** Resolve the (file, args) to spawn for a given pty command. No args ever for
- * the agent CLIs: they run bare and interactive, PATH-resolved. */
-function resolveCommand(command: PtyCommand): { file: string; args: string[] } {
-  if (command === 'shell') {
-    const file = process.env.SHELL || (os.platform() === 'win32' ? 'powershell.exe' : '/bin/bash');
-    return { file, args: [] };
-  }
-  return { file: command, args: [] };
+export function resolveShell(
+  platform: NodeJS.Platform,
+  env: NodeJS.ProcessEnv,
+): { file: string; args: string[] } {
+  const file = platform === 'win32' ? 'powershell.exe' : env.SHELL || '/bin/bash';
+  return { file, args: [] };
 }
 
 // ---------------------------------------------------------------------------
@@ -73,13 +67,15 @@ function loadNodePty(): Promise<NodePtyModule> {
  * are queued and attached once it resolves; writes/resizes issued in that
  * window are buffered and flushed in order.
  */
-function createLazyHandle(realHandlePromise: Promise<PtyHandle>): PtyHandle {
+export function createLazyHandle(realHandlePromise: Promise<PtyHandle>): PtyHandle {
   const dataCbs: Array<(d: string) => void> = [];
   const exitCbs: Array<(e: { exitCode: number }) => void> = [];
+  const errorCbs: Array<(error: Error) => void> = [];
   const pendingWrites: string[] = [];
   let pendingResize: { c: number; r: number } | null = null;
   let real: PtyHandle | null = null;
   let killedBeforeReady = false;
+  let failure: Error | null = null;
 
   realHandlePromise.then(
     (handle) => {
@@ -90,20 +86,14 @@ function createLazyHandle(realHandlePromise: Promise<PtyHandle>): PtyHandle {
       real = handle;
       for (const cb of dataCbs) handle.onData(cb);
       for (const cb of exitCbs) handle.onExit(cb);
+      for (const cb of errorCbs) handle.onError(cb);
       for (const data of pendingWrites) handle.write(data);
       pendingWrites.length = 0;
       if (pendingResize) handle.resize(pendingResize.c, pendingResize.r);
     },
     (err: unknown) => {
-      // The pty could never be spawned (e.g. node-pty failed to load, or
-      // the binary doesn't exist) — surface it the same way a process exit
-      // would, so callers don't need a separate error path.
-      const message = err instanceof Error ? err.message : String(err);
-      for (const cb of exitCbs) cb({ exitCode: -1 });
-      if (exitCbs.length === 0) {
-        // No listener yet: at least don't lose the error silently.
-        console.error(`[ptyManager] failed to spawn: ${message}`);
-      }
+      failure = err instanceof Error ? err : new Error(String(err));
+      for (const cb of errorCbs) cb(failure);
     },
   );
 
@@ -115,6 +105,11 @@ function createLazyHandle(realHandlePromise: Promise<PtyHandle>): PtyHandle {
     onExit(cb) {
       exitCbs.push(cb);
       if (real) real.onExit(cb);
+    },
+    onError(cb) {
+      errorCbs.push(cb);
+      if (failure) cb(failure);
+      else if (real) real.onError(cb);
     },
     write(d) {
       if (real) real.write(d);
@@ -135,14 +130,22 @@ function createDefaultBackend(): PtyBackend {
   return {
     spawn(file, args, opts) {
       return createLazyHandle(
-        loadNodePty().then((nodePty) =>
-          nodePty.spawn(file, args, {
+        loadNodePty().then((nodePty) => {
+          const pty = nodePty.spawn(file, args, {
             cwd: opts.cwd,
             cols: opts.cols,
             rows: opts.rows,
             env: opts.env,
-          }),
-        ),
+          });
+          return {
+            onData: (cb) => { pty.onData(cb); },
+            onExit: (cb) => { pty.onExit(cb); },
+            onError: () => {},
+            write: (data) => { pty.write(data); },
+            resize: (cols, rows) => { pty.resize(cols, rows); },
+            kill: () => { pty.kill(); },
+          } satisfies PtyHandle;
+        }),
       );
     },
   };
@@ -160,46 +163,49 @@ export class PtyManager {
     this.backend = backend ?? createDefaultBackend();
   }
 
-  /** Starts a pty for `root`, killing any existing one for that root first.
+  /** Starts a pty for `key`, killing any existing one for that key first.
    * `opts.env` overrides the child environment (defaults to process.env); ws.ts
    * passes a PATH with the `hearth` shim dir prepended. */
   start(
-    root: string,
-    command: PtyCommand,
+    key: string,
+    cwd: string,
     opts: { cols: number; rows: number; env?: NodeJS.ProcessEnv },
   ): PtyHandle {
-    this.kill(root);
-    const { file, args } = resolveCommand(command);
+    this.kill(key);
+    const { file, args } = resolveShell(os.platform(), process.env);
     const handle = this.backend.spawn(file, args, {
-      cwd: root,
+      cwd,
       cols: opts.cols,
       rows: opts.rows,
       env: opts.env ?? process.env,
     });
-    this.ptys.set(root, handle);
+    this.ptys.set(key, handle);
     handle.onExit(() => {
-      if (this.ptys.get(root) === handle) this.ptys.delete(root);
+      if (this.ptys.get(key) === handle) this.ptys.delete(key);
+    });
+    handle.onError(() => {
+      if (this.ptys.get(key) === handle) this.ptys.delete(key);
     });
     return handle;
   }
 
-  write(root: string, data: string): void {
-    this.ptys.get(root)?.write(data);
+  write(key: string, data: string): void {
+    this.ptys.get(key)?.write(data);
   }
 
-  resize(root: string, cols: number, rows: number): void {
-    this.ptys.get(root)?.resize(cols, rows);
+  resize(key: string, cols: number, rows: number): void {
+    this.ptys.get(key)?.resize(cols, rows);
   }
 
-  kill(root: string): void {
-    const handle = this.ptys.get(root);
+  kill(key: string): void {
+    const handle = this.ptys.get(key);
     if (!handle) return;
-    this.ptys.delete(root);
+    this.ptys.delete(key);
     handle.kill();
   }
 
   /** Tears down every live pty. Used when the owning http server closes. */
   killAll(): void {
-    for (const root of [...this.ptys.keys()]) this.kill(root);
+    for (const key of [...this.ptys.keys()]) this.kill(key);
   }
 }

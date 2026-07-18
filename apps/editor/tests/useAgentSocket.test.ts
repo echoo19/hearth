@@ -20,7 +20,6 @@ import {
   initialWriteCursor,
   markAgentStarted,
   markAgentStopped,
-  planClaudeStart,
   planTerminalWrite,
   reduceAgentSocket,
   resetAgentSocket,
@@ -54,11 +53,11 @@ describe('reduceAgentSocket', () => {
       exitCode: 0,
       errorMessage: 'boom',
     };
-    const next = reduceAgentSocket(stale, { type: 'start', command: 'claude' });
+    const next = reduceAgentSocket(stale, { type: 'start', command: 'shell' });
     expect(next).toEqual({
       status: 'running',
       epoch: 4,
-      command: 'claude',
+      command: 'shell',
       scrollback: '',
       droppedBytes: 0,
       exitCode: null,
@@ -110,7 +109,7 @@ describe('reduceAgentSocket', () => {
   });
 
   it('frame pty-exit: moves to exited, records the exit code, and keeps the scrollback', () => {
-    let state = reduceAgentSocket(initialAgentSocketState(), { type: 'start', command: 'claude' });
+    let state = reduceAgentSocket(initialAgentSocketState(), { type: 'start', command: 'shell' });
     state = reduceAgentSocket(state, { type: 'frame', frame: { type: 'pty-data', data: 'bye' } as PtyServerFrame });
     state = reduceAgentSocket(state, { type: 'frame', frame: { type: 'pty-exit', code: 1 } as PtyServerFrame });
     expect(state.status).toBe('exited');
@@ -119,7 +118,7 @@ describe('reduceAgentSocket', () => {
   });
 
   it('frame pty-error: moves to exited, records the message, and appends it to the scrollback', () => {
-    const state0 = reduceAgentSocket(initialAgentSocketState(), { type: 'start', command: 'claude' });
+    const state0 = reduceAgentSocket(initialAgentSocketState(), { type: 'start', command: 'shell' });
     const state = reduceAgentSocket(state0, {
       type: 'frame',
       frame: { type: 'pty-error', message: 'spawn claude ENOENT' } as PtyServerFrame,
@@ -141,7 +140,7 @@ describe('reduceAgentSocket', () => {
   });
 
   it('reset: returns to a fresh idle state but bumps the epoch so a mounted terminal notices', () => {
-    const running = reduceAgentSocket(initialAgentSocketState(), { type: 'start', command: 'claude' });
+    const running = reduceAgentSocket(initialAgentSocketState(), { type: 'start', command: 'shell' });
     const withOutput = reduceAgentSocket(running, {
       type: 'frame',
       frame: { type: 'pty-data', data: 'hi' } as PtyServerFrame,
@@ -155,26 +154,6 @@ describe('reduceAgentSocket', () => {
       droppedBytes: 0,
       exitCode: null,
       errorMessage: null,
-    });
-  });
-});
-
-describe('planClaudeStart', () => {
-  it('a successful prepare allows the start to proceed, with no error to surface', () => {
-    expect(planClaudeStart({ ok: true })).toEqual({ shouldStart: true, errorMessage: null });
-  });
-
-  it('a failed prepare blocks the start and surfaces the API-reported reason', () => {
-    expect(planClaudeStart({ ok: false, error: '.mcp.json is not valid JSON' })).toEqual({
-      shouldStart: false,
-      errorMessage: '.mcp.json is not valid JSON',
-    });
-  });
-
-  it('a failed prepare with no reason from the API still blocks the start, with a fallback message', () => {
-    expect(planClaudeStart({ ok: false })).toEqual({
-      shouldStart: false,
-      errorMessage: 'failed to write .mcp.json',
     });
   });
 });
@@ -208,7 +187,7 @@ describe('planTerminalWrite', () => {
     state = reduceAgentSocket(state, { type: 'frame', frame: { type: 'pty-data', data: 'abc' } as PtyServerFrame });
     const caughtUp = planTerminalWrite(initialWriteCursor(), state);
 
-    const restarted = reduceAgentSocket(state, { type: 'start', command: 'claude' });
+    const restarted = reduceAgentSocket(state, { type: 'start', command: 'shell' });
     const afterRestart = reduceAgentSocket(restarted, {
       type: 'frame',
       frame: { type: 'pty-data', data: 'fresh' } as PtyServerFrame,
@@ -278,9 +257,9 @@ describe('the external agent-socket store (survives the panel component unmounti
     const listener = vi.fn();
     const unsubscribe = subscribeAgentSocket(listener);
 
-    markAgentStarted('claude');
+    markAgentStarted('shell');
     expect(getAgentSocketSnapshot().status).toBe('running');
-    expect(getAgentSocketSnapshot().command).toBe('claude');
+    expect(getAgentSocketSnapshot().command).toBe('shell');
     expect(listener).toHaveBeenCalledTimes(1);
 
     ingestPtyFrame({ type: 'pty-data', data: 'ready' } as PtyServerFrame);
@@ -315,10 +294,10 @@ describe('the external agent-socket store (survives the panel component unmounti
   });
 
   it('the session summary keeps a stable identity across pure scrollback growth (no React re-render per frame)', () => {
-    markAgentStarted('claude');
+    markAgentStarted('shell');
     const summary = getAgentSessionSummary();
     expect(summary.status).toBe('running');
-    expect(summary.command).toBe('claude');
+    expect(summary.command).toBe('shell');
 
     ingestPtyFrame({ type: 'pty-data', data: 'chunk 1' } as PtyServerFrame);
     ingestPtyFrame({ type: 'pty-data', data: 'chunk 2' } as PtyServerFrame);

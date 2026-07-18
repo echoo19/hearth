@@ -1,304 +1,73 @@
 # Agent Panel
 
-The Agent panel is the editor's built-in home for a coding agent: a real
-embedded terminal running your own copy of the agent's CLI, with a live
-timeline of every structured command it runs underneath. The onboarding
-story it exists for is: download Hearth → open a project → click a tile →
-describe your game. Claude Code, Codex, OpenCode, and Hermes all get
-automatic MCP setup: the panel detects each on `PATH`, writes the `hearth`
-server into that tool's own config format, and launches it directly; any
-other shell-native agent uses the project terminal plus the same Hearth
-CLI/MCP surfaces.
+The Agent panel is a real embedded project terminal with a live timeline of
+Hearth commands. It does not run a model, hold an API key, or wrap an agent's
+protocol. Open a project and the panel starts your platform shell at that
+project's root. Type the same command you would in any terminal:
 
-It is not a chat UI, and it does not run any model. Hearth never calls an
-LLM, never holds an API key, and the panel's terminal is exactly the
-official CLI you'd run in any terminal, just spawned inside the editor with
-its working directory set to your project, with the `hearth` CLI already
-guaranteed on that terminal's `PATH` (a small shim Hearth writes into a temp
-dir and prepends, so a bare shell or any agent CLI finds a working `hearth`
-with zero manual alias/install step). Everything the panel shows is either
-that CLI's own terminal output, or facts read back from Hearth's own on-disk
-command journal.
+```bash
+claude
+codex
+opencode
+hermes
+```
 
-## Why a terminal, not a custom chat UI
+Your shell owns command resolution, login, updates, and agent-specific
+configuration. This is especially important on Windows, where PowerShell
+correctly resolves npm-installed `.cmd` launchers. Hearth does not detect,
+install, configure, or launch named agents itself.
 
-Anthropic's June 2026 billing change draws a clear line: the official
-`claude` CLI running in a terminal, **including a terminal embedded in an
-editor** (Zed's embedded terminal is the named precedent), draws from the
-user's existing Claude Pro/Max subscription like any other terminal session
-would. What does not: ACP-style integrations, third-party UIs that wrap
-Claude Code's protocol, and piping `claude -p` through a custom
-non-terminal front end.
+The terminal's `PATH` includes a small shim for the bundled `hearth` CLI, so
+both you and any shell-native agent can run `hearth` without a global install.
+GUI-launched desktop apps also merge the user's login-shell PATH, covering
+common locations such as `~/.local/bin`, Homebrew, nvm, mise, and asdf.
 
-Hearth's embedded panel stays on the safe side of that line deliberately:
+New Hearth projects already contain `AGENTS.md`, `CLAUDE.md`, and the
+project-local Hearth skills. An agent can therefore use the CLI immediately.
+MCP is optional; the per-agent connect guides explain how to register
+`hearth-mcp` when you want typed MCP tools as well.
 
-- It spawns a genuine, unmodified `claude` binary in a real PTY
-  (`@lydell/node-pty`), the same binary `which claude` finds on your
-  machine, not a fork or a wrapped subprocess with a scripted stdin/stdout.
-  (The same holds for Codex, OpenCode, and Hermes when you pick those
-  launchers: real PTY, real binary, no wrapping.)
-- Hearth never touches the CLI's stream, its credentials, or its flags,
-  beyond setting the working directory (`cwd`) to your project root and
-  writing standard MCP server configuration in that tool's own format
-  (`.mcp.json` for Claude Code; `opencode.json` for OpenCode; Codex's and
-  Hermes's own global config for those two), the same kind of file you'd
-  hand-write to wire up any MCP server yourself.
-- There is no token or cost readout anywhere in the panel. Hearth does not
-  parse the CLI's stream to extract that information, on purpose. Doing so
-  would mean depending on the internal shape of output that isn't a
-  supported integration surface.
-- The **activity timeline** next to the terminal is fed exclusively by
-  Hearth's own command journal (`.hearth/log/commands.jsonl`, see
-  [project-format.md](./project-format.md#hearthlogcommandsjsonl)), a
-  record of engine commands the CLI happened to run through Hearth's MCP
-  server, not anything read out of the agent's own process.
-- Login is entirely the CLI's own business: starting Claude Code
-  never touches your credentials. If the CLI needs you to authenticate, it
-  prompts for it inside the terminal exactly as it would from any shell,
-  and whatever it persists to your machine is between you and the CLI.
+## Beginner guide
 
-A custom chat UI over the agent, something beyond just a terminal, is
-explicitly out of scope until it can be built against an API-key path (the
-Claude Agent SDK) instead of a subscription session, or until Anthropic
-clarifies that subscription use through a wrapped UI is fine. Until then,
-this doc and the panel itself describe things as "works with Claude Code"
-descriptively: no logos, no implied partnership or endorsement.
+The compact guide above the terminal explains the project root, agent command,
+and `hearth` PATH setup. Dismissing it is remembered for that project in the
+editor's local storage. If browser storage is unavailable, dismissal lasts for
+the current mount and the guide safely returns later.
 
-## Where it lives
+## Session lifetime
 
-The Agent panel has its own full-height dock at the right edge of the
-window, next to the Inspector (380px wide by default, resizable like any
-other dock). It used to live as a tab in the bottom dock alongside Assets
-and Console; that changed so the terminal gets real vertical room instead
-of fighting the Assets browser for tab space. If you saved a layout before
-this change, the editor migrates it automatically the first time you open
-it: only the Agent panel moves to the new right-hand dock, everything else
-about your layout (panel sizes, which tabs are open, where you put
-Hierarchy/Inspector/Assets) is left exactly as you had it.
+There is one PTY per editor connection, so two windows on the same project have
+independent shells. Output is buffered outside the React panel, so closing and
+reopening the Agent tab preserves the live process and roughly 200K JavaScript
+characters of scrollback. Stop kills it explicitly; Restart opens a fresh
+shell. Switching projects, losing the WebSocket, or closing the app ends the
+session. Terminal history is not persisted to disk.
 
-## First run: launch your agent
+The terminal is a genuine `@lydell/node-pty` session. xterm only forwards raw
+keystrokes, resize events, and output; Hearth does not parse or inject into the
+stream.
 
-With no session running, the panel shows a "Launch your agent" screen: one
-tile per agent CLI (**Claude Code**, **Codex**, **OpenCode**, **Hermes**),
-plus an **Open a plain terminal** row underneath. Whichever tools are
-already installed sort to the top, so the common case is one click on the
-first tile.
+## Activity and review
 
-- **Tile states**: a tile reads **Checking…** until the first PATH detect
-  finishes (so a slow detect never flashes "not installed" for a tool that
-  actually is), then either becomes a clickable launch tile, or shows
-  **Install** (for Claude Code, Codex, and OpenCode, which each have a known
-  install command) or **Not installed** (Hermes has no single blessed
-  installer; see [connect-hermes.md](./connect-hermes.md) for both the
-  `hermes` CLI and model-only paths).
-- **Clicking a ready tile** does the whole setup in one action: it runs that
-  tool's *prepare* step invisibly, then spawns the real CLI in the terminal.
-  There's no separate "Start agent" button anymore, the tile click is prepare
-  and launch together, all at the permission mode set in the gear menu (see
-  below):
-  - **Claude Code** → merges a `hearth` entry into the project's
-    `.mcp.json`.
-  - **Codex** → runs `codex mcp get hearth` to check, then `codex mcp add
-    hearth -- …` if it isn't already correct, writing `~/.codex/config.toml`
-    (a **global** config, see [connect-codex.md](./connect-codex.md)).
-  - **OpenCode** → merges a `hearth` entry into the project's
-    `opencode.json`, and adds an Ollama provider block automatically when
-    local models are found and none is configured yet (see
-    [connect-opencode.md](./connect-opencode.md)).
-  - **Hermes** → merges a `mcp_servers.hearth` entry into
-    `~/.hermes/config.yaml` (also **global**, see
-    [connect-hermes.md](./connect-hermes.md)).
+Activity below the terminal comes from Hearth's on-disk command journal, not
+terminal text. It shows structured CLI/MCP/editor operations and provides the
+same review loop as the toolbar:
 
-  Every prepare is idempotent (a no-op if the entry is already correct at
-  that mode) and also backfills the project's `.claude/skills/` if missing.
-  Claude Code discovers `.mcp.json` itself, asks you to approve the server
-  on first use, and handles its own login if needed, all inside the
-  terminal; Codex/OpenCode/Hermes do the same in their own way.
-- **Install**: for Claude Code, Codex, and OpenCode, runs that tool's
-  official install command (`npm install -g …`) visibly in the terminal, no
-  hidden installs happen anywhere, then re-detects automatically once the
-  install session exits, so the tile flips from Install to a ready launch
-  tile without a manual re-detect.
-- **Open a plain terminal**: a plain shell (`$SHELL` on macOS/Linux,
-  PowerShell on Windows) in the project root, for any other shell-native
-  agent/tool, or to run an install command by hand. `hearth` is already on
-  its `PATH`.
-- **Footer**: shows the current permission mode and the gear menu.
+- **Checkpoint** saves a baseline.
+- **Review changes** opens the Changes panel.
+- **Restore checkpoint** reverts to the baseline after confirmation.
 
-## Permission mode, gear menu, and manual setup
+External changes refresh the open editor through the shared WebSocket. The
+conflict model remains last-writer-wins per file; checkpoint, diff, undo, and
+the journal are the recovery tools.
 
-Permission mode defaults to **Safe edit** and isn't picked from the launcher
-tiles themselves. It lives behind the gear icon (in the launcher's footer,
-or the session header once an agent is running):
+## MCP setup
 
-- The 4-tier mode ladder (`Read-only` / `Safe edit` / `Full (no build)` /
-  `All (incl. build)`), see [Permission modes](#permission-modes) below.
-  It's locked while a session is running (stop the agent first to change
-  it), since rewriting the tool's config out from under a live session could
-  silently grant it a different mode than the one you started it with.
-- **Re-detect agents**: re-runs the PATH scan, useful right after installing
-  something outside the editor.
-- **Manual setup**: toggles the collapsible section with the CLI/MCP
-  copy-paste snippets and the permission-mode table, for anyone not using
-  the embedded terminal at all (see
-  [Manual setup](#manual-setup-fallback-for-any-tool)).
+The panel intentionally does not rewrite `.mcp.json`, `opencode.json`,
+`~/.codex/config.toml`, or `~/.hermes/config.yaml`. Follow the relevant guide:
 
-## Once a session is running
-
-The panel switches to a session view: a header with a status dot, the
-running tool's name, a live status line (running / exited / failed to
-start), a **Stop** button, and the gear. Below that, the live terminal.
-Below the terminal, a collapsible **Activity** section holding the
-timeline described next.
-
-When a session exits, the terminal's scrollback and exit code stay on
-screen as the record of what happened; the header gains **Launch again**
-(relaunch the same tool at the current mode) and **Switch agent** (go back
-to the launcher tiles). One PTY session per open project at a time in this
-release; switching projects always kills the old terminal (see
-[Troubleshooting](#troubleshooting)).
-
-### Activity
-
-One row per journaled command (icon by kind, summary, ok/✗, relative time),
-newest first. Playtest rows show pass/fail and assertion counts; validate
-rows show error/warning counts. Its header carries three actions:
-**Checkpoint** (`snapshotProject`), **Review changes** (focuses the Changes
-panel), and **Restore checkpoint** (`revertProject` with a confirm dialog,
-disabled when there's nothing to revert). A link to the History panel
-covers granular per-command undo instead of a whole-session revert.
-
-## Permission modes
-
-The panel's 4-tier picker maps onto the CLI/MCP server's real permission
-modes (see [cli.md](./cli.md#global-options) and
-[mcp.md](./mcp.md#choosing-modes-per-session)); `full` and `all` are
-composed from the tiers they actually grant, not separate claims:
-
-| Panel label | Grants |
-| --- | --- |
-| Read-only | Inspect project, scenes, entities; validate; diff; run non-mutating playtests. |
-| Safe edit | Create/modify/delete scenes and entities; add/remove components; set component properties; snapshot. |
-| Full (no build) | Safe edit, plus create/edit/attach scripts, and import/create/modify assets. Explicitly **not** build/export. |
-| All (incl. build) | Everything above, plus build/export the project. |
-
-Picking a mode in the gear menu and then clicking a tile rewrites that
-tool's own config with the selected mode before it launches, whichever of
-the four tools you picked. Denied tool calls return a structured
-`PERMISSION_DENIED` error the agent can relay to you, rather than failing
-silently. That's the same behavior as the CLI and MCP server outside the
-panel.
-
-## Manual setup (fallback for any tool)
-
-Every tool in the launcher is one click from the panel now, so manual
-setup is a fallback, not a requirement. It's useful if you're driving
-an agent outside the editor entirely, want to see exactly what gets written
-before trusting the automatic path, or are wiring up any other MCP-capable
-client. The Manual setup section's snippets cover:
-
-- The plain CLI loop (`hearth snapshot` → `hearth inspect` → edit → `hearth
-  validate` → `hearth diff`) for any agent that just gets a shell.
-- `claude mcp add hearth -- node <mcp path> --project <project path>` for
-  Claude Code from outside the panel.
-- A raw `.mcp.json` block for any other MCP-capable client that reads the
-  same shape (Cursor, Cline, Windsurf, and others, see
-  [connect-any-agent.md](./connect-any-agent.md)).
-- The same permission-mode table as above.
-
-Per-tool config formats and exact commands for Codex (`~/.codex/config.toml`
-via `codex mcp add`), OpenCode (`opencode.json` + Ollama provider), and
-Hermes (`~/.hermes/config.yaml`) are in their own connect guides:
-[connect-codex.md](./connect-codex.md), [connect-opencode.md](./connect-opencode.md),
-[connect-hermes.md](./connect-hermes.md).
-
-This manual section is exactly the content that used to be the whole Agent
-panel before the embedded terminal (and, later, per-tool auto-wiring)
-shipped; it hasn't gone away, just moved behind the gear menu's "Manual
-setup" toggle.
-
-## The external-change model
-
-The editor now live-follows changes made *outside* itself (from the
-embedded terminal, a separate CLI invocation, or another MCP session),
-using the same journal that feeds the timeline:
-
-- The project server watches `.hearth/log/commands.jsonl` for the open
-  project (`fs.watch` plus a polling fallback) and pushes new entries to
-  every connected editor over one WebSocket endpoint.
-- Every `/api/*` request and the `/api/ws` upgrade enforce Origin/Host
-  before doing anything else: a request with no `Origin` header is allowed
-  (non-browser clients like the CLI/MCP server never send one), but a
-  present `Origin` must resolve to a loopback hostname
-  (`localhost`/`127.0.0.1`/`::1`), and a present `Host` header is checked
-  the same way as a DNS-rebinding backstop. This is what stops a hostile
-  webpage from driving the local project server just by pointing a
-  browser tab at its port. There's no auth token to check, so Origin/Host
-  is the only defense a loopback dev server has.
-- When a pushed batch contains an entry whose `source` isn't `editor`, the
-  server drops its in-memory session for that project so the next command
-  re-reads from disk, and the editor bumps its own refresh signal. Every
-  panel that already reacts to that signal (Hierarchy, Inspector, Diff,
-  History, Assets) picks up the change automatically. You don't need to
-  reopen the project or hit refresh.
-- Entries the editor's own UI produced still show up in the timeline, but
-  don't trigger this reload (there's nothing external to catch up on).
-
-**Conflict model:** this is last-writer-wins per file, same as before: the
-editor only ever *re-reads* on an external change, it never auto-writes
-over one. If you and an agent edit genuinely overlapping state in the same
-narrow window, whichever write lands last on disk wins, and the editor will
-faithfully show you that state once it reloads. There's no merge and no
-lock; `snapshot`/`diff`/`revert` (or per-command undo/redo, see
-[cli.md](./cli.md#command-tour)) are your safety net if that ever surprises
-you, not this refresh mechanism.
-
-## Troubleshooting
-
-**Claude Code's tile shows "Install" instead of a launch button.** The panel
-didn't find `claude` on `PATH`. Click **Install** (runs the official install
-command in the terminal so you can see exactly what it does); the panel
-re-detects on its own once the install session exits. If you installed it
-in a way that doesn't land on the `PATH` the editor's process sees (e.g. a
-shell-specific rc file change, or a version manager), it still won't show
-up until you restart the editor from a shell that has the updated `PATH` —
-use **Re-detect agents** in the gear menu to try again without restarting
-first.
-
-**A tile is stuck on "Checking…" or never resolves.** Agent detection times
-out after 3 seconds per CLI. If your shell is slow to start, the detection
-may fail silently. Use **Re-detect agents** in the gear menu to try again,
-or check your shell startup files for expensive operations that might be
-slowing things down.
-
-**"Agent setup failed: ... exists but is not valid JSON/YAML" (409).** The
-selected tool's config file already exists but doesn't parse: `.mcp.json` or
-`opencode.json` not valid JSON, or `~/.hermes/config.yaml` not valid YAML (or
-not a mapping). Hearth refuses to overwrite a file it can't safely merge into
-rather than clobbering whatever's there. Fix or delete the file and start
-the agent again. (This surfaces as HTTP 409 from the panel's
-`/api/agent/prepare` call if you're driving it directly.) Codex is the one
-exception: it doesn't hand-merge TOML at all, so a config problem there
-instead surfaces as a `codex mcp add` failure with Codex's own error text.
-
-**Terminal shows "Exited" after switching projects.** Expected: this
-release supports one PTY per open project, and switching projects tears
-down the old project's WebSocket connection, which kills its terminal
-session with it. Start the agent or terminal again in the new project. The
-old session isn't recoverable, but nothing about it was silently lost either
-(its work is exactly what's on disk plus whatever the timeline/journal
-recorded).
-
-**Nothing happens when I click a tile.** Check for an inline "Agent setup
-failed: …" message under that tile (or under the session header, if it was
-a "Launch again" click). The panel deliberately refuses to launch the
-selected tool if writing its config failed, since a stale config from an
-earlier session could otherwise grant a more permissive mode than the one
-you just picked without telling you.
-
-**The terminal looks frozen / stopped updating.** Check the WebSocket
-status implicitly via whether other live panels (Hierarchy, Console) are
-still updating from external changes; a dropped connection reconnects
-automatically with backoff. If the whole editor lost its connection to the
-project server (e.g. the dev server or app process restarted), reload the
-editor.
+- [Claude Code](./connect-claude-code.md)
+- [Codex](./connect-codex.md)
+- [OpenCode and Ollama](./connect-opencode.md)
+- [Hermes](./connect-hermes.md)
+- [Any MCP client or CLI agent](./connect-any-agent.md)

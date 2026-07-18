@@ -3,28 +3,15 @@
 Two things both go by "Hermes" here, and it's worth separating them:
 [Hermes](https://nousresearch.com/) the **model family** (Nous Research's
 Hermes 2/3/4 fine-tunes, built on Llama and other bases, known for strong
-structured function/tool calling), and a **`hermes` agent CLI** the editor's
-Agent panel can detect and launch directly if you have one on `PATH`. Which
+structured function/tool calling), and a **`hermes` agent CLI** you can run in
+the editor's Agent terminal if you have one on `PATH`. Which
 path applies to you depends on what you've actually installed.
 
 ## From the Agent panel (a `hermes` CLI on PATH)
 
-If a `hermes` binary is on your `PATH`, the Agent panel detects it, and
-clicking the **Hermes** tile wires it up automatically in one click:
-
-1. Hearth merges a `mcp_servers.hearth` entry (`command`/`args` for the
-   stdio launch) into `~/.hermes/config.yaml`, preserving every other
-   setting already in that file. This is a direct YAML merge rather than
-   driving Hermes's own `mcp add`, because that flow is interactive and
-   saves a server *disabled* if its connection probe fails on first pass.
-   The merge sidesteps that.
-2. It backfills the project's `.claude/skills/` if missing, then spawns
-   `hermes` in the embedded terminal, working directory set to your project.
-   The `hearth` CLI is already on that terminal's `PATH`.
-
-Like Codex, Hermes's config is **global**: `~/.hermes/config.yaml` holds one
-`hearth` entry, repointed at whichever project you most recently prepared,
-which in practice is always the project you're launching from.
+Open a project, focus the Agent panel, and type `hermes`. The shell starts at
+the project root with `hearth` already on PATH. Hearth does not detect Hermes
+or rewrite `~/.hermes/config.yaml`; configure MCP manually if you want it.
 
 If there's no `hermes` binary on your machine (which is the common case,
 since it's the model that gets distributed far more often than a dedicated
@@ -60,14 +47,6 @@ as the brain behind some other MCP-capable agent:
 That's the whole story for this path: the Hermes model is the *brain*,
 OpenCode (or another MCP client) is the *agent*, and Hearth's stdio MCP
 server is the *tools*.
-
-> **Honesty note.** The `~/.hermes/config.yaml` merge above was exercised
-> against an installed `hermes` CLI on the machine this shipped from, plus
-> unit tests covering the merge/parse logic (including refusing to clobber a
-> file that isn't valid YAML). The OpenCode + Ollama model path described
-> above is config-shape-tested only (not live-verified against a running
-> OpenCode + Ollama on this machine). See the honesty note in
-> [connect-opencode.md](./connect-opencode.md#launching-from-the-editor).
 
 ## Why Hermes specifically
 

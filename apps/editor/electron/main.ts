@@ -321,7 +321,7 @@ async function smokeTestPty(): Promise<void> {
   const nodePty = await import('@lydell/node-pty');
   console.log('[smoke] @lydell/node-pty module loaded');
 
-  const shell = process.env.SHELL || (process.platform === 'win32' ? 'powershell.exe' : '/bin/bash');
+  const shell = process.platform === 'win32' ? 'powershell.exe' : process.env.SHELL || '/bin/bash';
   const marker = 'hearth-pty-ok';
   const pty = nodePty.spawn(shell, [], {
     cwd: os.homedir(),
@@ -364,7 +364,7 @@ async function smokeTestHearthShim(): Promise<void> {
   const toolPaths = await resolveToolPaths(process.cwd());
   const shimDir = await ensureHearthShim(toolPaths.cli);
   const nodePty = await import('@lydell/node-pty');
-  const shell = process.env.SHELL || (process.platform === 'win32' ? 'powershell.exe' : '/bin/bash');
+  const shell = process.platform === 'win32' ? 'powershell.exe' : process.env.SHELL || '/bin/bash';
   const marker = 'hearth-shim-ok';
   const pty = nodePty.spawn(shell, [], {
     cwd: os.homedir(),

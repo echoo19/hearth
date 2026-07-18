@@ -1,13 +1,6 @@
-/**
- * `apiMeta`/`apiDetectAgents` used to swallow every failure with a bare
- * `catch { return null }` — a network hiccup was completely invisible, and
- * indistinguishable in the UI from a legitimate "checked, found nothing"
- * response. Both now log via `console.error` before returning `null`, so
- * the failure at least reaches devtools even though callers already treat
- * `null` as "couldn't check" (see AgentPanel's `detectionFailed`).
- */
+/** apiMeta reports request failures before returning null. */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { apiDetectAgents, apiMeta } from '../src/api';
+import { apiMeta } from '../src/api';
 
 describe('apiMeta', () => {
   let errorSpy: ReturnType<typeof vi.spyOn>;
@@ -62,40 +55,5 @@ describe('apiMeta', () => {
     );
     await expect(apiMeta()).resolves.toBeNull();
     expect(errorSpy).toHaveBeenCalledTimes(1);
-  });
-});
-
-describe('apiDetectAgents', () => {
-  let errorSpy: ReturnType<typeof vi.spyOn>;
-
-  beforeEach(() => {
-    errorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
-  });
-
-  afterEach(() => {
-    errorSpy.mockRestore();
-    vi.unstubAllGlobals();
-  });
-
-  it('returns the parsed detection result on success', async () => {
-    const detect = { claude: { found: true }, codex: { found: false } };
-    vi.stubGlobal(
-      'fetch',
-      vi.fn(async () => ({ json: async () => ({ ok: true, ...detect }) })),
-    );
-    await expect(apiDetectAgents()).resolves.toEqual({ ok: true, ...detect });
-    expect(errorSpy).not.toHaveBeenCalled();
-  });
-
-  it('logs and returns null when fetch throws', async () => {
-    vi.stubGlobal(
-      'fetch',
-      vi.fn(async () => {
-        throw new TypeError('Failed to fetch');
-      }),
-    );
-    await expect(apiDetectAgents()).resolves.toBeNull();
-    expect(errorSpy).toHaveBeenCalledTimes(1);
-    expect(errorSpy.mock.calls[0][0]).toContain('apiDetectAgents');
   });
 });

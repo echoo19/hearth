@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import type { DockviewApi } from 'dockview-react';
 import { useEditor } from './store';
-import { hearthNative } from './native';
+import { hearthNative, type HearthNative } from './native';
 import { Launcher } from './components/Launcher';
 import { Toolbar } from './components/Toolbar';
 import { ShortcutSheet } from './components/ShortcutSheet';
@@ -13,6 +13,7 @@ import { useUnsavedScriptsCloseGuard } from './unsavedScriptsCloseGuard';
 export default function App() {
   const projectPath = useEditor((s) => s.projectPath);
   const projectName = useEditor((s) => s.info?.name);
+  const native = hearthNative();
 
   useEffect(() => {
     void useEditor.getState().loadMeta();
@@ -25,14 +26,50 @@ export default function App() {
   // the same project name so a browser tab reads "MyGame — Hearth" instead
   // of a bare "Hearth Editor" once a project is open.
   useEffect(() => {
-    void hearthNative()?.setWindowMode(
-      projectPath ? 'editor' : 'launcher',
-      projectPath ? projectName : undefined,
-    );
+    if (!projectPath && native) {
+      void native.setWindowMode('launcher').catch((error: unknown) => {
+        console.error('Failed to enter launcher window mode.', error);
+      });
+    }
     document.title = projectPath && projectName ? `${projectName} · Hearth` : 'Hearth Editor';
-  }, [projectPath, projectName]);
+  }, [native, projectPath, projectName]);
 
-  return projectPath ? <EditorShell projectPath={projectPath} /> : <Launcher />;
+  if (!projectPath) return <Launcher />;
+  if (native) {
+    return <NativeEditorGate key={projectPath} native={native} projectPath={projectPath} projectName={projectName} />;
+  }
+  return <EditorShell projectPath={projectPath} />;
+}
+
+function NativeEditorGate({
+  native,
+  projectPath,
+  projectName,
+}: {
+  native: HearthNative;
+  projectPath: string;
+  projectName: string | undefined;
+}) {
+  const [ready, setReady] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    void native.setWindowMode('editor', projectName).then(
+      () => {
+        if (!cancelled) setReady(true);
+      },
+      (error: unknown) => {
+        if (cancelled) return;
+        console.error('Failed to enter editor window mode.', error);
+        setReady(true);
+      },
+    );
+    return () => {
+      cancelled = true;
+    };
+  }, [native, projectName]);
+
+  return ready ? <EditorShell projectPath={projectPath} /> : null;
 }
 
 function EditorShell({ projectPath }: { projectPath: string }) {

@@ -12,16 +12,15 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { CommandResult } from '../src/types';
 
-const { apiCommand, apiOpenProject, apiCreateProject, apiMeta, apiDetectAgents, fileUrl } = vi.hoisted(() => ({
+const { apiCommand, apiOpenProject, apiCreateProject, apiMeta, fileUrl } = vi.hoisted(() => ({
   apiCommand: vi.fn(),
   apiOpenProject: vi.fn(),
   apiCreateProject: vi.fn(),
   apiMeta: vi.fn(async () => null),
-  apiDetectAgents: vi.fn(async () => null),
   fileUrl: vi.fn((project: string, relPath: string) => `http://localhost/${project}/${relPath}`),
 }));
 
-vi.mock('../src/api', () => ({ apiCommand, apiOpenProject, apiCreateProject, apiMeta, apiDetectAgents, fileUrl }));
+vi.mock('../src/api', () => ({ apiCommand, apiOpenProject, apiCreateProject, apiMeta, fileUrl }));
 
 class FakeWebSocket {
   static OPEN = 1;

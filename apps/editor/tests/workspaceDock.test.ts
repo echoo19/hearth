@@ -44,14 +44,14 @@ function stubRenderer(): IContentRenderer {
 let parents: HTMLElement[] = [];
 let docks: DockviewApi[] = [];
 
-function makeDock(): DockviewApi {
+function makeDock(width = 1280, height = 720): DockviewApi {
   const parent = document.createElement('div');
   document.body.appendChild(parent);
   const api = createDockview(parent, {
     createComponent: () => stubRenderer(),
     className: 'test-dock',
   });
-  api.layout(1280, 720);
+  api.layout(width, height);
   parents.push(parent);
   docks.push(api);
   return api;
@@ -195,6 +195,27 @@ describe('agent right dock (v1.2 layout)', () => {
     expect(agent.group.panels.map((p) => p.id)).toEqual(['agent']);
   });
 
+  it('restores custom widths from a current-version saved layout', () => {
+    const source = makeDock();
+    buildDefaultLayout(source);
+    source.getPanel('hierarchy')!.api.setSize({ width: 400 });
+    source.getPanel('inspector')!.api.setSize({ width: 340 });
+    const expected = {
+      hierarchy: source.getPanel('hierarchy')!.group.width,
+      inspector: source.getPanel('inspector')!.group.width,
+      agent: source.getPanel('agent')!.group.width,
+    };
+    const key = 'hearth.layout.custom-widths';
+    localStorage.setItem(key, serializeLayout(source.toJSON()));
+
+    const restored = makeDock();
+    initLayout(restored, key);
+
+    expect(restored.getPanel('hierarchy')!.group.width).toBeCloseTo(expected.hierarchy, 0);
+    expect(restored.getPanel('inspector')!.group.width).toBeCloseTo(expected.inspector, 0);
+    expect(restored.getPanel('agent')!.group.width).toBeCloseTo(expected.agent, 0);
+  });
+
   // Replicates the v1 default: agent tabbed inside the bottom (assets) group.
   function buildV1Layout(api: DockviewApi): void {
     api.clear();
@@ -295,6 +316,15 @@ describe('agent dock does not crush the inspector', () => {
     expect(inspectorWidth(api)).toBeGreaterThanOrEqual(MIN_INSPECTOR);
     // Agent keeps roughly its intended 380 (center, not inspector, gave the room).
     expect(agentWidth(api)).toBeGreaterThanOrEqual(340);
+  });
+
+  it('keeps fresh side docks at their intended widths when built at the final wide size', () => {
+    const api = makeDock(2560, 1440);
+    buildDefaultLayout(api);
+
+    expect(api.getPanel('hierarchy')!.group.width).toBeCloseTo(260, -1);
+    expect(inspectorWidth(api)).toBeCloseTo(300, -1);
+    expect(agentWidth(api)).toBeCloseTo(380, -1);
   });
 
   it('showPanel reopening a closed agent does not crush the inspector', () => {
