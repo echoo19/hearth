@@ -113,7 +113,11 @@ beforeAll(async () => {
     res.statusCode = 404;
     res.end();
   });
-  attachWebSocket(server, ctx, backend);
+  // Resolve the pty env instantly for this suite. These tests exercise frame
+  // ROUTING, not env resolution (that has its own describe below), and the real
+  // getPtyEnv spawns a login shell — a variable delay that raced the fixed
+  // `wait()` after `pty-start` and flaked the spawn assertions on slow CI.
+  attachWebSocket(server, ctx, backend, () => Promise.resolve(process.env));
 
   await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
   const address = server.address();
