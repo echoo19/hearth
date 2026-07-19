@@ -1,10 +1,11 @@
 # Hearth Roadmap
 
-**v1.3.1 is the current release.** Opening a project now wires up your agent
-with no setup: the editor writes a project-scoped `.mcp.json` pointing at
-Hearth's MCP server, so the first time you run `claude` (or any MCP client) in
-the panel it loads the whole engine as tools after a single approval — the
-`hearth` CLI is already on the terminal's PATH too. The Agent panel is a shell
+**v1.3.2 is the current release.** Opening a project wires up your agent with no
+setup: the editor writes a project-scoped `.mcp.json` pointing at Hearth's MCP
+server, so the first time you run `claude` (or any MCP client) in the panel it
+loads the whole engine as tools after a single approval — the `hearth` CLI is
+already on the terminal's PATH too. Both run on Hearth's own bundled Node, so
+you don't need a system Node.js install for any of it. The Agent panel is a shell
 at the project root: type `claude`, `codex`, `opencode`, `hermes`, or any other
 terminal agent, with a dismissible per-project guide and nothing to detect,
 install, or configure. This release also stabilizes the desktop layout on wide

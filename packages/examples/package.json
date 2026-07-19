@@ -1,6 +1,6 @@
 {
   "name": "@hearth/examples",
-  "version": "1.3.1",
+  "version": "1.3.2",
   "description": "Hearth sample projects: eleven games covering physics, lighting and particles, pathfinding, asset pipeline, gamepad input, camera effects, UI widgets, post effects, horde-scale gameplay, and script modules with seeded procgen",
   "license": "MIT",
   "type": "module",

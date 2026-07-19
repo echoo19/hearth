@@ -49,6 +49,21 @@ export class McpConfigParseError extends Error {}
 interface McpServerEntry {
   command: string;
   args: string[];
+  env?: Record<string, string>;
+}
+
+/**
+ * Env for the hearth MCP entry. When `command` is the packaged app's Electron
+ * binary, ELECTRON_RUN_AS_NODE makes it run as plain Node — so the MCP server
+ * uses Hearth's OWN bundled Node and the user never needs a system `node`
+ * installed. Harmless when `command` is already a plain-node binary (dev).
+ */
+const HEARTH_MCP_ENV = { ELECTRON_RUN_AS_NODE: '1' };
+
+function envEqual(a: Record<string, string> | undefined, b: Record<string, string>): boolean {
+  if (!a) return false;
+  const ak = Object.keys(a);
+  return ak.length === Object.keys(b).length && ak.every((k) => a[k] === b[k]);
 }
 interface McpConfig {
   mcpServers?: Record<string, McpServerEntry>;
@@ -97,6 +112,7 @@ export async function ensureHearthMcpConfig(
   root: string,
   mcpPath: string,
   defaultMode: AgentPermissionMode,
+  nodeBin: string = process.execPath,
 ): Promise<EnsureMcpResult> {
   const configPath = path.join(root, '.mcp.json');
   const existing = await readConfig(configPath);
@@ -104,12 +120,17 @@ export async function ensureHearthMcpConfig(
   const modeArg = existingModeArg(current?.args) ?? MODE_ARGS[defaultMode];
   const desired = buildArgs(mcpPath, root, modeArg);
 
-  if (current && current.command === 'node' && argsEqual(current.args, desired)) {
+  if (
+    current &&
+    current.command === nodeBin &&
+    argsEqual(current.args, desired) &&
+    envEqual(current.env, HEARTH_MCP_ENV)
+  ) {
     return { written: false, configPath };
   }
 
   const servers = { ...(existing.mcpServers ?? {}) };
-  servers.hearth = { command: 'node', args: desired };
+  servers.hearth = { command: nodeBin, args: desired, env: { ...HEARTH_MCP_ENV } };
   const next: McpConfig = { ...existing, mcpServers: servers };
   await fsp.writeFile(configPath, JSON.stringify(next, null, 2) + '\n', 'utf8');
   return { written: true, configPath };

@@ -27,11 +27,25 @@ import crypto from 'node:crypto';
  */
 const shimDirs = new Map<string, Promise<string>>();
 
-/** The line the shim executes. Exported so a test can assert its exact shape
- * without spawning a shell. `"$@"` / `%*` forward every argument through. */
-export function shimScript(cliPath: string, platform: NodeJS.Platform = process.platform): string {
-  if (platform === 'win32') return `@node "${cliPath}" %*\r\n`;
-  return `#!/bin/sh\nexec node "${cliPath}" "$@"\n`;
+/** The script the shim executes. Exported so a test can assert its exact shape
+ * without spawning a shell. `"$@"` / `%*` forward every argument through.
+ *
+ * `nodeBin` is the Node binary to run the CLI with. In the packaged desktop app
+ * this is the Electron executable (`process.execPath`) launched with
+ * `ELECTRON_RUN_AS_NODE=1`, so `hearth` runs on Hearth's OWN bundled Node — the
+ * user never needs a system `node` installed. In dev it's just the `node` that
+ * runs the server. `ELECTRON_RUN_AS_NODE` is harmless for a plain-node binary,
+ * so the same script works for both. The paths are quoted so a Program Files
+ * install (spaces) still runs. */
+export function shimScript(
+  cliPath: string,
+  nodeBin: string,
+  platform: NodeJS.Platform = process.platform,
+): string {
+  if (platform === 'win32') {
+    return `@echo off\r\nset "ELECTRON_RUN_AS_NODE=1"\r\n"${nodeBin}" "${cliPath}" %*\r\n`;
+  }
+  return `#!/bin/sh\nELECTRON_RUN_AS_NODE=1 exec "${nodeBin}" "${cliPath}" "$@"\n`;
 }
 
 /**
@@ -53,11 +67,14 @@ async function createShim(cliPath: string): Promise<string> {
   const key = crypto.createHash('sha1').update(cliPath).digest('hex').slice(0, 12);
   const dir = path.join(os.tmpdir(), `hearth-cli-shim-${key}`);
   await fsp.mkdir(dir, { recursive: true });
+  // Hearth's own Node: the Electron binary in the packaged app (run as Node via
+  // ELECTRON_RUN_AS_NODE inside shimScript), or the dev server's node.
+  const nodeBin = process.execPath;
   if (process.platform === 'win32') {
-    await fsp.writeFile(path.join(dir, 'hearth.cmd'), shimScript(cliPath), 'utf8');
+    await fsp.writeFile(path.join(dir, 'hearth.cmd'), shimScript(cliPath, nodeBin), 'utf8');
   } else {
     const shimPath = path.join(dir, 'hearth');
-    await fsp.writeFile(shimPath, shimScript(cliPath), 'utf8');
+    await fsp.writeFile(shimPath, shimScript(cliPath, nodeBin), 'utf8');
     await fsp.chmod(shimPath, 0o755);
   }
   return dir;

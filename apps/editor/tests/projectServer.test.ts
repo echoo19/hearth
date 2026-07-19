@@ -74,7 +74,8 @@ describe('project open/create', () => {
     expect(opened.status).toBe(200);
     const config = JSON.parse(await fsp.readFile(path.join(root, '.mcp.json'), 'utf8'));
     const hearth = config.mcpServers?.hearth;
-    expect(hearth?.command).toBe('node');
+    expect(hearth?.command).toBe(process.execPath); // Hearth's bundled Node — no system `node` needed
+    expect(hearth?.env?.ELECTRON_RUN_AS_NODE).toBe('1');
     expect(hearth?.args).toContain('--project');
     expect(hearth?.args).toContain(root);
     expect(hearth?.args).toContain('safe-edit,code-edit,asset-edit'); // default "full" mode

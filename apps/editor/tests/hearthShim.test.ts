@@ -14,15 +14,18 @@ import os from 'node:os';
 import { ensureHearthShim, hearthPtyEnv, shimScript } from '../server/hearthShim';
 
 describe('shimScript', () => {
-  it('execs `node <cliPath>` forwarding all args on POSIX', () => {
-    const script = shimScript('/tools/hearth-cli.mjs', 'linux');
+  it('runs the given node binary with ELECTRON_RUN_AS_NODE on POSIX', () => {
+    const script = shimScript('/tools/hearth-cli.mjs', '/apps/Hearth', 'linux');
     expect(script).toContain('#!/bin/sh');
-    expect(script).toContain('exec node "/tools/hearth-cli.mjs" "$@"');
+    expect(script).toContain('ELECTRON_RUN_AS_NODE=1');
+    expect(script).toContain('exec "/apps/Hearth" "/tools/hearth-cli.mjs" "$@"');
   });
 
-  it('uses a .cmd-style launcher on win32', () => {
-    const script = shimScript('C:\\tools\\hearth-cli.mjs', 'win32');
-    expect(script).toContain('@node "C:\\tools\\hearth-cli.mjs" %*');
+  it('runs the given node binary with ELECTRON_RUN_AS_NODE on win32', () => {
+    const script = shimScript('C:\\tools\\hearth-cli.mjs', 'C:\\Program Files\\Hearth\\Hearth.exe', 'win32');
+    expect(script).toContain('ELECTRON_RUN_AS_NODE=1');
+    // exe path must be quoted so a Program Files install (spaces) still runs.
+    expect(script).toContain('"C:\\Program Files\\Hearth\\Hearth.exe" "C:\\tools\\hearth-cli.mjs" %*');
   });
 });
 
