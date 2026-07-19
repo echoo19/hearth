@@ -1,6 +1,6 @@
 {
   "name": "@hearth/cli",
-  "version": "1.3.0",
+  "version": "1.3.1",
   "description": "hearth — the Hearth engine command-line interface for humans and coding agents",
   "license": "MIT",
   "type": "module",

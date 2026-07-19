@@ -1,11 +1,15 @@
 # Hearth Roadmap
 
-**v1.2.0 is the current release.** It reworks the editor's Agent panel: the
-panel now lives in its own full-height dock beside the Inspector and
-automatically starts a shell at the project root. Type `claude`, `codex`,
-`opencode`, `hermes`, or any other terminal agent; a dismissible per-project
-guide explains the workflow without detecting, installing, or configuring it.
-Saved layouts migrate automatically. v1.1.0 added script modules: `require`
+**v1.3.1 is the current release.** Opening a project now wires up your agent
+with no setup: the editor writes a project-scoped `.mcp.json` pointing at
+Hearth's MCP server, so the first time you run `claude` (or any MCP client) in
+the panel it loads the whole engine as tools after a single approval — the
+`hearth` CLI is already on the terminal's PATH too. The Agent panel is a shell
+at the project root: type `claude`, `codex`, `opencode`, `hermes`, or any other
+terminal agent, with a dismissible per-project guide and nothing to detect,
+install, or configure. This release also stabilizes the desktop layout on wide
+Windows/macOS screens and fixes agent-tool resolution on Windows. v1.1.0 added
+script modules: `require`
 for same-language Lua and JavaScript helpers under `scripts/`, recursive
 script discovery/export, whole-graph hot reload, and validation for broken
 or cyclic requires. v1.0.0 closed the road to 1.0 with the final hardening
@@ -809,6 +813,12 @@ tilemap-grid editor) moved to the parallel track below rather than blocking
 
 None of these block 1.0; they ride alongside or after it:
 
+- **Auto-updating** — today, updating means re-downloading the desktop app
+  or the standalone `hearth-cli.mjs`/`hearth-mcp.mjs` from the GitHub
+  Releases page; there's no in-app updater or version-check nudge yet. An
+  Electron auto-updater (and a lightweight "a newer version exists" check
+  for the CLI/MCP) is the natural next step once the release pipeline is
+  settled.
 - **Custom chat UI over the agent** — only when it can be built
   API-key-only (Claude Agent SDK) or subscription terms allow a wrapped
   UI; see [agent-panel.md](./agent-panel.md#why-a-terminal-not-a-custom-chat-ui).

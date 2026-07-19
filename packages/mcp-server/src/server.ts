@@ -23,7 +23,7 @@ const SERVER_NAME = 'hearth-mcp';
 // Hardcoded for the same reason as @hearth/cli's VERSION constant (see that
 // file's comment) — keep in sync with package.json's "version" on every
 // release.
-const SERVER_VERSION = '1.3.0';
+const SERVER_VERSION = '1.3.1';
 
 /** Project-relative path to a project's own agent instructions, if present. */
 const AGENTS_MD_PATH = 'AGENTS.md';
