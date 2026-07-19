@@ -101,14 +101,22 @@ async function launchChromium(): Promise<Browser> {
   const { chromium } = (await import('playwright-core')) as unknown as {
     chromium: { launch(opts: Record<string, unknown>): Promise<Browser> };
   };
+  // Force deterministic software rendering (ANGLE + SwiftShader). Hardware GPUs
+  // produce sub-pixel jitter between two renders of the same scene, which made
+  // the same-seed "byte-identical frame" assertion flake on CI (macOS). With
+  // SwiftShader the render is reproducible, so same-seed stays byte-identical
+  // while different-seed still differs.
+  const GL_ARGS = ['--use-gl=angle', '--use-angle=swiftshader', '--force-color-profile=srgb'];
   const attempts: Array<() => Promise<Browser>> = [
-    () => chromium.launch({ channel: 'chrome', headless: true }),
-    () => chromium.launch({ channel: 'msedge', headless: true }),
+    () => chromium.launch({ channel: 'chrome', headless: true, args: GL_ARGS }),
+    () => chromium.launch({ channel: 'msedge', headless: true, args: GL_ARGS }),
   ];
   if (process.env.CHROMIUM_PATH) {
-    attempts.push(() => chromium.launch({ executablePath: process.env.CHROMIUM_PATH, headless: true }));
+    attempts.push(() =>
+      chromium.launch({ executablePath: process.env.CHROMIUM_PATH, headless: true, args: GL_ARGS }),
+    );
   }
-  attempts.push(() => chromium.launch({ headless: true }));
+  attempts.push(() => chromium.launch({ headless: true, args: GL_ARGS }));
   for (const attempt of attempts) {
     try {
       return await attempt();
