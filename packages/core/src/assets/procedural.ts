@@ -33,6 +33,14 @@ export interface SpriteSpec {
   strokeWidth?: number;
   /** Corner radius for rectangles. */
   cornerRadius?: number;
+  /**
+   * Body fill style. 'flat' (default) is a single solid color — byte-identical
+   * to the historical output. 'gradient' fills the body with a subtle two-stop
+   * top-to-bottom linear gradient (light -> dark).
+   */
+  shading?: 'flat' | 'gradient';
+  /** Gradient's dark (bottom) stop; defaults to a deterministic darken of `color`. */
+  secondaryColor?: string;
 }
 
 function darken(hex: string, factor = 0.6): string {
@@ -43,6 +51,11 @@ function darken(hex: string, factor = 0.6): string {
   const g = Math.round(((n >> 8) & 0xff) * factor);
   const b = Math.round((n & 0xff) * factor);
   return `#${((r << 16) | (g << 8) | b).toString(16).padStart(6, '0')}`;
+}
+
+/** A two-stop top-to-bottom linear gradient def, keyed by the fixed id `hearthGrad`. */
+function gradientDefsLine(light: string, dark: string): string {
+  return `  <defs><linearGradient id="hearthGrad" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="${light}"/><stop offset="1" stop-color="${dark}"/></linearGradient></defs>`;
 }
 
 function polygonPoints(cx: number, cy: number, radius: number, sides: number, rotation = -90): string {
@@ -70,6 +83,12 @@ export function generateSpriteSvg(spec: SpriteSpec): string {
   const h = spec.height ?? 32;
   const color = spec.color;
   const accent = spec.accentColor ?? darken(color);
+  // Gradient shading swaps the primary body fill for a gradient reference;
+  // every other fill (accents, eyes, rims) is untouched. In flat mode `fill`
+  // is exactly `color`, so the output is byte-identical to before.
+  const gradient = spec.shading === 'gradient';
+  const gradDark = spec.secondaryColor ?? darken(color);
+  const fill = gradient ? 'url(#hearthGrad)' : color;
   const stroke = spec.strokeColor
     ? ` stroke="${spec.strokeColor}" stroke-width="${spec.strokeWidth ?? 2}"`
     : '';
@@ -80,28 +99,28 @@ export function generateSpriteSvg(spec: SpriteSpec): string {
   let body: string;
   switch (spec.shape) {
     case 'rectangle':
-      body = `<rect x="0" y="0" width="${w}" height="${h}" rx="${spec.cornerRadius ?? 0}" fill="${color}"${stroke}/>`;
+      body = `<rect x="0" y="0" width="${w}" height="${h}" rx="${spec.cornerRadius ?? 0}" fill="${fill}"${stroke}/>`;
       break;
     case 'circle':
-      body = `<circle cx="${cx}" cy="${cy}" r="${r}" fill="${color}"${stroke}/>`;
+      body = `<circle cx="${cx}" cy="${cy}" r="${r}" fill="${fill}"${stroke}/>`;
       break;
     case 'triangle':
-      body = `<polygon points="${polygonPoints(cx, cy, r, 3)}" fill="${color}"${stroke}/>`;
+      body = `<polygon points="${polygonPoints(cx, cy, r, 3)}" fill="${fill}"${stroke}/>`;
       break;
     case 'diamond':
-      body = `<polygon points="${polygonPoints(cx, cy, r, 4)}" fill="${color}"${stroke}/>`;
+      body = `<polygon points="${polygonPoints(cx, cy, r, 4)}" fill="${fill}"${stroke}/>`;
       break;
     case 'star':
-      body = `<polygon points="${starPoints(cx, cy, r, r * 0.45)}" fill="${color}"${stroke}/>`;
+      body = `<polygon points="${starPoints(cx, cy, r, r * 0.45)}" fill="${fill}"${stroke}/>`;
       break;
     case 'capsule': {
       const radius = Math.min(w, h) / 2;
-      body = `<rect x="0" y="0" width="${w}" height="${h}" rx="${radius}" fill="${color}"${stroke}/>`;
+      body = `<rect x="0" y="0" width="${w}" height="${h}" rx="${radius}" fill="${fill}"${stroke}/>`;
       break;
     }
     case 'polygon': {
       const sides = Math.min(12, Math.max(3, spec.sides ?? 6));
-      body = `<polygon points="${polygonPoints(cx, cy, r, sides)}" fill="${color}"${stroke}/>`;
+      body = `<polygon points="${polygonPoints(cx, cy, r, sides)}" fill="${fill}"${stroke}/>`;
       break;
     }
     case 'character': {
@@ -109,7 +128,7 @@ export function generateSpriteSvg(spec: SpriteSpec): string {
       const eyeR = Math.max(1.5, w * 0.07);
       const eyeY = h * 0.32;
       body = [
-        `<rect x="${w * 0.1}" y="0" width="${w * 0.8}" height="${h * 0.9}" rx="${w * 0.25}" fill="${color}"${stroke}/>`,
+        `<rect x="${w * 0.1}" y="0" width="${w * 0.8}" height="${h * 0.9}" rx="${w * 0.25}" fill="${fill}"${stroke}/>`,
         `<circle cx="${w * 0.35}" cy="${eyeY}" r="${eyeR * 1.8}" fill="#ffffff"/>`,
         `<circle cx="${w * 0.65}" cy="${eyeY}" r="${eyeR * 1.8}" fill="#ffffff"/>`,
         `<circle cx="${w * 0.38}" cy="${eyeY}" r="${eyeR}" fill="#222222"/>`,
@@ -123,7 +142,7 @@ export function generateSpriteSvg(spec: SpriteSpec): string {
       const eyeR = Math.max(1.5, w * 0.07);
       const eyeY = h * 0.4;
       body = [
-        `<polygon points="${polygonPoints(cx, cy, r, 6)}" fill="${color}"${stroke}/>`,
+        `<polygon points="${polygonPoints(cx, cy, r, 6)}" fill="${fill}"${stroke}/>`,
         `<polygon points="${w * 0.28},${eyeY - eyeR} ${w * 0.42},${eyeY - eyeR * 2.2} ${w * 0.42},${eyeY}" fill="#ffffff"/>`,
         `<polygon points="${w * 0.72},${eyeY - eyeR} ${w * 0.58},${eyeY - eyeR * 2.2} ${w * 0.58},${eyeY}" fill="#ffffff"/>`,
         `<circle cx="${w * 0.38}" cy="${eyeY}" r="${eyeR}" fill="#ffffff"/>`,
@@ -134,7 +153,7 @@ export function generateSpriteSvg(spec: SpriteSpec): string {
     }
     case 'coin': {
       body = [
-        `<circle cx="${cx}" cy="${cy}" r="${r}" fill="${color}"${stroke}/>`,
+        `<circle cx="${cx}" cy="${cy}" r="${r}" fill="${fill}"${stroke}/>`,
         `<circle cx="${cx}" cy="${cy}" r="${r * 0.7}" fill="none" stroke="${accent}" stroke-width="${Math.max(1, r * 0.12)}"/>`,
         `<rect x="${cx - r * 0.12}" y="${cy - r * 0.4}" width="${r * 0.24}" height="${r * 0.8}" rx="${r * 0.1}" fill="${accent}"/>`,
       ].join('');
@@ -142,30 +161,42 @@ export function generateSpriteSvg(spec: SpriteSpec): string {
     }
     case 'heart': {
       const d = `M ${cx} ${h * 0.85} C ${w * 0.05} ${h * 0.5}, ${w * 0.1} ${h * 0.12}, ${cx} ${h * 0.3} C ${w * 0.9} ${h * 0.12}, ${w * 0.95} ${h * 0.5}, ${cx} ${h * 0.85} Z`;
-      body = `<path d="${d}" fill="${color}"${stroke}/>`;
+      body = `<path d="${d}" fill="${fill}"${stroke}/>`;
       break;
     }
     default:
-      body = `<rect x="0" y="0" width="${w}" height="${h}" fill="${color}"/>`;
+      body = `<rect x="0" y="0" width="${w}" height="${h}" fill="${fill}"/>`;
   }
 
   return [
     `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}">`,
     `  <!-- Generated by Hearth procedural asset system. shape=${spec.shape} color=${spec.color} -->`,
+    ...(gradient ? [gradientDefsLine(color, gradDark)] : []),
     `  ${body}`,
     `</svg>`,
     '',
   ].join('\n');
 }
 
+export interface TileShadingOptions {
+  /** 'flat' (default, byte-identical to before) or 'gradient' body fill. */
+  shading?: 'flat' | 'gradient';
+  /** Gradient's dark (bottom) stop; defaults to a deterministic darken of `color`. */
+  secondaryColor?: string;
+}
+
 /** Generate a simple tile SVG with a subtle top edge highlight. */
-export function generateTileSvg(color: string, size = 32): string {
+export function generateTileSvg(color: string, size = 32, opts: TileShadingOptions = {}): string {
   const accent = darken(color, 0.75);
   const highlight = darken(color, 1.25 > 1 ? 0.9 : 0.9);
+  const gradient = opts.shading === 'gradient';
+  const gradDark = opts.secondaryColor ?? darken(color);
+  const fill = gradient ? 'url(#hearthGrad)' : color;
   return [
     `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 ${size} ${size}">`,
     `  <!-- Generated by Hearth procedural asset system. tile color=${color} -->`,
-    `  <rect x="0" y="0" width="${size}" height="${size}" fill="${color}"/>`,
+    ...(gradient ? [gradientDefsLine(color, gradDark)] : []),
+    `  <rect x="0" y="0" width="${size}" height="${size}" fill="${fill}"/>`,
     `  <rect x="0" y="0" width="${size}" height="${Math.max(2, size * 0.12)}" fill="${highlight}" opacity="0.5"/>`,
     `  <rect x="0" y="${size - Math.max(2, size * 0.08)}" width="${size}" height="${Math.max(2, size * 0.08)}" fill="${accent}"/>`,
     `</svg>`,

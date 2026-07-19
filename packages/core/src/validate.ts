@@ -1038,11 +1038,15 @@ export async function validateProject(store: ProjectStore): Promise<ValidationRe
           entity: entity.id,
         });
       }
-      if (c.ParticleEmitter && c.ParticleEmitter.rate === 0 && c.ParticleEmitter.burst === 0) {
+      // rate=0 (with or without a configured burst) is NOT inert: burst-only
+      // emitters are commonly fired at runtime via ctx.particles.burst — a
+      // legitimate juice pattern. Only flag emitters that can never hold a
+      // particle at all (maxParticles <= 0), which is genuinely useless.
+      if (c.ParticleEmitter && c.ParticleEmitter.maxParticles <= 0) {
         push({
           severity: 'warning',
           code: 'PARTICLE_EMITTER_EMITS_NOTHING',
-          message: `Entity "${entity.name}" has a ParticleEmitter with rate=0 and burst=0; it emits nothing`,
+          message: `Entity "${entity.name}" has a ParticleEmitter with maxParticles=${c.ParticleEmitter.maxParticles}; it can never emit anything`,
           scene: sceneId,
           entity: entity.id,
         });

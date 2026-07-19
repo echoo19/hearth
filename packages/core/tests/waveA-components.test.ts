@@ -116,13 +116,33 @@ describe('Wave A validation rules', () => {
     expect(validation.warnings.some((w) => w.code === 'LINERENDERER_TOO_FEW_POINTS')).toBe(true);
   });
 
-  it('ParticleEmitter with rate=0 && burst=0 warns', async () => {
+  it('ParticleEmitter with rate=0 && burst=0 (burst-only mode) does NOT warn', async () => {
+    // rate=0 is a legitimate, common juice pattern: the emitter is fired at
+    // runtime via ctx.particles.burst. Flagging it produced 38 noise warnings
+    // in a real project and taught agents to ignore validate.
     const { session, store } = await makeSession();
     await session.execute('createEntity', {
       scene: 'Main',
-      name: 'Dead Emitter',
+      name: 'Burst Emitter',
       components: { ParticleEmitter: { rate: 0, burst: 0 } },
     });
+
+    const validation = await validateProject(store);
+    expect(validation.warnings.some((w) => w.code === 'PARTICLE_EMITTER_EMITS_NOTHING')).toBe(false);
+  });
+
+  it('ParticleEmitter that can never emit (maxParticles<=0) warns', async () => {
+    const { session, store } = await makeSession();
+    await session.execute('createEntity', {
+      scene: 'Main',
+      name: 'Inert Emitter',
+      components: { ParticleEmitter: { rate: 10 } },
+    });
+    // maxParticles is schema-constrained positive; force the genuinely-inert
+    // state directly on the model to simulate a hand-edited/corrupt project.
+    const scene = store.getScene('Main')!;
+    const ent = scene.entities.find((e) => e.name === 'Inert Emitter')!;
+    (ent.components.ParticleEmitter as any).maxParticles = 0;
 
     const validation = await validateProject(store);
     expect(validation.warnings.some((w) => w.code === 'PARTICLE_EMITTER_EMITS_NOTHING')).toBe(true);

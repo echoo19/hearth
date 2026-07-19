@@ -13,6 +13,7 @@ import {
   type SpriteShape,
 } from '../assets/procedural.js';
 import { generateSoundWav, SOUND_PRESETS } from '../assets/sounds.js';
+import { generateMusicWav, MusicSynthError, type MusicWave } from '../assets/music.js';
 import { probeImage } from '../assets/imageInfo.js';
 import { getSheetFrames, findSheetFrame } from '../assets/sheetFrames.js';
 
@@ -244,6 +245,8 @@ export const createSpriteAsset = defineCommand({
     strokeColor: z.string().optional(),
     strokeWidth: z.number().positive().optional(),
     cornerRadius: z.number().min(0).optional(),
+    shading: z.enum(['flat', 'gradient']).default('flat'),
+    secondaryColor: z.string().optional(),
   }),
   async run(ctx, params) {
     const svg = generateSpriteSvg({
@@ -256,6 +259,8 @@ export const createSpriteAsset = defineCommand({
       strokeColor: params.strokeColor ? resolveColor(params.strokeColor) : undefined,
       strokeWidth: params.strokeWidth,
       cornerRadius: params.cornerRadius,
+      shading: params.shading,
+      secondaryColor: params.secondaryColor ? resolveColor(params.secondaryColor) : undefined,
     });
     const relPath = joinPath(ASSETS_DIR, 'sprites', `${slugify(params.name)}.svg`);
     const absPath = joinPath(ctx.store.root, relPath);
@@ -274,6 +279,10 @@ export const createSpriteAsset = defineCommand({
         color: params.color,
         width: params.width,
         height: params.height,
+        // Only recorded when non-default so existing flat assets regenerate
+        // with byte-identical metadata (examples embed these).
+        ...(params.shading !== 'flat' ? { shading: params.shading } : {}),
+        ...(params.secondaryColor ? { secondaryColor: params.secondaryColor } : {}),
       },
     });
     ctx.suggest(`setComponentProperty --property SpriteRenderer.assetId --value ${asset.id}`);
@@ -290,9 +299,14 @@ export const createTileAsset = defineCommand({
     name: z.string().min(1),
     color: z.string().default('#2ecc71'),
     size: z.number().int().positive().max(256).default(32),
+    shading: z.enum(['flat', 'gradient']).default('flat'),
+    secondaryColor: z.string().optional(),
   }),
   async run(ctx, params) {
-    const svg = generateTileSvg(resolveColor(params.color), params.size);
+    const svg = generateTileSvg(resolveColor(params.color), params.size, {
+      shading: params.shading,
+      secondaryColor: params.secondaryColor ? resolveColor(params.secondaryColor) : undefined,
+    });
     const relPath = joinPath(ASSETS_DIR, 'tiles', `${slugify(params.name)}.svg`);
     const absPath = joinPath(ctx.store.root, relPath);
     if (await ctx.fs.exists(absPath)) {
@@ -304,7 +318,13 @@ export const createTileAsset = defineCommand({
       name: params.name,
       type: 'tile',
       path: relPath,
-      metadata: { procedural: true, color: params.color, size: params.size },
+      metadata: {
+        procedural: true,
+        color: params.color,
+        size: params.size,
+        ...(params.shading !== 'flat' ? { shading: params.shading } : {}),
+        ...(params.secondaryColor ? { secondaryColor: params.secondaryColor } : {}),
+      },
     });
     return { asset };
   },
@@ -339,6 +359,70 @@ export const createSound = defineCommand({
       metadata: { procedural: true, preset: params.preset, seed },
     });
     ctx.suggest(`setComponentProperty --property AudioSource.assetId --value ${asset.id}`);
+    return { asset };
+  },
+});
+
+const MUSIC_WAVES = ['sine', 'square', 'saw', 'triangle', 'noise'] as const;
+
+export const createMusic = defineCommand({
+  name: 'createMusic',
+  description:
+    'Create a procedural chiptune track (deterministic 16-bit PCM WAV) from 1-4 oscillator tracks. ' +
+    'Each track\'s `notes` is a whitespace-separated sequence of tokens; one token = one sixteenth-note ' +
+    'step at the given tempo. Tokens: note names (C4, F#3, Bb2 — equal temperament, A4=440), "-" (rest), ' +
+    'or "." (extend the previous note by one step). Same params always produce byte-identical audio.',
+  permission: 'asset-edit',
+  mutates: true,
+  paramsSchema: z
+    .object({
+      name: z.string().min(1),
+      tempo: z.number().min(40).max(300),
+      tracks: z
+        .array(
+          z
+            .object({
+              wave: z.enum(MUSIC_WAVES as unknown as [MusicWave, ...MusicWave[]]),
+              volume: z.number().min(0).max(1).default(0.6),
+              notes: z.string().min(1),
+            })
+            .strict(),
+        )
+        .min(1)
+        .max(4),
+      loop: z.boolean().default(false),
+    })
+    .strict(),
+  async run(ctx, params) {
+    let result: { wav: Uint8Array; trackSteps: number[] };
+    try {
+      result = generateMusicWav({ tempo: params.tempo, tracks: params.tracks });
+    } catch (err) {
+      if (err instanceof MusicSynthError) throw new ProjectError(err.message, 'INVALID_INPUT');
+      throw err;
+    }
+    const relPath = joinPath(ASSETS_DIR, 'sounds', `${slugify(params.name)}.wav`);
+    const absPath = joinPath(ctx.store.root, relPath);
+    if (await ctx.fs.exists(absPath)) {
+      throw new ProjectError(`Asset file already exists: ${relPath}`, 'CONFLICT');
+    }
+    await ctx.fs.writeFile(absPath, result.wav);
+    const asset = registerAsset(ctx, {
+      id: generateId('ast'),
+      name: params.name,
+      type: 'audio',
+      path: relPath,
+      metadata: {
+        procedural: true,
+        music: {
+          tempo: params.tempo,
+          loop: params.loop,
+          tracks: params.tracks.map((t, i) => ({ wave: t.wave, volume: t.volume, steps: result.trackSteps[i] })),
+        },
+      },
+    });
+    ctx.suggest(`setComponentProperty --property AudioSource.music --value ${asset.id}`);
+    ctx.suggest(`ctx.audio.playMusic("${asset.id}")`);
     return { asset };
   },
 });

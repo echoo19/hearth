@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { defineCommand } from './types.js';
-import { ProjectError, readJson, writeJson, ProjectStore, type ProjectSnapshot } from '../project/store.js';
+import { ProjectError, readJson, writeJson, ProjectStore, playtestFilePath, type ProjectSnapshot } from '../project/store.js';
 import { applySnapshot } from '../project/restore.js';
 import { diffSnapshots } from '../diff/diff.js';
 import { joinPath, isSafeOut } from '../fs.js';
@@ -160,6 +160,26 @@ export const createPlaytest = defineCommand({
     });
     ctx.suggest(`runPlaytest ${playtest.name}`);
     return { playtestId: playtest.id, name: playtest.name, sceneId: scene.id, steps: playtest.steps.length };
+  },
+});
+
+export const deletePlaytest = defineCommand({
+  name: 'deletePlaytest',
+  description: 'Delete a playtest definition (removes it from the project and its playtest file).',
+  permission: 'safe-edit',
+  mutates: true,
+  paramsSchema: z.object({ playtest: z.string().min(1) }),
+  async run(ctx, params) {
+    const pt = ctx.store.getPlaytest(params.playtest);
+    if (!pt) throw new ProjectError(`Playtest not found: ${params.playtest}`, 'NOT_FOUND');
+    ctx.store.playtests.delete(pt.id);
+    // Remove the on-disk file too: store.save() only ever writes, never
+    // removes, so an orphaned *.playtest.json would resurrect the playtest in
+    // a fresh session (ProjectStore.load slurps every one it finds).
+    const path = playtestFilePath(pt.name);
+    await ctx.fs.remove(joinPath(ctx.store.root, path));
+    ctx.changed({ kind: 'playtest', id: pt.id, name: pt.name, path, action: 'deleted' });
+    return { playtestId: pt.id, name: pt.name };
   },
 });
 

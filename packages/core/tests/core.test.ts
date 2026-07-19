@@ -719,6 +719,55 @@ describe('playtests & build', () => {
     expect(list.data.playtests.length).toBe(1);
   });
 
+  it('deletePlaytest removes a playtest and its on-disk file', async () => {
+    const { session, fs } = await makeSession();
+    await session.execute('createPlaytest', { name: 'smoke', scene: 'Main' });
+    const path = '/proj/playtests/smoke.playtest.json';
+    expect(await fs.exists(path)).toBe(true);
+
+    const del = await session.execute<any>('deletePlaytest', { playtest: 'smoke' });
+    expect(del.success).toBe(true);
+    expect(del.data.name).toBe('smoke');
+
+    expect(session.store.getPlaytest('smoke')).toBeUndefined();
+    expect(await fs.exists(path)).toBe(false);
+
+    // Cross-session: a fresh load must not resurrect it.
+    const fresh = await HearthSession.open(fs, '/proj');
+    expect(fresh.store.getPlaytest('smoke')).toBeUndefined();
+  });
+
+  it('deletePlaytest errors with NOT_FOUND for a missing playtest', async () => {
+    const { session } = await makeSession();
+    const del = await session.execute('deletePlaytest', { playtest: 'nope' });
+    expect(del.success).toBe(false);
+    expect(del.errors[0].code).toBe('NOT_FOUND');
+  });
+
+  it('undo of deletePlaytest restores the playtest and its file, cross-session', async () => {
+    const { session, fs } = await makeSession();
+    await session.execute('createPlaytest', { name: 'smoke', scene: 'Main' });
+    await session.execute('deletePlaytest', { playtest: 'smoke' });
+    const path = '/proj/playtests/smoke.playtest.json';
+    expect(await fs.exists(path)).toBe(false);
+
+    const undo = await session.execute<any>('undo');
+    expect(undo.success).toBe(true);
+    expect(session.store.getPlaytest('smoke')).toBeTruthy();
+    expect(await fs.exists(path)).toBe(true);
+
+    const fresh = await HearthSession.open(fs, '/proj');
+    expect(fresh.store.getPlaytest('smoke')).toBeTruthy();
+  });
+
+  it('deletePlaytest requires safe-edit permission', async () => {
+    const { store } = await makeSession();
+    const ro = HearthSession.fromStore(store, { granted: ['read-only'] });
+    const denied = await ro.execute('deletePlaytest', { playtest: 'x' });
+    expect(denied.success).toBe(false);
+    expect(denied.errors[0].code).toBe('PERMISSION_DENIED');
+  });
+
   it('assertEventCount schema rejects step with no equals/min/max', async () => {
     const { session } = await makeSession();
     const pt = await session.execute('createPlaytest', {

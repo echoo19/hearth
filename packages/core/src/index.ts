@@ -124,8 +124,19 @@ export {
   generateSoundWav,
   SOUND_PRESETS,
   SOUND_SAMPLE_RATE,
+  mulberry32,
+  encodeWav,
   type SoundPreset,
 } from './assets/sounds.js';
+export {
+  generateMusicWav,
+  noteToFrequency,
+  MusicSynthError,
+  MUSIC_MAX_DURATION_SECONDS,
+  type MusicWave,
+  type MusicTrack,
+  type MusicSpec,
+} from './assets/music.js';
 export {
   probeImage,
   type ImageInfo,

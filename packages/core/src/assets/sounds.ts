@@ -16,7 +16,7 @@ export type SoundPreset = (typeof SOUND_PRESETS)[number];
 export const SOUND_SAMPLE_RATE = 44100;
 
 /** Mulberry32: tiny, fast, deterministic PRNG. */
-function mulberry32(seed: number): () => number {
+export function mulberry32(seed: number): () => number {
   let a = seed >>> 0;
   return () => {
     a = (a + 0x6d2b79f5) | 0;
@@ -155,7 +155,7 @@ function renderSegments(segments: Segment[], rand: () => number): Float64Array {
 }
 
 /** Encode mono float samples as a 16-bit PCM WAV file. */
-function encodeWav(samples: Float64Array, sampleRate: number): Uint8Array {
+export function encodeWav(samples: Float64Array, sampleRate: number): Uint8Array {
   const dataSize = samples.length * 2;
   const buffer = new ArrayBuffer(44 + dataSize);
   const view = new DataView(buffer);
