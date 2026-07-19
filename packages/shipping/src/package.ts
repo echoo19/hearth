@@ -10,7 +10,7 @@
  */
 import * as path from 'node:path';
 import * as fsp from 'node:fs/promises';
-import { packager, type OfficialPlatform, type SupportedArch } from '@electron/packager';
+import type { OfficialPlatform, SupportedArch } from '@electron/packager';
 import type { DesktopBuildSpec, DesktopBuildResult, DesktopPlatform } from '@hearth/core';
 import { renderElectronMain, packageJsonForApp } from './shell.js';
 import { zipDirectory } from './zip.js';
@@ -95,9 +95,16 @@ export async function packageDesktop(opts: PackageDesktopOptions): Promise<Deskt
       const icon = osName === 'darwin' ? icons.icns : osName === 'win32' ? icons.ico : icons.png;
 
       // 3. Package with Electron (downloads the runtime on first use per version).
+      // Loaded lazily: @electron/packager pulls in a native (NAPI-RS) extract-zip
+      // that throws at module-eval if its prebuilt binding isn't present. A
+      // static top-level import made that throw crash the ESM tool bundles
+      // (hearth-cli.mjs / hearth-mcp.mjs) at startup — ESM evaluates its whole
+      // graph eagerly — even for `hearth --version`. Importing it here defers the
+      // load to an actual desktop export, which is the only thing that needs it.
       emit(platform, 'download', `ensuring Electron ${ELECTRON_VERSION} for ${platform}`);
       emit(platform, 'package', `packaging ${platform}`);
       const outParent = path.join(spec.outDirAbs, platform);
+      const { packager } = await import('@electron/packager');
       const packaged = await packager({
         dir: stageDir,
         out: outParent,

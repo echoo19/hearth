@@ -1,6 +1,6 @@
 {
   "name": "@hearth/runtime",
-  "version": "1.3.2",
+  "version": "1.3.3",
   "description": "Hearth 2D runtime: scene instantiation, game loop, input, collision, scripting, rendering",
   "license": "MIT",
   "type": "module",

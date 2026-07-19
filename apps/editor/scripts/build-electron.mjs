@@ -102,24 +102,39 @@ for (const [entry, outfile] of [
     target: 'node20',
     sourcemap: false,
     logLevel: 'info',
-    // playwright-core (used lazily by @hearth/playtest's `hearth screenshot`
-    // support) must never be inlined: it's a large, optional, native-binary-
-    // adjacent package, only ever pulled in via a dynamic `import()` inside
-    // captureScreenshot so the tools still run without it installed. Bundling
-    // it would both bloat these single-file tools and defeat that fallback.
-    external: ['playwright-core'],
+    // Kept external (resolved lazily at runtime, never inlined):
+    // - playwright-core: large, optional, native-adjacent; only pulled in via a
+    //   dynamic import() inside captureScreenshot (`hearth screenshot`).
+    // - @electron/packager (+ its NAPI-RS @electron-internal/extract-zip): a
+    //   native dep that THROWS at module-eval when its prebuilt binding is
+    //   absent. Bundling it inline made the ESM tools crash at startup (ESM
+    //   evaluates the whole graph eagerly) — even `hearth --version`. It's only
+    //   needed by `export desktop` (which a standalone tool can't do anyway), and
+    //   @hearth/shipping imports it via a lazy import(), so leaving it external
+    //   keeps the tools working for everything else.
+    external: ['playwright-core', '@electron/packager', '@electron-internal/extract-zip', 'png2icons'],
+    // createRequire + __filename/__dirname shims: bundled CJS deps (wasmoon
+    // among them) reference require()/__filename/__dirname at runtime, which
+    // don't exist in ESM output. We inject them via `define`+`banner` rather
+    // than declaring `const __dirname`/`const __filename` in the banner
+    // directly: a bundled dep (@electron-internal/extract-zip) declares its OWN
+    // top-level `var __dirname`, and a banner `const __dirname` collides with it
+    // ("Identifier '__dirname' has already been declared"), breaking the whole
+    // tool at parse time. `define` rewrites free __dirname/__filename references
+    // to uniquely-named banner consts and leaves the dep's own declaration
+    // alone, so there's exactly one binding for each.
+    define: {
+      __dirname: '__hearthDirnameShim',
+      __filename: '__hearthFilenameShim',
+    },
     banner: {
-      // createRequire + __filename/__dirname shims: bundled CJS deps
-      // (wasmoon among them) reference require()/__filename at runtime,
-      // which don't exist in ESM output. (The entry files' own shebang is
-      // preserved above this by esbuild.)
       js: [
         'import { createRequire as __hearthCreateRequire } from "node:module";',
         'import { fileURLToPath as __hearthFileURLToPath } from "node:url";',
         'import { dirname as __hearthDirname } from "node:path";',
         'const require = __hearthCreateRequire(import.meta.url);',
-        'const __filename = __hearthFileURLToPath(import.meta.url);',
-        'const __dirname = __hearthDirname(__filename);',
+        'const __hearthFilenameShim = __hearthFileURLToPath(import.meta.url);',
+        'const __hearthDirnameShim = __hearthDirname(__hearthFilenameShim);',
       ].join(' '),
     },
     ...toolInline,

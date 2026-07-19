@@ -8,7 +8,10 @@
 import * as path from 'node:path';
 import * as fsp from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
-import png2icons from 'png2icons';
+// png2icons is imported lazily inside resolveIcons: it relies on sloppy-mode
+// implicit globals (`UZIP = ...`) that throw under ESM strict mode, so it can't
+// be inlined into the ESM tool bundles (hearth-cli.mjs / hearth-mcp.mjs) — it
+// must load as a real CJS module at runtime, and only when an icon is converted.
 
 /** Absolute paths to icon files, one per platform family. */
 export interface ResolvedIcons {
@@ -48,6 +51,7 @@ export async function resolveIcons(opts: ResolveIconsOptions): Promise<ResolvedI
   if (!iconPng) return defaultIconPaths();
 
   try {
+    const { default: png2icons } = await import('png2icons');
     const src = Buffer.from(iconPng);
     const icns = png2icons.createICNS(src, png2icons.BICUBIC, 0);
     const ico = png2icons.createICO(src, png2icons.BICUBIC, 0, false);

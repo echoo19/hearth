@@ -36,6 +36,8 @@ jobs:
         run: npm run build -w @hearth/editor
       - name: Bundle Electron main + agent tools
         run: npm run app:bundle -w @hearth/editor
+      - name: Smoke-test bundled agent tools (they must actually run)
+        run: node apps/editor/scripts/smoke-tools.mjs
       - name: Assemble app directory
         run: node apps/editor/scripts/assemble-app.mjs
       # Signing is secret-gated: builds are ad-hoc signed (mac) / unsigned

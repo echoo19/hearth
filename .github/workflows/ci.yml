@@ -75,5 +75,9 @@ jobs:
         run: npm run build:packages
       - name: Build editor
         run: npm run build:editor
+      - name: Bundle + smoke-test agent tools (the shipped hearth-cli.mjs / hearth-mcp.mjs)
+        run: |
+          npm run app:bundle -w @hearth/editor
+          node apps/editor/scripts/smoke-tools.mjs
       - name: Report editor chunk sizes
         run: ls -S apps/editor/dist/assets/*.js | head -8 | xargs -I{} sh -c 'printf "%8d  %s\n" "$(wc -c < {})" "{}"'

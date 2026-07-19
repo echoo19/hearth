@@ -1,6 +1,6 @@
 # Hearth Roadmap
 
-**v1.3.2 is the current release.** Opening a project wires up your agent with no
+**v1.3.3 is the current release.** Opening a project wires up your agent with no
 setup: the editor writes a project-scoped `.mcp.json` pointing at Hearth's MCP
 server, so the first time you run `claude` (or any MCP client) in the panel it
 loads the whole engine as tools after a single approval — the `hearth` CLI is
