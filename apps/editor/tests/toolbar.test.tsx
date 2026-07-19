@@ -43,6 +43,7 @@ function ctx(over: Partial<AppMenuContext> = {}): AppMenuContext {
     onExport: vi.fn(),
     onReview: vi.fn(),
     openDocs: vi.fn(),
+    checkForUpdates: null,
     view: {
       panels: [
         { id: 'hierarchy', label: 'Hierarchy', open: true },

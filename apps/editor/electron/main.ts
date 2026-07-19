@@ -14,7 +14,8 @@
  * app does not need node_modules.
  */
 import { app, BrowserWindow, Menu, dialog, ipcMain, shell } from 'electron';
-import type { MessageBoxSyncOptions } from 'electron';
+import type { MessageBoxOptions, MessageBoxSyncOptions } from 'electron';
+import { autoUpdater } from 'electron-updater';
 import http from 'node:http';
 import path from 'node:path';
 import fs from 'node:fs';
@@ -27,6 +28,8 @@ import {
 } from '../server/projectServer.js';
 import { ensureHearthShim, hearthPtyEnv } from '../server/hearthShim.js';
 import { applyAppMenu, buildAppMenuTemplate } from './appMenu.js';
+import { resolveUpdatePolicy } from './updaterPolicy.js';
+import { wireUpdater, type UpdatePrompt, type UpdaterHandle, type UpdaterLike } from './updater.js';
 import type { SerializedMenuSection } from '../src/menu/appMenu';
 
 const SMOKE = process.env.HEARTH_SMOKE === '1';
@@ -171,6 +174,51 @@ function registerDialogHandlers(getWindow: () => BrowserWindow | null): void {
   });
 }
 
+/** Where macOS's notify-only update prompt sends people. */
+const DOWNLOAD_URL = 'https://hearthengine.com/download';
+
+/**
+ * Hook electron-updater up to the GitHub-Releases feed (app-update.yml, baked
+ * into the packaged app by electron-builder's `publish` config). All behavior
+ * lives in wireUpdater (unit-tested); this is just the Electron glue: native
+ * message boxes, the system browser, and the policy inputs. Returns null when
+ * updates are off (dev runs, smoke tests, HEARTH_DISABLE_UPDATES=1).
+ */
+function initAutoUpdater(getWindow: () => BrowserWindow | null): UpdaterHandle | null {
+  const policy = resolveUpdatePolicy({
+    platform: process.platform,
+    packaged: app.isPackaged,
+    env: process.env,
+  });
+  if (policy.mode === 'off') return null;
+
+  const prompt = async (p: UpdatePrompt): Promise<number> => {
+    const options: MessageBoxOptions = {
+      type: 'info',
+      title: p.title,
+      message: p.message,
+      detail: p.detail,
+      buttons: p.buttons,
+      defaultId: 0,
+      cancelId: p.buttons.length - 1,
+      noLink: true,
+    };
+    const win = getWindow();
+    const result = win ? await dialog.showMessageBox(win, options) : await dialog.showMessageBox(options);
+    return result.response;
+  };
+
+  return wireUpdater({
+    // Structural cast: electron-updater's emitter types its events; UpdaterLike
+    // only needs the string-event subset wireUpdater listens to.
+    updater: autoUpdater as unknown as UpdaterLike,
+    policy,
+    prompt,
+    openDownloadPage: () => void shell.openExternal(DOWNLOAD_URL),
+    log: (message) => console.log('[updater]', message),
+  });
+}
+
 function confirmDiscardUnsavedScripts(win: BrowserWindow | null): boolean {
   const options: MessageBoxSyncOptions = {
     type: 'warning',
@@ -202,6 +250,11 @@ async function main(): Promise<void> {
   let win: BrowserWindow | null = null;
   let hasUnsavedScripts = false;
   registerDialogHandlers(() => win);
+  const updates = initAutoUpdater(() => win);
+  ipcMain.handle('hearth:check-for-updates', async () => {
+    // No-op when updates are off (dev runs) — the menu item is still wired.
+    await updates?.checkNow();
+  });
   ipcMain.on('hearth:set-unsaved-scripts', (_event, has: boolean) => {
     hasUnsavedScripts = has === true;
   });
@@ -278,6 +331,11 @@ async function main(): Promise<void> {
   });
 
   await win.loadURL(url);
+
+  // One quiet startup check, delayed so it never competes with app boot.
+  // Offline/failed checks just log; the user can always check explicitly via
+  // Help → Check for updates….
+  if (updates) setTimeout(() => updates.checkBackground(), 5000);
 
   if (SMOKE) {
     // Self-test mode: verify the API responds through the real server, then

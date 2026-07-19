@@ -20,6 +20,12 @@ export interface HearthNative {
   setUnsavedScripts(has: boolean): void;
   /** Subscribe to native-menu clicks (menu:invoke). Returns an unsubscribe fn. */
   onMenuInvoke(cb: (id: string) => void): () => void;
+  /**
+   * User-invoked update check (Help → Check for updates…). The main process
+   * owns the whole flow, including result dialogs. Optional so a renderer
+   * updated ahead of its preload (post-update relaunch) degrades gracefully.
+   */
+  checkForUpdates?(): Promise<void>;
   platform: string;
 }
 

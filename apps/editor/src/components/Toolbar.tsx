@@ -13,6 +13,7 @@ import { useOpenPanels } from '../workspace/useOpenPanels';
 import { PANEL_TITLES, VIEW_MENU_PANELS, resetLayout, showPanel } from '../workspace/Workspace';
 import type { PanelId } from '../workspace/layout';
 import { useHistoryList } from '../useHistoryList';
+import { hearthNative } from '../native';
 import { comboDisplay } from '../keybinds';
 import { getGameView } from '../gameViewRef';
 
@@ -96,6 +97,9 @@ export function Toolbar({ dock, storageKey }: { dock: DockviewApi | null; storag
       }
     : null;
 
+  // Bound local so TS can see the optional method stays defined inside the
+  // menu-item closure.
+  const nativeCheckForUpdates = hearthNative()?.checkForUpdates;
   const menuCtx: AppMenuContext = {
     canUndo: !!undoTarget,
     canRedo: !!redoTarget,
@@ -106,6 +110,7 @@ export function Toolbar({ dock, storageKey }: { dock: DockviewApi | null; storag
       void refreshDiff();
     },
     openDocs: () => window.open(DOCS_URL, '_blank', 'noopener,noreferrer'),
+    checkForUpdates: nativeCheckForUpdates ? () => void nativeCheckForUpdates() : null,
     view,
   };
 

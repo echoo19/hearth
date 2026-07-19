@@ -110,6 +110,32 @@ Downloads then open with **zero** warnings and none of the Open Anyway or
 xattr workarounds. Without them it falls back to the current ad-hoc signing.
 Linux needs nothing.
 
+## Auto-updates
+
+The packaged app checks GitHub Releases for new versions (electron-updater;
+the feed is `latest*.yml` next to the release assets — electron-builder
+generates them because `build.publish` is configured, and the release
+workflow uploads them). One quiet check a few seconds after launch, plus
+**Help → Check for updates…** for an explicit check with visible results.
+
+Per platform:
+
+- **Windows / Linux** (NSIS installer, AppImage): updates download in the
+  background and install when you quit, or immediately via the "Restart now"
+  prompt. Works with today's unsigned builds.
+- **macOS**: notify-only for now — the app offers the download page when a
+  new version ships. Squirrel.Mac (the install mechanism) requires
+  Developer-ID-signed builds, and releases are still ad-hoc signed. Once CI
+  signs and notarizes (secrets above), flip `MAC_AUTO_UPDATE` in
+  `apps/editor/electron/updaterPolicy.ts`; anyone on an older ad-hoc build
+  still re-downloads once to get onto the signed line.
+- Zip archives are plain downloads; only the installer formats self-update.
+
+Dev runs, `HEARTH_SMOKE=1`, and `HEARTH_DISABLE_UPDATES=1` all disable the
+updater entirely. Behavior lives in `apps/editor/electron/updater.ts`
+(unit-tested; the Electron glue is in `main.ts`), the feed wiring is pinned
+by `apps/editor/tests/updateFeed.test.ts`.
+
 ## Window model
 
 The desktop app behaves like Godot: it opens as a compact **project

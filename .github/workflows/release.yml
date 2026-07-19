@@ -83,6 +83,12 @@ jobs:
             apps/editor/release/*.exe
             apps/editor/release/*.AppImage
             apps/editor/release/*.deb
+            # electron-updater's feed: latest.yml (win) / latest-mac.yml /
+            # latest-linux.yml plus the differential-download blockmaps. If
+            # these stop shipping, the auto-updater silently never finds
+            # updates — tests/updateFeed.test.ts pins this glob.
+            apps/editor/release/latest*.yml
+            apps/editor/release/*.blockmap
           if-no-files-found: warn
 
   release:

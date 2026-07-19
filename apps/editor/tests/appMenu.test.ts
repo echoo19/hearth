@@ -43,6 +43,7 @@ function baseCtx(over: Partial<AppMenuContext> = {}): AppMenuContext {
     onExport: vi.fn(),
     onReview: vi.fn(),
     openDocs: vi.fn(),
+    checkForUpdates: null,
     view: {
       panels: [
         { id: 'hierarchy', label: 'Hierarchy', open: true },
@@ -182,5 +183,23 @@ describe('comboToAccelerator', () => {
 
   it('returns undefined for keys Electron cannot safely accept', () => {
     expect(comboToAccelerator('shift+/')).toBeUndefined();
+  });
+});
+
+describe('buildAppMenu — Check for updates (desktop only)', () => {
+  it('appears under Help and runs the native check when available', () => {
+    const check = vi.fn();
+    const sections = buildAppMenu(mockStore(), baseCtx({ checkForUpdates: check }));
+    const help = sections.find((s) => s.id === 'help');
+    const item = help?.items.find((e): e is AppMenuItemModel => !isMenuSeparator(e) && e.id === 'check-updates');
+    expect(item, 'Help → Check for updates… missing').toBeTruthy();
+    expect(item!.enabled).toBe(true);
+    item!.onSelect();
+    expect(check).toHaveBeenCalledTimes(1);
+  });
+
+  it('is absent in browser mode, where there is nothing to update', () => {
+    const sections = buildAppMenu(mockStore(), baseCtx());
+    expect(allItems(sections).some((i) => i.id === 'check-updates')).toBe(false);
   });
 });

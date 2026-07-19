@@ -65,6 +65,8 @@ export interface AppMenuContext {
   onExport: () => void;
   onReview: () => void;
   openDocs: () => void;
+  /** Desktop-only: ask the main process to check for app updates (null in the browser). */
+  checkForUpdates: (() => void) | null;
   view: AppMenuViewContext | null;
 }
 
@@ -158,6 +160,11 @@ export function buildAppMenu(store: EditorStore, ctx: AppMenuContext): AppMenuSe
         onSelect: () => store.setShortcutSheet(true),
       },
       { id: 'docs', label: 'Documentation', enabled: true, onSelect: ctx.openDocs },
+      // Only the desktop app has something to update; the browser dev editor
+      // never shows this.
+      ...(ctx.checkForUpdates
+        ? [{ id: 'check-updates', label: 'Check for updates…', enabled: true, onSelect: ctx.checkForUpdates }]
+        : []),
     ],
   };
 

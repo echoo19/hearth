@@ -18,6 +18,8 @@ contextBridge.exposeInMainWorld('hearthNative', {
   setAppMenu: (model) => ipcRenderer.send('hearth:set-app-menu', model),
   /** Mirror Code-panel dirty script state for native close/quit guards. */
   setUnsavedScripts: (has) => ipcRenderer.send('hearth:set-unsaved-scripts', !!has),
+  /** Ask the main process to check for app updates (it owns the dialogs). */
+  checkForUpdates: () => ipcRenderer.invoke('hearth:check-for-updates'),
   /** Subscribe to native-menu clicks; returns an unsubscribe function. */
   onMenuInvoke: (cb) => {
     const listener = (_event, id) => cb(id);
