@@ -66,9 +66,18 @@ async function createShim(cliPath: string): Promise<string> {
 /**
  * Returns `baseEnv` with `shimDir` prepended to PATH (so the shim's `hearth`
  * wins over anything else). Pure — never mutates `baseEnv`.
+ *
+ * Windows exposes PATH as `Path`. Naively spreading `baseEnv` and adding `PATH`
+ * would leave BOTH `Path` (stale, without the shim dir) and `PATH` in the env
+ * object; the pty child could then read the stale one and never find `hearth`.
+ * So we collapse every case-variant of the key into a single `PATH` (Windows
+ * looks it up case-insensitively, so one canonical key resolves everywhere).
  */
 export function hearthPtyEnv(baseEnv: NodeJS.ProcessEnv, shimDir: string): NodeJS.ProcessEnv {
-  const existing = baseEnv.PATH ?? baseEnv.Path ?? '';
-  const nextPath = existing ? `${shimDir}${path.delimiter}${existing}` : shimDir;
-  return { ...baseEnv, PATH: nextPath };
+  const next = { ...baseEnv };
+  const pathKeys = Object.keys(next).filter((k) => k.toLowerCase() === 'path');
+  const existing = pathKeys.map((k) => next[k]).find((v) => v != null && v !== '') ?? '';
+  for (const k of pathKeys) delete next[k];
+  next.PATH = existing ? `${shimDir}${path.delimiter}${existing}` : shimDir;
+  return next;
 }

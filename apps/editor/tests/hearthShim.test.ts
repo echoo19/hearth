@@ -65,4 +65,15 @@ describe('hearthPtyEnv', () => {
   it('handles an empty/absent PATH', () => {
     expect(hearthPtyEnv({} as NodeJS.ProcessEnv, '/shim').PATH).toBe('/shim');
   });
+
+  it('collapses a Windows-style `Path` key so no stale duplicate shadows the shim', () => {
+    // Windows exposes PATH as `Path`. Spreading it and adding `PATH` would leave
+    // BOTH keys, and the pty child could read the stale `Path` (without the shim
+    // dir) — so `hearth` would not resolve. There must be exactly one path key.
+    const base = { Path: 'C:\\Windows;C:\\nodejs' } as NodeJS.ProcessEnv;
+    const next = hearthPtyEnv(base, 'C:\\shim');
+    const pathKeys = Object.keys(next).filter((k) => k.toLowerCase() === 'path');
+    expect(pathKeys).toHaveLength(1);
+    expect(next[pathKeys[0]]).toBe(`C:\\shim${path.delimiter}C:\\Windows;C:\\nodejs`);
+  });
 });
