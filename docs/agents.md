@@ -114,27 +114,35 @@ recommended first commands, permission defaults) in every project. The MCP
 server serves the same content via the `get_agent_instructions` tool, so an
 agent that connects cold can bootstrap itself.
 
-Beyond the per-project files, Hearth ships **two coding-agent skills** (Claude
-Code skill format), scaffolded into every project under `.claude/skills/` and
-backfilled into older projects when an agent launch is prepared:
+Beyond the per-project files, Hearth ships **five focused coding-agent skills**
+(Claude Code skill format), scaffolded into every project under
+`.claude/skills/` and backfilled into older projects when an agent launch is
+prepared. The split means an agent loads only the domain it's working in
+instead of one monolithic document — smaller context, sharper activation:
 
-- **`skills/hearth/SKILL.md`** (*operating the engine*): setup,
-  scenes/entities/components, the `ctx` Lua stdlib, prefabs, animation state
-  machines, autotiling, input, audio, playtest-driven verification, screenshot
-  checks, the review loop, and export.
-- **`skills/hearth-craft/SKILL.md`** (*making the game good*): game-feel recipes
-  (hit-stop, screen shake/flash/zoomPunch, particle bursts, layered sound, tween
-  easing, animation-state anticipation/recovery), game-UX conventions
-  (scene-based menus/pause/settings, onboarding, difficulty curves,
-  feedback-on-every-interaction, save/load etiquette), an **asset-sourcing
-  playbook** (Kenney, itch.io CC0, OpenGameArt, Freesound, Google Fonts, with
-  live-verified URLs, licensing rules, and the fetch → import → screenshot-verify
-  loop), and a **quality-bar checklist** an agent runs before calling a game
-  done.
+- **`skills/hearth/SKILL.md`** (*the operating core — loaded first*): the
+  session loop (recall → snapshot → change → validate → playtest → screenshot →
+  remember), project memory and the state digest, permission modes,
+  playtest/screenshot verification, the review loop, and export. Routes to the
+  four domain skills.
+- **`skills/hearth-build/SKILL.md`** (*world structure*): scenes, entities,
+  components, tilemaps and autotiling (surfaces must connect), collider/sprite
+  feet alignment, prefabs, animation state machines, and input bindings.
+- **`skills/hearth-code/SKILL.md`** (*behavior*): the `ctx` stdlib, Lua/JS
+  lifecycle hooks, script modules, the dot-call and userdata pitfalls,
+  deterministic RNG, and the check-script/edit-script iteration loop.
+- **`skills/hearth-art/SKILL.md`** (*assets*): importing and slicing
+  spritesheets, animations, procedural sprites and sounds, the asset-sourcing
+  playbook (Kenney, itch.io CC0, OpenGameArt, Freesound, Google Fonts, with
+  licensing rules and the fetch → read-the-art → import → screenshot-verify
+  loop), and pixel-art discipline.
+- **`skills/hearth-feel/SKILL.md`** (*polish*): game-feel recipes (hit-stop,
+  screen shake/flash/zoomPunch, particle bursts, layered sound, tween easing,
+  anticipation/recovery), game-UX conventions, effect-asserting playtests, and
+  the quality-bar checklist an agent runs before calling a game done.
 
-The generated AGENTS.md and `get_agent_instructions` point at both; the first
-teaches an agent to drive Hearth, the second to make what it builds worth
-playing.
+The generated AGENTS.md and `get_agent_instructions` carry the same routing
+map, so an agent that connects cold knows which skill to load for which work.
 
 ## Starting a new project: templates
 

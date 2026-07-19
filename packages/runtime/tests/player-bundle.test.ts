@@ -36,11 +36,14 @@ describe.skipIf(!built)('player bundle (hearth-player.js)', () => {
   // filters (postEffects.ts + spriteEffectsFilter.ts, GLSL as inline strings,
   // plus the full-screen background rect that lets post effects cover the
   // whole frame) measured 1,366,476 B — a +16,827 B (~1.2%) delta. The
-  // 1,450,000 B ceiling leaves headroom for the rest of the 0.10
-  // visual-effects work while still catching an accidental heavyweight
-  // dependency (e.g. pulling in pixi-filters, which the bloat rule forbids).
-  it('stays under the 1.45 MB player budget', () => {
+  // previous 1,450,000 B ceiling was reached at 1,449,769 B (v1.3.3); the
+  // DPR/pixelated rendering fix plus the PIXEL_ART_STRETCHED and
+  // SPRITE_COLLIDER_FEET_MISMATCH validators (core is bundled into the
+  // player) measured 1,453,803 B — a +4,034 B (~0.3%) delta. The 1,500,000 B
+  // ceiling still catches an accidental heavyweight dependency (e.g. pulling
+  // in pixi-filters, which the bloat rule forbids).
+  it('stays under the 1.5 MB player budget', () => {
     const size = statSync(bundlePath).size;
-    expect(size).toBeLessThan(1_450_000);
+    expect(size).toBeLessThan(1_500_000);
   });
 });

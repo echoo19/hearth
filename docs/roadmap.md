@@ -1,6 +1,15 @@
 # Hearth Roadmap
 
-**v1.3.3 is the current release.** Opening a project wires up your agent with no
+**v1.3.4 is the current release.** Agents stop relearning the project every
+session: the engine keeps an always-current state digest (`.hearth/digest.md`)
+plus durable cross-session memory (`hearth remember`/`recall`), `screenshot` is
+read-only so an agent can always see its own work, and rendering is
+DPR-aware — crisp on Retina/scaled displays in the editor and every export.
+Validation now catches stretched pixel art (`PIXEL_ART_STRETCHED`) and
+floating/sunk sprites (`SPRITE_COLLIDER_FEET_MISMATCH`) mechanically, and the
+coding-agent knowledge shipped into every project is split into five focused
+skills (`hearth` core + build/code/art/feel) that route by domain. v1.3.3
+made opening a project wire up your agent with no
 setup: the editor writes a project-scoped `.mcp.json` pointing at Hearth's MCP
 server, so the first time you run `claude` (or any MCP client) in the panel it
 loads the whole engine as tools after a single approval — the `hearth` CLI is

@@ -362,12 +362,27 @@ export class PixiSceneView {
     sessionRef = session;
     const settings = opts.store.project.buildSettings;
     const app = new Application();
+    // Render at the display's real pixel density. Without resolution +
+    // autoDensity the canvas backs at 1× and the compositor CSS-upscales it,
+    // which blurs EVERYTHING on Retina/scaled displays (macOS is 2×, most
+    // Windows machines 1.25-2×) regardless of texture filtering. autoDensity
+    // keeps the element's CSS size at the logical width/height. Headless
+    // capture (playtests/screenshot) runs at DPR 1, so determinism and
+    // screenshot byte-identity are unaffected.
+    const dpr = (globalThis as { devicePixelRatio?: number }).devicePixelRatio ?? 1;
     await app.init({
       width: settings.width,
       height: settings.height,
       background: session.runtime.camera.backgroundColor,
       antialias: true,
+      resolution: dpr,
+      autoDensity: true,
     });
+    // Pixel-art projects: when the canvas is CSS-scaled (the player's
+    // letterbox, a resized editor panel), resample with nearest-neighbour so
+    // pixels stay crisp instead of going soft. Non-pixel projects keep smooth
+    // scaling.
+    if (settings.pixelPerfect) app.canvas.style.imageRendering = 'pixelated';
     opts.container.appendChild(app.canvas);
 
     const view = new PixiSceneView(opts, session, app);

@@ -20,9 +20,10 @@ Quick facts:
   (run reports include `audioEvents` for checking sound behavior).
 - **See your work:** `hearth screenshot <scene>` renders a PNG — no build permission
   needed. Read it back to check layout before calling anything done.
-- **Building or polishing a game?** Use the `hearth-craft` skill (animation, juice,
-  game-feel, quality bar). Flat placeholder rectangles and static scenes are not
-  "done" — animate, add feel, and screenshot to confirm.
+- **Load the domain skill for the work at hand** (see AGENTS.md): `hearth-build`
+  for world structure, `hearth-code` for scripting, `hearth-art` for assets,
+  `hearth-feel` for polish. Flat placeholder rectangles and static scenes are
+  not "done" — animate, add feel, and screenshot to confirm.
 - `hearth create sound <name> --preset coin` makes procedural sound effects;
   `hearth export web [--single-file] [--zip]` makes a playable web build (needs build permission).
 - Never delete assets/scenes without being asked.

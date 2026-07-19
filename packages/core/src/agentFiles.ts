@@ -14,19 +14,23 @@ structured CLI (\`hearth\`) and an MCP server (\`hearth-mcp\`) so coding agents
 can inspect, modify, test, and build this game through safe engine
 operations instead of hand-editing JSON.
 
-> **Coding-agent skills.** This project ships two skills that Claude Code loads
-> automatically:
-> - \`.claude/skills/hearth/SKILL.md\` (**operating the engine**): project setup,
->   ctx scripting, prefabs, autotiling, playtest-driven verification, and export.
-> - \`.claude/skills/hearth-craft/SKILL.md\` (**making the game good**): game-feel
->   recipes (hit-stop, screen shake, particle bursts, layered sound, tween
->   easing), game-UX conventions, an asset-sourcing playbook (Kenney, itch.io
->   CC0, OpenGameArt, Freesound, Google Fonts), and a quality-bar checklist to
->   clear before calling a game done.
+> **Coding-agent skills.** This project ships five focused skills under
+> \`.claude/skills/\` that Claude Code discovers automatically. **Load the one
+> whose domain you're working in — don't work from memory:**
+> - \`hearth\` (**the operating core — load first**): the session loop, project
+>   memory, permissions, validation, playtests, screenshots, and export.
+> - \`hearth-build\` (**world structure**): scenes, entities, components,
+>   tilemaps/autotiling, collider alignment, prefabs, state machines, input.
+> - \`hearth-code\` (**behavior**): ctx scripting, Lua/JS hooks, modules,
+>   determinism, script iteration.
+> - \`hearth-art\` (**assets**): importing/slicing/animating, procedural
+>   sprites and sounds, CC0 sourcing with licensing, pixel-art discipline.
+> - \`hearth-feel\` (**polish**): juice recipes, game-UX conventions, and the
+>   quality bar to clear before calling a game done.
 >
-> (Canonical copies live at \`skills/hearth/SKILL.md\` and
-> \`skills/hearth-craft/SKILL.md\` in the Hearth engine repo.) This file is the
-> per-project quick reference; the skills are the deeper playbooks.
+> (Canonical copies live at \`skills/<name>/SKILL.md\` in the Hearth engine
+> repo.) This file is the per-project quick reference; the skills are the
+> deeper playbooks.
 
 ## Start of session: recall, don't re-derive
 
@@ -233,9 +237,10 @@ Quick facts:
   (run reports include \`audioEvents\` for checking sound behavior).
 - **See your work:** \`hearth screenshot <scene>\` renders a PNG — no build permission
   needed. Read it back to check layout before calling anything done.
-- **Building or polishing a game?** Use the \`hearth-craft\` skill (animation, juice,
-  game-feel, quality bar). Flat placeholder rectangles and static scenes are not
-  "done" — animate, add feel, and screenshot to confirm.
+- **Load the domain skill for the work at hand** (see AGENTS.md): \`hearth-build\`
+  for world structure, \`hearth-code\` for scripting, \`hearth-art\` for assets,
+  \`hearth-feel\` for polish. Flat placeholder rectangles and static scenes are
+  not "done" — animate, add feel, and screenshot to confirm.
 - \`hearth create sound <name> --preset coin\` makes procedural sound effects;
   \`hearth export web [--single-file] [--zip]\` makes a playable web build (needs build permission).
 - Never delete assets/scenes without being asked.

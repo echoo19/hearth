@@ -23,10 +23,7 @@ import { SceneSchema } from '../schema/scene.js';
 import { createComponent } from '../schema/components.js';
 import { generateAgentsMd, generateClaudeMd, generateAgentConfig } from '../agentFiles.js';
 import {
-  AGENT_SKILL_CONTENT,
-  AGENT_SKILL_FILE,
-  AGENT_CRAFT_SKILL_CONTENT,
-  AGENT_CRAFT_SKILL_FILE,
+  AGENT_SKILLS,
 } from '../agentSkillContent.js';
 import { writeJson, ProjectError, ProjectStore } from './store.js';
 import { writeDigest } from './digest.js';
@@ -184,14 +181,16 @@ export async function createProject(
   files.push('AGENTS.md');
   await fs.writeFile(joinPath(root, 'CLAUDE.md'), generateClaudeMd(options.name));
   files.push('CLAUDE.md');
-  // The two coding-agent skills travel with the project so Claude Code (and any
+  // The coding-agent skills travel with the project so Claude Code (and any
   // agent that reads project-local skills) gets them without a repo-scoped
-  // install. Content is embedded from the canonical skills/*/SKILL.md: `hearth`
-  // teaches operating the engine, `hearth-craft` teaches making the game good.
-  await fs.writeFile(joinPath(root, AGENT_SKILL_FILE), AGENT_SKILL_CONTENT);
-  files.push(AGENT_SKILL_FILE);
-  await fs.writeFile(joinPath(root, AGENT_CRAFT_SKILL_FILE), AGENT_CRAFT_SKILL_CONTENT);
-  files.push(AGENT_CRAFT_SKILL_FILE);
+  // install. Content is embedded from the canonical skills/*/SKILL.md files:
+  // `hearth` is the operating core (and routes to the rest), `hearth-build`
+  // structures the world, `hearth-code` writes behavior, `hearth-art` sources
+  // and uses assets, `hearth-feel` polishes and judges done-ness.
+  for (const skill of AGENT_SKILLS) {
+    await fs.writeFile(joinPath(root, skill.file), skill.content);
+    files.push(skill.file);
+  }
   await writeJson(fs, joinPath(root, AGENT_CONFIG_FILE), generateAgentConfig(options.name, projectId));
   files.push(AGENT_CONFIG_FILE);
   await fs.writeFile(joinPath(root, '.gitignore'), PROJECT_GITIGNORE);

@@ -1,50 +1,51 @@
 /**
- * The embedded best-practices skill constant (packages/core/src/agentSkillContent.ts)
- * is generated from the canonical skills/hearth/SKILL.md by
+ * The embedded coding-agent skills (packages/core/src/agentSkillContent.ts)
+ * are generated from the canonical skills/<name>/SKILL.md files by
  * `node scripts/sync-agent-skill.mjs`. This test is the drift gate: it fails CI
- * whenever the two get out of sync, telling you to re-run the sync script. The
- * sync is deliberately NOT wired into the build — this test is the only gate.
+ * whenever any skill gets out of sync, telling you to re-run the sync script.
+ * The sync is deliberately NOT wired into the build — this test is the only gate.
  */
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import {
-  AGENT_SKILL_CONTENT,
-  AGENT_SKILL_FILE,
-  AGENT_CRAFT_SKILL_CONTENT,
-  AGENT_CRAFT_SKILL_FILE,
-} from '@hearth/core';
+import { AGENT_SKILLS } from '@hearth/core';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(__dirname, '../../..');
-const SKILL_PATH = path.join(REPO_ROOT, 'skills', 'hearth', 'SKILL.md');
-const CRAFT_SKILL_PATH = path.join(REPO_ROOT, 'skills', 'hearth-craft', 'SKILL.md');
 
-describe('embedded agent skill', () => {
-  it('byte-matches the canonical skills/hearth/SKILL.md', () => {
-    const canonical = readFileSync(SKILL_PATH, 'utf8');
-    expect(
-      AGENT_SKILL_CONTENT,
-      'Embedded skill has drifted from skills/hearth/SKILL.md — run node scripts/sync-agent-skill.mjs',
-    ).toBe(canonical);
+/** The canonical five-skill set, core `hearth` first — the split is deliberate. */
+const EXPECTED_NAMES = ['hearth', 'hearth-build', 'hearth-code', 'hearth-art', 'hearth-feel'];
+
+describe('embedded agent skills', () => {
+  it('embeds exactly the canonical skill set, core first', () => {
+    expect(AGENT_SKILLS.map((s) => s.name)).toEqual(EXPECTED_NAMES);
   });
 
-  it('scaffolds to the project-local .claude path', () => {
-    expect(AGENT_SKILL_FILE).toBe('.claude/skills/hearth/SKILL.md');
-  });
-});
+  for (const name of EXPECTED_NAMES) {
+    it(`${name}: byte-matches skills/${name}/SKILL.md and scaffolds to .claude/skills/`, () => {
+      const skill = AGENT_SKILLS.find((s) => s.name === name)!;
+      const canonical = readFileSync(path.join(REPO_ROOT, 'skills', name, 'SKILL.md'), 'utf8');
+      expect(
+        skill.content,
+        `Embedded ${name} skill has drifted from skills/${name}/SKILL.md — run node scripts/sync-agent-skill.mjs`,
+      ).toBe(canonical);
+      expect(skill.file).toBe(`.claude/skills/${name}/SKILL.md`);
+    });
+  }
 
-describe('embedded game-craft skill', () => {
-  it('byte-matches the canonical skills/hearth-craft/SKILL.md', () => {
-    const canonical = readFileSync(CRAFT_SKILL_PATH, 'utf8');
-    expect(
-      AGENT_CRAFT_SKILL_CONTENT,
-      'Embedded craft skill has drifted from skills/hearth-craft/SKILL.md — run node scripts/sync-agent-skill.mjs',
-    ).toBe(canonical);
+  it('every skill has frontmatter with its own name and a description', () => {
+    for (const skill of AGENT_SKILLS) {
+      expect(skill.content.startsWith('---\n'), `${skill.name} missing frontmatter`).toBe(true);
+      expect(skill.content).toContain(`name: ${skill.name}\n`);
+      expect(skill.content).toMatch(/description: .{40,}/);
+    }
   });
 
-  it('scaffolds to the project-local .claude path', () => {
-    expect(AGENT_CRAFT_SKILL_FILE).toBe('.claude/skills/hearth-craft/SKILL.md');
+  it('the core skill routes to every domain skill by name', () => {
+    const core = AGENT_SKILLS[0].content;
+    for (const name of EXPECTED_NAMES.slice(1)) {
+      expect(core, `core skill does not mention ${name}`).toContain(name);
+    }
   });
 });

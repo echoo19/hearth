@@ -12,10 +12,7 @@ import path from 'node:path';
 import {
   ProjectStore,
   validateProject,
-  AGENT_SKILL_CONTENT,
-  AGENT_SKILL_FILE,
-  AGENT_CRAFT_SKILL_CONTENT,
-  AGENT_CRAFT_SKILL_FILE,
+  AGENT_SKILLS,
 } from '@hearth/core';
 import { NodeFileSystem } from '@hearth/core/node';
 import { getTemplatePath, scaffoldFromTemplate, type TemplateName } from '../src/index.js';
@@ -86,12 +83,10 @@ describe('scaffoldFromTemplate', () => {
 
       // Both project-local coding-agent skills are written from core's embedded
       // canonical copies, so the scaffolded project carries them.
-      expect(files).toContain(AGENT_SKILL_FILE);
-      expect(await readFile(path.join(target, AGENT_SKILL_FILE), 'utf8')).toBe(AGENT_SKILL_CONTENT);
-      expect(files).toContain(AGENT_CRAFT_SKILL_FILE);
-      expect(await readFile(path.join(target, AGENT_CRAFT_SKILL_FILE), 'utf8')).toBe(
-        AGENT_CRAFT_SKILL_CONTENT,
-      );
+      for (const skill of AGENT_SKILLS) {
+        expect(files).toContain(skill.file);
+        expect(await readFile(path.join(target, skill.file), 'utf8')).toBe(skill.content);
+      }
 
       // Template gameplay content is preserved: scene(s) and Lua script(s).
       expect(files.some((f) => f.startsWith('scripts/') && f.endsWith('.lua'))).toBe(true);

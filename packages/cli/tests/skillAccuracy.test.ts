@@ -1,6 +1,6 @@
 /**
  * Accuracy gate for the shipped Hearth coding-agent skills
- * (`skills/hearth/SKILL.md` and `skills/hearth-craft/SKILL.md`). Every
+ * (the `skills/<name>/SKILL.md` files). Every
  * `hearth <command> [--flags]` invocation in a skill's bash blocks must resolve
  * against the REAL commander program — a fake command path or a flag that no
  * command declares fails this test. This keeps the agent-facing playbooks from
@@ -15,8 +15,7 @@ import { buildProgram } from '../src/program.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(__dirname, '../../..');
-const SKILL_PATH = path.join(REPO_ROOT, 'skills', 'hearth', 'SKILL.md');
-const CRAFT_SKILL_PATH = path.join(REPO_ROOT, 'skills', 'hearth-craft', 'SKILL.md');
+const skillPath = (name: string) => path.join(REPO_ROOT, 'skills', name, 'SKILL.md');
 
 // --- Model the real CLI surface from the commander program -----------------
 
@@ -154,10 +153,15 @@ function validate(inv: Invocation): string[] {
 // --- Tests -----------------------------------------------------------------
 
 const SKILLS: { label: string; path: string; minInvocations: number }[] = [
-  { label: 'skills/hearth/SKILL.md', path: SKILL_PATH, minInvocations: 30 },
-  // The craft skill is prose-heavy (game feel, UX, licensing) but still carries
-  // real CLI: sound presets, imports, slices, screenshots, playtests.
-  { label: 'skills/hearth-craft/SKILL.md', path: CRAFT_SKILL_PATH, minInvocations: 8 },
+  // The five-way split: every skill still carries real, parseable CLI — the
+  // minimums just reflect how command-dense each domain is.
+  { label: 'skills/hearth/SKILL.md', path: skillPath('hearth'), minInvocations: 15 },
+  { label: 'skills/hearth-build/SKILL.md', path: skillPath('hearth-build'), minInvocations: 15 },
+  { label: 'skills/hearth-code/SKILL.md', path: skillPath('hearth-code'), minInvocations: 6 },
+  { label: 'skills/hearth-art/SKILL.md', path: skillPath('hearth-art'), minInvocations: 8 },
+  // Feel is prose-heavy (juice recipes, UX, quality bar) but still carries
+  // real CLI: sound presets, the emitter setup, playtests, export.
+  { label: 'skills/hearth-feel/SKILL.md', path: skillPath('hearth-feel'), minInvocations: 4 },
 ];
 
 for (const skillFile of SKILLS) {

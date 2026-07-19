@@ -1,6 +1,6 @@
 {
   "formatVersion": 1,
-  "hearthVersion": "1.3.3",
+  "hearthVersion": "1.3.4",
   "id": "prj_bsezoxwg",
   "name": "Arcade Starter",
   "description": "A fixed-camera arcade skeleton: a ship, shoot-on-key bullets, and a spawned target prefab.",

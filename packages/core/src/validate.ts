@@ -850,6 +850,58 @@ export async function validateProject(store: ProjectStore): Promise<ValidationRe
           });
         }
       }
+      // Pixel-art smear: a raster texture in `stretch` renderMode whose box is
+      // a non-integer or aspect-distorting scale of the native pixels. This is
+      // the classic "build a platform by stretching one grass tile" mistake —
+      // skill prose alone didn't stop it, so validate (which every agent loop
+      // runs) catches it mechanically. Warning, not error: pre-existing
+      // projects must keep loading and exporting. SVG/procedural sprites are
+      // vector and scale cleanly; assets with pixelArt:false (photos, soft art)
+      // opt out; `tile`/`sliced` modes always preserve native texels.
+      if (c.SpriteRenderer?.assetId && c.SpriteRenderer.renderMode === 'stretch') {
+        const srAsset = assetsById.get(c.SpriteRenderer.assetId);
+        const isRasterImage =
+          srAsset && (srAsset.type === 'sprite' || srAsset.type === 'tile') && !srAsset.path.endsWith('.svg');
+        const effectivePixelArt = srAsset ? (srAsset.pixelArt ?? project.buildSettings.pixelPerfect) : false;
+        if (isRasterImage && effectivePixelArt) {
+          let nativeW: number | undefined;
+          let nativeH: number | undefined;
+          if (c.SpriteRenderer.frame != null) {
+            const fr = findSheetFrame(srAsset, c.SpriteRenderer.frame);
+            if (fr) {
+              nativeW = fr.width;
+              nativeH = fr.height;
+            }
+          } else {
+            const mw = srAsset.metadata?.width;
+            const mh = srAsset.metadata?.height;
+            if (typeof mw === 'number' && mw > 0 && typeof mh === 'number' && mh > 0) {
+              nativeW = mw;
+              nativeH = mh;
+            }
+          }
+          if (nativeW && nativeH) {
+            const sx = c.SpriteRenderer.width / nativeW;
+            const sy = c.SpriteRenderer.height / nativeH;
+            const isIntegerScale = Math.abs(sx - Math.round(sx)) < 1e-9;
+            if (sx !== sy || !isIntegerScale) {
+              const source = c.SpriteRenderer.frame != null ? `frame "${c.SpriteRenderer.frame}" of "${srAsset.name}"` : `"${srAsset.name}"`;
+              push({
+                severity: 'warning',
+                code: 'PIXEL_ART_STRETCHED',
+                message:
+                  `Entity "${entity.name}" SpriteRenderer stretches pixel art ${source} (${nativeW}×${nativeH}) ` +
+                  `to ${c.SpriteRenderer.width}×${c.SpriteRenderer.height} — ${sx === sy ? 'a non-integer' : 'an aspect-distorting'} scale that smears texels. ` +
+                  `For a surface/platform use renderMode 'tile' (or a Tilemap); otherwise keep the box at an integer scale of the native size (e.g. ${nativeW * 2}×${nativeH * 2}). ` +
+                  `Genuinely non-pixel art (a photo, a painted backdrop) may scale freely — mark the asset pixelArt:false to opt out`,
+                scene: sceneId,
+                entity: entity.id,
+                asset: srAsset.id,
+              });
+            }
+          }
+        }
+      }
       if (c.AudioSource?.assetId && !assetIds.has(c.AudioSource.assetId)) {
         push({
           severity: 'error',
@@ -941,6 +993,41 @@ export async function validateProject(store: ProjectStore): Promise<ValidationRe
           scene: sceneId,
           entity: entity.id,
         });
+      }
+      // Feet mismatch — the "floating player" disconnect. Sprites are
+      // center-anchored and colliders centered + offset, so a dynamic body
+      // whose collider bottom differs from its sprite bottom visibly floats
+      // above the ground (or sinks into it) when physics rests the collider on
+      // a surface. Intentional smaller hitboxes are fine — they align feet via
+      // offset.y — so only a bottom-edge mismatch is flagged. Triggers don't
+      // resolve contacts and static bodies don't rest on anything; both skip.
+      if (
+        c.SpriteRenderer &&
+        c.Collider &&
+        !c.Collider.isTrigger &&
+        c.PhysicsBody?.bodyType === 'dynamic' &&
+        (c.Collider.shape === 'box' || c.Collider.shape === 'circle')
+      ) {
+        const spriteBottom = c.SpriteRenderer.height / 2;
+        const colliderHalf = c.Collider.shape === 'box' ? c.Collider.height / 2 : c.Collider.radius;
+        const colliderBottom = c.Collider.offset.y + colliderHalf;
+        const mismatch = spriteBottom - colliderBottom;
+        // Tolerance 2px: a 1-2px overlap is a common deliberate "settle" (it
+        // hides floating-point contact flicker); beyond that the disconnect is
+        // clearly visible.
+        if (Math.abs(mismatch) > 2) {
+          const fixOffsetY = spriteBottom - colliderHalf;
+          push({
+            severity: 'warning',
+            code: 'SPRITE_COLLIDER_FEET_MISMATCH',
+            message:
+              `Entity "${entity.name}" sprite bottom (${spriteBottom}) and collider bottom (${colliderBottom}) differ by ${Math.abs(mismatch)}px — ` +
+              `the art will visibly ${mismatch > 0 ? 'sink into' : 'float above'} surfaces it rests on. ` +
+              `Align the feet with Collider.offset.y = ${fixOffsetY} (or size the collider to match the sprite)`,
+            scene: sceneId,
+            entity: entity.id,
+          });
+        }
       }
       if (c.LineRenderer && c.LineRenderer.points.length < 2) {
         push({

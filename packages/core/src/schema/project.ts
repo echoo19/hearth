@@ -6,7 +6,7 @@ import { POST_EFFECT_TYPES, Vec2Schema, type ComponentMap } from './components.j
 import { EntitySchema } from './scene.js';
 
 export const FORMAT_VERSION = 1;
-export const HEARTH_VERSION = '1.3.3';
+export const HEARTH_VERSION = '1.3.4';
 
 export const SceneRefSchema = z.object({
   id: z.string(),

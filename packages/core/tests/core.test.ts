@@ -8,8 +8,7 @@ import {
   resolveColor,
   createComponent,
   COMPONENT_TYPES,
-  AGENT_SKILL_CONTENT,
-  AGENT_SKILL_FILE,
+  AGENT_SKILLS,
 } from '@hearth/core';
 
 async function makeSession(granted?: any) {
@@ -30,7 +29,9 @@ describe('project creation', () => {
     expect(files).toContain('AGENTS.md');
     expect(files).toContain('CLAUDE.md');
     expect(files).toContain('.hearth/agent-config.json');
-    expect(files).toContain(AGENT_SKILL_FILE);
+    for (const skill of AGENT_SKILLS) {
+      expect(files).toContain(skill.file);
+    }
     // Durable agent memory ships from the start (committed; the agent appends via `hearth remember`).
     expect(files).toContain('.hearth/memory.md');
     expect(store.project.name).toBe('My Game');
@@ -51,8 +52,9 @@ describe('project creation', () => {
   it('scaffolds the project-local best-practices skill from the embedded canonical copy', async () => {
     const fs = new MemoryFileSystem();
     await createProject(fs, '/proj', { name: 'My Game' });
-    const skill = await fs.readFile(`/proj/${AGENT_SKILL_FILE}`);
-    expect(skill).toBe(AGENT_SKILL_CONTENT);
+    for (const skill of AGENT_SKILLS) {
+      expect(await fs.readFile(`/proj/${skill.file}`)).toBe(skill.content);
+    }
   });
 
   it('refuses to create a project over an existing one', async () => {

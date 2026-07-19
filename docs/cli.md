@@ -531,6 +531,9 @@ for severity:
 `MISSING_SCRIPT`, `MISSING_SPRITE_ASSET`, `MISSING_TILE_ASSET`,
 `MULTIPLE_MAIN_CAMERAS`, `NO_INITIAL_SCENE`, `NO_MAIN_CAMERA`,
 `PARENT_CYCLE`, `PARTICLE_EMITTER_EMITS_NOTHING`,
+`PIXEL_ART_STRETCHED` (a raster texture in `stretch` renderMode at a
+non-integer or aspect-distorting scale — use `renderMode: 'tile'`/a `Tilemap`
+for surfaces, or an integer-scale box),
 `PLAYTEST_MISSING_SCENE`, `PLAYTEST_UNKNOWN_ACTION`,
 `POLYGON_DUPLICATE_POINT`, `POLYGON_NOT_CONVEX`,
 `POLYGON_TOO_FEW_POINTS`, `PREFAB_ASSET_NOT_FOUND`,
@@ -539,4 +542,7 @@ for severity:
 `SCRIPT_REQUIRE_CYCLE`, `SCRIPT_REQUIRE_NOT_FOUND`,
 `SCRIPT_SYNTAX_ERROR`, `SCRIPT_UNKNOWN_EXTENSION`,
 `SPRITE_ANIMATOR_MISSING_RENDERER`,
+`SPRITE_COLLIDER_FEET_MISMATCH` (a dynamic body's collider bottom edge is
+more than 2px off its sprite's bottom edge, so the art visibly floats above
+or sinks into surfaces — align the feet via `Collider.offset.y`),
 `UNKNOWN_COMPONENT_KEY`.

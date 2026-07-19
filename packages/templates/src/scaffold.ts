@@ -24,10 +24,7 @@ import {
   generateAgentsMd,
   generateClaudeMd,
   PROJECT_GITIGNORE,
-  AGENT_SKILL_CONTENT,
-  AGENT_SKILL_FILE,
-  AGENT_CRAFT_SKILL_CONTENT,
-  AGENT_CRAFT_SKILL_FILE,
+  AGENT_SKILLS,
 } from '@hearth/core';
 import type { FsLike } from '@hearth/core';
 import { applyTemplate, type ApplyTemplateOptions, type ApplyTemplateResult } from './apply.js';
@@ -71,11 +68,12 @@ export async function scaffoldFromTemplate(
   await fs.writeFile(join(targetDir, AGENTS_FILE), generateAgentsMd(options.name));
   await fs.writeFile(join(targetDir, CLAUDE_FILE), generateClaudeMd(options.name));
   await fs.writeFile(join(targetDir, GITIGNORE_FILE), PROJECT_GITIGNORE);
-  // Rewrite both coding-agent skills from core's embedded canonical copies
+  // Rewrite every coding-agent skill from core's embedded canonical copies
   // rather than trusting the template's (possibly stale) copies, matching
   // createProject.
-  await fs.writeFile(join(targetDir, AGENT_SKILL_FILE), AGENT_SKILL_CONTENT);
-  await fs.writeFile(join(targetDir, AGENT_CRAFT_SKILL_FILE), AGENT_CRAFT_SKILL_CONTENT);
+  for (const skill of AGENT_SKILLS) {
+    await fs.writeFile(join(targetDir, skill.file), skill.content);
+  }
 
   // applyTemplate copies agent-config/AGENTS/CLAUDE and the skill files, so they
   // are already in `files`; .gitignore is regenerated here and must be added.
@@ -84,7 +82,8 @@ export async function scaffoldFromTemplate(
   all.add(AGENT_CONFIG_FILE);
   all.add(AGENTS_FILE);
   all.add(CLAUDE_FILE);
-  all.add(AGENT_SKILL_FILE);
-  all.add(AGENT_CRAFT_SKILL_FILE);
+  for (const skill of AGENT_SKILLS) {
+    all.add(skill.file);
+  }
   return { files: [...all].sort() };
 }
