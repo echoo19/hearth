@@ -5,6 +5,7 @@
  * native modules).
  */
 import { describe, it, expect, beforeEach } from 'vitest';
+import os from 'node:os';
 import { createLazyHandle, PtyManager, resolveShell, type PtyBackend, type PtyHandle } from '../server/ptyManager';
 
 class FakePtyHandle implements PtyHandle {
@@ -67,17 +68,26 @@ describe('resolveShell', () => {
       args: [],
     });
   });
+
+  it('uses $SHELL on POSIX, falling back to /bin/bash', () => {
+    expect(resolveShell('linux', { SHELL: '/bin/zsh' })).toEqual({ file: '/bin/zsh', args: [] });
+    expect(resolveShell('darwin', {})).toEqual({ file: '/bin/bash', args: [] });
+  });
 });
 
 describe('PtyManager', () => {
-  it('spawns "shell" as $SHELL (or /bin/bash) with no args and cwd=root', () => {
+  // The expected shell is platform-specific (powershell.exe on Windows,
+  // $SHELL/bin/bash on POSIX), so derive it the same way PtyManager does rather
+  // than hardcoding a POSIX path — otherwise this fails on the Windows release CI.
+  it('spawns the platform shell with no args and cwd=root', () => {
     const savedShell = process.env.SHELL;
     process.env.SHELL = '/bin/zsh';
     try {
+      const expected = resolveShell(os.platform(), process.env);
       manager.start('session-a', '/proj/a', { cols: 80, rows: 24 });
       expect(backend.spawns).toHaveLength(1);
-      expect(backend.spawns[0].file).toBe('/bin/zsh');
-      expect(backend.spawns[0].args).toEqual([]);
+      expect(backend.spawns[0].file).toBe(expected.file);
+      expect(backend.spawns[0].args).toEqual(expected.args);
       expect(backend.spawns[0].opts.cwd).toBe('/proj/a');
       expect(backend.spawns[0].opts.cols).toBe(80);
       expect(backend.spawns[0].opts.rows).toBe(24);

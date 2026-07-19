@@ -15,7 +15,7 @@ import { NodeFileSystem } from '@hearth/core/node';
 import { createProjectServerContext, type ProjectServerContext } from '../server/projectServer';
 import { attachWebSocket, type WsFrame } from '../server/ws';
 import { resetLoginShellPathCacheForTests } from '../server/shellEnv';
-import type { PtyBackend, PtyHandle } from '../server/ptyManager';
+import { resolveShell, type PtyBackend, type PtyHandle } from '../server/ptyManager';
 
 function wait(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -273,7 +273,9 @@ describe('pty-* frame routing over /api/ws', () => {
     await wait(100);
 
     expect(first.killed).toBe(true);
-    expect(backend.spawns[backend.spawns.length - 1].file).toBe(process.env.SHELL || '/bin/bash');
+    // Platform-specific shell (powershell.exe on Windows): derive it the same
+    // way the server does so this holds on the Windows release CI too.
+    expect(backend.spawns[backend.spawns.length - 1].file).toBe(resolveShell(os.platform(), process.env).file);
 
     client.close();
     await wait(50);
