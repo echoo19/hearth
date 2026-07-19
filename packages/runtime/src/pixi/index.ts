@@ -82,6 +82,9 @@ import { syncSpriteEffectsFilter } from './spriteEffectsFilter.js';
 import { buildTilemapContainer } from './tilemapRender.js';
 import { buildSpriteRenderable, pixelArtScaleMode, resolvePixelArt } from './spriteRender.js';
 import { clearGraphics } from './graphicsGuard.js';
+import { resolveEntityZIndex } from './layering.js';
+import { buildTextNode, syncTextNode } from './textRender.js';
+import { collectPreloadAssetIds, type PreloadComponents } from './preload.js';
 import { pixiTextureAssetDescriptor } from './assetDescriptor.js';
 
 export { localStorageAdapter, type WebStorageLike } from './storage.js';
@@ -702,58 +705,31 @@ export class PixiSceneView {
   /**
    * Load every texture referenced by SpriteRenderers and Tilemaps in ANY
    * scene of the project up front, so scene switches never pop in assets.
-   * Also covers SpriteAnimator: animation assets are tiny JSON on disk
-   * listing frame sprite-asset ids, so those get read and their frames
-   * folded into the same preload set (the runtime does the same read to
-   * play animations; see SceneRuntime.loadAnimations).
+   * Also folds in EVERY animation asset's frame textures (not just those a
+   * SpriteAnimator statically references) so a clip switched at runtime via
+   * ctx.animate() never renders white for lack of a loaded sheet — see
+   * collectPreloadAssetIds. All reads/loads are awaited here, and this is
+   * awaited before the first render, so there's no first-frames-white window.
    */
   private async preloadTextures(): Promise<void> {
-    const assetIds = new Set<string>();
-    const animationAssetIds = new Set<string>();
-    const collect = (components: {
-      SpriteRenderer?: { assetId?: string | null };
-      Tilemap?: { tileAssets: Record<string, string | { sheet: string }> };
-      SpriteAnimator?: { assetId?: string };
-    }) => {
-      if (components.SpriteRenderer?.assetId) assetIds.add(components.SpriteRenderer.assetId);
-      if (components.Tilemap) {
-        // A tile source is a plain asset id (string) or an autotile rule whose
-        // `sheet` is the spritesheet asset id — preload whichever it references.
-        for (const tile of Object.values(components.Tilemap.tileAssets)) {
-          assetIds.add(typeof tile === 'string' ? tile : tile.sheet);
-        }
-      }
-      if (components.SpriteAnimator?.assetId) animationAssetIds.add(components.SpriteAnimator.assetId);
-    };
+    const componentSets: PreloadComponents[] = [];
     for (const ref of this.opts.store.project.scenes) {
       const scene = this.opts.store.scenes.get(ref.id);
       if (!scene) continue;
-      for (const entity of scene.entities) collect(entity.components);
+      for (const entity of scene.entities) componentSets.push(entity.components);
     }
     // Entities already live in the current runtime (covers spawned ones).
-    for (const entity of this.runtime.getEntities()) collect(entity.components);
+    for (const entity of this.runtime.getEntities()) componentSets.push(entity.components);
 
-    for (const id of animationAssetIds) {
-      const asset = this.opts.store.getAsset(id);
-      if (!asset || asset.type !== 'animation') continue;
-      try {
+    const assetIds = await collectPreloadAssetIds({
+      componentSets,
+      assets: this.opts.store.assets.assets,
+      readAnimationFrames: async (asset) => {
         const raw = await this.opts.store.fs.readFile(joinPath(this.opts.store.root, asset.path));
-        const animation = AnimationDataSchema.parse(JSON.parse(raw));
-        // Entries may be a plain sprite-asset id or a sheet ref
-        // `<sheetAssetId>#<frameName>` (split on the FIRST '#') — either way
-        // the sheet's own asset id is what needs a texture loaded.
-        for (const frameAssetId of animation.frames) {
-          const hashIndex = frameAssetId.indexOf('#');
-          assetIds.add(hashIndex === -1 ? frameAssetId : frameAssetId.slice(0, hashIndex));
-        }
-      } catch (err) {
-        this.opts.onLog?.({
-          frame: this.session.frame,
-          level: 'warn',
-          message: `Failed to load animation asset ${asset.name}: ${(err as Error).message}`,
-        });
-      }
-    }
+        return AnimationDataSchema.parse(JSON.parse(raw)).frames;
+      },
+      onWarn: (message) => this.opts.onLog?.({ frame: this.session.frame, level: 'warn', message }),
+    });
 
     const pixelPerfect = this.opts.store.project.buildSettings.pixelPerfect;
     for (const id of assetIds) {
@@ -1056,18 +1032,7 @@ export class PixiSceneView {
     }
     const text = entity.components.Text;
     if (text) {
-      const child = new Text({
-        text: text.content,
-        style: {
-          fontFamily: text.fontFamily,
-          fontSize: text.fontSize,
-          fill: text.color,
-          align: text.align,
-        },
-      });
-      child.anchor.set(text.align === 'center' ? 0.5 : text.align === 'right' ? 1 : 0, 0.5);
-      child.label = 'text';
-      node.addChild(child);
+      node.addChild(buildTextNode(text));
     }
     const tilemap = entity.components.Tilemap;
     if (tilemap) {
@@ -1204,14 +1169,7 @@ export class PixiSceneView {
     const line = entity.components.LineRenderer;
     const slider = entity.components.UISlider;
     const toggle = entity.components.UIToggle;
-    node.zIndex = Math.max(
-      sprite?.layer ?? 0,
-      text?.layer ?? 0,
-      tilemap?.layer ?? 0,
-      line?.layer ?? 0,
-      slider?.layer ?? 0,
-      toggle?.layer ?? 0,
-    );
+    node.zIndex = resolveEntityZIndex(entity.components);
     node.visible = entity.enabled;
 
     let spriteNode = node.getChildByLabel?.('sprite') ?? null;
@@ -1245,8 +1203,7 @@ export class PixiSceneView {
     }
     const textNode = node.getChildByLabel?.('text') as Text | null;
     if (textNode && text) {
-      textNode.visible = text.visible;
-      if (textNode.text !== text.content) textNode.text = text.content;
+      syncTextNode(textNode, text);
     }
     const lineNode = node.getChildByLabel?.('line') as Graphics | null;
     if (lineNode && line) {

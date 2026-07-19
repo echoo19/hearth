@@ -378,6 +378,14 @@ export class SceneRuntime {
   private emitDepth = 0;
   private navGrid: NavGrid | null = null;
   private navGridFrame = -1;
+  /**
+   * Tilemap `grid` array references baked into `navGrid`, in entity order.
+   * A same-frame `tilemap.grid = [...]` swap (common in onStart, which shares
+   * frame 0 with the first onUpdate) changes a reference here, so the cache is
+   * invalidated even though the frame is unchanged — mirrors how
+   * `tilemapGridHashCache` keys off the grid ARRAY REFERENCE.
+   */
+  private navGridGrids: readonly (readonly string[])[] = [];
 
   private constructor(
     private readonly store: ProjectStore,
@@ -718,6 +726,19 @@ export class SceneRuntime {
     return { x, y };
   }
 
+  /**
+   * Whether the current tilemap grid references match the ones baked into the
+   * cached nav grid (identity per element, in entity order). A same-frame
+   * `tilemap.grid = [...]` swap fails this and forces a rebuild.
+   */
+  private sameNavGrids(grids: readonly (readonly string[])[]): boolean {
+    if (grids.length !== this.navGridGrids.length) return false;
+    for (let i = 0; i < grids.length; i++) {
+      if (grids[i] !== this.navGridGrids[i]) return false;
+    }
+    return true;
+  }
+
   /** Whether every point falls within a nav grid's cell bounds. */
   private gridContains(grid: NavGrid, points: Vec2[]): boolean {
     return points.every((p) => {
@@ -737,15 +758,8 @@ export class SceneRuntime {
    * fresh rebuild attempt.
    */
   private getNavGrid(include: Vec2[]): NavGrid | null {
-    if (
-      this.navGridFrame === this._frame &&
-      this.navGrid &&
-      this.gridContains(this.navGrid, include)
-    ) {
-      return this.navGrid;
-    }
-    this.navGridFrame = this._frame;
     const inputs: NavEntityInput[] = [];
+    const grids: (readonly string[])[] = [];
     for (const entity of this.getEntities()) {
       if (!entity.enabled) continue;
       inputs.push({
@@ -755,7 +769,18 @@ export class SceneRuntime {
         tilemap: entity.components.Tilemap,
         bodyType: entity.components.PhysicsBody?.bodyType ?? 'static',
       });
+      if (entity.components.Tilemap) grids.push(entity.components.Tilemap.grid);
     }
+    if (
+      this.navGridFrame === this._frame &&
+      this.navGrid &&
+      this.sameNavGrids(grids) &&
+      this.gridContains(this.navGrid, include)
+    ) {
+      return this.navGrid;
+    }
+    this.navGridFrame = this._frame;
+    this.navGridGrids = grids;
     const { cellSize, solids } = collectNavSolids(inputs);
     try {
       this.navGrid = buildNavGrid({ cellSize, solids, include });

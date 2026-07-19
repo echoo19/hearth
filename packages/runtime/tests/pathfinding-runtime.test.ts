@@ -206,6 +206,58 @@ describe('ctx.scene.findPath', () => {
     expect(bLen).toBeGreaterThan(0);
   });
 
+  it('reflects a tilemap.grid swap done in the SAME frame before findPath', async () => {
+    const { store } = await makeStore({
+      entities: [
+        scripted('Seeker', 'scripts/seeker.js'),
+        ent('Maze', {
+          Transform: {},
+          Tilemap: {
+            tileSize: 32,
+            solid: true,
+            // Fully open to start: the direct row-0 route is unobstructed.
+            grid: ['.....', '.....', '.....'],
+          },
+        }),
+      ],
+      scripts: {
+        'seeker.js': `
+          export default {
+            onStart(ctx) {
+              const from = { x: 16, y: 16 };
+              const to = { x: 144, y: 16 };
+              const open = ctx.scene.findPath(from, to);
+              ctx.log('open', open && open.length);
+              // Swap in a wall (col 2, rows 0-1) that blocks the direct route,
+              // then re-query in the SAME frame. The nav grid was already built
+              // and cached for this frame by the first findPath; without keying
+              // the cache on the grid reference this returns the stale open grid.
+              const maze = ctx.scene.find('Maze');
+              maze.getComponent('Tilemap').grid = ['..#..', '..#..', '.....'];
+              const walled = ctx.scene.findPath(from, to);
+              ctx.log('walled', walled && walled.length);
+            },
+          };
+        `,
+      },
+    });
+    const runtime = await SceneRuntime.create(store, 'Test');
+    runtime.run(1);
+    expect(runtime.errors).toEqual([]);
+    const openLog = runtime.logs.find((l) => l.message.startsWith('open'));
+    const walledLog = runtime.logs.find((l) => l.message.startsWith('walled'));
+    expect(openLog).toBeDefined();
+    expect(walledLog).toBeDefined();
+    const openLen = Number(openLog!.message.split(' ')[1]);
+    const walledLen = Number(walledLog!.message.split(' ')[1]);
+    expect(Number.isFinite(openLen)).toBe(true);
+    expect(Number.isFinite(walledLen)).toBe(true);
+    // The post-swap query must detour around the freshly-added wall, so its
+    // path is strictly longer than the open route (proving it saw the new grid
+    // instead of the cached open one).
+    expect(walledLen).toBeGreaterThan(openLen);
+  });
+
   it('memoization smoke check: two calls with the same points in the same frame both succeed', async () => {
     const { store } = await makeStore({
       entities: [scripted('Seeker', 'scripts/seeker.js')],
