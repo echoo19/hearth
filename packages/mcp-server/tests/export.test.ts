@@ -124,7 +124,7 @@ describe('hearth-mcp export_desktop tool', () => {
     // 68, and set_entity_enabled/set_entity_tags (Wave L parity closure)
     // brought it from 68 to 70 (screenshot and get_agent_instructions are
     // registered separately, outside TOOL_SPECS, so they're not counted here).
-    expect(TOOL_SPECS.length).toBe(70);
+    expect(TOOL_SPECS.length).toBe(72);
   });
 
   it('mirrors exportDesktop paramsSchema: outDir and platforms', async () => {

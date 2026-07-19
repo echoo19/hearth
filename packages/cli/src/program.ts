@@ -1133,6 +1133,31 @@ export function buildProgram(): Command {
   });
 
   // ---------------------------------------------------------------------
+  // remember / recall — durable agent memory (.hearth/memory.md)
+  // ---------------------------------------------------------------------
+  addGlobalOptions(
+    program
+      .command('remember <note>')
+      .description(
+        'record a durable note in project memory (.hearth/memory.md) that survives across sessions — a decision, ' +
+          'a todo, or a gotcha already hit; read it back with `hearth recall`',
+      )
+      .option('--section <section>', 'note | decision | todo | gotcha (default: note)'),
+  ).action(async (note: string, opts, cmd) => {
+    await guarded(cmd, 'rememberNote', () =>
+      runAndEmit(cmd, 'rememberNote', { note, section: opts.section }),
+    );
+  });
+
+  addGlobalOptions(
+    program
+      .command('recall')
+      .description('read the durable project memory (.hearth/memory.md): decisions, todos, and gotchas across sessions'),
+  ).action(async (opts, cmd) => {
+    await guarded(cmd, 'recallNotes', () => runRecallCommand(cmd));
+  });
+
+  // ---------------------------------------------------------------------
   // run / playtest / test
   // ---------------------------------------------------------------------
   addGlobalOptions(
@@ -1270,8 +1295,8 @@ export function buildProgram(): Command {
     program
       .command('screenshot [scene]')
       .description(
-        'capture a deterministic PNG screenshot of a scene via headless Chrome/Chromium ' +
-          '(requires --allow build or all). Scene defaults to the project\'s initial scene.',
+        'capture a deterministic PNG screenshot of a scene via headless Chrome/Chromium. ' +
+          'Scene defaults to the project\'s initial scene.',
       )
       .option('--frame <n>', 'fixed frames to step before capture (default: 0)', (v) => parseInt(v, 10))
       .option('--seed <n>', 'session seed (default: 0)', (v) => parseInt(v, 10))
@@ -1282,9 +1307,8 @@ export function buildProgram(): Command {
     await guarded(cmd, 'screenshot', async () => {
       const g = globalOpts(cmd);
       const session = await openSession(g);
-      if (!hasPermission(session.granted, 'build')) {
-        throw new CliError('PERMISSION_DENIED', new PermissionError('build', session.granted, 'screenshot').message);
-      }
+      // No permission gate: a screenshot is read-only observation (the visual
+      // sibling of inspect/playtest), so the agent can always see its own work.
       const size = opts.size ? parseSize(opts.size) : undefined;
       const meta = await captureScreenshot(session.store, {
         scene,
@@ -1501,6 +1525,22 @@ async function runLogCommand(cmd: Command, since: number | undefined, limit: num
       console.log(`#${entry.seq} [${entry.source}] ${entry.summary}${suffix}`);
     }
   }
+  process.exitCode = 0;
+}
+
+// ---------------------------------------------------------------------------
+// recall (custom human formatting: print the memory markdown directly, so
+// `hearth recall` reads like a document rather than a JSON envelope)
+// ---------------------------------------------------------------------------
+async function runRecallCommand(cmd: Command): Promise<void> {
+  const opts = globalOpts(cmd);
+  const session = await openSession(opts);
+  const result = await session.execute<{ memory: string }>('recallNotes', {});
+  if (opts.json || !result.success) {
+    process.exitCode = emit(result, opts);
+    return;
+  }
+  process.stdout.write((result.data?.memory ?? '') + '\n');
   process.exitCode = 0;
 }
 

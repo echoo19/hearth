@@ -8,6 +8,7 @@ import type { FsLike } from './fs.js';
 import { ProjectStore, ProjectError, type ProjectSnapshot } from './project/store.js';
 import { HistoryStore } from './project/history.js';
 import { JournalStore, shouldJournal } from './project/journal.js';
+import { writeDigest } from './project/digest.js';
 import { HISTORY_EXEMPT } from './commands/historyCommands.js';
 import { getCommand, listCommands } from './commands/registry.js';
 import type { ChangedRef, CommandIssue, CommandResources, CommandResult, RuntimeHooks } from './commands/types.js';
@@ -277,6 +278,16 @@ export class HearthSession {
           this.store.project.hearthVersion = HEARTH_VERSION;
         }
         files = await this.store.save();
+        // Refresh the engine-generated state digest so the agent can read a
+        // current snapshot next turn instead of re-inspecting. Best-effort and
+        // isolated (like history/journal below): the digest is a convenience
+        // cache, never project data, so a write failure must not fail the
+        // command. writeDigest swallows its own errors, but guard the call too.
+        try {
+          await writeDigest(this.fs, this.root, this.store);
+        } catch {
+          /* digest is best-effort; ignore */
+        }
       }
       if (capturesHistory && before) {
         // The mutation has already run and been persisted; a broken history

@@ -11,9 +11,9 @@ import {
   type HearthSession,
   type PermissionMode,
   generateAgentsMd,
-  hasPermission,
+  generateDigest,
+  readMemory,
   joinPath,
-  PermissionError,
 } from '@hearth/core';
 import { captureScreenshot } from '@hearth/playtest';
 import { zipDirectory } from '@hearth/shipping';
@@ -109,17 +109,18 @@ export function createHearthMcpServer(session: HearthSession, granted: Permissio
   // depend on since core must stay usable in the browser — see
   // exportCommands.ts's "core cannot use node:Buffer" note), so
   // captureScreenshot lives in @hearth/playtest and is called directly here,
-  // the same way get_agent_instructions below calls generateAgentsMd
-  // directly. It still requires the "build" permission mode, same as
-  // export_web, so that check is replicated by hand (session.execute would
-  // normally do this for a registry command).
+  // the same way get_agent_instructions below calls generateAgentsMd directly.
+  // It requires only read-only: a screenshot is observation — the visual
+  // sibling of inspect and playtest (which also render/execute under read-only),
+  // not a build step. Gating it behind "build" left the agent unable to see its
+  // own work in the default session, forcing blind trial-and-error.
   server.registerTool(
     'screenshot',
     {
       description:
         'Capture a deterministic PNG screenshot of a scene via headless Chrome/Chromium. ' +
         'Scene defaults to the project\'s initial scene. Returns screenshot metadata (path, width, ' +
-        'height, frame, scene) as JSON; read the PNG file yourself. (requires build)',
+        'height, frame, scene) as JSON; read the PNG file yourself. (requires read-only)',
       inputSchema: {
         scene: z.string().min(1).optional(),
         frame: z.number().int().min(0).optional(),
@@ -131,10 +132,6 @@ export function createHearthMcpServer(session: HearthSession, granted: Permissio
       },
     },
     async (args) => {
-      if (!hasPermission(granted, 'build')) {
-        const err = new PermissionError('build', granted, 'screenshot');
-        return jsonResult(envelope('screenshot', null, [{ code: 'PERMISSION_DENIED', message: err.message }]), true);
-      }
       try {
         const data = await captureScreenshot(session.store, args ?? {});
         return jsonResult(envelope('screenshot', data, [], [data.path]));
@@ -151,7 +148,9 @@ export function createHearthMcpServer(session: HearthSession, granted: Permissio
     'get_agent_instructions',
     {
       description:
-        "Get this project's agent instructions (its AGENTS.md, or Hearth's generated default) plus the permission modes active this session.",
+        "Get this project's agent instructions (its AGENTS.md, or Hearth's generated default), the current engine-generated " +
+        'state digest, the durable project memory, and the permission modes active this session. Call this first: it hands you ' +
+        'the project state and prior decisions so you can work without re-inspecting or re-deciding from scratch.',
       inputSchema: {},
     },
     async () => {
@@ -165,7 +164,20 @@ export function createHearthMcpServer(session: HearthSession, granted: Permissio
       } else {
         body = generateAgentsMd(session.store.project.name);
       }
-      return textResult(header + body);
+      // Surface live state + durable memory in the same call, so the agent reads
+      // the project once instead of re-inspecting every turn. The digest is the
+      // engine's current-state snapshot; memory is the agent's own decisions/
+      // todos/gotchas carried across sessions.
+      const digest = generateDigest(session.store);
+      const memory = await readMemory(session.fs, session.root);
+      const state =
+        '\n\n---\n\n' +
+        digest +
+        '\n---\n\n' +
+        memory +
+        '\n---\n\n_State above is current as of this call. Trust the digest instead of re-inspecting; ' +
+        'inspect a specific entity only when you need its full component data. Record durable decisions with the `remember` tool._\n';
+      return textResult(header + body + state);
     },
   );
 

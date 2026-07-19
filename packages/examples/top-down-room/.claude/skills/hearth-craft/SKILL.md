@@ -363,7 +363,7 @@ hearth create asset anim-from-sheet hero-walk --sheet hero --frames hero_0,hero_
 hearth import asset ./downloads/PressStart2P.ttf --name press-start-2p --json
 
 # 5. VERIFY — put it in a scene and screenshot it back. Don't trust unseen art.
-hearth screenshot "Level 1" --frame 10 --out shots/art-check.png --allow build
+hearth screenshot "Level 1" --frame 10 --out shots/art-check.png
 ```
 
 Read the PNG back and confirm the art is the size, palette, and alignment you

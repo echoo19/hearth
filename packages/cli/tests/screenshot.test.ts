@@ -53,12 +53,17 @@ afterAll(async () => {
 });
 
 describe('hearth screenshot: permissions and input validation', () => {
-  it('fails with PERMISSION_DENIED without --allow build', async () => {
+  it('does not require --allow build — screenshot is read-only observation', async () => {
+    // Screenshot is how the agent sees its own work; it must work in the default
+    // session with no build grant. It may still fail for a non-permission reason
+    // (no Chromium / unbuilt runtime here), but never PERMISSION_DENIED.
     const result = await runCli(['screenshot', '--json'], projectDir);
-    expect(result.code).toBe(1);
     const envelope = JSON.parse(result.stdout);
-    expect(envelope.success).toBe(false);
-    expect(envelope.errors[0].code).toBe('PERMISSION_DENIED');
+    if (!envelope.success) {
+      expect(envelope.errors[0].code).not.toBe('PERMISSION_DENIED');
+    } else {
+      expect(envelope.command).toBe('screenshot');
+    }
   });
 
   it('fails with INVALID_INPUT on a malformed --size', async () => {

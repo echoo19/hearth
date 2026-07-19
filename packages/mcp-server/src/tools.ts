@@ -823,6 +823,29 @@ export const TOOL_SPECS: ToolSpec[] = [
       limit: z.number().int().positive().max(500).optional(),
     },
   },
+  // ---- durable agent memory ------------------------------------------------
+  {
+    name: 'remember',
+    command: 'rememberNote',
+    description:
+      'Record a durable note in project memory (.hearth/memory.md) that survives across sessions: a decision, a todo, or a ' +
+      'gotcha already hit. Read it back with recall at the start of a session so you never re-derive intent or repeat a ' +
+      'failed approach. (requires safe-edit)',
+    permission: 'safe-edit',
+    inputShape: {
+      note: z.string().min(1),
+      section: z.enum(['note', 'decision', 'todo', 'gotcha']).optional(),
+    },
+  },
+  {
+    name: 'recall',
+    command: 'recallNotes',
+    description:
+      'Read the project memory (.hearth/memory.md): the durable decisions, todos, and gotchas recorded across sessions. ' +
+      'Do this at the start of a session before re-inspecting or re-deciding. (requires read-only)',
+    permission: 'read-only',
+    inputShape: {},
+  },
 
   // ---- diff / playtest / build ---------------------------------------------------------------
   {

@@ -2,6 +2,7 @@ build/
 .hearth/baseline.json
 .hearth/history/
 .hearth/log/
+.hearth/digest.md
 .hearth-tmp/
 screenshot.png
 .mcp.json

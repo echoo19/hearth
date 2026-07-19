@@ -78,11 +78,18 @@ everything except `build`.
 
 | Mode | Unlocks |
 | --- | --- |
-| `read-only` | inspect, validate, diff, run scenes/playtests (always implied) |
-| `safe-edit` | scene/entity/component CRUD, project settings (`updateSettings`: buildSettings incl. loading visuals, initial scene, input mappings), snapshot/revert, playtest defs |
+| `read-only` | inspect, validate, diff, run scenes/playtests, `screenshot`, `recallNotes` (always implied) |
+| `safe-edit` | scene/entity/component CRUD, project settings (`updateSettings`: buildSettings incl. loading visuals, initial scene, input mappings), snapshot/revert, playtest defs, `rememberNote` |
 | `code-edit` | create/edit/attach scripts (Lua by default, `--language js` for JavaScript) |
 | `asset-edit` | import + procedural asset creation (sprites, tiles, sounds), metadata |
 | `build` | web export (`exportWeb`) + native desktop export (`exportDesktop`) + portable project builds (`buildProject`) |
+
+`screenshot` is read-only observation — the visual sibling of inspect/playtest —
+so an agent can always see its own work without a build grant. State and memory:
+the engine regenerates `.hearth/digest.md` (a current-state snapshot) after every
+change, and `rememberNote`/`recallNotes` persist durable decisions/todos/gotchas
+in `.hearth/memory.md` across sessions. Read both at the start of a session
+instead of re-inspecting and re-deciding.
 
 A human can run an agent read-only to get analysis with a guarantee of no
 mutation, or grant `safe-edit` only to keep the agent out of code.

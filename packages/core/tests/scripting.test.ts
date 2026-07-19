@@ -321,18 +321,21 @@ describe('inspectApi', () => {
 });
 
 describe('generated agent docs', () => {
-  it('AGENTS.md is Lua-first and generated from CTX_API', () => {
+  it('AGENTS.md is Lua-first and points at the on-demand ctx reference', () => {
     const md = generateAgentsMd('Doc Game');
     expect(md).toContain('Lua by default');
     expect(md).toContain('dot, not a colon');
     expect(md).toContain('local script = {}');
     expect(md).toContain('ctx.scenes.load("Level")');
     expect(md).toContain('ctx.save("bestScore", score)');
-    expect(md).toContain('hearth inspect api --json');
     expect(md).toContain('--language js');
-    // Every CTX_API entry surfaces in the reference list.
-    for (const entry of CTX_API) {
-      expect(md).toContain(`ctx.${entry.path}`);
-    }
+    // The full 81-entry ctx signature dump is no longer inlined every session:
+    // AGENTS.md points at `hearth inspect api --json` — the canonical, live
+    // reference with per-member Lua/JS examples — so the agent loads exact
+    // signatures on demand (when scripting) instead of relearning them on every
+    // boot. Accuracy is preserved (inspect api is generated from the same
+    // CTX_API); the eager re-read is what's gone.
+    expect(md).toContain('hearth inspect api --json');
+    expect(CTX_API.length).toBeGreaterThan(0); // inspect api still renders these
   });
 });

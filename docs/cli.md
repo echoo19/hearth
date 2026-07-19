@@ -217,6 +217,16 @@ and *failed* commands, and it's never rewound by `undo`/`redo`. See
 [Command journal](#command-journal) below for the entry shape and a worked
 example.
 
+**Memory** (`recall` read-only, `remember` safe-edit): `remember "<note>"
+[--section note|decision|todo|gotcha]` records a durable note in
+`.hearth/memory.md`, and `recall` reads them all back. Memory is authored
+*intent* — decisions made, work still to do, gotchas already hit — that
+survives across sessions and is committed to git (unlike the derived
+`.hearth/digest.md` state snapshot the engine regenerates after every change).
+Read the digest and `recall` at the start of a session instead of re-inspecting
+and re-deciding from scratch. Memory is not project data, so `remember` never
+touches the undo history or the structural diff.
+
 **Tilemap editing** (safe-edit): `paint tiles <scene> <entity> --cells
 "x,y,c;x,y,c"` (a batch of cell writes in one undo step), `fill tiles
 <scene> <entity> --rect x,y,w,h --char c` (fills a rectangular region in
@@ -274,7 +284,7 @@ for the signing ladder, the icon setting, and honest cross-platform
 verification limits. `build [--out dir]` still exports a portable project
 folder.
 
-**Screenshot** (requires `--allow build`): `screenshot [scene] [--frame n]
+**Screenshot** (read-only — no build grant needed): `screenshot [scene] [--frame n]
 [--seed n] [--size WxH] [--debug] [--out path]`: a deterministic PNG of a
 scene, so an agent can *see* its work instead of only reading state. Scene
 defaults to the project's initial scene; `--frame` steps that many fixed

@@ -20,9 +20,26 @@ operations instead of hand-editing JSON.
 > `skills/hearth-craft/SKILL.md` in the Hearth engine repo.) This file is the
 > per-project quick reference; the skills are the deeper playbooks.
 
+## Start of session: recall, don't re-derive
+
+The engine keeps two files so you don't relearn the project every session:
+
+- `.hearth/digest.md` — an **engine-generated snapshot of current state**
+  (scenes, entities + their components, scripts, assets), refreshed after every
+  change. Read it instead of re-running `inspect` on everything; it is always
+  current. Inspect one entity only when you need its full component data.
+- `.hearth/memory.md` — **durable decisions, todos, and gotchas** you recorded
+  in earlier sessions. Read it with `hearth recall` before re-deciding anything.
+
+Record durable facts as you go with `hearth remember "<note>" --section
+decision|todo|gotcha` so the next session (and the human) inherit them. Over
+MCP, one `get_agent_instructions` call returns this guide plus the live digest
+and memory together.
+
 ## Golden rules
 
-1. **Do not guess the project structure.** Inspect first:
+1. **Do not guess the project structure.** Read `.hearth/digest.md` first; then
+   `inspect` only what you still need in detail:
    - `hearth inspect project --json`
    - `hearth inspect scenes --json`
    - `hearth inspect scene <scene> --json`
@@ -123,88 +140,13 @@ return script
 never `ctx:log("hi")`. JS scripts `export default` an object with the same
 hooks and receive the identical `ctx`.
 
-The full ctx API (`hearth inspect api --json` returns this machine-readable,
-with Lua and JS examples per entry):
-
-- `ctx.entity`: This entity's id, name, and tags.
-- `ctx.transform`: Live Transform of this entity (mutable): position, rotation, scale.
-- `ctx.getComponent(type: T): ComponentMap[T]`: Live component data for this entity (mutable).
-- `ctx.params`: Parameters from the Script component (set via attachScript).
-- `ctx.input.isDown(action: string): boolean`: Is an input action currently held?
-- `ctx.input.justPressed(action: string): boolean`: Was the input action pressed this frame?
-- `ctx.input.axis(name: string): number`: Analog value in [-1, 1] for a virtual axis (inputMappings.axes). Precedence: a playtest setAxis override, else the bound gamepad axis once it clears the deadzone, else the keyboard fallback (negativeCodes held → -1, positiveCodes held → +1, both/neither → 0).
-- `ctx.scene.find(idOrName: string): EntityHandle | null`: Find an entity in the current scene by id or name.
-- `ctx.scene.findByTag(tag: string): EntityHandle[]`: All entities in the current scene with the given tag.
-- `ctx.scene.spawn(def: SpawnDef): EntityHandle`: Create an entity at runtime ({ name, position?, tags?, components? }).
-- `ctx.scene.spawnPrefab(name: string, opts?: { position?: Vec2; name?: string }): EntityHandle | null`: Spawn a prefab asset (by name or id) as a fresh entity subtree at runtime: every entity gets a new id, parent/child links are preserved among the spawned set, opts.position overrides the root's position and opts.name its name. Spawned children are registered for scripts just like the root. Returns the root's EntityHandle, or null (with a warn log) when no prefab by that name exists. Note: destroying the returned root does NOT cascade to its children. Destroy is per-entity, so destroy each child yourself if you want the whole subtree gone.
-- `ctx.scene.destroy(idOrHandle: string | EntityHandle): void`: Remove an entity from the current scene at runtime.
-- `ctx.scene.findPath(from: Vec2, to: Vec2, opts?: { diagonals?: boolean }): Vec2[] | null`: Grid A* path from `from` to `to` over solid tilemaps and static, non-trigger colliders currently in the scene. Waypoints are cell centers; null when unreachable or the grid is too large; set diagonals to allow 8-directional movement.
-- `ctx.scenes.current`: Current scene {id, name}.
-- `ctx.scenes.list(): { id: string; name: string }[]`: All scenes in the project as {id, name}.
-- `ctx.scenes.load(idOrName: string): boolean`: Request a scene switch at end of frame. False if unknown.
-- `ctx.timers.after(seconds: number, fn: () => void): string`: Run fn once after `seconds`. Returns a cancel id.
-- `ctx.timers.every(seconds: number, fn: () => void): string`: Run fn every `seconds`. Returns a cancel id.
-- `ctx.timers.cancel(id: string): void`: Cancel a timer by the id returned from after/every.
-- `ctx.tweens.to(path: string, target: number, seconds: number, opts?: { easing?: 'linear' | 'easeIn' | 'easeOut' | 'easeInOut'; onComplete?: () => void }): string`: Tween a numeric component property on this entity, e.g. to('Transform.position.x', 400, 0.5, { easing: 'easeOut' }). Returns a cancel id. Unknown/non-numeric path → warn log + '' id.
-- `ctx.tweens.cancel(id: string): void`: Cancel a tween by the id returned from tweens.to.
-- `ctx.random.next(): number`: Seeded, deterministic [0, 1). Same seed → same sequence.
-- `ctx.random.range(min: number, max: number): number`: Seeded float in [min, max).
-- `ctx.random.int(min: number, max: number): number`: Seeded integer, min and max inclusive.
-- `ctx.particles.burst(count: number): void`: Spawn `count` particles immediately from this entity's ParticleEmitter (in addition to its normal rate/burst). Warns if the entity has no ParticleEmitter.
-- `ctx.particles.count(): number`: Live particle count for this entity's ParticleEmitter (0 if none).
-- `ctx.animate(assetRef: string): void`: Switch this entity's SpriteAnimator to `assetRef` (animation asset id or name), set playing = true, and restart at frame 0. Warns if the entity has no SpriteAnimator or the asset is unknown.
-- `ctx.animator.setParam(entityRef: string, name: string, value: boolean | number): void`: Set a bool or number param on entityRef's AnimationStateMachine (id or unique name, not always this entity). Persists until changed again. Throws a script error if entityRef has no AnimationStateMachine, name isn't a param on its asset, name is a trigger param (use ctx.animator.fire instead), or value's type doesn't match the param's declared type.
-- `ctx.animator.getParam(entityRef: string, name: string): boolean | number`: Read a param's current value: the stored bool/number for a bool or number param, or whether a trigger param is currently latched (true) or already consumed/never fired (false). Throws if entityRef has no AnimationStateMachine or name isn't a param on its asset.
-- `ctx.animator.fire(entityRef: string, name: string): void`: Latch a trigger param on entityRef's AnimationStateMachine. Stays latched (surviving as many fixed frames as it takes) until a transition whose conditions name it is actually taken, at which point only that trigger is consumed; other latched triggers are untouched. A paused machine (component.playing = false) never consumes it. Throws if entityRef has no AnimationStateMachine, name isn't a param on its asset, or name isn't a trigger param.
-- `ctx.animator.state(entityRef: string): string`: The current state name of entityRef's AnimationStateMachine. Throws if entityRef has no AnimationStateMachine or its asset is unknown.
-- `ctx.math.vec2(x?: number, y?: number): Vec2`: Create a vector {x, y}. Missing args default to 0.
-- `ctx.math.add(a: Vec2, b: Vec2): Vec2`: Vector addition. Pure. Returns a new value without mutating inputs.
-- `ctx.math.sub(a: Vec2, b: Vec2): Vec2`: Vector subtraction. Pure. Returns a new value without mutating inputs.
-- `ctx.math.scale(v: Vec2, s: number): Vec2`: Scale a vector by a scalar. Pure. Returns a new value.
-- `ctx.math.dot(a: Vec2, b: Vec2): number`: Dot product of two vectors.
-- `ctx.math.length(v: Vec2): number`: Length (magnitude) of a vector.
-- `ctx.math.distance(a: Vec2, b: Vec2): number`: Distance between two points.
-- `ctx.math.normalize(v: Vec2): Vec2`: Unit vector in the direction of v ({x:0,y:0} for the zero vector). Pure. Returns a new value.
-- `ctx.math.angle(v: Vec2): number`: Angle of a vector in degrees (0 = +x, 90 = +y/down).
-- `ctx.math.fromAngle(degrees: number, length?: number): Vec2`: Unit vector from an angle in degrees (default length 1). 0 = +x, 90 = +y/down.
-- `ctx.math.lerp(a: number, b: number, t: number): number`: Linear interpolation between two scalars. Does not clamp t.
-- `ctx.math.lerpVec(a: Vec2, b: Vec2, t: number): Vec2`: Linear interpolation between two vectors. Does not clamp t. Pure. Returns a new value.
-- `ctx.math.clamp(x: number, min: number, max: number): number`: Clamp a value to [min, max].
-- `ctx.math.hexToRgb(hex: string): { r: number; g: number; b: number }`: Parse a hex color string (#rgb, #rrggbb, or #rrggbbaa) to {r, g, b}. Returns white on invalid input (warns once per instance).
-- `ctx.math.rgbToHex(r: number, g: number, b: number): string`: Convert RGB channels (0-255) to a hex color string. Clamps and rounds channel values.
-- `ctx.math.colorLerp(hexA: string, hexB: string, t: number): string`: Interpolate between two hex colors. Clamps t to [0, 1].
-- `ctx.save(key: string, value: unknown): void`: Persistent save data (JSON values), survives scene switches; in the browser it persists across sessions via localStorage.
-- `ctx.load(key: string): unknown`: Read saved data; null when absent.
-- `ctx.clearSave(key?: string): void`: Clear one save key, or all save data when no key is given.
-- `ctx.camera.getPosition(): Vec2`: The main camera's position {x, y}.
-- `ctx.camera.setPosition(x: number, y: number): void`: Move the main camera.
-- `ctx.camera.getZoom(): number`: The main camera's zoom factor.
-- `ctx.camera.setZoom(zoom: number): void`: Set the main camera's zoom factor.
-- `ctx.camera.follow(idOrName: string | null): void`: Follow an entity each frame (null stops). Warn log if not found.
-- `ctx.camera.shake(intensity: number, seconds: number, opts?: { seed?: number }): void`: Screen shake: offset decays linearly from `intensity` (world units) to 0 over `seconds`. Deterministic: same seed (explicit or scene-derived) reproduces the same offsets.
-- `ctx.camera.flash(color: string, seconds: number): void`: A color pulse over the screen that fades from full alpha to 0 over `seconds`.
-- `ctx.camera.fade(alpha: number, seconds: number, opts?: { color?: string; onComplete?: () => void }): void`: Ease the persistent screen overlay toward `alpha` over `seconds`, then hold at that level. Survives scene switches (ctx.scenes.load). Last call wins: a new fade replaces an in-flight one (starting from the current level), and the superseded fade's onComplete is dropped, never fired. Only the winning fade's onComplete runs, once.
-- `ctx.camera.zoomPunch(scale: number, seconds: number): void`: A zoom kick that eases back to 1x over `seconds`.
-- `ctx.effects.flash(color?: string, seconds?: number): void`: Trigger this entity's own hit-flash: sets its SpriteEffects flashColor/flashStrength=1/flashDuration (adding the component if the entity doesn't have one; authored scene data is untouched). flashStrength then decays linearly back to 0 over `seconds` (default 0.15, clamped to [0.01, 10]), deterministically, no RNG. For a camera-wide look instead of a per-sprite flash, use data-driven Camera.postEffects (e.g. a 'vignette' or 'colorGrade' entry) rather than this.
-- `ctx.audio.play(assetRef: string, opts?: { volume?: number; loop?: boolean }): string | null`: Play an audio asset (by asset id or name). Returns a handle id for ctx.audio.stop, or null when the asset does not exist.
-- `ctx.audio.stop(handleIdOrAssetRef: string): void`: Stop a playback by handle id, or every playback of an asset id/name.
-- `ctx.audio.playMusic(assetRef: string, opts?: { volume?: number; loop?: boolean; fadeIn?: number }): string | null`: Play a track on the single shared music channel (by asset id or name); replaces any current track. Survives scene switches. Returns a handle id, or null when the asset does not exist.
-- `ctx.audio.stopMusic(opts?: { fadeOut?: number }): void`: Stop the current music track. No-op when nothing is playing.
-- `ctx.audio.setMusicVolume(volume: number, opts?: { fade?: number }): void`: Change the current music track's volume. No-op when nothing is playing.
-- `ctx.vars`: Persistent per-entity state, survives across frames (not across scene switches: use ctx.save).
-- `ctx.time`: Elapsed seconds, delta seconds, and frame count.
-- `ctx.log(...args: unknown[]): void`: Log to the Hearth console (shows up in playtest and smoke-run reports).
-- `ctx.collisions`: This entity's current collisions (refreshed each frame): { other, normal, trigger }.
-- `ctx.isGrounded(): boolean`: Any non-trigger contact pushing this entity up (normal.y < -0.5).
-- `ctx.destroySelf(): void`: Remove this entity from the scene.
-- `ctx.events.emit(name: string, data?: unknown): void`: Broadcast an event to the whole scene, synchronously and deterministically: every ctx.events.on subscriber for `name` fires in subscription order, including this entity's own. Also triggers every script's onEvent(ctx, name, data) hook, in entity order. Nested emits (an onEvent handler emitting again) are allowed up to 8 levels deep; deeper emits are dropped with a warning.
-- `ctx.events.on(name: string, fn: (data: unknown) => void): string`: Subscribe to an event by name. Returns a subscription id for ctx.events.off. The subscription is automatically removed when this entity is destroyed.
-- `ctx.events.off(id: string): void`: Unsubscribe by id (as returned by ctx.events.on). Unknown ids are a no-op.
-- `ctx.ui.focus(idOrName: string | null): void`: Set focus to an entity by id/name, or clear it with null. Fires onUiEvent {type:'blur'} on the previously focused entity and {type:'focus'} on the new one. Warns (no-op) when the target is unknown, disabled, or its UIElement.focusable is not true. Focusing the already-focused entity is a no-op.
-- `ctx.ui.getFocused(): string | null`: The currently focused entity id, or null.
-- `ctx.ui.moveFocus(direction: 'up' | 'down' | 'left' | 'right'): void`: Move focus among focusable UIElement entities: picks the nearest candidate strictly in `direction` from the current focus position (or the top-left-most candidate when nothing is focused). No wrap: a no-op when nothing lies further that way.
-- `ctx.ui.activate(): void`: Synthesizes a press+release (a click) at the focused element's center, through the normal pointer path, so slider/toggle behavior fires exactly as a real click would. Warns (no-op) when the focused entity is not interactive; no-op when nothing is focused.
-- `ctx.ui.adjust(delta: number): void`: For a focused UISlider: value += delta * (step || (max-min)/10), clamped to [min, max], firing onUiEvent {type:'change', value}. No-op when nothing is focused or it has no UISlider.
+The `ctx` stdlib covers this entity, the scene, input, timers, tweens, seeded
+random, save/load, camera, effects, events, audio, UI focus, and math. For the
+exact signatures — with a Lua and JS example per member — run
+`hearth inspect api --json`. It is the canonical, always-current reference and
+the source of the editor's autocomplete; read it when you script instead of
+guessing (or re-loading it every session). The `hearth` skill has the grouped
+overview.
 
 Scene switching makes user-built menus/start screens (e.g. a Start button,
 an interactive `UIElement`, whose script loads the level):
@@ -249,9 +191,11 @@ with at least 3 points. Split concave shapes across multiple entities.
 If you are connected via MCP instead of the CLI, the same operations are
 exposed as tools (`get_project_info`, `inspect_scene`, `create_entity`,
 `set_component_property`, `set_properties`, `check_script`,
-`create_sound`, `run_playtest`, `get_diff`, `export_web`,
-`export_desktop`, ...). Call `get_agent_instructions` for this document.
-(`hearth init --template` is pre-project, so it has no MCP tool: it's a
-CLI-only step before a session exists.)
+`create_sound`, `run_playtest`, `get_diff`, `remember`, `recall`,
+`screenshot`, `export_web`, `export_desktop`, ...). Call
+`get_agent_instructions` first — it returns this document plus the current
+digest and memory in one call. `screenshot` needs only read-only, so you can
+always see your own work. (`hearth init --template` is pre-project, so it has
+no MCP tool: it's a CLI-only step before a session exists.)
 
 Generated by Hearth 1.3.3.

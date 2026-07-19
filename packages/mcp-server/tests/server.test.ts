@@ -162,6 +162,17 @@ describe('hearth-mcp server', () => {
     expect(text).toContain('hearth inspect');
   });
 
+  it('get_agent_instructions bundles the live digest and durable memory in one call', async () => {
+    ctx = await connectClient();
+    const result = await ctx.client.callTool({ name: 'get_agent_instructions', arguments: {} });
+    const text = toolText(result);
+    // The engine-generated state digest...
+    expect(text).toContain('Project digest');
+    // ...and the durable memory file, so the agent gets state + intent without
+    // extra round-trips.
+    expect(text).toContain('Project memory');
+  });
+
   it('get_diff without a prior snapshot returns a NOT_FOUND error envelope', async () => {
     ctx = await connectClient();
     const result = await ctx.client.callTool({ name: 'get_diff', arguments: {} });

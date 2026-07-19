@@ -559,3 +559,13 @@ export const TRASH_DIR = '.hearth/trash';
 export const LOG_DIR = '.hearth/log';
 /** Append-only command journal: one JSON `JournalEntry` per line (see `project/journal.ts`). */
 export const JOURNAL_FILE = '.hearth/log/commands.jsonl';
+/**
+ * Engine-generated state digest (see `project/digest.ts`): a compact, always-current
+ * markdown snapshot regenerated after every mutating command. Derived state — gitignored.
+ */
+export const DIGEST_FILE = '.hearth/digest.md';
+/**
+ * Agent-managed durable memory (see `project/memory.ts`): decisions, todos, and gotchas
+ * that survive across sessions. Authored intent — committed, not gitignored.
+ */
+export const MEMORY_FILE = '.hearth/memory.md';

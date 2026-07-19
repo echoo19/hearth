@@ -31,9 +31,16 @@ describe('project creation', () => {
     expect(files).toContain('CLAUDE.md');
     expect(files).toContain('.hearth/agent-config.json');
     expect(files).toContain(AGENT_SKILL_FILE);
+    // Durable agent memory ships from the start (committed; the agent appends via `hearth remember`).
+    expect(files).toContain('.hearth/memory.md');
     expect(store.project.name).toBe('My Game');
     expect(store.project.initialScene).not.toBeNull();
     expect(store.scenes.size).toBe(1);
+
+    // The engine writes an initial state digest at creation (best-effort, not in
+    // the returned file list since it's derived state).
+    expect(await fs.exists('/proj/.hearth/digest.md')).toBe(true);
+    expect(await fs.readFile('/proj/.hearth/digest.md')).toContain('My Game');
 
     // Reload from disk
     const reloaded = await ProjectStore.load(fs, '/proj');
@@ -70,6 +77,11 @@ describe('project creation', () => {
     // .mcp.json is auto-provisioned per-machine with absolute paths (the editor
     // rewrites it on open), so it must never be committed.
     expect(gitignore).toContain('.mcp.json');
+    // The engine-derived state digest is a regenerated cache — ignored. Durable
+    // memory (agent decisions/todos/gotchas) is authored intent — committed, so
+    // it must NOT appear in the ignore list.
+    expect(gitignore).toContain('.hearth/digest.md');
+    expect(gitignore).not.toContain('memory.md');
   });
 });
 

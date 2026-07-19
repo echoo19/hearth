@@ -22,6 +22,8 @@ export { formatSource, FormatError, setFormatterModules, type FormatResult } fro
 // Project model
 export { ProjectStore, ProjectError, readJson, writeJson, type ProjectSnapshot } from './project/store.js';
 export { createProject, DEFAULT_INPUT_ACTIONS, PROJECT_GITIGNORE, type CreateProjectOptions } from './project/create.js';
+export { generateDigest, writeDigest } from './project/digest.js';
+export { appendMemory, readMemory, MEMORY_TEMPLATE, type MemorySection } from './project/memory.js';
 export {
   PROJECT_MIGRATIONS,
   applyProjectMigrations,

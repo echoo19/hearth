@@ -9,7 +9,7 @@ Hearth is an agent-native 2D game engine. Every editor operation is a
 **registered command**, reachable two ways with identical semantics:
 
 - **CLI**: `hearth <command> --json` — best from a shell (Claude Code, Codex).
-- **MCP**: `hearth-mcp --project <path>` over stdio — 70 command tools plus
+- **MCP**: `hearth-mcp --project <path>` over stdio — 72 command tools plus
   `screenshot` and `get_agent_instructions`. Tool names come from the MCP tool
   list, not a mechanical transform of the CLI verb — most are the snake_case of
   the command (`create_entity`, `set_component_property`, `run_playtest`), but
@@ -27,15 +27,27 @@ operational playbook.
 ## The loop every session runs
 
 ```
-snapshot → inspect → change (commands) → validate → playtest → screenshot → diff
+recall + digest → snapshot → change (commands) → validate → playtest → screenshot → remember + diff
 ```
 
-1. **Snapshot** so the human can review and revert your whole session.
-2. **Inspect before editing** — never assume names, ids, or properties.
-3. **Change through commands.**
+1. **Recall first** — read `.hearth/digest.md` (the engine's current-state
+   snapshot) and run `hearth recall` (past decisions/todos/gotchas). Trust the
+   digest instead of re-inspecting the whole project; inspect one entity only
+   when you need its full component data. This is how you avoid relearning the
+   project — and burning tokens — every session.
+2. **Snapshot** so the human can review and revert your whole session.
+3. **Change through commands.** Don't assume a name/id/property the digest
+   doesn't show — inspect that one thing.
 4. **Validate** and fix every error you introduced.
-5. **Playtest** — assert behavior headlessly; **screenshot** to see your work.
-6. **Diff** and summarize what changed.
+5. **Playtest** — assert behavior headlessly; **screenshot** to *see* your work
+   (read-only, no build permission needed).
+6. **Remember + diff** — record durable decisions/gotchas with `hearth remember`
+   so the next session inherits them, then summarize the diff.
+
+**Building or polishing a game** (not just wiring a mechanic)? Load the
+**`hearth-craft`** skill — animation, juice, game-feel, and the quality bar a
+game must clear. A flat, static scene of placeholder rectangles is not "done";
+animate it, give it feel, and screenshot to confirm it looks real.
 
 ```bash
 alias hearth="node /path/to/hearth/packages/cli/dist/main.js"   # or the release hearth-cli.mjs
@@ -78,15 +90,16 @@ and [docs/agents.md](https://hearthengine.com/docs/agents).
 
 Sessions carry a grant; commands declare a requirement. Default grant is
 `read-only,safe-edit,code-edit,asset-edit` — everything except `build`. Pass
-`--allow build` (or `--allow all`) for export/screenshot.
+`--allow build` (or `--allow all`) for export. **Screenshot is not gated** — it
+is read-only observation, so you can always see your own work.
 
 | Mode | Unlocks |
 | --- | --- |
-| `read-only` | inspect, validate, diff, run scenes/playtests |
-| `safe-edit` | scene/entity/component CRUD, settings, snapshot/revert, playtest defs |
+| `read-only` | inspect, validate, diff, run scenes/playtests, **screenshot**, recall memory |
+| `safe-edit` | scene/entity/component CRUD, settings, snapshot/revert, playtest defs, remember |
 | `code-edit` | create/edit/attach scripts |
 | `asset-edit` | import + procedural asset creation, metadata |
-| `build` | web/desktop export, portable builds, screenshot |
+| `build` | web/desktop export, portable builds |
 
 ## Start a project
 
@@ -403,15 +416,17 @@ run (read the run report), then assert them. Details:
 
 ## Screenshot verification
 
-See your own work — a deterministic PNG through headless Chromium.
+See your own work — a deterministic PNG through headless Chromium. Read-only, no
+build permission needed: this is your eyes, use it often.
 
 ```bash
-hearth screenshot "Level 1" --allow build
-hearth screenshot "Level 1" --frame 30 --size 800x600 --debug --out shots/level1.png --allow build
+hearth screenshot "Level 1"
+hearth screenshot "Level 1" --frame 30 --size 800x600 --debug --out shots/level1.png
 ```
 
 `--debug` overlays collider/velocity/light outlines. Read the PNG back to
-confirm layout. (MCP: the `screenshot` tool; it writes the file, you read it.)
+confirm layout — never declare a scene done you haven't looked at. (MCP: the
+`screenshot` tool; it writes the file, you read it.)
 
 ## Review loop: snapshot, journal, checkpoint
 
@@ -428,6 +443,28 @@ hearth log                      # disk-backed journal of every command any sessi
 The human sees the same diff in the editor's Changes panel and can revert. An
 unreviewable session is a failed session — always snapshot, always summarize the
 diff when done. See [docs/agent-panel.md](https://hearthengine.com/docs/agent-panel).
+
+## Memory: read state, don't re-derive it
+
+Two engine-managed files stop you relearning the project (and burning tokens)
+every session:
+
+```bash
+cat .hearth/digest.md              # engine-generated snapshot of CURRENT state,
+                                   # refreshed after every change — read, don't re-inspect
+hearth recall                      # durable decisions/todos/gotchas from past sessions
+hearth remember "Chose Kenney tileset; palette is 8-color" --section decision
+hearth remember "Coin flash >0.2s reads as a bug" --section gotcha
+hearth remember "Still need a game-over scene" --section todo
+```
+
+The **digest** (`.hearth/digest.md`) is state the engine derives — scenes,
+entities and their components, scripts, assets — always current, so trust it
+over a fresh `inspect scene --full`. **Memory** (`.hearth/memory.md`, written via
+`remember`) is intent the engine can't derive — why you did something, what's
+left, what already failed. Record decisions and gotchas as you hit them; the next
+session and the human inherit them. Over MCP, `get_agent_instructions` returns
+this skill's guide plus the live digest and memory in one call.
 
 ## Export and ship
 

@@ -47,14 +47,18 @@ describe('screenshot tool: listing and permissions', () => {
     expect(tools.map((t) => t.name)).toContain('screenshot');
   });
 
-  it('returns PERMISSION_DENIED when the session does not grant "build"', async () => {
-    ctx = await connectClient(); // default grant excludes "build"
+  it('does not require "build" — screenshot is read-only observation', async () => {
+    // A session granting only read-only (no build, no edit) must still be able
+    // to screenshot: seeing the scene is observation, the visual sibling of
+    // inspect/playtest, not a build step. It may still fail for a non-permission
+    // reason (no Chromium in this env), but never PERMISSION_DENIED.
+    ctx = await connectClient(['read-only']);
     const result = await ctx.client.callTool({ name: 'screenshot', arguments: {} });
-    expect(result.isError).toBe(true);
     const envelope = toolJson(result);
-    expect(envelope.success).toBe(false);
+    if (!envelope.success) {
+      expect(envelope.errors[0].code).not.toBe('PERMISSION_DENIED');
+    }
     expect(envelope.command).toBe('screenshot');
-    expect(envelope.errors[0].code).toBe('PERMISSION_DENIED');
   });
 });
 

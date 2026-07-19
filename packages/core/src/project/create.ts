@@ -15,6 +15,7 @@ import {
   PLAYTESTS_DIR,
   HEARTH_DIR,
   AGENT_CONFIG_FILE,
+  MEMORY_FILE,
   ProjectFileSchema,
   type ProjectFile,
 } from '../schema/project.js';
@@ -28,6 +29,8 @@ import {
   AGENT_CRAFT_SKILL_FILE,
 } from '../agentSkillContent.js';
 import { writeJson, ProjectError, ProjectStore } from './store.js';
+import { writeDigest } from './digest.js';
+import { MEMORY_TEMPLATE } from './memory.js';
 
 export interface CreateProjectOptions {
   name: string;
@@ -65,6 +68,10 @@ export const PROJECT_GITIGNORE = [
   '.hearth/baseline.json',
   '.hearth/history/',
   '.hearth/log/',
+  // digest.md is engine-derived state, regenerated after every change — cache,
+  // not source. memory.md (agent decisions/todos/gotchas) is authored intent and
+  // is intentionally NOT ignored: it should be committed and travel with the repo.
+  '.hearth/digest.md',
   '.hearth-tmp/',
   'screenshot.png',
   // The editor auto-provisions .mcp.json with machine-absolute paths (rewritten
@@ -189,7 +196,14 @@ export async function createProject(
   files.push(AGENT_CONFIG_FILE);
   await fs.writeFile(joinPath(root, '.gitignore'), PROJECT_GITIGNORE);
   files.push('.gitignore');
+  // Seed the durable agent-memory file so it exists (and is committed) from the
+  // start; the agent appends to it via `hearth remember`.
+  await fs.writeFile(joinPath(root, MEMORY_FILE), MEMORY_TEMPLATE);
+  files.push(MEMORY_FILE);
 
   const store = await ProjectStore.load(fs, root);
+  // Write the initial state digest so a first agent session has a snapshot to
+  // read before making any change. Best-effort — never blocks project creation.
+  await writeDigest(fs, root, store);
   return { store, files };
 }
