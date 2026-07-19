@@ -1,6 +1,6 @@
 {
   "formatVersion": 1,
-  "hearthVersion": "1.2.0",
+  "hearthVersion": "1.3.0",
   "id": "prj_pbxy6xka",
   "name": "Crystal Warrens",
   "description": "A seeded value-noise cave, carved and crystal-lit by two behaviors sharing one scripts/lib module.",
@@ -51,6 +51,7 @@
     "fixedTimestep": 60,
     "title": "Crystal Warrens",
     "icon": null,
+    "pixelPerfect": true,
     "loading": {
       "backgroundColor": "#000000",
       "image": null,

@@ -36,6 +36,7 @@ import {
 import { NodeFileSystem, loadPlayerBundle } from '@hearth/core/node';
 import { listTemplates, getTemplatePath, scaffoldFromTemplate } from '@hearth/templates';
 import { isRequestAllowed } from './originGuard.js';
+import { ensureHearthMcpConfig } from './mcpConfig.js';
 import { attachWebSocket, type ExportFrame, type ExportStage, type DesktopExportResult } from './ws.js';
 
 export { attachWebSocket } from './ws.js';
@@ -497,6 +498,22 @@ export function createProjectServerContext(options: ProjectServerOptions = {}) {
     return withMutationLock(root, dispatch);
   }
 
+  /**
+   * Best-effort: write the `hearth` MCP server entry into the project's
+   * `.mcp.json` so an agent launched in the embedded terminal (e.g. `claude`)
+   * finds Hearth's tools with no manual setup. Never throws — provisioning must
+   * not block opening a project — and never spawns anything, so it can't
+   * reintroduce the old launcher's silent spawn failures.
+   */
+  async function provisionAgentMcp(root: string): Promise<void> {
+    try {
+      const { mcp } = await resolveToolPaths(repoRoot);
+      await ensureHearthMcpConfig(root, mcp, 'full');
+    } catch (err) {
+      console.warn(`[hearth] MCP auto-provisioning skipped: ${(err as Error).message}`);
+    }
+  }
+
   const ctx = {
     repoRoot,
     sessions,
@@ -516,6 +533,7 @@ export function createProjectServerContext(options: ProjectServerOptions = {}) {
         }
         const info = result.data as { name?: string };
         await addRecent(root, info?.name ?? path.basename(root));
+        await provisionAgentMcp(root);
         return { status: 200, body: { ok: true, path: root, info: result.data } };
       } catch (err) {
         const status = (err as { status?: number }).status ?? 500;
@@ -568,6 +586,7 @@ export function createProjectServerContext(options: ProjectServerOptions = {}) {
         const result = await session.execute('inspectProject');
         const info = result.data as { name?: string };
         await addRecent(target, info?.name ?? name.trim());
+        await provisionAgentMcp(target);
         return { status: 200, body: { ok: true, path: target, info: result.data } };
       } catch (err) {
         const code = (err as { code?: string }).code;

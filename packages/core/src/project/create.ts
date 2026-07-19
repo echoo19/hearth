@@ -67,6 +67,9 @@ export const PROJECT_GITIGNORE = [
   '.hearth/log/',
   '.hearth-tmp/',
   'screenshot.png',
+  // The editor auto-provisions .mcp.json with machine-absolute paths (rewritten
+  // on each open), so it is per-machine and must not be committed.
+  '.mcp.json',
   '.DS_Store',
   '',
 ].join('\n');

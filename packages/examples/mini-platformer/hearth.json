@@ -1,6 +1,6 @@
 {
   "formatVersion": 1,
-  "hearthVersion": "1.2.0",
+  "hearthVersion": "1.3.0",
   "id": "prj_was98kwz",
   "name": "Mini Platformer",
   "description": "Jump between platforms, collect coins, avoid spikes and the patrolling enemy.",
@@ -51,6 +51,7 @@
     "fixedTimestep": 60,
     "title": "Mini Platformer",
     "icon": null,
+    "pixelPerfect": true,
     "loading": {
       "backgroundColor": "#000000",
       "image": null,

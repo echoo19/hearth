@@ -126,7 +126,7 @@ function registerDialogHandlers(getWindow: () => BrowserWindow | null): void {
   // Godot-style window modes: the app opens as a compact project manager;
   // opening a project grows the same window into the full editor (same
   // BrowserWindow, so no state is lost), closing the project shrinks it back.
-  ipcMain.handle('hearth:window-mode', (_event, mode: string, title?: string) => {
+  ipcMain.handle('hearth:window-mode', async (_event, mode: string, title?: string) => {
     const win = getWindow();
     if (!win) return;
     if (mode === 'editor') {
@@ -136,7 +136,30 @@ function registerDialogHandlers(getWindow: () => BrowserWindow | null): void {
         win.setSize(1440, 900, true);
         win.center();
       }
-      if (!win.isMaximized()) win.maximize();
+      // The renderer awaits this handler before mounting dockview (see
+      // NativeEditorGate in App.tsx), so the layout is built at the window's
+      // FINAL size and side panels keep their fixed widths instead of being
+      // proportionally inflated. maximize() is asynchronous on Windows (the
+      // bounds update arrives with the 'maximize'/'resize' event, not on
+      // return), so we must wait for it to actually settle here — otherwise the
+      // renderer resolves too early and dockview builds at the pre-maximize size
+      // and re-inflates when the window grows. Timeout-guarded so it can never
+      // hang if the event doesn't fire (e.g. already maximized on some setups).
+      if (!win.isMaximized()) {
+        await new Promise<void>((resolve) => {
+          let settled = false;
+          const finish = (): void => {
+            if (settled) return;
+            settled = true;
+            clearTimeout(timer);
+            win.off('maximize', finish);
+            resolve();
+          };
+          const timer = setTimeout(finish, 600);
+          win.once('maximize', finish);
+          win.maximize();
+        });
+      }
       win.setTitle(title ? `${title} — Hearth` : 'Hearth');
     } else {
       if (win.isMaximized()) win.unmaximize();

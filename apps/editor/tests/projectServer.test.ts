@@ -67,6 +67,28 @@ describe('project open/create', () => {
     expect(again.status).toBe(409);
   });
 
+  it('auto-provisions a hearth MCP entry in .mcp.json on open', async () => {
+    const created = await ctx.createNewProject(path.join(tmpDir, 'projects'), 'Mcp Game');
+    const root = (created.body as { path: string }).path;
+    const opened = await ctx.openProject(root);
+    expect(opened.status).toBe(200);
+    const config = JSON.parse(await fsp.readFile(path.join(root, '.mcp.json'), 'utf8'));
+    const hearth = config.mcpServers?.hearth;
+    expect(hearth?.command).toBe('node');
+    expect(hearth?.args).toContain('--project');
+    expect(hearth?.args).toContain(root);
+    expect(hearth?.args).toContain('safe-edit,code-edit,asset-edit'); // default "full" mode
+  });
+
+  it('still opens the project when .mcp.json is malformed', async () => {
+    const created = await ctx.createNewProject(path.join(tmpDir, 'projects'), 'Bad Mcp Game');
+    const root = (created.body as { path: string }).path;
+    await fsp.writeFile(path.join(root, '.mcp.json'), '{ broken', 'utf8');
+    const opened = await ctx.openProject(root);
+    expect(opened.status).toBe(200); // provisioning failure never blocks opening
+    expect((opened.body as { ok: boolean }).ok).toBe(true);
+  });
+
   it('scaffolds from a genre template with a fresh agent-config', async () => {
     const created = await ctx.createNewProject(
       path.join(tmpDir, 'projects'),

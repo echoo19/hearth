@@ -363,6 +363,13 @@
           "color": "#ffffff",
           "width": 30,
           "height": 34,
+          "renderMode": "stretch",
+          "slice": {
+            "top": 0,
+            "right": 0,
+            "bottom": 0,
+            "left": 0
+          },
           "opacity": 1,
           "flipX": false,
           "flipY": false,
@@ -446,6 +453,13 @@
           "color": "#c0392b",
           "width": 32,
           "height": 64,
+          "renderMode": "stretch",
+          "slice": {
+            "top": 0,
+            "right": 0,
+            "bottom": 0,
+            "left": 0
+          },
           "opacity": 1,
           "flipX": false,
           "flipY": false,
@@ -515,6 +529,13 @@
           "color": "#ffffff",
           "width": 30,
           "height": 34,
+          "renderMode": "stretch",
+          "slice": {
+            "top": 0,
+            "right": 0,
+            "bottom": 0,
+            "left": 0
+          },
           "opacity": 1,
           "flipX": false,
           "flipY": false,

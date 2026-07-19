@@ -112,6 +112,13 @@
           "color": "#ffffff",
           "width": 24,
           "height": 30,
+          "renderMode": "stretch",
+          "slice": {
+            "top": 0,
+            "right": 0,
+            "bottom": 0,
+            "left": 0
+          },
           "opacity": 1,
           "flipX": false,
           "flipY": false,
@@ -201,6 +208,13 @@
           "color": "#ffb347",
           "width": 22,
           "height": 26,
+          "renderMode": "stretch",
+          "slice": {
+            "top": 0,
+            "right": 0,
+            "bottom": 0,
+            "left": 0
+          },
           "opacity": 1,
           "flipX": false,
           "flipY": false,

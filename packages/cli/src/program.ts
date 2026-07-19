@@ -46,7 +46,7 @@ import {
 // import-attribute syntax (`with { type: 'json' }`) that's a bigger change
 // than a version bump justifies here. Keep this in sync with package.json's
 // "version" on every release.
-const VERSION = '1.2.0';
+const VERSION = '1.3.0';
 
 /** The genre template names `init --template` accepts, in menu order. */
 const TEMPLATE_NAMES: string[] = listTemplates().map((t) => t.name);

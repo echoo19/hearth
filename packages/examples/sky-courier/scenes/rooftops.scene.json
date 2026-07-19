@@ -57,6 +57,13 @@
           "color": "#3f6b91",
           "width": 800,
           "height": 600,
+          "renderMode": "stretch",
+          "slice": {
+            "top": 0,
+            "right": 0,
+            "bottom": 0,
+            "left": 0
+          },
           "opacity": 1,
           "flipX": false,
           "flipY": false,
@@ -92,6 +99,13 @@
           "color": "#7f8c8d",
           "width": 200,
           "height": 24,
+          "renderMode": "stretch",
+          "slice": {
+            "top": 0,
+            "right": 0,
+            "bottom": 0,
+            "left": 0
+          },
           "opacity": 1,
           "flipX": false,
           "flipY": false,
@@ -169,6 +183,13 @@
           "color": "#7f8c8d",
           "width": 150,
           "height": 24,
+          "renderMode": "stretch",
+          "slice": {
+            "top": 0,
+            "right": 0,
+            "bottom": 0,
+            "left": 0
+          },
           "opacity": 1,
           "flipX": false,
           "flipY": false,
@@ -246,6 +267,13 @@
           "color": "#7f8c8d",
           "width": 150,
           "height": 24,
+          "renderMode": "stretch",
+          "slice": {
+            "top": 0,
+            "right": 0,
+            "bottom": 0,
+            "left": 0
+          },
           "opacity": 1,
           "flipX": false,
           "flipY": false,
@@ -323,6 +351,13 @@
           "color": "#7f8c8d",
           "width": 140,
           "height": 24,
+          "renderMode": "stretch",
+          "slice": {
+            "top": 0,
+            "right": 0,
+            "bottom": 0,
+            "left": 0
+          },
           "opacity": 1,
           "flipX": false,
           "flipY": false,
@@ -400,6 +435,13 @@
           "color": "#ffffff",
           "width": 48,
           "height": 48,
+          "renderMode": "stretch",
+          "slice": {
+            "top": 0,
+            "right": 0,
+            "bottom": 0,
+            "left": 0
+          },
           "opacity": 1,
           "flipX": false,
           "flipY": false,
@@ -488,6 +530,13 @@
           "color": "#ffffff",
           "width": 18,
           "height": 16,
+          "renderMode": "stretch",
+          "slice": {
+            "top": 0,
+            "right": 0,
+            "bottom": 0,
+            "left": 0
+          },
           "opacity": 1,
           "flipX": false,
           "flipY": false,
@@ -557,6 +606,13 @@
           "color": "#ffffff",
           "width": 18,
           "height": 16,
+          "renderMode": "stretch",
+          "slice": {
+            "top": 0,
+            "right": 0,
+            "bottom": 0,
+            "left": 0
+          },
           "opacity": 1,
           "flipX": false,
           "flipY": false,
@@ -626,6 +682,13 @@
           "color": "#ffffff",
           "width": 18,
           "height": 16,
+          "renderMode": "stretch",
+          "slice": {
+            "top": 0,
+            "right": 0,
+            "bottom": 0,
+            "left": 0
+          },
           "opacity": 1,
           "flipX": false,
           "flipY": false,
@@ -695,6 +758,13 @@
           "color": "#ffffff",
           "width": 40,
           "height": 32,
+          "renderMode": "stretch",
+          "slice": {
+            "top": 0,
+            "right": 0,
+            "bottom": 0,
+            "left": 0
+          },
           "opacity": 1,
           "flipX": false,
           "flipY": false,

@@ -4,4 +4,5 @@ build/
 .hearth/log/
 .hearth-tmp/
 screenshot.png
+.mcp.json
 .DS_Store

@@ -377,6 +377,25 @@ transparent-background PNG can hide misalignment until you look.
   `Tilemap.tileSize` to the source.
 - **Integer scale only.** Display pixel art at 1×, 2×, 3× — never 1.5×, or it
   smears. Size sprites/build resolution so scaling stays integer.
+- **Never stretch a tile into a surface.** A wide platform, floor, or wall is
+  *not* one small tile scaled up in a `SpriteRenderer` — that smears the texels
+  into a blur. Build surfaces from a `Tilemap` (grids/terrain, supports
+  autotiling) or set `SpriteRenderer.renderMode: 'tile'` so the texture repeats
+  at its native size. For panels/bars with distinct end-caps use
+  `renderMode: 'sliced'` with `slice` insets so the corners stay un-stretched.
+  Snap every tile to the grid so neighbours connect with no gaps or overlaps.
+- **Make surfaces connect — never repeat one tile.** A cohesive platform, floor,
+  wall, or structure uses a **connective tileset**: edge, corner, interior, and
+  end-cap tiles chosen by their neighbours. Use a `Tilemap` with a blob47
+  `autotile` rule, or a deliberate left-cap/middle/right-cap (top/mid/bottom)
+  choice. A single tile repeated with autotile OFF, or a row of individual
+  one-tile `SpriteRenderer` entities, reads as disconnected mismatched blocks
+  each with its own outline — not one object. This is the line between "tiles
+  that render" and "a surface that looks real."
+- **Crisp by default.** `buildSettings.pixelPerfect: true` (the default) renders
+  every texture with NEAREST filtering — leave it on for pixel art. Only a
+  genuinely non-pixel asset (a photo, a soft gradient) should opt out via its
+  own `pixelArt: false`.
 - **Constrain the palette.** A cohesive game uses a limited, shared palette
   (Kenney packs and most CC0 pixel packs already are). Don't mix a 40-color
   painterly sprite with an 8-color pixel tileset. When generating procedural
@@ -439,6 +458,9 @@ is the floor, not the bar.
 - [ ] Every non-CC0 asset is credited in `CREDITS.md` (asset, author, URL,
       license); no CC-BY-NC/SA/GPL sneaking into a shippable build.
 - [ ] One tile size, one palette family, integer scaling — screenshot-verified.
+- [ ] No stretched pixel art: surfaces use a `Tilemap` or `renderMode:'tile'`/
+      `'sliced'`, tiles snap to the grid and connect — no smears, gaps, or
+      distortion (screenshot-verified).
 - [ ] Real or cohesive procedural art everywhere (no orphan default rectangles).
 
 **Ship (from the `hearth` skill):**

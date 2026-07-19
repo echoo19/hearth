@@ -67,6 +67,9 @@ describe('project creation', () => {
     // writes straight into the project root; keep that debug artifact out
     // of git status too.
     expect(gitignore).toContain('screenshot.png');
+    // .mcp.json is auto-provisioned per-machine with absolute paths (the editor
+    // rewrites it on open), so it must never be committed.
+    expect(gitignore).toContain('.mcp.json');
   });
 });
 
