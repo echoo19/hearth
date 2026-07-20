@@ -168,15 +168,14 @@ same asset pipeline: import, probe, slice, animate.
 
 ## Status
 
-Hearth is at **v1.2.0**. Version 1.0 shipped on 2026-07-15, so this is no
-longer a developer preview. The whole loop works end to end: project model,
-editor, runtime preview, CLI, MCP, headless playtests, diff review, and web
-and desktop export. Everything since 1.0 has been additive. v1.1.0 added
-script modules, so scripts can `require()` each other in both Lua and
+Hearth is at **v1.0.0**, the production release — no longer a developer
+preview. The whole loop works end to end: project model, editor, runtime
+preview, CLI, MCP, headless playtests, diff review, and web and desktop
+export. Scripts have modules: they can `require()` each other in both Lua and
 JavaScript; a library is just a script that returns a table or exports an
 object, and hot-reload recompiles whatever depended on the file you changed.
-v1.2.0 gave the Agent panel its own full-height dock on the right beside the
-Inspector. It now opens a project shell directly; a compact first-project guide
+The Agent panel has its own full-height dock on the right beside the
+Inspector. It opens a project shell directly; a compact first-project guide
 explains how to type an agent command and can be dismissed. The Activity
 timeline collapses under the terminal. The
 [roadmap](docs/roadmap.md) keeps an honest list of what's next.

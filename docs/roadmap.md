@@ -8,8 +8,8 @@ DPR-aware — crisp on Retina/scaled displays in the editor and every export.
 Validation now catches stretched pixel art (`PIXEL_ART_STRETCHED`) and
 floating/sunk sprites (`SPRITE_COLLIDER_FEET_MISMATCH`) mechanically, and the
 coding-agent knowledge shipped into every project is split into five focused
-skills (`hearth` core + build/code/art/feel) that route by domain. v1.3.3
-made opening a project wire up your agent with no
+skills (`hearth` core + build/code/art/feel) that route by domain. Opening a
+project wires up your agent with no
 setup: the editor writes a project-scoped `.mcp.json` pointing at Hearth's MCP
 server, so the first time you run `claude` (or any MCP client) in the panel it
 loads the whole engine as tools after a single approval — the `hearth` CLI is
@@ -17,12 +17,12 @@ already on the terminal's PATH too. Both run on Hearth's own bundled Node, so
 you don't need a system Node.js install for any of it. The Agent panel is a shell
 at the project root: type `claude`, `codex`, `opencode`, `hermes`, or any other
 terminal agent, with a dismissible per-project guide and nothing to detect,
-install, or configure. This release also stabilizes the desktop layout on wide
-Windows/macOS screens and fixes agent-tool resolution on Windows. v1.1.0 added
-script modules: `require`
+install, or configure. The desktop layout holds up on wide
+Windows/macOS screens and agent-tool resolution works on Windows. Scripts have
+modules: `require`
 for same-language Lua and JavaScript helpers under `scripts/`, recursive
 script discovery/export, whole-graph hot reload, and validation for broken
-or cyclic requires. v1.0.0 closed the road to 1.0 with the final hardening
+or cyclic requires. The road to 1.0 closed with the final hardening
 wave: a
 project-format stability guarantee (an automatic migration rail, strict
 version-stamp rules, upgrade tests against 0.13/0.14 projects), a native
@@ -141,7 +141,9 @@ The standing rule for everything below: **agent-native first**. Each system
 ships as schemas + commands (inspectable via `hearth … --json`, exposed as
 MCP tools, testable in headless playtests) before it gets editor UI.
 
-## Shipped in v1.2.0 — Agent panel
+## Shipped in v1.0.0
+
+**Agent panel:**
 
 - **Own right-hand dock**: the Agent panel moved out of the bottom dock into
   a full-height column beside the Inspector, so the terminal gets height and
@@ -158,7 +160,7 @@ MCP tools, testable in headless playtests) before it gets editor UI.
 - **Activity remains visible**: the collapsible timeline under the terminal
   retains Checkpoint / Review changes / Restore checkpoint actions.
 
-## Shipped in v1.1.0
+**Script modules:**
 
 - **Script modules**: scripts can now share code with load-time
   `require("lib/noise")`, resolved against `scripts/` with the requiring

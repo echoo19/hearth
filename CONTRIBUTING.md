@@ -84,7 +84,7 @@ held to the same standard as any other contribution:
 
 ## Releases
 
-Hearth is at v1.2.0; 1.0 shipped in July 2026, so it is no longer a developer
+Hearth is at v1.0.0, the production release; it is no longer a developer
 preview. Versioning is synchronized across packages, and releases are
 automated: pushing a `v*` tag builds the desktop app for macOS, Windows, and
 Linux, and publishes those alongside the standalone `hearth-cli.mjs` and
