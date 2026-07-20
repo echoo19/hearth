@@ -15,7 +15,7 @@ import {
   readMemory,
   joinPath,
 } from '@hearth/core';
-import { captureScreenshot } from '@hearth/playtest';
+import { captureScreenshot, captureSequence, MAX_SEQUENCE_FRAMES } from '@hearth/playtest';
 import { zipDirectory } from '@hearth/shipping';
 import { TOOL_SPECS } from './tools.js';
 
@@ -138,6 +138,43 @@ export function createHearthMcpServer(session: HearthSession, granted: Permissio
       } catch (err) {
         return jsonResult(
           envelope('screenshot', null, [{ code: 'INTERNAL_ERROR', message: (err as Error).message }]),
+          true,
+        );
+      }
+    },
+  );
+
+  // Not in TOOL_SPECS, for the same reason as screenshot: capturing a frame
+  // sequence launches headless Chromium (Node/Playwright-only), so
+  // captureSequence lives in @hearth/playtest and is called directly here.
+  // Read-only observation, like screenshot — the moving-picture sibling.
+  server.registerTool(
+    'capture',
+    {
+      description:
+        'Capture a deterministic frame SEQUENCE of a scene via headless Chrome/Chromium and lay it out as a ' +
+        'contact sheet (sheet:false emits one PNG per frame). Scene defaults to the initial scene. Requires a ' +
+        `headless Chromium; captures at most ${MAX_SEQUENCE_FRAMES} frames (raise step to widen the range). ` +
+        'Returns capture metadata (outPaths, frames, size, sheet grid) as JSON — read the PNG file(s) yourself, ' +
+        'it does not return pixels. (requires read-only)',
+      inputSchema: {
+        scene: z.string().min(1).optional(),
+        from: z.number().int().min(0).optional(),
+        to: z.number().int().min(0),
+        step: z.number().int().positive().optional(),
+        sheet: z.boolean().optional(),
+        seed: z.number().int().min(0).optional(),
+        size: z.object({ width: z.number().int().positive(), height: z.number().int().positive() }).optional(),
+        outPath: z.string().optional(),
+      },
+    },
+    async (args) => {
+      try {
+        const data = await captureSequence(session.store, args as Parameters<typeof captureSequence>[1]);
+        return jsonResult(envelope('capture', data, [], data.outPaths));
+      } catch (err) {
+        return jsonResult(
+          envelope('capture', null, [{ code: 'INTERNAL_ERROR', message: (err as Error).message }]),
           true,
         );
       }

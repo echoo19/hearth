@@ -14,8 +14,8 @@ import { AGENT_SKILLS } from '@hearth/core';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(__dirname, '../../..');
 
-/** The canonical five-skill set, core `hearth` first — the split is deliberate. */
-const EXPECTED_NAMES = ['hearth', 'hearth-build', 'hearth-code', 'hearth-art', 'hearth-feel'];
+/** The canonical six-skill set, core `hearth` first — the split is deliberate. */
+const EXPECTED_NAMES = ['hearth', 'hearth-build', 'hearth-code', 'hearth-art', 'hearth-feel', 'hearth-design'];
 
 describe('embedded agent skills', () => {
   it('embeds exactly the canonical skill set, core first', () => {

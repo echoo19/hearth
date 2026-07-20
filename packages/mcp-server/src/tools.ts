@@ -10,15 +10,21 @@ import {
   SPRITE_SHAPES,
   SOUND_PRESETS,
   PlaytestStepSchema,
+  PlaytestTraceSchema,
   StateMachineDataSchema,
   type PermissionMode,
   type SpriteShape,
   type DesktopPlatform,
+  type MusicWave,
 } from '@hearth/core';
 
 // Mirrors core's exportCommands.ts DESKTOP_PLATFORMS (not exported from
 // @hearth/core, since it's private to the exportDesktop command definition).
 const DESKTOP_PLATFORMS = ['darwin-arm64', 'darwin-x64', 'win32-x64', 'linux-x64'] as const satisfies readonly DesktopPlatform[];
+
+// Mirrors core's assetCommands.ts MUSIC_WAVES (private to the createMusic
+// command definition, so not exported from @hearth/core).
+const MUSIC_WAVES = ['sine', 'square', 'saw', 'triangle', 'noise'] as const satisfies readonly MusicWave[];
 
 export interface ToolSpec {
   /** MCP tool name (snake_case). */
@@ -117,7 +123,8 @@ export const TOOL_SPECS: ToolSpec[] = [
   {
     name: 'validate_project',
     command: 'validateProject',
-    description: 'Validate the whole project: schemas, references, cameras, scripts, assets, playtests. (requires read-only)',
+    description:
+      'Validate the whole project (schemas, references, cameras, scripts, assets, playtests). Errors block a build; warnings are advisory. (requires read-only)',
     permission: 'read-only',
     inputShape: {},
   },
@@ -304,7 +311,7 @@ export const TOOL_SPECS: ToolSpec[] = [
     name: 'set_component_property',
     command: 'setComponentProperty',
     description:
-      'Set a component property by dot path, e.g. property="Transform.position.x", value=100. The full component is re-validated against its schema. (requires safe-edit)',
+      'Set a component property by strict dot-path, e.g. property="Transform.position.x", value=100; an unknown path fails with a did-you-mean suggestion. (requires safe-edit)',
     permission: 'safe-edit',
     inputShape: {
       scene: z.string().min(1),
@@ -473,7 +480,7 @@ export const TOOL_SPECS: ToolSpec[] = [
     name: 'create_script',
     command: 'createScript',
     description:
-      'Create a new script file under scripts/ from the standard template (or custom source). Lua by default; language "js" for JavaScript. Pass dir to create under a subdirectory such as lib. Reformats to Hearth house style on save unless format:false. Returns its path. (requires code-edit)',
+      'Create a script under scripts/ from a template (or source), returning its path. Lua by default (language:"js" for JS); call ctx with a DOT, never a colon. (requires code-edit)',
     permission: 'code-edit',
     inputShape: {
       name: z.string().min(1),
@@ -612,6 +619,8 @@ export const TOOL_SPECS: ToolSpec[] = [
       strokeColor: z.string().optional(),
       strokeWidth: z.number().positive().optional(),
       cornerRadius: z.number().min(0).optional(),
+      shading: z.enum(['flat', 'gradient']).optional(),
+      secondaryColor: z.string().optional(),
     },
   },
   {
@@ -623,6 +632,8 @@ export const TOOL_SPECS: ToolSpec[] = [
       name: z.string().min(1),
       color: z.string().optional(),
       size: z.number().int().positive().max(256).optional(),
+      shading: z.enum(['flat', 'gradient']).optional(),
+      secondaryColor: z.string().optional(),
     },
   },
   {
@@ -635,6 +646,33 @@ export const TOOL_SPECS: ToolSpec[] = [
       name: z.string().min(1),
       preset: z.enum(SOUND_PRESETS),
       seed: z.number().int().min(0).optional(),
+    },
+  },
+  {
+    name: 'create_music',
+    command: 'createMusic',
+    description:
+      'Create a procedural chiptune track (deterministic 16-bit PCM WAV) from 1-4 oscillator tracks. Each ' +
+      'track\'s notes is a whitespace-separated token sequence — one token = one sixteenth step at the tempo: ' +
+      'note names (C4, F#3, Bb2 — A4=440), "-" (rest), or "." (extend previous note). Wire to AudioSource.music ' +
+      'or play with ctx.audio.playMusic. Same params → byte-identical audio. (requires asset-edit)',
+    permission: 'asset-edit',
+    inputShape: {
+      name: z.string().min(1),
+      tempo: z.number().min(40).max(300),
+      tracks: z
+        .array(
+          z
+            .object({
+              wave: z.enum(MUSIC_WAVES),
+              volume: z.number().min(0).max(1).optional(),
+              notes: z.string().min(1),
+            })
+            .strict(),
+        )
+        .min(1)
+        .max(4),
+      loop: z.boolean().optional(),
     },
   },
   {
@@ -877,13 +915,25 @@ export const TOOL_SPECS: ToolSpec[] = [
     name: 'create_playtest',
     command: 'createPlaytest',
     description:
-      'Create a playtest definition: a scripted sequence of waits, input presses, and assertions run headlessly against a scene. (requires safe-edit)',
+      'Create a playtest definition: a scripted sequence of waits, input presses, and assertions run headlessly ' +
+      'against a scene. Include assertPeak/assertRange/assertSettledBy steps (or a trace block) to measure feel — ' +
+      'jump height, dash distance, settle time — from recorded motion. (requires safe-edit)',
     permission: 'safe-edit',
     inputShape: {
       name: z.string().min(1),
       scene: z.string().min(1),
       steps: z.array(PlaytestStepSchema).optional(),
+      trace: PlaytestTraceSchema.optional(),
       maxFrames: z.number().int().positive().optional(),
+    },
+  },
+  {
+    name: 'delete_playtest',
+    command: 'deletePlaytest',
+    description: 'Delete a playtest definition (removes it from the project and its playtest file). (requires safe-edit)',
+    permission: 'safe-edit',
+    inputShape: {
+      playtest: z.string().min(1),
     },
   },
   {
@@ -897,7 +947,8 @@ export const TOOL_SPECS: ToolSpec[] = [
     name: 'run_playtest',
     command: 'runPlaytest',
     description:
-      'Run a playtest headlessly (simulated frames, scripted inputs, assertions). Returns pass/fail with per-step results. (requires read-only)',
+      'Run a playtest headlessly. Returns pass/fail plus observed counts and trace summaries: probe with a ' +
+      'bare run first, then bake the observed numbers into asserts. (requires read-only)',
     permission: 'read-only',
     inputShape: {
       playtest: z.string().min(1),
@@ -912,6 +963,21 @@ export const TOOL_SPECS: ToolSpec[] = [
     inputShape: {
       scene: z.string().min(1),
       frames: z.number().int().positive().max(36000).optional(),
+    },
+  },
+  {
+    name: 'bench_scene',
+    command: 'benchScene',
+    description:
+      'Benchmark a scene headlessly: step warmup frames, then time N measured frames and report per-frame ms ' +
+      '(avg/median/p95/max/total) so you can check whether it holds 60fps (16.67ms/frame). Pass budgetMs for a ' +
+      'withinBudget verdict. Scene defaults to the initial scene. Summary only. (requires read-only)',
+    permission: 'read-only',
+    inputShape: {
+      scene: z.string().min(1).optional(),
+      frames: z.number().int().positive().max(36000).optional(),
+      warmupFrames: z.number().int().nonnegative().max(36000).optional(),
+      budgetMs: z.number().positive().optional(),
     },
   },
   {

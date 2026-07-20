@@ -30,6 +30,32 @@ npm run bench -- --json  # machine-readable output instead of the aligned table
 packages are built it can also be run directly with
 `node packages/runtime/bench/bench.mjs`.
 
+## Benchmarking from the CLI/MCP
+
+`npm run bench` above measures the *engine* against canonical scenarios. To
+measure *your own project's* scene, use the `benchScene` command, exposed as
+`hearth bench` on the CLI and `bench_scene` over MCP. It runs the same
+rendering-free `GameSession` step loop headlessly — no Chromium — so a coding
+agent can check a scene's frame budget as part of its normal loop:
+
+```sh
+hearth bench                       # the project's initial scene, defaults
+hearth bench "Level 1" --frames 600 --warmup 60 --budget-ms 16.67 --json
+```
+
+It steps `--warmup` frames untimed (JIT/allocation warmup), then times
+`--frames` measured frames and reports the per-frame millisecond distribution:
+`avgMs`, `medianMs`, `p95Ms`, `maxMs`, and `totalMs`, plus `entityCount` and
+`scriptErrors`. Percentiles use nearest-rank over the sorted sample. Pass
+`--budget-ms` (MCP: `budgetMs`) to get a `withinBudget` verdict (`medianMs <=
+budgetMs`); when the median exceeds one 60fps frame (16.67ms), `suggestions`
+carries a hint. The result is summary-only — no per-frame array — to stay
+token-frugal for agents. Like the harness, timings exclude rendering, so a
+green `hearth bench` means simulation holds budget; it does not measure GPU or
+DOM cost. Per CI-flakiness policy, treat these as guidance, not hard gates —
+the repo's own `npm run bench -- --check` fence is the authority for
+regressions.
+
 ## Regression fences
 
 CI runs `node packages/runtime/bench/bench.mjs --check` after

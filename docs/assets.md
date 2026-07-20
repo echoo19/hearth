@@ -263,6 +263,40 @@ fill its shape.
 
 ## Music
 
+### Generating a track (`create music`)
+
+You don't need an imported audio file to have a soundtrack. `hearth create
+music` (MCP: `create_music`) synthesizes a deterministic chiptune WAV from
+1-4 oscillator tracks and registers it as an `audio` asset, the same way
+`create sound` does for one-shot SFX:
+
+```sh
+hearth create music theme --tempo 120 --loop \
+  --tracks '[{"wave":"square","notes":"C4 E4 G4 - C4 E4 G4 -"},
+             {"wave":"triangle","volume":0.4,"notes":"C2 . . . G2 . . ."}]'
+```
+
+- `--tempo` is beats per minute (40-300). One `notes` token = one sixteenth
+  step, so the step duration is `(60 / tempo) / 4` seconds.
+- Each track is `{ wave, volume?, notes }`. `wave` is one of `sine`,
+  `square`, `saw`, `triangle`, `noise`; `volume` defaults to `0.6`.
+- `notes` is a whitespace-separated token sequence: **note names** in equal
+  temperament with `A4 = 440` (`C4`, `F#3`, `Bb2`), `-` for a **rest**, and
+  `.` to **extend** the previous note by one more step. Bad tokens fail with
+  `INVALID_INPUT`, naming the offending token and track.
+- `--loop` (MCP: `loop`) marks the track as looping.
+- Pass `--tracks @path/to/song.json` to read the track array from a file
+  instead of inline JSON — handy for longer songs.
+
+The WAV lands at `assets/sounds/<slug>.wav` and the asset's `metadata.music`
+records `{ tempo, loop, tracks: [{ wave, volume, steps }] }`. Generation is
+deterministic: the same params always produce byte-identical audio (noise
+uses a seeded PRNG), so committed tracks are reproducible. Wire the returned
+asset id to `AudioSource.music` (below) for scene-start autoplay, or play it
+from a script with `ctx.audio.playMusic("<asset id or name>")`.
+
+### Playing music at runtime
+
 `ctx.audio.playMusic` / `stopMusic` / `setMusicVolume` are a **separate
 channel** from `ctx.audio.play`/`stop`: one shared track for the whole
 running game (session-scoped, so it survives `ctx.scenes.load` scene

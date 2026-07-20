@@ -892,4 +892,58 @@ describe('hearth-mcp server', () => {
     const listed = toolJson(listAssets).data.assets.find((a: any) => a.id === assetId);
     expect(listed.stateMachine.states.map((s: any) => s.name)).toEqual(['idle', 'walk', 'attack']);
   });
+
+  it('exposes create_music, delete_playtest, bench_scene, and capture in the tool list', async () => {
+    ctx = await connectClient();
+    const names = (await ctx.client.listTools()).tools.map((t) => t.name);
+    expect(names).toContain('create_music');
+    expect(names).toContain('delete_playtest');
+    expect(names).toContain('bench_scene');
+    expect(names).toContain('capture');
+  });
+
+  it('create_music writes a WAV audio asset with music metadata', async () => {
+    ctx = await connectClient();
+    const result = await ctx.client.callTool({
+      name: 'create_music',
+      arguments: { name: 'theme', tempo: 120, tracks: [{ wave: 'square', notes: 'C4 E4 G4 -' }], loop: true },
+    });
+    expect(result.isError).toBeFalsy();
+    const envelope = toolJson(result);
+    expect(envelope.command).toBe('createMusic');
+    expect(envelope.data.asset.type).toBe('audio');
+    expect(envelope.data.asset.metadata.music.tempo).toBe(120);
+    expect(envelope.data.asset.metadata.music.loop).toBe(true);
+  });
+
+  it('bench_scene runs headlessly and returns a per-frame timing summary', async () => {
+    ctx = await connectClient();
+    const result = await ctx.client.callTool({
+      name: 'bench_scene',
+      arguments: { frames: 5, warmupFrames: 2, budgetMs: 16.67 },
+    });
+    expect(result.isError).toBeFalsy();
+    const envelope = toolJson(result);
+    expect(envelope.command).toBe('benchScene');
+    expect(envelope.data.frames).toBe(5);
+    expect(envelope.data.budgetMs).toBe(16.67);
+    expect(typeof envelope.data.withinBudget).toBe('boolean');
+  });
+
+  it('create_playtest then delete_playtest removes it', async () => {
+    ctx = await connectClient();
+    const sceneId = ctx.store.project.initialScene!;
+    const created = await ctx.client.callTool({
+      name: 'create_playtest',
+      arguments: { name: 'smoke', scene: sceneId, steps: [{ type: 'wait', frames: 1 }] },
+    });
+    expect(created.isError).toBeFalsy();
+
+    const del = await ctx.client.callTool({ name: 'delete_playtest', arguments: { playtest: 'smoke' } });
+    expect(del.isError).toBeFalsy();
+    expect(toolJson(del).command).toBe('deletePlaytest');
+
+    const list = await ctx.client.callTool({ name: 'list_playtests', arguments: {} });
+    expect(toolJson(list).data.playtests.some((p: any) => p.name === 'smoke')).toBe(false);
+  });
 });

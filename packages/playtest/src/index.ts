@@ -14,6 +14,7 @@ import {
   type RuntimeEntity,
   type SceneRuntime,
 } from '@hearth/runtime';
+import { benchScene } from './bench.js';
 
 /** One per-frame world-position sample for a traced entity (or the camera). */
 export interface TraceSample {
@@ -756,6 +757,7 @@ export function createRuntimeHooks(): RuntimeHooks {
   return {
     runPlaytest: (store, id) => runPlaytest(store, id),
     runSceneSmoke: (store, scene, frames) => runSceneSmoke(store, scene, frames),
+    benchScene: (store, scene, opts) => benchScene(store, scene, opts),
   };
 }
 
@@ -1047,3 +1049,4 @@ function round(n: number): number {
 }
 
 export { captureSequence, computeFrames, gridDimensions, MAX_SEQUENCE_FRAMES, type CaptureSequenceOptions, type CaptureSequenceResult } from './capture.js';
+export { benchScene, summarizeBench, percentile, FRAME_BUDGET_60FPS_MS, type BenchOptions, type BenchResult, type BenchSummaryInput } from './bench.js';

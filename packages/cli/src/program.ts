@@ -21,7 +21,7 @@ import {
 } from '@hearth/core';
 import { NodeFileSystem } from '@hearth/core/node';
 import { listTemplates, getTemplatePath, scaffoldFromTemplate } from '@hearth/templates';
-import { captureScreenshot } from '@hearth/playtest';
+import { captureScreenshot, captureSequence, MAX_SEQUENCE_FRAMES } from '@hearth/playtest';
 import { zipDirectory, describeSigningCapability } from '@hearth/shipping';
 import { CliError, openSession, resolveProjectRoot, type GlobalOpts } from './context.js';
 import { emit, errorResult, makeResult, logStderr } from './output.js';
@@ -91,6 +91,20 @@ async function readDataOption(raw: string, flagName: string): Promise<Record<str
     return parseJsonObject(text, filePath);
   }
   return parseJsonObject(raw, flagName);
+}
+
+/**
+ * Resolve a `--tracks <json|@file>` (or any JSON-array) option: `@path` reads
+ * and parses a JSON file; anything else is parsed as inline JSON. The array
+ * sibling of readDataOption, used by `create music`'s track list.
+ */
+async function readArrayDataOption(raw: string, flagName: string): Promise<unknown[]> {
+  if (raw.startsWith('@')) {
+    const filePath = raw.slice(1);
+    const text = await fsp.readFile(path.resolve(filePath), 'utf8');
+    return parseJsonArray(text, filePath);
+  }
+  return parseJsonArray(raw, flagName);
 }
 
 /** Open a session, execute a core command, and emit the result. `okIf` can force exit 1 on semantic failure. */
@@ -428,7 +442,9 @@ export function buildProgram(): Command {
       .option('--sides <n>', 'polygon side count', (v) => parseInt(v, 10))
       .option('--stroke-color <color>', 'stroke color')
       .option('--stroke-width <n>', 'stroke width', (v) => parseFloat(v))
-      .option('--corner-radius <n>', 'corner radius', (v) => parseFloat(v)),
+      .option('--corner-radius <n>', 'corner radius', (v) => parseFloat(v))
+      .option('--shading <mode>', 'body shading: flat (default) or gradient')
+      .option('--secondary-color <color>', 'gradient end color (defaults to a darkened primary; requires --shading gradient)'),
   ).action(async (name: string, opts, cmd) => {
     await guarded(cmd, 'createSpriteAsset', () =>
       runAndEmit(cmd, 'createSpriteAsset', {
@@ -442,6 +458,8 @@ export function buildProgram(): Command {
         strokeColor: opts.strokeColor,
         strokeWidth: opts.strokeWidth,
         cornerRadius: opts.cornerRadius,
+        shading: opts.shading,
+        secondaryColor: opts.secondaryColor,
       }),
     );
   });
@@ -450,10 +468,18 @@ export function buildProgram(): Command {
       .command('tile <name>')
       .description('create a procedural tile asset')
       .option('--color <color>', 'hex or named color')
-      .option('--size <n>', 'tile size in px', (v) => parseInt(v, 10)),
+      .option('--size <n>', 'tile size in px', (v) => parseInt(v, 10))
+      .option('--shading <mode>', 'body shading: flat (default) or gradient')
+      .option('--secondary-color <color>', 'gradient end color (defaults to a darkened primary; requires --shading gradient)'),
   ).action(async (name: string, opts, cmd) => {
     await guarded(cmd, 'createTileAsset', () =>
-      runAndEmit(cmd, 'createTileAsset', { name, color: opts.color, size: opts.size }),
+      runAndEmit(cmd, 'createTileAsset', {
+        name,
+        color: opts.color,
+        size: opts.size,
+        shading: opts.shading,
+        secondaryColor: opts.secondaryColor,
+      }),
     );
   });
 
@@ -467,6 +493,28 @@ export function buildProgram(): Command {
     await guarded(cmd, 'createSound', () =>
       runAndEmit(cmd, 'createSound', { name, preset: opts.preset, seed: opts.seed }),
     );
+  });
+
+  addGlobalOptions(
+    create
+      .command('music <name>')
+      .description(
+        'create a procedural chiptune track (deterministic WAV) from 1-4 oscillator tracks. ' +
+          'Each track\'s notes are whitespace-separated tokens (one token = one sixteenth step): ' +
+          'note names (C4, F#3, Bb2), "-" (rest), or "." (extend previous note).',
+      )
+      .requiredOption('--tempo <n>', 'beats per minute (40-300)', (v) => parseFloat(v))
+      .requiredOption(
+        '--tracks <json|@file>',
+        'JSON array of tracks: inline, or @path/to/file.json, e.g. \'[{"wave":"square","notes":"C4 E4 G4"}]\' ' +
+          '(each track: {wave, volume?, notes}; wave is sine|square|saw|triangle|noise)',
+      )
+      .option('--loop', 'mark the track as looping'),
+  ).action(async (name: string, opts: { tempo: number; tracks: string; loop?: boolean }, cmd) => {
+    await guarded(cmd, 'createMusic', async () => {
+      const tracks = await readArrayDataOption(opts.tracks, '--tracks');
+      await runAndEmit(cmd, 'createMusic', { name, tempo: opts.tempo, tracks, loop: !!opts.loop });
+    });
   });
 
   addGlobalOptions(
@@ -858,7 +906,7 @@ export function buildProgram(): Command {
     },
   );
 
-  const del = program.command('delete').description('delete a scene or entity');
+  const del = program.command('delete').description('delete a scene, entity, asset, or playtest');
   addGlobalOptions(del);
   addGlobalOptions(del.command('scene <scene>').description('delete a scene')).action(async (scene: string, opts, cmd) => {
     await guarded(cmd, 'deleteScene', () => runAndEmit(cmd, 'deleteScene', { scene }));
@@ -877,6 +925,11 @@ export function buildProgram(): Command {
     await guarded(cmd, 'removeAsset', () =>
       runAndEmit(cmd, 'removeAsset', { asset, deleteFile: !opts.keepFile }),
     );
+  });
+  addGlobalOptions(
+    del.command('playtest <name>').description('delete a playtest definition (removes its playtest file)'),
+  ).action(async (name: string, opts, cmd) => {
+    await guarded(cmd, 'deletePlaytest', () => runAndEmit(cmd, 'deletePlaytest', { playtest: name }));
   });
 
   const duplicate = program.command('duplicate').description('duplicate a scene or entity');
@@ -1321,6 +1374,69 @@ export function buildProgram(): Command {
       });
       process.exitCode = emit(makeResult('screenshot', true, meta, { files: [meta.path] }), g);
     });
+  });
+
+  // ---------------------------------------------------------------------
+  // capture (frame sequence / contact sheet)
+  // ---------------------------------------------------------------------
+  addGlobalOptions(
+    program
+      .command('capture [scene]')
+      .description(
+        'capture a deterministic frame sequence of a scene via headless Chrome/Chromium and lay it out ' +
+          'as a contact sheet (or one PNG per frame with --no-sheet). Scene defaults to the initial scene. ' +
+          `At most ${MAX_SEQUENCE_FRAMES} frames per capture.`,
+      )
+      .requiredOption('--to <n>', 'last frame to capture (inclusive)', (v) => parseInt(v, 10))
+      .option('--from <n>', 'first frame to capture (default: 0)', (v) => parseInt(v, 10))
+      .option('--step <n>', 'frames between captures (default: auto, ≤32 frames)', (v) => parseInt(v, 10))
+      .option('--no-sheet', 'emit one PNG per frame instead of a single contact sheet')
+      .option('--seed <n>', 'session seed (default: 0)', (v) => parseInt(v, 10))
+      .option('--size <WxH>', 'per-frame canvas size, e.g. 800x600 (default: buildSettings size)')
+      .option('--out <path>', 'output PNG path, project-relative (absolute paths and ".." are rejected)', 'capture.png'),
+  ).action(async (scene: string | undefined, opts, cmd) => {
+    await guarded(cmd, 'capture', async () => {
+      const g = globalOpts(cmd);
+      const session = await openSession(g);
+      // No permission gate: like screenshot, a capture is read-only observation.
+      const size = opts.size ? parseSize(opts.size) : undefined;
+      const meta = await captureSequence(session.store, {
+        scene,
+        from: opts.from,
+        to: opts.to,
+        step: opts.step,
+        // commander's --no-sheet sets opts.sheet=false; absent leaves it undefined (default true).
+        sheet: opts.sheet,
+        seed: opts.seed,
+        size,
+        outPath: opts.out,
+      });
+      process.exitCode = emit(makeResult('capture', true, meta, { files: meta.outPaths }), g);
+    });
+  });
+
+  // ---------------------------------------------------------------------
+  // bench (headless performance)
+  // ---------------------------------------------------------------------
+  addGlobalOptions(
+    program
+      .command('bench [scene]')
+      .description(
+        'benchmark a scene headlessly: step warmup frames, then time N measured frames and report per-frame ' +
+          'ms (avg/median/p95/max) so you can check whether it holds 60fps. Scene defaults to the initial scene.',
+      )
+      .option('--frames <n>', 'measured frames (default: 600)', (v) => parseInt(v, 10))
+      .option('--warmup <n>', 'warmup frames, stepped but not measured (default: 60)', (v) => parseInt(v, 10))
+      .option('--budget-ms <n>', 'per-frame budget in ms; adds a withinBudget verdict', (v) => parseFloat(v)),
+  ).action(async (scene: string | undefined, opts, cmd) => {
+    await guarded(cmd, 'benchScene', () =>
+      runAndEmit(cmd, 'benchScene', {
+        scene,
+        frames: opts.frames,
+        warmupFrames: opts.warmup,
+        budgetMs: opts.budgetMs,
+      }),
+    );
   });
 
   // ---------------------------------------------------------------------

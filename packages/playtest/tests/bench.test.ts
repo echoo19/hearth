@@ -5,7 +5,8 @@
  * synthetic-sample stats.
  */
 import { describe, it, expect } from 'vitest';
-import { MemoryFileSystem, createProject } from '@hearth/core';
+import { MemoryFileSystem, ProjectStore, createProject, HearthSession } from '@hearth/core';
+import { createRuntimeHooks } from '../src/index.js';
 import {
   benchScene,
   summarizeBench,
@@ -134,5 +135,44 @@ describe('benchScene (integration, no wall-clock assertions)', () => {
     const r = await benchScene(store, 'Main', { frames: 3, warmupFrames: 1, budgetMs: 16.67 });
     expect(r.budgetMs).toBe(16.67);
     expect(typeof r.withinBudget).toBe('boolean');
+  });
+});
+
+describe('benchScene through HearthSession.execute (hook wired via createRuntimeHooks)', () => {
+  async function sessionOverStarter(): Promise<HearthSession> {
+    const fs = new MemoryFileSystem();
+    await createProject(fs, '/proj', { name: 'Bench Game' });
+    const loaded = await ProjectStore.load(fs, '/proj');
+    return HearthSession.fromStore(loaded, { runtime: createRuntimeHooks() });
+  }
+
+  it('runs benchScene end-to-end when the runtime hook is installed', async () => {
+    const session = await sessionOverStarter();
+    // No scene arg → defaults to the project's initial scene.
+    const result = await session.execute<{
+      sceneName: string;
+      frames: number;
+      entityCount: number;
+      suggestions: string[];
+    }>('benchScene', { frames: 4, warmupFrames: 2 });
+    expect(result.success).toBe(true);
+    // Proves the command reached the injected hook rather than returning the
+    // INVALID_INPUT "runtime hooks not injected" error.
+    expect(result.data?.sceneName).toBe('Main');
+    expect(result.data?.frames).toBe(4);
+    expect(result.data?.entityCount).toBeGreaterThan(0);
+    expect(Array.isArray(result.data?.suggestions)).toBe(true);
+  });
+
+  it('threads budgetMs through the hook to a withinBudget verdict', async () => {
+    const session = await sessionOverStarter();
+    const result = await session.execute<{ budgetMs: number; withinBudget: boolean }>('benchScene', {
+      frames: 3,
+      warmupFrames: 1,
+      budgetMs: 16.67,
+    });
+    expect(result.success).toBe(true);
+    expect(result.data?.budgetMs).toBe(16.67);
+    expect(typeof result.data?.withinBudget).toBe('boolean');
   });
 });

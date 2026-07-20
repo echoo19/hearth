@@ -129,10 +129,16 @@ script <scene> <entity> <path> [--params '<json>']`, plus the
 
 **Assets** (asset-edit): `create asset sprite <name> --shape circle --color
 gold --width 24 --height 24` (shapes: rectangle, circle, triangle, diamond,
-star, capsule, polygon, character, enemy, coin, heart), `create asset tile
-<name> --color green`, `create sound <name> --preset coin [--seed n]`
+star, capsule, polygon, character, enemy, coin, heart; `--shading gradient
+[--secondary-color <color>]` fills the body with a top-to-bottom gradient),
+`create asset tile <name> --color green [--shading gradient
+--secondary-color <color>]`, `create sound <name> --preset coin [--seed n]`
 (deterministic WAV; presets: coin, jump, hit, laser, powerup, explosion,
-blip), `create animation <name> --frames f1 f2`, `import asset <path...>
+blip), `create music <name> --tempo 120 --tracks '<json|@file>' [--loop]`
+(a deterministic chiptune WAV from 1-4 oscillator tracks; each track is
+`{wave, volume?, notes}` and `notes` is whitespace-separated tokens — note
+names like `C4`/`F#3`, `-` rest, `.` extend; see [assets.md](./assets.md#music)),
+`create animation <name> --frames f1 f2`, `import asset <path...>
 [--name n] [--type t] [--recursive]` (a single path with no `--recursive`
 runs `importAsset` unchanged: it probes image dimensions for sprites/tiles
 into `metadata`, `.woff`/`.woff2`/`.ttf`/`.otf` import as `font` assets;
@@ -270,8 +276,17 @@ assertions: `assertEntityExists`, `assertProperty`, `assertPositionNear`,
 main camera's stack, not param values; see
 [effects.md](./effects.md#playtests-assertposteffect)), `assertFocus`
 (`entity` name/id, or `null` for nothing focused; results expose
-`focusedEntity`), `assertNoErrors`), `test` (validate + all playtests, the
-CI command).
+`focusedEntity`), `assertNoErrors`; plus the motion asserts `assertPeak`
+(`property: x|y|speed`, `op: greaterThan|lessThan`, `value`),
+`assertRange` (`property: x|y`, `min?`/`max?`), and `assertSettledBy`
+(`entity`, `frame`, `epsilon?`) which measure *feel* — jump height, dash
+distance, settle time — from recorded motion; a `trace` block
+(`{entities, camera?, raw?}`) opts an entity or the camera into per-frame
+sampling, and any motion assert auto-enables tracing for its target.
+Run reports expose `traceSummary` per traced key), `delete playtest <name>`
+(removes a playtest and its file), `bench [scene] [--frames n] [--warmup n]
+[--budget-ms n]` (headless per-frame timing; see below), `test` (validate +
+all playtests, the CI command).
 
 **Export** (requires `--allow build`): `export web [--out dir]
 [--single-file] [--zip]`: a static playable web build; `--zip` writes an
@@ -295,6 +310,24 @@ Needs a real Chromium: Google Chrome or Microsoft Edge on the machine, a
 `CHROMIUM_PATH` environment variable pointing at one, or
 `npx playwright install chromium`; without any of those it fails with a
 message telling you exactly that.
+
+**Capture** (read-only, same Chromium requirement): `capture [scene] --to N
+[--from N] [--step N] [--no-sheet] [--seed n] [--size WxH] [--out path]`
+renders a deterministic frame *sequence* and lays it out as a single
+contact-sheet PNG (the moving-picture sibling of `screenshot`), so an agent
+can watch motion play out over time. `--from`/`--to` bound the frame range
+(inclusive); `--step` sets the stride (default auto, ≤32 frames); `--no-sheet`
+emits one PNG per frame (`<out>-f<frame>.png`) instead of a sheet. A capture
+is hard-capped at 64 frames — raise `--step` to widen the range. The result's
+`outPaths` lists the file(s) written.
+
+**Bench** (read-only, no Chromium — runs headlessly): `bench [scene]
+[--frames n] [--warmup n] [--budget-ms n]` steps `--warmup` frames (default
+60, untimed) then times `--frames` measured frames (default 600), reporting
+per-frame ms (`avgMs`/`medianMs`/`p95Ms`/`maxMs`/`totalMs`) so you can check a
+scene holds 60fps (16.67ms/frame) before shipping. `--budget-ms` adds a
+`withinBudget` verdict (median ≤ budget). Scene defaults to the initial scene.
+See [performance.md](./performance.md#benchmarking-from-the-cli-mcp).
 
 ## The `script` group
 

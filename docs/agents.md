@@ -18,9 +18,9 @@ reviewable diffs.
 - **CLI**: `hearth <command> --json` (see [cli.md](./cli.md)). Best when the
   agent already lives in a shell (Claude Code, Codex CLI).
 - **MCP**: `hearth-mcp --project <path>` over stdio (see
-  [mcp.md](./mcp.md)). Best for MCP-native clients; 70 command tools
-  (plus `screenshot` and `get_agent_instructions`) wrapping the same core
-  commands.
+  [mcp.md](./mcp.md)). Best for MCP-native clients; 75 command tools
+  (plus `screenshot`, `capture`, and `get_agent_instructions`) wrapping the
+  same core commands.
 
 Both call the identical core command layer. Pick either; never mix in
 hand-edits of `hearth.json`/`*.scene.json`/`assets.json`.
@@ -28,7 +28,7 @@ hand-edits of `hearth.json`/`*.scene.json`/`assets.json`.
 ## The loop every agent should run
 
 ```
-snapshot  →  inspect  →  change (commands)  →  validate  →  playtest  →  diff
+snapshot → inspect → change (commands) → validate → playtest → capture/bench → diff
 ```
 
 1. **Snapshot** (`hearth snapshot` / `snapshot_project`) so the human can
@@ -50,7 +50,18 @@ snapshot  →  inspect  →  change (commands)  →  validate  →  playtest  �
    `audioEvents` (every play/stop with frame and asset id), `sceneEvents`,
    and `finalScene`, so sound and scene switching are checkable headlessly
    too.
-6. **Diff** (`hearth diff --json`) and summarize the changes for the human:
+6. **See it and measure feel**: `hearth screenshot <scene>` renders one PNG;
+   `hearth capture <scene> --to 120` renders a contact sheet across frames so
+   you can watch motion over time. To pin *feel* to numbers, add
+   `assertPeak`/`assertRange`/`assertSettledBy` trace steps to a playtest —
+   they measure jump height, dash distance, and settle time from recorded
+   motion (probe with a bare `run_playtest` first to read the observed values,
+   then bake them into asserts).
+7. **Check the frame budget**: `hearth bench <scene>` steps warmup frames then
+   times N measured frames, reporting per-frame ms (avg/median/p95) so you can
+   confirm a scene holds 60fps (16.67ms/frame) before shipping; pass
+   `--budget-ms` for a pass/fail verdict.
+8. **Diff** (`hearth diff --json`) and summarize the changes for the human:
    scenes/entities/components/scripts/assets touched. The human sees the
    same diff in the editor's Changes panel (opened via the toolbar's
    Review button) and can revert.

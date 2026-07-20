@@ -1350,3 +1350,134 @@ describe('hearth import asset (single + bulk)', () => {
     expect(envelope.data.imported.every((i: any) => i.type === 'other')).toBe(true);
   });
 });
+
+describe('hearth create music', () => {
+  it('creates a chiptune WAV asset from inline JSON tracks', async () => {
+    const dir = path.join(tmpRoot, 'music-ok');
+    await fsp.mkdir(dir, { recursive: true });
+    await runCli(['init', 'Music Game', '--dir', dir, '--json'], tmpRoot);
+
+    const result = await runCli(
+      ['create', 'music', 'theme', '--tempo', '120', '--tracks', '[{"wave":"square","notes":"C4 E4 G4 -"}]', '--loop', '--json'],
+      dir,
+    );
+    expect(result.code).toBe(0);
+    const envelope = parseJson(result.stdout);
+    expect(envelope.success).toBe(true);
+    expect(envelope.command).toBe('createMusic');
+    expect(envelope.data.asset.type).toBe('audio');
+    expect(envelope.data.asset.metadata.music.tempo).toBe(120);
+    expect(envelope.data.asset.metadata.music.loop).toBe(true);
+    const wav = await fsp.readFile(path.join(dir, envelope.data.asset.path));
+    expect(wav.subarray(0, 4).toString('ascii')).toBe('RIFF');
+  });
+
+  it('reports a bad note token as INVALID_INPUT', async () => {
+    const dir = path.join(tmpRoot, 'music-bad');
+    await fsp.mkdir(dir, { recursive: true });
+    await runCli(['init', 'Music Bad', '--dir', dir, '--json'], tmpRoot);
+
+    const result = await runCli(
+      ['create', 'music', 'oops', '--tempo', '120', '--tracks', '[{"wave":"square","notes":"H9"}]', '--json'],
+      dir,
+    );
+    expect(result.code).toBe(1);
+    const envelope = parseJson(result.stdout);
+    expect(envelope.success).toBe(false);
+    expect(envelope.errors[0].code).toBe('INVALID_INPUT');
+  });
+});
+
+describe('hearth create asset sprite --shading', () => {
+  it('records gradient shading + secondaryColor in asset metadata', async () => {
+    const dir = path.join(tmpRoot, 'sprite-shading');
+    await fsp.mkdir(dir, { recursive: true });
+    await runCli(['init', 'Shading Game', '--dir', dir, '--json'], tmpRoot);
+
+    const result = await runCli(
+      ['create', 'asset', 'sprite', 'orb', '--shape', 'circle', '--color', '#ff0000', '--shading', 'gradient', '--secondary-color', '#000000', '--json'],
+      dir,
+    );
+    expect(result.code).toBe(0);
+    const envelope = parseJson(result.stdout);
+    expect(envelope.success).toBe(true);
+    expect(envelope.data.asset.metadata.shading).toBe('gradient');
+    const svg = await fsp.readFile(path.join(dir, envelope.data.asset.path), 'utf8');
+    expect(svg).toContain('linearGradient');
+  });
+});
+
+describe('hearth delete playtest', () => {
+  it('removes a playtest definition and its file', async () => {
+    const dir = path.join(tmpRoot, 'delete-playtest');
+    await fsp.mkdir(dir, { recursive: true });
+    await runCli(['init', 'Delete PT', '--dir', dir, '--json'], tmpRoot);
+    const created = await runCli(['create', 'playtest', 'smoke', '--scene', 'Main', '--json'], dir);
+    expect(created.code).toBe(0);
+
+    const del = await runCli(['delete', 'playtest', 'smoke', '--json'], dir);
+    expect(del.code).toBe(0);
+    const envelope = parseJson(del.stdout);
+    expect(envelope.success).toBe(true);
+    expect(envelope.command).toBe('deletePlaytest');
+
+    const list = parseJson((await runCli(['inspect', 'project', '--json'], dir)).stdout);
+    // Playtest is gone from the project, so a fresh session sees none.
+    const files = await fsp.readdir(path.join(dir, 'playtests')).catch(() => []);
+    expect(files.some((f) => f.includes('smoke'))).toBe(false);
+    expect(list.success).toBe(true);
+  });
+
+  it('reports NOT_FOUND for a missing playtest', async () => {
+    const dir = path.join(tmpRoot, 'delete-playtest-missing');
+    await fsp.mkdir(dir, { recursive: true });
+    await runCli(['init', 'Delete PT Missing', '--dir', dir, '--json'], tmpRoot);
+
+    const del = await runCli(['delete', 'playtest', 'ghost', '--json'], dir);
+    expect(del.code).toBe(1);
+    const envelope = parseJson(del.stdout);
+    expect(envelope.success).toBe(false);
+    expect(envelope.errors[0].code).toBe('NOT_FOUND');
+  });
+});
+
+describe('hearth bench', () => {
+  it('benchmarks a scene headlessly and reports per-frame timing', async () => {
+    const result = await runCli(['bench', 'Main', '--frames', '5', '--warmup', '2', '--json'], projectDir);
+    expect(result.code).toBe(0);
+    const envelope = parseJson(result.stdout);
+    expect(envelope.success).toBe(true);
+    expect(envelope.command).toBe('benchScene');
+    expect(envelope.data.frames).toBe(5);
+    expect(envelope.data.sceneName).toBe('Main');
+    expect(typeof envelope.data.medianMs).toBe('number');
+  });
+
+  it('adds a withinBudget verdict when --budget-ms is given', async () => {
+    const result = await runCli(['bench', 'Main', '--frames', '3', '--budget-ms', '16.67', '--json'], projectDir);
+    expect(result.code).toBe(0);
+    const envelope = parseJson(result.stdout);
+    expect(envelope.data.budgetMs).toBe(16.67);
+    expect(typeof envelope.data.withinBudget).toBe('boolean');
+  });
+
+  it('defaults the scene to the project initial scene', async () => {
+    const result = await runCli(['bench', '--frames', '3', '--json'], projectDir);
+    expect(result.code).toBe(0);
+    const envelope = parseJson(result.stdout);
+    expect(envelope.success).toBe(true);
+    expect(envelope.data.sceneName).toBe('Main');
+  });
+});
+
+describe('hearth capture (option validation, no Chromium)', () => {
+  it('rejects a frame range that exceeds the hard cap before launching a browser', async () => {
+    // step 1 over 0..200 is 201 frames, past MAX_SEQUENCE_FRAMES (64); the
+    // validation error fires before any Chromium launch, so this is hermetic.
+    const result = await runCli(['capture', 'Main', '--to', '200', '--step', '1', '--json'], projectDir);
+    expect(result.code).toBe(1);
+    const envelope = parseJson(result.stdout);
+    expect(envelope.success).toBe(false);
+    expect(envelope.command).toBe('capture');
+  });
+});

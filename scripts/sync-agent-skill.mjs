@@ -13,6 +13,8 @@
  *   - skills/hearth-art/SKILL.md    → assets (sourcing, import/slice/animate,
  *                                     pixel discipline, sound)
  *   - skills/hearth-feel/SKILL.md   → polish (juice, game UX, quality bar)
+ *   - skills/hearth-design/SKILL.md → design (scope, pacing, endings,
+ *                                     completeness)
  *
  *   node scripts/sync-agent-skill.mjs
  *
@@ -31,7 +33,7 @@ const repoRoot = path.resolve(here, '..');
 const OUT_PATH = path.join(repoRoot, 'packages', 'core', 'src', 'agentSkillContent.ts');
 
 /** Skill names in scaffold order; the core `hearth` skill first. */
-const SKILL_NAMES = ['hearth', 'hearth-build', 'hearth-code', 'hearth-art', 'hearth-feel'];
+const SKILL_NAMES = ['hearth', 'hearth-build', 'hearth-code', 'hearth-art', 'hearth-feel', 'hearth-design'];
 
 const skills = SKILL_NAMES.map((name) => {
   const content = readFileSync(path.join(repoRoot, 'skills', name, 'SKILL.md'), 'utf8');

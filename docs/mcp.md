@@ -1,9 +1,9 @@
 # MCP Guide
 
 Hearth ships `hearth-mcp` (`packages/mcp-server`), a stdio MCP server that
-exposes the engine command layer as 72 typed tools (70 command tools, plus
-`screenshot` and `get_agent_instructions`, neither of which wraps a core
-command). The engine's own command registry has 71 commands total. One
+exposes the engine command layer as 78 typed tools (75 command tools, plus
+`screenshot`, `capture`, and `get_agent_instructions`, none of which wraps a
+core command). The engine's own command registry has 76 commands total. One
 (`setAssetMetadata`) has no CLI or MCP wrapper (a housekeeping verb with no
 editor surface either). The full reference (flags, registration snippets,
 permission table, complete tool list) lives in
@@ -57,7 +57,9 @@ per-file match counts, results are written verbatim without reformatting,
 see [cli.md](./cli.md#the-script-group)),
 `import_asset`, `import_assets` (bulk/atomic multi-file import, `skipped`
 per-file reasons; see [cli.md](./cli.md#command-tour)), `create_sprite_asset`,
-`create_tile_asset`, `create_sound`, `create_animation_asset`,
+`create_tile_asset`, `create_sound`, `create_music` (a procedural chiptune
+WAV from 1-4 oscillator tracks; wire to `AudioSource.music`, see
+[assets.md](./assets.md#music)), `create_animation_asset`,
 `slice_spritesheet` (frame grid over an
 imported spritesheet: takes numeric `frameWidth`/`frameHeight` rather
 than the CLI's `--frame-size WxH` string), `remove_asset` (unregisters an
@@ -77,8 +79,12 @@ undo/redo, independent of `snapshot_project`/`revert_project`'s single
 diff baseline; see [cli.md](./cli.md#command-tour)), `list_journal`
 (the command journal backing `hearth log` and the editor's Agent panel
 timeline, see [cli.md](./cli.md#command-journal)), `snapshot_project`,
-`get_diff`, `revert_project`, `create_playtest`, `list_playtests`, `run_playtest`,
-`run_scene`, `update_settings` (build settings, initial scene, and every
+`get_diff`, `revert_project`, `create_playtest` (waits, input, and asserts —
+including `assertPeak`/`assertRange`/`assertSettledBy` and a `trace` block to
+measure feel), `delete_playtest`, `list_playtests`, `run_playtest`,
+`run_scene`, `bench_scene` (headless per-frame timing to check a scene holds
+60fps; see [performance.md](./performance.md#benchmarking-from-the-cli-mcp)),
+`update_settings` (build settings, initial scene, and every
 input mapping: actions, gamepad buttons/axes, virtual axes, deadzone;
 see [input.md](./input.md)), `inspect_api` (the script `ctx` reference),
 `inspect_path` (grid A\* pathfinding over solid scene geometry, the same
@@ -94,14 +100,19 @@ for the signing ladder and icon setting), `get_agent_instructions`, … Every re
 JSON envelope in the tool output (with `isError` set on failure), so MCP
 agents and CLI agents read identical structures.
 
-`screenshot` is the one exception: it doesn't wrap a core command (capturing
-requires headless Chromium, a Node/Playwright-only dependency core can't
-take on). It still requires the `build` permission mode exactly like
-`export_web`, takes the same options as the CLI's `hearth screenshot`
-(`scene`, `frame`, `seed`, `width`, `height`, `debug`, `out`), and returns
-screenshot metadata (path, width, height, frame, scene) as JSON. Read the
-PNG file yourself to see it. It needs a real Chromium install on the host
-(Google Chrome, Microsoft Edge, `CHROMIUM_PATH`, or `npx playwright install
+`screenshot` and `capture` are the exceptions: neither wraps a core command
+(both launch headless Chromium, a Node/Playwright-only dependency core can't
+take on). Both are read-only observation — the visual siblings of `inspect`
+and `run_playtest` — so they need only the `read-only` mode, letting an agent
+always see its own work. `screenshot` takes the same options as the CLI's
+`hearth screenshot` (`scene`, `frame`, `seed`, `width`, `height`, `debug`,
+`out`) and returns one PNG's metadata. `capture` renders a deterministic
+frame *sequence* laid out as a contact sheet (`sheet: false` emits one PNG per
+frame): it takes `scene`, `from`, `to`, `step`, `sheet`, `seed`, `size`, and
+`outPath`, caps a capture at 64 frames, and returns capture metadata
+(`outPaths`, `frames`, `size`, sheet grid) — not pixels. Read the PNG file(s)
+yourself to see them. Both need a real Chromium install on the host (Google
+Chrome, Microsoft Edge, `CHROMIUM_PATH`, or `npx playwright install
 chromium`); see [cli.md](./cli.md#command-tour) for the full requirement.
 
 ## Choosing modes per session

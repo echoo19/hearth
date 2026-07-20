@@ -14,7 +14,7 @@ structured CLI (\`hearth\`) and an MCP server (\`hearth-mcp\`) so coding agents
 can inspect, modify, test, and build this game through safe engine
 operations instead of hand-editing JSON.
 
-> **Coding-agent skills.** This project ships five focused skills under
+> **Coding-agent skills.** This project ships six focused skills under
 > \`.claude/skills/\` that Claude Code discovers automatically. **Load the one
 > whose domain you're working in — don't work from memory:**
 > - \`hearth\` (**the operating core — load first**): the session loop, project
@@ -27,6 +27,9 @@ operations instead of hand-editing JSON.
 >   sprites and sounds, CC0 sourcing with licensing, pixel-art discipline.
 > - \`hearth-feel\` (**polish**): juice recipes, game-UX conventions, and the
 >   quality bar to clear before calling a game done.
+> - \`hearth-design\` (**design**): scoping a game to its session length,
+>   pacing and difficulty ramps, endings and replay hooks, and judging
+>   completeness.
 >
 > (Canonical copies live at \`skills/<name>/SKILL.md\` in the Hearth engine
 > repo.) This file is the per-project quick reference; the skills are the
@@ -72,6 +75,12 @@ and memory together.
    tests; \`hearth run <scene> --frames 120\` smoke-runs a scene and reports
    script errors. Run reports include \`audioEvents\` (every audio play/stop
    with its frame and asset id), so you can verify sound behavior headlessly.
+   **See your game over time:** \`hearth capture <scene> --to 120\` renders a
+   contact sheet of frames (the moving-picture sibling of \`screenshot\`).
+   **Measure feel:** add \`assertPeak\`/\`assertRange\`/\`assertSettledBy\` trace
+   steps to a playtest to pin jump height, dash distance, or settle time.
+   **Check the frame budget:** \`hearth bench <scene>\` reports per-frame ms
+   (avg/median/p95) so you can confirm a scene holds 60fps before shipping.
 6. **Do not delete assets or scenes unless explicitly asked.**
 7. **Summarize your changes** when done: which scenes, entities, components,
    scripts, and assets you touched (\`hearth diff --json\` gives you the list).
@@ -203,8 +212,9 @@ with at least 3 points. Split concave shapes across multiple entities.
 If you are connected via MCP instead of the CLI, the same operations are
 exposed as tools (\`get_project_info\`, \`inspect_scene\`, \`create_entity\`,
 \`set_component_property\`, \`set_properties\`, \`check_script\`,
-\`create_sound\`, \`run_playtest\`, \`get_diff\`, \`remember\`, \`recall\`,
-\`screenshot\`, \`export_web\`, \`export_desktop\`, ...). Call
+\`create_sound\`, \`create_music\`, \`run_playtest\`, \`get_diff\`, \`remember\`,
+\`recall\`, \`screenshot\`, \`capture\`, \`bench_scene\`, \`export_web\`,
+\`export_desktop\`, ...). Call
 \`get_agent_instructions\` first — it returns this document plus the current
 digest and memory in one call. \`screenshot\` needs only read-only, so you can
 always see your own work. (\`hearth init --template\` is pre-project, so it has
@@ -237,10 +247,13 @@ Quick facts:
   (run reports include \`audioEvents\` for checking sound behavior).
 - **See your work:** \`hearth screenshot <scene>\` renders a PNG — no build permission
   needed. Read it back to check layout before calling anything done.
+  \`hearth capture <scene> --to 120\` renders a contact sheet across frames (motion
+  over time); \`hearth bench <scene>\` reports per-frame ms to check 60fps.
 - **Load the domain skill for the work at hand** (see AGENTS.md): \`hearth-build\`
   for world structure, \`hearth-code\` for scripting, \`hearth-art\` for assets,
-  \`hearth-feel\` for polish. Flat placeholder rectangles and static scenes are
-  not "done" — animate, add feel, and screenshot to confirm.
+  \`hearth-feel\` for polish, \`hearth-design\` for scope/pacing/completeness. Flat
+  placeholder rectangles and static scenes are not "done" — animate, add feel,
+  and screenshot to confirm.
 - \`hearth create sound <name> --preset coin\` makes procedural sound effects;
   \`hearth export web [--single-file] [--zip]\` makes a playable web build (needs build permission).
 - Never delete assets/scenes without being asked.
