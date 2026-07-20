@@ -30,6 +30,7 @@
       "buildResources": "buildResources"
     },
     "afterPack": "scripts/afterPack.cjs",
+    "afterAllArtifactBuild": "scripts/afterAllArtifactBuild.cjs",
     "asar": true,
     "asarUnpack": [
       "dist-electron/hearth-cli.mjs",
