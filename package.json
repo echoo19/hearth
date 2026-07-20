@@ -1,6 +1,6 @@
 {
   "name": "hearth-monorepo",
-  "version": "1.3.4",
+  "version": "1.0.0",
   "private": true,
   "description": "Hearth \u2014 an open-source, agent-native 2D game engine and editor",
   "license": "MIT",

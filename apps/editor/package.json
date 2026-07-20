@@ -1,6 +1,6 @@
 {
   "name": "@hearth/editor",
-  "version": "1.3.4",
+  "version": "1.0.0",
   "description": "Hearth desktop editor (Tauri + React). Also runs in the browser via `npm run dev`.",
   "license": "MIT",
   "type": "module",
@@ -16,6 +16,8 @@
     "app:dev": "npm run app:bundle && ELECTRON_START_URL=http://localhost:5173 electron .",
     "app:dist": "npm run build && npm run app:bundle && node scripts/assemble-app.mjs && CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder --dir",
     "app:dist:installers": "npm run build && npm run app:bundle && node scripts/assemble-app.mjs && CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder",
+    "app:dist:signed": "npm run build && npm run app:bundle && node scripts/assemble-app.mjs && CSC_NAME=\"Hyunsoo Kang (4H7RHXHJ5Z)\" APPLE_KEYCHAIN_PROFILE=hearth-notary electron-builder --dir",
+    "app:dist:signed:installers": "npm run build && npm run app:bundle && node scripts/assemble-app.mjs && CSC_NAME=\"Hyunsoo Kang (4H7RHXHJ5Z)\" APPLE_KEYCHAIN_PROFILE=hearth-notary electron-builder",
     "tauri": "tauri"
   },
   "build": {
@@ -51,6 +53,9 @@
       "gatekeeperAssess": false,
       "entitlements": "buildResources/entitlements.mac.plist",
       "entitlementsInherit": "buildResources/entitlements.mac.plist",
+      "notarize": {
+        "teamId": "4H7RHXHJ5Z"
+      },
       "target": [
         {
           "target": "dmg",
