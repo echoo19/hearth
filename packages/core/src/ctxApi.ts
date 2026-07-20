@@ -86,6 +86,51 @@ export const CTX_API: readonly CtxApiEntry[] = [
       lua: 'body.velocity.x = ctx.input.axis("moveX") * speed',
     },
   },
+  {
+    path: 'input.pointer',
+    kind: 'method',
+    signature: 'pointer(): { x: number; y: number }',
+    description:
+      'Mouse/touch cursor position in WORLD space, un-projected through the logical camera (position + zoom) — ' +
+      'use it to aim at or point into the game world. Defaults to the camera-center world point before the first ' +
+      'pointer event. Screen shake/zoomPunch effects are ignored so aim never jitters.',
+    example: {
+      js: 'const aim = ctx.input.pointer(); const angle = Math.atan2(aim.y - ctx.transform.position.y, aim.x - ctx.transform.position.x)',
+      lua: 'local aim = ctx.input.pointer()\nlocal angle = math.atan(aim.y - ctx.transform.position.y, aim.x - ctx.transform.position.x)',
+    },
+  },
+  {
+    path: 'input.pointerScreen',
+    kind: 'method',
+    signature: 'pointerScreen(): { x: number; y: number }',
+    description:
+      'Cursor position in screen space (the buildSettings width×height coordinate space), unaffected by the camera. ' +
+      'Use pointer() for world-space aim; use this for screen-anchored UI or HUD math.',
+    example: {
+      js: 'const s = ctx.input.pointerScreen()',
+      lua: 'local s = ctx.input.pointerScreen()',
+    },
+  },
+  {
+    path: 'input.pointerDown',
+    kind: 'method',
+    signature: 'pointerDown(): boolean',
+    description: 'Is the primary pointer (mouse/touch) button currently held?',
+    example: {
+      js: 'if (ctx.input.pointerDown()) { /* dragging / firing */ }',
+      lua: 'if ctx.input.pointerDown() then end',
+    },
+  },
+  {
+    path: 'input.pointerPressed',
+    kind: 'method',
+    signature: 'pointerPressed(): boolean',
+    description: 'Did the primary pointer button go down this frame? (mirrors justPressed for the mouse)',
+    example: {
+      js: 'if (ctx.input.pointerPressed()) { fire(ctx.input.pointer()); }',
+      lua: 'if ctx.input.pointerPressed() then fire(ctx.input.pointer()) end',
+    },
+  },
   // --- current scene entities -------------------------------------------
   {
     path: 'scene.find',

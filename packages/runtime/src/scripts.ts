@@ -70,6 +70,19 @@ export interface ScriptContext {
     justPressed(action: string): boolean;
     /** Analog value in [-1, 1] for a virtual axis from inputMappings.axes. */
     axis(name: string): number;
+    /**
+     * Cursor position in WORLD space (mouse aim), un-projected through the
+     * logical camera (position + zoom). Defaults to the camera-center world
+     * point before the first pointer event. Screen-shake/zoomPunch effects are
+     * ignored so aim stays stable.
+     */
+    pointer(): Vec2;
+    /** Cursor position in screen space (buildSettings width×height coordinates). */
+    pointerScreen(): Vec2;
+    /** Is the primary pointer button currently held? */
+    pointerDown(): boolean;
+    /** Did the primary pointer button go down this frame? */
+    pointerPressed(): boolean;
   };
   scene: {
     find(idOrName: string): EntityHandle | null;

@@ -196,6 +196,10 @@ Lua sees `nil`; where JS takes an object literal Lua passes a table.
 | `ctx.input.isDown(action)` | Is an input action held this frame? |
 | `ctx.input.justPressed(action)` | Did the action go down this frame? |
 | `ctx.input.axis(name)` | Analog value in `[-1, 1]` for a virtual axis defined in `inputMappings.axes` |
+| `ctx.input.pointer()` | Cursor `{x, y}` in **world** space (mouse aim), un-projected through the camera |
+| `ctx.input.pointerScreen()` | Cursor `{x, y}` in screen space (buildSettings coordinates) |
+| `ctx.input.pointerDown()` | Is the primary pointer button held? |
+| `ctx.input.pointerPressed()` | Did the primary button go down this frame? |
 
 `axis` reads, in order: a sticky `setAxis` playtest override if one is set
 (see [Playtests](./cli.md#command-tour)); else the bound gamepad stick
@@ -206,6 +210,17 @@ side is held, `0` otherwise. An axis name with no entry in
 `inputMappings.axes` always reads `0`. See [input.md](./input.md) for how
 virtual axes are configured (CLI, MCP, and the editor's Input panel) and
 [Gamepad](./input.md#gamepad) for named buttons and axis indices.
+
+`ctx.input.pointer()` returns the mouse/touch cursor in **world** space —
+the same coordinate space your entities live in — by un-projecting the
+screen position through the logical camera (position + zoom). Use it for
+mouse aim: face a turret at the cursor, throw toward it, or place a tile
+under it. It ignores transient camera shake / zoomPunch so aim stays
+stable, and defaults to the camera-center world point before the first
+pointer event. `pointerScreen()` gives the raw screen position for HUD/UI
+math; `pointerDown()`/`pointerPressed()` mirror `isDown`/`justPressed` for
+the primary button. Headless playtests drive all of it with the
+`setPointer` step (see [input.md](./input.md#playtest-input)).
 
 ### Entities in the current scene
 

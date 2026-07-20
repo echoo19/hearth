@@ -402,6 +402,16 @@ const PlaytestStepUnionSchema = z.discriminatedUnion('type', [
     frames: z.number().int().min(1).optional(),
   }),
   z.object({
+    type: z.literal('setPointer'),
+    /** Screen coordinates (buildSettings width×height space) the cursor moves to; drives ctx.input.pointer(). */
+    x: z.number(),
+    y: z.number(),
+    /** Optional primary-button state: true presses, false releases; omitted just moves the cursor. */
+    down: z.boolean().optional(),
+    /** Frames to advance after setting the pointer (default 1), so scripts observe it. */
+    frames: z.number().int().min(0).optional(),
+  }),
+  z.object({
     type: z.literal('assertEntityExists'),
     entity: z.string(), // id or name
     exists: z.boolean().default(true),

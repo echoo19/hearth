@@ -234,6 +234,71 @@ describe('runPlaytest setAxis', () => {
   });
 });
 
+// Starter Main scene: Main Camera at (400, 300) zoom 1 over an 800×600 build,
+// so a screen point maps 1:1 to world coordinates — screen x == world x.
+const POINTER_AIM_SCRIPT = `
+export default {
+  onUpdate(ctx) {
+    ctx.transform.position.x = ctx.input.pointerDown() ? 700 : ctx.input.pointer().x;
+  },
+};
+`;
+
+async function makePointerProject(): Promise<{ store: ProjectStore; session: HearthSession }> {
+  const fs = new MemoryFileSystem();
+  const { store } = await createProject(fs, '/proj', { name: 'Pointer Playtest Game' });
+  const session = HearthSession.fromStore(store, { runtime: createRuntimeHooks() });
+  const created = await session.execute<{ path: string }>('createScript', {
+    name: 'pointer aim',
+    source: POINTER_AIM_SCRIPT,
+    language: 'js',
+  });
+  expect(created.success).toBe(true);
+  const attached = await session.execute('attachScript', {
+    scene: 'Main',
+    entity: 'Player',
+    script: created.data!.path,
+  });
+  expect(attached.success).toBe(true);
+  return { store, session };
+}
+
+describe('runPlaytest setPointer', () => {
+  it('drives ctx.input.pointer() world aim via a setPointer step', async () => {
+    const { store, session } = await makePointerProject();
+    await session.execute('createPlaytest', {
+      name: 'aim',
+      scene: 'Main',
+      steps: [
+        { type: 'setPointer', x: 600, y: 300 },
+        { type: 'assertProperty', entity: 'Player', property: 'Transform.position.x', equals: 600 },
+        { type: 'assertNoErrors' },
+      ],
+    });
+    const result = await runPlaytest(store, 'aim');
+    expect(result.steps.map((s) => `${s.type}:${s.passed}`)).toEqual([
+      'setPointer:true',
+      'assertProperty:true',
+      'assertNoErrors:true',
+    ]);
+    expect(result.passed).toBe(true);
+  });
+
+  it('drives the primary button held-state via setPointer down', async () => {
+    const { store, session } = await makePointerProject();
+    await session.execute('createPlaytest', {
+      name: 'aim down',
+      scene: 'Main',
+      steps: [
+        { type: 'setPointer', x: 600, y: 300, down: true },
+        { type: 'assertProperty', entity: 'Player', property: 'Transform.position.x', equals: 700 },
+      ],
+    });
+    const result = await runPlaytest(store, 'aim down');
+    expect(result.passed).toBe(true);
+  });
+});
+
 describe('runSceneSmoke', () => {
   it('passes a healthy scene and reports entity count', async () => {
     const { store } = await makeProject();

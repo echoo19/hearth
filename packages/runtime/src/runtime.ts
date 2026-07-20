@@ -358,6 +358,17 @@ export class SceneRuntime {
   private readonly musicChannel: MusicChannelState;
   private uiHoverId: string | null = null;
   private uiPressedId: string | null = null;
+  /**
+   * Latest pointer position in screen coordinates (buildSettings width×height
+   * space), fed by every `sendPointer`. Defaults to screen center so
+   * `ctx.input.pointer()` reads the camera-center world point before the first
+   * pointer event. `pointerButtonDown` tracks the primary button held-state
+   * and `pointerPressedEdge` its just-pressed-this-frame flag (cleared at
+   * endFrame, mirroring InputState.justPressed).
+   */
+  private pointerScreenPos: Vec2;
+  private pointerButtonDown = false;
+  private pointerPressedEdge = false;
   private uiFocusId: string | null = null;
   private readonly sceneId: string;
   private readonly sceneName: string;
@@ -395,6 +406,10 @@ export class SceneRuntime {
     this.fixedDt = 1 / store.project.buildSettings.fixedTimestep;
     this.maxLogs = options.maxLogs ?? 1000;
     this.input = new InputState(store.project.inputMappings);
+    this.pointerScreenPos = {
+      x: store.project.buildSettings.width / 2,
+      y: store.project.buildSettings.height / 2,
+    };
     this.sceneId = scene.id;
     this.sceneName = scene.name;
     this.rng = options.rng ?? createRng(options.seed ?? 0);
@@ -880,6 +895,8 @@ export class SceneRuntime {
     // 5. End of frame bookkeeping.
     this.flushDestroyed();
     this.input.endFrame();
+    // Pointer just-pressed edge is frame-scoped, like InputState.justPressed.
+    this.pointerPressedEdge = false;
     this._frame++;
     this._elapsed += this.fixedDt;
   }
@@ -1058,6 +1075,17 @@ export class SceneRuntime {
    */
   sendPointer(x: number, y: number, kind: PointerKind): void {
     if (this.stopped) return;
+    // Record the pointer state read by ctx.input.pointer/pointerScreen/
+    // pointerDown/pointerPressed. This is the single choke point for both real
+    // browser pointer events and playtest steps, so scripts see identical
+    // input in the editor and in headless runs.
+    this.pointerScreenPos = { x, y };
+    if (kind === 'down') {
+      this.pointerButtonDown = true;
+      this.pointerPressedEdge = true;
+    } else if (kind === 'up') {
+      this.pointerButtonDown = false;
+    }
     const settings = this.store.project.buildSettings;
     const positions = resolveUiPositions(this.getEntities(), settings.width, settings.height);
     const target = this.hitTestUi(x, y, positions);
@@ -1094,6 +1122,39 @@ export class SceneRuntime {
         this.applySliderPointer(pressed, x, y, positions);
       }
     }
+  }
+
+  /** Latest pointer position in screen coordinates (buildSettings space). */
+  get pointerScreen(): Vec2 {
+    return { x: this.pointerScreenPos.x, y: this.pointerScreenPos.y };
+  }
+
+  /** Is the primary pointer button currently held? */
+  get pointerDown(): boolean {
+    return this.pointerButtonDown;
+  }
+
+  /** Did the primary pointer button go down this frame? (cleared at endFrame) */
+  get pointerPressed(): boolean {
+    return this.pointerPressedEdge;
+  }
+
+  /**
+   * The pointer position un-projected into world space through the logical
+   * camera (position + zoom), the inverse of the pixi renderer's world
+   * transform. Uses the logical camera only — transient shake/zoomPunch
+   * effects are ignored so aim never jitters with screen juice, matching the
+   * camera the `ctx.camera` API already exposes to scripts. This is the
+   * backing for `ctx.input.pointer()` (mouse aim).
+   */
+  pointerWorld(): Vec2 {
+    const settings = this.store.project.buildSettings;
+    const cam = this.camera;
+    const zoom = cam.zoom !== 0 ? cam.zoom : 1;
+    return {
+      x: cam.position.x + (this.pointerScreenPos.x - settings.width / 2) / zoom,
+      y: cam.position.y + (this.pointerScreenPos.y - settings.height / 2) / zoom,
+    };
   }
 
   /** Topmost interactive UI element under a screen point (layer, then order), positioned via `resolveUiPositions`. */
@@ -1860,6 +1921,10 @@ export class SceneRuntime {
         isDown: (action) => runtime.input.isDown(action),
         justPressed: (action) => runtime.input.justPressed(action),
         axis: (name) => runtime.input.axisValue(name),
+        pointer: () => runtime.pointerWorld(),
+        pointerScreen: () => runtime.pointerScreen,
+        pointerDown: () => runtime.pointerDown,
+        pointerPressed: () => runtime.pointerPressed,
       },
       scene: {
         find: (idOrName) => {

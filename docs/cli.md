@@ -264,7 +264,10 @@ steps cover input: `wait`, `press`, `release`, `click {x,y}`,
 `setAxis {axis, value, frames?}` (sticky virtual-axis override for
 `ctx.input.axis`; see [input.md](./input.md#playtest-input)),
 `drag {from, to, frames?}` (pointer down at `from`, interpolated moves,
-up at `to`; see [ui.md](./ui.md#playtests)); and
+up at `to`; see [ui.md](./ui.md#playtests)),
+`setPointer {x, y, down?, frames?}` (move the cursor for `ctx.input.pointer()`
+mouse aim; optional `down` presses/releases the primary button; see
+[input.md](./input.md#playtest-input)); and
 assertions: `assertEntityExists`, `assertProperty`, `assertPositionNear`,
 `assertScene`, `assertParticleCount`, `assertEventCount`,
 `assertAudioCount` (filter by `asset`/`action`/`music`, checked against

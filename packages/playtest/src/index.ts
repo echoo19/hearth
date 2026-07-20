@@ -430,6 +430,23 @@ async function executeStep(
             : desc,
       };
     }
+    case 'setPointer': {
+      const target = session.runtime;
+      const kind = step.down === true ? 'down' : step.down === false ? 'up' : 'move';
+      target.sendPointer(step.x, step.y, kind);
+      const frames = step.frames ?? 1;
+      const ran = await runFrames(frames);
+      const buttonNote = step.down === true ? ' (button down)' : step.down === false ? ' (button up)' : '';
+      return {
+        index,
+        type: step.type,
+        passed: true,
+        message:
+          ran < frames
+            ? `set pointer to (${step.x}, ${step.y})${buttonNote} for ${ran}/${frames} frames (maxFrames cap reached)`
+            : `set pointer to (${step.x}, ${step.y})${buttonNote} for ${ran} frames`,
+      };
+    }
     case 'assertEntityExists': {
       const found = runtime.find(step.entity) !== undefined;
       const passed = found === step.exists;

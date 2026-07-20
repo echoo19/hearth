@@ -129,6 +129,23 @@ hearth set-settings --input-deadzone 0.2
 | `ctx.input.isDown(action)` | Is the action held this frame? |
 | `ctx.input.justPressed(action)` | Did the action go down this frame? |
 | `ctx.input.axis(name)` | Analog value in `[-1, 1]` for a virtual axis |
+| `ctx.input.pointer()` | Cursor position `{x, y}` in **world** space — mouse aim |
+| `ctx.input.pointerScreen()` | Cursor position `{x, y}` in screen space (buildSettings coordinates) |
+| `ctx.input.pointerDown()` | Is the primary pointer button held? |
+| `ctx.input.pointerPressed()` | Did the primary button go down this frame? |
+
+`ctx.input.pointer()` un-projects the cursor through the logical camera
+(position + zoom), so it points at the same world coordinates your entities
+live in — aim a turret, throw toward the cursor, place a tile. It ignores
+transient screen shake / zoomPunch so aim never jitters. Before the first
+pointer event it reads the camera-center world point.
+
+```lua
+-- Rotate this entity to face the mouse
+local aim = ctx.input.pointer()
+ctx.transform.rotation = math.atan(aim.y - ctx.transform.position.y, aim.x - ctx.transform.position.x)
+if ctx.input.pointerPressed() then ctx.log("fire!") end
+```
 
 See [scripting.md](./scripting.md#input) for these in context alongside
 the rest of the `ctx` API.
@@ -182,6 +199,7 @@ drive actions and axes directly:
 | `{ "type": "press", "action": "jump", "frames": 1 }` | Hold an action down for `frames` fixed frames (default `1`) |
 | `{ "type": "release", "action": "jump" }` | Release a held action |
 | `{ "type": "setAxis", "axis": "horizontal", "value": 1, "frames": 10 }` | Stick a virtual axis at `value` (a **sticky** override — stays until a later `setAxis` overwrites it; there's no separate "clear" step), then run `frames` frames (default `1`) |
+| `{ "type": "setPointer", "x": 600, "y": 300, "down": true, "frames": 1 }` | Move the cursor to a screen point (drives `ctx.input.pointer()`); optional `down` presses (`true`) or releases (`false`) the primary button, then run `frames` frames (default `1`) |
 
 ```jsonc
 {
