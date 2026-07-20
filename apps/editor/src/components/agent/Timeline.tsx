@@ -253,7 +253,7 @@ export function Timeline() {
         {entries.length === 0 ? (
           // Not the shared .empty-state hero: the rail is a ~220px column
           // beside the terminal, and the icon + display heading + prose
-          // treatment overfilled and clipped there (v1.1.1). A quiet caption
+          // treatment overfilled and clipped there. A quiet caption
           // in the panel-header label vocabulary is all this column can carry.
           <div className="timeline-empty">
             <span className="timeline-empty-label">Activity</span>

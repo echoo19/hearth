@@ -178,7 +178,7 @@
 
 /* Empty timeline: a quiet caption in the panel-header label vocabulary, not
    the shared .empty-state hero — that treatment overfilled and clipped in
-   this narrow rail (v1.1.1). Wraps freely; nothing here can clip. */
+   this narrow rail. Wraps freely; nothing here can clip. */
 .timeline-empty {
   display: flex;
   flex-direction: column;
