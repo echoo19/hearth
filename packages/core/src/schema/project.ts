@@ -470,6 +470,35 @@ const PlaytestStepUnionSchema = z.discriminatedUnion('type', [
     /** true: effect must be present; false: effect must be absent. */
     active: z.boolean().optional(),
   }),
+  z.object({
+    type: z.literal('assertPeak'),
+    /** Entity id or name. Auto-enables tracing for this entity. */
+    entity: z.string(),
+    /**
+     * 'x'/'y': peak amplitude = max absolute displacement from the entity's
+     * first traced position. 'speed': peakSpeed (max per-frame displacement × fps).
+     */
+    property: z.enum(['x', 'y', 'speed']),
+    op: z.enum(['greaterThan', 'lessThan']),
+    value: z.number(),
+  }),
+  z.object({
+    type: z.literal('assertRange'),
+    /** Entity id or name. Auto-enables tracing for this entity. */
+    entity: z.string(),
+    property: z.enum(['x', 'y']),
+    /** The entity's world position on this axis never leaves [min, max]; either bound optional. */
+    min: z.number().optional(),
+    max: z.number().optional(),
+  }),
+  z.object({
+    type: z.literal('assertSettledBy'),
+    /** Entity id or name. Auto-enables tracing for this entity. */
+    entity: z.string(),
+    /** From this frame to the end of the run, per-frame displacement stays < epsilon. */
+    frame: z.number().int().nonnegative(),
+    epsilon: z.number().positive().default(0.1),
+  }),
 ]);
 
 export const PlaytestStepSchema = PlaytestStepUnionSchema.superRefine((step, ctx) => {
@@ -523,8 +552,29 @@ export const PlaytestStepSchema = PlaytestStepUnionSchema.superRefine((step, ctx
       message: 'assertPostEffect requires active (boolean)',
     });
   }
+  if (step.type === 'assertRange' && step.min === undefined && step.max === undefined) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: 'assertRange requires at least one of min or max',
+    });
+  }
 });
 export type PlaytestStep = z.infer<typeof PlaytestStepSchema>;
+
+/**
+ * Opt-in per-frame motion tracing for a playtest. Summaries (envelope, peak
+ * speed, settle time) are always cheap and always returned when tracing is
+ * on; raw per-frame samples are gated behind `raw` to keep results token-frugal.
+ */
+export const PlaytestTraceSchema = z.object({
+  /** Entity names/ids to trace — explicit list only, no 'all' sugar. */
+  entities: z.array(z.string()),
+  /** Also trace the active camera's world x/y. */
+  camera: z.boolean().optional(),
+  /** Include per-frame {frame,x,y} samples in the result (default false). */
+  raw: z.boolean().optional(),
+});
+export type PlaytestTrace = z.infer<typeof PlaytestTraceSchema>;
 
 export const PlaytestSchema = z.object({
   formatVersion: z.literal(FORMAT_VERSION).default(FORMAT_VERSION),
@@ -533,6 +583,8 @@ export const PlaytestSchema = z.object({
   /** Scene id or name to run. */
   scene: z.string(),
   steps: z.array(PlaytestStepSchema).default([]),
+  /** Optional per-frame motion tracing; see PlaytestTraceSchema. */
+  trace: PlaytestTraceSchema.optional(),
   /** Hard stop so playtests always terminate. */
   maxFrames: z.number().int().positive().default(600),
   /** Seed for ctx.random / Lua math.random — same seed, same run. */

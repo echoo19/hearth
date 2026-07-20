@@ -7,7 +7,7 @@ import { joinPath, isSafeOut } from '../fs.js';
 import { BASELINE_FILE, PLAYTESTS_DIR, SCRIPTS_DIR, ProjectFileSchema } from '../schema/project.js';
 import { SceneSchema } from '../schema/scene.js';
 import { generateId, slugify } from '../ids.js';
-import { PlaytestSchema, PlaytestStepSchema } from '../schema/project.js';
+import { PlaytestSchema, PlaytestStepSchema, PlaytestTraceSchema } from '../schema/project.js';
 import { validateProject } from '../validate.js';
 
 async function loadBaseline(ctx: any): Promise<ProjectSnapshot | null> {
@@ -131,6 +131,8 @@ export const createPlaytest = defineCommand({
     name: z.string().min(1),
     scene: z.string().min(1),
     steps: z.array(PlaytestStepSchema).default([]),
+    /** Optional per-frame motion tracing carried on the playtest definition. */
+    trace: PlaytestTraceSchema.optional(),
     maxFrames: z.number().int().positive().default(600),
     /** Seed for ctx.random / Lua math.random — same seed, same run. */
     seed: z.number().int().nonnegative().default(0),
@@ -147,6 +149,7 @@ export const createPlaytest = defineCommand({
       name: params.name,
       scene: scene.id,
       steps: params.steps,
+      trace: params.trace,
       maxFrames: params.maxFrames,
       seed: params.seed,
     });
