@@ -20,6 +20,7 @@ import * as exportCommands from './exportCommands.js';
 import * as historyCommands from './historyCommands.js';
 import * as journalCommands from './journalCommands.js';
 import * as memoryCommands from './memoryCommands.js';
+import * as benchCommands from './benchCommands.js';
 
 const ALL_DEFINITIONS: CommandDefinition[] = [
   // inspect (read-only)
@@ -99,6 +100,7 @@ const ALL_DEFINITIONS: CommandDefinition[] = [
   diffCommands.listPlaytests,
   diffCommands.runPlaytest,
   diffCommands.runSceneSmoke,
+  benchCommands.benchScene,
   diffCommands.buildProject,
   exportCommands.exportWeb,
   exportCommands.exportDesktop,

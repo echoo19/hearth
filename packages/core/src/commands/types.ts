@@ -44,6 +44,12 @@ export interface CommandResult<T = unknown> {
 export interface RuntimeHooks {
   runPlaytest?(store: ProjectStore, playtestIdOrName: string): Promise<unknown>;
   runSceneSmoke?(store: ProjectStore, sceneIdOrName: string, frames: number): Promise<unknown>;
+  /** Headless performance benchmark of a scene (per-frame timing summary). */
+  benchScene?(
+    store: ProjectStore,
+    sceneIdOrName: string,
+    opts: { frames: number; warmupFrames: number; budgetMs?: number },
+  ): Promise<unknown>;
 }
 
 /**
