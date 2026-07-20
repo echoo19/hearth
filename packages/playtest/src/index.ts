@@ -220,7 +220,10 @@ export async function runPlaytest(
 
   // Motion tracing: traced set is the union of the declared trace.entities and
   // every entity referenced by a trace-assert step (those auto-enable tracing).
-  const tracer = createTracer(session.runtime, playtest.trace, playtest.steps);
+  // Pass `session` (not `session.runtime`): a scene switch destroys the current
+  // runtime and stands up a new one, so the tracer must read `session.runtime`
+  // live on every sample or it would keep polling a dead runtime.
+  const tracer = createTracer(session, playtest.trace, playtest.steps);
   const fps = store.project.buildSettings.fixedTimestep;
 
   /** Run up to `n` frames within the maxFrames cap; returns frames actually run. */
@@ -795,7 +798,7 @@ const CAMERA_KEY = 'camera';
  * enable tracing). Returns a no-op tracer when nothing needs tracing.
  */
 function createTracer(
-  runtime: SceneRuntime,
+  session: GameSession,
   trace: PlaytestTrace | undefined,
   steps: readonly PlaytestStep[],
 ): Tracer {
@@ -824,6 +827,14 @@ function createTracer(
     keys,
     samplesFor: (key) => samples.get(key),
     sample(frame) {
+      // Read the runtime live: a ctx.scenes.load switch destroys the old
+      // runtime and installs a new one, so a value captured at tracer
+      // construction would go stale mid-run. Traced entity names re-resolve
+      // against whatever scene is now live — a name that maps to a fresh
+      // entity in the new scene is picked up there, matching how every other
+      // playtest observable (assertScene, focusedEntity, etc.) behaves across
+      // a switch.
+      const runtime = session.runtime;
       for (const ref of entityRefs) {
         const entity = runtime.find(ref);
         if (!entity) continue; // entity may not exist yet / anymore this frame

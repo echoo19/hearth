@@ -96,8 +96,9 @@ file. Full command reference: [cli.md](./cli.md).
 Whatever the client, have the agent call **`get_agent_instructions`** (MCP) or
 read `AGENTS.md` (shell) first. It returns the project's house rules and the
 active permission modes. The working loop and game-craft recipes live in the
-project skills under `.claude/skills/`, which the editor backfills into any
-project that doesn't have them yet.
+project skills under `.claude/skills/`, scaffolded into every project at
+creation. An older project that predates them won't have them yet; copy
+`.claude/skills/` in from a freshly scaffolded project or from the repo.
 
 ## See also
 

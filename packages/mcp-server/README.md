@@ -152,6 +152,7 @@ requires no permission (it's purely informational).
 | `create_sprite_asset` | `createSpriteAsset` | asset-edit |
 | `create_tile_asset` | `createTileAsset` | asset-edit |
 | `create_sound` | `createSound` | asset-edit |
+| `create_music` | `createMusic` | asset-edit |
 | `create_animation_asset` | `createAnimationAsset` | asset-edit |
 | `slice_spritesheet` | `sliceSpritesheet` | asset-edit |
 | `remove_asset` | `removeAsset` | asset-edit |
@@ -167,17 +168,22 @@ requires no permission (it's purely informational).
 | `redo` | `redo` | safe-edit |
 | `list_history` | `listHistory` | read-only |
 | `list_journal` | `listJournal` | read-only |
+| `remember` | `rememberNote` | safe-edit |
+| `recall` | `recallNotes` | read-only |
 | `snapshot_project` | `snapshotProject` | safe-edit |
 | `get_diff` | `diffProject` | read-only |
 | `revert_project` | `revertProject` | safe-edit |
 | `create_playtest` | `createPlaytest` | safe-edit |
+| `delete_playtest` | `deletePlaytest` | safe-edit |
 | `list_playtests` | `listPlaytests` | read-only |
 | `run_playtest` | `runPlaytest` | read-only |
 | `run_scene` | `runScene` | read-only |
+| `bench_scene` | `benchScene` | read-only |
 | `build_project` | `buildProject` | build |
 | `export_web` | `exportWeb` | build |
 | `export_desktop` | `exportDesktop` | build |
-| `screenshot` | — (calls `@hearth/playtest`'s `captureScreenshot` directly; needs headless Chrome/Chromium) | build |
+| `screenshot` | — (calls `@hearth/playtest`'s `captureScreenshot` directly; needs headless Chrome/Chromium) | read-only |
+| `capture` | — (calls `@hearth/playtest`'s `captureSequence` directly; needs headless Chrome/Chromium) | read-only |
 | `get_agent_instructions` | — (reads project `AGENTS.md`, or generates the default) | — |
 
 All tools are registered regardless of the session's granted modes, so a client can always see the full

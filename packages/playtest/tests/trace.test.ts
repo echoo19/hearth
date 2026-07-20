@@ -259,6 +259,142 @@ describe('assertSettledBy', () => {
   });
 });
 
+// ---------------------------------------------------------------------------
+// Tracing must follow the live runtime across ctx.scenes.load, not freeze on
+// the runtime that existed when tracing started.
+// ---------------------------------------------------------------------------
+
+// Menu camera: switch to Level at frame 3, otherwise sit still at x=400.
+const SWITCH_AT_3_SCRIPT = `export default {
+  onUpdate(ctx) { if (ctx.time.frame === 3) ctx.scenes.load('Level'); },
+};`;
+// Level camera starts at x=1000 and marches +10px/frame — well past the Menu
+// camera's frozen 400, so a dead-runtime read is unmistakable.
+const LEVEL_CAM_MARCH_SCRIPT = `export default {
+  onUpdate(ctx) { ctx.transform.position.x = ctx.transform.position.x + 10; },
+};`;
+// Level-only Mover marches +5px/frame from 0; it exists only in the new scene,
+// so a traced "Mover" must re-resolve there to collect any samples at all.
+const LEVEL_MOVER_MARCH_SCRIPT = `export default {
+  onUpdate(ctx) { ctx.transform.position.x = ctx.transform.position.x + 5; },
+};`;
+
+/**
+ * Two-scene project. Menu has a main Camera (static at x=400) that switches to
+ * Level at frame 3. Level has its own main Camera (starts x=1000, marching) and
+ * a Mover entity that exists ONLY in Level.
+ */
+async function makeSwitchTraceProject(): Promise<{
+  store: ProjectStore;
+  session: HearthSession;
+}> {
+  const fs = new MemoryFileSystem();
+  const { store } = await createProject(fs, '/switch', {
+    name: 'Switch Game',
+    starterScene: false,
+  });
+  store.project.scenes.push(
+    { id: 'scn_menu', name: 'Menu', path: 'scenes/menu.scene.json' },
+    { id: 'scn_level', name: 'Level', path: 'scenes/level.scene.json' },
+  );
+  store.project.initialScene = 'scn_menu';
+  store.scenes.set(
+    'scn_menu',
+    SceneSchema.parse({
+      formatVersion: 1,
+      id: 'scn_menu',
+      name: 'Menu',
+      entities: [
+        {
+          id: 'ent_menucam',
+          name: 'Camera',
+          parentId: null,
+          enabled: true,
+          tags: [],
+          components: {
+            Transform: { position: { x: 400, y: 300 } },
+            Camera: { isMain: true },
+            Script: { scriptPath: 'scripts/switch.js' },
+          },
+        },
+      ],
+    }),
+  );
+  store.scenes.set(
+    'scn_level',
+    SceneSchema.parse({
+      formatVersion: 1,
+      id: 'scn_level',
+      name: 'Level',
+      entities: [
+        {
+          id: 'ent_levelcam',
+          name: 'Camera',
+          parentId: null,
+          enabled: true,
+          tags: [],
+          components: {
+            Transform: { position: { x: 1000, y: 300 } },
+            Camera: { isMain: true },
+            Script: { scriptPath: 'scripts/levelcam.js' },
+          },
+        },
+        {
+          id: 'ent_levelmover',
+          name: 'Mover',
+          parentId: null,
+          enabled: true,
+          tags: [],
+          components: {
+            Transform: { position: { x: 0, y: 0 } },
+            Script: { scriptPath: 'scripts/levelmover.js' },
+          },
+        },
+      ],
+    }),
+  );
+  await fs.writeFile('/switch/scripts/switch.js', SWITCH_AT_3_SCRIPT);
+  await fs.writeFile('/switch/scripts/levelcam.js', LEVEL_CAM_MARCH_SCRIPT);
+  await fs.writeFile('/switch/scripts/levelmover.js', LEVEL_MOVER_MARCH_SCRIPT);
+  await store.save();
+  const loaded = await ProjectStore.load(fs, '/switch');
+  const session = HearthSession.fromStore(loaded, { runtime: createRuntimeHooks() });
+  return { store: loaded, session };
+}
+
+describe('trace across scene switches', () => {
+  it('keeps camera tracing live and re-resolves a traced entity in the new scene', async () => {
+    const { store, session } = await makeSwitchTraceProject();
+    await session.execute('createPlaytest', {
+      name: 'switch trace',
+      scene: 'Menu',
+      trace: { entities: ['Mover'], camera: true },
+      steps: [
+        { type: 'wait', frames: 20 },
+        { type: 'assertScene', scene: 'Level' },
+      ],
+    });
+    const result = await runPlaytest(store, 'switch trace');
+    expect(result.finalScene).toBe('scn_level');
+
+    // (a) Camera tracing follows the LIVE runtime: after the switch it reads
+    // Level's marching camera (x >= 1000), not the dead Menu runtime frozen at
+    // 400. A dead-runtime read would cap max.x at 400.
+    const cam = result.traceSummary.camera;
+    expect(cam).toBeDefined();
+    expect(cam.first.x).toBe(400); // sampled in Menu before the switch
+    expect(cam.max.x).toBeGreaterThan(900); // moved into Level's camera range
+    expect(cam.final.x).toBeGreaterThan(cam.first.x);
+
+    // (b) A traced entity that exists only in the new scene re-resolves there
+    // and collects real motion samples.
+    const mover = result.traceSummary.Mover;
+    expect(mover).toBeDefined();
+    expect(mover.frames).toBeGreaterThan(0);
+    expect(mover.final.x).toBeGreaterThan(mover.first.x);
+  });
+});
+
 describe('createPlaytest trace round-trip', () => {
   it('persists trace through the schema and back out of the store', async () => {
     const { store, session } = await makeMoverProject();

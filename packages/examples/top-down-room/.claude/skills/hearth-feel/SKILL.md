@@ -13,6 +13,9 @@ person wants to keep playing — and the bar to clear before calling it done.
 the `hearth-build`/`hearth-code` skills' job), then layer juice on top. Juice on a broken mechanic
 just hides the bug. Every effect you add should be playtest-observable (`assertCameraEffect`,
 `assertParticleCount`, `assertAudioCount`) so "it feels good" rests on evidence, not vibes.
+To verify feel *magnitudes* — jump height, dash distance, settle time — add the motion asserts
+`assertPeak`/`assertRange`/`assertSettledBy` (backed by a `trace` block), which measure recorded
+motion so numbers like "peaks at 120px" or "settles by frame 18" become assertable, not eyeballed.
 
 ## Game feel: the juice stack
 

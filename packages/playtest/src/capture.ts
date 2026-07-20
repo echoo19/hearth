@@ -19,10 +19,12 @@
  * unconditionally, so this module must load fine even when Chromium tooling
  * isn't installed.
  *
- * Permissions: like `captureScreenshot`, this runs an ephemeral `exportWeb`
- * and so needs "build" mode. It does NOT check permissions itself — its
- * internal session is granted "build" unconditionally; callers (the future
- * CLI command / MCP tool) must check the *caller's* grant first.
+ * Permissions: like `captureScreenshot`, this is deliberately ungated
+ * read-only observation on both surfaces (CLI and MCP) — it only looks at the
+ * scene, it never mutates the project. It runs an ephemeral `exportWeb`
+ * internally, but that internal session is granted "build" unconditionally so
+ * the observation works regardless of the caller's grant; capture itself
+ * requires only "read-only".
  */
 import { randomBytes } from 'node:crypto';
 import { mkdtemp, rm, writeFile, mkdir } from 'node:fs/promises';

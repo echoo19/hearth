@@ -56,7 +56,10 @@ snapshot → inspect → change (commands) → validate → playtest → capture
    `assertPeak`/`assertRange`/`assertSettledBy` trace steps to a playtest —
    they measure jump height, dash distance, and settle time from recorded
    motion (probe with a bare `run_playtest` first to read the observed values,
-   then bake them into asserts).
+   then bake them into asserts). Tracing follows the live runtime across a
+   `ctx.scenes.load` switch: the camera keeps sampling in the new scene, and a
+   traced entity name re-resolves against whatever scene is now active (so a
+   name that exists in the destination scene is picked up there).
 7. **Check the frame budget**: `hearth bench <scene>` steps warmup frames then
    times N measured frames, reporting per-frame ms (avg/median/p95) so you can
    confirm a scene holds 60fps (16.67ms/frame) before shipping; pass
@@ -127,8 +130,9 @@ agent that connects cold can bootstrap itself.
 
 Beyond the per-project files, Hearth ships **six focused coding-agent skills**
 (Claude Code skill format), scaffolded into every project under
-`.claude/skills/` and backfilled into older projects when an agent launch is
-prepared. The split means an agent loads only the domain it's working in
+`.claude/skills/` at project creation. A project made before these skills
+existed won't have them; copy `.claude/skills/` in from a freshly scaffolded
+project or from this repo. The split means an agent loads only the domain it's working in
 instead of one monolithic document — smaller context, sharper activation:
 
 - **`skills/hearth/SKILL.md`** (*the operating core — loaded first*): the

@@ -136,7 +136,8 @@ journal). Property writes validate the full dot-path against the component's
 real schema, with a did-you-mean suggestion on a typo instead of silently
 corrupting the write. The engine's command registry has **76 commands**; the
 MCP server exposes **78 typed tools** with per-session permission modes:
-**70 wrapping a core command**, plus `screenshot` and `get_agent_instructions`.
+**75 wrapping a core command**, plus `screenshot`, `capture`, and
+`get_agent_instructions`.
 Playtests script input (including gamepad axes and pointer drags) and assert on
 game state, events, particles, audio, camera effects, post effects, and UI
 focus, entirely headless and CI-friendly. `hearth screenshot` renders real
