@@ -67,16 +67,16 @@ const INTERACTIVE_TAGS = new Set(['button', 'a', 'select', 'input', 'textarea'])
  * dialog heading, `ConfirmDialog`'s). Pinned by exact name rather than
  * inferred structurally — no static check here can tell "spreads onto a raw
  * element" apart from "consumes title as its own prop", so a new spreading
- * component must be added to this set deliberately. As of Wave L Task 7,
- * nothing in the tree passes `title` to either component; this only guards
+ * component must be added to this set deliberately. Currently, nothing in
+ * the tree passes `title` to either component; this only guards
  * against a future regression.
  */
 const TITLE_FORWARDING_COMPONENTS = new Set(['Button', 'IconButton']);
 
 /**
  * Escape hatch for a genuinely-justified native title on an interactive element
- * (none today — every interactive title was migrated to Tooltip/IconButton in
- * Wave L Task 7). Keyed by file basename → set of substrings; if a flagged
+ * (none today — every interactive title was migrated to Tooltip/IconButton).
+ * Keyed by file basename → set of substrings; if a flagged
  * opening tag contains a listed substring it is exempt. Adding an entry is a
  * deliberate, reviewed edit.
  */
@@ -121,7 +121,7 @@ const FONT_DEF_FILES = new Set(['tokens.css', 'fonts.css']);
  * The ONLY selectors permitted to reference `--font-display` / Bricolage.
  * Pinned exactly (whitespace-normalized) so adding a new brand moment is a
  * deliberate edit to this list, reviewed against the "brand moments only"
- * rule from the Wave L design spec.
+ * rule from the design spec.
  */
 const BRAND_MOMENT_SELECTORS = new Set<string>([
   '.toolbar .wordmark', // toolbar wordmark

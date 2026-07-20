@@ -2,7 +2,7 @@
  * UI focus system: ctx.ui.focus/getFocused/moveFocus/activate/adjust,
  * onUiEvent focus/blur dispatch, and destroy-clears-focus (headless).
  *
- * Task 11 wires:
+ * Wires:
  *  - runtime.focusUi(idOrName|null): set/clear the focused UIElement,
  *    firing onUiEvent {type:'blur'} on the previously focused entity (if
  *    any) and {type:'focus'} on the newly focused one. Warns (no state

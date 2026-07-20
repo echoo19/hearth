@@ -1047,7 +1047,7 @@ return script
 // particles.ts's fp-real spawn-accumulator timing (see
 // packages/playtest/tests/particles.test.ts).
 //
-// Also the Wave I autotile showcase (Task 12): a "Cave Rocks" Tilemap whose
+// Also the autotile showcase: a "Cave Rocks" Tilemap whose
 // 'R' char is bound to a blob47 rule (setTileAutotile) over a generated
 // spritesheet (pixelart.mjs's makeBlob47CaveSheetRgba) — every filled cell's
 // frame is picked from its 8-neighbour mask at render time, so the rock
@@ -3081,15 +3081,15 @@ return script
 }
 
 // ---------------------------------------------------------------------------
-// Example 9: Ember Horde (the Wave E spatial-hash horde-scale proof, and the
-// Wave I prefab-spawn showcase)
+// Example 9: Ember Horde (the spatial-hash horde-scale proof, and the
+// prefab-spawn showcase)
 // ---------------------------------------------------------------------------
 // A survivors-like: virtual-axis movement + gamepad (matching drift-cellar),
 // one tilemap-bordered arena, and a Director that waves-spawns kinematic
 // enemies at runtime via ctx.scene.spawnPrefab, capped at 300 concurrent —
-// well inside the headroom Wave E's spatial-hash broadphase bought (see
+// well inside the headroom the spatial-hash broadphase bought (see
 // docs/performance.md's "mixed-horde" scenario: 800 movers, ~2.7ms/frame
-// after Tasks 9-11, down from 14.3ms before). Every script is Lua.
+// after the perf work, down from 14.3ms before). Every script is Lua.
 //
 // Steering-pattern decision (see docs/scripting.md's EntityHandle section):
 // each enemy's onStart calls ctx.scene.find("Player") exactly ONCE and
@@ -3104,7 +3104,7 @@ return script
 // the handle at spawn removes it entirely for a one-time O(n) spawn cost
 // instead. No event-broadcast or save/load channel is needed for this.
 //
-// Prefab spawning (Task 12): the "Enemy" entity below is authored once as a
+// Prefab spawning: the "Enemy" entity below is authored once as a
 // normal (enabled) scene entity, then promoted to a reusable prefab via
 // createPrefab — horde-director.lua's spawnEnemy spawns copies of it at
 // runtime through ctx.scene.spawnPrefab("Enemy", ...), so an enemy's
@@ -3773,10 +3773,10 @@ return script
 }
 
 // ---------------------------------------------------------------------------
-// Example 10: Ember Arcade (the Wave G effects-system proof)
+// Example 10: Ember Arcade (the effects-system proof)
 // ---------------------------------------------------------------------------
 // A compact arcade scene (drift-cellar tier, not bounce-patrol tier) built
-// to exercise Task 5/6's screen-space effects end-to-end: Camera.postEffects
+// to exercise the screen-space effects end-to-end: Camera.postEffects
 // (crt + vignette + bloom, stacked on the main camera at scene start),
 // ctx.effects.flash (per-sprite SpriteEffects hit-flash), and a scripted
 // dissolve (SpriteEffects.dissolveAmount driven 0->1 by a target's own

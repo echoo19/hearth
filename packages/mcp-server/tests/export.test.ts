@@ -1,6 +1,6 @@
 /**
  * Tests for the v0.2 tool additions: create_sound and export_web, plus the
- * later exportDesktop tool and export_web's `zip` flag (Wave J task 5).
+ * later exportDesktop tool and export_web's `zip` flag.
  */
 import { describe, it, expect, afterEach, beforeAll, afterAll } from 'vitest';
 import os from 'node:os';
@@ -121,7 +121,7 @@ describe('hearth-mcp export_desktop tool', () => {
     expect(tools.map((t) => t.name)).toContain('export_desktop');
     // TOOL_SPECS is the single source of truth the server registers
     // session.execute-backed tools from; exportDesktop brought it from 67 to
-    // 68, set_entity_enabled/set_entity_tags (Wave L parity closure) brought it
+    // 68, set_entity_enabled/set_entity_tags (parity closure) brought it
     // to 70, and create_music/delete_playtest/bench_scene brought it to 75
     // (screenshot, capture, and get_agent_instructions are registered
     // separately, outside TOOL_SPECS, so they're not counted here).

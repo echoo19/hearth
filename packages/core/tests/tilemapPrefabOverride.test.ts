@@ -1,5 +1,5 @@
 /**
- * Wave I final-review finding I-2: tilemap mutation commands must record a
+ * Tilemap mutation commands must record a
  * prefab override when they mutate a live-linked instance member, so painting
  * / autotiling a tilemap inside an instance is NOT silently clobbered by the
  * next updatePrefab/sync.

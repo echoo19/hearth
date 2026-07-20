@@ -253,7 +253,7 @@
 /* --------------------------------------------------------------------------
    Toolbar
 
-   Layout contract (Wave L minimalism): the toolbar never wraps and never
+   Layout contract (minimalism): the toolbar never wraps and never
    reflows. Fixed clusters (wordmark, menu bar, transport, undo/redo) are
    flex:none; only the scene picker shrinks (truncating with an ellipsis) and
    the flex:1 spacer absorbs slack — including the restart badge, which sits

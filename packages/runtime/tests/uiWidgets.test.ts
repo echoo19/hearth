@@ -1,7 +1,7 @@
 /**
  * UISlider drag and UIToggle click interaction (headless, via sendPointer).
  *
- * Task 10 wires the runtime's pointer pipeline to:
+ * Wires the runtime's pointer pipeline to:
  *  - dispatch onUiEvent {type:'drag', x, y} to the pressed entity on every
  *    'move' while a pointer button is held, for ANY interactive element;
  *  - map pointer x onto a pressed UISlider's track on both 'down' and

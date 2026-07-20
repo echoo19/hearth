@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 /**
- * App shell — document.title project sync (Wave L Task 6 review fix).
+ * App shell — document.title project sync (review fix).
  *
  * App.tsx's window-mode effect drives both the Electron native title bar
  * (via hearthNative().setWindowMode) and document.title. The latter is what

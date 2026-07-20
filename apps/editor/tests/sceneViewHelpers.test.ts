@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { GRID_SIZE, panSpaceKey, snapToGrid, uiScreenToWorld } from '../src/components/SceneView';
 
 /**
- * Pure logic tests for the SceneView helpers added in Wave L T8-B4:
+ * Pure logic tests for the SceneView helpers:
  * - panSpaceKey: the hold-Space-to-pan guard (L-053) must yield to any typing
  *   target, including CodeMirror's contenteditable surface — so Space types a
  *   space in the Code panel instead of being swallowed by the pan handler.

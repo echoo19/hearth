@@ -1,5 +1,5 @@
 /**
- * Module-level game view handle (Task 9): a plain get/set pair, no React
+ * Module-level game view handle: a plain get/set pair, no React
  * involved, so this is exercised directly rather than through a component.
  */
 import { describe, it, expect, beforeEach } from 'vitest';

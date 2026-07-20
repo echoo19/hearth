@@ -7,9 +7,9 @@ particle/event simulation only, not pixi, the DOM, or `setTimeout`/rAF jitter.
 
 This doc exists to give the broadphase/caching/pooling perf work an
 honest **before** so later tasks have something concrete to compare against.
-Tasks 9-11 re-run the harness and update the table below with **after**
+That work re-runs the harness and updates the table below with **after**
 numbers. The "Current bottlenecks" section is expected to shrink or change
-as they land.
+as it lands.
 
 **Status: the optimization pass is complete.** See "After the optimization pass" below for the
 final numbers and what each task contributed; "Current bottlenecks" has been

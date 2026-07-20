@@ -1,5 +1,5 @@
 /**
- * Task 8: Game settings panel. This repo has no jsdom/RTL, so GameSettings'
+ * Game settings panel. This repo has no jsdom/RTL, so GameSettings'
  * edit-shaping logic is pulled to module scope and unit-tested directly (same
  * pattern as inputSettingsEdit.test.ts / consoleLinkClick.test.ts).
  *

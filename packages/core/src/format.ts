@@ -4,7 +4,7 @@
  * Lua goes through StyLua's WASM build, JS through Prettier standalone,
  * both with Hearth's fixed style (no `.stylua.toml`/`.prettierrc` — one
  * consistent look for every project). Only two languages are gated here;
- * callers (Task 2's formatOnSave hook, Task 8's format command) already
+ * callers (the formatOnSave hook, the format command) already
  * know a script's language from its file extension and never call this
  * with anything else.
  *

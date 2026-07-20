@@ -97,7 +97,7 @@ export const inspectProject = defineCommand({
       scriptCount: scripts.length,
       // Project-relative paths of every script file, alongside the
       // back-compat scriptCount above — the editor's Code panel needs the
-      // full list to populate its script picker (additive; Wave G Task 7).
+      // full list to populate its script picker (additive).
       scripts,
       playtestCount: ctx.store.playtests.size,
       inputActions: ctx.store.project.inputMappings.actions,

@@ -75,12 +75,12 @@ export interface EditorState {
   /**
    * Structured runtime errors (the full RuntimeError incl. script/line) from
    * the current run, newest last and capped. Fed by GamePreview's
-   * onErrorEntry; a fresh Play/restart/scene-switch clears it. Task 7 turns
-   * these into clickable script-panel diagnostics — this task only records them.
+   * onErrorEntry; a fresh Play/restart/scene-switch clears it. These are turned
+   * into clickable script-panel diagnostics elsewhere — this only records them.
    */
   runtimeErrors: RuntimeErrorEntry[];
   /**
-   * Play-mode debug pause (Task 9): freezes the running game in place without
+   * Play-mode debug pause: freezes the running game in place without
    * stopping the run — distinct from `playing`/Stop, which tears the preview
    * down. Only meaningful while `playing`; Play/Stop both reset it to false.
    */
@@ -109,7 +109,7 @@ export interface EditorState {
    * components/agent/useAgentSocket.ts) so it survives that panel's own
    * component tree unmounting; `agentStatus` is mirrored from that store by
    * a single subscription registered there — never set by hand here — so
-   * other panels (and Task 6's activity timeline) can select it without a
+   * other panels (and the Agent panel's activity timeline) can select it without a
    * second source of truth. */
   agentStatus: AgentStatus;
   /** Whether `snapshotProject` has succeeded at least once this editor session
@@ -118,8 +118,8 @@ export interface EditorState {
    * project changes; the flag is purely "have I seen a baseline get taken
    * this session", not a read of what's on disk. */
   snapshotTaken: boolean;
-  /** Bumped to ask the workspace shell to focus the Diff panel (Task 6's
-   * "Review changes"). A counter rather than a boolean so repeated requests
+  /** Bumped to ask the workspace shell to focus the Diff panel
+   * ("Review changes"). A counter rather than a boolean so repeated requests
    * while already on the Diff panel still register as a change; mirrors the
    * `playing` -> "surface the Game panel" pattern in Workspace.tsx. */
   diffFocusRequest: number;
@@ -131,7 +131,7 @@ export interface EditorState {
    * host size, in which case callers fall back to (0,0).
    */
   sceneViewCenter: Vec2 | null;
-  /** Whether the keyboard-shortcut cheat sheet overlay is open (Task 8). */
+  /** Whether the keyboard-shortcut cheat sheet overlay is open. */
   shortcutSheetOpen: boolean;
   /**
    * Bumped to ask SceneView to center+fit the camera on the current
@@ -158,7 +158,7 @@ export interface EditorState {
    */
   codeOpenRequest: { path: string; line?: number; nonce: number } | null;
   /**
-   * Imperative "open the Code panel's search bar" request (Task 9), mirroring
+   * Imperative "open the Code panel's search bar" request, mirroring
    * `diffFocusRequest`'s bare counter — search mode has no payload, just an
    * open-or-refocus signal, so a plain nonce is enough (the workspace shell
    * surfaces the Code panel; CodePanel flips into search mode and re-focuses
@@ -167,7 +167,7 @@ export interface EditorState {
   codeSearchRequest: number;
   /**
    * Imperative "open the Animator editor for this state-machine asset" request
-   * (Task 8), mirroring `codeOpenRequest`. The Assets card's "Edit" action and
+   * mirroring `codeOpenRequest`. The Assets card's "Edit" action and
    * the Inspector's AnimationStateMachine row call `openAnimatorFor(assetId)`;
    * the workspace shell surfaces the Animator panel and AnimatorEditor loads
    * that asset's document. The `nonce` re-fires a repeat open of the same asset.
@@ -224,7 +224,7 @@ export interface EditorState {
   requestCodeSearch(): void;
   /** Open (and surface) the Animator editor targeting a state-machine asset. See `animatorTarget`. */
   openAnimatorFor(assetId: string): void;
-  /** Shortcut actions (Task 8), each backed by an exec() where it mutates. */
+  /** Shortcut actions, each backed by an exec() where it mutates. */
   togglePlay(): void;
   checkpoint(): Promise<void>;
   /**
@@ -276,7 +276,7 @@ export interface EditorState {
   setPlaying(playing: boolean): void;
   /** Restart the running preview from the current scene, clearing the restart badge (the badge's action). */
   restartPlay(): void;
-  /** Record a structured runtime error from the running preview (feeds Task 7's diagnostics). */
+  /** Record a structured runtime error from the running preview (feeds the Console's diagnostics). */
   recordRuntimeError(error: RuntimeErrorEntry): void;
   /**
    * Mirror one EXTERNAL journal entry (source !== 'editor') into the running
@@ -298,7 +298,7 @@ export interface EditorState {
    */
   setGameTabVisible(visible: boolean): void;
   setDebugDraw(on: boolean): void;
-  /** `link` (Task 7): when present, ConsolePanel renders a clickable `path:line` suffix that jumps to it via `openScriptAt`. */
+  /** `link`: when present, ConsolePanel renders a clickable `path:line` suffix that jumps to it via `openScriptAt`. */
   log(level: ConsoleLevel, source: ConsoleSource, message: string, link?: ConsoleEntry['link']): void;
   clearConsole(): void;
   refresh(): Promise<void>;
@@ -332,7 +332,7 @@ function makeEntry(level: ConsoleLevel, source: ConsoleSource, message: string, 
 }
 
 /**
- * Plain-language, entity-first Console message for a runtime error (Task 7):
+ * Plain-language, entity-first Console message for a runtime error:
  * e.g. "Enemy hit an error in scripts/enemy.lua:12 — attempt to index a nil
  * value". Falls back gracefully as script/line go missing (no script at all
  * for a global/engine-level error; no line when it isn't extractable).
@@ -458,7 +458,7 @@ export const useEditor = create<EditorState>((set, get) => {
     };
   }
 
-  // --- Live update dispatch (Wave H) ---------------------------------------
+  // --- Live update dispatch --------------------------------------------------
   // Apply a classified LiveAction against the running preview. Patches go
   // straight to the live PixiSceneView (independent of the authored-scene
   // refresh); reloads hot-swap a script's source; structural changes raise
@@ -487,7 +487,7 @@ export const useEditor = create<EditorState>((set, get) => {
     }
   }
 
-  /** Hot-reload one script, logging the console notice (structured for Task 7 linkability). */
+  /** Hot-reload one script, logging the console notice (structured to support the Console's clickable-link diagnostics). */
   async function applyReload(path: string, source: string | undefined): Promise<void> {
     const view = getGameView();
     if (!view?.reloadScript) return;
@@ -554,7 +554,7 @@ export const useEditor = create<EditorState>((set, get) => {
     if (value !== undefined) applyPatch(entity, property, value);
   }
 
-  /** Live-swap a state-machine asset's parsed doc on the running preview (Task 11 asm-reload). */
+  /** Live-swap a state-machine asset's parsed doc on the running preview (asm-reload). */
   async function applyAsmReload(assetId: string): Promise<void> {
     const view = getGameView();
     if (!view?.reloadStateMachineAsset) return;

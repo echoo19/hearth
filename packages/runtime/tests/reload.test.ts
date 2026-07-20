@@ -1,5 +1,5 @@
 /**
- * Runtime hot-reload and live-patch seams (Wave H): SceneRuntime.reloadScript
+ * Runtime hot-reload and live-patch seams: SceneRuntime.reloadScript
  * swaps a script's hooks in place while PRESERVING vars/timers/tweens (onStart
  * does NOT re-run), keeps old code running on a compile failure, re-enables an
  * error-disabled script on success, and feeds newly spawned entities the new

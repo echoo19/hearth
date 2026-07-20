@@ -217,7 +217,7 @@ export function stepStateMachine(
 
 // ---------------------------------------------------------------------------
 // Param mutation helpers backing ctx.animator. These throw on misuse; the
-// runtime lets those throws surface as script errors (Wave H error->line).
+// runtime lets those throws surface as script errors (error->line).
 // ---------------------------------------------------------------------------
 
 /** Set a bool/number param. Throws on unknown param, a trigger, or a type mismatch. */

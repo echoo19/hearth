@@ -1,5 +1,5 @@
 /**
- * The Code panel's script list, as a tree (Wave N script modules): nested
+ * The Code panel's script list, as a tree (script modules): nested
  * paths like scripts/lib/noise.lua render under their folder instead of as
  * flat rows, and hookless scripts wear a "library" badge so a human can tell
  * helpers from behaviors at a glance. Deliberately the same tree idiom as the

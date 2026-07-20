@@ -1,5 +1,5 @@
 /**
- * Script modules, human surface (Wave N): the pure models behind the Code
+ * Script modules, human surface: the pure models behind the Code
  * panel's script tree and the library classification —
  *  - buildScriptRows: nested scripts/lib/noise.lua renders as a tree (folder
  *    rows + depth), never 25 flat rows; flat projects are unchanged.

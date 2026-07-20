@@ -1,5 +1,5 @@
 /**
- * Task 6: prefab merge sync, project-wide auto-sync, override revert, and
+ * Prefab merge sync, project-wide auto-sync, override revert, and
  * structural detach. These exercise the merge semantics (id reuse, fresh ids
  * for new locals, deletion of removed locals, override re-application, stale
  * override dropping) plus the command-level auto-sync / revert / detach.

@@ -974,7 +974,7 @@ export function SceneView() {
    * A CORNER drag on a sprite or box collider edits width AND height, which
    * are two separate scalar schema leaves (there is no vec-shaped size
    * property) — planDragCommit (transformHandles.ts) turns those two
-   * commands into a single setProperties batch (Task 2), so even a corner
+   * commands into a single setProperties batch, so even a corner
    * drag commits as one undo step. A single-property drag (edge resize,
    * rotate, circle radius, Transform.scale) still uses the cheaper
    * setComponentProperty directly.

@@ -1,5 +1,5 @@
 /**
- * Task 9 perf caches: frame-scoped getEntities() cache + tilemap collider
+ * Perf caches: frame-scoped getEntities() cache + tilemap collider
  * cache. These tests pin exact behavior BEFORE the perf change (spawn
  * mid-frame visibility) and exercise every invalidation trigger the cache
  * must honor — a stale getEntities()/tilemap box set is a gameplay bug, not

@@ -1,5 +1,5 @@
 /**
- * Per-sprite visual effects (SpriteEffects component, Task 5 → Task 6): a
+ * Per-sprite visual effects (SpriteEffects component): a
  * single combined Pixi v8 GLSL filter that does outline, hit-flash, and
  * dissolve in one pass, attached to an entity's display node only while at
  * least one field is non-neutral.

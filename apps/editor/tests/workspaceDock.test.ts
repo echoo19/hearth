@@ -2,7 +2,7 @@
 /**
  * Workspace dock lifecycle against a real dockview instance in jsdom.
  *
- * Two regression areas from Wave L L-003:
+ * Two regression areas:
  * - Disposed-dock guards: the View menu's closures can hold a dockview that a
  *   project switch / StrictMode remount already disposed. `resetLayout` and
  *   `showPanel` on that stale reference used to surface uncaught errors

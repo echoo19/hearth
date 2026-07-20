@@ -1,6 +1,6 @@
 /**
- * Screen-space post-processing filters for Camera.postEffects (Task 5 data
- * model → Task 6 rendering). Each PostEffect variant maps to one hand-written
+ * Screen-space post-processing filters for Camera.postEffects. Each
+ * PostEffect variant maps to one hand-written
  * Pixi v8 GLSL filter applied, in stack order, to the game-view container.
  *
  * Design notes:

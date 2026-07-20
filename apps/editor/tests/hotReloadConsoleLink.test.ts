@@ -1,6 +1,6 @@
 /**
- * Task 7: hot-reload notices raised by the live-update dispatcher (Task 5's
- * applyReload, store.ts) become clickable the same way a runtime error does
+ * Hot-reload notices raised by the live-update dispatcher (applyReload,
+ * store.ts) become clickable the same way a runtime error does
  * — a compile FAILURE carries a `link` to the script (and line, when the
  * runtime reports one); a SUCCESS notice stays plain `info` with no link.
  * Exercises the real `useEditor` store end-to-end (api + game view mocked),

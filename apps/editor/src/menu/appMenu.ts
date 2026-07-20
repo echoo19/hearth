@@ -1,5 +1,5 @@
 /**
- * Application menu model — Wave L. The single source of truth for the editor's
+ * Application menu model. The single source of truth for the editor's
  * File / Edit / View / Help menus. One `buildAppMenu` call feeds BOTH surfaces:
  *
  *  - the slim in-window menu bar in the toolbar (browser dev, and Electron on

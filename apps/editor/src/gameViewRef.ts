@@ -1,5 +1,5 @@
 /**
- * Module-level handle to the currently-mounted game preview (Task 9). A few
+ * Module-level handle to the currently-mounted game preview. A few
  * chrome pieces outside GamePreview's own tree — the Toolbar's Pause/Step
  * buttons, the Live inspector panel — need to reach the live PixiSceneView
  * without prop-drilling it through the workspace layout. GamePreview owns

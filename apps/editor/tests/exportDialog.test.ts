@@ -1,5 +1,5 @@
 /**
- * Task 7: Export dialog — desktop target. This repo runs tests under the
+ * Export dialog — desktop target. This repo runs tests under the
  * `node` environment (no jsdom/RTL), so the dialog's logic is pulled to module
  * scope in ../src/components/exportJob.ts and unit-tested directly — the same
  * pattern as gameSettingsEdit.test.ts / consoleLinkClick.test.ts.

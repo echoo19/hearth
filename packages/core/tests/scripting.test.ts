@@ -1,5 +1,5 @@
 /**
- * Wave 0 core surface: Lua-first script creation, per-script syntax
+ * Core surface: Lua-first script creation, per-script syntax
  * validation, updateSettings, inspectApi, and the regenerated agent docs.
  */
 import { describe, it, expect } from 'vitest';

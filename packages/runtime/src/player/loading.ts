@@ -75,7 +75,7 @@ export function parseHexColor(color: string): { r: number; g: number; b: number 
  * fetch loop in ./index.ts); single-file exports already inline every asset
  * as a dataUri, so this gate only guards the multi-file fetch path. Missing a
  * type here silently freezes the feature that reads it (animations froze on
- * their first frame before this existed — the Wave A regression class).
+ * their first frame before this existed).
  */
 export function assetNeedsRawContent(type: string): boolean {
   return type === 'animation' || type === 'prefab' || type === 'stateMachine';

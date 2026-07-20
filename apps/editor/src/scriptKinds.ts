@@ -1,7 +1,7 @@
 /**
  * Script kind classification: which of the project's scripts are LIBRARIES —
  * scripts with no lifecycle hooks, meant to be require()d by behaviors rather
- * than attached to entities (Wave N script modules; spec decision 6: a
+ * than attached to entities (spec decision 6: a
  * library is just a hookless script, never a new asset type). The Code
  * panel's script tree labels them and the Inspector's Script picker keeps
  * them out of the attachable list, because attaching a hookless script

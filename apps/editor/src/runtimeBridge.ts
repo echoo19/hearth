@@ -82,13 +82,13 @@ export interface MountedGameView {
   play(): void;
   pause(): void;
   destroy(): void;
-  /** Toggle the collider/velocity/light debug overlay (PixiSceneView.setDebugDraw, since Task 7). */
+  /** Toggle the collider/velocity/light debug overlay (PixiSceneView.setDebugDraw). */
   setDebugDraw?(on: boolean): void;
   /** Advance exactly one fixed frame and render it (PixiSceneView.stepFrame, play-mode pause/step). */
   stepFrame?(): Promise<void>;
-  /** Hot-reload a script against the current scene, preserving vars/timers/tweens (PixiSceneView.reloadScript, since Wave H). */
+  /** Hot-reload a script against the current scene, preserving vars/timers/tweens (PixiSceneView.reloadScript). */
   reloadScript?(path: string, source: string): Promise<ReloadScriptResult>;
-  /** Live-patch a component property on the current scene (PixiSceneView.patchComponent, since Wave H). */
+  /** Live-patch a component property on the current scene (PixiSceneView.patchComponent). */
   patchComponent?(
     entityRef: string,
     componentType: string,
@@ -97,7 +97,7 @@ export interface MountedGameView {
   ): boolean;
   /**
    * Live-swap a state-machine asset's parsed doc, resetting only entities bound
-   * to it (PixiSceneView.reloadStateMachineAsset, since Task 11). Re-reads the
+   * to it (PixiSceneView.reloadStateMachineAsset). Re-reads the
    * asset fresh from the project fs; resolves to the number of entities reset
    * (0 when the asset is unknown or the runtime has no machine on it).
    */

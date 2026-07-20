@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 /**
- * useShowInWindowMenuBar — Wave L Task 6 review fix.
+ * useShowInWindowMenuBar — review fix.
  *
  * Pins the platform gate documented at nativeMenu.ts:55: the in-window
  * MenuBar renders everywhere except Electron on macOS, where the native

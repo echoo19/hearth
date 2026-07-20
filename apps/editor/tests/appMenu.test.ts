@@ -1,5 +1,5 @@
 /**
- * Application menu model — Wave L Task 6.
+ * Application menu model.
  *
  * buildAppMenu is a pure function of (store, ctx); these tests pin the
  * enabled-state logic, the checkbox reflection, that every shortcut string

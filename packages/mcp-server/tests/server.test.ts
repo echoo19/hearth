@@ -492,7 +492,7 @@ describe('hearth-mcp server', () => {
     const { tools } = await ctx.client.listTools();
     const tool = tools.find((t) => t.name === 'list_journal');
     expect(tool).toBeDefined();
-    // Mirror every field of listJournal's paramsSchema (Wave D lesson: a
+    // Mirror every field of listJournal's paramsSchema (lesson: a
     // stripped inputShape silently drops a param the tool description still
     // advertises) — both since and limit must round-trip through the schema.
     const props = tool!.inputSchema.properties as Record<string, unknown>;

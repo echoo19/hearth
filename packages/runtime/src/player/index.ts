@@ -79,7 +79,7 @@ export interface BootOptions {
 }
 
 // window.__HEARTH_BOOT__ (read by boot() below) is the seam a host — the
-// `hearth screenshot` CLI (Task 9) — uses to stage manual/seeded/debug mode
+// `hearth screenshot` CLI — uses to stage manual/seeded/debug mode
 // BEFORE this script runs, so an export's unmodified auto-boot call
 // (`window.HearthPlayer.boot({ mount, bundle })`, see exportCommands.ts's
 // index.html template) can still be driven into that mode without touching
@@ -91,7 +91,7 @@ declare global {
     __HEARTH_BOOT__?: BootOverrides;
     /**
      * Manual-stepping control surface, present only after a `manual: true`
-     * boot. Task 9 (`hearth screenshot`) drives this from Playwright.
+     * boot. `hearth screenshot` drives this from Playwright.
      */
     __hearth?: {
       /** Step N fixed frames, awaiting any scene switch triggered mid-run. */

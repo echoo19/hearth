@@ -1,4 +1,4 @@
-/* Menu primitive — Wave L.
+/* Menu primitive.
    The dropdown menu (trigger + popover) shared by SceneMenu and MenuBar via
    the MenuButton primitive. Same visual language as before; consolidated
    here so there is one implementation of the look. */

@@ -1,6 +1,6 @@
 /**
  * Contract tests for the nudge-burst accumulator extracted from store.ts's
- * nudgeSelection (Task 8 review fix): a burst of nudge() calls must collapse
+ * nudgeSelection (review fix): a burst of nudge() calls must collapse
  * into exactly ONE flush with the accumulated delta after the debounce
  * window, and teardown (flush/clear) must behave correctly regardless of
  * whether a burst is in flight.

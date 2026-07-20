@@ -1,4 +1,4 @@
-/* tooltip primitive — Wave L
+/* tooltip primitive
    Quiet, tight hint that floats over everything (portalled to <body>). One
    short line, optional shortcut chip. Enters with a small translate+fade;
    leaves instantly (the element just unmounts). */

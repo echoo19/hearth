@@ -108,7 +108,7 @@ export function shouldLintViaPath(
 export function CodePanel() {
   const projectPath = useEditor((s) => s.projectPath);
   const scripts = useEditor((s) => s.info?.scripts ?? []);
-  // Task 2's project setting, default true (older projects predate the
+  // Project setting, default true (older projects predate the
   // field). `exec('updateSettings', …)` refreshes `s.info` on success (see
   // store.ts's `refresh()` after every mutating exec), so this selector is
   // the toggle's whole state — no local optimistic copy needed.
@@ -143,7 +143,7 @@ export function CodePanel() {
   /** Bumped after every successful save — tells CodeEditor to re-lint without
    * a doc change, so path-mode require diagnostics refresh (see checkScript). */
   const [lintNonce, setLintNonce] = useState(0);
-  /** Task 9: whether the cross-script search bar is showing under the tab strip. */
+  /** Whether the cross-script search bar is showing under the tab strip. */
   const [searchOpen, setSearchOpen] = useState(false);
   // "New script" dialog (L-057 / CODE-4): the first in-editor create path —
   // previously the only createScript caller was the missing-file recovery,
@@ -453,7 +453,7 @@ export function CodePanel() {
     });
     setSaving(false);
     if (result.success) {
-      // When editScript returns the formatted source (Task 2), adopt it as
+      // When editScript returns the formatted source, adopt it as
       // both the buffer's live and saved content (so the tab is clean) and
       // push it into the view in one transaction (preserving undo history +
       // selection). Guard for absence in case format was off and codeStyle

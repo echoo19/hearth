@@ -1,14 +1,15 @@
 /**
- * GOLDEN DETERMINISM — the safety net for Wave E's perf work (Tasks 9-11).
+ * GOLDEN DETERMINISM — the safety net for the engine's perf work (frame-scoped
+ * caching, broadphase, and pooling).
  *
- * These hashes were recorded against unmodified (pre-Task-9) runtime.ts by
- * running this file once and copying stateHash's output into EXPECTED
- * below. From here on they must stay byte-identical: Task 9's
- * getEntities()/tilemap caches, and Tasks 10-11's broadphase/pooling work,
- * are only allowed to change *how fast* these scenes run, never *what they
- * compute*. If one of these hashes changes, the fix is to the perf change,
- * not to this file — never update EXPECTED to make a diverging run pass
- * unless the task deliberately changes observable behavior (and says so).
+ * These hashes were recorded against the original (pre-perf-work) runtime.ts
+ * by running this file once and copying stateHash's output into EXPECTED
+ * below. From here on they must stay byte-identical: the getEntities()/
+ * tilemap caches, and the broadphase/pooling work, are only allowed to change
+ * *how fast* these scenes run, never *what they compute*. If one of these
+ * hashes changes, the fix is to the perf change, not to this file — never
+ * update EXPECTED to make a diverging run pass unless the change deliberately
+ * alters observable behavior (and says so).
  *
  * PLATFORM SCOPE: the tilemap-arena / mixed-horde / colliders-1500 bench
  * scenarios seed their movers with Math.cos/Math.sin (scenarios.mjs), and
@@ -21,7 +22,7 @@
  * hashes identically when run twice in the same process (catches any
  * nondeterminism the caches/pooling could introduce), and (b) the broadphase
  * run hashes identically to a forced-naive run in the same process (the exact
- * broadphase-vs-naive equivalence Task 10 guaranteed) — plus the original
+ * broadphase-vs-naive equivalence the broadphase work guaranteed) — plus the original
  * absolute EXPECTED pin, asserted only on the recording platform (arm64
  * macOS) where it was captured. FeatureMix keeps its unconditional absolute
  * pin: its hashed surface is trig-free (integer mover velocities; particle
@@ -240,11 +241,12 @@ async function buildFeatureMixStore(): Promise<ProjectStoreType> {
 }
 
 /**
- * Recorded once against unmodified (pre-Task-9) code — see file header.
- * 'colliders-1500' was added by Task 10 and recorded against post-Task-9 /
- * pre-Task-10 code (Task 9 preserved the pre-Task-9 hashes, so this is the
- * same behavior baseline): it pins the broadphase's highest-density
- * mover-vs-mover scenario.
+ * Recorded once against unmodified (pre-perf-work) code — see file header.
+ * 'colliders-1500' was added later, recorded against code that already had
+ * the getEntities()/tilemap caching change but not yet the broadphase change
+ * (the caching change preserved the original hashes, so this is the same
+ * behavior baseline): it pins the broadphase's highest-density mover-vs-mover
+ * scenario.
  */
 const EXPECTED: Record<string, string> = {
   'tilemap-arena': 'f4ebf2c7f8495c17c464989df6a7abb46f2839d90e806233d76806eb36039abd',
@@ -268,7 +270,7 @@ const IS_RECORDING_PLATFORM = process.platform === 'darwin' && process.arch === 
  * way, then (only on the recording platform) that it still matches the
  * captured absolute hash:
  *   1. same-process, run twice → identical (catches nondeterminism).
- *   2. forced-naive path === broadphase path (Task 10's equivalence property).
+ *   2. forced-naive path === broadphase path (the broadphase equivalence property).
  *   3. recording platform only: broadphase hash === EXPECTED[name].
  */
 async function assertGoldenScenario(name: string): Promise<void> {

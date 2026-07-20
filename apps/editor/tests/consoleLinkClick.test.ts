@@ -1,5 +1,5 @@
 /**
- * Task 7: clicking a Console entry's link opens the script it points at.
+ * Clicking a Console entry's link opens the script it points at.
  * ConsolePanel.tsx's `.console-link` button's onClick calls this exact
  * function (see openConsoleLink's export comment) — this repo has no
  * jsdom/RTL, so the click handler is pulled to module scope and unit-tested

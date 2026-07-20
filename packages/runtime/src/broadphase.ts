@@ -1,5 +1,5 @@
 /**
- * Spatial-hash broadphase for stepPhysics's pair loops (Task 10).
+ * Spatial-hash broadphase for stepPhysics's pair loops.
  *
  * The contract is strict: the broadphase may only PRUNE pairs relative to
  * the naive O(n²) loops, never reorder the survivors. `query()` therefore

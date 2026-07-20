@@ -298,7 +298,7 @@ export class SceneRuntime {
    * (every call site does that itself), and there is no runtime API that
    * mutates `enabled` post-instantiate, so there is nothing to invalidate
    * for. The returned array must never be mutated by callers (no push/
-   * splice/sort at any call site — audited for Task 9) since the same
+   * splice/sort at any call site — audited) since the same
    * array is handed out to every call site for the rest of the frame.
    */
   private entitiesCache: RuntimeEntity[] | null = null;
@@ -1581,7 +1581,7 @@ export class SceneRuntime {
   /**
    * Current state name of an entity's AnimationStateMachine (by id or name),
    * or null when the entity has no machine (or none has run yet). Read-only
-   * accessor for hosts and the Task 11 script bridge.
+   * accessor for hosts and the script bridge.
    */
   getStateMachineState(entityIdOrName: string): string | null {
     const entity = this.find(entityIdOrName);
@@ -2420,7 +2420,7 @@ export class SceneRuntime {
     };
 
     // -----------------------------------------------------------------------
-    // Broadphase (Task 10): spatial hashes prune far-apart pairs; the pair
+    // Broadphase: spatial hashes prune far-apart pairs; the pair
     // loops below are otherwise byte-identical to the naive O(n²) loops.
     // query() returns candidates ascending, so per mover the surviving
     // obstacles run in collection-index order and mover×mover pairs run in

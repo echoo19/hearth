@@ -1,5 +1,5 @@
 /**
- * Cross-script search/replace UI (Task 9). Plain React — NO CodeMirror value
+ * Cross-script search/replace UI. Plain React — NO CodeMirror value
  * import, on purpose: CodePanel.tsx mounts this eagerly (it lives outside the
  * `lazy(() => import('./code/CodeEditor'))` boundary), so pulling in a CM6
  * package here would drag the CM chunk back into the main bundle before the

@@ -1,5 +1,5 @@
 /**
- * Task 11 playtest steps: `drag` (pointer down/interpolated moves/up over
+ * Playtest steps: `drag` (pointer down/interpolated moves/up over
  * several frames, driving a UISlider) and `assertFocus` (matches
  * ctx.ui.focus's current target by name/id, or null for nothing focused).
  * Results also gain `focusedEntity`.

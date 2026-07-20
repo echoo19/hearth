@@ -1,5 +1,5 @@
 /**
- * Live-update classifier (Wave H). Pure, unit-testable core of the editor's
+ * Live-update classifier. Pure, unit-testable core of the editor's
  * iteration loop: turn a mutation — whether run locally through exec() or
  * observed on the WS journal from an external tool (CLI/MCP) — into the set of
  * live actions the store applies against the running preview.
@@ -91,11 +91,12 @@ const ASSETS_PANEL_ONLY = new Set(['importAssets', 'createStateMachineAsset']);
 const EXPORT_ONLY = new Set(['exportDesktop', 'exportWeb']);
 
 /**
- * Wave I command → live action, shared by the local and journal paths so an
- * external agent behaves identically to an in-editor exec. `target` is the
+ * Maps a command to its live action, shared by the local and journal paths so
+ * an external agent behaves identically to an in-editor exec. `target` is the
  * {scene, entity} the command wrote (when it records one); `assetId` is the
- * state-machine asset an ASM update touched. Returns null when `command` is not
- * a Wave I command (callers fall through to their own logic / `fallback`).
+ * state-machine asset an ASM update touched. Returns null when `command` isn't
+ * one of the commands this recognizes (callers fall through to their own
+ * logic / `fallback`).
  */
 function waveIActions(
   command: string,
@@ -225,7 +226,7 @@ export function classifyLocal(command: string, params: Record<string, unknown>, 
     return [{ kind: 'none' }];
   }
 
-  // Wave I commands (identical mapping to the journal path). Local params carry
+  // Live-patch commands (identical mapping to the journal path). Local params carry
   // the target directly; the ASM asset id comes off the command's result data.
   const wave = waveIActions(
     command,
@@ -279,7 +280,7 @@ export function classifyJournal(entry: JournalEntry): LiveAction[] {
 
   const detail = entry.detail;
 
-  // Wave I commands (identical mapping to the local path). Everything the
+  // Live-patch commands (identical mapping to the local path). Everything the
   // classification needs is in the journal detail: the {scene,entity} target,
   // or the ASM asset id for an update.
   const wave = waveIActions(

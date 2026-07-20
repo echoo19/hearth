@@ -154,10 +154,10 @@ describe('getParticles / getParticleCount', () => {
 
 /**
  * Exact per-particle position/velocity/age snapshots, recorded against
- * unmodified (pre-Task-11) particles.ts by running these two scenarios once
+ * unmodified (pre-pooling) particles.ts by running these two scenarios once
  * and copying EmitterState's output verbatim into EXPECTED_CAP/EXPECTED_EXPIRY
- * below (same golden discipline as goldenDeterminism.test.ts's Tasks 9-10
- * hashes). Task 11's pooling change (free-list reuse in spawnOne, objects
+ * below (same golden discipline as goldenDeterminism.test.ts's
+ * hashes). The pooling change (free-list reuse in spawnOne, objects
  * recycled on splice-expiry and shift-eviction) must reproduce these
  * snapshots bit-for-bit — it's only allowed to change *how* particle objects
  * are allocated, never any arithmetic (rng draws, integration, spawn/expiry

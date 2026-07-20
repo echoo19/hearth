@@ -81,7 +81,7 @@ describe('assetNeedsRawContent', () => {
   it('flags the asset types the runtime reads off the store fs', () => {
     // Multi-file exports fetch these into the player's in-memory fs so
     // loadAnimations / loadPrefabs can read them; missing one silently
-    // freezes that feature (the Wave A regression class).
+    // freezes that feature.
     expect(assetNeedsRawContent('animation')).toBe(true);
     expect(assetNeedsRawContent('prefab')).toBe(true);
     expect(assetNeedsRawContent('stateMachine')).toBe(true);

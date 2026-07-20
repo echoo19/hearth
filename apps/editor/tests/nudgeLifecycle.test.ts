@@ -1,5 +1,5 @@
 /**
- * Store-level regression test for Task 8's nudge-timer teardown fix: a
+ * Store-level regression test for the nudge-timer teardown fix: a
  * pending arrow-key nudge burst must not fire a stale `moveEntity` exec
  * after the project/scene it targeted is gone. Exercises the real
  * `useEditor` store (not just nudgeQueue.ts in isolation) so the actual

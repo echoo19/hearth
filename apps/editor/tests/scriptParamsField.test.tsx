@@ -98,7 +98,7 @@ describe('ScriptPathField', () => {
     expect(text.value).toBe('scripts/new.lua');
   });
 
-  // Wave N (script modules): libraries — hookless scripts — must not be
+  // Script modules: libraries — hookless scripts — must not be
   // offered as attachable behaviors; attaching one silently does nothing.
   it('excludes library scripts from the pick list', () => {
     render(

@@ -175,7 +175,7 @@ describe('classifyLocal', () => {
     expect(kinds(classifyLocal('updateSettings', {}, {}))).toEqual(['structural']);
   });
 
-  // --- Wave I commands -------------------------------------------------------
+  // --- Live-patch commands ----------------------------------------------------
 
   it('updateStateMachineAsset → an asm-reload carrying the asset id (from result data)', () => {
     expect(classifyLocal('updateStateMachineAsset', { assetId: 'ast_sm' }, { assetId: 'ast_sm', name: 'hero' })).toEqual([
@@ -316,7 +316,7 @@ describe('classifyJournal', () => {
     ).toEqual([{ kind: 'patch', scene: 'main', entity: 'e1', property: 'Camera.ambientLight', hasValue: false }]);
   });
 
-  // --- Wave I commands (external parity with classifyLocal) ------------------
+  // --- Live-patch commands (external parity with classifyLocal) --------------
 
   it('external updateStateMachineAsset → an asm-reload from detail.assetId', () => {
     expect(classifyJournal(entry({ command: 'updateStateMachineAsset', detail: { assetId: 'ast_sm' } }))).toEqual([

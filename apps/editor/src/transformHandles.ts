@@ -1,7 +1,7 @@
 /**
  * Pure math for the Scene view's transform-handle gizmo: the 8 resize
  * handles + 1 rotate handle drawn on a selected entity's bounding box.
- * SceneView (Task 10) resolves which component a drag actually edits
+ * SceneView resolves which component a drag actually edits
  * (HandleTarget) and turns DragResult into a scene-JSON patch; this module
  * only knows about an abstract, already-rotated `SelectionBox`.
  *
@@ -25,7 +25,7 @@ import type { SceneEntity, Vec2 } from './types';
 
 export type HandleId = 'nw' | 'n' | 'ne' | 'e' | 'se' | 's' | 'sw' | 'w' | 'rotate';
 
-/** What a drag gesture edits; resolved and interpreted by Task 10 (SceneView). */
+/** What a drag gesture edits; resolved and interpreted by SceneView. */
 export interface HandleTarget {
   kind: 'sprite-size' | 'collider-box' | 'collider-circle' | 'ui-size' | 'transform-scale';
   /** Current extent in world px (a circle collider reports radius*2 for both). */
@@ -343,7 +343,7 @@ export function cursorFor(id: HandleId, rotation: number): string {
  * e.g. a CORNER drag on a sprite/box Collider, which edits width AND height
  * (two separate scalar schema leaves, no vec-shaped size property). Either
  * way the gesture now commits as exactly ONE undo step (HearthSession
- * snapshots once per execute() call), using Task 2's setProperties batch
+ * snapshots once per execute() call), using the setProperties batch
  * command — a corner drag used to commit width then height as two
  * sequential setComponentProperty calls, which was two undo steps for one
  * gesture.

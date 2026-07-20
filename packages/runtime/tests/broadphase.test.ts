@@ -1,5 +1,5 @@
 /**
- * Task 10 — spatial-hash broadphase, order-preserving and bit-identical.
+ * Spatial-hash broadphase, order-preserving and bit-identical.
  *
  * Two layers of proof:
  *  1. Unit tests for SpatialHash / chooseCellSize / shapeAabb, including a

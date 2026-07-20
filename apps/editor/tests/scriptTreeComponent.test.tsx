@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 /**
- * The Code panel's script tree (Wave N script modules, human surface):
+ * The Code panel's script tree (script modules, human surface):
  * nested paths render as a real ARIA tree (folder rows, aria-level), library
  * scripts wear the "library" badge, and the keyboard contract is the shared
  * Hierarchy treeNav one — roving tabindex, arrows move a focus cursor

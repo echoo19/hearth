@@ -40,7 +40,7 @@ export async function countPrefabInstances(
 
 /**
  * Confirm-dialog copy for syncing a prefab's instances. `syncPrefabInstances`
- * is a MERGE, not a wholesale rebuild (Wave I): each instance's subtree is
+ * is a MERGE, not a wholesale rebuild: each instance's subtree is
  * reconciled against the prefab reusing its existing scene ids, so per-
  * instance overrides survive the sync and are only dropped when the field
  * they targeted no longer exists on the updated prefab.

@@ -6,7 +6,7 @@
  * calls audio.suspend() (and play() audio.resume()) without a Pixi
  * Application. The suspend/resume semantics themselves are covered in
  * pixi-audio.test.ts; end-to-end audio silence is verified live in the
- * editor (Wave L T9-U5).
+ * editor.
  */
 import { describe, it, expect, vi } from 'vitest';
 import { PixiSceneView } from '../src/pixi/index.js';

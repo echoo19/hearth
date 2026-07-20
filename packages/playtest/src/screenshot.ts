@@ -1,13 +1,13 @@
 /**
  * `hearth screenshot`: capture a deterministic PNG of a scene via headless
- * Chromium, driven through the manual-stepping seam Task 8 built into the
+ * Chromium, driven through the manual-stepping seam built into the
  * web player (`window.__HEARTH_BOOT__` / `window.__hearth`, see
  * `@hearth/runtime`'s `player/bootOverrides.ts` and `player/index.ts`).
  *
  * Lives in @hearth/playtest (not @hearth/cli or @hearth/mcp-server) so both
  * consumers — which already depend on this package for
  * `createRuntimeHooks()` — can call it symmetrically, without either one
- * depending on the other. See the Task 9 report for the fuller rationale.
+ * depending on the other.
  *
  * `playwright-core` is imported lazily (inside `launchChromium`) so this
  * module — and therefore @hearth/cli and @hearth/mcp-server, which both pull
@@ -79,9 +79,9 @@ function escapeScriptContent(source: string): string {
 /**
  * Insert `<script>window.__HEARTH_BOOT__ = {...}</script>` right before the
  * player's `<script>` tag in a single-file `exportWeb` HTML document — i.e.
- * right after the `hearthBoot` helper's closing `</script>`, per Task 8's
- * verified insertion point (see exportCommands.ts's `renderIndexHtml` and
- * the Task 8 report's "notes for Task 9"). Pure and independently testable.
+ * right after the `hearthBoot` helper's closing `</script>`, per the
+ * verified insertion point (see exportCommands.ts's `renderIndexHtml`).
+ * Pure and independently testable.
  */
 export function injectBootScript(html: string, overrides: BootOverrides): string {
   const anchor = 'function hearthBoot(load)';

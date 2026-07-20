@@ -17,7 +17,7 @@ import { setGameView } from '../src/gameViewRef';
 import type { JournalEntry } from '../src/types';
 
 /**
- * Store live-dispatch wiring for the Wave I commands, driven through the
+ * Store live-dispatch wiring for the live-patch commands, driven through the
  * `applyExternalJournalEntry` seam (the WS journal handler's per-entry step).
  * Classification is unit-tested in livePatch.test.ts; this pins the store side:
  * an ASM update reaches the runtime seam, an autotile edit re-reads and patches

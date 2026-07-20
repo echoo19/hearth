@@ -8,7 +8,7 @@
  * `GameSession.create`. Positions/velocities/tilemap layout are all derived
  * from a seeded PRNG (mulberry32) so two runs of the same scenario produce
  * byte-identical physics every frame — required for stable before/after
- * comparisons across Wave E's perf tasks.
+ * comparisons across the engine's perf work.
  */
 import {
   MemoryFileSystem,

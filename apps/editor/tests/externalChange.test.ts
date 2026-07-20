@@ -3,7 +3,7 @@ import { decideExternalChange } from '../src/components/code/externalChange';
 
 /**
  * Exhaustive decision-table coverage for the Code panel's external-change
- * seam. The one invariant that must never break (the Wave E stale-clobber
+ * seam. The one invariant that must never break (the stale-clobber
  * bug class): an external edit is never silently discarded by a later Save
  * without the user explicitly choosing "Keep mine" — i.e. whenever the open
  * buffer is dirty and an external script edit lands, the outcome must be

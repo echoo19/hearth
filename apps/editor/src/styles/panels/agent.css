@@ -151,7 +151,7 @@
   height: 100%;
 }
 
-/* Task 6's activity timeline: the trust layer over the journal feed, plus
+/* Activity timeline: the trust layer over the journal feed, plus
    session controls (Snapshot / Review changes / Revert session). Lives under
    the terminal in the collapsible Activity section (.agent-activity); it's fed
    by the WS journal channel, not the pty, so it works with the terminal idle. */

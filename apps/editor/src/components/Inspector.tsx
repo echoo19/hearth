@@ -84,7 +84,7 @@ function Vec2Field({
  * Row-per-point editor for Vec2[] fields (LineRenderer.points, Collider
  * polygon points): paired x/y NumberField inputs identical to Vec2Field, a
  * remove button per row, and an add-point button. Jake's uniformity
- * feedback: this replaces JsonField's raw JSON textarea for every Wave A
+ * feedback: this replaces JsonField's raw JSON textarea for every
  * Vec2[] field — the array-editing logic lives in ../vec2List so it stays
  * unit-testable without a DOM.
  */
@@ -1136,8 +1136,8 @@ export function Inspector() {
 
   // Revert every override on one component of the inspected instance member in
   // a single call (INSPSPEC-7 / L-040). revertPrefabOverride with `component`
-  // and no `path` clears all of that component's overrides at once (per Wave I
-  // — see revertInstanceOverrides), so unlike handleRevertField this needs no
+  // and no `path` clears all of that component's overrides at once (see
+  // revertInstanceOverrides), so unlike handleRevertField this needs no
   // per-path fan-out.
   const handleRevertComponent = async (component: string) => {
     await exec('revertPrefabOverride', { scene: sceneId, entity: entity.id, component });

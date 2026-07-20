@@ -23,7 +23,7 @@ import {
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 // Committed real TTF fixture (see packages/examples/fixtures/fonts/OFL.txt
-// for license) — Task 9's font-loading tests need bytes a real FontFace can
+// for license) — font-loading tests need bytes a real FontFace can
 // actually parse, not the header-only stand-ins used elsewhere in this file.
 const FONT_FIXTURE_PATH = path.resolve(
   __dirname,
@@ -590,7 +590,7 @@ describe('captureScreenshot (real Chromium)', () => {
     30000,
   );
 
-  // Task 5: renderer draws sliced-sheet sub-rects and applies SpriteRenderer.tint.
+  // Renderer draws sliced-sheet sub-rects and applies SpriteRenderer.tint.
   // Two entities at the SAME two screen positions, but with which frame is
   // assigned to which position swapped between the two captures below. If
   // the renderer actually crops to each entity's named frame, swapping the
@@ -740,10 +740,10 @@ describe('captureScreenshot (real Chromium)', () => {
     30000,
   );
 
-  // Task 9: font-type assets are loaded via FontFace at mount so
+  // Font-type assets are loaded via FontFace at mount so
   // Text.fontFamily can reference one by asset name. captureScreenshot
-  // doesn't expose the underlying Playwright page to callers (see Task 7's
-  // notes), so `document.fonts.check(...)` isn't reachable from here.
+  // doesn't expose the underlying Playwright page to callers (see notes
+  // above), so `document.fonts.check(...)` isn't reachable from here.
   //
   // A naive "custom font name vs. literal 'monospace'" pixel diff would be a
   // false positive: Chromium falls back to some default font for ANY
@@ -861,7 +861,7 @@ describe('captureScreenshot (real Chromium)', () => {
     30000,
   );
 
-  // Task 6: Camera.postEffects render as hand-written Pixi filters on the game
+  // Camera.postEffects render as hand-written Pixi filters on the game
   // view. Each of the six effect types, applied to a scene with real content,
   // must change the captured pixels versus no effect. One shared OFF baseline
   // is compared against each effect ON (each setComponentProperty overwrites
@@ -988,7 +988,7 @@ describe('captureScreenshot (real Chromium)', () => {
     60_000,
   );
 
-  // Task 6: SpriteEffects (outline/flash/dissolve) render as one combined
+  // SpriteEffects (outline/flash/dissolve) render as one combined
   // per-sprite filter. Each non-neutral field must change the pixels, while a
   // default (all no-op) SpriteEffects component must be byte-identical to
   // having no component at all — the load-bearing no-op invariant.
@@ -1038,7 +1038,7 @@ describe('captureScreenshot (real Chromium)', () => {
         const dissolveCap = await captureScreenshot(store, { frame: 0, seed: 1, out: 'shots/fx-dissolve.png' });
         expect(Buffer.compare(baselineBytes, await readFile(dissolveCap.path)), 'dissolve').not.toBe(0);
 
-        // Flash mid-decay (~0.9167, the first-frame value Task 5's decay
+        // Flash mid-decay (~0.9167, the first-frame value the decay
         // produces). Reset dissolve so flash is the only active field.
         const flash = await session.execute('setProperties', {
           scene: 'Main',

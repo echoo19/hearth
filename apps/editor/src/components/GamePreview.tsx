@@ -66,7 +66,7 @@ export function GamePreview() {
           // The structured RuntimeError (script/line/phase) is what actually
           // drives the Console line, so onError's plain-string variant is
           // deliberately left unwired here — recordRuntimeError() builds the
-          // plain-language, clickable entry (Task 7) from onErrorEntry below.
+          // plain-language, clickable entry from onErrorEntry below.
           onErrorEntry: (error) => {
             if (!cancelled) recordRuntimeError(error);
           },
@@ -124,7 +124,7 @@ export function GamePreview() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [playing, status]);
 
-  // Debug pause (Task 9): freezes the running game without stopping the run.
+  // Debug pause: freezes the running game without stopping the run.
   // Only meaningful while playing — Stop already froze the view via the
   // effect above, and a fresh Play always starts with paused reset to false.
   useEffect(() => {

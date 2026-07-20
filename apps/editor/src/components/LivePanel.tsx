@@ -1,5 +1,5 @@
 /**
- * Live panel (Task 9): read-only runtime inspector for the running game.
+ * Live panel: read-only runtime inspector for the running game.
  * Polls the mounted PixiSceneView's SceneRuntime at 10Hz — only while this
  * panel is actually visible (see LivePanelHost in Workspace.tsx) and a run
  * is playing — and shows one entity's live transform/velocity/timers/tweens

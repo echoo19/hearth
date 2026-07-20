@@ -681,7 +681,7 @@ describe('hearth log', () => {
     const log = await runCli(['log'], dir);
     expect(log.code).toBe(0);
     // summary already leads with the command name ("createScene Level2") —
-    // the line must not repeat it (Wave D T3 lesson).
+    // the line must not repeat it.
     expect(log.stdout.split('\n')).toContain('#1 [cli] createScene Level2');
     expect(log.stdout).not.toContain('createScene createScene');
   });

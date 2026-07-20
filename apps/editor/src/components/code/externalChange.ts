@@ -4,7 +4,7 @@
  * buffer should do. No DOM, no store access — kept side-effect-free so the
  * full decision table is unit-testable (see externalChange.test.ts).
  *
- * The invariant this exists to protect (the Wave E stale-clobber bug
+ * The invariant this exists to protect (the stale-clobber bug
  * class): an external agent's edit must never be silently discarded by a
  * later Save from this panel. Concretely: whenever the local buffer is
  * dirty, a matching (or possibly-matching) external script edit always

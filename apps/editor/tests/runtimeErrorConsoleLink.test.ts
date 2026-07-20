@@ -1,5 +1,5 @@
 /**
- * Task 7: a structured RuntimeError recorded via recordRuntimeError() also
+ * A structured RuntimeError recorded via recordRuntimeError() also
  * lands in the Console as a plain-language, entity-first message, with a
  * `link` to the offending script when one is known — the click target for
  * ConsolePanel's `.console-link` button (openScriptAt). Pure store-level

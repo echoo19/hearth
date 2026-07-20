@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 /**
- * Menu primitive — Wave L Task 4.
+ * Menu primitive.
  *
  * The vitest config collects `apps/*\/tests/**\/*.test.{ts,tsx}` and defaults
  * to the `node` environment, but a per-file docblock can opt a `.tsx` file

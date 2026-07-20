@@ -602,8 +602,8 @@ describe('drift-cellar v0.7 showcase (axes + gamepad + widgets + camera effects)
   });
 });
 
-// Ember Horde is the Wave E spatial-hash horde-scale showcase, and (as of
-// Task 12) the Wave I prefab-spawn showcase: a Director waves-spawns
+// Ember Horde is the spatial-hash horde-scale showcase, and also
+// the prefab-spawn showcase: a Director waves-spawns
 // kinematic enemies at runtime via ctx.scene.spawnPrefab("Enemy", ...),
 // capped at 300 concurrent, each caching the Player EntityHandle once
 // instead of re-searching the scene every frame (see generate.mjs's

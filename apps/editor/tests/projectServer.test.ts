@@ -263,7 +263,7 @@ describe('/api/fs for the browser ProjectStore', () => {
 });
 
 describe('getSession self-healing (no websocket/watcher involved)', () => {
-  // Regression test for the Wave E final-review Critical (C1): the
+  // Regression test for a final-review Critical (C1): the
   // project-server's cached HearthSession must not serialize stale memory
   // over external agent/CLI disk edits. Previously the ONLY invalidation was
   // the journal-watcher callback in ws.ts, which only fires while a socket is

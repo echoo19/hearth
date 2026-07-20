@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 /**
- * Toolbar application menu bar — Wave L Task 6.
+ * Toolbar application menu bar.
  *
  * The full Toolbar is heavily store/dock/API-bound; its logic lives in the
  * pure `buildAppMenu` model (appMenu.test.ts) and the shared MenuButton

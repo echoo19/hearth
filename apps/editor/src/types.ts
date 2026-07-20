@@ -179,7 +179,7 @@ export interface HistoryList {
 }
 
 // ---------------------------------------------------------------------------
-// Desktop / web export (Wave J)
+// Desktop / web export
 // ---------------------------------------------------------------------------
 
 /** Signing rung the host environment selects (mirrors @hearth/shipping). */
@@ -206,7 +206,7 @@ export type ExportStage = 'stage' | 'download' | 'package' | 'sign' | 'notarize'
  * WS frames for a running desktop export job (POST /api/export/desktop).
  * Progress streams as `export-progress`, then exactly one terminal frame:
  * `export-done` on success or `export-error` on failure (a per-platform
- * failure carries the `platform`). Task 7's dialog consumes these.
+ * failure carries the `platform`). The export dialog consumes these.
  */
 export type ExportProgressFrame = {
   type: 'export-progress';

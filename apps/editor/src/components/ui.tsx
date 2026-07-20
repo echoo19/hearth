@@ -14,7 +14,7 @@ import { Button } from './ui/Button';
 // to reach a field primitive, which used to create a circular import between
 // Inspector.tsx and PostEffectsField.tsx.
 //
-// Rejection contract (Wave L / L-108). A field's local `draft` only re-syncs
+// Rejection contract. A field's local `draft` only re-syncs
 // from the `value` prop, so a commit the consumer rejects — one that leaves
 // `value` unchanged — used to leave the bad draft on screen (and, for
 // NumberField, silently commit `0` for an emptied field). To close that gap:
@@ -416,7 +416,7 @@ const ICON_PATHS: Record<string, ReactNode> = {
       <path d="M4.5 6V4.2A1.5 1.5 0 0 1 6 2.7v0a1.5 1.5 0 0 1 1.5 1.5V6" />
     </>
   ),
-  // ---- Toolbar / application-menu glyphs (Wave L Task 6) ------------------
+  // ---- Toolbar / application-menu glyphs -----------------------------------
   // Undo / Redo: curved "return" arrows (↩ / ↪), reading as step-back /
   // step-forward rather than plain page navigation.
   undo: (
@@ -481,7 +481,7 @@ const ICON_PATHS: Record<string, ReactNode> = {
       <circle cx="9.25" cy="6" r="0.9" fill="currentColor" stroke="none" />
     </>
   ),
-  // Search: magnifying glass — the Assets panel's name/type filter (Wave L T9).
+  // Search: magnifying glass — the Assets panel's name/type filter.
   search: (
     <>
       <circle cx="5.1" cy="5.1" r="3.1" />

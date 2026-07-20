@@ -40,7 +40,7 @@ describe('syncConfirmBody', () => {
   });
 
   it('no longer describes a wholesale rebuild', () => {
-    // Wave I: syncPrefabInstances merges (reuses scene ids, re-applies
+    // syncPrefabInstances merges (reuses scene ids, re-applies
     // overrides) rather than rebuilding every instance from scratch.
     expect(syncConfirmBody(3)).not.toMatch(/rebuild/i);
   });

@@ -191,7 +191,7 @@
 }
 
 /* --------------------------------------------------------------------------
-   Code panel body — script tree rail + editor, side by side (Wave N script
+   Code panel body — script tree rail + editor, side by side (script
    modules). The rail reuses the Hierarchy panel's .tree/.tree-row idiom.
    -------------------------------------------------------------------------- */
 .code-body {
@@ -240,7 +240,7 @@
 }
 
 /* --------------------------------------------------------------------------
-   Code panel — cross-script search/replace (Task 9)
+   Code panel — cross-script search/replace
    -------------------------------------------------------------------------- */
 
 .code-search-bar {

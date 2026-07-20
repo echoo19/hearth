@@ -1,6 +1,6 @@
 /**
- * Golden determinism harness — shared by goldenDeterminism.test.ts (Task 9)
- * and extended by Task 10/11's broadphase/pooling goldens.
+ * Golden determinism harness — shared by goldenDeterminism.test.ts
+ * and extended by the broadphase/pooling goldens.
  *
  * Hashes a GameSession's full observable state (entities, camera, particle
  * counts, event totals) into one short digest, so a byte-for-byte behavior

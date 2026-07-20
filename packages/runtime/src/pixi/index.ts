@@ -478,8 +478,8 @@ export class PixiSceneView {
   /**
    * Toggle the debug overlay (collider outlines, velocity vectors, light
    * radii). Never on by default — this is the only way to enable it, so a
-   * shipped export stays clean unless a host explicitly opts in (Task 8
-   * wires this into the player UI; this class does not enable it itself).
+   * shipped export stays clean unless a host explicitly opts in (the player UI
+   * wires this in; this class does not enable it itself).
    */
   setDebugDraw(on: boolean): void {
     this._debugDraw = on;

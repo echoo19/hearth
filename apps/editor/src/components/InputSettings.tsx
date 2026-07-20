@@ -3,7 +3,7 @@
  * action, virtual axes, and the global deadzone — no JSON textareas, every
  * control is typed (reuses NumberField/TextField from ui.tsx).
  *
- * Every edit calls exec('updateSettings', { inputMappings }). Per Task 4's
+ * Every edit calls exec('updateSettings', { inputMappings }). Per
  * settingsCommands.ts: `actions` merges per-action (an empty code array
  * removes that action), while `gamepadButtons`, `gamepadAxes`, `axes`, and
  * `deadzone` each replace that whole top-level key — so whenever one of
