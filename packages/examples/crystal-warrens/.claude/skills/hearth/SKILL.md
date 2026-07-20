@@ -1,6 +1,6 @@
 ---
 name: hearth
-description: Operate the Hearth engine as a coding agent — the session loop (recall → snapshot → change → validate → playtest → screenshot → remember), project memory, permission modes, verification, review/undo, and export. Load FIRST whenever a project has a hearth.json or the task mentions Hearth. Routes to the domain skills: hearth-build (scenes/entities/tilemaps/prefabs), hearth-code (ctx scripting), hearth-art (assets/sourcing/pixel discipline), hearth-feel (juice/UX/quality bar).
+description: Operate the Hearth engine as a coding agent — the session loop (recall → snapshot → change → validate → playtest → screenshot → remember), project memory, permission modes, verification, review/undo, and export. Load FIRST whenever a project has a hearth.json or the task mentions Hearth. Routes to the domain skills: hearth-build (scenes/entities/tilemaps/prefabs), hearth-code (ctx scripting), hearth-art (assets/sourcing/pixel discipline), hearth-feel (juice/UX/quality bar), hearth-design (scope/pacing/endings/completeness).
 ---
 
 # Building games in Hearth
@@ -26,12 +26,13 @@ operational playbook.
 
 ## Which skill do you need?
 
-This skill is the core loop; the domain playbooks are four sibling skills. **Load the relevant skill before working in its domain — don't work from memory:**
+This skill is the core loop; the domain playbooks are five sibling skills. **Load the relevant skill before working in its domain — don't work from memory:**
 
 - **`hearth-build`** — scenes, entities, components, tilemaps/autotiling, colliders, prefabs, animation state machines, input bindings: structuring what EXISTS in the game.
 - **`hearth-code`** — behavior scripts: the ctx API, Lua/JS hooks, modules, determinism, script iteration: making things HAPPEN.
 - **`hearth-art`** — importing/slicing/animating assets, procedural sprites and sounds, autonomous CC0 sourcing with licensing, pixel-art discipline: making the game LOOK and SOUND real.
 - **`hearth-feel`** — juice, game-UX conventions, and the quality bar: making it feel GOOD and judging when it's DONE.
+- **`hearth-design`** — scoping a game to its session length, structuring levels/scenes, difficulty ramps and pacing, endings and replay hooks: deciding what the game NEEDS and judging whether it's COMPLETE.
 
 ## The loop every session runs
 
