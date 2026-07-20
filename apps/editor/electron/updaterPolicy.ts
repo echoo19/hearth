@@ -7,15 +7,14 @@
  * (Windows code signing only affects the first manual install's SmartScreen
  * prompt, not updater-applied updates).
  *
- * macOS is notify-only for now: Squirrel.Mac validates the downloaded app's
- * code signature against the running app's, and the release builds are ad-hoc
- * signed — they can never pass that check. Flip MAC_AUTO_UPDATE once CI ships
- * Developer-ID-signed, notarized builds (MAC_CSC_LINK + notarization secrets
- * in the release workflow); users on older ad-hoc builds still need one
- * manual re-download to get onto the signed line.
+ * macOS self-updates in place too: Squirrel.Mac validates the downloaded app's
+ * code signature against the running app's, and CI now ships Developer-ID-
+ * signed, notarized builds (MAC_CSC_LINK + Apple notarization secrets are set
+ * on the release workflow), so the check passes. Users on older ad-hoc builds
+ * still need one manual re-download to get onto the signed line.
  */
 
-export const MAC_AUTO_UPDATE = false;
+export const MAC_AUTO_UPDATE = true;
 
 export interface UpdatePolicy {
   mode: 'off' | 'auto' | 'notify';

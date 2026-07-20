@@ -28,8 +28,8 @@ describe('resolveUpdatePolicy', () => {
     expect(resolveUpdatePolicy({ ...base, platform: 'linux' })).toEqual({ mode: 'auto' });
   });
 
-  it('only notifies on macOS while release builds are ad-hoc signed', () => {
-    expect(resolveUpdatePolicy({ ...base, platform: 'darwin' })).toEqual({ mode: 'notify' });
+  it('fully auto-updates on macOS now that CI ships notarized builds', () => {
+    expect(resolveUpdatePolicy({ ...base, platform: 'darwin' })).toEqual({ mode: 'auto' });
   });
 
   it('is off on platforms the release workflow does not build for', () => {
