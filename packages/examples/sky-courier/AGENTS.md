@@ -6,7 +6,7 @@ structured CLI (`hearth`) and an MCP server (`hearth-mcp`) so coding agents
 can inspect, modify, test, and build this game through safe engine
 operations instead of hand-editing JSON.
 
-> **Coding-agent skills.** This project ships six focused skills under
+> **Coding-agent skills.** This project ships seven focused skills under
 > `.claude/skills/` that Claude Code discovers automatically. **Load the one
 > whose domain you're working in — don't work from memory:**
 > - `hearth` (**the operating core — load first**): the session loop, project
@@ -22,6 +22,9 @@ operations instead of hand-editing JSON.
 > - `hearth-design` (**design**): scoping a game to its session length,
 >   pacing and difficulty ramps, endings and replay hooks, and judging
 >   completeness.
+> - `hearth-playtest` (**bot playtesting**): `hearth sweep` runs seeded bot
+>   policies across many seeds to hunt softlocks, crashes, and unmet
+>   objectives, and bakes a failing seed into a permanent regression test.
 >
 > (Canonical copies live at `skills/<name>/SKILL.md` in the Hearth engine
 > repo.) This file is the per-project quick reference; the skills are the
@@ -73,8 +76,12 @@ and memory together.
    steps to a playtest to pin jump height, dash distance, or settle time.
    **Check the frame budget:** `hearth bench <scene>` reports per-frame ms
    (avg/median/p95) so you can confirm a scene holds 60fps before shipping.
-6. **Do not delete assets or scenes unless explicitly asked.**
-7. **Summarize your changes** when done: which scenes, entities, components,
+6. **Sweep after gameplay changes:** `hearth sweep <scene>` sets seeded bot
+   players loose to hunt softlocks and crashes for you. When a bug is reported,
+   sweep for a deterministic repro seed *before* debugging, then `--bake` that
+   seed into a regression playtest — red until you fix it, green forever after.
+7. **Do not delete assets or scenes unless explicitly asked.**
+8. **Summarize your changes** when done: which scenes, entities, components,
    scripts, and assets you touched (`hearth diff --json` gives you the list).
 
 ## Typical workflow

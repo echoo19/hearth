@@ -332,6 +332,23 @@ scene holds 60fps (16.67ms/frame) before shipping. `--budget-ms` adds a
 `withinBudget` verdict (median ≤ budget). Scene defaults to the initial scene.
 See [performance.md](./performance.md#benchmarking-from-the-cli-mcp).
 
+**Sweep** (read-only, headless): `sweep [scene] [--policies <csv>]
+[--seeds n] [--seed-start n] [--max-frames n] [--avatar ref] [--target
+ref|x,y] [--objective <json>]... [--stuck-after n] [--heatmap] [--bake
+<name>]`: seeded bot policies (`mash`, `idle`, `wander`, `seek`) play the scene
+across many seeds and report softlocks, crashes, stuck states, and unreached
+objectives as a token-frugal summary (full per-run detail lands in
+`.hearth/sweeps/`). `--policies` picks the bots (default `mash`, which needs no
+setup; `wander`/`seek` steer `--avatar`, and `seek` needs `--target`);
+`--objective` (repeatable) declares pass/fail criteria that double as
+acceptance criteria; `--seeds`/`--seed-start`/`--max-frames` size the run,
+capped at `policies × seeds × maxFrames ≤ 400000` frames; `--heatmap` adds the
+ASCII coverage grid (off by default, token cost). `--bake <name>` freezes one
+`(policy, seed)` run into a normal scripted playtest instead of sweeping (needs
+an explicit scene, one policy, `--seeds 1`) — red until the bug is fixed, green
+forever after. Scene defaults to the initial scene. See
+[playtesting.md](./playtesting.md).
+
 ## The `script` group
 
 `hearth script edit|check|format|search|replace` is the forward surface

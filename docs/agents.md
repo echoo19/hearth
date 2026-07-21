@@ -46,7 +46,10 @@ snapshot → inspect → change (commands) → validate → playtest → capture
    behavior you add (`create playtest`): steps cover waits, key presses,
    pointer clicks, and assertions (including `assertScene`), and they're
    deterministic (fixed timestep, scripted input, seeded RNG, and a playtest
-   can set its own `seed`), so they're trustworthy. Run reports include
+   can set its own `seed`), so they're trustworthy. After a gameplay change,
+   also `hearth sweep <scene>` to let seeded bot policies hunt softlocks and
+   crashes you didn't think to check, and bake any failing seed into a
+   regression test — see [playtesting.md](./playtesting.md). Run reports include
    `audioEvents` (every play/stop with frame and asset id), `sceneEvents`,
    and `finalScene`, so sound and scene switching are checkable headlessly
    too.

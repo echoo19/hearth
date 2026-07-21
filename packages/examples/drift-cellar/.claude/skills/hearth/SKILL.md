@@ -26,13 +26,14 @@ operational playbook.
 
 ## Which skill do you need?
 
-This skill is the core loop; the domain playbooks are five sibling skills. **Load the relevant skill before working in its domain — don't work from memory:**
+This skill is the core loop; the domain playbooks are six sibling skills. **Load the relevant skill before working in its domain — don't work from memory:**
 
 - **`hearth-build`** — scenes, entities, components, tilemaps/autotiling, colliders, prefabs, animation state machines, input bindings: structuring what EXISTS in the game.
 - **`hearth-code`** — behavior scripts: the ctx API, Lua/JS hooks, modules, determinism, script iteration: making things HAPPEN.
 - **`hearth-art`** — importing/slicing/animating assets, procedural sprites and sounds, autonomous CC0 sourcing with licensing, pixel-art discipline: making the game LOOK and SOUND real.
 - **`hearth-feel`** — juice, game-UX conventions, and the quality bar: making it feel GOOD and judging when it's DONE.
 - **`hearth-design`** — scoping a game to its session length, structuring levels/scenes, difficulty ramps and pacing, endings and replay hooks: deciding what the game NEEDS and judging whether it's COMPLETE.
+- **`hearth-playtest`** — bot playtesting: `hearth sweep` runs seeded bot policies across many seeds to hunt softlocks, crashes, and unmet objectives, and bakes a failing seed into a permanent regression test: letting the engine FIND the bugs you didn't think to check.
 
 ## The loop every session runs
 
@@ -49,8 +50,9 @@ recall + digest → snapshot → change (commands) → validate → playtest →
 3. **Change through commands.** Don't assume a name/id/property the digest
    doesn't show — inspect that one thing.
 4. **Validate** and fix every error you introduced.
-5. **Playtest** — assert behavior headlessly; **screenshot** to *see* your work
-   (read-only, no build permission needed).
+5. **Playtest** — assert behavior headlessly; after gameplay changes **sweep**
+   (`hearth sweep <scene>`) to let the engine hunt softlocks and crashes for
+   you; **screenshot** to *see* your work (all read-only, no build permission).
 6. **Remember + diff** — record durable decisions/gotchas with `hearth remember`
    so the next session inherits them, then summarize the diff.
 
@@ -144,6 +146,13 @@ Steps cover waits, key presses, pointer drags, and asserts (`assertScene`,
 `assertAudioCount`, `assertParticleCount`, `assertCameraEffect`, `assertFocus`,
 `assertNoErrors`, …). Run reports expose `audioEvents`, `sceneEvents`,
 `cameraEffects`, and live particle counts.
+
+**Sweeps** are the other half of verification: where a playtest asserts what you
+*know* to check, `hearth sweep <scene>` sets seeded bot players loose to find
+what you *didn't* — softlocks, crashes, unreached exits — and can bake a failing
+seed into a permanent regression test. Sweep after every gameplay change and to
+find a repro seed before debugging a reported bug. Load the **`hearth-playtest`**
+skill for the how.
 
 **Never hand-compute frame counts.** Particle spawns and effect decay land on
 whole fixed frames via floating-point accumulators — `rate: 10` at 60fps spawns

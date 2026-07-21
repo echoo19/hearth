@@ -246,6 +246,11 @@ Run once, read the report's actual counts, then tighten `min` to `equals`.
 `assertFocus` covers menu navigation, and post-processing has its own
 `assertPostEffect` step ([effects.md](./effects.md#playtests-assertposteffect)).
 
+Feel asserts check the moments you scripted; a bot **sweep** complements them by
+playing the scene across many seeds to surface the softlocks and crashes you
+didn't script for — see [playtesting.md](./playtesting.md). The bots produce
+evidence, not a verdict on feel; that judgment stays yours.
+
 ## The quality bar
 
 Before calling a game done — whether you're a human or an agent — every box
