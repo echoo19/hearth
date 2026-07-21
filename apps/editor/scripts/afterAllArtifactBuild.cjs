@@ -19,15 +19,94 @@
 const { execSync } = require('node:child_process');
 const crypto = require('node:crypto');
 const fs = require('node:fs');
+const os = require('node:os');
 const path = require('node:path');
 
-function findDeveloperIdIdentity() {
-  const out = execSync('security find-identity -v -p codesigning', { encoding: 'utf8' });
+function findDeveloperIdIdentity(keychain) {
+  const out = execSync(
+    keychain
+      ? `security find-identity -v -p codesigning "${keychain}"`
+      : 'security find-identity -v -p codesigning',
+    { encoding: 'utf8' },
+  );
   // lines look like:  1) <40-hex-sha1> "Developer ID Application: Name (TEAMID)"
   const match = out.split('\n').find((l) => l.includes('Developer ID Application'));
   if (!match) return null;
   const hash = match.match(/\)\s+([0-9A-F]{40})\s+"/i);
   return hash ? hash[1] : null;
+}
+
+/**
+ * CI fallback: electron-builder imports CSC_LINK into a private keychain of
+ * its own and signs with it explicitly, so on a fresh runner the Developer ID
+ * never appears in the default keychain search list — find-identity comes up
+ * empty even though the .app just got signed. (Locally the cert lives in the
+ * login keychain, so the fallback never triggers.) Import the same p12 into a
+ * throwaway keychain and hand back the identity plus the keychain to sign
+ * against. The keychain password is random and never logged; the p12 password
+ * rides argv exactly like electron-builder's own import does on the same
+ * single-tenant runner.
+ */
+function importSigningKeychain() {
+  const link = process.env.CSC_LINK || process.env.MAC_CSC_LINK;
+  const p12Password = process.env.CSC_KEY_PASSWORD ?? process.env.MAC_CSC_KEY_PASSWORD ?? '';
+  if (!link) return null;
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'hearth-dmg-sign-'));
+  const cleanup = (keychain) => {
+    if (keychain) {
+      try {
+        execSync(`security delete-keychain "${keychain}"`, { stdio: 'ignore' });
+      } catch {
+        /* best-effort */
+      }
+    }
+    fs.rmSync(dir, { recursive: true, force: true });
+  };
+  try {
+    // CSC_LINK is base64 p12 in our CI; also accept a plain/file:// path so the
+    // fallback behaves like electron-builder's loader for local experiments.
+    const asPath = link.startsWith('file://') ? link.slice('file://'.length) : link;
+    const p12 = path.join(dir, 'cert.p12');
+    if (fs.existsSync(asPath)) fs.copyFileSync(asPath, p12);
+    else fs.writeFileSync(p12, Buffer.from(link.replace(/\s/g, ''), 'base64'));
+    const keychain = path.join(dir, 'dmg-sign.keychain-db');
+    const keychainPassword = crypto.randomBytes(24).toString('hex');
+    // Secrets ride as env vars the shell expands at runtime, never as JS
+    // string interpolation: execSync failures embed the command line in
+    // err.message, and that must stay free of password material.
+    const run = (cmd) =>
+      execSync(cmd, {
+        stdio: 'ignore',
+        env: { ...process.env, HEARTH_KC_PW: keychainPassword, HEARTH_P12_PW: p12Password },
+      });
+    run(`security create-keychain -p "$HEARTH_KC_PW" "${keychain}"`);
+    // No auto-lock: notarization waits can outlive the default 300s timeout.
+    run(`security set-keychain-settings "${keychain}"`);
+    run(`security unlock-keychain -p "$HEARTH_KC_PW" "${keychain}"`);
+    run(`security import "${p12}" -k "${keychain}" -P "$HEARTH_P12_PW" -T /usr/bin/codesign`);
+    // Chain building needs the Developer ID intermediate and the p12 may only
+    // carry the leaf; fetch Apple's G2 intermediate into the same keychain.
+    // Best-effort: when the p12 bundles the chain (or the runner has it), the
+    // signing below works without this.
+    try {
+      const cer = path.join(dir, 'DeveloperIDG2CA.cer');
+      run(`curl -fsSL -o "${cer}" https://www.apple.com/certificateauthority/DeveloperIDG2CA.cer`);
+      run(`security import "${cer}" -k "${keychain}"`);
+    } catch {
+      /* best-effort */
+    }
+    // Let codesign use the key non-interactively (no UI prompt on the runner).
+    run(`security set-key-partition-list -S apple-tool:,apple: -s -k "$HEARTH_KC_PW" "${keychain}"`);
+    const identity = findDeveloperIdIdentity(keychain);
+    if (!identity) {
+      cleanup(keychain);
+      return null;
+    }
+    return { identity, keychain, cleanup: () => cleanup(keychain) };
+  } catch (err) {
+    cleanup();
+    throw err;
+  }
 }
 
 function notarytoolCreds() {
@@ -74,20 +153,31 @@ module.exports = async function afterAllArtifactBuild(context) {
   const dmgs = (context.artifactPaths || []).filter((p) => p.endsWith('.dmg'));
   if (dmgs.length === 0) return [];
 
-  const identity = findDeveloperIdIdentity();
+  let imported = null;
+  let identity = findDeveloperIdIdentity(null);
+  if (!identity) {
+    imported = importSigningKeychain();
+    identity = imported ? imported.identity : null;
+  }
   if (!identity) {
     throw new Error('afterAllArtifactBuild: signing configured but no "Developer ID Application" identity found to sign the dmg');
   }
   const creds = notarytoolCreds();
   if (!creds) {
+    if (imported) imported.cleanup();
     throw new Error('afterAllArtifactBuild: signing configured but no notarization credentials (set APPLE_ID/APPLE_APP_SPECIFIC_PASSWORD/APPLE_TEAM_ID or APPLE_KEYCHAIN_PROFILE)');
   }
+  const keychainArg = imported ? ` --keychain "${imported.keychain}"` : '';
 
-  for (const dmg of dmgs) {
-    console.log(`  • signing + notarizing dmg: ${path.basename(dmg)}`);
-    execSync(`codesign --force --sign ${identity} --timestamp "${dmg}"`, { stdio: 'inherit' });
-    execSync(`xcrun notarytool submit "${dmg}" ${creds} --wait --timeout 30m`, { stdio: 'inherit' });
-    execSync(`xcrun stapler staple "${dmg}"`, { stdio: 'inherit' });
+  try {
+    for (const dmg of dmgs) {
+      console.log(`  • signing + notarizing dmg: ${path.basename(dmg)}`);
+      execSync(`codesign --force --sign ${identity}${keychainArg} --timestamp "${dmg}"`, { stdio: 'inherit' });
+      execSync(`xcrun notarytool submit "${dmg}" ${creds} --wait --timeout 30m`, { stdio: 'inherit' });
+      execSync(`xcrun stapler staple "${dmg}"`, { stdio: 'inherit' });
+    }
+  } finally {
+    if (imported) imported.cleanup();
   }
 
   const ymlUpdated = rewriteYmlDmgHashes(dmgs);
