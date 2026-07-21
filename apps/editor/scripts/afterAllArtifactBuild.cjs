@@ -52,8 +52,22 @@ function importSigningKeychain() {
   const p12Password = process.env.CSC_KEY_PASSWORD ?? process.env.MAC_CSC_KEY_PASSWORD ?? '';
   if (!link) return null;
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'hearth-dmg-sign-'));
+  // codesign resolves identities through the keychain SEARCH LIST — the
+  // --keychain flag alone is not enough (find-identity accepts an explicit
+  // keychain; codesign does not). Capture the current user search list so the
+  // throwaway keychain can be prepended and the list restored on cleanup.
+  const originalSearchList = execSync('security list-keychains -d user', { encoding: 'utf8' })
+    .split('\n')
+    .map((l) => l.trim().replace(/^"|"$/g, ''))
+    .filter(Boolean);
+  const quotedOriginal = originalSearchList.map((k) => `"${k}"`).join(' ');
   const cleanup = (keychain) => {
     if (keychain) {
+      try {
+        execSync(`security list-keychains -d user -s ${quotedOriginal}`, { stdio: 'ignore' });
+      } catch {
+        /* best-effort */
+      }
       try {
         execSync(`security delete-keychain "${keychain}"`, { stdio: 'ignore' });
       } catch {
@@ -83,6 +97,7 @@ function importSigningKeychain() {
     // No auto-lock: notarization waits can outlive the default 300s timeout.
     run(`security set-keychain-settings "${keychain}"`);
     run(`security unlock-keychain -p "$HEARTH_KC_PW" "${keychain}"`);
+    run(`security list-keychains -d user -s "${keychain}" ${quotedOriginal}`);
     run(`security import "${p12}" -k "${keychain}" -P "$HEARTH_P12_PW" -T /usr/bin/codesign`);
     // Chain building needs the Developer ID intermediate and the p12 may only
     // carry the leaf; fetch Apple's G2 intermediate into the same keychain.
