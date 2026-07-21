@@ -1094,3 +1094,33 @@ function round(n: number): number {
 
 export { captureSequence, computeFrames, gridDimensions, MAX_SEQUENCE_FRAMES, type CaptureSequenceOptions, type CaptureSequenceResult } from './capture.js';
 export { benchScene, summarizeBench, percentile, FRAME_BUDGET_60FPS_MS, type BenchOptions, type BenchResult, type BenchSummaryInput } from './bench.js';
+
+// Bot playtesting surface (Tasks 3/4 consume these names).
+export { runBotRun } from './bots/run.js';
+export { InputRecorder } from './bots/recorder.js';
+export { resolveAvatar } from './bots/avatar.js';
+export {
+  MashPolicy,
+  IdlePolicy,
+  policyRegistry,
+  createPolicy,
+  type PolicyFactory,
+} from './bots/policies.js';
+export {
+  objectiveSummary,
+  makeLiveObjectives,
+  evaluateObjectives,
+  toOutcomes,
+  type LiveObjective,
+  type ObjectiveEvalContext,
+} from './bots/objectives.js';
+export type {
+  InputEvent,
+  BotRunConfig,
+  BotVerdict,
+  ObjectiveOutcome,
+  BotRunResult,
+  BotInitCtx,
+  BotObservation,
+  BotPolicy,
+} from './bots/types.js';
