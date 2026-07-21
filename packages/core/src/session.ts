@@ -75,6 +75,28 @@ export function extractJournalDetail(
     if (!Array.isArray(d.errors) || !Array.isArray(d.warnings)) return undefined;
     return { errors: d.errors.length, warnings: d.warnings.length };
   }
+  if (name === 'sweepScene') {
+    // Read-only-but-journaled outcome: the scene swept, how many runs, and the
+    // verdict tally — enough for the trust timeline without the full report.
+    if (typeof d.scene !== 'string' || typeof d.runs !== 'number') return undefined;
+    if (typeof d.verdicts !== 'object' || d.verdicts === null || Array.isArray(d.verdicts)) return undefined;
+    return { scene: d.scene, runs: d.runs, verdicts: d.verdicts };
+  }
+  if (name === 'bakePlaytest') {
+    // Record the bake TARGET (name/scene/policy/seed) from params — the run's
+    // identity, never the compressed step payload.
+    if (typeof params !== 'object' || params === null) return undefined;
+    const p = params as Record<string, unknown>;
+    if (
+      typeof p.name !== 'string' ||
+      typeof p.scene !== 'string' ||
+      typeof p.policy !== 'string' ||
+      typeof p.seed !== 'number'
+    ) {
+      return undefined;
+    }
+    return { name: p.name, scene: p.scene, policy: p.policy, seed: p.seed };
+  }
   if (name === 'exportDesktop') {
     // Record the target platforms + outDir (from the parsed params), never
     // the build payload — this is a non-mutating, journaled-only outcome.

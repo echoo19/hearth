@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { defineCommand } from './types.js';
+import { defineCommand, type CommandContext } from './types.js';
 import { ProjectError, readJson, writeJson, ProjectStore, playtestFilePath, type ProjectSnapshot } from '../project/store.js';
 import { applySnapshot } from '../project/restore.js';
 import { diffSnapshots } from '../diff/diff.js';
@@ -121,6 +121,51 @@ export const revertProject = defineCommand({
   },
 });
 
+/**
+ * Persist a new playtest definition into the store: the shared write path for
+ * both `createPlaytest` (author-supplied steps) and `bakePlaytest` (steps
+ * compressed from a recorded bot run). Validates the whole definition through
+ * PlaytestSchema, records the change, and suggests a run — the single place
+ * this shape is produced so the two commands can never drift.
+ */
+export async function persistPlaytest(
+  ctx: CommandContext,
+  params: {
+    name: string;
+    scene: string;
+    steps: unknown[];
+    trace?: unknown;
+    maxFrames: number;
+    seed: number;
+  },
+): Promise<{ playtestId: string; name: string; sceneId: string; steps: number }> {
+  const scene = ctx.store.getScene(params.scene);
+  if (!scene) throw new ProjectError(`Scene not found: ${params.scene}`, 'NOT_FOUND');
+  if (ctx.store.getPlaytest(params.name)) {
+    throw new ProjectError(`A playtest named "${params.name}" already exists`, 'CONFLICT');
+  }
+  const playtest = PlaytestSchema.parse({
+    formatVersion: 1,
+    id: generateId('ptt'),
+    name: params.name,
+    scene: scene.id,
+    steps: params.steps,
+    trace: params.trace,
+    maxFrames: params.maxFrames,
+    seed: params.seed,
+  });
+  ctx.store.playtests.set(playtest.id, playtest);
+  ctx.changed({
+    kind: 'playtest',
+    id: playtest.id,
+    name: playtest.name,
+    path: joinPath(PLAYTESTS_DIR, `${slugify(playtest.name)}.playtest.json`),
+    action: 'created',
+  });
+  ctx.suggest(`runPlaytest ${playtest.name}`);
+  return { playtestId: playtest.id, name: playtest.name, sceneId: scene.id, steps: playtest.steps.length };
+}
+
 export const createPlaytest = defineCommand({
   name: 'createPlaytest',
   description:
@@ -138,31 +183,14 @@ export const createPlaytest = defineCommand({
     seed: z.number().int().nonnegative().default(0),
   }),
   async run(ctx, params) {
-    const scene = ctx.store.getScene(params.scene);
-    if (!scene) throw new ProjectError(`Scene not found: ${params.scene}`, 'NOT_FOUND');
-    if (ctx.store.getPlaytest(params.name)) {
-      throw new ProjectError(`A playtest named "${params.name}" already exists`, 'CONFLICT');
-    }
-    const playtest = PlaytestSchema.parse({
-      formatVersion: 1,
-      id: generateId('ptt'),
+    return persistPlaytest(ctx, {
       name: params.name,
-      scene: scene.id,
+      scene: params.scene,
       steps: params.steps,
       trace: params.trace,
       maxFrames: params.maxFrames,
       seed: params.seed,
     });
-    ctx.store.playtests.set(playtest.id, playtest);
-    ctx.changed({
-      kind: 'playtest',
-      id: playtest.id,
-      name: playtest.name,
-      path: joinPath(PLAYTESTS_DIR, `${slugify(playtest.name)}.playtest.json`),
-      action: 'created',
-    });
-    ctx.suggest(`runPlaytest ${playtest.name}`);
-    return { playtestId: playtest.id, name: playtest.name, sceneId: scene.id, steps: playtest.steps.length };
   },
 });
 

@@ -8,6 +8,46 @@ import type { z } from 'zod';
 import type { FsLike } from '../fs.js';
 import type { ProjectStore } from '../project/store.js';
 import type { PermissionMode } from '../permissions.js';
+import type { Objective } from '../schema/project.js';
+
+/** Which built-in bot policy a sweep or bake run drives the scene with. */
+export type BotPolicyName = 'mash' | 'wander' | 'seek' | 'idle';
+
+/**
+ * Parameters for a scene sweep (see `sweepScene`). The playtest package
+ * implements the hook; core only validates params and threads them through, so
+ * this mirrors the resolved shape after the command's paramsSchema defaults.
+ */
+export interface SweepParams {
+  /** Resolved scene id. */
+  scene: string;
+  policies: BotPolicyName[];
+  /** Number of consecutive seeds to run per policy (seedStart .. seedStart+seeds-1). */
+  seeds: number;
+  seedStart: number;
+  maxFrames: number;
+  avatar?: string;
+  target?: string | { x: number; y: number };
+  objectives: Objective[];
+  stuckAfter: number;
+  /** When true, the sweep report's `data` carries an ASCII coverage grid. */
+  heatmap: boolean;
+}
+
+/**
+ * Parameters for baking one bot run into a scripted playtest (see
+ * `bakePlaytest`). No stuckAfter: bake re-runs the default sweep configuration.
+ */
+export interface BakeParams {
+  /** Resolved scene id. */
+  scene: string;
+  policy: BotPolicyName;
+  seed: number;
+  maxFrames: number;
+  avatar?: string;
+  target?: string | { x: number; y: number };
+  objectives: Objective[];
+}
 
 export interface ChangedRef {
   kind: 'project' | 'scene' | 'entity' | 'component' | 'asset' | 'script' | 'playtest' | 'file';
@@ -50,6 +90,10 @@ export interface RuntimeHooks {
     sceneIdOrName: string,
     opts: { frames: number; warmupFrames: number; budgetMs?: number },
   ): Promise<unknown>;
+  /** Run bot policies across seeds headlessly and return a token-frugal sweep report. */
+  sweepScene?(store: ProjectStore, params: SweepParams): Promise<unknown>;
+  /** Re-run one bot run deterministically and compress its input timeline into scripted steps. */
+  bakeBotRun?(store: ProjectStore, params: BakeParams): Promise<{ steps: unknown[]; seed: number }>;
 }
 
 /**

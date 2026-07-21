@@ -21,6 +21,7 @@ import * as historyCommands from './historyCommands.js';
 import * as journalCommands from './journalCommands.js';
 import * as memoryCommands from './memoryCommands.js';
 import * as benchCommands from './benchCommands.js';
+import * as sweepCommands from './sweepCommands.js';
 
 const ALL_DEFINITIONS: CommandDefinition[] = [
   // inspect (read-only)
@@ -101,6 +102,8 @@ const ALL_DEFINITIONS: CommandDefinition[] = [
   diffCommands.runPlaytest,
   diffCommands.runSceneSmoke,
   benchCommands.benchScene,
+  sweepCommands.sweepScene,
+  sweepCommands.bakePlaytest,
   diffCommands.buildProject,
   exportCommands.exportWeb,
   exportCommands.exportDesktop,

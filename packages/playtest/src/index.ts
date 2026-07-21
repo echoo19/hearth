@@ -15,6 +15,8 @@ import {
   type SceneRuntime,
 } from '@hearth/runtime';
 import { benchScene } from './bench.js';
+import { runSweep } from './bots/sweep.js';
+import { bakeBotRun } from './bots/bake.js';
 
 /** One per-frame world-position sample for a traced entity (or the camera). */
 export interface TraceSample {
@@ -794,6 +796,8 @@ export function createRuntimeHooks(): RuntimeHooks {
     runPlaytest: (store, id) => runPlaytest(store, id),
     runSceneSmoke: (store, scene, frames) => runSceneSmoke(store, scene, frames),
     benchScene: (store, scene, opts) => benchScene(store, scene, opts),
+    sweepScene: (store, params) => runSweep(store, params),
+    bakeBotRun: (store, params) => bakeBotRun(store, params),
   };
 }
 
@@ -1095,13 +1099,25 @@ function round(n: number): number {
 export { captureSequence, computeFrames, gridDimensions, MAX_SEQUENCE_FRAMES, type CaptureSequenceOptions, type CaptureSequenceResult } from './capture.js';
 export { benchScene, summarizeBench, percentile, FRAME_BUDGET_60FPS_MS, type BenchOptions, type BenchResult, type BenchSummaryInput } from './bench.js';
 
-// Bot playtesting surface (Tasks 3/4 consume these names).
+// Bot playtesting surface.
 export { runBotRun } from './bots/run.js';
+export { probeMovement, type MovementBasis, type MovementBasisEntry } from './bots/probe.js';
+export { Steerer, pickBasis } from './bots/steer.js';
+export {
+  runSweep,
+  type SweepReport,
+  type SweepObjectiveStat,
+  type SweepCoverage,
+  type SweepFailure,
+} from './bots/sweep.js';
+export { bakeBotRun, compressTimeline } from './bots/bake.js';
 export { InputRecorder } from './bots/recorder.js';
 export { resolveAvatar } from './bots/avatar.js';
 export {
   MashPolicy,
   IdlePolicy,
+  WanderPolicy,
+  SeekPolicy,
   policyRegistry,
   createPolicy,
   type PolicyFactory,
