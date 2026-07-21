@@ -402,6 +402,15 @@ const PlaytestStepUnionSchema = z.discriminatedUnion('type', [
     frames: z.number().int().min(1).optional(),
   }),
   z.object({
+    type: z.literal('setAction'),
+    /** Input action name from project inputMappings; sticky hold/release, mirrors setAxis. */
+    action: z.string(),
+    /** true holds the action down until a later setAction releases it; false releases. */
+    down: z.boolean(),
+    /** Frames to advance after applying (default 1; 0 applies without stepping). */
+    frames: z.number().int().min(0).optional(),
+  }),
+  z.object({
     type: z.literal('setPointer'),
     /** Screen coordinates (buildSettings width×height space) the cursor moves to; drives ctx.input.pointer(). */
     x: z.number(),
@@ -601,6 +610,57 @@ export const PlaytestSchema = z.object({
   seed: z.number().int().nonnegative().default(0),
 });
 export type Playtest = z.infer<typeof PlaytestSchema>;
+
+// ---------------------------------------------------------------------------
+// Objectives — shared by sweeps and baked playtests (see bots/objectives.ts)
+// ---------------------------------------------------------------------------
+
+/**
+ * Declared success/failure criteria for a bot run. `entity` defaults to the
+ * avatar when omitted. Objectives are evaluated per frame post-step; see the
+ * playtest package for evaluation and verdict precedence.
+ */
+export const ObjectiveSchema = z.discriminatedUnion('type', [
+  z.object({
+    type: z.literal('reach'),
+    target: z.union([z.string(), Vec2Schema]),
+    entity: z.string().optional(),
+    tolerance: z.number().positive().default(24),
+  }),
+  z.object({
+    type: z.literal('survive'),
+    /** Alive and enabled through this frame. */
+    frames: z.number().int().positive(),
+    entity: z.string().optional(),
+  }),
+  z.object({
+    type: z.literal('event'),
+    /** Checked against session.eventCounts. */
+    event: z.string().min(1),
+    count: z.number().int().positive().default(1),
+  }),
+  z.object({
+    type: z.literal('property'),
+    entity: z.string(),
+    property: z.string(),
+    equals: z.unknown().optional(),
+    greaterThan: z.number().optional(),
+    lessThan: z.number().optional(),
+  }),
+]).superRefine((objective, ctx) => {
+  if (
+    objective.type === 'property' &&
+    objective.equals === undefined &&
+    objective.greaterThan === undefined &&
+    objective.lessThan === undefined
+  ) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: 'property objective requires at least one of equals, greaterThan, or lessThan',
+    });
+  }
+});
+export type Objective = z.infer<typeof ObjectiveSchema>;
 
 // ---------------------------------------------------------------------------
 // Well-known project paths

@@ -383,6 +383,22 @@ async function executeStep(
             : `set axis "${step.axis}" to ${step.value} for ${ran} frames`,
       };
     }
+    case 'setAction': {
+      if (step.down) session.runtime.input.setActionDown(step.action);
+      else session.runtime.input.setActionUp(step.action);
+      const frames = step.frames ?? 1;
+      const ran = await runFrames(frames);
+      const verb = step.down ? 'held' : 'released';
+      return {
+        index,
+        type: step.type,
+        passed: true,
+        message:
+          ran < frames
+            ? `${verb} "${step.action}" for ${ran}/${frames} frames (maxFrames cap reached)`
+            : `${verb} "${step.action}" for ${ran} frames`,
+      };
+    }
     case 'click': {
       const target = session.runtime;
       target.sendPointer(step.x, step.y, 'move');

@@ -263,6 +263,120 @@ async function makePointerProject(): Promise<{ store: ProjectStore; session: Hea
   return { store, session };
 }
 
+// Two differently-weighted digital actions accumulated into the same axis so
+// overlapping holds are observable from a single property read (both channels
+// contribute in the same frame only while both are held). The Player starts
+// dynamic-body-under-gravity, so this only touches x — y is left to physics.
+const SET_ACTION_SCRIPT = `
+export default {
+  onUpdate(ctx) {
+    if (ctx.input.isDown('right')) ctx.transform.position.x += 1;
+    if (ctx.input.isDown('jump')) ctx.transform.position.x += 10;
+  },
+};
+`;
+
+async function makeSetActionProject(): Promise<{ store: ProjectStore; session: HearthSession }> {
+  const fs = new MemoryFileSystem();
+  const { store } = await createProject(fs, '/proj', { name: 'SetAction Playtest Game' });
+  const session = HearthSession.fromStore(store, { runtime: createRuntimeHooks() });
+  const created = await session.execute<{ path: string }>('createScript', {
+    name: 'set action tracker',
+    source: SET_ACTION_SCRIPT,
+    language: 'js',
+  });
+  expect(created.success).toBe(true);
+  const attached = await session.execute('attachScript', {
+    scene: 'Main',
+    entity: 'Player',
+    script: created.data!.path,
+  });
+  expect(attached.success).toBe(true);
+  return { store, session };
+}
+
+describe('runPlaytest setAction', () => {
+  it('holds are sticky and overlap — unlike press, which auto-releases', async () => {
+    const { store, session } = await makeSetActionProject();
+    await session.execute('createPlaytest', {
+      name: 'overlapping holds',
+      scene: 'Main',
+      steps: [
+        { type: 'setAction', action: 'right', down: true }, // frames defaults to 1; x: 400 -> 401
+        { type: 'wait', frames: 5 }, // x: 401 -> 406
+        { type: 'setAction', action: 'jump', down: true }, // 'right' still held here; x: 406 -> 417
+        { type: 'wait', frames: 5 }, // both held for these frames; x: 417 -> 472
+        { type: 'assertProperty', entity: 'Player', property: 'Transform.position.x', equals: 472 },
+        { type: 'setAction', action: 'right', down: false }, // jump only from here; x: 472 -> 482
+        { type: 'wait', frames: 5 }, // x: 482 -> 532
+        { type: 'assertProperty', entity: 'Player', property: 'Transform.position.x', equals: 532 },
+        { type: 'assertNoErrors' },
+      ],
+    });
+    const result = await runPlaytest(store, 'overlapping holds');
+    expect(result.steps.map((s) => `${s.type}:${s.passed}`)).toEqual([
+      'setAction:true',
+      'wait:true',
+      'setAction:true',
+      'wait:true',
+      'assertProperty:true',
+      'setAction:true',
+      'wait:true',
+      'assertProperty:true',
+      'assertNoErrors:true',
+    ]);
+    expect(result.passed).toBe(true);
+    expect(result.framesRun).toBe(18);
+  });
+
+  it('defaults frames to 1 and does not auto-release', async () => {
+    const { store, session } = await makeSetActionProject();
+    await session.execute('createPlaytest', {
+      name: 'sticky default',
+      scene: 'Main',
+      steps: [
+        { type: 'setAction', action: 'right', down: true },
+        { type: 'wait', frames: 10 },
+        { type: 'assertProperty', entity: 'Player', property: 'Transform.position.x', equals: 411 },
+      ],
+    });
+    const result = await runPlaytest(store, 'sticky default');
+    expect(result.framesRun).toBe(11);
+    expect(result.passed).toBe(true);
+  });
+
+  it('frames: 0 applies the action without stepping', async () => {
+    const { store, session } = await makeSetActionProject();
+    await session.execute('createPlaytest', {
+      name: 'no-step apply',
+      scene: 'Main',
+      steps: [
+        { type: 'setAction', action: 'right', down: true, frames: 0 },
+        { type: 'assertProperty', entity: 'Player', property: 'Transform.position.x', equals: 400 },
+        { type: 'wait', frames: 3 },
+        { type: 'assertProperty', entity: 'Player', property: 'Transform.position.x', equals: 403 },
+      ],
+    });
+    const result = await runPlaytest(store, 'no-step apply');
+    expect(result.framesRun).toBe(3);
+    expect(result.passed).toBe(true);
+  });
+
+  it('enforces maxFrames as a hard cap, matching setAxis behavior', async () => {
+    const { store, session } = await makeSetActionProject();
+    await session.execute('createPlaytest', {
+      name: 'capped set-action',
+      scene: 'Main',
+      maxFrames: 5,
+      steps: [{ type: 'setAction', action: 'right', down: true, frames: 20 }],
+    });
+    const result = await runPlaytest(store, 'capped set-action');
+    expect(result.framesRun).toBe(5);
+    expect(result.steps[0].message).toMatch(/5\/20 frames \(maxFrames cap reached\)/);
+    expect(result.passed).toBe(true);
+  });
+});
+
 describe('runPlaytest setPointer', () => {
   it('drives ctx.input.pointer() world aim via a setPointer step', async () => {
     const { store, session } = await makePointerProject();
