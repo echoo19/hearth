@@ -21,8 +21,12 @@ import {
   type LiveObjective,
 } from './objectives.js';
 import { createPolicy } from './policies.js';
+import { probeMovement, type MovementBasis } from './probe.js';
 import { InputRecorder } from './recorder.js';
 import type { BotObservation, BotRunConfig, BotRunResult, BotVerdict } from './types.js';
+
+/** Policies that steer an avatar and therefore need a probed movement basis. */
+const STEERING_POLICIES = new Set(['wander', 'seek']);
 
 /** World-grid cell size (px) for novelty/coverage tracking. */
 const CELL_SIZE = 32;
@@ -75,6 +79,15 @@ export async function runBotRun(store: ProjectStore, config: BotRunConfig): Prom
   const axes = Object.keys(mappings.axes).sort();
   const { width, height } = store.project.buildSettings;
 
+  // Steering policies need the avatar's control scheme. Probe it once, lazily,
+  // before frame 0, in throwaway seed-0 sessions that never touch this run's
+  // rng. A null avatar is left for the policy's init to reject with a clear
+  // error, so the "no avatar" message is consistent across policies.
+  let basis: MovementBasis | undefined;
+  if (STEERING_POLICIES.has(config.policy) && avatarId !== null) {
+    basis = await probeMovement(store, config.scene, avatarId);
+  }
+
   const policy = createPolicy(config.policy);
   policy.init({
     session,
@@ -85,6 +98,7 @@ export async function runBotRun(store: ProjectStore, config: BotRunConfig): Prom
     actions,
     axes,
     viewport: { width, height },
+    ...(basis ? { basis } : {}),
   });
 
   const live: LiveObjective[] = makeLiveObjectives(config.objectives);

@@ -771,8 +771,16 @@ export class SceneRuntime {
    * A build failure (grid over the 512x512 cap) warns and returns null for
    * that query only — a later same-frame query with different points gets a
    * fresh rebuild attempt.
+   *
+   * Public so external per-frame callers (bot playtesting policies) can reuse
+   * the exact same grid `ctx.scene.findPath` uses, rather than reconstructing
+   * one. It is safe to call every frame: the result is memoized per frame and
+   * only rebuilt when the query points fall outside the cached bounds or the
+   * scene's solids change. Pair it with `findPath` from `@hearth/core`, passing
+   * the same `include` points you intend to path between so the grid is
+   * guaranteed to cover them.
    */
-  private getNavGrid(include: Vec2[]): NavGrid | null {
+  getNavGrid(include: Vec2[]): NavGrid | null {
     const inputs: NavEntityInput[] = [];
     const grids: (readonly string[])[] = [];
     for (const entity of this.getEntities()) {

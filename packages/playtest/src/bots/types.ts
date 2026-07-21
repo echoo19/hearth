@@ -13,6 +13,7 @@ import type { Objective } from '@hearth/core';
 import type { GameSession, RuntimeEntity, SceneRuntime } from '@hearth/runtime';
 import type { ProjectStore } from '@hearth/core';
 import type { InputRecorder } from './recorder.js';
+import type { MovementBasis } from './probe.js';
 
 /**
  * One recorded bot input, tagged with the frame it was applied on (the frame
@@ -84,6 +85,13 @@ export interface BotInitCtx {
   axes: string[];
   /** Viewport size in screen coordinates (buildSettings width×height). */
   viewport: { width: number; height: number };
+  /**
+   * Probed movement basis, present only for policies that steer (wander, seek).
+   * runBotRun computes it once, lazily, before frame 0 via probeMovement and
+   * hands it in here; other policies never see it. Additive and optional so the
+   * shape stays backward-compatible for mash/idle.
+   */
+  basis?: MovementBasis;
 }
 
 /** What a policy reads each frame. `input` is the ONLY input surface it may touch. */
