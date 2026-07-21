@@ -107,6 +107,17 @@ async function readArrayDataOption(raw: string, flagName: string): Promise<unkno
   return parseJsonArray(raw, flagName);
 }
 
+/**
+ * Parse `sweep`/`--bake`'s `--target`: a plain "x,y" pair becomes a world
+ * point (same grammar as `--position`), anything else is passed through as
+ * an entity ref (id/name/tag) for the command layer to resolve.
+ */
+function parseSweepTarget(raw: string): string | { x: number; y: number } {
+  const parts = raw.split(',');
+  const isPoint = parts.length === 2 && parts.every((p) => p.trim() !== '' && Number.isFinite(Number(p.trim())));
+  return isPoint ? parsePosition(raw) : raw;
+}
+
 /** Open a session, execute a core command, and emit the result. `okIf` can force exit 1 on semantic failure. */
 async function runAndEmit(
   cmd: Command,
@@ -1435,6 +1446,87 @@ export function buildProgram(): Command {
         frames: opts.frames,
         warmupFrames: opts.warmup,
         budgetMs: opts.budgetMs,
+      }),
+    );
+  });
+
+  // ---------------------------------------------------------------------
+  // sweep (bot playtesting)
+  // ---------------------------------------------------------------------
+  addGlobalOptions(
+    program
+      .command('sweep [scene]')
+      .description(
+        'play a scene headlessly with seeded bot policies across many seeds and report softlocks, crashes, ' +
+          'and unreached objectives (token-frugal summary; full per-run detail lands in .hearth/sweeps/). Scene ' +
+          'defaults to the initial scene. --bake freezes one failing (or passing) run into a scripted regression ' +
+          'playtest instead of sweeping — it requires exactly one policy and exactly one seed.',
+      )
+      .option('--policies <csv>', 'comma-separated bot policies to run: mash, wander, seek, idle (default: mash)')
+      .option('--seeds <n>', 'seeds per policy: seedStart..seedStart+seeds-1 (default: 8)', (v) => parseInt(v, 10))
+      .option('--seed-start <n>', 'seed offset, so a sweep can extend an earlier one (default: 0)', (v) => parseInt(v, 10))
+      .option('--max-frames <n>', 'per-run frame cap (default: 600)', (v) => parseInt(v, 10))
+      .option('--avatar <ref>', 'entity id/name/tag the bots steer (default: the sole input-reading entity)')
+      .option('--target <ref|x,y>', 'seek only: where to go — an entity ref or a world point "x,y"')
+      .option(
+        '--objective <json>',
+        'declared success/failure criterion (repeatable); see docs/playtesting.md for the objective shapes',
+        (value: string, previous: string[]) => previous.concat([value]),
+        [] as string[],
+      )
+      .option('--stuck-after <n>', 'frames with no novelty before a run is judged stuck (default: 180)', (v) => parseInt(v, 10))
+      .option('--heatmap', 'include the ASCII coverage grid in the report (token cost — off by default)')
+      .option('--bake <name>', 'freeze one (policy, seed) run into a playtest instead of sweeping'),
+  ).action(async (scene: string | undefined, opts, cmd) => {
+    const policies = opts.policies !== undefined ? parseList(opts.policies) : undefined;
+    const objectives = (opts.objective as string[]).map((raw) => parseJsonObject(raw, '--objective'));
+    const target = opts.target !== undefined ? parseSweepTarget(opts.target) : undefined;
+
+    if (opts.bake !== undefined) {
+      await guarded(cmd, 'bakePlaytest', async () => {
+        if (!scene) {
+          throw new CliError('INVALID_INPUT', 'A scene is required with --bake (sweep can default to the initial scene; bake cannot).');
+        }
+        const effectivePolicies = policies ?? ['mash'];
+        if (effectivePolicies.length !== 1) {
+          throw new CliError(
+            'INVALID_INPUT',
+            `--bake requires exactly one policy, got ${effectivePolicies.length} via --policies. ` +
+              'Pass a single policy, e.g. --policies mash.',
+          );
+        }
+        if (opts.seeds !== undefined && opts.seeds !== 1) {
+          throw new CliError(
+            'INVALID_INPUT',
+            `--bake requires exactly one seed (--seeds 1), got --seeds ${opts.seeds}.`,
+          );
+        }
+        await runAndEmit(cmd, 'bakePlaytest', {
+          name: opts.bake,
+          scene,
+          policy: effectivePolicies[0],
+          seed: opts.seedStart ?? 0,
+          maxFrames: opts.maxFrames,
+          avatar: opts.avatar,
+          target,
+          objectives,
+        });
+      });
+      return;
+    }
+
+    await guarded(cmd, 'sweepScene', () =>
+      runAndEmit(cmd, 'sweepScene', {
+        scene,
+        policies,
+        seeds: opts.seeds,
+        seedStart: opts.seedStart,
+        maxFrames: opts.maxFrames,
+        avatar: opts.avatar,
+        target,
+        objectives,
+        stuckAfter: opts.stuckAfter,
+        heatmap: !!opts.heatmap,
       }),
     );
   });

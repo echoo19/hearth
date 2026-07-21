@@ -12,10 +12,13 @@ import {
   PlaytestStepSchema,
   PlaytestTraceSchema,
   StateMachineDataSchema,
+  ObjectiveSchema,
+  Vec2Schema,
   type PermissionMode,
   type SpriteShape,
   type DesktopPlatform,
   type MusicWave,
+  type BotPolicyName,
 } from '@hearth/core';
 
 // Mirrors core's exportCommands.ts DESKTOP_PLATFORMS (not exported from
@@ -25,6 +28,14 @@ const DESKTOP_PLATFORMS = ['darwin-arm64', 'darwin-x64', 'win32-x64', 'linux-x64
 // Mirrors core's assetCommands.ts MUSIC_WAVES (private to the createMusic
 // command definition, so not exported from @hearth/core).
 const MUSIC_WAVES = ['sine', 'square', 'saw', 'triangle', 'noise'] as const satisfies readonly MusicWave[];
+
+// Mirrors core's sweepCommands.ts POLICY_NAMES (private to the sweepScene /
+// bakePlaytest command definitions, so not exported from @hearth/core).
+const BOT_POLICIES = ['mash', 'wander', 'seek', 'idle'] as const satisfies readonly BotPolicyName[];
+
+// A sweep/bake steering target: an entity ref (id/name/tag) or a world point.
+// Mirrors sweepCommands.ts's targetSchema.
+const sweepTargetSchema = z.union([z.string(), Vec2Schema]);
 
 export interface ToolSpec {
   /** MCP tool name (snake_case). */
@@ -925,6 +936,7 @@ export const TOOL_SPECS: ToolSpec[] = [
       steps: z.array(PlaytestStepSchema).optional(),
       trace: PlaytestTraceSchema.optional(),
       maxFrames: z.number().int().positive().optional(),
+      seed: z.number().int().nonnegative().optional(),
     },
   },
   {
@@ -978,6 +990,44 @@ export const TOOL_SPECS: ToolSpec[] = [
       frames: z.number().int().positive().max(36000).optional(),
       warmupFrames: z.number().int().nonnegative().max(36000).optional(),
       budgetMs: z.number().positive().optional(),
+    },
+  },
+  {
+    name: 'sweep_scene',
+    command: 'sweepScene',
+    description:
+      'Bot players play the scene headlessly across seeds and report softlocks, crashes, and unreached ' +
+      'objectives. Run after gameplay changes and to find repro seeds for reported bugs. Summary only ' +
+      '(token-frugal). (requires read-only)',
+    permission: 'read-only',
+    inputShape: {
+      scene: z.string().min(1).optional(),
+      policies: z.array(z.enum(BOT_POLICIES)).min(1).optional(),
+      seeds: z.number().int().positive().optional(),
+      seedStart: z.number().int().nonnegative().optional(),
+      maxFrames: z.number().int().positive().optional(),
+      avatar: z.string().optional(),
+      objectives: z.array(ObjectiveSchema).optional(),
+      target: sweepTargetSchema.optional(),
+      stuckAfter: z.number().int().positive().optional(),
+      heatmap: z.boolean().optional(),
+    },
+  },
+  {
+    name: 'bake_playtest',
+    command: 'bakePlaytest',
+    description:
+      'Freeze a failing sweep run into a deterministic regression playtest — red until fixed. (requires safe-edit)',
+    permission: 'safe-edit',
+    inputShape: {
+      name: z.string().min(1),
+      scene: z.string().min(1),
+      policy: z.enum(BOT_POLICIES),
+      seed: z.number().int().nonnegative(),
+      maxFrames: z.number().int().positive().optional(),
+      avatar: z.string().optional(),
+      target: sweepTargetSchema.optional(),
+      objectives: z.array(ObjectiveSchema).optional(),
     },
   },
   {

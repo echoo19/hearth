@@ -122,10 +122,11 @@ describe('hearth-mcp export_desktop tool', () => {
     // TOOL_SPECS is the single source of truth the server registers
     // session.execute-backed tools from; exportDesktop brought it from 67 to
     // 68, set_entity_enabled/set_entity_tags (parity closure) brought it
-    // to 70, and create_music/delete_playtest/bench_scene brought it to 75
-    // (screenshot, capture, and get_agent_instructions are registered
-    // separately, outside TOOL_SPECS, so they're not counted here).
-    expect(TOOL_SPECS.length).toBe(75);
+    // to 70, create_music/delete_playtest/bench_scene brought it to 75, and
+    // sweep_scene/bake_playtest brought it to 77 (screenshot, capture, and
+    // get_agent_instructions are registered separately, outside TOOL_SPECS,
+    // so they're not counted here).
+    expect(TOOL_SPECS.length).toBe(77);
   });
 
   it('mirrors exportDesktop paramsSchema: outDir and platforms', async () => {
@@ -135,6 +136,37 @@ describe('hearth-mcp export_desktop tool', () => {
     expect(tool).toBeDefined();
     const props = tool!.inputSchema.properties as Record<string, unknown>;
     expect(Object.keys(props).sort()).toEqual(['outDir', 'platforms']);
+  });
+
+  it('mirrors sweepScene paramsSchema', async () => {
+    ctx = await connectClient();
+    const { tools } = await ctx.client.listTools();
+    const tool = tools.find((t) => t.name === 'sweep_scene');
+    expect(tool).toBeDefined();
+    const props = tool!.inputSchema.properties as Record<string, unknown>;
+    expect(Object.keys(props).sort()).toEqual(
+      ['avatar', 'heatmap', 'maxFrames', 'objectives', 'policies', 'scene', 'seedStart', 'seeds', 'stuckAfter', 'target'].sort(),
+    );
+  });
+
+  it('mirrors bakePlaytest paramsSchema', async () => {
+    ctx = await connectClient();
+    const { tools } = await ctx.client.listTools();
+    const tool = tools.find((t) => t.name === 'bake_playtest');
+    expect(tool).toBeDefined();
+    const props = tool!.inputSchema.properties as Record<string, unknown>;
+    expect(Object.keys(props).sort()).toEqual(
+      ['avatar', 'maxFrames', 'name', 'objectives', 'policy', 'scene', 'seed', 'target'].sort(),
+    );
+  });
+
+  it('create_playtest carries the seed rider', async () => {
+    ctx = await connectClient();
+    const { tools } = await ctx.client.listTools();
+    const tool = tools.find((t) => t.name === 'create_playtest');
+    expect(tool).toBeDefined();
+    const props = tool!.inputSchema.properties as Record<string, unknown>;
+    expect(Object.keys(props).sort()).toEqual(['maxFrames', 'name', 'scene', 'seed', 'steps', 'trace'].sort());
   });
 
   it('produces builds for the requested platforms via a stubbed packageDesktop resource', async () => {

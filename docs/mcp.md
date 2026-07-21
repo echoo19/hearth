@@ -1,9 +1,9 @@
 # MCP Guide
 
 Hearth ships `hearth-mcp` (`packages/mcp-server`), a stdio MCP server that
-exposes the engine command layer as 78 typed tools (75 command tools, plus
+exposes the engine command layer as 80 typed tools (77 command tools, plus
 `screenshot`, `capture`, and `get_agent_instructions`, none of which wraps a
-core command). The engine's own command registry has 76 commands total. One
+core command). The engine's own command registry has 78 commands total. One
 (`setAssetMetadata`) has no CLI or MCP wrapper (a housekeeping verb with no
 editor surface either). The full reference (flags, registration snippets,
 permission table, complete tool list) lives in
@@ -81,10 +81,15 @@ diff baseline; see [cli.md](./cli.md#command-tour)), `list_journal`
 timeline, see [cli.md](./cli.md#command-journal)), `snapshot_project`,
 `get_diff`, `revert_project`, `create_playtest` (waits, input, and asserts —
 including `assertPeak`/`assertRange`/`assertSettledBy` and a `trace` block to
-measure feel), `delete_playtest`, `list_playtests`, `run_playtest`,
+measure feel; also takes an optional `seed`), `delete_playtest`,
+`list_playtests`, `run_playtest`,
 `run_scene`, `bench_scene` (headless per-frame timing to check a scene holds
 60fps; see [performance.md](./performance.md#benchmarking-from-the-cli-mcp)),
-`update_settings` (build settings, initial scene, and every
+`sweep_scene` (seeded bot policies — mash/wander/seek/idle — play a scene
+headlessly across many seeds and report softlocks, crashes, and unreached
+objectives; token-frugal summary, full per-run detail written to
+`.hearth/sweeps/`), `bake_playtest` (freeze one sweep run into a scripted
+regression playtest, red until the bug is fixed), `update_settings` (build settings, initial scene, and every
 input mapping: actions, gamepad buttons/axes, virtual axes, deadzone;
 see [input.md](./input.md)), `inspect_api` (the script `ctx` reference),
 `inspect_path` (grid A\* pathfinding over solid scene geometry, the same

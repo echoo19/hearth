@@ -179,6 +179,8 @@ requires no permission (it's purely informational).
 | `run_playtest` | `runPlaytest` | read-only |
 | `run_scene` | `runScene` | read-only |
 | `bench_scene` | `benchScene` | read-only |
+| `sweep_scene` | `sweepScene` | read-only |
+| `bake_playtest` | `bakePlaytest` | safe-edit |
 | `build_project` | `buildProject` | build |
 | `export_web` | `exportWeb` | build |
 | `export_desktop` | `exportDesktop` | build |

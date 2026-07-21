@@ -946,4 +946,40 @@ describe('hearth-mcp server', () => {
     const list = await ctx.client.callTool({ name: 'list_playtests', arguments: {} });
     expect(toolJson(list).data.playtests.some((p: any) => p.name === 'smoke')).toBe(false);
   });
+
+  it('exposes sweep_scene and bake_playtest in the tool list', async () => {
+    ctx = await connectClient();
+    const names = (await ctx.client.listTools()).tools.map((t) => t.name);
+    expect(names).toContain('sweep_scene');
+    expect(names).toContain('bake_playtest');
+  });
+
+  it('sweep_scene runs headlessly and returns a token-frugal verdict summary', async () => {
+    ctx = await connectClient();
+    const sceneId = ctx.store.project.initialScene!;
+    const result = await ctx.client.callTool({
+      name: 'sweep_scene',
+      arguments: { scene: sceneId, policies: ['idle'], seeds: 2, maxFrames: 30 },
+    });
+    expect(result.isError).toBeFalsy();
+    const envelope = toolJson(result);
+    expect(envelope.command).toBe('sweepScene');
+    expect(envelope.data.verdicts).toBeDefined();
+    expect(typeof envelope.data.reportFile).toBe('string');
+  });
+
+  it('bake_playtest freezes a bot run into a playtest definition', async () => {
+    ctx = await connectClient();
+    const sceneId = ctx.store.project.initialScene!;
+    const result = await ctx.client.callTool({
+      name: 'bake_playtest',
+      arguments: { name: 'idle-mcp-bake', scene: sceneId, policy: 'idle', seed: 0, maxFrames: 30 },
+    });
+    expect(result.isError).toBeFalsy();
+    const envelope = toolJson(result);
+    expect(envelope.command).toBe('bakePlaytest');
+
+    const list = await ctx.client.callTool({ name: 'list_playtests', arguments: {} });
+    expect(toolJson(list).data.playtests.some((p: any) => p.name === 'idle-mcp-bake')).toBe(true);
+  });
 });

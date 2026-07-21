@@ -1470,6 +1470,91 @@ describe('hearth bench', () => {
   });
 });
 
+describe('hearth sweep', () => {
+  it('sweeps a scene with the idle policy and reports verdicts plus a report file', async () => {
+    const dir = path.join(tmpRoot, 'sweep-basic');
+    await fsp.mkdir(dir, { recursive: true });
+    await runCli(['init', 'Sweep Basic', '--dir', dir, '--json'], tmpRoot);
+
+    const result = await runCli(
+      ['sweep', 'Main', '--policies', 'idle', '--seeds', '2', '--max-frames', '60', '--json'],
+      dir,
+    );
+    expect(result.code).toBe(0);
+    const envelope = parseJson(result.stdout);
+    expect(envelope.success).toBe(true);
+    expect(envelope.command).toBe('sweepScene');
+    expect(envelope.data.verdicts).toBeDefined();
+    expect(typeof envelope.data.reportFile).toBe('string');
+
+    const reportRaw = await fsp.readFile(path.join(dir, envelope.data.reportFile), 'utf8');
+    expect(() => JSON.parse(reportRaw)).not.toThrow();
+  });
+
+  it('defaults the scene to the project initial scene', async () => {
+    const dir = path.join(tmpRoot, 'sweep-default-scene');
+    await fsp.mkdir(dir, { recursive: true });
+    await runCli(['init', 'Sweep Default Scene', '--dir', dir, '--json'], tmpRoot);
+
+    const result = await runCli(['sweep', '--policies', 'idle', '--seeds', '1', '--max-frames', '30', '--json'], dir);
+    expect(result.code).toBe(0);
+    const envelope = parseJson(result.stdout);
+    expect(envelope.success).toBe(true);
+    expect(envelope.data.scene).toBe('main');
+  });
+
+  it('--bake freezes one run into a *.playtest.json file', async () => {
+    const dir = path.join(tmpRoot, 'sweep-bake');
+    await fsp.mkdir(dir, { recursive: true });
+    await runCli(['init', 'Sweep Bake', '--dir', dir, '--json'], tmpRoot);
+
+    const result = await runCli(
+      ['sweep', 'Main', '--policies', 'idle', '--seed-start', '0', '--max-frames', '30', '--bake', 'idle-bake', '--json'],
+      dir,
+    );
+    expect(result.code).toBe(0);
+    const envelope = parseJson(result.stdout);
+    expect(envelope.success).toBe(true);
+    expect(envelope.command).toBe('bakePlaytest');
+
+    const files = await fsp.readdir(path.join(dir, 'playtests'));
+    // slugify() turns "-" into "_" for the on-disk file name.
+    const baked = files.find((f) => f.endsWith('.playtest.json') && f.includes('idle_bake'));
+    expect(baked).toBeDefined();
+    const raw = await fsp.readFile(path.join(dir, 'playtests', baked!), 'utf8');
+    const parsed = JSON.parse(raw);
+    expect(parsed.name).toBe('idle-bake');
+    expect(parsed.seed).toBe(0);
+  });
+
+  it('rejects --bake with more than one policy', async () => {
+    const dir = path.join(tmpRoot, 'sweep-bake-multi-policy');
+    await fsp.mkdir(dir, { recursive: true });
+    await runCli(['init', 'Sweep Bake Multi Policy', '--dir', dir, '--json'], tmpRoot);
+
+    const result = await runCli(['sweep', 'Main', '--policies', 'idle,mash', '--bake', 'nope', '--json'], dir);
+    expect(result.code).toBe(1);
+    const envelope = parseJson(result.stdout);
+    expect(envelope.success).toBe(false);
+    expect(envelope.errors[0].code).toBe('INVALID_INPUT');
+  });
+
+  it('rejects --bake with more than one seed', async () => {
+    const dir = path.join(tmpRoot, 'sweep-bake-multi-seed');
+    await fsp.mkdir(dir, { recursive: true });
+    await runCli(['init', 'Sweep Bake Multi Seed', '--dir', dir, '--json'], tmpRoot);
+
+    const result = await runCli(
+      ['sweep', 'Main', '--policies', 'idle', '--seeds', '2', '--bake', 'nope', '--json'],
+      dir,
+    );
+    expect(result.code).toBe(1);
+    const envelope = parseJson(result.stdout);
+    expect(envelope.success).toBe(false);
+    expect(envelope.errors[0].code).toBe('INVALID_INPUT');
+  });
+});
+
 describe('hearth capture (option validation, no Chromium)', () => {
   it('rejects a frame range that exceeds the hard cap before launching a browser', async () => {
     // step 1 over 0..200 is 201 frames, past MAX_SEQUENCE_FRAMES (64); the
