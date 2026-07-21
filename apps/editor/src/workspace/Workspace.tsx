@@ -491,12 +491,37 @@ export function resetLayout(api: DockviewApi, storageKey: string, template?: Wor
   writeLayout(api, storageKey);
 }
 
+/**
+ * Resolve which template to stamp onto a persisted envelope. When the store
+ * still knows the template (`current`), it wins. When it's null, fall back to
+ * the template already in the stored envelope rather than defaulting to
+ * 'studio'.
+ *
+ * WHY the fallback matters — the unmount-flush-after-close race: on project
+ * close, `closeProject` nulls `workspaceTemplate` synchronously, then Workspace
+ * unmounts; its cleanup effect flushes any save still pending in the
+ * SAVE_DEBOUNCE_MS window. Defaulting a null template to 'studio' there would
+ * stamp `template:'studio'` onto an Agent project's envelope — silently
+ * corrupting the feature's durable field. Preserving the stored template keeps
+ * the flush honest.
+ *
+ * Exported for tests (unit-tested in workspaceDock.test.ts); the production
+ * path is `writeLayout` below.
+ */
+export function resolvePersistTemplate(
+  current: WorkspaceTemplate | null,
+  raw: string | null,
+): WorkspaceTemplate {
+  return current ?? restoreLayout(raw)?.template ?? 'studio';
+}
+
 function writeLayout(api: DockviewApi, storageKey: string): void {
   try {
-    localStorage.setItem(
-      storageKey,
-      serializeLayout(api.toJSON(), useEditor.getState().workspaceTemplate ?? 'studio'),
+    const template = resolvePersistTemplate(
+      useEditor.getState().workspaceTemplate,
+      localStorage.getItem(storageKey),
     );
+    localStorage.setItem(storageKey, serializeLayout(api.toJSON(), template));
   } catch {
     /* private mode / quota — layout persistence is best-effort */
   }
@@ -665,6 +690,12 @@ export function Workspace({
   // Agent workspace: first selection reveals the Inspector; a user closing it
   // afterwards keeps it closed for the session. All decisions live in the pure
   // nextAutoReveal state machine (layout.ts) — this effect just supplies inputs.
+  //
+  // `workspaceTemplate` is a dep by design: switching Studio→Agent while an
+  // entity is selected auto-reveals the Inspector immediately. This is the
+  // deliberate choice — the user carried a selection into the switch, so
+  // surfacing its Inspector preserves their context. The "resting face"
+  // (Inspector closed) argument applies to fresh projects with no selection.
   useEffect(() => {
     const api = apiRef.current;
     if (!api) return;

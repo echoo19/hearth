@@ -16,7 +16,7 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createDockview, type DockviewApi, type IContentRenderer } from 'dockview-core';
-import { buildAgentLayout, buildDefaultLayout, initLayout, resetLayout, showPanel } from '../src/workspace/Workspace';
+import { buildAgentLayout, buildDefaultLayout, initLayout, resetLayout, resolvePersistTemplate, showPanel } from '../src/workspace/Workspace';
 import { ensureGroupsActive, serializeLayout } from '../src/workspace/layout';
 import { useEditor } from '../src/store';
 
@@ -465,6 +465,52 @@ describe('workspace templates', () => {
     // pendingWorkspaceTemplate is null here — the restore path must not crash.
     expect(() => initLayout(api, key)).not.toThrow();
     expect(useEditor.getState().workspaceTemplate).toBe('agent');
+  });
+
+  it('initLayout restoring an envelope consumes a live pending template (stored wins)', () => {
+    // A create can arrive with a pending choice AND an existing envelope on the
+    // same key (e.g. reopening a project someone just created). The stored
+    // envelope's template must win, and the stale pending choice must be
+    // consumed so the next fresh build doesn't pick it up.
+    const source = makeDock();
+    buildDefaultLayout(source);
+    const key = 'hearth.layout.restore-consumes-pending';
+    localStorage.setItem(key, serializeLayout(source.toJSON(), 'studio'));
+
+    useEditor.setState({ pendingWorkspaceTemplate: 'agent' });
+    const api = makeDock();
+    initLayout(api, key);
+
+    // The stored studio template wins over the pending agent choice.
+    expect(useEditor.getState().workspaceTemplate).toBe('studio');
+    // And the pending choice was consumed, not left behind.
+    expect(useEditor.getState().pendingWorkspaceTemplate).toBeNull();
+  });
+
+  // Unit-tests the pure template-resolution helper that backs writeLayout.
+  // The load-bearing case is the close race (Finding 1): closeProject nulls the
+  // store template, then the unmount cleanup flushes a pending debounced save;
+  // a null store template must fall back to the stored envelope's template, not
+  // default to 'studio', or an Agent project's envelope gets silently
+  // rewritten as studio.
+  describe('resolvePersistTemplate', () => {
+    it('falls back to the stored envelope template when the store template is null (close race)', () => {
+      const source = makeDock();
+      buildAgentLayout(source);
+      const agentEnvelope = serializeLayout(source.toJSON(), 'agent');
+      expect(resolvePersistTemplate(null, agentEnvelope)).toBe('agent');
+    });
+
+    it('defaults to studio when the store template is null and nothing is stored', () => {
+      expect(resolvePersistTemplate(null, null)).toBe('studio');
+    });
+
+    it('prefers the live store template over the stored envelope', () => {
+      const source = makeDock();
+      buildDefaultLayout(source);
+      const studioEnvelope = serializeLayout(source.toJSON(), 'studio');
+      expect(resolvePersistTemplate('agent', studioEnvelope)).toBe('agent');
+    });
   });
 
   it('resetLayout on a disposed dock no-ops even with an explicit template', () => {
