@@ -162,6 +162,8 @@ const SKILLS: { label: string; path: string; minInvocations: number }[] = [
   // Feel is prose-heavy (juice recipes, UX, quality bar) but still carries
   // real CLI: sound presets, the emitter setup, playtests, export.
   { label: 'skills/hearth-feel/SKILL.md', path: skillPath('hearth-feel'), minInvocations: 4 },
+  // Bot playtesting is command-driven end to end: sweeps, objectives, bake.
+  { label: 'skills/hearth-playtest/SKILL.md', path: skillPath('hearth-playtest'), minInvocations: 8 },
 ];
 
 for (const skillFile of SKILLS) {
