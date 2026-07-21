@@ -1,6 +1,6 @@
 {
   "formatVersion": 1,
-  "hearthVersion": "1.0.0",
+  "hearthVersion": "1.0.1",
   "id": "prj_z4cvultk",
   "name": "Top-Down Starter",
   "description": "A top-down movement skeleton: four-direction walking, camera follow, and an autotiled room.",

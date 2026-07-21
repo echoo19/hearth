@@ -1,6 +1,6 @@
 {
   "name": "@hearth/templates",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Hearth genre starter templates: small, playable platformer/topdown/arcade skeletons plus the generator and apply helper used by `hearth init` and the editor",
   "license": "MIT",
   "type": "module",
