@@ -52,6 +52,8 @@ function ctx(over: Partial<AppMenuContext> = {}): AppMenuContext {
       togglePanel: vi.fn(),
       resetLayout: vi.fn(),
       canReset: true,
+      workspaceTemplate: null,
+      applyWorkspace: vi.fn(),
     },
     ...over,
   };

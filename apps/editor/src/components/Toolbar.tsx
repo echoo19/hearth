@@ -1,7 +1,7 @@
 import React, { useMemo, useState } from 'react';
 import type { DockviewApi } from 'dockview-react';
 import { useEditor } from '../store';
-import { Icon, Modal } from './ui';
+import { ConfirmDialog, Icon, Modal } from './ui';
 import { IconButton } from './ui/Button';
 import { Tooltip } from './ui/Tooltip';
 import { ExportDialog } from './ExportDialog';
@@ -11,7 +11,7 @@ import { useNativeAppMenu, useShowInWindowMenuBar } from '../menu/nativeMenu';
 import { buildAppMenu, DOCS_URL, type AppMenuContext, type AppMenuViewContext } from '../menu/appMenu';
 import { useOpenPanels } from '../workspace/useOpenPanels';
 import { PANEL_TITLES, VIEW_MENU_PANELS, resetLayout, showPanel } from '../workspace/Workspace';
-import type { PanelId } from '../workspace/layout';
+import type { PanelId, WorkspaceTemplate } from '../workspace/layout';
 import { useHistoryList } from '../useHistoryList';
 import { hearthNative } from '../native';
 import { comboDisplay } from '../keybinds';
@@ -45,6 +45,7 @@ export function Toolbar({ dock, storageKey }: { dock: DockviewApi | null; storag
   const paused = useEditor((s) => s.paused);
   const pendingRestart = useEditor((s) => s.pendingRestart);
   const debugDraw = useEditor((s) => s.debugDraw);
+  const workspaceTemplate = useEditor((s) => s.workspaceTemplate);
   const selectScene = useEditor((s) => s.selectScene);
   const setPlaying = useEditor((s) => s.setPlaying);
   const restartPlay = useEditor((s) => s.restartPlay);
@@ -58,6 +59,7 @@ export function Toolbar({ dock, storageKey }: { dock: DockviewApi | null; storag
   const [newSceneOpen, setNewSceneOpen] = useState(false);
   const [newSceneName, setNewSceneName] = useState('');
   const [exportOpen, setExportOpen] = useState(false);
+  const [workspaceSwitch, setWorkspaceSwitch] = useState<WorkspaceTemplate | null>(null);
 
   // Shared with DiffPanel.tsx's Undo/Redo buttons — see useHistoryList.ts.
   const { undoTarget, redoTarget } = useHistoryList();
@@ -94,6 +96,14 @@ export function Toolbar({ dock, storageKey }: { dock: DockviewApi | null; storag
         },
         resetLayout: () => resetLayout(dock, storageKey),
         canReset: true,
+        workspaceTemplate,
+        applyWorkspace: (template) => {
+          // Re-selecting the current workspace is a no-op; switching replaces the
+          // user's arrangement, so it confirms first (Reset layout stays instant —
+          // it restores the same template, not a different one).
+          if (template === workspaceTemplate) return;
+          setWorkspaceSwitch(template);
+        },
       }
     : null;
 
@@ -118,7 +128,7 @@ export function Toolbar({ dock, storageKey }: { dock: DockviewApi | null; storag
     () => buildAppMenu(useEditor.getState(), menuCtx),
     // Rebuild when any input the model reads or depends on changes.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [info, debugDraw, playing, undoTarget, redoTarget, openPanels, dock, storageKey],
+    [info, debugDraw, playing, undoTarget, redoTarget, openPanels, dock, storageKey, workspaceTemplate],
   );
   useNativeAppMenu(sections);
   const showMenuBar = useShowInWindowMenuBar();
@@ -226,6 +236,18 @@ export function Toolbar({ dock, storageKey }: { dock: DockviewApi | null; storag
       <WsStatusDot />
 
       <ExportDialog open={exportOpen} onClose={() => setExportOpen(false)} />
+
+      <ConfirmDialog
+        open={workspaceSwitch != null}
+        title="Switch workspace?"
+        body="This replaces your current panel arrangement with the selected workspace."
+        confirmLabel="Switch"
+        onConfirm={() => {
+          if (dock && workspaceSwitch) resetLayout(dock, storageKey, workspaceSwitch);
+          setWorkspaceSwitch(null);
+        }}
+        onCancel={() => setWorkspaceSwitch(null)}
+      />
 
       <Modal open={newSceneOpen} title="New scene" onClose={() => setNewSceneOpen(false)}>
         <div className="modal-body">

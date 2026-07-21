@@ -16,8 +16,9 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createDockview, type DockviewApi, type IContentRenderer } from 'dockview-core';
-import { buildDefaultLayout, initLayout, resetLayout, showPanel } from '../src/workspace/Workspace';
+import { buildAgentLayout, buildDefaultLayout, initLayout, resetLayout, showPanel } from '../src/workspace/Workspace';
 import { ensureGroupsActive, serializeLayout } from '../src/workspace/layout';
+import { useEditor } from '../src/store';
 
 // Spy-wrap ensureGroupsActive (keeping its real behavior) so the wiring tests
 // can pin that Workspace's init paths actually invoke the heal — the vendored
@@ -353,5 +354,125 @@ describe('agent dock does not crush the inspector', () => {
     api.layout(1280, 720);
     expect(inspectorWidth(api)).toBeGreaterThanOrEqual(MIN_INSPECTOR);
     expect(agentWidth(api)).toBeGreaterThanOrEqual(340);
+  });
+});
+
+// Workspace templates (v1.3): the Agent template is a second named layout, and
+// reset/init became template-aware. These pin the layout shape plus the
+// store<->layout wiring (workspaceTemplate, layoutAppliedNonce, the pending
+// hand-off from createProject, and the persisted envelope's `template`).
+describe('workspace templates', () => {
+  // Keep the shared store from leaking template/nonce state between tests (and
+  // out to the other describe blocks, which don't touch the store).
+  beforeEach(() => {
+    useEditor.setState({
+      workspaceTemplate: null,
+      pendingWorkspaceTemplate: null,
+      layoutAppliedNonce: 0,
+    });
+  });
+  afterEach(() => {
+    useEditor.setState({
+      workspaceTemplate: null,
+      pendingWorkspaceTemplate: null,
+      layoutAppliedNonce: 0,
+    });
+  });
+
+  it('buildAgentLayout builds the agent shell: scene/game/code + agent + console, game active, no hierarchy/inspector', () => {
+    const api = makeDock(2560, 1440);
+    buildAgentLayout(api);
+
+    expect(api.panels.map((p) => p.id).sort()).toEqual(['agent', 'code', 'console', 'game', 'scene']);
+    // The game tab rests active — the agent builds, the user watches.
+    expect(api.activePanel?.id).toBe('game');
+    // No hierarchy/inspector in this template (View menu / auto-reveal bring them back).
+    expect(api.getPanel('hierarchy')).toBeUndefined();
+    expect(api.getPanel('inspector')).toBeUndefined();
+    // Console spans the bottom in its own group at ~BOTTOM_HEIGHT (260).
+    const consoleGroup = api.getPanel('console')!.group;
+    expect(consoleGroup).not.toBe(api.getPanel('scene')!.group);
+    expect(consoleGroup.height).toBeCloseTo(260, -1);
+    // Agent keeps its full-height right dock at ~AGENT_WIDTH (380).
+    expect(api.getPanel('agent')!.group.width).toBeCloseTo(380, -1);
+    // No headless groups (watermark) left behind.
+    expect(headlessGroups(api)).toBe(0);
+  });
+
+  it('resetLayout(api, key, "agent") builds agent, sets the template, bumps the nonce, and persists template:agent', () => {
+    const api = makeDock();
+    const key = 'hearth.layout.reset-agent';
+    resetLayout(api, key, 'agent');
+
+    // Agent shape, not studio.
+    expect(api.getPanel('hierarchy')).toBeUndefined();
+    expect(api.getPanel('agent')).toBeDefined();
+    expect(useEditor.getState().workspaceTemplate).toBe('agent');
+    expect(useEditor.getState().layoutAppliedNonce).toBe(1);
+    const persisted = JSON.parse(localStorage.getItem(key)!) as { template: string };
+    expect(persisted.template).toBe('agent');
+  });
+
+  it('resetLayout(api, key) falls back to the store template (agent), not studio', () => {
+    useEditor.setState({ workspaceTemplate: 'agent' });
+    const api = makeDock();
+    const key = 'hearth.layout.reset-default-agent';
+    resetLayout(api, key);
+
+    // Rebuilt the AGENT layout because that's the current template.
+    expect(api.getPanel('hierarchy')).toBeUndefined();
+    expect(api.getPanel('inspector')).toBeUndefined();
+    expect(api.getPanel('agent')).toBeDefined();
+    const persisted = JSON.parse(localStorage.getItem(key)!) as { template: string };
+    expect(persisted.template).toBe('agent');
+  });
+
+  it('initLayout with no envelope and a pending agent template builds + persists agent, then clears pending', () => {
+    useEditor.setState({ pendingWorkspaceTemplate: 'agent' });
+    const api = makeDock();
+    const key = 'hearth.layout.init-pending-agent';
+    initLayout(api, key);
+
+    expect(api.getPanel('hierarchy')).toBeUndefined();
+    expect(api.getPanel('agent')).toBeDefined();
+    expect(useEditor.getState().workspaceTemplate).toBe('agent');
+    // Persisted immediately (the debounce listener isn't attached yet).
+    const persisted = JSON.parse(localStorage.getItem(key)!) as { template: string };
+    expect(persisted.template).toBe('agent');
+    // Pending choice consumed.
+    expect(useEditor.getState().pendingWorkspaceTemplate).toBeNull();
+  });
+
+  it('initLayout with no envelope and no pending builds the default studio layout', () => {
+    const api = makeDock();
+    const key = 'hearth.layout.init-fresh-studio';
+    initLayout(api, key);
+
+    // Studio has the hierarchy + inspector.
+    expect(api.getPanel('hierarchy')).toBeDefined();
+    expect(api.getPanel('inspector')).toBeDefined();
+    expect(useEditor.getState().workspaceTemplate).toBe('studio');
+  });
+
+  it('initLayout restoring an agent envelope sets the store template and does not crash on null pending', () => {
+    // Build a real agent layout and persist it as a template:agent envelope.
+    const source = makeDock();
+    buildAgentLayout(source);
+    const key = 'hearth.layout.restore-agent';
+    localStorage.setItem(key, serializeLayout(source.toJSON(), 'agent'));
+
+    const api = makeDock();
+    // pendingWorkspaceTemplate is null here — the restore path must not crash.
+    expect(() => initLayout(api, key)).not.toThrow();
+    expect(useEditor.getState().workspaceTemplate).toBe('agent');
+  });
+
+  it('resetLayout on a disposed dock no-ops even with an explicit template', () => {
+    const api = makeDock();
+    buildDefaultLayout(api);
+    api.dispose();
+    const key = 'hearth.layout.reset-agent-dead';
+    expect(() => resetLayout(api, key, 'agent')).not.toThrow();
+    expect(localStorage.getItem(key)).toBeNull();
   });
 });

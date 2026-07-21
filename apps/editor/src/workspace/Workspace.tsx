@@ -32,7 +32,15 @@ import { InputSettings } from '../components/InputSettings';
 import { GameSettings } from '../components/GameSettings';
 import { LivePanel } from '../components/LivePanel';
 import { AnimatorEditor } from '../components/AnimatorEditor';
-import { ensureGroupsActive, restoreLayout, serializeLayout, type PanelId } from './layout';
+import {
+  ensureGroupsActive,
+  nextAutoReveal,
+  restoreLayout,
+  serializeLayout,
+  type AutoRevealState,
+  type PanelId,
+  type WorkspaceTemplate,
+} from './layout';
 
 export const PANEL_TITLES: Record<PanelId, string> = {
   hierarchy: 'Hierarchy',
@@ -243,7 +251,11 @@ function addPanelOptions(id: PanelId, extra?: Partial<AddPanelOptions>): AddPane
   } as AddPanelOptions;
 }
 
-/** Today's fixed shell, rebuilt as a dockview layout. */
+/**
+ * The Studio workspace (the default): today's fixed shell, rebuilt as a
+ * dockview layout — Hierarchy/Scene/Inspector across the top, the Agent in its
+ * own right dock, and the shared bottom group (Assets/Console/Changes/…).
+ */
 export function buildDefaultLayout(api: DockviewApi): void {
   api.clear();
   const scene = api.addPanel(addPanelOptions('scene'));
@@ -280,6 +292,44 @@ export function buildDefaultLayout(api: DockviewApi): void {
   // into them. Activate each group's first panel; the sweep re-activates the
   // Scene last so it stays the visually active group (cosmetic only).
   ensureGroupsActive(api);
+}
+
+/**
+ * The Agent workspace: the agent terminal and the running game are the whole
+ * face of the editor. Center group holds Scene/Game/Code with the GAME tab
+ * resting active (the agent builds, the user watches), the agent keeps its
+ * full-height right dock, and the Console spans the bottom. Hierarchy,
+ * Inspector, and the other panels stay closed — the View menu and the
+ * select→Inspector auto-reveal bring them back on demand.
+ */
+export function buildAgentLayout(api: DockviewApi): void {
+  api.clear();
+  api.addPanel(addPanelOptions('scene'));
+  api.addPanel(addPanelOptions('game', { position: { referencePanel: 'scene', direction: 'within' }, inactive: true }));
+  api.addPanel(addPanelOptions('code', { position: { referencePanel: 'scene', direction: 'within' }, inactive: true }));
+  addAgentPanelRight(api, { inactive: true });
+  api.addPanel(
+    addPanelOptions('console', {
+      position: { referencePanel: 'scene', direction: 'below' },
+      initialHeight: BOTTOM_HEIGHT,
+      inactive: true,
+    }),
+  );
+  // With no Inspector in this layout the agent's width is carved straight out
+  // of the center group; re-assert it once in case dockview short-changed it
+  // (same class of correction as reassertInspectorWidth, one panel fewer).
+  const agent = api.getPanel('agent');
+  if (agent && agent.group.width > 0 && agent.group.width < AGENT_WIDTH) {
+    agent.api.setSize({ width: AGENT_WIDTH });
+  }
+  api.getPanel('game')?.api.setActive();
+  ensureGroupsActive(api);
+}
+
+/** Build the named workspace template. */
+export function buildLayout(api: DockviewApi, template: WorkspaceTemplate): void {
+  if (template === 'agent') buildAgentLayout(api);
+  else buildDefaultLayout(api);
 }
 
 /** A living panel to anchor re-opened panels against. */
@@ -426,16 +476,27 @@ function isDockAlive(api: DockviewApi): boolean {
   return element?.isConnected === true;
 }
 
-/** Rebuild the default layout and persist it. */
-export function resetLayout(api: DockviewApi, storageKey: string): void {
+/**
+ * Rebuild the current (or given) workspace template and persist it. The
+ * template falls back to the store's current one so "Reset layout" restores
+ * what the user chose, not unconditionally the Studio arrangement.
+ */
+export function resetLayout(api: DockviewApi, storageKey: string, template?: WorkspaceTemplate): void {
   if (!isDockAlive(api)) return;
-  buildDefaultLayout(api);
+  const applied = template ?? useEditor.getState().workspaceTemplate ?? 'studio';
+  buildLayout(api, applied);
+  // Set the template BEFORE writeLayout — writeLayout stamps the envelope from
+  // the store's current template.
+  useEditor.getState().setWorkspaceTemplate(applied);
   writeLayout(api, storageKey);
 }
 
 function writeLayout(api: DockviewApi, storageKey: string): void {
   try {
-    localStorage.setItem(storageKey, serializeLayout(api.toJSON()));
+    localStorage.setItem(
+      storageKey,
+      serializeLayout(api.toJSON(), useEditor.getState().workspaceTemplate ?? 'studio'),
+    );
   } catch {
     /* private mode / quota — layout persistence is best-effort */
   }
@@ -453,6 +514,9 @@ export function initLayout(api: DockviewApi, storageKey: string): void {
   if (stored) {
     try {
       api.fromJSON(stored.layout as SerializedDockview);
+      // Adopt the template the envelope was saved under BEFORE any re-persist
+      // below, so a migration re-stamp carries the right template forward.
+      useEditor.getState().setWorkspaceTemplate(stored.template);
       if (stored.migrateAgentDock) {
         relocateAgentPanel(api);
         // Persist as v2 right away so the migration runs exactly once even
@@ -462,12 +526,21 @@ export function initLayout(api: DockviewApi, storageKey: string): void {
       // Older saves persisted headless groups (`activeView: null`); heal them
       // so a restored layout doesn't come back showing the watermark.
       ensureGroupsActive(api);
+      // A create that opened straight into an existing envelope must not leave
+      // a stale pending choice behind for the next fresh build to pick up.
+      useEditor.getState().consumePendingWorkspaceTemplate();
       return;
     } catch {
       /* corrupt beyond what validation catches — fall through to default */
     }
   }
-  buildDefaultLayout(api);
+  const template = useEditor.getState().consumePendingWorkspaceTemplate() ?? 'studio';
+  buildLayout(api, template);
+  useEditor.getState().setWorkspaceTemplate(template);
+  // Persist right away: the debounce listener isn't attached yet, and a chosen
+  // Agent workspace must survive a same-session reopen even if the user never
+  // rearranges a panel.
+  writeLayout(api, storageKey);
 }
 
 // ---------------------------------------------------------------------------
@@ -488,9 +561,13 @@ export function Workspace({
   const codeSearchRequest = useEditor((s) => s.codeSearchRequest);
   const animatorTarget = useEditor((s) => s.animatorTarget);
   const closeProjectRequest = useEditor((s) => s.closeProjectRequest);
+  const selection = useEditor((s) => s.selection);
+  const workspaceTemplate = useEditor((s) => s.workspaceTemplate);
+  const layoutAppliedNonce = useEditor((s) => s.layoutAppliedNonce);
   const apiRef = useRef<DockviewApi | null>(null);
   const saveTimer = useRef<number | null>(null);
   const disposables = useRef<{ dispose(): void }[]>([]);
+  const autoReveal = useRef<AutoRevealState>('idle');
 
   const handleReady = useCallback(
     (event: DockviewReadyEvent) => {
@@ -578,6 +655,27 @@ export function Workspace({
   useEffect(() => {
     if (closeProjectRequest > 0 && apiRef.current) showPanel(apiRef.current, 'code');
   }, [closeProjectRequest]);
+
+  // A template apply/reset re-arms the select→Inspector reveal (spec: per-mount
+  // dismissal, re-armed by any workspace apply).
+  useEffect(() => {
+    autoReveal.current = 'idle';
+  }, [layoutAppliedNonce]);
+
+  // Agent workspace: first selection reveals the Inspector; a user closing it
+  // afterwards keeps it closed for the session. All decisions live in the pure
+  // nextAutoReveal state machine (layout.ts) — this effect just supplies inputs.
+  useEffect(() => {
+    const api = apiRef.current;
+    if (!api) return;
+    const result = nextAutoReveal(autoReveal.current, {
+      template: workspaceTemplate,
+      hasSelection: selection != null,
+      inspectorOpen: api.getPanel('inspector') != null,
+    });
+    autoReveal.current = result.state;
+    if (result.open) showPanel(api, 'inspector');
+  }, [selection, workspaceTemplate]);
 
   // Flush a pending save and release listeners when the workspace unmounts
   // (project switch or close).

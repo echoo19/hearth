@@ -17,6 +17,7 @@
  */
 import type { EditorStore } from '../store';
 import { keybindFor } from '../keybinds';
+import type { WorkspaceTemplate } from '../workspace/layout';
 
 export interface AppMenuItemModel {
   /** Stable id — used for IPC dispatch (menu:invoke) and tests. */
@@ -50,6 +51,10 @@ export interface AppMenuViewContext {
   togglePanel: (id: string) => void;
   resetLayout: () => void;
   canReset: boolean;
+  /** Which workspace template the current layout came from (null before the dock mounts). */
+  workspaceTemplate: WorkspaceTemplate | null;
+  /** Switch to the given template (the toolbar confirms before applying). */
+  applyWorkspace: (template: WorkspaceTemplate) => void;
 }
 
 /**
@@ -142,6 +147,21 @@ export function buildAppMenu(store: EditorStore, ctx: AppMenuContext): AppMenuSe
         checked: store.debugDraw,
         keepOpen: true,
         onSelect: () => store.setDebugDraw(!store.debugDraw),
+      },
+      { separator: true },
+      {
+        id: 'workspace-agent',
+        label: 'Workspace: Agent',
+        enabled: ctx.view != null,
+        checked: ctx.view?.workspaceTemplate === 'agent',
+        onSelect: () => ctx.view?.applyWorkspace('agent'),
+      },
+      {
+        id: 'workspace-studio',
+        label: 'Workspace: Studio',
+        enabled: ctx.view != null,
+        checked: ctx.view?.workspaceTemplate === 'studio',
+        onSelect: () => ctx.view?.applyWorkspace('studio'),
       },
       { separator: true },
       { id: 'reset-layout', label: 'Reset layout', enabled: ctx.view?.canReset ?? false, onSelect: () => ctx.view?.resetLayout() },

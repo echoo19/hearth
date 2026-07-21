@@ -52,6 +52,8 @@ function baseCtx(over: Partial<AppMenuContext> = {}): AppMenuContext {
       togglePanel: vi.fn(),
       resetLayout: vi.fn(),
       canReset: true,
+      workspaceTemplate: null,
+      applyWorkspace: vi.fn(),
     },
     ...over,
   };
@@ -124,6 +126,54 @@ describe('buildAppMenu — View section', () => {
     expect(findItem(buildAppMenu(mockStore({ debugDraw: true }), baseCtx()), 'debug-overlay').checked).toBe(true);
     expect(findItem(buildAppMenu(mockStore({ debugDraw: false }), baseCtx()), 'debug-overlay').checked).toBe(false);
   });
+
+  it('places the workspace items between the debug-overlay separator and reset-layout', () => {
+    const sections = buildAppMenu(mockStore(), baseCtx());
+    const view = sections.find((s) => s.id === 'view')!;
+    const ids = view.items.map((e) => (isMenuSeparator(e) ? '---' : e.id));
+    const debugIdx = ids.indexOf('debug-overlay');
+    const agentIdx = ids.indexOf('workspace-agent');
+    const studioIdx = ids.indexOf('workspace-studio');
+    const resetIdx = ids.indexOf('reset-layout');
+    // debug-overlay, separator, workspace-agent, workspace-studio, separator, reset-layout
+    expect(ids[debugIdx + 1]).toBe('---');
+    expect(agentIdx).toBe(debugIdx + 2);
+    expect(studioIdx).toBe(agentIdx + 1);
+    expect(ids[studioIdx + 1]).toBe('---');
+    expect(resetIdx).toBe(studioIdx + 2);
+  });
+
+  it('checks the workspace item matching the current template', () => {
+    const agentSections = buildAppMenu(mockStore(), baseCtx({ view: { ...baseCtx().view!, workspaceTemplate: 'agent' } }));
+    expect(findItem(agentSections, 'workspace-agent').checked).toBe(true);
+    expect(findItem(agentSections, 'workspace-studio').checked).toBe(false);
+
+    const studioSections = buildAppMenu(mockStore(), baseCtx({ view: { ...baseCtx().view!, workspaceTemplate: 'studio' } }));
+    expect(findItem(studioSections, 'workspace-agent').checked).toBe(false);
+    expect(findItem(studioSections, 'workspace-studio').checked).toBe(true);
+
+    const nullSections = buildAppMenu(mockStore(), baseCtx({ view: { ...baseCtx().view!, workspaceTemplate: null } }));
+    expect(findItem(nullSections, 'workspace-agent').checked).toBe(false);
+    expect(findItem(nullSections, 'workspace-studio').checked).toBe(false);
+  });
+
+  it('disables both workspace items when there is no view context', () => {
+    const sections = buildAppMenu(mockStore(), baseCtx({ view: null }));
+    expect(findItem(sections, 'workspace-agent').enabled).toBe(false);
+    expect(findItem(sections, 'workspace-studio').enabled).toBe(false);
+  });
+});
+
+describe('buildAppMenu — workspace switching', () => {
+  it('routes selecting a workspace item through applyWorkspace with the matching template', () => {
+    const applyWorkspace = vi.fn();
+    const ctx = baseCtx({ view: { ...baseCtx().view!, applyWorkspace } });
+    const sections = buildAppMenu(mockStore(), ctx);
+    findItem(sections, 'workspace-agent').onSelect();
+    expect(applyWorkspace).toHaveBeenCalledWith('agent');
+    findItem(sections, 'workspace-studio').onSelect();
+    expect(applyWorkspace).toHaveBeenCalledWith('studio');
+  });
 });
 
 describe('buildAppMenu — onSelect wiring', () => {
@@ -171,6 +221,16 @@ describe('serializeAppMenu', () => {
     const checkpoint = flat.find((i) => i.id === 'checkpoint')!;
     expect(checkpoint.accelerator).toBe('Shift+CmdOrCtrl+S');
     expect(serialized[0].items.some((i) => i.type === 'separator')).toBe(true);
+  });
+
+  it('carries checked for the workspace items', () => {
+    const ctx = baseCtx({ view: { ...baseCtx().view!, workspaceTemplate: 'agent' } });
+    const serialized = serializeAppMenu(buildAppMenu(mockStore(), ctx));
+    const flat = serialized.flatMap((s) => s.items);
+    const agentItem = flat.find((i) => i.id === 'workspace-agent')!;
+    const studioItem = flat.find((i) => i.id === 'workspace-studio')!;
+    expect(agentItem.checked).toBe(true);
+    expect(studioItem.checked).toBe(false);
   });
 });
 
