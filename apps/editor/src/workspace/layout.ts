@@ -38,14 +38,22 @@ export function layoutStorageKey(projectId: string): string {
   return `hearth.layout.${projectId}`;
 }
 
+/** The editor's dockview presets. Persisted alongside the layout so a restore knows which one produced it. */
+export type WorkspaceTemplate = 'agent' | 'studio';
+
+export function isWorkspaceTemplate(value: unknown): value is WorkspaceTemplate {
+  return value === 'agent' || value === 'studio';
+}
+
 interface StoredLayout {
   version: number;
   layout: unknown;
+  template?: WorkspaceTemplate;
 }
 
 /** Wrap a dockview `toJSON()` result in the versioned envelope, ready for localStorage. */
-export function serializeLayout(layout: unknown): string {
-  return JSON.stringify({ version: LAYOUT_VERSION, layout } satisfies StoredLayout);
+export function serializeLayout(layout: unknown, template: WorkspaceTemplate = 'studio'): string {
+  return JSON.stringify({ version: LAYOUT_VERSION, layout, template } satisfies StoredLayout);
 }
 
 export interface RestoredLayout {
@@ -57,6 +65,11 @@ export interface RestoredLayout {
    * keeps the user's layout but the agent lands in the new dock.
    */
   migrateAgentDock: boolean;
+  /**
+   * Which workspace template produced this save; absent/garbled values read
+   * as 'studio' so an envelope is never rejected over it.
+   */
+  template: WorkspaceTemplate;
 }
 
 /**
@@ -78,7 +91,11 @@ export function restoreLayout(raw: string | null | undefined): RestoredLayout | 
   const stored = parsed as Partial<StoredLayout>;
   if (stored.version !== 1 && stored.version !== LAYOUT_VERSION) return null;
   if (!isValidDockviewLayout(stored.layout)) return null;
-  return { layout: stored.layout, migrateAgentDock: stored.version === 1 };
+  return {
+    layout: stored.layout,
+    migrateAgentDock: stored.version === 1,
+    template: isWorkspaceTemplate(stored.template) ? stored.template : 'studio',
+  };
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -146,4 +163,24 @@ export function isValidDockviewLayout(layout: unknown): boolean {
     if (!isPanelId(id)) return false;
   }
   return true;
+}
+
+export type AutoRevealState = 'idle' | 'opened' | 'dismissed';
+
+/**
+ * Pure state machine for the Agent workspace's select→Inspector reveal: the
+ * first time something is selected, the Inspector opens itself once so a new
+ * user finds it. If the Inspector is 'opened' by this machine but shows up
+ * absent on a later tick, the user closed it themselves, so it moves to
+ * 'dismissed' and stays there for the session instead of reopening.
+ */
+export function nextAutoReveal(
+  state: AutoRevealState,
+  input: { template: WorkspaceTemplate | null; hasSelection: boolean; inspectorOpen: boolean },
+): { state: AutoRevealState; open: boolean } {
+  if (input.template !== 'agent' || !input.hasSelection) return { state, open: false };
+  if (input.inspectorOpen) return { state, open: false };
+  if (state === 'dismissed') return { state, open: false };
+  if (state === 'opened') return { state: 'dismissed', open: false };
+  return { state: 'opened', open: true };
 }

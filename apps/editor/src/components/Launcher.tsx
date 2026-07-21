@@ -6,6 +6,8 @@ import { Icon } from './ui';
 import { Button } from './ui/Button';
 import { Tooltip } from './ui/Tooltip';
 import { TemplatePicker } from './TemplatePicker';
+import { WorkspacePicker } from './WorkspacePicker';
+import type { WorkspaceTemplate } from '../workspace/layout';
 import { hearthNative } from '../native';
 
 /** Which of Launcher's two primary actions (if any) is currently in flight. */
@@ -53,6 +55,7 @@ export function Launcher() {
   const [dir, setDir] = useState('');
   const [description, setDescription] = useState('');
   const [template, setTemplate] = useState(''); // '' = Blank
+  const [workspace, setWorkspace] = useState<WorkspaceTemplate>('agent');
   const [openPath, setOpenPath] = useState('');
   const [createError, setCreateError] = useState('');
   const [openError, setOpenError] = useState('');
@@ -88,7 +91,13 @@ export function Launcher() {
     }
     setCreateError('');
     const res = await withBusyAction('create', setBusyAction, () =>
-      createProject(dir.trim() || defaultDir, name.trim(), description.trim() || undefined, template || undefined),
+      createProject(
+        dir.trim() || defaultDir,
+        name.trim(),
+        description.trim() || undefined,
+        template || undefined,
+        workspace,
+      ),
     );
     if (!res.ok) setCreateError(res.error ?? 'Failed to create project.');
   }
@@ -162,6 +171,10 @@ export function Launcher() {
                 onChange={(e) => setDescription(e.target.value)}
                 placeholder="A tiny game to build with an agent"
               />
+            </div>
+            <div className="form-field">
+              <label className="field-label">Workspace</label>
+              <WorkspacePicker value={workspace} onChange={setWorkspace} disabled={busy} />
             </div>
             <div className="form-field">
               {/* Group caption for the radiogroup; the picker carries its own aria-label. */}

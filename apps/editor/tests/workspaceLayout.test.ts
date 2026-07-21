@@ -4,6 +4,7 @@ import {
   ensureGroupsActive,
   isValidDockviewLayout,
   layoutStorageKey,
+  nextAutoReveal,
   restoreLayout,
   serializeLayout,
   type GroupsActiveApi,
@@ -36,7 +37,7 @@ describe('workspace layout persistence helpers', () => {
   it('round-trips a layout through serialize/restore', () => {
     const layout = sampleLayout();
     const restored = restoreLayout(serializeLayout(layout));
-    expect(restored).toEqual({ layout, migrateAgentDock: false });
+    expect(restored).toEqual({ layout, migrateAgentDock: false, template: 'studio' });
   });
 
   it('stamps the current layout version', () => {
@@ -78,6 +79,62 @@ describe('workspace layout persistence helpers', () => {
     expect(isValidDockviewLayout({ ...layout, grid: { root: null } })).toBe(false);
     expect(isValidDockviewLayout({ ...layout, panels: 'nope' })).toBe(false);
     expect(isValidDockviewLayout(layout)).toBe(true);
+  });
+
+  it('round-trips the workspace template', () => {
+    const restored = restoreLayout(serializeLayout(sampleLayout(), 'agent'));
+    expect(restored?.template).toBe('agent');
+  });
+
+  it('defaults an absent template to studio', () => {
+    const restored = restoreLayout(serializeLayout(sampleLayout()));
+    expect(restored?.template).toBe('studio');
+  });
+
+  it('tolerates a garbled template value', () => {
+    const raw = JSON.stringify({ version: LAYOUT_VERSION, layout: sampleLayout(), template: 'kiosk' });
+    const restored = restoreLayout(raw);
+    expect(restored).not.toBeNull();
+    expect(restored?.template).toBe('studio');
+  });
+
+  it('reports studio for migrated v1 envelopes', () => {
+    const raw = JSON.stringify({ version: 1, layout: sampleLayout() });
+    const restored = restoreLayout(raw);
+    expect(restored?.migrateAgentDock).toBe(true);
+    expect(restored?.template).toBe('studio');
+  });
+});
+
+describe('nextAutoReveal', () => {
+  it('opens the inspector once on first selection in the agent workspace', () => {
+    const r = nextAutoReveal('idle', { template: 'agent', hasSelection: true, inspectorOpen: false });
+    expect(r).toEqual({ state: 'opened', open: true });
+  });
+
+  it('never opens in the studio workspace or without a selection', () => {
+    expect(nextAutoReveal('idle', { template: 'studio', hasSelection: true, inspectorOpen: false }).open).toBe(
+      false,
+    );
+    expect(nextAutoReveal('idle', { template: 'agent', hasSelection: false, inspectorOpen: false }).open).toBe(
+      false,
+    );
+    expect(nextAutoReveal('idle', { template: null, hasSelection: true, inspectorOpen: false }).open).toBe(false);
+  });
+
+  it('treats a vanished inspector after auto-open as a dismissal', () => {
+    const r = nextAutoReveal('opened', { template: 'agent', hasSelection: true, inspectorOpen: false });
+    expect(r).toEqual({ state: 'dismissed', open: false });
+  });
+
+  it('stays dismissed', () => {
+    const r = nextAutoReveal('dismissed', { template: 'agent', hasSelection: true, inspectorOpen: false });
+    expect(r).toEqual({ state: 'dismissed', open: false });
+  });
+
+  it('holds state while the inspector is open', () => {
+    const r = nextAutoReveal('opened', { template: 'agent', hasSelection: true, inspectorOpen: true });
+    expect(r).toEqual({ state: 'opened', open: false });
   });
 });
 

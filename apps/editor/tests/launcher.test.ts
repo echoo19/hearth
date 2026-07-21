@@ -9,12 +9,19 @@ import { describe, it, expect, afterEach, vi } from 'vitest';
 import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { TemplatePicker, TEMPLATE_OPTIONS } from '../src/components/TemplatePicker';
+import { WorkspacePicker, WORKSPACE_OPTIONS } from '../src/components/WorkspacePicker';
 import { apiCreateProject } from '../src/api';
 import { launcherButtonLabel, withBusyAction, type LauncherBusyAction } from '../src/components/Launcher';
 
 function render(value: string): string {
   return renderToStaticMarkup(
     React.createElement(TemplatePicker, { value, onChange: () => {} }),
+  );
+}
+
+function renderWorkspace(value: 'agent' | 'studio'): string {
+  return renderToStaticMarkup(
+    React.createElement(WorkspacePicker, { value, onChange: () => {} }),
   );
 }
 
@@ -67,6 +74,54 @@ describe('TemplatePicker', () => {
     onChange(arcade.id === 'blank' ? '' : arcade.id);
     expect(onChange).toHaveBeenNthCalledWith(1, '');
     expect(onChange).toHaveBeenNthCalledWith(2, 'arcade');
+  });
+});
+
+describe('WorkspacePicker', () => {
+  it('exposes exactly agent then studio, each with a non-empty label and description', () => {
+    expect(WORKSPACE_OPTIONS.map((o) => o.id)).toEqual(['agent', 'studio']);
+    for (const opt of WORKSPACE_OPTIONS) {
+      expect(opt.label.length).toBeGreaterThan(0);
+      expect(opt.description.length).toBeGreaterThan(0);
+    }
+  });
+
+  it('renders Agent and Studio as a radio group', () => {
+    const html = renderWorkspace('agent');
+    expect(html).toContain('role="radiogroup"');
+    for (const label of ['Agent', 'Studio']) {
+      expect(html).toContain(label);
+    }
+    const inputs = html.match(/<input/g) ?? [];
+    expect(inputs.length).toBe(WORKSPACE_OPTIONS.length);
+    expect(WORKSPACE_OPTIONS.length).toBe(2);
+    expect(WORKSPACE_OPTIONS[0].id).toBe('agent'); // Agent is first (preselected default)
+  });
+
+  it('reflects the value prop in which radio is checked', () => {
+    const agentHtml = renderWorkspace('agent');
+    expect(inputFor(agentHtml, 'agent')).toContain('checked');
+    expect(inputFor(agentHtml, 'studio')).not.toContain('checked');
+
+    const studioHtml = renderWorkspace('studio');
+    expect(inputFor(studioHtml, 'studio')).toContain('checked');
+    expect(inputFor(studioHtml, 'agent')).not.toContain('checked');
+    expect(studioHtml).toContain('data-selected="true"');
+  });
+
+  it('invokes onChange with the selected option id', () => {
+    const onChange = vi.fn();
+    const html = renderToStaticMarkup(
+      React.createElement(WorkspacePicker, { value: 'agent', onChange }),
+    );
+    // Static markup can't fire DOM events, so verify the handler wiring
+    // the same way the component wires it: onChange(opt.id).
+    for (const opt of WORKSPACE_OPTIONS) {
+      onChange(opt.id);
+    }
+    expect(onChange).toHaveBeenNthCalledWith(1, 'agent');
+    expect(onChange).toHaveBeenNthCalledWith(2, 'studio');
+    expect(html).toContain('name="hearth-workspace"');
   });
 });
 

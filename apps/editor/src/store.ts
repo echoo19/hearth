@@ -22,6 +22,7 @@ import type {
   Vec2,
 } from './types';
 import type { WsFrame } from '../server/ws';
+import type { WorkspaceTemplate } from './workspace/layout';
 import type { RuntimeErrorEntry } from './runtimeBridge';
 import { ingestPtyFrame, resetAgentSocket, type AgentStatus } from './components/agent/useAgentSocket';
 import { ingestExportFrame, resetExportJob } from './components/exportJob';
@@ -202,6 +203,12 @@ export interface EditorState {
    * close attempt after a cancel still re-triggers.
    */
   closeProjectRequest: number;
+  /** Active workspace template driving the panel layout preset (see workspace/layout); null before one is applied. */
+  workspaceTemplate: WorkspaceTemplate | null;
+  /** Workspace template requested by `createProject`, awaiting `consumePendingWorkspaceTemplate` once the new project's shell mounts. */
+  pendingWorkspaceTemplate: WorkspaceTemplate | null;
+  /** Bumped by `setWorkspaceTemplate` on every apply/reset so auto-reveal state (see `nextAutoReveal`) re-arms for the new layout. */
+  layoutAppliedNonce: number;
 
   /** Sends a pty-* frame over the shared WS socket; a no-op (returns false) when disconnected. */
   sendAgentFrame(frame: WsFrame): boolean;
@@ -251,7 +258,12 @@ export interface EditorState {
     name: string,
     description?: string,
     template?: string,
+    workspace?: WorkspaceTemplate,
   ): Promise<{ ok: boolean; error?: string }>;
+  /** Apply (or clear, with `null`) the active workspace template and re-arm auto-reveal. See `workspaceTemplate`. */
+  setWorkspaceTemplate(template: WorkspaceTemplate | null): void;
+  /** Read and clear the workspace template requested by the last `createProject` call. See `pendingWorkspaceTemplate`. */
+  consumePendingWorkspaceTemplate(): WorkspaceTemplate | null;
   /** Publish whether the Code panel holds unsaved script buffers (see `hasUnsavedScripts`). */
   setUnsavedScripts(has: boolean): void;
   /** Publish whether the Animator holds a dirty draft (see `hasUnsavedAnimatorDraft`). */
@@ -870,6 +882,7 @@ export const useEditor = create<EditorState>((set, get) => {
       sceneId: info.initialScene ?? info.scenes[0]?.id ?? null,
       scene: null,
       selection: null,
+      workspaceTemplate: null,
       diff: null,
       assets: [],
       journalFeed: [],
@@ -904,6 +917,9 @@ export const useEditor = create<EditorState>((set, get) => {
     assets: [],
     componentDocs: [],
     selection: null,
+    workspaceTemplate: null,
+    pendingWorkspaceTemplate: null,
+    layoutAppliedNonce: 0,
     consoleEntries: [],
     consoleUnread: 0,
     consoleOpen: false,
@@ -1084,6 +1100,10 @@ export const useEditor = create<EditorState>((set, get) => {
     },
 
     async openProject(path) {
+      // A pending workspace choice belongs to whatever createProject call queued
+      // it; if that call failed (or this open is unrelated), it must not leak
+      // into and restyle this project once its shell mounts.
+      set({ pendingWorkspaceTemplate: null });
       const res = await apiOpenProject(path);
       if (!res.ok || !res.path || !res.info) {
         return { ok: false, error: res.error ?? 'Failed to open project' };
@@ -1092,13 +1112,25 @@ export const useEditor = create<EditorState>((set, get) => {
       return { ok: true };
     },
 
-    async createProject(dir, name, description, template) {
+    async createProject(dir, name, description, template, workspace) {
+      set({ pendingWorkspaceTemplate: workspace ?? null });
       const res = await apiCreateProject(dir, name, description, template);
       if (!res.ok || !res.path || !res.info) {
+        set({ pendingWorkspaceTemplate: null });
         return { ok: false, error: res.error ?? 'Failed to create project' };
       }
       await afterOpen(res.path, res.info);
       return { ok: true };
+    },
+
+    setWorkspaceTemplate(template) {
+      set({ workspaceTemplate: template, layoutAppliedNonce: get().layoutAppliedNonce + 1 });
+    },
+
+    consumePendingWorkspaceTemplate() {
+      const pending = get().pendingWorkspaceTemplate;
+      if (pending) set({ pendingWorkspaceTemplate: null });
+      return pending;
     },
 
     setUnsavedScripts(has) {
@@ -1135,6 +1167,7 @@ export const useEditor = create<EditorState>((set, get) => {
         scene: null,
         assets: [],
         selection: null,
+        workspaceTemplate: null,
         diff: null,
         journalFeed: [],
         playing: false,
