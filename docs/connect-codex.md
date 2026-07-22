@@ -2,7 +2,7 @@
 
 [Codex](https://github.com/openai/codex) is OpenAI's coding-agent CLI, and it
 speaks stdio MCP, so it reads the exact same Hearth command surface Claude
-Code does: the same 78 typed tools, the same `CommandResult` envelope, the
+Code does: the same 80 typed tools, the same `CommandResult` envelope, the
 same permission modes. This page covers launching it from the editor and
 wiring it up manually.
 
