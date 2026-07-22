@@ -36,7 +36,7 @@ export interface SweepParams {
 
 /**
  * Parameters for baking one bot run into a scripted playtest (see
- * `bakePlaytest`). No stuckAfter: bake re-runs the default sweep configuration.
+ * `bakePlaytest`).
  */
 export interface BakeParams {
   /** Resolved scene id. */
@@ -44,6 +44,8 @@ export interface BakeParams {
   policy: BotPolicyName;
   seed: number;
   maxFrames: number;
+  /** Must match the sweep that found the failure, or the replay diverges. */
+  stuckAfter: number;
   avatar?: string;
   target?: string | { x: number; y: number };
   objectives: Objective[];

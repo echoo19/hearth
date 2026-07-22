@@ -118,6 +118,8 @@ export const bakePlaytest = defineCommand({
     policy: z.enum(POLICY_NAMES),
     seed: z.number().int().nonnegative(),
     maxFrames: z.number().int().positive().default(600),
+    /** Must match the sweep that found the failure, or the replay diverges. */
+    stuckAfter: z.number().int().positive().default(180),
     avatar: z.string().optional(),
     target: targetSchema.optional(),
     objectives: z.array(ObjectiveSchema).default([]),
@@ -141,6 +143,7 @@ export const bakePlaytest = defineCommand({
       policy: params.policy,
       seed: params.seed,
       maxFrames: params.maxFrames,
+      stuckAfter: params.stuckAfter,
       avatar: params.avatar,
       target: params.target,
       objectives: params.objectives,

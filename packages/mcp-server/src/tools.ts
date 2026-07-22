@@ -1025,6 +1025,7 @@ export const TOOL_SPECS: ToolSpec[] = [
       policy: z.enum(BOT_POLICIES),
       seed: z.number().int().nonnegative(),
       maxFrames: z.number().int().positive().optional(),
+      stuckAfter: z.number().int().positive().optional(),
       avatar: z.string().optional(),
       target: sweepTargetSchema.optional(),
       objectives: z.array(ObjectiveSchema).optional(),

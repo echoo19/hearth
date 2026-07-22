@@ -127,6 +127,12 @@ ordinary playtests: they run in `hearth playtest --all` and `hearth test` like
 any other. The loop closes: sweep finds it → bake it red → fix → it goes green →
 it never regresses.
 
+One nuance: a crash bakes red on its own (`assertNoErrors` fails), but a *stuck*
+failure only bakes red if you pass the same `--objective` flags — the stall
+itself is not asserted, the unmet objective is. Repeat the sweep's `--objective`
+and `--stuck-after` flags when baking a stuck seed (the report's `bake` string
+already includes them).
+
 ## Budget etiquette
 
 Sweeps are cheap; keep them that way.

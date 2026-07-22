@@ -230,6 +230,12 @@ ordinary playtests: they run in `hearth playtest --all` and `hearth test` like
 any other, in CI included. The loop closes: sweep finds it → bake it red → fix →
 it goes green → it never regresses.
 
+A crash bakes red on its own (`assertNoErrors` fails). A *stuck* failure only
+bakes red if the bake carries the sweep's `--objective` flags — the stall itself
+is not asserted, the unmet objective is. The report's `bake` string already
+repeats the sweep's `--objective` and `--stuck-after` flags for exactly this
+reason.
+
 ## What sweeps don't do
 
 Bots produce **evidence**, not judgment. A sweep can tell you a level softlocks,

@@ -235,7 +235,8 @@ describe('sweep report', () => {
 
     const first = data.failures[0];
     expect(first.verdict).toBe('error');
-    expect(first.repro).toContain('hearth sweep test');
+    // Repro strings carry the real scene name (the CLI resolves names, not slugs).
+    expect(first.repro).toContain('hearth sweep Test ');
     expect(first.repro).toContain('--policies mash');
     expect(first.repro).toContain(`--seed-start ${first.seed}`);
     expect(first.bake).toContain('--bake mash-seed-');
@@ -318,5 +319,15 @@ describe('coverage and heatmap', () => {
       maxFrames: 60,
     });
     expect(result.data.coverage).toBeUndefined();
+  });
+});
+
+describe('cliQuote', () => {
+  it('leaves slug-safe names bare and quotes everything else', async () => {
+    const { cliQuote } = await import('../src/bots/sweep.js');
+    expect(cliQuote('Test')).toBe('Test');
+    expect(cliQuote('level_1')).toBe('level_1');
+    expect(cliQuote('Level 1')).toBe('"Level 1"');
+    expect(cliQuote('say "hi"')).toBe('"say \\"hi\\""');
   });
 });

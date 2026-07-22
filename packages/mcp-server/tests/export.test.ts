@@ -156,7 +156,7 @@ describe('hearth-mcp export_desktop tool', () => {
     expect(tool).toBeDefined();
     const props = tool!.inputSchema.properties as Record<string, unknown>;
     expect(Object.keys(props).sort()).toEqual(
-      ['avatar', 'maxFrames', 'name', 'objectives', 'policy', 'scene', 'seed', 'target'].sort(),
+      ['avatar', 'maxFrames', 'name', 'objectives', 'policy', 'scene', 'seed', 'stuckAfter', 'target'].sort(),
     );
   });
 

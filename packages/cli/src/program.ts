@@ -1507,6 +1507,7 @@ export function buildProgram(): Command {
           policy: effectivePolicies[0],
           seed: opts.seedStart ?? 0,
           maxFrames: opts.maxFrames,
+          stuckAfter: opts.stuckAfter,
           avatar: opts.avatar,
           target,
           objectives,

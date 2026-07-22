@@ -98,7 +98,8 @@ export async function runSweep(store: ProjectStore, params: SweepParams): Promis
 
   const wallMs = Math.round(performance.now() - t0);
   const sceneObj = store.getScene(params.scene);
-  const label = slugify(sceneObj?.name ?? params.scene);
+  const sceneName = sceneObj?.name ?? params.scene;
+  const label = slugify(sceneName);
 
   // Verdict tally — every verdict key present (zeros included) for a stable shape.
   const verdicts: Record<BotVerdict, number> = {
@@ -115,7 +116,7 @@ export async function runSweep(store: ProjectStore, params: SweepParams): Promis
   }
 
   const objectives = aggregateObjectives(params, results);
-  const failures = collectFailures(params, results, label);
+  const failures = collectFailures(params, results, sceneName);
 
   // Coverage + heatmap from the nav grid (omitted when there is no nav grid).
   const nav = await computeNav(store, params.scene, params.seedStart);
@@ -194,7 +195,11 @@ function badness(outcome: { achievedAtFrame: number | null; failed: boolean } | 
 }
 
 /** The most severe failing runs (cap 5), each with repro + bake CLI strings. */
-function collectFailures(params: SweepParams, results: BotRunResult[], label: string): SweepFailure[] {
+function collectFailures(
+  params: SweepParams,
+  results: BotRunResult[],
+  sceneName: string,
+): SweepFailure[] {
   const failing = results.filter((r) => r.verdict in FAILURE_SEVERITY);
   failing.sort((a, b) => {
     const sa = FAILURE_SEVERITY[a.verdict];
@@ -205,14 +210,15 @@ function collectFailures(params: SweepParams, results: BotRunResult[], label: st
   });
   return failing.slice(0, MAX_FAILURES).map((r) => {
     const flags = reproFlags(params, r.policy, r.seed);
+    const sceneArg = cliQuote(sceneName);
     return {
       policy: r.policy,
       seed: r.seed,
       verdict: r.verdict,
       frame: failureFrame(r),
       detail: failureDetail(r, params),
-      repro: `hearth sweep ${label} ${flags}`,
-      bake: `hearth sweep ${label} ${flags} --bake ${r.policy}-seed-${r.seed}`,
+      repro: `hearth sweep ${sceneArg} ${flags}`,
+      bake: `hearth sweep ${sceneArg} ${flags} --bake ${r.policy}-seed-${r.seed}`,
     };
   });
 }
@@ -231,6 +237,11 @@ function failureDetail(r: BotRunResult, params: SweepParams): string {
     .filter((o) => o.failed || o.achievedAtFrame === null)
     .map((o) => o.summary);
   return unmet.length > 0 ? `unmet: ${unmet.join('; ')}` : 'objectives unmet at cap';
+}
+
+/** Scene argument for repro strings: quoted when the name would not survive a shell. */
+export function cliQuote(name: string): string {
+  return /^[A-Za-z0-9_-]+$/.test(name) ? name : `"${name.replace(/"/g, '\\"')}"`;
 }
 
 /** CLI flags that reproduce a single (policy, seed) run of this sweep. */

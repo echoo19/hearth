@@ -19,9 +19,6 @@ import type { BotRunConfig, InputEvent } from './types.js';
 import type { BakeParams, Objective, ProjectStore } from '@hearth/core';
 import { GameSession, type SceneRuntime } from '@hearth/runtime';
 
-/** stuckAfter for bake re-runs — the sweepScene default, so a default sweep reproduces exactly. */
-const DEFAULT_STUCK_AFTER = 180;
-
 export async function bakeBotRun(
   store: ProjectStore,
   params: BakeParams,
@@ -31,7 +28,7 @@ export async function bakeBotRun(
     policy: params.policy,
     seed: params.seed,
     maxFrames: params.maxFrames,
-    stuckAfter: DEFAULT_STUCK_AFTER,
+    stuckAfter: params.stuckAfter,
     avatar: params.avatar,
     target: params.target,
     objectives: params.objectives,
