@@ -65,28 +65,21 @@ it, and `--bake` freezes that run into a permanent scripted regression test. It
 means your agent can show you the game still works instead of telling you. More
 in [docs/playtesting.md](docs/playtesting.md).
 
-Feel is checkable the same way. `assertPeak`, `assertRange`, and
-`assertSettledBy` measure recorded motion, so "the jump peaks at 120px and
-settles by frame 18" is a test rather than an opinion, and the `hearth-design`
-skill teaches an agent the craft (juice, easing, anticipation) before it starts
-tuning. See [docs/game-feel.md](docs/game-feel.md).
+Feel is checkable too: motion asserts turn "the jump peaks at 120px, settles by
+frame 18" into a test, not an opinion. See [docs/game-feel.md](docs/game-feel.md).
 
 ## The rest of the idea, briefly
 
-- **Your agent already knows how to use it.** 78 commands over CLI and MCP, each
-  with a real schema, permission modes, and a did-you-mean error when it
-  mistypes a property path, instead of a file format it has to guess at. A
-  per-project skill lands in the folder and teaches it the working loop and the
-  game-feel craft before it touches anything.
-- **You stay in charge.** Snapshot, then a structural diff, then revert if you
-  want, over a whole session. Permission modes gate what agents may touch. Every
-  command from every agent is journaled to disk (`hearth log`, or live in the
-  editor's Agent panel).
-- **The engine works without AI.** Fixed-timestep deterministic 2D runtime, a
-  dockable editor you can happily work in all day, web and native export. Agents
-  are a first-class client, never a dependency.
-- **Your project is just files.** Readable JSON, plain Lua or JavaScript, and
-  your own art, on your own disk. MIT licensed.
+- **Your agent already knows how to use it.** Commands with real schemas over
+  CLI and MCP, plus a per-project skill that teaches it the loop before it
+  touches anything. No file format to guess at.
+- **You stay in charge.** Snapshot, review a structural diff, revert the whole
+  session if you want. Permission modes gate what agents may touch, and every
+  command is journaled to disk.
+- **The engine works without AI.** A full 2D engine and a dockable editor you
+  can work in all day. Agents are a first-class client, never a dependency.
+- **Your project is just files.** Readable JSON, plain Lua or JavaScript, your
+  own art, on your own disk. MIT licensed.
 
 ```
    Human ──▶ Editor UI ──┐
@@ -94,11 +87,9 @@ tuning. See [docs/game-feel.md](docs/game-feel.md).
    Agent ──▶ CLI / MCP ──┘      (validate · execute · diff)     scenes · scripts · assets
 ```
 
-## Coding with your agent in minutes
+## Get started
 
-The fastest path, no build step:
-
-**1. Get Hearth.** [Download the desktop app](https://github.com/echoo19/hearth/releases/latest)
+No build step. Download the [desktop app](https://github.com/echoo19/hearth/releases/latest)
 (macOS/Windows/Linux), or grab the two standalone agent files (Node 20+):
 
 ```bash
@@ -106,141 +97,42 @@ curl -LO https://github.com/echoo19/hearth/releases/latest/download/hearth-cli.m
 curl -LO https://github.com/echoo19/hearth/releases/latest/download/hearth-mcp.mjs
 ```
 
-**2. Scaffold a game.** `hearth init` (or `node hearth-cli.mjs init`) writes a
-small playable project (a scene with a camera, ground, and a player that
-already falls and lands) plus an `AGENTS.md` and a project skill any agent
-that visits will read:
+Scaffold a playable starter with `hearth init "Star Catcher" --template platformer`,
+open it, and point your agent at the Agent panel (`hearth` is already on PATH).
+Then just describe the game. When it's done, press **Play** and
+`hearth export web --zip` for an itch.io build or `hearth export desktop` for a
+native app.
 
-```bash
-node hearth-cli.mjs init "Star Catcher" --template platformer
-```
-
-**3. Point your agent at it.** In the desktop app, open the project, focus the
-Agent panel, and type `claude`, `codex`, `opencode`, `hermes`, or another agent
-command. The terminal starts at the project root with `hearth` already on PATH.
-MCP is optional; connect it by hand when you want typed tools:
-
-```bash
-claude mcp add hearth -- node $PWD/hearth-mcp.mjs --project $PWD/star_catcher
-```
-
-Then describe the game. The agent calls `get_agent_instructions`, follows the
-snapshot → inspect → edit → validate → playtest → diff loop from its skill, and
-hands you changes to review. Per-agent walkthroughs:
-[Claude Code](docs/connect-claude-code.md), [Codex](docs/connect-codex.md),
-[OpenCode + Ollama (local models)](docs/connect-opencode.md),
-[Hermes](docs/connect-hermes.md), and
-[any MCP client or CLI](docs/connect-any-agent.md).
-
-**4. See it and ship it.** Open the folder in the editor, press **Play**, then
-`hearth export web --zip --allow build` for an itch.io-ready build or
-`hearth export desktop --allow build` for a native app. See the
-[Quickstart](docs/quickstart.md) for the full
-ten-minute version.
+The [Quickstart](docs/quickstart.md) has the full ten-minute walkthrough, and
+there are per-agent setup guides for [Claude Code](docs/connect-claude-code.md),
+[Codex](docs/connect-codex.md), [OpenCode + Ollama](docs/connect-opencode.md),
+[Hermes](docs/connect-hermes.md), and [any MCP client](docs/connect-any-agent.md).
 
 ## What's in the engine
 
-**Runtime.** A fixed-timestep, deterministic 2D runtime: sprites and
-spritesheets, tilemaps with auto-generated colliders and 47-blob autotiling,
-text, 2D lighting, polylines, deterministic particles, sprite animation plus
-animation state machines, gamepad input with analog virtual axes, camera
-effects (shake/flash/fade/zoom punch), a screen-space post-processing stack
-(bloom/CRT/vignette/chromatic-aberration/pixelate/color-grade, up to 8 stacked)
-plus per-sprite outline/hit-flash/dissolve effects, and screen-space game UI
-with layout containers, sliders, toggles, and focus navigation. Physics covers
-mass, restitution, friction, named collision layers, one-way platforms, and
-box/circle/convex-polygon colliders. Audio includes sound effects, procedural
-synthesis, and a streamed music channel that survives scene switches. The same
-runtime runs in the editor preview, headlessly in Node, and in exported games,
-including every post-processing/sprite effect. See
-[docs/effects.md](docs/effects.md).
+A real 2D engine, not a toy. The short version, with the detail one link away:
 
-**Scripting.** Lua by default (sandboxed, seed-deterministic), JavaScript
-equally supported, both against the same `ctx` API: timers, tweens, seeded RNG,
-pub/sub events, math helpers, grid pathfinding, camera control and effects,
-per-sprite hit-flash, animation state machine control, UI focus, save data, and
-scene switching for building your own menus. `hearth inspect api` prints the
-whole surface, the editor's Code panel autocompletes off that same reference,
-and `check-script` syntax-checks a draft before you save it. See
-[docs/scripting.md](docs/scripting.md).
+- **Runtime.** Deterministic, fixed-timestep: sprites, tilemaps with
+  autotiling, 2D lighting, particles, animation state machines, a post-processing
+  stack, physics, gamepad input, and game UI. Runs identically in the editor,
+  headless, and in exports. [Effects](docs/effects.md) · [Components](docs/components.md)
+- **Scripting.** Lua or JavaScript against one `ctx` API, sandboxed and
+  seed-deterministic, with hot-reload. [Scripting](docs/scripting.md)
+- **Editor.** A dockable workspace with a scene view, typed inspector, asset
+  pipeline, live preview, and an embedded terminal for your agent that
+  auto-follows external edits. [Editor](docs/editor.md) · [Agent panel](docs/agent-panel.md)
+- **Agent tooling.** Every command over CLI and MCP with JSON output,
+  permission modes, and schema-checked writes. Headless playtests and
+  `hearth screenshot` let an agent check its own work. [CLI](docs/cli.md) · [MCP](docs/mcp.md)
+- **Bot playtesting.** `hearth sweep` sends seeded bots through a scene to find
+  crashes, softlocks, and dead ends; `--bake` freezes a failure into a
+  regression test. [Playtesting](docs/playtesting.md)
+- **Prefabs and export.** Reusable live-linked templates, and self-contained web
+  or native builds with none of Hearth's chrome in them.
+  [Prefabs](docs/prefabs.md) · [Export](docs/export.md)
 
-**Editor.** A dockable workspace: scene view with tilemap paint tool and
-direct-manipulation transform handles, hierarchy with "Save as prefab", a
-schema-driven inspector (typed pickers and enum dropdowns for every field, no
-raw JSON textareas), an Animator editor for state-machine assets, an asset
-browser with spritesheet slicing and whole-folder drag-drop import, live
-preview with Pause/Step, a Code panel, a read-only Live runtime inspector,
-console, Input and Game Settings panels, undo/redo with a history panel, a
-plain-language Checkpoint/Review/Changes loop for agent sessions, and an
-**Agent panel**: a real embedded project terminal where you run your own agent
-CLI, with `hearth` already on PATH, a live activity timeline, and
-Checkpoint/Review/Revert one click away (see
-[docs/agent-panel.md](docs/agent-panel.md)). The editor
-live-follows changes from any *external* agent session, whether CLI, MCP, or
-another editor, reloading automatically instead of going stale, and its local
-project server enforces Origin/Host on every request. Runs in the browser during
-development or as a packaged desktop app (see [docs/editor.md](docs/editor.md)).
-
-**Agent tooling.** The `hearth` CLI wraps every command with `--json`
-envelopes, including `undo`/`redo`/`history` and `log` (the disk-backed command
-journal). Property writes validate the full dot-path against the component's
-real schema, with a did-you-mean suggestion on a typo instead of silently
-corrupting the write. The engine's command registry has **78 commands**; the
-MCP server exposes **80 typed tools** with per-session permission modes:
-**77 wrapping a core command**, plus `screenshot`, `capture`, and
-`get_agent_instructions`.
-Playtests script input (including gamepad axes and pointer drags) and assert on
-game state, events, particles, audio, camera effects, post effects, and UI
-focus, entirely headless and CI-friendly. `hearth screenshot` renders real
-frames through headless Chromium so agents can see their own work. See
-[docs/cli.md](docs/cli.md) and [docs/mcp.md](docs/mcp.md).
-
-**Bot playtesting.** `hearth sweep` plays the game for you. Seeded bot policies
-(mash, idle, wander, seek; the steering ones probe the avatar first to derive its
-real movement model) drive a scene headlessly across a range of seeds and report
-crashes, softlocks, stuck states, and unreached objectives. The summary is
-deliberately token-frugal, with copy-paste repro strings and the full per-run
-detail written to disk. Because the runtime is deterministic, a failing
-`(policy, seed)` replays exactly, and `--bake` freezes it into a permanent
-scripted regression test. Objectives (`reach`, `survive`, `event`, `property`)
-double as executable acceptance criteria for a level. See
-[docs/playtesting.md](docs/playtesting.md).
-
-**Prefabs.** Reusable, live-linked entity templates: serialize a subtree into a
-prefab asset, place instances, edit an instance and the change records as a
-per-instance override automatically, push a change back and every other
-instance auto-syncs (merging each instance's own overrides rather than
-discarding them), or revert one field/component/instance. CLI, MCP, and editor
-all the way through; scripts spawn prefabs live with `ctx.scene.spawnPrefab`.
-See [docs/prefabs.md](docs/prefabs.md).
-
-**Export.** `hearth export web` produces a static, self-contained build (one
-folder, one HTML file, or an itch.io zip) that boots straight into your first
-scene. `hearth export desktop` wraps the same build in a hardened Electron
-shell and zips a native app per platform (macOS arm64/x64, Windows, Linux). No
-engine splash, no branding, nothing of Hearth's chrome ships in your game. See
-[docs/export.md](docs/export.md), [docs/ship-web-hosting.md](docs/ship-web-hosting.md),
-[docs/shipping-to-itch.md](docs/shipping-to-itch.md), and
-[docs/ship-desktop.md](docs/ship-desktop.md).
-
-**Procedural placeholders.** Agents can create deterministic SVG sprites and
-WAV sound effects through commands, so a game is playable and audible before
-any real assets exist. Real art, sound, music, and fonts come in through the
-same asset pipeline: import, probe, slice, animate.
-
-## Status
-
-Hearth is at **v1.1.0**, a production release rather than a developer preview.
-The whole loop works end to end: project model, editor, runtime preview, CLI,
-MCP, headless playtests, bot sweeps, diff review, and web and desktop export.
-Scripts have modules: they can `require()` each other in both Lua and
-JavaScript; a library is just a script that returns a table or exports an
-object, and hot-reload recompiles whatever depended on the file you changed.
-The Agent panel has its own full-height dock on the right beside the
-Inspector. It opens a project shell directly; a compact first-project guide
-explains how to type an agent command and can be dismissed. The Activity
-timeline collapses under the terminal. The
-[roadmap](docs/roadmap.md) keeps an honest list of what's next.
+Hearth is at **v1.1.0**, a production release. The whole loop works end to end;
+the [roadmap](docs/roadmap.md) tracks what's next.
 
 ## Install
 
@@ -254,8 +146,8 @@ SmartScreen shows a "More info → Run anyway" prompt on first launch. After tha
 the app updates itself from later releases. See
 [docs/desktop-app.md](docs/desktop-app.md).
 
-**Agent tools, no install.** The CLI and MCP server ship as single files that
-only need Node 20+:
+**Agent tools, no install.** The CLI and MCP server are single files that only
+need Node 20+ (also bundled inside the desktop app):
 
 ```bash
 curl -LO https://github.com/echoo19/hearth/releases/latest/download/hearth-cli.mjs
@@ -264,32 +156,10 @@ node hearth-cli.mjs --help
 claude mcp add hearth -- node $PWD/hearth-mcp.mjs --project <your game>
 ```
 
-The same two files are bundled inside the desktop app, and the editor's
-agent-setup panel shows their exact paths ready to copy.
-
-## The agent loop by hand
-
-The workflow agents are taught is pleasant to run yourself:
-
-```bash
-alias hearth="node $PWD/packages/cli/dist/main.js"
-cd packages/examples/mini-platformer
-
-hearth snapshot                       # checkpoint for review
-hearth inspect scene "Level 1" --json # what's here?
-hearth create entity "Level 1" Gem \
-  --position 620,300 --tags coin \
-  --components '{"SpriteRenderer":{"shape":"circle","color":"#9b59b6","width":20,"height":20},"Collider":{"shape":"circle","radius":12,"isTrigger":true}}'
-hearth attach script "Level 1" Gem scripts/coin-pickup.js
-hearth validate --json                # schema + reference checks
-hearth test                           # headless playtests
-hearth sweep --seeds 8                # bots play it; find what you didn't test
-hearth diff                           # what changed, human-readable
-hearth revert --confirm               # undo the whole session
-```
-
-Permission modes from `--mode read-only` up to `--mode all` control what an
-agent may do; see [docs/mcp.md](docs/mcp.md).
+The loop an agent runs (snapshot, inspect, edit, validate, test, sweep, diff,
+revert) is pleasant to run by hand too. [The CLI guide](docs/cli.md) walks
+through it; permission modes ([MCP guide](docs/mcp.md)) control what an agent may
+touch.
 
 ## Documentation
 
