@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="668" height="385" viewBox="0 0 668 385" role="img" aria-label="Terminal: a person asks an agent to make a small platformer; the agent runs hearth init, create entity, attach script, test, sweep and export web, then reports the game is playable.">
+  <rect x="0.5" y="0.5" width="667" height="384" rx="9" fill="#0f1117" stroke="#262b36"/>
+  <path d="M0.5 9.5a9 9 0 0 1 9-9h649a9 9 0 0 1 9 9V30H0.5z" fill="#171a22"/>
+  <line x1="0.5" y1="30.5" x2="667.5" y2="30.5" stroke="#262b36"/>
+  <circle cx="19" cy="15.5" r="4" fill="#3b4150"/>
+  <circle cx="34" cy="15.5" r="4" fill="#3b4150"/>
+  <circle cx="49" cy="15.5" r="4" fill="#3b4150"/>
+  <text x="334" y="20" text-anchor="middle" fill="#8b949e" font-size="12">gem-rush — claude</text>
+  <g font-family="ui-monospace, SFMono-Regular, &quot;SF Mono&quot;, Menlo, Consolas, monospace" font-size="13.5">
+  <text x="18" y="54" xml:space="preserve"><tspan fill="#6e7681">&gt; </tspan><tspan fill="#e6edf3">make a small platformer where you collect gems, with a bird that chases you</tspan></text>
+  <text x="18" y="96" xml:space="preserve"><tspan fill="#e2703a">⏺ </tspan><tspan fill="#c9d1d9">hearth init "Gem Rush" --template platformer</tspan></text>
+  <text x="18" y="117" xml:space="preserve"><tspan fill="#6e7681">  ⎿ </tspan><tspan fill="#6e7681">project created · scene "Level 1" · a player that already falls and lands</tspan></text>
+  <text x="18" y="138" xml:space="preserve"><tspan fill="#e2703a">⏺ </tspan><tspan fill="#c9d1d9">hearth create entity "Level 1" Gem --position 620,300 --tags coin</tspan></text>
+  <text x="18" y="159" xml:space="preserve"><tspan fill="#e2703a">⏺ </tspan><tspan fill="#c9d1d9">hearth attach script "Level 1" Bird scripts/chase.lua</tspan></text>
+  <text x="18" y="180" xml:space="preserve"><tspan fill="#e2703a">⏺ </tspan><tspan fill="#c9d1d9">hearth test                       </tspan><tspan fill="#565f6b"># the tests it wrote, headless</tspan></text>
+  <text x="18" y="201" xml:space="preserve"><tspan fill="#6e7681">  ⎿ </tspan><tspan fill="#6e7681">validate: valid · playtests 5/5 passed</tspan></text>
+  <text x="18" y="222" xml:space="preserve"><tspan fill="#e2703a">⏺ </tspan><tspan fill="#c9d1d9">hearth sweep --seeds 8            </tspan><tspan fill="#565f6b"># bots actually play it, 8 ways</tspan></text>
+  <text x="18" y="243" xml:space="preserve"><tspan fill="#6e7681">  ⎿ </tspan><tspan fill="#6e7681">runs 8 · ran-clean 8 · stuck 0 · error 0 · coverage 21%</tspan></text>
+  <text x="18" y="264" xml:space="preserve"><tspan fill="#e2703a">⏺ </tspan><tspan fill="#c9d1d9">hearth export web --zip --allow build</tspan></text>
+  <text x="18" y="285" xml:space="preserve"><tspan fill="#6e7681">  ⎿ </tspan><tspan fill="#6e7681">gem_rush-web.zip, itch.io ready</tspan></text>
+  <text x="18" y="327" xml:space="preserve"><tspan fill="#e6edf3">  Gem Rush is playable. Press Play in the editor, </tspan><tspan fill="#c9d1d9">hearth diff</tspan><tspan fill="#e6edf3"> to see</tspan></text>
+  <text x="18" y="348" xml:space="preserve"><tspan fill="#e6edf3">  every change, or </tspan><tspan fill="#c9d1d9">hearth revert</tspan><tspan fill="#e6edf3"> to undo the whole session.</tspan></text>
+  </g>
+</svg>

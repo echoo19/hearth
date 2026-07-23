@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="701" height="175" viewBox="0 0 701 175" role="img" aria-label="Terminal: hearth sweep runs 20 seeded bot playthroughs; 18 run clean, 2 get stuck, and the report includes a copy-paste repro command and a bake command.">
+  <rect x="0.5" y="0.5" width="700" height="174" rx="9" fill="#0f1117" stroke="#262b36"/>
+  <path d="M0.5 9.5a9 9 0 0 1 9-9h682a9 9 0 0 1 9 9V30H0.5z" fill="#171a22"/>
+  <line x1="0.5" y1="30.5" x2="700.5" y2="30.5" stroke="#262b36"/>
+  <circle cx="19" cy="15.5" r="4" fill="#3b4150"/>
+  <circle cx="34" cy="15.5" r="4" fill="#3b4150"/>
+  <circle cx="49" cy="15.5" r="4" fill="#3b4150"/>
+  <text x="350.5" y="20" text-anchor="middle" fill="#8b949e" font-size="12">gem-rush — zsh</text>
+  <g font-family="ui-monospace, SFMono-Regular, &quot;SF Mono&quot;, Menlo, Consolas, monospace" font-size="13.5">
+  <text x="18" y="54" xml:space="preserve"><tspan fill="#6e7681">$ </tspan><tspan fill="#e6edf3">hearth sweep "Level 1" --policies mash,wander --seeds 20</tspan></text>
+  <text x="18" y="75" xml:space="preserve"><tspan fill="#4ac26b">✓ </tspan><tspan fill="#c9d1d9">sweepScene   runs 20 · ran-clean 18 · </tspan><tspan fill="#e2703a">stuck 2</tspan><tspan fill="#c9d1d9"> · coverage 47%</tspan></text>
+  <text x="18" y="96" xml:space="preserve"><tspan fill="#6e7681">  stuck   </tspan><tspan fill="#c9d1d9">wander seed 11 · frame 412 · no novelty for 180 frames</tspan></text>
+  <text x="18" y="117" xml:space="preserve"><tspan fill="#6e7681">  repro   </tspan><tspan fill="#c9d1d9">hearth sweep "Level 1" --policies wander --seeds 1 --seed-start 11</tspan></text>
+  <text x="18" y="138" xml:space="preserve"><tspan fill="#6e7681">  bake    </tspan><tspan fill="#c9d1d9">…same, plus --bake wander-seed-11</tspan></text>
+  </g>
+</svg>

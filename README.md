@@ -22,12 +22,10 @@ plus a headless bot that plays the game to check the change actually works.
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="assets/brand/works-with-dark.svg">
-  <img src="assets/brand/works-with-light.svg" alt="Works with Claude Code, Codex, Cursor, Copilot, Gemini CLI, OpenCode, Ollama, and any MCP client" width="459">
+  <img src="assets/brand/works-with-light.svg" alt="Works with Claude Code, Codex, Cursor, Copilot, Gemini CLI, OpenCode, Hermes, Ollama, and any MCP client" width="323">
 </picture>
 
-Also [Hermes](docs/connect-hermes.md), and anything else that runs in a terminal.
-No AI ships inside Hearth: **you bring your own agent**. No API key to buy from
-us, no cloud, no account.
+**Your agent. No subscription.**
 
 <br>
 
@@ -35,9 +33,8 @@ us, no cloud, no account.
 <img src="assets/brand/shots/dungeon.png" alt="Torch-lit top-down dungeon with 2D lighting, characters and mine carts" width="32%">
 <img src="assets/brand/shots/adventure.png" alt="Platformer with an animated character, fruit pickups, crates and a checkpoint flag" width="32%">
 
-<sub>Real frames out of the Hearth runtime, captured headlessly. Tilemaps, sliced
-spritesheets, 2D lighting, post-processing. Art: <a href="https://kenney.nl">Kenney</a>
-and <a href="https://pixelfrog-assets.itch.io">Pixel Frog</a> (CC0).</sub>
+<sub>Any game you can imagine. Art: <a href="https://kenney.nl">Kenney</a> and
+<a href="https://pixelfrog-assets.itch.io">Pixel Frog</a> (CC0).</sub>
 
 </div>
 
@@ -48,23 +45,7 @@ and <a href="https://pixelfrog-assets.itch.io">Pixel Frog</a> (CC0).</sub>
 Point one of those agents at an empty folder and ask for a game. The editor has a
 terminal built into it (the Agent panel), or use your own:
 
-```console
-> make a small platformer where you collect gems, with a bird that chases you
-
-⏺ hearth init "Gem Rush" --template platformer
-  ⎿ project created · scene "Level 1" · a player that already falls and lands
-⏺ hearth create entity "Level 1" Gem --position 620,300 --tags coin
-⏺ hearth attach script "Level 1" Bird scripts/chase.lua
-⏺ hearth test                        # the tests it wrote, headless
-  ⎿ validate: valid · playtests 5/5 passed
-⏺ hearth sweep --seeds 8             # bots actually play it, 8 seeded ways
-  ⎿ runs 8 · ran-clean 8 · stuck 0 · error 0 · coverage 21%
-⏺ hearth export web --zip --allow build
-  ⎿ gem_rush-web.zip, itch.io ready
-
-  Gem Rush is playable. Press Play in the editor, `hearth diff` to see every
-  change, or `hearth revert` to undo the whole session.
-```
+<img src="assets/brand/agent-session.svg" alt="Terminal: someone asks an agent to make a small platformer; the agent runs hearth init, create entity, attach script, test, sweep and export web, then reports the game is playable" width="820">
 
 None of that is a chat box wrapped around a game template. Each line is a real
 command with a schema behind it, and each one is also an MCP tool, an editor
@@ -77,13 +58,7 @@ Seeded bots play a scene headlessly at full speed, using mash, idle, wander, or
 seek policies, and report back what crashed, softlocked, got stuck, or turned
 out to be unreachable.
 
-```console
-$ hearth sweep "Level 1" --policies mash,wander --seeds 20
-✓ sweepScene   runs 20 · ran-clean 18 · stuck 2 · coverage 47%
-  stuck   wander seed 11 · frame 412 · no novelty for 180 frames
-  repro   hearth sweep "Level 1" --policies wander --seeds 1 --seed-start 11
-  bake    (same again, plus --bake wander-seed-11)
-```
+<img src="assets/brand/sweep.svg" alt="Terminal: hearth sweep runs 20 seeded bot playthroughs; 18 run clean, 2 get stuck, and the report hands back a copy-paste repro command" width="820">
 
 The runtime is deterministic, so seed 11 fails the same way every time you run
 it, and `--bake` freezes that run into a permanent scripted regression test. It
