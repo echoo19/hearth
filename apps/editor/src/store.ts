@@ -24,7 +24,16 @@ import type {
 import type { WsFrame } from '../server/ws';
 import type { WorkspaceTemplate } from './workspace/layout';
 import type { RuntimeErrorEntry } from './runtimeBridge';
-import { ingestPtyFrame, resetAgentSocket, type AgentStatus } from './components/agent/useAgentSocket';
+import {
+  ensureAgentPtySessionId,
+  getAgentSessionSummary,
+  ingestPtyAttach,
+  ingestPtyFrame,
+  markAgentDisconnected,
+  markAgentStarted,
+  resetAgentSocket,
+  type AgentStatus,
+} from './components/agent/useAgentSocket';
 import { ingestExportFrame, resetExportJob } from './components/exportJob';
 import { createNudgeQueue } from './nudgeQueue';
 
@@ -431,6 +440,10 @@ export const useEditor = create<EditorState>((set, get) => {
   let wsReconnectTimer: ReturnType<typeof setTimeout> | null = null;
   let wsBackoffMs = WS_BACKOFF_INITIAL_MS;
   let wsEpoch = 0;
+  // The project the current agent session belongs to: a reconnect to the SAME
+  // project keeps the session (the server-side pty survives socket drops,
+  // detached), while a different project must never inherit it.
+  let wsAgentProject: string | null = null;
 
   // Dedupe concurrent loadMeta() calls: React.StrictMode double-invokes
   // App.tsx's mount effect in dev, and loadMeta's own `!projectPath` guard
@@ -723,13 +736,15 @@ export const useEditor = create<EditorState>((set, get) => {
   function connectWs(project: string): void {
     const epoch = ++wsEpoch;
     teardownSocket();
-    // A fresh socket means a fresh pty on the server (a new project root, or
-    // a reconnect after a drop that already killed the old one) — never let
-    // a prior project's agent session bleed into this connection.
-    resetAgentSocket();
-    // Same reasoning for the export job display: its frames arrived on the
-    // old socket, and a prior project's builds must not surface here.
-    resetExportJob();
+    // A different project must never inherit the previous one's agent
+    // session or export job. A same-project reconnect (sleep/wake, network
+    // blip) keeps both: the server-side pty survives the drop detached, and
+    // the session reattaches in onopen below.
+    if (wsAgentProject !== project) {
+      resetAgentSocket();
+      resetExportJob();
+      wsAgentProject = project;
+    }
     set({ wsStatus: 'connecting' });
     const socket = new WebSocket(wsUrl(project));
     ws = socket;
@@ -738,6 +753,14 @@ export const useEditor = create<EditorState>((set, get) => {
       if (epoch !== wsEpoch) return;
       wsBackoffMs = WS_BACKOFF_INITIAL_MS;
       set({ wsStatus: 'connected' });
+      // The drop happened under a live session: reattach to the surviving
+      // server-side pty (or get a fresh shell if it died meanwhile). Sent
+      // here — not from the Agent panel — so reattach works even while the
+      // panel's tab is closed.
+      if (getAgentSessionSummary().status === 'reconnecting') {
+        socket.send(JSON.stringify({ type: 'pty-start', sessionId: ensureAgentPtySessionId() }));
+        markAgentStarted('shell');
+      }
     };
     socket.onmessage = (event) => {
       if (epoch !== wsEpoch) return;
@@ -775,6 +798,12 @@ export const useEditor = create<EditorState>((set, get) => {
         ingestPtyFrame(frame);
         return;
       }
+      if (frame.type === 'pty-attach') {
+        // The server handed our surviving pty back: its buffered tail
+        // replaces the buffer the reattach pty-start just reset.
+        ingestPtyAttach(frame);
+        return;
+      }
       if (frame.type === 'export-progress' || frame.type === 'export-done' || frame.type === 'export-error') {
         // Desktop export job progress (POST /api/export/desktop), broadcast to
         // every socket for this project root; the Export dialog subscribes via
@@ -789,9 +818,11 @@ export const useEditor = create<EditorState>((set, get) => {
       if (epoch !== wsEpoch) return;
       ws = null;
       set({ wsStatus: 'disconnected' });
-      // The server always kills the owning pty when its socket closes (see
-      // ws.ts releaseSocket), so any live agent session died with it.
-      resetAgentSocket();
+      // The server detaches (not kills) a session-tokened pty when its
+      // socket drops (see ws.ts detachPty): mark the session reconnecting —
+      // scrollback and the running shell both survive — and reattach in
+      // onopen once the reconnect lands.
+      markAgentDisconnected();
       scheduleReconnect(project, epoch);
     };
   }
@@ -799,8 +830,16 @@ export const useEditor = create<EditorState>((set, get) => {
   function disconnectWs(): void {
     wsEpoch++; // invalidate any in-flight handlers/reconnect timers
     wsBackoffMs = WS_BACKOFF_INITIAL_MS;
+    // Deliberate teardown (project switch/close): kill the server-side pty
+    // now rather than leaving it to linger detached until its reap timeout.
+    // Best-effort — a downed socket means there is nothing left to stop or
+    // the linger timeout will handle it.
+    if (ws && ws.readyState === WebSocket.OPEN) {
+      ws.send(JSON.stringify({ type: 'pty-stop' }));
+    }
     teardownSocket();
     set({ wsStatus: 'disconnected' });
+    wsAgentProject = null;
     resetAgentSocket();
     resetExportJob();
   }

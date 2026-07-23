@@ -119,6 +119,24 @@
   background: var(--ink-mute);
 }
 
+/* Socket dropped, server-side shell still alive: pulse while reattaching. */
+.agent-status-dot.agent-status-reconnecting {
+  background: var(--warn);
+  animation: agent-reconnect-pulse 1.2s ease-in-out infinite;
+}
+
+@keyframes agent-reconnect-pulse {
+  50% {
+    opacity: 0.35;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .agent-status-dot.agent-status-reconnecting {
+    animation: none;
+  }
+}
+
 .agent-status {
   font-size: var(--text-sm);
   color: var(--ink-faint);
@@ -131,6 +149,10 @@
 
 .agent-status-exited {
   color: var(--ink-mute);
+}
+
+.agent-status-reconnecting {
+  color: var(--warn);
 }
 
 .agent-terminal-pane {

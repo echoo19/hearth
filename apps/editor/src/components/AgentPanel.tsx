@@ -18,6 +18,7 @@ export function shouldStartTerminal(
 
 function statusLabel(status: AgentStatus, exitCode: number | null): string {
   if (status === 'running') return 'Running';
+  if (status === 'reconnecting') return 'Reconnecting…';
   if (status === 'exited') return exitCode == null ? 'Stopped' : `Exited (code ${exitCode})`;
   return 'Connecting…';
 }

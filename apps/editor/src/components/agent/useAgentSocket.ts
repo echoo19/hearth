@@ -23,8 +23,15 @@ import type { WsFrame } from '../../../server/ws';
 
 export type PtyCommand = 'shell';
 export type PtyServerFrame = Extract<WsFrame, { type: 'pty-data' | 'pty-exit' | 'pty-error' }>;
+export type PtyAttachFrame = Extract<WsFrame, { type: 'pty-attach' }>;
 
-export type AgentStatus = 'idle' | 'running' | 'exited';
+/**
+ * 'reconnecting': the WS connection dropped under a running session. The
+ * server keeps the pty alive detached (see ws.ts detachPty), so the client
+ * keeps the session — scrollback intact, terminal rendering — and reattaches
+ * when the socket comes back (store.ts onopen).
+ */
+export type AgentStatus = 'idle' | 'running' | 'reconnecting' | 'exited';
 
 export interface AgentSocketState {
   status: AgentStatus;
@@ -77,6 +84,8 @@ export type AgentSocketAction =
   | { type: 'start'; command: PtyCommand }
   | { type: 'stop' }
   | { type: 'reset' }
+  | { type: 'disconnected' }
+  | { type: 'attach'; replay: string; dropped: number }
   | { type: 'frame'; frame: PtyServerFrame };
 
 export function reduceAgentSocket(state: AgentSocketState, action: AgentSocketAction): AgentSocketState {
@@ -96,6 +105,24 @@ export function reduceAgentSocket(state: AgentSocketState, action: AgentSocketAc
       return { ...initialAgentSocketState(), epoch: state.epoch + 1 };
     case 'stop':
       return state.status === 'running' ? { ...state, status: 'exited' } : state;
+    case 'disconnected':
+      // The socket dropped under a live session. The server-side pty is
+      // detached, not dead — keep everything (scrollback, epoch, the mounted
+      // terminal's rendering) and wait for the reconnect to reattach.
+      return state.status === 'running' ? { ...state, status: 'reconnecting' } : state;
+    case 'attach':
+      // The server reattached us to the surviving pty: its buffered tail
+      // replaces our just-reset buffer (the 'start' sent alongside pty-start
+      // already bumped the epoch and cleared it). `dropped` > 0 lets a
+      // (re)mounting terminal show the usual trimmed-history cue.
+      return {
+        ...state,
+        status: 'running',
+        scrollback: action.replay,
+        droppedBytes: action.dropped,
+        exitCode: null,
+        errorMessage: null,
+      };
     case 'frame': {
       const { frame } = action;
       if (frame.type === 'pty-data') {
@@ -172,11 +199,12 @@ export function planTerminalWrite(cursor: TerminalWriteCursor, state: Scrollback
 
 // ---------------------------------------------------------------------------
 // External store: module-level, outside React, so it outlives the Agent
-// panel's component tree. Fed by store.ts's WS message handler (ingestPtyFrame)
-// and by the start/stop actions below (markAgentStarted/markAgentStopped),
-// and cleared by store.ts whenever the WS connection drops (resetAgentSocket)
-// — the server always kills the pty when its owning socket closes, so the
-// client must not go on claiming a session survives past that point.
+// panel's component tree. Fed by store.ts's WS message handler
+// (ingestPtyFrame/ingestPtyAttach) and by the start/stop actions below
+// (markAgentStarted/markAgentStopped). A dropped WS connection marks the
+// session 'reconnecting' (markAgentDisconnected) — the server keeps the pty
+// alive detached and store.ts reattaches on reconnect; only a deliberate
+// teardown (project switch/close) resets the store (resetAgentSocket).
 // ---------------------------------------------------------------------------
 
 type Listener = () => void;
@@ -223,16 +251,48 @@ export function ingestPtyFrame(frame: PtyServerFrame): void {
   commit(reduceAgentSocket(agentSocketState, { type: 'frame', frame }));
 }
 
+export function ingestPtyAttach(frame: PtyAttachFrame): void {
+  commit(reduceAgentSocket(agentSocketState, { type: 'attach', replay: frame.replay, dropped: frame.dropped }));
+}
+
 export function markAgentStarted(command: PtyCommand): void {
   commit(reduceAgentSocket(agentSocketState, { type: 'start', command }));
 }
 
 export function markAgentStopped(): void {
+  // Rotate the session token: if the pty-stop never reached the server (the
+  // socket was down), a later Restart must spawn fresh, not reattach to the
+  // stopped-but-lingering session (its linger timeout will reap it).
+  agentPtySessionId = null;
   commit(reduceAgentSocket(agentSocketState, { type: 'stop' }));
 }
 
+export function markAgentDisconnected(): void {
+  commit(reduceAgentSocket(agentSocketState, { type: 'disconnected' }));
+}
+
 export function resetAgentSocket(): void {
+  agentPtySessionId = null; // the server session dies with a deliberate teardown
   commit(reduceAgentSocket(agentSocketState, { type: 'reset' }));
+}
+
+// ---------------------------------------------------------------------------
+// Resumable-session token. Sent with every pty-start so the server can hand
+// this client its own surviving pty back after a socket drop (sleep/wake).
+// Rotates on resetAgentSocket (project switch/close): a prior project's
+// server session must never be reachable from the next one.
+// ---------------------------------------------------------------------------
+
+let agentPtySessionId: string | null = null;
+
+export function ensureAgentPtySessionId(): string {
+  if (!agentPtySessionId) {
+    agentPtySessionId =
+      typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+        ? crypto.randomUUID()
+        : `sess-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  }
+  return agentPtySessionId;
 }
 
 export function subscribeAgentSocket(listener: Listener): () => void {
@@ -287,7 +347,7 @@ export function useAgentSocket(): AgentSocket {
 
   const start = useCallback(() => {
     const editor = useEditor.getState();
-    if (!editor.sendAgentFrame({ type: 'pty-start' })) {
+    if (!editor.sendAgentFrame({ type: 'pty-start', sessionId: ensureAgentPtySessionId() })) {
       editor.log('error', 'editor', NOT_CONNECTED_MSG);
       return false;
     }
@@ -296,8 +356,10 @@ export function useAgentSocket(): AgentSocket {
   }, []);
 
   const stop = useCallback(() => {
-    // Even if the send fails the exited mark is right: a downed socket means
-    // the server already killed the pty when the connection dropped.
+    // Best-effort over a possibly-downed socket. The exited mark is right
+    // either way: an unreachable server-side pty (if one still lingers
+    // detached) is reaped by its linger timeout, and an explicit restart
+    // spawns fresh rather than reattaching to a stopped session.
     useEditor.getState().sendAgentFrame({ type: 'pty-stop' });
     markAgentStopped();
   }, []);

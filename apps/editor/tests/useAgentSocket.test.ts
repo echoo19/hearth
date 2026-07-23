@@ -13,11 +13,14 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   SCROLLBACK_CAP_BYTES,
   SCROLLBACK_TRIM_SLACK_BYTES,
+  ensureAgentPtySessionId,
   getAgentSessionSummary,
   getAgentSocketSnapshot,
+  ingestPtyAttach,
   ingestPtyFrame,
   initialAgentSocketState,
   initialWriteCursor,
+  markAgentDisconnected,
   markAgentStarted,
   markAgentStopped,
   planTerminalWrite,
@@ -309,5 +312,94 @@ describe('the external agent-socket store (survives the panel component unmounti
     expect(exited).not.toBe(summary);
     expect(exited.status).toBe('exited');
     expect(exited.exitCode).toBe(0);
+  });
+});
+
+describe('disconnect/reattach (the socket dropped but the server-side pty lives on)', () => {
+  beforeEach(() => {
+    resetAgentSocket();
+  });
+
+  it('disconnected: a running session becomes reconnecting, keeping scrollback and epoch', () => {
+    let state = reduceAgentSocket(initialAgentSocketState(), { type: 'start', command: 'shell' });
+    state = reduceAgentSocket(state, {
+      type: 'frame',
+      frame: { type: 'pty-data', data: 'kept output' } as PtyServerFrame,
+    });
+    const epochBefore = state.epoch;
+
+    const next = reduceAgentSocket(state, { type: 'disconnected' });
+    expect(next.status).toBe('reconnecting');
+    expect(next.scrollback).toBe('kept output');
+    expect(next.epoch).toBe(epochBefore); // no reset: the mounted terminal keeps rendering
+  });
+
+  it('disconnected: idle and exited sessions are untouched (nothing to reattach to)', () => {
+    const idle = initialAgentSocketState();
+    expect(reduceAgentSocket(idle, { type: 'disconnected' })).toBe(idle);
+
+    let exited = reduceAgentSocket(initialAgentSocketState(), { type: 'start', command: 'shell' });
+    exited = reduceAgentSocket(exited, {
+      type: 'frame',
+      frame: { type: 'pty-exit', code: 0 } as PtyServerFrame,
+    });
+    expect(reduceAgentSocket(exited, { type: 'disconnected' })).toBe(exited);
+  });
+
+  it('attach: replaces the (just-reset) buffer with the server replay and records dropped bytes', () => {
+    // The reconnect flow: start (reset + epoch bump) was already dispatched
+    // when pty-start went out; the pty-attach reply then lands the replay.
+    let state = reduceAgentSocket(initialAgentSocketState(), { type: 'start', command: 'shell' });
+    const epochBefore = state.epoch;
+
+    state = reduceAgentSocket(state, { type: 'attach', replay: 'replayed session', dropped: 4096 });
+    expect(state.status).toBe('running');
+    expect(state.scrollback).toBe('replayed session');
+    expect(state.droppedBytes).toBe(4096);
+    expect(state.epoch).toBe(epochBefore); // start already reset this epoch
+
+    // A terminal that mounts now replays the attach buffer, with the trim cue.
+    const plan = planTerminalWrite(initialWriteCursor(), state);
+    expect(plan.text).toBe('replayed session');
+    expect(plan.truncated).toBe(true);
+  });
+
+  it('start from reconnecting resets the buffer for the incoming replay (or fresh shell)', () => {
+    let state = reduceAgentSocket(initialAgentSocketState(), { type: 'start', command: 'shell' });
+    state = reduceAgentSocket(state, {
+      type: 'frame',
+      frame: { type: 'pty-data', data: 'stale' } as PtyServerFrame,
+    });
+    state = reduceAgentSocket(state, { type: 'disconnected' });
+
+    const next = reduceAgentSocket(state, { type: 'start', command: 'shell' });
+    expect(next.status).toBe('running');
+    expect(next.scrollback).toBe('');
+    expect(next.epoch).toBe(state.epoch + 1);
+  });
+
+  it('the store exposes markAgentDisconnected/ingestPtyAttach for the WS lifecycle', () => {
+    markAgentStarted('shell');
+    ingestPtyFrame({ type: 'pty-data', data: 'before the drop' } as PtyServerFrame);
+
+    markAgentDisconnected();
+    expect(getAgentSocketSnapshot().status).toBe('reconnecting');
+    expect(getAgentSocketSnapshot().scrollback).toBe('before the drop');
+
+    markAgentStarted('shell'); // the auto-reattach pty-start on reconnect
+    ingestPtyAttach({ type: 'pty-attach', replay: 'the whole session', dropped: 0 });
+    expect(getAgentSocketSnapshot().status).toBe('running');
+    expect(getAgentSocketSnapshot().scrollback).toBe('the whole session');
+  });
+
+  it('ensureAgentPtySessionId is stable across calls and rotates on resetAgentSocket', () => {
+    const first = ensureAgentPtySessionId();
+    expect(first).toBeTruthy();
+    expect(ensureAgentPtySessionId()).toBe(first);
+
+    resetAgentSocket(); // project switch/close: the old server session must not be reachable
+    const second = ensureAgentPtySessionId();
+    expect(second).toBeTruthy();
+    expect(second).not.toBe(first);
   });
 });

@@ -45,6 +45,41 @@ export function resolveShell(
 }
 
 // ---------------------------------------------------------------------------
+// ScrollbackBuffer: the server-side tail of everything a pty emitted, kept so
+// a client that reattaches after a socket drop (sleep/wake, network blip) can
+// replay what it missed. Mirrors the client-side cap semantics in
+// useAgentSocket.ts: appends are cheap (no copy per chunk) because trimming
+// only happens once the buffer overshoots the cap by the slack, and every
+// trim cuts back to exactly the cap.
+// ---------------------------------------------------------------------------
+
+export const SERVER_SCROLLBACK_CAP_BYTES = 200 * 1024;
+export const SERVER_SCROLLBACK_TRIM_SLACK_BYTES = 16 * 1024;
+
+export class ScrollbackBuffer {
+  private data = '';
+  private dropped = 0;
+
+  constructor(
+    private readonly cap: number = SERVER_SCROLLBACK_CAP_BYTES,
+    private readonly slack: number = SERVER_SCROLLBACK_TRIM_SLACK_BYTES,
+  ) {}
+
+  append(chunk: string): void {
+    this.data += chunk;
+    if (this.data.length > this.cap + this.slack) {
+      this.dropped += this.data.length - this.cap;
+      this.data = this.data.slice(this.data.length - this.cap);
+    }
+  }
+
+  /** The buffered tail plus how many earlier bytes the cap already evicted. */
+  snapshot(): { data: string; dropped: number } {
+    return { data: this.data, dropped: this.dropped };
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Default backend: real @lydell/node-pty, imported lazily so that browser
 // bundles and non-pty test/server paths never load the native module.
 // ---------------------------------------------------------------------------

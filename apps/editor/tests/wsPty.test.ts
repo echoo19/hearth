@@ -144,12 +144,13 @@ function connect(): Promise<WebSocket> {
 async function startOwnServer(
   ownBackend: FakeBackend,
   ptyEnv: () => Promise<NodeJS.ProcessEnv>,
+  opts?: { detachLingerMs?: number },
 ): Promise<{ server: http.Server; connect: () => Promise<WebSocket> }> {
   const ownServer = http.createServer((_req, res) => {
     res.statusCode = 404;
     res.end();
   });
-  attachWebSocket(ownServer, ctx, ownBackend, ptyEnv);
+  attachWebSocket(ownServer, ctx, ownBackend, ptyEnv, opts);
   await new Promise<void>((resolve) => ownServer.listen(0, '127.0.0.1', resolve));
   const address = ownServer.address();
   const port = typeof address === 'object' && address ? address.port : 0;
@@ -367,6 +368,250 @@ describe('pty-* frame routing over /api/ws', () => {
       client.close();
       await wait(50);
     }
+  });
+});
+
+describe('detach/reattach: a dropped socket keeps its session-tokened pty alive', () => {
+  it('detaches on socket close, then reattaches by sessionId with a pty-attach replay and live routing', async () => {
+    const client = await connect();
+    client.send(JSON.stringify({ type: 'pty-start', sessionId: 'reattach-sess-1' }));
+    await wait(100);
+    const spawnsBefore = backend.spawns.length;
+    const handle = backend.spawns[backend.spawns.length - 1].handle;
+    handle.emitData('before drop\n');
+    await wait(50);
+
+    // The socket drops (sleep/wake, network blip): the pty must SURVIVE.
+    client.close();
+    await wait(100);
+    expect(handle.killed).toBe(false);
+
+    // Output produced while nobody is attached is buffered, not lost.
+    handle.emitData('while detached\n');
+
+    // A new socket presenting the same sessionId gets the same pty back.
+    const client2 = await connect();
+    const frames2: WsFrame[] = [];
+    client2.on('message', (raw) => frames2.push(JSON.parse(raw.toString()) as WsFrame));
+    client2.send(JSON.stringify({ type: 'pty-start', sessionId: 'reattach-sess-1' }));
+    await wait(100);
+
+    expect(backend.spawns.length).toBe(spawnsBefore); // reattached, not respawned
+    const attach = frames2.find((f) => f.type === 'pty-attach');
+    expect(attach).toBeDefined();
+    expect(attach && attach.type === 'pty-attach' && attach.replay).toBe(
+      'before drop\nwhile detached\n',
+    );
+    expect(attach && attach.type === 'pty-attach' && attach.dropped).toBe(0);
+
+    // Live output and input both route to/from the new socket.
+    handle.emitData('after reattach\n');
+    client2.send(JSON.stringify({ type: 'pty-input', data: 'still here\r' }));
+    await wait(50);
+    expect(frames2.some((f) => f.type === 'pty-data' && f.data === 'after reattach\n')).toBe(true);
+    expect(handle.writes).toContain('still here\r');
+
+    client2.send(JSON.stringify({ type: 'pty-stop' }));
+    await wait(50);
+    expect(handle.killed).toBe(true);
+    client2.close();
+    await wait(50);
+  });
+
+  it('jiggles the pty size on the first same-size resize after reattach so full-screen TUIs repaint', async () => {
+    const client = await connect();
+    client.send(JSON.stringify({ type: 'pty-start', sessionId: 'reattach-sess-2' }));
+    await wait(100);
+    const handle = backend.spawns[backend.spawns.length - 1].handle;
+    client.send(JSON.stringify({ type: 'pty-resize', cols: 100, rows: 30 }));
+    await wait(50);
+    expect(handle.resizes).toEqual([{ cols: 100, rows: 30 }]);
+
+    client.close();
+    await wait(100);
+
+    const client2 = await connect();
+    client2.send(JSON.stringify({ type: 'pty-start', sessionId: 'reattach-sess-2' }));
+    await wait(100);
+    // Same size as before the drop: a plain TIOCSWINSZ would not deliver
+    // SIGWINCH, so the TUI would never repaint over the raw replay bytes.
+    client2.send(JSON.stringify({ type: 'pty-resize', cols: 100, rows: 30 }));
+    await wait(50);
+    expect(handle.resizes.slice(1)).toEqual([
+      { cols: 100, rows: 31 },
+      { cols: 100, rows: 30 },
+    ]);
+
+    // Only the first post-reattach resize jiggles; later ones pass through.
+    client2.send(JSON.stringify({ type: 'pty-resize', cols: 100, rows: 30 }));
+    await wait(50);
+    expect(handle.resizes.slice(3)).toEqual([{ cols: 100, rows: 30 }]);
+
+    client2.send(JSON.stringify({ type: 'pty-stop' }));
+    client2.close();
+    await wait(50);
+  });
+
+  it('a size that actually changed after reattach resizes once, without a jiggle', async () => {
+    const client = await connect();
+    client.send(JSON.stringify({ type: 'pty-start', sessionId: 'reattach-sess-3' }));
+    await wait(100);
+    const handle = backend.spawns[backend.spawns.length - 1].handle;
+    client.send(JSON.stringify({ type: 'pty-resize', cols: 100, rows: 30 }));
+    await wait(50);
+    client.close();
+    await wait(100);
+
+    const client2 = await connect();
+    client2.send(JSON.stringify({ type: 'pty-start', sessionId: 'reattach-sess-3' }));
+    await wait(100);
+    client2.send(JSON.stringify({ type: 'pty-resize', cols: 120, rows: 40 }));
+    await wait(50);
+    // A real size change delivers SIGWINCH by itself — no jiggle needed.
+    expect(handle.resizes.slice(1)).toEqual([{ cols: 120, rows: 40 }]);
+
+    client2.send(JSON.stringify({ type: 'pty-stop' }));
+    client2.close();
+    await wait(50);
+  });
+
+  it('an unknown sessionId spawns a fresh shell with no pty-attach', async () => {
+    const client = await connect();
+    const frames: WsFrame[] = [];
+    client.on('message', (raw) => frames.push(JSON.parse(raw.toString()) as WsFrame));
+    const spawnsBefore = backend.spawns.length;
+    client.send(JSON.stringify({ type: 'pty-start', sessionId: 'never-seen-before' }));
+    await wait(100);
+
+    expect(backend.spawns.length).toBe(spawnsBefore + 1);
+    expect(frames.some((f) => f.type === 'pty-attach')).toBe(false);
+
+    client.send(JSON.stringify({ type: 'pty-stop' }));
+    client.close();
+    await wait(50);
+  });
+
+  it('a pty that exits while detached is gone: reattaching spawns fresh', async () => {
+    const client = await connect();
+    client.send(JSON.stringify({ type: 'pty-start', sessionId: 'reattach-sess-4' }));
+    await wait(100);
+    const handle = backend.spawns[backend.spawns.length - 1].handle;
+    client.close();
+    await wait(100);
+    expect(handle.killed).toBe(false);
+
+    handle.emitExit(0); // the shell died on its own while nobody was attached
+
+    const client2 = await connect();
+    const frames2: WsFrame[] = [];
+    client2.on('message', (raw) => frames2.push(JSON.parse(raw.toString()) as WsFrame));
+    const spawnsBefore = backend.spawns.length;
+    client2.send(JSON.stringify({ type: 'pty-start', sessionId: 'reattach-sess-4' }));
+    await wait(100);
+
+    expect(backend.spawns.length).toBe(spawnsBefore + 1);
+    expect(frames2.some((f) => f.type === 'pty-attach')).toBe(false);
+
+    client2.send(JSON.stringify({ type: 'pty-stop' }));
+    client2.close();
+    await wait(50);
+  });
+
+  it('pty-stop still kills a session-tokened pty immediately (no linger)', async () => {
+    const client = await connect();
+    client.send(JSON.stringify({ type: 'pty-start', sessionId: 'reattach-sess-5' }));
+    await wait(100);
+    const handle = backend.spawns[backend.spawns.length - 1].handle;
+
+    client.send(JSON.stringify({ type: 'pty-stop' }));
+    await wait(50);
+    expect(handle.killed).toBe(true);
+
+    // Reattach after an explicit stop must spawn fresh, not resurrect.
+    const frames: WsFrame[] = [];
+    client.on('message', (raw) => frames.push(JSON.parse(raw.toString()) as WsFrame));
+    const spawnsBefore = backend.spawns.length;
+    client.send(JSON.stringify({ type: 'pty-start', sessionId: 'reattach-sess-5' }));
+    await wait(100);
+    expect(backend.spawns.length).toBe(spawnsBefore + 1);
+    expect(frames.some((f) => f.type === 'pty-attach')).toBe(false);
+
+    client.send(JSON.stringify({ type: 'pty-stop' }));
+    client.close();
+    await wait(50);
+  });
+
+  it('replay is capped server-side: pty-attach reports dropped bytes past the cap', async () => {
+    const client = await connect();
+    client.send(JSON.stringify({ type: 'pty-start', sessionId: 'reattach-sess-6' }));
+    await wait(100);
+    const handle = backend.spawns[backend.spawns.length - 1].handle;
+    // 200KB cap + 16KB slack: push well past both so a trim must have happened.
+    handle.emitData('x'.repeat(150 * 1024));
+    handle.emitData('y'.repeat(150 * 1024));
+    client.close();
+    await wait(100);
+
+    const client2 = await connect();
+    const frames2: WsFrame[] = [];
+    client2.on('message', (raw) => frames2.push(JSON.parse(raw.toString()) as WsFrame));
+    client2.send(JSON.stringify({ type: 'pty-start', sessionId: 'reattach-sess-6' }));
+    await wait(100);
+
+    const attach = frames2.find((f) => f.type === 'pty-attach');
+    expect(attach && attach.type === 'pty-attach' && attach.replay.length).toBe(200 * 1024);
+    expect(attach && attach.type === 'pty-attach' && attach.dropped).toBe(100 * 1024);
+
+    client2.send(JSON.stringify({ type: 'pty-stop' }));
+    client2.close();
+    await wait(50);
+  });
+
+  it('kills a detached pty after the linger timeout', async () => {
+    const ownBackend = new FakeBackend();
+    const own = await startOwnServer(ownBackend, () => Promise.resolve(process.env), {
+      detachLingerMs: 80,
+    });
+    try {
+      const client = await own.connect();
+      client.send(JSON.stringify({ type: 'pty-start', sessionId: 'linger-sess' }));
+      await wait(100);
+      const handle = ownBackend.spawns[0].handle;
+      client.close();
+      await wait(30);
+      expect(handle.killed).toBe(false); // still inside the linger window
+
+      await wait(150);
+      expect(handle.killed).toBe(true); // linger expired with nobody reattached
+
+      // A late reattach finds nothing and spawns fresh.
+      const client2 = await own.connect();
+      const frames2: WsFrame[] = [];
+      client2.on('message', (raw) => frames2.push(JSON.parse(raw.toString()) as WsFrame));
+      client2.send(JSON.stringify({ type: 'pty-start', sessionId: 'linger-sess' }));
+      await wait(100);
+      expect(ownBackend.spawns.length).toBe(2);
+      expect(frames2.some((f) => f.type === 'pty-attach')).toBe(false);
+      client2.close();
+      await wait(50);
+    } finally {
+      await new Promise<void>((resolve) => own.server.close(() => resolve()));
+    }
+  });
+
+  it('closing the http server kills detached ptys too (no orphans on app quit)', async () => {
+    const ownBackend = new FakeBackend();
+    const own = await startOwnServer(ownBackend, () => Promise.resolve(process.env));
+    const client = await own.connect();
+    client.send(JSON.stringify({ type: 'pty-start', sessionId: 'quit-sess' }));
+    await wait(100);
+    const handle = ownBackend.spawns[0].handle;
+    client.close();
+    await wait(100);
+    expect(handle.killed).toBe(false); // detached, still alive
+
+    await new Promise<void>((resolve) => own.server.close(() => resolve()));
+    expect(handle.killed).toBe(true);
   });
 });
 

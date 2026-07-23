@@ -6,7 +6,16 @@
  */
 import { describe, it, expect, beforeEach } from 'vitest';
 import os from 'node:os';
-import { createLazyHandle, PtyManager, resolveShell, type PtyBackend, type PtyHandle } from '../server/ptyManager';
+import {
+  createLazyHandle,
+  PtyManager,
+  resolveShell,
+  ScrollbackBuffer,
+  SERVER_SCROLLBACK_CAP_BYTES,
+  SERVER_SCROLLBACK_TRIM_SLACK_BYTES,
+  type PtyBackend,
+  type PtyHandle,
+} from '../server/ptyManager';
 
 class FakePtyHandle implements PtyHandle {
   dataCbs: Array<(d: string) => void> = [];
@@ -202,5 +211,41 @@ describe('createLazyHandle', () => {
     handle.onError((error) => errors.push(error.message));
 
     expect(errors).toEqual(['native pty unavailable']);
+  });
+});
+
+describe('ScrollbackBuffer', () => {
+  it('accumulates appended chunks and snapshots them with zero dropped bytes', () => {
+    const buffer = new ScrollbackBuffer();
+    buffer.append('hello ');
+    buffer.append('world');
+    expect(buffer.snapshot()).toEqual({ data: 'hello world', dropped: 0 });
+  });
+
+  it('tolerates overshoot within the trim slack (no copy on every chunk)', () => {
+    const buffer = new ScrollbackBuffer();
+    buffer.append('x'.repeat(SERVER_SCROLLBACK_CAP_BYTES));
+    buffer.append('y'.repeat(1000));
+    const snap = buffer.snapshot();
+    expect(snap.data.length).toBe(SERVER_SCROLLBACK_CAP_BYTES + 1000);
+    expect(snap.dropped).toBe(0);
+  });
+
+  it('trims back to exactly the cap once past cap+slack, tracking dropped bytes', () => {
+    const buffer = new ScrollbackBuffer();
+    buffer.append('x'.repeat(SERVER_SCROLLBACK_CAP_BYTES));
+    const overflow = 'y'.repeat(SERVER_SCROLLBACK_TRIM_SLACK_BYTES + 500);
+    buffer.append(overflow);
+    const snap = buffer.snapshot();
+    expect(snap.data.length).toBe(SERVER_SCROLLBACK_CAP_BYTES);
+    expect(snap.dropped).toBe(SERVER_SCROLLBACK_TRIM_SLACK_BYTES + 500);
+    expect(snap.data.endsWith(overflow)).toBe(true);
+  });
+
+  it('supports a custom cap for tests and small sessions', () => {
+    const buffer = new ScrollbackBuffer(10, 4);
+    buffer.append('0123456789'); // exactly at cap
+    buffer.append('abcde'); // 15 > cap+slack(14): trim to cap
+    expect(buffer.snapshot()).toEqual({ data: '56789abcde', dropped: 5 });
   });
 });
