@@ -159,13 +159,17 @@ adapters over the same command result envelope.
   sourceUrl?: string;
   author?: string;
   license?: string;
-  contactSheet?: string;
 }
 ```
 
-The host resource boundary performs directory walking and file reads, matching
-the existing asset-import architecture. Core owns schemas, parsing,
-classification, diagnostics, and report ordering.
+The command uses `ctx.fs` for directory walking and file reads, matching the
+existing asset-import architecture. Core owns schemas, parsing, classification,
+diagnostics, and report ordering.
+
+`contactSheet` is an adapter-only CLI/MCP option. After the shared inspection
+command succeeds, the Node adapter may pass its report to a Playwright-backed
+contact-sheet helper, attach the output path to `data.contactSheet`, and list
+the file in the normal result envelope. Browser-safe core does not create PNGs.
 
 ### Output
 
@@ -281,9 +285,9 @@ The optional contact sheet is a review aid, not a semantic classifier. It:
 - includes loose images and atlas sheets without cropping away context; and
 - caps thumbnail size and total page size predictably.
 
-The implementation may reuse the existing browser-canvas/Playwright capture
-path rather than adding an image-decoding dependency. The core report remains
-usable when contact-sheet generation is unavailable.
+The implementation reuses the existing browser-canvas/Playwright capture path
+rather than adding an image-decoding dependency. The core report remains usable
+when contact-sheet generation is unavailable.
 
 ## Fixed Tilemap Frame Source
 
