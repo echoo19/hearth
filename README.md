@@ -5,43 +5,119 @@
   <img src="assets/brand/readme-banner-light.svg" alt="hearth" width="480">
 </picture>
 
-**An AI-native 2D game engine — a real editor for humans, and the whole engine as commands your coding agent already knows how to use.**
+### The 2D game engine your coding agent can actually drive
 
-[Website](https://hearthengine.com) · [Download](https://github.com/echoo19/hearth/releases/latest) · [Quickstart](docs/quickstart.md) · [Docs](#documentation) · [Feedback](https://hearthengine.com/feedback)
+A real editor for you. The whole engine as typed, validated commands for your agent,
+plus a headless bot that plays the game to check the change actually works.
+
+[Download](https://github.com/echoo19/hearth/releases/latest) · [Quickstart](docs/quickstart.md) · [Docs](#documentation) · [Website](https://hearthengine.com) · [Feedback](https://hearthengine.com/feedback)
 
 [![CI](https://img.shields.io/github/actions/workflow/status/echoo19/hearth/ci.yml?label=CI)](https://github.com/echoo19/hearth/actions/workflows/ci.yml)
 [![Release](https://img.shields.io/github/v/release/echoo19/hearth)](https://github.com/echoo19/hearth/releases/latest)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 
+<br>
+
+**Works with**
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="assets/brand/works-with-dark.svg">
+  <img src="assets/brand/works-with-light.svg" alt="Works with Claude Code, Codex, Cursor, Copilot, Gemini CLI, OpenCode, Ollama, and any MCP client" width="459">
+</picture>
+
+Also [Hermes](docs/connect-hermes.md), and anything else that runs in a terminal.
+No AI ships inside Hearth: **you bring your own agent**. No API key to buy from
+us, no cloud, no account.
+
+<br>
+
+<img src="assets/brand/shots/platformer.png" alt="Side-view platformer level with layered terrain, a tree, coins and enemies" width="32%">
+<img src="assets/brand/shots/dungeon.png" alt="Torch-lit top-down dungeon with 2D lighting, characters and mine carts" width="32%">
+<img src="assets/brand/shots/adventure.png" alt="Platformer with an animated character, fruit pickups, crates and a checkpoint flag" width="32%">
+
+<sub>Real frames out of the Hearth runtime, captured headlessly. Tilemaps, sliced
+spritesheets, 2D lighting, post-processing. Art: <a href="https://kenney.nl">Kenney</a>
+and <a href="https://pixelfrog-assets.itch.io">Pixel Frog</a> (CC0).</sub>
+
 </div>
 
 ---
 
-Hearth is a real engine, not an AI game generator. Humans get a normal visual
-editor. Coding agents (Claude Code, Codex, OpenCode with local models, any MCP
-client) get the entire editor surface as structured, validated,
-permission-checked commands, and they arrive already knowing how to use it:
-a per-project skill teaches the working loop and game-feel craft, headless
-playtests and screenshots let an agent *prove* its work runs, and every
-command lands in a disk-backed journal you can read and revert. No AI runs
-inside the engine, nothing needs an API key or a cloud account, and your
-project is a folder of readable JSON, scripts, and assets on your own disk.
+## Just say "make a game"
+
+Point one of those agents at an empty folder and ask for a game. The editor has a
+terminal built into it (the Agent panel), or use your own:
+
+```console
+> make a small platformer where you collect gems, with a bird that chases you
+
+⏺ hearth init "Gem Rush" --template platformer
+  ⎿ project created · scene "Level 1" · a player that already falls and lands
+⏺ hearth create entity "Level 1" Gem --position 620,300 --tags coin
+⏺ hearth attach script "Level 1" Bird scripts/chase.lua
+⏺ hearth test                        # the tests it wrote, headless
+  ⎿ validate: valid · playtests 5/5 passed
+⏺ hearth sweep --seeds 8             # bots actually play it, 8 seeded ways
+  ⎿ runs 8 · ran-clean 8 · stuck 0 · error 0 · coverage 21%
+⏺ hearth export web --zip --allow build
+  ⎿ gem_rush-web.zip, itch.io ready
+
+  Gem Rush is playable. Press Play in the editor, `hearth diff` to see every
+  change, or `hearth revert` to undo the whole session.
+```
+
+None of that is a chat box wrapped around a game template. Each line is a real
+command with a schema behind it, and each one is also an MCP tool, an editor
+action, and an entry in a journal on disk.
+
+## The flagship: the engine plays your game
+
+An agent will happily tell you the level works. `hearth sweep` makes it check.
+Seeded bots play a scene headlessly at full speed, using mash, idle, wander, or
+seek policies, and report back what crashed, softlocked, got stuck, or turned
+out to be unreachable.
+
+```console
+$ hearth sweep "Level 1" --policies mash,wander --seeds 20
+✓ sweepScene   runs 20 · ran-clean 18 · stuck 2 · coverage 47%
+  stuck   wander seed 11 · frame 412 · no novelty for 180 frames
+  repro   hearth sweep "Level 1" --policies wander --seeds 1 --seed-start 11
+  bake    (same again, plus --bake wander-seed-11)
+```
+
+The runtime is deterministic, so seed 11 fails the same way every time you run
+it, and `--bake` freezes that run into a permanent scripted regression test. It
+means your agent can show you the game still works instead of telling you. More
+in [docs/playtesting.md](docs/playtesting.md).
+
+Feel is checkable the same way. `assertPeak`, `assertRange`, and
+`assertSettledBy` measure recorded motion, so "the jump peaks at 120px and
+settles by frame 18" is a test rather than an opinion, and the `hearth-design`
+skill teaches an agent the craft (juice, easing, anticipation) before it starts
+tuning. See [docs/game-feel.md](docs/game-feel.md).
+
+## The rest of the idea, briefly
+
+- **Your agent already knows how to use it.** 78 commands over CLI and MCP, each
+  with a real schema, permission modes, and a did-you-mean error when it
+  mistypes a property path, instead of a file format it has to guess at. A
+  per-project skill lands in the folder and teaches it the working loop and the
+  game-feel craft before it touches anything.
+- **You stay in charge.** Snapshot, then a structural diff, then revert if you
+  want, over a whole session. Permission modes gate what agents may touch. Every
+  command from every agent is journaled to disk (`hearth log`, or live in the
+  editor's Agent panel).
+- **The engine works without AI.** Fixed-timestep deterministic 2D runtime, a
+  dockable editor you can happily work in all day, web and native export. Agents
+  are a first-class client, never a dependency.
+- **Your project is just files.** Readable JSON, plain Lua or JavaScript, and
+  your own art, on your own disk. MIT licensed.
 
 ```
    Human ──▶ Editor UI ──┐
                          ├──▶  one shared command system  ──▶  project files
    Agent ──▶ CLI / MCP ──┘      (validate · execute · diff)     scenes · scripts · assets
 ```
-
-The connection is plumbing; the point is the loop it enables. An agent
-snapshots the project, inspects what's there, builds a level, wires input,
-writes behavior scripts, imports and slices art, runs a deterministic headless
-playtest to check it actually works, and hands you a structural diff to review
-in the editor, all without guessing at file formats. You stay in charge:
-permission modes gate what agents may touch, every session can be snapshotted,
-diffed, and reverted, and every command any agent runs, whether from the CLI,
-MCP, or the editor's embedded terminal, is journaled (`hearth log`, or live in
-the editor's Agent panel).
 
 ## Coding with your agent in minutes
 
@@ -144,6 +220,17 @@ focus, entirely headless and CI-friendly. `hearth screenshot` renders real
 frames through headless Chromium so agents can see their own work. See
 [docs/cli.md](docs/cli.md) and [docs/mcp.md](docs/mcp.md).
 
+**Bot playtesting.** `hearth sweep` plays the game for you. Seeded bot policies
+(mash, idle, wander, seek; the steering ones probe the avatar first to derive its
+real movement model) drive a scene headlessly across a range of seeds and report
+crashes, softlocks, stuck states, and unreached objectives. The summary is
+deliberately token-frugal, with copy-paste repro strings and the full per-run
+detail written to disk. Because the runtime is deterministic, a failing
+`(policy, seed)` replays exactly, and `--bake` freezes it into a permanent
+scripted regression test. Objectives (`reach`, `survive`, `event`, `property`)
+double as executable acceptance criteria for a level. See
+[docs/playtesting.md](docs/playtesting.md).
+
 **Prefabs.** Reusable, live-linked entity templates: serialize a subtree into a
 prefab asset, place instances, edit an instance and the change records as a
 per-instance override automatically, push a change back and every other
@@ -168,10 +255,10 @@ same asset pipeline: import, probe, slice, animate.
 
 ## Status
 
-Hearth is at **v1.0.0**, the production release — no longer a developer
-preview. The whole loop works end to end: project model, editor, runtime
-preview, CLI, MCP, headless playtests, diff review, and web and desktop
-export. Scripts have modules: they can `require()` each other in both Lua and
+Hearth is at **v1.1.0**, a production release rather than a developer preview.
+The whole loop works end to end: project model, editor, runtime preview, CLI,
+MCP, headless playtests, bot sweeps, diff review, and web and desktop export.
+Scripts have modules: they can `require()` each other in both Lua and
 JavaScript; a library is just a script that returns a table or exports an
 object, and hot-reload recompiles whatever depended on the file you changed.
 The Agent panel has its own full-height dock on the right beside the
@@ -186,11 +273,11 @@ timeline collapses under the terminal. The
 [latest release](https://github.com/echoo19/hearth/releases/latest): macOS
 (`Hearth-mac-arm64.dmg` / `Hearth-mac-x64.dmg`), Windows
 (`Hearth-win-x64.exe`), Linux (`Hearth-linux-x86_64.AppImage` /
-`Hearth-linux-amd64.deb`). On macOS, first launch is right-click → Open (macOS
-14 and earlier) or System Settings → Privacy & Security → Open Anyway (macOS
-15+); if macOS claims the app is damaged, run `xattr -cr /Applications/Hearth.app`
-(desktop builds are ad-hoc signed, not notarized yet, see
-[docs/desktop-app.md](docs/desktop-app.md)).
+`Hearth-linux-amd64.deb`). macOS builds are signed with a Developer ID and
+notarized by Apple, so they open normally; Windows is not code-signed yet, so
+SmartScreen shows a "More info → Run anyway" prompt on first launch. After that
+the app updates itself from later releases. See
+[docs/desktop-app.md](docs/desktop-app.md).
 
 **Agent tools, no install.** The CLI and MCP server ship as single files that
 only need Node 20+:
@@ -217,10 +304,11 @@ hearth snapshot                       # checkpoint for review
 hearth inspect scene "Level 1" --json # what's here?
 hearth create entity "Level 1" Gem \
   --position 620,300 --tags coin \
-  --components '{"SpriteRenderer":{"shape":"diamond","color":"#9b59b6","width":20,"height":20},"Collider":{"shape":"circle","radius":12,"isTrigger":true}}'
+  --components '{"SpriteRenderer":{"shape":"circle","color":"#9b59b6","width":20,"height":20},"Collider":{"shape":"circle","radius":12,"isTrigger":true}}'
 hearth attach script "Level 1" Gem scripts/coin-pickup.js
 hearth validate --json                # schema + reference checks
 hearth test                           # headless playtests
+hearth sweep --seeds 8                # bots play it; find what you didn't test
 hearth diff                           # what changed, human-readable
 hearth revert --confirm               # undo the whole session
 ```
@@ -248,6 +336,9 @@ reference.
 | [UI](docs/ui.md) | Widgets, layout, focus navigation |
 | **Script** | |
 | [Scripting](docs/scripting.md) | Lua and JS, the full `ctx` API, animation state machines |
+| **Prove it** | |
+| [Playtesting](docs/playtesting.md) | Scripted playtests, bot sweeps, objectives, `--bake` |
+| [Game feel](docs/game-feel.md) | Making it feel good, and measuring that it does |
 | **Ship** | |
 | [Export](docs/export.md) | Web (static/single-file) and desktop (Electron, signing) builds |
 | [Hosting a web build](docs/ship-web-hosting.md) | Your own domain, static hosts, iframe embeds |
