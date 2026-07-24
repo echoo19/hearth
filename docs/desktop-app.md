@@ -47,20 +47,10 @@ npm run app:dist:installers -w @hearth/editor   # dmg/nsis/AppImage installers
 ```
 
 Notes:
-- macOS builds are **ad-hoc signed, not notarized** (no Apple Developer ID
-  yet; an afterPack hook re-signs with `codesign -s -` so the bundle's
-  signature is valid). First launch of a downloaded build on **macOS 15
-  Sequoia or later**: Gatekeeper says "Apple could not verify 'Hearth' is
-  free of malware" and only offers Move to Trash / Done. The old
-  right-click → Open bypass no longer works there. Click **Done** (not
-  Move to Trash), open **System Settings → Privacy & Security**, scroll
-  down to the **"'Hearth' was blocked"** row, click **Open Anyway**, and
-  confirm once. On macOS 14 and earlier, right-click → Open still works.
-  If macOS instead claims the app "is damaged and can't be opened", clear
-  the quarantine flag and open normally:
-  `xattr -cr /Applications/Hearth.app`.
-  Real Developer ID signing + notarization is on the roadmap and removes
-  all of this.
+- Official macOS release builds are Developer-ID signed and notarized, so
+  Gatekeeper opens them normally. Local packages without release credentials
+  fall back to ad-hoc signing and may require the standard Privacy & Security
+  override.
 - The app icon is the stock Electron icon for now. A custom icon is on the
   roadmap: drop icons into `buildResources/` and remove `identity: null`
   when signing.
@@ -123,12 +113,8 @@ Per platform:
 - **Windows / Linux** (NSIS installer, AppImage): updates download in the
   background and install when you quit, or immediately via the "Restart now"
   prompt. Works with today's unsigned builds.
-- **macOS**: notify-only for now — the app offers the download page when a
-  new version ships. Squirrel.Mac (the install mechanism) requires
-  Developer-ID-signed builds, and releases are still ad-hoc signed. Once CI
-  signs and notarizes (secrets above), flip `MAC_AUTO_UPDATE` in
-  `apps/editor/electron/updaterPolicy.ts`; anyone on an older ad-hoc build
-  still re-downloads once to get onto the signed line.
+- **macOS**: signed and notarized releases update in place. Users on older
+  ad-hoc builds need one manual download to get onto the signed update line.
 - Zip archives are plain downloads; only the installer formats self-update.
 
 Dev runs, `HEARTH_SMOKE=1`, and `HEARTH_DISABLE_UPDATES=1` all disable the
