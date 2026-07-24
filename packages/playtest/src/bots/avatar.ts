@@ -12,26 +12,40 @@ import type { ProjectStore } from '@hearth/core';
 import type { GameSession } from '@hearth/runtime';
 
 /**
- * Resolve the avatar entity id for a run, or null when none can be inferred.
- * Throws on an unresolvable explicit ref, or on an ambiguous inferred set.
+ * The outcome of avatar inference. `id` is the chosen entity (or null when none
+ * can be picked); `ambiguous` is true only when several input-readers competed
+ * and no `player`-tagged one broke the tie; `candidates` names them for a note.
  */
-export async function resolveAvatar(
+export interface AvatarResolution {
+  id: string | null;
+  ambiguous: boolean;
+  candidates: string[];
+}
+
+/**
+ * Resolve the avatar for a run without throwing. An explicit ref wins. Otherwise
+ * we infer from script-bearing entities that reference `ctx.input`: a lone one
+ * is the avatar; several are ambiguous, unless exactly one carries the `player`
+ * tag, which breaks the tie. Steering policies turn an ambiguous result into a
+ * hard error via {@link resolveAvatar}; mash/idle tolerate it and just note it.
+ */
+export async function resolveAvatarInfo(
   store: ProjectStore,
   session: GameSession,
   explicit?: string,
-): Promise<string | null> {
+): Promise<AvatarResolution> {
   const runtime = session.runtime;
 
   if (explicit !== undefined) {
     const direct = runtime.find(explicit);
-    if (direct) return direct.id;
+    if (direct) return { id: direct.id, ambiguous: false, candidates: [direct.name] };
     const tagged = runtime.findByTag(explicit);
-    if (tagged.length > 0) return tagged[0].id;
+    if (tagged.length > 0) return { id: tagged[0].id, ambiguous: false, candidates: [tagged[0].name] };
     throw new Error(`avatar "${explicit}" not found in scene "${session.currentSceneId}"`);
   }
 
   // Infer: script-bearing entities whose source references ctx.input.
-  const candidates: { id: string; name: string }[] = [];
+  const candidates: { id: string; name: string; player: boolean }[] = [];
   for (const entity of runtime.getEntities()) {
     const scriptPath = entity.components.Script?.scriptPath;
     if (!scriptPath) continue;
@@ -42,14 +56,38 @@ export async function resolveAvatar(
       continue;
     }
     if (source.includes('ctx.input')) {
-      candidates.push({ id: entity.id, name: entity.name });
+      candidates.push({ id: entity.id, name: entity.name, player: entity.tags.includes('player') });
     }
   }
 
-  if (candidates.length === 0) return null;
-  if (candidates.length === 1) return candidates[0].id;
-  const names = candidates.map((c) => c.name).join(', ');
-  throw new Error(
-    `avatar is ambiguous: ${candidates.length} input-reading entities (${names}); pass an explicit avatar`,
-  );
+  const names = candidates.map((c) => c.name);
+  if (candidates.length === 0) return { id: null, ambiguous: false, candidates: [] };
+  if (candidates.length === 1) return { id: candidates[0].id, ambiguous: false, candidates: names };
+
+  // A single `player`-tagged candidate breaks the tie — the common intent.
+  const tagged = candidates.filter((c) => c.player);
+  if (tagged.length === 1) return { id: tagged[0].id, ambiguous: false, candidates: names };
+
+  return { id: null, ambiguous: true, candidates: names };
+}
+
+/**
+ * Resolve the avatar entity id for a run, or null when none can be inferred.
+ * Throws on an unresolvable explicit ref, or — for steering policies that must
+ * have a definite avatar — on an ambiguous inferred set.
+ */
+export async function resolveAvatar(
+  store: ProjectStore,
+  session: GameSession,
+  explicit?: string,
+  opts: { required?: boolean } = {},
+): Promise<string | null> {
+  const info = await resolveAvatarInfo(store, session, explicit);
+  if (info.ambiguous && (opts.required ?? true)) {
+    throw new Error(
+      `avatar is ambiguous: ${info.candidates.length} input-reading entities ` +
+        `(${info.candidates.join(', ')}); pass an explicit avatar`,
+    );
+  }
+  return info.id;
 }

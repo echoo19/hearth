@@ -289,6 +289,7 @@ describe('coverage and heatmap', () => {
     });
     expect(result.data.coverage).toBeDefined();
     expect(result.data.coverage.cellsReachable).toBeGreaterThan(0);
+    expect(result.data.coverage.cellsWalkable).toBeGreaterThanOrEqual(result.data.coverage.cellsReachable);
     expect(result.data.coverage.pct).toBeGreaterThanOrEqual(0);
     expect(result.data.coverage.pct).toBeLessThanOrEqual(1);
     expect(result.data.heatmap).toBeUndefined();
@@ -319,6 +320,43 @@ describe('coverage and heatmap', () => {
       maxFrames: 60,
     });
     expect(result.data.coverage).toBeUndefined();
+    // No nav grid ⇒ sealed-region can't run, and says so rather than staying silent.
+    expect(result.data.skipped.map((s: any) => s.kind)).toContain('sealed-region');
+  });
+
+  it('does not invent a sealed-region finding when the avatar spawns outside the solids', async () => {
+    // walledGame's Hero sits at the origin, outside the lone wall's bounding box.
+    // Connectivity is unknown there, so the safe answer is "nothing sealed".
+    const store = await walledGame(INPUT_MOVER);
+    const session = realSession(store);
+    const result = await session.execute<any>('sweepScene', {
+      scene: 'Test',
+      policies: ['mash'],
+      seeds: 1,
+      maxFrames: 60,
+      avatar: 'Hero',
+    });
+    expect(result.data.findings.some((f: any) => f.kind === 'sealed-region')).toBe(false);
+    expect(result.data.coverage.cellsWalkable).toBe(result.data.coverage.cellsReachable);
+  });
+});
+
+describe('dead controls (D2)', () => {
+  it('flags declared actions no script reads', async () => {
+    // A fresh project declares left/right/up/down/jump/action; INPUT_MOVER reads
+    // only left/right, so jump/up/down/action are dead controls.
+    const store = await heroGame(INPUT_MOVER);
+    const session = realSession(store);
+    const result = await session.execute<any>('sweepScene', {
+      scene: 'Test',
+      policies: ['mash'],
+      seeds: 1,
+      maxFrames: 40,
+      avatar: 'Hero',
+    });
+    const dead = result.data.findings.filter((f: any) => f.kind === 'dead-control');
+    expect(dead.length).toBeGreaterThan(0);
+    expect(dead.every((f: any) => f.severity === 'issue')).toBe(true);
   });
 });
 

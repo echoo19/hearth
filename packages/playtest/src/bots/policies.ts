@@ -10,6 +10,7 @@
 import { findPath } from '@hearth/core';
 import type { BotInitCtx, BotObservation, BotPolicy } from './types.js';
 import { Steerer } from './steer.js';
+import { interactiveUiCenters } from './uiTargets.js';
 
 /** A world-space point (findPath waypoints and steering goals). */
 interface Point {
@@ -21,8 +22,16 @@ interface Point {
 const MASH_ACTION_FLIP_P = 1 / 30;
 /** Per-frame probability an individual axis is set to a new sticky value. */
 const MASH_AXIS_P = 1 / 45;
-/** Per-frame probability of a pointer click somewhere in the viewport. */
+/** Per-frame probability of a pointer click somewhere in the viewport (gameplay scenes). */
 const MASH_POINTER_P = 1 / 120;
+/**
+ * Per-frame click probability in a menu-like scene (no avatar + interactive UI).
+ * Brisk enough to hit a button well within a default stuck window, so a working
+ * menu advances instead of reading as a false stall. Gameplay HUDs are left
+ * alone (that path stays at MASH_POINTER_P and never targets UI) so the bot never
+ * spams a pause/quit button mid-game.
+ */
+const MASH_MENU_CLICK_P = 1 / 12;
 
 /**
  * mash — weighted-persistence random input. Works on any game with zero config:
@@ -37,12 +46,15 @@ export class MashPolicy implements BotPolicy {
   private axes: string[] = [];
   private viewport = { width: 0, height: 0 };
   private held = new Map<string, boolean>();
+  /** Null avatar ⇒ no gameplay entity; combined with interactive UI this reads as a menu. */
+  private avatar: string | null = null;
 
   init(ctx: BotInitCtx): void {
     this.rng = ctx.rng;
     this.actions = ctx.actions;
     this.axes = ctx.axes;
     this.viewport = ctx.viewport;
+    this.avatar = ctx.avatar;
     for (const action of this.actions) this.held.set(action, false);
   }
 
@@ -59,12 +71,27 @@ export class MashPolicy implements BotPolicy {
         obs.input.axis(axis, this.rng() * 2 - 1);
       }
     }
-    if (this.rng() < MASH_POINTER_P) {
-      const x = this.rng() * this.viewport.width;
-      const y = this.rng() * this.viewport.height;
-      obs.input.pointer(x, y, 'down');
-      obs.input.pointer(x, y, 'up');
+    // Menu-like scenes (no avatar) get brisk, button-targeted clicks so a working
+    // menu is navigated rather than falsely judged stuck; a dead button still
+    // stalls, which is the real bug. Gameplay scenes keep the old rare random click.
+    if (this.avatar === null) {
+      if (this.rng() < MASH_MENU_CLICK_P) {
+        const targets = interactiveUiCenters(obs.runtime, this.viewport.width, this.viewport.height);
+        if (targets.length > 0) {
+          const target = targets[Math.floor(this.rng() * targets.length)];
+          this.click(obs, target.x, target.y);
+        } else {
+          this.click(obs, this.rng() * this.viewport.width, this.rng() * this.viewport.height);
+        }
+      }
+    } else if (this.rng() < MASH_POINTER_P) {
+      this.click(obs, this.rng() * this.viewport.width, this.rng() * this.viewport.height);
     }
+  }
+
+  private click(obs: BotObservation, x: number, y: number): void {
+    obs.input.pointer(x, y, 'down');
+    obs.input.pointer(x, y, 'up');
   }
 }
 

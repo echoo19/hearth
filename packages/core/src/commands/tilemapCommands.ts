@@ -134,6 +134,7 @@ export const paintTiles = defineCommand({
     // If this tilemap lives inside a live prefab instance, record the painted
     // grid as an implicit override so the next updatePrefab/sync preserves it.
     recordInstanceOverride(scene, entity.id, 'Tilemap', 'grid', stored.grid);
+    ctx.suggest(`sweepScene --scene ${scene.id} to check for regressions`);
     return { painted: params.cells.length };
   },
 });
@@ -202,6 +203,7 @@ export const fillTilemapRect = defineCommand({
     const stored = writeGrid(entity, tilemap, grid);
     ctx.changed({ kind: 'component', id: entity.id, name: 'Tilemap', scene: scene.id, action: 'modified' });
     recordInstanceOverride(scene, entity.id, 'Tilemap', 'grid', stored.grid);
+    ctx.suggest(`sweepScene --scene ${scene.id} to check for regressions`);
     return { painted: cells.length };
   },
 });

@@ -320,7 +320,7 @@ export const updatePrefab = defineCommand({
     // all scenes in the SAME command, so one undo entry rolls back both the
     // payload file and every re-synced instance.
     const synced = syncInstances(ctx, asset, data, allScenes(ctx));
-    ctx.suggest(`inspectAssets --type prefab`);
+    ctx.suggest(`inspectAssets --type prefab`, `sweepScene --scene ${scene.id} to check for regressions`);
 
     return {
       asset,

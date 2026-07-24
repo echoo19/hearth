@@ -280,6 +280,16 @@ export class SceneRuntime {
   /** Exact per-name emit totals, unbounded — never truncated even once `events` caps. */
   readonly eventCounts = new Map<string, number>();
   readonly input: InputState;
+  /**
+   * Every action/axis name read this scene run via ctx.input.isDown,
+   * ctx.input.justPressed, or ctx.input.axis — recorded passively (no effect
+   * on the returned value, no ordering/rng impact) so a later consumer can
+   * diff this against inputMappings to find "dead controls": declared
+   * actions/axes no script ever queries. Pointer reads are not tracked.
+   * GameSession folds this into GameSession.readInputs across scene
+   * switches (see performSwitch in session.ts).
+   */
+  readonly readInputNames = new Set<string>();
   /** Deterministic shake/flash/fade/zoomPunch — stepped right after camera follow. */
   readonly cameraEffects: CameraEffectsState;
 
@@ -1926,9 +1936,18 @@ export class SceneRuntime {
       getComponent: (type) => entity.components[type],
       params,
       input: {
-        isDown: (action) => runtime.input.isDown(action),
-        justPressed: (action) => runtime.input.justPressed(action),
-        axis: (name) => runtime.input.axisValue(name),
+        isDown: (action) => {
+          runtime.readInputNames.add(action);
+          return runtime.input.isDown(action);
+        },
+        justPressed: (action) => {
+          runtime.readInputNames.add(action);
+          return runtime.input.justPressed(action);
+        },
+        axis: (name) => {
+          runtime.readInputNames.add(name);
+          return runtime.input.axisValue(name);
+        },
         pointer: () => runtime.pointerWorld(),
         pointerScreen: () => runtime.pointerScreen,
         pointerDown: () => runtime.pointerDown,

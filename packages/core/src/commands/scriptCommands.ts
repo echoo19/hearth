@@ -193,7 +193,10 @@ export const createScript = defineCommand({
     const { source, formatted } = await applyFormatting(ctx, relPath, rawSource, params.format);
     await ctx.fs.writeFile(absPath, source);
     ctx.changed({ kind: 'script', path: relPath, name: params.name, action: 'created' });
-    ctx.suggest(`attachScript --scene <scene> --entity <entity> --script ${relPath}`);
+    ctx.suggest(
+      `attachScript --scene <scene> --entity <entity> --script ${relPath}`,
+      'sweepScene <scene> once attached, to check for regressions',
+    );
     return { path: relPath, language: params.language, lines: source.split('\n').length, source, formatted };
   },
 });
@@ -271,7 +274,7 @@ export const editScript = defineCommand({
     const { source, formatted } = await applyFormatting(ctx, path, params.source, params.format);
     await ctx.fs.writeFile(absPath, source);
     ctx.changed({ kind: 'script', path, action: 'modified' });
-    ctx.suggest('validateProject', 'runPlaytest <playtest> to verify behavior');
+    ctx.suggest('validateProject', 'runPlaytest <playtest> to verify behavior', 'sweepScene <scene> to check for regressions');
     return { path, lines: source.split('\n').length, source, formatted };
   },
 });
@@ -627,6 +630,7 @@ export const attachScript = defineCommand({
       params: params.params,
     }) as typeof entity.components.Script;
     ctx.changed({ kind: 'component', id: entity.id, name: 'Script', scene: scene.id, action: 'modified' });
+    ctx.suggest(`sweepScene --scene ${scene.id} to check for regressions`);
     return { entityId: entity.id, script: params.script, params: params.params };
   },
 });

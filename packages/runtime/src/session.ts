@@ -99,6 +99,15 @@ export class GameSession {
   eventsTruncated = false;
   /** Exact per-name totals across every scene switch — never truncated. */
   readonly eventCounts = new Map<string, number>();
+  /**
+   * Every action/axis name any script has read via ctx.input.isDown/
+   * justPressed/axis, unioned across every scene this session has run
+   * (SceneRuntime.readInputNames, folded in after each step and again on
+   * scene switch — see foldReadInputs). Feeds "dead control" detection:
+   * diff this against inputMappings to find declared actions/axes no
+   * script ever queries.
+   */
+  readonly readInputs = new Set<string>();
 
   private _runtime!: SceneRuntime;
   private _currentSceneId = '';
@@ -162,6 +171,7 @@ export class GameSession {
   step(): void {
     if (this.destroyed || this._switching) return;
     this._runtime.step();
+    this.foldReadInputs();
     void this.maybeBeginSwitch();
   }
 
@@ -171,6 +181,7 @@ export class GameSession {
     if (this.switchPromise) await this.switchPromise;
     if (this.destroyed) return;
     this._runtime.step();
+    this.foldReadInputs();
     const swap = this.maybeBeginSwitch();
     if (swap) await swap;
   }
@@ -208,6 +219,11 @@ export class GameSession {
     const carriedOverlay = old.cameraEffects.persistentOverlay;
     old.stopAllAudio(); // emits stop AudioPlaybackEvents through onAudio
     this.eventsTruncated ||= old.eventsTruncated;
+    // Fold the outgoing runtime's reads before it's replaced. step()/
+    // stepAsync() already fold after every step, so this is normally a
+    // no-op union, but it keeps readInputs correct even if a future
+    // caller reaches performSwitch without going through step first.
+    this.foldReadInputs(old);
     old.destroy();
     try {
       await this.startScene(to, frame, carriedOverlay);
@@ -299,6 +315,11 @@ export class GameSession {
 
   private framesSoFar(): number {
     return this._runtime ? this._runtime.frame : 0;
+  }
+
+  /** Union a SceneRuntime's readInputNames into the session-level readInputs set. */
+  private foldReadInputs(runtime: SceneRuntime = this._runtime): void {
+    for (const name of runtime.readInputNames) this.readInputs.add(name);
   }
 
   private recordLog(e: RuntimeLog): void {

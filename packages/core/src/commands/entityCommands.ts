@@ -91,7 +91,11 @@ export const createEntity = defineCommand({
     // detach the instance (anchor on the parent, which is the instance member).
     if (parentId) detachOnStructuralEdit(ctx, scene, parentId);
     ctx.changed({ kind: 'entity', id: entity.id, name: entity.name, scene: scene.id, action: 'created' });
-    ctx.suggest(`inspectEntity --scene ${scene.id} ${entity.id}`, `addComponent --scene ${scene.id} ${entity.id} <type>`);
+    ctx.suggest(
+      `inspectEntity --scene ${scene.id} ${entity.id}`,
+      `addComponent --scene ${scene.id} ${entity.id} <type>`,
+      `sweepScene --scene ${scene.id} to check for regressions`,
+    );
     return { entityId: entity.id, name: entity.name, sceneId: scene.id, components: Object.keys(entity.components) };
   },
 });
@@ -117,6 +121,7 @@ export const deleteEntity = defineCommand({
       detachOnStructuralEdit(ctx, scene, membership.rootId);
     }
     ctx.changed({ kind: 'entity', id: entity.id, name: entity.name, scene: scene.id, action: 'deleted' });
+    ctx.suggest(`sweepScene --scene ${scene.id} to check for regressions`);
     return { entityId: entity.id, name: entity.name };
   },
 });

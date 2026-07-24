@@ -259,6 +259,7 @@ Quick facts:
   documents the full ctx API — read it when scripting rather than from memory.
 - Test with \`hearth playtest <name>\` and \`hearth run <scene> --frames 120 --json\`
   (run reports include \`audioEvents\` for checking sound behavior).
+- **After a gameplay change:** \`hearth sweep <scene>\` runs seeded bots to catch softlocks and crashes.
 - **See your work:** \`hearth screenshot <scene>\` renders a PNG — no build permission
   needed. Read it back to check layout before calling anything done.
   \`hearth capture <scene> --to 120\` renders a contact sheet across frames (motion

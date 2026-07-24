@@ -11,7 +11,7 @@ import {
   createProject,
 } from '@hearth/core';
 import { GameSession } from '@hearth/runtime';
-import { runBotRun, resolveAvatar, type BotRunConfig } from '@hearth/playtest';
+import { runBotRun, resolveAvatar, interactiveUiCenters, type BotRunConfig } from '@hearth/playtest';
 
 // --- scripts --------------------------------------------------------------
 
@@ -30,6 +30,15 @@ const EMITTER = `export default { onUpdate(ctx) { if (ctx.time.frame === 5) ctx.
 const SUICIDE = `export default { onUpdate(ctx) { if (ctx.time.frame === 5) ctx.destroySelf(); } };`;
 /** Throws once frame >= 3. */
 const THROWER = `export default { onUpdate(ctx) { if (ctx.time.frame >= 3) throw new Error('kaboom'); } };`;
+/** Fires two DISTINCT camera-effect kinds, at frames 3 and 6 — first-occurrence interaction novelty. */
+const FX_DISTINCT = `export default { onUpdate(ctx) {
+  if (ctx.time.frame === 3) ctx.camera.flash('#ffffff', 0.1);
+  if (ctx.time.frame === 6) ctx.camera.shake(2, 0.1);
+} };`;
+/** Fires the SAME camera effect every frame — repetition, which must NOT keep resetting the stuck timer. */
+const FX_LOOP = `export default { onUpdate(ctx) { ctx.camera.flash('#ffffff', 0.1); } };`;
+/** Fades the screen fully opaque near the start and never lifts it — a hidden softlock. */
+const FADE_STUCK = `export default { onUpdate(ctx) { if (ctx.time.frame === 1) ctx.camera.fade(1, 0.02); } };`;
 
 // --- project builders -----------------------------------------------------
 
@@ -62,18 +71,21 @@ async function makeBotGame(
   return ProjectStore.load(fs, '/g');
 }
 
-/** A scene with two input-reading entities — an ambiguous avatar set. */
-async function makeAmbiguousGame(): Promise<ProjectStore> {
+/**
+ * A scene with two input-reading entities — an ambiguous avatar set.
+ * `taggedPlayer` tags the first entity `player`, giving a preference tiebreak.
+ */
+async function makeAmbiguousGame(opts: { taggedPlayer?: boolean } = {}): Promise<ProjectStore> {
   const fs = new MemoryFileSystem();
   const { store } = await createProject(fs, '/g', { name: 'Ambiguous', starterScene: false });
   store.project.scenes.push({ id: 'scn_test', name: 'Test', path: 'scenes/test.scene.json' });
   store.project.initialScene = 'scn_test';
-  const mk = (id: string, name: string) => ({
+  const mk = (id: string, name: string, tags: string[] = []) => ({
     id,
     name,
     parentId: null,
     enabled: true,
-    tags: [],
+    tags,
     components: { Transform: { position: { x: 0, y: 0 } }, Script: { scriptPath: 'scripts/hero.js' } },
   });
   store.scenes.set(
@@ -82,10 +94,96 @@ async function makeAmbiguousGame(): Promise<ProjectStore> {
       formatVersion: 1,
       id: 'scn_test',
       name: 'Test',
-      entities: [mk('ent_a', 'PlayerA'), mk('ent_b', 'PlayerB')],
+      entities: [
+        mk('ent_a', 'PlayerA', opts.taggedPlayer ? ['player'] : []),
+        mk('ent_b', 'PlayerB'),
+      ],
     }),
   );
   await fs.writeFile('/g/scripts/hero.js', INPUT_MOVER);
+  await store.save();
+  return ProjectStore.load(fs, '/g');
+}
+
+/** A menu scene: a Main Camera plus an interactive Start button whose click emits an event. */
+async function makeMenuGame(): Promise<ProjectStore> {
+  const fs = new MemoryFileSystem();
+  const { store } = await createProject(fs, '/g', { name: 'Menu Game', starterScene: false });
+  store.project.scenes.push({ id: 'scn_menu', name: 'Menu', path: 'scenes/menu.scene.json' });
+  store.project.initialScene = 'scn_menu';
+  store.scenes.set(
+    'scn_menu',
+    SceneSchema.parse({
+      formatVersion: 1,
+      id: 'scn_menu',
+      name: 'Menu',
+      entities: [
+        {
+          id: 'ent_cam',
+          name: 'Main Camera',
+          parentId: null,
+          enabled: true,
+          tags: [],
+          components: { Transform: { position: { x: 0, y: 0 } }, Camera: { isMain: true } },
+        },
+        {
+          id: 'ent_start',
+          name: 'Start',
+          parentId: null,
+          enabled: true,
+          tags: [],
+          components: {
+            Transform: { position: { x: 0, y: 0 } },
+            UIElement: { anchor: 'center', offset: { x: 0, y: 0 }, interactive: true },
+            SpriteRenderer: { width: 200, height: 80 },
+            Script: { scriptPath: 'scripts/start.js' },
+          },
+        },
+      ],
+    }),
+  );
+  // Clicking the button emits an event — progress novelty the sweep can see.
+  await fs.writeFile(
+    '/g/scripts/start.js',
+    `export default { onUiEvent(ctx, event) { if (event.type === 'click') ctx.events.emit('started'); } };`,
+  );
+  await store.save();
+  return ProjectStore.load(fs, '/g');
+}
+
+/** A one-scene project: a Main Camera plus a scripted Hero (used for camera-effect novelty). */
+async function makeCameraGame(heroScript: string): Promise<ProjectStore> {
+  const fs = new MemoryFileSystem();
+  const { store } = await createProject(fs, '/g', { name: 'Camera Game', starterScene: false });
+  store.project.scenes.push({ id: 'scn_test', name: 'Test', path: 'scenes/test.scene.json' });
+  store.project.initialScene = 'scn_test';
+  store.scenes.set(
+    'scn_test',
+    SceneSchema.parse({
+      formatVersion: 1,
+      id: 'scn_test',
+      name: 'Test',
+      entities: [
+        {
+          id: 'ent_cam',
+          name: 'Main Camera',
+          parentId: null,
+          enabled: true,
+          tags: [],
+          components: { Transform: { position: { x: 0, y: 0 } }, Camera: { isMain: true } },
+        },
+        {
+          id: 'ent_hero',
+          name: 'Hero',
+          parentId: null,
+          enabled: true,
+          tags: [],
+          components: { Transform: { position: { x: 0, y: 0 } }, Script: { scriptPath: 'scripts/hero.js' } },
+        },
+      ],
+    }),
+  );
+  await fs.writeFile('/g/scripts/hero.js', heroScript);
   await store.save();
   return ProjectStore.load(fs, '/g');
 }
@@ -135,7 +233,9 @@ describe('idle policy', () => {
 describe('stuck detection', () => {
   it('fires exactly at stuckAfter on a static scene', async () => {
     const store = await makeBotGame(null); // Hero has no script ⇒ no novelty ever
-    const result = await runBotRun(store, baseConfig({ policy: 'idle', stuckAfter: 10, maxFrames: 50 }));
+    // mash injects input; nothing responds, so no novelty ever — stuck. (idle is
+    // exempt from stuck now, so the mechanism is exercised with an active policy.)
+    const result = await runBotRun(store, baseConfig({ policy: 'mash', stuckAfter: 10, maxFrames: 50 }));
     expect(result.verdict).toBe('stuck');
     expect(result.stuckAtFrame).toBe(10);
     expect(result.endFrame).toBe(10);
@@ -143,10 +243,115 @@ describe('stuck detection', () => {
 
   it('does not fire before stuckAfter is reached', async () => {
     const store = await makeBotGame(null);
-    const result = await runBotRun(store, baseConfig({ policy: 'idle', stuckAfter: 10, maxFrames: 5 }));
+    const result = await runBotRun(store, baseConfig({ policy: 'mash', stuckAfter: 10, maxFrames: 5 }));
     expect(result.verdict).toBe('ran-clean');
     expect(result.stuckAtFrame).toBeUndefined();
     expect(result.endFrame).toBe(5);
+  });
+});
+
+// --- F4: seek fails honestly ----------------------------------------------
+
+describe('seek diagnostics (F4)', () => {
+  it('a seek that stalls short of its target explains itself, not "no novelty"', async () => {
+    // Hero moves only on the x axis (INPUT_MOVER). The target sits far below, so
+    // seek can never close the y gap and stalls — the classic platformer case
+    // where a nav route exists through the air but the walking bot can't follow.
+    const store = await makeBotGame(INPUT_MOVER);
+    const result = await runBotRun(
+      store,
+      baseConfig({
+        policy: 'seek',
+        avatar: 'Hero',
+        target: { x: 0, y: 600 },
+        stuckAfter: 20,
+        maxFrames: 120,
+      }),
+    );
+    expect(result.verdict).toBe('stuck');
+    const f = result.findings.find((x) => x.kind === 'seek-unreachable');
+    expect(f).toBeDefined();
+    expect(f!.summary.toLowerCase()).toMatch(/seek|target|jump|reach/);
+  });
+});
+
+// --- menu navigation: mash targets interactive UI -------------------------
+
+describe('mash UI navigation (F3 root cause)', () => {
+  it('interactiveUiCenters returns the screen center of an interactive button', async () => {
+    const store = await makeMenuGame();
+    const session = await GameSession.create(store, { scene: 'Menu' });
+    const centers = interactiveUiCenters(
+      session.runtime,
+      store.project.buildSettings.width,
+      store.project.buildSettings.height,
+    );
+    session.destroy();
+    expect(centers.length).toBe(1);
+    // Anchored center of a 800x600-ish viewport, roughly the middle.
+    expect(centers[0].x).toBeGreaterThan(0);
+    expect(centers[0].y).toBeGreaterThan(0);
+  });
+
+  it('mash navigates a menu by clicking the button instead of getting stuck', async () => {
+    const store = await makeMenuGame();
+    const result = await runBotRun(
+      store,
+      baseConfig({ scene: 'Menu', policy: 'mash', seed: 3, stuckAfter: 180, maxFrames: 600 }),
+    );
+    // Clicking Start fires 'started' — progress novelty — so the run isn't a false stuck.
+    expect(result.verdict).not.toBe('stuck');
+  });
+});
+
+// --- D4: fade-softlock ----------------------------------------------------
+
+describe('fade-softlock (D4)', () => {
+  it('flags a run stuck behind a full-screen fade that never lifted', async () => {
+    const store = await makeCameraGame(FADE_STUCK);
+    const result = await runBotRun(store, baseConfig({ policy: 'mash', seed: 1, stuckAfter: 6, maxFrames: 40 }));
+    expect(result.verdict).toBe('stuck');
+    const f = result.findings.find((x) => x.kind === 'fade-softlock');
+    expect(f).toBeDefined();
+    expect(f!.severity).toBe('issue');
+  });
+
+  it('does not flag an ordinary stall with no fade', async () => {
+    const store = await makeBotGame(null);
+    const result = await runBotRun(store, baseConfig({ policy: 'mash', seed: 1, stuckAfter: 6, maxFrames: 40 }));
+    expect(result.verdict).toBe('stuck');
+    expect(result.findings.find((x) => x.kind === 'fade-softlock')).toBeUndefined();
+  });
+});
+
+// --- F2/F3: tiered novelty ------------------------------------------------
+
+describe('tiered novelty (F2/F3)', () => {
+  it('F2: idle is never judged stuck (it injects no input)', async () => {
+    const store = await makeBotGame(null); // fully static
+    const result = await runBotRun(store, baseConfig({ policy: 'idle', stuckAfter: 10, maxFrames: 50 }));
+    expect(result.verdict).not.toBe('stuck');
+    expect(result.stuckAtFrame).toBeUndefined();
+  });
+
+  it('F3: a first-of-its-kind camera effect resets the stuck timer', async () => {
+    // Distinct effects (flash, then shake) at frames 3 and 6 with no positional or
+    // event novelty. Naive novelty (cells/events/scene only) would call this stuck
+    // at frame 4; tiered novelty counts each first-seen effect, pushing the stall
+    // past the last one.
+    const store = await makeCameraGame(FX_DISTINCT);
+    const result = await runBotRun(store, baseConfig({ policy: 'mash', seed: 1, stuckAfter: 4, maxFrames: 40 }));
+    expect(result.verdict).toBe('stuck');
+    expect(result.stuckAtFrame).toBeGreaterThan(6);
+  });
+
+  it('F3: a repeated camera effect does NOT keep resetting the timer (no masking)', async () => {
+    // The same flash every frame is novel only the first time; after that the run
+    // is genuinely stalled and must still be caught — an ambient effect can't mask it.
+    const store = await makeCameraGame(FX_LOOP);
+    const result = await runBotRun(store, baseConfig({ policy: 'mash', seed: 1, stuckAfter: 4, maxFrames: 40 }));
+    expect(result.verdict).toBe('stuck');
+    expect(result.stuckAtFrame).toBeLessThan(10);
   });
 });
 
@@ -293,5 +498,32 @@ describe('resolveAvatar', () => {
     const store = await makeBotGame(MOVER); // no input-reading entity
     const result = await runBotRun(store, baseConfig({ policy: 'mash', seed: 3, maxFrames: 30 }));
     expect(result.verdict).toBeDefined();
+  });
+});
+
+// --- F1: avatar resolution scoped to steering policies --------------------
+
+describe('avatar scoping (F1)', () => {
+  it('mash does not throw on an ambiguous avatar set; it notes it and runs', async () => {
+    const store = await makeAmbiguousGame(); // PlayerA + PlayerB, no player tag
+    const result = await runBotRun(store, baseConfig({ policy: 'mash', seed: 2, maxFrames: 30 }));
+    expect(result.verdict).toBeDefined();
+    const note = result.findings.find((f) => f.kind === 'ambiguous-avatar');
+    expect(note).toBeDefined();
+    expect(note!.severity).toBe('note');
+    expect(note!.summary).toMatch(/PlayerA.*PlayerB|PlayerB.*PlayerA/);
+  });
+
+  it('mash prefers a player-tagged entity over an ambiguous set (no note)', async () => {
+    const store = await makeAmbiguousGame({ taggedPlayer: true });
+    const result = await runBotRun(store, baseConfig({ policy: 'mash', seed: 2, maxFrames: 30 }));
+    expect(result.findings.find((f) => f.kind === 'ambiguous-avatar')).toBeUndefined();
+  });
+
+  it('a steering policy still throws on an ambiguous avatar set', async () => {
+    const store = await makeAmbiguousGame();
+    await expect(
+      runBotRun(store, baseConfig({ policy: 'wander', seed: 2, maxFrames: 30 })),
+    ).rejects.toThrow(/ambiguous/);
   });
 });

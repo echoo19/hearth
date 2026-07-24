@@ -42,6 +42,39 @@ export interface BotRunConfig {
 /** One-per-run outcome, most severe first in the sweep report's ordering. */
 export type BotVerdict = 'error' | 'stuck' | 'completed' | 'objective-failed' | 'ran-clean';
 
+/**
+ * How much a finding should worry the reader. `blocker` breaks the game,
+ * `issue` is a probable defect, `note` is an observation worth a glance. The
+ * verdict enum is unchanged — findings are additive, richer detail alongside it.
+ */
+export type FindingSeverity = 'blocker' | 'issue' | 'note';
+
+/**
+ * One observation about a run or a sweep, beyond the coarse verdict. Findings
+ * are what make the judge genre-aware: a detector that does not apply to a game
+ * emits nothing rather than a false failure. Kept flat and one-line-summarizable
+ * so the report stays token-frugal.
+ */
+export interface Finding {
+  /** Stable slug: ambiguous-avatar | unresponsive-input | unread-action | sealed-region | fade-softlock | wall-bump | seek-unreachable | crash-on-input | … */
+  kind: string;
+  severity: FindingSeverity;
+  /** One line, agent-readable. */
+  summary: string;
+  /** Optional longer explanation (still one or two sentences). */
+  detail?: string;
+  /** Frame the observation is anchored to, when it has one. */
+  frame?: number;
+  /** Structured evidence for the report file; never required for the summary. */
+  evidence?: Record<string, unknown>;
+}
+
+/** A detector that did not run, and why — surfaced so "not checked" is never silent. */
+export interface SkippedDetector {
+  kind: string;
+  reason: string;
+}
+
 /** Per-objective result: when it was first achieved (sticky), and whether it definitively failed. */
 export interface ObjectiveOutcome {
   index: number;
@@ -63,6 +96,10 @@ export interface BotRunResult {
   cellsVisited: number;
   /** Visited cell keys ("cx,cy"), sorted for deterministic output. */
   visitedCells: string[];
+  /** Observations beyond the verdict — genre-aware, additive; may be empty. */
+  findings: Finding[];
+  /** Input action/axis names any script read during the run — union feeds dead-control detection. */
+  readInputs: string[];
   timeline: InputEvent[];
 }
 

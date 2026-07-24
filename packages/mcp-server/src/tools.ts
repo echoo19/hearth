@@ -336,7 +336,7 @@ export const TOOL_SPECS: ToolSpec[] = [
     name: 'set_component_property',
     command: 'setComponentProperty',
     description:
-      'Set a component property by strict dot-path, e.g. property="Transform.position.x", value=100; an unknown path fails with a did-you-mean suggestion. (requires safe-edit)',
+      'Set a component property by strict dot-path, e.g. property="Transform.position.x", value=100; an unknown path fails with a did-you-mean suggestion; sweep the scene afterward to catch regressions. (requires safe-edit)',
     permission: 'safe-edit',
     inputShape: {
       scene: z.string().min(1),
@@ -352,7 +352,7 @@ export const TOOL_SPECS: ToolSpec[] = [
       'Set multiple component properties on one entity in a single undo step, e.g. properties={' +
       '"Transform.position.x": 100, "SpriteRenderer.width": 64}. Keys are "<ComponentType>.<path.to.property>", ' +
       'same as set_component_property. All-or-nothing: every key is validated (path + resulting schema) before ' +
-      'anything is written. (requires safe-edit)',
+      'anything is written; sweep the scene afterward to catch regressions. (requires safe-edit)',
     permission: 'safe-edit',
     inputShape: {
       scene: z.string().min(1),
@@ -505,7 +505,7 @@ export const TOOL_SPECS: ToolSpec[] = [
     name: 'create_script',
     command: 'createScript',
     description:
-      'Create a script under scripts/ from a template (or source), returning its path. Lua by default (language:"js" for JS); call ctx with a DOT, never a colon. (requires code-edit)',
+      'Create a script under scripts/ from a template (or source), returning its path. Lua by default (language:"js" for JS); call ctx with a DOT, never a colon; sweep the scene after attaching it. (requires code-edit)',
     permission: 'code-edit',
     inputShape: {
       name: z.string().min(1),
@@ -519,7 +519,7 @@ export const TOOL_SPECS: ToolSpec[] = [
     name: 'edit_script',
     command: 'editScript',
     description:
-      'Replace the full source of an existing script file. Reformats to Hearth house style on save unless format:false. (requires code-edit)',
+      'Replace the full source of an existing script file. Reformats to Hearth house style on save unless format:false; sweep the scene afterward to catch regressions. (requires code-edit)',
     permission: 'code-edit',
     inputShape: {
       path: z.string().min(1),
@@ -557,7 +557,7 @@ export const TOOL_SPECS: ToolSpec[] = [
     name: 'attach_script',
     command: 'attachScript',
     description:
-      'Attach a script to an entity (adds or updates its Script component). Optional params are exposed to the script as ctx.params. (requires code-edit)',
+      'Attach a script to an entity (adds or updates its Script component). Optional params are exposed to the script as ctx.params; sweep the scene afterward to catch regressions. (requires code-edit)',
     permission: 'code-edit',
     inputShape: {
       scene: z.string().min(1),

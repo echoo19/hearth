@@ -1122,7 +1122,19 @@ export {
 } from './bots/sweep.js';
 export { bakeBotRun, compressTimeline } from './bots/bake.js';
 export { InputRecorder } from './bots/recorder.js';
-export { resolveAvatar } from './bots/avatar.js';
+export { resolveAvatar, resolveAvatarInfo, type AvatarResolution } from './bots/avatar.js';
+export {
+  floodReachable,
+  walkableIndices,
+  cellCenter,
+  cellIndexAt,
+  analyzeReachability,
+  type ReachabilityReport,
+} from './bots/reachability.js';
+export { deadControlFindings, type DeadControlInput } from './bots/deadControls.js';
+export { nonSupportingContact, isWallBump, FADE_OPAQUE_ALPHA } from './bots/frustration.js';
+export { probeResponsiveness } from './bots/responsiveness.js';
+export { interactiveUiCenters, type UiPoint } from './bots/uiTargets.js';
 export {
   MashPolicy,
   IdlePolicy,
@@ -1149,4 +1161,7 @@ export type {
   BotInitCtx,
   BotObservation,
   BotPolicy,
+  Finding,
+  FindingSeverity,
+  SkippedDetector,
 } from './bots/types.js';

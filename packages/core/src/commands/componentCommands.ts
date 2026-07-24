@@ -308,6 +308,7 @@ export const setComponentProperty = defineCommand({
     if (!valuesEqual(previousValue, newValue)) {
       recordInstanceOverride(scene, entity.id, type, pathParts.join('.'), newValue);
     }
+    ctx.suggest(`sweepScene --scene ${scene.id} to check for regressions`);
     return {
       entityId: entity.id,
       property: params.property,
@@ -410,6 +411,7 @@ export const setProperties = defineCommand({
       recordInstanceOverride(scene, entity.id, type, pathParts.join('.'), newValue);
     }
 
+    ctx.suggest(`sweepScene --scene ${scene.id} to check for regressions`);
     return {
       entityId: entity.id,
       applied: params.properties,
