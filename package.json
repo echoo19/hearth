@@ -24,6 +24,8 @@
     "mcp": "node packages/mcp-server/dist/main.js",
     "test": "vitest run",
     "test:watch": "vitest",
+    "check:release": "node scripts/check-release.mjs",
+    "test:release": "node --test scripts/check-release.test.mjs",
     "typecheck": "npm run typecheck --workspaces --if-present",
     "lint": "npm run typecheck",
     "bench": "npm run build:packages && node packages/runtime/bench/bench.mjs"
