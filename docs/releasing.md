@@ -78,10 +78,11 @@ of the same release contract:
 npm run check:release -- --tag "$TAG" --website "$WEBSITE_WORKTREE"
 ```
 
-Push the clean engine commit, tag that exact commit, and push only the new tag:
+Push the prepared engine `HEAD` to `main`, tag that same commit, and push only
+the new tag:
 
 ```bash
-direnv exec . git push origin main
+direnv exec . git push origin HEAD:main
 git tag "$TAG"
 direnv exec . git push origin "$TAG"
 ```

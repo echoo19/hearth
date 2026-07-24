@@ -10,10 +10,22 @@ import {
   collectReleaseErrors,
   parseArgs,
   runWebsiteCheck,
+  selectNpmCommand,
 } from './check-release.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(here, '..');
+const { version: currentVersion } = JSON.parse(
+  await readFile(path.join(repoRoot, 'package.json'), 'utf8'),
+);
+const [currentMajor, currentMinor, currentPatch] = currentVersion.split('.').map(Number);
+const staleVersion = currentPatch > 0
+  ? `${currentMajor}.${currentMinor}.${currentPatch - 1}`
+  : currentMinor > 0
+    ? `${currentMajor}.${currentMinor - 1}.0`
+    : currentMajor > 0
+      ? `${currentMajor - 1}.0.0`
+      : '0.0.0-stale';
 const temporaryRoots = [];
 
 async function writeJson(file, value) {
@@ -229,12 +241,66 @@ test('delegates website validation with the exact engine path and unprefixed ver
     return { status: 0 };
   };
 
-  assert.deepEqual(await collectReleaseErrors(root, { website, runner }), []);
+  assert.equal(
+    await runWebsiteCheck(website, root, '1.2.1', runner, {
+      platform: 'linux',
+      execPath: '/opt/node/bin/node',
+      npmExecPath: '/opt/npm/bin/npm-cli.js',
+    }),
+    undefined,
+  );
   assert.deepEqual(calls, [[
-    'npm',
-    ['run', 'release:check', '--', '--engine', path.resolve(root), '--version', '1.2.1'],
+    '/opt/node/bin/node',
+    [
+      '/opt/npm/bin/npm-cli.js',
+      'run',
+      'release:check',
+      '--',
+      '--engine',
+      path.resolve(root),
+      '--version',
+      '1.2.1',
+    ],
     { cwd: path.resolve(website), stdio: 'inherit' },
   ]]);
+});
+
+test('selects the npm CLI safely for canonical and simulated Windows execution', () => {
+  assert.deepEqual(
+    selectNpmCommand({
+      platform: 'linux',
+      execPath: '/opt/node/bin/node',
+      npmExecPath: '/opt/npm/bin/npm-cli.js',
+    }),
+    { command: '/opt/node/bin/node', args: ['/opt/npm/bin/npm-cli.js'] },
+  );
+  assert.deepEqual(
+    selectNpmCommand({ platform: 'linux', npmExecPath: '' }),
+    { command: 'npm', args: [] },
+  );
+
+  assert.deepEqual(
+    selectNpmCommand({
+      platform: 'win32',
+      execPath: String.raw`C:\Program Files\nodejs\node.exe`,
+      npmExecPath: '',
+      pathExists: (candidate) => candidate === String.raw`C:\Program Files\nodejs\node_modules\npm\bin\npm-cli.js`,
+    }),
+    {
+      command: String.raw`C:\Program Files\nodejs\node.exe`,
+      args: [String.raw`C:\Program Files\nodejs\node_modules\npm\bin\npm-cli.js`],
+    },
+  );
+
+  assert.throws(
+    () => selectNpmCommand({
+      platform: 'win32',
+      execPath: String.raw`C:\Program Files\nodejs\node.exe`,
+      npmExecPath: '',
+      pathExists: () => false,
+    }),
+    /cannot locate npm CLI on Windows.*npm run check:release/is,
+  );
 });
 
 test('turns website command failures into an actionable release error', async () => {
@@ -301,14 +367,25 @@ test('CI and tag publication consume the release checker and versioned notes', a
 
   assert.match(ci, /Check release coherence[\s\S]*npm run check:release/);
   assert.match(
+    ci,
+    /npm ci[\s\S]*npm run test:release[\s\S]*npm run check:release/,
+  );
+  assert.match(
     release,
     /Check release tag and metadata[\s\S]*npm run check:release -- --tag "\$\{GITHUB_REF_NAME\}"/,
+  );
+  assert.match(
+    release,
+    /npm ci[\s\S]*npm run test:release[\s\S]*npm run check:release -- --tag "\$\{GITHUB_REF_NAME\}"/,
   );
   assert.match(release, /--notes-file "docs\/releases\/\$\{GITHUB_REF_NAME\}\.md"/);
   assert.doesNotMatch(release, /\*\*v1\.2 highlights\*\*/);
 });
 
-async function writeFakeTools(root, { cliVersion = '1.2.1', mcpVersion = '1.2.1' } = {}) {
+async function writeFakeTools(root, {
+  cliVersion = currentVersion,
+  mcpVersion = currentVersion,
+} = {}) {
   const dist = path.join(root, 'dist');
   await mkdir(dist, { recursive: true });
   await writeFile(path.join(dist, 'hearth-cli.mjs'), `console.log(${JSON.stringify(cliVersion)});\n`);
@@ -332,7 +409,7 @@ lines.on('line', (line) => {
 test('bundled-tool smoke rejects a CLI version that differs from the root package', async () => {
   const root = await mkdtemp(path.join(os.tmpdir(), 'hearth-smoke-tools-'));
   temporaryRoots.push(root);
-  const dist = await writeFakeTools(root, { cliVersion: '1.2.0' });
+  const dist = await writeFakeTools(root, { cliVersion: staleVersion });
 
   const result = spawnSync(
     process.execPath,
@@ -341,13 +418,16 @@ test('bundled-tool smoke rejects a CLI version that differs from the root packag
   );
 
   assert.equal(result.status, 1);
-  assert.match(result.stderr, /hearth-cli\.mjs reported 1\.2\.0; expected 1\.2\.1/);
+  assert.match(
+    result.stderr,
+    new RegExp(`hearth-cli\\.mjs reported ${staleVersion.replaceAll('.', '\\.')}; expected ${currentVersion.replaceAll('.', '\\.')}`),
+  );
 });
 
 test('bundled-tool smoke rejects an MCP server version that differs from the root package', async () => {
   const root = await mkdtemp(path.join(os.tmpdir(), 'hearth-smoke-tools-'));
   temporaryRoots.push(root);
-  const dist = await writeFakeTools(root, { mcpVersion: '1.2.0' });
+  const dist = await writeFakeTools(root, { mcpVersion: staleVersion });
 
   const result = spawnSync(
     process.execPath,
@@ -356,7 +436,10 @@ test('bundled-tool smoke rejects an MCP server version that differs from the roo
   );
 
   assert.equal(result.status, 1);
-  assert.match(result.stderr, /hearth-mcp\.mjs reported 1\.2\.0; expected 1\.2\.1/);
+  assert.match(
+    result.stderr,
+    new RegExp(`hearth-mcp\\.mjs reported ${staleVersion.replaceAll('.', '\\.')}; expected ${currentVersion.replaceAll('.', '\\.')}`),
+  );
 });
 
 test('the maintainer runbook pins the two-repository release commands', async () => {
@@ -369,6 +452,7 @@ test('the maintainer runbook pins the two-repository release commands', async ()
     'npm run release:check -- --engine "$ENGINE_ROOT" --version "$VERSION"',
     'git commit -m "Publish Hearth v$VERSION"',
     'npm run check:release -- --tag "$TAG" --website "$WEBSITE_WORKTREE"',
+    'direnv exec . git push origin HEAD:main',
     'git tag "$TAG"',
     'direnv exec . git push origin "$TAG"',
     'direnv exec . git push origin HEAD:main',
@@ -377,11 +461,12 @@ test('the maintainer runbook pins the two-repository release commands', async ()
   ];
   let previous = -1;
   for (const command of orderedCommands) {
-    const index = releasing.indexOf(command);
+    const index = releasing.indexOf(command, previous + 1);
     assert.notEqual(index, -1, `missing canonical release step: ${command}`);
     assert.ok(index > previous, `release step is out of order: ${command}`);
     previous = index;
   }
+  assert.doesNotMatch(releasing, /git push origin main\b/);
   assert.match(releasing, /private.*secrets.*public.*CI/is);
   assert.match(contributing, /\[maintainer release runbook\]\(docs\/releasing\.md\)/);
 });

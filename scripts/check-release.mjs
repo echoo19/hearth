@@ -3,6 +3,7 @@
  * Verify that every release-facing engine surface agrees with package.json.
  */
 import { spawnSync } from 'node:child_process';
+import { existsSync } from 'node:fs';
 import { readdir, readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -55,6 +56,8 @@ function versionMismatch(surface, actual, expected) {
   return `${surface} ${String(actual)}; canonical version ${expected}`;
 }
 
+// This lexer only discovers declarations while skipping preceding comments
+// and strings; it intentionally does not parse executable JavaScript.
 function advanceLexicalState(line, initialState) {
   let state = initialState;
   for (let index = 0; index < line.length; index += 1) {
@@ -109,15 +112,54 @@ function findConstantVersion(source, name) {
   return undefined;
 }
 
+export function selectNpmCommand({
+  platform = process.platform,
+  execPath = process.execPath,
+  npmExecPath = process.env.npm_execpath,
+  pathExists = existsSync,
+} = {}) {
+  if (npmExecPath) {
+    return { command: execPath, args: [npmExecPath] };
+  }
+  if (platform !== 'win32') {
+    return { command: 'npm', args: [] };
+  }
+
+  const npmCli = path.win32.join(
+    path.win32.dirname(execPath),
+    'node_modules',
+    'npm',
+    'bin',
+    'npm-cli.js',
+  );
+  if (pathExists(npmCli)) {
+    return { command: execPath, args: [npmCli] };
+  }
+  throw new Error(
+    'cannot locate npm CLI on Windows; run this through `npm run check:release` so npm_execpath is available',
+  );
+}
+
 export async function runWebsiteCheck(
   websitePath,
   enginePath,
   version,
   runner = spawnSync,
+  npmOptions,
 ) {
+  const npm = selectNpmCommand(npmOptions);
   const result = runner(
-    'npm',
-    ['run', 'release:check', '--', '--engine', path.resolve(enginePath), '--version', version],
+    npm.command,
+    [
+      ...npm.args,
+      'run',
+      'release:check',
+      '--',
+      '--engine',
+      path.resolve(enginePath),
+      '--version',
+      version,
+    ],
     { cwd: path.resolve(websitePath), stdio: 'inherit' },
   );
   if (result.error) {
