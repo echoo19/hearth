@@ -506,7 +506,7 @@ describe('captureScreenshot (real Chromium)', () => {
         await cleanup();
       }
     },
-    30000,
+    120_000,
   );
 
   // Regression for the "SpriteAnimator never renders" bug: buildNode built

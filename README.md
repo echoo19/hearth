@@ -131,7 +131,7 @@ A real 2D engine, not a toy. The short version, with the detail one link away:
   or native builds with none of Hearth's chrome in them.
   [Prefabs](docs/prefabs.md) · [Export](docs/export.md)
 
-Hearth is at **v1.2.0**, a production release. The whole loop works end to end;
+Hearth is at **v1.2.1**, a production release. The whole loop works end to end;
 the [roadmap](docs/roadmap.md) tracks what's next.
 
 ## Install

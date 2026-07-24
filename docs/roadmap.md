@@ -1,6 +1,6 @@
 # Hearth Roadmap
 
-**v1.2.0 is the current release.** Agents stop relearning the project every
+**v1.2.1 is the current release.** Agents stop relearning the project every
 session: the engine keeps an always-current state digest (`.hearth/digest.md`)
 plus durable cross-session memory (`hearth remember`/`recall`), `screenshot` is
 read-only so an agent can always see its own work, and rendering is

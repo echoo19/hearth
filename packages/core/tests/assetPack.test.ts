@@ -569,26 +569,29 @@ describe("inspectAssetPack", () => {
     expect(report.files).toContainEqual({ path: "tiles.png", kind: "image" });
   });
 
-  it("keeps literal POSIX backslashes opaque when checking symlink containment", async () => {
-    const temp = await mkdtemp(path.join(tmpdir(), "hearth-pack-slash-"));
-    const pack = path.join(temp, "pack\\literal");
-    const outside = path.join(temp, "outside.png");
-    try {
-      await writeFile(outside, pngHeader(16, 16));
-      await new NodeFileSystem().mkdir(pack);
-      await symlink(outside, path.join(pack, "escape.png"));
+  it.skipIf(process.platform === "win32")(
+    "keeps literal POSIX backslashes opaque when checking symlink containment",
+    async () => {
+      const temp = await mkdtemp(path.join(tmpdir(), "hearth-pack-slash-"));
+      const pack = path.join(temp, "pack\\literal");
+      const outside = path.join(temp, "outside.png");
+      try {
+        await writeFile(outside, pngHeader(16, 16));
+        await new NodeFileSystem().mkdir(pack);
+        await symlink(outside, path.join(pack, "escape.png"));
 
-      const report = await inspectAssetPack(new NodeFileSystem(), {
-        path: pack,
-        license: "CC0-1.0",
-      });
+        const report = await inspectAssetPack(new NodeFileSystem(), {
+          path: pack,
+          license: "CC0-1.0",
+        });
 
-      expect(report.root).toMatch(/pack\\literal$/);
-      expect(report.files).toEqual([]);
-    } finally {
-      await rm(temp, { recursive: true, force: true });
-    }
-  });
+        expect(report.root).toMatch(/pack\\literal$/);
+        expect(report.files).toEqual([]);
+      } finally {
+        await rm(temp, { recursive: true, force: true });
+      }
+    },
+  );
 
   it("marks unreadable image files partial with exact evidence", async () => {
     const { fs, session } = await setup();

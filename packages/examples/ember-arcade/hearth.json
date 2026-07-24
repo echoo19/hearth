@@ -1,6 +1,6 @@
 {
   "formatVersion": 1,
-  "hearthVersion": "1.2.0",
+  "hearthVersion": "1.2.1",
   "id": "prj_zg7y0sn4",
   "name": "Ember Arcade",
   "description": "Run the embers down before they fade. Touch a target to pop it, and flip CRT to see the stack move.",
