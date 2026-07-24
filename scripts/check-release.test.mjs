@@ -320,3 +320,20 @@ test('bundled-tool smoke rejects an MCP server version that differs from the roo
   assert.equal(result.status, 1);
   assert.match(result.stderr, /hearth-mcp\.mjs reported 1\.2\.0; expected 1\.2\.1/);
 });
+
+test('the maintainer runbook pins the two-repository release commands', async () => {
+  const releasing = await readFile(path.join(repoRoot, 'docs/releasing.md'), 'utf8');
+  const contributing = await readFile(path.join(repoRoot, 'CONTRIBUTING.md'), 'utf8');
+
+  for (const command of [
+    'release:sync',
+    'check:release -- --tag',
+    'release:check',
+    'direnv exec . vercel --prod --yes',
+    'release:verify-live',
+  ]) {
+    assert.match(releasing, new RegExp(command.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
+  }
+  assert.match(releasing, /private.*secrets.*public.*CI/is);
+  assert.match(contributing, /\[maintainer release runbook\]\(docs\/releasing\.md\)/);
+});

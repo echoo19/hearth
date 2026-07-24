@@ -89,3 +89,7 @@ preview. Versioning is synchronized across packages, and releases are
 automated: pushing a `v*` tag builds the desktop app for macOS, Windows, and
 Linux, and publishes those alongside the standalone `hearth-cli.mjs` and
 `hearth-mcp.mjs` as release assets.
+
+Maintainers cutting a version should follow the
+[maintainer release runbook](docs/releasing.md), including the separate website
+sync, deployment, and live verification.
