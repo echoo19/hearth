@@ -16,11 +16,14 @@
 import { spawn } from 'node:child_process';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const appRoot = path.join(here, '..');
 const repoRoot = path.join(appRoot, '..', '..');
+const expectedVersion = JSON.parse(
+  readFileSync(path.join(repoRoot, 'package.json'), 'utf8'),
+).version;
 const distDir = process.argv[2] ? path.resolve(process.argv[2]) : path.join(appRoot, 'dist-electron');
 const projectDir = process.argv[3]
   ? path.resolve(process.argv[3])
@@ -50,8 +53,11 @@ const cliOut = await new Promise((resolve) => {
   child.on('close', (code) => resolve({ code, out, err }));
 });
 if (cliOut.code !== 0) fail(`hearth-cli.mjs --version exited ${cliOut.code}: ${cliOut.err || cliOut.out}`);
-if (!/\d+\.\d+\.\d+/.test(cliOut.out)) fail(`hearth-cli.mjs --version printed no version: ${cliOut.out}`);
-console.log(`[smoke-tools] CLI ok: ${cliOut.out.trim()}`);
+const cliVersion = cliOut.out.trim();
+if (cliVersion !== expectedVersion) {
+  fail(`hearth-cli.mjs reported ${cliVersion || 'no version'}; expected ${expectedVersion}`);
+}
+console.log(`[smoke-tools] CLI ok: ${cliVersion}`);
 
 // 2. The MCP bundle must boot and serve tools over stdio.
 const mcpChild = spawn(process.execPath, [mcp, '--project', projectDir, '--mode', 'read-only'], {
@@ -95,16 +101,20 @@ function rpc(method, params) {
 }
 
 try {
-  await rpc('initialize', {
+  const initialized = await rpc('initialize', {
     protocolVersion: '2024-11-05',
     capabilities: {},
     clientInfo: { name: 'smoke-tools', version: '1.0.0' },
   });
+  const mcpVersion = initialized.result?.serverInfo?.version;
+  if (mcpVersion !== expectedVersion) {
+    fail(`hearth-mcp.mjs reported ${mcpVersion || 'no version'}; expected ${expectedVersion}`);
+  }
   mcpChild.stdin.write(JSON.stringify({ jsonrpc: '2.0', method: 'notifications/initialized', params: {} }) + '\n');
   const tools = await rpc('tools/list', {});
   const count = (tools.result?.tools ?? []).length;
   if (count < 1) fail(`hearth-mcp.mjs served no tools`);
-  console.log(`[smoke-tools] MCP ok: ${count} tools`);
+  console.log(`[smoke-tools] MCP ok: ${mcpVersion}, ${count} tools`);
 } catch (e) {
   fail(e.message);
 } finally {

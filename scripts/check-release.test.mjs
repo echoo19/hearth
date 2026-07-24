@@ -239,3 +239,84 @@ test('package scripts expose the focused release checks', async () => {
   assert.equal(pkg.scripts['check:release'], 'node scripts/check-release.mjs');
   assert.equal(pkg.scripts['test:release'], 'node --test scripts/check-release.test.mjs');
 });
+
+test('the repository release surfaces and release-note content are coherent', async () => {
+  assert.deepEqual(await collectReleaseErrors(repoRoot), []);
+  const notes = await readFile(path.join(repoRoot, 'docs/releases/v1.2.1.md'), 'utf8');
+  for (const required of [
+    /asset-pack intelligence/i,
+    /embedded agent terminals/i,
+    /art\/build guidance/i,
+    /signed and notarized/i,
+    /Windows.*not code-signed/is,
+    /hearth-cli\.mjs/,
+    /hearth-mcp\.mjs/,
+    /hearth-player\.js/,
+  ]) {
+    assert.match(notes, required);
+  }
+});
+
+test('CI and tag publication consume the release checker and versioned notes', async () => {
+  const ci = await readFile(path.join(repoRoot, '.github/workflows/ci.yml'), 'utf8');
+  const release = await readFile(path.join(repoRoot, '.github/workflows/release.yml'), 'utf8');
+
+  assert.match(ci, /Check release coherence[\s\S]*npm run check:release/);
+  assert.match(
+    release,
+    /Check release tag and metadata[\s\S]*npm run check:release -- --tag "\$\{GITHUB_REF_NAME\}"/,
+  );
+  assert.match(release, /--notes-file "docs\/releases\/\$\{GITHUB_REF_NAME\}\.md"/);
+  assert.doesNotMatch(release, /\*\*v1\.2 highlights\*\*/);
+});
+
+async function writeFakeTools(root, { cliVersion = '1.2.1', mcpVersion = '1.2.1' } = {}) {
+  const dist = path.join(root, 'dist');
+  await mkdir(dist, { recursive: true });
+  await writeFile(path.join(dist, 'hearth-cli.mjs'), `console.log(${JSON.stringify(cliVersion)});\n`);
+  await writeFile(
+    path.join(dist, 'hearth-mcp.mjs'),
+    `import readline from 'node:readline';
+const lines = readline.createInterface({ input: process.stdin });
+lines.on('line', (line) => {
+  const message = JSON.parse(line);
+  if (!message.id) return;
+  const result = message.method === 'initialize'
+    ? { protocolVersion: '2024-11-05', capabilities: {}, serverInfo: { name: 'fake', version: ${JSON.stringify(mcpVersion)} } }
+    : { tools: [{ name: 'fake' }] };
+  console.log(JSON.stringify({ jsonrpc: '2.0', id: message.id, result }));
+});
+`,
+  );
+  return dist;
+}
+
+test('bundled-tool smoke rejects a CLI version that differs from the root package', async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), 'hearth-smoke-tools-'));
+  temporaryRoots.push(root);
+  const dist = await writeFakeTools(root, { cliVersion: '1.2.0' });
+
+  const result = spawnSync(
+    process.execPath,
+    [path.join(repoRoot, 'apps/editor/scripts/smoke-tools.mjs'), dist, root],
+    { encoding: 'utf8' },
+  );
+
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, /hearth-cli\.mjs reported 1\.2\.0; expected 1\.2\.1/);
+});
+
+test('bundled-tool smoke rejects an MCP server version that differs from the root package', async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), 'hearth-smoke-tools-'));
+  temporaryRoots.push(root);
+  const dist = await writeFakeTools(root, { mcpVersion: '1.2.0' });
+
+  const result = spawnSync(
+    process.execPath,
+    [path.join(repoRoot, 'apps/editor/scripts/smoke-tools.mjs'), dist, root],
+    { encoding: 'utf8' },
+  );
+
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, /hearth-mcp\.mjs reported 1\.2\.0; expected 1\.2\.1/);
+});

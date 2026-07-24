@@ -28,6 +28,9 @@ jobs:
           cache: npm
       - name: Install dependencies
         run: npm ci
+      - name: Check release tag and metadata
+        shell: bash
+        run: npm run check:release -- --tag "${GITHUB_REF_NAME}"
       - name: Build packages
         run: npm run build:packages
       - name: Run tests
@@ -122,20 +125,5 @@ jobs:
           ls -la artifacts/
           gh release create "${GITHUB_REF_NAME}" \
             --title "Hearth ${GITHUB_REF_NAME}" \
-            --notes "Hearth ${GITHUB_REF_NAME} — the agent-native 2D game engine.
-
-          **v1.2 highlights**
-          - Asset-pack intelligence across CLI and MCP: provenance, Tiled metadata, compatibility diagnostics, vision contact sheets, fixed atlas-frame Tilemaps, and stronger validation.
-          - Embedded agent terminals now survive sleep/wake and brief socket loss by detaching, buffering output, and reattaching automatically.
-          - Revised built-in art/build guidance teaches agents to inspect, visually verify, and prove unfamiliar packs before production placement.
-
-          **Desktop app**: download the build for your OS below.
-          macOS builds are Developer-ID signed and notarized. Windows builds are not code-signed yet, so SmartScreen may require \"More info\" → \"Run anyway\" on first launch.
-
-          **Agent tools (no install needed, any Node ≥ 20):**
-          - \`node hearth-cli.mjs --help\` — the full hearth CLI
-          - \`node hearth-mcp.mjs --project <your game> \` — MCP server for Claude Code / any MCP client
-          - \`hearth-player.js\` — the web-export player; keep it next to the CLI (or set HEARTH_TOOLS_DIR) so \`export web\` works
-
-          Docs: https://github.com/${GITHUB_REPOSITORY}#readme" \
+            --notes-file "docs/releases/${GITHUB_REF_NAME}.md" \
             artifacts/*
