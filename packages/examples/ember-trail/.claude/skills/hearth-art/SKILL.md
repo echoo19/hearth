@@ -66,6 +66,45 @@ first, in one line** ("Pull Kenney's platformer pack, CC0?") — then source
 freely within what they approved. **Licensing is not optional** — a
 mis-licensed asset is a shipping blocker, not a detail.
 
+### Mandatory pack intake: source → inspect → vision → contract → proof
+
+Do this before importing any unfamiliar local or online asset pack:
+
+1. **Source and provenance.** For an online pack, use the pack's listing page,
+   get download approval, record the exact source URL, author, and license, and
+   download the complete pack. Preserve unchanged vendor files in the downloaded pack;
+   put crops, conversions, and renamed working copies elsewhere. A missing or
+   unclear license is a hard stop.
+2. **Inspect before import.** Run
+   `hearth inspect asset-pack ./downloads/pack --source-url URL --author NAME --license SPDX --json`
+   or MCP `inspect_asset_pack`. Read every diagnostic, the ordered
+   `reviewImages`, README/license evidence, image dimensions, and TMX/TSX/Tiled
+   metadata before choosing files. A contact sheet is an aid, not a substitute
+   for the source metadata.
+3. **Use authored evidence.** Inspect authored sample or example TMX/Tiled maps
+   and their TSX/Tiled metadata. They show intended layer order, tile
+   adjacency, anchors, terrain rules, and collision semantics. Do not guess
+   adjacency or neighbour rules from loose tiles, filenames, or atlas indices.
+4. **Visual review with vision.** Read the reported `reviewImages` (or generated
+   contact sheet) and compare them with vendor screenshots. Keep **engine facts**
+   separate from **vision**. Mark each placement decision as:
+   **exact** (explicit metadata), **corroborated** (metadata plus visual
+   agreement), **inferred** (visual evidence only), or **unknown**. Never turn
+   inferred/unknown adjacency, anchors, collision, or frame roles into facts.
+   An inferred standalone visual may be tried only in the proving ground.
+5. **Write the art contract.** Record logical grid footprint, sprite rectangle,
+   anchor/feet point, projection, authored layer stack, palette/value range,
+   outline weight, light direction, shadow style, filtering, and pixel density.
+6. **Prove it.** Import only a representative subset and build a visual proving ground:
+   every transition/corner, representative walls and oversized props,
+   actor front/behind checks, and collision. Capture it at gameplay zoom and
+   compare it with the vendor reference before production placement.
+
+`PACK_ISOMETRIC_UNSUPPORTED`, unsupported depth/occlusion, tile flips, object
+layers, offsets, collision, or terrain diagnostics are not invitations to
+flatten the map. Stop, use a supported representation, or ask the human to
+approve a different pack/scope.
+
 ### Where to look (verified July 2026)
 
 | Source | URL | License | Attribution | Notes |
@@ -91,22 +130,26 @@ mis-licensed asset is a shipping blocker, not a detail.
 5. **Record the provenance at import time.** URL + license in `CREDITS.md` for
    every non-CC0 asset (and it's polite for CC0 too).
 
-### The fetch → import → verify loop
+### The fetch → inspect → import → verify loop
 
-Download, **look at the art**, import through the pipeline (never drop files
-into `assets/` by hand), then *look again* with a screenshot before trusting it.
+Download, inspect the whole pack, **look at the art**, import through the
+pipeline (never drop files into `assets/` by hand), then *look again* with a
+screenshot before trusting it.
 
 ```bash
 # 1. Fetch (plain shell — curl/wget; respect the site's terms).
 curl -L -o downloads/kenney-platformer.zip https://kenney.nl/media/pages/assets/.../platformer-pack.zip
 unzip downloads/kenney-platformer.zip -d downloads/kenney-platformer
 
-# 2. READ the images before using them (you can read PNGs). Know what each
+# 2. INSPECT metadata, then READ the reported images before using them.
+hearth inspect asset-pack ./downloads/kenney-platformer \
+  --source-url https://kenney.nl/assets/... --author Kenney --license CC0-1.0 --json
+#    Know what each
 #    tile/frame actually depicts — pick art by appearance, never by filename
 #    or frame index. A lever is a switch, not a spike; spikes are hazards.
 #    Getting this wrong reads as a broken game even when the code is right.
 
-# 3. Import through Hearth (schema-validated; batch import is atomic).
+# 3. Import only after inspection (schema-validated; batch import is atomic).
 hearth import asset ./downloads/kenney-platformer/PNG/Tiles/ --recursive --json   # check data.skipped
 hearth import asset ./downloads/hero.png --name hero --json
 
@@ -127,9 +170,12 @@ transparent-background PNG can hide misalignment until you look.
 
 ## Pixel-art sizing and palette discipline
 
-- **Pick one tile size and hold it.** 16×16 or 32×32 for tiles; keep every
-  sprite on the same grid. Mixing 16px and 24px art reads as amateur. Match your
-  `Tilemap.tileSize` to the source.
+- **Pick one logical cell footprint and hold it.** Match `Tilemap.tileSize` to
+  the authored grid (for example 16×16 or 32×32). The sprite rectangle is a
+  separate fact: a 32px cell may legitimately have a 32×64 wall or tree drawn
+  above it. Keep that art intact and bottom-align its footprint/feet point; do
+  not crop or squash oversized sprites to cell height. Mixing unrelated pixel
+  densities still reads as amateur.
 - **Integer scale only.** Display pixel art at 1×, 2×, 3× — never 1.5×, or it
   smears. Size sprites/build resolution so scaling stays integer. `hearth
   validate` flags every violation as `PIXEL_ART_STRETCHED` — fix them all before
@@ -141,11 +187,12 @@ transparent-background PNG can hide misalignment until you look.
   at its native size. For panels/bars with distinct end-caps use
   `renderMode: 'sliced'` with `slice` insets so the corners stay un-stretched.
   Snap every tile to the grid so neighbours connect with no gaps or overlaps.
-- **Make surfaces connect — never repeat one tile.** A cohesive platform, floor,
+- **Make surfaces connect from evidence — never repeat one tile.** A cohesive platform, floor,
   wall, or structure uses a **connective tileset**: edge, corner, interior, and
-  end-cap tiles chosen by their neighbours. Use a `Tilemap` with a blob47
-  `autotile` rule, or a deliberate left-cap/middle/right-cap (top/mid/bottom)
-  choice. A single tile repeated with autotile OFF, or a row of individual
+  end-cap tiles chosen by their neighbours. Reproduce the pack's authored
+  sample map/layers, use a genuine blob47 rule, or use a deliberate
+  left-cap/middle/right-cap (top/mid/bottom) choice backed by exact evidence.
+  A single tile repeated with autotile OFF, or a row of individual
   one-tile `SpriteRenderer` entities, reads as disconnected mismatched blocks
   each with its own outline — not one object. This is the line between "tiles
   that render" and "a surface that looks real." (Painting and binding the

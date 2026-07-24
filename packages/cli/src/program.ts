@@ -17,11 +17,17 @@ import {
   SOUND_PRESETS,
   PermissionError,
   hasPermission,
+  type AssetPackReport,
   type HearthSession,
 } from '@hearth/core';
 import { NodeFileSystem } from '@hearth/core/node';
 import { listTemplates, getTemplatePath, scaffoldFromTemplate } from '@hearth/templates';
-import { captureScreenshot, captureSequence, MAX_SEQUENCE_FRAMES } from '@hearth/playtest';
+import {
+  attachAssetPackContactSheet,
+  captureScreenshot,
+  captureSequence,
+  MAX_SEQUENCE_FRAMES,
+} from '@hearth/playtest';
 import { zipDirectory, describeSigningCapability } from '@hearth/shipping';
 import { CliError, openSession, resolveProjectRoot, type GlobalOpts } from './context.js';
 import { emit, errorResult, makeResult, logStderr } from './output.js';
@@ -131,6 +137,31 @@ async function runAndEmit(
   let code = emit(result, opts);
   if (code === 0 && options.okIf && !options.okIf(result.data)) code = 1;
   process.exitCode = code;
+}
+
+async function runInspectAssetPackCommand(
+  cmd: Command,
+  packPath: string,
+  opts: {
+    sourceUrl?: string;
+    author?: string;
+    license?: string;
+    contactSheet?: string;
+  },
+): Promise<void> {
+  const globals = globalOpts(cmd);
+  const session = await openSession(globals);
+  const result = await session.execute<AssetPackReport>('inspectAssetPack', {
+    path: packPath,
+    sourceUrl: opts.sourceUrl,
+    author: opts.author,
+    license: opts.license,
+  });
+
+  if (opts.contactSheet)
+    await attachAssetPackContactSheet(result, session.root, opts.contactSheet);
+
+  process.exitCode = emit(result, globals);
 }
 
 /**
@@ -337,6 +368,23 @@ export function buildProgram(): Command {
   ).action(async (opts, cmd) => {
     await guarded(cmd, 'inspectAssets', () => runAndEmit(cmd, 'inspectAssets', { type: opts.type }));
   });
+  addGlobalOptions(
+    inspect
+      .command('asset-pack <path>')
+      .description('inspect a downloaded asset pack before importing or placing it')
+      .option('--source-url <url>')
+      .option('--author <name>')
+      .option('--license <id>')
+      .option('--contact-sheet <path>', 'project-relative PNG review sheet'),
+  ).action(
+    async (
+      packPath: string,
+      opts: { sourceUrl?: string; author?: string; license?: string; contactSheet?: string },
+      cmd,
+    ) => {
+      await guarded(cmd, 'inspectAssetPack', () => runInspectAssetPackCommand(cmd, packPath, opts));
+    },
+  );
   addGlobalOptions(inspect.command('scripts').description('list all script files')).action(async (opts, cmd) => {
     await guarded(cmd, 'inspectScripts', () => runAndEmit(cmd, 'inspectScripts', {}));
   });

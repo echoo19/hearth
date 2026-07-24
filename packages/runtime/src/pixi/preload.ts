@@ -1,9 +1,9 @@
-import type { Asset } from '@hearth/core';
+import type { Asset, TileAsset } from '@hearth/core';
 
 /** The component fields a preload scan reads off each entity. */
 export interface PreloadComponents {
   SpriteRenderer?: { assetId?: string | null };
-  Tilemap?: { tileAssets: Record<string, string | { sheet: string }> };
+  Tilemap?: { tileAssets: Record<string, TileAsset> };
   SpriteAnimator?: { assetId?: string };
 }
 
@@ -48,8 +48,7 @@ export async function collectPreloadAssetIds(deps: PreloadDeps): Promise<Set<str
   for (const components of deps.componentSets) {
     if (components.SpriteRenderer?.assetId) assetIds.add(components.SpriteRenderer.assetId);
     if (components.Tilemap) {
-      // A tile source is a plain asset id (string) or an autotile rule whose
-      // `sheet` is the spritesheet asset id — preload whichever it references.
+      // Object tile sources both reference a spritesheet through `sheet`.
       for (const tile of Object.values(components.Tilemap.tileAssets)) {
         assetIds.add(typeof tile === 'string' ? tile : tile.sheet);
       }

@@ -14,8 +14,14 @@ import {
   generateDigest,
   readMemory,
   joinPath,
+  type AssetPackReport,
 } from '@hearth/core';
-import { captureScreenshot, captureSequence, MAX_SEQUENCE_FRAMES } from '@hearth/playtest';
+import {
+  attachAssetPackContactSheet,
+  captureScreenshot,
+  captureSequence,
+  MAX_SEQUENCE_FRAMES,
+} from '@hearth/playtest';
 import { zipDirectory } from '@hearth/shipping';
 import { TOOL_SPECS } from './tools.js';
 
@@ -67,6 +73,16 @@ export function createHearthMcpServer(session: HearthSession, granted: Permissio
       spec.name,
       { description: spec.description, inputSchema: spec.inputShape },
       async (args) => {
+        if (spec.name === 'inspect_asset_pack') {
+          const { contactSheet, ...rest } = (args ?? {}) as {
+            contactSheet?: string;
+            [key: string]: unknown;
+          };
+          const result = await session.execute<AssetPackReport>(spec.command, rest);
+          if (contactSheet)
+            await attachAssetPackContactSheet(result, session.root, contactSheet);
+          return jsonResult(result, !result.success);
+        }
         // export_web's `zip` flag is an MCP/CLI-level post-step, not part of
         // exportWeb's own paramsSchema — mirrors the CLI's `export web --zip`
         // handling in packages/cli/src/program.ts (zipExportedDir), but via

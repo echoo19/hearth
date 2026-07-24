@@ -1,7 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import type { AutotileRule } from '@hearth/core';
+import { isAutotileRule, isTileFrameSource, type AutotileRule, type TileFrameSource } from '@hearth/core';
 import {
-  isAutotileRule,
   nextAvailableChar,
   setMappingOverride,
   toTileRows,
@@ -10,18 +9,24 @@ import {
 } from '../src/tileAutotileRows';
 
 const RULE: AutotileRule = { sheet: 'ast_sheet', template: 'blob47' };
+const FRAME: TileFrameSource = { sheet: 'ast_sheet', frame: 'floor_7' };
 
-describe('isAutotileRule', () => {
-  it('distinguishes the string arm from the object arm', () => {
+describe('TileAsset guards', () => {
+  it('distinguishes fixed frames from autotile rules', () => {
     expect(isAutotileRule('ast_grass')).toBe(false);
+    expect(isAutotileRule(FRAME)).toBe(false);
     expect(isAutotileRule(RULE)).toBe(true);
+    expect(isTileFrameSource('ast_grass')).toBe(false);
+    expect(isTileFrameSource(FRAME)).toBe(true);
+    expect(isTileFrameSource(RULE)).toBe(false);
   });
 });
 
 describe('toTileRows', () => {
-  it('sorts by char code and keeps mixed sprite/autotile values intact', () => {
-    const map = { W: RULE, G: 'ast_grass' };
+  it('sorts by char code and keeps all source modes intact', () => {
+    const map = { W: RULE, F: FRAME, G: 'ast_grass' };
     expect(toTileRows(map)).toEqual([
+      { char: 'F', value: FRAME },
       { char: 'G', value: 'ast_grass' },
       { char: 'W', value: RULE },
     ]);

@@ -27,6 +27,11 @@ Quick facts:
   `hearth-feel` for polish, `hearth-design` for scope/pacing/completeness. Flat
   placeholder rectangles and static scenes are not "done" — animate, add feel,
   and screenshot to confirm.
+- For an unfamiliar pack, load `hearth-art` before import and
+  `hearth-build` before placement. Run
+  `hearth inspect asset-pack <path> --json` / MCP `inspect_asset_pack`;
+  read its `reviewImages` and diagnostics. Never guess tile adjacency or flatten
+  unsupported isometric/depth metadata.
 - `hearth create sound <name> --preset coin` makes procedural sound effects;
   `hearth export web [--single-file] [--zip]` makes a playable web build (needs build permission).
 - Never delete assets/scenes without being asked.

@@ -45,8 +45,27 @@ hearth fill tiles Arena Ground --rect 2,2,10,6 --char G
 hearth resize tilemap Arena Ground --size 40,20
 ```
 
-Autotiling (blob47: a char's per-cell frame is chosen from its 8 neighbours at
-render time). Paint terrain first, then bind the char to a sliced sheet:
+Choose the source representation from evidence gathered with `hearth-art`:
+
+- **whole asset** — one standalone image repeated on a grid;
+- **fixed frame** — one named slice from a sheet:
+  `{"sheet":"ast_sheet","frame":"floor_7"}`;
+- **animation** — time-varying art on a sprite entity, not a Tilemap cell;
+- **genuine blob47** — a verified 47-shape connective terrain set;
+- **authored layers** — one Hearth entity per authored visual layer, preserving
+  the source map's order rather than flattening floor/walls/overlays;
+- **bottom-aligned oversized sprite** — walls, trees, props, and overhangs whose
+  sprite rectangle is taller/wider than the logical tile footprint.
+
+Set a fixed frame through the normal component property path, for example:
+
+```bash
+hearth set Arena Ground Tilemap.tileAssets.G '{"sheet":"ast_sheet","frame":"floor_7"}'
+```
+
+Autotiling is only for genuine blob47 art: a char's per-cell frame is chosen
+from its eight neighbours at render time. Paint terrain first, then bind the
+char to a verified sliced sheet:
 
 ```bash
 hearth import asset ./art/ground-blob47.png --name ground-sheet --json
@@ -62,15 +81,28 @@ The preview and any export re-render live the moment the rule changes. Full
 **Firm rule — surfaces must connect.** Any multi-tile surface, platform, floor,
 wall, or built structure MUST use a **connective tileset** whose edge, corner,
 interior, and end-cap tiles are chosen by their neighbours — via a `Tilemap`
-with a blob47 `autotile` rule (the default), or a hand-authored neighbour-aware
+with a verified blob47 `autotile` rule, or a hand-authored neighbour-aware
 tile choice (left-cap / middle / right-cap, top / mid / bottom). **Never** build
 a surface from a single tile repeated with autotile OFF, and **never** from a
 row/column of individual `SpriteRenderer` entities each holding one tile — both
 read as disconnected mismatched blocks, each with its own outline, instead of
-one cohesive object. If the source art is not already a blob47 layout, slice it
-and pass `autotile set --mapping` a full 47-shape-key map (every resolved frame
-must exist), or compose a blob47-arranged sheet. This is the difference between
-"tiles that render" and "a surface that looks real."
+one cohesive object. **Never synthesize or compose blob47 from unrelated atlas
+tiles.** If the pack is not a verified complete blob47 set, reproduce its
+authored layers with fixed frames or choose another supported representation.
+Do not guess adjacency from filenames, loose tiles, or frame order.
+
+Hearth Tilemaps are orthogonal square-cell grids. Native isometric projection,
+per-tile flips, Y/depth sorting, and dynamic wall occlusion are unsupported.
+Depth interleaving is unsupported.
+If a pack needs isometric projection or unsupported depth interleaving, reject
+that workflow and stop rather than flattening it into an incoherent orthogonal
+map. A manually positioned sprite mockup is acceptable only when the human
+explicitly approves that reduced scope.
+
+Before production placement, build a proving ground that exercises every
+transition/corner, separate authored layers, oversized wall/prop anchors,
+actor front/behind behavior, and collision; validate and screenshot it at the
+gameplay camera scale.
 
 ## Prefabs
 

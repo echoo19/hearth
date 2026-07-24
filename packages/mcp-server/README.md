@@ -113,6 +113,7 @@ requires no permission (it's purely informational).
 | `inspect_entity` | `inspectEntity` | read-only |
 | `list_components` | `inspectComponents` | read-only |
 | `list_assets` | `inspectAssets` | read-only |
+| `inspect_asset_pack` | `inspectAssetPack` | read-only |
 | `list_scripts` | `inspectScripts` | read-only |
 | `read_script` | `readScript` | read-only |
 | `inspect_api` | `inspectApi` | read-only |

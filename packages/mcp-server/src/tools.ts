@@ -70,6 +70,20 @@ export const TOOL_SPECS: ToolSpec[] = [
     inputShape: {},
   },
   {
+    name: 'inspect_asset_pack',
+    command: 'inspectAssetPack',
+    description:
+      'Inspect a downloaded asset pack before import: provenance hints, images, Tiled metadata, compatibility diagnostics, and ordered visual-review inputs. (requires read-only)',
+    permission: 'read-only',
+    inputShape: {
+      path: z.string().min(1),
+      sourceUrl: z.string().url().optional(),
+      author: z.string().min(1).optional(),
+      license: z.string().min(1).optional(),
+      contactSheet: z.string().optional(),
+    },
+  },
+  {
     name: 'inspect_scene',
     command: 'inspectScene',
     description:

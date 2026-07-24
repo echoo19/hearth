@@ -22,6 +22,7 @@ import * as journalCommands from './journalCommands.js';
 import * as memoryCommands from './memoryCommands.js';
 import * as benchCommands from './benchCommands.js';
 import * as sweepCommands from './sweepCommands.js';
+import * as assetPackCommands from './assetPackCommands.js';
 
 const ALL_DEFINITIONS: CommandDefinition[] = [
   // inspect (read-only)
@@ -36,6 +37,7 @@ const ALL_DEFINITIONS: CommandDefinition[] = [
   inspectCommands.inspectApi,
   inspectCommands.validateProjectCommand,
   inspectCommands.inspectPath,
+  assetPackCommands.inspectAssetPack,
   // scenes
   sceneCommands.createScene,
   sceneCommands.deleteScene,

@@ -1,8 +1,7 @@
 /**
  * Pure row/mapping helpers for the Inspector's Tilemap.tileAssets char-row
- * editor, mode-aware version: a row's value is either a plain asset id
- * (sprite mode) or an autotile rule (autotile mode, the object arm — see
- * @hearth/core's AutotileRuleSchema). Kept separate from Inspector.tsx and
+ * editor. A row's value is a plain asset id, a fixed frame, or an autotile
+ * rule. Kept separate from Inspector.tsx and
  * from ../tileAssetsList.ts (the older sprite-only row helpers, whose
  * `TileAssetRow.assetId: string` shape and existing tests assume every row
  * is a plain asset id — untouched here) so this stays unit-testable without
@@ -18,17 +17,12 @@
  * (not pure), so it stays in Inspector.tsx; this module only supplies the
  * data it needs.
  */
-import type { AutotileRule } from '@hearth/core';
-
-export type TileAsset = string | AutotileRule;
+import type { TileAsset } from '@hearth/core';
+export type { TileAsset } from '@hearth/core';
 
 export interface TileRow {
   char: string;
   value: TileAsset;
-}
-
-export function isAutotileRule(value: TileAsset): value is AutotileRule {
-  return typeof value === 'object' && value !== null;
 }
 
 /** '.' and ' ' always mean an empty cell (see TilemapSchema/paintTiles) — never assignable to a row. */

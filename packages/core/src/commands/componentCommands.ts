@@ -5,6 +5,7 @@ import {
   COMPONENT_SCHEMAS,
   COMPONENT_TYPES,
   createComponent,
+  isAutotileRule,
   isComponentType,
   type ComponentType,
   type ComponentMap,
@@ -220,13 +221,13 @@ function assertWriteResolves(type: ComponentType, pathParts: string[], data: unk
 }
 
 /**
- * Reject a write that would place an autotile RULE (the object arm of the
+ * Reject a write that would place an autotile RULE (the `template` object arm of the
  * `Tilemap.tileAssets` union) via setComponentProperty/setProperties. Those
  * commands do no sheet/frame validation, so a rule written this way could
  * point at a non-existent sheet or missing frames; the dedicated
  * `setTileAutotile` command owns that validation. Plain string tile ids write
- * through untouched — this only fires when the affected char resolves to an
- * object after parsing.
+ * and fixed-frame sources write through untouched — this only fires when the
+ * affected char resolves to a genuine blob47 rule after parsing.
  */
 function assertNotAutotileWrite(type: ComponentType, pathParts: string[], parsedData: unknown): void {
   if (type !== 'Tilemap' || pathParts[0] !== 'tileAssets') return;
@@ -236,7 +237,7 @@ function assertNotAutotileWrite(type: ComponentType, pathParts: string[], parsed
   const chars = pathParts.length === 1 ? Object.keys(record) : [pathParts[1]];
   for (const ch of chars) {
     const val = record[ch];
-    if (val !== null && typeof val === 'object') {
+    if (isAutotileRule(val)) {
       throw new ProjectError(
         `Tilemap.tileAssets["${ch}"] is an autotile rule (object arm). setComponentProperty/setProperties ` +
           'cannot write autotile rules. Use the setTileAutotile command (with clear:true to remove one).',

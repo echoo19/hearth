@@ -7,6 +7,33 @@ human's editor click, an agent's CLI/MCP call, or a script's `ctx` call;
 the differences that do exist (a couple of surfaces error where others
 return `null`) are called out explicitly below.
 
+## Inspect a pack before import
+
+`inspectAssetPack` is the read-only intake step for an unfamiliar downloaded
+pack. It scans the local directory without copying or changing anything:
+
+```bash
+hearth inspect asset-pack ./downloads/dungeon \
+  --source-url https://example.com/dungeon \
+  --author "Example Artist" --license CC0-1.0 --json
+```
+
+MCP exposes the same report as `inspect_asset_pack`. The report inventories
+images and authored TMX/TSX/Tiled JSON metadata, records provenance hints,
+orders `reviewImages` for visual inspection, and emits compatibility
+diagnostics for unsupported orientation, flips, offsets, object/collision
+layers, terrain rules, mixed tile sizes, and oversized art. An optional
+project-relative `--contact-sheet reviews/dungeon.png` (MCP:
+`contactSheet`) renders the review images as one labeled PNG.
+
+Treat metadata and vision as separate evidence. Authored sample maps define
+layer order and adjacency more reliably than loose tile filenames. A
+diagnostic such as `PACK_ISOMETRIC_UNSUPPORTED` means stop or choose another
+representation; it does not mean flatten the map and guess. For online packs,
+the agent remains responsible for download approval, the exact listing URL,
+author/license verification, attribution, and preserving the downloaded
+vendor files unchanged.
+
 ## Import
 
 `importAsset` (CLI: `hearth import asset <path> [--name n] [--type t]`;

@@ -282,19 +282,46 @@ export const AutotileRuleSchema = z
   .strict();
 export type AutotileRule = z.infer<typeof AutotileRuleSchema>;
 
+/** A single named frame from a sliced spritesheet, used unchanged for every matching Tilemap cell. */
+export const TileFrameSourceSchema = z
+  .object({
+    sheet: z.string(),
+    frame: z.string().min(1),
+  })
+  .strict();
+export type TileFrameSource = z.infer<typeof TileFrameSourceSchema>;
+
 /**
- * A Tilemap `tileAssets` value: EITHER a plain asset id (string) OR an autotile
- * rule (object arm). The string arm is unchanged and fully back-compatible.
+ * A Tilemap `tileAssets` value: a plain asset id, one fixed sliced-sheet
+ * frame, or an autotile rule. The string arm is unchanged and fully
+ * back-compatible.
  */
-export const TileAssetSchema = z.union([z.string(), AutotileRuleSchema]);
+export const TileAssetSchema = z.union([z.string(), TileFrameSourceSchema, AutotileRuleSchema]);
 export type TileAsset = z.infer<typeof TileAssetSchema>;
+
+export function isTileFrameSource(value: unknown): value is TileFrameSource {
+  return (
+    typeof value === 'object' &&
+    value !== null &&
+    typeof (value as { sheet?: unknown }).sheet === 'string' &&
+    typeof (value as { frame?: unknown }).frame === 'string'
+  );
+}
+
+export function isAutotileRule(value: unknown): value is AutotileRule {
+  return (
+    typeof value === 'object' &&
+    value !== null &&
+    typeof (value as { sheet?: unknown }).sheet === 'string' &&
+    (value as { template?: unknown }).template === 'blob47'
+  );
+}
 
 export const TilemapSchema = z.object({
   tileSize: z.number().positive().default(32),
   /**
    * Maps single characters used in `grid` rows to a tile source: a plain asset
-   * id, or an autotile rule (see AutotileRuleSchema). '.' and ' ' always mean
-   * empty.
+   * id, one fixed frame, or an autotile rule. '.' and ' ' always mean empty.
    */
   tileAssets: z.record(z.string(), TileAssetSchema).default({}),
   /** Rows of characters, top row first, e.g. ["........", "GGGGGGGG"]. */

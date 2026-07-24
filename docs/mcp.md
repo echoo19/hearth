@@ -1,11 +1,9 @@
 # MCP Guide
 
 Hearth ships `hearth-mcp` (`packages/mcp-server`), a stdio MCP server that
-exposes the engine command layer as 80 typed tools (77 command tools, plus
-`screenshot`, `capture`, and `get_agent_instructions`, none of which wraps a
-core command). The engine's own command registry has 78 commands total. One
-(`setAssetMetadata`) has no CLI or MCP wrapper (a housekeeping verb with no
-editor surface either). The full reference (flags, registration snippets,
+exposes the engine command layer as typed tools plus a few Node-only
+observation helpers. One core housekeeping command (`setAssetMetadata`) has no
+CLI or MCP wrapper. The full reference (flags, registration snippets,
 permission table, complete tool list) lives in
 [`packages/mcp-server/README.md`](../packages/mcp-server/README.md).
 
@@ -27,7 +25,10 @@ Each MCP tool wraps exactly one core command, named in snake_case (`setAssetMeta
 is the one core command with neither a CLI nor an MCP wrapper, see above):
 `get_project_info`,
 `list_scenes`, `inspect_scene`, `inspect_entity`, `list_components`,
-`list_assets`, `list_scripts`, `read_script`, `validate_project`,
+`list_assets`, `inspect_asset_pack` (read-only pack provenance, image and
+Tiled metadata, compatibility diagnostics, and optional visual contact sheet;
+see [assets.md](./assets.md#inspect-a-pack-before-import)), `list_scripts`,
+`read_script`, `validate_project`,
 `create_scene`, `delete_scene`, `duplicate_scene` (fresh entity ids;
 optionally clones playtests targeting the source scene, retargeted to the
 copy, see [cli.md](./cli.md#command-tour)), `rename_scene`,
@@ -105,11 +106,11 @@ for the signing ladder and icon setting), `get_agent_instructions`, … Every re
 JSON envelope in the tool output (with `isError` set on failure), so MCP
 agents and CLI agents read identical structures.
 
-`screenshot` and `capture` are the exceptions: neither wraps a core command
-(both launch headless Chromium, a Node/Playwright-only dependency core can't
-take on). Both are read-only observation — the visual siblings of `inspect`
-and `run_playtest` — so they need only the `read-only` mode, letting an agent
-always see its own work. `screenshot` takes the same options as the CLI's
+`screenshot` and `capture` launch headless Chromium rather than wrapping core
+commands. `inspect_asset_pack` wraps a core command, but its optional
+`contactSheet` post-step also uses that Node/Playwright observation seam. All
+three are read-only observation, so they need only the `read-only` mode,
+letting an agent always see its own work. `screenshot` takes the same options as the CLI's
 `hearth screenshot` (`scene`, `frame`, `seed`, `width`, `height`, `debug`,
 `out`) and returns one PNG's metadata. `capture` renders a deterministic
 frame *sequence* laid out as a contact sheet (`sheet: false` emits one PNG per

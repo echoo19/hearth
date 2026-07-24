@@ -81,6 +81,24 @@ describe('buildTilemapContainer: plain string tiles (unchanged behavior)', () =>
   });
 });
 
+describe('buildTilemapContainer: fixed frame tiles', () => {
+  it('resolves the named frame directly without blob47 neighbor resolution', () => {
+    const deps = makeDeps({ ast_sheet: BASE_TEXTURE });
+    const tm = tilemap({
+      grid: ['GG'],
+      tileAssets: { G: { sheet: 'ast_sheet', frame: 'floor_7' } },
+    });
+    const container = buildTilemapContainer(tm, deps);
+
+    expect(container.children).toHaveLength(2);
+    expect(container.children.every((child) => child instanceof Sprite)).toBe(true);
+    expect(deps.calls).toEqual([
+      { assetId: 'ast_sheet', frame: 'floor_7' },
+      { assetId: 'ast_sheet', frame: 'floor_7' },
+    ]);
+  });
+});
+
 describe('buildTilemapContainer: autotile tiles resolve per neighbor mask', () => {
   // A 3x3 block of 'G' inside a '.' background — gives every position in the
   // block (center / edge / corner) a genuinely different neighbor mask,

@@ -104,8 +104,14 @@ export function injectBootScript(html: string, overrides: BootOverrides): string
 
 type PlaywrightBrowser = { newPage(opts?: unknown): Promise<PlaywrightPage>; close(): Promise<void> };
 type PlaywrightConsoleMessage = { type(): string; text(): string };
+type PlaywrightRoute = {
+  request(): { url(): string };
+  continue(): Promise<unknown>;
+  abort(): Promise<unknown>;
+};
 type PlaywrightPage = {
   goto(url: string): Promise<unknown>;
+  route?(url: string, handler: (route: PlaywrightRoute) => Promise<unknown>): Promise<unknown>;
   waitForFunction(fn: () => unknown): Promise<unknown>;
   evaluate<T>(fn: (arg: T) => unknown, arg?: T): Promise<unknown>;
   locator(selector: string): { screenshot(opts: { path: string }): Promise<unknown> };
@@ -115,7 +121,7 @@ type PlaywrightPage = {
 type Chromium = { launch(opts: Record<string, unknown>): Promise<PlaywrightBrowser> };
 
 /** Try each launch strategy in order; first success wins. */
-async function launchChromium(): Promise<PlaywrightBrowser> {
+export async function launchChromium(): Promise<PlaywrightBrowser> {
   let chromium: Chromium;
   try {
     ({ chromium } = (await import('playwright-core')) as unknown as { chromium: Chromium });

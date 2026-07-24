@@ -145,6 +145,20 @@ export {
   type ImageInfo,
 } from './assets/imageInfo.js';
 export {
+  inspectAssetPack,
+  ASSET_PACK_MAX_FILES,
+  ASSET_PACK_MAX_FILE_BYTES,
+  TILED_GID_FLAGS,
+  type AssetPackStatus,
+  type AssetPackFileKind,
+  type AssetPackDiagnostic,
+  type AssetPackImage,
+  type AssetPackLayer,
+  type AssetPackTileset,
+  type AssetPackMap,
+  type AssetPackReport,
+} from './assets/assetPack.js';
+export {
   getSheetFrames,
   findSheetFrame,
 } from './assets/sheetFrames.js';

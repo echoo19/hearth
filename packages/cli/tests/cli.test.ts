@@ -83,6 +83,63 @@ describe('hearth init', () => {
   });
 });
 
+describe('hearth inspect asset-pack', () => {
+  it('inspects a downloaded pack without mutating the project', async () => {
+    const dir = await fsp.mkdtemp(path.join(tmpRoot, 'pack-inspect-project-'));
+    const pack = await fsp.mkdtemp(path.join(tmpRoot, 'pack-inspect-source-'));
+    expect((await runCli(['init', 'Pack Inspect', '--dir', dir, '--json'], tmpRoot)).code).toBe(0);
+    await fsp.writeFile(
+      path.join(pack, 'tiles.svg'),
+      '<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32"></svg>',
+    );
+
+    const before = await fsp.readFile(path.join(dir, 'hearth.json'), 'utf8');
+    const result = await runCli(
+      ['inspect', 'asset-pack', pack, '--license', 'CC0-1.0', '--json'],
+      dir,
+    );
+    expect(result.code).toBe(0);
+    const envelope = parseJson(result.stdout);
+    expect(envelope.command).toBe('inspectAssetPack');
+    expect(envelope.data.reviewImages).toEqual(['tiles.svg']);
+    expect(envelope.changed).toEqual([]);
+    expect(envelope.files).toEqual([]);
+    expect(await fsp.readFile(path.join(dir, 'hearth.json'), 'utf8')).toBe(before);
+  });
+
+  it('keeps inspection successful when contact-sheet capture fails', async () => {
+    const dir = await fsp.mkdtemp(path.join(tmpRoot, 'pack-sheet-project-'));
+    const pack = await fsp.mkdtemp(path.join(tmpRoot, 'pack-sheet-source-'));
+    expect((await runCli(['init', 'Pack Sheet', '--dir', dir, '--json'], tmpRoot)).code).toBe(0);
+    await fsp.writeFile(
+      path.join(pack, 'tiles.svg'),
+      '<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32"></svg>',
+    );
+
+    const result = await runCli(
+      [
+        'inspect',
+        'asset-pack',
+        pack,
+        '--license',
+        'CC0-1.0',
+        '--contact-sheet',
+        'reviews/pack.jpg',
+        '--json',
+      ],
+      dir,
+    );
+
+    expect(result.code).toBe(0);
+    const envelope = parseJson(result.stdout);
+    expect(envelope.success).toBe(true);
+    expect(envelope.files).toEqual([]);
+    expect(envelope.warnings).toEqual([
+      expect.objectContaining({ code: 'CONTACT_SHEET_FAILED' }),
+    ]);
+  });
+});
+
 describe('hearth init --template', () => {
   it('lists the available templates with --list-templates', async () => {
     const result = await runCli(['init', '--list-templates', '--json'], tmpRoot);

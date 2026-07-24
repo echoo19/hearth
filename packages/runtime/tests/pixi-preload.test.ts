@@ -54,7 +54,15 @@ describe('collectPreloadAssetIds', () => {
   it('includes sprite and tilemap textures referenced by components', async () => {
     const componentSets: PreloadComponents[] = [
       { SpriteRenderer: { assetId: 'ast_hero' } },
-      { Tilemap: { tileAssets: { a: 'ast_tile', b: { sheet: 'ast_terrain' } } } },
+      {
+        Tilemap: {
+          tileAssets: {
+            a: 'ast_tile',
+            b: { sheet: 'ast_terrain', template: 'blob47' },
+            c: { sheet: 'ast_decor', frame: 'flowers' },
+          },
+        },
+      },
     ];
     const ids = await collectPreloadAssetIds({
       componentSets,
@@ -64,6 +72,7 @@ describe('collectPreloadAssetIds', () => {
     expect(ids.has('ast_hero')).toBe(true);
     expect(ids.has('ast_tile')).toBe(true);
     expect(ids.has('ast_terrain')).toBe(true);
+    expect(ids.has('ast_decor')).toBe(true);
   });
 
   it('warns (not throws) when an animation asset fails to read', async () => {

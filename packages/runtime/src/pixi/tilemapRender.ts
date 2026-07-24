@@ -4,9 +4,10 @@
  * ../../tests/tilemapRender.test.ts — PixiSceneView.mount() needs a real
  * browser canvas, same reason font-face loading is split into fonts.ts).
  *
- * A tile char resolves to a texture one of two ways:
+ * A tile char resolves to a texture one of three ways:
  *   - Plain asset id (string arm): the whole preloaded texture, unchanged.
- *   - Autotile rule (object arm): the per-cell frame is picked from the 8
+ *   - Fixed frame: the named sliced-sheet frame, unchanged per cell.
+ *   - Autotile rule: the per-cell frame is picked from the 8
  *     neighbours sharing this cell's char (see @hearth/core's
  *     computeMask/resolveTileFrame — the blob47 resolver), then cropped from
  *     the rule's sheet texture exactly like a sliced SpriteRenderer frame.
@@ -18,10 +19,10 @@
  * function has no hidden state to go stale across calls.
  */
 import { Container, Graphics, Sprite, type Texture } from 'pixi.js';
-import { computeMask, resolveTileFrame, type TilemapComponent } from '@hearth/core';
+import { computeMask, isTileFrameSource, resolveTileFrame, type TilemapComponent } from '@hearth/core';
 
 export interface TilemapRenderDeps {
-  /** Preloaded whole texture for a plain asset id, or an autotile rule's `sheet`. Undefined = not loaded / missing. */
+  /** Preloaded whole texture for a plain asset id or an object source's `sheet`. Undefined = not loaded / missing. */
   getTexture(assetId: string): Texture | undefined;
   /** Crop `base` to `frameName` on `assetId`'s sliced sheet metadata; falls back to `base` (whole image) when the frame isn't found. */
   resolveFrameTexture(assetId: string, frameName: string, base: Texture): Texture;
@@ -42,6 +43,9 @@ export function buildTilemapContainer(tilemap: TilemapComponent, deps: TilemapRe
       let texture: Texture | undefined;
       if (typeof tile === 'string') {
         texture = deps.getTexture(tile);
+      } else if (isTileFrameSource(tile)) {
+        const base = deps.getTexture(tile.sheet);
+        if (base) texture = deps.resolveFrameTexture(tile.sheet, tile.frame, base);
       } else if (tile) {
         const base = deps.getTexture(tile.sheet);
         if (base) {

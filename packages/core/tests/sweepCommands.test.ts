@@ -64,11 +64,11 @@ async function makeSession(
 }
 
 describe('sweep command registry', () => {
-  it('registers sweepScene and bakePlaytest for a total of 78 commands', () => {
+  it('registers sweepScene and bakePlaytest for a total of 79 commands', () => {
     const names = listCommands().map((c) => c.name);
     expect(names).toContain('sweepScene');
     expect(names).toContain('bakePlaytest');
-    expect(names.length).toBe(78);
+    expect(names.length).toBe(79);
   });
 
   it('sweepScene is read-only and non-mutating', () => {

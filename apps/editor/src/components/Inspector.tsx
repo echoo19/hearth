@@ -1,17 +1,25 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { AUTOTILE_SHAPES, BLOB47_TEMPLATE, getSheetFrames, type AutotileRule, type PostEffect } from '@hearth/core';
+import {
+  AUTOTILE_SHAPES,
+  BLOB47_TEMPLATE,
+  getSheetFrames,
+  isAutotileRule,
+  isTileFrameSource,
+  type AutotileRule,
+  type PostEffect,
+  type TileAsset,
+  type TileFrameSource,
+} from '@hearth/core';
 import { useEditor } from '../store';
 import { PostEffectsField } from './PostEffectsField';
 import type { AssetItem, SceneEntity } from '../types';
 import { addPoint, removePoint, setPointAxis, shouldHideField } from '../vec2List';
 import { addString, removeString, setStringAt } from '../stringList';
 import {
-  isAutotileRule,
   nextAvailableChar,
   setMappingOverride,
   toTileRows,
   validateTileChar,
-  type TileAsset,
   type TileRow,
 } from '../tileAutotileRows';
 import { ColorField, ConfirmDialog, Icon, NumberField, TextField, componentIcon, type CommitOutcome } from './ui';
@@ -313,7 +321,7 @@ function AutotileRuleFields({
   );
 }
 
-/** One TileAssetsField row: char input, sprite/autotile mode select, mode-specific controls, and a remove button. */
+/** One TileAssetsField row: char input, source mode, mode-specific controls, and a remove button. */
 function TileRowEditor({
   row,
   rows,
@@ -334,25 +342,31 @@ function TileRowEditor({
   onRemove: () => void;
 }) {
   const autotile = isAutotileRule(row.value);
-  const assetId = autotile ? '' : (row.value as string);
-  const missingAsset = !autotile && assetId !== '' && !imageAssets.some((a) => a.id === assetId);
-  const canUseAutotile = autotile || sheetAssets.length > 0;
+  const frameSource = isTileFrameSource(row.value) ? row.value : null;
+  const fixedFrame = frameSource !== null;
+  const assetId = typeof row.value === 'string' ? row.value : '';
+  const missingAsset = assetId !== '' && !imageAssets.some((a) => a.id === assetId);
+  const canUseSheetMode = autotile || fixedFrame || sheetAssets.length > 0;
+  const frameSheet = frameSource ? sheetAssets.find((asset) => asset.id === frameSource.sheet) : undefined;
+  const frames = frameSheet ? getSheetFrames(frameSheet) : [];
   // Mode-switch memory (L-039): remember the last value each mode held so
   // toggling sprite ↔ autotile and back restores the prior assignment
   // instead of forcing a re-pick. Refs (not state) — they only matter at the
   // moment of the switch, never for rendering.
   const lastSpriteRef = useRef<string>('');
+  const lastFrameRef = useRef<TileFrameSource | null>(null);
   const lastAutotileRef = useRef<AutotileRule | null>(null);
   useEffect(() => {
     if (autotile) lastAutotileRef.current = row.value as AutotileRule;
+    else if (fixedFrame) lastFrameRef.current = row.value as TileFrameSource;
     else if (assetId !== '') lastSpriteRef.current = assetId;
-  }, [autotile, assetId, row.value]);
+  }, [autotile, fixedFrame, assetId, row.value]);
   const modeSelect = (
     <select
       className="select"
       style={{ maxWidth: 96, flex: 'none' }}
-      value={autotile ? 'autotile' : 'sprite'}
-      disabled={!canUseAutotile}
+      value={autotile ? 'autotile' : fixedFrame ? 'frame' : 'sprite'}
+      disabled={!canUseSheetMode}
       onChange={(e) => {
         if (e.target.value === 'autotile') {
           if (sheetAssets.length === 0) return;
@@ -363,6 +377,17 @@ function TileRowEditor({
           } else {
             onWrite({ sheet: sheetAssets[0].id, template: 'blob47' });
           }
+        } else if (e.target.value === 'frame') {
+          if (sheetAssets.length === 0) return;
+          const remembered = lastFrameRef.current;
+          const rememberedSheet = remembered && sheetAssets.find((asset) => asset.id === remembered.sheet);
+          if (rememberedSheet && getSheetFrames(rememberedSheet).some((frame) => frame.name === remembered.frame)) {
+            onWrite(remembered);
+          } else {
+            const sheet = sheetAssets[0];
+            const frame = getSheetFrames(sheet)[0];
+            if (frame) onWrite({ sheet: sheet.id, frame: frame.name });
+          }
         } else {
           // Restore the remembered sprite if the asset still exists.
           const remembered = lastSpriteRef.current;
@@ -371,6 +396,7 @@ function TileRowEditor({
       }}
     >
       <option value="sprite">Sprite</option>
+      <option value="frame">Frame</option>
       <option value="autotile">Autotile</option>
     </select>
   );
@@ -378,19 +404,19 @@ function TileRowEditor({
     <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
       <div className="vec2-list-row">
         <TileCharField value={row.char} rows={rows} index={index} onCommit={onRename} />
-        {canUseAutotile ? (
+        {canUseSheetMode ? (
           modeSelect
         ) : (
           // A disabled <select> is inert to hover/focus in most browsers, so the
           // Tooltip wraps a focusable/hoverable span around it rather than the
           // select itself (same reasoning as Menu.tsx's disabledReason pattern).
-          <Tooltip content="Import a sliced spritesheet to enable autotile">
+          <Tooltip content="Import a sliced spritesheet to enable frame and autotile modes">
             <span tabIndex={0} style={{ display: 'inline-flex' }}>
               {modeSelect}
             </span>
           </Tooltip>
         )}
-        {!autotile && (
+        {!autotile && !fixedFrame && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 2, flex: 1, minWidth: 0 }}>
             <select
               className={`select${missingAsset ? ' invalid' : ''}`}
@@ -413,6 +439,48 @@ function TileRowEditor({
               ))}
             </select>
             {missingAsset && <span className="field-error">Referenced asset was deleted. Pick a replacement.</span>}
+          </div>
+        )}
+        {fixedFrame && frameSource && (
+          <div style={{ display: 'flex', gap: 4, flex: 1, minWidth: 0 }}>
+            <select
+              className="select"
+              value={frameSource.sheet}
+              onChange={(e) => {
+                const sheet = sheetAssets.find((asset) => asset.id === e.target.value);
+                const nextFrame = sheet ? getSheetFrames(sheet)[0] : undefined;
+                if (nextFrame) onWrite({ sheet: e.target.value, frame: nextFrame.name });
+              }}
+            >
+              {!sheetAssets.some((asset) => asset.id === frameSource.sheet) && (
+                <option value={frameSource.sheet} disabled>
+                  (missing sheet)
+                </option>
+              )}
+              {sheetAssets.map((asset) => (
+                <option key={asset.id} value={asset.id}>
+                  {asset.name}
+                </option>
+              ))}
+            </select>
+            <select
+              className="select"
+              value={frames.some((frame) => frame.name === frameSource.frame) ? frameSource.frame : MISSING_ASSET}
+              onChange={(e) => {
+                if (e.target.value !== MISSING_ASSET) onWrite({ ...frameSource, frame: e.target.value });
+              }}
+            >
+              {!frames.some((frame) => frame.name === frameSource.frame) && (
+                <option value={MISSING_ASSET} disabled>
+                  (missing frame)
+                </option>
+              )}
+              {frames.map((frame) => (
+                <option key={frame.name} value={frame.name}>
+                  {frame.name}
+                </option>
+              ))}
+            </select>
           </div>
         )}
         {autotile && (
@@ -453,8 +521,7 @@ function TileRowEditor({
 
 /**
  * Row-per-char editor for Tilemap.tileAssets: each char is either a plain
- * sprite/tile asset (sprite mode) or an autotile rule (autotile mode — the
- * blob47 resolver, see @hearth/core's tilemap/autotile.ts). Replaces
+ * sprite/tile asset, fixed sliced-sheet frame, or blob47 autotile rule. Replaces
  * JsonField's raw JSON textarea (Jake: never raw JSON for these) — row
  * ordering/validation/mapping edits live in ../tileAutotileRows so they stay
  * unit-testable without a DOM, matching Vec2ListField/StringListField.
@@ -493,7 +560,7 @@ function TileAssetsField({
   const sheetAssets = imageAssets.filter((a) => getSheetFrames(a).length > 0);
 
   function writeChar(char: string, next: TileAsset) {
-    if (typeof next === 'string') {
+    if (!isAutotileRule(next)) {
       return exec(
         'setComponentProperty',
         { scene: sceneId, entity: entityId, property: `Tilemap.tileAssets.${char}`, value: next },
@@ -926,7 +993,7 @@ function isStringArray(v: unknown): v is string[] {
   return Array.isArray(v) && v.every((s) => typeof s === 'string');
 }
 
-/** Tilemap.tileAssets shape: values are plain asset ids (sprite mode) or autotile rule objects (the object arm) — never anything else. */
+/** Tilemap.tileAssets shape: plain asset ids, fixed frame sources, or autotile rules. */
 function isTileAssetsRecord(v: unknown): v is Record<string, TileAsset> {
   return (
     typeof v === 'object' &&

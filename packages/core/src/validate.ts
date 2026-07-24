@@ -6,11 +6,25 @@ import { z } from 'zod';
 import luaparse from 'luaparse';
 import { readJson, type ProjectStore } from './project/store.js';
 import { joinPath } from './fs.js';
-import { AnimationDataSchema, PrefabDataSchema, SCRIPTS_DIR, type PrefabData } from './schema/project.js';
+import {
+  AnimationDataSchema,
+  PrefabDataSchema,
+  SCRIPTS_DIR,
+  type Asset,
+  type PrefabData,
+} from './schema/project.js';
 import { findSheetFrame } from './assets/sheetFrames.js';
 import { validatePrefabLocalIds } from './project/prefabData.js';
-import { COMPONENT_SCHEMAS, isComponentType } from './schema/components.js';
+import {
+  COMPONENT_SCHEMAS,
+  isAutotileRule,
+  isComponentType,
+  isTileFrameSource,
+  type TilemapComponent,
+  type TransformComponent,
+} from './schema/components.js';
 import { unwrap } from './schema/paths.js';
+import { resolvedMapping } from './tilemap/autotile.js';
 
 export interface ValidationIssue {
   severity: 'error' | 'warning';
@@ -542,6 +556,101 @@ async function checkUnknownComponentKeys(store: ProjectStore, push: (issue: Vali
   }
 }
 
+function validateTilemapSources(
+  tilemap: TilemapComponent,
+  transform: TransformComponent | undefined,
+  assetsById: Map<string, Asset>,
+  label: string,
+): ValidationIssue[] {
+  const issues: ValidationIssue[] = [];
+
+  for (const key of Object.keys(tilemap.tileAssets)) {
+    if (key.length !== 1) {
+      issues.push({
+        severity: 'error',
+        code: 'TILEMAP_INVALID_CHAR_KEY',
+        message: `${label} uses tileAssets key "${key}", but keys must be exactly one character; replace it with a single character other than "." or space`,
+      });
+    } else if (key === '.' || key === ' ') {
+      issues.push({
+        severity: 'error',
+        code: 'TILEMAP_RESERVED_CHAR_KEY',
+        message: `${label} maps reserved empty character ${JSON.stringify(key)}; remove that tileAssets entry and use a different character`,
+      });
+    }
+  }
+
+  const usedChars = new Set(tilemap.grid.flatMap((row) => row.split('')));
+  for (const char of usedChars) {
+    if (char !== '.' && char !== ' ' && !Object.prototype.hasOwnProperty.call(tilemap.tileAssets, char)) {
+      issues.push({
+        severity: 'error',
+        code: 'TILEMAP_UNMAPPED_CHAR',
+        message: `${label} uses "${char}" in its grid without a tileAssets source; add tileAssets.${char} or replace those cells`,
+      });
+    }
+  }
+
+  for (const [char, source] of Object.entries(tilemap.tileAssets)) {
+    const assetId = typeof source === 'string' ? source : source.sheet;
+    const asset = assetsById.get(assetId);
+    if (!asset) continue; // Compatibility missing-asset issues are emitted by the caller.
+
+    if (asset.type !== 'sprite' && asset.type !== 'tile') {
+      issues.push({
+        severity: 'error',
+        code: 'TILEMAP_SOURCE_NOT_IMAGE',
+        message: `${label} maps "${char}" to "${asset.name}" (${asset.id}), a ${asset.type} asset; choose a sprite or tile asset`,
+        asset: asset.id,
+      });
+      continue;
+    }
+
+    if (isTileFrameSource(source)) {
+      const frame = findSheetFrame(asset, source.frame);
+      if (!frame) {
+        issues.push({
+          severity: 'error',
+          code: 'TILEMAP_FRAME_NOT_FOUND',
+          message: `${label} maps "${char}" to missing frame "${source.frame}" on "${asset.name}"; slice the sheet or choose an existing frame`,
+          asset: asset.id,
+        });
+      } else if (frame.width !== frame.height) {
+        issues.push({
+          severity: 'warning',
+          code: 'TILEMAP_FRAME_NOT_SQUARE',
+          message: `${label} maps "${char}" to ${frame.width}x${frame.height} frame "${source.frame}", which will distort into a square cell; use a square frame or a bottom-aligned SpriteRenderer`,
+          asset: asset.id,
+        });
+      }
+    } else if (isAutotileRule(source)) {
+      const missingFrames = [...new Set(Object.values(resolvedMapping(source)))]
+        .filter((frameName) => !findSheetFrame(asset, frameName));
+      if (missingFrames.length > 0) {
+        issues.push({
+          severity: 'error',
+          code: 'TILEMAP_AUTOTILE_INVALID',
+          message: `${label} autotile "${char}" is missing ${missingFrames.length} effective blob47 frame(s) on "${asset.name}", starting with "${missingFrames[0]}"; slice the sheet and provide every effective blob47 frame`,
+          asset: asset.id,
+        });
+      }
+    }
+  }
+
+  if (
+    transform &&
+    (transform.rotation !== 0 || transform.scale.x !== 1 || transform.scale.y !== 1)
+  ) {
+    issues.push({
+      severity: 'warning',
+      code: 'TILEMAP_TRANSFORM_UNSUPPORTED',
+      message: `${label} is rotated or scaled, but Tilemap rendering, physics, and pathfinding use untransformed orthogonal cells; set Transform.rotation to 0 and Transform.scale to {"x":1,"y":1}`,
+    });
+  }
+
+  return issues;
+}
+
 export async function validateProject(store: ProjectStore): Promise<ValidationReport> {
   const issues: ValidationIssue[] = [];
   const push = (issue: ValidationIssue) => issues.push(issue);
@@ -740,6 +849,14 @@ export async function validateProject(store: ProjectStore): Promise<ValidationRe
         }
       }
       if (c.Tilemap) {
+        for (const issue of validateTilemapSources(
+          c.Tilemap,
+          c.Transform,
+          assetsById,
+          `Prefab "${asset.name}" (${asset.id}) entity "${entity.name}" Tilemap`,
+        )) {
+          push({ ...issue, asset: asset.id });
+        }
         for (const [ch, tile] of Object.entries(c.Tilemap.tileAssets)) {
           const tileAssetId = typeof tile === 'string' ? tile : tile.sheet;
           if (!assetIds.has(tileAssetId)) {
@@ -749,6 +866,8 @@ export async function validateProject(store: ProjectStore): Promise<ValidationRe
               message:
                 typeof tile === 'string'
                   ? `Prefab "${asset.name}" (${asset.id}) entity "${entity.name}" Tilemap maps '${ch}' to unknown asset ${tileAssetId}`
+                  : isTileFrameSource(tile)
+                    ? `Prefab "${asset.name}" (${asset.id}) entity "${entity.name}" Tilemap maps '${ch}' to a frame on unknown spritesheet ${tileAssetId}`
                   : `Prefab "${asset.name}" (${asset.id}) entity "${entity.name}" Tilemap autotiles '${ch}' from unknown spritesheet ${tileAssetId}`,
               asset: asset.id,
             });
@@ -945,10 +1064,17 @@ export async function validateProject(store: ProjectStore): Promise<ValidationRe
         }
       }
       if (c.Tilemap) {
+        for (const issue of validateTilemapSources(
+          c.Tilemap,
+          c.Transform,
+          assetsById,
+          `Tilemap on "${entity.name}"`,
+        )) {
+          push({ ...issue, scene: sceneId, entity: entity.id });
+        }
         for (const [ch, tile] of Object.entries(c.Tilemap.tileAssets)) {
-          // A tile source is either a plain asset id (string) or an autotile
-          // rule (object) whose `sheet` names the spritesheet asset. Either
-          // way the referenced asset must exist.
+          // All source arms ultimately name an asset. Keep this compatibility
+          // diagnostic alongside the more specific coherence checks above.
           const assetRef = typeof tile === 'string' ? tile : tile.sheet;
           if (!assetIds.has(assetRef)) {
             push({
@@ -957,6 +1083,8 @@ export async function validateProject(store: ProjectStore): Promise<ValidationRe
               message:
                 typeof tile === 'string'
                   ? `Tilemap on "${entity.name}" maps '${ch}' to unknown asset ${assetRef}`
+                  : isTileFrameSource(tile)
+                    ? `Tilemap on "${entity.name}" maps '${ch}' to a frame on unknown spritesheet ${assetRef}`
                   : `Tilemap on "${entity.name}" autotiles '${ch}' from unknown spritesheet ${assetRef}`,
               scene: sceneId,
               entity: entity.id,

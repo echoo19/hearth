@@ -25,6 +25,7 @@
   },
   "dependencies": {
     "@johnnymorganz/stylua": "^2.5.2",
+    "@xmldom/xmldom": "^0.8.13",
     "luaparse": "^0.3.1",
     "prettier": "^3.9.5",
     "zod": "^3.24.1"

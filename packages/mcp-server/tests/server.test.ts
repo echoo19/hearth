@@ -59,6 +59,50 @@ describe('hearth-mcp server', () => {
     expect(envelope.data.name).toBe('MCP Test');
   });
 
+  it('inspect_asset_pack works with read-only permission and does not mutate', async () => {
+    ctx = await connectClient(['read-only']);
+    await ctx.fs.mkdir('/packs/demo');
+    await ctx.fs.writeFile(
+      '/packs/demo/tiles.svg',
+      '<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32"></svg>',
+    );
+
+    const result = await ctx.client.callTool({
+      name: 'inspect_asset_pack',
+      arguments: { path: '/packs/demo', license: 'CC0-1.0' },
+    });
+    expect(result.isError).toBeFalsy();
+    const envelope = toolJson(result);
+    expect(envelope.command).toBe('inspectAssetPack');
+    expect(envelope.data.reviewImages).toEqual(['tiles.svg']);
+    expect(envelope.changed).toEqual([]);
+    expect(envelope.files).toEqual([]);
+  });
+
+  it('inspect_asset_pack keeps inspection successful when its contact sheet cannot be captured', async () => {
+    ctx = await connectClient(['read-only']);
+    await ctx.fs.mkdir('/packs/demo');
+    await ctx.fs.writeFile(
+      '/packs/demo/tiles.svg',
+      '<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32"></svg>',
+    );
+
+    const result = await ctx.client.callTool({
+      name: 'inspect_asset_pack',
+      arguments: {
+        path: '/packs/demo',
+        license: 'CC0-1.0',
+        contactSheet: 'reviews/demo.png',
+      },
+    });
+    expect(result.isError).toBeFalsy();
+    const envelope = toolJson(result);
+    expect(envelope.success).toBe(true);
+    expect(envelope.warnings).toEqual([
+      expect.objectContaining({ code: 'CONTACT_SHEET_FAILED' }),
+    ]);
+  });
+
   it('create_entity then inspect_scene shows the new entity', async () => {
     ctx = await connectClient();
     const sceneId = ctx.store.project.initialScene;

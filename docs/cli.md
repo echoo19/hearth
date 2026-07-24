@@ -469,6 +469,18 @@ cells as command errors rather than silently clamping; the error
 `suggestions` field points you at `resize tilemap` first if that's what's
 needed.
 
+Bind a character to one named frame from a sliced sheet with the ordinary
+`set` command:
+
+```bash
+hearth set Arena Ground Tilemap.tileAssets.G \
+  '{"sheet":"ast_sheet","frame":"floor_7"}'
+```
+
+Tilemaps remain unrotated, unscaled orthogonal grids of square cells.
+Non-square or oversized pack art should be a `SpriteRenderer` whose bottom
+edge is aligned to the cell, not a stretched Tilemap frame.
+
 ## Project templates
 
 `hearth init <name> --template <t>` scaffolds a new project from a small,

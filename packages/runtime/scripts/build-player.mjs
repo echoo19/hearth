@@ -75,6 +75,9 @@ await build({
   minify: true,
   sourcemap: false,
   logLevel: 'info',
+  // inspectAssetPack is registered in @hearth/core but is Node-only and never
+  // called by the browser player. Leave its lazy XML parser outside the IIFE.
+  external: ['@xmldom/xmldom'],
   alias: {
     '@hearth/core': path.join(pkgRoot, '../core/src/index.ts'),
   },

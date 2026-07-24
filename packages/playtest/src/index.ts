@@ -1097,6 +1097,16 @@ function round(n: number): number {
 }
 
 export { captureSequence, computeFrames, gridDimensions, MAX_SEQUENCE_FRAMES, type CaptureSequenceOptions, type CaptureSequenceResult } from './capture.js';
+export {
+  assetPackContactSheetGrid,
+  buildAssetPackContactSheetHtml,
+  captureAssetPackContactSheet,
+  attachAssetPackContactSheet,
+  MAX_ASSET_PACK_REVIEW_IMAGES,
+  MAX_ASSET_PACK_REVIEW_FILE_BYTES,
+  type AssetPackContactSheetOptions,
+  type AssetPackReviewImage,
+} from './assetPackContactSheet.js';
 export { benchScene, summarizeBench, percentile, FRAME_BUDGET_60FPS_MS, type BenchOptions, type BenchResult, type BenchSummaryInput } from './bench.js';
 
 // Bot playtesting surface.

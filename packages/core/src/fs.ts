@@ -20,6 +20,8 @@ export interface FsLike {
   mkdir(path: string): Promise<void>;
   readdir(path: string): Promise<string[]>;
   stat(path: string): Promise<{ isDirectory: boolean; size: number; mtimeMs: number }>;
+  /** Canonical path when the host can resolve symlinks. */
+  realpath?(path: string): Promise<string>;
   remove(path: string): Promise<void>;
   copyFile(src: string, dest: string): Promise<void>;
 }
@@ -159,6 +161,10 @@ export class MemoryFileSystem implements FsLike {
     if (value === undefined) throw new Error(`ENOENT: no such file: ${path}`);
     const size = typeof value === 'string' ? value.length : value.byteLength;
     return { isDirectory: false, size, mtimeMs: 0 };
+  }
+
+  async realpath(path: string): Promise<string> {
+    return this.norm(path);
   }
 
   async remove(path: string): Promise<void> {

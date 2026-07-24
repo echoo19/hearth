@@ -311,15 +311,17 @@ edges/corners without hand-placing every variant.
 
 **Per-char mode toggle** (Inspector, `Tilemap.tileAssets` row list; see
 [components.md](./components.md#tilemap)): each char has a **Sprite** /
-**Autotile** mode `<select>`, disabled (with an explanatory tooltip)
-until the project has at least one sliced spritesheet asset to bind to.
-Switching a char to **Autotile** shows a sheet picker (defaulting to the
+**Frame** / **Autotile** mode. Sprite uses a whole image. Frame selects one
+named slice from a sheet and stores `{"sheet":"…","frame":"…"}` without
+neighbour logic. Autotile is disabled (with an explanatory tooltip) until the
+project has at least one sliced spritesheet asset to bind to. Switching a char
+to **Autotile** shows a sheet picker (defaulting to the
 first available sliced sheet), a locked "Blob47 (47-shape)" template
 field (the only template today), and a collapsed **Advanced mapping**
 section listing all 47 shape keys, each with a frame-name `<select>`
 that defaults to the standard template name and can be overridden
 per-shape. Every edit here dispatches its own `setTileAutotile` call (or
-`setComponentProperty` for a plain sprite-mode char) rather than a
+`setComponentProperty` for a plain sprite or fixed-frame char) rather than a
 whole-map commit: the autotile rule shape is rejected by
 `setComponentProperty` entirely, so it always goes through the dedicated
 command.

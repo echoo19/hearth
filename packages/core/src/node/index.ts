@@ -55,6 +55,12 @@ export class NodeFileSystem implements FsLike {
     return { isDirectory: s.isDirectory(), size: s.size, mtimeMs: s.mtimeMs };
   }
 
+  async realpath(path: string): Promise<string> {
+    const canonical = await fsp.realpath(this.resolve(path));
+    // FsLike paths are POSIX-style even when the host is Windows.
+    return nodePath.sep === '\\' ? canonical.replaceAll('\\', '/') : canonical;
+  }
+
   async remove(path: string): Promise<void> {
     await fsp.rm(this.resolve(path), { recursive: true, force: true });
   }

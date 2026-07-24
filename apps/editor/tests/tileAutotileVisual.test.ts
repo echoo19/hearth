@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
-import type { AutotileRule } from '@hearth/core';
-import { isAutotileRule, overlayStrokeCells, resolveTileVisual, type TileAsset } from '../src/tileAutotileVisual';
+import { isAutotileRule, type AutotileRule, type TileAsset } from '@hearth/core';
+import { overlayStrokeCells, resolveTileVisual } from '../src/tileAutotileVisual';
 import type { AssetItem } from '../src/types';
 import type { TileCell } from '../src/tilemapPaint';
 
@@ -37,6 +37,25 @@ describe('resolveTileVisual', () => {
     const map = new Map<string, AssetItem>();
     const visual = resolveTileVisual(['G'], 0, 0, { G: 'ast_grass' }, map);
     expect(visual).toEqual({ assetId: 'ast_grass' });
+  });
+
+  it('resolves a fixed frame to that exact sheet crop regardless of neighbours', () => {
+    const asset = sheetAsset('ast_sheet', [
+      { name: 'floor_7', x: 32, y: 16, w: 16, h: 16 },
+      { name: 'blob_255', x: 0, y: 0, w: 16, h: 16 },
+    ]);
+    const map = new Map([[asset.id, asset]]);
+    const visual = resolveTileVisual(
+      ['GGG', 'GGG', 'GGG'],
+      1,
+      1,
+      { G: { sheet: 'ast_sheet', frame: 'floor_7' } },
+      map,
+    );
+    expect(visual).toEqual({
+      assetId: 'ast_sheet',
+      frame: { name: 'floor_7', x: 32, y: 16, width: 16, height: 16 },
+    });
   });
 
   it('resolves an autotile cell to the sheet + frame rect for its neighbor mask', () => {
@@ -154,10 +173,12 @@ describe('overlayStrokeCells', () => {
 });
 
 describe('TileAsset type sanity (compile-time only, asserted at runtime for coverage)', () => {
-  it('accepts both arms', () => {
+  it('accepts all three arms', () => {
     const a: TileAsset = 'ast_grass';
-    const b: TileAsset = RULE;
+    const b: TileAsset = { sheet: 'ast_sheet', frame: 'floor_7' };
+    const c: TileAsset = RULE;
     expect(typeof a).toBe('string');
     expect(typeof b).toBe('object');
+    expect(typeof c).toBe('object');
   });
 });

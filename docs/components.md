@@ -364,14 +364,23 @@ layer name. A solid Tilemap's generated colliders are always physics
 `layer: "default"`, `collidesWith: ["*"]`; see [Collider](#collider)
 above.)
 
-A `tileAssets` entry is either a plain asset id (a fixed sprite/tile for
-that char) or an **autotile rule** (`{ sheet, template: "blob47",
-mapping? }`) that picks the char's on-screen frame from its 8 neighbours
-at render time instead of drawing the same tile everywhere. Set with
-`setTileAutotile`/`hearth autotile set`, never with
+A `tileAssets` entry is one of:
+
+- a plain asset id (the whole sprite/tile);
+- a fixed sliced-sheet frame (`{ "sheet": "ast_…", "frame": "floor_7" }`);
+- an **autotile rule** (`{ sheet, template: "blob47", mapping? }`) that
+  picks the char's on-screen frame from its 8 neighbours.
+
+Set autotile rules with `setTileAutotile`/`hearth autotile set`, never with
 `setComponentProperty` directly (it rejects the rule shape). See
 [editor.md](./editor.md#autotile) for the frame-naming convention and an
 ASCII diagram of the neighbour bitmask.
+
+Tilemaps are orthogonal grids of square `tileSize` cells. Do not rotate or
+scale a Tilemap entity: rendering, generated collision, painting, and
+pathfinding all use the untransformed grid. A non-square or oversized wall,
+prop, or decoration belongs on a `SpriteRenderer`, positioned so its bottom
+edge aligns with the cell, rather than stretched into a Tilemap cell.
 
 ## Light2D
 

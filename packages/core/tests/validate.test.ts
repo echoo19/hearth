@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { MemoryFileSystem, createProject, HearthSession, readJson } from '@hearth/core';
+import { AUTOTILE_SHAPES, MemoryFileSystem, createProject, HearthSession, readJson } from '@hearth/core';
 import { validateProject, checkScriptRequires } from '../src/validate.js';
 
 async function makeSession() {
@@ -7,6 +7,59 @@ async function makeSession() {
   const { store } = await createProject(fs, '/proj', { name: 'Test Game' });
   const session = HearthSession.fromStore(store, {});
   return { fs, session, store };
+}
+
+async function createImageAsset(
+  session: HearthSession,
+  store: any,
+  name: string,
+  frames: Array<{ name: string; x: number; y: number; width: number; height: number }> = [],
+) {
+  const created = await session.execute<any>('createSpriteAsset', {
+    name,
+    shape: 'rectangle',
+    color: '#ffffff',
+    width: 16,
+    height: 16,
+  });
+  expect(created.success).toBe(true);
+  const asset = store.assets.assets.find((candidate: any) => candidate.id === created.data.asset.id)!;
+  asset.metadata.frames = frames;
+  return asset;
+}
+
+async function createTilemapEntity(
+  session: HearthSession,
+  tilemap: { grid: string[]; tileAssets: Record<string, unknown> },
+  transform: Record<string, unknown> = {},
+) {
+  const created = await session.execute<any>('createEntity', {
+    scene: 'Main',
+    name: 'Tiles',
+    components: {
+      Transform: transform,
+      Tilemap: tilemap,
+    },
+  });
+  expect(created.success).toBe(true);
+  return created.data.entityId as string;
+}
+
+function tilemapIssueCodes(report: Awaited<ReturnType<typeof validateProject>>): string[] {
+  return [...report.errors, ...report.warnings]
+    .map((issue) => issue.code)
+    .filter((code) => code.startsWith('TILEMAP_'));
+}
+
+function expectTilemapIssue(
+  report: Awaited<ReturnType<typeof validateProject>>,
+  severity: 'errors' | 'warnings',
+  code: string,
+  remediation: RegExp,
+) {
+  const issue = report[severity].find((candidate) => candidate.code === code);
+  expect(issue, `${code} must be reported in ${severity}`).toBeDefined();
+  expect(issue!.message).toMatch(remediation);
 }
 
 async function makePrefabAsset(session: HearthSession, store: any) {
@@ -20,6 +73,149 @@ async function makePrefabAsset(session: HearthSession, store: any) {
   expect(created.success).toBe(true);
   return { asset: created.data.asset as { id: string; name: string; path: string }, sceneId, rootId: player.id as string };
 }
+
+describe('Tilemap coherence validation', () => {
+  it('TILEMAP_UNMAPPED_CHAR: a used non-empty grid character has no source', async () => {
+    const { session, store } = await makeSession();
+    await createTilemapEntity(session, { grid: ['G'], tileAssets: {} });
+
+    const report = await validateProject(store);
+
+    expectTilemapIssue(report, 'errors', 'TILEMAP_UNMAPPED_CHAR', /add tileAssets\.G|replace those cells/i);
+  });
+
+  it('TILEMAP_INVALID_CHAR_KEY: a source key must be exactly one character', async () => {
+    const { session, store } = await makeSession();
+    const image = await createImageAsset(session, store, 'floor');
+    await createTilemapEntity(session, { grid: [], tileAssets: { GG: image.id } });
+
+    const report = await validateProject(store);
+
+    expectTilemapIssue(report, 'errors', 'TILEMAP_INVALID_CHAR_KEY', /other than "\." or space/i);
+  });
+
+  it('TILEMAP_RESERVED_CHAR_KEY: dot and space cannot be source keys', async () => {
+    const { session, store } = await makeSession();
+    const image = await createImageAsset(session, store, 'floor');
+    await createTilemapEntity(session, { grid: ['.'], tileAssets: { '.': image.id } });
+
+    const report = await validateProject(store);
+
+    expectTilemapIssue(report, 'errors', 'TILEMAP_RESERVED_CHAR_KEY', /remove.*entry.*different character/i);
+  });
+
+  it('TILEMAP_SOURCE_NOT_IMAGE: a tile source must be a sprite or tile asset', async () => {
+    const { session, store } = await makeSession();
+    const sound = await session.execute<any>('createSound', { name: 'not-a-tile', preset: 'coin' });
+    expect(sound.success).toBe(true);
+    await createTilemapEntity(session, { grid: ['G'], tileAssets: { G: sound.data.asset.id } });
+
+    const report = await validateProject(store);
+
+    expectTilemapIssue(report, 'errors', 'TILEMAP_SOURCE_NOT_IMAGE', /choose a sprite or tile asset/i);
+  });
+
+  it('TILEMAP_FRAME_NOT_FOUND: a fixed frame must exist on its sheet', async () => {
+    const { session, store } = await makeSession();
+    const sheet = await createImageAsset(session, store, 'sheet');
+    await createTilemapEntity(session, {
+      grid: ['G'],
+      tileAssets: { G: { sheet: sheet.id, frame: 'floor_7' } },
+    });
+
+    const report = await validateProject(store);
+
+    expectTilemapIssue(report, 'errors', 'TILEMAP_FRAME_NOT_FOUND', /slice the sheet|choose an existing frame/i);
+  });
+
+  it('TILEMAP_FRAME_NOT_SQUARE: a non-square fixed frame warns about distortion', async () => {
+    const { session, store } = await makeSession();
+    const sheet = await createImageAsset(session, store, 'sheet', [
+      { name: 'wall', x: 0, y: 0, width: 16, height: 32 },
+    ]);
+    await createTilemapEntity(session, {
+      grid: ['W'],
+      tileAssets: { W: { sheet: sheet.id, frame: 'wall' } },
+    });
+
+    const report = await validateProject(store);
+
+    expectTilemapIssue(report, 'warnings', 'TILEMAP_FRAME_NOT_SQUARE', /square frame|bottom-aligned SpriteRenderer/i);
+  });
+
+  it('TILEMAP_AUTOTILE_INVALID: every effective blob47 frame must exist', async () => {
+    const { session, store } = await makeSession();
+    const sheet = await createImageAsset(session, store, 'sheet', [
+      { name: 'blob_0', x: 0, y: 0, width: 16, height: 16 },
+    ]);
+    await createTilemapEntity(session, {
+      grid: ['G'],
+      tileAssets: { G: { sheet: sheet.id, template: 'blob47' } },
+    });
+
+    const report = await validateProject(store);
+
+    expectTilemapIssue(report, 'errors', 'TILEMAP_AUTOTILE_INVALID', /provide every effective blob47 frame/i);
+  });
+
+  it('TILEMAP_TRANSFORM_UNSUPPORTED: rotated or scaled Tilemaps warn', async () => {
+    const { session, store } = await makeSession();
+    await createTilemapEntity(
+      session,
+      { grid: [], tileAssets: {} },
+      { rotation: 30, scale: { x: 2, y: 1 } },
+    );
+
+    const report = await validateProject(store);
+
+    expectTilemapIssue(report, 'warnings', 'TILEMAP_TRANSFORM_UNSUPPORTED', /rotation to 0.*scale to/i);
+  });
+
+  it('accepts mixed plain, fixed-frame, and complete blob47 sources', async () => {
+    const { session, store } = await makeSession();
+    const plain = await createImageAsset(session, store, 'plain');
+    const frames = [
+      { name: 'floor', x: 0, y: 0, width: 16, height: 16 },
+      ...AUTOTILE_SHAPES.map((shape, index) => ({
+        name: `blob_${shape}`,
+        x: index * 16,
+        y: 16,
+        width: 16,
+        height: 16,
+      })),
+    ];
+    const sheet = await createImageAsset(session, store, 'sheet', frames);
+    await createTilemapEntity(session, {
+      grid: ['SFA'],
+      tileAssets: {
+        S: plain.id,
+        F: { sheet: sheet.id, frame: 'floor' },
+        A: { sheet: sheet.id, template: 'blob47' },
+      },
+    });
+
+    const report = await validateProject(store);
+
+    expect(tilemapIssueCodes(report)).toEqual([]);
+  });
+
+  it('applies coherence checks to Tilemaps stored in prefab payloads', async () => {
+    const { session, store, fs } = await makeSession();
+    const { asset } = await makePrefabAsset(session, store);
+    const sheet = await createImageAsset(session, store, 'prefab-sheet');
+    const data: any = await readJson(fs, `/proj/${asset.path}`);
+    data.entities[0].components.Tilemap = {
+      grid: ['GF'],
+      tileAssets: { F: { sheet: sheet.id, frame: 'missing' } },
+    };
+    await fs.writeFile(`/proj/${asset.path}`, JSON.stringify(data));
+
+    const report = await validateProject(store);
+
+    expectTilemapIssue(report, 'errors', 'TILEMAP_UNMAPPED_CHAR', /add tileAssets\.G/i);
+    expectTilemapIssue(report, 'errors', 'TILEMAP_FRAME_NOT_FOUND', /slice the sheet|existing frame/i);
+  });
+});
 
 describe('prefab validation', () => {
   it('clean project with a valid prefab and a live instance has no prefab-related issues', async () => {

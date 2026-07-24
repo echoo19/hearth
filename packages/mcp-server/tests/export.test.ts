@@ -123,10 +123,11 @@ describe('hearth-mcp export_desktop tool', () => {
     // session.execute-backed tools from; exportDesktop brought it from 67 to
     // 68, set_entity_enabled/set_entity_tags (parity closure) brought it
     // to 70, create_music/delete_playtest/bench_scene brought it to 75, and
-    // sweep_scene/bake_playtest brought it to 77 (screenshot, capture, and
+    // sweep_scene/bake_playtest brought it to 77 and inspect_asset_pack to 78
+    // (screenshot, capture, and
     // get_agent_instructions are registered separately, outside TOOL_SPECS,
     // so they're not counted here).
-    expect(TOOL_SPECS.length).toBe(77);
+    expect(TOOL_SPECS.length).toBe(78);
   });
 
   it('mirrors exportDesktop paramsSchema: outDir and platforms', async () => {

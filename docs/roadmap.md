@@ -31,6 +31,18 @@ and a docs completeness pass. Before it, v0.15.0's agent game-craft wave
 (below) sharpened how agents actually make games. What follows is
 the running history.
 
+The current asset-pack intelligence work closes a practical agent-quality
+gap: `inspectAssetPack` / `hearth inspect asset-pack` /
+`inspect_asset_pack` now inventories downloaded packs, provenance hints,
+images, and authored Tiled metadata before import, with explicit diagnostics
+for unsupported isometric orientation, flip, offset, object/collision, and terrain
+features plus an optional labeled visual contact sheet. Tilemaps can select a
+fixed named sheet frame without pretending it is blob47; validation catches
+unmapped chars, invalid sources/frames, and transform/aspect hazards. The
+shipped art/build skills route online and local packs through metadata,
+vision, an art contract, and a proving ground instead of guessing from loose
+tiles; unsupported depth compositions are rejected during that guided workflow.
+
 v0.14.0 ("Tightening", below) added no new engine features — 129 commits that make the
 editor *work properly everywhere*, front-load the workflows, and unify the
 design language, driven by a 16-surface UI audit (100 of 121 findings

@@ -30,9 +30,9 @@ results.
 
 | Package | Role |
 | --- | --- |
-| `packages/core` | Zod schemas for every file format; `ProjectStore` (load/save); the **command registry** (78 operations, including web + desktop export, pathfinding, spritesheet slicing, headless scene benchmarking, bot playtesting (`sweepScene`/`bakePlaytest`), undo/redo/history, the command journal, tilemap editing/autotiling, prefab authoring, animation state machines, procedural music, and the `ctx` API reference); validation; structural diff; permission model; procedural asset generation (SVG sprites/tiles, WAV sounds); AGENTS.md/CLAUDE.md generation; the deterministic grid A\* pathfinding module shared by the runtime and the CLI/MCP; prefab serialization/instantiation, live-link merge/detach (see [Prefabs](#prefabs) below). `exportDesktop` reuses `exportWeb`'s in-memory build assembly and delegates native packaging to a host-supplied `ctx.resources.packageDesktop` resource, so core itself never touches Electron or Node-only packaging APIs. Browser-safe: Node fs access is isolated in `@hearth/core/node`. |
+| `packages/core` | Zod schemas for every file format; `ProjectStore` (load/save); the **command registry** (including read-only asset-pack/Tiled metadata inspection, web + desktop export, pathfinding, spritesheet slicing, headless scene benchmarking, bot playtesting, history/journal, tilemap editing, prefabs, animation state machines, procedural music, and the `ctx` API reference); validation; structural diff; permission model; procedural asset generation; AGENTS.md/CLAUDE.md generation; shared deterministic pathfinding; prefab serialization/instantiation and live-link merge/detach. `exportDesktop` delegates native packaging to a host resource, so core itself never touches Electron or Node-only packaging APIs. Browser-safe: Node fs access is isolated in `@hearth/core/node`. |
 | `packages/runtime` | 2D runtime: scene instantiation, fixed-timestep loop, input actions, box/circle/convex-polygon physics (SAT, with mass/restitution/friction and named collision layers), a synchronous deterministic event bus, screen-space UI with pointer hit-testing, audio (recorded headlessly, Web Audio in the browser), camera, and the script engine: **Lua 5.4 (sandboxed wasmoon VM) by default, JavaScript equally supported, one identical `ctx` API** with scene switching, timers, tweens, seeded RNG, and persistent save data. `SceneRuntime` runs a single scene; `GameSession` wraps it for cross-scene games (`ctx.scenes.load` swaps runtimes while the RNG stream, save storage, frame counter, and logs carry across). The main entry is **headless** (runs in Node for playtests); the PixiJS renderer is the separate `@hearth/runtime/pixi` subpath used by the editor's game preview, and the web-export player bundle is built from the same code. |
-| `packages/playtest` | Headless playtest execution: scripted input + assertions over a `GameSession` (seeded, scene-switch aware), exposed as `RuntimeHooks` injected into core commands (`runPlaytest`, `runScene`). |
+| `packages/playtest` | Headless playtest execution plus Node-only visual observation: scripted input/assertions over a seeded `GameSession`, screenshots/frame contact sheets, and labeled asset-pack review sheets shared by CLI and MCP adapters. |
 | `packages/cli` | `hearth`, the command-line surface. Every subcommand dispatches into the core command system; `--json` emits the raw `CommandResult` envelope for agents. |
 | `packages/mcp-server` | `hearth-mcp`, a stdio MCP server exposing the same commands as typed MCP tools, with permission modes. |
 | `packages/shipping` | `@hearth/shipping`: Node-only native packaging, consumed by the CLI, MCP server, and editor server (never by `@hearth/core` or any browser bundle). Generates a hardened, minimal Electron `main.js` per export (`contextIsolation`, no preload, navigation locked to the loaded file), drives `@electron/packager` per platform (`darwin-arm64`/`darwin-x64`/`win32-x64`/`linux-x64`), converts a project's sprite-asset icon to `.icns`/`.ico` with `png2icons` (falling back to a bundled default), runs the macOS ad-hoc/identity/notarize signing ladder, and zips the result (`<slug>-<platform>.zip`; also the single zip implementation `exportWeb --zip` reuses for `<slug>-web.zip`). |
@@ -75,6 +75,12 @@ returns a uniform envelope:
 CLI subcommands, MCP tools, and editor UI actions are all thin adapters over
 this. Adding a new engine operation = adding one command definition; every
 surface picks it up.
+
+`inspectAssetPack` is a representative read-only command: core scans a local
+pack through `FsLike`, parses image and Tiled metadata, and returns
+compatibility diagnostics without importing anything. The CLI/MCP adapters may
+then ask `@hearth/playtest` to render the report's ordered images as a contact
+sheet; Playwright remains outside browser-safe core.
 
 ## Data flow
 

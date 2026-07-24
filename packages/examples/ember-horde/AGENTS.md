@@ -16,7 +16,8 @@ operations instead of hand-editing JSON.
 > - `hearth-code` (**behavior**): ctx scripting, Lua/JS hooks, modules,
 >   determinism, script iteration.
 > - `hearth-art` (**assets**): importing/slicing/animating, procedural
->   sprites and sounds, CC0 sourcing with licensing, pixel-art discipline.
+>   sprites and sounds, evidence-first pack inspection, CC0 sourcing with
+>   licensing, and pixel-art discipline.
 > - `hearth-feel` (**polish**): juice recipes, game-UX conventions, and the
 >   quality bar to clear before calling a game done.
 > - `hearth-design` (**design**): scoping a game to its session length,
@@ -62,6 +63,12 @@ and memory together.
    initial scene, and input mappings safely). Scripts are **Lua by default**
    (`.js` also supported) and are normal code: edit `scripts/*.lua` /
    `scripts/*.js` freely (or via `hearth create script` / `hearth edit-script`).
+   For an unfamiliar pack, load `hearth-art` before import and
+   `hearth-build` before placement. Run
+   `hearth inspect asset-pack <path> --json` (MCP: `inspect_asset_pack`).
+   Read its metadata, diagnostics, and
+   `reviewImages`; then load `hearth-build` before placement so the pack is
+   represented with supported frames, layers, anchors, and tile rules.
 3. **Snapshot before you change anything:** `hearth snapshot`.
    Then the human can review your work with `hearth diff` (or the editor's
    Diff panel), and `hearth revert --confirm` can undo it.

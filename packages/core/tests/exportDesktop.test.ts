@@ -88,10 +88,10 @@ describe('updateSettings icon round-trip', () => {
 });
 
 describe('registry', () => {
-  it('registers exportDesktop for a total of 78 commands', () => {
+  it('registers exportDesktop for a total of 79 commands', () => {
     const names = listCommands().map((c) => c.name);
     expect(names).toContain('exportDesktop');
-    expect(names.length).toBe(78);
+    expect(names.length).toBe(79);
   });
 });
 
