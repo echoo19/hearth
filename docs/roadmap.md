@@ -494,7 +494,7 @@ dispositioned) and closed by six independent re-audits.
   closing a hole where a hostile webpage could otherwise drive the local
   dev server just by pointing a browser tab at its port (no Origin header
   at all, e.g. from the CLI or MCP server, is still allowed). See
-  [agent-panel.md](./agent-panel.md#the-external-change-model).
+  [agent-panel.md](./agent-panel.md#activity-and-review).
 - **Editor bundle code-split**: the Agent panel's embedded Terminal
   (`@xterm/xterm`) and the spritesheet `SliceDialog` now lazy-load with
   `React.lazy`, alongside the already-lazy Code panel editor — the
@@ -845,7 +845,7 @@ None of these block 1.0; they ride alongside or after it:
   settled.
 - **Custom chat UI over the agent** — only when it can be built
   API-key-only (Claude Agent SDK) or subscription terms allow a wrapped
-  UI; see [agent-panel.md](./agent-panel.md#why-a-terminal-not-a-custom-chat-ui).
+  UI; see [agent-panel.md](./agent-panel.md).
   The embedded terminal is the answer for now.
 - **Custom shader assets (user GLSL)** — the curated `postEffects` set
   covers the common cases; user-authored shaders need a sandboxing and

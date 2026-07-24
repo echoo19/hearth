@@ -330,7 +330,7 @@ is hard-capped at 64 frames — raise `--step` to widen the range. The result's
 per-frame ms (`avgMs`/`medianMs`/`p95Ms`/`maxMs`/`totalMs`) so you can check a
 scene holds 60fps (16.67ms/frame) before shipping. `--budget-ms` adds a
 `withinBudget` verdict (median ≤ budget). Scene defaults to the initial scene.
-See [performance.md](./performance.md#benchmarking-from-the-cli-mcp).
+See [performance.md](./performance.md#benchmarking-from-the-climcp).
 
 **Sweep** (read-only, headless): `sweep [scene] [--policies <csv>]
 [--seeds n] [--seed-start n] [--max-frames n] [--avatar ref] [--target

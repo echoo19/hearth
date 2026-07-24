@@ -1,13 +1,13 @@
 # Connect Claude Code
 
 Claude Code works directly from Hearth's embedded project terminal. Opening a
-project wires up the MCP server for you; this page covers launching the CLI and
-adjusting or reproducing that setup by hand. Either way, what Claude Code gets
-is the whole engine as typed, permission-checked commands, plus the per-project
-skill that teaches it *how* to use them well. Hearth never runs a model or holds
-an API key; you're running your own `claude` CLI against your own subscription.
-See [agent-panel.md](./agent-panel.md#why-a-terminal-not-a-custom-chat-ui) for
-why that distinction matters.
+project gives it a normal shell at the project root, puts the `hearth` CLI on
+PATH, and provides the project's instructions and skills. MCP registration is
+optional and manual; use the CLI immediately, or follow the setup below when
+you want Hearth's commands exposed as MCP tools. Hearth never runs a model or
+holds an API key; you're running your own `claude` CLI against your own
+subscription. See [agent-panel.md](./agent-panel.md) for the terminal,
+Activity, Checkpoint, Review, and Restore workflow.
 
 ## From the Agent panel
 
@@ -16,15 +16,9 @@ shell starts at the project root, `hearth` is already on PATH, and Claude Code
 owns its normal login and update flow. Hearth does not detect or install it.
 New projects already contain Claude instructions and project-local skills.
 
-Opening a project also writes a project-scoped `.mcp.json` pointing at Hearth's
-MCP server (mode `safe-edit,code-edit,asset-edit` — scenes, scripts, and assets,
-but not build/export). So the first time you run `claude`, it finds the server
-and asks you to approve it — one prompt, then Hearth's tools are loaded. That
-`.mcp.json` holds machine-absolute paths, so it's gitignored and refreshed on
-every open (a project copied to another machine just gets a fresh one). Edit its
-`--mode` and your choice is preserved across reopens. Full terminal, Activity,
-Checkpoint, Review, and Restore behavior is in
-[agent-panel.md](./agent-panel.md).
+Opening a project does not create an MCP configuration or change Claude Code's
+settings. The shell and `hearth` CLI are ready without MCP. If you prefer MCP
+tool calls, register the server explicitly using the manual path below.
 
 ## The manual path (any terminal)
 

@@ -206,7 +206,7 @@ records read-only-but-meaningful runs (`runPlaytest`, `validateProject`)
 and failed commands, and it is never rewound by `undo`/`redo`. It's the
 data source for `hearth log` / `listJournal` / the MCP `list_journal` tool,
 and for the editor's Agent panel activity timeline and external-change
-detection (see [agent-panel.md](./agent-panel.md#the-external-change-model)).
+detection (see [agent-panel.md](./agent-panel.md#activity-and-review)).
 
 One JSON object per line, oldest first:
 

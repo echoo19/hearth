@@ -53,7 +53,7 @@ each maps onto the input system.
 `assertCameraEffect`, `assertPostEffect`, `assertFocus`, `assertNoErrors`, plus
 the motion asserts `assertPeak`, `assertRange`, and `assertSettledBy` that
 measure *feel* — jump height, dash distance, settle time — from recorded
-motion. See the [CLI guide](./cli.md#testing--review) for the full parameter
+motion. See the [CLI guide](./cli.md#command-tour) for the full parameter
 list and [game-feel.md](./game-feel.md#verifying-feel-in-playtests) for the
 feel asserts in context.
 

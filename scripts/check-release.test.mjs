@@ -152,6 +152,44 @@ test('reports each runtime version constant when it drifts or loses its exact de
   assert.match(errors, /packages\/mcp-server\/src\/server\.ts.*1\.2\.0.*1\.2\.1/);
 });
 
+test('ignores matching constants inside comments and strings before stale declarations', async () => {
+  const root = await makeFixture();
+  await writeFile(
+    path.join(root, 'packages/core/src/schema/project.ts'),
+    [
+      "// export const HEARTH_VERSION = '1.2.1';",
+      "export const HEARTH_VERSION = '1.2.0';",
+      '',
+    ].join('\n'),
+  );
+  await writeFile(
+    path.join(root, 'packages/cli/src/program.ts'),
+    [
+      '/*',
+      "const VERSION = '1.2.1';",
+      '*/',
+      "const VERSION = '1.2.0';",
+      '',
+    ].join('\n'),
+  );
+  await writeFile(
+    path.join(root, 'packages/mcp-server/src/server.ts'),
+    [
+      'const example = `',
+      "const SERVER_VERSION = '1.2.1';",
+      '`;',
+      "const SERVER_VERSION = '1.2.0';",
+      '',
+    ].join('\n'),
+  );
+
+  const errors = (await collectReleaseErrors(root)).join('\n');
+
+  assert.match(errors, /packages\/core\/src\/schema\/project\.ts.*1\.2\.0.*1\.2\.1/);
+  assert.match(errors, /packages\/cli\/src\/program\.ts.*1\.2\.0.*1\.2\.1/);
+  assert.match(errors, /packages\/mcp-server\/src\/server\.ts.*1\.2\.0.*1\.2\.1/);
+});
+
 test('reports stale README, CONTRIBUTING, and top-of-roadmap release claims', async () => {
   const root = await makeFixture();
   await writeFile(path.join(root, 'README.md'), 'Current release: v1.2.0.\n');
@@ -325,15 +363,62 @@ test('the maintainer runbook pins the two-repository release commands', async ()
   const releasing = await readFile(path.join(repoRoot, 'docs/releasing.md'), 'utf8');
   const contributing = await readFile(path.join(repoRoot, 'CONTRIBUTING.md'), 'utf8');
 
-  for (const command of [
-    'release:sync',
-    'check:release -- --tag',
-    'release:check',
+  const orderedCommands = [
+    'git -C "$WEBSITE_REPO" worktree add -b "release-$VERSION" "$WEBSITE_WORKTREE" origin/main',
+    'npm run release:sync -- --engine "$ENGINE_ROOT" --version "$VERSION"',
+    'npm run release:check -- --engine "$ENGINE_ROOT" --version "$VERSION"',
+    'git commit -m "Publish Hearth v$VERSION"',
+    'npm run check:release -- --tag "$TAG" --website "$WEBSITE_WORKTREE"',
+    'git tag "$TAG"',
+    'direnv exec . git push origin "$TAG"',
+    'direnv exec . git push origin HEAD:main',
     'direnv exec . vercel --prod --yes',
-    'release:verify-live',
-  ]) {
-    assert.match(releasing, new RegExp(command.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
+    'npm run release:verify-live -- --url https://hearthengine.com',
+  ];
+  let previous = -1;
+  for (const command of orderedCommands) {
+    const index = releasing.indexOf(command);
+    assert.notEqual(index, -1, `missing canonical release step: ${command}`);
+    assert.ok(index > previous, `release step is out of order: ${command}`);
+    previous = index;
   }
   assert.match(releasing, /private.*secrets.*public.*CI/is);
   assert.match(contributing, /\[maintainer release runbook\]\(docs\/releasing\.md\)/);
+});
+
+test('engine docs use live Agent Panel and generated heading anchors', async () => {
+  const docs = Object.fromEntries(
+    await Promise.all(
+      [
+        'cli.md',
+        'mcp.md',
+        'playtesting.md',
+        'project-format.md',
+        'roadmap.md',
+        'connect-claude-code.md',
+      ].map(async (file) => [file, await readFile(path.join(repoRoot, 'docs', file), 'utf8')]),
+    ),
+  );
+
+  assert.doesNotMatch(docs['cli.md'], /#benchmarking-from-the-cli-mcp\b/);
+  assert.match(docs['cli.md'], /#benchmarking-from-the-climcp\b/);
+  assert.doesNotMatch(docs['mcp.md'], /#benchmarking-from-the-cli-mcp\b/);
+  assert.match(docs['mcp.md'], /#benchmarking-from-the-climcp\b/);
+  assert.doesNotMatch(docs['playtesting.md'], /#testing--review\b/);
+  assert.match(docs['playtesting.md'], /#command-tour\b/);
+
+  for (const file of ['project-format.md', 'roadmap.md']) {
+    assert.doesNotMatch(docs[file], /agent-panel\.md#the-external-change-model\b/);
+    assert.match(docs[file], /agent-panel\.md#activity-and-review\b/);
+  }
+  assert.doesNotMatch(docs['roadmap.md'], /agent-panel\.md#why-a-terminal-not-a-custom-chat-ui\b/);
+  assert.match(docs['roadmap.md'], /\]\(\.\/agent-panel\.md\)/);
+
+  const connectIntro = docs['connect-claude-code.md'].split('\n## The manual path')[0];
+  assert.match(connectIntro, /embedded project terminal[\s\S]*shell[\s\S]*`hearth`/i);
+  assert.match(connectIntro, /MCP registration is\s+optional and manual/i);
+  assert.doesNotMatch(connectIntro, /Opening a project.*(?:wires|writes).*MCP/is);
+  assert.doesNotMatch(connectIntro, /\.mcp\.json/);
+  assert.doesNotMatch(connectIntro, /agent-panel\.md#why-a-terminal-not-a-custom-chat-ui\b/);
+  assert.match(connectIntro, /\]\(\.\/agent-panel\.md\)/);
 });

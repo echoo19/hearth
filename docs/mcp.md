@@ -85,7 +85,7 @@ including `assertPeak`/`assertRange`/`assertSettledBy` and a `trace` block to
 measure feel; also takes an optional `seed`), `delete_playtest`,
 `list_playtests`, `run_playtest`,
 `run_scene`, `bench_scene` (headless per-frame timing to check a scene holds
-60fps; see [performance.md](./performance.md#benchmarking-from-the-cli-mcp)),
+60fps; see [performance.md](./performance.md#benchmarking-from-the-climcp)),
 `sweep_scene` (seeded bot policies — mash/wander/seek/idle — play a scene
 headlessly across many seeds and report softlocks, crashes, and unreached
 objectives; token-frugal summary, full per-run detail written to

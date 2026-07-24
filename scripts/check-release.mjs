@@ -55,6 +55,60 @@ function versionMismatch(surface, actual, expected) {
   return `${surface} ${String(actual)}; canonical version ${expected}`;
 }
 
+function advanceLexicalState(line, initialState) {
+  let state = initialState;
+  for (let index = 0; index < line.length; index += 1) {
+    const char = line[index];
+    const next = line[index + 1];
+    if (state === 'block-comment') {
+      if (char === '*' && next === '/') {
+        state = 'code';
+        index += 1;
+      }
+      continue;
+    }
+    if (state !== 'code') {
+      if (char === '\\') {
+        index += 1;
+      } else if (
+        (state === 'single-quote' && char === "'")
+        || (state === 'double-quote' && char === '"')
+        || (state === 'template' && char === '`')
+      ) {
+        state = 'code';
+      }
+      continue;
+    }
+    if (char === '/' && next === '/') return 'code';
+    if (char === '/' && next === '*') {
+      state = 'block-comment';
+      index += 1;
+    } else if (char === "'") {
+      state = 'single-quote';
+    } else if (char === '"') {
+      state = 'double-quote';
+    } else if (char === '`') {
+      state = 'template';
+    }
+  }
+  return state;
+}
+
+function findConstantVersion(source, name) {
+  const declaration = new RegExp(
+    `^\\s*(?:export\\s+)?const\\s+${name}\\s*=\\s*'([^']+)'\\s*;\\s*$`,
+  );
+  let state = 'code';
+  for (const line of source.split(/\r?\n/)) {
+    if (state === 'code') {
+      const match = line.match(declaration);
+      if (match) return match[1];
+    }
+    state = advanceLexicalState(line, state);
+  }
+  return undefined;
+}
+
 export async function runWebsiteCheck(
   websitePath,
   enginePath,
@@ -117,13 +171,11 @@ export async function collectReleaseErrors(repoRoot, options = {}) {
 
   for (const [relative, name] of CONSTANTS) {
     const source = await readFile(path.join(root, relative), 'utf8');
-    const declaration = source.match(
-      new RegExp(`\\b(?:export\\s+)?const\\s+${name}\\s*=\\s*'([^']+)'\\s*;`),
-    );
-    if (!declaration) {
+    const constantVersion = findConstantVersion(source, name);
+    if (!constantVersion) {
       errors.push(`${relative} must declare the exact single-quoted ${name}`);
-    } else if (declaration[1] !== version) {
-      errors.push(versionMismatch(relative, declaration[1], version));
+    } else if (constantVersion !== version) {
+      errors.push(versionMismatch(relative, constantVersion, version));
     }
   }
 
