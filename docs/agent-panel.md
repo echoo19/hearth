@@ -63,8 +63,11 @@ the journal are the recovery tools.
 
 ## MCP setup
 
-The panel intentionally does not rewrite `.mcp.json`, `opencode.json`,
-`~/.codex/config.toml`, or `~/.hermes/config.yaml`. Follow the relevant guide:
+Opening a project writes one entry — `hearth` — into the project's `.mcp.json`,
+so Claude Code discovers the server without a manual `claude mcp add`. Other
+servers in that file are left alone, and nothing else is rewritten: not
+`opencode.json`, `~/.codex/config.toml`, or `~/.hermes/config.yaml`. For those
+agents, and to adjust Hearth's own entry, follow the relevant guide:
 
 - [Claude Code](./connect-claude-code.md)
 - [Codex](./connect-codex.md)

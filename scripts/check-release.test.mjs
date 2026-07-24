@@ -481,6 +481,7 @@ test('engine docs use live Agent Panel and generated heading anchors', async () 
         'project-format.md',
         'roadmap.md',
         'connect-claude-code.md',
+        'agent-panel.md',
       ].map(async (file) => [file, await readFile(path.join(repoRoot, 'docs', file), 'utf8')]),
     ),
   );
@@ -501,9 +502,18 @@ test('engine docs use live Agent Panel and generated heading anchors', async () 
 
   const connectIntro = docs['connect-claude-code.md'].split('\n## The manual path')[0];
   assert.match(connectIntro, /embedded project terminal[\s\S]*shell[\s\S]*`hearth`/i);
-  assert.match(connectIntro, /MCP registration is\s+optional and manual/i);
-  assert.doesNotMatch(connectIntro, /Opening a project.*(?:wires|writes).*MCP/is);
-  assert.doesNotMatch(connectIntro, /\.mcp\.json/);
   assert.doesNotMatch(connectIntro, /agent-panel\.md#why-a-terminal-not-a-custom-chat-ui\b/);
   assert.match(connectIntro, /\]\(\.\/agent-panel\.md\)/);
+
+  // The editor auto-provisions `.mcp.json` on every project open
+  // (apps/editor/server/projectServer.ts -> ensureHearthMcpConfig). Docs that
+  // claim MCP registration is manual are wrong, so pin the live behavior here.
+  assert.match(connectIntro, /Opening a project also writes a project-scoped `\.mcp\.json`/);
+  assert.match(connectIntro, /safe-edit,code-edit,asset-edit/);
+  assert.doesNotMatch(connectIntro, /MCP registration is\s+optional and manual/i);
+  assert.doesNotMatch(
+    docs['agent-panel.md'],
+    /intentionally does not rewrite `\.mcp\.json`/,
+  );
+  assert.match(docs['agent-panel.md'], /writes one entry — `hearth` — into the project's `\.mcp\.json`/);
 });

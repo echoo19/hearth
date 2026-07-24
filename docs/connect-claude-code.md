@@ -2,9 +2,9 @@
 
 Claude Code works directly from Hearth's embedded project terminal. Opening a
 project gives it a normal shell at the project root, puts the `hearth` CLI on
-PATH, and provides the project's instructions and skills. MCP registration is
-optional and manual; use the CLI immediately, or follow the setup below when
-you want Hearth's commands exposed as MCP tools. Hearth never runs a model or
+PATH, provides the project's instructions and skills, and registers Hearth's
+MCP server for that project. This page covers launching the CLI and
+reproducing or adjusting that setup by hand. Hearth never runs a model or
 holds an API key; you're running your own `claude` CLI against your own
 subscription. See [agent-panel.md](./agent-panel.md) for the terminal,
 Activity, Checkpoint, Review, and Restore workflow.
@@ -16,9 +16,15 @@ shell starts at the project root, `hearth` is already on PATH, and Claude Code
 owns its normal login and update flow. Hearth does not detect or install it.
 New projects already contain Claude instructions and project-local skills.
 
-Opening a project does not create an MCP configuration or change Claude Code's
-settings. The shell and `hearth` CLI are ready without MCP. If you prefer MCP
-tool calls, register the server explicitly using the manual path below.
+Opening a project also writes a project-scoped `.mcp.json` pointing at Hearth's
+MCP server (mode `safe-edit,code-edit,asset-edit` — scenes, scripts, and assets,
+but not build/export). The first time you run `claude` it finds that server and
+asks you to approve it; after that one prompt, Hearth's tools are loaded. The
+file holds machine-absolute paths, so it is gitignored and refreshed on every
+open — a project copied to another machine simply gets a fresh one. If you edit
+its `--mode`, your choice is preserved across reopens. Nothing else in Claude
+Code's settings is touched, and the shell plus `hearth` CLI work with or
+without MCP.
 
 ## The manual path (any terminal)
 
