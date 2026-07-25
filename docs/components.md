@@ -634,14 +634,30 @@ Defaults:
     "down": "down",
     "jump": "jump"
   },
+  "axes": { "x": "", "y": "" },
   "enabled": true
 }
 ```
 
-`mode: "topDown"` drives both axes and normalises diagonals, so moving
-diagonally is exactly as fast as moving straight. `mode: "platformer"`
+`mode: "topDown"` drives both axes and clamps the result to one speed, so
+moving diagonally is no faster than moving straight. `mode: "platformer"`
 drives x and leaves y to gravity, apart from the jump impulse and the
 `maxFallSpeed` cap.
+
+### Analog steering
+
+`actions` reads digital inputs: held or not, full speed or nothing. For a
+gamepad stick, name a virtual axis from `inputMappings.axes` instead:
+
+```jsonc
+"axes": { "x": "moveX", "y": "moveY" }
+```
+
+Now a half-pushed stick moves at half speed. You can configure both at once
+and the larger magnitude wins, which lets one entity accept a keyboard and a
+stick without a second controller. An empty name means digital only, which is
+the default. A twin-stick game needs this; a game that only ever reads the
+keyboard can ignore it.
 
 The component **needs a sibling `PhysicsBody`** to write velocity into.
 Without one it does nothing at all, which validation reports as
@@ -660,6 +676,7 @@ Tuning fields, in the units they are named for:
 | `jumpBufferFrames` | Frames before landing where a jump press is remembered and replayed |
 | `maxFallSpeed` | Downward speed cap in px/s (`0` = uncapped); upward motion is never clipped |
 | `airControl` | Fraction of horizontal control kept while airborne, platformer only; `0` keeps air momentum instead of stopping mid-air |
+| `axes` | Virtual axis names for analog steering (see above); empty means digital actions only |
 
 The controller runs **before** each entity's `onUpdate`, so a script can
 overwrite `PhysicsBody.velocity` in the same frame. That ordering is the

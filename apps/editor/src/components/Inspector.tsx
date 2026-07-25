@@ -1080,6 +1080,73 @@ export function ActionMapField({
   );
 }
 
+/**
+ * CharacterController.axes: the two virtual axes read for analog steering.
+ *
+ * Same shape as the action map but picked from `inputMappings.axes`, not from
+ * the digital actions — mixing the two vocabularies is exactly the mistake that
+ * makes a gamepad silently do nothing. Empty means digital only, which is the
+ * default, so this control has to make "unset" a first-class choice rather than
+ * an empty-looking dropdown.
+ */
+export function AxisMapField({
+  value,
+  declared,
+  onCommit,
+}: {
+  value: Record<string, string>;
+  /** Virtual axis names declared by the project (inputMappings.axes keys). */
+  declared: string[];
+  onCommit: (slot: 'x' | 'y', axis: string) => void;
+}) {
+  return (
+    <div className="action-map">
+      {(['x', 'y'] as const).map((slot) => {
+        const current = typeof value[slot] === 'string' ? value[slot] : '';
+        const unknown = current !== '' && !declared.includes(current);
+        return (
+          <div className="editor-row editor-row--nested" key={slot}>
+            <label className="editor-row-label" htmlFor={`cc-axis-${slot}`}>
+              {slot === 'x' ? 'Horizontal' : 'Vertical'}
+            </label>
+            <div className="editor-row-control">
+              <select
+                id={`cc-axis-${slot}`}
+                value={current}
+                onChange={(e) => onCommit(slot, e.target.value)}
+              >
+                <option value="">(digital actions only)</option>
+                {declared.map((name) => (
+                  <option key={name} value={name}>
+                    {name}
+                  </option>
+                ))}
+                {unknown && (
+                  <option value={current} disabled>
+                    {current} (not declared)
+                  </option>
+                )}
+              </select>
+              {unknown && (
+                <span className="field-error">
+                  "{current}" isn't a declared virtual axis, so this direction never moves. Add it
+                  in the Input panel.
+                </span>
+              )}
+              {current === '' && declared.length === 0 && (
+                <span className="field-fallback-note">
+                  This project declares no virtual axes. Add one in the Input panel to steer from a
+                  stick.
+                </span>
+              )}
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 // ---------------------------------------------------------------------------
 // Respawn.point: a nullable Vec2 — the Vec2 control plus a bind/unbind toggle.
 // ---------------------------------------------------------------------------
@@ -1091,11 +1158,12 @@ export function ActionMapField({
  * and a real Vec2 (committed wholesale, since there's nothing to descend into
  * while it's null), and the Vec2 pair only exists while it's set.
  *
- * The precedence note matters more than the control: the runtime resolves a
- * respawn as `respawn.point ?? capturedSpawnPoint` (runtime.ts respawnEntity),
- * and a Checkpoint writes the CAPTURED point, never `Respawn.point`. So a set
- * `point` silently outranks both `useSpawnPosition` and every checkpoint in
- * the level — a trap worth spelling out on the field that causes it.
+ * The precedence note matters more than the control. The runtime resolves a
+ * respawn as `checkpointPoint ?? respawn.point ?? capturedSpawnPoint`
+ * (runtime.ts respawnEntity), so a set `point` outranks `useSpawnPosition` but
+ * a checkpoint reached during play still wins over both. Worth spelling out on
+ * the field, because "my fixed point is being ignored" and "my checkpoints do
+ * nothing" are the two ways this confuses people.
  */
 export function RespawnPointField({
   value,
@@ -1348,6 +1416,10 @@ export function Inspector() {
   // CharacterController.actions' pick list: the actions the project declares
   // (the same map the Input panel edits).
   const declaredActions = useMemo(() => Object.keys(info?.inputActions ?? {}), [info?.inputActions]);
+  const declaredAxes = useMemo(
+    () => Object.keys(info?.inputMappings?.axes ?? {}),
+    [info?.inputMappings?.axes],
+  );
   const componentDocs = useEditor((s) => s.componentDocs);
   const exec = useEditor((s) => s.exec);
   const query = useEditor((s) => s.query);
@@ -1953,6 +2025,21 @@ export function Inspector() {
                         value={value}
                         declared={declaredActions}
                         onCommit={(slot, action) => setProperty(`${property}.${slot}`, action)}
+                      />
+                    );
+                  } else if (
+                    type === 'CharacterController' &&
+                    field === 'axes' &&
+                    isStringRecord(value)
+                  ) {
+                    // Analog steering: the two virtual axes, picked from the
+                    // project's declared axes rather than its digital actions.
+                    control = (
+                      <AxisMapField
+                        key={rowKey}
+                        value={value}
+                        declared={declaredAxes}
+                        onCommit={(slot, axis) => setProperty(`${property}.${slot}`, axis)}
                       />
                     );
                   } else if (

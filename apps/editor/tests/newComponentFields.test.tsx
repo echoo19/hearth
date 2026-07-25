@@ -25,6 +25,7 @@ import {
   RespawnPointField,
   tagTargets,
   targetMatches,
+  AxisMapField,
 } from '../src/components/Inspector';
 
 afterEach(() => cleanup());
@@ -250,5 +251,38 @@ describe('CheckpointTargetField (Checkpoint.target)', () => {
     expect(screen.queryByText(/Nothing in this scene matches/i)).toBeNull();
     expect(screen.queryByText(/has no Respawn component/i)).toBeNull();
     expect(screen.queryByText(/can't overlap itself/i)).toBeNull();
+  });
+});
+
+describe('AxisMapField', () => {
+  it('offers the declared virtual axes and an explicit digital-only choice', () => {
+    const onCommit = vi.fn();
+    render(
+      <AxisMapField value={{ x: 'moveX', y: '' }} declared={['moveX', 'moveY']} onCommit={onCommit} />,
+    );
+    const selects = screen.getAllByRole('combobox');
+    expect(selects).toHaveLength(2);
+    expect((selects[0] as HTMLSelectElement).value).toBe('moveX');
+    // Unset must be a real, selectable choice, not an empty-looking dropdown.
+    expect((selects[1] as HTMLSelectElement).value).toBe('');
+    // One per slot, so both dropdowns can express 'unset'.
+    expect(screen.getAllByText('(digital actions only)')).toHaveLength(2);
+  });
+
+  it('flags an axis that is not declared, since that direction silently never moves', () => {
+    render(<AxisMapField value={{ x: 'stickX', y: '' }} declared={['moveX']} onCommit={vi.fn()} />);
+    expect(screen.getByText(/isn't a declared virtual axis/i)).toBeTruthy();
+  });
+
+  it('explains itself when the project declares no axes at all', () => {
+    render(<AxisMapField value={{ x: '', y: '' }} declared={[]} onCommit={vi.fn()} />);
+    expect(screen.getAllByText(/declares no virtual axes/i).length).toBeGreaterThan(0);
+  });
+
+  it('commits one slot at a time', () => {
+    const onCommit = vi.fn();
+    render(<AxisMapField value={{ x: '', y: '' }} declared={['moveX', 'moveY']} onCommit={onCommit} />);
+    fireEvent.change(screen.getAllByRole('combobox')[1], { target: { value: 'moveY' } });
+    expect(onCommit).toHaveBeenCalledWith('y', 'moveY');
   });
 });
