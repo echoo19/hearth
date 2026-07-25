@@ -141,8 +141,11 @@ export class GameSession {
       store.project.gameState ?? {},
       this.storage,
       (key, value, previous) => {
-        // Fired on the live runtime so scripts can react with ctx.events.on.
+        // Fired on the live runtime so scripts can react with ctx.events.on,
+        // and bound labels refresh now rather than a frame later — see
+        // SceneRuntime.refreshTextBindings.
         this._runtime?.emitEvent('stateChanged', { key, value, previous });
+        this._runtime?.refreshTextBindings();
       },
     );
   }

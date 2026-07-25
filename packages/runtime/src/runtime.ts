@@ -453,8 +453,14 @@ export class SceneRuntime {
     this.musicChannel = options.musicChannel ?? { current: null, seq: 0 };
     // Session-owned when running under a GameSession so declared values survive
     // scene switches; a standalone runtime builds its own from the project.
+    // Either way the change handler emits `stateChanged` and refreshes bound
+    // labels immediately — see refreshTextBindings for why that matters.
     this.gameState =
-      options.gameState ?? new GameStateStore(store.project.gameState ?? {}, this.storage);
+      options.gameState ??
+      new GameStateStore(store.project.gameState ?? {}, this.storage, (key, value, previous) => {
+        this.emitEvent('stateChanged', { key, value, previous });
+        this.refreshTextBindings();
+      });
     this._frame = options.frameOffset ?? 0;
     this._elapsed = this._frame * this.fixedDt;
     this.cameraEffects = new CameraEffectsState({
@@ -925,7 +931,7 @@ export class SceneRuntime {
         const controller = entity.components.CharacterController;
         const body = entity.components.PhysicsBody;
         if (!controller?.enabled || !body) continue;
-        stepCharacter(
+        const result = stepCharacter(
           controller,
           {
             isDown: (action) => this.input.isDown(action),
@@ -936,6 +942,10 @@ export class SceneRuntime {
           this.fixedDt,
           GRAVITY * body.gravityScale,
         );
+        // The controller owns the jump, so it has to say when one happened —
+        // otherwise a game could configure movement but never dress it with a
+        // sound, dust puff, or squash.
+        if (result.jumped) this.emitEvent('jumped', { entity: entity.name });
       }
     }
 
@@ -1111,6 +1121,19 @@ export class SceneRuntime {
       }
     }
     this.emitEvent('respawned', { entity: entity.name });
+  }
+
+  /**
+   * Push declared state into bound labels right now.
+   *
+   * Called on every state change as well as once per frame. The per-frame pass
+   * alone would leave a label one frame stale, so anything reading
+   * `Text.content` straight after a `ctx.state` write — a playtest assertion, a
+   * UI click handler — would see the old value. Hand-written HUD code updated
+   * the label synchronously, and losing that would be a regression.
+   */
+  refreshTextBindings(): void {
+    this.applyTextBindings();
   }
 
   /** Mirror declared game-state values into bound Text components. */

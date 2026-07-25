@@ -66,7 +66,8 @@
           "align": "center",
           "fontFamily": "monospace",
           "layer": 10,
-          "visible": true
+          "visible": true,
+          "binding": null
         }
       }
     },
@@ -106,7 +107,8 @@
           "align": "center",
           "fontFamily": "monospace",
           "layer": 10,
-          "visible": true
+          "visible": true,
+          "binding": null
         }
       }
     },
@@ -166,11 +168,13 @@
           "align": "center",
           "fontFamily": "monospace",
           "layer": 21,
-          "visible": true
+          "visible": true,
+          "binding": null
         },
         "Script": {
           "scriptPath": "scripts/start-button.lua",
-          "params": {}
+          "params": {},
+          "runWhilePaused": false
         }
       }
     },
@@ -210,11 +214,13 @@
           "align": "center",
           "fontFamily": "monospace",
           "layer": 10,
-          "visible": true
+          "visible": true,
+          "binding": null
         },
         "Script": {
           "scriptPath": "scripts/best-label.lua",
-          "params": {}
+          "params": {},
+          "runWhilePaused": false
         }
       }
     }

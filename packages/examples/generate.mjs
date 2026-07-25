@@ -54,6 +54,12 @@ async function generatePlatformer() {
 
   const scene = (await run(session, 'createScene', { name: 'Level 1', withCamera: false })).sceneId;
 
+  // The score is declared game state, not a number parsed back out of the HUD
+  // label. The Score entity's Text binds to it below.
+  await run(session, 'updateSettings', {
+    gameState: { score: { type: 'number', initial: 0, persist: false } },
+  });
+
   // --- assets ---
   const player = (await run(session, 'createSpriteAsset', {
     name: 'player', shape: 'character', color: '#3498db', width: 32, height: 48,
@@ -80,36 +86,20 @@ async function generatePlatformer() {
     name: 'player-controller',
     language: 'js',
     source: `/**
- * Platformer player: left/right movement, jump when grounded, respawn on fall.
- * params: speed (px/s), jumpSpeed (px/s)
+ * Everything specific to THIS player. Movement, jump arc, coyote time and the
+ * respawn point are configured on the CharacterController and Respawn
+ * components, so this script only holds what the engine cannot know: which
+ * sound a jump makes, and that falling past y=900 counts as dying.
  */
 export default {
-  onStart(ctx) {
-    ctx.vars.spawnX = ctx.transform.position.x;
-    ctx.vars.spawnY = ctx.transform.position.y;
-  },
-
-  onUpdate(ctx, dt) {
-    const body = ctx.getComponent('PhysicsBody');
-    const speed = ctx.params.speed ?? 220;
-    let vx = 0;
-    if (ctx.input.isDown('left')) vx -= speed;
-    if (ctx.input.isDown('right')) vx += speed;
-    body.velocity.x = vx;
-
-    if (ctx.input.justPressed('jump') && ctx.isGrounded()) {
-      body.velocity.y = -(ctx.params.jumpSpeed ?? 460);
+  onEvent(ctx, name, data) {
+    if (name === 'jumped' && data.entity === ctx.entity.name) {
       ctx.audio.play('jump-sound', { volume: 0.8 });
     }
+  },
 
-    // Fell off the world: respawn at the starting point.
-    if (ctx.transform.position.y > 900) {
-      ctx.transform.position.x = ctx.vars.spawnX;
-      ctx.transform.position.y = ctx.vars.spawnY;
-      body.velocity.x = 0;
-      body.velocity.y = 0;
-      ctx.log('player respawned');
-    }
+  onUpdate(ctx) {
+    if (ctx.transform.position.y > 900) ctx.respawn(ctx.entity);
   },
 };
 `,
@@ -119,20 +109,15 @@ export default {
     name: 'coin-pickup',
     language: 'js',
     source: `/**
- * Coin: when the player touches it, bump the Score HUD text, play the
- * pickup sound, and disappear.
+ * Coin: when the player touches it, add to the score, play the pickup sound,
+ * and disappear. The score lives in declared game state and the HUD Text is
+ * bound to it, so nothing here has to find or format a label.
  */
 export default {
   onCollision(ctx, other) {
     if (!other.tags.includes('player')) return;
-    const score = ctx.scene.find('Score');
-    if (score) {
-      const text = score.getComponent('Text');
-      const current = parseInt((text.content.match(/\\d+/) || ['0'])[0], 10);
-      text.content = 'Score: ' + (current + 1);
-    }
+    ctx.state.add('score', 1);
     ctx.audio.play('coin-sound');
-    ctx.log('coin collected');
     ctx.destroySelf();
   },
 };
@@ -163,10 +148,8 @@ export default {
 
   onCollision(ctx, other) {
     if (!other.tags.includes('player')) return;
-    other.transform.position.x = 120;
-    other.transform.position.y = 380;
+    ctx.respawn(other);
     ctx.audio.play('hit-sound');
-    ctx.log('player hit by enemy');
   },
 };
 `,
@@ -176,19 +159,18 @@ export default {
     name: 'spike-hazard',
     language: 'js',
     source: `/**
- * Spikes: touching them plays the hit sound and sends the player back to
- * the start. The collider is a convex polygon (a triangle).
+ * Spikes: touching them plays the hit sound and sends the player back to its
+ * respawn point. The collider is a convex polygon (a triangle).
+ *
+ * ctx.respawn reads the point off the player's own Respawn component, so the
+ * spawn coordinates live in exactly one place instead of being copied into
+ * every hazard.
  */
 export default {
   onCollision(ctx, other) {
     if (!other.tags.includes('player')) return;
-    other.transform.position.x = 120;
-    other.transform.position.y = 380;
-    const body = other.getComponent('PhysicsBody');
-    body.velocity.x = 0;
-    body.velocity.y = 0;
+    ctx.respawn(other);
     ctx.audio.play('hit-sound');
-    ctx.log('player hit spikes');
   },
 };
 `,
@@ -198,24 +180,16 @@ export default {
     name: 'restart-button',
     language: 'js',
     source: `/**
- * Restart button (screen-space UI): clicking it resets the score and puts
- * the player back at the start. Requires UIElement.interactive = true.
+ * Restart button (screen-space UI): clicking it resets the score and puts the
+ * player back at its respawn point. Requires UIElement.interactive = true.
  */
 export default {
   onUiEvent(ctx, event) {
     if (event.type !== 'click') return;
     const player = ctx.scene.find('Player');
-    if (player) {
-      player.transform.position.x = 120;
-      player.transform.position.y = 380;
-      const body = player.getComponent('PhysicsBody');
-      body.velocity.x = 0;
-      body.velocity.y = 0;
-    }
-    const score = ctx.scene.find('Score');
-    if (score) score.getComponent('Text').content = 'Score: 0';
+    if (player) ctx.respawn(player);
+    ctx.state.reset('score');
     ctx.audio.play('click-sound');
-    ctx.log('game restarted');
   },
 };
 `,
@@ -278,11 +252,22 @@ export default {
       SpriteRenderer: { assetId: player.id, width: 32, height: 48 },
       Collider: { shape: 'box', width: 28, height: 46 },
       PhysicsBody: { bodyType: 'dynamic' },
+      // Movement and jump feel as data. coyoteFrames and jumpBufferFrames are
+      // the forgiveness a hand-written controller usually never gets around to.
+      CharacterController: {
+        mode: 'platformer',
+        speed: 220,
+        jumpHeight: 108,
+        coyoteFrames: 6,
+        jumpBufferFrames: 4,
+      },
+      // One place holds the spawn point. Hazards call ctx.respawn instead of
+      // each copying the coordinates.
+      Respawn: { useSpawnPosition: true, resetVelocity: true },
     },
   });
   await run(session, 'attachScript', {
     scene, entity: 'Player', script: 'scripts/player-controller.js',
-    params: { speed: 220, jumpSpeed: 460 },
   });
 
   const coins = [
@@ -332,7 +317,14 @@ export default {
     scene, name: 'Score', tags: ['ui'],
     components: {
       UIElement: { anchor: 'top-left', offset: { x: 24, y: 28 } },
-      Text: { content: 'Score: 0', fontSize: 20, color: '#ffffff' },
+      // Bound to declared state, so the engine keeps this label current and no
+      // script writes (or parses) its content.
+      Text: {
+        content: 'Score: 0',
+        fontSize: 20,
+        color: '#ffffff',
+        binding: { key: 'score', format: 'Score: {value}' },
+      },
     },
   });
   await run(session, 'createEntity', {

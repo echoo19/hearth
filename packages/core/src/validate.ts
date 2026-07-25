@@ -1157,6 +1157,100 @@ export async function validateProject(store: ProjectStore): Promise<ValidationRe
           });
         }
       }
+      // A Text bound to a game-state key that nothing declares renders as a
+      // blank label at runtime, because the runtime skips keys it cannot
+      // resolve. That silent blank is the bug this whole binding exists to
+      // remove, so it is an error, not a warning.
+      if (c.Text?.binding) {
+        const key = c.Text.binding.key;
+        if (!Object.prototype.hasOwnProperty.call(project.gameState, key)) {
+          const declared = Object.keys(project.gameState);
+          push({
+            severity: 'error',
+            code: 'TEXT_BINDING_UNKNOWN_STATE',
+            message:
+              `Entity "${entity.name}" Text.binding reads game state "${key}", which is not declared in hearth.json gameState, ` +
+              `so the label will render blank. Declare it with updateSettings ` +
+              `(gameState: {"${key}": {"type": "number", "initial": 0}})` +
+              (declared.length > 0 ? `, or point the binding at a declared key: ${declared.join(', ')}` : ''),
+            scene: sceneId,
+            entity: entity.id,
+          });
+        }
+      }
+      // A CharacterController with no PhysicsBody to write velocity into is
+      // inert: the entity reads input and never moves.
+      if (c.CharacterController && !c.PhysicsBody) {
+        push({
+          severity: 'warning',
+          code: 'CHARACTER_CONTROLLER_WITHOUT_BODY',
+          message:
+            `Entity "${entity.name}" has a CharacterController but no PhysicsBody; the controller writes ` +
+            `PhysicsBody.velocity, so it does nothing at all. Add a PhysicsBody (dynamic for a platformer, ` +
+            `kinematic for top-down movement that ignores gravity)`,
+          scene: sceneId,
+          entity: entity.id,
+        });
+      }
+      if (c.Checkpoint) {
+        // Checkpoints fire off trigger contacts. A solid collider blocks the
+        // player instead of reporting the overlap, and no collider means no
+        // contacts at all — both leave the checkpoint permanently unreached.
+        if (!c.Collider) {
+          push({
+            severity: 'warning',
+            code: 'CHECKPOINT_WITHOUT_TRIGGER',
+            message:
+              `Entity "${entity.name}" has a Checkpoint but no Collider, so nothing can ever overlap it. ` +
+              `Add a Collider with isTrigger=true`,
+            scene: sceneId,
+            entity: entity.id,
+          });
+        } else if (!c.Collider.isTrigger) {
+          push({
+            severity: 'warning',
+            code: 'CHECKPOINT_WITHOUT_TRIGGER',
+            message:
+              `Entity "${entity.name}" has a Checkpoint but its Collider is solid, so it blocks the player ` +
+              `instead of reporting the overlap that moves the respawn point. Set Collider.isTrigger to true`,
+            scene: sceneId,
+            entity: entity.id,
+          });
+        }
+
+        // The target is matched at runtime by tag ("tag:<tag>") or exact name,
+        // and only ever against entities that carry a Respawn component.
+        const target = c.Checkpoint.target;
+        const matches = target.startsWith('tag:')
+          ? scene.entities.filter((e) => e.tags.includes(target.slice(4)))
+          : scene.entities.filter((e) => e.name === target);
+        const describeTarget = target.startsWith('tag:')
+          ? `tag "${target.slice(4)}"`
+          : `entity named "${target}"`;
+        if (matches.length === 0) {
+          push({
+            severity: 'warning',
+            code: 'CHECKPOINT_TARGET_NOT_FOUND',
+            message:
+              `Entity "${entity.name}" Checkpoint targets ${describeTarget}, but nothing in scene "${scene.name}" ` +
+              `matches, so reaching it changes nothing. Point Checkpoint.target at an entity name, or tag the ` +
+              `player and use "tag:<tag>"`,
+            scene: sceneId,
+            entity: entity.id,
+          });
+        } else if (!matches.some((e) => e.components.Respawn)) {
+          push({
+            severity: 'warning',
+            code: 'CHECKPOINT_TARGET_MISSING_RESPAWN',
+            message:
+              `Entity "${entity.name}" Checkpoint targets ${describeTarget}, but no matching entity has a Respawn ` +
+              `component; a checkpoint only moves the respawn point of an entity that has one. Add Respawn to ` +
+              `"${matches[0].name}"`,
+            scene: sceneId,
+            entity: entity.id,
+          });
+        }
+      }
       if (c.LineRenderer && c.LineRenderer.points.length < 2) {
         push({
           severity: 'warning',

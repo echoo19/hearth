@@ -41,6 +41,11 @@ export interface TestProjectOptions {
   extraScenes?: { id: string; name: string; entities: Record<string, unknown>[] }[];
   /** Scene id that runs first (default 'scn_test'). */
   initialScene?: string;
+  /** Declared `gameState` keys on the project file (ctx.state / Text.binding). */
+  gameState?: Record<
+    string,
+    { type: 'number' | 'boolean' | 'string'; initial: number | boolean | string; persist?: boolean }
+  >;
 }
 
 export async function makeStore(
@@ -49,6 +54,14 @@ export async function makeStore(
   const fs = new MemoryFileSystem();
   const { store } = await createProject(fs, '/proj', { name: 'Test', starterScene: false });
   if (opts.actions) store.project.inputMappings.actions = opts.actions;
+  if (opts.gameState) {
+    store.project.gameState = Object.fromEntries(
+      Object.entries(opts.gameState).map(([key, decl]) => [
+        key,
+        { persist: false, ...decl },
+      ]),
+    );
+  }
   store.project.scenes.push({ id: 'scn_test', name: 'Test', path: 'scenes/test.scene.json' });
   store.project.initialScene = 'scn_test';
   const scene = SceneSchema.parse({

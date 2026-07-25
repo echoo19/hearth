@@ -233,7 +233,8 @@
             "maxHp": 100,
             "contactDamage": 8,
             "hitCooldown": 0.4
-          }
+          },
+          "runWhilePaused": false
         }
       }
     },
@@ -322,7 +323,8 @@
           "scriptPath": "scripts/enemy-chase.lua",
           "params": {
             "speed": 90
-          }
+          },
+          "runWhilePaused": false
         }
       },
       "id": "ent_7ax0y7xc",
@@ -420,7 +422,8 @@
           "scriptPath": "scripts/enemy-chase.lua",
           "params": {
             "speed": 90
-          }
+          },
+          "runWhilePaused": false
         }
       },
       "id": "ent_morik0z9",
@@ -478,7 +481,8 @@
             "spawnRadius": 250,
             "centerX": 400,
             "centerY": 304
-          }
+          },
+          "runWhilePaused": false
         }
       }
     },
@@ -518,7 +522,8 @@
           "align": "left",
           "fontFamily": "monospace",
           "layer": 10,
-          "visible": true
+          "visible": true,
+          "binding": null
         }
       }
     },
@@ -558,7 +563,8 @@
           "align": "right",
           "fontFamily": "monospace",
           "layer": 10,
-          "visible": true
+          "visible": true,
+          "binding": null
         }
       }
     },
@@ -598,7 +604,8 @@
           "align": "center",
           "fontFamily": "monospace",
           "layer": 10,
-          "visible": true
+          "visible": true,
+          "binding": null
         }
       }
     },
@@ -638,7 +645,8 @@
           "align": "center",
           "fontFamily": "monospace",
           "layer": 10,
-          "visible": true
+          "visible": true,
+          "binding": null
         }
       }
     },
@@ -682,7 +690,8 @@
           "params": {
             "openX": -105,
             "closedX": -3000
-          }
+          },
+          "runWhilePaused": false
         }
       }
     },
@@ -722,7 +731,8 @@
           "align": "center",
           "fontFamily": "monospace",
           "layer": 31,
-          "visible": true
+          "visible": true,
+          "binding": null
         }
       }
     },
@@ -782,11 +792,13 @@
           "align": "center",
           "fontFamily": "monospace",
           "layer": 31,
-          "visible": true
+          "visible": true,
+          "binding": null
         },
         "Script": {
           "scriptPath": "scripts/resume-button.lua",
-          "params": {}
+          "params": {},
+          "runWhilePaused": false
         }
       }
     },
@@ -826,7 +838,8 @@
           "align": "center",
           "fontFamily": "monospace",
           "layer": 31,
-          "visible": true
+          "visible": true,
+          "binding": null
         }
       }
     },
@@ -868,7 +881,8 @@
         },
         "Script": {
           "scriptPath": "scripts/shake-toggle.lua",
-          "params": {}
+          "params": {},
+          "runWhilePaused": false
         }
       }
     }

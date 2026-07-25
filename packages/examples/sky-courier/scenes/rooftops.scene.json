@@ -499,7 +499,8 @@
           "params": {
             "speed": 170,
             "jumpSpeed": 480
-          }
+          },
+          "runWhilePaused": false
         }
       }
     },
@@ -575,7 +576,8 @@
         },
         "Script": {
           "scriptPath": "scripts/parcel-pickup.lua",
-          "params": {}
+          "params": {},
+          "runWhilePaused": false
         }
       }
     },
@@ -651,7 +653,8 @@
         },
         "Script": {
           "scriptPath": "scripts/parcel-pickup.lua",
-          "params": {}
+          "params": {},
+          "runWhilePaused": false
         }
       }
     },
@@ -727,7 +730,8 @@
         },
         "Script": {
           "scriptPath": "scripts/parcel-pickup.lua",
-          "params": {}
+          "params": {},
+          "runWhilePaused": false
         }
       }
     },
@@ -803,7 +807,8 @@
         },
         "Script": {
           "scriptPath": "scripts/delivery-chute.lua",
-          "params": {}
+          "params": {},
+          "runWhilePaused": false
         }
       }
     },
@@ -843,7 +848,8 @@
           "align": "center",
           "fontFamily": "press-start-2p",
           "layer": 10,
-          "visible": true
+          "visible": true,
+          "binding": null
         }
       }
     },
@@ -883,11 +889,13 @@
           "align": "left",
           "fontFamily": "press-start-2p",
           "layer": 10,
-          "visible": true
+          "visible": true,
+          "binding": null
         },
         "Script": {
           "scriptPath": "scripts/hud.lua",
-          "params": {}
+          "params": {},
+          "runWhilePaused": false
         }
       }
     },

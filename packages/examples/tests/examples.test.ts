@@ -92,7 +92,12 @@ describe('mini-platformer v0.2 showcase (audio + UI)', () => {
     runtime.run(60); // land; ambience autoplay fires
 
     const score = runtime.getEntities().find((e) => e.name === 'Score')!;
-    score.components.Text!.content = 'Score: 3';
+    // Drive the real mechanism: the Score Text is bound to declared game
+    // state, so the engine owns its content. Writing the label directly would
+    // prove nothing now — and a reset back to an unchanged value would be a
+    // no-op that never refreshes it.
+    runtime.gameState.set('score', 3);
+    expect(score.components.Text!.content).toBe('Score: 3');
 
     // Restart is anchored top-right with offset (-80, 32) → screen (720, 32)
     // in the 800×600 buildSettings space.

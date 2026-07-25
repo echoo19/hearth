@@ -1,33 +1,17 @@
 /**
- * Platformer player: left/right movement, jump when grounded, respawn on fall.
- * params: speed (px/s), jumpSpeed (px/s)
+ * Everything specific to THIS player. Movement, jump arc, coyote time and the
+ * respawn point are configured on the CharacterController and Respawn
+ * components, so this script only holds what the engine cannot know: which
+ * sound a jump makes, and that falling past y=900 counts as dying.
  */
 export default {
-  onStart(ctx) {
-    ctx.vars.spawnX = ctx.transform.position.x;
-    ctx.vars.spawnY = ctx.transform.position.y;
-  },
-
-  onUpdate(ctx, dt) {
-    const body = ctx.getComponent("PhysicsBody");
-    const speed = ctx.params.speed ?? 220;
-    let vx = 0;
-    if (ctx.input.isDown("left")) vx -= speed;
-    if (ctx.input.isDown("right")) vx += speed;
-    body.velocity.x = vx;
-
-    if (ctx.input.justPressed("jump") && ctx.isGrounded()) {
-      body.velocity.y = -(ctx.params.jumpSpeed ?? 460);
+  onEvent(ctx, name, data) {
+    if (name === "jumped" && data.entity === ctx.entity.name) {
       ctx.audio.play("jump-sound", { volume: 0.8 });
     }
+  },
 
-    // Fell off the world: respawn at the starting point.
-    if (ctx.transform.position.y > 900) {
-      ctx.transform.position.x = ctx.vars.spawnX;
-      ctx.transform.position.y = ctx.vars.spawnY;
-      body.velocity.x = 0;
-      body.velocity.y = 0;
-      ctx.log("player respawned");
-    }
+  onUpdate(ctx) {
+    if (ctx.transform.position.y > 900) ctx.respawn(ctx.entity);
   },
 };

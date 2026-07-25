@@ -108,7 +108,8 @@
           "align": "center",
           "fontFamily": "monospace",
           "layer": 10,
-          "visible": true
+          "visible": true,
+          "binding": null
         }
       }
     },
@@ -148,13 +149,15 @@
           "align": "center",
           "fontFamily": "monospace",
           "layer": 10,
-          "visible": true
+          "visible": true,
+          "binding": null
         },
         "Script": {
           "scriptPath": "scripts/vault-greeter.lua",
           "params": {
             "fadeSeconds": 0.7
-          }
+          },
+          "runWhilePaused": false
         }
       }
     },

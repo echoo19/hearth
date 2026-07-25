@@ -511,7 +511,8 @@
           "scriptPath": "scripts/player-move.lua",
           "params": {
             "speed": 200
-          }
+          },
+          "runWhilePaused": false
         }
       }
     },
@@ -601,7 +602,8 @@
             "flashColor": "#fff4d6",
             "flashSeconds": 0.2,
             "dissolveSeconds": 0.5
-          }
+          },
+          "runWhilePaused": false
         }
       }
     },
@@ -691,7 +693,8 @@
             "flashColor": "#fff4d6",
             "flashSeconds": 0.2,
             "dissolveSeconds": 0.5
-          }
+          },
+          "runWhilePaused": false
         }
       }
     },
@@ -781,7 +784,8 @@
             "flashColor": "#fff4d6",
             "flashSeconds": 0.2,
             "dissolveSeconds": 0.5
-          }
+          },
+          "runWhilePaused": false
         }
       }
     },
@@ -809,7 +813,8 @@
           "scriptPath": "scripts/score-director.lua",
           "params": {
             "total": 3
-          }
+          },
+          "runWhilePaused": false
         }
       }
     },
@@ -849,7 +854,8 @@
           "align": "left",
           "fontFamily": "monospace",
           "layer": 10,
-          "visible": true
+          "visible": true,
+          "binding": null
         }
       }
     },
@@ -889,7 +895,8 @@
           "align": "center",
           "fontFamily": "monospace",
           "layer": 10,
-          "visible": true
+          "visible": true,
+          "binding": null
         }
       }
     },
@@ -929,7 +936,8 @@
           "align": "right",
           "fontFamily": "monospace",
           "layer": 10,
-          "visible": true
+          "visible": true,
+          "binding": null
         }
       }
     },
@@ -971,7 +979,8 @@
         },
         "Script": {
           "scriptPath": "scripts/crt-toggle.lua",
-          "params": {}
+          "params": {},
+          "runWhilePaused": false
         }
       }
     }

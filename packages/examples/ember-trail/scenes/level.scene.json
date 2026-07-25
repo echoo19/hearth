@@ -415,7 +415,8 @@
           "params": {
             "speed": 220,
             "duration": 20
-          }
+          },
+          "runWhilePaused": false
         }
       }
     },
@@ -445,7 +446,8 @@
             "interval": 1.2,
             "lifetime": 4,
             "emberAsset": "ast_j15m1694"
-          }
+          },
+          "runWhilePaused": false
         }
       }
     },
@@ -485,7 +487,8 @@
           "align": "left",
           "fontFamily": "monospace",
           "layer": 10,
-          "visible": true
+          "visible": true,
+          "binding": null
         }
       }
     },
@@ -525,7 +528,8 @@
           "align": "center",
           "fontFamily": "monospace",
           "layer": 10,
-          "visible": true
+          "visible": true,
+          "binding": null
         }
       }
     }

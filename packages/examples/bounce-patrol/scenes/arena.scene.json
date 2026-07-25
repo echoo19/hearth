@@ -209,7 +209,8 @@
           "scriptPath": "scripts/player-move.lua",
           "params": {
             "speed": 180
-          }
+          },
+          "runWhilePaused": false
         }
       }
     },
@@ -633,7 +634,8 @@
         },
         "Script": {
           "scriptPath": "scripts/patroller-chase.lua",
-          "params": {}
+          "params": {},
+          "runWhilePaused": false
         }
       }
     },
@@ -709,7 +711,8 @@
         },
         "Script": {
           "scriptPath": "scripts/coin-collect.lua",
-          "params": {}
+          "params": {},
+          "runWhilePaused": false
         }
       }
     },
@@ -785,7 +788,8 @@
         },
         "Script": {
           "scriptPath": "scripts/coin-collect.lua",
-          "params": {}
+          "params": {},
+          "runWhilePaused": false
         }
       }
     },
@@ -861,7 +865,8 @@
         },
         "Script": {
           "scriptPath": "scripts/coin-collect.lua",
-          "params": {}
+          "params": {},
+          "runWhilePaused": false
         }
       }
     },
@@ -901,11 +906,13 @@
           "align": "left",
           "fontFamily": "monospace",
           "layer": 10,
-          "visible": true
+          "visible": true,
+          "binding": null
         },
         "Script": {
           "scriptPath": "scripts/score-ui.lua",
-          "params": {}
+          "params": {},
+          "runWhilePaused": false
         }
       }
     }

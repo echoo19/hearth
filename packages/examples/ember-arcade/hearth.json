@@ -57,6 +57,7 @@
       "spinner": true
     }
   },
+  "gameState": {},
   "codeStyle": {
     "formatOnSave": true
   }

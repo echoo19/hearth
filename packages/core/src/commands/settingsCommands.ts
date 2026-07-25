@@ -6,7 +6,12 @@
 import { z } from 'zod';
 import { defineCommand } from './types.js';
 import { ProjectError } from '../project/store.js';
-import { BuildSettingsSchema, CodeStyleSchema, InputMappingsSchema } from '../schema/project.js';
+import {
+  BuildSettingsSchema,
+  CodeStyleSchema,
+  GameStateEntrySchema,
+  InputMappingsSchema,
+} from '../schema/project.js';
 
 const LoadingSettingsPatchSchema = z.object({
   backgroundColor: z.string().optional(),
@@ -46,8 +51,10 @@ export const updateSettings = defineCommand({
   description:
     'Update project settings: partial buildSettings (deep-merged, incl. the loading screen visuals), ' +
     'the initial scene, input mappings (actions are replaced per action, empty keys removes one; ' +
-    'gamepadButtons, gamepadAxes, axes, and deadzone each replace that top-level key wholesale), and ' +
-    'codeStyle (deep-merged, e.g. formatOnSave).',
+    'gamepadButtons, gamepadAxes, axes, and deadzone each replace that top-level key wholesale), ' +
+    'codeStyle (deep-merged, e.g. formatOnSave), and gameState — the named values ' +
+    '(score, lives, currency) that scripts read through ctx.state and Text.binding displays. ' +
+    'Declare a gameState key before binding a Text to it.',
   permission: 'safe-edit',
   mutates: true,
   paramsSchema: z.object({
@@ -59,6 +66,11 @@ export const updateSettings = defineCommand({
     inputMappings: InputMappingsSchema.partial().optional(),
     /** Partial codeStyle; deep-merged like buildSettings.loading. */
     codeStyle: CodeStylePatchSchema.optional(),
+    /**
+     * Declared game-state values, merged per key: a key you pass is added or
+     * replaced, and passing null removes it. Other keys keep their values.
+     */
+    gameState: z.record(z.string(), GameStateEntrySchema.nullable()).optional(),
   }),
   async run(ctx, params) {
     const project = ctx.store.project;
@@ -90,6 +102,14 @@ export const updateSettings = defineCommand({
 
     if (mergedBuildSettings) project.buildSettings = mergedBuildSettings;
     if (mergedCodeStyle) project.codeStyle = mergedCodeStyle;
+    if (params.gameState) {
+      // Merged per key so declaring one value never drops the others; null
+      // removes a key. Text bindings validate against what ends up here.
+      for (const [key, entry] of Object.entries(params.gameState)) {
+        if (entry === null) delete project.gameState[key];
+        else project.gameState[key] = entry;
+      }
+    }
     if (initialSceneId !== undefined) project.initialScene = initialSceneId;
     if (params.inputMappings) {
       // For actions: merge individual actions (deep-merge, [] removes action)
@@ -121,6 +141,7 @@ export const updateSettings = defineCommand({
       inputActions: project.inputMappings.actions,
       inputMappings: project.inputMappings,
       codeStyle: project.codeStyle,
+      gameState: project.gameState,
     };
   },
 });

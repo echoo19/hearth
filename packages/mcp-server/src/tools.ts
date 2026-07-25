@@ -377,7 +377,7 @@ export const TOOL_SPECS: ToolSpec[] = [
     name: 'update_settings',
     command: 'updateSettings',
     description:
-      'Update project settings: partial buildSettings (deep-merged, incl. the loading screen visuals), the initial scene, input mappings (actions are replaced per action, empty keys removes one; gamepadButtons/gamepadAxes/axes/deadzone each replace that key wholesale), and codeStyle (deep-merged, e.g. formatOnSave). (requires safe-edit)',
+      'Update project settings: partial buildSettings (deep-merged, incl. the loading screen visuals), the initial scene, input mappings (actions are replaced per action, empty keys removes one; gamepadButtons/gamepadAxes/axes/deadzone each replace that key wholesale), codeStyle (deep-merged, e.g. formatOnSave), and gameState — the named values (score, lives, currency) scripts read through ctx.state and Text.binding displays. Declare a gameState key before binding a Text to it. (requires safe-edit)',
     permission: 'safe-edit',
     inputShape: {
       buildSettings: z
@@ -425,6 +425,20 @@ export const TOOL_SPECS: ToolSpec[] = [
             .optional(),
           deadzone: z.number().min(0).max(1).optional(),
         })
+        .optional(),
+      // Mirrors core's GameStateEntrySchema (settingsCommands.ts). Merged per
+      // key; null removes a key.
+      gameState: z
+        .record(
+          z.string(),
+          z
+            .object({
+              type: z.enum(['number', 'boolean', 'string']),
+              initial: z.union([z.number(), z.boolean(), z.string()]),
+              persist: z.boolean().optional(),
+            })
+            .nullable(),
+        )
         .optional(),
       codeStyle: z
         .object({

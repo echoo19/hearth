@@ -58,6 +58,13 @@
       "spinner": false
     }
   },
+  "gameState": {
+    "score": {
+      "type": "number",
+      "initial": 0,
+      "persist": false
+    }
+  },
   "codeStyle": {
     "formatOnSave": true
   }

@@ -484,6 +484,119 @@ export const CTX_API: readonly CtxApiEntry[] = [
     description: 'Clear one save key, or all save data when no key is given.',
     example: { js: 'ctx.clearSave()', lua: 'ctx.clearSave()' },
   },
+  // --- pause / game state / health (game primitives) -----------------------
+  {
+    path: 'game.pause',
+    kind: 'method',
+    signature: 'pause(): void',
+    description:
+      'Freeze the simulation: physics, collisions, animators, particles, and script onUpdate all stop, and ctx.time.elapsed stops advancing (ctx.time.frame keeps counting). Scripts whose Script component sets runWhilePaused keep running, with their timers and tweens, which is how a pause menu stays live. UI pointer and focus events keep working either way. The pause lives on the session, so it survives ctx.scenes.load.',
+    example: {
+      js: "if (ctx.input.justPressed('pause')) ctx.game.pause()",
+      lua: 'if ctx.input.justPressed("pause") then ctx.game.pause() end',
+    },
+  },
+  {
+    path: 'game.resume',
+    kind: 'method',
+    signature: 'resume(): void',
+    description: 'Unfreeze the simulation. Calling it while already running is a no-op.',
+    example: { js: 'ctx.game.resume()', lua: 'ctx.game.resume()' },
+  },
+  {
+    path: 'game.isPaused',
+    kind: 'method',
+    signature: 'isPaused(): boolean',
+    description: 'Is the simulation currently frozen?',
+    example: {
+      js: 'if (ctx.game.isPaused()) ctx.game.resume()',
+      lua: 'if ctx.game.isPaused() then ctx.game.resume() end',
+    },
+  },
+  {
+    path: 'state.get',
+    kind: 'method',
+    signature: 'get(key: string): number | boolean | string | null',
+    description:
+      "Read a named value declared in `hearth.json` gameState. Reads never throw: an undeclared key returns null. Values are session-scoped, so they survive ctx.scenes.load; keys declared with persist round-trip through save storage.",
+    example: { js: "const score = ctx.state.get('score')", lua: 'local score = ctx.state.get("score")' },
+  },
+  {
+    path: 'state.set',
+    kind: 'method',
+    signature: 'set(key: string, value: number | boolean | string): void',
+    description:
+      "Write a declared value, firing a 'stateChanged' event ({ key, value, previous }) when it actually changes. Throws for an undeclared key or a value of the wrong declared type. Setting the value it already holds is silent.",
+    example: { js: "ctx.state.set('lives', 3)", lua: 'ctx.state.set("lives", 3)' },
+  },
+  {
+    path: 'state.add',
+    kind: 'method',
+    signature: 'add(key: string, delta: number): void',
+    description:
+      "Add to a number-typed key, the score += 1 case without a read-modify-write. Throws when the key is undeclared or is not a number. Use a negative delta to subtract.",
+    example: { js: "ctx.state.add('score', 10)", lua: 'ctx.state.add("score", 10)' },
+  },
+  {
+    path: 'state.reset',
+    kind: 'method',
+    signature: 'reset(key?: string): void',
+    description:
+      'Restore one key to its declared initial value, or every key when called with no argument. Use it on game over or when starting a new run, instead of setting each key back by hand.',
+    example: { js: 'ctx.state.reset()', lua: 'ctx.state.reset()' },
+  },
+  {
+    path: 'health.get',
+    kind: 'method',
+    signature: 'get(idOrHandle: string | EntityHandle): { current: number; max: number }',
+    description:
+      "Current and max hit points of an entity with a Health component (id, name, or an EntityHandle from ctx.scene.find). Throws when the entity does not exist or has no Health.",
+    example: {
+      js: "const hp = ctx.health.get('Player'); ctx.log(hp.current, '/', hp.max)",
+      lua: 'local hp = ctx.health.get("Player")\nctx.log(hp.current, "/", hp.max)',
+    },
+  },
+  {
+    path: 'health.damage',
+    kind: 'method',
+    signature: 'damage(idOrHandle: string | EntityHandle, amount: number): void',
+    description:
+      "Subtract hit points, clamped at 0, then emit 'damaged' ({ entity, amount, current }) and, at zero, 'died' ({ entity }). Ignored while invulnerability frames remain, while Health.enabled is false, or for a non-positive amount. Health owns no visuals: drive flash, shake, and knockback from those events. A 'died' handler that heals back above 0 keeps the entity alive, because deathAction is read after the event.",
+    example: {
+      js: "ctx.health.damage(other, 1)",
+      lua: 'ctx.health.damage(other, 1)',
+    },
+  },
+  {
+    path: 'health.heal',
+    kind: 'method',
+    signature: 'heal(idOrHandle: string | EntityHandle, amount: number): void',
+    description:
+      "Add hit points, capped at Health.max, and emit 'healed' ({ entity, amount, current }). A heal that changes nothing (already full) emits nothing.",
+    example: { js: "ctx.health.heal(ctx.entity.id, 1)", lua: 'ctx.health.heal(ctx.entity.id, 1)' },
+  },
+  {
+    path: 'health.isInvulnerable',
+    kind: 'method',
+    signature: 'isInvulnerable(idOrHandle: string | EntityHandle): boolean',
+    description:
+      "Does the entity still have invulnerability frames left from its last hit? Read it to blink a sprite or skip a hit sound while damage is being ignored.",
+    example: {
+      js: "if (!ctx.health.isInvulnerable('Player')) ctx.audio.play('hurt')",
+      lua: 'if not ctx.health.isInvulnerable("Player") then ctx.audio.play("hurt") end',
+    },
+  },
+  {
+    path: 'respawn',
+    kind: 'method',
+    signature: 'respawn(idOrHandle: string | EntityHandle): void',
+    description:
+      "Move an entity with a Respawn component back to its respawn point: Respawn.point if set, otherwise the position captured at start, otherwise the last Checkpoint it reached. Zeroes PhysicsBody velocity when Respawn.resetVelocity is true, and emits 'respawned' ({ entity }). Never automatic, so call it yourself, usually from a 'died' handler. Throws when the entity has no Respawn or no point to return to.",
+    example: {
+      js: "ctx.events.on('died', () => ctx.respawn(ctx.entity.id))",
+      lua: 'ctx.events.on("died", function() ctx.respawn(ctx.entity.id) end)',
+    },
+  },
   // --- camera (ctx v2) ----------------------------------------------------
   {
     path: 'camera.getPosition',

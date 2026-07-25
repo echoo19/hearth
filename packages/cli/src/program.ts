@@ -795,7 +795,11 @@ export function buildProgram(): Command {
         'virtual axis name -> axis JSON, replaced wholesale, e.g. \'{"horizontal":{"gamepadAxis":0,"negativeCodes":["ArrowLeft"],"positiveCodes":["ArrowRight"]}}\'',
       )
       .option('--input-deadzone <number>', 'global gamepad stick deadzone (0-1)', (v) => parseFloat(v))
-      .option('--format-on-save <bool>', 'auto-format Lua/JS scripts on save (true/false)'),
+      .option('--format-on-save <bool>', 'auto-format Lua/JS scripts on save (true/false)')
+      .option(
+        '--game-state <json>',
+        'named game values scripts read via ctx.state, merged per key (null removes one), e.g. \'{"score":{"type":"number","initial":0},"best":{"type":"number","initial":0,"persist":true}}\'',
+      ),
   ).action(async (opts, cmd) => {
     await guarded(cmd, 'updateSettings', () => {
       const params: Record<string, unknown> = {};
@@ -815,6 +819,7 @@ export function buildProgram(): Command {
       if (opts.formatOnSave !== undefined) {
         params.codeStyle = { formatOnSave: parseBool(opts.formatOnSave, '--format-on-save') };
       }
+      if (opts.gameState) params.gameState = parseJsonObject(opts.gameState, '--game-state');
       return runAndEmit(cmd, 'updateSettings', params);
     });
   });

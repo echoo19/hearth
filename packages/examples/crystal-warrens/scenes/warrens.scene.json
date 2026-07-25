@@ -81,7 +81,8 @@
         },
         "Script": {
           "scriptPath": "scripts/cave-carver.lua",
-          "params": {}
+          "params": {},
+          "runWhilePaused": false
         }
       }
     },
@@ -177,7 +178,8 @@
           "scriptPath": "scripts/player-move.lua",
           "params": {
             "speed": 150
-          }
+          },
+          "runWhilePaused": false
         }
       }
     },
@@ -251,7 +253,8 @@
         },
         "Script": {
           "scriptPath": "scripts/crystal-grower.lua",
-          "params": {}
+          "params": {},
+          "runWhilePaused": false
         }
       }
     },
@@ -291,7 +294,8 @@
           "align": "left",
           "fontFamily": "monospace",
           "layer": 10,
-          "visible": true
+          "visible": true,
+          "binding": null
         }
       }
     },
@@ -331,7 +335,8 @@
           "align": "right",
           "fontFamily": "monospace",
           "layer": 10,
-          "visible": true
+          "visible": true,
+          "binding": null
         }
       }
     }

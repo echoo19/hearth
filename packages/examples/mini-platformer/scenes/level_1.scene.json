@@ -30,7 +30,8 @@
         },
         "Script": {
           "scriptPath": "scripts/camera-follow.js",
-          "params": {}
+          "params": {},
+          "runWhilePaused": false
         }
       }
     },
@@ -403,12 +404,34 @@
           "restitution": 0,
           "friction": 0
         },
+        "CharacterController": {
+          "mode": "platformer",
+          "speed": 220,
+          "acceleration": 0,
+          "drag": 0,
+          "jumpHeight": 108,
+          "coyoteFrames": 6,
+          "jumpBufferFrames": 4,
+          "maxFallSpeed": 0,
+          "airControl": 1,
+          "actions": {
+            "left": "left",
+            "right": "right",
+            "up": "up",
+            "down": "down",
+            "jump": "jump"
+          },
+          "enabled": true
+        },
+        "Respawn": {
+          "point": null,
+          "useSpawnPosition": true,
+          "resetVelocity": true
+        },
         "Script": {
           "scriptPath": "scripts/player-controller.js",
-          "params": {
-            "speed": 220,
-            "jumpSpeed": 460
-          }
+          "params": {},
+          "runWhilePaused": false
         }
       }
     },
@@ -484,7 +507,8 @@
         },
         "Script": {
           "scriptPath": "scripts/coin-pickup.js",
-          "params": {}
+          "params": {},
+          "runWhilePaused": false
         }
       }
     },
@@ -560,7 +584,8 @@
         },
         "Script": {
           "scriptPath": "scripts/coin-pickup.js",
-          "params": {}
+          "params": {},
+          "runWhilePaused": false
         }
       }
     },
@@ -636,7 +661,8 @@
         },
         "Script": {
           "scriptPath": "scripts/coin-pickup.js",
-          "params": {}
+          "params": {},
+          "runWhilePaused": false
         }
       }
     },
@@ -712,7 +738,8 @@
         },
         "Script": {
           "scriptPath": "scripts/spike-hazard.js",
-          "params": {}
+          "params": {},
+          "runWhilePaused": false
         }
       }
     },
@@ -791,7 +818,8 @@
           "params": {
             "range": 120,
             "speed": 70
-          }
+          },
+          "runWhilePaused": false
         }
       }
     },
@@ -831,7 +859,12 @@
           "align": "left",
           "fontFamily": "monospace",
           "layer": 10,
-          "visible": true
+          "visible": true,
+          "binding": {
+            "key": "score",
+            "format": "Score: {value}",
+            "precision": 0
+          }
         }
       }
     },
@@ -891,11 +924,13 @@
           "align": "center",
           "fontFamily": "monospace",
           "layer": 21,
-          "visible": true
+          "visible": true,
+          "binding": null
         },
         "Script": {
           "scriptPath": "scripts/restart-button.js",
-          "params": {}
+          "params": {},
+          "runWhilePaused": false
         }
       }
     },

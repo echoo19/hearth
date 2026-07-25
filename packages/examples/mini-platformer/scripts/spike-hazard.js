@@ -1,16 +1,15 @@
 /**
- * Spikes: touching them plays the hit sound and sends the player back to
- * the start. The collider is a convex polygon (a triangle).
+ * Spikes: touching them plays the hit sound and sends the player back to its
+ * respawn point. The collider is a convex polygon (a triangle).
+ *
+ * ctx.respawn reads the point off the player's own Respawn component, so the
+ * spawn coordinates live in exactly one place instead of being copied into
+ * every hazard.
  */
 export default {
   onCollision(ctx, other) {
     if (!other.tags.includes("player")) return;
-    other.transform.position.x = 120;
-    other.transform.position.y = 380;
-    const body = other.getComponent("PhysicsBody");
-    body.velocity.x = 0;
-    body.velocity.y = 0;
+    ctx.respawn(other);
     ctx.audio.play("hit-sound");
-    ctx.log("player hit spikes");
   },
 };

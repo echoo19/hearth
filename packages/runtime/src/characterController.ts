@@ -86,14 +86,26 @@ function driveAxis(
  * `speed`. `platformer` drives x only and leaves y to the physics engine, apart
  * from the jump impulse and the `maxFallSpeed` cap.
  */
+/**
+ * What the controller did this frame, for the caller to turn into events.
+ * The controller performs the jump itself, so without this a game could not
+ * tell when to play the jump sound, puff dust, or squash the sprite — the
+ * movement would be configurable but undressable.
+ */
+export interface CharacterStepResult {
+  jumped: boolean;
+}
+
+const NO_JUMP: CharacterStepResult = { jumped: false };
+
 export function stepCharacter(
   cfg: CharacterControllerComponent,
   input: CharacterInput,
   body: { velocity: { x: number; y: number } },
   dt: number,
   gravity: number,
-): void {
-  if (!cfg.enabled) return;
+): CharacterStepResult {
+  if (!cfg.enabled) return NO_JUMP;
 
   const a = cfg.actions;
   const state = stateFor(cfg);
@@ -106,6 +118,8 @@ export function stepCharacter(
     ax /= len;
     ay /= len;
   }
+
+  let jumped = false;
 
   if (cfg.mode === 'topDown') {
     body.velocity.x = driveAxis(body.velocity.x, ax * cfg.speed, ax !== 0, cfg, dt, 1);
@@ -143,6 +157,7 @@ export function stepCharacter(
       body.velocity.y = -jumpSpeed; // up is -y
       state.buffer = 0;
       state.coyote = 0;
+      jumped = true;
     } else if (!pressed && state.buffer > 0) {
       state.buffer -= 1;
     }
@@ -154,4 +169,6 @@ export function stepCharacter(
   if (cfg.maxFallSpeed > 0 && body.velocity.y > cfg.maxFallSpeed) {
     body.velocity.y = cfg.maxFallSpeed;
   }
+
+  return jumped ? { jumped: true } : NO_JUMP;
 }

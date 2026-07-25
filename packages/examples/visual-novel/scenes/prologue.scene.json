@@ -183,7 +183,8 @@
           "align": "left",
           "fontFamily": "monospace",
           "layer": 10,
-          "visible": true
+          "visible": true,
+          "binding": null
         },
         "Script": {
           "scriptPath": "scripts/dialogue-runner.js",
@@ -194,7 +195,8 @@
               "Aria: Humans shape it with their hands. Agents shape it with commands.",
               "Aria: Together, then. Let us make something worth playing."
             ]
-          }
+          },
+          "runWhilePaused": false
         }
       }
     }

@@ -29,6 +29,35 @@ function detachOnStructuralEdit(ctx: any, scene: any, anchorId: string): void {
   }
 }
 
+/**
+ * Guidance pushed into the result envelope when an agent adds one of the game
+ * primitives. Each line gives the next concrete step AND when to skip the
+ * component, because the failure mode these primitives replace is a
+ * hand-written 200-line controller — and the second failure mode is reaching
+ * for a primitive where a script was the right answer.
+ */
+const PRIMITIVE_SUGGESTIONS: Partial<Record<ComponentType, string>> = {
+  CharacterController:
+    'add a PhysicsBody if this entity has none (the controller writes PhysicsBody.velocity, so it is inert without one), ' +
+    'then layer custom feel by writing PhysicsBody.velocity in onUpdate, which runs after the controller. ' +
+    'Skip CharacterController for motion that is not input-driven: cutscene movers, AI-steered enemies, vehicles with their own physics',
+  Health:
+    "drive flash, shake and knockback from the 'damaged'/'healed'/'died' events this component emits, because Health owns no visuals; " +
+    "deathAction defaults to event-only, so choose 'disable' or 'destroy' deliberately. " +
+    'Skip Health in one-hit-kill or score-only games',
+  Respawn:
+    "pair this with a Checkpoint trigger and call ctx.respawn from a 'died' handler, since respawning is never automatic. " +
+    'Not for roguelikes that reload the scene instead',
+  Checkpoint:
+    'give this entity a Collider with isTrigger=true, and point Checkpoint.target at an entity name (or "tag:<tag>") whose entity has a Respawn component. ' +
+    'A solid collider or a target without Respawn means the checkpoint never fires. Skip checkpoints in single-screen games with no travel to redo',
+};
+
+/** Guidance for a Text that mirrors declared game state instead of script-written content. */
+const TEXT_BINDING_SUGGESTION =
+  'declare the binding key in hearth.json gameState first (updateSettings), then stop writing Text.content for this entity: ' +
+  'the engine overwrites it from game state every frame. Leave binding null when a script owns the text';
+
 function resolve(ctx: any, sceneRef: string, entityRef: string) {
   const scene = ctx.store.getScene(sceneRef);
   if (!scene) throw new ProjectError(`Scene not found: ${sceneRef}`, 'NOT_FOUND');
@@ -67,6 +96,11 @@ export const addComponent = defineCommand({
     (entity.components as Record<string, unknown>)[params.type] = component;
     detachOnStructuralEdit(ctx, scene, entity.id);
     ctx.changed({ kind: 'component', id: entity.id, name: params.type, scene: scene.id, action: 'created' });
+    const primitiveSuggestion = PRIMITIVE_SUGGESTIONS[params.type];
+    if (primitiveSuggestion) ctx.suggest(primitiveSuggestion);
+    if (params.type === 'Text' && (component as { binding?: unknown }).binding) {
+      ctx.suggest(TEXT_BINDING_SUGGESTION);
+    }
     return { entityId: entity.id, type: params.type, component };
   },
 });
@@ -307,6 +341,11 @@ export const setComponentProperty = defineCommand({
     const newValue = valueAtPath(parsed.data, pathParts);
     if (!valuesEqual(previousValue, newValue)) {
       recordInstanceOverride(scene, entity.id, type, pathParts.join('.'), newValue);
+    }
+    // Binding an existing Text to game state is the other way this primitive
+    // gets used, so the same guidance belongs here, not only on addComponent.
+    if (type === 'Text' && pathParts[0] === 'binding' && (parsed.data as { binding?: unknown }).binding) {
+      ctx.suggest(TEXT_BINDING_SUGGESTION);
     }
     ctx.suggest(`sweepScene --scene ${scene.id} to check for regressions`);
     return {

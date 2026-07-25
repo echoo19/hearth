@@ -422,7 +422,8 @@
           "scriptPath": "scripts/top-down-move.js",
           "params": {
             "speed": 180
-          }
+          },
+          "runWhilePaused": false
         }
       }
     },
@@ -498,7 +499,8 @@
         },
         "Script": {
           "scriptPath": "scripts/door-trigger.js",
-          "params": {}
+          "params": {},
+          "runWhilePaused": false
         }
       }
     },
@@ -589,7 +591,8 @@
           "params": {
             "line": "The door on the east wall leads out. It opens at a touch.",
             "radius": 70
-          }
+          },
+          "runWhilePaused": false
         }
       }
     },
@@ -620,7 +623,8 @@
           "align": "left",
           "fontFamily": "monospace",
           "layer": 10,
-          "visible": true
+          "visible": true,
+          "binding": null
         }
       }
     }

@@ -578,7 +578,8 @@
           "scriptPath": "scripts/player-move.lua",
           "params": {
             "speed": 160
-          }
+          },
+          "runWhilePaused": false
         }
       }
     },
@@ -656,7 +657,8 @@
         },
         "Script": {
           "scriptPath": "scripts/torch-embers.lua",
-          "params": {}
+          "params": {},
+          "runWhilePaused": false
         }
       }
     },

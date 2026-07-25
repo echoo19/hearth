@@ -86,7 +86,8 @@
           "scriptPath": "scripts/enemy-chase.lua",
           "params": {
             "speed": 90
-          }
+          },
+          "runWhilePaused": false
         }
       },
       "id": "pfe_1",

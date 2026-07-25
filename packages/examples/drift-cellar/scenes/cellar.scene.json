@@ -496,7 +496,8 @@
             "speed": 240,
             "drift": 0.12,
             "dashBoost": 420
-          }
+          },
+          "runWhilePaused": false
         }
       }
     },
@@ -572,7 +573,8 @@
         },
         "Script": {
           "scriptPath": "scripts/gem-pickup.lua",
-          "params": {}
+          "params": {},
+          "runWhilePaused": false
         }
       }
     },
@@ -648,7 +650,8 @@
         },
         "Script": {
           "scriptPath": "scripts/gem-pickup.lua",
-          "params": {}
+          "params": {},
+          "runWhilePaused": false
         }
       }
     },
@@ -724,7 +727,8 @@
         },
         "Script": {
           "scriptPath": "scripts/gem-pickup.lua",
-          "params": {}
+          "params": {},
+          "runWhilePaused": false
         }
       }
     },
@@ -752,7 +756,8 @@
           "scriptPath": "scripts/cellar-director.lua",
           "params": {
             "fadeSeconds": 0.8
-          }
+          },
+          "runWhilePaused": false
         }
       }
     },
@@ -792,7 +797,8 @@
           "align": "left",
           "fontFamily": "monospace",
           "layer": 10,
-          "visible": true
+          "visible": true,
+          "binding": null
         }
       }
     },
@@ -832,7 +838,8 @@
           "align": "center",
           "fontFamily": "monospace",
           "layer": 10,
-          "visible": true
+          "visible": true,
+          "binding": null
         }
       }
     },
@@ -905,7 +912,8 @@
           "params": {
             "openX": -105,
             "closedX": -3000
-          }
+          },
+          "runWhilePaused": false
         }
       }
     },
@@ -945,7 +953,8 @@
           "align": "center",
           "fontFamily": "monospace",
           "layer": 31,
-          "visible": true
+          "visible": true,
+          "binding": null
         }
       }
     },
@@ -1005,11 +1014,13 @@
           "align": "center",
           "fontFamily": "monospace",
           "layer": 31,
-          "visible": true
+          "visible": true,
+          "binding": null
         },
         "Script": {
           "scriptPath": "scripts/resume-button.lua",
-          "params": {}
+          "params": {},
+          "runWhilePaused": false
         }
       }
     },
@@ -1049,7 +1060,8 @@
           "align": "center",
           "fontFamily": "monospace",
           "layer": 31,
-          "visible": true
+          "visible": true,
+          "binding": null
         }
       }
     },
@@ -1095,7 +1107,8 @@
         },
         "Script": {
           "scriptPath": "scripts/volume-slider.lua",
-          "params": {}
+          "params": {},
+          "runWhilePaused": false
         }
       }
     },
@@ -1135,7 +1148,8 @@
           "align": "center",
           "fontFamily": "monospace",
           "layer": 31,
-          "visible": true
+          "visible": true,
+          "binding": null
         }
       }
     },
@@ -1177,7 +1191,8 @@
         },
         "Script": {
           "scriptPath": "scripts/shake-toggle.lua",
-          "params": {}
+          "params": {},
+          "runWhilePaused": false
         }
       }
     }
