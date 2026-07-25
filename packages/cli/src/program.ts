@@ -774,7 +774,7 @@ export function buildProgram(): Command {
     program
       .command('set-settings')
       .description(
-        'update project settings: partial buildSettings (deep-merged), initial scene, input mappings, code style',
+        'update project settings: partial buildSettings (deep-merged), initial scene, input mappings, code style, declared game state',
       )
       .option(
         '--build-settings <json>',
