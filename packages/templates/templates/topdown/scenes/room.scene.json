@@ -171,7 +171,8 @@
           "scriptPath": "scripts/player-controller.lua",
           "params": {
             "speed": 180
-          }
+          },
+          "runWhilePaused": false
         }
       }
     },

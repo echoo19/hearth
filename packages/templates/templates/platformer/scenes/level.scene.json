@@ -154,7 +154,8 @@
           "params": {
             "speed": 220,
             "jumpSpeed": 460
-          }
+          },
+          "runWhilePaused": false
         }
       }
     },

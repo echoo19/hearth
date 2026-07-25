@@ -159,7 +159,8 @@
           "params": {
             "speed": 200,
             "bulletSpeed": 420
-          }
+          },
+          "runWhilePaused": false
         }
       }
     },
@@ -265,7 +266,8 @@
           "params": {
             "x": 560,
             "y": 150
-          }
+          },
+          "runWhilePaused": false
         }
       }
     },
@@ -305,7 +307,8 @@
           "align": "left",
           "fontFamily": "monospace",
           "layer": 10,
-          "visible": true
+          "visible": true,
+          "binding": null
         }
       }
     }
