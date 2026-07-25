@@ -206,6 +206,13 @@
           "restitution": 0,
           "friction": 0
         },
+        "Health": {
+          "max": 100,
+          "current": 100,
+          "invulnerableFrames": 24,
+          "deathAction": "event-only",
+          "enabled": true
+        },
         "ParticleEmitter": {
           "emitting": false,
           "rate": 0,
@@ -230,9 +237,7 @@
           "scriptPath": "scripts/player-move.lua",
           "params": {
             "speed": 170,
-            "maxHp": 100,
-            "contactDamage": 8,
-            "hitCooldown": 0.4
+            "contactDamage": 8
           },
           "runWhilePaused": false
         }
@@ -523,7 +528,11 @@
           "fontFamily": "monospace",
           "layer": 10,
           "visible": true,
-          "binding": null
+          "binding": {
+            "key": "time",
+            "format": "Time: {value}",
+            "precision": 1
+          }
         }
       }
     },
@@ -564,7 +573,11 @@
           "fontFamily": "monospace",
           "layer": 10,
           "visible": true,
-          "binding": null
+          "binding": {
+            "key": "hp",
+            "format": "HP: {value}",
+            "precision": 0
+          }
         }
       }
     },
@@ -605,7 +618,11 @@
           "fontFamily": "monospace",
           "layer": 10,
           "visible": true,
-          "binding": null
+          "binding": {
+            "key": "enemies",
+            "format": "Enemies: {value}/300",
+            "precision": 0
+          }
         }
       }
     },
@@ -691,7 +708,7 @@
             "openX": -105,
             "closedX": -3000
           },
-          "runWhilePaused": false
+          "runWhilePaused": true
         }
       }
     },

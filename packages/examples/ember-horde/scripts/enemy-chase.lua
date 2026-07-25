@@ -10,36 +10,26 @@
 -- is the O(n)-per-enemy pattern that turns into O(n^2) across a few hundred
 -- enemies — the exact cost docs/performance.md flags next once broadphase
 -- stopped dominating.
+--
+-- Nothing in here knows the game can be paused: ctx.game.pause freezes
+-- physics and every script that did not opt into runWhilePaused, so the old
+-- per-enemy paused flag and velocity-zeroing block are gone.
 local script = {}
 
 function script.onStart(ctx)
   ctx.vars.player = ctx.scene.find("Player")
-  ctx.vars.paused = false
 end
 
 function script.onUpdate(ctx, dt)
-  local body = ctx.getComponent("PhysicsBody")
-  if ctx.vars.paused then
-    body.velocity.x = 0
-    body.velocity.y = 0
-    return
-  end
   local player = ctx.vars.player
   if not player then
     return
   end
+  local body = ctx.getComponent("PhysicsBody")
   local toPlayer = ctx.math.sub(player.transform.position, ctx.transform.position)
   local steer = ctx.math.scale(ctx.math.normalize(toPlayer), ctx.params.speed or 90)
   body.velocity.x = steer.x
   body.velocity.y = steer.y
-end
-
-function script.onEvent(ctx, name)
-  if name == "pause" then
-    ctx.vars.paused = true
-  elseif name == "resume" then
-    ctx.vars.paused = false
-  end
 end
 
 return script

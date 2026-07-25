@@ -3141,6 +3141,14 @@ async function generateEmberHorde() {
         moveY: { gamepadAxis: 1, negativeCodes: ['ArrowUp', 'KeyW'], positiveCodes: ['ArrowDown', 'KeyS'] },
       },
     },
+    // The three HUD numbers are declared game state, not strings a script
+    // formats into a label it had to go find first. Each HUD Text below binds
+    // to one of these keys and the engine keeps it current.
+    gameState: {
+      time: { type: 'number', initial: 0, persist: false },
+      hp: { type: 'number', initial: 100, persist: false },
+      enemies: { type: 'number', initial: 0, persist: false },
+    },
   });
 
   // --- assets ---
@@ -3157,62 +3165,48 @@ async function generateEmberHorde() {
     name: 'player-move',
     language: 'lua',
     source: `-- Player: direct velocity-follows-axis movement (no drift/easing — a
--- horde needs snappy, predictable dodging, not momentum). Contact with an
--- Enemy costs HP on a cooldown (so a stack of enemies all touching at
--- once doesn't drain it in one frame), updates the HP HUD, and — gated by
--- the pause menu's live Screen Shake toggle value, read directly with no
--- mirror state (same idiom as drift-cellar's wall-bump handler) — shakes
--- the camera and bursts this entity's own pooled ParticleEmitter.
+-- horde needs snappy, predictable dodging, not momentum). This stays a
+-- script on purpose: CharacterController reads DIGITAL actions
+-- (isDown(left/right/up/down)), and this game steers from an analog axis
+-- (inputMappings.axes.moveX/moveY, gamepadAxis 0/1), so the component
+-- would binarise a half-pushed stick to full speed. Movement that reads a
+-- stick's magnitude is exactly the game-specific feel the primitive tells
+-- you to keep.
+--
+-- Everything else here IS a primitive now. The HP number, its clamp and
+-- the 24-frame post-hit immunity live on the Health component; contact just
+-- calls ctx.health.damage. Health owns no visuals, so the shake (gated by
+-- the pause menu's live Screen Shake toggle, read directly with no mirror
+-- state) and the particle burst hang off the "damaged" event it emits.
+-- The HP HUD is bound to game state, so nothing here touches a label.
 -- Reminder: ctx calls use DOT syntax (ctx.log("hi"), never ctx:log("hi")).
 local script = {}
 
-function script.onStart(ctx)
-  ctx.vars.hp = ctx.params.maxHp or 100
-  ctx.vars.lastHit = -1
-  ctx.vars.paused = false
-  ctx.vars.hpHud = ctx.scene.find("HP HUD")
-end
-
 function script.onUpdate(ctx, dt)
   local body = ctx.getComponent("PhysicsBody")
-  if ctx.vars.paused then
-    body.velocity.x = 0
-    body.velocity.y = 0
-    return
-  end
   local speed = ctx.params.speed or 170
   body.velocity.x = ctx.input.axis("moveX") * speed
   body.velocity.y = ctx.input.axis("moveY") * speed
 end
 
 function script.onCollision(ctx, other)
-  if ctx.vars.paused then return end
   -- Tag-, not name-, based: "Elite Enemy" (a tinted prefab instance, still
   -- tagged "enemy") must hurt on contact exactly like every other enemy.
   if not other.tags.includes("enemy") then return end
-  if ctx.vars.hp <= 0 then return end
-  local now = ctx.time.elapsed
-  local cooldown = ctx.params.hitCooldown or 0.4
-  if now - ctx.vars.lastHit < cooldown then return end
-  ctx.vars.lastHit = now
-  ctx.vars.hp = math.max(0, ctx.vars.hp - (ctx.params.contactDamage or 8))
-  if ctx.vars.hpHud then
-    ctx.vars.hpHud.getComponent("Text").content = string.format("HP: %d", ctx.vars.hp)
-  end
-  ctx.events.emit("player-hit", { hp = ctx.vars.hp })
+  -- At 0 HP this game stops hurting the player rather than killing them
+  -- (Health.deathAction is event-only), so stop re-firing the hit visuals.
+  if ctx.health.get(ctx.entity.id).current <= 0 then return end
+  ctx.health.damage(ctx.entity.id, ctx.params.contactDamage or 8)
+end
+
+function script.onEvent(ctx, name, data)
+  if name ~= "damaged" then return end
+  ctx.state.set("hp", data.current)
   local toggle = ctx.scene.find("Screen Shake")
   if toggle and toggle.getComponent("UIToggle").value then
     ctx.camera.shake(6, 0.2)
   end
   ctx.particles.burst(16)
-end
-
-function script.onEvent(ctx, name)
-  if name == "pause" then
-    ctx.vars.paused = true
-  elseif name == "resume" then
-    ctx.vars.paused = false
-  end
 end
 
 return script
@@ -3234,34 +3228,24 @@ return script
 -- is the O(n)-per-enemy pattern that turns into O(n^2) across a few hundred
 -- enemies — the exact cost docs/performance.md flags next once broadphase
 -- stopped dominating.
+--
+-- Nothing in here knows the game can be paused: ctx.game.pause freezes
+-- physics and every script that did not opt into runWhilePaused, so the old
+-- per-enemy paused flag and velocity-zeroing block are gone.
 local script = {}
 
 function script.onStart(ctx)
   ctx.vars.player = ctx.scene.find("Player")
-  ctx.vars.paused = false
 end
 
 function script.onUpdate(ctx, dt)
-  local body = ctx.getComponent("PhysicsBody")
-  if ctx.vars.paused then
-    body.velocity.x = 0
-    body.velocity.y = 0
-    return
-  end
   local player = ctx.vars.player
   if not player then return end
+  local body = ctx.getComponent("PhysicsBody")
   local toPlayer = ctx.math.sub(player.transform.position, ctx.transform.position)
   local steer = ctx.math.scale(ctx.math.normalize(toPlayer), ctx.params.speed or 90)
   body.velocity.x = steer.x
   body.velocity.y = steer.y
-end
-
-function script.onEvent(ctx, name)
-  if name == "pause" then
-    ctx.vars.paused = true
-  elseif name == "resume" then
-    ctx.vars.paused = false
-  end
 end
 
 return script
@@ -3278,54 +3262,29 @@ return script
 -- "Enemy" prefab (see generate.mjs's createPrefab call) via
 -- ctx.scene.spawnPrefab — the prefab asset owns every enemy's components,
 -- so this script only ever decides WHERE and WHEN, never what an enemy is
--- made of. Keeps the Timer/Horde HUDs current every frame from cached
--- handles (found once in onStart, same live-handle idiom enemy-chase.lua
--- uses, applied here too for consistency even though the director itself
--- only ever does one find per HUD, not one per enemy).
+-- made of. The live count and the clock are declared game state that the
+-- Timer/Horde HUD labels are bound to, so this script never looks a HUD up
+-- and never formats one; and it needs no paused flag, because
+-- ctx.game.pause already stops onUpdate from running at all.
 local script = {}
 
 local ENEMY_CAP = 300
 local WAVE_SIZE = 10
 local WAVE_INTERVAL = 20
 
-function script.onStart(ctx)
-  ctx.vars.count = 0
-  ctx.vars.paused = false
-  ctx.vars.timerHud = ctx.scene.find("Timer HUD")
-  ctx.vars.hordeHud = ctx.scene.find("Horde HUD")
-end
-
-local function spawnEnemy(ctx, x, y)
-  ctx.scene.spawnPrefab("Enemy", { position = { x = x, y = y } })
-  ctx.events.emit("enemy-spawned")
-end
-
 function script.onUpdate(ctx, dt)
-  if not ctx.vars.paused and ctx.vars.count < ENEMY_CAP and ctx.time.frame % WAVE_INTERVAL == 0 then
-    local toSpawn = math.min(WAVE_SIZE, ENEMY_CAP - ctx.vars.count)
-    local radius = ctx.params.spawnRadius or 250
-    for i = 1, toSpawn do
-      local angle = ctx.random.range(0, 6.2831853)
-      local x = (ctx.params.centerX or 400) + math.cos(angle) * radius
-      local y = (ctx.params.centerY or 304) + math.sin(angle) * radius
-      spawnEnemy(ctx, x, y)
-      ctx.vars.count = ctx.vars.count + 1
-    end
-  end
-
-  if ctx.vars.timerHud then
-    ctx.vars.timerHud.getComponent("Text").content = string.format("Time: %.1f", ctx.time.elapsed)
-  end
-  if ctx.vars.hordeHud then
-    ctx.vars.hordeHud.getComponent("Text").content = string.format("Enemies: %d/%d", ctx.vars.count, ENEMY_CAP)
-  end
-end
-
-function script.onEvent(ctx, name)
-  if name == "pause" then
-    ctx.vars.paused = true
-  elseif name == "resume" then
-    ctx.vars.paused = false
+  ctx.state.set("time", ctx.time.elapsed)
+  local count = ctx.state.get("enemies")
+  if count >= ENEMY_CAP or ctx.time.frame % WAVE_INTERVAL ~= 0 then return end
+  local toSpawn = math.min(WAVE_SIZE, ENEMY_CAP - count)
+  local radius = ctx.params.spawnRadius or 250
+  for i = 1, toSpawn do
+    local angle = ctx.random.range(0, 6.2831853)
+    local x = (ctx.params.centerX or 400) + math.cos(angle) * radius
+    local y = (ctx.params.centerY or 304) + math.sin(angle) * radius
+    ctx.scene.spawnPrefab("Enemy", { position = { x = x, y = y } })
+    ctx.events.emit("enemy-spawned")
+    ctx.state.add("enemies", 1)
   end
 end
 
@@ -3336,47 +3295,45 @@ return script
   await run(session, 'createScript', {
     name: 'menu-controller',
     language: 'lua',
-    source: `-- Pause menu controller (on the UILayout container): Esc / gamepad start
--- toggles the menu by sliding the container's UIElement offset on/offscreen
--- (children stack relative to the container). Opening emits "pause"
--- (every entity's onEvent hook sees it scene-wide — the Player, the
--- Director, and every live Enemy all freeze) and focuses Resume; closing
--- emits "resume" and clears focus. ui-up/ui-down move focus between the
--- two widgets; ui-confirm activates the focused one (a synthesized real
--- click, so a focused toggle flips exactly like a pointer click would).
+    source: `-- Pause menu controller (on the UILayout container, and the ONE script in
+-- this game with Script.runWhilePaused = true): Esc / gamepad start toggles
+-- the menu by sliding the container's UIElement offset on/offscreen
+-- (children stack relative to the container). Opening calls ctx.game.pause()
+-- — the engine freezes physics, particles and every script that did not opt
+-- in, so the Player, the Director and all 300 Enemies stop without any of
+-- them knowing a pause exists — and focuses Resume; closing resumes and
+-- clears focus. The engine's pause flag IS the menu's open state, so there
+-- is no second copy of it to drift. ui-up/ui-down move focus between the two
+-- widgets; ui-confirm activates the focused one (a synthesized real click,
+-- so a focused toggle flips exactly like a pointer click would — UI pointer
+-- and focus events keep working while paused).
 local script = {}
 
 local function openMenu(ctx)
-  ctx.vars.open = true
   ctx.getComponent("UIElement").offset.x = ctx.params.openX or -105
-  ctx.events.emit("pause")
+  ctx.game.pause()
   ctx.ui.focus("Resume")
 end
 
 local function closeMenu(ctx)
-  ctx.vars.open = false
   ctx.getComponent("UIElement").offset.x = ctx.params.closedX or -3000
   ctx.ui.focus(nil)
-  ctx.events.emit("resume")
-end
-
-function script.onStart(ctx)
-  ctx.vars.open = false
+  ctx.game.resume()
 end
 
 function script.onUpdate(ctx, dt)
   if ctx.input.justPressed("pause") then
-    if ctx.vars.open then closeMenu(ctx) else openMenu(ctx) end
+    if ctx.game.isPaused() then closeMenu(ctx) else openMenu(ctx) end
     return
   end
-  if not ctx.vars.open then return end
+  if not ctx.game.isPaused() then return end
   if ctx.input.justPressed("ui-up") then ctx.ui.moveFocus("up") end
   if ctx.input.justPressed("ui-down") then ctx.ui.moveFocus("down") end
   if ctx.input.justPressed("ui-confirm") then ctx.ui.activate() end
 end
 
 function script.onEvent(ctx, name)
-  if name == "menu-close" and ctx.vars.open then
+  if name == "menu-close" and ctx.game.isPaused() then
     closeMenu(ctx)
   end
 end
@@ -3465,6 +3422,12 @@ return script
       SpriteRenderer: { assetId: playerAsset.id, width: 28, height: 32 },
       Collider: { shape: 'box', width: 24, height: 28, layer: 'player', collidesWith: ['default', 'enemy'] },
       PhysicsBody: { bodyType: 'dynamic', gravityScale: 0 },
+      // HP, its clamp and the post-hit immunity window as data. 24 frames is
+      // the 0.4s cooldown the script used to re-derive from ctx.time.elapsed
+      // every contact, and it stops a stack of enemies all touching at once
+      // from draining the bar in one frame. event-only: this game has no
+      // game-over, so at 0 the player just stops taking damage.
+      Health: { max: 100, current: 100, invulnerableFrames: 24, deathAction: 'event-only' },
       ParticleEmitter: {
         emitting: false, rate: 0, burst: 0, lifetime: 0.4, speed: 140, spread: 180, direction: 0,
         startSize: 5, endSize: 0, startColor: '#ffcf5c', endColor: '#8a2a12', maxParticles: 64, seed: 7,
@@ -3473,7 +3436,7 @@ return script
   });
   await run(session, 'attachScript', {
     scene, entity: 'Player', script: 'scripts/player-move.lua',
-    params: { speed: 170, maxHp: 100, contactDamage: 8, hitCooldown: 0.4 },
+    params: { speed: 170, contactDamage: 8 },
   });
 
   // Enemy prefab: authored once as a normal (enabled) scene entity, then
@@ -3527,25 +3490,37 @@ return script
     params: { spawnRadius: 250, centerX: CENTER_X, centerY: CENTER_Y },
   });
 
+  // Every HUD label is bound to a declared game-state key, so the engine
+  // rewrites it each frame (including while paused, so the menu never covers a
+  // stale number) and no script owns a Text.content.
   await run(session, 'createEntity', {
     scene, name: 'Timer HUD', tags: ['ui'],
     components: {
       UIElement: { anchor: 'top-left', offset: { x: 24, y: 20 } },
-      Text: { content: 'Time: 0.0', fontSize: 18, color: '#ffe8d1' },
+      Text: {
+        content: 'Time: 0.0', fontSize: 18, color: '#ffe8d1',
+        binding: { key: 'time', format: 'Time: {value}', precision: 1 },
+      },
     },
   });
   await run(session, 'createEntity', {
     scene, name: 'HP HUD', tags: ['ui'],
     components: {
       UIElement: { anchor: 'top-right', offset: { x: -24, y: 20 } },
-      Text: { content: 'HP: 100', fontSize: 18, color: '#ffe8d1', align: 'right' },
+      Text: {
+        content: 'HP: 100', fontSize: 18, color: '#ffe8d1', align: 'right',
+        binding: { key: 'hp', format: 'HP: {value}' },
+      },
     },
   });
   await run(session, 'createEntity', {
     scene, name: 'Horde HUD', tags: ['ui'],
     components: {
       UIElement: { anchor: 'top', offset: { x: 0, y: 20 } },
-      Text: { content: 'Enemies: 0/300', fontSize: 18, color: '#ffb385', align: 'center' },
+      Text: {
+        content: 'Enemies: 0/300', fontSize: 18, color: '#ffb385', align: 'center',
+        binding: { key: 'enemies', format: 'Enemies: {value}/300' },
+      },
     },
   });
   await run(session, 'createEntity', {
@@ -3571,6 +3546,12 @@ return script
   await run(session, 'attachScript', {
     scene, entity: 'Pause Menu', script: 'scripts/menu-controller.lua',
     params: { openX: MENU_OPEN_X, closedX: MENU_CLOSED_X },
+  });
+  // The menu is the one thing that must keep ticking while the game it froze
+  // is frozen. attachScript has no runWhilePaused option, so it takes a second
+  // command (see the note in the report — this ought to be an attachScript field).
+  await run(session, 'setProperties', {
+    scene, entity: 'Pause Menu', properties: { 'Script.runWhilePaused': true },
   });
   await run(session, 'createEntity', {
     scene, name: 'Menu Title', tags: ['ui'], parent: 'Pause Menu',
@@ -3654,9 +3635,11 @@ return script
   const CONTACT_FRAMES = 220;
   probe = await GameSession.create(session.store, { scene, seed: 0 });
   for (let i = 0; i < CONTACT_FRAMES; i++) await probe.stepAsync();
-  const hitCount = probe.eventCounts.get('player-hit') ?? 0;
+  // "damaged" is the Health component's own event — the hand-rolled
+  // "player-hit" emit it replaced no longer exists.
+  const hitCount = probe.eventCounts.get('damaged') ?? 0;
   if (hitCount < 1) {
-    throw new Error(`ember-horde: probed ${CONTACT_FRAMES} frames with no player-hit event — enemies never reached the player`);
+    throw new Error(`ember-horde: probed ${CONTACT_FRAMES} frames with no damaged event — enemies never reached the player`);
   }
   const shakeCount = probe.cameraEffects.filter((r) => r.effect === 'shake').length;
   if (shakeCount < 1) {
@@ -3711,7 +3694,7 @@ return script
     scene,
     steps: [
       { type: 'wait', frames: CONTACT_FRAMES },
-      { type: 'assertEventCount', event: 'player-hit', min: 1 },
+      { type: 'assertEventCount', event: 'damaged', min: 1 },
       { type: 'assertCameraEffect', effect: 'shake', min: 1 },
       { type: 'assertNoErrors' },
     ],
@@ -3732,7 +3715,7 @@ return script
       { type: 'wait', frames: 2 },
       { type: 'assertFocus', entity: null },
       { type: 'wait', frames: CONTACT_FRAMES },
-      { type: 'assertEventCount', event: 'player-hit', min: 1 },
+      { type: 'assertEventCount', event: 'damaged', min: 1 },
       { type: 'assertCameraEffect', effect: 'shake', equals: 0 },
       { type: 'assertNoErrors' },
     ],

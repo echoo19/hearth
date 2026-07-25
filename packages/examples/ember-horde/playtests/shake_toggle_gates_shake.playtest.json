@@ -54,7 +54,7 @@
     },
     {
       "type": "assertEventCount",
-      "event": "player-hit",
+      "event": "damaged",
       "min": 1
     },
     {

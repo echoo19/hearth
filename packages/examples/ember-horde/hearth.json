@@ -83,7 +83,23 @@
       "spinner": true
     }
   },
-  "gameState": {},
+  "gameState": {
+    "time": {
+      "type": "number",
+      "initial": 0,
+      "persist": false
+    },
+    "hp": {
+      "type": "number",
+      "initial": 100,
+      "persist": false
+    },
+    "enemies": {
+      "type": "number",
+      "initial": 0,
+      "persist": false
+    }
+  },
   "codeStyle": {
     "formatOnSave": true
   }

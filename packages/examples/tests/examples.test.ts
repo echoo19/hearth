@@ -749,20 +749,110 @@ describe('ember-horde v0.7 showcase (Wave E spatial-hash horde scale)', () => {
     expect(runtime.errors).toEqual([]);
   });
 
+  // The hit is the Health component's own "damaged" event now, not a
+  // hand-rolled "player-hit" emit — and the HP it reports has to actually come
+  // down off Health.max, which the old assertion could not see.
   it('an enemy reaching the player hurts and shakes the camera (enemy-contact-hurts-and-shakes playtest)', async () => {
     const store = await loadStore('ember-horde');
     const result = await runPlaytest(store, 'enemy-contact-hurts-and-shakes');
     expect(result.passed).toBe(true);
-    expect(result.eventCounts['player-hit']).toBeGreaterThanOrEqual(1);
+    expect(result.eventCounts['damaged']).toBeGreaterThanOrEqual(1);
     expect(result.cameraEffects.some((r) => r.effect === 'shake')).toBe(true);
+
+    // Same contact, driven directly, so the Health numbers are readable: the
+    // component's HP really comes down off max, and the invulnerability window
+    // keeps a wall of touching enemies from draining it in one frame — the
+    // hand-rolled emit the old assertion watched could show neither.
+    const scene = store.getScene('Arena')!;
+    const runtime = await SceneRuntime.create(store, scene.id);
+    runtime.run(220);
+    const hp = runtime.find('Player')!.components.Health!;
+    expect(hp.current).toBeLessThan(hp.max);
+    expect(hp.current).toBe(100 - 8 * (runtime.eventCounts.get('damaged') ?? 0));
+    // 24 invulnerable frames per hit: 220 frames cannot fit more than 10 hits
+    // however many enemies are touching.
+    expect(runtime.eventCounts.get('damaged')).toBeLessThanOrEqual(Math.ceil(220 / 24));
   });
 
   it('turning off the Screen Shake toggle gates the shake but not the hit (shake-toggle-gates-shake playtest)', async () => {
     const store = await loadStore('ember-horde');
     const result = await runPlaytest(store, 'shake-toggle-gates-shake');
     expect(result.passed).toBe(true);
-    expect(result.eventCounts['player-hit']).toBeGreaterThanOrEqual(1);
+    expect(result.eventCounts['damaged']).toBeGreaterThanOrEqual(1);
     expect(result.cameraEffects.some((r) => r.effect === 'shake')).toBe(false);
+  });
+
+  // The three HUD counters used to be strings two scripts formatted into
+  // labels they had gone and found. They are declared game state bound to Text
+  // now, and the ENGINE keeps them current.
+  it('keeps every HUD label current from declared game state, with no script writing Text.content', async () => {
+    const store = await loadStore('ember-horde');
+    const scene = store.getScene('Arena')!;
+    const byName = (n: string) => scene.entities.find((e) => e.name === n)!;
+
+    expect(store.project.gameState.hp).toMatchObject({ type: 'number', initial: 100 });
+    expect(byName('Timer HUD').components.Text!.binding).toMatchObject({ key: 'time', precision: 1 });
+    expect(byName('HP HUD').components.Text!.binding).toMatchObject({ key: 'hp' });
+    expect(byName('Horde HUD').components.Text!.binding).toMatchObject({ key: 'enemies' });
+
+    const runtime = await SceneRuntime.create(store, scene.id);
+    runtime.run(120);
+    const content = (n: string) => runtime.find(n)!.components.Text!.content;
+    expect(content('Timer HUD')).toBe(`Time: ${runtime.elapsed.toFixed(1)}`);
+    expect(content('Horde HUD')).toBe(`Enemies: ${runtime.gameState.get('enemies')}/300`);
+    expect(runtime.gameState.get('enemies')).toBeGreaterThan(0);
+    expect(content('HP HUD')).toBe(`HP: ${runtime.gameState.get('hp')}`);
+    expect(runtime.errors).toEqual([]);
+  });
+
+  // Engine pause, not the old scene-wide emit("pause") protocol: opening the
+  // menu must freeze the whole simulation while the menu script keeps running,
+  // and closing it must hand the world back.
+  it('the pause menu freezes the simulation through ctx.game.pause and resumes it', async () => {
+    const store = await loadStore('ember-horde');
+    const scene = store.getScene('Arena')!;
+    const menu = scene.entities.find((e) => e.name === 'Pause Menu')!;
+    // Only the menu opts back in while paused; every other script must not.
+    expect(menu.components.Script!.runWhilePaused).toBe(true);
+    for (const e of scene.entities) {
+      if (e.name === 'Pause Menu' || !e.components.Script) continue;
+      expect(e.components.Script.runWhilePaused).toBe(false);
+    }
+
+    const runtime = await SceneRuntime.create(store, scene.id);
+    const enemyCount = () => runtime.getEntities().filter((e) => e.tags.includes('enemy')).length;
+    runtime.run(60);
+    expect(enemyCount()).toBeGreaterThan(0);
+
+    // Esc opens the menu, which pauses the engine.
+    runtime.input.setActionDown('pause');
+    runtime.run(1);
+    runtime.input.setActionUp('pause');
+    expect(runtime.paused).toBe(true);
+    // The menu script still ran while paused — it is what slid the container on-screen.
+    expect(runtime.find('Pause Menu')!.components.UIElement!.offset.x).toBe(-105);
+    expect(runtime.getUiFocused()).toBe(runtime.find('Resume')!.id);
+
+    // Frozen: no enemy moves, no wave spawns, and the clock stops. Snapshot
+    // AFTER the pause took effect — the Director sits earlier in entity order,
+    // so it still got its onUpdate on the frame the menu opened.
+    const enemy = runtime.getEntities().find((e) => e.name === 'Enemy')!;
+    const posBefore = { ...enemy.components.Transform!.position };
+    const elapsedBefore = runtime.elapsed;
+    const pausedCount = enemyCount();
+    runtime.run(60);
+    expect(enemy.components.Transform!.position).toEqual(posBefore);
+    expect(enemyCount()).toBe(pausedCount);
+    expect(runtime.elapsed).toBe(elapsedBefore);
+
+    // Esc again resumes, and the horde starts growing back.
+    runtime.input.setActionDown('pause');
+    runtime.run(1);
+    runtime.input.setActionUp('pause');
+    expect(runtime.paused).toBe(false);
+    runtime.run(60);
+    expect(enemyCount()).toBeGreaterThan(pausedCount);
+    expect(runtime.errors).toEqual([]);
   });
 
   it('keyboard/gamepad focus navigation moves between Resume and Screen Shake (pause-menu-focus-nav playtest)', async () => {
