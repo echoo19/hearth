@@ -292,6 +292,11 @@ export class GameSession {
       maxLogs: this.opts.maxLogs,
       musicChannel: this.musicChannel,
       gameState: this.gameState,
+      // Keeps the session flag in step with ctx.game.pause, so a pause taken
+      // from a script is not dropped by the next scene switch.
+      onPausedChanged: (paused) => {
+        this._paused = paused;
+      },
       initialCameraOverlay,
       onCameraEffect: (rec) => {
         if (this.cameraEffects.length < MAX_RECORDED_EVENTS) {

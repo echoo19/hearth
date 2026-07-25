@@ -178,6 +178,12 @@ export interface RuntimeOptions {
    */
   gameState?: GameStateStore;
   /**
+   * Notified when this runtime's pause state changes, including from
+   * ctx.game.pause. GameSession uses it to keep its own flag in step so a pause
+   * taken from a script survives a scene switch.
+   */
+  onPausedChanged?(paused: boolean): void;
+  /**
    * Live notification for every ctx.events.emit — fires even after the
    * runtime's recorded-events list caps, so aggregators keep exact counts.
    */
@@ -517,7 +523,12 @@ export class SceneRuntime {
   }
 
   set paused(value: boolean) {
+    if (this._paused === value) return;
     this._paused = value;
+    // Tell the owning session, or a pause taken from script would be dropped by
+    // the next scene switch — which is exactly what a pause menu's "Restart
+    // Level" button does.
+    this.options.onPausedChanged?.(value);
   }
 
   /**
@@ -1069,6 +1080,11 @@ export class SceneRuntime {
     const hp = this.healthOf(entity, 'health.damage');
     if (!hp.enabled || amount <= 0) return;
     if ((this.invulnerableFrames.get(entity.id) ?? 0) > 0) return;
+    // `died` is a transition, not a state. The default deathAction is
+    // event-only, so a corpse stays in the scene and a hazard still overlapping
+    // it would otherwise re-run every death handler on each hit.
+    const wasAlive = hp.current > 0;
+    if (!wasAlive) return;
 
     hp.current = Math.max(0, hp.current - amount);
     if (hp.invulnerableFrames > 0) {
@@ -1078,8 +1094,8 @@ export class SceneRuntime {
 
     if (hp.current > 0) return;
     this.emitEvent('died', { entity: entity.name });
-    // Read deathAction after the event so a handler can revive by healing and
-    // keep the entity alive — otherwise `destroy` would win over the revive.
+    // Re-read after the event so a handler can revive by healing: otherwise
+    // `destroy` would win over the revive.
     if (hp.current > 0) return;
     if (hp.deathAction === 'destroy') this.destroyEntity(entity.id);
     else if (hp.deathAction === 'disable') entity.enabled = false;

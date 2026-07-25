@@ -39,11 +39,19 @@ describe.skipIf(!built)('player bundle (hearth-player.js)', () => {
   // previous 1,450,000 B ceiling was reached at 1,449,769 B (v1.3.3); the
   // DPR/pixelated rendering fix plus the PIXEL_ART_STRETCHED and
   // SPRITE_COLLIDER_FEET_MISMATCH validators (core is bundled into the
-  // player) measured 1,453,803 B — a +4,034 B (~0.3%) delta. The 1,500,000 B
-  // ceiling still catches an accidental heavyweight dependency (e.g. pulling
-  // in pixi-filters, which the bloat rule forbids).
-  it('stays under the 1.5 MB player budget', () => {
+  // player) measured 1,453,803 B — a +4,034 B (~0.3%) delta.
+  //
+  // The game primitives (engine pause, declared game state + Text bindings,
+  // CharacterController, Health, Respawn/Checkpoint) took it from a measured
+  // 1,487,788 B to 1,507,500 B — a +19,712 B (~1.3%) delta, measured by
+  // building the player at both commits. Five gameplay systems for under 20 KB
+  // is proportionate, but it left the old 1,500,000 B ceiling behind, so the
+  // ceiling moves to 1,550,000 B rather than the test being deleted. It exists
+  // to catch an accidental heavyweight dependency (e.g. pulling in
+  // pixi-filters, which the bloat rule forbids), and a ~42 KB headroom still
+  // does that.
+  it('stays under the 1.55 MB player budget', () => {
     const size = statSync(bundlePath).size;
-    expect(size).toBeLessThan(1_500_000);
+    expect(size).toBeLessThan(1_550_000);
   });
 });
