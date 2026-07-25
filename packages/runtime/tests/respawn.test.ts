@@ -191,9 +191,10 @@ describe('Checkpoint', () => {
     moveTo(rt, 'Player', 900, 900);
     rt.step();
     respawn(rt);
-    // NOTE: the recorded point is the TARGET's position at overlap time, not
-    // the checkpoint entity's own position (100, 0).
-    expect(posOf(rt, 'Player')).toEqual({ x: 110, y: 0 });
+    // The CHECKPOINT's own position (100, 0), not the player's position at the
+    // moment of contact (110, 0). Recording the toucher's position would
+    // respawn a player who grabbed the checkpoint mid-jump back in mid-air.
+    expect(posOf(rt, 'Player')).toEqual({ x: 100, y: 0 });
   });
 
   it('resolves target by exact entity name', async () => {
@@ -223,7 +224,7 @@ describe('Checkpoint', () => {
     expect(posOf(rt, 'Player')).toEqual({ x: 0, y: 0 });
   });
 
-  it('once: false keeps re-recording on every overlapping frame', async () => {
+  it('once: false re-records on every overlapping frame, always its own position', async () => {
     const rt = await makeCheckpointRuntime({ target: 'Player', once: false });
     moveTo(rt, 'Player', 90, 0);
     rt.step();
@@ -232,23 +233,27 @@ describe('Checkpoint', () => {
     moveTo(rt, 'Player', 900, 0);
     rt.step();
     respawn(rt);
-    expect(posOf(rt, 'Player')).toEqual({ x: 120, y: 0 });
+    // Re-recording is idempotent now that the point is the checkpoint's own
+    // position: repeated overlaps cannot drift it around with the player.
+    expect(posOf(rt, 'Player')).toEqual({ x: 100, y: 0 });
   });
 
   it('once: true records only the first overlap and ignores later ones', async () => {
     const rt = await makeCheckpointRuntime({ target: 'Player', once: true });
     moveTo(rt, 'Player', 90, 0);
     rt.step();
-    moveTo(rt, 'Player', 120, 0);
-    rt.step();
-    moveTo(rt, 'Player', 900, 0);
-    rt.step();
-    moveTo(rt, 'Player', 100, 0); // return later: still must not re-record
-    rt.step();
     moveTo(rt, 'Player', 900, 0);
     rt.step();
     respawn(rt);
-    expect(posOf(rt, 'Player')).toEqual({ x: 90, y: 0 });
+    expect(posOf(rt, 'Player')).toEqual({ x: 100, y: 0 });
+    // Returning later must not re-arm it. Proven by moving the flag itself and
+    // confirming the recorded point does not follow.
+    moveTo(rt, 'Flag', 500, 0);
+    moveTo(rt, 'Player', 500, 0);
+    rt.step();
+    moveTo(rt, 'Player', 900, 0);
+    respawn(rt);
+    expect(posOf(rt, 'Player')).toEqual({ x: 100, y: 0 });
   });
 
   it('enabled: false is inert', async () => {
@@ -291,19 +296,23 @@ describe('Checkpoint', () => {
     expect(rt.errors.map((e) => e.message)).toEqual(['ctx.respawn: no Respawn on "Player"']);
   });
 
-  it('an explicit Respawn.point still wins over a reached checkpoint', async () => {
+  it('a reached checkpoint overrides an explicit Respawn.point', async () => {
     const rt = await makeCheckpointRuntime(
       { target: 'Player' },
       { respawn: { point: { x: -7, y: -7 } } },
     );
+    // Before touching anything, the authored point is where respawn goes.
+    respawn(rt);
+    expect(posOf(rt, 'Player')).toEqual({ x: -7, y: -7 });
+
     moveTo(rt, 'Player', 100, 0);
     rt.step();
     moveTo(rt, 'Player', 400, 0);
     respawn(rt);
-    // Respawn.point ?? spawnPoints — a checkpoint can never override a
-    // hand-authored point. Worth knowing when authoring: set point OR use
-    // checkpoints, never both.
-    expect(posOf(rt, 'Player')).toEqual({ x: -7, y: -7 });
+    // Precedence is checkpoint > authored point > captured spawn, so the two
+    // features compose. If the authored point won, declaring a level's starting
+    // point would silently switch every checkpoint in that level off.
+    expect(posOf(rt, 'Player')).toEqual({ x: 100, y: 0 });
   });
 
   it('records a spawn point even when useSpawnPosition is off', async () => {

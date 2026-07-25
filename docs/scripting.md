@@ -623,6 +623,167 @@ color grade, CRT, …) use the data-driven `Camera.postEffects` stack
 instead. See [effects.md](./effects.md) for the full catalog of both
 systems, param ranges, and determinism notes.
 
+### Pause and resume
+
+| Member | What it is |
+| --- | --- |
+| `ctx.game.pause()` | Freeze the simulation |
+| `ctx.game.resume()` | Unfreeze it (a no-op when already running) |
+| `ctx.game.isPaused()` | Is it frozen right now? |
+
+While paused, these stop: physics and collision resolution, checkpoints,
+animators and state machines, particles, sprite-effect and invulnerability
+countdowns, script `onUpdate`, and the timers and tweens those scripts own.
+`ctx.time.elapsed` stops advancing too, because game time is a gameplay
+input.
+
+These keep going: `ctx.time.frame` (playtest `wait` steps and the sweep
+frame budget are counted in frames), camera effects already in flight so a
+fade can still finish, `Text` bindings so a pause menu shows correct
+values, UI pointer and focus events (they arrive outside the frame loop),
+and any script whose `Script` component sets **`runWhilePaused: true`**.
+
+That last flag is what makes a pause menu work: mark the menu's script
+`runWhilePaused`, leave every gameplay script alone, and the menu stays
+live while the world stands still.
+
+```lua
+-- pause-menu.lua, on an entity whose Script has runWhilePaused = true
+local script = {}
+
+function script.onUpdate(ctx)
+  if not ctx.input.justPressed("pause") then return end
+  if ctx.game.isPaused() then
+    ctx.game.resume()
+  else
+    ctx.game.pause()
+  end
+end
+
+return script
+```
+
+The pause lives on the session rather than the scene, so a game paused
+during a transition is still paused in the next scene. Nothing pauses
+itself: no scene load, no death, and no window blur flips this flag for
+you.
+
+### Game state
+
+| Member | What it is |
+| --- | --- |
+| `ctx.state.get(key)` | Current value of a declared key; `nil`/`null` when the key is not declared |
+| `ctx.state.set(key, value)` | Write a declared key (throws on an unknown key or the wrong type) |
+| `ctx.state.add(key, delta)` | Add to a number key; `delta` may be negative |
+| `ctx.state.reset(key?)` | Restore one key to its declared initial value, or every key with no argument |
+
+Score, lives, currency, and the best-run flag are **declared in
+`hearth.json`** under `gameState`, not invented at runtime:
+
+```jsonc
+"gameState": {
+  "score": { "type": "number",  "initial": 0 },
+  "lives": { "type": "number",  "initial": 3 },
+  "hasKey": { "type": "boolean", "initial": false },
+  "best":  { "type": "number",  "initial": 0, "persist": true }
+}
+```
+
+Each entry is a `type` (`number`, `boolean`, or `string`), an `initial`
+value of that type, and optional `persist`. Declare keys with
+`hearth set-settings --game-state '{"score":{"type":"number","initial":0}}'`
+(merged per key; pass `null` for a key to remove it) rather than editing
+`hearth.json` by hand. Declaring up front is what buys the typo check:
+`ctx.state.set("scoer", 1)` throws instead of quietly creating a second
+counter, and the editor can offer a key dropdown.
+
+Values are **session-scoped**, so they survive `ctx.scenes.load` the way
+the music channel does; keys marked `persist` also round-trip through save
+storage on every change, which is `localStorage` in the browser. Use
+`ctx.state` for values the game itself is about, and `ctx.save` for
+anything outside a run (settings, unlocks, high-score tables).
+
+```lua
+ctx.state.add("score", 10)
+if ctx.state.get("lives") <= 0 then
+  ctx.state.set("best", math.max(ctx.state.get("best"), ctx.state.get("score")))
+  ctx.state.reset("score")
+  ctx.scenes.load("GameOver")
+end
+```
+
+A change fires a `stateChanged` event with `{ key, value, previous }`, so a
+combo meter or an achievement watcher needs no polling. Writing the value a
+key already holds changes nothing and fires nothing.
+
+To *display* a value, do not write a `Text` from a script. Bind it:
+`Text.binding = { key = "score", format = "Score: {value}" }` and the
+engine keeps the label current: it rewrites `content` on the write itself
+and again every frame, pause included, so a script that reads the label
+right after `ctx.state.add` sees the new text. See
+[components.md](./components.md#text). Validation reports
+`TEXT_BINDING_UNKNOWN_STATE` when a binding names a key nothing declares,
+because the runtime cannot resolve it and the label would silently render
+blank.
+
+### Health and respawn
+
+| Member | What it is |
+| --- | --- |
+| `ctx.health.get(entity)` | `{ current, max }` for an entity with a `Health` component |
+| `ctx.health.damage(entity, amount)` | Subtract hit points (ignored during invulnerability frames) |
+| `ctx.health.heal(entity, amount)` | Add hit points, capped at `max` |
+| `ctx.health.isInvulnerable(entity)` | Is the entity still in its post-hit mercy window? |
+| `ctx.respawn(entity)` | Move an entity with a `Respawn` component back to its respawn point |
+
+Every one of these takes an entity id, an exact entity name, or an
+`EntityHandle` (from `ctx.scene.find`, `ctx.collisions`, or
+`onCollision`), so a bullet can damage whatever it hit without looking
+anything up:
+
+```lua
+function script.onCollision(ctx, other)
+  ctx.health.damage(other, ctx.params.damage or 1)
+  ctx.destroySelf()
+end
+```
+
+Damage and healing emit events rather than drawing anything: `damaged`
+(`{ entity, amount, current }`), `healed` (same shape), `died`
+(`{ entity }`) at zero, and `respawned` (`{ entity }`). `Health` owns no
+visuals on purpose, so the flash, shake, knockback, and blink stay yours:
+
+```lua
+function script.onStart(ctx)
+  ctx.events.on("damaged", function(data)
+    if data.entity ~= ctx.entity.name then return end
+    ctx.effects.flash("#ff4444", 0.15)
+    ctx.camera.shake(6, 0.2)
+  end)
+
+  ctx.events.on("died", function(data)
+    if data.entity ~= ctx.entity.name then return end
+    ctx.particles.burst(24)
+    ctx.state.add("lives", -1)
+    ctx.respawn(ctx.entity.id)
+  end)
+end
+```
+
+Respawning is never automatic: `ctx.respawn` is a call you make, usually
+from a `died` handler like the one above. It returns the entity to
+`Respawn.point` if set, otherwise the position captured when the entity
+started, otherwise the last `Checkpoint` that entity reached. Reaching a
+`Checkpoint` is the only thing that moves that point, and it does so
+silently, so raise the flag or play the chime from your own
+`onCollision`.
+
+Two calls throw rather than fail quietly, because both mean the scene is
+wired wrong: `ctx.health.*` on an entity with no `Health`, and
+`ctx.respawn` on an entity with no `Respawn` (or with `point: null` and
+`useSpawnPosition: false`, which leaves nowhere to go). Errors surface in
+run reports and the Console panel like any other script error.
+
 ### UI focus
 
 | Member | What it is |
@@ -750,6 +911,23 @@ The `bounce-patrol` example's `ScoreUI` (`packages/examples/bounce-patrol`)
 is a complete, playtested emit/`onEvent` pair: coins emit `"coin"` on
 pickup, the score label increments purely from `onEvent`, no
 `ctx.events.on` subscription needed at all.
+
+The engine emits a few events of its own through the same bus, so you can
+subscribe to them exactly like your own:
+
+| Event | Payload | Emitted when |
+| --- | --- | --- |
+| `damaged` | `{ entity, amount, current }` | `ctx.health.damage` actually removes hit points |
+| `healed` | `{ entity, amount, current }` | `ctx.health.heal` actually adds hit points |
+| `died` | `{ entity }` | A `Health` reaches 0, before `deathAction` is applied |
+| `respawned` | `{ entity }` | `ctx.respawn` moved an entity back |
+| `jumped` | `{ entity }` | A `CharacterController` performed a jump |
+| `stateChanged` | `{ key, value, previous }` | A declared `gameState` value changed |
+
+`entity` is the entity's **name**, so a shared handler filters with
+`data.entity == ctx.entity.name`. These are the hooks that keep the
+gameplay primitives free of visuals: the engine reports what happened and
+your scripts decide how it looks and sounds.
 
 Event payloads (and other JS-side objects) reach Lua as proxies, not
 plain Lua tables: `data.value` field access works as expected, but

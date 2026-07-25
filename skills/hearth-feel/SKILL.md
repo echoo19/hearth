@@ -29,6 +29,11 @@ stack, in the order they should land:
 4. **Sound** — a layered SFX on the same frame.
 5. **Knockback / recovery** — a short eased tween out of the freeze.
 
+If the struck entity has a `Health` component, hang the whole stack off the events it emits
+(`damaged`, `died`) instead of re-deriving the hit in `onCollision`: `Health` deliberately draws
+nothing, so the flash, shake, burst, sound and knockback are exactly the part you own. Same for
+`jumped` from a `CharacterController` and `respawned` from `ctx.respawn`.
+
 ### Recipe: full impact stack (Lua)
 
 Deterministic, no wall clock, no `Math.random`. Attach to the entity that takes the hit.
@@ -176,7 +181,7 @@ There is no built-in menu system — and you don't need one. A menu is a scene o
 thing. This is a feature: menus are fully yours.
 
 - **Title/start screen** — its own scene; the Start button's `onUiEvent` calls `ctx.scenes.load("Level 1")`. Set it as `initialScene` so the export boots into it (no engine chrome ever ships).
-- **Pause** — an overlay built in the *same* scene, hidden until `pause` is pressed. Because Hearth has no engine pause, "paused" means your scripts stop integrating: gate every mover's `onUpdate` on a shared `ctx.vars`/event flag (the same freeze trick as hit-stop), and show the pause `UIElement` subtree.
+- **Pause** — an overlay built in the *same* scene, hidden until `pause` is pressed. Call `ctx.game.pause()` and the engine freezes physics, animation, particles and every gameplay script for you; set `Script.runWhilePaused` on the menu's own script so it keeps updating (`hearth set "Level 1" PauseMenu Script.runWhilePaused true`), then show the pause `UIElement` subtree. Don't hand-roll a freeze flag for this — that trick is for hit-stop, which freezes a couple of actors for a few frames, not the whole game.
 - **Settings** — `UISlider` (volume), `UIToggle` (screen shake, etc.), wired to `ctx.audio.setMusicVolume` and to flags your effect code reads. Persist them with `ctx.save` so they stick across sessions.
 
 Bind the action first so logic never hard-codes a key:

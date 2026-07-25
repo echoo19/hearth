@@ -326,6 +326,13 @@ export class SceneRuntime {
    * coordinates that games otherwise cache in several scripts at once.
    */
   private readonly spawnPoints = new Map<string, { x: number; y: number }>();
+  /**
+   * Respawn points set by a reached Checkpoint, keyed by the TARGET entity id.
+   * Kept separate from the authored captures so precedence is predictable:
+   * a reached checkpoint wins, then Respawn.point, then the captured spawn.
+   * Sharing one map would make an authored point silently disable checkpoints.
+   */
+  private readonly checkpointPoints = new Map<string, { x: number; y: number }>();
   /** Checkpoints that have already fired, for `once`. */
   private readonly firedCheckpoints = new Set<string>();
   private entities: RuntimeEntity[] = [];
@@ -1118,7 +1125,11 @@ export class SceneRuntime {
   private respawnEntity(entity: RuntimeEntity): void {
     const respawn = entity.components.Respawn;
     if (!respawn) throw new Error(`ctx.respawn: no Respawn on "${entity.name}"`);
-    const target = respawn.point ?? this.spawnPoints.get(entity.id);
+    // Precedence: the last checkpoint reached, then an authored point, then the
+    // position captured at start. Checkpoints win so the two features compose —
+    // authoring a starting point must not quietly switch checkpoints off.
+    const target =
+      this.checkpointPoints.get(entity.id) ?? respawn.point ?? this.spawnPoints.get(entity.id);
     if (!target) {
       throw new Error(
         `ctx.respawn: "${entity.name}" has no respawn point — set Respawn.point or enable useSpawnPosition`,
@@ -1177,13 +1188,16 @@ export class SceneRuntime {
       const checkpoint = entity.components.Checkpoint;
       if (!checkpoint?.enabled) continue;
       if (checkpoint.once && this.firedCheckpoints.has(entity.id)) continue;
+      // The checkpoint's OWN position is the respawn point, not wherever the
+      // player happened to be standing when they touched it — otherwise
+      // grabbing a checkpoint mid-jump respawns you in mid-air.
+      const here = entity.components.Transform?.position;
+      if (!here) continue;
       for (const contact of entity.collisions) {
         const other = contact.other;
         if (!other.components.Respawn) continue;
         if (!this.matchesTarget(other, checkpoint.target)) continue;
-        const position = other.components.Transform?.position;
-        if (!position) continue;
-        this.spawnPoints.set(other.id, { x: position.x, y: position.y });
+        this.checkpointPoints.set(other.id, { x: here.x, y: here.y });
         if (checkpoint.once) this.firedCheckpoints.add(entity.id);
         break;
       }

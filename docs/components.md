@@ -151,9 +151,17 @@ Defaults:
 ```json
 {
   "scriptPath": "",
-  "params": {}
+  "params": {},
+  "runWhilePaused": false
 }
 ```
+
+`runWhilePaused` keeps this script's `onUpdate`, timers, and tweens ticking
+while the game is frozen by `ctx.game.pause()`. Set it on pause menus,
+option screens, and anything else that has to stay live while gameplay
+stops. Leave it `false` for gameplay scripts, which is what makes pause
+actually pause. See [scripting.md](./scripting.md#pause-and-resume) for
+what freezes and what does not.
 
 ## Camera
 
@@ -200,9 +208,27 @@ Defaults:
   "align": "left",
   "fontFamily": "monospace",
   "layer": 10,
-  "visible": true
+  "visible": true,
+  "binding": null
 }
 ```
+
+`binding` mirrors a declared game-state value into `content`, so a score or
+lives label needs no script at all:
+
+```json
+{ "key": "score", "format": "Score: {value}", "precision": 0 }
+```
+
+`key` must be declared in `hearth.json` `gameState` (validation reports
+`TEXT_BINDING_UNKNOWN_STATE` when it is not, because an unresolvable key
+renders as a blank label). `format` is a template with one `{value}`
+placeholder; `precision` is the decimal places used for number values and
+is ignored for booleans and strings. The engine rewrites `content` the
+moment the value changes and again every frame while a binding is set,
+including while the game is paused, so
+**nothing else should write `Text.content` for that entity**. Leave
+`binding` at `null` when a script owns the text.
 
 ## AudioSource
 
@@ -583,6 +609,172 @@ dissolveAmount', 1, 0.6)` for a reproducible death/spawn effect. See
 [effects.md](./effects.md) for the full field reference, the `ctx.effects`
 scripting surface, and the `assertPostEffect` playtest step's sibling
 coverage of `Camera.postEffects`.
+
+## CharacterController
+
+Input-driven movement as data instead of a hand-written controller. Reads named input actions and writes `PhysicsBody.velocity`.
+
+Defaults:
+
+```json
+{
+  "mode": "topDown",
+  "speed": 180,
+  "acceleration": 0,
+  "drag": 0,
+  "jumpHeight": 0,
+  "coyoteFrames": 0,
+  "jumpBufferFrames": 0,
+  "maxFallSpeed": 0,
+  "airControl": 1,
+  "actions": {
+    "left": "left",
+    "right": "right",
+    "up": "up",
+    "down": "down",
+    "jump": "jump"
+  },
+  "enabled": true
+}
+```
+
+`mode: "topDown"` drives both axes and normalises diagonals, so moving
+diagonally is exactly as fast as moving straight. `mode: "platformer"`
+drives x and leaves y to gravity, apart from the jump impulse and the
+`maxFallSpeed` cap.
+
+The component **needs a sibling `PhysicsBody`** to write velocity into.
+Without one it does nothing at all, which validation reports as
+`CHARACTER_CONTROLLER_WITHOUT_BODY`. Use a `dynamic` body for a platformer
+and a `kinematic` body for top-down movement that should ignore gravity.
+
+Tuning fields, in the units they are named for:
+
+| Field | Meaning |
+| --- | --- |
+| `speed` | Target speed in px/s |
+| `acceleration` | px/s² toward the target speed; `0` snaps instantly, which is what a hand-written controller usually does |
+| `drag` | px/s² toward zero when no direction is held; `0` stops instantly |
+| `jumpHeight` | Peak height in **pixels**, converted to an impulse using this body's effective gravity (`0` means no jump) |
+| `coyoteFrames` | Frames after walking off a ledge where a jump press still fires |
+| `jumpBufferFrames` | Frames before landing where a jump press is remembered and replayed |
+| `maxFallSpeed` | Downward speed cap in px/s (`0` = uncapped); upward motion is never clipped |
+| `airControl` | Fraction of horizontal control kept while airborne, platformer only; `0` keeps air momentum instead of stopping mid-air |
+
+The controller runs **before** each entity's `onUpdate`, so a script can
+overwrite `PhysicsBody.velocity` in the same frame. That ordering is the
+escape hatch: dash, drift, wall-jump, and knockback layer on top of the
+primitive instead of replacing it. `enabled: false` hands movement back to
+scripts without removing the component (useful during a cutscene). A jump
+the controller performs emits a `jumped` event (`{ entity }`), so the sound,
+dust puff, and squash still belong to your scripts.
+
+Not for motion that is not input-driven. Cutscene movers, AI-steered
+enemies, and vehicles with their own physics should keep writing velocity
+from a script.
+
+## Health
+
+Hit points with optional invulnerability frames. Changed through `ctx.health.damage` / `ctx.health.heal`, never by writing `current` directly.
+
+Defaults:
+
+```json
+{
+  "max": 3,
+  "current": 3,
+  "invulnerableFrames": 0,
+  "deathAction": "event-only",
+  "enabled": true
+}
+```
+
+Every change emits an event: `damaged` (`{ entity, amount, current }`),
+`healed` (same shape), and `died` (`{ entity }`) when `current` reaches 0.
+Damage is ignored while invulnerability frames remain, so
+`invulnerableFrames: 30` gives half a second of mercy after each hit;
+`ctx.health.isInvulnerable(entity)` reports whether that window is open,
+which is what you blink a sprite from.
+
+`deathAction` decides what the engine itself does at zero: `event-only`
+(the default, your scripts decide everything), `disable` (the entity stops
+updating and rendering), or `destroy` (removed from the scene). The default
+is deliberate. Adding `Health` can never silently delete an entity, and
+`destroy` has to be opted into. A `died` handler that heals back above zero
+keeps the entity alive, because `deathAction` is read after the event fires.
+
+This component **owns no visuals**. Drive flash, shake, knockback, and
+blink from those events with `SpriteEffects`, `ctx.effects.flash`,
+`ctx.camera.shake`, and `ctx.particles.burst`. Skip `Health` entirely in a
+one-hit-kill game or a score-only game, where a tag and `ctx.destroySelf()`
+say the same thing with less machinery.
+
+## Respawn
+
+Where `ctx.respawn(entity)` puts this entity.
+
+Defaults:
+
+```json
+{
+  "point": null,
+  "useSpawnPosition": true,
+  "resetVelocity": true
+}
+```
+
+With `useSpawnPosition` (the default) the engine captures the authored
+position when the entity starts, so no script has to cache spawn
+coordinates and two scripts cannot disagree about them. Set `point` to
+`{ "x": …, "y": … }` to override with a fixed location instead.
+`resetVelocity` zeroes `PhysicsBody.velocity` on respawn, which stops a
+death mid-fall from carrying its momentum into the next life.
+
+Respawning is never automatic. Call `ctx.respawn`, usually from a `died`
+handler:
+
+```lua
+function script.onStart(ctx)
+  ctx.events.on("died", function(data)
+    if data.entity == ctx.entity.name then ctx.respawn(ctx.entity.id) end
+  end)
+end
+```
+
+A `Checkpoint` a targeted entity reaches replaces the point `ctx.respawn`
+returns it to. Not the right primitive for a roguelike that reloads the
+scene on death; call `ctx.scenes.load` for that.
+
+## Checkpoint
+
+A trigger that moves another entity's respawn point when reached.
+
+Defaults:
+
+```json
+{
+  "target": "tag:player",
+  "once": false,
+  "enabled": true
+}
+```
+
+Put it on an entity with a **trigger `Collider`** (`isTrigger: true`). A
+solid collider blocks the player instead of reporting the overlap, and no
+collider at all means no overlap ever happens; validation reports both as
+`CHECKPOINT_WITHOUT_TRIGGER`.
+
+`target` is an entity name, or `"tag:<tag>"` to match by tag. The target
+entity needs a `Respawn` component, since that is what a checkpoint
+rewrites, and validation reports `CHECKPOINT_TARGET_NOT_FOUND` or
+`CHECKPOINT_TARGET_MISSING_RESPAWN` when the wiring is incomplete. `once`
+fires only the first time this checkpoint is reached (a one-way flag);
+leaving it `false` lets the player re-arm a checkpoint by walking back
+through it. `enabled: false` makes a checkpoint inert without removing it.
+
+Checkpoints are quiet by design: reaching one emits nothing, so the flag
+raise or chime is a script's job (watch for the overlap in `onCollision`).
+A single-screen game where death costs nothing to redo does not need them.
 
 ## Notes
 
