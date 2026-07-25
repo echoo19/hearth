@@ -107,6 +107,10 @@ export const inspectProject = defineCommand({
       inputMappings: ctx.store.project.inputMappings,
       buildSettings: ctx.store.project.buildSettings,
       codeStyle: ctx.store.project.codeStyle,
+      // Declared game state, so an agent (or the Inspector's Text-binding
+      // picker) can see which keys exist instead of guessing a name and
+      // tripping TEXT_BINDING_UNKNOWN_STATE.
+      gameState: ctx.store.project.gameState,
     };
   },
 });

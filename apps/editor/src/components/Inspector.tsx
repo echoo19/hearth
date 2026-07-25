@@ -12,6 +12,8 @@ import {
 } from '@hearth/core';
 import { useEditor } from '../store';
 import { PostEffectsField } from './PostEffectsField';
+import { TextBindingField } from './TextBindingField';
+import { isTextBinding } from '../textBinding';
 import type { AssetItem, SceneEntity } from '../types';
 import { addPoint, removePoint, setPointAxis, shouldHideField } from '../vec2List';
 import { addString, removeString, setStringAt } from '../stringList';
@@ -973,6 +975,313 @@ function AnchorGrid({ value, onCommit }: { value: string; onCommit: (v: string) 
 }
 
 // ---------------------------------------------------------------------------
+// CharacterController.actions: the five input slots as labelled sub-rows.
+// ---------------------------------------------------------------------------
+
+/** The slots CharacterControllerSchema declares, in schema order. */
+export const CHARACTER_ACTION_SLOTS = ['left', 'right', 'up', 'down', 'jump'] as const;
+const CUSTOM_ACTION_OPTION = '__custom__';
+
+/**
+ * One action slot: a dropdown of the actions the project actually declares
+ * (hearth.json inputMappings.actions — the same list the Input panel edits),
+ * plus a "Custom…" escape hatch for an action that doesn't exist yet. A slot
+ * pointed at an undeclared action reads as a marked custom value rather than
+ * being silently rewritten, exactly like FontFamilyField's unknown font.
+ *
+ * A dropdown rather than five bare text inputs because an action name is
+ * declared data, not free text: "jmp" would type in cleanly and then just
+ * never fire.
+ */
+function ActionSlotField({
+  slot,
+  value,
+  declared,
+  onCommit,
+}: {
+  slot: string;
+  value: string;
+  declared: string[];
+  onCommit: (v: string) => void;
+}) {
+  const known = declared.includes(value);
+  // Seeded false, not `!known`: `declared` arrives with the project, so seeding
+  // from a first render that hasn't got it yet would pin the slot to Custom
+  // forever. An unknown value already forces the text input via `!known`.
+  const [forceCustom, setForceCustom] = useState(false);
+  // With nothing declared there is no list to pick from, so the dropdown would
+  // only ever offer "Custom…" — go straight to the text input.
+  const showCustom = declared.length === 0 || forceCustom || !known;
+  return (
+    <div className="inspector-row editor-row--nested" style={{ '--nested-label-w': '52px' } as React.CSSProperties}>
+      <label className="field-label" title={`CharacterController.actions.${slot}`}>
+        {humanizeFieldLabel(slot)}
+      </label>
+      <div className="action-slot">
+        {declared.length > 0 && (
+          <select
+            className="select"
+            aria-label={`${humanizeFieldLabel(slot)} action`}
+            value={showCustom ? CUSTOM_ACTION_OPTION : value}
+            onChange={(e) => {
+              if (e.target.value === CUSTOM_ACTION_OPTION) {
+                setForceCustom(true);
+              } else {
+                setForceCustom(false);
+                onCommit(e.target.value);
+              }
+            }}
+          >
+            {declared.map((action) => (
+              <option key={action} value={action}>
+                {action}
+              </option>
+            ))}
+            <option value={CUSTOM_ACTION_OPTION}>Custom…</option>
+          </select>
+        )}
+        {showCustom && (
+          <TextField value={value} placeholder={slot} onCommit={(v) => onCommit(v.trim())} />
+        )}
+        {showCustom && value !== '' && !known && declared.length > 0 && (
+          <span className="field-fallback-note">
+            "{value}" isn't a declared input action, so this direction never fires. Add it in the
+            Input panel.
+          </span>
+        )}
+      </div>
+    </div>
+  );
+}
+
+export function ActionMapField({
+  value,
+  declared,
+  onCommit,
+}: {
+  value: Record<string, string>;
+  /** Action names declared by the project (ProjectInfo.inputActions keys). */
+  declared: string[];
+  /** Writes one slot through CharacterController.actions.<slot>. */
+  onCommit: (slot: string, action: string) => void;
+}) {
+  return (
+    <div className="action-map">
+      {CHARACTER_ACTION_SLOTS.map((slot) => (
+        <ActionSlotField
+          key={slot}
+          slot={slot}
+          value={typeof value[slot] === 'string' ? value[slot] : ''}
+          declared={declared}
+          onCommit={(v) => onCommit(slot, v)}
+        />
+      ))}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Respawn.point: a nullable Vec2 — the Vec2 control plus a bind/unbind toggle.
+// ---------------------------------------------------------------------------
+
+/**
+ * Respawn.point is nullable, and null is the DEFAULT — so the generic path saw
+ * `null` and fell through to the read-only fallback, leaving the field
+ * uneditable in the editor. A checkbox switches the whole value between null
+ * and a real Vec2 (committed wholesale, since there's nothing to descend into
+ * while it's null), and the Vec2 pair only exists while it's set.
+ *
+ * The precedence note matters more than the control: the runtime resolves a
+ * respawn as `respawn.point ?? capturedSpawnPoint` (runtime.ts respawnEntity),
+ * and a Checkpoint writes the CAPTURED point, never `Respawn.point`. So a set
+ * `point` silently outranks both `useSpawnPosition` and every checkpoint in
+ * the level — a trap worth spelling out on the field that causes it.
+ */
+export function RespawnPointField({
+  value,
+  useSpawnPosition,
+  fallback,
+  onCommit,
+}: {
+  value: { x: number; y: number } | null;
+  /** The sibling field, which this one overrides when set. */
+  useSpawnPosition: boolean;
+  /** Seed for a freshly-set point — the entity's current position beats {0,0}. */
+  fallback: { x: number; y: number };
+  onCommit: (next: { x: number; y: number } | null) => void;
+}) {
+  return (
+    <div className="nullable-vec2">
+      <label className="nullable-vec2-toggle">
+        <input
+          type="checkbox"
+          checked={value !== null}
+          onChange={(e) => onCommit(e.target.checked ? { ...fallback } : null)}
+        />
+        <span>Fixed point</span>
+      </label>
+      {value !== null ? (
+        <>
+          <Vec2Field
+            value={value}
+            onCommitAxis={(axis, v) => onCommit({ ...value, [axis]: v })}
+          />
+          {useSpawnPosition && (
+            <span className="field-fallback-note">
+              A fixed point wins over the position captured on start. A Checkpoint reached during
+              play still wins over both.
+            </span>
+          )}
+        </>
+      ) : useSpawnPosition ? (
+        <span className="field-fallback-note">
+          Respawns at the position captured on start, or the last Checkpoint reached.
+        </span>
+      ) : (
+        <span className="field-error">
+          No respawn point: ctx.respawn will fail. Turn on Use Spawn Position or set a fixed point.
+        </span>
+      )}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Checkpoint.target: an entity name or "tag:<tag>", picked not typed.
+// ---------------------------------------------------------------------------
+
+const TAG_TARGET_PREFIX = 'tag:';
+const CUSTOM_TARGET_OPTION = '__custom__';
+
+/** Every distinct tag in the scene, sorted, as `tag:<tag>` target values. */
+export function tagTargets(entities: { tags: string[] }[]): string[] {
+  const tags = new Set<string>();
+  for (const entity of entities) {
+    for (const tag of entity.tags) if (tag) tags.add(tag);
+  }
+  return [...tags].sort().map((tag) => `${TAG_TARGET_PREFIX}${tag}`);
+}
+
+/** A target's shape as far as this control cares: id, name, tags, components. */
+type TargetEntity = {
+  id: string;
+  name: string;
+  tags: string[];
+  components: Record<string, unknown>;
+};
+
+/**
+ * Which entities answer to this target. Same rule as core's validator and the
+ * runtime: `tag:<tag>` matches on tags, anything else is an exact name.
+ */
+export function targetMatches(entities: TargetEntity[], target: string): TargetEntity[] {
+  if (target.startsWith(TAG_TARGET_PREFIX)) {
+    const tag = target.slice(TAG_TARGET_PREFIX.length);
+    return entities.filter((e) => e.tags.includes(tag));
+  }
+  return entities.filter((e) => e.name === target);
+}
+
+/**
+ * Checkpoint.target is a string with structure — an entity name, or
+ * "tag:<tag>" — so a bare text input is the wrong control twice over: the
+ * `tag:` prefix is invisible convention, and a name that matches nothing makes
+ * the checkpoint inert (core's validator reports CHECKPOINT_TARGET_NOT_FOUND
+ * for it). This offers the scene's tags and entity names, keeps a "Custom…"
+ * escape hatch for an entity that doesn't exist yet, and says so inline for
+ * each way the target can end up inert: nothing matches, nothing matching has
+ * a Respawn (runtime.ts applyCheckpoints skips those, and the validator warns
+ * CHECKPOINT_TARGET_MISSING_RESPAWN), or the only match is the checkpoint
+ * itself — which can never overlap itself, so it never fires.
+ *
+ * The pick list spans the WHOLE scene, self included, so it agrees with the
+ * validator's match set rather than quietly disagreeing with the warnings the
+ * user will read in the Changes panel.
+ */
+export function CheckpointTargetField({
+  value,
+  entities,
+  selfId,
+  onCommit,
+}: {
+  value: string;
+  /** Every entity in the scene, the checkpoint's own included. */
+  entities: TargetEntity[];
+  /** The entity this Checkpoint sits on — it can never trigger on itself. */
+  selfId: string;
+  onCommit: (v: string) => void;
+}) {
+  const tags = tagTargets(entities);
+  const names = entities.map((e) => e.name);
+  const known = tags.includes(value) || names.includes(value);
+  // Seeded false for the same reason as ActionSlotField's: the scene's entity
+  // list is loaded, so `!known` on a first render would stick.
+  const [forceCustom, setForceCustom] = useState(false);
+  const showCustom = forceCustom || !known;
+  const matches = targetMatches(entities, value);
+  const selfOnly = matches.length > 0 && matches.every((e) => e.id === selfId);
+  const withRespawn = matches.filter((e) => e.components.Respawn !== undefined);
+  return (
+    <div className="checkpoint-target">
+      <select
+        className="select"
+        aria-label="Checkpoint target"
+        value={showCustom ? CUSTOM_TARGET_OPTION : value}
+        onChange={(e) => {
+          if (e.target.value === CUSTOM_TARGET_OPTION) {
+            setForceCustom(true);
+          } else {
+            setForceCustom(false);
+            onCommit(e.target.value);
+          }
+        }}
+      >
+        {tags.length > 0 && (
+          <optgroup label="By tag">
+            {tags.map((target) => (
+              <option key={target} value={target}>
+                {target}
+              </option>
+            ))}
+          </optgroup>
+        )}
+        {names.length > 0 && (
+          <optgroup label="By entity name">
+            {names.map((name) => (
+              <option key={name} value={name}>
+                {name}
+              </option>
+            ))}
+          </optgroup>
+        )}
+        <option value={CUSTOM_TARGET_OPTION}>Custom…</option>
+      </select>
+      {showCustom && (
+        <TextField value={value} placeholder="tag:player" onCommit={(v) => onCommit(v.trim())} />
+      )}
+      {matches.length === 0 ? (
+        <span className="field-fallback-note">
+          Nothing in this scene matches, so reaching this checkpoint changes nothing.
+        </span>
+      ) : selfOnly ? (
+        <span className="field-fallback-note">
+          This only matches the checkpoint's own entity, which can't overlap itself — target the
+          entity that should respawn here.
+        </span>
+      ) : (
+        withRespawn.length === 0 && (
+          <span className="field-fallback-note">
+            {matches.length === 1
+              ? `"${matches[0].name}" has no Respawn component, so its respawn point can't move.`
+              : `None of the ${matches.length} matching entities has a Respawn component, so no respawn point can move.`}
+          </span>
+        )
+      )}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
 
 function isVec2(v: unknown): v is { x: number; y: number } {
   return (
@@ -991,6 +1300,16 @@ function isVec2Array(v: unknown): v is { x: number; y: number }[] {
 
 function isStringArray(v: unknown): v is string[] {
   return Array.isArray(v) && v.every((s) => typeof s === 'string');
+}
+
+/** CharacterController.actions' shape: a flat record of action names. */
+function isStringRecord(v: unknown): v is Record<string, string> {
+  return (
+    typeof v === 'object' &&
+    v !== null &&
+    !Array.isArray(v) &&
+    Object.values(v).every((s) => typeof s === 'string')
+  );
 }
 
 /** Tilemap.tileAssets shape: plain asset ids, fixed frame sources, or autotile rules. */
@@ -1022,6 +1341,13 @@ export function Inspector() {
   // Hookless scripts are kept out of the picker: attaching a library does
   // nothing. Shared classification with the Code panel's script tree.
   const libraries = useLibraryScripts();
+  // Text.binding's key dropdown: the project's declared gameState keys. Not on
+  // `info` (inspectProject doesn't surface gameState) — the store reads them
+  // from hearth.json, see its `gameState` field.
+  const gameState = useEditor((s) => s.gameState);
+  // CharacterController.actions' pick list: the actions the project declares
+  // (the same map the Input panel edits).
+  const declaredActions = useMemo(() => Object.keys(info?.inputActions ?? {}), [info?.inputActions]);
   const componentDocs = useEditor((s) => s.componentDocs);
   const exec = useEditor((s) => s.exec);
   const query = useEditor((s) => s.query);
@@ -1593,6 +1919,89 @@ export function Inspector() {
                         value={value as Record<string, unknown>}
                         onWriteKey={(k, next) => setProperty(`${property}.${k}`, next)}
                         onWriteAll={(next) => void setProperty(property, next)}
+                      />
+                    );
+                  } else if (
+                    type === 'Text' &&
+                    field === 'binding' &&
+                    (value === null || isTextBinding(value))
+                  ) {
+                    // Text.binding is a nullable { key, format, precision }
+                    // group whose key must be a DECLARED gameState key — a
+                    // dropdown, never a text input (the typo it prevents is
+                    // the reason the binding exists). Own file, like
+                    // PostEffectsField, since it carries its own
+                    // empty/unavailable states.
+                    control = (
+                      <TextBindingField
+                        key={rowKey}
+                        value={value}
+                        gameState={gameState}
+                        onCommit={(next) => setProperty(property, next)}
+                      />
+                    );
+                  } else if (
+                    type === 'CharacterController' &&
+                    field === 'actions' &&
+                    isStringRecord(value)
+                  ) {
+                    // The five input slots, one labelled sub-row each, picked
+                    // from the project's declared input actions.
+                    control = (
+                      <ActionMapField
+                        key={rowKey}
+                        value={value}
+                        declared={declaredActions}
+                        onCommit={(slot, action) => setProperty(`${property}.${slot}`, action)}
+                      />
+                    );
+                  } else if (
+                    type === 'Respawn' &&
+                    field === 'point' &&
+                    (value === null || isVec2(value))
+                  ) {
+                    // Nullable Vec2: null is the schema default, so without
+                    // this branch the field's usual state is the read-only
+                    // fallback.
+                    control = (
+                      <RespawnPointField
+                        key={rowKey}
+                        value={value}
+                        useSpawnPosition={
+                          (component as Record<string, unknown>).useSpawnPosition !== false
+                        }
+                        fallback={entity.position ?? { x: 0, y: 0 }}
+                        onCommit={(next) => setProperty(property, next)}
+                      />
+                    );
+                  } else if (type === 'Respawn' && field === 'useSpawnPosition' && typeof value === 'boolean') {
+                    // The one field a sibling can render inert: a set
+                    // Respawn.point outranks it (runtime.ts respawnEntity), so
+                    // say so here rather than leave a checkbox that does
+                    // nothing.
+                    const pointSet = (component as Record<string, unknown>).point != null;
+                    control = (
+                      <div className="checkbox-with-note">
+                        <input
+                          type="checkbox"
+                          checked={value}
+                          onChange={(e) => setProperty(property, e.target.checked)}
+                        />
+                        {pointSet && (
+                          <span className="field-fallback-note">
+                            Overridden by Point while that is set.
+                          </span>
+                        )}
+                      </div>
+                    );
+                  } else if (type === 'Checkpoint' && field === 'target' && typeof value === 'string') {
+                    control = (
+                      <CheckpointTargetField
+                        key={rowKey}
+                        value={value}
+                        entities={scene?.entities ?? []}
+                        selfId={entity.id}
+                        onCommit={(v) => setProperty(property, v)}
                       />
                     );
                   } else if (typeof value === 'string' && (doc?.enums[field]?.length ?? 0) > 0) {

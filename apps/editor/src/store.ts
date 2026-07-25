@@ -14,6 +14,7 @@ import type {
   ConsoleEntry,
   ConsoleLevel,
   ConsoleSource,
+  GameStateEntry,
   JournalEntry,
   ProjectDiff,
   ProjectInfo,
@@ -45,6 +46,14 @@ export interface EditorState {
   scene: SceneData | null;
   assets: AssetItem[];
   componentDocs: ComponentDoc[];
+  /**
+   * The open project's declared `gameState`, keyed by state key, mirrored off
+   * `info` so it refreshes with every other project fact. The Inspector needs
+   * the declared keys to offer Text.binding a dropdown instead of a free-text
+   * field, since a typed key is the whole point of declaring it. `{}` when the
+   * project declares none, or while no project is open.
+   */
+  gameState: Record<string, GameStateEntry>;
   selection: string | null;
   consoleEntries: ConsoleEntry[];
   consoleUnread: number;
@@ -495,6 +504,18 @@ export const useEditor = create<EditorState>((set, get) => {
     return dot === -1 ? [property, ''] : [property.slice(0, dot), property.slice(dot + 1)];
   }
 
+  /**
+   * The project's declared `gameState`, normalized off `inspectProject`.
+   * Optional on the wire so an older server (or a project predating the field)
+   * just reports no declared keys, which the Text-binding control already has
+   * to explain for a project that declares none.
+   */
+  function gameStateOf(info: ProjectInfo): Record<string, GameStateEntry> {
+    const declared = info.gameState;
+    if (typeof declared !== 'object' || declared === null || Array.isArray(declared)) return {};
+    return declared;
+  }
+
   /** Fetch a script's current on-disk source (used for external/format reloads). */
   async function fetchScriptSource(path: string): Promise<string | null> {
     const project = get().projectPath;
@@ -924,6 +945,10 @@ export const useEditor = create<EditorState>((set, get) => {
       workspaceTemplate: null,
       diff: null,
       assets: [],
+      // Refreshed from the newly-opened project's hearth.json by refresh()
+      // below; cleared here so the previous project's declared keys can never
+      // show up in this one's Text.binding dropdown, even for a frame.
+      gameState: {},
       journalFeed: [],
       playing: false,
       pendingRestart: false,
@@ -955,6 +980,7 @@ export const useEditor = create<EditorState>((set, get) => {
     scene: null,
     assets: [],
     componentDocs: [],
+    gameState: {},
     selection: null,
     workspaceTemplate: null,
     pendingWorkspaceTemplate: null,
@@ -1205,6 +1231,7 @@ export const useEditor = create<EditorState>((set, get) => {
         sceneId: null,
         scene: null,
         assets: [],
+        gameState: {},
         selection: null,
         workspaceTemplate: null,
         diff: null,
@@ -1377,10 +1404,10 @@ export const useEditor = create<EditorState>((set, get) => {
         sceneId ? query<SceneData>('inspectScene', { scene: sceneId, full: true }) : Promise.resolve(null),
         query<{ assets: AssetItem[] }>('inspectAssets'),
       ]);
-
       const selection = get().selection;
       set({
         info,
+        gameState: gameStateOf(info),
         sceneId,
         scene: scene ?? null,
         assets: assetData?.assets ?? [],

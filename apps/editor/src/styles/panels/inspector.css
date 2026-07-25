@@ -333,6 +333,50 @@
   border-left: 2px solid var(--border);
 }
 
+/* Structured-field groups that stack a control over its explanation:
+   Text.binding (TextBindingField), Respawn.point, CharacterController.actions,
+   Checkpoint.target. All of them are one row's control column holding several
+   inputs plus a caption, so they share one column layout instead of four. */
+.text-binding,
+.text-binding-body,
+.nullable-vec2,
+.action-map,
+.action-slot,
+.checkpoint-target {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+/* A group's own on/off switch reads as a labelled control, not as a bare
+   checkbox floating above the inputs it gates. */
+.text-binding-toggle,
+.nullable-vec2-toggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: var(--text-sm);
+  color: var(--ink-mute);
+  cursor: pointer;
+}
+
+/* The bound group's inputs sit slightly inside the toggle that gates them —
+   same indent language as .script-params-nested. */
+.text-binding-body {
+  padding-left: 8px;
+  border-left: 2px solid var(--border);
+}
+
+/* A checkbox whose meaning depends on a sibling field (Respawn's
+   useSpawnPosition vs point) keeps its note on the same row. */
+.checkbox-with-note {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
 .add-component-row {
   padding: 10px;
 }

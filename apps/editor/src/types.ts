@@ -6,6 +6,7 @@ import type {
   CommandResult,
   DesktopBuildResult,
   DesktopPlatform,
+  GameStateEntry,
   InputMappings,
   JournalEntry,
   ProjectDiff,
@@ -13,7 +14,15 @@ import type {
   StateMachineData,
 } from '@hearth/core';
 
-export type { CommandResult, DesktopBuildResult, DesktopPlatform, JournalEntry, ProjectDiff, ScriptDiagnostic };
+export type {
+  CommandResult,
+  DesktopBuildResult,
+  DesktopPlatform,
+  GameStateEntry,
+  JournalEntry,
+  ProjectDiff,
+  ScriptDiagnostic,
+};
 
 export interface Vec2 {
   x: number;
@@ -64,6 +73,8 @@ export interface ProjectInfo {
   inputMappings: InputMappings;
   buildSettings: BuildSettings;
   codeStyle?: { formatOnSave: boolean };
+  /** Declared game state (hearth.json `gameState`), keyed by state key. */
+  gameState?: Record<string, GameStateEntry>;
 }
 
 /** Entity shape from inspectScene with full=true. */
