@@ -20,6 +20,7 @@ import {
   type RuntimeLog,
 } from './runtime.js';
 import { createRng } from './stdlib.js';
+import { GameStateStore } from './gameState.js';
 
 /**
  * Key/value persistence behind ctx.save/load. MemorySessionStorage for
@@ -120,6 +121,14 @@ export class GameSession {
   private readonly maxLogs: number;
   /** One music channel per session, shared across every scene so playMusic survives switches. */
   private readonly musicChannel: MusicChannelState = { current: null, seq: 0 };
+  /**
+   * One game-state store per session, shared across every scene so declared
+   * values (score, lives, currency) survive switches — same reason the music
+   * channel is session-scoped.
+   */
+  private readonly gameState: GameStateStore;
+  /** Pause is a session concern; re-applied to each scene's runtime on load. */
+  private _paused = false;
 
   private constructor(
     private readonly store: ProjectStore,
@@ -128,6 +137,27 @@ export class GameSession {
     this.rng = createRng(opts.seed ?? 0);
     this.storage = opts.storage ?? new MemorySessionStorage();
     this.maxLogs = opts.maxLogs ?? 1000;
+    this.gameState = new GameStateStore(
+      store.project.gameState ?? {},
+      this.storage,
+      (key, value, previous) => {
+        // Fired on the live runtime so scripts can react with ctx.events.on.
+        this._runtime?.emitEvent('stateChanged', { key, value, previous });
+      },
+    );
+  }
+
+  /**
+   * Freeze the simulation. Survives scene switches, so a game paused during a
+   * transition stays paused in the next scene.
+   */
+  setPaused(value: boolean): void {
+    this._paused = value;
+    if (this._runtime) this._runtime.paused = value;
+  }
+
+  isPaused(): boolean {
+    return this._paused;
   }
 
   static async create(store: ProjectStore, opts: GameSessionOptions = {}): Promise<GameSession> {
@@ -258,6 +288,7 @@ export class GameSession {
       frameOffset,
       maxLogs: this.opts.maxLogs,
       musicChannel: this.musicChannel,
+      gameState: this.gameState,
       initialCameraOverlay,
       onCameraEffect: (rec) => {
         if (this.cameraEffects.length < MAX_RECORDED_EVENTS) {
@@ -290,6 +321,9 @@ export class GameSession {
         this.opts.onGameEvent?.(merged);
       },
     });
+    // Pause is a session concern, so it has to be re-applied to the fresh
+    // runtime — a game paused during a transition stays paused after it.
+    this._runtime.paused = this._paused;
   }
 
   /**

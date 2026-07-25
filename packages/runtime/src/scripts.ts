@@ -241,6 +241,50 @@ export interface ScriptContext {
     off(id: string): void;
   };
   /** Keyboard/gamepad focus navigation among focusable UIElement entities. */
+  /**
+   * Freeze and unfreeze the simulation. While paused, physics, animators,
+   * particles and scripts stop; scripts whose Script component sets
+   * `runWhilePaused` keep running, which is how pause menus stay live. UI
+   * pointer and focus events keep working either way.
+   */
+  game: {
+    pause(): void;
+    resume(): void;
+    isPaused(): boolean;
+  };
+  /**
+   * Named game state declared in `hearth.json` `gameState`. Session-scoped, so
+   * values survive scene switches, and keys declared with `persist` round-trip
+   * through save storage automatically. Bind a Text to a key (Text.binding) and
+   * the engine keeps the label current — no script should write that content.
+   */
+  state: {
+    /** Current value, or null for an undeclared key. */
+    get(key: string): number | boolean | string | null;
+    /** Throws for an undeclared key or a type mismatch. */
+    set(key: string, value: number | boolean | string): void;
+    /** Numbers only; throws otherwise. */
+    add(key: string, delta: number): void;
+    /** Restore one key, or every key when called with no argument. */
+    reset(key?: string): void;
+  };
+  /**
+   * Hit points on entities with a Health component. Emits `damaged`, `healed`
+   * and `died`; owns no visuals, so drive flash/shake/knockback from those
+   * events. Damage is ignored while invulnerability frames remain.
+   */
+  health: {
+    get(idOrHandle: string | EntityHandle): { current: number; max: number };
+    isInvulnerable(idOrHandle: string | EntityHandle): boolean;
+    damage(idOrHandle: string | EntityHandle, amount: number): void;
+    heal(idOrHandle: string | EntityHandle, amount: number): void;
+  };
+  /**
+   * Move an entity to its respawn point (Respawn.point, else the position
+   * captured at start, else the last Checkpoint reached). Never automatic —
+   * call it from a `died` handler.
+   */
+  respawn(idOrHandle: string | EntityHandle): void;
   ui: {
     /**
      * Set focus to an entity by id/name, or clear it with null. Fires

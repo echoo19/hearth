@@ -33,6 +33,7 @@ import {
   type PrefabData,
   type StateMachineData,
   type ComponentMap,
+  type HealthComponent,
   type Entity,
   type NavEntityInput,
   type NavGrid,
@@ -62,6 +63,8 @@ import {
   type Aabb,
 } from './broadphase.js';
 import { InputState } from './input.js';
+import { GameStateStore, type GameStateValue } from './gameState.js';
+import { stepCharacter } from './characterController.js';
 import {
   GRAVITY,
   TILEMAP_FILTER,
@@ -168,6 +171,12 @@ export interface RuntimeOptions {
   frameOffset?: number;
   /** Session-shared music channel; created on demand if absent (standalone use). */
   musicChannel?: MusicChannelState;
+  /**
+   * Session-shared game state behind ctx.state; created on demand if absent
+   * (standalone use). Session-owned so declared values survive scene switches,
+   * the same reason the music channel is.
+   */
+  gameState?: GameStateStore;
   /**
    * Live notification for every ctx.events.emit — fires even after the
    * runtime's recorded-events list caps, so aggregators keep exact counts.
@@ -298,6 +307,21 @@ export class SceneRuntime {
 
   private _frame = 0;
   private _elapsed = 0;
+  private _paused = false;
+  /**
+   * Health invulnerability countdown, frames remaining, keyed by entity id.
+   * Kept off the component so authored project data carries no per-frame
+   * bookkeeping and project diffs stay quiet.
+   */
+  private readonly invulnerableFrames = new Map<string, number>();
+  /**
+   * Respawn points captured from authored positions at entity start, keyed by
+   * entity id. This is what lets one Respawn component replace the spawn
+   * coordinates that games otherwise cache in several scripts at once.
+   */
+  private readonly spawnPoints = new Map<string, { x: number; y: number }>();
+  /** Checkpoints that have already fired, for `once`. */
+  private readonly firedCheckpoints = new Set<string>();
   private entities: RuntimeEntity[] = [];
   private destroyedIds = new Set<string>();
   /**
@@ -366,6 +390,8 @@ export class SceneRuntime {
   private audioHandleSeq = 0;
   private activePlaybacks = new Map<string, { assetId: string }>();
   private readonly musicChannel: MusicChannelState;
+  /** Declared named game state behind ctx.state; see RuntimeOptions.gameState. */
+  readonly gameState: GameStateStore;
   private uiHoverId: string | null = null;
   private uiPressedId: string | null = null;
   /**
@@ -425,6 +451,10 @@ export class SceneRuntime {
     this.rng = options.rng ?? createRng(options.seed ?? 0);
     this.storage = options.storage ?? new MemorySessionStorage();
     this.musicChannel = options.musicChannel ?? { current: null, seq: 0 };
+    // Session-owned when running under a GameSession so declared values survive
+    // scene switches; a standalone runtime builds its own from the project.
+    this.gameState =
+      options.gameState ?? new GameStateStore(store.project.gameState ?? {}, this.storage);
     this._frame = options.frameOffset ?? 0;
     this._elapsed = this._frame * this.fixedDt;
     this.cameraEffects = new CameraEffectsState({
@@ -463,6 +493,25 @@ export class SceneRuntime {
 
   get elapsed(): number {
     return this._elapsed;
+  }
+
+  /**
+   * Frozen simulation. While paused, `step()` skips physics, collisions,
+   * animators, particles and non-opted-in scripts, and `_elapsed` (game time)
+   * stops — but `_frame` keeps advancing, because playtest `wait{frames}`
+   * accounting and the sweep frame budget are measured in frames.
+   *
+   * Scripts whose Script component sets `runWhilePaused` keep receiving
+   * onUpdate plus their timers and tweens, which is what makes pause menus
+   * work. UI needs no special handling: pointer events arrive through
+   * `sendPointer` outside `step()`.
+   */
+  get paused(): boolean {
+    return this._paused;
+  }
+
+  set paused(value: boolean) {
+    this._paused = value;
   }
 
   /**
@@ -843,6 +892,19 @@ export class SceneRuntime {
       }
     }
 
+    // 0b. Capture authored positions as respawn points, before any script has
+    //     had a chance to move the entity. Done here rather than in the
+    //     constructor so entities spawned mid-run are covered too, and keyed
+    //     by id so it happens exactly once per entity.
+    for (const entity of this.getEntities()) {
+      const respawn = entity.components.Respawn;
+      if (!respawn?.useSpawnPosition) continue;
+      if (this.spawnPoints.has(entity.id)) continue;
+      const position = entity.components.Transform?.position;
+      if (!position) continue;
+      this.spawnPoints.set(entity.id, { x: position.x, y: position.y });
+    }
+
     // 1. onStart for entities that have not started yet (entity order).
     for (const entity of this.getEntities()) {
       const state = this.scriptStates.get(entity.id);
@@ -852,9 +914,37 @@ export class SceneRuntime {
       }
     }
 
+    // 1b. CharacterController writes PhysicsBody.velocity from input BEFORE
+    //     scripts run, so a script's onUpdate can still overwrite velocity in
+    //     the same frame. That ordering is the escape hatch: game-specific
+    //     feel (dash, drift, wall-jump) layers on top of the primitive
+    //     instead of replacing it.
+    if (!this._paused) {
+      for (const entity of this.getEntities()) {
+        if (!entity.enabled) continue;
+        const controller = entity.components.CharacterController;
+        const body = entity.components.PhysicsBody;
+        if (!controller?.enabled || !body) continue;
+        stepCharacter(
+          controller,
+          {
+            isDown: (action) => this.input.isDown(action),
+            justPressed: (action) => this.input.justPressed(action),
+            grounded: entity.collisions.some((c) => !c.trigger && c.normal.y < -0.5),
+          },
+          body,
+          this.fixedDt,
+          GRAVITY * body.gravityScale,
+        );
+      }
+    }
+
     // 2. Timers fire and tweens advance right before each entity's onUpdate.
+    //    While paused, only entities whose Script sets runWhilePaused keep
+    //    ticking — that is what keeps a pause menu live while the game freezes.
     for (const entity of this.getEntities()) {
       if (!entity.enabled) continue;
+      if (this._paused && !entity.components.Script?.runWhilePaused) continue;
       const state = this.scriptStates.get(entity.id);
       if (state) {
         state.scheduler.step(this.fixedDt, (phase, err) =>
@@ -870,24 +960,34 @@ export class SceneRuntime {
       this.callHook(entity, 'onUpdate', this.fixedDt);
     }
 
-    // 2c. AnimationStateMachine playback runs BEFORE plain SpriteAnimator so a
-    // machine wins the shared SpriteRenderer on entities that (mis)configure
-    // both; the plain animator then skips those entities.
-    this.stepStateMachines();
+    // Everything from here to 4c is simulation and freezes while paused. Camera
+    // effects (4b2) deliberately stay outside the guard so a fade already in
+    // flight can still finish, and text bindings (4d) stay outside so a pause
+    // menu shows correct values.
+    if (!this._paused) {
+      // 2c. AnimationStateMachine playback runs BEFORE plain SpriteAnimator so a
+      // machine wins the shared SpriteRenderer on entities that (mis)configure
+      // both; the plain animator then skips those entities.
+      this.stepStateMachines();
 
-    // 2d. SpriteAnimator playback, right after scripts so same-frame
-    // playing/assetId mutations (including ctx.animate) take effect the
-    // frame they're made.
-    this.stepAnimators();
+      // 2d. SpriteAnimator playback, right after scripts so same-frame
+      // playing/assetId mutations (including ctx.animate) take effect the
+      // frame they're made.
+      this.stepAnimators();
 
-    // 3. Physics integration + collision detection/resolution.
-    const contacts = this.stepPhysics();
+      // 3. Physics integration + collision detection/resolution.
+      const contacts = this.stepPhysics();
 
-    // 4. Collision events for new contact pairs.
-    this.dispatchCollisionEvents(contacts);
+      // 4. Collision events for new contact pairs.
+      this.dispatchCollisionEvents(contacts);
 
-    // 4b. Camera follow applies at end of frame, after physics.
-    this.applyCameraFollow();
+      // 4a2. Checkpoints move a target entity's respawn point on overlap,
+      //      reusing the contacts just computed rather than a second pass.
+      this.applyCheckpoints();
+
+      // 4b. Camera follow applies at end of frame, after physics.
+      this.applyCameraFollow();
+    }
 
     // 4b2. Camera effects (shake/flash/fade/zoomPunch) step deterministically.
     this.cameraEffects.step(this.fixedDt, this._frame, (err) =>
@@ -898,25 +998,163 @@ export class SceneRuntime {
       }),
     );
 
-    // 4b3. SpriteEffects hit-flash decays deterministically — pure arithmetic,
-    // no RNG: flashStrength counts down to 0 over flashDuration seconds.
-    for (const entity of this.getEntities()) {
-      if (!entity.enabled) continue;
-      const fx = entity.components.SpriteEffects;
-      if (!fx || fx.flashStrength <= 0) continue;
-      fx.flashStrength = Math.max(0, fx.flashStrength - this.fixedDt / fx.flashDuration);
+    if (!this._paused) {
+      // 4b3. SpriteEffects hit-flash decays deterministically — pure arithmetic,
+      // no RNG: flashStrength counts down to 0 over flashDuration seconds.
+      for (const entity of this.getEntities()) {
+        if (!entity.enabled) continue;
+        const fx = entity.components.SpriteEffects;
+        if (!fx || fx.flashStrength <= 0) continue;
+        fx.flashStrength = Math.max(0, fx.flashStrength - this.fixedDt / fx.flashDuration);
+      }
+
+      // 4b4. Health invulnerability counts down in frames, deterministically.
+      for (const [id, left] of this.invulnerableFrames) {
+        if (left <= 1) this.invulnerableFrames.delete(id);
+        else this.invulnerableFrames.set(id, left - 1);
+      }
+
+      // 4c. Particle emitters step deterministically (per-emitter seeded RNG).
+      this.stepParticles();
     }
 
-    // 4c. Particle emitters step deterministically (per-emitter seeded RNG).
-    this.stepParticles();
+    // 4d. Text bindings mirror declared game state into labels. Outside the
+    //     pause guard on purpose: a pause menu that shows the score should
+    //     show the right one. Runs after scripts so a same-frame
+    //     ctx.state.add is visible this frame.
+    this.applyTextBindings();
 
     // 5. End of frame bookkeeping.
     this.flushDestroyed();
     this.input.endFrame();
     // Pointer just-pressed edge is frame-scoped, like InputState.justPressed.
     this.pointerPressedEdge = false;
+    // The frame counter always advances (playtest wait{frames} and the sweep
+    // frame budget are measured in frames); game time does not, because
+    // ctx.time.elapsed is a gameplay input.
     this._frame++;
-    this._elapsed += this.fixedDt;
+    if (!this._paused) this._elapsed += this.fixedDt;
+  }
+
+  /** Resolve a ctx entity argument (id, name, or handle) or throw a named error. */
+  private entityForCtx(idOrHandle: string | { id: string }, method: string): RuntimeEntity {
+    const ref = typeof idOrHandle === 'string' ? idOrHandle : idOrHandle.id;
+    const entity = this.find(ref);
+    if (!entity) throw new Error(`ctx.${method}: entity not found "${ref}"`);
+    return entity;
+  }
+
+  private healthOf(entity: RuntimeEntity, method: string): HealthComponent {
+    const hp = entity.components.Health;
+    if (!hp) throw new Error(`ctx.${method}: no Health on "${entity.name}"`);
+    return hp;
+  }
+
+  /**
+   * Apply damage, honouring invulnerability frames, then emit `damaged` and —
+   * at zero — `died`. Deliberately owns no visuals: flash, shake, knockback
+   * and blink belong to the game's own scripts, driven off these events.
+   */
+  private applyDamage(entity: RuntimeEntity, amount: number): void {
+    const hp = this.healthOf(entity, 'health.damage');
+    if (!hp.enabled || amount <= 0) return;
+    if ((this.invulnerableFrames.get(entity.id) ?? 0) > 0) return;
+
+    hp.current = Math.max(0, hp.current - amount);
+    if (hp.invulnerableFrames > 0) {
+      this.invulnerableFrames.set(entity.id, hp.invulnerableFrames);
+    }
+    this.emitEvent('damaged', { entity: entity.name, amount, current: hp.current });
+
+    if (hp.current > 0) return;
+    this.emitEvent('died', { entity: entity.name });
+    // Read deathAction after the event so a handler can revive by healing and
+    // keep the entity alive — otherwise `destroy` would win over the revive.
+    if (hp.current > 0) return;
+    if (hp.deathAction === 'destroy') this.destroyEntity(entity.id);
+    else if (hp.deathAction === 'disable') entity.enabled = false;
+  }
+
+  private applyHeal(entity: RuntimeEntity, amount: number): void {
+    const hp = this.healthOf(entity, 'health.heal');
+    if (!hp.enabled || amount <= 0) return;
+    const next = Math.min(hp.max, hp.current + amount);
+    if (next === hp.current) return;
+    hp.current = next;
+    this.emitEvent('healed', { entity: entity.name, amount, current: hp.current });
+  }
+
+  /**
+   * Move an entity back to its respawn point: the explicit `Respawn.point` if
+   * set, otherwise the position captured at start (or the last Checkpoint
+   * reached). Never automatic — games call this from a `died` handler.
+   */
+  private respawnEntity(entity: RuntimeEntity): void {
+    const respawn = entity.components.Respawn;
+    if (!respawn) throw new Error(`ctx.respawn: no Respawn on "${entity.name}"`);
+    const target = respawn.point ?? this.spawnPoints.get(entity.id);
+    if (!target) {
+      throw new Error(
+        `ctx.respawn: "${entity.name}" has no respawn point — set Respawn.point or enable useSpawnPosition`,
+      );
+    }
+    const transform = entity.components.Transform;
+    if (transform) {
+      transform.position.x = target.x;
+      transform.position.y = target.y;
+    }
+    if (respawn.resetVelocity) {
+      const body = entity.components.PhysicsBody;
+      if (body) {
+        body.velocity.x = 0;
+        body.velocity.y = 0;
+      }
+    }
+    this.emitEvent('respawned', { entity: entity.name });
+  }
+
+  /** Mirror declared game-state values into bound Text components. */
+  private applyTextBindings(): void {
+    for (const entity of this.getEntities()) {
+      if (!entity.enabled) continue;
+      const text = entity.components.Text;
+      const binding = text?.binding;
+      if (!text || !binding) continue;
+      const value = this.gameState.get(binding.key);
+      if (value === null) continue;
+      const rendered = typeof value === 'number' ? value.toFixed(binding.precision) : String(value);
+      const next = binding.format.replace('{value}', rendered);
+      if (text.content !== next) text.content = next;
+    }
+  }
+
+  /**
+   * Move a target entity's respawn point when it overlaps a Checkpoint. Uses
+   * the trigger contacts already recorded this frame on each entity.
+   */
+  private applyCheckpoints(): void {
+    for (const entity of this.getEntities()) {
+      if (!entity.enabled) continue;
+      const checkpoint = entity.components.Checkpoint;
+      if (!checkpoint?.enabled) continue;
+      if (checkpoint.once && this.firedCheckpoints.has(entity.id)) continue;
+      for (const contact of entity.collisions) {
+        const other = contact.other;
+        if (!other.components.Respawn) continue;
+        if (!this.matchesTarget(other, checkpoint.target)) continue;
+        const position = other.components.Transform?.position;
+        if (!position) continue;
+        this.spawnPoints.set(other.id, { x: position.x, y: position.y });
+        if (checkpoint.once) this.firedCheckpoints.add(entity.id);
+        break;
+      }
+    }
+  }
+
+  /** `"tag:foo"` matches an entity tag; anything else matches the entity name. */
+  private matchesTarget(entity: RuntimeEntity, target: string): boolean {
+    if (target.startsWith('tag:')) return entity.tags.includes(target.slice(4));
+    return entity.name === target;
   }
 
   run(frames: number): void {
@@ -2117,6 +2355,44 @@ export class SceneRuntime {
           return;
         }
         for (const k of keys) runtime.storage.remove(k);
+      },
+      game: {
+        pause: () => {
+          runtime.paused = true;
+        },
+        resume: () => {
+          runtime.paused = false;
+        },
+        isPaused: () => runtime.paused,
+      },
+      state: {
+        get: (key) => runtime.gameState.get(key),
+        set: (key, value) => runtime.gameState.set(key, value),
+        add: (key, delta) => runtime.gameState.add(key, delta),
+        reset: (key) => runtime.gameState.reset(key),
+      },
+      health: {
+        get: (idOrHandle) => {
+          const target = runtime.entityForCtx(idOrHandle, 'health.get');
+          const hp = runtime.healthOf(target, 'health.get');
+          return { current: hp.current, max: hp.max };
+        },
+        isInvulnerable: (idOrHandle) => {
+          const target = runtime.entityForCtx(idOrHandle, 'health.isInvulnerable');
+          return (runtime.invulnerableFrames.get(target.id) ?? 0) > 0;
+        },
+        damage: (idOrHandle, amount) => {
+          const target = runtime.entityForCtx(idOrHandle, 'health.damage');
+          runtime.applyDamage(target, amount);
+        },
+        heal: (idOrHandle, amount) => {
+          const target = runtime.entityForCtx(idOrHandle, 'health.heal');
+          runtime.applyHeal(target, amount);
+        },
+      },
+      respawn: (idOrHandle) => {
+        const target = runtime.entityForCtx(idOrHandle, 'respawn');
+        runtime.respawnEntity(target);
       },
       camera: {
         getPosition: () => {
