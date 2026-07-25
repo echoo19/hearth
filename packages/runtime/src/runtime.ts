@@ -274,6 +274,18 @@ const MAX_CONSECUTIVE_SCRIPT_ERRORS = 3;
 const MAX_EVENT_DEPTH = 8;
 /** Cap on SceneRuntime.events (oldest kept, newest dropped once full). */
 const MAX_RECORDED_EVENTS = 200;
+
+/**
+ * Per-name cap inside the recorded event log.
+ *
+ * The global cap alone let one chatty emitter starve the log: a game writing a
+ * state value every frame emits `stateChanged` 60 times a second, which filled
+ * all 200 slots before any gameplay event landed, so an agent debugging a
+ * playtest read a log that was 100% bookkeeping. Capping per name keeps the log
+ * representative of everything that happened instead of the loudest thing.
+ * eventCounts stays exact either way, so assertions are unaffected.
+ */
+export const MAX_RECORDED_PER_EVENT = 12;
 /** Unit vectors for moveUiFocus directions, in screen space (+x right, +y down). */
 const DIRECTION_VECTORS: Record<'up' | 'down' | 'left' | 'right', Vec2> = {
   up: { x: 0, y: -1 },
@@ -335,6 +347,8 @@ export class SceneRuntime {
   private readonly checkpointPoints = new Map<string, { x: number; y: number }>();
   /** Checkpoints that have already fired, for `once`. */
   private readonly firedCheckpoints = new Set<string>();
+  /** Records already logged per event name — see MAX_RECORDED_PER_EVENT. */
+  private readonly loggedPerEvent = new Map<string, number>();
   private entities: RuntimeEntity[] = [];
   private destroyedIds = new Set<string>();
   /**
@@ -2682,10 +2696,15 @@ export class SceneRuntime {
     // Only the recorded list is capped. onGameEvent fires for every emit so
     // aggregators (GameSession) can keep exact counts past the cap; they
     // apply their own list cap.
-    if (this.events.length < MAX_RECORDED_EVENTS) {
-      this.events.push(record);
-    } else {
+    //
+    // The per-name cap is what stops one chatty emitter starving the log —
+    // see MAX_RECORDED_PER_EVENT.
+    const loggedSoFar = this.loggedPerEvent.get(name) ?? 0;
+    if (this.events.length >= MAX_RECORDED_EVENTS || loggedSoFar >= MAX_RECORDED_PER_EVENT) {
       this.eventsTruncated = true;
+    } else {
+      this.events.push(record);
+      this.loggedPerEvent.set(name, loggedSoFar + 1);
     }
     this.options.onGameEvent?.(record);
     this.emitDepth++;

@@ -6,7 +6,7 @@
  * events/eventCounts recording (with its 200-entry cap).
  */
 import { describe, it, expect } from 'vitest';
-import { GameSession, SceneRuntime } from '@hearth/runtime';
+import { GameSession, MAX_RECORDED_PER_EVENT, SceneRuntime } from '@hearth/runtime';
 import { makeStore, ent } from './helpers.js';
 
 function scripted(name: string, scriptPath: string, components: Record<string, unknown> = {}) {
@@ -171,7 +171,10 @@ describe('ctx.events', () => {
     const runtime = await SceneRuntime.create(store, 'Test');
     runtime.run(1);
     expect(runtime.eventCounts.get('spam')).toBe(250);
-    expect(runtime.events.filter((e) => e.name === 'spam').length).toBe(200);
+    // The log keeps a bounded sample per event name (MAX_RECORDED_PER_EVENT), so
+    // one chatty emitter cannot consume all 200 slots and hide everything else.
+    // The exact total still lives in eventCounts, which is the point of this test.
+    expect(runtime.events.filter((e) => e.name === 'spam').length).toBe(MAX_RECORDED_PER_EVENT);
     expect(runtime.eventsTruncated).toBe(true);
   });
 
@@ -192,7 +195,8 @@ describe('ctx.events', () => {
     await session.stepAsync();
     expect(session.errors).toEqual([]);
     expect(session.eventCounts.get('spam')).toBe(250);
-    expect(session.events.length).toBe(200);
+    // Bounded per name, same reason as the runtime-level test above.
+    expect(session.events.length).toBe(MAX_RECORDED_PER_EVENT);
     expect(session.eventsTruncated).toBe(true);
     session.destroy();
   });

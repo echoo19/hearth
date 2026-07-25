@@ -460,3 +460,77 @@ describe('game state across GameSessions', () => {
     session.destroy();
   });
 });
+
+describe('one chatty event cannot starve the recorded event log', () => {
+  it('a per-frame state write leaves room for gameplay events', async () => {
+    const { store } = await makeStore({
+      gameState: { clock: { type: 'number', initial: 0 } },
+      scripts: {
+        'ticker.lua': [
+          'return {',
+          '  onUpdate = function(ctx)',
+          "    ctx.state.add('clock', 1)",
+          "    if ctx.state.get('clock') == 250 then ctx.events.emit('milestone') end",
+          '  end,',
+          '}',
+        ].join('\n'),
+      },
+      entities: [ent('Ticker', { Script: { scriptPath: 'scripts/ticker.lua', params: {} } })],
+    });
+    const session = await GameSession.create(store, { scene: 'Test', seed: 1 });
+    try {
+      // 300 frames writes state 300 times. Before the per-name cap those 300
+      // records filled all 200 log slots and the late 'milestone' never landed.
+      for (let f = 0; f < 300; f++) session.step();
+      expect(session.errors).toEqual([]);
+
+      // Counts stay exact, so assertions are unaffected by the cap.
+      expect(session.eventCounts.get('stateChanged')).toBe(300);
+
+      const logged = session.events.filter((e) => e.name === 'stateChanged');
+      expect(logged.length).toBeGreaterThan(0); // still visible for debugging
+      expect(logged.length).toBeLessThanOrEqual(12); // but bounded
+      expect(session.events.some((e) => e.name === 'milestone')).toBe(true);
+      expect(session.eventsTruncated).toBe(true);
+    } finally {
+      session.destroy();
+    }
+  });
+
+  it('still delivers stateChanged to subscribers past the log cap', async () => {
+    const { store } = await makeStore({
+      gameState: { score: { type: 'number', initial: 0 } },
+      scripts: {
+        'watcher.lua': [
+          'return {',
+          '  onStart = function(ctx) ctx.vars.seen = 0 end,',
+          '  onUpdate = function(ctx) ctx.state.add(\'score\', 1) end,',
+          '  onEvent = function(ctx, name, data)',
+          "    if name == 'stateChanged' then",
+          '      ctx.vars.seen = ctx.vars.seen + 1',
+          "      ctx.getComponent('Text').content = 'seen ' .. ctx.vars.seen",
+          '    end',
+          '  end,',
+          '}',
+        ].join('\n'),
+      },
+      entities: [
+        ent('Watcher', {
+          Text: { content: 'seen 0' },
+          Script: { scriptPath: 'scripts/watcher.lua', params: {} },
+        }),
+      ],
+    });
+    const session = await GameSession.create(store, { scene: 'Test', seed: 1 });
+    try {
+      for (let f = 0; f < 40; f++) session.step();
+      expect(session.errors).toEqual([]);
+      const watcher = session.runtime.getEntities().find((e) => e.name === 'Watcher')!;
+      // 40 deliveries even though only 12 were logged.
+      expect(watcher.components.Text!.content).toBe('seen 40');
+      expect(session.eventCounts.get('stateChanged')).toBe(40);
+    } finally {
+      session.destroy();
+    }
+  });
+});

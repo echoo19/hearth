@@ -12,6 +12,7 @@ import type { CameraEffectRecord } from './cameraEffects.js';
 import type { GameEventRecord } from './events.js';
 import { LuaScriptEngine, isLuaPath } from './lua.js';
 import {
+  MAX_RECORDED_PER_EVENT,
   SceneRuntime,
   type AudioEvent,
   type AudioPlaybackEvent,
@@ -129,6 +130,8 @@ export class GameSession {
   private readonly gameState: GameStateStore;
   /** Pause is a session concern; re-applied to each scene's runtime on load. */
   private _paused = false;
+  /** Records already logged per event name — see MAX_RECORDED_PER_EVENT. */
+  private readonly loggedPerEvent = new Map<string, number>();
 
   private constructor(
     private readonly store: ProjectStore,
@@ -320,8 +323,13 @@ export class GameSession {
       },
       onGameEvent: (record) => {
         const merged: GameEventRecord = { ...record, frame: this._runtime?.frame ?? frameOffset };
-        if (this.events.length < MAX_RECORDED_EVENTS) {
+        // Same per-name cap as SceneRuntime.emitEvent. This is the list a
+        // playtest result exposes, so it is the one that actually has to stay
+        // readable when a game writes state every frame.
+        const loggedSoFar = this.loggedPerEvent.get(merged.name) ?? 0;
+        if (this.events.length < MAX_RECORDED_EVENTS && loggedSoFar < MAX_RECORDED_PER_EVENT) {
           this.events.push(merged);
+          this.loggedPerEvent.set(merged.name, loggedSoFar + 1);
         } else {
           this.eventsTruncated = true;
         }

@@ -571,13 +571,14 @@ export const TOOL_SPECS: ToolSpec[] = [
     name: 'attach_script',
     command: 'attachScript',
     description:
-      'Attach a script to an entity (adds or updates its Script component). Optional params are exposed to the script as ctx.params; sweep the scene afterward to catch regressions. (requires code-edit)',
+      'Attach a script to an entity (adds or updates its Script component). Optional params are exposed to the script as ctx.params; sweep the scene afterward to catch regressions. Set runWhilePaused for pause menus and anything that must keep running while ctx.game.pause freezes the game. (requires code-edit)',
     permission: 'code-edit',
     inputShape: {
       scene: z.string().min(1),
       entity: z.string().min(1),
       script: z.string().min(1),
       params: z.record(z.string(), z.unknown()).optional(),
+      runWhilePaused: z.boolean().optional(),
     },
   },
   {

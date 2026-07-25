@@ -845,7 +845,11 @@ export function buildProgram(): Command {
     attach
       .command('script <scene> <entity> <script-path>')
       .description('attach a script to an entity')
-      .option('--params <json>', 'parameters exposed to the script as ctx.params'),
+      .option('--params <json>', 'parameters exposed to the script as ctx.params')
+      .option(
+        '--run-while-paused',
+        'keep this script running while ctx.game.pause freezes the game (pause menus)',
+      ),
   ).action(async (scene: string, entity: string, scriptPath: string, opts, cmd) => {
     await guarded(cmd, 'attachScript', () =>
       runAndEmit(cmd, 'attachScript', {
@@ -853,6 +857,7 @@ export function buildProgram(): Command {
         entity,
         script: scriptPath,
         params: parseJsonObject(opts.params, '--params'),
+        ...(opts.runWhilePaused ? { runWhilePaused: true } : {}),
       }),
     );
   });

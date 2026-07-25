@@ -603,7 +603,7 @@ export const replaceInScripts = defineCommand({
 export const attachScript = defineCommand({
   name: 'attachScript',
   description:
-    'Attach a script to an entity (adds or updates its Script component). Optional params are exposed to the script as ctx.params.',
+    'Attach a script to an entity (adds or updates its Script component). Optional params are exposed to the script as ctx.params. Set runWhilePaused for pause menus and anything that must keep running while ctx.game.pause freezes the game.',
   permission: 'code-edit',
   mutates: true,
   paramsSchema: z.object({
@@ -611,6 +611,12 @@ export const attachScript = defineCommand({
     entity: z.string().min(1),
     script: z.string().min(1),
     params: z.record(z.string(), z.unknown()).default({}),
+    /**
+     * Keep this script running while the game is paused. Attaching a pause menu
+     * needed a second setProperties call without it, which every game hits the
+     * first time it builds one.
+     */
+    runWhilePaused: z.boolean().default(false),
   }),
   async run(ctx, params) {
     const scene = ctx.store.getScene(params.scene);
@@ -628,9 +634,15 @@ export const attachScript = defineCommand({
     entity.components.Script = createComponent('Script', {
       scriptPath: params.script,
       params: params.params,
+      runWhilePaused: params.runWhilePaused,
     }) as typeof entity.components.Script;
     ctx.changed({ kind: 'component', id: entity.id, name: 'Script', scene: scene.id, action: 'modified' });
     ctx.suggest(`sweepScene --scene ${scene.id} to check for regressions`);
-    return { entityId: entity.id, script: params.script, params: params.params };
+    return {
+      entityId: entity.id,
+      script: params.script,
+      params: params.params,
+      runWhilePaused: params.runWhilePaused,
+    };
   },
 });

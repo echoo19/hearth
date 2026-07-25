@@ -8,6 +8,7 @@
  */
 export { InputState, type GamepadLike } from './input.js';
 export {
+  MAX_RECORDED_PER_EVENT,
   SceneRuntime,
   type RuntimeLog,
   type RuntimeError,
