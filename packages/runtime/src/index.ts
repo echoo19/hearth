@@ -32,6 +32,13 @@ export {
 } from './cameraEffects.js';
 export { EventBus, type GameEventRecord } from './events.js';
 export {
+  GameStateStore,
+  type GameStateChangeHandler,
+  type GameStateDecl,
+  type GameStateStorage,
+  type GameStateValue,
+} from './gameState.js';
+export {
   GameSession,
   MemorySessionStorage,
   type GameSessionOptions,

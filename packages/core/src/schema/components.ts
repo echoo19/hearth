@@ -118,6 +118,12 @@ export const ScriptSchema = z.object({
   scriptPath: z.string().default(''),
   /** Arbitrary parameters exposed to the script via ctx.params. */
   params: z.record(z.string(), z.unknown()).default({}),
+  /**
+   * Keep running onUpdate, timers, and tweens while the game is paused
+   * (ctx.game.pause). Set this on pause menus and anything that has to stay
+   * live while the game itself is frozen; leave it false for gameplay.
+   */
+  runWhilePaused: z.boolean().default(false),
 });
 
 /** Post-processing effect types stackable on Camera.postEffects. */
@@ -183,6 +189,20 @@ export const CameraSchema = z.object({
   postEffects: z.array(PostEffectSchema).max(8).default([]),
 });
 
+/**
+ * Binds a Text to a declared game-state value (`hearth.json` `gameState`) so
+ * the engine keeps the label current. With a binding set, nothing should write
+ * Text.content for this entity — the engine overwrites it every frame.
+ */
+export const TextBindingSchema = z.object({
+  /** A key declared in `hearth.json` `gameState`. */
+  key: z.string().min(1),
+  /** Template with a single {value} placeholder, e.g. "Score: {value}". */
+  format: z.string().default('{value}'),
+  /** Decimal places for number values; ignored for booleans and strings. */
+  precision: z.number().int().min(0).max(6).default(0),
+});
+
 export const TextSchema = z.object({
   content: z.string().default('Text'),
   fontSize: z.number().positive().default(16),
@@ -191,6 +211,8 @@ export const TextSchema = z.object({
   fontFamily: z.string().default('monospace'),
   layer: z.number().int().default(10),
   visible: z.boolean().default(true),
+  /** Mirror a declared game-state value into content. null = content is script-owned. */
+  binding: TextBindingSchema.nullable().default(null),
 });
 
 export const AudioSourceSchema = z.object({
@@ -424,6 +446,107 @@ export const SpriteEffectsSchema = z.object({
   dissolveSeed: z.number().int().default(0),
 });
 
+/** CharacterController movement models. */
+export const CHARACTER_MODES = ['topDown', 'platformer'] as const;
+
+/**
+ * Input-driven movement as data instead of a hand-written controller.
+ *
+ * Runs BEFORE each entity's onUpdate, writing PhysicsBody.velocity, so a
+ * script can still overwrite velocity in the same frame — that is the
+ * supported way to layer game-specific feel (dash, drift, wall-jump) on top
+ * of the primitive rather than instead of it. Set `enabled: false` to hand
+ * movement back to scripts entirely without removing the component.
+ *
+ * Not for entities whose motion is not input-driven: cutscene movers,
+ * AI-steered enemies, or vehicles with their own physics.
+ */
+export const CharacterControllerSchema = z.object({
+  /** topDown drives both axes; platformer drives x and leaves y to gravity. */
+  mode: z.enum(CHARACTER_MODES).default('topDown'),
+  /** Target speed in pixels/second. */
+  speed: z.number().min(0).default(180),
+  /** Pixels/second² toward target speed. 0 = instant (what hand-written controllers do). */
+  acceleration: z.number().min(0).default(0),
+  /** Pixels/second² toward zero when there is no input. 0 = stop instantly. */
+  drag: z.number().min(0).default(0),
+  /** Peak jump height in pixels, converted to an impulse using scene gravity. 0 = cannot jump. */
+  jumpHeight: z.number().min(0).default(0),
+  /** Frames after leaving the ground where a jump press still counts. */
+  coyoteFrames: z.number().int().min(0).max(30).default(0),
+  /** Frames before landing where a jump press is remembered and replayed. */
+  jumpBufferFrames: z.number().int().min(0).max(30).default(0),
+  /** Downward velocity cap in pixels/second. 0 = uncapped. */
+  maxFallSpeed: z.number().min(0).default(0),
+  /** Fraction of horizontal control retained while airborne (platformer). */
+  airControl: z.number().min(0).max(1).default(1),
+  /** Action names this controller reads from the input layer. */
+  actions: z
+    .object({
+      left: z.string().default('left'),
+      right: z.string().default('right'),
+      up: z.string().default('up'),
+      down: z.string().default('down'),
+      jump: z.string().default('jump'),
+    })
+    .default({}),
+  /** false hands velocity back to scripts without removing the component. */
+  enabled: z.boolean().default(true),
+});
+
+/** What the engine does when Health.current reaches 0. */
+export const DEATH_ACTIONS = ['destroy', 'disable', 'event-only'] as const;
+
+/**
+ * Hit points with optional invulnerability frames.
+ *
+ * Owns no visuals: it emits `damaged`, `healed`, and `died` events and leaves
+ * flash, shake, knockback, and blink to your scripts (SpriteEffects,
+ * ctx.effects.flash, ctx.camera.shake, ctx.particles.burst already cover
+ * those). Skip it for one-hit-kill or score-only games.
+ */
+export const HealthSchema = z.object({
+  max: z.number().positive().default(3),
+  /** Current hit points, clamped to [0, max]. */
+  current: z.number().min(0).default(3),
+  /** Frames of immunity after taking damage. 0 = none. */
+  invulnerableFrames: z.number().int().min(0).default(0),
+  /**
+   * What happens at 0. Defaults to event-only so adding Health can never
+   * silently delete an entity — opt into destroy/disable deliberately.
+   */
+  deathAction: z.enum(DEATH_ACTIONS).default('event-only'),
+  /** false makes damage and heal no-ops without removing the component. */
+  enabled: z.boolean().default(true),
+});
+
+/**
+ * Where ctx.respawn puts this entity. With useSpawnPosition the engine
+ * captures the authored position when the entity starts, so no script has to
+ * cache spawn coordinates (and no two scripts can disagree about them).
+ */
+export const RespawnSchema = z.object({
+  /** Explicit respawn point. null = use the position captured at start. */
+  point: Vec2Schema.nullable().default(null),
+  /** Capture this entity's authored position on start as the respawn point. */
+  useSpawnPosition: z.boolean().default(true),
+  /** Zero PhysicsBody velocity on respawn. */
+  resetVelocity: z.boolean().default(true),
+});
+
+/**
+ * A trigger that moves another entity's respawn point when reached. Put it on
+ * an entity with a trigger Collider.
+ */
+export const CheckpointSchema = z.object({
+  /** Who this moves: an entity name, or "tag:<tag>" to match by tag. */
+  target: z.string().default('tag:player'),
+  /** Fire only the first time it is reached. */
+  once: z.boolean().default(false),
+  /** false makes the checkpoint inert without removing it. */
+  enabled: z.boolean().default(true),
+});
+
 export const COMPONENT_SCHEMAS = {
   Transform: TransformSchema,
   SpriteRenderer: SpriteRendererSchema,
@@ -444,6 +567,10 @@ export const COMPONENT_SCHEMAS = {
   UILayout: UILayoutSchema,
   UISlider: UISliderSchema,
   UIToggle: UIToggleSchema,
+  CharacterController: CharacterControllerSchema,
+  Health: HealthSchema,
+  Respawn: RespawnSchema,
+  Checkpoint: CheckpointSchema,
 } as const;
 
 export type ComponentType = keyof typeof COMPONENT_SCHEMAS;
@@ -469,7 +596,14 @@ export type UIElementComponent = z.infer<typeof UIElementSchema>;
 export type UILayoutComponent = z.infer<typeof UILayoutSchema>;
 export type UISliderComponent = z.infer<typeof UISliderSchema>;
 export type UIToggleComponent = z.infer<typeof UIToggleSchema>;
+export type CharacterControllerComponent = z.infer<typeof CharacterControllerSchema>;
+export type HealthComponent = z.infer<typeof HealthSchema>;
+export type RespawnComponent = z.infer<typeof RespawnSchema>;
+export type CheckpointComponent = z.infer<typeof CheckpointSchema>;
+export type TextBinding = z.infer<typeof TextBindingSchema>;
 export type UIAnchor = (typeof UI_ANCHORS)[number];
+export type CharacterMode = (typeof CHARACTER_MODES)[number];
+export type DeathAction = (typeof DEATH_ACTIONS)[number];
 
 export interface ComponentMap {
   Transform?: TransformComponent;
@@ -491,6 +625,10 @@ export interface ComponentMap {
   UILayout?: UILayoutComponent;
   UISlider?: UISliderComponent;
   UIToggle?: UIToggleComponent;
+  CharacterController?: CharacterControllerComponent;
+  Health?: HealthComponent;
+  Respawn?: RespawnComponent;
+  Checkpoint?: CheckpointComponent;
 }
 
 export function isComponentType(type: string): type is ComponentType {
@@ -538,6 +676,14 @@ export const COMPONENT_DOCS: Record<ComponentType, string> = {
     "Stacks child entities' UI elements vertically or horizontally; children's offsets become relative nudges",
   UISlider: "Draggable value widget rendered by the runtime; fires onUiEvent {type:'change', value}",
   UIToggle: "Boolean checkbox widget; click flips value and fires onUiEvent {type:'change', value}",
+  CharacterController:
+    "Input-driven movement as data: mode 'topDown' (drives both axes) or 'platformer' (drives x, leaves y to gravity), with speed, acceleration, drag, jumpHeight (pixels, converted using scene gravity), coyoteFrames, jumpBufferFrames, maxFallSpeed, airControl, and the action names to read. Writes PhysicsBody.velocity BEFORE scripts run, so onUpdate can overwrite velocity to layer game-specific feel (dash, drift, wall-jump) on top. Needs a PhysicsBody. Set enabled=false to hand movement back to scripts without removing it. Do NOT use it for motion that is not input-driven: cutscene movers, AI-steered enemies, vehicles with custom physics.",
+  Health:
+    "Hit points with optional invulnerableFrames after each hit. Change it through ctx.health.damage/heal, which emit 'damaged', 'healed', and 'died' events. deathAction at 0 hp: 'event-only' (default, your scripts decide), 'disable', or 'destroy'. Owns NO visuals — drive flash/shake/knockback/blink from those events using SpriteEffects, ctx.effects.flash, ctx.camera.shake, ctx.particles.burst. Skip it for one-hit-kill or score-only games.",
+  Respawn:
+    'Where ctx.respawn puts this entity. With useSpawnPosition (default) the engine captures the authored position when the entity starts, so no script has to cache spawn coordinates and two scripts cannot disagree about them. Set point to override with a fixed location. resetVelocity zeroes PhysicsBody velocity on respawn. Respawning is never automatic: call ctx.respawn, usually from a Health "died" handler.',
+  Checkpoint:
+    "Trigger that moves another entity's respawn point when reached — put it on an entity with a trigger Collider. target is an entity name or \"tag:<tag>\". once=true fires only the first time. Requires the target entity to have a Respawn component.",
 };
 
 /** Unwraps `.default(...)`/`.optional()` wrappers and returns a field's `z.enum([...])` options, or null. */

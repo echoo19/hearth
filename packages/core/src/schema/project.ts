@@ -95,6 +95,32 @@ export const CodeStyleSchema = z
   .default({ formatOnSave: true });
 export type CodeStyle = z.infer<typeof CodeStyleSchema>;
 
+/**
+ * One declared game-state value: a named number, boolean or string that
+ * scripts read and write through ctx.state. Declaring it here rather than
+ * inventing keys at runtime is what lets the editor offer a key dropdown and
+ * lets validation catch a typo before the game runs.
+ */
+export const GameStateEntrySchema = z
+  .object({
+    /** Value type; a write of any other type is refused at runtime. */
+    type: z.enum(['number', 'boolean', 'string']),
+    /** Value at session start, and the value ctx.state.reset() restores. */
+    initial: z.union([z.number(), z.boolean(), z.string()]),
+    /** Save on change and load on session start, through the session storage. */
+    persist: z.boolean().default(false),
+  })
+  .superRefine((entry, ctx) => {
+    if (typeof entry.initial !== entry.type) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['initial'],
+        message: `initial must be a ${entry.type} to match type: "${entry.type}"`,
+      });
+    }
+  });
+export type GameStateEntry = z.infer<typeof GameStateEntrySchema>;
+
 export const ProjectFileSchema = z.object({
   formatVersion: z.literal(FORMAT_VERSION).default(FORMAT_VERSION),
   hearthVersion: z.string().default(HEARTH_VERSION),
@@ -106,6 +132,8 @@ export const ProjectFileSchema = z.object({
   scenes: z.array(SceneRefSchema).default([]),
   inputMappings: InputMappingsSchema.default({ actions: {} }),
   buildSettings: BuildSettingsSchema.default({}),
+  /** Named game-state values (score, lives, currency) readable and writable from scripts via ctx.state. */
+  gameState: z.record(z.string(), GameStateEntrySchema).default({}),
   codeStyle: CodeStyleSchema,
 });
 export type ProjectFile = z.infer<typeof ProjectFileSchema>;

@@ -134,7 +134,9 @@ describe('SpriteEffects registration', () => {
     );
     expect(result.success).toBe(true);
     const components = result.data!.components;
-    expect(components).toHaveLength(19);
+    // Derived, not a literal: a hard-coded count here goes stale every time a
+    // component ships, and the failure looks like a bug in the new component.
+    expect(components).toHaveLength(COMPONENT_TYPES.length);
     const spriteEffects = components.find((c) => c.type === 'SpriteEffects');
     expect(spriteEffects).toBeDefined();
     expect(spriteEffects!.defaults).toEqual({
