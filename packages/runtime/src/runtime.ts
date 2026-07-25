@@ -503,6 +503,9 @@ export class SceneRuntime {
     await runtime.loadStateMachines();
     await runtime.loadPrefabs();
     await runtime.loadScripts();
+    // Before the host can dispatch a pointer event: a Restart button clicked
+    // ahead of the first frame must still find a respawn point.
+    runtime.captureSpawnPoints();
     return runtime;
   }
 
@@ -916,18 +919,9 @@ export class SceneRuntime {
       }
     }
 
-    // 0b. Capture authored positions as respawn points, before any script has
-    //     had a chance to move the entity. Done here rather than in the
-    //     constructor so entities spawned mid-run are covered too, and keyed
-    //     by id so it happens exactly once per entity.
-    for (const entity of this.getEntities()) {
-      const respawn = entity.components.Respawn;
-      if (!respawn?.useSpawnPosition) continue;
-      if (this.spawnPoints.has(entity.id)) continue;
-      const position = entity.components.Transform?.position;
-      if (!position) continue;
-      this.spawnPoints.set(entity.id, { x: position.x, y: position.y });
-    }
+    // 0b. Catch entities spawned since the last frame. The initial pass runs at
+    //     scene load, not here — see captureSpawnPoints.
+    this.captureSpawnPoints();
 
     // 1. onStart for entities that have not started yet (entity order).
     for (const entity of this.getEntities()) {
@@ -949,6 +943,20 @@ export class SceneRuntime {
         const controller = entity.components.CharacterController;
         const body = entity.components.PhysicsBody;
         if (!controller?.enabled || !body) continue;
+        // Record what the controller reads, exactly as the ctx.input wrapper
+        // does for scripts. Without this the sweep's dead-control detector
+        // reports every action the controller consumes as "declared but no
+        // script reads it" — the component reads it instead of a script. Listed
+        // per mode so a genuinely dead control is still caught.
+        const used = entity.components.CharacterController!.actions;
+        this.readInputNames.add(used.left);
+        this.readInputNames.add(used.right);
+        if (controller.mode === 'topDown') {
+          this.readInputNames.add(used.up);
+          this.readInputNames.add(used.down);
+        } else if (controller.jumpHeight > 0) {
+          this.readInputNames.add(used.jump);
+        }
         const result = stepCharacter(
           controller,
           {
@@ -1062,6 +1070,26 @@ export class SceneRuntime {
     // ctx.time.elapsed is a gameplay input.
     this._frame++;
     if (!this._paused) this._elapsed += this.fixedDt;
+  }
+
+  /**
+   * Record authored positions as respawn points, before anything has had a
+   * chance to move the entity. Idempotent per entity id.
+   *
+   * Called at scene load AND once per frame. Load-time matters: UI pointer
+   * events dispatch synchronously from the host, outside `step()`, so a
+   * "Restart" button clicked before the first frame would otherwise find no
+   * captured point and throw. A bot sweep found exactly that at frame 0.
+   */
+  private captureSpawnPoints(): void {
+    for (const entity of this.getEntities()) {
+      const respawn = entity.components.Respawn;
+      if (!respawn?.useSpawnPosition) continue;
+      if (this.spawnPoints.has(entity.id)) continue;
+      const position = entity.components.Transform?.position;
+      if (!position) continue;
+      this.spawnPoints.set(entity.id, { x: position.x, y: position.y });
+    }
   }
 
   /** Resolve a ctx entity argument (id, name, or handle) or throw a named error. */
