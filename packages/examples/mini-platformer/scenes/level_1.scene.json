@@ -421,6 +421,10 @@
             "down": "down",
             "jump": "jump"
           },
+          "axes": {
+            "x": "",
+            "y": ""
+          },
           "enabled": true
         },
         "Respawn": {

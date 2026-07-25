@@ -213,6 +213,29 @@
           "deathAction": "event-only",
           "enabled": true
         },
+        "CharacterController": {
+          "mode": "topDown",
+          "speed": 170,
+          "acceleration": 0,
+          "drag": 0,
+          "jumpHeight": 0,
+          "coyoteFrames": 0,
+          "jumpBufferFrames": 0,
+          "maxFallSpeed": 0,
+          "airControl": 1,
+          "actions": {
+            "left": "left",
+            "right": "right",
+            "up": "up",
+            "down": "down",
+            "jump": "jump"
+          },
+          "axes": {
+            "x": "moveX",
+            "y": "moveY"
+          },
+          "enabled": true
+        },
         "ParticleEmitter": {
           "emitting": false,
           "rate": 0,
@@ -236,7 +259,6 @@
         "Script": {
           "scriptPath": "scripts/player-move.lua",
           "params": {
-            "speed": 170,
             "contactDamage": 8
           },
           "runWhilePaused": false

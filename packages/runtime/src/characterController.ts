@@ -25,6 +25,8 @@ export interface CharacterInput {
   isDown(action: string): boolean;
   /** Did this action go down on this exact frame? */
   justPressed(action: string): boolean;
+  /** Virtual axis value in [-1, 1], for analog steering. */
+  axis(name: string): number;
   /** Is the body resting on something solid this frame? */
   grounded: boolean;
 }
@@ -38,6 +40,11 @@ interface ControllerState {
 }
 
 const STATE = new WeakMap<CharacterControllerComponent, ControllerState>();
+
+/** Whichever input is pushed harder, preserving its sign and magnitude. */
+function strongest(digital: number, analog: number): number {
+  return Math.abs(analog) > Math.abs(digital) ? analog : digital;
+}
 
 function stateFor(cfg: CharacterControllerComponent): ControllerState {
   let state = STATE.get(cfg);
@@ -110,13 +117,26 @@ export function stepCharacter(
   const a = cfg.actions;
   const state = stateFor(cfg);
 
-  // Raw intent, then normalised so holding two directions is not faster than one.
-  let ax = (input.isDown(a.right) ? 1 : 0) - (input.isDown(a.left) ? 1 : 0);
-  let ay = (input.isDown(a.down) ? 1 : 0) - (input.isDown(a.up) ? 1 : 0);
-  if (cfg.mode === 'topDown' && ax !== 0 && ay !== 0) {
+  // Raw intent. Digital actions give ±1; a configured virtual axis gives an
+  // analog magnitude, and whichever is pushed harder wins so one entity can
+  // accept a keyboard and a stick at once.
+  let ax = strongest(
+    (input.isDown(a.right) ? 1 : 0) - (input.isDown(a.left) ? 1 : 0),
+    cfg.axes.x ? input.axis(cfg.axes.x) : 0,
+  );
+  let ay = strongest(
+    (input.isDown(a.down) ? 1 : 0) - (input.isDown(a.up) ? 1 : 0),
+    cfg.axes.y ? input.axis(cfg.axes.y) : 0,
+  );
+  // Clamp the vector to unit length rather than normalising to it: a diagonal
+  // on the keyboard still comes out at one speed, but a half-pushed stick stays
+  // half speed instead of being snapped to full.
+  if (cfg.mode === 'topDown') {
     const len = Math.hypot(ax, ay);
-    ax /= len;
-    ay /= len;
+    if (len > 1) {
+      ax /= len;
+      ay /= len;
+    }
   }
 
   let jumped = false;

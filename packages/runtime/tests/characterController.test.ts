@@ -18,9 +18,15 @@ const DT = 1 / 60;
 const cfg = (over: Record<string, unknown> = {}) =>
   COMPONENT_SCHEMAS.CharacterController.parse({ speed: 100, ...over });
 
-const input = (down: string[], pressed: string[] = [], grounded = true) => ({
+const input = (
+  down: string[],
+  pressed: string[] = [],
+  grounded = true,
+  axes: Record<string, number> = {},
+) => ({
   isDown: (a: string) => down.includes(a),
   justPressed: (a: string) => pressed.includes(a),
+  axis: (name: string) => axes[name] ?? 0,
   grounded,
 });
 
@@ -288,5 +294,60 @@ describe('stepCharacter — configuration', () => {
       return trace;
     };
     expect(run()).toEqual(run());
+  });
+});
+
+describe('stepCharacter — analog axes', () => {
+  it('steers from a virtual axis and preserves its magnitude', () => {
+    const body = { velocity: { x: 0, y: 0 } };
+    const c = cfg({ mode: 'topDown', axes: { x: 'moveX', y: 'moveY' } });
+    stepCharacter(c, input([], [], true, { moveX: 0.5 }), body, 1 / 60, GRAVITY);
+    // Half-pushed stick = half speed. Binarising this is the feel regression
+    // that kept a twin-stick game off the component entirely.
+    expect(body.velocity.x).toBeCloseTo(50, 5);
+    expect(body.velocity.y).toBe(0);
+  });
+
+  it('clamps a fully-pushed diagonal stick to one speed', () => {
+    const body = { velocity: { x: 0, y: 0 } };
+    const c = cfg({ mode: 'topDown', axes: { x: 'moveX', y: 'moveY' } });
+    stepCharacter(c, input([], [], true, { moveX: 1, moveY: 1 }), body, 1 / 60, GRAVITY);
+    expect(Math.hypot(body.velocity.x, body.velocity.y)).toBeCloseTo(100, 5);
+  });
+
+  it('leaves a half-pushed diagonal below full speed instead of normalising it up', () => {
+    const body = { velocity: { x: 0, y: 0 } };
+    const c = cfg({ mode: 'topDown', axes: { x: 'moveX', y: 'moveY' } });
+    stepCharacter(c, input([], [], true, { moveX: 0.3, moveY: 0.3 }), body, 1 / 60, GRAVITY);
+    const mag = Math.hypot(body.velocity.x, body.velocity.y);
+    expect(mag).toBeGreaterThan(0);
+    expect(mag).toBeLessThan(100);
+  });
+
+  it('takes whichever of stick or key is pushed harder', () => {
+    const c = cfg({ mode: 'topDown', axes: { x: 'moveX' } });
+    // Key held, stick barely touched: the key wins.
+    const keyed = { velocity: { x: 0, y: 0 } };
+    stepCharacter(c, input(['right'], [], true, { moveX: 0.2 }), keyed, 1 / 60, GRAVITY);
+    expect(keyed.velocity.x).toBeCloseTo(100, 5);
+    // Nothing held, stick pushed left: the stick wins, including its sign.
+    const sticked = { velocity: { x: 0, y: 0 } };
+    stepCharacter(c, input([], [], true, { moveX: -0.8 }), sticked, 1 / 60, GRAVITY);
+    expect(sticked.velocity.x).toBeCloseTo(-80, 5);
+  });
+
+  it('ignores axes that are not configured', () => {
+    const body = { velocity: { x: 0, y: 0 } };
+    const c = cfg({ mode: 'topDown' }); // axes default to ''
+    stepCharacter(c, input([], [], true, { moveX: 1 }), body, 1 / 60, GRAVITY);
+    expect(body.velocity.x).toBe(0);
+  });
+
+  it('drives platformer x from a stick without touching y', () => {
+    const body = { velocity: { x: 0, y: 200 } };
+    const c = cfg({ mode: 'platformer', axes: { x: 'moveX', y: 'moveY' } });
+    stepCharacter(c, input([], [], true, { moveX: 0.5, moveY: 1 }), body, 1 / 60, GRAVITY);
+    expect(body.velocity.x).toBeCloseTo(50, 5);
+    expect(body.velocity.y).toBe(200);
   });
 });

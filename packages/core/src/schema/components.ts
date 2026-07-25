@@ -490,6 +490,18 @@ export const CharacterControllerSchema = z.object({
       jump: z.string().default('jump'),
     })
     .default({}),
+  /**
+   * Virtual axis names (project inputMappings.axes) read for analog steering,
+   * so a half-pushed stick moves at half speed. Empty means digital actions
+   * only. When both are configured the larger magnitude wins, which lets one
+   * entity accept a keyboard and a stick without a second controller.
+   */
+  axes: z
+    .object({
+      x: z.string().default(''),
+      y: z.string().default(''),
+    })
+    .default({}),
   /** false hands velocity back to scripts without removing the component. */
   enabled: z.boolean().default(true),
 });

@@ -1,27 +1,18 @@
--- Player: direct velocity-follows-axis movement (no drift/easing — a
--- horde needs snappy, predictable dodging, not momentum). This stays a
--- script on purpose: CharacterController reads DIGITAL actions
--- (isDown(left/right/up/down)), and this game steers from an analog axis
--- (inputMappings.axes.moveX/moveY, gamepadAxis 0/1), so the component
--- would binarise a half-pushed stick to full speed. Movement that reads a
--- stick's magnitude is exactly the game-specific feel the primitive tells
--- you to keep.
+-- Player: only what is specific to THIS game.
 --
--- Everything else here IS a primitive now. The HP number, its clamp and
--- the 24-frame post-hit immunity live on the Health component; contact just
--- calls ctx.health.damage. Health owns no visuals, so the shake (gated by
--- the pause menu's live Screen Shake toggle, read directly with no mirror
--- state) and the particle burst hang off the "damaged" event it emits.
--- The HP HUD is bound to game state, so nothing here touches a label.
+-- Movement is gone from here. The CharacterController reads the analog
+-- moveX/moveY axes directly, so a half-pushed stick still moves at half
+-- speed, and it clamps a diagonal to one speed (this script did not, so a
+-- keyboard diagonal used to travel at speed x sqrt(2)).
+--
+-- The HP number, its clamp and the 24-frame post-hit immunity live on the
+-- Health component; contact just calls ctx.health.damage. Health owns no
+-- visuals, so the shake (gated by the pause menu's live Screen Shake toggle,
+-- read directly with no mirror state) and the particle burst hang off the
+-- "damaged" event it emits. The HP HUD is bound to game state, so nothing
+-- here touches a label.
 -- Reminder: ctx calls use DOT syntax (ctx.log("hi"), never ctx:log("hi")).
 local script = {}
-
-function script.onUpdate(ctx, dt)
-  local body = ctx.getComponent("PhysicsBody")
-  local speed = ctx.params.speed or 170
-  body.velocity.x = ctx.input.axis("moveX") * speed
-  body.velocity.y = ctx.input.axis("moveY") * speed
-end
 
 function script.onCollision(ctx, other)
   -- Tag-, not name-, based: "Elite Enemy" (a tinted prefab instance, still

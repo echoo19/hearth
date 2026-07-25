@@ -962,7 +962,7 @@ export class SceneRuntime {
         // reports every action the controller consumes as "declared but no
         // script reads it" — the component reads it instead of a script. Listed
         // per mode so a genuinely dead control is still caught.
-        const used = entity.components.CharacterController!.actions;
+        const used = controller.actions;
         this.readInputNames.add(used.left);
         this.readInputNames.add(used.right);
         if (controller.mode === 'topDown') {
@@ -971,11 +971,16 @@ export class SceneRuntime {
         } else if (controller.jumpHeight > 0) {
           this.readInputNames.add(used.jump);
         }
+        if (controller.axes.x) this.readInputNames.add(controller.axes.x);
+        if (controller.axes.y && controller.mode === 'topDown') {
+          this.readInputNames.add(controller.axes.y);
+        }
         const result = stepCharacter(
           controller,
           {
             isDown: (action) => this.input.isDown(action),
             justPressed: (action) => this.input.justPressed(action),
+            axis: (name) => this.input.axisValue(name),
             grounded: entity.collisions.some((c) => !c.trigger && c.normal.y < -0.5),
           },
           body,
