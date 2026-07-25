@@ -77,9 +77,22 @@ normative; this page is descriptive. Every file carries `formatVersion: 1`.
       "image": null,             // sprite asset id, centered, or null
       "spinner": false           // minimal neutral spinner
     }
+  },
+  "gameState": {                 // named values scripts read via ctx.state
+    "score":  { "type": "number", "initial": 0 },
+    "hearts": { "type": "number", "initial": 3 },
+    "best":   { "type": "number", "initial": 0, "persist": true }
   }
 }
 ```
+
+`gameState` declares the game's named values: `type` is `number`, `boolean`,
+or `string`, `initial` must match that type, and `persist` saves the value on
+change and reloads it on start. Scripts read and write them through
+`ctx.state`, and a `Text` component can bind to a key so the engine keeps the
+label current. Declare a key before binding a `Text` to it, or validation
+reports `TEXT_BINDING_UNKNOWN_STATE`. Values are session-scoped, so they
+survive scene switches. See [scripting.md#game-state](./scripting.md#game-state).
 
 Change settings with the `updateSettings` command (partial deep-merge)
 rather than hand-editing, or the editor's **Game Settings** panel for a
