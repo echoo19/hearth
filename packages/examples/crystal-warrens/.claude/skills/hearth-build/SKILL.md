@@ -31,8 +31,64 @@ hearth rename entity "Level 1" Coin Gem
 
 `set`/`set-many` validate the full dot-path against the component's real schema
 and suggest a fix on a typo. `Collider` polygons must be convex with ≥3 points —
-split concave shapes across entities. All 19 component types:
+split concave shapes across entities. All 23 component types:
 [docs/components.md](https://hearthengine.com/docs/components).
+
+## Gameplay primitives: reach for these before writing a controller
+
+Movement, hit points, respawning, checkpoints, and HUD labels are components,
+not scripts. Configure them, then use scripts for the feel on top. Each one has
+a real "don't use this" case — read it before adding the component.
+
+```bash
+# Input-driven movement. Needs a PhysicsBody to write velocity into.
+hearth add component "Level 1" Player PhysicsBody --properties '{"bodyType":"dynamic"}'
+hearth add component "Level 1" Player CharacterController --properties '{"mode":"platformer","speed":220,"jumpHeight":90,"coyoteFrames":6,"jumpBufferFrames":6,"maxFallSpeed":900}'
+
+# Hit points. Emits damaged/healed/died; deathAction defaults to event-only.
+hearth add component "Level 1" Player Health --properties '{"max":3,"invulnerableFrames":45}'
+
+# Respawn point + a checkpoint that moves it. Checkpoint needs a TRIGGER collider.
+hearth add component "Level 1" Player Respawn
+hearth add component "Level 1" Flag Collider --properties '{"shape":"box","width":24,"height":48,"isTrigger":true}'
+hearth add component "Level 1" Flag Checkpoint --properties '{"target":"tag:player","once":true}'
+
+# A HUD label the engine keeps current, with no script writing it.
+hearth set-settings --game-state '{"score":{"type":"number","initial":0}}'
+hearth add component "Level 1" ScoreLabel Text --properties '{"binding":{"key":"score","format":"Score: {value}"}}'
+```
+
+- **`CharacterController`** — `mode` is `topDown` (drives both axes, normalised
+  diagonals) or `platformer` (drives x, leaves y to gravity, owns the jump).
+  `jumpHeight` is in pixels. It runs *before* `onUpdate`, so a script layers
+  dash, drift, knockback, or wall-jump by writing `PhysicsBody.velocity` in the
+  same frame. **Skip it** when motion is not input-driven: cutscene movers,
+  AI-steered enemies, vehicles with their own physics.
+- **`Health`** — change it through `ctx.health.damage/heal`, never by writing
+  `current`. It owns no visuals; drive flash/shake/knockback from the `damaged`
+  and `died` events. `deathAction` stays `event-only` until you deliberately
+  choose `disable` or `destroy`. **Skip it** for one-hit-kill or score-only
+  games, where a tag and `ctx.destroySelf()` say the same thing.
+- **`Respawn`** + **`Checkpoint`** — `Respawn` captures the authored position at
+  start, so no script caches spawn coordinates. Call `ctx.respawn` from a `died`
+  handler; nothing respawns automatically. A `Checkpoint` needs
+  `Collider.isTrigger = true` and a `target` (entity name, or `"tag:<tag>"`)
+  whose entity has a `Respawn`. **Skip them** for roguelikes that reload the
+  scene on death.
+- **`Text.binding`** — declare the key in `hearth.json` `gameState` first
+  (`hearth set-settings --game-state`), then let the engine own the label.
+  **Nothing should write that entity's `Text.content` afterwards.** Leave
+  `binding` null when a script owns the text.
+- **Pause** — `ctx.game.pause()` freezes physics, animation, particles and
+  gameplay scripts. Mark the menu's script `runWhilePaused` and it keeps running
+  while everything else stands still:
+  `hearth set "Level 1" PauseMenu Script.runWhilePaused true`.
+
+`hearth validate --json` catches the wiring mistakes these primitives invite:
+`CHARACTER_CONTROLLER_WITHOUT_BODY`, `CHECKPOINT_WITHOUT_TRIGGER`,
+`CHECKPOINT_TARGET_NOT_FOUND`, `CHECKPOINT_TARGET_MISSING_RESPAWN`, and
+`TEXT_BINDING_UNKNOWN_STATE` (an undeclared binding key renders a blank label,
+so it is an error). The scripting side is in the `hearth-code` skill.
 
 ## Tilemaps and autotiling
 

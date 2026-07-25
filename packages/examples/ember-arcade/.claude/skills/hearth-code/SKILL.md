@@ -100,6 +100,63 @@ Read `hearth inspect api --json` for exact signatures:
   `ctx.audio.playMusic/stopMusic/setMusicVolume`.
 - **UI focus**: `ctx.ui.focus/moveFocus/activate/adjust` for menus.
 - **Math**: `ctx.math.*` pure vec2/color helpers.
+- **Pause**: `ctx.game.pause/resume/isPaused` freezes physics, animation,
+  particles and gameplay scripts; a script whose `Script` component sets
+  `runWhilePaused` keeps running, which is how a pause menu stays live.
+- **Game state**: `ctx.state.get/set/add/reset` over the keys declared in
+  `hearth.json` `gameState`. Session-scoped (survives scene switches), typed,
+  and a change emits `stateChanged`. Writing an undeclared key throws instead
+  of inventing a second counter.
+- **Health**: `ctx.health.get/damage/heal/isInvulnerable(entityRef)` on entities
+  with a `Health` component; emits `damaged`/`healed`/`died` and draws nothing.
+- **Respawn**: `ctx.respawn(entityRef)` returns an entity with a `Respawn`
+  component to its point. Never automatic; call it from a `died` handler.
+
+Every `ctx.health.*` call and `ctx.respawn` takes an id, an exact name, or an
+`EntityHandle`, so `onCollision(ctx, other)` can act on `other` directly.
+
+## Don't hand-write what a component already does
+
+Before writing a movement, health, respawn or HUD script, check whether a
+component covers it (`hearth inspect components --json`, and the `hearth-build`
+skill). `CharacterController`, `Health`, `Respawn`, `Checkpoint` and
+`Text.binding` exist so these stop being 200 lines of Lua per game. Scripts then
+do the part that is actually yours:
+
+```lua
+-- Feel on top of the primitive: the controller ran BEFORE this hook, so
+-- writing velocity here wins for this frame (dash, drift, wall-jump).
+function script.onUpdate(ctx, dt)
+  if ctx.input.justPressed("dash") and ctx.vars.dashReady then
+    local body = ctx.getComponent("PhysicsBody")
+    body.velocity.x = body.velocity.x * 3
+    ctx.vars.dashReady = false
+  end
+end
+
+-- Reaction on top of the primitive: Health owns no visuals.
+function script.onStart(ctx)
+  ctx.events.on("damaged", function(data)
+    if data.entity ~= ctx.entity.name then return end
+    ctx.effects.flash("#ff4444", 0.15)
+    ctx.camera.shake(6, 0.2)
+  end)
+  ctx.events.on("died", function(data)
+    if data.entity ~= ctx.entity.name then return end
+    ctx.state.add("lives", -1)
+    ctx.respawn(ctx.entity.id)
+  end)
+end
+```
+
+Engine-emitted events you can subscribe to: `damaged`, `healed`, `died`,
+`respawned`, `jumped`, `stateChanged`. Each payload names the entity by
+**name** (`stateChanged` carries `{ key, value, previous }` instead), so filter
+with `data.entity == ctx.entity.name` in a shared handler.
+
+Score and lives labels are the one to unlearn hardest: don't write
+`Text.content` from a script. Declare the value in `gameState`, bind the `Text`
+to it, and the engine keeps the label current every frame, pause included.
 
 Determinism is free if you stay inside `ctx`: fixed timestep, seeded RNG, no
 wall clock. Same seed, same machine → bit-identical replay (transcendental math
