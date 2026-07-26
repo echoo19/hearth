@@ -37,11 +37,12 @@ The one folder Hearth writes for itself:
 .hearth/
   chats/index.json          every conversation: id, title, timestamps
   chats/<chatId>.jsonl      one conversation, one JSON record per line
+  chats/attachments/<chatId>/  files you sent with a message
   app.json                  this folder's agent settings (see below)
   evidence/journal.jsonl    the playtest event stream
   evidence/sweeps/<id>/     report.json, runs/, shots/
   evidence/capabilities.json  what the last sweep found the game could sense
-  harness.json              connectors and skills you registered
+  harness.json              connectors you registered
 ```
 
 Chat records are appended to disk *before* they are broadcast, so a transcript
@@ -49,9 +50,27 @@ survives a crash, a quit, or an agent that dies mid-turn. Each line is either
 `{role: "user", ts, text}` or `{role: "agent", ts, event}` — the same event
 vocabulary the live stream uses, which is why reopening a chat renders exactly
 what you saw the first time. Titles come from the first message, trimmed to 60
-characters.
+characters; a first message that was only a file is titled from the filename.
+
+A user record carrying files also has an `attachments` array of
+`{name, mimeType, relPath}`, pointing at the copies under
+`chats/attachments/<chatId>/`. The files are written down before the turn
+starts — that is what lets the agent be handed a path instead of a blob, and
+what lets the transcript show the picture again after a restart. Names are
+flattened to one safe segment and prefixed, so two files called
+`screenshot.png` in one conversation stay apart
+([agents.md](./agents.md)).
 
 The evidence layout is described in [playtesting.md](./playtesting.md).
+
+## Skills live outside the folder
+
+Skills belong to you, not to a game, so they live in `~/.hearth/skills/` and
+apply to every project on the machine ([agents.md](./agents.md)). The one thing
+they leave in a project folder is `<project>/.claude/skills/`, where Hearth
+symlinks (or copies) the enabled ones so the Anthropic Agent SDK can discover
+them. It is regenerated on every bind and safe to delete; anything you put in
+that folder yourself is left alone.
 
 ## Where keys live
 
@@ -88,8 +107,9 @@ else.
 
 Two things worth knowing before you commit one:
 
-- `.hearth/chats/` is your transcript history. Keep it if you want the record;
-  delete it if you'd rather not publish your conversations.
+- `.hearth/chats/` is your transcript history, and `chats/attachments/` holds a
+  copy of every file you sent with a message. Keep them if you want the record;
+  delete them if you'd rather not publish your conversations.
 - `.hearth/evidence/` grows with every playtest, mostly PNGs. It is safe to
   delete at any time — the next sweep starts a new numbered directory and the
   app simply shows an empty rail until then.

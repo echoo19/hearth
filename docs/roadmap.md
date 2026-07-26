@@ -28,6 +28,11 @@ Shipped and in use:
 - Three ways to bring an agent: an Anthropic key, ChatGPT through the
   open-source Codex CLI, or any CLI in the terminal
   ([agents.md](./agents.md)).
+- Images and files attached to a message, by drop, paste or picker, and handed
+  to either backend as a path ([agents.md](./agents.md)).
+- Skills: `SKILL.md` folders in `~/.hearth/skills/`, in the format Claude Code
+  and Codex both read, switched on and off in the sidebar's Skills panel
+  ([agents.md](./agents.md)).
 - The same probe outside the app, as a CLI and an MCP server
   ([cli.md](./cli.md), [mcp.md](./mcp.md)).
 
@@ -44,10 +49,20 @@ better novelty signals from pixels alone, audio, and more of the reasoning that
 currently needs entity positions. The rule stays the same — a sense that isn't
 there is declared absent, never faked.
 
-**Harness slots.** The registry already distinguishes what Hearth can reach
-(connectors) from what it knows how to do with it (skills), and playtesting is
-the only skill wired up. The slot exists so a second one can arrive without a
-new architecture.
+**Answering the agent.** A structured question with options now appears in the
+transcript, but there is no picker for answering it: the request is answered
+empty so the turn doesn't wedge, and you reply in your next message instead
+([agents.md](./agents.md)). A real answer surface is a small feature that
+removes a real reason to go back to the terminal.
+
+**Per-turn Claude models.** The Agent SDK binds its model when a conversation's
+stream opens, so a Claude model change applies to the next new chat rather than
+the next message. Faking it would mean silently restarting the agent
+mid-conversation; doing it properly means the driver learning to rebind.
+
+**Per-project skills.** Skills are global to the machine today, which is right
+for "how I like sprites drawn" and wrong for "how this game's save format
+works". Scoping some of them to a folder is the obvious next shape.
 
 **Reading evidence back.** The report is written for a context window, but
 moving a finding from the rail into the conversation is still a copy. Closing

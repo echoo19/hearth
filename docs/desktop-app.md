@@ -54,10 +54,17 @@ Hearth itself. See [architecture.md](./architecture.md).
 
 ## Where things go
 
-Everything Hearth deliberately keeps lives in the project folder's `.hearth/`
-directory: conversations, settings, evidence
-([projects-and-chats.md](./projects-and-chats.md)). The one file outside it is
-`~/.hearth/recent-projects.json`, the recents list.
+Nearly everything Hearth deliberately keeps lives in the project folder's
+`.hearth/` directory: conversations, the files you attached to them, settings,
+evidence ([projects-and-chats.md](./projects-and-chats.md)).
+
+What is outside it is what belongs to you rather than to one game, all under
+`~/.hearth/`:
+
+- `recent-projects.json` — the recents list, twelve entries of path and name.
+- `skills/<slug>/` — your skills, one folder each
+  ([agents.md](./agents.md)).
+- `skills.json` — which of them are switched off.
 
 Electron itself keeps a small amount of app state in the platform default —
 `~/Library/Application Support/Hearth` on macOS, `%APPDATA%\Hearth` on Windows,

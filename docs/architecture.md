@@ -61,14 +61,49 @@ One `ChatDriver` interface, three implementations, selected per turn:
 - `stub` — no provider configured; it explains the three ways to connect one.
 
 Every provider's output is folded into one provider-agnostic event vocabulary
-(`message-delta`, `tool-begin`, `tool-end`, `file-change`, `approval-request`,
-`turn-complete`, …), so the transcript renderer knows nothing about who
-answered. Adding a third backend means writing a mapping, not a renderer.
+(`message-delta`, `reasoning-delta`, `tool-begin`, `tool-output-delta`,
+`tool-end`, `file-change`, `approval-request`, `approval-resolved`,
+`subagent-start/delta/end`, `plan-update`, `image`, `notice`, `turn-complete`,
+`error`), so the transcript renderer knows nothing about who answered. Adding a
+third backend means writing a mapping, not a renderer. The union only ever
+grows: the older event names are still parsed and upgraded at read time, so a
+conversation recorded before the vocabulary was extended replays exactly as it
+did.
+
+Two mapping rules keep the transcript honest about actions neither backend had
+when the vocabulary was written. A Codex item type the adapter doesn't
+recognise becomes an ordinary tool row titled with the item's own type rather
+than nothing at all; and things that are not tool calls — a plan, a generated
+or viewed image, a compaction notice, a subagent — are mapped to their own
+event, from both backends, so the app never shows less than the terminal it
+replaced.
+
+Attachments are written into `.hearth/chats/attachments/<chatId>/` before the
+turn is queued, and each driver hands its backend a path: `localImage` /
+`mention` input items for Codex, base64 image blocks or an `Attached file:`
+line for the Agent SDK.
 
 Drivers are keyed by `(root, chatId)`, so two windows on one conversation share
 its agent and the driver only dies when the last of them leaves. Every turn and
 tool event is appended to `.hearth/chats/<id>.jsonl` as it streams — history
 survives anything the live driver doesn't. See [agents.md](./agents.md).
+
+## Skills
+
+Skills are folders under `~/.hearth/skills/`, each with a `SKILL.md` — the
+format Claude Code and Codex both read — with `~/.hearth/skills.json` holding
+the disabled list. They are global to the machine, and `/api/skills` is
+therefore the one route in this server that is *not* scoped to a project. That
+costs it the project jail every other file route relies on, so the validation
+carries the whole weight: ids go through a single-segment check, imported paths
+through a relative-path check, and request bodies through zod before anything
+touches the disk.
+
+Reaching the two backends takes two different mechanisms, both re-applied on
+every bind: Codex is given the folder with `skills/extraRoots/set` on the
+app-server protocol, and the Agent SDK — which discovers skills from the
+filesystem around its cwd — gets the enabled ones symlinked into
+`<project>/.claude/skills/`, copied where the platform refuses a symlink.
 
 ## The probe contract
 
@@ -133,10 +168,14 @@ to subscribe to, and "something changed" is all the pane needs to know.
 
 ## The harness registry
 
-A folder's registry is the honest answer to "what can this Hearth reach, and
-what does it know how to do?" — connectors (things it can talk to) and skills
-(things it knows how to do with them). Built-ins are facts about the binary and
-are never written to disk; anything you register lands in `.hearth/harness.json`.
+A folder's registry is the honest answer to "what can this Hearth reach?" —
+the connectors it can talk to. Built-ins are facts about the binary and are
+never written to disk; anything you register lands in `.hearth/harness.json`.
 Every entry carries a status the app assigns: `active` (wired up and used now),
 `available` (registered, nothing consumes it yet), or `coming-soon` (named, not
 built).
+
+The file also has a `skills` array, from when this registry held named slots
+for what Hearth knew how to do. It is still read and still returned by the
+route, and nothing in the app shows it any more: skills became real folders
+with real instructions, described above and in [agents.md](./agents.md).

@@ -41,7 +41,9 @@ agent wants to touch something outside the folder or run something that doesn't
 obviously stay inside it.
 
 Keep talking to it. "The leaves fall too fast." "Add a wind gust every ten
-seconds." Each message is a turn; the pane reloads when the files land.
+seconds." Each message is a turn; the pane reloads when the files land. Drop a
+screenshot or a reference image onto the composer when a picture says it faster
+— an image on its own is a message ([agents.md](./agents.md)).
 
 ## 5. Press Playtest
 
@@ -85,6 +87,7 @@ everything above works there too.
 ## Where next
 
 - [projects-and-chats.md](./projects-and-chats.md) — your folders, your files
-- [agents.md](./agents.md) — providers, the model selector, approvals
+- [agents.md](./agents.md) — providers, attachments, skills, the model
+  selector, approvals
 - [playtesting.md](./playtesting.md) — policies, verdicts, evidence
 - [cli.md](./cli.md) / [mcp.md](./mcp.md) — the probe for agents outside the app

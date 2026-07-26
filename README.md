@@ -110,9 +110,20 @@ status from it. Models come live from the binary, reasoning effort included.
 it. Run `claude`, `codex`, or whatever CLI you like. Hearth watches the folder
 either way, so the pane and the playtests work the same.
 
-Setup, keys, and approvals: [docs/agents.md](docs/agents.md). For agents
-working outside the app, the probe is also an MCP server and a CLI
-([docs/mcp.md](docs/mcp.md), [docs/cli.md](docs/cli.md)).
+**Show it something.** Drop an image or a file onto the composer, paste one, or
+pick it — a message that is only a picture is a message. Attachments are saved
+into the project and handed to the agent as a path; images go to the model as
+pixels either way.
+
+**Teach it once.** A skill is a folder with a `SKILL.md` in it, the format
+Claude Code and Codex both already read, so one skill works with whichever
+agent answers. They live in `~/.hearth/skills`, apply to every project, and
+switch on and off in the Skills panel in the sidebar.
+
+Setup, keys, attachments, skills, and approvals:
+[docs/agents.md](docs/agents.md). For agents working outside the app, the probe
+is also an MCP server and a CLI ([docs/mcp.md](docs/mcp.md),
+[docs/cli.md](docs/cli.md)).
 
 ## The probe, for game authors
 
