@@ -533,11 +533,14 @@ export function Modal({
   open,
   title,
   onClose,
+  className,
   children,
 }: {
   open: boolean;
   title: string;
   onClose: () => void;
+  /** Extra classes on the dialog itself — `is-wide` for a panel, not a prompt. */
+  className?: string;
   children: ReactNode;
 }) {
   const ref = useRef<HTMLDialogElement>(null);
@@ -566,7 +569,13 @@ export function Modal({
   }, [open]);
 
   return (
-    <dialog className="modal" ref={ref} onCancel={onClose} onClose={onClose} aria-labelledby={titleId}>
+    <dialog
+      className={className ? `modal ${className}` : 'modal'}
+      ref={ref}
+      onCancel={onClose}
+      onClose={onClose}
+      aria-labelledby={titleId}
+    >
       {open && (
         <>
           <div className="modal-title" id={titleId}>

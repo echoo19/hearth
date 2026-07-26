@@ -132,6 +132,53 @@ export function installMenuDismiss(opts: {
 }
 
 /**
+ * `popover` is a real DOM attribute this React typing predates, so it is
+ * spread rather than written inline.
+ */
+const TOP_LAYER_ATTR = { popover: 'manual' } as unknown as Record<string, string>;
+
+/**
+ * Where a menu's popover should be portaled to.
+ *
+ * `<body>` for everything on the page — but NOT for a menu opened from inside
+ * a modal dialog. `showModal()` marks every node outside the dialog INERT, so
+ * a body portal there produces a menu that paints (the popover API puts it in
+ * the top layer) and cannot be clicked: the click falls through to the dialog
+ * behind it, which reads as a menu that closes without doing anything.
+ * Portaling into the dialog itself is what escapes the inertness; the popover
+ * attribute still keeps it clear of any overflow clipping.
+ */
+export function menuPortalTarget(anchor: Element | null): HTMLElement {
+  const dialog = anchor?.closest('dialog[open]');
+  return (dialog as HTMLElement | null) ?? document.body;
+}
+
+/**
+ * Put a body-portaled popover into the TOP LAYER.
+ *
+ * A `<dialog>` opened with `showModal()` lives in the top layer, above every
+ * normal stacking context — so a menu portaled to `<body>` opens *underneath*
+ * it and its backdrop, which reads as a menu that does not open at all. The
+ * popover API is the only way back above: `popover="manual"` keeps our own
+ * click-outside and Escape handling rather than the UA's light dismiss.
+ *
+ * A ref callback rather than an effect, so the element is promoted in the same
+ * commit it is attached. No-ops where the API is absent (jsdom, older
+ * engines), which simply restores the previous behaviour.
+ */
+function useTopLayer(): (node: HTMLDivElement | null) => void {
+  return useCallback((node: HTMLDivElement | null) => {
+    if (!node) return;
+    const el = node as HTMLDivElement & { showPopover?: () => void };
+    try {
+      el.showPopover?.();
+    } catch {
+      /* already shown, or not supported */
+    }
+  }, []);
+}
+
+/**
  * The popover's item list. Exported so render states are testable without a
  * live DOM; also the single place the item → markup mapping lives.
  */
@@ -310,6 +357,7 @@ export function ContextMenu({
   returnFocus?: HTMLElement | null;
 }) {
   const ref = useRef<HTMLDivElement>(null);
+  const promote = useTopLayer();
   const itemRefs = useRef<(HTMLButtonElement | null)[]>([]);
   const [focused, setFocused] = useState(() => menuNavIndex(items, -1, 'Home'));
   const [pos, setPos] = useState({ x, y });
@@ -365,16 +413,20 @@ export function ContextMenu({
 
   return createPortal(
     <div
-      ref={ref}
+      ref={(node) => {
+        (ref as React.MutableRefObject<HTMLDivElement | null>).current = node;
+        promote(node);
+      }}
       className="menu-popover context-menu"
       role="menu"
       aria-label={label}
+      {...TOP_LAYER_ATTR}
       style={{ position: 'fixed', left: pos.x, top: pos.y }}
       onKeyDown={onKeyDown}
     >
       <MenuItems items={items} focusedIndex={focused} onFocusIndex={setFocused} onSelectItem={selectItem} itemRefs={itemRefs} />
     </div>,
-    document.body,
+    menuPortalTarget(returnFocus ?? null),
   );
 }
 
@@ -410,6 +462,7 @@ export function MenuButton({
   const rootRef = useRef<HTMLSpanElement>(null);
   const buttonRef = useRef<HTMLButtonElement>(null);
   const popoverRef = useRef<HTMLDivElement>(null);
+  const promote = useTopLayer();
   const itemRefs = useRef<(HTMLButtonElement | null)[]>([]);
 
   const closeAndFocusTrigger = useCallback(() => {
@@ -506,10 +559,14 @@ export function MenuButton({
       {open &&
         createPortal(
           <div
-            ref={popoverRef}
+            ref={(node) => {
+              (popoverRef as React.MutableRefObject<HTMLDivElement | null>).current = node;
+              promote(node);
+            }}
             className={popoverClassName ? `menu-popover ${popoverClassName}` : 'menu-popover'}
             role="menu"
             aria-label={label}
+            {...TOP_LAYER_ATTR}
             onKeyDown={onKeyDown}
             // Fixed + clamped coords; hidden for the one pre-measure frame so it
             // never flashes at 0,0. useLayoutEffect sets `pos` before paint.
@@ -522,7 +579,7 @@ export function MenuButton({
           >
             <MenuItems items={items} focusedIndex={focused} onFocusIndex={setFocused} onSelectItem={selectItem} itemRefs={itemRefs} />
           </div>,
-          document.body,
+          menuPortalTarget(buttonRef.current),
         )}
     </span>
   );

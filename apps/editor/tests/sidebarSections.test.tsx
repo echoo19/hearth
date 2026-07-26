@@ -1,6 +1,10 @@
 // @vitest-environment jsdom
 /**
- * The rail's two harness folds: Connectors and Skills.
+ * The rail's harness fold: Connectors.
+ *
+ * Skills used to be a second fold here, holding names the app could not yet
+ * act on. They are real folders now, with their own store and panel, so this
+ * file covers what is left: the connector registry.
  *
  * These are insertion slots, so the tests are about honesty as much as
  * rendering:
@@ -132,17 +136,6 @@ describe('adding something', () => {
     ]);
   });
 
-  it('adds a skill as this project’s, not yet running', async () => {
-    await mount();
-    fireEvent.click(screen.getByText('Add skill…'));
-    fireEvent.change(screen.getByLabelText('Skill name'), { target: { value: 'Level balancing' } });
-    fireEvent.change(screen.getByLabelText('Description'), { target: { value: 'tune the curve' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
-
-    await screen.findByText('Level balancing');
-    expect(within(row('Level balancing')).getByText('soon')).toBeTruthy();
-  });
-
   it('never sends a nameless entry, and cancels back to the row', async () => {
     await mount();
     fireEvent.click(screen.getByText('Add connector…'));
@@ -208,14 +201,11 @@ describe('the folds', () => {
 
     expect(screen.queryByText('Web games')).toBeNull();
     expect(screen.queryByText('Add connector…')).toBeNull();
-    // Skills is its own fold and stays as it was.
-    expect(screen.getByText('Playtesting')).toBeTruthy();
     expect(localStorage.getItem(sectionStorageKey('connectors'))).toBe('0');
 
     cleanup();
     render(<HarnessSections projectPath={folder} />);
-    await screen.findByText('Playtesting');
-    expect(screen.queryByText('Web games')).toBeNull();
+    await waitFor(() => expect(screen.queryByText('Web games')).toBeNull());
     expect(screen.getByRole('button', { name: 'Connectors' }).getAttribute('aria-expanded')).toBe('false');
   });
 

@@ -1740,6 +1740,12 @@ async function route(ctx: ProjectServerContext, req: IncomingMessage, res: Serve
   // The harness registry (connectors + skills) owns its own route module.
   if (url.pathname === '/api/harness/registry') return (await import('./harnessRegistry.js')).routeHarnessRegistry(ctx, req, res);
 
+  // Skills are the one thing here that is NOT per-project — they belong to the
+  // person, so the route takes no `project` and does its own validation.
+  if (url.pathname === '/api/skills' || url.pathname === '/api/skills/source') {
+    return (await import('./skillsRoutes.js')).routeSkills(req, res, url.pathname);
+  }
+
   switch (key) {
     case 'POST /api/workspace/open': {
       const body = await readJsonBody(req);

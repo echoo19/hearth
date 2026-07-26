@@ -73,9 +73,11 @@ describe('merge', () => {
     const result = await getHarnessRegistry(ctx, folder);
     expect(result.status).toBe(200);
     const payload = body(result);
-    expect(payload.registry?.connectors.map((c) => c.id)).toEqual(['web-games', 'godot']);
-    expect(payload.registry?.skills.map((s) => s.id)).toEqual(['playtesting']);
-    expect(payload.builtins).toEqual({ connectors: ['web-games', 'godot'], skills: ['playtesting'] });
+    expect(payload.registry?.connectors.map((c) => c.id)).toEqual(['web-games', 'godot', 'playtesting']);
+    // The skills collection is retired: real skills are folders on disk with
+    // their own route, and this one only stays so an old file still parses.
+    expect(payload.registry?.skills).toEqual([]);
+    expect(payload.builtins).toEqual({ connectors: ['web-games', 'godot', 'playtesting'], skills: [] });
   });
 
   it('says what is actually running, and what is only named', async () => {
@@ -89,11 +91,11 @@ describe('merge', () => {
       detail: 'playtests any web game via the built-in probe',
     });
     expect(godot).toMatchObject({ name: 'Godot', kind: 'engine', status: 'coming-soon' });
-    expect(payload.registry?.skills[0]).toMatchObject({
+    expect(payload.registry?.connectors.find((c) => c.id === 'playtesting')).toMatchObject({
       name: 'Playtesting',
-      source: 'builtin',
+      kind: 'builtin',
       status: 'active',
-      description: 'sweep, verdicts, evidence',
+      detail: 'sweep, verdicts, evidence',
     });
   });
 
@@ -105,7 +107,12 @@ describe('merge', () => {
       entry: { name: 'Acme MCP', kind: 'mcp' },
     });
     const payload = body(await getHarnessRegistry(ctx, folder));
-    expect(payload.registry?.connectors.map((c) => c.id)).toEqual(['web-games', 'godot', 'acme-mcp']);
+    expect(payload.registry?.connectors.map((c) => c.id)).toEqual([
+      'web-games',
+      'godot',
+      'playtesting',
+      'acme-mcp',
+    ]);
   });
 
   it('refuses to let a project file shadow a built-in id', () => {
@@ -114,10 +121,10 @@ describe('merge', () => {
       skills: [{ id: 'playtesting', name: 'Impostor', source: 'project', status: 'active' }],
     };
     const merged = mergeRegistry(BUILTIN_REGISTRY, user);
-    expect(merged.connectors).toHaveLength(2);
+    expect(merged.connectors).toHaveLength(3);
     expect(merged.connectors[0].name).toBe('Web games');
-    expect(merged.skills).toHaveLength(1);
-    expect(merged.skills[0].name).toBe('Playtesting');
+    // Nothing built in is left in this collection to shadow.
+    expect(merged.skills.map((s) => s.name)).toEqual(['Impostor']);
   });
 
   it('drops unparseable rows instead of blanking the file', () => {
@@ -246,7 +253,7 @@ describe('remove', () => {
       id: 'acme-mcp',
     });
     expect(result.status).toBe(200);
-    expect(body(result).registry?.connectors.map((c) => c.id)).toEqual(['web-games', 'godot']);
+    expect(body(result).registry?.connectors.map((c) => c.id)).toEqual(['web-games', 'godot', 'playtesting']);
     expect((await readUserRegistry(folder)).connectors).toEqual([]);
   });
 
@@ -254,7 +261,7 @@ describe('remove', () => {
     const result = await postHarnessRegistry(ctx, {
       project: folder,
       action: 'remove',
-      collection: 'skills',
+      collection: 'connectors',
       id: 'playtesting',
     });
     expect(result.status).toBe(400);
@@ -392,7 +399,7 @@ describe('GET/POST /api/harness/registry over HTTP', () => {
     expect(get.status).toBe(200);
     const payload = (await get.json()) as Payload;
     expect(payload.ok).toBe(true);
-    expect(payload.registry?.skills.map((s) => s.id)).toEqual(['playtesting', 'balance-pass']);
+    expect(payload.registry?.skills.map((s) => s.id)).toEqual(['balance-pass']);
   });
 
   it('refuses a method it doesn’t serve', async () => {

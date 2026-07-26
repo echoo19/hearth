@@ -60,16 +60,19 @@ export const BUILTIN_REGISTRY: HarnessRegistry = {
       detail: 'playtests any web game via the built-in probe',
     },
     { id: 'godot', name: 'Godot', kind: 'engine', status: 'coming-soon' },
-  ],
-  skills: [
     {
       id: 'playtesting',
       name: 'Playtesting',
-      description: 'sweep, verdicts, evidence',
-      source: 'builtin',
+      kind: 'builtin',
       status: 'active',
+      detail: 'sweep, verdicts, evidence',
     },
   ],
+  // Empty on purpose. This collection was the placeholder for "things the
+  // agent knows how to do" before there was anywhere to put one; real skills
+  // are folders on disk now (server/skills.ts) with their own route and their
+  // own panel. The field stays so an existing harness.json still parses.
+  skills: [],
 };
 
 const BUILTIN_CONNECTOR_IDS = new Set(BUILTIN_REGISTRY.connectors.map((c) => c.id));

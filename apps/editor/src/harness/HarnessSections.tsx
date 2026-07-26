@@ -24,7 +24,6 @@ import {
   type ConnectorEntry,
   type ConnectorStatus,
   type HarnessCollection,
-  type SkillEntry,
   type SkillStatus,
 } from './registry';
 import { useHarnessRegistry, type HarnessRegistryApi } from './useRegistry';
@@ -326,7 +325,6 @@ export function HarnessSections({ projectPath }: { projectPath: string | null })
   if (!projectPath) return null;
 
   const connectors: ConnectorEntry[] = api.registry.connectors;
-  const skills: SkillEntry[] = api.registry.skills;
 
   return (
     <>
@@ -345,20 +343,6 @@ export function HarnessSections({ projectPath }: { projectPath: string | null })
         ))}
       </Section>
 
-      <Section collection="skills" title="Skills" addLabel="Add skill…" api={api}>
-        {skills.map((skill) => (
-          <HarnessRow
-            key={skill.id}
-            name={skill.name}
-            detail={skill.description}
-            status={skill.status}
-            builtin={api.isBuiltin('skills', skill.id)}
-            menuLabel={`Skill options — ${skill.name}`}
-            onRename={(name) => void api.rename('skills', skill.id, name)}
-            onRemove={() => void api.remove('skills', skill.id)}
-          />
-        ))}
-      </Section>
     </>
   );
 }

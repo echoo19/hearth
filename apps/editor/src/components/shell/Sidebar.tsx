@@ -22,6 +22,7 @@ import { apiRecentWorkspaces } from '../../api';
 import type { ChatProviderStatus, RecentChatEntry, RecentWorkspace } from '../../types';
 import { hearthNative } from '../../native';
 import { HarnessSections } from '../../harness/HarnessSections';
+import { SkillsSection } from '../../skills/SkillsSection';
 import { ConfirmDialog, Icon } from '../ui';
 import { IconButton } from '../ui/Button';
 import { MenuButton, type MenuItem } from '../ui/Menu';
@@ -578,6 +579,9 @@ export function Sidebar() {
         {/* What this Hearth can reach, and what it knows how to do. Secondary
             to the two lists above and folded away by whoever doesn't need it. */}
         <HarnessSections projectPath={projectPath} />
+        {/* Not inside HarnessSections: a skill belongs to the person, not to
+            the folder, so it is listed with or without one open. */}
+        <SkillsSection />
       </div>
 
       <div className="sidebar-foot">
