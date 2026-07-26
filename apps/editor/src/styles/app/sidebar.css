@@ -287,7 +287,8 @@
   opacity: 1;
 }
 
-.chat-more {
+.chat-more,
+.harness-more {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -301,7 +302,8 @@
   transition: background var(--t-fast) var(--ease-out), color var(--t-fast) var(--ease-out);
 }
 
-.chat-more:hover {
+.chat-more:hover,
+.harness-more:hover {
   background: var(--bg-3);
   color: var(--ink);
 }
@@ -369,4 +371,203 @@
   flex: none;
   font-size: var(--text-2xs);
   color: var(--ink-faint);
+}
+
+/* --- Connectors & Skills --------------------------------------------------
+
+   The two folds under Projects: what this Hearth can reach, and what it knows
+   how to do. Secondary by construction — they fold away, they carry no colour
+   except the one ember dot that means "this is genuinely running", and in the
+   collapsed rail they inherit .sidebar-scroll's fade like everything else.
+
+   The only new motion is the caret: a fold that turns is the whole feedback. */
+
+.harness-section-title {
+  /* The disclosure button carries the padding, so the whole row is the target. */
+  padding: 0;
+}
+
+.harness-disclosure {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: 6px 8px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  /* Inherits the heading's size, weight and colour: this is the same label it
+     always was, now with a hinge. */
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: color var(--t-fast) var(--ease-out);
+}
+
+.harness-disclosure:hover {
+  color: var(--ink-mute);
+}
+
+.harness-caret {
+  display: inline-flex;
+  flex: none;
+  color: var(--ink-faint);
+  transition: transform var(--t) var(--ease-out);
+}
+
+.harness-caret.is-open {
+  transform: rotate(90deg);
+}
+
+.harness-list {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.harness-row {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 8px;
+  border-radius: var(--radius-sm);
+  font-size: var(--text-sm);
+  color: var(--ink-mute);
+  transition:
+    background var(--t-fast) var(--ease-out),
+    color var(--t-fast) var(--ease-out);
+}
+
+/* Only a row with something behind it lights up under the pointer. A built-in
+   row opens nothing, and a hover state is a promise it can't keep — same rule
+   the current folder follows above. */
+.harness-row.has-actions:hover {
+  background: var(--bg-2);
+  color: var(--ink);
+}
+
+.harness-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* State, in 6px. Filled ember = wired up and running; a neutral ring =
+   registered and waiting. Nothing else earns colour in this list. */
+.harness-dot {
+  flex: none;
+  width: 6px;
+  height: 6px;
+  border: 1px solid var(--border-strong);
+  border-radius: 50%;
+  opacity: 1;
+  transition: opacity var(--t-fast) var(--ease-out);
+}
+
+.harness-dot.is-active {
+  border-color: var(--accent);
+  background: var(--accent);
+}
+
+/* Named, not built. A word, not a badge. */
+.harness-soon {
+  flex: none;
+  font-size: var(--text-2xs);
+  color: var(--ink-faint);
+  opacity: 1;
+  transition: opacity var(--t-fast) var(--ease-out);
+}
+
+/* The mark yields to the overflow control rather than reflowing the row —
+   exactly how a conversation's timestamp behaves. */
+.harness-row.has-actions:hover .harness-dot,
+.harness-row.has-actions:focus-within .harness-dot,
+.harness-row.has-actions:hover .harness-soon,
+.harness-row.has-actions:focus-within .harness-soon {
+  opacity: 0;
+}
+
+.harness-actions {
+  position: absolute;
+  right: 4px;
+  display: inline-flex;
+  opacity: 0;
+  transition: opacity var(--t-fast) var(--ease-out);
+}
+
+.harness-row:hover .harness-actions,
+.harness-row:focus-within .harness-actions {
+  opacity: 1;
+}
+
+.harness-row.is-renaming {
+  padding: 2px 4px;
+}
+
+.harness-rename {
+  width: 100%;
+  height: var(--ctl-h-sm);
+  font-size: var(--text-sm);
+}
+
+/* --- Registering something new -------------------------------------------- */
+
+/* Inline, where the row will be — not a dialog. Registering a connector is a
+   name and (maybe) an address; interrupting the window for that would be the
+   heavier act. */
+.harness-form {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 2px 0;
+  padding: 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg-1);
+}
+
+.harness-form .harness-input,
+.harness-form .harness-select {
+  width: 100%;
+}
+
+.harness-form .harness-input {
+  height: var(--ctl-h-sm);
+  padding: 0 10px;
+  border-radius: var(--radius-sm);
+  font-size: var(--text-xs);
+}
+
+.harness-form-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
+/* The receipt. Deliberately faint and deliberately temporary: it says what
+   happened ("saved, nothing runs it yet") without becoming another row. */
+.harness-note {
+  margin: 4px 0 0;
+  padding: 0 8px;
+  font-size: var(--text-2xs);
+  line-height: 1.55;
+  color: var(--ink-faint);
+  animation: harness-note-in var(--t) var(--ease-out);
+}
+
+.harness-note.is-error {
+  color: var(--err);
+}
+
+@keyframes harness-note-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
 }

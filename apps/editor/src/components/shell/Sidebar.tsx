@@ -1,9 +1,12 @@
 /**
- * The left rail: what you've said, and where you're saying it.
+ * The left rail: what you've said, where you're saying it, and what this
+ * Hearth can reach.
  *
- * Two lists, in the order they matter. Conversations in this folder come
- * first — they are the work — and the folder itself sits underneath, because
- * changing folders is rare and reading back a conversation is not.
+ * Lists in the order they matter. Conversations in this folder come first —
+ * they are the work — the folder itself sits underneath, because changing
+ * folders is rare and reading back a conversation is not, and the harness
+ * folds (Connectors, Skills — see harness/HarnessSections.tsx) sit last and
+ * closed-able, because they are settings you visit, not work you do.
  *
  * Deliberately quiet: no counts, no badges, no icons per row. The only colour
  * is the mark at the top and whatever the active row needs to look active.
@@ -15,6 +18,7 @@ import { useApp } from '../../store';
 import { apiRecentWorkspaces } from '../../api';
 import type { ChatSummary, RecentWorkspace } from '../../types';
 import { hearthNative } from '../../native';
+import { HarnessSections } from '../../harness/HarnessSections';
 import { ConfirmDialog, Icon } from '../ui';
 import { IconButton } from '../ui/Button';
 import { MenuButton } from '../ui/Menu';
@@ -236,6 +240,10 @@ export function Sidebar() {
             )}
           </div>
         </section>
+
+        {/* What this Hearth can reach, and what it knows how to do. Secondary
+            to the two lists above and folded away by whoever doesn't need it. */}
+        <HarnessSections projectPath={projectPath} />
       </div>
 
       <ConfirmDialog
