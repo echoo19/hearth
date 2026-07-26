@@ -4,6 +4,7 @@
  * runs against the canned SweepReport in support.ts.
  */
 import { describe, it, expect } from 'vitest';
+import path from 'node:path';
 import { MAX_FAILURES, MAX_FINDINGS } from '@hearth/probe-core';
 import {
   ERROR_CODES,
@@ -76,15 +77,19 @@ describe('the envelope', () => {
 });
 
 describe('resolving what to probe', () => {
+  // Expectations are derived through node:path so they hold on Windows too,
+  // where '/work/game' resolves to a drive-lettered backslash path.
+  const GAME = path.resolve('/work', 'game');
+
   it('serves a directory and writes evidence into it by default', () => {
     const target = resolveTarget({ dir: 'game', cwd: '/work' });
-    expect(target).toEqual({ label: '/work/game', open: { dir: '/work/game' }, root: '/work/game', isUrl: false });
+    expect(target).toEqual({ label: GAME, open: { dir: GAME }, root: GAME, isUrl: false });
   });
 
   it('lets --out move the evidence root without moving the target', () => {
     const target = resolveTarget({ dir: 'game', out: 'evidence', cwd: '/work' });
-    expect(target.label).toBe('/work/game');
-    expect(target.root).toBe('/work/evidence');
+    expect(target.label).toBe(GAME);
+    expect(target.root).toBe(path.resolve('/work', 'evidence'));
   });
 
   it('takes a url verbatim and falls back to cwd for evidence', () => {
@@ -92,7 +97,7 @@ describe('resolving what to probe', () => {
     expect(target).toEqual({
       label: 'http://localhost:5173/',
       open: { url: 'http://localhost:5173/' },
-      root: '/work',
+      root: path.resolve('/work'),
       isUrl: true,
     });
   });
@@ -171,7 +176,7 @@ describe('the sweep view', () => {
   });
 
   it('points at report.json for the depth it does not inline', () => {
-    expect(view.reportPath).toBe('/tmp/my game/.hearth/evidence/sweeps/0002/report.json');
+    expect(view.reportPath).toBe(path.join('/tmp/my game/.hearth/evidence/sweeps/0002', 'report.json'));
   });
 
   it('flags when the folded lists are sitting on probe-core’s caps', () => {
@@ -239,7 +244,9 @@ describe('the human report', () => {
 
   it('ends on the evidence directory and the report path', () => {
     expect(text).toContain('evidence: /tmp/my game/.hearth/evidence/sweeps/0002');
-    expect(text).toContain('full detail: /tmp/my game/.hearth/evidence/sweeps/0002/report.json');
+    expect(text).toContain(
+      `full detail: ${path.join('/tmp/my game/.hearth/evidence/sweeps/0002', 'report.json')}`,
+    );
   });
 
   it('says "findings: none" rather than omitting the section', () => {

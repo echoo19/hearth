@@ -8,11 +8,12 @@
  * from packages/adapter-web/tests/support.ts.
  */
 import { describe, it, expect } from 'vitest';
+import { shellQuote } from '../src/target.js';
 import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { canLaunchChromium } from '@hearth/adapter-web';
-import { buildProgram } from '../src/cli.js';
+import { buildProgram }  from '../src/cli.js';
 import { reportCommand, shimCommand, sweepCommand, SHIM_FILENAME, SHIM_SNIPPET } from '../src/actions.js';
 import { findLatestSweep, listSweepIds } from '../src/store.js';
 import type { Envelope } from '../src/envelope.js';
@@ -101,7 +102,7 @@ describe('hearth-probe, without a browser', () => {
       expect(envelope.data!.evidenceDir).toBe(dir);
       expect(envelope.data!.passed).toBe(false);
       expect(envelope.data!.failures[0]!.repro).toBe(
-        `hearth-probe sweep ${root} --policies mash --seeds 1 --seed-start 3`,
+        `hearth-probe sweep ${shellQuote(root)} --policies mash --seeds 1 --seed-start 3`,
       );
     } finally {
       await rm(root, { recursive: true, force: true });

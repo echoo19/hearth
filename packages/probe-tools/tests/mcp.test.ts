@@ -8,13 +8,14 @@
  * through the ones that don't (report, install_shim) plus their input schemas.
  */
 import { describe, it, expect } from 'vitest';
+import { shellQuote } from '../src/target.js';
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
-import { createProbeMcpServer } from '../src/mcp.js';
+import { createProbeMcpServer }  from '../src/mcp.js';
 import { SHIM_FILENAME } from '../src/actions.js';
 import type { Envelope } from '../src/envelope.js';
 import type { SweepView } from '../src/format.js';
@@ -116,7 +117,7 @@ describe('the probe MCP server', () => {
       expect(envelope.data!.sweepId).toBe('0003');
       expect(envelope.data!.passed).toBe(false);
       expect(envelope.data!.failures[0]!.repro).toBe(
-        `hearth-probe sweep ${root} --policies mash --seeds 1 --seed-start 3`,
+        `hearth-probe sweep ${shellQuote(root)} --policies mash --seeds 1 --seed-start 3`,
       );
     } finally {
       await close();
