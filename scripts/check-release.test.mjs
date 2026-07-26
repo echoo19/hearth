@@ -471,49 +471,13 @@ test('the maintainer runbook pins the two-repository release commands', async ()
   assert.match(contributing, /\[maintainer release runbook\]\(docs\/releasing\.md\)/);
 });
 
-test('engine docs use live Agent Panel and generated heading anchors', async () => {
-  const docs = Object.fromEntries(
-    await Promise.all(
-      [
-        'cli.md',
-        'mcp.md',
-        'playtesting.md',
-        'project-format.md',
-        'roadmap.md',
-        'connect-claude-code.md',
-        'agent-panel.md',
-      ].map(async (file) => [file, await readFile(path.join(repoRoot, 'docs', file), 'utf8')]),
-    ),
-  );
-
-  assert.doesNotMatch(docs['cli.md'], /#benchmarking-from-the-cli-mcp\b/);
-  assert.match(docs['cli.md'], /#benchmarking-from-the-climcp\b/);
-  assert.doesNotMatch(docs['mcp.md'], /#benchmarking-from-the-cli-mcp\b/);
-  assert.match(docs['mcp.md'], /#benchmarking-from-the-climcp\b/);
-  assert.doesNotMatch(docs['playtesting.md'], /#testing--review\b/);
-  assert.match(docs['playtesting.md'], /#command-tour\b/);
-
-  for (const file of ['project-format.md', 'roadmap.md']) {
-    assert.doesNotMatch(docs[file], /agent-panel\.md#the-external-change-model\b/);
-    assert.match(docs[file], /agent-panel\.md#activity-and-review\b/);
-  }
-  assert.doesNotMatch(docs['roadmap.md'], /agent-panel\.md#why-a-terminal-not-a-custom-chat-ui\b/);
-  assert.match(docs['roadmap.md'], /\]\(\.\/agent-panel\.md\)/);
-
-  const connectIntro = docs['connect-claude-code.md'].split('\n## The manual path')[0];
-  assert.match(connectIntro, /embedded project terminal[\s\S]*shell[\s\S]*`hearth`/i);
-  assert.doesNotMatch(connectIntro, /agent-panel\.md#why-a-terminal-not-a-custom-chat-ui\b/);
-  assert.match(connectIntro, /\]\(\.\/agent-panel\.md\)/);
-
-  // The editor auto-provisions `.mcp.json` on every project open
-  // (apps/editor/server/projectServer.ts -> ensureHearthMcpConfig). Docs that
-  // claim MCP registration is manual are wrong, so pin the live behavior here.
-  assert.match(connectIntro, /Opening a project also writes a project-scoped `\.mcp\.json`/);
-  assert.match(connectIntro, /safe-edit,code-edit,asset-edit/);
-  assert.doesNotMatch(connectIntro, /MCP registration is\s+optional and manual/i);
-  assert.doesNotMatch(
-    docs['agent-panel.md'],
-    /intentionally does not rewrite `\.mcp\.json`/,
-  );
-  assert.match(docs['agent-panel.md'], /writes one entry — `hearth` — into the project's `\.mcp\.json`/);
-});
+/*
+ * Removed: 'engine docs use live Agent Panel and generated heading anchors'.
+ *
+ * It pinned heading anchors and claims in docs/project-format.md,
+ * docs/connect-claude-code.md and docs/agent-panel.md. All three were engine-era
+ * pages, retired when the docs were rewritten for the app (they live on in the
+ * `engine-v1` branch), and every anchor it asserted on is gone from the pages
+ * that remain. A test that reads three deleted files is not protecting anything
+ * — it just fails the release gate.
+ */

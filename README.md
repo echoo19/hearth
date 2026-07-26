@@ -29,7 +29,7 @@ ChatGPT sign-in, or any CLI you already run.
 [Download the app](https://hearthengine.com/download) for macOS (`.dmg`),
 Windows (`.exe`), or Linux (`.AppImage` / `.deb`), or take it from the
 [latest release](https://github.com/echoo19/hearth/releases/latest) — the
-current release is v1.4.0. macOS
+current release is v1.5.0. macOS
 builds are Developer ID signed and notarized; Windows builds aren't code-signed
 yet, so SmartScreen wants **More info → Run anyway** the first time. After that
 the app updates itself. Details in [docs/desktop-app.md](docs/desktop-app.md).

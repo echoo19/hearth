@@ -1,6 +1,6 @@
 # Roadmap
 
-**v1.4.0 is the current release** — the agent-first Hearth app: a conversation
+**v1.5.0 is the current release** — the agent-first Hearth app: a conversation
 with a coding agent, an always-on game pane, and bot playtesting that leaves
 evidence behind. That app began at v1.3.0.
 
