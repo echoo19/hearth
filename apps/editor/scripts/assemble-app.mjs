@@ -28,6 +28,24 @@ const editorPkg = JSON.parse(await readFile(path.join(appRoot, 'package.json'), 
 const nodePtyRange = editorPkg.dependencies['@lydell/node-pty'];
 const nodePtyVersion = nodePtyRange.replace(/^[\^~]/, '');
 
+// playwright-core is the other dependency the packaged app really needs: the
+// probe reaches Chromium through a lazy `import('playwright-core')`
+// (packages/adapter-web/src/chromium.ts), and esbuild keeps it external — so
+// without installing it here, Playtest works in dev and silently can't launch
+// a browser in the shipped app. Pure JS, no postinstall, ~8 MB.
+const playwrightRange =
+  editorPkg.dependencies?.['playwright-core'] ?? editorPkg.optionalDependencies?.['playwright-core'];
+const playwrightVersion = (playwrightRange ?? (await resolvePlaywrightVersion())).replace(/^[\^~]/, '');
+
+async function resolvePlaywrightVersion() {
+  // The version the workspace actually resolved (adapter-web's optional dep),
+  // so the packaged app runs exactly what the tests ran.
+  const pkg = JSON.parse(
+    await readFile(path.join(appRoot, '..', '..', 'node_modules', 'playwright-core', 'package.json'), 'utf8'),
+  );
+  return pkg.version;
+}
+
 await rm(out, { recursive: true, force: true });
 await mkdir(out, { recursive: true });
 await cp(path.join(appRoot, 'dist'), path.join(out, 'dist'), { recursive: true });
@@ -39,7 +57,7 @@ await writeFile(
       name: 'hearth-editor',
       productName: 'Hearth',
       version: editorPkg.version,
-      description: 'Hearth — an open-source, agent-native 2D game engine and editor',
+      description: 'Hearth — the app for agentic game development, with playtesting built in',
       author: {
         name: 'Hearth Engine Contributors',
         email: 'hearth@users.noreply.github.com',
@@ -54,6 +72,7 @@ await writeFile(
       main: 'dist-electron/main.cjs',
       dependencies: {
         '@lydell/node-pty': nodePtyVersion,
+        'playwright-core': playwrightVersion,
       },
     },
     null,
@@ -68,7 +87,7 @@ await writeFile(
 // matches whatever OS/arch this script runs on — exactly what each release CI
 // runner (and a local packaging run) needs.
 const npmInstallArgs = ['install', '--omit=dev', '--no-audit', '--no-fund', '--no-package-lock'];
-console.log(`release-app/: npm install @lydell/node-pty@${nodePtyVersion}`);
+console.log(`release-app/: npm install @lydell/node-pty@${nodePtyVersion} playwright-core@${playwrightVersion}`);
 // Node's CVE-2024-27980 hardening refuses to spawn a .cmd/.bat file directly
 // on win32 (throws EINVAL) unless `shell: true` is set. `npmCmd()` resolves to
 // `npm.cmd` on Windows, so opt into the shell there; args are static strings

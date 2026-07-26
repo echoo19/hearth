@@ -117,6 +117,20 @@ describe('per-folder settings', () => {
     expect(JSON.parse(raw).apiKey).toBe('sk-test');
   });
 
+  it('guards the key file with a .gitignore that travels with the folder', async () => {
+    await writeAppSettings(dir, { apiKey: 'sk-test' });
+    const ignore = await fsp.readFile(path.join(dir, '.hearth', '.gitignore'), 'utf8');
+    expect(ignore.split(/\r?\n/)).toContain('app.json');
+    // Idempotent, and an existing .gitignore keeps its own lines.
+    await fsp.writeFile(path.join(dir, '.hearth', '.gitignore'), 'evidence/\n');
+    await writeAppSettings(dir, { apiKey: 'sk-test-2' });
+    const merged = await fsp.readFile(path.join(dir, '.hearth', '.gitignore'), 'utf8');
+    expect(merged.split(/\r?\n/)).toContain('evidence/');
+    expect(merged.split(/\r?\n/)).toContain('app.json');
+    await writeAppSettings(dir, { apiKey: 'sk-test-3' });
+    expect(await fsp.readFile(path.join(dir, '.hearth', '.gitignore'), 'utf8')).toBe(merged);
+  });
+
   it('clears the key when saved empty rather than storing a blank', async () => {
     await writeAppSettings(dir, { apiKey: 'sk-test' });
     await writeAppSettings(dir, { apiKey: '   ' });

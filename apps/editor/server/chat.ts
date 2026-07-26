@@ -290,6 +290,19 @@ export async function writeAppSettings(projectRoot: string, patch: AppSettings):
   }
   const file = appSettingsPath(projectRoot);
   await fsp.mkdir(path.dirname(file), { recursive: true });
+  // app.json can hold API keys, and projects are ordinary folders a user may
+  // put under git at any time. A .gitignore next to the file is the only
+  // guard that travels with the folder.
+  const ignoreFile = path.join(path.dirname(file), '.gitignore');
+  try {
+    const existing = await fsp.readFile(ignoreFile, 'utf8').catch(() => null);
+    if (existing === null) await fsp.writeFile(ignoreFile, 'app.json\n');
+    else if (!existing.split(/\r?\n/).includes('app.json')) {
+      await fsp.writeFile(ignoreFile, existing.replace(/\n?$/, '\n') + 'app.json\n');
+    }
+  } catch {
+    // Never let the guard block saving the settings themselves.
+  }
   await fsp.writeFile(file, JSON.stringify(next, null, 2) + '\n');
   return next;
 }
