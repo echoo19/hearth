@@ -1,0 +1,21 @@
+{
+  // Typecheck-only config (no emit), covering the tests as well as src.
+  //
+  // It maps @hearth/probe-core straight at the committed contract file: the
+  // contract is the authoritative coordination artifact and the only thing
+  // this package imports from probe-core, so checking here never waits on
+  // probe-core being installed and built first. `rootDir` is widened purely
+  // because that mapping pulls in a file outside src — nothing is emitted, so
+  // it has no effect on the build (`tsconfig.json`, which stays the standard
+  // package shape). At runtime nothing is imported from probe-core at all:
+  // every use is `import type`.
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "rootDir": "../..",
+    "paths": {
+      "@hearth/probe-core": ["../probe-core/src/contract.js"]
+    }
+  },
+  "include": ["src", "tests"]
+}

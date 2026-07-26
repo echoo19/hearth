@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Blank fixture</title>
+    <style>
+      html,
+      body {
+        margin: 0;
+        background: #10131a;
+      }
+      canvas {
+        display: block;
+      }
+    </style>
+  </head>
+  <body>
+    <!--
+      The zero-cooperation floor: a canvas, one flat color, no input handling,
+      no shim. Whatever the adapter can honestly claim here is the baseline
+      every web game gets for free.
+    -->
+    <canvas id="stage" width="960" height="540"></canvas>
+    <script src="game.js"></script>
+  </body>
+</html>
