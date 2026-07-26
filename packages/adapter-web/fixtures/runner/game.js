@@ -9,6 +9,10 @@
  *   broken-jump   Space does nothing, so the pit is impassable
  *   pit-softlock  falling in the pit freezes the player forever
  *   crash         touching the pit edge throws an uncaught TypeError
+ *   crash-early   throws the same TypeError after 30 update ticks, regardless
+ *                 of position — for tests that need the crash to be reachable
+ *                 at any frame rate (a random-input bot on a slow CI runner
+ *                 may never physically reach the pit)
  */
 (function () {
   'use strict';
@@ -62,13 +66,20 @@
     respawn();
     frozen = false;
     won = false;
+    ticks = 0;
     scene = 'level1';
   }
 
+  var ticks = 0;
+
   function update() {
     if (frozen) return;
+    ticks += 1;
 
-    if (VARIANT === 'crash' && player.x + player.w >= PIT_START - 8) {
+    if (
+      (VARIANT === 'crash' && player.x + player.w >= PIT_START - 8) ||
+      (VARIANT === 'crash-early' && ticks > 30)
+    ) {
       // A plausible shape of real bug: an object that isn't there yet.
       var tile = null;
       tile.solid = true;
@@ -143,9 +154,12 @@
   }
 
   function frame() {
+    // Schedule before updating: a crash variant's throw must not kill the
+    // loop for good, or a post-crash restart() leaves a permanently frozen
+    // game and later runs observe silence instead of the error.
+    requestAnimationFrame(frame);
     update();
     render();
-    requestAnimationFrame(frame);
   }
 
   if (window.__hearthProbe) {

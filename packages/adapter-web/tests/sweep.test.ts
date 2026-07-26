@@ -69,19 +69,25 @@ describe('sweeping a web game through probe-core', () => {
     'catches the crashing variant: error verdicts, a blocker finding, a failure entry',
     async () => {
       const root = await mkdtemp(path.join(tmpdir(), 'hearth-sweep-'));
-      const { game, close } = await openFixture(RUNNER_DIR, { variant: 'crash' });
+      // crash-early, not crash: this test proves runSweep surfaces an uncaught
+      // game error as verdict + blocker + failure. The position-triggered
+      // `crash` variant needs the bot to physically reach the pit, which a
+      // random mash at a slow CI runner's frame rate reliably fails to do
+      // (both CI platforms, twice) — trajectory-reaching coverage lives in the
+      // scripted discrimination tests instead.
+      const { game, close } = await openFixture(RUNNER_DIR, { variant: 'crash-early' });
       try {
         const report = await runSweep(game, {
           policies: ['mash'],
           seeds: [1, 2, 3],
           evidence: new NodeEvidenceStore(root),
           target: 'runner:crash',
-          // Generous caps: on loaded CI runners headless Chromium's rAF slows
-          // to a crawl, so a 150-step budget starves the bot of game frames
-          // and it never physically reaches the crash trigger (both CI
-          // platforms failed exactly this way on the first v0.1.0 run).
-          maxSteps: 600,
-          stuckAfter: 500,
+          maxSteps: 300,
+          stuckAfter: 250,
+          // No probe prelude: crash-early fires ~30 ticks in, which would land
+          // inside the prelude and be consumed as a probe abort instead of
+          // surfacing as a run verdict.
+          inputProbe: false,
           screenshotEvery: 50,
         });
 
