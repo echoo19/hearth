@@ -55,6 +55,7 @@ import {
   type ChatEvent,
 } from './chat.js';
 import { providerBus, type ChatProviderStatus } from './chatProviders.js';
+import { parseAttachmentInputs, saveAttachments, storedAttachment } from './chatAttachments.js';
 import {
   appendChatRecord,
   createChat,
@@ -105,7 +106,10 @@ export type WsFrame =
   // OPTIONAL in both directions: a client that predates the selector omits it
   // and gets exactly the old behavior, and a server that predates it ignores
   // the field.
-  | { type: 'chat-send'; text: string; agent?: unknown } // client -> server
+  // `attachments` are base64 payloads the composer collected (images, and any
+  // other file the user dropped). Optional like `agent`, and validated on
+  // arrival — see chatAttachments.ts.
+  | { type: 'chat-send'; text: string; agent?: unknown; attachments?: unknown } // client -> server
   | { type: 'chat-cancel' } // client -> server
   | { type: 'chat-new' } // client -> server
   | { type: 'chat-open'; chatId: string } // client -> server
@@ -735,7 +739,10 @@ export function attachWebSocket(
           case 'chat-send':
             {
               const text = typeof frame.text === 'string' ? frame.text : '';
-              if (text.trim() === '') break;
+              const files = parseAttachmentInputs(frame.attachments);
+              // An image on its own is a message; empty words with nothing
+              // attached is not.
+              if (text.trim() === '' && files.length === 0) break;
               const agent = parseAgentOptions(frame.agent);
               enqueueChatOp(ws, async () => {
                 const session = await ensureChat(root, ws, agent);
@@ -744,9 +751,17 @@ export function attachWebSocket(
                 const chatId = socketChat.get(ws);
                 const bound = session ?? (chatId ? (chatSessions.get(chatKey(root, chatId)) ?? null) : null);
                 if (!bound) return;
-                await appendChatRecord(root, bound.chatId, { role: 'user', ts: new Date().toISOString(), text });
+                // Written down BEFORE the turn starts: the agent is handed
+                // paths, so the files have to exist by the time it reads them.
+                const attachments = await saveAttachments(root, bound.chatId, files);
+                await appendChatRecord(root, bound.chatId, {
+                  role: 'user',
+                  ts: new Date().toISOString(),
+                  text,
+                  ...(attachments.length > 0 ? { attachments: attachments.map(storedAttachment) } : {}),
+                });
                 await announceChats(root); // the first turn names the chat
-                bound.driver?.send(text, agent ?? undefined);
+                bound.driver?.send(text, agent ?? undefined, attachments);
               });
             }
             break;

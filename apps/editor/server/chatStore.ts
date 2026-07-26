@@ -28,6 +28,7 @@ import { promises as fsp } from 'node:fs';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import type { ChatEvent } from './chat.js';
+import { parseStoredAttachments, type StoredAttachment } from './chatAttachments.js';
 
 /** Relative location of the chat directory within a project. */
 export const CHATS_DIR = path.join('.hearth', 'chats');
@@ -58,7 +59,7 @@ export interface ChatSummary {
 
 /** One line of a transcript. */
 export type ChatRecord =
-  | { role: 'user'; ts: string; text: string }
+  | { role: 'user'; ts: string; text: string; attachments?: StoredAttachment[] }
   | { role: 'agent'; ts: string; event: ChatEvent };
 
 export function chatsDir(root: string): string {
@@ -99,6 +100,17 @@ export function chatTitleFrom(text: string): string {
   return `${(space > TITLE_MAX * 0.6 ? cut.slice(0, space) : cut).trimEnd()}…`;
 }
 
+/**
+ * What names a conversation whose first message was a file with no words —
+ * dropping a screenshot in and pressing send is a real way to start, and
+ * "New chat" forever is not a name.
+ */
+export function userRecordTitle(record: { text: string; attachments?: readonly StoredAttachment[] }): string {
+  if (record.text.trim() !== '') return chatTitleFrom(record.text);
+  const names = (record.attachments ?? []).map((a) => a.name).join(', ');
+  return names === '' ? UNTITLED : chatTitleFrom(names);
+}
+
 /** Parse a transcript body, skipping blank and malformed lines. */
 export function parseTranscript(text: string): ChatRecord[] {
   const out: ChatRecord[] = [];
@@ -115,7 +127,13 @@ export function parseTranscript(text: string): ChatRecord[] {
     const record = parsed as Partial<ChatRecord> & { role?: string };
     const ts = typeof record.ts === 'string' ? record.ts : new Date(0).toISOString();
     if (record.role === 'user' && typeof (record as { text?: unknown }).text === 'string') {
-      out.push({ role: 'user', ts, text: (record as { text: string }).text });
+      const attachments = parseStoredAttachments((record as { attachments?: unknown }).attachments);
+      out.push({
+        role: 'user',
+        ts,
+        text: (record as { text: string }).text,
+        ...(attachments.length > 0 ? { attachments } : {}),
+      });
     } else if (record.role === 'agent') {
       const event = (record as { event?: unknown }).event;
       if (event && typeof event === 'object' && typeof (event as { type?: unknown }).type === 'string') {
@@ -230,7 +248,7 @@ export function appendChatRecord(root: string, chatId: string, record: ChatRecor
     await fsp.mkdir(path.dirname(file), { recursive: true });
     await fsp.appendFile(file, `${JSON.stringify(record)}\n`, 'utf8');
     const next: ChatSummary = { ...chats[index], updatedAt: record.ts };
-    if (record.role === 'user' && next.title === UNTITLED) next.title = chatTitleFrom(record.text);
+    if (record.role === 'user' && next.title === UNTITLED) next.title = userRecordTitle(record);
     chats[index] = next;
     await writeIndexUnlocked(root, chats);
     return next;

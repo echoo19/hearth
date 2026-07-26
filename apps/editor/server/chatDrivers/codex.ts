@@ -32,6 +32,7 @@ import {
   resolveOpenAiKey,
   type AgentTurnOptions,
   type ApprovalDecision,
+  type ChatAttachment,
   type ChatDriver,
   type ChatEvent,
 } from '../chat.js';
@@ -40,6 +41,7 @@ import {
   CODEX_CLIENT_INFO,
   CODEX_TESTED_VERSION,
   codexApprovalReply,
+  codexInputItems,
   codexTurnOverrides,
   decodeRpcChunk,
   encodeRpc,
@@ -479,7 +481,7 @@ export class CodexDriver implements ChatDriver {
   private turnId: string | null = null;
   private stopped = false;
   /** Turns queued before the thread finished starting. */
-  private backlog: { text: string; agent?: AgentTurnOptions }[] = [];
+  private backlog: { text: string; agent?: AgentTurnOptions; attachments?: readonly ChatAttachment[] }[] = [];
   private ready = false;
   /** Inbound approval requests awaiting the user, by our approvalId. */
   private approvals = new Map<string, { id: number | string; method: string }>();
@@ -536,7 +538,7 @@ export class CodexDriver implements ChatDriver {
       if (id !== this.resumeThreadId) this.onThreadId(id);
     }
     this.ready = true;
-    for (const queued of this.backlog.splice(0)) this.startTurn(queued.text, queued.agent);
+    for (const queued of this.backlog.splice(0)) this.startTurn(queued.text, queued.agent, queued.attachments);
   }
 
   private handleNotification(method: string, params: unknown): void {
@@ -582,22 +584,22 @@ export class CodexDriver implements ChatDriver {
     this.queue.push({ type: 'approval-resolved', approvalId, decision });
   }
 
-  send(text: string, agent?: AgentTurnOptions): void {
+  send(text: string, agent?: AgentTurnOptions, attachments?: readonly ChatAttachment[]): void {
     if (this.stopped) return;
     if (!this.ready) {
-      this.backlog.push({ text, agent });
+      this.backlog.push({ text, agent, attachments });
       return;
     }
-    this.startTurn(text, agent);
+    this.startTurn(text, agent, attachments);
   }
 
-  private startTurn(text: string, agent?: AgentTurnOptions): void {
+  private startTurn(text: string, agent?: AgentTurnOptions, attachments?: readonly ChatAttachment[]): void {
     const conn = this.conn;
     if (!conn || !this.threadId) return;
     void conn
       .request('turn/start', {
         threadId: this.threadId,
-        input: [{ type: 'text', text, text_elements: [] }],
+        input: codexInputItems(text, attachments ?? []),
         // `model` and `effort` are real TurnStartParams fields on the app-server
         // protocol (verified against CODEX_TESTED_VERSION's own
         // `generate-ts` output): both override the thread's setting for this

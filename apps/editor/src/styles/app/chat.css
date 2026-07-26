@@ -1345,3 +1345,146 @@
   align-self: flex-start;
   min-width: 180px;
 }
+
+/* ---------------------------------------------------------------------------
+   Attachments
+
+   One vocabulary in two places: the composer's tray, where a thumbnail can be
+   taken back out, and the sent turn, where it can't. A picture shows as a
+   picture at a size you can actually recognise it at; anything else shows as a
+   chip with its name, because a filename is the only honest thing to show
+   about a zip.
+   --------------------------------------------------------------------------- */
+
+.attach-tray {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 0;
+  padding: 14px 16px 0;
+  list-style: none;
+}
+
+/* In a sent turn the tray sits inside the bubble's own padding, above the
+   words, so it needs none of its own. */
+.attach-tray.is-sent {
+  padding: 0 0 8px;
+}
+
+.attach-item {
+  position: relative;
+  display: flex;
+  align-items: center;
+  max-width: 100%;
+  border-radius: var(--radius, 8px);
+  background: var(--bg-2);
+  overflow: hidden;
+}
+
+.attach-item.is-image {
+  width: 60px;
+  height: 60px;
+  border: 1px solid var(--border);
+}
+
+.attach-tray.is-sent .attach-item.is-image {
+  /* Sent pictures are the message, not a manifest of it: bigger, and sized to
+     the image rather than cropped to a uniform grid. */
+  width: auto;
+  height: auto;
+  max-width: min(320px, 100%);
+  background: transparent;
+}
+
+.attach-thumb {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.attach-tray.is-sent .attach-thumb {
+  width: auto;
+  height: auto;
+  max-width: 100%;
+  max-height: 320px;
+  border-radius: var(--radius, 8px);
+  object-fit: contain;
+}
+
+.attach-file {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+  max-width: 15rem;
+  height: 32px;
+  padding: 0 11px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius, 8px);
+  color: var(--ink-mute);
+  font-size: var(--text-sm);
+}
+
+.attach-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Present but quiet until the item is pointed at — a remove button that is
+   always at full strength reads as a warning on every thumbnail. */
+.attach-remove {
+  position: absolute;
+  top: 3px;
+  right: 3px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 17px;
+  height: 17px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: var(--bg-0);
+  color: var(--ink-mute);
+  opacity: 0;
+  cursor: pointer;
+  transition: opacity var(--t-fast) var(--ease-out), color var(--t-fast) var(--ease-out);
+}
+
+.attach-item:hover .attach-remove,
+.attach-remove:focus-visible {
+  opacity: 1;
+}
+
+.attach-remove:hover {
+  color: var(--ink);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .attach-remove {
+    transition: none;
+  }
+}
+
+/* The picker the + menu opens. Kept in the layout but out of sight: a
+   display:none input can still be clicked, but it cannot be focused, and a
+   focus ring landing on nothing is worse than one landing off-screen. */
+.composer-file-input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  border: 0;
+  clip-path: inset(50%);
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+/* A drop is a promise that letting go will do something, so the card says so
+   with the one accent it already owns. */
+.composer-card.is-dropping {
+  border-color: var(--accent);
+  box-shadow: var(--shadow-2), inset 0 0 0 1px var(--accent);
+}

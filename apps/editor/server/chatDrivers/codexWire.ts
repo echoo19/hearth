@@ -32,11 +32,13 @@ import type {
   AgentTurnOptions,
   ApprovalDecision,
   ApprovalKind,
+  ChatAttachment,
   ChatEvent,
   FileChangeEntry,
   ToolKind,
   ToolStatus,
 } from '../chat.js';
+import { isInlineImage } from '../chatAttachments.js';
 
 /** The codex build this adapter was written and verified against. */
 export const CODEX_TESTED_VERSION = '0.144.5';
@@ -387,6 +389,35 @@ export function codexTurnOverrides(agent: AgentTurnOptions | null | undefined): 
   if (typeof agent.model === 'string' && agent.model !== '') out.model = agent.model;
   if (agent.effort) out.effort = agent.effort;
   return out;
+}
+
+/**
+ * The `input` array for a `turn/start`, given what the user typed and what
+ * they attached.
+ *
+ * `UserInput` on CODEX_TESTED_VERSION is a five-variant enum — `text`,
+ * `image`, `localImage`, `skill`, `mention` — and two of those are exactly
+ * what an attachment is. An image already on disk goes as `localImage` with
+ * its path, so the bytes never travel through the JSON-RPC pipe; anything else
+ * goes as `mention`, which is how codex's own UI hands the model a file it
+ * should look at.
+ *
+ * Attachments come first, then the words, because that is the order the user
+ * assembled them in — and the text item is omitted entirely when there is
+ * nothing to say, since an empty string reads to a model as a question it was
+ * asked to answer.
+ */
+export function codexInputItems(text: string, attachments: readonly ChatAttachment[]): unknown[] {
+  const input: unknown[] = [];
+  for (const attachment of attachments) {
+    input.push(
+      isInlineImage(attachment.mimeType)
+        ? { type: 'localImage', path: attachment.path }
+        : { type: 'mention', name: attachment.name, path: attachment.path },
+    );
+  }
+  if (text.trim() !== '' || input.length === 0) input.push({ type: 'text', text, text_elements: [] });
+  return input;
 }
 
 /**

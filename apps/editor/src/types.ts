@@ -13,6 +13,7 @@ export type { CommandResult, JournalEntry };
  */
 export type { EvidenceEvent } from '@hearth/probe-core';
 export type { ChatRecord, ChatSummary } from '../server/chatStore';
+export type { StoredAttachment } from '../server/chatAttachments';
 
 // ---------------------------------------------------------------------------
 // Folders
@@ -219,12 +220,31 @@ export type ChatPart =
   | ChatSubagentPart
   | ChatApprovalPart;
 
+/**
+ * A file the user sent with a turn, as the transcript shows it back.
+ *
+ * `url` is where the picture actually comes from, and it has two lives: a
+ * blob/data URL for the message that was just sent (the bytes are already in
+ * the browser, and waiting for a round trip would make the send feel slow),
+ * and an `/api/file` URL once the turn is replayed from disk. The renderer
+ * never needs to know which it is looking at.
+ */
+export interface ChatAttachmentView {
+  name: string;
+  mimeType: string;
+  url: string;
+  /** Absent for a locally-previewed attachment that has not been saved yet. */
+  relPath?: string;
+}
+
 export interface ChatMessage {
   id: string;
   role: 'user' | 'agent';
   parts: ChatPart[];
   /** Still receiving events (drives the working indicator). Agent turns only. */
   streaming: boolean;
+  /** What was attached to this turn. User turns only. */
+  attachments?: ChatAttachmentView[];
 }
 
 /**

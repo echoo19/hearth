@@ -28,10 +28,13 @@ import {
   apiRecentChats,
   apiRenameChat,
   apiStartSweep,
+  projectFileUrl,
 } from './api';
+import { attachmentPayload, type PendingAttachment } from './chat/attachments';
 import type {
   AppSettingsInfo,
   ApprovalDecision,
+  ChatAttachmentView,
   ChatDriverKind,
   ChatEvent,
   ChatMessage,
@@ -49,6 +52,7 @@ import type {
   RecentChatEntry,
   Sense,
   ServerMeta,
+  StoredAttachment,
   UpdateReadyInfo,
   WorkspaceInfo,
 } from './types';
@@ -182,7 +186,8 @@ export interface AppState {
   loadMeta(): Promise<void>;
   openWorkspace(path: string, prompt?: string): Promise<{ ok: boolean; error?: string }>;
   closeWorkspace(): void;
-  sendChat(text: string): void;
+  /** Send a turn. `attachments` are files the composer's tray was holding. */
+  sendChat(text: string, attachments?: readonly PendingAttachment[]): void;
   /** End the turn AND the session — the conversation's agent is torn down. */
   cancelChat(): void;
   /** Stop the running turn but keep the session, so the next message continues. */
@@ -208,7 +213,7 @@ export interface AppState {
    * it, start a conversation, and send. The whole point of Home — a project
    * is a consequence of talking, not a prerequisite for it.
    */
-  startFromHome(text: string): Promise<{ ok: boolean; error?: string }>;
+  startFromHome(text: string, attachments?: readonly PendingAttachment[]): Promise<{ ok: boolean; error?: string }>;
   /** Subscribe to the main process's update-ready signal. Returns unsubscribe. */
   watchUpdates(): () => void;
   /** Quit and install the downloaded update (the rail's banner button). */
@@ -324,8 +329,16 @@ function writeConversationMode(projectPath: string, mode: ConversationMode): voi
 // without a socket or a React tree.
 // ---------------------------------------------------------------------------
 
-export function makeUserMessage(text: string): ChatMessage {
-  return { id: `m${++messageId}`, role: 'user', parts: [{ kind: 'text', text }], streaming: false };
+export function makeUserMessage(text: string, attachments?: readonly ChatAttachmentView[]): ChatMessage {
+  return {
+    id: `m${++messageId}`,
+    role: 'user',
+    // A message that is only a picture has no text part: an empty paragraph
+    // would render as a blank line under the thumbnail.
+    parts: text === '' ? [] : [{ kind: 'text', text }],
+    streaming: false,
+    ...(attachments && attachments.length > 0 ? { attachments: [...attachments] } : {}),
+  };
 }
 
 export function makeAgentMessage(): ChatMessage {
@@ -582,11 +595,30 @@ export function pendingApprovalId(messages: readonly ChatMessage[]): string | nu
  * settles: history is not resumable, and a permanently "working" bubble would
  * be a lie.
  */
-export function replayTranscript(records: readonly ChatRecord[]): ChatMessage[] {
+/**
+ * Turn a transcript's saved attachments into something renderable. The bytes
+ * are a file in the project, so the URL is the same read route the rest of the
+ * app uses; a project we don't know (a bare replay in a test) yields nothing
+ * rather than a broken image.
+ */
+export function replayAttachments(
+  attachments: readonly StoredAttachment[] | undefined,
+  project: string,
+): ChatAttachmentView[] {
+  if (!attachments || attachments.length === 0 || project === '') return [];
+  return attachments.map((attachment) => ({
+    name: attachment.name,
+    mimeType: attachment.mimeType,
+    relPath: attachment.relPath,
+    url: projectFileUrl(project, attachment.relPath),
+  }));
+}
+
+export function replayTranscript(records: readonly ChatRecord[], project = ''): ChatMessage[] {
   let messages: ChatMessage[] = [];
   for (const record of records) {
     if (record.role === 'user') {
-      messages = [...messages, makeUserMessage(record.text)];
+      messages = [...messages, makeUserMessage(record.text, replayAttachments(record.attachments, project))];
       continue;
     }
     const last = messages[messages.length - 1];
@@ -782,7 +814,7 @@ export const useApp = create<AppState>((set, get) => {
         chatIntent = { type: 'chat-open', chatId: frame.chat.id };
         set({
           activeChatId: frame.chat.id,
-          messages: replayTranscript(frame.records),
+          messages: replayTranscript(frame.records, get().projectPath ?? ''),
           chatBusy: false,
           chatError: null,
         });
@@ -1040,21 +1072,41 @@ export const useApp = create<AppState>((set, get) => {
       // the first thing a user looks at after closing one.
     },
 
-    sendChat(text) {
+    sendChat(text, attachments) {
       const trimmed = text.trim();
-      if (trimmed === '' || get().chatBusy) return;
+      const files = attachments ?? [];
+      // A picture on its own is a message; nothing at all is not.
+      if ((trimmed === '' && files.length === 0) || get().chatBusy) return;
       // Every turn carries who should answer it and how hard to think, rather
       // than the server remembering a setting: the selector can change between
       // two messages in the same conversation, and the turn is the unit that
       // choice applies to. Additive on the wire — a server that predates the
       // field ignores it, which is why it is omitted rather than sent as null.
       const agent = getModelChoice();
-      if (!get().sendFrame({ type: 'chat-send', text: trimmed, ...(agent ? { agent } : {}) })) {
+      if (
+        !get().sendFrame({
+          type: 'chat-send',
+          text: trimmed,
+          ...(agent ? { agent } : {}),
+          ...(files.length > 0 ? { attachments: files.map(attachmentPayload) } : {}),
+        })
+      ) {
         get().log('error', 'app', 'Not connected — wait a moment and send again.');
         return;
       }
+      // The bubble shows the bytes the browser already has. When this chat is
+      // reopened the same turn comes back from disk instead, through
+      // replayAttachments — the reader can't tell the two apart.
+      // A data URL, not the tray's object URL: the composer revokes those as
+      // soon as it lets go, and a bubble must not depend on the box that sent
+      // it still being alive.
+      const shown = files.map((file) => ({
+        name: file.name,
+        mimeType: file.mimeType,
+        url: `data:${file.mimeType};base64,${file.data}`,
+      }));
       set((state) => ({
-        messages: [...state.messages, makeUserMessage(trimmed), makeAgentMessage()],
+        messages: [...state.messages, makeUserMessage(trimmed, shown), makeAgentMessage()],
         chatBusy: true,
         chatError: null,
       }));
@@ -1186,9 +1238,10 @@ export const useApp = create<AppState>((set, get) => {
       get().openChat(entry.id);
     },
 
-    async startFromHome(text) {
+    async startFromHome(text, attachments) {
       const trimmed = text.trim();
-      if (trimmed === '' || get().homeBusy) return { ok: false };
+      const files = attachments ?? [];
+      if ((trimmed === '' && files.length === 0) || get().homeBusy) return { ok: false };
       set({ homeBusy: true, chatError: null });
       // Failures land in chatError as well as the return value: whoever called
       // this may be a composer that doesn't render one, and a first message
@@ -1220,7 +1273,7 @@ export const useApp = create<AppState>((set, get) => {
           set({ pendingPrompt: trimmed });
           return fail('The folder opened, but nothing is listening yet. Your message is in the composer.');
         }
-        get().sendChat(trimmed);
+        get().sendChat(trimmed, files);
         return { ok: true };
       } finally {
         set({ homeBusy: false });

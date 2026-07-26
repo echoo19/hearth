@@ -12,6 +12,7 @@ import type { ChatMessage, ChatPart } from '../../types';
 import { greetingFor } from '../home/Home';
 import { Button } from '../ui/Button';
 import { ApprovalPrompt } from './ApprovalPrompt';
+import { SentAttachments } from './AttachmentTray';
 import { CommandRow } from './CommandRow';
 import { FileChangeCard } from './FileChangeCard';
 import { ReasoningRow } from './ReasoningRow';
@@ -125,6 +126,9 @@ function Turn({ message }: { message: ChatMessage }) {
   const showWorking = message.streaming && message.parts.length === 0;
   return (
     <article className={`msg msg-${message.role}`}>
+      {/* Above the words, the way it was assembled: you attach the picture,
+          then say what to do with it. */}
+      {message.attachments ? <SentAttachments attachments={message.attachments} /> : null}
       {message.parts.map((part, index) => (
         <Part key={partKey(part, index)} part={part} />
       ))}

@@ -11,12 +11,20 @@
  * Enter sends and Shift+Enter breaks the line, which is what every other chat
  * app in the world does. ⌘↵ keeps working for the people who learned it here.
  */
-import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { useApp } from '../../store';
 import { Tooltip } from '../ui/Tooltip';
 import { Icon } from '../ui';
 import { MenuButton } from '../ui/Menu';
 import { ModelSelector } from './ModelSelector';
+import { AttachmentTray } from './AttachmentTray';
+import {
+  attachmentRejection,
+  filesFromTransfer,
+  readAttachment,
+  releaseAttachments,
+  type PendingAttachment,
+} from '../../chat/attachments';
 
 /** Ceiling for the autosizing textarea, in px — past this it scrolls. */
 export const COMPOSER_MAX_PX = 200;
@@ -79,6 +87,15 @@ const PLACEHOLDER: Record<ComposerVariant, string> = {
   home: 'What are we making?',
 };
 
+/**
+ * A paste only means "attach this" when it carries real files. Pasting text
+ * that a page happened to expose as an item must go into the textarea, which
+ * is what everyone expects and what makes this safe to bind unconditionally.
+ */
+export function pasteCarriesFiles(data: DataTransfer | null): boolean {
+  return filesFromTransfer(data).length > 0;
+}
+
 export function Composer({ variant = 'chat' }: { variant?: ComposerVariant } = {}) {
   const sendChat = useApp((s) => s.sendChat);
   // Stop interrupts the TURN and keeps the conversation's agent alive, so the
@@ -92,8 +109,50 @@ export function Composer({ variant = 'chat' }: { variant?: ComposerVariant } = {
   // Home's submit is a round trip (create the folder, open it, then send), and
   // it must not be startable twice from one impatient double-press.
   const [starting, setStarting] = useState(false);
+  const [attachments, setAttachments] = useState<PendingAttachment[]>([]);
+  const [dropping, setDropping] = useState(false);
   const ref = useRef<HTMLTextAreaElement>(null);
+  const fileRef = useRef<HTMLInputElement>(null);
   const isHome = variant === 'home';
+
+  // Files can arrive faster than state settles (a drop of six at once), so the
+  // count is read from the setter rather than from the render's closure.
+  const addFiles = useCallback(
+    async (files: readonly File[]): Promise<void> => {
+      for (const file of files) {
+        let rejection: string | null = null;
+        setAttachments((current) => {
+          rejection = attachmentRejection(file, current.length);
+          return current;
+        });
+        if (rejection) {
+          useApp.getState().log('warn', 'app', rejection);
+          continue;
+        }
+        try {
+          const attachment = await readAttachment(file);
+          setAttachments((current) => [...current, attachment]);
+        } catch {
+          useApp.getState().log('error', 'app', `Could not read ${file.name}.`);
+        }
+      }
+    },
+    [],
+  );
+
+  const removeAttachment = useCallback((id: string): void => {
+    setAttachments((current) => {
+      releaseAttachments(current.filter((attachment) => attachment.id === id));
+      return current.filter((attachment) => attachment.id !== id);
+    });
+  }, []);
+
+  // The tray holds object URLs, and only the tray does — what goes into a sent
+  // message is a data URL (see sendChat), so these can be released the moment
+  // the tray lets go of them without ever breaking a picture on screen.
+  const trayRef = useRef<readonly PendingAttachment[]>(attachments);
+  trayRef.current = attachments;
+  useEffect(() => () => releaseAttachments(trayRef.current), []);
 
   // A prompt handed over by another surface lands here, focused and ready to
   // edit — never sent behind the user's back.
@@ -114,26 +173,76 @@ export function Composer({ variant = 'chat' }: { variant?: ComposerVariant } = {
   // Home talks to the workspace endpoint over HTTP, not the chat socket, so a
   // disconnected socket is not a reason to stop someone starting a project.
   const busy = isHome ? starting : chatBusy;
-  const blocked = isHome ? null : composerBlockReason({ connected, busy: chatBusy, empty: text.trim() === '' });
-  const canSend = (isHome || connected) && !busy && text.trim() !== '';
+  // An attachment is content: a picture with no words is a message, so the
+  // empty box stops being a reason not to send once something is in the tray.
+  const empty = text.trim() === '' && attachments.length === 0;
+  const blocked = isHome ? null : composerBlockReason({ connected, busy: chatBusy, empty });
+  const canSend = (isHome || connected) && !busy && !empty;
 
   function send(): void {
     if (!canSend) return;
     const value = text;
+    const files = attachments;
     if (!isHome) {
       setText('');
-      sendChat(value);
+      setAttachments([]);
+      sendChat(value, files);
+      releaseAttachments(files);
       return;
     }
     setStarting(true);
     // The prompt stays in the box until it is known to have gone somewhere: if
     // creating the folder fails, losing what was typed is the worst outcome.
-    void Promise.resolve(useApp.getState().startFromHome(value)).finally(() => setStarting(false));
+    void Promise.resolve(useApp.getState().startFromHome(value, files))
+      .then((result) => {
+        if (result?.ok) {
+          setText('');
+          setAttachments([]);
+          releaseAttachments(files);
+        }
+      })
+      .finally(() => setStarting(false));
   }
 
   return (
     <div className={`composer composer-${variant}`}>
-      <div className="composer-card">
+      <div
+        className={dropping ? 'composer-card is-dropping' : 'composer-card'}
+        onDragOver={(e) => {
+          if (!pasteCarriesFiles(e.dataTransfer)) return;
+          e.preventDefault();
+          setDropping(true);
+        }}
+        onDragLeave={(e) => {
+          // Only the card leaving counts; crossing into the textarea inside it
+          // fires dragleave too, and would make the highlight flicker.
+          if (e.currentTarget.contains(e.relatedTarget as Node | null)) return;
+          setDropping(false);
+        }}
+        onDrop={(e) => {
+          const files = filesFromTransfer(e.dataTransfer);
+          setDropping(false);
+          if (files.length === 0) return;
+          e.preventDefault();
+          void addFiles(files);
+        }}
+      >
+        {/* Off-screen rather than display:none — a hidden input can still be
+            opened by .click(), and this one is the + menu's file picker. */}
+        <input
+          ref={fileRef}
+          type="file"
+          multiple
+          className="composer-file-input"
+          aria-hidden="true"
+          tabIndex={-1}
+          onChange={(e) => {
+            const files = Array.from(e.target.files ?? []);
+            e.target.value = '';
+            if (files.length > 0) void addFiles(files);
+          }}
+        />
+        <AttachmentTray attachments={attachments} onRemove={removeAttachment} />
         <textarea
           ref={ref}
           className="composer-input"
@@ -142,6 +251,12 @@ export function Composer({ variant = 'chat' }: { variant?: ComposerVariant } = {
           placeholder={PLACEHOLDER[variant]}
           aria-label="Message the agent"
           onChange={(e) => setText(e.target.value)}
+          onPaste={(e) => {
+            const files = filesFromTransfer(e.clipboardData);
+            if (files.length === 0) return; // plain text: let it type itself
+            e.preventDefault();
+            void addFiles(files);
+          }}
           onKeyDown={(e) => {
             const action = composerKeyAction({
               key: e.key,
@@ -165,6 +280,11 @@ export function Composer({ variant = 'chat' }: { variant?: ComposerVariant } = {
             popoverClassName="composer-menu"
             trigger={<Icon name="plus" />}
             items={[
+              {
+                label: 'Add photos & files…',
+                icon: 'image',
+                onSelect: () => fileRef.current?.click(),
+              },
               {
                 label: 'Open folder…',
                 icon: 'folder',

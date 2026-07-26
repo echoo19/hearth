@@ -28,6 +28,9 @@
  */
 import path from 'node:path';
 import { promises as fsp } from 'node:fs';
+import { isInlineImage, type ChatAttachment } from './chatAttachments.js';
+
+export type { ChatAttachment } from './chatAttachments.js';
 
 // ---------------------------------------------------------------------------
 // Wire shapes
@@ -181,8 +184,14 @@ export interface ChatDriver {
    * Queue one user turn. Events for it arrive on `events`. `agent` carries the
    * per-turn model/effort choice; a driver applies what its backend supports
    * and ignores the rest.
+   *
+   * `attachments` are files already written into the conversation's folder.
+   * Both real backends take images inline and everything else as a path — see
+   * `sdkUserContent` here and `codexInputItems` in chatDrivers/codex.ts. `text`
+   * may be empty when there is at least one attachment: an image on its own is
+   * a message.
    */
-  send(text: string, agent?: AgentTurnOptions): void;
+  send(text: string, agent?: AgentTurnOptions, attachments?: readonly ChatAttachment[]): void;
   /** Everything the driver emits, in order, until `stop()`. */
   readonly events: AsyncIterable<ChatEvent>;
   /** Tear down: ends `events` and abandons any in-flight turn. */
@@ -630,6 +639,43 @@ export function commandLooksContained(command: string, projectRoot: string): boo
 }
 
 /**
+ * One user turn's content for the Agent SDK, given what was attached.
+ *
+ * Images the API understands go inline as base64 blocks — that is the only way
+ * a model actually SEES a picture. Everything else becomes a line naming its
+ * path, because the agent is already sitting in the folder with Read and Bash:
+ * pointing at the file is both cheaper and more useful than trying to stuff an
+ * archive into the context window. A file that can't be read is announced as
+ * such rather than silently dropped; a message that says "here's the sprite"
+ * with no sprite is worse than one that says it went missing.
+ */
+export async function sdkUserContent(
+  text: string,
+  attachments: readonly ChatAttachment[],
+  readFile: (file: string) => Promise<Buffer> = (file) => fsp.readFile(file),
+): Promise<unknown[]> {
+  const blocks: unknown[] = [];
+  for (const attachment of attachments) {
+    if (isInlineImage(attachment.mimeType)) {
+      try {
+        const bytes = await readFile(attachment.path);
+        blocks.push({
+          type: 'image',
+          source: { type: 'base64', media_type: attachment.mimeType, data: bytes.toString('base64') },
+        });
+        continue;
+      } catch {
+        blocks.push({ type: 'text', text: `[attached image could not be read: ${attachment.path}]` });
+        continue;
+      }
+    }
+    blocks.push({ type: 'text', text: `Attached file: ${attachment.path}` });
+  }
+  if (text.trim() !== '') blocks.push({ type: 'text', text });
+  return blocks;
+}
+
+/**
  * The Anthropic backend. Runs the Agent SDK in streaming-input mode with the
  * project folder as cwd, so everything the agent writes lands in the user's
  * project. `acceptEdits` is the default permission mode: the whole point of
@@ -650,6 +696,8 @@ export class AgentSdkDriver implements ChatDriver {
   /** Approvals awaiting an answer from the UI, by approvalId. */
   private pending = new Map<string, (decision: ApprovalDecision) => void>();
   private nextApproval = 0;
+  /** Serializes sends that have to read attachments before they can queue. */
+  private sends: Promise<void> = Promise.resolve();
 
   constructor(
     private readonly sdk: { query: (args: unknown) => AsyncIterable<unknown> },
@@ -743,9 +791,24 @@ export class AgentSdkDriver implements ChatDriver {
     resolve(decision);
   }
 
-  send(text: string): void {
+  send(text: string, _agent?: AgentTurnOptions, attachments?: readonly ChatAttachment[]): void {
     if (this.stopped) return;
-    this.turns.push({ type: 'user', message: { role: 'user', content: text } });
+    if (!attachments || attachments.length === 0) {
+      // The overwhelmingly common turn, kept synchronous and kept as a plain
+      // string: exactly what this driver has always queued.
+      this.turns.push({ type: 'user', message: { role: 'user', content: text } });
+      return;
+    }
+    // Attachments have to be read off disk, and a turn must never overtake the
+    // one before it, so every send with files goes through one chain.
+    this.sends = this.sends
+      .then(async () => {
+        const content = await sdkUserContent(text, attachments);
+        if (!this.stopped) this.turns.push({ type: 'user', message: { role: 'user', content } });
+      })
+      .catch((err: Error) => {
+        if (!this.stopped) this.queue.push({ type: 'error', message: err.message });
+      });
   }
 
   stop(): void {

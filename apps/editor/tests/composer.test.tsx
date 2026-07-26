@@ -63,7 +63,7 @@ describe('the home variant — sending is what creates the project', () => {
     type('a top-down space shooter');
     fireEvent.keyDown(box(), { key: 'Enter' });
 
-    expect(startFromHome).toHaveBeenCalledWith('a top-down space shooter');
+    expect(startFromHome).toHaveBeenCalledWith('a top-down space shooter', []);
     expect(sendChat).not.toHaveBeenCalled();
   });
 
@@ -71,7 +71,7 @@ describe('the home variant — sending is what creates the project', () => {
     render(<Composer variant="home" />);
     type('snake, but the walls wrap');
     fireEvent.click(screen.getByRole('button', { name: 'Send' }));
-    expect(startFromHome).toHaveBeenCalledWith('snake, but the walls wrap');
+    expect(startFromHome).toHaveBeenCalledWith('snake, but the walls wrap', []);
   });
 
   it('does not send an empty or whitespace-only box', () => {
@@ -122,7 +122,7 @@ describe('the in-chat variant', () => {
     type('add a second level');
     fireEvent.keyDown(box(), { key: 'Enter' });
 
-    expect(sendChat).toHaveBeenCalledWith('add a second level');
+    expect(sendChat).toHaveBeenCalledWith('add a second level', []);
     expect(startFromHome).not.toHaveBeenCalled();
     expect(box().value).toBe('');
   });
@@ -138,7 +138,7 @@ describe('the in-chat variant', () => {
     render(<Composer />);
     type('keep going');
     fireEvent.keyDown(box(), { key: 'Enter', metaKey: true });
-    expect(sendChat).toHaveBeenCalledWith('keep going');
+    expect(sendChat).toHaveBeenCalledWith('keep going', []);
   });
 
   it('says why it cannot send while the socket is down', () => {

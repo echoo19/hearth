@@ -269,6 +269,15 @@ export function gameUrl(project: string, entry: string, cacheBust?: number): str
   return `/game/${rootKey(project)}/${entry}${suffix}`;
 }
 
+/**
+ * URL for any file inside the project, by its project-relative path. Used for
+ * chat attachments, which live in the conversation's own folder — the bytes
+ * are the project's, so they are read the way every other project file is.
+ */
+export function projectFileUrl(project: string, relPath: string): string {
+  return `/api/file?project=${encodeURIComponent(project)}&path=${encodeURIComponent(relPath)}`;
+}
+
 /** URL for a file inside `.hearth/evidence/` (screenshots, reports). */
 export function evidenceUrl(project: string, relPath: string): string {
   return `/evidence/${rootKey(project)}/${relPath.replace(/^\.hearth\/evidence\//, '')}`;
