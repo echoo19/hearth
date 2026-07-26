@@ -12,12 +12,15 @@ import { wireUpdater, type UpdaterLike, type UpdaterDeps } from '../electron/upd
  *  - notify mode (macOS until signed builds ship): never downloads, one
  *    prompt per version offering the download page;
  *  - background failures log and stay quiet; only a user-invoked
- *    "Check for updates…" surfaces results (up to date / error) in a dialog.
+ *    "Check for updates…" surfaces results (up to date / error) in a dialog;
+ *  - downgrades are permitted in every live mode, because the 0.1.0 pivot
+ *    reset the version line below the retired 1.x engine's.
  */
 
 class FakeUpdater extends EventEmitter implements UpdaterLike {
   autoDownload = true;
   autoInstallOnAppQuit = false;
+  allowDowngrade = false;
   checkForUpdates = vi.fn(async () => null);
   quitAndInstall = vi.fn();
 }
@@ -42,6 +45,18 @@ describe('wireUpdater', () => {
     expect(handle).toBeNull();
     expect(d.updater.listenerCount('update-available')).toBe(0);
     expect(d.updater.checkForUpdates).not.toHaveBeenCalled();
+    // Nothing is configured at all when updates are off — including the
+    // downgrade allowance, which only matters once a feed is being consulted.
+    expect(d.updater.allowDowngrade).toBe(false);
+  });
+
+  // The 0.1.0 pivot published a version *lower* than the retired 1.x engine's
+  // 1.2.1. electron-updater rejects a lower feed version as a downgrade unless
+  // this is set, which would strand every 1.x install permanently.
+  it.each(['auto', 'notify'] as const)('allows deliberate downgrades in %s mode', (mode) => {
+    const d = deps({ policy: { mode } });
+    wireUpdater(d);
+    expect(d.updater.allowDowngrade).toBe(true);
   });
 
   it('auto mode downloads silently and installs on quit', () => {

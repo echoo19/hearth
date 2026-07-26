@@ -12,12 +12,15 @@
  *
  * Background checks are quiet on failure (being offline is normal); only a
  * user-invoked check surfaces "up to date" / errors in a dialog.
+ *
+ * Downgrades are allowed on purpose — see the `allowDowngrade` comment below.
  */
 import type { UpdatePolicy } from './updaterPolicy.js';
 
 export interface UpdaterLike {
   autoDownload: boolean;
   autoInstallOnAppQuit: boolean;
+  allowDowngrade: boolean;
   // Node EventEmitter-shaped on purpose (electron-updater extends it); any[]
   // matches @types/node's listener signature so real and fake emitters fit.
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -60,6 +63,15 @@ export function wireUpdater(deps: UpdaterDeps): UpdaterHandle | null {
 
   updater.autoDownload = policy.mode === 'auto';
   updater.autoInstallOnAppQuit = policy.mode === 'auto';
+  // The pivot reset the version line from the retired 1.x game engine to
+  // 0.1.0, so the published feed is *lower* than what any 1.x install reports.
+  // Without this, electron-updater refuses every update as a downgrade and
+  // those installs are stranded forever. There is no external user base to
+  // protect from an accidental rollback, and the release feed is the single
+  // source we control. Revisit before a public user base exists: with real
+  // users, allowing downgrades means a mistaken re-publish of an older build
+  // can silently roll everyone back.
+  updater.allowDowngrade = true;
 
   const promptedVersions = new Set<string>();
   let interactive = false;

@@ -9,6 +9,18 @@ export interface ProjectMigration {
 
 export const PROJECT_MIGRATIONS: readonly ProjectMigration[] = [];
 
+/**
+ * The last version of the retired 1.x game engine. Hearth reset its version
+ * line to 0.1.0 at the agent-first pivot, so the app version no longer
+ * increases monotonically across the whole history of stamped projects: a
+ * project saved by 1.2.1 is *older* than one saved by 0.1.0 despite comparing
+ * as newer. The "saved by a newer Hearth" guard below therefore ceilings at
+ * whichever is higher — this line or the running engine — so 0.x…1.2.1
+ * projects keep opening while genuinely unknown future stamps are still
+ * refused. Remove this once the new line passes 1.2.1.
+ */
+export const RETIRED_ENGINE_MAX_VERSION = '1.2.1';
+
 function parseSemver(version: string): [number, number, number] | null {
   const match = /^(\d+)\.(\d+)\.(\d+)$/.exec(version);
   if (!match) return null;
@@ -35,7 +47,10 @@ export function applyProjectMigrations(
   const rawDoc = raw as Record<string, unknown>;
   const projectVersion: string = typeof rawDoc.hearthVersion === 'string' ? rawDoc.hearthVersion : engineVersion;
 
-  if (compareSemver(projectVersion, engineVersion) > 0) {
+  const readableCeiling =
+    compareSemver(RETIRED_ENGINE_MAX_VERSION, engineVersion) > 0 ? RETIRED_ENGINE_MAX_VERSION : engineVersion;
+
+  if (compareSemver(projectVersion, readableCeiling) > 0) {
     throw new ProjectError(
       `Project was saved by Hearth ${projectVersion}, which is newer than this engine (${engineVersion}). Upgrade Hearth before opening it.`,
       'UNSUPPORTED_PROJECT_VERSION',

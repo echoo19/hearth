@@ -125,7 +125,14 @@ jobs:
           cp apps/editor/dist-electron/hearth-mcp.mjs artifacts/
           cp apps/editor/dist-electron/hearth-player.js artifacts/
           ls -la artifacts/
+          # --latest is explicit on purpose. gh's default is "automatic based
+          # on date and version", which resolves by semver — and the pivot
+          # reset the line to 0.1.0, so v1.2.1 would otherwise stay pinned as
+          # "Latest" and every /releases/latest link would serve the retired
+          # 1.x engine. Tags here are always cut newest-last, so the tag being
+          # built is always the one that should be Latest.
           gh release create "${GITHUB_REF_NAME}" \
             --title "Hearth ${GITHUB_REF_NAME}" \
             --notes-file "docs/releases/${GITHUB_REF_NAME}.md" \
+            --latest \
             artifacts/*

@@ -1,3 +1,11 @@
+> **Hearth is now an agent-first app for building and playtesting games.**
+> v0.1.0 is its first release: a conversation with a coding agent, an
+> always-on game pane, and bot playtesting that leaves evidence behind. The 2D
+> game engine this repository used to ship is preserved at tag
+> [v1.2.1](https://github.com/echoo19/hearth/releases/tag/v1.2.1) and is no
+> longer developed. The rest of this README still describes the 1.x engine and
+> is being rewritten.
+
 <div align="center">
 
 <picture>
@@ -131,8 +139,9 @@ A real 2D engine, not a toy. The short version, with the detail one link away:
   or native builds with none of Hearth's chrome in them.
   [Prefabs](docs/prefabs.md) · [Export](docs/export.md)
 
-Hearth is at **v1.2.1**, a production release. The whole loop works end to end;
-the [roadmap](docs/roadmap.md) tracks what's next.
+The current release is **v0.1.0**, the first release of the agent-first app;
+the 1.x engine described above stops at v1.2.1. The
+[roadmap](docs/roadmap.md) tracks what's next.
 
 ## Install
 
@@ -145,6 +154,10 @@ notarized by Apple, so they open normally; Windows is not code-signed yet, so
 SmartScreen shows a "More info → Run anyway" prompt on first launch. After that
 the app updates itself from later releases. See
 [docs/desktop-app.md](docs/desktop-app.md).
+
+If you already have a 1.x Hearth installed, install v0.1.0 manually from the
+release page once — the version reset means the in-app updater will not offer
+it to you. Updates are automatic again after that.
 
 **Agent tools, no install.** The CLI and MCP server are single files that only
 need Node 20+ (also bundled inside the desktop app):

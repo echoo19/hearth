@@ -15,6 +15,12 @@ apps/editor/dist-electron/
 apps/editor/release-app/
 apps/editor/release/
 
+# Playtest output written into whichever project is open — sweeps and their
+# evidence (journals, captures, results) are runtime artifacts, never sources,
+# and must not leak in from an example project someone playtested locally.
+.hearth/evidence/
+.hearth/sweeps/
+
 # agent/automation scratch (never commit to the public repo)
 .scratch-audit/
 .hearth-tmp/

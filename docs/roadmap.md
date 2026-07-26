@@ -1,6 +1,13 @@
 # Hearth Roadmap
 
-**v1.2.1 is the current release.** Agents stop relearning the project every
+**v0.1.0 is the current release** — the first release of the agent-first
+Hearth app (conversation with a coding agent, an always-on game pane, and bot
+playtesting that leaves evidence behind). The version line was reset
+deliberately at the pivot. Everything below this paragraph is the history of
+the retired 1.x game engine, which ends at v1.2.1; it is kept for the record
+and no longer describes what is being built.
+
+**v1.2.1 was the final engine release.** Agents stop relearning the project every
 session: the engine keeps an always-current state digest (`.hearth/digest.md`)
 plus durable cross-session memory (`hearth remember`/`recall`), `screenshot` is
 read-only so an agent can always see its own work, and rendering is

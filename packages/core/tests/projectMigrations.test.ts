@@ -140,7 +140,10 @@ async function writeFixture(fs: FsLike, version: string) {
 }
 
 describe('project migrations', () => {
-  for (const version of ['0.13.0', '0.14.0']) {
+  // 1.2.1 is the last stamp of the retired 1.x engine. It compares as *newer*
+  // than the post-pivot 0.1.0 line, so it exists here to pin that projects from
+  // the old line still open instead of tripping the "upgrade Hearth" guard.
+  for (const version of ['0.13.0', '0.14.0', '1.2.1']) {
     it(`opens ${version} projects without writing and stamps on first edit`, async () => {
       const fs = new CountingFileSystem();
       await writeFixture(fs, version);
