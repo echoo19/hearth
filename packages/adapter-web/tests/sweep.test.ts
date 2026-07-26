@@ -3,9 +3,6 @@
  * loop drive this adapter, and does it separate a healthy game from a
  * crashing one?
  *
- * probe-core is landing in parallel with this package and has no barrel yet,
- * so the sweep engine is loaded by path at runtime and the whole suite skips
- * cleanly when it isn't there — the same discipline as the Chromium gate.
  * `tests/discrimination.test.ts` covers the same fixtures through the raw
  * contract and does not depend on probe-core at all.
  */
@@ -13,15 +10,10 @@ import { describe, it, expect } from 'vitest';
 import { mkdtemp, rm, readdir } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
+import { runSweep, NodeEvidenceStore } from '@hearth/probe-core';
 import { canLaunchChromium } from '../src/index.js';
 import { RUNNER_DIR, openFixture } from './support.js';
 
-interface SweepModule {
-  runSweep(game: unknown, opts: Record<string, unknown>): Promise<SweepReportLike>;
-}
-interface StoreModule {
-  new (root: string): unknown;
-}
 interface SweepReportLike {
   target: string;
   runs: number;
@@ -32,22 +24,8 @@ interface SweepReportLike {
   evidenceDir: string;
 }
 
-async function loadModule(relative: string): Promise<Record<string, unknown> | null> {
-  try {
-    const href = new URL(relative, import.meta.url).href;
-    return (await import(href)) as Record<string, unknown>;
-  } catch {
-    return null;
-  }
-}
-
-const sweepModule = await loadModule('../../probe-core/src/sweep.js');
-const storeModule = await loadModule('../../probe-core/src/evidenceStore.js');
-const runSweep = sweepModule?.runSweep as SweepModule['runSweep'] | undefined;
-const NodeEvidenceStore = storeModule?.NodeEvidenceStore as StoreModule | undefined;
-
 const hasChromium = await canLaunchChromium();
-const canSweep = hasChromium && !!runSweep && !!NodeEvidenceStore;
+const canSweep = hasChromium;
 
 describe('sweeping a web game through probe-core', () => {
   it.skipIf(!canSweep)(
@@ -56,10 +34,10 @@ describe('sweeping a web game through probe-core', () => {
       const root = await mkdtemp(path.join(tmpdir(), 'hearth-sweep-'));
       const { game, close } = await openFixture(RUNNER_DIR, { variant: 'healthy' });
       try {
-        const report = await runSweep!(game, {
+        const report = await runSweep(game, {
           policies: ['idle', 'mash'],
           seeds: [1],
-          evidence: new NodeEvidenceStore!(root),
+          evidence: new NodeEvidenceStore(root),
           target: 'runner:healthy',
           maxSteps: 60,
           stuckAfter: 40,
@@ -93,10 +71,10 @@ describe('sweeping a web game through probe-core', () => {
       const root = await mkdtemp(path.join(tmpdir(), 'hearth-sweep-'));
       const { game, close } = await openFixture(RUNNER_DIR, { variant: 'crash' });
       try {
-        const report = await runSweep!(game, {
+        const report = await runSweep(game, {
           policies: ['mash'],
           seeds: [1, 2, 3],
-          evidence: new NodeEvidenceStore!(root),
+          evidence: new NodeEvidenceStore(root),
           target: 'runner:crash',
           maxSteps: 150,
           stuckAfter: 120,
