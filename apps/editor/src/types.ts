@@ -234,7 +234,12 @@ export interface ChatMessage {
  * inferred, so the Settings dialog can say why nothing is answering.
  */
 export interface ChatProviderStatus {
-  anthropic: { hasKey: boolean; source: 'project' | 'environment' | null };
+  anthropic: {
+    hasKey: boolean;
+    source: 'project' | 'environment' | null;
+    /** Models this provider can answer with, curated by the server. */
+    models?: ProviderModelInfo[];
+  };
   openai: {
     /** The `codex` binary was found on PATH (or at a configured path). */
     installed: boolean;
@@ -245,9 +250,46 @@ export interface ChatProviderStatus {
     planType: string | null;
     /** An OpenAI API key is stored for this folder. */
     hasKey: boolean;
+    /** Models this provider can answer with, curated by the server. */
+    models?: ProviderModelInfo[];
   };
   /** Which provider a turn would use right now, or null when none can answer. */
   active: ChatProvider | null;
+}
+
+/** One model a provider offers, in the words the selector shows. */
+export interface ProviderModelInfo {
+  /** Wire id (e.g. `claude-opus-5`). Empty string means the provider default. */
+  id: string;
+  label: string;
+  note?: string;
+}
+
+/**
+ * The user's standing choice of who answers and how hard it thinks. `model`
+ * null means the provider's default; `effort` only applies where the provider
+ * supports it (Codex).
+ */
+export interface AgentChoice {
+  provider: ChatProvider;
+  model: string | null;
+  effort: 'low' | 'medium' | 'high' | null;
+}
+
+/**
+ * One conversation anywhere on this machine — the global Recents list. The
+ * folder rides along because opening the chat means opening its folder first.
+ */
+export interface RecentChatEntry {
+  id: string;
+  title: string;
+  updatedAt: string;
+  project: { path: string; name: string };
+}
+
+/** hearth:update-ready — an update is downloaded and installs on relaunch. */
+export interface UpdateReadyInfo {
+  version: string;
 }
 
 // ---------------------------------------------------------------------------

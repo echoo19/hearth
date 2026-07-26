@@ -8,6 +8,7 @@ import type {
   ChatProvider,
   ChatProviderStatus,
   ChatSummary,
+  RecentChatEntry,
   GameStatus,
   ProbeStatus,
   ProjectFile,
@@ -56,6 +57,26 @@ export async function apiOpenWorkspace(path: string): Promise<{ ok: boolean; inf
     ok: true,
     info: { path: res.path, name: res.name ?? res.path, isHearthProject: res.isHearthProject === true },
   };
+}
+
+/**
+ * Make a folder for a game nobody has named yet: the server derives a slug
+ * from the prompt, creates it under the projects home (~/Hearth), and opens
+ * it exactly as /api/workspace/open would.
+ */
+export async function apiCreateWorkspace(prompt?: string): Promise<{ ok: boolean; info?: WorkspaceInfo; error?: string }> {
+  const res = await postJson<OpenResult>('/api/workspace/create', { prompt });
+  if (!res.ok || !res.path) return { ok: false, error: res.error ?? 'Could not create a folder.' };
+  return {
+    ok: true,
+    info: { path: res.path, name: res.name ?? res.path, isHearthProject: res.isHearthProject === true },
+  };
+}
+
+/** Every conversation across recent folders, newest first — the Recents list. */
+export async function apiRecentChats(): Promise<RecentChatEntry[]> {
+  const body = await getJson<{ chats: RecentChatEntry[] }>('/api/chats/recent', 'apiRecentChats');
+  return body?.chats ?? [];
 }
 
 export async function apiRecentWorkspaces(): Promise<RecentWorkspace[]> {
@@ -198,6 +219,7 @@ export async function apiChatProviders(project: string): Promise<ChatProviderSta
       anthropic: {
         hasKey: anthropic.hasKey === true,
         source: anthropic.source ?? null,
+        models: Array.isArray(anthropic.models) ? anthropic.models : undefined,
       },
       openai: {
         installed: openai.installed === true,
@@ -207,6 +229,7 @@ export async function apiChatProviders(project: string): Promise<ChatProviderSta
         email: openai.email ?? null,
         planType: openai.planType ?? null,
         hasKey: openai.hasKey === true,
+        models: Array.isArray(openai.models) ? openai.models : undefined,
       },
       active: body.active ?? null,
     };

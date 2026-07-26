@@ -4,6 +4,7 @@
  */
 
 import type { SerializedMenuSection } from './menu/appMenu';
+import type { UpdateReadyInfo } from './types';
 
 export interface HearthNative {
   pickProjectFolder(): Promise<string | null>;
@@ -26,6 +27,14 @@ export interface HearthNative {
    * updated ahead of its preload (post-update relaunch) degrades gracefully.
    */
   checkForUpdates?(): Promise<void>;
+  /**
+   * An update has been DOWNLOADED and will install on relaunch. The main
+   * process replays the latest value to a late subscriber, so mounting after
+   * the download still shows the banner. Returns an unsubscribe fn.
+   */
+  onUpdateReady?(cb: (info: UpdateReadyInfo) => void): () => void;
+  /** Quit and install the downloaded update now (the banner's button). */
+  relaunchToUpdate?(): Promise<void>;
   platform: string;
 }
 
