@@ -47,6 +47,8 @@ import { startEvidenceWatcher, type EvidenceEvent } from './evidenceWatcher.js';
 import {
   createChatDriver,
   endsTurn,
+  parseAgentOptions,
+  type AgentTurnOptions,
   type ApprovalDecision,
   type ChatDriver,
   type ChatDriverKind,
@@ -99,7 +101,11 @@ export type WsFrame =
   // server lazily binds a driver on the first `chat-send`; `chat-ready` reports
   // which backend answered so the UI can name it honestly. `chat-list` is
   // broadcast to every socket on the folder whenever the index changes.
-  | { type: 'chat-send'; text: string } // client -> server
+  // `agent` is the composer's model/effort pick, sent with every turn. It is
+  // OPTIONAL in both directions: a client that predates the selector omits it
+  // and gets exactly the old behavior, and a server that predates it ignores
+  // the field.
+  | { type: 'chat-send'; text: string; agent?: unknown } // client -> server
   | { type: 'chat-cancel' } // client -> server
   | { type: 'chat-new' } // client -> server
   | { type: 'chat-open'; chatId: string } // client -> server
@@ -212,7 +218,11 @@ export function attachWebSocket(
      */
     createChatDriver?: (
       projectRoot: string,
-      options?: { resumeThreadId?: string | null; onThreadId?: (threadId: string) => void },
+      options?: {
+        resumeThreadId?: string | null;
+        onThreadId?: (threadId: string) => void;
+        agent?: AgentTurnOptions | null;
+      },
     ) => Promise<ChatDriver>;
   },
 ): void {
@@ -498,7 +508,7 @@ export function attachWebSocket(
    * as chat-event frames, appending each one to the transcript as it streams.
    * Idempotent per (root, chatId); the drain loop lives until `stop()`.
    */
-  async function ensureChat(root: string, socket: WebSocket): Promise<ChatSession | null> {
+  async function ensureChat(root: string, socket: WebSocket, agent?: AgentTurnOptions | null): Promise<ChatSession | null> {
     let chatId = socketChat.get(socket);
     if (!chatId) {
       // A send with no chat opened yet (an older client, or a window that never
@@ -525,6 +535,9 @@ export function attachWebSocket(
       driver = await makeChatDriver(root, {
         resumeThreadId: summary?.codexThreadId ?? null,
         onThreadId: (threadId) => void setChatThreadId(root, session.chatId, threadId),
+        // The binding turn's choice decides WHICH backend answers, so it has
+        // to be known before the driver is built, not just when it is sent.
+        agent: agent ?? null,
       });
       await driver.start(session.chatId, root);
     } catch (err) {
@@ -707,8 +720,9 @@ export function attachWebSocket(
             {
               const text = typeof frame.text === 'string' ? frame.text : '';
               if (text.trim() === '') break;
+              const agent = parseAgentOptions(frame.agent);
               void (async () => {
-                const session = await ensureChat(root, ws);
+                const session = await ensureChat(root, ws, agent);
                 // Binding may still be in flight from a previous send; the
                 // driver is queued-input based, so waiting for it is enough.
                 const chatId = socketChat.get(ws);
@@ -716,7 +730,7 @@ export function attachWebSocket(
                 if (!bound) return;
                 await appendChatRecord(root, bound.chatId, { role: 'user', ts: new Date().toISOString(), text });
                 await announceChats(root); // the first turn names the chat
-                bound.driver?.send(text);
+                bound.driver?.send(text, agent ?? undefined);
               })();
             }
             break;

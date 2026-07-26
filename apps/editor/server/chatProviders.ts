@@ -29,10 +29,46 @@ import { CODEX_INSTALL_HINT, readCodexStatus, startCodexLogin, type CodexStatus 
 
 export { CODEX_INSTALL_HINT };
 
+/** One model a provider offers, in the words the selector shows. */
+export interface ProviderModelInfo {
+  /** Wire id. The empty string means "whatever the provider defaults to". */
+  id: string;
+  label: string;
+  note?: string;
+}
+
+/**
+ * What the model selector offers for Anthropic. Curated rather than probed:
+ * there is no cheap "which models can this key use" call, and a picker that
+ * lists everything the API has ever shipped is worse than three good answers.
+ */
+export const ANTHROPIC_MODELS: ProviderModelInfo[] = [
+  { id: 'claude-opus-5', label: 'Opus 5', note: 'Most capable' },
+  { id: 'claude-sonnet-5', label: 'Sonnet 5', note: 'Balanced' },
+  { id: 'claude-haiku-4-5-20251001', label: 'Haiku 4.5', note: 'Fastest' },
+];
+
+/**
+ * The OpenAI fallback list, used when the codex binary can't be asked (not
+ * installed, signed out, or a build without `model/list`). The real list comes
+ * from the binary — see readCodexStatus's `withModels`.
+ */
+export const OPENAI_FALLBACK_MODELS: ProviderModelInfo[] = [{ id: '', label: 'Default' }];
+
+/**
+ * The selector's OpenAI list: whatever the binary reported, always led by a
+ * "Default" row so the user can hand the choice back to codex's own config.
+ */
+export function openAiModels(status: CodexStatus): ProviderModelInfo[] {
+  const probed = status.models ?? [];
+  if (probed.length === 0) return OPENAI_FALLBACK_MODELS;
+  return [{ id: '', label: 'Default' }, ...probed];
+}
+
 /** GET /api/chat/providers — the whole picture, in one read. */
 export interface ChatProviderStatus {
-  anthropic: { hasKey: boolean; source: 'project' | 'environment' | null };
-  openai: CodexStatus;
+  anthropic: { hasKey: boolean; source: 'project' | 'environment' | null; models?: ProviderModelInfo[] };
+  openai: CodexStatus & { models?: ProviderModelInfo[] };
   /** Which provider a turn sent right now would actually go to. */
   active: ChatProvider | null;
 }
@@ -59,7 +95,7 @@ async function anthropicStatus(projectRoot: string): Promise<ChatProviderStatus[
 export async function readChatProviders(projectRoot: string): Promise<ChatProviderStatus> {
   const [anthropic, openai] = await Promise.all([
     anthropicStatus(projectRoot).catch(() => ({ hasKey: false, source: null }) as ChatProviderStatus['anthropic']),
-    readCodexStatus(projectRoot).catch(
+    readCodexStatus(projectRoot, { withModels: true }).catch(
       () =>
         ({
           installed: false,
@@ -72,7 +108,11 @@ export async function readChatProviders(projectRoot: string): Promise<ChatProvid
         }) as CodexStatus,
     ),
   ]);
-  return { anthropic, openai, active: activeProvider(anthropic, openai, (await readAppSettings(projectRoot)).provider) };
+  return {
+    anthropic: { ...anthropic, models: ANTHROPIC_MODELS },
+    openai: { ...openai, models: openAiModels(openai) },
+    active: activeProvider(anthropic, openai, (await readAppSettings(projectRoot)).provider),
+  };
 }
 
 /**

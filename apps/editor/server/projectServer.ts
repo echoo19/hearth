@@ -40,6 +40,7 @@ import { ensureHearthMcpConfig } from './mcpConfig.js';
 import { readAppSettings, writeAppSettings, resolveApiKey, type AppSettings } from './chat.js';
 import { announceProviders, beginOpenAiLogin, readChatProviders } from './chatProviders.js';
 import { createChat, deleteChat, listChats, renameChat } from './chatStore.js';
+import { resolveProjectsHome, slugFromPrompt, uniqueFolderName } from './workspaceSlug.js';
 import {
   planSweep,
   readCapabilities,
@@ -137,6 +138,12 @@ export type PackageDesktopFn = (opts: {
 export interface ProjectServerOptions {
   /** Where the recent-projects list is persisted. Default: ~/.hearth/recent-projects.json */
   recentsFile?: string;
+  /**
+   * Where `POST /api/workspace/create` puts the folders it makes. Default:
+   * `$HEARTH_PROJECTS_DIR`, else `~/Hearth`. Tests point it at a temp dir so
+   * they never write into the real home.
+   */
+  projectsDir?: string;
   /** Monorepo root (for example projects + agent docs). Auto-detected by default. */
   repoRoot?: string;
   /**
@@ -208,6 +215,22 @@ interface RecentEntry {
   name: string;
   openedAt: string;
 }
+
+/**
+ * One conversation in the GLOBAL recents list (GET /api/chats/recent) — the
+ * sidebar's chat history spans folders, so each row carries the folder it
+ * belongs to; opening it means opening that folder first.
+ */
+export interface RecentChatEntry {
+  id: string;
+  title: string;
+  createdAt: string;
+  updatedAt: string;
+  project: { path: string; name: string };
+}
+
+/** How many conversations the global recents list returns. */
+export const RECENT_CHATS_LIMIT = 40;
 
 const CONTENT_TYPES: Record<string, string> = {
   // The static mounts serve whatever web game the agent built, so the full
@@ -687,32 +710,94 @@ export function createProjectServerContext(options: ProjectServerOptions = {}) {
     };
   }
 
+  /**
+   * Open any folder as the working folder. Unlike `openProject` this does NOT
+   * require a hearth.json: the app's whole premise is that the agent builds a
+   * game in a folder however it wants, so an empty folder is a perfectly good
+   * starting point. A folder that also happens to be a Hearth project reports
+   * `isHearthProject` so callers can offer more.
+   *
+   * A standalone function rather than only a ctx method, so `createWorkspace`
+   * can run the EXACT same open path (recents registration included) after it
+   * makes the folder, instead of a near-copy that drifts.
+   */
+  async function openWorkspaceImpl(rawPath: unknown): Promise<JsonResult> {
+    if (typeof rawPath !== 'string' || rawPath.trim() === '') {
+      return { status: 400, body: { ok: false, error: 'Missing "path" (absolute folder).' } };
+    }
+    const root = path.resolve(rawPath.trim());
+    if (!(await isDirectory(root))) {
+      return { status: 400, body: { ok: false, error: `Not a folder: ${root}` } };
+    }
+    openedRoots.add(root);
+    const name = path.basename(root) || root;
+    const isHearthProject = await pathExists(path.join(root, 'hearth.json'));
+    await addRecent(root, name);
+    return { status: 200, body: { ok: true, path: root, name, isHearthProject } };
+  }
+
   const ctx = {
     repoRoot,
     sessions,
     /** Desktop-export progress bus; ws.ts subscribes and fans frames to sockets. */
     exportBus,
 
+    openWorkspace: openWorkspaceImpl,
+
     /**
-     * Open any folder as the working folder. Unlike `openProject` this does
-     * NOT require a hearth.json: the app's whole premise is that the agent
-     * builds a game in a folder however it wants, so an empty folder is a
-     * perfectly good starting point. A folder that also happens to be a Hearth
-     * project reports `isHearthProject` so callers can offer more.
+     * Make the folder a chat is about to fill. Home has no picker — the first
+     * message IS the project — so the prompt names a folder under the projects
+     * home (`~/Hearth` unless overridden), and from there this behaves exactly
+     * like `openWorkspace`: same recents registration, same response shape.
      */
-    async openWorkspace(rawPath: unknown): Promise<JsonResult> {
-      if (typeof rawPath !== 'string' || rawPath.trim() === '') {
-        return { status: 400, body: { ok: false, error: 'Missing "path" (absolute folder).' } };
+    async createWorkspace(prompt: unknown, name?: unknown): Promise<JsonResult> {
+      const source = typeof name === 'string' && name.trim() !== '' ? name : typeof prompt === 'string' ? prompt : '';
+      const home = resolveProjectsHome(options.projectsDir);
+      try {
+        await fsp.mkdir(home, { recursive: true });
+        const folder = await uniqueFolderName(home, slugFromPrompt(source));
+        const target = path.join(home, folder);
+        await fsp.mkdir(target, { recursive: true });
+        return await openWorkspaceImpl(target);
+      } catch (err) {
+        return { status: 500, body: { ok: false, error: `Could not create a project folder: ${(err as Error).message}` } };
       }
-      const root = path.resolve(rawPath.trim());
-      if (!(await isDirectory(root))) {
-        return { status: 400, body: { ok: false, error: `Not a folder: ${root}` } };
-      }
-      openedRoots.add(root);
-      const name = path.basename(root) || root;
-      const isHearthProject = await pathExists(path.join(root, 'hearth.json'));
-      await addRecent(root, name);
-      return { status: 200, body: { ok: true, path: root, name, isHearthProject } };
+    },
+
+    /**
+     * Every conversation across the folders this machine has open recently —
+     * the sidebar's Recents list, which is global rather than per-folder
+     * because a chat is the thing the user is looking for, not the folder it
+     * happens to live in. A folder that has moved, been deleted, or holds an
+     * unreadable index is skipped silently: a stale recents entry must not
+     * turn the whole list into an error.
+     */
+    async recentChats(): Promise<JsonResult> {
+      const entries = await readRecents();
+      const perFolder = await Promise.all(
+        entries.map(async (entry): Promise<RecentChatEntry[]> => {
+          try {
+            if (!(await isDirectory(entry.path))) return [];
+            return (await listChats(entry.path)).map((chat) => ({
+              id: chat.id,
+              title: chat.title,
+              createdAt: chat.createdAt,
+              updatedAt: chat.updatedAt,
+              project: { path: entry.path, name: entry.name || path.basename(entry.path) },
+            }));
+          } catch {
+            return [];
+          }
+        }),
+      );
+      const chats = perFolder
+        .flat()
+        // Newest activity first; ties break on id so the order is stable
+        // across reads (two chats created in the same millisecond otherwise
+        // swap places between refreshes).
+        .sort((a, b) => (a.updatedAt === b.updatedAt ? a.id.localeCompare(b.id) : b.updatedAt.localeCompare(a.updatedAt)))
+        .slice(0, RECENT_CHATS_LIMIT);
+      return { status: 200, body: { ok: true, chats } };
     },
 
     /** Recently opened folders, each flagged with whether it still exists. */
@@ -1661,8 +1746,17 @@ async function route(ctx: ProjectServerContext, req: IncomingMessage, res: Serve
       const result = await ctx.openWorkspace(body.path);
       return sendJson(res, result.status, result.body);
     }
+    case 'POST /api/workspace/create': {
+      const body = await readJsonBody(req);
+      const result = await ctx.createWorkspace(body.prompt, body.name);
+      return sendJson(res, result.status, result.body);
+    }
     case 'GET /api/workspace/recent': {
       const result = await ctx.recentWorkspaces();
+      return sendJson(res, result.status, result.body);
+    }
+    case 'GET /api/chats/recent': {
+      const result = await ctx.recentChats();
       return sendJson(res, result.status, result.body);
     }
     case 'GET /api/game/status': {

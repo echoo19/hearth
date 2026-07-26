@@ -37,6 +37,19 @@ const SMOKE = process.env.HEARTH_SMOKE === '1';
 /** In dev, point the window at the Vite dev server instead of dist/. */
 const START_URL = process.env.ELECTRON_START_URL;
 
+/**
+ * The window opens at working size, always. There is no compact launcher any
+ * more: the app's first screen is a conversation, and a conversation needs the
+ * same room the editor does.
+ */
+const WINDOW_WIDTH = 1440;
+const WINDOW_HEIGHT = 900;
+const MIN_WINDOW_WIDTH = 1024;
+const MIN_WINDOW_HEIGHT = 640;
+
+/** Matches --bg-0, so the frame never flashes a lighter panel before paint. */
+const WINDOW_BACKGROUND = '#101014';
+
 const MIME: Record<string, string> = {
   '.html': 'text/html; charset=utf-8',
   '.js': 'text/javascript',
@@ -130,51 +143,24 @@ function registerDialogHandlers(getWindow: () => BrowserWindow | null): void {
     applyAppMenu(model, getWindow());
   });
 
-  // Godot-style window modes: the app opens as a compact project manager;
-  // opening a project grows the same window into the full editor (same
-  // BrowserWindow, so no state is lost), closing the project shrinks it back.
-  ipcMain.handle('hearth:window-mode', async (_event, mode: string, title?: string) => {
+  // There is only ONE window shape now. The app used to open as a compact
+  // project manager and grow when a project opened (Godot-style); the chat-
+  // first home means there is nothing to gate on, so the window is always the
+  // working size and 'launcher' is just an alias of 'editor'. The IPC name and
+  // both mode values stay so a renderer running against an older or newer
+  // preload can't break on it.
+  ipcMain.handle('hearth:window-mode', (_event, _mode: string, title?: string) => {
     const win = getWindow();
     if (!win) return;
-    if (mode === 'editor') {
-      win.setMinimumSize(1100, 700);
-      const { width, height } = win.getBounds();
-      if (width < 1440 || height < 900) {
-        win.setSize(1440, 900, true);
-        win.center();
-      }
-      // The renderer awaits this handler before mounting dockview (see
-      // NativeEditorGate in App.tsx), so the layout is built at the window's
-      // FINAL size and side panels keep their fixed widths instead of being
-      // proportionally inflated. maximize() is asynchronous on Windows (the
-      // bounds update arrives with the 'maximize'/'resize' event, not on
-      // return), so we must wait for it to actually settle here — otherwise the
-      // renderer resolves too early and dockview builds at the pre-maximize size
-      // and re-inflates when the window grows. Timeout-guarded so it can never
-      // hang if the event doesn't fire (e.g. already maximized on some setups).
-      if (!win.isMaximized()) {
-        await new Promise<void>((resolve) => {
-          let settled = false;
-          const finish = (): void => {
-            if (settled) return;
-            settled = true;
-            clearTimeout(timer);
-            win.off('maximize', finish);
-            resolve();
-          };
-          const timer = setTimeout(finish, 600);
-          win.once('maximize', finish);
-          win.maximize();
-        });
-      }
-      win.setTitle(title ? `${title} — Hearth` : 'Hearth');
-    } else {
-      if (win.isMaximized()) win.unmaximize();
-      win.setMinimumSize(880, 600);
-      win.setSize(980, 680, true);
+    win.setMinimumSize(MIN_WINDOW_WIDTH, MIN_WINDOW_HEIGHT);
+    const { width, height } = win.getBounds();
+    // Only ever grow a window the user hasn't already sized past the floor —
+    // resizing one they deliberately made bigger would be rude.
+    if (width < WINDOW_WIDTH || height < WINDOW_HEIGHT) {
+      win.setSize(Math.max(width, WINDOW_WIDTH), Math.max(height, WINDOW_HEIGHT), true);
       win.center();
-      win.setTitle('Hearth — Projects');
     }
+    win.setTitle(title ? `${title} — Hearth` : 'Hearth');
   });
 }
 
@@ -188,7 +174,10 @@ const DOWNLOAD_URL = 'https://hearthengine.com/download';
  * message boxes, the system browser, and the policy inputs. Returns null when
  * updates are off (dev runs, smoke tests, HEARTH_DISABLE_UPDATES=1).
  */
-function initAutoUpdater(getWindow: () => BrowserWindow | null): UpdaterHandle | null {
+function initAutoUpdater(
+  getWindow: () => BrowserWindow | null,
+  onUpdateReady: (info: { version: string }) => void,
+): UpdaterHandle | null {
   const policy = resolveUpdatePolicy({
     platform: process.platform,
     packaged: app.isPackaged,
@@ -220,6 +209,7 @@ function initAutoUpdater(getWindow: () => BrowserWindow | null): UpdaterHandle |
     prompt,
     openDownloadPage: () => void shell.openExternal(DOWNLOAD_URL),
     log: (message) => console.log('[updater]', message),
+    onUpdateReady,
   });
 }
 
@@ -254,10 +244,30 @@ async function main(): Promise<void> {
   let win: BrowserWindow | null = null;
   let hasUnsavedScripts = false;
   registerDialogHandlers(() => win);
-  const updates = initAutoUpdater(() => win);
+
+  /**
+   * The last downloaded-update announcement, kept so a renderer that loads (or
+   * reloads) after the download still gets it. Without the replay, an update
+   * that lands during startup — or before the user opens a folder — would
+   * never show its banner.
+   */
+  let updateReady: { version: string } | null = null;
+  const sendUpdateReady = (): void => {
+    if (updateReady && win && !win.isDestroyed()) win.webContents.send('hearth:update-ready', updateReady);
+  };
+  const updates = initAutoUpdater(
+    () => win,
+    (info) => {
+      updateReady = info;
+      sendUpdateReady();
+    },
+  );
   ipcMain.handle('hearth:check-for-updates', async () => {
     // No-op when updates are off (dev runs) — the menu item is still wired.
     await updates?.checkNow();
+  });
+  ipcMain.handle('hearth:relaunch-to-update', () => {
+    updates?.relaunchToUpdate();
   });
   ipcMain.on('hearth:set-unsaved-scripts', (_event, has: boolean) => {
     hasUnsavedScripts = has === true;
@@ -288,16 +298,20 @@ async function main(): Promise<void> {
     url = `http://127.0.0.1:${port}`;
   }
 
-  // Start as a compact project-manager window (Godot-style); the renderer
-  // asks for editor size via hearth:window-mode once a project opens.
   win = new BrowserWindow({
-    width: 980,
-    height: 680,
-    minWidth: 880,
-    minHeight: 600,
-    title: 'Hearth — Projects',
-    backgroundColor: '#111116',
+    width: WINDOW_WIDTH,
+    height: WINDOW_HEIGHT,
+    minWidth: MIN_WINDOW_WIDTH,
+    minHeight: MIN_WINDOW_HEIGHT,
+    title: 'Hearth',
+    backgroundColor: WINDOW_BACKGROUND,
     center: true,
+    // macOS: no title bar of our own — the traffic lights sit inside the
+    // sidebar's top strip, which is the drag region (see .sidebar-titlebar).
+    // Every other platform keeps its native frame.
+    ...(process.platform === 'darwin'
+      ? { titleBarStyle: 'hiddenInset' as const, trafficLightPosition: { x: 18, y: 18 } }
+      : {}),
     webPreferences: {
       preload: path.join(__dirname, 'preload.cjs'),
       contextIsolation: true,
@@ -319,6 +333,10 @@ async function main(): Promise<void> {
   // setWindowMode owns the native title; block document.title from racing it
   // (the renderer also sets document.title for browser-tab identity).
   win.webContents.on('page-title-updated', (e) => e.preventDefault());
+
+  // Replay a pending update-ready to every load of the renderer, including a
+  // reload — the banner's state lives in the main process, not the page.
+  win.webContents.on('did-finish-load', sendUpdateReady);
 
   // Baseline app menu (app menu + system Edit + Window) so Quit/copy-paste work
   // before a project is open. The renderer replaces it with the full

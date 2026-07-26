@@ -16,6 +16,7 @@ import {
   CODEX_TESTED_VERSION,
   codexApprovalReply,
   codexChangeKind,
+  codexTurnOverrides,
   codexFileChanges,
   codexItemKind,
   codexItemTitle,
@@ -26,6 +27,7 @@ import {
   mapCodexAccount,
   mapCodexApproval,
   mapCodexLoginStart,
+  mapCodexModels,
   mapCodexNotification,
 } from '../server/chatDrivers/codexWire';
 
@@ -274,10 +276,65 @@ describe('account', () => {
   });
 });
 
+describe('per-turn overrides', () => {
+  it('omits both keys when the user expressed no choice', () => {
+    // An explicit null would be a deliberate reset of codex's own config,
+    // which is not the same thing as "the user didn't pick".
+    expect(codexTurnOverrides(null)).toEqual({});
+    expect(codexTurnOverrides(undefined)).toEqual({});
+    expect(codexTurnOverrides({ provider: 'openai' })).toEqual({});
+  });
+
+  it('carries the model and effort that were chosen', () => {
+    expect(codexTurnOverrides({ provider: 'openai', model: 'gpt-5.6-sol', effort: 'high' })).toEqual({
+      model: 'gpt-5.6-sol',
+      effort: 'high',
+    });
+    expect(codexTurnOverrides({ effort: 'low' })).toEqual({ effort: 'low' });
+  });
+
+  it('never forwards a model meant for the other vendor', () => {
+    expect(codexTurnOverrides({ provider: 'anthropic', model: 'claude-opus-5', effort: 'high' })).toEqual({});
+  });
+});
+
+describe('mapCodexModels', () => {
+  // Shape taken from a real `model/list` response on CODEX_TESTED_VERSION.
+  const response = {
+    data: [
+      { id: 'gpt-5.6-sol', model: 'gpt-5.6-sol', displayName: 'GPT-5.6-Sol', hidden: false, isDefault: true },
+      { id: 'gpt-5.6-luna', model: 'gpt-5.6-luna', displayName: 'GPT-5.6-Luna', hidden: false, isDefault: false },
+      { id: 'internal-preview', model: 'internal-preview', displayName: 'Hidden', hidden: true, isDefault: false },
+    ],
+    nextCursor: null,
+  };
+
+  it('keeps the visible models, in order, and marks the account default', () => {
+    expect(mapCodexModels(response)).toEqual([
+      { id: 'gpt-5.6-sol', label: 'GPT-5.6-Sol', note: 'Default' },
+      { id: 'gpt-5.6-luna', label: 'GPT-5.6-Luna' },
+    ]);
+  });
+
+  it('falls back to the id when a row has no display name', () => {
+    expect(mapCodexModels({ data: [{ id: 'gpt-x' }] })).toEqual([{ id: 'gpt-x', label: 'gpt-x' }]);
+  });
+
+  it('yields nothing rather than throwing on a shape it does not know', () => {
+    expect(mapCodexModels(undefined)).toEqual([]);
+    expect(mapCodexModels({})).toEqual([]);
+    expect(mapCodexModels({ data: 'nope' })).toEqual([]);
+    expect(mapCodexModels({ data: [null, 7, {}, { displayName: 'no id' }] })).toEqual([]);
+  });
+});
+
 describe('version pin', () => {
   it('records the codex build this adapter was verified against', () => {
     // Bump deliberately, after re-checking the mappings above against the new
-    // build's `codex app-server generate-ts` output.
+    // build's `codex app-server generate-ts` output. As of 0.144.5 that output
+    // also pins the two turn fields the model selector depends on —
+    // `TurnStartParams.model` and `TurnStartParams.effort` — and the
+    // `model/list` request behind the OpenAI model list.
     expect(CODEX_TESTED_VERSION).toBe('0.144.5');
   });
 });

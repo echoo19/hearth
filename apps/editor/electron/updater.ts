@@ -6,7 +6,7 @@
  *
  * Modes (electron/updaterPolicy.ts):
  *  - auto (Windows/Linux): download silently, install on quit; one
- *    "Restart now?" prompt when the download lands.
+ *    sidebar relaunch banner when the download lands.
  *  - notify (macOS until CI ships signed builds): never download — offer the
  *    download page once per version, plus whenever the user asks explicitly.
  *
@@ -44,6 +44,13 @@ export interface UpdaterDeps {
   prompt: (p: UpdatePrompt) => Promise<number>;
   openDownloadPage: () => void;
   log: (message: string) => void;
+  /**
+   * An update finished downloading and installs on relaunch. main.ts forwards
+   * this to the renderer, which shows the sidebar's "Relaunch to update"
+   * banner — a quiet, dismissible surface for something the modal dialog can
+   * only ask about once.
+   */
+  onUpdateReady?: (info: { version: string }) => void;
 }
 
 export interface UpdaterHandle {
@@ -51,6 +58,11 @@ export interface UpdaterHandle {
   checkNow(): Promise<void>;
   /** Startup check: silent unless an update actually turns up. */
   checkBackground(): void;
+  /**
+   * Quit and install the downloaded update. No-op until one has actually
+   * landed: quitAndInstall with nothing staged just closes the app.
+   */
+  relaunchToUpdate(): void;
 }
 
 interface UpdateInfoLike {
@@ -58,7 +70,7 @@ interface UpdateInfoLike {
 }
 
 export function wireUpdater(deps: UpdaterDeps): UpdaterHandle | null {
-  const { updater, policy, prompt, openDownloadPage, log } = deps;
+  const { updater, policy, prompt, openDownloadPage, log, onUpdateReady } = deps;
   if (policy.mode === 'off') return null;
 
   updater.autoDownload = policy.mode === 'auto';
@@ -74,6 +86,8 @@ export function wireUpdater(deps: UpdaterDeps): UpdaterHandle | null {
   updater.allowDowngrade = true;
 
   const promptedVersions = new Set<string>();
+  /** An update is staged on disk, so relaunching actually installs something. */
+  let downloaded = false;
   let interactive = false;
   let settle: (() => void) | null = null;
   const finishInteractive = (): void => {
@@ -101,7 +115,7 @@ export function wireUpdater(deps: UpdaterDeps): UpdaterHandle | null {
       void prompt({
         title: 'Downloading update',
         message: `Hearth ${version} is downloading.`,
-        detail: "You'll be asked to restart once it's ready.",
+        detail: 'A relaunch banner appears in the sidebar once it is ready.',
         buttons: ['OK'],
       });
     }
@@ -121,15 +135,11 @@ export function wireUpdater(deps: UpdaterDeps): UpdaterHandle | null {
 
   updater.on('update-downloaded', (info: UpdateInfoLike) => {
     if (policy.mode !== 'auto') return;
-    const version = info?.version ?? 'A new version';
-    void prompt({
-      title: 'Update ready',
-      message: `Hearth ${version} has been downloaded.`,
-      detail: 'Restart to apply it now, or it installs when you quit.',
-      buttons: ['Restart now', 'Later'],
-    }).then((choice) => {
-      if (choice === 0) updater.quitAndInstall();
-    });
+    downloaded = true;
+    // No dialog here: the sidebar banner is the surface for "restart when you
+    // like", and it can still be acted on an hour later. A modal on top of it
+    // would ask the same question twice.
+    onUpdateReady?.({ version: info?.version ?? '' });
   });
 
   updater.on('error', (err: unknown) => {
@@ -161,6 +171,13 @@ export function wireUpdater(deps: UpdaterDeps): UpdaterHandle | null {
       Promise.resolve(updater.checkForUpdates()).catch(() => {
         // Quiet by design: the 'error' listener above already logged it.
       });
+    },
+    relaunchToUpdate(): void {
+      if (!downloaded) {
+        log('relaunch requested with no downloaded update; ignoring');
+        return;
+      }
+      updater.quitAndInstall();
     },
   };
 }

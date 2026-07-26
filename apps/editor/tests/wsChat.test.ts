@@ -15,7 +15,7 @@ import path from 'node:path';
 import WebSocket from 'ws';
 import { createProjectServerContext, type ProjectServerContext } from '../server/projectServer';
 import { attachWebSocket, type WsFrame } from '../server/ws';
-import { EventQueue, type ChatDriver, type ChatEvent } from '../server/chat';
+import { EventQueue, type AgentTurnOptions, type ChatDriver, type ChatEvent } from '../server/chat';
 import { listChats, readTranscript } from '../server/chatStore';
 
 /** A driver that answers every turn with a fixed script, and records its life. */
@@ -23,6 +23,10 @@ class ScriptedDriver implements ChatDriver {
   readonly kind = 'stub' as const;
   queue = new EventQueue<ChatEvent>();
   sent: string[] = [];
+  /** The per-turn model/effort choice each send carried, in order. */
+  sentAgents: (AgentTurnOptions | undefined)[] = [];
+  /** The choice this driver was BOUND with (decides which backend answers). */
+  boundAgent: AgentTurnOptions | null | undefined;
   startedIn: string | null = null;
   stopped = false;
 
@@ -34,8 +38,9 @@ class ScriptedDriver implements ChatDriver {
     this.startedIn = projectRoot;
   }
 
-  send(text: string): void {
+  send(text: string, agent?: AgentTurnOptions): void {
     this.sent.push(text);
+    this.sentAgents.push(agent);
     this.queue.push({ type: 'text-delta', text: `echo:${text}` });
     this.queue.push({ type: 'done' });
   }
@@ -91,8 +96,9 @@ beforeAll(async () => {
   ctx = createProjectServerContext({ recentsFile: path.join(tmp, 'recents.json'), repoRoot: tmp });
   server = http.createServer();
   attachWebSocket(server, ctx, undefined, undefined, {
-    createChatDriver: async () => {
+    createChatDriver: async (_root, options) => {
       const driver = new ScriptedDriver();
+      driver.boundAgent = options?.agent;
       drivers.push(driver);
       return driver;
     },
@@ -145,6 +151,37 @@ describe('chat channel', () => {
     await nextFrame(socket, (frame) => frame.type === 'chat-event' && frame.event.type === 'done');
     expect(drivers).toHaveLength(1);
     expect(drivers[0].sent).toEqual(['one', 'two']);
+    socket.close();
+  });
+
+  it('carries the turn’s agent choice to the binding and to the send', async () => {
+    drivers = [];
+    const socket = await connect();
+    const agent = { provider: 'openai', model: 'gpt-5.6-sol', effort: 'high' };
+    socket.send(JSON.stringify({ type: 'chat-send', text: 'make a shooter', agent }));
+    await nextFrame(socket, (frame) => frame.type === 'chat-event' && frame.event.type === 'done');
+    expect(drivers[0].boundAgent).toEqual(agent);
+    expect(drivers[0].sentAgents).toEqual([agent]);
+    socket.close();
+  });
+
+  it('behaves exactly as before when the frame carries no agent field', async () => {
+    drivers = [];
+    const socket = await connect();
+    socket.send(JSON.stringify({ type: 'chat-send', text: 'no choice here' }));
+    await nextFrame(socket, (frame) => frame.type === 'chat-event' && frame.event.type === 'done');
+    expect(drivers[0].boundAgent).toBeNull();
+    expect(drivers[0].sentAgents).toEqual([undefined]);
+    socket.close();
+  });
+
+  it('drops an unusable agent field rather than failing the turn', async () => {
+    drivers = [];
+    const socket = await connect();
+    socket.send(JSON.stringify({ type: 'chat-send', text: 'still works', agent: { provider: 'nobody', effort: 9 } }));
+    await nextFrame(socket, (frame) => frame.type === 'chat-event' && frame.event.type === 'done');
+    expect(drivers[0].boundAgent).toBeNull();
+    expect(drivers[0].sent).toEqual(['still works']);
     socket.close();
   });
 

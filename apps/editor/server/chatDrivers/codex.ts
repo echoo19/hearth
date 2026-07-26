@@ -30,6 +30,7 @@ import {
   EventQueue,
   readAppSettings,
   resolveOpenAiKey,
+  type AgentTurnOptions,
   type ApprovalDecision,
   type ChatDriver,
   type ChatEvent,
@@ -39,18 +40,21 @@ import {
   CODEX_CLIENT_INFO,
   CODEX_TESTED_VERSION,
   codexApprovalReply,
+  codexTurnOverrides,
   decodeRpcChunk,
   encodeRpc,
   isApprovalRequest,
   mapCodexAccount,
   mapCodexApproval,
   mapCodexLoginStart,
+  mapCodexModels,
   mapCodexNotification,
   type CodexAccount,
+  type CodexModelInfo,
   type RpcMessage,
 } from './codexWire.js';
 
-export { CODEX_TESTED_VERSION };
+export { CODEX_TESTED_VERSION, type CodexModelInfo };
 
 /** What the UI needs to know about the OpenAI side, and how to fix it. */
 export interface CodexStatus extends CodexAccount {
@@ -59,6 +63,12 @@ export interface CodexStatus extends CodexAccount {
   version: string | null;
   /** An OpenAI API key is configured for this folder (or the environment). */
   hasKey: boolean;
+  /**
+   * Models this account can answer with, read from the binary rather than
+   * hardcoded — the catalogue moves faster than our releases do. Only
+   * populated when the caller asks for it (see `readCodexStatus`).
+   */
+  models?: CodexModelInfo[];
 }
 
 /** Shown verbatim in Settings when codex isn't on the machine. */
@@ -340,7 +350,18 @@ async function withConnection<T>(
  * binary, a binary that won't handshake, a protocol change) collapses into a
  * status the UI can render and act on.
  */
-export async function readCodexStatus(projectRoot: string): Promise<CodexStatus> {
+export async function readCodexStatus(
+  projectRoot: string,
+  opts?: {
+    /**
+     * Also ask the binary which models the account can use. Off by default:
+     * it is one extra round trip on the same connection, and only the
+     * providers read-out (which fills the model selector) needs it — binding a
+     * driver does not.
+     */
+    withModels?: boolean;
+  },
+): Promise<CodexStatus> {
   const hasKey = (await resolveOpenAiKey(projectRoot)) !== null;
   const bin = await resolveCodexBinary(projectRoot);
   if (!bin) {
@@ -349,11 +370,28 @@ export async function readCodexStatus(projectRoot: string): Promise<CodexStatus>
   const env = await codexEnv(projectRoot);
   const version = await readCodexVersion(bin, env);
   try {
-    const account = await withConnection(projectRoot, async (conn) => {
-      const result = await conn.request('account/read', {}, 15_000);
-      return mapCodexAccount(result);
+    const probe = await withConnection(projectRoot, async (conn) => {
+      const account = mapCodexAccount(await conn.request('account/read', {}, 15_000));
+      let models: CodexModelInfo[] = [];
+      if (opts?.withModels === true && account.loggedIn) {
+        try {
+          models = mapCodexModels(await conn.request('model/list', {}, 15_000));
+        } catch {
+          // An older build without model/list is not a broken install; the
+          // caller falls back to its curated list.
+        }
+      }
+      return { account, models };
     });
-    if (account) return { installed: true, version, hasKey, ...account };
+    if (probe) {
+      return {
+        installed: true,
+        version,
+        hasKey,
+        ...probe.account,
+        ...(probe.models.length > 0 ? { models: probe.models } : {}),
+      };
+    }
   } catch {
     /* installed but not answering: report it as signed out, not as broken */
   }
@@ -441,7 +479,7 @@ export class CodexDriver implements ChatDriver {
   private turnId: string | null = null;
   private stopped = false;
   /** Turns queued before the thread finished starting. */
-  private backlog: string[] = [];
+  private backlog: { text: string; agent?: AgentTurnOptions }[] = [];
   private ready = false;
   /** Inbound approval requests awaiting the user, by our approvalId. */
   private approvals = new Map<string, { id: number | string; method: string }>();
@@ -454,6 +492,12 @@ export class CodexDriver implements ChatDriver {
     private readonly onThreadId: (threadId: string) => void,
     /** How to open the pipe. Overridden in tests by a scripted app-server. */
     private readonly connect: (bin: string, cwd: string, env: NodeJS.ProcessEnv) => CodexTransport = spawnCodexTransport,
+    /**
+     * The choice this conversation was bound with. Used for any turn that
+     * doesn't carry its own, so a model picked before the first message still
+     * applies to it.
+     */
+    private readonly defaultAgent: AgentTurnOptions | null = null,
   ) {}
 
   get events(): AsyncIterable<ChatEvent> {
@@ -492,7 +536,7 @@ export class CodexDriver implements ChatDriver {
       if (id !== this.resumeThreadId) this.onThreadId(id);
     }
     this.ready = true;
-    for (const text of this.backlog.splice(0)) this.startTurn(text);
+    for (const queued of this.backlog.splice(0)) this.startTurn(queued.text, queued.agent);
   }
 
   private handleNotification(method: string, params: unknown): void {
@@ -538,22 +582,28 @@ export class CodexDriver implements ChatDriver {
     this.queue.push({ type: 'approval-resolved', approvalId, decision });
   }
 
-  send(text: string): void {
+  send(text: string, agent?: AgentTurnOptions): void {
     if (this.stopped) return;
     if (!this.ready) {
-      this.backlog.push(text);
+      this.backlog.push({ text, agent });
       return;
     }
-    this.startTurn(text);
+    this.startTurn(text, agent);
   }
 
-  private startTurn(text: string): void {
+  private startTurn(text: string, agent?: AgentTurnOptions): void {
     const conn = this.conn;
     if (!conn || !this.threadId) return;
     void conn
       .request('turn/start', {
         threadId: this.threadId,
         input: [{ type: 'text', text, text_elements: [] }],
+        // `model` and `effort` are real TurnStartParams fields on the app-server
+        // protocol (verified against CODEX_TESTED_VERSION's own
+        // `generate-ts` output): both override the thread's setting for this
+        // turn and the ones after it. Omitted entirely when the user expressed
+        // no choice, so codex keeps using its own configured default.
+        ...codexTurnOverrides(agent ?? this.defaultAgent),
       })
       .catch((err: Error) => {
         if (!this.stopped) this.queue.push({ type: 'error', message: err.message });
@@ -595,12 +645,24 @@ function readThreadId(result: unknown): string | null {
  */
 export async function createCodexDriver(
   projectRoot: string,
-  opts?: { resumeThreadId?: string | null; onThreadId?: (threadId: string) => void },
+  opts?: {
+    resumeThreadId?: string | null;
+    onThreadId?: (threadId: string) => void;
+    /** The choice the binding turn expressed, applied to turns that omit one. */
+    agent?: AgentTurnOptions | null;
+  },
 ): Promise<ChatDriver | null> {
   const bin = await resolveCodexBinary(projectRoot);
   if (!bin) return null;
   const env = await codexEnv(projectRoot);
   const status = await readCodexStatus(projectRoot);
   if (!status.loggedIn) return null;
-  return new CodexDriver(bin, env, opts?.resumeThreadId ?? null, opts?.onThreadId ?? (() => undefined));
+  return new CodexDriver(
+    bin,
+    env,
+    opts?.resumeThreadId ?? null,
+    opts?.onThreadId ?? (() => undefined),
+    spawnCodexTransport,
+    opts?.agent ?? null,
+  );
 }

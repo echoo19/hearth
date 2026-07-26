@@ -221,7 +221,10 @@ describe('provider status', () => {
   it('reports the Anthropic key without ever echoing it back', async () => {
     await writeAppSettings(root, { apiKey: 'sk-secret-value' });
     const status = await readChatProviders(root);
-    expect(status.anthropic).toEqual({ hasKey: true, source: 'project' });
+    expect(status.anthropic).toMatchObject({ hasKey: true, source: 'project' });
+    // The curated model list rides along, so the selector has something to
+    // show without a second request.
+    expect(status.anthropic.models?.map((m) => m.id)).toContain('claude-opus-5');
     expect(JSON.stringify(status)).not.toContain('sk-secret-value');
     await writeAppSettings(root, { apiKey: '' });
   });

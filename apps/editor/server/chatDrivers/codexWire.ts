@@ -28,7 +28,15 @@
  *   turn/start -> notifications... -> turn/completed
  *   server -> client REQUESTS pause the turn until answered (approvals)
  */
-import type { ChatEvent, ApprovalDecision, ApprovalKind, FileChangeEntry, ToolKind, ToolStatus } from '../chat.js';
+import type {
+  AgentTurnOptions,
+  ApprovalDecision,
+  ApprovalKind,
+  ChatEvent,
+  FileChangeEntry,
+  ToolKind,
+  ToolStatus,
+} from '../chat.js';
 
 /** The codex build this adapter was written and verified against. */
 export const CODEX_TESTED_VERSION = '0.144.5';
@@ -347,6 +355,59 @@ export function codexApprovalReply(method: string, decision: ApprovalDecision): 
   const isLegacy = method === 'execCommandApproval' || method === 'applyPatchApproval';
   if (isLegacy) return { decision: decision === 'allow' ? 'approved' : 'denied' };
   return { decision: decision === 'allow' ? 'accept' : 'decline' };
+}
+
+// ---------------------------------------------------------------------------
+// Models and per-turn overrides
+// ---------------------------------------------------------------------------
+
+/** One model the codex account can answer with, as the selector shows it. */
+export interface CodexModelInfo {
+  id: string;
+  label: string;
+  note?: string;
+}
+
+/**
+ * The model/effort fields to put on a `turn/start`, given the user's choice.
+ *
+ * `TurnStartParams` on CODEX_TESTED_VERSION carries `model?: string | null`
+ * and `effort?: ReasoningEffort | null`, both documented as overriding the
+ * thread's setting for this turn and subsequent ones. Absent fields mean "keep
+ * whatever codex is configured with", so a turn with no expressed choice sends
+ * NEITHER key rather than an explicit null — a null would be a deliberate
+ * reset, which is not what "the user didn't pick" means.
+ */
+export function codexTurnOverrides(agent: AgentTurnOptions | null | undefined): { model?: string; effort?: string } {
+  const out: { model?: string; effort?: string } = {};
+  if (!agent) return out;
+  // A choice aimed at the other vendor carries an anthropic model id; sending
+  // it to codex would just fail the turn.
+  if (agent.provider === 'anthropic') return out;
+  if (typeof agent.model === 'string' && agent.model !== '') out.model = agent.model;
+  if (agent.effort) out.effort = agent.effort;
+  return out;
+}
+
+/**
+ * Read `model/list`'s result into the selector's vocabulary. Hidden models are
+ * dropped (codex hides them from its own picker for a reason), and the
+ * account's default is noted so the UI can say which one "Default" means.
+ */
+export function mapCodexModels(result: unknown): CodexModelInfo[] {
+  const data = asRecord(result)?.data;
+  if (!Array.isArray(data)) return [];
+  const models: CodexModelInfo[] = [];
+  for (const raw of data) {
+    const model = asRecord(raw);
+    if (!model || model.hidden === true) continue;
+    const id = str(model.id) ?? str(model.model);
+    if (!id) continue;
+    const entry: CodexModelInfo = { id, label: str(model.displayName) ?? id };
+    if (model.isDefault === true) entry.note = 'Default';
+    models.push(entry);
+  }
+  return models;
 }
 
 // ---------------------------------------------------------------------------

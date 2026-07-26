@@ -16,7 +16,7 @@
 import { describe, expect, it } from 'vitest';
 import { CodexDriver, type CodexTransport } from '../server/chatDrivers/codex';
 import { encodeRpc } from '../server/chatDrivers/codexWire';
-import type { ChatEvent } from '../server/chat';
+import type { AgentTurnOptions, ChatEvent } from '../server/chat';
 
 /**
  * A scripted `codex app-server`. `sent` records every line the driver wrote,
@@ -100,7 +100,11 @@ function reader(source: AsyncIterable<ChatEvent>): { next(count: number): Promis
   };
 }
 
-function makeDriver(opts?: { resume?: string | null; onThreadId?: (id: string) => void }): {
+function makeDriver(opts?: {
+  resume?: string | null;
+  onThreadId?: (id: string) => void;
+  agent?: AgentTurnOptions | null;
+}): {
   driver: CodexDriver;
   server: FakeAppServer;
 } {
@@ -111,6 +115,7 @@ function makeDriver(opts?: { resume?: string | null; onThreadId?: (id: string) =
     opts?.resume ?? null,
     opts?.onThreadId ?? (() => undefined),
     () => server,
+    opts?.agent ?? null,
   );
   return { driver, server };
 }
@@ -283,6 +288,62 @@ describe('CodexDriver approvals', () => {
     await driver.start('chat-1', '/w/game');
     server.emit({ id: 42, method: 'some/futureRequest', params: {} });
     expect(server.replyFor(42)).toEqual({});
+    driver.stop();
+  });
+});
+
+/**
+ * Per-turn model and reasoning effort.
+ *
+ * `TurnStartParams` on CODEX_TESTED_VERSION really does carry `model` and
+ * `effort` (verified against that build's own `codex app-server generate-ts`
+ * output — see the codexWire header), and both override the thread's setting
+ * for the turn. What has to stay true is the negative case: a turn with no
+ * choice must send NEITHER key, so codex keeps using the user's own config.
+ */
+describe('CodexDriver model and effort', () => {
+  it('puts the turn choice on turn/start', async () => {
+    const { driver, server } = makeDriver();
+    await driver.start('chat-1', '/w/game');
+    driver.send('make a shooter', { provider: 'openai', model: 'gpt-5.6-sol', effort: 'high' });
+    expect(server.requestsFor('turn/start')[0]).toMatchObject({
+      threadId: 'thread-1',
+      model: 'gpt-5.6-sol',
+      effort: 'high',
+    });
+    driver.stop();
+  });
+
+  it('sends no override at all when the turn expressed no choice', async () => {
+    const { driver, server } = makeDriver();
+    await driver.start('chat-1', '/w/game');
+    driver.send('make a shooter');
+    const params = server.requestsFor('turn/start')[0];
+    expect(params).not.toHaveProperty('model');
+    expect(params).not.toHaveProperty('effort');
+    driver.stop();
+  });
+
+  it('applies the choice the conversation was bound with to turns that carry none', async () => {
+    const { driver, server } = makeDriver({ agent: { provider: 'openai', model: 'gpt-5.6-luna', effort: 'low' } });
+    await driver.start('chat-1', '/w/game');
+    driver.send('first');
+    driver.send('second', { provider: 'openai', model: 'gpt-5.6-sol' });
+    const [first, second] = server.requestsFor('turn/start');
+    expect(first).toMatchObject({ model: 'gpt-5.6-luna', effort: 'low' });
+    expect(second).toMatchObject({ model: 'gpt-5.6-sol' });
+    expect(second).not.toHaveProperty('effort');
+    driver.stop();
+  });
+
+  it('keeps the choice with a turn queued before the thread was ready', async () => {
+    const server = new FakeAppServer();
+    const driver = new CodexDriver('/fake/codex', {}, null, () => undefined, () => server, null);
+    // Sending before start() means the turn sits in the backlog; the choice
+    // must survive the wait rather than being dropped on the way through.
+    driver.send('early', { provider: 'openai', model: 'gpt-5.6-sol', effort: 'medium' });
+    await driver.start('chat-1', '/w/game');
+    expect(server.requestsFor('turn/start')[0]).toMatchObject({ model: 'gpt-5.6-sol', effort: 'medium' });
     driver.stop();
   });
 });

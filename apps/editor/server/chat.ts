@@ -137,13 +137,52 @@ export type ChatDriverKind = 'stub' | 'agent-sdk' | 'codex';
 /** Which vendor answers. Auth for each is configured independently. */
 export type ChatProvider = 'anthropic' | 'openai';
 
+/** How hard a reasoning model should think. Only Codex exposes this. */
+export type ReasoningEffort = 'low' | 'medium' | 'high';
+
+/**
+ * Who should answer THIS turn, and how. The composer sends it with every user
+ * message, so the choice travels with the turn rather than living in settings.
+ *
+ * Every field is optional and every driver applies only what it actually
+ * supports — a frame with no `agent` at all must behave exactly as it did
+ * before this existed, which is what keeps an older client working against a
+ * newer server and vice versa.
+ */
+export interface AgentTurnOptions {
+  provider?: ChatProvider;
+  /** Wire model id, e.g. `claude-opus-5`. Null/absent = the provider default. */
+  model?: string | null;
+  effort?: ReasoningEffort | null;
+}
+
+/**
+ * Read the `agent` field off a wire frame. Tolerant on purpose: an unknown
+ * provider, a non-string model or a made-up effort are dropped rather than
+ * failing the turn, and a frame with nothing usable yields null (which every
+ * caller treats as "no choice expressed").
+ */
+export function parseAgentOptions(raw: unknown): AgentTurnOptions | null {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
+  const record = raw as Record<string, unknown>;
+  const out: AgentTurnOptions = {};
+  if (record.provider === 'anthropic' || record.provider === 'openai') out.provider = record.provider;
+  if (typeof record.model === 'string' && record.model.trim() !== '') out.model = record.model.trim();
+  if (record.effort === 'low' || record.effort === 'medium' || record.effort === 'high') out.effort = record.effort;
+  return Object.keys(out).length > 0 ? out : null;
+}
+
 export interface ChatDriver {
   /** Which backend this is, surfaced to the UI so it can name what it's talking to. */
   readonly kind: ChatDriverKind;
   /** Bind the driver to a conversation and a working directory. */
   start(sessionId: string, projectRoot: string): Promise<void>;
-  /** Queue one user turn. Events for it arrive on `events`. */
-  send(text: string): void;
+  /**
+   * Queue one user turn. Events for it arrive on `events`. `agent` carries the
+   * per-turn model/effort choice; a driver applies what its backend supports
+   * and ignores the rest.
+   */
+  send(text: string, agent?: AgentTurnOptions): void;
   /** Everything the driver emits, in order, until `stop()`. */
   readonly events: AsyncIterable<ChatEvent>;
   /** Tear down: ends `events` and abandons any in-flight turn. */
@@ -602,6 +641,14 @@ export class AgentSdkDriver implements ChatDriver {
   constructor(
     private readonly sdk: { query: (args: unknown) => AsyncIterable<unknown> },
     private readonly apiKey: string,
+    /**
+     * Model id for this conversation, or null for the SDK's default. Fixed at
+     * bind time: the SDK runs ONE long-lived query for the whole session, so
+     * its options — model included — are chosen when the stream opens. There
+     * is no per-turn surface to change it, and faking one would mean silently
+     * restarting the agent mid-conversation.
+     */
+    private readonly model: string | null = null,
   ) {}
 
   get events(): AsyncIterable<ChatEvent> {
@@ -617,6 +664,7 @@ export class AgentSdkDriver implements ChatDriver {
         permissionMode: 'acceptEdits',
         includePartialMessages: true,
         env: { ...process.env, ANTHROPIC_API_KEY: this.apiKey },
+        ...(this.model ? { model: this.model } : {}),
         canUseTool: (toolName: string, input: unknown) => this.askPermission(toolName, input),
       },
     });
@@ -706,10 +754,16 @@ export class AgentSdkDriver implements ChatDriver {
 /**
  * Pick the driver for a project.
  *
- * An explicit `provider` in settings wins when that provider is actually
- * usable; otherwise whichever one is configured answers, and with neither the
- * stub explains how to connect one. Never throws — a broken agent backend
- * degrades to guidance rather than an unusable conversation column.
+ * An explicit `provider` wins when that provider is actually usable;
+ * otherwise whichever one is configured answers, and with neither the stub
+ * explains how to connect one. Never throws — a broken agent backend degrades
+ * to guidance rather than an unusable conversation column.
+ *
+ * The turn's own `agent.provider` outranks the stored preference: the composer
+ * shows the user which model they picked, so that pick has to be what binds.
+ * When it isn't usable the fall-through still applies, so choosing a provider
+ * you've since signed out of quietly lands on the other one rather than
+ * failing the turn.
  *
  * `deps` is a test seam so driver selection can be exercised without a real
  * SDK install or a real codex binary on the machine.
@@ -721,10 +775,16 @@ export async function createChatDriver(
     resumeThreadId?: string | null;
     /** Called with the thread codex bound, so it can be persisted. */
     onThreadId?: (threadId: string) => void;
+    /** The turn that is binding this driver, when it expressed a choice. */
+    agent?: AgentTurnOptions | null;
     loadAgentSdk?: typeof loadAgentSdk;
     createCodexDriver?: (
       projectRoot: string,
-      opts?: { resumeThreadId?: string | null; onThreadId?: (threadId: string) => void },
+      opts?: {
+        resumeThreadId?: string | null;
+        onThreadId?: (threadId: string) => void;
+        agent?: AgentTurnOptions | null;
+      },
     ) => Promise<ChatDriver | null>;
   },
 ): Promise<ChatDriver> {
@@ -734,7 +794,11 @@ export async function createChatDriver(
     options?.createCodexDriver ??
     (async (
       root: string,
-      opts?: { resumeThreadId?: string | null; onThreadId?: (threadId: string) => void },
+      opts?: {
+        resumeThreadId?: string | null;
+        onThreadId?: (threadId: string) => void;
+        agent?: AgentTurnOptions | null;
+      },
     ) => {
       // Imported lazily so a project that never uses OpenAI never pays for
       // resolving the module (and so this file stays free of node:child_process).
@@ -742,25 +806,31 @@ export async function createChatDriver(
       return mod.createCodexDriver(root, opts);
     });
 
+  const agent = options?.agent ?? null;
   const anthropic = async (): Promise<ChatDriver | null> => {
     const key = await resolveApiKey(projectRoot);
     if (!key) return null;
     const sdk = await loadSdk();
-    return sdk ? new AgentSdkDriver(sdk, key) : null;
+    // Only an anthropic-targeted choice names an anthropic model; a codex
+    // model id must never reach the SDK.
+    const model = agent && (agent.provider ?? 'anthropic') === 'anthropic' ? (agent.model ?? null) : null;
+    return sdk ? new AgentSdkDriver(sdk, key, model) : null;
   };
   const openai = async (): Promise<ChatDriver | null> => {
     try {
       return await makeCodex(projectRoot, {
         resumeThreadId: options?.resumeThreadId ?? null,
         onThreadId: options?.onThreadId,
+        agent,
       });
     } catch {
       return null;
     }
   };
 
+  const preferred = agent?.provider ?? settings.provider;
   const order: (() => Promise<ChatDriver | null>)[] =
-    settings.provider === 'openai' ? [openai, anthropic] : [anthropic, openai];
+    preferred === 'openai' ? [openai, anthropic] : [anthropic, openai];
   for (const attempt of order) {
     const driver = await attempt();
     if (driver) return driver;

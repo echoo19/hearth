@@ -69,24 +69,49 @@ describe('wireUpdater', () => {
     expect(d.prompt).not.toHaveBeenCalled();
   });
 
-  it('auto mode offers a restart once the download lands, and restarts on accept', async () => {
+  // No modal on download: the sidebar banner is the one surface for "restart
+  // when you like", and a dialog on top of it would ask the same question
+  // twice. The update still installs on quit either way.
+  it('auto mode stays quiet when the download lands — the banner carries it', async () => {
     const d = deps({ policy: { mode: 'auto' }, prompt: vi.fn(async () => 0) });
     wireUpdater(d);
     d.updater.emit('update-downloaded', { version: '9.9.9' });
     await flush();
-    expect(d.prompt).toHaveBeenCalledTimes(1);
-    const p = (d.prompt as ReturnType<typeof vi.fn>).mock.calls[0][0];
-    expect(p.message).toContain('9.9.9');
-    expect(p.buttons[0]).toBe('Restart now');
-    expect(d.updater.quitAndInstall).toHaveBeenCalledTimes(1);
+    expect(d.prompt).not.toHaveBeenCalled();
+    expect(d.updater.quitAndInstall).not.toHaveBeenCalled();
   });
 
-  it('auto mode leaves the update for quit when the restart is declined', async () => {
-    const d = deps({ policy: { mode: 'auto' }, prompt: vi.fn(async () => 1) });
+  // The sidebar's "Relaunch to update" banner is driven from here: the modal
+  // can only be answered once, but the banner stays until it is acted on.
+  it('announces a downloaded update to the renderer', async () => {
+    const onUpdateReady = vi.fn();
+    const d = deps({ policy: { mode: 'auto' }, prompt: vi.fn(async () => 1), onUpdateReady });
     wireUpdater(d);
     d.updater.emit('update-downloaded', { version: '9.9.9' });
     await flush();
+    expect(onUpdateReady).toHaveBeenCalledWith({ version: '9.9.9' });
+  });
+
+  it('never announces a download in notify mode, where nothing was downloaded', async () => {
+    const onUpdateReady = vi.fn();
+    const d = deps({ policy: { mode: 'notify' }, prompt: vi.fn(async () => 1), onUpdateReady });
+    wireUpdater(d);
+    d.updater.emit('update-downloaded', { version: '9.9.9' });
+    await flush();
+    expect(onUpdateReady).not.toHaveBeenCalled();
+  });
+
+  it('relaunches only once an update has actually landed', async () => {
+    const d = deps({ policy: { mode: 'auto' }, prompt: vi.fn(async () => 1) });
+    const handle = wireUpdater(d)!;
+    // Quitting with nothing staged would just close the app on someone who
+    // asked to be updated.
+    handle.relaunchToUpdate();
     expect(d.updater.quitAndInstall).not.toHaveBeenCalled();
+    d.updater.emit('update-downloaded', { version: '9.9.9' });
+    await flush();
+    handle.relaunchToUpdate();
+    expect(d.updater.quitAndInstall).toHaveBeenCalledTimes(1);
   });
 
   it('notify mode never downloads and points at the download page', async () => {
