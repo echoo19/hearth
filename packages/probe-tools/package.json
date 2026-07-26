@@ -1,0 +1,33 @@
+{
+  "name": "@hearth/probe-tools",
+  "version": "0.1.0",
+  "description": "Agent-facing surfaces for the Hearth probe: the hearth-probe CLI and its MCP server, so any coding agent can produce the evidence the Hearth app renders",
+  "license": "MIT",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "bin": {
+    "hearth-probe": "./dist/cli.js",
+    "hearth-probe-mcp": "./dist/mcp.js"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.typecheck.json"
+  },
+  "dependencies": {
+    "@hearth/adapter-web": "*",
+    "@hearth/probe-core": "*",
+    "@modelcontextprotocol/sdk": "^1.6.0",
+    "commander": "^13.0.0",
+    "zod": "^3.24.1"
+  }
+}
