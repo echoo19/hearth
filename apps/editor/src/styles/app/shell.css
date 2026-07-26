@@ -4,13 +4,24 @@
    at the window's own bg-0 so the running game is the brightest thing on
    screen. */
 
+/* Rail on the left, everything else in one column beside it. The rail runs
+   full height (it is navigation, not chrome under a title bar), so the top bar
+   starts where the conversation starts. */
 .app-shell {
-  display: grid;
-  grid-template-rows: auto 1fr;
+  display: flex;
   height: 100%;
   min-height: 0;
   background: var(--bg-0);
 }
+
+.app-main {
+  display: grid;
+  grid-template-rows: auto 1fr;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+}
+
 
 /* --------------------------------------------------------------------------
    Top bar
@@ -30,17 +41,11 @@
   flex: none;
 }
 
-.topbar-mark {
-  display: inline-flex;
-  color: var(--flame-brand);
-  flex: none;
-}
-
 .topbar-name {
   font-size: var(--text-sm);
   font-weight: 500;
   color: var(--ink);
-  max-width: 26ch;
+  max-width: 34ch;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;

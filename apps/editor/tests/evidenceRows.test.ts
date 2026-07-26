@@ -13,8 +13,14 @@ import {
 import type { EvidenceEvent } from '../src/types';
 
 let seq = 0;
-function event(kind: string, fields: Partial<EvidenceEvent> = {}, ts = '2026-07-25T10:00:00.000Z'): EvidenceEvent {
-  return { kind, seq: ++seq, ts, ...fields } as EvidenceEvent;
+/**
+ * Build one journal line. Fields are loose on purpose: the fold must survive a
+ * partial event (a sweep that only got as far as `sweep-started`) and an event
+ * kind this build has never seen, neither of which the closed
+ * `EvidenceEvent` union can express.
+ */
+function event(kind: string, fields: Record<string, unknown> = {}, ts = '2026-07-25T10:00:00.000Z'): EvidenceEvent {
+  return { kind, seq: ++seq, ts, ...fields } as unknown as EvidenceEvent;
 }
 
 function sweepRows(rows: ReturnType<typeof foldEvidence>): SweepRow[] {

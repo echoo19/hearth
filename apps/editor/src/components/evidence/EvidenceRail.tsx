@@ -10,9 +10,32 @@ import React from 'react';
 import { useApp } from '../../store';
 import { evidenceUrl } from '../../api';
 import { Icon } from '../ui';
-import { foldEvidence, railSummary, verdictLabel, type SweepRow } from './evidenceRows';
+import { foldEvidence, railSummary, verdictLabel, type SweepFinding, type SweepRow } from './evidenceRows';
+
+/**
+ * One line the probe wrote about the game, with the frame it wrote it on. The
+ * thumbnail is the point: a finding with a picture is evidence, a finding
+ * without one is a claim.
+ */
+function FindingCard({ finding, project }: { finding: SweepFinding; project: string }) {
+  const text = finding.summary ?? finding.detail ?? finding.kind ?? 'finding';
+  return (
+    <li className="finding">
+      {finding.shot && (
+        <img className="finding-shot" src={evidenceUrl(project, finding.shot)} alt="" loading="lazy" />
+      )}
+      <span className="finding-text">
+        <span className="finding-summary">{text}</span>
+        {finding.summary && finding.detail && <span className="finding-detail">{finding.detail}</span>}
+      </span>
+    </li>
+  );
+}
 
 function SweepCard({ row, project }: { row: SweepRow; project: string }) {
+  // Shots already shown beside a finding don't need repeating in the strip.
+  const findingShots = new Set(row.findings.map((finding) => finding.shot).filter(Boolean));
+  const looseShots = row.shots.filter((shot) => !findingShots.has(shot));
   return (
     <article className="sweep-card">
       <header className="sweep-head">
@@ -34,13 +57,13 @@ function SweepCard({ row, project }: { row: SweepRow; project: string }) {
       {row.findings.length > 0 && (
         <ul className="sweep-findings">
           {row.findings.slice(0, 4).map((finding, index) => (
-            <li key={index}>{finding.detail ?? finding.kind ?? 'finding'}</li>
+            <FindingCard key={index} finding={finding} project={project} />
           ))}
         </ul>
       )}
-      {row.shots.length > 0 && (
+      {looseShots.length > 0 && (
         <div className="sweep-shots">
-          {row.shots.slice(0, 6).map((shot) => (
+          {looseShots.slice(0, 6).map((shot) => (
             <img key={shot} className="sweep-shot" src={evidenceUrl(project, shot)} alt="" loading="lazy" />
           ))}
         </div>
@@ -49,11 +72,24 @@ function SweepCard({ row, project }: { row: SweepRow; project: string }) {
   );
 }
 
+/**
+ * What the rail says before anything has been played. Pure so the copy rule is
+ * testable: it must teach the action while nothing exists, then stop claiming
+ * nothing exists the moment something does.
+ */
+export function emptyRailCopy(opts: { gamePresent: boolean; running: boolean }): string {
+  if (opts.running) return 'Playing now. Verdicts land here as each run finishes.';
+  if (!opts.gamePresent) return 'Nothing has been played yet. Once there is a game to run, what the probe saw shows up here.';
+  return 'Nothing has been played yet. Press Playtest and the probe will play this game many ways and write down what happened.';
+}
+
 export function EvidenceRail() {
   const evidence = useApp((s) => s.evidence);
   const open = useApp((s) => s.evidenceOpen);
   const setOpen = useApp((s) => s.setEvidenceOpen);
   const project = useApp((s) => s.projectPath);
+  const gamePresent = useApp((s) => s.game.present);
+  const running = useApp((s) => s.sweep.running);
   const rows = foldEvidence(evidence);
 
   return (
@@ -73,9 +109,7 @@ export function EvidenceRail() {
       {open && (
         <div className="evidence-body">
           {rows.length === 0 ? (
-            <p className="evidence-empty">
-              No playtests yet. Once the game can be played, what the probe saw shows up here.
-            </p>
+            <p className="evidence-empty">{emptyRailCopy({ gamePresent, running })}</p>
           ) : (
             rows.map((row) =>
               row.kind === 'sweep' ? (

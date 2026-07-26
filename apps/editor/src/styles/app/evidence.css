@@ -153,13 +153,49 @@
 
 .sweep-findings {
   margin: 0;
-  padding-left: 16px;
+  padding: 0;
+  list-style: none;
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 8px;
+}
+
+/* A finding is its frame plus its sentence, side by side — the thumbnail is
+   not decoration, it is the evidence the sentence is about. */
+.finding {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
   color: var(--ink-mute);
   font-size: var(--text-xs);
   line-height: 1.55;
+}
+
+.finding-shot {
+  width: 76px;
+  height: 47px;
+  flex: none;
+  object-fit: cover;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  background: var(--canvas-bg);
+}
+
+.finding-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.finding-summary {
+  color: var(--ink);
+  text-wrap: pretty;
+}
+
+.finding-detail {
+  color: var(--ink-faint);
+  overflow-wrap: anywhere;
 }
 
 .sweep-shots {

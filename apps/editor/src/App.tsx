@@ -3,6 +3,7 @@ import { useApp } from './store';
 import { hearthNative, type HearthNative } from './native';
 import { Launcher } from './components/Launcher';
 import { TopBar } from './components/shell/TopBar';
+import { Sidebar, SIDEBAR_RAIL_PX, SIDEBAR_WIDTH_PX } from './components/shell/Sidebar';
 import { ChatColumn } from './components/chat/ChatColumn';
 import { PaneStack } from './components/game/PaneStack';
 import { CodePeek } from './components/code/CodePeek';
@@ -74,29 +75,42 @@ function NativeGate({
 }
 
 /**
+ * The window width below which the conversation and the game can't both hold a
+ * column. The rail is part of that arithmetic: 900px of window with a 260px
+ * rail leaves the same room as 640px without one, which is not two columns.
+ * Pure, so the rule is checkable without a viewport.
+ */
+export function narrowBreakpointFor(sidebarCollapsed: boolean): number {
+  return NARROW_BREAKPOINT_PX + (sidebarCollapsed ? SIDEBAR_RAIL_PX : SIDEBAR_WIDTH_PX);
+}
+
+/**
  * Whether the window is too narrow for two columns. A single matchMedia
  * listener rather than a resize handler: the only thing the layout cares about
  * is which side of the breakpoint it's on.
  */
 export function useNarrowLayout(): boolean {
+  const collapsed = useApp((s) => s.sidebarCollapsed);
+  const breakpoint = narrowBreakpointFor(collapsed);
   const [narrow, setNarrow] = useState(
-    () => typeof window !== 'undefined' && window.matchMedia?.(`(max-width: ${NARROW_BREAKPOINT_PX - 1}px)`).matches === true,
+    () => typeof window !== 'undefined' && window.matchMedia?.(`(max-width: ${breakpoint - 1}px)`).matches === true,
   );
   useEffect(() => {
-    const query = window.matchMedia?.(`(max-width: ${NARROW_BREAKPOINT_PX - 1}px)`);
+    const query = window.matchMedia?.(`(max-width: ${breakpoint - 1}px)`);
     if (!query) return;
     const onChange = (e: MediaQueryListEvent): void => setNarrow(e.matches);
     setNarrow(query.matches);
     query.addEventListener('change', onChange);
     return () => query.removeEventListener('change', onChange);
-  }, []);
+  }, [breakpoint]);
   return narrow;
 }
 
 /**
- * The working layout: conversation on the left, the game and its supporting
- * surfaces on the right. Two fixed regions, no draggable panel system — the
- * arrangement is the product's opinion, not a preference.
+ * The working layout: the rail of conversations and folders, then the
+ * conversation itself, then the game and its supporting surfaces. Three fixed
+ * regions, no draggable panel system — the arrangement is the product's
+ * opinion, not a preference. Only the rail moves, and only between two states.
  */
 function Shell() {
   const narrow = useNarrowLayout();
@@ -105,13 +119,16 @@ function Shell() {
 
   return (
     <div className={`app-shell${narrow ? ' is-narrow' : ''}`}>
-      <TopBar narrow={narrow} />
-      <div className="app-body">
-        <div className="app-region" data-active={!narrow || narrowTab === 'chat'}>
-          <ChatColumn />
-        </div>
-        <div className="app-region" data-active={!narrow || narrowTab === 'pane'}>
-          <PaneStack />
+      <Sidebar />
+      <div className="app-main">
+        <TopBar narrow={narrow} />
+        <div className="app-body">
+          <div className="app-region" data-active={!narrow || narrowTab === 'chat'}>
+            <ChatColumn />
+          </div>
+          <div className="app-region" data-active={!narrow || narrowTab === 'pane'}>
+            <PaneStack />
+          </div>
         </div>
       </div>
       <CodePeek />

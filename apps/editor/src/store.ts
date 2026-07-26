@@ -14,13 +14,25 @@
  * tab being hidden.
  */
 import { create } from 'zustand';
-import { apiAppSettings, apiGameStatus, apiMeta, apiOpenWorkspace, apiProbeStatus } from './api';
+import {
+  apiAppSettings,
+  apiDeleteChat,
+  apiGameStatus,
+  apiListChats,
+  apiMeta,
+  apiOpenWorkspace,
+  apiProbeStatus,
+  apiRenameChat,
+  apiStartSweep,
+} from './api';
 import type {
   AppSettingsInfo,
   ChatDriverKind,
   ChatEvent,
   ChatMessage,
   ChatPart,
+  ChatRecord,
+  ChatSummary,
   ConsoleEntry,
   ConsoleLevel,
   ConsoleSource,
@@ -66,12 +78,26 @@ export interface AppState {
   chatDriver: ChatDriverKind | null;
   chatError: string | null;
   settings: AppSettingsInfo | null;
+  /** Every conversation this folder holds, newest activity first. */
+  chats: ChatSummary[];
+  /** Which one the window is looking at. */
+  activeChatId: string | null;
 
   // --- Game pane ------------------------------------------------------------
   game: GameStatus;
   senses: Sense[];
+  /** The last sweep found a probe shim, so the deeper senses are real. */
+  shimDetected: boolean;
   /** Bumped whenever the game's files change, so the iframe reloads. */
   gameNonce: number;
+
+  // --- Playtest -------------------------------------------------------------
+  /**
+   * The running sweep, as the Playtest button reports it. `done`/`total` come
+   * from the evidence feed itself (one run-finished per completed run), so the
+   * progress a user sees is the same evidence the rail is filling with.
+   */
+  sweep: { running: boolean; done: number; total: number | null; error: string | null };
 
   // --- Evidence -------------------------------------------------------------
   evidence: EvidenceEvent[];
@@ -83,6 +109,8 @@ export interface AppState {
   consoleAtBottom: boolean;
 
   // --- Shell ----------------------------------------------------------------
+  /** Left rail collapsed to icons. Persisted — it is a workspace preference. */
+  sidebarCollapsed: boolean;
   paneTab: PaneTab;
   /** Narrow layout only: the conversation and the pane stack become tabs. */
   narrowTab: 'chat' | 'pane';
@@ -106,9 +134,19 @@ export interface AppState {
   closeWorkspace(): void;
   sendChat(text: string): void;
   cancelChat(): void;
+  /** Start a fresh conversation and switch to it. */
+  newChat(): void;
+  /** Switch to an existing conversation, replaying it from disk. */
+  openChat(chatId: string): void;
+  renameChat(chatId: string, title: string): Promise<void>;
+  deleteChat(chatId: string): Promise<void>;
+  refreshChats(): Promise<void>;
   consumePendingPrompt(): string | null;
   refreshGame(): Promise<void>;
   refreshSettings(): Promise<void>;
+  /** Play the game and stream what the probe finds into the evidence rail. */
+  startSweep(): Promise<void>;
+  setSidebarCollapsed(collapsed: boolean): void;
   setPaneTab(tab: PaneTab): void;
   setNarrowTab(tab: 'chat' | 'pane'): void;
   setEvidenceOpen(open: boolean): void;
@@ -125,6 +163,7 @@ const MAX_CONSOLE = 500;
 const MAX_JOURNAL_FEED = 200;
 const MAX_EVIDENCE = 400;
 const LAST_WORKSPACE_KEY = 'hearth:lastWorkspace';
+const SIDEBAR_KEY = 'hearth:sidebarCollapsed';
 const WS_BACKOFF_INITIAL_MS = 1000;
 const WS_BACKOFF_MAX_MS = 5000;
 /** How often the game pane re-checks whether a game exists / changed. */
@@ -142,6 +181,15 @@ function makeEntry(level: ConsoleLevel, source: ConsoleSource, message: string, 
 }
 
 const EMPTY_GAME: GameStatus = { present: false, entry: null, mtime: 0 };
+const IDLE_SWEEP = { running: false, done: 0, total: null, error: null } as const;
+
+function readSidebarCollapsed(): boolean {
+  try {
+    return localStorage.getItem(SIDEBAR_KEY) === '1';
+  } catch {
+    return false; // private mode: expanded is the better default
+  }
+}
 
 // ---------------------------------------------------------------------------
 // Conversation reducer — pure, so the streaming assembly is unit-testable
@@ -208,6 +256,64 @@ export function applyChatEvent(messages: ChatMessage[], event: ChatEvent): ChatM
   }
 }
 
+/**
+ * Rebuild a conversation from its on-disk transcript. Replay goes through the
+ * SAME fold as the live stream (`applyChatEvent`), so a reopened chat is
+ * assembled by the rules that assembled it the first time — there is no second
+ * renderer to drift.
+ *
+ * A transcript that ends mid-turn (the app quit while the agent was talking)
+ * settles: history is not resumable, and a permanently "working" bubble would
+ * be a lie.
+ */
+export function replayTranscript(records: readonly ChatRecord[]): ChatMessage[] {
+  let messages: ChatMessage[] = [];
+  for (const record of records) {
+    if (record.role === 'user') {
+      messages = [...messages, makeUserMessage(record.text)];
+      continue;
+    }
+    const last = messages[messages.length - 1];
+    if (!last || last.role !== 'agent' || !last.streaming) messages = [...messages, makeAgentMessage()];
+    messages = applyChatEvent(messages, record.event);
+  }
+  return messages.map((message) => (message.streaming ? { ...message, streaming: false } : message));
+}
+
+/**
+ * Fold a batch of evidence events into playtest progress. `sweep-started`
+ * declares the denominator (policies x seeds), each `run-finished` advances,
+ * and `sweep-finished` ends it. Pure, so the button's state is testable
+ * without a socket.
+ */
+export function applySweepProgress(
+  current: AppState['sweep'],
+  events: readonly EvidenceEvent[],
+): AppState['sweep'] {
+  let next = current;
+  for (const event of events) {
+    switch (event.kind) {
+      case 'sweep-started':
+        next = {
+          running: true,
+          done: 0,
+          total: event.policies.length * event.seeds.length || null,
+          error: null,
+        };
+        break;
+      case 'run-finished':
+        next = { ...next, running: true, done: next.done + 1 };
+        break;
+      case 'sweep-finished':
+        next = { ...next, running: false };
+        break;
+      default:
+        break;
+    }
+  }
+  return next;
+}
+
 // ---------------------------------------------------------------------------
 
 export const useApp = create<AppState>((set, get) => {
@@ -221,6 +327,18 @@ export const useApp = create<AppState>((set, get) => {
   let wsEpoch = 0;
   let wsAgentProject: string | null = null;
   let loadMetaPromise: Promise<void> | null = null;
+  /**
+   * Which conversation this window wants to be in, as a frame ready to resend.
+   * A chat request made before the socket is open (opening a folder does
+   * exactly that) — or one lost to a reconnect — is replayed on connect, so the
+   * window never ends up watching a conversation the server isn't sending.
+   */
+  let chatIntent: Extract<WsFrame, { type: 'chat-open' } | { type: 'chat-new' }> | null = null;
+
+  function requestChat(frame: Extract<WsFrame, { type: 'chat-open' } | { type: 'chat-new' }>): void {
+    chatIntent = frame;
+    get().sendFrame(frame);
+  }
 
   function wsUrl(project: string): string {
     const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
@@ -259,10 +377,27 @@ export const useApp = create<AppState>((set, get) => {
         set((state) => ({ journalFeed: [...state.journalFeed, ...frame.entries].slice(-MAX_JOURNAL_FEED) }));
         return;
       case 'evidence':
-        set((state) => ({ evidence: [...state.evidence, ...frame.events].slice(-MAX_EVIDENCE) }));
+        set((state) => ({
+          evidence: [...state.evidence, ...frame.events].slice(-MAX_EVIDENCE),
+          sweep: applySweepProgress(state.sweep, frame.events),
+        }));
         return;
       case 'chat-ready':
         set({ chatDriver: frame.driver });
+        return;
+      case 'chat-list':
+        set({ chats: frame.chats });
+        return;
+      case 'chat-opened':
+        // A `chat-new` that has landed becomes a plain "open this one" intent,
+        // so a later reconnect resumes this chat instead of minting another.
+        chatIntent = { type: 'chat-open', chatId: frame.chat.id };
+        set({
+          activeChatId: frame.chat.id,
+          messages: replayTranscript(frame.records),
+          chatBusy: false,
+          chatError: null,
+        });
         return;
       case 'chat-event': {
         const event = frame.event;
@@ -305,6 +440,7 @@ export const useApp = create<AppState>((set, get) => {
       if (epoch !== wsEpoch) return;
       wsBackoffMs = WS_BACKOFF_INITIAL_MS;
       set({ wsStatus: 'connected' });
+      if (chatIntent) socket.send(JSON.stringify(chatIntent));
       if (getAgentSessionSummary().status === 'reconnecting') {
         socket.send(JSON.stringify({ type: 'pty-start', sessionId: ensureAgentPtySessionId() }));
         markAgentStarted('shell');
@@ -340,6 +476,7 @@ export const useApp = create<AppState>((set, get) => {
   function disconnectWs(): void {
     wsEpoch++;
     wsBackoffMs = WS_BACKOFF_INITIAL_MS;
+    chatIntent = null;
     if (ws && ws.readyState === WebSocket.OPEN) {
       ws.send(JSON.stringify({ type: 'pty-stop' }));
       ws.send(JSON.stringify({ type: 'chat-cancel' }));
@@ -362,10 +499,15 @@ export const useApp = create<AppState>((set, get) => {
     chatDriver: null,
     chatError: null,
     settings: null,
+    chats: [],
+    activeChatId: null,
 
     game: EMPTY_GAME,
     senses: [],
+    shimDetected: false,
     gameNonce: 0,
+
+    sweep: { ...IDLE_SWEEP },
 
     evidence: [],
     evidenceOpen: true,
@@ -374,6 +516,7 @@ export const useApp = create<AppState>((set, get) => {
     consoleUnread: 0,
     consoleAtBottom: true,
 
+    sidebarCollapsed: readSidebarCollapsed(),
     paneTab: 'game',
     narrowTab: 'chat',
     codePeek: { open: false, path: null },
@@ -409,6 +552,7 @@ export const useApp = create<AppState>((set, get) => {
       const res = await apiOpenWorkspace(path);
       if (!res.ok || !res.info) return { ok: false, error: res.error ?? 'Could not open that folder.' };
       const info: WorkspaceInfo = res.info;
+      chatIntent = null;
       try {
         localStorage.setItem(LAST_WORKSPACE_KEY, info.path);
       } catch {
@@ -422,18 +566,29 @@ export const useApp = create<AppState>((set, get) => {
         chatBusy: false,
         chatDriver: null,
         chatError: null,
+        chats: [],
+        activeChatId: null,
         evidence: [],
         journalFeed: [],
         game: EMPTY_GAME,
         senses: [],
+        shimDetected: false,
         gameNonce: 0,
+        sweep: { ...IDLE_SWEEP },
         paneTab: 'game',
         narrowTab: 'chat',
         codePeek: { open: false, path: null },
         pendingPrompt: prompt?.trim() ? prompt.trim() : null,
       });
       connectWs(info.path);
-      await Promise.all([get().refreshGame(), get().refreshSettings()]);
+      await Promise.all([get().refreshGame(), get().refreshSettings(), get().refreshChats()]);
+      // Land in the most recent conversation, or start the folder's first one.
+      // Either way the window opens on a conversation, never on nothing.
+      const chats = get().chats;
+      if (get().projectPath === info.path) {
+        if (chats.length > 0) get().openChat(chats[0].id);
+        else get().newChat();
+      }
       return { ok: true };
     },
 
@@ -453,10 +608,14 @@ export const useApp = create<AppState>((set, get) => {
         chatDriver: null,
         chatError: null,
         settings: null,
+        chats: [],
+        activeChatId: null,
         evidence: [],
         journalFeed: [],
         game: EMPTY_GAME,
         senses: [],
+        shimDetected: false,
+        sweep: { ...IDLE_SWEEP },
         codePeek: { open: false, path: null },
         pendingPrompt: null,
       });
@@ -484,6 +643,50 @@ export const useApp = create<AppState>((set, get) => {
       }));
     },
 
+    newChat() {
+      // Clear the surface immediately: pressing New chat must feel like a blank
+      // page, not like waiting for the server to agree.
+      set({ messages: [], chatBusy: false, chatError: null, activeChatId: null });
+      requestChat({ type: 'chat-new' });
+    },
+
+    openChat(chatId) {
+      if (get().activeChatId === chatId) return;
+      set({ chatBusy: false, chatError: null });
+      requestChat({ type: 'chat-open', chatId });
+    },
+
+    async renameChat(chatId, title) {
+      const project = get().projectPath;
+      if (!project) return;
+      const chats = await apiRenameChat(project, chatId, title);
+      if (chats && get().projectPath === project) set({ chats });
+    },
+
+    async deleteChat(chatId) {
+      const project = get().projectPath;
+      if (!project) return;
+      const chats = await apiDeleteChat(project, chatId);
+      if (!chats || get().projectPath !== project) return;
+      set({ chats });
+      // Deleting the conversation you are reading leaves nowhere to be: land in
+      // the next one, or start a fresh one.
+      if (get().activeChatId !== chatId) return;
+      if (chats.length > 0) {
+        set({ activeChatId: null });
+        get().openChat(chats[0].id);
+      } else {
+        get().newChat();
+      }
+    },
+
+    async refreshChats() {
+      const project = get().projectPath;
+      if (!project) return;
+      const chats = await apiListChats(project);
+      if (get().projectPath === project) set({ chats });
+    },
+
     consumePendingPrompt() {
       const pending = get().pendingPrompt;
       if (pending) set({ pendingPrompt: null });
@@ -493,9 +696,18 @@ export const useApp = create<AppState>((set, get) => {
     async refreshGame() {
       const project = get().projectPath;
       if (!project) return;
-      const [status, senses] = await Promise.all([apiGameStatus(project), apiProbeStatus(project)]);
+      const [status, probe] = await Promise.all([apiGameStatus(project), apiProbeStatus(project)]);
       if (get().projectPath !== project) return; // folder changed mid-flight
-      if (senses.length > 0) set({ senses });
+      if (probe) {
+        set((state) => ({
+          senses: probe.senses,
+          shimDetected: probe.shimDetected,
+          // The server is the authority on whether a sweep is running: a reload
+          // mid-sweep must still show the spinner, and a sweep that died
+          // without writing a `sweep-finished` line must still release it.
+          sweep: probe.playing === state.sweep.running ? state.sweep : { ...state.sweep, running: probe.playing },
+        }));
+      }
       if (!status) return;
       const previous = get().game;
       const changed = status.present !== previous.present || status.entry !== previous.entry || status.mtime !== previous.mtime;
@@ -513,6 +725,34 @@ export const useApp = create<AppState>((set, get) => {
       if (!project) return;
       const settings = await apiAppSettings(project);
       if (get().projectPath === project) set({ settings });
+    },
+
+    async startSweep() {
+      const project = get().projectPath;
+      if (!project || get().sweep.running) return;
+      // Optimistic: the button must react to the press, not to the round trip.
+      // `total` stays null until sweep-started declares it.
+      set({ sweep: { running: true, done: 0, total: null, error: null } });
+      const result = await apiStartSweep(project);
+      if (get().projectPath !== project) return;
+      if (result.ok) {
+        set((state) => ({ sweep: { ...state.sweep, total: result.total ?? state.sweep.total } }));
+        return;
+      }
+      // A 409 means one is already running — the spinner is telling the truth,
+      // so leave it up rather than flashing an error at a working feature.
+      if (result.busy) return;
+      set({ sweep: { ...IDLE_SWEEP, error: result.error ?? 'The playtest could not start.' } });
+      get().log('error', 'app', result.error ?? 'The playtest could not start.');
+    },
+
+    setSidebarCollapsed(collapsed) {
+      try {
+        localStorage.setItem(SIDEBAR_KEY, collapsed ? '1' : '0');
+      } catch {
+        /* private mode: the preference just doesn't persist */
+      }
+      set({ sidebarCollapsed: collapsed });
     },
 
     setPaneTab(tab) {

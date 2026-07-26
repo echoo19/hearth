@@ -5,6 +5,15 @@ import type { CommandResult, JournalEntry } from '@hearth/core';
 
 export type { CommandResult, JournalEntry };
 
+/**
+ * The evidence schema is the probe's, not a mirror of it. This is a TYPE-only
+ * import: `@hearth/probe-core` is a Node package (it writes files), and the
+ * import is erased at build time, so nothing from it reaches the browser
+ * bundle. Verified by tests/probeTypes.test.ts.
+ */
+export type { EvidenceEvent } from '@hearth/probe-core';
+export type { ChatRecord, ChatSummary } from '../server/chatStore';
+
 // ---------------------------------------------------------------------------
 // Folders
 // ---------------------------------------------------------------------------
@@ -46,7 +55,16 @@ export interface GameStatus {
 }
 
 /** GET /api/probe/status — what Hearth can currently sense about the game. */
-export type Sense = 'preview' | 'errors' | 'screenshots' | 'entities' | 'events';
+export type Sense = 'preview' | 'errors' | 'screenshots' | 'entities' | 'events' | 'scenes';
+
+/** GET /api/probe/status — the full read-out, including whether one is running. */
+export interface ProbeStatus {
+  senses: Sense[];
+  /** A sweep is running for this folder right now. */
+  playing: boolean;
+  /** The last sweep found a probe shim, so the deeper senses are real. */
+  shimDetected: boolean;
+}
 
 /** One file in the folder, for the code peek. */
 export interface ProjectFile {
@@ -107,34 +125,12 @@ export interface ChatMessage {
 // Evidence
 // ---------------------------------------------------------------------------
 
-/** Verdict vocabulary shared with the probe (packages/probe-core). */
-export type Verdict = string;
-
 /**
- * One line of `.hearth/evidence/journal.jsonl`. Structurally mirrors
- * probe-core's `EvidenceEvent`; `kind` stays open so an event this build
- * doesn't know renders as a plain note rather than disappearing.
+ * Verdict vocabulary shared with the probe. Deliberately WIDER than
+ * probe-core's closed union: the rail must render a verdict a newer probe
+ * invents (as a neutral chip) rather than dropping the row.
  */
-export interface EvidenceEvent {
-  kind: string;
-  seq: number;
-  ts: string;
-  sweepId?: string;
-  target?: string;
-  policies?: string[];
-  seeds?: number[];
-  policy?: string;
-  seed?: number;
-  verdict?: Verdict;
-  frames?: number;
-  verdicts?: Record<string, number>;
-  findings?: { kind?: string; detail?: string; shot?: string }[];
-  reportPath?: string;
-  path?: string;
-  caption?: string;
-  text?: string;
-  source?: string;
-}
+export type Verdict = string;
 
 // ---------------------------------------------------------------------------
 // Console

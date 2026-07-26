@@ -16,6 +16,7 @@ import WebSocket from 'ws';
 import { createProjectServerContext, type ProjectServerContext } from '../server/projectServer';
 import { attachWebSocket, type WsFrame } from '../server/ws';
 import { EventQueue, type ChatDriver, type ChatEvent } from '../server/chat';
+import { listChats, readTranscript } from '../server/chatStore';
 
 /** A driver that answers every turn with a fixed script, and records its life. */
 class ScriptedDriver implements ChatDriver {
@@ -189,5 +190,112 @@ describe('chat channel', () => {
     socket.close();
     await new Promise((resolve) => setTimeout(resolve, 300));
     expect(drivers[0].stopped).toBe(true);
+  });
+});
+
+/**
+ * History is the part that outlives the process. These pin the promise the
+ * sidebar makes: every turn is on disk as it streams, reopening a chat replays
+ * it, and the index tracks what happened without the client maintaining it.
+ */
+describe('chat history', () => {
+  it('creates a chat on chat-new and answers with an empty transcript', async () => {
+    const socket = await connect();
+    socket.send(JSON.stringify({ type: 'chat-new' }));
+    const opened = await nextFrame(socket, (frame) => frame.type === 'chat-opened');
+    if (opened.type !== 'chat-opened') throw new Error('wrong frame');
+    expect(opened.records).toEqual([]);
+    expect(opened.chat.title).toBe('New chat');
+    expect((await listChats(root)).some((chat) => chat.id === opened.chat.id)).toBe(true);
+    socket.close();
+  });
+
+  it('appends every turn and tool event to the transcript as it streams', async () => {
+    const socket = await connect();
+    socket.send(JSON.stringify({ type: 'chat-new' }));
+    const opened = await nextFrame(socket, (frame) => frame.type === 'chat-opened');
+    if (opened.type !== 'chat-opened') throw new Error('wrong frame');
+
+    socket.send(JSON.stringify({ type: 'chat-send', text: 'make a shooter' }));
+    await nextFrame(socket, (frame) => frame.type === 'chat-event' && frame.event.type === 'done');
+    // The `done` frame is sent after its own append, but give the index write
+    // (which follows) a tick to land.
+    await new Promise((resolve) => setTimeout(resolve, 150));
+
+    const records = await readTranscript(root, opened.chat.id);
+    expect(records[0]).toMatchObject({ role: 'user', text: 'make a shooter' });
+    expect(records.slice(1).map((record) => (record.role === 'agent' ? record.event : null))).toEqual([
+      { type: 'text-delta', text: 'echo:make a shooter' },
+      { type: 'done' },
+    ]);
+    socket.close();
+  });
+
+  it('names the chat from the first user message and reports it as a chat-list', async () => {
+    const socket = await connect();
+    socket.send(JSON.stringify({ type: 'chat-new' }));
+    const opened = await nextFrame(socket, (frame) => frame.type === 'chat-opened');
+    if (opened.type !== 'chat-opened') throw new Error('wrong frame');
+
+    socket.send(JSON.stringify({ type: 'chat-send', text: 'a top-down space shooter' }));
+    const listed = await nextFrame(
+      socket,
+      (frame) => frame.type === 'chat-list' && frame.chats.some((chat) => chat.title === 'a top-down space shooter'),
+    );
+    if (listed.type !== 'chat-list') throw new Error('wrong frame');
+    expect(listed.chats.find((chat) => chat.id === opened.chat.id)?.title).toBe('a top-down space shooter');
+    socket.close();
+  });
+
+  it('replays a chat from disk when a NEW socket opens it — live state is not required', async () => {
+    const first = await connect();
+    first.send(JSON.stringify({ type: 'chat-new' }));
+    const opened = await nextFrame(first, (frame) => frame.type === 'chat-opened');
+    if (opened.type !== 'chat-opened') throw new Error('wrong frame');
+    first.send(JSON.stringify({ type: 'chat-send', text: 'hello' }));
+    await nextFrame(first, (frame) => frame.type === 'chat-event' && frame.event.type === 'done');
+    await new Promise((resolve) => setTimeout(resolve, 150));
+    first.close();
+    await new Promise((resolve) => setTimeout(resolve, 200));
+
+    const second = await connect();
+    second.send(JSON.stringify({ type: 'chat-open', chatId: opened.chat.id }));
+    const replay = await nextFrame(second, (frame) => frame.type === 'chat-opened');
+    if (replay.type !== 'chat-opened') throw new Error('wrong frame');
+    expect(replay.chat.id).toBe(opened.chat.id);
+    expect(replay.records.map((record) => record.role)).toEqual(['user', 'agent', 'agent']);
+    expect(replay.records[0]).toMatchObject({ role: 'user', text: 'hello' });
+    second.close();
+  });
+
+  it('ignores a chat-open for an id that is not in the index', async () => {
+    const socket = await connect();
+    socket.send(JSON.stringify({ type: 'chat-open', chatId: '../escape' }));
+    socket.send(JSON.stringify({ type: 'chat-open', chatId: 'does-not-exist' }));
+    await expect(nextFrame(socket, (frame) => frame.type === 'chat-opened', 400)).rejects.toThrow();
+    socket.close();
+  });
+
+  it('keeps two chats on one folder separate, each with its own driver', async () => {
+    drivers = [];
+    const socket = await connect();
+    socket.send(JSON.stringify({ type: 'chat-new' }));
+    const a = await nextFrame(socket, (frame) => frame.type === 'chat-opened');
+    if (a.type !== 'chat-opened') throw new Error('wrong frame');
+    socket.send(JSON.stringify({ type: 'chat-send', text: 'in a' }));
+    await nextFrame(socket, (frame) => frame.type === 'chat-event' && frame.event.type === 'done');
+
+    socket.send(JSON.stringify({ type: 'chat-new' }));
+    const b = await nextFrame(socket, (frame) => frame.type === 'chat-opened');
+    if (b.type !== 'chat-opened') throw new Error('wrong frame');
+    socket.send(JSON.stringify({ type: 'chat-send', text: 'in b' }));
+    await nextFrame(socket, (frame) => frame.type === 'chat-event' && frame.event.type === 'done');
+    await new Promise((resolve) => setTimeout(resolve, 150));
+
+    expect(a.chat.id).not.toBe(b.chat.id);
+    expect(drivers).toHaveLength(2);
+    expect((await readTranscript(root, a.chat.id))[0]).toMatchObject({ text: 'in a' });
+    expect((await readTranscript(root, b.chat.id))[0]).toMatchObject({ text: 'in b' });
+    socket.close();
   });
 });

@@ -38,6 +38,15 @@ import { listTemplates, getTemplatePath, scaffoldFromTemplate } from '@hearth/te
 import { isRequestAllowed } from './originGuard.js';
 import { ensureHearthMcpConfig } from './mcpConfig.js';
 import { readAppSettings, writeAppSettings, resolveApiKey } from './chat.js';
+import { createChat, deleteChat, listChats, renameChat } from './chatStore.js';
+import {
+  planSweep,
+  readCapabilities,
+  sensesFromCapabilities,
+  SweepBusyError,
+  SweepRunner,
+  type SweepDeps,
+} from './probeSweep.js';
 import { EVIDENCE_DIR } from './evidenceWatcher.js';
 import { attachWebSocket, type ExportFrame, type ExportStage, type DesktopExportResult } from './ws.js';
 
@@ -135,6 +144,12 @@ export interface ProjectServerOptions {
    * suites can inject a stub and never touch the real toolchain.
    */
   packageDesktop?: PackageDesktopFn;
+  /**
+   * Test seam: override how a playtest sweep opens a game and runs. Defaults to
+   * the real `@hearth/adapter-web` + `@hearth/probe-core` pair, which launches
+   * headless Chromium — suites inject a fake game instead.
+   */
+  sweepDeps?: Partial<SweepDeps>;
 }
 
 /** Native desktop targets offered by exportDesktop, surfaced on the capability route. */
@@ -433,6 +448,11 @@ export function createProjectServerContext(options: ProjectServerOptions = {}) {
       return packageDesktop(opts);
     });
 
+  // Playtest sweeps. One runner for the whole server; it enforces one sweep at
+  // a time per project root (see probeSweep.ts) the same way the mutation lock
+  // above serializes command dispatch.
+  const sweeps = new SweepRunner(options.sweepDeps ?? {});
+
   // Desktop-export progress bus. One export runs at a time; the running job
   // routes packageDesktop's onProgress and its terminal result onto this bus,
   // tagged with the project root, and ws.ts fans frames out to that root's
@@ -641,6 +661,19 @@ export function createProjectServerContext(options: ProjectServerOptions = {}) {
   }
 
   /**
+   * Where this folder's web game is, or null when it has none. One resolution
+   * shared by the game pane's status poll and the playtest sweep, so what the
+   * probe plays is exactly what the pane is showing.
+   */
+  async function resolveGameEntry(root: string): Promise<{ entry: string; abs: string } | null> {
+    for (const candidate of GAME_ENTRY_CANDIDATES) {
+      const abs = resolveInside(root, candidate);
+      if (abs && (await pathExists(abs))) return { entry: candidate, abs };
+    }
+    return null;
+  }
+
+  /**
    * What the client is told about agent credentials: whether a usable key
    * exists and where it came from — never the key itself.
    */
@@ -701,25 +734,125 @@ export function createProjectServerContext(options: ProjectServerOptions = {}) {
       }
       const root = path.resolve(project);
       if (!isOpenRoot(root)) return { status: 403, body: { ok: false, error: 'Folder is not open.' } };
-      for (const candidate of GAME_ENTRY_CANDIDATES) {
-        const abs = resolveInside(root, candidate);
-        if (!abs || !(await pathExists(abs))) continue;
-        const mtime = await newestMtimeMs(path.dirname(abs));
-        return { status: 200, body: { ok: true, present: true, entry: candidate, mtime } };
-      }
-      return { status: 200, body: { ok: true, present: false, entry: null, mtime: 0 } };
+      const found = await resolveGameEntry(root);
+      if (!found) return { status: 200, body: { ok: true, present: false, entry: null, mtime: 0 } };
+      const mtime = await newestMtimeMs(path.dirname(found.abs));
+      return { status: 200, body: { ok: true, present: true, entry: found.entry, mtime } };
     },
 
     /**
-     * What Hearth can currently sense about this game. A stub for v0 — the
-     * probe adapters land next and will report their real capability set here;
-     * the shape is already the one the capability strip renders.
+     * What Hearth can currently sense about this game — a read-out, not a
+     * feature list. Preview, errors and screenshots come free with any web game
+     * the adapter can open; entities, events and scenes are claimed only when
+     * the last sweep's adapter actually declared them (i.e. the game shipped a
+     * probe shim). `playing` reports whether a sweep is running right now, so
+     * the Playtest button survives a reload mid-sweep.
      */
     async probeStatus(project: unknown): Promise<JsonResult> {
       if (typeof project !== 'string' || project.trim() === '') {
         return { status: 400, body: { ok: false, error: 'Missing "project".' } };
       }
-      return { status: 200, body: { ok: true, senses: ['preview'] } };
+      const root = path.resolve(project);
+      if (!isOpenRoot(root)) return { status: 403, body: { ok: false, error: 'Folder is not open.' } };
+      const [game, record] = await Promise.all([resolveGameEntry(root), readCapabilities(root)]);
+      return {
+        status: 200,
+        body: {
+          ok: true,
+          senses: sensesFromCapabilities(record, game !== null),
+          playing: sweeps.isBusy(root),
+          shimDetected: record?.shimDetected === true,
+        },
+      };
+    },
+
+    /**
+     * Play the game. Resolves the same entry the pane is showing, hands its
+     * folder to the web adapter, and runs a seeded sweep whose milestones land
+     * in `.hearth/evidence/journal.jsonl` — already tailed by the evidence
+     * watcher, so the rail fills while this is still running.
+     *
+     * The job runs off the request (a sweep takes tens of seconds and its
+     * progress has its own channel); the response only says it started. A
+     * second request while one is running is a 409, never a queue.
+     */
+    async startProbeSweep(project: unknown, request: unknown): Promise<JsonResult> {
+      if (typeof project !== 'string' || project.trim() === '') {
+        return { status: 400, body: { ok: false, error: 'Missing "project".' } };
+      }
+      const root = path.resolve(project);
+      if (!isOpenRoot(root)) return { status: 403, body: { ok: false, error: 'Folder is not open.' } };
+      const game = await resolveGameEntry(root);
+      if (!game) {
+        return { status: 400, body: { ok: false, error: 'No game to play yet — nothing in this folder runs.' } };
+      }
+      const plan = planSweep((request ?? {}) as Parameters<typeof planSweep>[0]);
+      try {
+        const job = sweeps.start({
+          root,
+          dir: path.dirname(game.abs),
+          target: path.basename(root) || root,
+          plan,
+        });
+        return {
+          status: 200,
+          body: { ok: true, started: true, policies: job.plan.policies, seeds: job.plan.seeds, maxSteps: job.plan.maxSteps },
+        };
+      } catch (err) {
+        if (err instanceof SweepBusyError) {
+          return { status: 409, body: { ok: false, error: err.message } };
+        }
+        return { status: 500, body: { ok: false, error: (err as Error).message } };
+      }
+    },
+
+    /** The in-flight sweep for `root`, so callers (and tests) can await it. */
+    sweepJob(root: string) {
+      return sweeps.jobFor(path.resolve(root));
+    },
+
+    // --- Conversations ------------------------------------------------------
+
+    /** Every conversation this folder holds, newest activity first. */
+    async listProjectChats(project: unknown): Promise<JsonResult> {
+      if (typeof project !== 'string' || project.trim() === '') {
+        return { status: 400, body: { ok: false, error: 'Missing "project".' } };
+      }
+      const root = path.resolve(project);
+      if (!isOpenRoot(root)) return { status: 403, body: { ok: false, error: 'Folder is not open.' } };
+      return { status: 200, body: { ok: true, chats: await listChats(root) } };
+    },
+
+    async createProjectChat(project: unknown): Promise<JsonResult> {
+      if (typeof project !== 'string' || project.trim() === '') {
+        return { status: 400, body: { ok: false, error: 'Missing "project".' } };
+      }
+      const root = path.resolve(project);
+      if (!isOpenRoot(root)) return { status: 403, body: { ok: false, error: 'Folder is not open.' } };
+      const chat = await createChat(root);
+      return { status: 200, body: { ok: true, chat, chats: await listChats(root) } };
+    },
+
+    async renameProjectChat(project: unknown, chatId: unknown, title: unknown): Promise<JsonResult> {
+      if (typeof project !== 'string' || typeof chatId !== 'string' || typeof title !== 'string') {
+        return { status: 400, body: { ok: false, error: 'Missing "project", "chatId" or "title".' } };
+      }
+      const root = path.resolve(project);
+      if (!isOpenRoot(root)) return { status: 403, body: { ok: false, error: 'Folder is not open.' } };
+      const chat = await renameChat(root, chatId, title);
+      if (!chat) return { status: 404, body: { ok: false, error: 'No such conversation.' } };
+      return { status: 200, body: { ok: true, chat, chats: await listChats(root) } };
+    },
+
+    async deleteProjectChat(project: unknown, chatId: unknown): Promise<JsonResult> {
+      if (typeof project !== 'string' || typeof chatId !== 'string') {
+        return { status: 400, body: { ok: false, error: 'Missing "project" or "chatId".' } };
+      }
+      const root = path.resolve(project);
+      if (!isOpenRoot(root)) return { status: 403, body: { ok: false, error: 'Folder is not open.' } };
+      const removed = await deleteChat(root, chatId);
+      if (!removed) return { status: 404, body: { ok: false, error: 'No such conversation.' } };
+      return { status: 200, body: { ok: true, chats: await listChats(root) } };
     },
 
     /**
@@ -1494,6 +1627,30 @@ async function route(ctx: ProjectServerContext, req: IncomingMessage, res: Serve
     }
     case 'GET /api/probe/status': {
       const result = await ctx.probeStatus(q.get('project'));
+      return sendJson(res, result.status, result.body);
+    }
+    case 'POST /api/probe/sweep': {
+      const body = await readJsonBody(req);
+      const result = await ctx.startProbeSweep(body.project, body);
+      return sendJson(res, result.status, result.body);
+    }
+    case 'GET /api/chats': {
+      const result = await ctx.listProjectChats(q.get('project'));
+      return sendJson(res, result.status, result.body);
+    }
+    case 'POST /api/chats/new': {
+      const body = await readJsonBody(req);
+      const result = await ctx.createProjectChat(body.project);
+      return sendJson(res, result.status, result.body);
+    }
+    case 'POST /api/chats/rename': {
+      const body = await readJsonBody(req);
+      const result = await ctx.renameProjectChat(body.project, body.chatId, body.title);
+      return sendJson(res, result.status, result.body);
+    }
+    case 'POST /api/chats/delete': {
+      const body = await readJsonBody(req);
+      const result = await ctx.deleteProjectChat(body.project, body.chatId);
       return sendJson(res, result.status, result.body);
     }
     case 'GET /api/files': {

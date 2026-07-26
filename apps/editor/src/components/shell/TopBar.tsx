@@ -1,7 +1,11 @@
 /**
- * The app's one strip of chrome: what folder is open, whether the app is
- * connected and to which agent, and the two things that open over everything
- * else (files and settings).
+ * The app's one strip of chrome: which conversation is open, whether anything
+ * is listening, and the two things that open over everything else (files and
+ * settings).
+ *
+ * The folder — its name, its recents, closing it — moved to the sidebar, which
+ * is where folders now live. What is left is state the sidebar cannot show:
+ * the conversation you are IN, and whether typing into it will do anything.
  *
  * Deliberately thin — the conversation and the game are the app, and every
  * pixel this takes is one they don't get.
@@ -42,7 +46,6 @@ export function capabilityLabel(
 }
 
 export function TopBar({ narrow }: { narrow: boolean }) {
-  const projectName = useApp((s) => s.projectName);
   const projectPath = useApp((s) => s.projectPath);
   const wsStatus = useApp((s) => s.wsStatus);
   const driver = useApp((s) => s.chatDriver);
@@ -50,18 +53,17 @@ export function TopBar({ narrow }: { narrow: boolean }) {
   const narrowTab = useApp((s) => s.narrowTab);
   const setNarrowTab = useApp((s) => s.setNarrowTab);
   const openCodePeek = useApp((s) => s.openCodePeek);
-  const closeWorkspace = useApp((s) => s.closeWorkspace);
+  const activeChatId = useApp((s) => s.activeChatId);
+  const chats = useApp((s) => s.chats);
   const native = hearthNative();
 
   const capability = capabilityLabel(wsStatus, driver, hasKey);
+  const chatTitle = chats.find((chat) => chat.id === activeChatId)?.title ?? 'New chat';
 
   return (
     <header className="topbar">
-      <span className="topbar-mark" aria-hidden="true">
-        <Icon name="flame" size={14} />
-      </span>
       <Tooltip content={projectPath ?? ''}>
-        <span className="topbar-name">{projectName}</span>
+        <span className="topbar-name">{chatTitle}</span>
       </Tooltip>
 
       <span className={`topbar-capability status-${wsStatus}`}>
@@ -100,7 +102,6 @@ export function TopBar({ narrow }: { narrow: boolean }) {
         iconSize={15}
         onClick={() => window.dispatchEvent(new CustomEvent('hearth:open-settings'))}
       />
-      <IconButton icon="close" label="Close folder" iconSize={15} onClick={closeWorkspace} />
       {/* Room for the window controls on platforms that overlay them. macOS
           draws them in the native title bar above this strip, so on that
           platform the reserve is zero. */}

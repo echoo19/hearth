@@ -5,7 +5,9 @@
  */
 import type {
   AppSettingsInfo,
+  ChatSummary,
   GameStatus,
+  ProbeStatus,
   ProjectFile,
   RecentWorkspace,
   Sense,
@@ -68,9 +70,73 @@ export async function apiGameStatus(project: string): Promise<GameStatus | null>
   return body ? { present: body.present, entry: body.entry, mtime: body.mtime } : null;
 }
 
-export async function apiProbeStatus(project: string): Promise<Sense[]> {
-  const body = await getJson<{ senses: Sense[] }>(`/api/probe/status?project=${encodeURIComponent(project)}`, 'apiProbeStatus');
-  return body?.senses ?? [];
+export async function apiProbeStatus(project: string): Promise<ProbeStatus | null> {
+  const body = await getJson<ProbeStatus>(`/api/probe/status?project=${encodeURIComponent(project)}`, 'apiProbeStatus');
+  if (!body) return null;
+  return {
+    senses: Array.isArray(body.senses) ? body.senses : [],
+    playing: body.playing === true,
+    shimDetected: body.shimDetected === true,
+  };
+}
+
+/** What POST /api/probe/sweep answers: started, or why not (409 = one already is). */
+export interface SweepStartResult {
+  ok: boolean;
+  /** Number of runs the sweep will do, so progress has a denominator. */
+  total?: number;
+  error?: string;
+  busy?: boolean;
+}
+
+/**
+ * Ask the probe to play the game. Returns as soon as the sweep STARTS —
+ * everything it finds arrives on the evidence channel, so there is nothing to
+ * wait for here.
+ */
+export async function apiStartSweep(
+  project: string,
+  request: { policies?: string[]; seeds?: number[]; maxSteps?: number } = {},
+): Promise<SweepStartResult> {
+  try {
+    const res = await fetch('/api/probe/sweep', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ project, ...request }),
+    });
+    const body = (await res.json()) as {
+      ok?: boolean;
+      error?: string;
+      policies?: string[];
+      seeds?: number[];
+    };
+    if (!body.ok) {
+      return { ok: false, busy: res.status === 409, error: body.error ?? 'The playtest could not start.' };
+    }
+    const total = (body.policies?.length ?? 0) * (body.seeds?.length ?? 0);
+    return { ok: true, total: total > 0 ? total : undefined };
+  } catch (err) {
+    return { ok: false, error: (err as Error).message };
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Conversations
+// ---------------------------------------------------------------------------
+
+export async function apiListChats(project: string): Promise<ChatSummary[]> {
+  const body = await getJson<{ chats: ChatSummary[] }>(`/api/chats?project=${encodeURIComponent(project)}`, 'apiListChats');
+  return body?.chats ?? [];
+}
+
+export async function apiRenameChat(project: string, chatId: string, title: string): Promise<ChatSummary[] | null> {
+  const body = await postJson<{ ok: boolean; chats?: ChatSummary[] }>('/api/chats/rename', { project, chatId, title });
+  return body.ok ? (body.chats ?? []) : null;
+}
+
+export async function apiDeleteChat(project: string, chatId: string): Promise<ChatSummary[] | null> {
+  const body = await postJson<{ ok: boolean; chats?: ChatSummary[] }>('/api/chats/delete', { project, chatId });
+  return body.ok ? (body.chats ?? []) : null;
 }
 
 export async function apiListFiles(project: string): Promise<ProjectFile[]> {

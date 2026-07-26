@@ -12,10 +12,17 @@
  *  - pty-*: the embedded project shell spawned via PtyManager. A terminal is per-client,
  *    not broadcast: pty-data/pty-exit/pty-error only ever go back over the
  *    same socket whose pty-start spawned (or reattached) that connection's pty.
- *  - chat-*: the conversation. Per-client like the pty (a turn belongs to the
- *    window that asked for it), driven by a ChatDriver bound to the project
- *    root — see chat.ts. Deliberately independent of the pty channel: a chat
- *    failure must never take the terminal down, and vice versa.
+ *  - chat-*: the conversation. A socket is looking at exactly one chat, and a
+ *    live ChatDriver is keyed by (root, chatId) — see chat.ts and
+ *    chatStore.ts — so two windows on one conversation share its agent, and a
+ *    driver only dies when the last of them leaves. Deliberately independent
+ *    of the pty channel: a chat failure must never take the terminal down, and
+ *    vice versa.
+ *
+ *    Every turn and tool event is appended to `.hearth/chats/<id>.jsonl` as it
+ *    streams, so HISTORY survives anything (a socket drop, a quit, a crash)
+ *    even though the live driver does not. Opening a chat replays that file;
+ *    the next send binds a fresh backend.
  *
  * One socket subscribes to exactly one project (?project=<absolute path> on
  * the upgrade request). Sockets sharing a project root share a single
@@ -38,6 +45,15 @@ import { NodeFileSystem } from '@hearth/core/node';
 import { startJournalWatcher } from './journalWatcher.js';
 import { startEvidenceWatcher, type EvidenceEvent } from './evidenceWatcher.js';
 import { createChatDriver, type ChatDriver, type ChatDriverKind, type ChatEvent } from './chat.js';
+import {
+  appendChatRecord,
+  createChat,
+  listChats,
+  readTranscript,
+  safeChatId,
+  type ChatRecord,
+  type ChatSummary,
+} from './chatStore.js';
 import { type ProjectServerContext, resolveToolPaths } from './projectServer.js';
 import { PtyManager, ScrollbackBuffer, type PtyBackend, type PtyHandle } from './ptyManager.js';
 import { ensureHearthShim, hearthPtyEnv } from './hearthShim.js';
@@ -68,13 +84,20 @@ export type ExportFrame =
 export type WsFrame =
   | { type: 'journal'; entries: JournalEntry[] }
   | { type: 'evidence'; events: EvidenceEvent[] }
-  // Conversation. `chat-send` is the only client->server frame that matters;
-  // the server lazily binds a driver on the first one. `chat-ready` reports
-  // which backend answered so the UI can name it honestly.
+  // Conversation. A socket is looking at exactly one chat: `chat-new` starts
+  // one, `chat-open` switches to an existing one, and both are answered with
+  // `chat-opened` carrying that chat's transcript replayed from disk. The
+  // server lazily binds a driver on the first `chat-send`; `chat-ready` reports
+  // which backend answered so the UI can name it honestly. `chat-list` is
+  // broadcast to every socket on the folder whenever the index changes.
   | { type: 'chat-send'; text: string } // client -> server
   | { type: 'chat-cancel' } // client -> server
+  | { type: 'chat-new' } // client -> server
+  | { type: 'chat-open'; chatId: string } // client -> server
   | { type: 'chat-ready'; driver: ChatDriverKind }
   | { type: 'chat-event'; event: ChatEvent }
+  | { type: 'chat-opened'; chat: ChatSummary; records: ChatRecord[] }
+  | { type: 'chat-list'; chats: ChatSummary[] }
   | { type: 'pty-data'; data: string }
   | { type: 'pty-exit'; code: number }
   | { type: 'pty-input'; data: string } // client -> server
@@ -96,11 +119,19 @@ interface ProjectChannel {
   dispose: () => void;
 }
 
-/** One socket's conversation. `driver` is null only while the backend binds. */
+/**
+ * One live conversation, keyed by (root, chatId) rather than by socket: two
+ * windows looking at the same chat drive the same agent and see the same
+ * stream. `driver` is null only while the backend binds. The session dies when
+ * the last socket watching it leaves — history is on disk, an in-process agent
+ * is not resumable.
+ */
 interface ChatSession {
-  id: string;
+  key: string;
   root: string;
+  chatId: string;
   driver: ChatDriver | null;
+  sockets: Set<WebSocket>;
 }
 
 interface PtySession {
@@ -166,10 +197,11 @@ export function attachWebSocket(
   const detachedPtys = new Map<string, PtySession>(); // key: root NUL sessionId
   let nextPtyKey = 0;
   const makeChatDriver = opts?.createChatDriver ?? createChatDriver;
-  // One conversation per socket. Bound lazily on the first chat-send so a
-  // window that never talks never resolves an agent backend.
-  const chatSessions = new Map<WebSocket, ChatSession>();
-  let nextChatId = 0;
+  // Live conversations, keyed by `${root}\0${chatId}`. Bound lazily on the
+  // first chat-send so a window that never talks never resolves an agent
+  // backend. `socketChat` is which chat each socket is currently looking at.
+  const chatSessions = new Map<string, ChatSession>();
+  const socketChat = new Map<WebSocket, string>();
 
   function detachedKey(root: string, sessionId: string): string {
     return `${root}\u0000${sessionId}`;
@@ -389,55 +421,122 @@ export function attachWebSocket(
 
   // --- Conversation ---------------------------------------------------------
 
+  function chatKey(root: string, chatId: string): string {
+    return `${root} ${chatId}`;
+  }
+
+  /** Fan the chat index out to every window on this folder, so lists agree. */
+  async function announceChats(root: string): Promise<void> {
+    const channel = channels.get(root);
+    if (!channel) return;
+    broadcast(channel.sockets, { type: 'chat-list', chats: await listChats(root) });
+  }
+
   /**
-   * Bind a ChatDriver to this socket and pump its events back as chat-event
-   * frames. Binding is per-socket and idempotent; the drain loop lives for the
-   * socket's lifetime (the driver's iterable ends when `stop()` is called).
+   * Point `socket` at `chatId` and replay that conversation from disk. Live
+   * driver state is deliberately NOT part of the replay: what a restarted
+   * server can honestly show is the transcript, and the next turn binds a
+   * fresh backend.
+   */
+  async function openChatForSocket(root: string, socket: WebSocket, chatId: string): Promise<void> {
+    const id = safeChatId(chatId);
+    if (!id) return;
+    const chat = (await listChats(root)).find((entry) => entry.id === id);
+    if (!chat) return;
+    leaveChat(socket, { stopIfLast: true });
+    socketChat.set(socket, id);
+    // Join a session another window already has open for this chat, so both
+    // see the same stream rather than one of them going quiet.
+    const live = chatSessions.get(chatKey(root, id));
+    if (live) {
+      live.sockets.add(socket);
+      if (live.driver) send(socket, { type: 'chat-ready', driver: live.driver.kind });
+    }
+    send(socket, { type: 'chat-opened', chat, records: await readTranscript(root, id) });
+  }
+
+  /**
+   * Bind a ChatDriver for this socket's conversation and pump its events back
+   * as chat-event frames, appending each one to the transcript as it streams.
+   * Idempotent per (root, chatId); the drain loop lives until `stop()`.
    */
   async function ensureChat(root: string, socket: WebSocket): Promise<ChatSession | null> {
-    const existing = chatSessions.get(socket);
-    if (existing) return existing.driver ? existing : null; // still binding
-    const session: ChatSession = { id: `chat-${++nextChatId}`, root, driver: null };
-    chatSessions.set(socket, session);
+    let chatId = socketChat.get(socket);
+    if (!chatId) {
+      // A send with no chat opened yet (an older client, or a window that never
+      // asked): start one rather than dropping the turn on the floor.
+      chatId = (await createChat(root)).id;
+      socketChat.set(socket, chatId);
+      void announceChats(root);
+    }
+    const key = chatKey(root, chatId);
+    const existing = chatSessions.get(key);
+    if (existing) {
+      existing.sockets.add(socket);
+      return existing.driver ? existing : null; // still binding
+    }
+    const session: ChatSession = { key, root, chatId, driver: null, sockets: new Set([socket]) };
+    chatSessions.set(key, session);
 
     let driver: ChatDriver;
     try {
       driver = await makeChatDriver(root);
-      await driver.start(session.id, root);
+      await driver.start(session.chatId, root);
     } catch (err) {
-      chatSessions.delete(socket);
+      chatSessions.delete(key);
       send(socket, { type: 'chat-event', event: { type: 'error', message: (err as Error).message } });
       return null;
     }
-    // The socket dropped while the backend was resolving: tear the driver down
+    // Everyone dropped while the backend was resolving: tear the driver down
     // rather than leaving an orphaned agent process attached to nothing.
-    if (chatSessions.get(socket) !== session || socket.readyState !== WebSocket.OPEN) {
+    session.sockets.delete(socket);
+    if (socket.readyState === WebSocket.OPEN && socketChat.get(socket) === chatId) session.sockets.add(socket);
+    if (chatSessions.get(key) !== session || session.sockets.size === 0) {
       driver.stop();
-      chatSessions.delete(socket);
+      if (chatSessions.get(key) === session) chatSessions.delete(key);
       return null;
     }
     session.driver = driver;
-    send(socket, { type: 'chat-ready', driver: driver.kind });
+    broadcast(session.sockets, { type: 'chat-ready', driver: driver.kind });
     void (async () => {
       try {
         for await (const event of driver.events) {
-          if (chatSessions.get(socket) !== session) break;
-          send(socket, { type: 'chat-event', event });
+          if (chatSessions.get(key) !== session) break;
+          // Disk first: a window that closes mid-turn must still find the turn
+          // in its transcript when it comes back.
+          await appendChatRecord(root, session.chatId, { role: 'agent', ts: new Date().toISOString(), event });
+          broadcast(session.sockets, { type: 'chat-event', event });
+          if (event.type === 'done' || event.type === 'error') void announceChats(root);
         }
       } catch (err) {
-        if (chatSessions.get(socket) === session) {
-          send(socket, { type: 'chat-event', event: { type: 'error', message: (err as Error).message } });
+        if (chatSessions.get(key) === session) {
+          broadcast(session.sockets, { type: 'chat-event', event: { type: 'error', message: (err as Error).message } });
         }
       }
     })();
     return session;
   }
 
+  /**
+   * Detach `socket` from whatever conversation it was watching. The session —
+   * and its agent — only ends when the last watcher leaves, which is what makes
+   * two windows on one chat work without one of them killing the other's turn.
+   */
+  function leaveChat(socket: WebSocket, opts: { stopIfLast: boolean }): void {
+    const chatId = socketChat.get(socket);
+    if (chatId === undefined) return;
+    for (const session of chatSessions.values()) {
+      if (!session.sockets.delete(socket)) continue;
+      if (opts.stopIfLast && session.sockets.size === 0) {
+        chatSessions.delete(session.key);
+        session.driver?.stop();
+      }
+    }
+  }
+
+  /** Explicit teardown: cancel ends this socket's conversation backend. */
   function stopChat(socket: WebSocket): void {
-    const session = chatSessions.get(socket);
-    if (!session) return;
-    chatSessions.delete(socket);
-    session.driver?.stop();
+    leaveChat(socket, { stopIfLast: true });
   }
 
   function getChannel(root: string): ProjectChannel {
@@ -469,9 +568,11 @@ export function attachWebSocket(
 
   function releaseSocket(root: string, socket: WebSocket): void {
     detachPty(socket);
-    // Unlike a pty, a conversation is not resumable across a socket drop: the
-    // driver holds an in-process agent, so it dies with its window.
+    // Unlike a pty, a live conversation is not resumable across a socket drop:
+    // the driver holds an in-process agent, so it dies with its last window.
+    // The transcript on disk is what survives.
     stopChat(socket);
+    socketChat.delete(socket);
     const channel = channels.get(root);
     if (!channel) return;
     channel.sockets.delete(socket);
@@ -547,16 +648,30 @@ export function attachWebSocket(
             // way a pty dies client-side is a fresh pty-start superseding it.
             stopPty(ws);
             break;
+          case 'chat-new':
+            void (async () => {
+              const chat = await createChat(root);
+              await announceChats(root);
+              await openChatForSocket(root, ws, chat.id);
+            })();
+            break;
+          case 'chat-open':
+            void openChatForSocket(root, ws, typeof frame.chatId === 'string' ? frame.chatId : '');
+            break;
           case 'chat-send':
             {
               const text = typeof frame.text === 'string' ? frame.text : '';
               if (text.trim() === '') break;
               void (async () => {
-                const session = chatSessions.get(ws) ?? (await ensureChat(root, ws));
+                const session = await ensureChat(root, ws);
                 // Binding may still be in flight from a previous send; the
                 // driver is queued-input based, so waiting for it is enough.
-                const bound = session ?? chatSessions.get(ws) ?? null;
-                bound?.driver?.send(text);
+                const chatId = socketChat.get(ws);
+                const bound = session ?? (chatId ? (chatSessions.get(chatKey(root, chatId)) ?? null) : null);
+                if (!bound) return;
+                await appendChatRecord(root, bound.chatId, { role: 'user', ts: new Date().toISOString(), text });
+                await announceChats(root); // the first turn names the chat
+                bound.driver?.send(text);
               })();
             }
             break;
@@ -590,5 +705,6 @@ export function attachWebSocket(
     ptyManager.killAll();
     for (const session of chatSessions.values()) session.driver?.stop();
     chatSessions.clear();
+    socketChat.clear();
   });
 }

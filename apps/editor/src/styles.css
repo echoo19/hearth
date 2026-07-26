@@ -21,6 +21,7 @@
 
 /* The app shell and its surfaces. */
 @import './styles/app/shell.css';
+@import './styles/app/sidebar.css';
 @import './styles/app/chat.css';
 @import './styles/app/game.css';
 @import './styles/app/evidence.css';

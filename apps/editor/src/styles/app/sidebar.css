@@ -1,0 +1,372 @@
+/* The left rail.
+
+   A second neutral layer under the conversation column: --bg-0, the same as
+   the window chrome, so the conversation (--bg-1) reads as the lit surface and
+   the rail recedes behind it. Hairline right border, no shadow — it is part of
+   the window, not floating over it.
+
+   Motion: exactly one animated thing, the width. Collapsing is a deliberate,
+   occasional act and the rail carrying the layout with it is the whole point;
+   everything inside crossfades rather than sliding, so text never appears to
+   squeeze. Row hover/press are colour-only (high frequency, no motion). */
+
+.sidebar {
+  display: flex;
+  flex-direction: column;
+  width: 260px;
+  min-width: 0;
+  flex: none;
+  background: var(--bg-0);
+  border-right: 1px solid var(--border);
+  overflow: hidden;
+  transition: width var(--t-slow) var(--ease-out);
+}
+
+.sidebar.is-collapsed {
+  width: 60px;
+}
+
+/* --- Head ----------------------------------------------------------------- */
+
+.sidebar-head {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  height: 48px;
+  padding: 0 10px 0 16px;
+  flex: none;
+}
+
+.sidebar-mark {
+  display: inline-flex;
+  color: var(--flame-brand);
+  flex: none;
+}
+
+.sidebar-wordmark {
+  flex: 1;
+  min-width: 0;
+  font-size: var(--text-sm);
+  font-weight: 600;
+  letter-spacing: -0.005em;
+  color: var(--ink);
+  white-space: nowrap;
+  opacity: 1;
+  transition: opacity var(--t) var(--ease-out);
+}
+
+.sidebar.is-collapsed .sidebar-wordmark {
+  opacity: 0;
+  pointer-events: none;
+}
+
+/* Points at the edge it will move toward: ‹ to collapse, › to expand. */
+.sidebar-toggle {
+  flex: none;
+  transform: rotate(180deg);
+  transition: transform var(--t) var(--ease-out);
+}
+
+.sidebar-toggle.is-collapsed {
+  transform: rotate(0deg);
+}
+
+/* Collapsed, the mark and the expand control share one 60px cell: the mark is
+   what you see, the control is what you reach for — revealed on hover or
+   keyboard focus, the way a logo that doubles as a control should behave. */
+.sidebar.is-collapsed .sidebar-head {
+  position: relative;
+  padding: 0;
+  justify-content: center;
+  gap: 0;
+}
+
+.sidebar.is-collapsed .sidebar-mark {
+  transition: opacity var(--t-fast) var(--ease-out);
+}
+
+.sidebar.is-collapsed .sidebar-toggle {
+  position: absolute;
+  inset: 6px auto auto 12px;
+  opacity: 0;
+  transition: opacity var(--t-fast) var(--ease-out), transform var(--t) var(--ease-out);
+}
+
+.sidebar.is-collapsed .sidebar-head:hover .sidebar-mark,
+.sidebar.is-collapsed .sidebar-head:focus-within .sidebar-mark {
+  opacity: 0;
+}
+
+.sidebar.is-collapsed .sidebar-head:hover .sidebar-toggle,
+.sidebar.is-collapsed .sidebar-head:focus-within .sidebar-toggle {
+  opacity: 1;
+}
+
+/* --- New chat ------------------------------------------------------------- */
+
+.sidebar-actions {
+  padding: 2px 12px 10px;
+  flex: none;
+}
+
+.sidebar.is-collapsed .sidebar-actions {
+  padding: 2px 0 10px;
+  display: flex;
+  justify-content: center;
+}
+
+/* The rail's primary action. Bordered rather than filled: the app already has
+   one ember-filled button (Playtest), and two competing solids in one window
+   is a fight neither wins. The ember lives in the glyph. */
+.sidebar-new {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  height: var(--ctl-h);
+  padding: 0 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-1);
+  color: var(--ink);
+  font-family: inherit;
+  font-size: var(--text-sm);
+  cursor: pointer;
+  transition: background var(--t-fast) var(--ease-out), border-color var(--t-fast) var(--ease-out);
+}
+
+.sidebar.is-collapsed .sidebar-new {
+  width: var(--ctl-h);
+  justify-content: center;
+  padding: 0;
+  color: var(--accent);
+}
+
+.sidebar-new:hover {
+  background: var(--bg-2);
+  border-color: var(--border-strong);
+}
+
+.sidebar-new:active {
+  background: var(--bg-3);
+}
+
+.sidebar-new-glyph {
+  display: inline-flex;
+  color: var(--accent);
+  flex: none;
+}
+
+.sidebar-label {
+  white-space: nowrap;
+  overflow: hidden;
+}
+
+/* --- Lists ---------------------------------------------------------------- */
+
+.sidebar-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 0 8px 12px;
+  opacity: 1;
+  transition: opacity var(--t) var(--ease-out);
+}
+
+/* Collapsed, the lists have nothing legible to say — they fade out and stop
+   taking focus rather than being clipped mid-word. */
+.sidebar.is-collapsed .sidebar-scroll {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.sidebar-section + .sidebar-section {
+  margin-top: 18px;
+}
+
+/* Sentence case, not a tracked all-caps eyebrow: it names a list, it isn't a
+   heading anyone reads twice. */
+.sidebar-section-title {
+  margin: 0;
+  padding: 6px 8px;
+  font-size: var(--text-xs);
+  font-weight: 500;
+  color: var(--ink-faint);
+  white-space: nowrap;
+}
+
+.sidebar-empty {
+  margin: 0;
+  padding: 2px 8px 6px;
+  font-size: var(--text-xs);
+  line-height: 1.55;
+  color: var(--ink-faint);
+}
+
+.chat-list,
+.folder-list {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+/* --- One conversation ----------------------------------------------------- */
+
+.chat-row {
+  position: relative;
+  display: flex;
+  align-items: center;
+  border-radius: var(--radius-sm);
+  transition: background var(--t-fast) var(--ease-out);
+}
+
+.chat-row:hover {
+  background: var(--bg-2);
+}
+
+.chat-row.is-active {
+  background: var(--bg-2);
+}
+
+.chat-open {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  border: 0;
+  background: transparent;
+  padding: 7px 8px;
+  text-align: left;
+  font-family: inherit;
+  cursor: pointer;
+  color: var(--ink-mute);
+  transition: color var(--t-fast) var(--ease-out);
+}
+
+.chat-row:hover .chat-open,
+.chat-row.is-active .chat-open {
+  color: var(--ink);
+}
+
+.chat-title {
+  flex: 1;
+  min-width: 0;
+  font-size: var(--text-sm);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.chat-when {
+  flex: none;
+  font-size: var(--text-2xs);
+  color: var(--ink-faint);
+  white-space: nowrap;
+  /* Yields to the overflow control on hover rather than reflowing the row. */
+  opacity: 1;
+  transition: opacity var(--t-fast) var(--ease-out);
+}
+
+.chat-row:hover .chat-when,
+.chat-row:focus-within .chat-when {
+  opacity: 0;
+}
+
+.chat-actions {
+  position: absolute;
+  right: 4px;
+  display: inline-flex;
+  opacity: 0;
+  transition: opacity var(--t-fast) var(--ease-out);
+}
+
+.chat-row:hover .chat-actions,
+.chat-row:focus-within .chat-actions {
+  opacity: 1;
+}
+
+.chat-more {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--ink-faint);
+  cursor: pointer;
+  transition: background var(--t-fast) var(--ease-out), color var(--t-fast) var(--ease-out);
+}
+
+.chat-more:hover {
+  background: var(--bg-3);
+  color: var(--ink);
+}
+
+.chat-row.is-renaming {
+  padding: 2px 4px;
+}
+
+.chat-rename {
+  width: 100%;
+  height: var(--ctl-h-sm);
+  font-size: var(--text-sm);
+}
+
+/* --- Folders -------------------------------------------------------------- */
+
+.folder-row {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  width: 100%;
+  border: 0;
+  background: transparent;
+  border-radius: var(--radius-sm);
+  padding: 7px 8px;
+  text-align: left;
+  font-family: inherit;
+  font-size: var(--text-sm);
+  color: var(--ink-mute);
+  cursor: pointer;
+  transition: background var(--t-fast) var(--ease-out), color var(--t-fast) var(--ease-out);
+}
+
+.folder-row:hover {
+  background: var(--bg-2);
+  color: var(--ink);
+}
+
+.folder-row.is-current {
+  color: var(--ink);
+  cursor: default;
+}
+
+.folder-row.is-current:hover {
+  background: transparent;
+}
+
+.folder-row.is-action {
+  color: var(--ink-faint);
+}
+
+.folder-row.is-action:hover {
+  color: var(--ink-mute);
+}
+
+.folder-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.folder-note {
+  flex: none;
+  font-size: var(--text-2xs);
+  color: var(--ink-faint);
+}

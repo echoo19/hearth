@@ -16,6 +16,7 @@
 import { watch, mkdirSync, type FSWatcher } from 'node:fs';
 import { promises as fsp } from 'node:fs';
 import path from 'node:path';
+import type { EvidenceEvent } from '@hearth/probe-core';
 
 const POLL_INTERVAL_MS = 2000;
 const DEBOUNCE_MS = 150;
@@ -25,19 +26,12 @@ export const EVIDENCE_DIR = path.join('.hearth', 'evidence');
 export const EVIDENCE_JOURNAL = path.join(EVIDENCE_DIR, 'journal.jsonl');
 
 /**
- * One line of the evidence journal. Structurally mirrors
- * `packages/probe-core/src/evidence.ts`'s `EvidenceEvent`, kept here rather
- * than imported so the editor does not gain a build-order dependency on a
- * package that ships on its own schedule. `kind` is left open (`string`) for
- * forward compatibility: an unknown event renders as a plain note instead of
- * being dropped.
+ * One line of the evidence journal — probe-core's own `EvidenceEvent`, now
+ * that the editor runs sweeps itself and depends on that package outright.
+ * Re-exported here so every consumer (ws frames, the store, the rail) reads
+ * the same schema the probe writes.
  */
-export interface EvidenceEvent {
-  kind: string;
-  seq: number;
-  ts: string;
-  [key: string]: unknown;
-}
+export type { EvidenceEvent } from '@hearth/probe-core';
 
 /**
  * Parse a JSONL body into events, skipping blank and malformed lines. A
@@ -57,10 +51,13 @@ export function parseEvidenceLines(text: string, since: number): EvidenceEvent[]
       continue;
     }
     if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) continue;
-    const event = parsed as Partial<EvidenceEvent>;
+    // Structural validation only: `kind` stays open here on purpose, so an
+    // event written by a newer probe still reaches the UI (which renders an
+    // unrecognised one as a plain note) rather than being silently dropped.
+    const event = parsed as Record<string, unknown>;
     if (typeof event.seq !== 'number' || typeof event.kind !== 'string') continue;
     if (event.seq <= since) continue;
-    out.push({ ...(event as EvidenceEvent), ts: typeof event.ts === 'string' ? event.ts : new Date().toISOString() });
+    out.push({ ...event, ts: typeof event.ts === 'string' ? event.ts : new Date().toISOString() } as EvidenceEvent);
   }
   out.sort((a, b) => a.seq - b.seq);
   return out;

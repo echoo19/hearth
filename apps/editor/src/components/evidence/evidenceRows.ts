@@ -54,7 +54,19 @@ export interface SweepRow {
   runs: number;
   /** Evidence-relative screenshot paths belonging to this sweep. */
   shots: string[];
-  findings: { kind?: string; detail?: string }[];
+  findings: SweepFinding[];
+}
+
+/**
+ * One thing the probe noticed. `summary` is the sentence a person reads;
+ * `shot` is the frame it happened on, when one was captured — which is what
+ * makes a finding evidence rather than an assertion.
+ */
+export interface SweepFinding {
+  kind?: string;
+  summary?: string;
+  detail?: string;
+  shot?: string;
 }
 
 export interface NoteRow {
@@ -129,7 +141,12 @@ export function foldEvidence(events: readonly EvidenceEvent[]): EvidenceRow[] {
         finished.add(sweepId);
         row.counts = tally(event.verdicts ?? {});
         row.runs = row.counts.reduce((sum, c) => sum + c.count, 0) || row.runs;
-        row.findings = (event.findings ?? []).map((f) => ({ kind: f.kind, detail: f.detail }));
+        row.findings = (event.findings ?? []).map((f) => ({
+          kind: f.kind,
+          summary: f.summary,
+          detail: f.detail,
+          shot: f.shot,
+        }));
         break;
       }
       case 'shot': {
