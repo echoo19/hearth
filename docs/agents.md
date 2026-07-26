@@ -1,329 +1,99 @@
-# Agent Workflow Guide
+# Bring your own agent
 
-How coding agents (Claude Code, Codex, or any MCP client) should work on
-Hearth game projects. Humans: this is also the best explanation of *why*
-Hearth is shaped the way it is.
+Hearth does not ship an agent and does not resell one. It gives a coding agent
+a place to work — a folder, a running game, and playtests — and lets you pick
+which agent that is. There are three doors, and they can all be open at once in
+the same folder.
 
-## The philosophy
+## 1. An Anthropic API key
 
-Hearth doesn't put an AI in the engine. Instead it makes the engine
-**legible and controllable from outside**: every editor operation is a
-structured, schema-validated, permission-checked command available over CLI
-and MCP. Agents get real operations instead of guessing at file formats;
-humans stay in charge through the visual editor, permissions, playtests, and
-reviewable diffs.
+Settings → paste an API key. Hearth runs Claude through the Anthropic Agent
+SDK, rooted at the folder, with the transcript streaming into the conversation
+pane.
 
-## Two transports, one engine
+The key is stored **per folder**, in `.hearth/app.json`. Hearth never sends it
+back to the UI — the settings dialog only knows whether a key exists and
+whether it came from that file or from `ANTHROPIC_API_KEY` in your environment.
+Clear the field and save to remove it.
 
-- **CLI**: `hearth <command> --json` (see [cli.md](./cli.md)). Best when the
-  agent already lives in a shell (Claude Code, Codex CLI).
-- **MCP**: `hearth-mcp --project <path>` over stdio (see
-  [mcp.md](./mcp.md)). Best for MCP-native clients; 77 command tools
-  (plus `screenshot`, `capture`, and `get_agent_instructions`) wrapping the
-  same core commands.
+## 2. ChatGPT through the open-source Codex CLI
 
-Both call the identical core command layer. Pick either; never mix in
-hand-edits of `hearth.json`/`*.scene.json`/`assets.json`.
+Hearth talks to [Codex](https://github.com/openai/codex), OpenAI's open-source
+CLI, by spawning it as a child process (`codex app-server`) and driving it over
+stdio. Sign in once with your ChatGPT account through Codex's own browser flow,
+started from Hearth's settings.
 
-## The loop every agent should run
+Say that precisely, because it matters: **this is Codex doing the work, and
+Codex holds the credential.** The sign-in token lives in `~/.codex/auth.json`,
+which belongs to the Codex CLI. Hearth reads a status from it and nothing else —
+it never reads the token, never proxies it, never forwards it anywhere. There is
+no partnership here and no official integration; it is one open-source tool
+launching another. An OpenAI API key works too, in the same place as the
+Anthropic one.
 
-```
-snapshot → inspect → change (commands) → validate → playtest → capture/bench → diff
-```
+## 3. Any CLI, in the terminal
 
-1. **Snapshot** (`hearth snapshot` / `snapshot_project`) so the human can
-   diff and revert your entire session.
-2. **Inspect before editing**: `inspect project`, `inspect scene`,
-   `inspect components`. Do not assume entity names, ids, or component
-   properties; read them.
-3. **Change through commands.** Create entities with components inline;
-   set properties by dot path (`Transform.position.x`); create procedural
-   placeholder sprites so the game is playable before art exists.
-4. **Validate** (`hearth validate --json`) and fix every error you
-   introduced. Warnings are advisory but read them.
-5. **Playtest**: `hearth run <scene> --frames 120` catches script crashes;
-   `hearth playtest --all` runs scripted assertions. Create playtests for
-   behavior you add (`create playtest`): steps cover waits, key presses,
-   pointer clicks, and assertions (including `assertScene`), and they're
-   deterministic (fixed timestep, scripted input, seeded RNG, and a playtest
-   can set its own `seed`), so they're trustworthy. After a gameplay change,
-   also `hearth sweep <scene>` to let seeded bot policies hunt softlocks and
-   crashes you didn't think to check, and bake any failing seed into a
-   regression test — see [playtesting.md](./playtesting.md). Run reports include
-   `audioEvents` (every play/stop with frame and asset id), `sceneEvents`,
-   and `finalScene`, so sound and scene switching are checkable headlessly
-   too.
-6. **See it and measure feel**: `hearth screenshot <scene>` renders one PNG;
-   `hearth capture <scene> --to 120` renders a contact sheet across frames so
-   you can watch motion over time. To pin *feel* to numbers, add
-   `assertPeak`/`assertRange`/`assertSettledBy` trace steps to a playtest —
-   they measure jump height, dash distance, and settle time from recorded
-   motion (probe with a bare `run_playtest` first to read the observed values,
-   then bake them into asserts). Tracing follows the live runtime across a
-   `ctx.scenes.load` switch: the camera keeps sampling in the new scene, and a
-   traced entity name re-resolves against whatever scene is now active (so a
-   name that exists in the destination scene is picked up there).
-7. **Check the frame budget**: `hearth bench <scene>` steps warmup frames then
-   times N measured frames, reporting per-frame ms (avg/median/p95) so you can
-   confirm a scene holds 60fps (16.67ms/frame) before shipping; pass
-   `--budget-ms` for a pass/fail verdict.
-8. **Diff** (`hearth diff --json`) and summarize the changes for the human:
-   scenes/entities/components/scripts/assets touched. The human sees the
-   same diff in the editor's Changes panel (opened via the toolbar's
-   Review button) and can revert.
+The Terminal tab is a real shell at the folder root. Type `claude`, `codex`,
+`opencode`, `hermes`, or whatever you use. Hearth detects nothing and installs
+nothing; if the command works in your terminal it works here, because the shell
+starts with your login shell's `PATH` merged in (a GUI-launched app otherwise
+only inherits a minimal system `PATH`).
 
-**Scripting iteration**: `check_script`/`check-script` before
-`edit_script`/`edit-script` as a pre-flight. It catches syntax errors
-without writing anything. `edit_script` formats automatically (StyLua/
-Prettier house style) unless you pass `format: false` or the project has
-`codeStyle.formatOnSave` off, so you don't need a separate format step.
-If the human has the editor open and playing while you work, your script
-edits hot-reload into the running game and your property writes
-(`set_component_property`/`set_properties`) apply live. No need to ask
-them to Stop/Play for most changes; see
-[scripting.md](./scripting.md#hot-reload-during-play) and
-[editor.md](./editor.md#live-iteration-during-play) for exactly what
-does and doesn't carry over. For cross-file work, `search_scripts` finds
-matches read-only; `replace_in_scripts` always takes a `dryRun: true`
-pass first to preview per-file counts before writing for real. See
-[cli.md](./cli.md#the-script-group).
+Terminals are independent of the conversation: a chat failure never takes the
+terminal down, and vice versa. A terminal you leave stays alive for an hour, so
+reloading the window reattaches to the same session with its scrollback
+replayed rather than killing your agent mid-task.
 
-## Permission modes
+For agents working outside the app entirely, the probe has its own MCP server
+and CLI — see [mcp.md](./mcp.md) and [cli.md](./cli.md).
 
-Sessions carry a grant; commands declare a requirement. Defaults allow
-everything except `build`.
+## The model selector
 
-| Mode | Unlocks |
-| --- | --- |
-| `read-only` | inspect, validate, diff, run scenes/playtests, `screenshot`, `recallNotes` (always implied) |
-| `safe-edit` | scene/entity/component CRUD, project settings (`updateSettings`: buildSettings incl. loading visuals, initial scene, input mappings), snapshot/revert, playtest defs, `rememberNote` |
-| `code-edit` | create/edit/attach scripts (Lua by default, `--language js` for JavaScript) |
-| `asset-edit` | import + procedural asset creation (sprites, tiles, sounds), metadata |
-| `build` | web export (`exportWeb`) + native desktop export (`exportDesktop`) + portable project builds (`buildProject`) |
+The composer carries a model choice with every message, so it can change
+between two messages in the same conversation. What happens next depends
+honestly on the backend:
 
-`screenshot` is read-only observation — the visual sibling of inspect/playtest —
-so an agent can always see its own work without a build grant. State and memory:
-the engine regenerates `.hearth/digest.md` (a current-state snapshot) after every
-change, and `rememberNote`/`recallNotes` persist durable decisions/todos/gotchas
-in `.hearth/memory.md` across sessions. Read both at the start of a session
-instead of re-inspecting and re-deciding.
+- **ChatGPT / Codex: per message.** The model and the reasoning effort
+  (low / medium / high) are sent with the turn and apply from that turn on.
+- **Claude: per conversation.** The Agent SDK runs one long-lived query for the
+  whole session, and its options — model included — are fixed when that stream
+  opens. Picking a different Claude model applies to the next new chat, not the
+  one you're in. Hearth doesn't fake it, because faking it would mean silently
+  restarting your agent mid-conversation.
 
-A human can run an agent read-only to get analysis with a guarantee of no
-mutation, or grant `safe-edit` only to keep the agent out of code.
+The Claude list is curated (Opus 5, Sonnet 5, Haiku 4.5). The ChatGPT list comes
+live from your installed Codex binary, with a "Default" row that lets Codex use
+whatever it is configured for. Reasoning effort only appears for Codex, because
+only Codex exposes it.
 
-## What agents must not do
+The provider that answers is the one your choice names; if you haven't chosen,
+Hearth uses whichever is configured, preferring an Anthropic key over a Codex
+sign-in. With neither, the conversation replies with a short note telling you
+about these three doors.
 
-- Don't hand-edit project JSON. Schemas are strict, commands exist for
-  everything, and unknown component types are rejected.
-- Don't delete scenes/assets unless explicitly asked (asset removal refuses
-  while references exist; file deletion is opt-in).
-- Don't restructure the project layout.
-- Don't leave validation failing.
-- Don't skip the snapshot; an unreviewable session is a failed session.
+## Approvals
 
-## Project-embedded instructions
+Agents work inside the folder without asking. Hearth interrupts you in two
+cases:
 
-`hearth init` generates **AGENTS.md** (full instructions: golden rules, a
-Lua-first scripting quick reference, and a `ctx` API reference rendered from
-the same `CTX_API` table that powers `hearth inspect api`), **CLAUDE.md**
-(pointer), and `.hearth/agent-config.json` (machine-readable: binary names,
-recommended first commands, permission defaults) in every project. The MCP
-server serves the same content via the `get_agent_instructions` tool, so an
-agent that connects cold can bootstrap itself.
+- **A file change outside the project folder.** Edits inside are automatic;
+  anything above it asks first, and shows you the path.
+- **A command that doesn't obviously stay inside the folder.** Anything with
+  `sudo`, `ssh`, `curl`, `wget`, `systemctl`, a root `rm`, or a path resolving
+  outside the folder asks first, and shows you the command. The heuristic errs
+  toward asking: a false "ask" is a small interruption, a false "allow" is
+  someone's home directory.
 
-Beyond the per-project files, Hearth ships **seven focused coding-agent skills**
-(Claude Code skill format), scaffolded into every project under
-`.claude/skills/` at project creation. A project made before these skills
-existed won't have them; copy `.claude/skills/` in from a freshly scaffolded
-project or from this repo. The split means an agent loads only the domain it's working in
-instead of one monolithic document — smaller context, sharper activation:
+An approval genuinely blocks the turn until you answer, and either window open
+on that conversation can answer it. Enter allows, Escape denies. Nothing is
+remembered as a standing policy — there is no "always allow" — but the question
+and your answer are both written into the transcript, so the record of what you
+let an agent do is permanent.
 
-- **`skills/hearth/SKILL.md`** (*the operating core — loaded first*): the
-  session loop (recall → snapshot → change → validate → playtest → screenshot →
-  remember), project memory and the state digest, permission modes,
-  playtest/screenshot verification, the review loop, and export. Routes to the
-  six domain skills.
-- **`skills/hearth-build/SKILL.md`** (*world structure*): scenes, entities,
-  components, tilemaps and autotiling (surfaces must connect), collider/sprite
-  feet alignment, prefabs, animation state machines, and input bindings.
-- **`skills/hearth-code/SKILL.md`** (*behavior*): the `ctx` stdlib, Lua/JS
-  lifecycle hooks, script modules, the dot-call and userdata pitfalls,
-  deterministic RNG, and the check-script/edit-script iteration loop.
-- **`skills/hearth-art/SKILL.md`** (*assets*): importing and slicing
-  spritesheets, animations, procedural sprites and sounds, the asset-sourcing
-  playbook (Kenney, itch.io CC0, OpenGameArt, Freesound, Google Fonts, with
-  licensing rules and the fetch → read-the-art → import → screenshot-verify
-  loop), and pixel-art discipline.
-- **`skills/hearth-feel/SKILL.md`** (*polish*): game-feel recipes (hit-stop,
-  screen shake/flash/zoomPunch, particle bursts, layered sound, tween easing,
-  anticipation/recovery), game-UX conventions, effect-asserting playtests, and
-  the quality-bar checklist an agent runs before calling a game done. The same
-  craft is documented for humans in [game-feel.md](./game-feel.md).
-- **`skills/hearth-design/SKILL.md`** (*macro design*): scoping a game to its
-  session length, the teach → develop → escalate → climax → end arc, difficulty
-  ramps, level/scene pacing, replay hooks, and the complete-game checklist an
-  agent runs before calling a game finished (a real ending, not just a
-  game-over).
-- **`skills/hearth-playtest/SKILL.md`** (*bot playtesting*): `hearth sweep`
-  runs seeded bot policies (mash/idle/wander/seek) across many seeds to hunt
-  softlocks, crashes, and unmet objectives; declared objectives that double as
-  acceptance criteria; and baking a failing seed into a permanent regression
-  playtest — the closed loop of letting the engine find the bugs you didn't
-  think to check.
+## Where the work lands
 
-The generated AGENTS.md and `get_agent_instructions` carry the same routing
-map, so an agent that connects cold knows which skill to load for which work.
-
-## Starting a new project: templates
-
-`init` is pre-project: there's no MCP tool for it, since a session needs an
-existing `hearth.json` to connect to. An agent working from the CLI picks a
-starting point with `hearth init <name> --template <t>` instead of the
-blank default: `platformer` (gravity + jump), `topdown` (four-direction
-movement + camera follow), or `arcade` (fixed camera, shoot-on-key). Each is
-a small, playable skeleton (one scene, a commented movement script, a
-`smoke` playtest), not a demo to keep or delete. Pick whichever genre is
-closest to the ask and build on it, the same way you'd build on a blank
-project. See [cli.md](./cli.md#project-templates) for the full flag
-reference; the editor's Launcher offers the same choice as cards for a
-human starting a project by hand.
-
-## Recipes
-
-Four common workflows, worked end to end on
-the CLI. Every command has an MCP equivalent (see [mcp.md](./mcp.md#tool-naming)).
-
-### Build an animation state machine from scratch
-
-```bash
-# 1. Two little animations to drive (idle: 2 frames, walk: 2 frames)
-hearth create asset sprite hero-idle-a --shape rectangle --color "#f4a460" --width 24 --height 24 --json
-hearth create asset sprite hero-idle-b --shape rectangle --color "#f4a460" --width 24 --height 26 --json
-hearth create animation hero-idle --frames hero-idle-a hero-idle-b --frame-duration 0.4
-
-hearth create asset sprite hero-walk-a --shape rectangle --color "#f4a460" --width 22 --height 24 --json
-hearth create asset sprite hero-walk-b --shape rectangle --color "#f4a460" --width 26 --height 22 --json
-hearth create animation hero-walk --frames hero-walk-a hero-walk-b --frame-duration 0.1
-
-# 2. The state machine document: a bool "moving" param toggles idle <-> walk
-hearth create asset state-machine hero-motion --data '{
-  "params": { "moving": { "type": "bool" } },
-  "states": [
-    { "name": "idle", "animation": "hero-idle" },
-    { "name": "walk", "animation": "hero-walk" }
-  ],
-  "initial": "idle",
-  "transitions": [
-    { "from": "idle", "to": "walk", "conditions": [{ "param": "moving", "op": "eq", "value": true }] },
-    { "from": "walk", "to": "idle", "conditions": [{ "param": "moving", "op": "eq", "value": false }] }
-  ]
-}' --json
-# -> { "success": true, "command": "createStateMachineAsset",
-#      "data": { "assetId": "ast_h0er0m0t", "path": "assets/statemachines/hero-motion.asm.json" }, … }
-
-# 3. Attach it to the entity (assetId from step 2's output; state.animation
-#    above could have been ids or names — getAsset resolves either)
-hearth add component "Level 1" Hero AnimationStateMachine --properties '{"assetId":"ast_h0er0m0t"}'
-```
-
-Drive it from a script with `ctx.animator`. See
-[scripting.md](./scripting.md#animation-state-machines) for the full API,
-param types, and trigger consume/latch semantics:
-
-```lua
-ctx.animator.setParam(ctx.entity.name, "moving", math.abs(vx) > 1)
-```
-
-Editing the graph later: `hearth set-state-machine ast_h0er0m0t --data '<full document>'`
-replaces it wholesale (same asset id/path), or use the editor's
-[Animator editor](./editor.md#animator-editor) for a typed params/states/
-transitions UI instead of hand-writing JSON.
-
-### Autotile a map
-
-```bash
-# 1. Import + slice a blob47 tileset (frames slice as ground_0, ground_1, …
-#    in row-major order — sliceSpritesheet can't name frames by shape key
-#    directly, so a --mapping translates slice order to shape keys below)
-hearth import asset ./art/ground-blob47.png --name ground-sheet --json
-hearth create asset slice ground-sheet --frame-size 16x16 --prefix ground --json
-
-# 2. Paint some "G" cells first — autotile shades existing terrain, it
-#    doesn't place it
-hearth fill tiles Arena Ground --rect 2,2,10,6 --char G --json
-
-# 3. Bind "G" to a blob47 rule. mapping keys are canonical shape keys (see
-#    editor.md#autotile for the full 47-key table); values are whatever
-#    frame names sliceSpritesheet actually produced, in your tileset's
-#    layout order
-hearth autotile set Arena Ground --char G --sheet ground-sheet \
-  --mapping '{"0":"ground_0","1":"ground_1","4":"ground_2","5":"ground_3","7":"ground_4", …}' \
-  --json
-# -> { "success": true, "command": "setTileAutotile",
-#      "data": { "entityId": "ent_…", "char": "G",
-#                 "rule": { "sheet": "ast_…", "template": "blob47", "mapping": { "0": "ground_0", … } } }, … }
-```
-
-The running editor preview (and any exported build) re-renders the map
-live the moment the rule changes, no restart needed. To remove a rule:
-`hearth autotile set Arena Ground --char G --clear`.
-
-### Override an instance field, then revert it
-
-```bash
-# Assume "Elite Enemy" is a placed instance of the Enemy prefab (see
-# prefabs.md — packages/examples/ember-horde does exactly this)
-hearth set Arena "Elite Enemy" SpriteRenderer.color "#c9184a"
-hearth set Arena "Elite Enemy" SpriteRenderer.width 32
-hearth set Arena "Elite Enemy" SpriteRenderer.height 32
-# Each set is a normal setComponentProperty call — the override recording
-# is implicit, no separate command. Confirm with inspectEntity or the
-# Inspector's ember dots.
-
-hearth prefab update Enemy Arena "Enemy"   # tweak the base prefab...
-# ...auto-syncs every instance, INCLUDING Elite Enemy, whose three
-# overrides above are preserved on top of the merge (see
-# prefabs.md#live-link-semantics-marker-merge-detach)
-
-# Change your mind about the size, keep the color override:
-hearth prefab revert Arena "Elite Enemy" SpriteRenderer width
-hearth prefab revert Arena "Elite Enemy" SpriteRenderer height
-# Or revert every override on this entity in one call:
-hearth prefab revert Arena "Elite Enemy"
-```
-
-### Bulk import a folder
-
-```bash
-hearth import asset ./art/tileset/ --recursive --json
-# -> { "success": true, "command": "importAssets",
-#      "data": { "imported": [ { "path": "art/tileset/grass.png", "assetId": "ast_…", "name": "grass", "type": "sprite" },
-#                                … ],
-#                 "skipped": [ { "path": "art/tileset/notes.txt", "code": "UNKNOWN_TYPE", "message": "…" } ] },
-#      … "files": ["hearth.json", "assets.json"] }
-```
-
-One atomic undo/journal entry for the whole folder; name/path collisions
-auto-suffix (`grass` → `grass-2`) instead of failing the batch, and a bad
-file is reported in `data.skipped` (with a `code`/`message`) rather than
-aborting everything else. Over MCP, `import_assets` takes `sourcePaths`
-directly with no `--recursive` equivalent: enumerate the folder's files
-yourself (e.g. via `list_assets`-style host tooling, or a directory
-listing tool the client has) and pass the full path list.
-
-## Discovering capabilities
-
-- `hearth commands --json`: the full engine command registry (name,
-  description, permission, mutates).
-- `hearth inspect components --json`: every component type with docs and
-  default values.
-- `hearth inspect api --json`: the complete script `ctx` API, every
-  member with its signature, description, and a Lua + JS example.
-- MCP `tools/list`: same registry as typed tools.
-
-If a capability isn't in the registry, it doesn't exist. Ask the human
-instead of improvising (e.g. there is no pathfinding command yet; it's on
-the [roadmap](./roadmap.md)). `screenshot` (CLI and MCP) is the one
-deliberate exception: it doesn't wrap a registry command since it needs
-headless Chromium, a Node-only dependency the browser-safe core can't take
-on. See [cli.md](./cli.md#command-tour).
+Your agent writes ordinary files into the folder; the pane reloads when they
+change; the Playtest button plays what's there. Nothing about that requires the
+agent to know Hearth exists. If you want to *tell* it, point it at
+[playtesting.md](./playtesting.md) and [probe-shim.md](./probe-shim.md) — the
+shim is the one thing a game can do to make its own playtests see more.

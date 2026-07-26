@@ -1,141 +1,70 @@
-# The Hearth Desktop App
+# The desktop app
 
-Hearth runs three ways; all use the exact same UI and project server code:
+Hearth is an Electron app. One window: conversations on the left, the
+conversation and the game pane in the middle and on the right.
 
-| Mode | Command | Best for |
+## Install
+
+Download from [hearthengine.com/download](https://hearthengine.com/download) or
+from the [latest release](https://github.com/echoo19/hearth/releases/latest).
+
+| Platform | Artifacts | Notes |
 | --- | --- | --- |
-| Browser (dev) | `npm run dev` → http://localhost:5173 | Development, contributions |
-| Desktop (local) | `npm run app` | Daily use from a repo checkout |
-| Desktop (packaged) | `npm run app:dist` → `apps/editor/release/…/Hearth.app` | Installing like a normal app |
+| macOS | `.dmg`, `.zip` — Apple Silicon and Intel | Developer ID signed and notarized; opens normally. |
+| Windows | `.exe` installer, `.zip` | Not code-signed yet. SmartScreen shows a warning on first launch: **More info → Run anyway**. |
+| Linux | `.AppImage`, `.deb` | Nothing special needed. |
 
-## Why Electron (and where Tauri stands)
+The Windows warning is Microsoft's reputation check on an unsigned installer,
+not a detection of anything. It affects the first manual install only — updates
+applied by the app itself never show it.
 
-The original plan was Tauri, and a Tauri shell still lives in
-`apps/editor/src-tauri/` as an experimental alternative. The blocker: Hearth's
-project server is Node (it reuses `@hearth/core/node` and the whole command
-layer directly) and Tauri has no Node runtime, so it would need the server
-rewritten in Rust or shipped as a sidecar. Electron's main process **is**
-Node, so the same `createProjectServerContext()` that powers the Vite dev
-server runs in-process, unchanged. One server implementation, three modes.
+## Updates
 
-How it works: the main process starts a loopback-only `node:http` server on a
-random port serving the built UI + the `/api` routes, and the window loads
-`http://127.0.0.1:<port>`. The renderer is byte-identical to browser mode.
-Everything is bundled by esbuild/vite (`dist-electron/main.cjs` is
-self-contained), so the packaged app ships **zero node_modules**.
+The packaged app checks GitHub Releases a few seconds after launch, and again
+whenever you use **Help → Check for updates…**. On macOS, Windows and Linux the
+update downloads quietly in the background.
 
-## Working from folders (Godot/Unity style)
+When it's ready, a card appears at the bottom of the sidebar: **Relaunch to
+update**, with the new version under it. Press it when you're at a good
+stopping point; nothing restarts on its own, and no modal interrupts you. An
+explicit check also tells you when you're already up to date, or when the check
+failed.
 
-A Hearth project is just a folder with `hearth.json` in it. In the desktop
-app the launcher has native pickers:
+Two caveats. macOS self-updates validate the downloaded app's signature against
+the running one, so anyone still on an old ad-hoc-signed build needs one manual
+download to get onto the signed line. And `.zip` archives are plain downloads —
+only the installer formats self-update.
 
-- **Open Folder…**: a system dialog; choose any project folder on disk.
-- **Browse…** next to the new-project location field.
-- Recent projects are remembered in `~/.hearth/recent-projects.json`.
+Updates are disabled in development runs and by `HEARTH_DISABLE_UPDATES=1`.
 
-In browser mode the same launcher accepts typed/pasted paths (browsers can't
-show native folder pickers for server-side paths).
-
-## Building the app
+## Running from source
 
 ```bash
+git clone https://github.com/echoo19/hearth.git && cd hearth
 npm install && npm run build:packages
 
-npm run app          # build UI + main, launch Electron directly
-npm run app:dist     # + electron-builder → apps/editor/release/mac-arm64/Hearth.app
-npm run app:dist:installers -w @hearth/editor   # dmg/nsis/AppImage installers
+npm run dev        # browser mode: http://localhost:5173
+npm run app        # the desktop app, from your checkout
+npm run app:dist   # package it with electron-builder
 ```
 
-Notes:
-- Official macOS release builds are Developer-ID signed and notarized, so
-  Gatekeeper opens them normally. Local packages without release credentials
-  fall back to ad-hoc signing and may require the standard Privacy & Security
-  override.
-- The app icon is the stock Electron icon for now. A custom icon is on the
-  roadmap: drop icons into `buildResources/` and remove `identity: null`
-  when signing.
-- Windows (`nsis`, `zip`) and Linux (`AppImage`, `deb`) targets are
-  configured in `apps/editor/package.json` → `build`; build them on the
-  matching OS or in CI.
+Node 20 or newer. Browser mode runs the same UI against the same server — the
+window is the only difference — which makes it the fastest way to work on
+Hearth itself. See [architecture.md](./architecture.md).
 
-## Dependency audit posture
+## Where things go
 
-`npm audit --omit=dev`: **0 vulnerabilities.** Nothing that ships in the
-packaged app (or in an exported game) carries a known advisory.
+Everything Hearth deliberately keeps lives in the project folder's `.hearth/`
+directory: conversations, settings, evidence
+([projects-and-chats.md](./projects-and-chats.md)). The one file outside it is
+`~/.hearth/recent-projects.json`, the recents list.
 
-`npm audit` (full, including dev tooling): **11 advisories** (1 moderate, 10
-high), all in the packaging toolchain: `electron` (bundled dev version
-33.x, fix requires 43.x), `electron-builder` (25.x → 26.x) and its
-`app-builder-lib`/`dmg-builder`/`tar` dependency chain, and `esbuild` (0.24.x
-→ 0.28.x, used by Vite/vitest, not shipped). Every fix `npm audit fix
---force` offers is a breaking major bump, and none of the flagged code paths
-run in the built app: Electron's advisories are renderer/IPC bugs in
-Chromium versions this project isn't shipping, and esbuild's is a dev-server
-CORS issue that doesn't exist once `dist/` is built. Consciously deferred
-rather than force-bumped mid-wave; revisit alongside the next toolchain
-upgrade (Electron majors land every few months and tend to want a coordinated
-bump of `electron-builder` alongside them).
+Electron itself keeps a small amount of app state in the platform default —
+`~/Library/Application Support/Hearth` on macOS, `%APPDATA%\Hearth` on Windows,
+`~/.config/Hearth` on Linux — along with the updater's download cache. Deleting
+those loses nothing but window state and a pending download.
 
-## Real signing & notarization (removing the warnings entirely)
-
-This section is about signing **the Hearth editor app itself** (the
-`.dmg`/`.exe`/`.AppImage` you'd distribute from this repo's releases) via
-`electron-builder` and CI secrets, a separate pipeline from signing *games
-made with Hearth*, which `hearth export desktop` handles with its own,
-differently-named environment variables (`HEARTH_MAC_IDENTITY` and
-friends) read locally at export time; see
-[export.md#signing-macos-only](./export.md#signing-macos-only).
-
-Release builds sign automatically once these GitHub Actions secrets exist;
-the workflow itself doesn't need to change:
-
-| Platform | What to get | Secrets to set |
-| --- | --- | --- |
-| macOS | Apple Developer Program ($99/yr) → create a **Developer ID Application** certificate in Xcode/developer.apple.com, export as .p12; generate an app-specific password at appleid.apple.com | `MAC_CSC_LINK` (the .p12, base64: `base64 -i cert.p12 \| pbcopy`), `MAC_CSC_KEY_PASSWORD`, `APPLE_ID`, `APPLE_APP_SPECIFIC_PASSWORD`, `APPLE_TEAM_ID` |
-| Windows | Any Authenticode cert. Cheapest modern route: **Azure Trusted Signing** (~$10/mo); classic route: an OV .pfx from a CA (SmartScreen trust builds with downloads) | `WIN_CSC_LINK` (base64 .pfx), `WIN_CSC_KEY_PASSWORD` |
-
-With the macOS secrets present the workflow signs with hardened runtime
-(entitlements in `buildResources/entitlements.mac.plist`) and notarizes.
-Downloads then open with **zero** warnings and none of the Open Anyway or
-xattr workarounds. Without them it falls back to the current ad-hoc signing.
-Linux needs nothing.
-
-## Auto-updates
-
-The packaged app checks GitHub Releases for new versions (electron-updater;
-the feed is `latest*.yml` next to the release assets — electron-builder
-generates them because `build.publish` is configured, and the release
-workflow uploads them). One quiet check a few seconds after launch, plus
-**Help → Check for updates…** for an explicit check with visible results.
-
-Per platform:
-
-- **Windows / Linux** (NSIS installer, AppImage): updates download in the
-  background and install when you quit, or immediately via the "Restart now"
-  prompt. Works with today's unsigned builds.
-- **macOS**: signed and notarized releases update in place. Users on older
-  ad-hoc builds need one manual download to get onto the signed update line.
-- Zip archives are plain downloads; only the installer formats self-update.
-
-Dev runs, `HEARTH_SMOKE=1`, and `HEARTH_DISABLE_UPDATES=1` all disable the
-updater entirely. Behavior lives in `apps/editor/electron/updater.ts`
-(unit-tested; the Electron glue is in `main.ts`), the feed wiring is pinned
-by `apps/editor/tests/updateFeed.test.ts`.
-
-## Window model
-
-The desktop app behaves like Godot: it opens as a compact **project
-manager** window (create/open/recents/examples); opening a project grows the
-same window into the full editor (maximized) and titles it after the
-project; closing the project shrinks back to the manager. Browser mode is a
-single full-page app.
-
-## Smoke-testing headlessly
-
-`HEARTH_SMOKE=1` makes the app boot, verify `/api/meta` through the real
-in-process server, print what the window loaded, and exit 0. CI uses it, and
-it's handy after packaging changes:
-
-```bash
-HEARTH_SMOKE=1 ./apps/editor/release/mac-arm64/Hearth.app/Contents/MacOS/Hearth
-```
+The server the window talks to is bound to `127.0.0.1` on an OS-assigned port
+and refuses any request that doesn't come from loopback. Nothing listens
+publicly, and no project data leaves the machine except what you send to your
+agent's provider.

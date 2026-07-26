@@ -1,139 +1,90 @@
-# Quickstart: your first Hearth game
+# Quickstart
 
-Ten minutes from clone to a playable, playtested game. Everything below also
-works for a coding agent. That's the point.
+Ten minutes from downloading the app to a game you can play, and evidence that
+says whether it works. Nothing is scaffolded, nothing is generated for you, and
+you don't have to learn a format.
 
-## 1. Install & build
+## 1. Get the app
 
-Node ≥ 20 (macOS, Linux, Windows).
+Download it from
+[hearthengine.com/download](https://hearthengine.com/download) — macOS,
+Windows, or Linux — and open it. On Windows, SmartScreen will ask; **More info
+→ Run anyway** ([desktop-app.md](./desktop-app.md)).
+
+## 2. Connect an agent
+
+Hearth doesn't ship an agent, so you bring one. In Settings: paste an Anthropic
+API key, or sign in with ChatGPT through the open-source Codex CLI. Or skip
+both and run your own CLI in the Terminal tab, which already sits in the
+project folder. Send a message with none of them connected and the conversation
+answers with those same three options rather than pretending to build anything.
+
+Keys are stored per folder, not globally ([agents.md](./agents.md)).
+
+## 3. Say what you want to play
+
+Type one sentence into the box on the Home screen and send it:
+
+> a small top-down game about sweeping leaves off a courtyard
+
+A folder appears under `~/Hearth`, named from your words —
+`~/Hearth/small-top-down-sweeping` — and the conversation moves into it. That
+folder is empty until the agent writes something. There is no project file, no
+manifest, no template.
+
+## 4. Watch it build
+
+The agent works in the folder with plain web files, however it likes. The game
+pane on the right notices any file changing and reloads the page, so the game
+you're looking at is always the newest one. Approvals appear inline when the
+agent wants to touch something outside the folder or run something that doesn't
+obviously stay inside it.
+
+Keep talking to it. "The leaves fall too fast." "Add a wind gust every ten
+seconds." Each message is a turn; the pane reloads when the files land.
+
+## 5. Press Playtest
+
+The button under the game pane sends bots in. They press real keys, move a real
+mouse, take screenshots and collect errors — with no cooperation from the game
+at all, because the probe treats it as a page rather than a project.
+
+Verdicts stream into the Playtests rail as each episode finishes:
+
+```
+6 runs: error 1, ran-clean 5 — 1 failing
+  [blocker] crash: game threw: Cannot read properties of null (leaf.js:31)
+```
+
+## 6. Read the evidence
+
+Every run leaves files under `.hearth/evidence/` in the folder: a report per
+sweep, one file per episode, and the screenshots the findings point at. Open
+the rail, or hand the report back to the agent — "the playtest found a crash in
+leaf.js, fix it and run it again" — and the loop closes.
+
+Read the `not checked` list next to the findings. A sweep of a game that says
+nothing about itself can only check for crashes and blank screens; that isn't a
+failure, it's the honest floor. When you want more,
+[probe-shim.md](./probe-shim.md) is the twenty lines a game adds to let the
+bots see where things are. [playtesting.md](./playtesting.md) is the whole
+story.
+
+## Running from source instead
 
 ```bash
 git clone https://github.com/echoo19/hearth.git && cd hearth
-npm install
-npm run build:packages
-alias hearth="node $PWD/packages/cli/dist/main.js"   # or: npm link -w @hearth/cli
+npm install && npm run build:packages
+npm run dev      # browser mode, http://localhost:5173
+npm run app      # the desktop app from your checkout
 ```
 
-## 2. Create a project
-
-```bash
-cd ~ && hearth init "Star Catcher"
-cd star_catcher
-```
-
-You get a `Main` scene with a camera, ground, and a blue player box that
-already falls and lands (dynamic physics body + static ground), plus
-`AGENTS.md`/`CLAUDE.md` for any agent that visits. `hearth init --template
-platformer|topdown|arcade` starts from a genre skeleton instead of blank.
-See [cli.md](./cli.md#project-templates).
-
-## 3. Make the player move
-
-Scripts are Lua by default (JavaScript works too: `--language js`); the
-same `ctx` API in either language, always called with a dot
-(`ctx.log("hi")`, never `ctx:log("hi")`).
-
-```bash
-hearth create script player-move --source-file /dev/stdin <<'EOF'
-local script = {}
-
-function script.onUpdate(ctx, dt)
-  local body = ctx.getComponent("PhysicsBody")
-  local vx = 0
-  if ctx.input.isDown("left") then vx = vx - 220 end
-  if ctx.input.isDown("right") then vx = vx + 220 end
-  body.velocity.x = vx
-  if ctx.input.justPressed("jump") and ctx.isGrounded() then
-    body.velocity.y = -420
-  end
-end
-
-return script
-EOF
-hearth attach script Main Player scripts/player-move.lua
-```
-
-Default input mappings already bind `left/right` to arrows+AD and `jump` to
-Space (`hearth inspect project --json` shows them).
-
-## 4. Add something to catch
-
-```bash
-hearth create asset sprite star --shape star --color yellow --width 24 --height 24
-# the output includes the new asset id (ast_…); use it below
-hearth create entity Main Star --position 500,480 --tags star --components \
-  '{"SpriteRenderer":{"assetId":"<ast_id>","width":24,"height":24},"Collider":{"shape":"circle","radius":14,"isTrigger":true}}'
-
-hearth create script star-catch --source-file /dev/stdin <<'EOF'
-local script = {}
-
-function script.onCollision(ctx, other)
-  if other.name ~= "Player" then return end
-  ctx.log("caught a star!")
-  ctx.destroySelf()
-end
-
-return script
-EOF
-hearth attach script Main Star scripts/star-catch.lua
-```
-
-## 5. Validate, playtest, review
-
-```bash
-hearth validate --json
-hearth run Main --frames 120 --json     # smoke: zero script errors?
-
-# a real behavioral test:
-cat > steps.json <<'EOF'
-[
-  { "type": "wait", "frames": 30 },
-  { "type": "press", "action": "right", "frames": 60 },
-  { "type": "assertProperty", "entity": "Player", "property": "Transform.position.x", "greaterThan": 420 },
-  { "type": "assertNoErrors" }
-]
-EOF
-hearth create playtest reach-the-star --scene Main --steps-file steps.json
-hearth test                              # validate + all playtests
-```
-
-## 6. See it
-
-From the hearth repo: `npm run dev`, open http://localhost:5173, open your
-project folder in the launcher, press **Play**. The Changes panel (toolbar:
-**Review**) shows exactly what you (or an agent) changed since the last
-checkpoint (`hearth snapshot`). See [docs/editor.md](./editor.md) for the
-rest of the editor's chrome and shortcuts.
-
-## 7. Hand it to an agent
-
-```bash
-claude mcp add star-catcher -- node <hearth repo>/packages/mcp-server/dist/main.js \
-  --project ~/star_catcher
-```
-
-Ask the agent to *"add three more stars in an arc and a score counter, then
-prove it with a playtest."* It has instructions (`AGENTS.md`), tools, tests,
-and a diff you'll review. That's Hearth.
-
-## 8. Ship it
-
-```bash
-hearth export web --zip --allow build
-```
-
-A static playable build lands in `export/web/`, plus an itch.io-ready zip.
-For a native app instead: `hearth export desktop --allow build` zips one
-packaged app per platform. See [export.md](./export.md) and
-[shipping-to-itch.md](./shipping-to-itch.md).
+Node 20 or newer. Browser mode is the same UI against the same server, so
+everything above works there too.
 
 ## Where next
 
-- [Scripting guide](./scripting.md): the full `ctx` API
-- [CLI guide](./cli.md): everything `hearth` can do
-- [Prefabs](./prefabs.md): reusable entity templates, `ctx.scene.spawnPrefab`
-- [Editor guide](./editor.md): chrome, shortcuts, transform handles
-- [Export](./export.md): web (folder vs single file) and desktop (Electron, signing)
-- [Shipping to itch.io](./shipping-to-itch.md): web zip, desktop channels, butler
-- [Connect your agent](./connect-any-agent.md): Claude Code, Codex,
-  OpenCode + Ollama, Hermes, or any MCP-capable CLI (one-command setup)
+- [projects-and-chats.md](./projects-and-chats.md) — your folders, your files
+- [agents.md](./agents.md) — providers, the model selector, approvals
+- [playtesting.md](./playtesting.md) — policies, verdicts, evidence
+- [cli.md](./cli.md) / [mcp.md](./mcp.md) — the probe for agents outside the app

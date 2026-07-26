@@ -1,248 +1,133 @@
-# Playtesting Guide
+# Playtesting
 
-Two ways to make a Hearth game prove itself headlessly. **Scripted playtests**
-assert behavior you already know to check: press these keys, expect this
-outcome. **Bot sweeps** find the behavior you *didn't* think to check: seeded
-bot policies play a scene across many seeds and hand back a compact report of
-softlocks, crashes, stuck states, and unreached objectives. Both run the same
-deterministic runtime, so anything they catch is a perfect, replayable repro.
+Press **Playtest** and Hearth plays your game for you: seeded bots drive it
+many times over, watchers look for the failures a person would notice, and
+everything they saw lands on disk as files you and your agent can read.
 
-This is the human-readable mirror of the `hearth-playtest` agent skill
-(`skills/hearth-playtest/SKILL.md`, scaffolded into every project under
-`.claude/skills/` — see [agents.md](./agents.md#project-embedded-instructions)),
-so agents and humans work from the same playbook.
+The part that matters: this works **no matter what the agent built**. The
+probe opens the game like a browser would, presses real keys, moves a real
+mouse, captures frames, and collects errors. That tier needs nothing from the
+game — no engine, no format, no cooperation. When the game chooses to say more
+about itself ([probe-shim.md](./probe-shim.md)), the same sweep sees more and
+checks more.
 
-## Determinism is the foundation
+## What a sweep is
 
-Everything here rests on the same guarantee: the runtime advances every system
-on a fixed timestep with scripted input and seeded RNG, so the same
-`(scene, seed, inputs)` replays bit-for-bit
-([scripting.md](./scripting.md#determinism)). A playtest that passed once passes
-again; a sweep seed that crashed crashes again, at the same frame. That is what
-makes a failing bot run something you can bake into a permanent test instead of
-a bug report you can't reproduce.
+A sweep runs `policies × seeds` episodes against one live game, sequentially,
+and folds them into a single report. The bot's RNG is seeded, so one
+`(policy, seed)` pair is a re-runnable experiment. **The game is not assumed
+to be deterministic** — the same policy and seed can trace differently twice —
+so read the tally as a distribution. One clean run proves nothing.
 
-## Scripted playtests
+### Policies
 
-A playtest is an asset: a scene, an ordered list of input/assert steps, an
-optional `seed`, and a frame cap. Author one with a steps file and run it (or
-all of them) headlessly.
-
-```bash
-hearth create playtest coin-pickup --scene "Level 1" --steps-file steps.json --seed 7 --json
-hearth playtest coin-pickup --json         # one playtest
-hearth playtest --all                      # every playtest
-hearth test                                # validate + all playtests (the CI command)
-```
-
-The `--seed` makes `ctx.random` and Lua `math.random` reproducible, so a
-playtest that leans on randomness still replays identically.
-
-### Steps: input and assertions
-
-Steps run in order. Input steps drive the game; assertion steps check state and
-fail the run (exit code `1`) when they don't hold.
-
-**Input**: `wait`, `press`, `release`, `click {x,y}`, `setAction`,
-`setAxis {axis, value, frames?}`, `setPointer {x, y, down?, frames?}`,
-`drag {from, to, frames?}`. See [input.md](./input.md#playtest-input) for how
-each maps onto the input system.
-
-**Assertions**: `assertEntityExists`, `assertProperty`, `assertPositionNear`,
-`assertScene`, `assertParticleCount`, `assertEventCount`, `assertAudioCount`,
-`assertCameraEffect`, `assertPostEffect`, `assertFocus`, `assertNoErrors`, plus
-the motion asserts `assertPeak`, `assertRange`, and `assertSettledBy` that
-measure *feel* — jump height, dash distance, settle time — from recorded
-motion. See the [CLI guide](./cli.md#command-tour) for the full parameter
-list and [game-feel.md](./game-feel.md#verifying-feel-in-playtests) for the
-feel asserts in context.
-
-A run report exposes `audioEvents`, `sceneEvents`, `finalScene`, and a
-`traceSummary` per traced key, so sound, scene switching, and motion are all
-checkable without opening a window. Probe with a bare run to read the observed
-numbers, then tighten a loose `min` to an exact `equals`.
-
-### `setAction`: sticky holds
-
-`press` steps N frames then releases the action for you. That can't express one
-action held *while* another is tapped — a moving jump, say. `setAction` is the
-sticky sibling: it holds (`down: true`) or releases (`down: false`) an action
-and leaves it there until you change it, exactly like `setAxis`.
-
-```json
-[
-  { "type": "setAction", "action": "right", "down": true },
-  { "type": "wait", "frames": 20 },
-  { "type": "setAction", "action": "jump", "down": true, "frames": 6 },
-  { "type": "setAction", "action": "jump", "down": false },
-  { "type": "wait", "frames": 30 },
-  { "type": "setAction", "action": "right", "down": false },
-  { "type": "assertPositionNear", "entity": "Player", "x": 240, "y": 300, "tolerance": 24 },
-  { "type": "assertNoErrors" }
-]
-```
-
-`right` stays held across the whole run; `jump` overlaps it for six frames in
-the middle. `frames` defaults to `1`; `0` applies the input without advancing,
-so several `setAction`s can land on the same frame. Every action name must be
-one of the project's `inputMappings` (`hearth set-input`), or the playtest is
-rejected at validation with `PLAYTEST_UNKNOWN_ACTION`.
-
-## Bot sweeps
-
-A sweep is the engine playing your game for you. Bot policies drive a scene
-headlessly across a range of seeds, at full speed, and report what broke or
-stalled. Sweeps are read-only — no build permission, no mutation — and the
-report is a compact summary by design.
-
-```bash
-hearth sweep "Level 1" --json                                   # mash, 8 seeds, zero setup
-hearth sweep "Level 1" --policies mash,idle --seeds 8 --json
-hearth sweep "Level 1" --policies seek --avatar Player --target exit-door --json
-```
-
-Scene defaults to the project's initial scene. `--seeds` runs
-`seedStart..seedStart+seeds-1`; extend a prior sweep with `--seed-start` rather
-than re-running seeds you already cleared.
-
-### Policies: which bot, when
-
-Pass one or more with `--policies` (comma-separated). `mash` and `idle` need no
-setup. `wander` and `seek` steer an avatar — the sole input-reading entity, or
-`--avatar <ref>` — and `seek` also needs a `--target` (an entity ref or a world
-point `"x,y"`).
-
-| Policy | What it does | Reach for it when |
+| Policy | What it does | What it needs |
 | --- | --- | --- |
-| `mash` | Random weighted-persistence input on every declared action. Zero config, works on every game. | The default. After any gameplay change; smoking out crashes and softlocks. |
-| `idle` | No input at all. | Cutscenes, auto-play, timeouts — anything that breaks when the player does nothing. |
-| `wander` | Curiosity-driven exploration; steers toward unvisited reachable cells. | Coverage — "is any part of this level unreachable or a trap?" |
-| `seek` | Beelines the avatar to a fixed target. | Verification — "can the player *actually* reach the exit?" Pair with a `reach` objective. |
+| `mash` | Random weighted-persistence input on every declared action, axis and pointer. The default. | At least one declared action, axis, or pointer. |
+| `idle` | No input at all. Catches games that break when the player does nothing. | Nothing. |
+| `wander` | Steers toward unvisited walkable cells. Coverage. | Entities **and** a nav grid. |
+| `seek` | Beelines toward a target. Verification. | Entities **and** a nav grid. |
 
-`wander` and `seek` derive their movement model by probing the avatar in a
-throwaway session first (hold each input, measure displacement), so they steer
-whatever the control scheme happens to be. An avatar with no measurable
-movement fails fast with a clear error naming the actions it tried.
+A policy the game can't support does not run and does not quietly pass: it is
+recorded in `skipped` with a reason naming the missing sense.
 
-### Objectives: declared acceptance criteria
+### Seeds
 
-Objectives are pass/fail criteria the sweep evaluates per run, and they double
-as executable acceptance criteria for the level. Pass `--objective` once per
-criterion (repeatable), each a JSON object; `entity` defaults to the avatar.
+`--seeds N` runs seeds `seedStart … seedStart + N - 1` (default: 6 seeds from
+1). Extend a prior sweep with `--seed-start` instead of re-running seeds you
+already cleared.
 
-```bash
-hearth sweep "Level 1" --policies seek --avatar Player --target exit-door \
-  --objective '{"type":"reach","target":"exit-door","tolerance":24}' --json
+## What is watched
+
+Five per-step detectors plus one probe that runs once, before the first
+episode:
+
+| Check | Fires when | Needs |
+| --- | --- | --- |
+| `crash` | the game throws or logs an uncaught error | error stream |
+| `stuck` | nothing new happens for 180 steps (a novelty drought) | any one of entities, screenshots, scenes, events — and a policy that presses something (`idle` is exempt) |
+| `black-screen` | the frame stays dark and flat for 60 steps | screenshots |
+| `wall-bump` | the avatar pushes in one direction and goes nowhere | entities |
+| `sealed-region` | a fifth or more of the walkable area is cut off from spawn | nav grid **and** entities |
+| `unresponsive-input` | holding a control does nothing a no-input window doesn't already do | at least one declared action or axis, plus entities or screenshots to measure with |
+
+Findings carry a severity — `blocker`, `issue`, or `note` — a frame, and often
+a screenshot path.
+
+## Verdicts
+
+Every run gets exactly one verdict. Worst to best, and that order is the
+precedence when several apply:
+
+`error` → `stuck` → `objective-failed` → `completed` → `ran-clean`
+
+`ran-clean` is the best a sweep with no declared objectives can report: the cap
+was reached, nothing threw, nothing stalled. A sweep **passes** only when no
+run failed *and* nothing was flagged as a blocker — a blocker finding on
+otherwise clean runs still means don't ship.
+
+## Skipped is not passed
+
+This is the rule the whole design rests on. Capabilities are declared by the
+game, never guessed at, and a check that needs a sense the game doesn't declare
+is skipped with an explicit reason:
+
+```
+  not checked (3):
+    - sealed-region: needs nav grid + entity enumeration, which this game does not declare
+    - wall-bump: needs entity enumeration, which this game does not declare
+    - stuck: no sense that can show progress (needs entities, screenshots, scenes, or events)
 ```
 
-The four shapes:
+"No findings" never means "nothing was wrong" on its own. Read the `skipped`
+list next to it, and if it's long, that's the argument for the shim.
 
-- `{"type":"reach","target":"exit-door","tolerance":24}` — get within
-  `tolerance` px of a point or entity.
-- `{"type":"survive","frames":600}` — the entity stays alive and enabled
-  through frame N.
-- `{"type":"event","event":"coin","count":5}` — the named event fires at least
-  `count` times.
-- `{"type":"property","entity":"player","property":"Transform.position.x","greaterThan":100}`
-  — a component path passes a comparison (`greaterThan` | `lessThan` |
-  `equals`).
+## Evidence
 
-A run that meets every objective verdicts `completed`; one that definitively
-misses verdicts `objective-failed`.
+Everything a sweep learns is written under the project, in plain files:
 
-### Verdicts
-
-Every run (one per policy × seed) gets exactly one verdict. Worst to best:
-
-- **`error`** — a script crashed; the first error and its frame are captured.
-- **`stuck`** — no novelty (a new visited cell, a new event, a scene switch)
-  for `--stuck-after` frames (default 180) before the cap. A likely softlock.
-- **`objective-failed`** — an objective definitively failed, or the frame cap
-  arrived with objectives unmet.
-- **`completed`** — every declared objective was achieved.
-- **`ran-clean`** — no objectives declared, the cap was reached, no errors, not
-  stuck. The best a sweep with no objectives can report.
-
-### The report contract
-
-The report's `data` is a summary, not a transcript. Read three things and act:
-
-1. **`verdicts`** — the per-run tally by verdict.
-2. **`failures[]`** — up to five worst-first failing runs, each with `policy`,
-   `seed`, `verdict`, `frame`, a one-line `detail`, and a ready-to-run `repro`
-   string (a failure that's worth freezing also carries a `bake` string).
-3. **`repro`** — copy-paste it to replay a single failing run deterministically.
-
-```jsonc
-{
-  "scene": "level-1", "runs": 16, "framesSimulated": 8400, "wallMs": 5200,
-  "verdicts": { "ran-clean": 12, "stuck": 2, "error": 1, "completed": 0, "objective-failed": 1 },
-  "objectives": [ { "summary": "reach exit-door ±24px", "successRate": 0.75,
-                    "medianCompletedFrame": 342, "worstSeed": 6 } ],
-  "coverage": { "cellsVisited": 84, "cellsReachable": 120, "pct": 0.70 },
-  "failures": [
-    { "policy": "mash", "seed": 4, "verdict": "error", "frame": 218,
-      "detail": "player.lua:31: attempt to index nil ...",
-      "repro": "hearth sweep level-1 --policies mash --seeds 1 --seed-start 4",
-      "bake": "hearth sweep level-1 --policies mash --seed-start 4 --seeds 1 --bake crash-seed-4" }
-  ],
-  "reportFile": ".hearth/sweeps/level-1-0001.json"
-}
+```
+.hearth/evidence/
+  journal.jsonl                          append-only event stream (the live feed)
+  sweeps/0001/report.json                the folded report
+  sweeps/0001/runs/<policy>-<seed>.json  one file per episode
+  sweeps/0001/shots/*.png                frames the findings point at
 ```
 
-Full per-run detail — every run, verdict frames, first-error stacks, visited
-counts — is written to `.hearth/sweeps/<scene>-<seq>.json` (sequential ids, not
-timestamps, so the path is deterministic). **Don't open it by default.** The
-summary plus `repro` is the contract; reaching for the file is for deep
-diagnosis only. The ASCII coverage heatmap is gated behind `--heatmap` for the
-same reason — the verdict tally already tells you *whether* there's a coverage
-problem; the grid, which costs tokens, only tells you *where*.
+Sweep ids are zero-padded sequence numbers (`0001`), not timestamps, so a path
+stays stable and can be pasted into a conversation. The journal is what the
+app's Playtests rail renders while the sweep is still running; the same files
+are there afterwards for anything else that wants to read them.
 
-### The budget guard
+The report is deliberately small: findings are deduped and capped at 8 total
+and 3 per kind, failures at 5, worst-first. Per-episode depth lives in
+`runs/*.json` — reach for it for diagnosis, not by default.
 
-A sweep is `policies × seeds × maxFrames` simulated frames, and that product
-must stay at or under **400,000** frames — otherwise the command fails fast,
-before running a single frame, with a message telling you to cut seeds,
-policies, or `--max-frames`. At roughly 1–3 ms/frame headless this keeps every
-sweep a seconds-scale operation. The default 8 seeds is almost always right:
-because runs are deterministic, one failing seed is already a complete repro,
-so more seeds rarely buy more signal.
+## Reading a report back
 
-## Bake: freeze a failure into a regression test
+In the app, results land in the Playtests rail and can be handed straight to
+the conversation. Outside it, the CLI and the MCP server print the same folded
+summary from the same files ([cli.md](./cli.md), [mcp.md](./mcp.md)):
 
-When a sweep finds a failing seed, bake it. `--bake <name>` re-runs that exact
-`(policy, seed)`, records the input timeline, and writes an ordinary scripted
-playtest — `setAction`/`setAxis`/`setPointer`/`wait` steps that reproduce the
-run bit-for-bit — with assertions derived from the objectives (`reach` →
-`assertPositionNear`, `survive` → `assertEntityExists`, `event` →
-`assertEventCount`, `property` → `assertProperty`, always `assertNoErrors`).
-Bake needs an explicit scene, exactly one policy, and exactly one seed
-(`--seeds 1`, the seed from `--seed-start`):
-
-```bash
-# Sweep found: mash / seed 4 → error at frame 218. Freeze it.
-hearth sweep "Level 1" --policies mash --seed-start 4 --seeds 1 --bake crash-seed-4 --json
+```
+✗ sweep 0003 — ~/Hearth/tiny-roguelike
+  6 runs: error 1, ran-clean 5 — 1 failing
+  policies: mash · seeds: 1-6
+  findings (1):
+    - [blocker] crash: game threw: Cannot read properties of null (reading 'x') (player.js:31)
+        frame 218 · shot sweeps/0003/shots/mash-4-00210.png
+  failures (1):
+    - mash/4 error at frame 218 — Cannot read properties of null
+        repro: hearth-probe sweep ~/Hearth/tiny-roguelike --policies mash --seeds 1 --seed-start 4
+  evidence: ~/Hearth/tiny-roguelike/.hearth/evidence/sweeps/0003
+  full detail: ~/Hearth/tiny-roguelike/.hearth/evidence/sweeps/0003/report.json
 ```
 
-A baked run that *failed* produces a **failing** playtest — that's the point. It
-stays red until you fix the bug, then guards it forever, green. Baked tests are
-ordinary playtests: they run in `hearth playtest --all` and `hearth test` like
-any other, in CI included. The loop closes: sweep finds it → bake it red → fix →
-it goes green → it never regresses.
-
-A crash bakes red on its own (`assertNoErrors` fails). A *stuck* failure only
-bakes red if the bake carries the sweep's `--objective` flags — the stall itself
-is not asserted, the unmet objective is. The report's `bake` string already
-repeats the sweep's `--objective` and `--stuck-after` flags for exactly this
-reason.
+Every failure carries its own repro line, so the next step is never a guess.
 
 ## What sweeps don't do
 
-Bots produce **evidence**, not judgment. A sweep can tell you a level softlocks,
-a script crashes, or the exit is unreachable — objective, replayable facts. It
-cannot tell you whether the game is *fun*, whether the difficulty curve feels
-right, or whether a mechanic is satisfying. That read is yours (or your
-agent's). Use sweeps to clear the floor — "it doesn't break, and it's
-beatable" — then judge the ceiling yourself. "It runs" is not "it's good," and a
-green sweep is not a finished game; the quality bar lives in
-[game-feel.md](./game-feel.md#the-quality-bar) and the `hearth-design` skill.
+Bots produce evidence, not judgment. A sweep can say the game crashed, stalled,
+went black, or ignored a control. It cannot say whether the game is fun,
+whether the difficulty is right, or whether a mechanic is satisfying. That read
+is yours. Use a sweep to clear the floor, then judge the ceiling yourself.
