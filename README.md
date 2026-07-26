@@ -1,5 +1,5 @@
 > **Hearth is now an agent-first app for building and playtesting games.**
-> v1.3.0 is its first release: a conversation with a coding agent, an
+> v1.4.0 is its current release: a conversation with a coding agent, an
 > always-on game pane, and bot playtesting that leaves evidence behind. The 2D
 > game engine this repository used to ship is preserved at tag
 > [v1.2.1](https://github.com/echoo19/hearth/releases/tag/v1.2.1) and is no
@@ -139,7 +139,7 @@ A real 2D engine, not a toy. The short version, with the detail one link away:
   or native builds with none of Hearth's chrome in them.
   [Prefabs](docs/prefabs.md) · [Export](docs/export.md)
 
-The current release is **v1.3.0**, the first release of the agent-first app;
+The current release is **v1.4.0**; Hearth became the agent-first app at v1.3.0, and
 the 1.x engine described above stops at v1.2.1. The
 [roadmap](docs/roadmap.md) tracks what's next.
 

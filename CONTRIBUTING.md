@@ -84,9 +84,9 @@ held to the same standard as any other contribution:
 
 ## Releases
 
-Hearth is at v1.3.0 — the first release of the agent-first app, after the
-version line was deliberately reset at the pivot. The retired 1.x game engine
-ends at v1.2.1. Versioning is synchronized across packages, and releases are
+Hearth is at v1.4.0 — the agent-first app line that began at v1.3.0. The
+retired 1.x game engine ends at v1.2.1 and continues to share the same
+version line. Versioning is synchronized across packages, and releases are
 automated: pushing a `v*` tag builds the desktop app for macOS, Windows, and
 Linux, and publishes those alongside the standalone `hearth-cli.mjs` and
 `hearth-mcp.mjs` as release assets.
