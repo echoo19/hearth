@@ -76,8 +76,12 @@ describe('sweeping a web game through probe-core', () => {
           seeds: [1, 2, 3],
           evidence: new NodeEvidenceStore(root),
           target: 'runner:crash',
-          maxSteps: 150,
-          stuckAfter: 120,
+          // Generous caps: on loaded CI runners headless Chromium's rAF slows
+          // to a crawl, so a 150-step budget starves the bot of game frames
+          // and it never physically reaches the crash trigger (both CI
+          // platforms failed exactly this way on the first v0.1.0 run).
+          maxSteps: 600,
+          stuckAfter: 500,
           screenshotEvery: 50,
         });
 
