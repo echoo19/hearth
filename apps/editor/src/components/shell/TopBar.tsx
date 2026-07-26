@@ -16,6 +16,7 @@ import { hearthNative } from '../../native';
 import { Icon } from '../ui';
 import { IconButton } from '../ui/Button';
 import { Tooltip } from '../ui/Tooltip';
+import type { ChatDriverKind } from '../../types';
 
 /** Human label for the connection state, used as the dot's accessible name. */
 export function connectionLabel(status: 'connected' | 'connecting' | 'disconnected'): string {
@@ -36,11 +37,14 @@ export function connectionLabel(status: 'connected' | 'connecting' | 'disconnect
  */
 export function capabilityLabel(
   status: 'connected' | 'connecting' | 'disconnected',
-  driver: 'stub' | 'agent-sdk' | null,
+  driver: ChatDriverKind | null,
   hasKey: boolean,
 ): string {
   if (status !== 'connected') return connectionLabel(status);
-  if (driver === 'agent-sdk') return 'Agent connected';
+  // Every real backend reads the same here on purpose: WHICH agent answered is
+  // the conversation header's business, not the top bar's. This line answers
+  // only "will anything happen if I type?".
+  if (driver === 'agent-sdk' || driver === 'codex') return 'Agent connected';
   if (driver === 'stub') return 'No agent connected';
   return hasKey ? 'Ready' : 'No agent connected';
 }

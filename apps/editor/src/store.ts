@@ -16,10 +16,12 @@
 import { create } from 'zustand';
 import {
   apiAppSettings,
+  apiChatProviders,
   apiDeleteChat,
   apiGameStatus,
   apiListChats,
   apiMeta,
+  apiOpenAiLogin,
   apiOpenWorkspace,
   apiProbeStatus,
   apiRenameChat,
@@ -27,16 +29,19 @@ import {
 } from './api';
 import type {
   AppSettingsInfo,
+  ApprovalDecision,
   ChatDriverKind,
   ChatEvent,
   ChatMessage,
   ChatPart,
+  ChatProviderStatus,
   ChatRecord,
   ChatSummary,
   ConsoleEntry,
   ConsoleLevel,
   ConsoleSource,
   EvidenceEvent,
+  FileChangeEntry,
   GameStatus,
   JournalEntry,
   Sense,
@@ -87,6 +92,12 @@ export interface AppState {
   chatDriver: ChatDriverKind | null;
   chatError: string | null;
   settings: AppSettingsInfo | null;
+  /**
+   * What could answer a turn in this folder — a key, a signed-in Codex, or
+   * nothing. Null until the first read; refreshed whenever the server says it
+   * changed (a login completing, a key being saved).
+   */
+  providers: ChatProviderStatus | null;
   /** Every conversation this folder holds, newest activity first. */
   chats: ChatSummary[];
   /** Which one the window is looking at. */
@@ -151,7 +162,15 @@ export interface AppState {
   openWorkspace(path: string, prompt?: string): Promise<{ ok: boolean; error?: string }>;
   closeWorkspace(): void;
   sendChat(text: string): void;
+  /** End the turn AND the session — the conversation's agent is torn down. */
   cancelChat(): void;
+  /** Stop the running turn but keep the session, so the next message continues. */
+  interruptChat(): void;
+  /** Answer a blocking ask, and show the answer without waiting for the round trip. */
+  approveChat(approvalId: string, decision: ApprovalDecision): void;
+  refreshProviders(): Promise<void>;
+  /** Begin the ChatGPT device flow and open the page it hands back. */
+  startOpenAiLogin(): Promise<void>;
   /** Start a fresh conversation and switch to it. */
   newChat(): void;
   /** Switch to an existing conversation, replaying it from disk. */
@@ -264,17 +283,84 @@ export function makeAgentMessage(): ChatMessage {
 }
 
 /**
- * Fold one ChatEvent into the message list. Text deltas extend the trailing
+ * Upgrade a v0 event to the canonical vocabulary. Old transcripts on disk were
+ * written in the smaller union (`text-delta`, `tool-start`, `tool-end{ok}`,
+ * `done`); rather than teach the fold two dialects, everything is translated
+ * once here and the fold only ever sees one. Canonical events pass through
+ * untouched, so this is a no-op for anything a current driver emits.
+ *
+ * `tool-end` legitimately has two shapes — the legacy one is keyed by `id`,
+ * the canonical one by `toolId` — which is what the `'toolId' in event` narrow
+ * is for.
+ */
+export function normalizeChatEvent(event: ChatEvent): ChatEvent {
+  switch (event.type) {
+    case 'text-delta':
+      return { type: 'message-delta', text: event.text };
+    case 'tool-start':
+      // v0 had no tool taxonomy: everything becomes a generic chip, which is
+      // exactly how it rendered when it was written.
+      return { type: 'tool-begin', toolId: event.id, kind: 'other', title: event.name, detail: event.detail };
+    case 'tool-end':
+      return 'toolId' in event
+        ? event
+        : { type: 'tool-end', toolId: event.id, status: event.ok ? 'ok' : 'error', summary: event.detail };
+    case 'done':
+      return { type: 'turn-complete' };
+    default:
+      return event;
+  }
+}
+
+/**
+ * Ceiling on captured output held per command / per subagent, in characters.
+ * A build log can run to megabytes and none of it is worth the memory once it
+ * has scrolled past — the TAIL is what a reader wants, so the head is what
+ * gets dropped.
+ */
+const MAX_CAPTURED_CHARS = 20000;
+
+function clampCapture(text: string): string {
+  return text.length <= MAX_CAPTURED_CHARS ? text : text.slice(text.length - MAX_CAPTURED_CHARS);
+}
+
+/**
+ * Merge a second file-change report into the first. Keyed by path, first-seen
+ * order, later report wins: a driver that re-reports a file (an edit followed
+ * by the diff for it) must not double it in the list.
+ */
+function mergeFileChanges(existing: FileChangeEntry[], incoming: FileChangeEntry[]): FileChangeEntry[] {
+  const merged = existing.slice();
+  for (const file of incoming) {
+    const at = merged.findIndex((entry) => entry.path === file.path);
+    if (at >= 0) merged[at] = file;
+    else merged.push(file);
+  }
+  return merged;
+}
+
+/**
+ * Fold one ChatEvent into the message list. Prose deltas extend the trailing
  * text part (or open one), so a run of deltas is one paragraph rather than a
- * thousand fragments; a tool call closes the current text part, which is what
- * makes chips land inline where they actually happened.
+ * thousand fragments; anything else — a command, a file change, a subagent, an
+ * ask — closes that paragraph, which is what makes activity land inline where
+ * it actually happened.
+ *
+ * `now` is a parameter rather than a `Date.now()` call so the fold stays pure
+ * and the one thing it times (how long a command ran) is testable.
  *
  * Returns the same array identity when nothing applies, so React skips work.
  */
-export function applyChatEvent(messages: ChatMessage[], event: ChatEvent): ChatMessage[] {
+export function applyChatEvent(
+  messages: ChatMessage[],
+  incoming: ChatEvent,
+  now: number = Date.now(),
+): ChatMessage[] {
   const lastIndex = messages.length - 1;
   const last = lastIndex >= 0 ? messages[lastIndex] : null;
   if (!last || last.role !== 'agent' || !last.streaming) return messages;
+
+  const event = normalizeChatEvent(incoming);
 
   const replace = (parts: ChatPart[], streaming = true): ChatMessage[] => {
     const next = messages.slice();
@@ -283,27 +369,133 @@ export function applyChatEvent(messages: ChatMessage[], event: ChatEvent): ChatM
   };
 
   switch (event.type) {
-    case 'text-delta': {
+    case 'message-delta': {
       const parts = last.parts.slice();
       const tail = parts[parts.length - 1];
       if (tail && tail.kind === 'text') parts[parts.length - 1] = { kind: 'text', text: tail.text + event.text };
       else parts.push({ kind: 'text', text: event.text });
       return replace(parts);
     }
-    case 'tool-start':
+    case 'reasoning-delta': {
+      const parts = last.parts.slice();
+      const tail = parts[parts.length - 1];
+      if (tail && tail.kind === 'reasoning') {
+        parts[parts.length - 1] = { kind: 'reasoning', text: tail.text + event.text };
+      } else {
+        parts.push({ kind: 'reasoning', text: event.text });
+      }
+      return replace(parts);
+    }
+    case 'tool-begin':
+      // A shell command is the one tool with a body worth keeping, so it opens
+      // its own part with a capture buffer. Everything else is a chip.
       return replace([
         ...last.parts,
-        { kind: 'tool', id: event.id, name: event.name, detail: event.detail, state: 'running' },
+        event.kind === 'command'
+          ? {
+              kind: 'command',
+              id: event.toolId,
+              title: event.title,
+              detail: event.detail,
+              output: '',
+              state: 'running',
+              startedAt: now,
+            }
+          : { kind: 'tool', id: event.toolId, name: event.title, detail: event.detail, state: 'running' },
       ]);
-    case 'tool-end':
+    case 'tool-output-delta':
       return replace(
         last.parts.map((part) =>
-          part.kind === 'tool' && part.id === event.id
-            ? { ...part, state: event.ok ? 'ok' : 'error', detail: event.detail ?? part.detail }
+          part.kind === 'command' && part.id === event.toolId
+            ? { ...part, output: clampCapture(part.output + event.chunk) }
             : part,
         ),
       );
-    case 'done':
+    case 'tool-end': {
+      // Only the canonical shape reaches here — normalizeChatEvent rewrote the
+      // legacy one — but the union still carries both, so narrow before use.
+      if (!('toolId' in event)) return messages;
+      const settled = event.status === 'ok' ? 'ok' : 'error';
+      return replace(
+        last.parts.map((part) => {
+          if (part.kind === 'command' && part.id === event.toolId) {
+            return {
+              ...part,
+              state: settled,
+              exitCode: event.exitCode ?? part.exitCode,
+              durationMs: part.startedAt === undefined ? part.durationMs : now - part.startedAt,
+              detail: event.summary ?? part.detail,
+            };
+          }
+          if (part.kind === 'tool' && part.id === event.toolId) {
+            return { ...part, state: settled, detail: event.summary ?? part.detail };
+          }
+          return part;
+        }),
+      );
+    }
+    case 'file-change': {
+      const toolId = event.toolId;
+      const belongsToOpenCard =
+        toolId !== undefined && last.parts.some((part) => part.kind === 'file-change' && part.id === toolId);
+      if (belongsToOpenCard) {
+        return replace(
+          last.parts.map((part) =>
+            part.kind === 'file-change' && part.id === toolId
+              ? { ...part, files: mergeFileChanges(part.files, event.files) }
+              : part,
+          ),
+        );
+      }
+      // No tool to hang it on: key the card by where it landed, which is
+      // unique within the turn and stable across a replay of it.
+      return replace([
+        ...last.parts,
+        { kind: 'file-change', id: toolId ?? `${last.id}:f${last.parts.length}`, files: event.files },
+      ]);
+    }
+    case 'approval-request':
+      return replace([
+        ...last.parts,
+        {
+          kind: 'approval',
+          id: event.approvalId,
+          approvalKind: event.kind,
+          title: event.title,
+          detail: event.detail,
+          decision: null,
+        },
+      ]);
+    case 'approval-resolved':
+      // The prompt becomes the record of what was allowed. Nothing is removed:
+      // "I said yes to that" is part of the transcript.
+      return replace(
+        last.parts.map((part) =>
+          part.kind === 'approval' && part.id === event.approvalId ? { ...part, decision: event.decision } : part,
+        ),
+      );
+    case 'subagent-start':
+      return replace([
+        ...last.parts,
+        { kind: 'subagent', id: event.agentId, role: event.role, title: event.title, text: '', state: 'running' },
+      ]);
+    case 'subagent-delta':
+      return replace(
+        last.parts.map((part) =>
+          part.kind === 'subagent' && part.id === event.agentId
+            ? { ...part, text: clampCapture(part.text + event.chunk) }
+            : part,
+        ),
+      );
+    case 'subagent-end':
+      return replace(
+        last.parts.map((part) =>
+          part.kind === 'subagent' && part.id === event.agentId
+            ? { ...part, state: event.status === 'ok' ? 'ok' : 'error', summary: event.summary ?? part.summary }
+            : part,
+        ),
+      );
+    case 'turn-complete':
       // Drop a turn that produced nothing at all rather than leaving an empty
       // bubble behind.
       if (last.parts.length === 0) return messages.slice(0, lastIndex);
@@ -313,6 +505,21 @@ export function applyChatEvent(messages: ChatMessage[], event: ChatEvent): ChatM
     default:
       return messages;
   }
+}
+
+/**
+ * The ask the transcript is currently waiting on, or null. Approvals block, so
+ * there is normally at most one — the OLDEST unanswered one wins, because a
+ * driver that managed to stack two is still owed an answer to the first.
+ * Pure: the keyboard contract (↵ allow, esc deny) is bound to this id alone.
+ */
+export function pendingApprovalId(messages: readonly ChatMessage[]): string | null {
+  for (const message of messages) {
+    for (const part of message.parts) {
+      if (part.kind === 'approval' && part.decision === null) return part.id;
+    }
+  }
+  return null;
 }
 
 /**
@@ -444,6 +651,11 @@ export const useApp = create<AppState>((set, get) => {
       case 'chat-ready':
         set({ chatDriver: frame.driver });
         return;
+      case 'chat-providers':
+        // Pushed rather than polled: a ChatGPT login finishes in a browser
+        // window this app doesn't own, and the dialog behind it has to notice.
+        set({ providers: frame.status });
+        return;
       case 'chat-list':
         set({ chats: frame.chats });
         return;
@@ -459,9 +671,12 @@ export const useApp = create<AppState>((set, get) => {
         });
         return;
       case 'chat-event': {
-        const event = frame.event;
+        // Normalize here as well as inside the fold, so the turn-ending rules
+        // below are written once in the canonical vocabulary rather than once
+        // per dialect.
+        const event = normalizeChatEvent(frame.event);
         set((state) => ({ messages: applyChatEvent(state.messages, event) }));
-        if (event.type === 'done') set({ chatBusy: false });
+        if (event.type === 'turn-complete') set({ chatBusy: false });
         if (event.type === 'error') {
           set({ chatBusy: false, chatError: event.message });
           get().log('error', 'agent', event.message);
@@ -558,6 +773,7 @@ export const useApp = create<AppState>((set, get) => {
     chatDriver: null,
     chatError: null,
     settings: null,
+    providers: null,
     chats: [],
     activeChatId: null,
 
@@ -631,6 +847,7 @@ export const useApp = create<AppState>((set, get) => {
         chatBusy: false,
         chatDriver: null,
         chatError: null,
+        providers: null,
         chats: [],
         activeChatId: null,
         evidence: [],
@@ -648,7 +865,12 @@ export const useApp = create<AppState>((set, get) => {
         pendingPrompt: prompt?.trim() ? prompt.trim() : null,
       });
       connectWs(info.path);
-      await Promise.all([get().refreshGame(), get().refreshSettings(), get().refreshChats()]);
+      await Promise.all([
+        get().refreshGame(),
+        get().refreshSettings(),
+        get().refreshProviders(),
+        get().refreshChats(),
+      ]);
       // Land in the most recent conversation, or start the folder's first one.
       // Either way the window opens on a conversation, never on nothing.
       const chats = get().chats;
@@ -675,6 +897,7 @@ export const useApp = create<AppState>((set, get) => {
         chatDriver: null,
         chatError: null,
         settings: null,
+        providers: null,
         chats: [],
         activeChatId: null,
         evidence: [],
@@ -710,6 +933,60 @@ export const useApp = create<AppState>((set, get) => {
         chatBusy: false,
         messages: state.messages.map((m) => (m.streaming ? { ...m, streaming: false } : m)),
       }));
+    },
+
+    interruptChat() {
+      // Stop is about THIS turn, not about the conversation: `chat-interrupt`
+      // abandons the running turn and leaves the agent bound, so the next
+      // message picks up with everything it already knows. (`chat-cancel`,
+      // above, is the teardown — closing the folder, not pressing Stop.)
+      get().sendFrame({ type: 'chat-interrupt' });
+      // Settle the surface now rather than waiting for the server to confirm:
+      // a Stop that leaves the composer locked reads as a Stop that failed.
+      set((state) => ({
+        chatBusy: false,
+        messages: state.messages.map((m) => (m.streaming ? { ...m, streaming: false } : m)),
+      }));
+    },
+
+    approveChat(approvalId, decision) {
+      get().sendFrame({ type: 'chat-approval', approvalId, decision });
+      // Optimistic, and safe to be: the server echoes `approval-resolved` with
+      // the same decision, which lands on an already-resolved part as a no-op.
+      set((state) => ({
+        messages: state.messages.map((message) =>
+          message.parts.some((part) => part.kind === 'approval' && part.id === approvalId && part.decision === null)
+            ? {
+                ...message,
+                parts: message.parts.map((part) =>
+                  part.kind === 'approval' && part.id === approvalId ? { ...part, decision } : part,
+                ),
+              }
+            : message,
+        ),
+      }));
+    },
+
+    async refreshProviders() {
+      const project = get().projectPath;
+      if (!project) return;
+      const providers = await apiChatProviders(project);
+      if (get().projectPath !== project) return; // folder changed mid-flight
+      set({ providers });
+    },
+
+    async startOpenAiLogin() {
+      const project = get().projectPath;
+      if (!project) return;
+      const result = await apiOpenAiLogin(project);
+      if (!result.ok || !result.authUrl) {
+        get().log('error', 'app', result.error ?? 'Could not start the ChatGPT sign-in.');
+        return;
+      }
+      // The flow finishes in a real browser (it is an OAuth page, and Codex
+      // owns the callback); the app hears about it as a `chat-providers`
+      // broadcast rather than by polling.
+      window.open(result.authUrl, '_blank', 'noopener,noreferrer');
     },
 
     newChat() {

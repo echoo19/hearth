@@ -44,13 +44,22 @@ import { type JournalEntry, type DesktopPlatform, type DesktopBuildResult } from
 import { NodeFileSystem } from '@hearth/core/node';
 import { startJournalWatcher } from './journalWatcher.js';
 import { startEvidenceWatcher, type EvidenceEvent } from './evidenceWatcher.js';
-import { createChatDriver, type ChatDriver, type ChatDriverKind, type ChatEvent } from './chat.js';
+import {
+  createChatDriver,
+  endsTurn,
+  type ApprovalDecision,
+  type ChatDriver,
+  type ChatDriverKind,
+  type ChatEvent,
+} from './chat.js';
+import { providerBus, type ChatProviderStatus } from './chatProviders.js';
 import {
   appendChatRecord,
   createChat,
   listChats,
   readTranscript,
   safeChatId,
+  setChatThreadId,
   type ChatRecord,
   type ChatSummary,
 } from './chatStore.js';
@@ -94,10 +103,21 @@ export type WsFrame =
   | { type: 'chat-cancel' } // client -> server
   | { type: 'chat-new' } // client -> server
   | { type: 'chat-open'; chatId: string } // client -> server
+  // The answer to an `approval-request` event. The agent's turn is genuinely
+  // BLOCKED until this arrives, which is why it rides the same socket as the
+  // events rather than an HTTP round trip.
+  | { type: 'chat-approval'; approvalId: string; decision: ApprovalDecision } // client -> server
+  // Stop the running turn but KEEP the conversation: `chat-cancel` tears the
+  // whole backend down (and the next send binds a fresh one), which is the
+  // wrong thing to do to someone who just wants the agent to stop talking.
+  | { type: 'chat-interrupt' } // client -> server
   | { type: 'chat-ready'; driver: ChatDriverKind }
   | { type: 'chat-event'; event: ChatEvent }
   | { type: 'chat-opened'; chat: ChatSummary; records: ChatRecord[] }
   | { type: 'chat-list'; chats: ChatSummary[] }
+  // Provider auth moved (a key was saved, a ChatGPT sign-in completed in a
+  // browser tab). Broadcast so Settings updates itself.
+  | { type: 'chat-providers'; status: ChatProviderStatus }
   | { type: 'pty-data'; data: string }
   | { type: 'pty-exit'; code: number }
   | { type: 'pty-input'; data: string } // client -> server
@@ -184,8 +204,16 @@ export function attachWebSocket(
   ptyEnvForTests?: () => Promise<NodeJS.ProcessEnv>,
   opts?: {
     detachLingerMs?: number;
-    /** Test seam: stand in a scripted ChatDriver instead of resolving a real backend. */
-    createChatDriver?: (projectRoot: string) => Promise<ChatDriver>;
+    /**
+     * Test seam: stand in a scripted ChatDriver instead of resolving a real
+     * backend. The options argument carries the conversation's codex thread
+     * (and the callback that persists a new one); a fake that ignores it is
+     * still a valid stand-in, which is why it is optional.
+     */
+    createChatDriver?: (
+      projectRoot: string,
+      options?: { resumeThreadId?: string | null; onThreadId?: (threadId: string) => void },
+    ) => Promise<ChatDriver>;
   },
 ): void {
   const wss = new WebSocketServer({ noServer: true });
@@ -268,6 +296,16 @@ export function attachWebSocket(
     if (channel) broadcast(channel.sockets, frame);
   };
   ctx.exportBus.on('frame', onExportFrame);
+
+  // Provider auth changes arrive from OUTSIDE the socket — an HTTP settings
+  // save, or a ChatGPT sign-in that completed in the user's browser minutes
+  // later. Fan them out to every window on the folder so Settings and the
+  // conversation header stay honest without polling.
+  const onProviderChange = ({ root, status }: { root: string; status: ChatProviderStatus }): void => {
+    const channel = channels.get(root);
+    if (channel) broadcast(channel.sockets, { type: 'chat-providers', status });
+  };
+  providerBus.on('changed', onProviderChange);
 
   /** Removes `session` from every registry (maps, linger timer) without
    * touching the pty process itself. */
@@ -480,7 +518,14 @@ export function attachWebSocket(
 
     let driver: ChatDriver;
     try {
-      driver = await makeChatDriver(root);
+      // A conversation the OpenAI backend has answered before carries its
+      // codex thread, so reopening it resumes that thread rather than handing
+      // a fresh agent a transcript to read.
+      const summary = (await listChats(root)).find((entry) => entry.id === session.chatId);
+      driver = await makeChatDriver(root, {
+        resumeThreadId: summary?.codexThreadId ?? null,
+        onThreadId: (threadId) => void setChatThreadId(root, session.chatId, threadId),
+      });
       await driver.start(session.chatId, root);
     } catch (err) {
       chatSessions.delete(key);
@@ -506,7 +551,7 @@ export function attachWebSocket(
           // in its transcript when it comes back.
           await appendChatRecord(root, session.chatId, { role: 'agent', ts: new Date().toISOString(), event });
           broadcast(session.sockets, { type: 'chat-event', event });
-          if (event.type === 'done' || event.type === 'error') void announceChats(root);
+          if (endsTurn(event)) void announceChats(root);
         }
       } catch (err) {
         if (chatSessions.get(key) === session) {
@@ -675,6 +720,30 @@ export function attachWebSocket(
               })();
             }
             break;
+          case 'chat-approval':
+            {
+              // Answering is routed to the conversation's driver, not to this
+              // socket: the turn belongs to the chat, so either window looking
+              // at it can unblock the agent.
+              const chatId = socketChat.get(ws);
+              const session = chatId ? chatSessions.get(chatKey(root, chatId)) : null;
+              const decision: ApprovalDecision = frame.decision === 'allow' ? 'allow' : 'deny';
+              if (typeof frame.approvalId === 'string' && frame.approvalId !== '') {
+                session?.driver?.approve?.(frame.approvalId, decision);
+              }
+            }
+            break;
+          case 'chat-interrupt':
+            {
+              // Stop talking, stay in the conversation. A backend without a
+              // real interrupt has no honest way to do that, so it falls back
+              // to the coarse teardown rather than pretending it stopped.
+              const chatId = socketChat.get(ws);
+              const session = chatId ? chatSessions.get(chatKey(root, chatId)) : null;
+              if (session?.driver?.interrupt) session.driver.interrupt();
+              else stopChat(ws);
+            }
+            break;
           case 'chat-cancel':
             // Cancelling ends the conversation's backend; the next send binds
             // a fresh one. Coarse by design for v0 — a half-cancelled agent is
@@ -693,6 +762,7 @@ export function attachWebSocket(
 
   httpServer.on('close', () => {
     ctx.exportBus.off('frame', onExportFrame);
+    providerBus.off('changed', onProviderChange);
     for (const channel of channels.values()) channel.dispose();
     channels.clear();
     // Detached sessions hold linger timers and live ptys; app quit reaps

@@ -12,10 +12,19 @@
  *                     non-literal import specifier) so the editor typechecks,
  *                     tests, and boots identically whether or not the package
  *                     is installed.
+ *  - `CodexDriver`  — OpenAI's `codex app-server` over stdio JSON-RPC (see
+ *                     chatDrivers/codex.ts). Authenticated by a ChatGPT sign-in
+ *                     or an API key, both held by the codex binary itself.
  *
  * Events are a plain async iterable of `ChatEvent`, which ws.ts forwards over
  * the socket's `chat` channel one frame per event. A driver is per-socket and
  * per-project: `start()` binds it, `send()` queues a turn, `stop()` ends it.
+ *
+ * The event vocabulary is deliberately PROVIDER-AGNOSTIC. Two very different
+ * agents (an Anthropic SDK stream, a Codex JSON-RPC stream) are mapped onto
+ * one union here, so the transcript UI renders a command execution, a file
+ * change, a subagent or an approval the same way regardless of who is doing
+ * the work. Adding a third backend means writing a mapping, not a renderer.
  */
 import path from 'node:path';
 import { promises as fsp } from 'node:fs';
@@ -24,15 +33,109 @@ import { promises as fsp } from 'node:fs';
 // Wire shapes
 // ---------------------------------------------------------------------------
 
-/** One thing that happened in a turn. `done` ends a turn; `error` also ends it. */
+/** What a tool call fundamentally IS, for rendering purposes. */
+export type ToolKind = 'command' | 'file-change' | 'mcp' | 'web-search' | 'other';
+
+/** How a tool call, or a subagent, finished. */
+export type ToolStatus = 'ok' | 'error' | 'declined';
+
+/** The two things an agent can be made to ask permission for. */
+export type ApprovalKind = 'command' | 'file-change';
+
+/** The user's answer to an approval request. Provider-neutral on purpose:
+ * codex spells these accept/decline, the Agent SDK allow/deny. */
+export type ApprovalDecision = 'allow' | 'deny';
+
+export type FileChangeKind = 'edit' | 'create' | 'delete';
+
+/** One file touched by a turn. `diff` is unified-diff text when the backend
+ * gives us one; absent is normal, not an error. */
+export interface FileChangeEntry {
+  path: string;
+  kind: FileChangeKind;
+  diff?: string;
+}
+
+/**
+ * One thing that happened in a turn.
+ *
+ * The union is ADDITIVE: the four v0 members at the bottom are still valid,
+ * because they are what is already written into every existing
+ * `.hearth/chats/*.jsonl`. Nothing renames them and nothing rewrites those
+ * files; instead `normalizeChatEvent` upgrades a legacy event to its
+ * canonical equivalent at read time, so replay and the live stream go through
+ * one fold. Drivers only ever EMIT canonical events.
+ *
+ * `turn-complete` ends a turn; `error` also ends it.
+ */
 export type ChatEvent =
+  // --- canonical vocabulary ------------------------------------------------
+  /** Agent prose, streamed. */
+  | { type: 'message-delta'; text: string }
+  /** Visible chain-of-thought summary, streamed. Rendered muted + collapsed. */
+  | { type: 'reasoning-delta'; text: string }
+  /** A tool call started. `title` is the one-line human summary. */
+  | { type: 'tool-begin'; toolId: string; kind: ToolKind; title: string; detail?: string }
+  /** Captured stdout/stderr for a running tool call. */
+  | { type: 'tool-output-delta'; toolId: string; chunk: string }
+  /** A tool call settled. */
+  | { type: 'tool-end'; toolId: string; status: ToolStatus; exitCode?: number; summary?: string }
+  /** Files the turn changed. Carries `toolId` when it came from one call. */
+  | { type: 'file-change'; toolId?: string; files: FileChangeEntry[] }
+  /** The turn is BLOCKED until the user answers. */
+  | { type: 'approval-request'; approvalId: string; kind: ApprovalKind; title: string; detail: string }
+  /** …and the answer, echoed so every window watching the chat agrees. */
+  | { type: 'approval-resolved'; approvalId: string; decision: ApprovalDecision }
+  /** A nested agent was spawned. */
+  | { type: 'subagent-start'; agentId: string; role?: string; title: string }
+  | { type: 'subagent-delta'; agentId: string; chunk: string }
+  | { type: 'subagent-end'; agentId: string; status: ToolStatus; summary?: string }
+  | { type: 'turn-complete' }
+  | { type: 'error'; message: string }
+  // --- legacy v0 members, read-only ----------------------------------------
+  // Never emitted by a driver any more; still parsed, so a conversation held
+  // before the vocabulary was extended replays exactly as it did.
   | { type: 'text-delta'; text: string }
   | { type: 'tool-start'; id: string; name: string; detail?: string }
   | { type: 'tool-end'; id: string; ok: boolean; detail?: string }
-  | { type: 'done' }
-  | { type: 'error'; message: string };
+  | { type: 'done' };
 
-export type ChatDriverKind = 'stub' | 'agent-sdk';
+/**
+ * Upgrade a legacy v0 event to its canonical equivalent; pass a canonical one
+ * through untouched. This is the ONE place the old vocabulary is understood,
+ * which is what keeps the rest of the server and the whole client on a single
+ * set of names.
+ *
+ * `tool-end` is the only tag carrying two shapes (v0's `{id, ok}` and the
+ * canonical `{toolId, status}`), so it is discriminated on the presence of
+ * `toolId` rather than on the tag.
+ */
+export function normalizeChatEvent(event: ChatEvent): ChatEvent {
+  switch (event.type) {
+    case 'text-delta':
+      return { type: 'message-delta', text: event.text };
+    case 'tool-start':
+      return { type: 'tool-begin', toolId: event.id, kind: 'other', title: event.name, detail: event.detail };
+    case 'tool-end':
+      if ('toolId' in event) return event;
+      return { type: 'tool-end', toolId: event.id, status: event.ok ? 'ok' : 'error', summary: event.detail };
+    case 'done':
+      return { type: 'turn-complete' };
+    default:
+      return event;
+  }
+}
+
+/** True when this event ends the turn it belongs to. */
+export function endsTurn(event: ChatEvent): boolean {
+  const type = normalizeChatEvent(event).type;
+  return type === 'turn-complete' || type === 'error';
+}
+
+export type ChatDriverKind = 'stub' | 'agent-sdk' | 'codex';
+
+/** Which vendor answers. Auth for each is configured independently. */
+export type ChatProvider = 'anthropic' | 'openai';
 
 export interface ChatDriver {
   /** Which backend this is, surfaced to the UI so it can name what it's talking to. */
@@ -45,6 +148,17 @@ export interface ChatDriver {
   readonly events: AsyncIterable<ChatEvent>;
   /** Tear down: ends `events` and abandons any in-flight turn. */
   stop(): void;
+  /**
+   * Answer an `approval-request`. Optional: a backend that never asks (the
+   * stub) does not implement it.
+   */
+  approve?(approvalId: string, decision: ApprovalDecision): void;
+  /**
+   * End the RUNNING TURN but keep the session alive, so the next send
+   * continues the same conversation. Optional — a backend without a real
+   * interrupt is torn down instead (see ws.ts).
+   */
+  interrupt?(): void;
 }
 
 // ---------------------------------------------------------------------------
@@ -94,7 +208,20 @@ export class EventQueue<T> implements AsyncIterable<T> {
 export interface AppSettings {
   /** Anthropic API key, stored per project. Never sent to the client verbatim. */
   apiKey?: string;
+  /** OpenAI API key, handed to the codex binary. Never sent to the client. */
+  openaiApiKey?: string;
+  /** Which provider answers when both are usable. */
+  provider?: ChatProvider;
+  /** Absolute path to a `codex` binary, when it isn't on PATH. */
+  codexPath?: string;
 }
+
+/** Settings fields that are secrets: blanked rather than persisted empty, and
+ * never echoed back to the renderer. */
+const SECRET_FIELDS = ['apiKey', 'openaiApiKey'] as const;
+
+/** Settings fields that are plain strings and clear when saved blank. */
+const BLANKABLE_FIELDS = [...SECRET_FIELDS, 'codexPath'] as const;
 
 export function appSettingsPath(projectRoot: string): string {
   return path.join(projectRoot, '.hearth', 'app.json');
@@ -113,8 +240,15 @@ export async function readAppSettings(projectRoot: string): Promise<AppSettings>
 
 export async function writeAppSettings(projectRoot: string, patch: AppSettings): Promise<AppSettings> {
   const next = { ...(await readAppSettings(projectRoot)), ...patch };
-  // An empty string clears the key rather than persisting a useless blank.
-  if (next.apiKey !== undefined && next.apiKey.trim() === '') delete next.apiKey;
+  // An empty string clears a field rather than persisting a useless blank —
+  // which is also how the UI removes a stored key.
+  for (const field of BLANKABLE_FIELDS) {
+    const value = next[field];
+    if (value !== undefined && value.trim() === '') delete next[field];
+  }
+  if (next.provider !== undefined && next.provider !== 'anthropic' && next.provider !== 'openai') {
+    delete next.provider;
+  }
   const file = appSettingsPath(projectRoot);
   await fsp.mkdir(path.dirname(file), { recursive: true });
   await fsp.writeFile(file, JSON.stringify(next, null, 2) + '\n');
@@ -129,6 +263,14 @@ export async function resolveApiKey(projectRoot: string): Promise<string | null>
   return env ? env : null;
 }
 
+/** The OpenAI key to hand codex, when one is configured here or in the env. */
+export async function resolveOpenAiKey(projectRoot: string): Promise<string | null> {
+  const stored = (await readAppSettings(projectRoot)).openaiApiKey?.trim();
+  if (stored) return stored;
+  const env = process.env.OPENAI_API_KEY?.trim() || process.env.CODEX_API_KEY?.trim();
+  return env ? env : null;
+}
+
 // ---------------------------------------------------------------------------
 // StubDriver
 // ---------------------------------------------------------------------------
@@ -136,9 +278,10 @@ export async function resolveApiKey(projectRoot: string): Promise<string | null>
 export const STUB_REPLY = [
   'No agent is connected yet, so nothing is building.',
   '',
-  'Two ways to connect one:',
+  'Three ways to connect one:',
   '  1. Set an Anthropic API key in Settings (or export ANTHROPIC_API_KEY before launching).',
-  '  2. Open the Terminal tab and run your own agent CLI there — it already has the project folder as its working directory.',
+  '  2. Sign in with ChatGPT in Settings, if you have the codex CLI installed.',
+  '  3. Open the Terminal tab and run your own agent CLI there — it already has the project folder as its working directory.',
 ].join('\n');
 
 /**
@@ -162,9 +305,9 @@ export class StubDriver implements ChatDriver {
   send(_text: string): void {
     if (this.stopped) return;
     for (const line of STUB_REPLY.split('\n')) {
-      this.queue.push({ type: 'text-delta', text: `${line}\n` });
+      this.queue.push({ type: 'message-delta', text: `${line}\n` });
     }
-    this.queue.push({ type: 'done' });
+    this.queue.push({ type: 'turn-complete' });
   }
 
   stop(): void {
@@ -203,10 +346,68 @@ function asRecord(value: unknown): Record<string, unknown> | null {
 }
 
 /**
+ * What kind of thing an Agent SDK tool name IS. The SDK's vocabulary is its
+ * own; this is the seam that maps it onto the provider-agnostic kinds so a
+ * `Bash` call and a codex `commandExecution` render as the same row.
+ */
+export function sdkToolKind(name: string): ToolKind {
+  if (name.startsWith('mcp__')) return 'mcp';
+  switch (name) {
+    case 'Bash':
+    case 'BashOutput':
+    case 'KillShell':
+      return 'command';
+    case 'Edit':
+    case 'MultiEdit':
+    case 'Write':
+    case 'NotebookEdit':
+      return 'file-change';
+    case 'WebFetch':
+    case 'WebSearch':
+      return 'web-search';
+    default:
+      return 'other';
+  }
+}
+
+/** Plain-language one-liner for a tool call, e.g. `npm test` for a Bash call. */
+export function sdkToolTitle(name: string, input: unknown): string {
+  const record = asRecord(input);
+  const command = record?.command;
+  if (sdkToolKind(name) === 'command' && typeof command === 'string' && command.trim() !== '') return command;
+  return name;
+}
+
+/** The file a file-change tool touched, and whether it created it. */
+export function sdkFileChange(name: string, input: unknown): FileChangeEntry | null {
+  const record = asRecord(input);
+  if (!record) return null;
+  const file = record.file_path ?? record.path ?? record.notebook_path;
+  if (typeof file !== 'string' || file.trim() === '') return null;
+  if (name === 'Write') return { path: file, kind: 'create' };
+  const before = record.old_string;
+  const after = record.new_string;
+  // A minimal, honest diff: the SDK gives us the exact strings being swapped,
+  // so render those rather than inventing hunk headers we can't compute.
+  const diff =
+    typeof before === 'string' && typeof after === 'string'
+      ? [
+          ...before.split('\n').map((line) => `-${line}`),
+          ...after.split('\n').map((line) => `+${line}`),
+        ].join('\n')
+      : undefined;
+  return { path: file, kind: 'edit', diff };
+}
+
+/**
  * Map ONE SDK message onto zero or more ChatEvents. Pure and defensive: the
  * SDK's message union is not typed here (it is resolved at runtime), so every
  * field is probed rather than trusted, and an unrecognised shape yields no
  * events instead of throwing mid-stream. Exported for direct unit testing.
+ *
+ * `Task` tool calls become subagent events rather than tool events: a nested
+ * agent is a different thing on screen from a command, and the vocabulary has
+ * a shape for it.
  */
 export function mapSdkMessage(message: unknown): ChatEvent[] {
   const msg = asRecord(message);
@@ -217,8 +418,11 @@ export function mapSdkMessage(message: unknown): ChatEvent[] {
   if (msg.type === 'stream_event') {
     const event = asRecord(msg.event);
     const delta = asRecord(event?.delta);
-    if (event?.type === 'content_block_delta' && delta?.type === 'text_delta' && typeof delta.text === 'string') {
-      out.push({ type: 'text-delta', text: delta.text });
+    if (event?.type !== 'content_block_delta' || !delta) return out;
+    if (delta.type === 'text_delta' && typeof delta.text === 'string') {
+      out.push({ type: 'message-delta', text: delta.text });
+    } else if (delta.type === 'thinking_delta' && typeof delta.thinking === 'string') {
+      out.push({ type: 'reasoning-delta', text: delta.thinking });
     }
     return out;
   }
@@ -229,8 +433,21 @@ export function mapSdkMessage(message: unknown): ChatEvent[] {
     for (const raw of content) {
       const block = asRecord(raw);
       if (!block) continue;
-      if (block.type === 'tool_use' && typeof block.id === 'string' && typeof block.name === 'string') {
-        out.push({ type: 'tool-start', id: block.id, name: block.name, detail: describeToolInput(block.input) });
+      if (block.type !== 'tool_use' || typeof block.id !== 'string' || typeof block.name !== 'string') continue;
+      const { id, name, input } = block as { id: string; name: string; input: unknown };
+      if (name === 'Task') {
+        const params = asRecord(input);
+        const role = typeof params?.subagent_type === 'string' ? params.subagent_type : undefined;
+        const title =
+          typeof params?.description === 'string' && params.description.trim() !== '' ? params.description : 'Subagent';
+        out.push({ type: 'subagent-start', agentId: id, role, title });
+        continue;
+      }
+      const kind = sdkToolKind(name);
+      out.push({ type: 'tool-begin', toolId: id, kind, title: sdkToolTitle(name, input), detail: describeToolInput(input) });
+      if (kind === 'file-change') {
+        const change = sdkFileChange(name, input);
+        if (change) out.push({ type: 'file-change', toolId: id, files: [change] });
       }
     }
     return out;
@@ -242,7 +459,15 @@ export function mapSdkMessage(message: unknown): ChatEvent[] {
     for (const raw of content) {
       const block = asRecord(raw);
       if (!block || block.type !== 'tool_result' || typeof block.tool_use_id !== 'string') continue;
-      out.push({ type: 'tool-end', id: block.tool_use_id, ok: block.is_error !== true });
+      const status: ToolStatus = block.is_error === true ? 'error' : 'ok';
+      const text = toolResultText(block.content);
+      // A subagent's result closes the subagent card, not a tool row. Which of
+      // the two this is was decided when the call opened; the id is the link,
+      // and emitting both would double-render. `subagent-end` is emitted for
+      // ids the driver saw open as a Task (tracked by the driver, not here) —
+      // this pure mapper cannot know, so it emits a tool-end and the driver
+      // rewrites it. See AgentSdkDriver.pump.
+      out.push({ type: 'tool-end', toolId: block.tool_use_id, status, summary: text });
     }
     return out;
   }
@@ -252,10 +477,24 @@ export function mapSdkMessage(message: unknown): ChatEvent[] {
       const text = typeof msg.result === 'string' ? msg.result : 'The agent ended with an error.';
       out.push({ type: 'error', message: text });
     } else {
-      out.push({ type: 'done' });
+      out.push({ type: 'turn-complete' });
     }
   }
   return out;
+}
+
+/** Flatten a tool_result's content into a short one-line summary. */
+function toolResultText(content: unknown): string | undefined {
+  const flatten = (value: unknown): string => {
+    if (typeof value === 'string') return value;
+    if (Array.isArray(value)) return value.map(flatten).join('');
+    const record = asRecord(value);
+    if (record && typeof record.text === 'string') return record.text;
+    return '';
+  };
+  const text = flatten(content).trim();
+  if (text === '') return undefined;
+  return text.length > 400 ? `${text.slice(0, 397)}…` : text;
 }
 
 /**
@@ -275,11 +514,77 @@ export function describeToolInput(input: unknown): string | undefined {
 }
 
 /**
- * The real backend. Runs the Agent SDK in streaming-input mode with the
+ * Is this path inside the project folder? The auto-allow tier depends on it,
+ * so it is deliberately strict: a relative path is resolved against the root,
+ * and anything that climbs out (`../`) fails.
+ */
+export function isInsideRoot(target: string, projectRoot: string): boolean {
+  const root = path.resolve(projectRoot);
+  const resolved = path.resolve(root, target);
+  if (resolved === root) return true;
+  return resolved.startsWith(root.endsWith(path.sep) ? root : root + path.sep);
+}
+
+/**
+ * The default approval policy: work inside the open project folder proceeds
+ * without interrupting the user (that is the whole point of the app — the
+ * agent builds the game, it doesn't ask nine times per file), and anything
+ * reaching OUTSIDE the folder becomes a real inline prompt.
+ *
+ * Pure, so the policy is unit-testable without an SDK. Returns null when the
+ * call is auto-allowed, or the approval to raise.
+ */
+export function sdkApprovalFor(
+  toolName: string,
+  input: unknown,
+  projectRoot: string,
+): { kind: ApprovalKind; title: string; detail: string } | null {
+  const kind = sdkToolKind(toolName);
+  const record = asRecord(input);
+  if (kind === 'file-change') {
+    const file = record?.file_path ?? record?.path ?? record?.notebook_path;
+    if (typeof file === 'string' && !isInsideRoot(file, projectRoot)) {
+      return { kind: 'file-change', title: 'Write outside the project folder?', detail: file };
+    }
+    return null; // acceptEdits, jailed to the folder
+  }
+  if (kind === 'command') {
+    const command = typeof record?.command === 'string' ? record.command : toolName;
+    // A command runs with the folder as cwd, but nothing stops it naming an
+    // absolute path elsewhere, so the cwd jail is not a real boundary here.
+    // Commands that only mention paths inside the folder are the common case
+    // and stay quiet; anything else asks.
+    return commandLooksContained(command, projectRoot)
+      ? null
+      : { kind: 'command', title: 'Run this command?', detail: command };
+  }
+  return null;
+}
+
+/**
+ * Heuristic: does this shell command stay inside the project folder? Absolute
+ * paths that leave the root, and the handful of verbs that reach the wider
+ * machine, are what make it ask. Deliberately conservative — a false "ask" is
+ * a small interruption, a false "allow" is someone's home directory.
+ */
+export function commandLooksContained(command: string, projectRoot: string): boolean {
+  if (/(^|\s|[;&|])(sudo|ssh|scp|curl|wget|systemctl|launchctl|shutdown|reboot)(\s|$)/.test(command)) return false;
+  if (/(^|\s)rm\s+(-[a-z]*\s+)*\//.test(command)) return false;
+  for (const match of command.matchAll(/(^|\s)(~?\/[^\s'"|;&]*)/g)) {
+    const candidate = match[2].startsWith('~') ? path.join(process.env.HOME ?? '~', match[2].slice(1)) : match[2];
+    if (!isInsideRoot(candidate, projectRoot)) return false;
+  }
+  return true;
+}
+
+/**
+ * The Anthropic backend. Runs the Agent SDK in streaming-input mode with the
  * project folder as cwd, so everything the agent writes lands in the user's
  * project. `acceptEdits` is the default permission mode: the whole point of
  * the app is that the agent builds the game without a confirmation per file,
- * and the cwd jail keeps that scoped to the open project.
+ * and the cwd jail keeps that scoped to the open project. Work that reaches
+ * outside the folder goes through `canUseTool`, which is the approval seam —
+ * it raises an `approval-request` and blocks the turn on the answer.
  */
 export class AgentSdkDriver implements ChatDriver {
   readonly kind = 'agent-sdk' as const;
@@ -287,6 +592,12 @@ export class AgentSdkDriver implements ChatDriver {
   private turns = new EventQueue<unknown>();
   private stopped = false;
   private pump: Promise<void> | null = null;
+  private projectRoot = '';
+  /** tool_use ids opened as a `Task`, so their result closes a subagent card. */
+  private subagents = new Set<string>();
+  /** Approvals awaiting an answer from the UI, by approvalId. */
+  private pending = new Map<string, (decision: ApprovalDecision) => void>();
+  private nextApproval = 0;
 
   constructor(
     private readonly sdk: { query: (args: unknown) => AsyncIterable<unknown> },
@@ -298,6 +609,7 @@ export class AgentSdkDriver implements ChatDriver {
   }
 
   async start(_sessionId: string, projectRoot: string): Promise<void> {
+    this.projectRoot = projectRoot;
     const stream = this.sdk.query({
       prompt: this.turns,
       options: {
@@ -305,6 +617,7 @@ export class AgentSdkDriver implements ChatDriver {
         permissionMode: 'acceptEdits',
         includePartialMessages: true,
         env: { ...process.env, ANTHROPIC_API_KEY: this.apiKey },
+        canUseTool: (toolName: string, input: unknown) => this.askPermission(toolName, input),
       },
     });
     // One long-lived pump for the whole session: the SDK yields messages for
@@ -313,12 +626,60 @@ export class AgentSdkDriver implements ChatDriver {
       try {
         for await (const message of stream) {
           if (this.stopped) break;
-          for (const event of mapSdkMessage(message)) this.queue.push(event);
+          for (const event of mapSdkMessage(message)) this.queue.push(this.retarget(event));
         }
       } catch (err) {
         if (!this.stopped) this.queue.push({ type: 'error', message: (err as Error).message });
       }
     })();
+  }
+
+  /**
+   * `mapSdkMessage` is pure and can't know which tool_use ids were `Task`
+   * calls, so it emits a tool event for every result. The driver holds that
+   * memory and rewrites those into subagent events here — keeping the mapper
+   * testable in isolation while the transcript still gets the right shape.
+   */
+  private retarget(event: ChatEvent): ChatEvent {
+    if (event.type === 'subagent-start') {
+      this.subagents.add(event.agentId);
+      return event;
+    }
+    if (event.type === 'tool-end' && 'toolId' in event && this.subagents.has(event.toolId)) {
+      this.subagents.delete(event.toolId);
+      return { type: 'subagent-end', agentId: event.toolId, status: event.status, summary: event.summary };
+    }
+    return event;
+  }
+
+  /**
+   * The SDK's permission callback. Auto-allow inside the project root (the
+   * acceptEdits tier), otherwise raise an inline approval and WAIT — the
+   * promise this returns is what holds the agent's turn open until the user
+   * answers, which is exactly the blocking semantics the transcript shows.
+   */
+  private askPermission(toolName: string, input: unknown): Promise<unknown> {
+    const approval = sdkApprovalFor(toolName, input, this.projectRoot);
+    if (!approval || this.stopped) return Promise.resolve({ behavior: 'allow', updatedInput: input });
+    const approvalId = `a${++this.nextApproval}`;
+    this.queue.push({ type: 'approval-request', approvalId, ...approval });
+    return new Promise((resolve) => {
+      this.pending.set(approvalId, (decision) => {
+        this.queue.push({ type: 'approval-resolved', approvalId, decision });
+        resolve(
+          decision === 'allow'
+            ? { behavior: 'allow', updatedInput: input }
+            : { behavior: 'deny', message: 'The user declined this.' },
+        );
+      });
+    });
+  }
+
+  approve(approvalId: string, decision: ApprovalDecision): void {
+    const resolve = this.pending.get(approvalId);
+    if (!resolve) return;
+    this.pending.delete(approvalId);
+    resolve(decision);
   }
 
   send(text: string): void {
@@ -328,6 +689,10 @@ export class AgentSdkDriver implements ChatDriver {
 
   stop(): void {
     this.stopped = true;
+    // Anything still blocking the agent is answered `deny`, so the SDK's own
+    // turn unwinds instead of hanging on a promise nobody will settle.
+    for (const [, resolve] of this.pending) resolve('deny');
+    this.pending.clear();
     this.turns.close();
     this.queue.close();
     this.pump = null;
@@ -339,14 +704,66 @@ export class AgentSdkDriver implements ChatDriver {
 // ---------------------------------------------------------------------------
 
 /**
- * Pick the driver for a project: the Agent SDK when both the package and a key
- * are present, otherwise the stub. Never throws — a broken agent backend
+ * Pick the driver for a project.
+ *
+ * An explicit `provider` in settings wins when that provider is actually
+ * usable; otherwise whichever one is configured answers, and with neither the
+ * stub explains how to connect one. Never throws — a broken agent backend
  * degrades to guidance rather than an unusable conversation column.
+ *
+ * `deps` is a test seam so driver selection can be exercised without a real
+ * SDK install or a real codex binary on the machine.
  */
-export async function createChatDriver(projectRoot: string): Promise<ChatDriver> {
-  const key = await resolveApiKey(projectRoot);
-  if (!key) return new StubDriver();
-  const sdk = await loadAgentSdk();
-  if (!sdk) return new StubDriver();
-  return new AgentSdkDriver(sdk, key);
+export async function createChatDriver(
+  projectRoot: string,
+  options?: {
+    /** The codex thread this conversation already had, for `thread/resume`. */
+    resumeThreadId?: string | null;
+    /** Called with the thread codex bound, so it can be persisted. */
+    onThreadId?: (threadId: string) => void;
+    loadAgentSdk?: typeof loadAgentSdk;
+    createCodexDriver?: (
+      projectRoot: string,
+      opts?: { resumeThreadId?: string | null; onThreadId?: (threadId: string) => void },
+    ) => Promise<ChatDriver | null>;
+  },
+): Promise<ChatDriver> {
+  const settings = await readAppSettings(projectRoot);
+  const loadSdk = options?.loadAgentSdk ?? loadAgentSdk;
+  const makeCodex =
+    options?.createCodexDriver ??
+    (async (
+      root: string,
+      opts?: { resumeThreadId?: string | null; onThreadId?: (threadId: string) => void },
+    ) => {
+      // Imported lazily so a project that never uses OpenAI never pays for
+      // resolving the module (and so this file stays free of node:child_process).
+      const mod = await import('./chatDrivers/codex.js');
+      return mod.createCodexDriver(root, opts);
+    });
+
+  const anthropic = async (): Promise<ChatDriver | null> => {
+    const key = await resolveApiKey(projectRoot);
+    if (!key) return null;
+    const sdk = await loadSdk();
+    return sdk ? new AgentSdkDriver(sdk, key) : null;
+  };
+  const openai = async (): Promise<ChatDriver | null> => {
+    try {
+      return await makeCodex(projectRoot, {
+        resumeThreadId: options?.resumeThreadId ?? null,
+        onThreadId: options?.onThreadId,
+      });
+    } catch {
+      return null;
+    }
+  };
+
+  const order: (() => Promise<ChatDriver | null>)[] =
+    settings.provider === 'openai' ? [openai, anthropic] : [anthropic, openai];
+  for (const attempt of order) {
+    const driver = await attempt();
+    if (driver) return driver;
+  }
+  return new StubDriver();
 }

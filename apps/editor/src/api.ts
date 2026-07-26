@@ -5,6 +5,8 @@
  */
 import type {
   AppSettingsInfo,
+  ChatProvider,
+  ChatProviderStatus,
   ChatSummary,
   GameStatus,
   ProbeStatus,
@@ -156,9 +158,71 @@ export async function apiAppSettings(project: string): Promise<AppSettingsInfo |
   return body ? { hasKey: body.hasKey, source: body.source } : null;
 }
 
-export async function apiSaveApiKey(project: string, apiKey: string): Promise<AppSettingsInfo | null> {
-  const body = await postJson<AppSettingsInfo & { ok: boolean }>('/api/app/settings', { project, apiKey });
+/**
+ * Everything the settings dialog can change about who answers a turn. All
+ * optional and independently applied: saving a Codex path must not clear the
+ * Anthropic key, so a patch says only what it means to change.
+ */
+export interface ProviderSettingsPatch {
+  /** Anthropic key. Empty string removes the stored one. */
+  apiKey?: string;
+  /** OpenAI key. Empty string removes the stored one. */
+  openaiApiKey?: string;
+  /** Which provider answers when both could. */
+  provider?: ChatProvider;
+  /** Where the `codex` binary is, when it isn't on PATH. */
+  codexPath?: string;
+}
+
+export async function apiSaveProviderSettings(
+  project: string,
+  patch: ProviderSettingsPatch,
+): Promise<AppSettingsInfo | null> {
+  const body = await postJson<AppSettingsInfo & { ok: boolean }>('/api/app/settings', { project, ...patch });
   return body.ok ? { hasKey: body.hasKey, source: body.source } : null;
+}
+
+/**
+ * What could answer a turn in this folder. Read defensively — the two halves
+ * are gathered from very different places (a file on disk, and shelling out to
+ * `codex`), so a partial or older answer must degrade to "not configured"
+ * rather than take the dialog down.
+ */
+export async function apiChatProviders(project: string): Promise<ChatProviderStatus | null> {
+  try {
+    const res = await fetch(`/api/chat/providers?project=${encodeURIComponent(project)}`);
+    const body = (await res.json()) as Partial<ChatProviderStatus> & { ok?: boolean };
+    if (body.ok === false || !body.anthropic || !body.openai) return null;
+    const { anthropic, openai } = body;
+    return {
+      anthropic: {
+        hasKey: anthropic.hasKey === true,
+        source: anthropic.source ?? null,
+      },
+      openai: {
+        installed: openai.installed === true,
+        version: openai.version ?? null,
+        loggedIn: openai.loggedIn === true,
+        authMode: openai.authMode ?? null,
+        email: openai.email ?? null,
+        planType: openai.planType ?? null,
+        hasKey: openai.hasKey === true,
+      },
+      active: body.active ?? null,
+    };
+  } catch (err) {
+    console.error('apiChatProviders: request failed', err);
+    return null;
+  }
+}
+
+/**
+ * Start the ChatGPT sign-in. Answers with the URL to open — the flow itself
+ * happens in a browser, and its completion arrives as a `chat-providers`
+ * frame on the socket rather than as this call's return value.
+ */
+export function apiOpenAiLogin(project: string): Promise<{ ok: boolean; authUrl?: string; error?: string }> {
+  return postJson<{ ok: boolean; authUrl?: string; error?: string }>('/api/chat/providers/openai/login', { project });
 }
 
 // ---------------------------------------------------------------------------

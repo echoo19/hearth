@@ -9,6 +9,7 @@
  */
 import React from 'react';
 import { useApp, type ConversationMode } from '../../store';
+import type { ChatDriverKind, ChatProviderStatus } from '../../types';
 import { useAgentSocket } from '../agent/useAgentSocket';
 import { Button } from '../ui/Button';
 import { Tooltip } from '../ui/Tooltip';
@@ -18,6 +19,20 @@ const MODES: { id: ConversationMode; label: string }[] = [
   { id: 'chat', label: 'Chat' },
   { id: 'terminal', label: 'Terminal' },
 ];
+
+/**
+ * Who is answering, in the name a user would use for it — not the driver's.
+ * The server's `active` provider is the truth when it has been read; a bound
+ * driver is the fallback, since it is proof by demonstration.
+ */
+export function providerLabel(providers: ChatProviderStatus | null, driver: ChatDriverKind | null): string {
+  const active = providers?.active ?? null;
+  if (active === 'anthropic') return 'Claude';
+  if (active === 'openai') return 'ChatGPT';
+  if (driver === 'agent-sdk') return 'Claude';
+  if (driver === 'codex') return 'ChatGPT';
+  return 'No agent';
+}
 
 /**
  * Terminal mode's contextual read-out: the folder the shell is in, how the
@@ -59,6 +74,8 @@ function TerminalContext() {
 export function ConversationHead() {
   const mode = useApp((s) => s.conversationMode);
   const setMode = useApp((s) => s.setConversationMode);
+  const providers = useApp((s) => s.providers);
+  const driver = useApp((s) => s.chatDriver);
 
   return (
     <div className="conversation-head">
@@ -79,6 +96,9 @@ export function ConversationHead() {
 
       <span className="conversation-head-spacer" />
 
+      {/* Chat mode's one read-out: which agent would answer. Same quiet
+          register as the terminal's status — a label, not a control. */}
+      {mode === 'chat' && <span className="conversation-provider">{providerLabel(providers, driver)}</span>}
       {mode === 'terminal' && <TerminalContext />}
     </div>
   );

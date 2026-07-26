@@ -45,6 +45,15 @@ export interface ChatSummary {
   /** ISO timestamps. */
   createdAt: string;
   updatedAt: string;
+  /**
+   * The codex thread this conversation is, when it is being answered by the
+   * OpenAI backend. A codex thread outlives our process, so remembering it is
+   * what lets reopening a chat RESUME the agent's own context instead of
+   * starting a stranger who has only read the transcript. Absent for every
+   * other backend, and harmless when the thread has since been forgotten (the
+   * driver falls back to a fresh thread).
+   */
+  codexThreadId?: string;
 }
 
 /** One line of a transcript. */
@@ -127,12 +136,16 @@ export function parseChatIndex(raw: unknown): ChatSummary[] {
     const id = safeChatId(row.id);
     if (!id) continue;
     const createdAt = typeof row.createdAt === 'string' ? row.createdAt : new Date().toISOString();
-    out.push({
+    const summary: ChatSummary = {
       id,
       title: typeof row.title === 'string' && row.title.trim() !== '' ? row.title : UNTITLED,
       createdAt,
       updatedAt: typeof row.updatedAt === 'string' ? row.updatedAt : createdAt,
-    });
+    };
+    // Carried through rather than defaulted: an index written by an older
+    // build simply has no thread to remember.
+    if (typeof row.codexThreadId === 'string' && row.codexThreadId !== '') summary.codexThreadId = row.codexThreadId;
+    out.push(summary);
   }
   return sortChats(out);
 }
@@ -247,6 +260,25 @@ export function renameChat(root: string, chatId: string, title: string): Promise
     const index = chats.findIndex((chat) => chat.id === id);
     if (index === -1) return null;
     chats[index] = { ...chats[index], title: name };
+    await writeIndexUnlocked(root, chats);
+    return chats[index];
+  });
+}
+
+/**
+ * Remember which codex thread answers this conversation, so reopening it
+ * resumes rather than restarts. Deliberately does NOT touch `updatedAt`:
+ * binding a backend is not conversation activity, and bumping it would
+ * reorder the sidebar for something the user didn't do.
+ */
+export function setChatThreadId(root: string, chatId: string, threadId: string): Promise<ChatSummary | null> {
+  const id = safeChatId(chatId);
+  if (!id || threadId === '') return Promise.resolve(null);
+  return serialize(root, async () => {
+    const chats = await readIndexUnlocked(root);
+    const index = chats.findIndex((chat) => chat.id === id);
+    if (index === -1 || chats[index].codexThreadId === threadId) return null;
+    chats[index] = { ...chats[index], codexThreadId: threadId };
     await writeIndexUnlocked(root, chats);
     return chats[index];
   });

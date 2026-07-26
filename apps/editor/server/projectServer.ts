@@ -37,7 +37,8 @@ import { NodeFileSystem, loadPlayerBundle } from '@hearth/core/node';
 import { listTemplates, getTemplatePath, scaffoldFromTemplate } from '@hearth/templates';
 import { isRequestAllowed } from './originGuard.js';
 import { ensureHearthMcpConfig } from './mcpConfig.js';
-import { readAppSettings, writeAppSettings, resolveApiKey } from './chat.js';
+import { readAppSettings, writeAppSettings, resolveApiKey, type AppSettings } from './chat.js';
+import { announceProviders, beginOpenAiLogin, readChatProviders } from './chatProviders.js';
 import { createChat, deleteChat, listChats, renameChat } from './chatStore.js';
 import {
   planSweep,
@@ -906,17 +907,57 @@ export function createProjectServerContext(options: ProjectServerOptions = {}) {
       return settingsSummary(path.resolve(project));
     },
 
-    async setAppSettings(project: unknown, apiKey: unknown): Promise<JsonResult> {
+    /**
+     * Save agent settings. `apiKey` stays the Anthropic key (the shape every
+     * existing caller sends); `extra` carries the newer provider fields, each
+     * optional so a client that only knows about the key keeps working.
+     * Saving anything here can change which agent answers, so the socket is
+     * told — that is what keeps Settings live during a sign-in.
+     */
+    async setAppSettings(project: unknown, apiKey: unknown, extra?: unknown): Promise<JsonResult> {
       if (typeof project !== 'string' || project.trim() === '') {
         return { status: 400, body: { ok: false, error: 'Missing "project".' } };
       }
-      if (typeof apiKey !== 'string') {
-        return { status: 400, body: { ok: false, error: '"apiKey" must be a string.' } };
+      const patch: AppSettings = {};
+      if (typeof apiKey === 'string') patch.apiKey = apiKey;
+      const more = extra && typeof extra === 'object' ? (extra as Record<string, unknown>) : {};
+      if (typeof more.openaiApiKey === 'string') patch.openaiApiKey = more.openaiApiKey;
+      if (typeof more.codexPath === 'string') patch.codexPath = more.codexPath;
+      if (more.provider === 'anthropic' || more.provider === 'openai') patch.provider = more.provider;
+      if (Object.keys(patch).length === 0) {
+        return { status: 400, body: { ok: false, error: 'Nothing to save.' } };
       }
       const root = path.resolve(project);
       if (!isOpenRoot(root)) return { status: 403, body: { ok: false, error: 'Folder is not open.' } };
-      await writeAppSettings(root, { apiKey });
+      await writeAppSettings(root, patch);
+      void announceProviders(root);
       return settingsSummary(root);
+    },
+
+    /** Which agents this machine can talk to right now. */
+    async chatProviders(project: unknown): Promise<JsonResult> {
+      if (typeof project !== 'string' || project.trim() === '') {
+        return { status: 400, body: { ok: false, error: 'Missing "project".' } };
+      }
+      const root = path.resolve(project);
+      if (!isOpenRoot(root)) return { status: 403, body: { ok: false, error: 'Folder is not open.' } };
+      return { status: 200, body: { ok: true, ...(await readChatProviders(root)) } };
+    },
+
+    /**
+     * Start a ChatGPT sign-in. The reply is only the URL to open — the flow
+     * itself runs in the user's browser against codex's own callback, and its
+     * completion reaches the app as a `chat-providers` socket frame. No token
+     * ever passes through here.
+     */
+    async openAiLogin(project: unknown): Promise<JsonResult> {
+      if (typeof project !== 'string' || project.trim() === '') {
+        return { status: 400, body: { ok: false, error: 'Missing "project".' } };
+      }
+      const root = path.resolve(project);
+      if (!isOpenRoot(root)) return { status: 403, body: { ok: false, error: 'Folder is not open.' } };
+      const result = await beginOpenAiLogin(root);
+      return { status: result.ok ? 200 : 400, body: result };
     },
 
     /**
@@ -1611,6 +1652,9 @@ async function route(ctx: ProjectServerContext, req: IncomingMessage, res: Serve
     return sendJson(res, result.status, result.body);
   }
 
+  // The harness registry (connectors + skills) owns its own route module.
+  if (url.pathname === '/api/harness/registry') return (await import('./harnessRegistry.js')).routeHarnessRegistry(ctx, req, res);
+
   switch (key) {
     case 'POST /api/workspace/open': {
       const body = await readJsonBody(req);
@@ -1663,7 +1707,16 @@ async function route(ctx: ProjectServerContext, req: IncomingMessage, res: Serve
     }
     case 'POST /api/app/settings': {
       const body = await readJsonBody(req);
-      const result = await ctx.setAppSettings(body.project, body.apiKey);
+      const result = await ctx.setAppSettings(body.project, body.apiKey, body);
+      return sendJson(res, result.status, result.body);
+    }
+    case 'GET /api/chat/providers': {
+      const result = await ctx.chatProviders(q.get('project'));
+      return sendJson(res, result.status, result.body);
+    }
+    case 'POST /api/chat/providers/openai/login': {
+      const body = await readJsonBody(req);
+      const result = await ctx.openAiLogin(body.project);
       return sendJson(res, result.status, result.body);
     }
     case 'POST /api/project/open': {

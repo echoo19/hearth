@@ -34,7 +34,10 @@ export function isSendChord(event: { key: string; metaKey: boolean; ctrlKey: boo
 
 export function Composer() {
   const sendChat = useApp((s) => s.sendChat);
-  const cancelChat = useApp((s) => s.cancelChat);
+  // Stop interrupts the TURN and keeps the conversation's agent alive, so the
+  // next message continues with everything it already knows — pressing Stop
+  // must not cost the user the session they were in the middle of.
+  const interruptChat = useApp((s) => s.interruptChat);
   const busy = useApp((s) => s.chatBusy);
   const connected = useApp((s) => s.wsStatus === 'connected');
   const consumePendingPrompt = useApp((s) => s.consumePendingPrompt);
@@ -87,7 +90,7 @@ export function Composer() {
         <div className="composer-actions">
           <span className="composer-note">{blocked ?? '⌘↵ to send'}</span>
           {busy ? (
-            <IconButton icon="stop" label="Stop" className="composer-send is-stop" onClick={cancelChat} />
+            <IconButton icon="stop" label="Stop" className="composer-send is-stop" onClick={interruptChat} />
           ) : (
             <IconButton
               icon="chevron"

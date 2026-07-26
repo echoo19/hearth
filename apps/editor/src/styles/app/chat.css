@@ -40,6 +40,15 @@
   min-width: 0;
 }
 
+/* Chat mode's answer to "who am I talking to?", in the same quiet register as
+   the terminal's session status on the opposite side of the same header. A
+   label, not a control — changing the answer happens in Settings. */
+.conversation-provider {
+  flex: none;
+  font-size: var(--text-xs);
+  color: var(--ink-faint);
+}
+
 /* --- Mode layers ---------------------------------------------------------- */
 
 /* Both modes occupy the same cell so the swap can't move anything around it,
@@ -306,6 +315,569 @@
 
 .tool-open:hover {
   color: var(--accent-hover);
+}
+
+/* --------------------------------------------------------------------------
+   Transcript grammar
+   --------------------------------------------------------------------------
+   Everything below is one decision applied consistently: the transcript is a
+   READING surface, so activity that scrolls past is a LINE and only activity
+   worth finding again is a BOX. A command ran and worked — that is a line. A
+   file changed, an agent was delegated, permission was asked — those are the
+   three things a reader scans back for, and only those get a container.
+
+   Disclosure everywhere is click-triggered and frequent, so none of it
+   animates height (a layout property, and the reveal would judder against the
+   scroll). The body fades and rises 2-3px on mount instead; the chevron turns.
+   Streamed rows deliberately have NO entrance animation — a turn arrives once
+   (`.msg`), and giving every row inside it the same rise would turn a stream
+   of work into a slot machine. */
+
+/* Shared disclosure body reveal. A keyframe rather than a transition because
+   these bodies mount when opened; there is no closed state to transition
+   from. --t-fast: this is a control the reader opens and closes repeatedly. */
+@keyframes disclose-in {
+  from {
+    opacity: 0;
+    transform: translateY(-2px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* The same arrival with the travel taken out — what everything below falls
+   back to under reduced motion, and what a settled approval uses outright. */
+@keyframes chat-fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.cmd-chevron,
+.filechange-chevron,
+.reasoning-chevron,
+.subagent-chevron {
+  display: inline-flex;
+  flex: none;
+  color: var(--ink-faint);
+  transition: transform var(--t-fast) var(--ease-out);
+}
+
+[data-open='true'] > .cmd-line > .cmd-chevron,
+[data-open='true'] > .filechange-line > .filechange-chevron,
+[data-open='true'] > .reasoning-line > .reasoning-chevron,
+[data-open='true'] > .subagent-head > .subagent-chevron {
+  transform: rotate(90deg);
+}
+
+/* --- Command -------------------------------------------------------------- */
+
+/* One line: what ran, how it went, how long it took. A failed command keeps
+   its place and its size and states its exit code — findable while scanning,
+   without becoming an alert. */
+
+.cmd-row {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.cmd-line {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 4px 0;
+  border: 0;
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+  color: var(--ink-faint);
+  font-size: var(--text-sm);
+  transition: color var(--t-fast) var(--ease-out);
+}
+
+.cmd-line:hover {
+  color: var(--ink-mute);
+}
+
+.cmd-verb {
+  flex: none;
+  color: var(--ink-mute);
+}
+
+/* The command itself, in mono and clipped rather than wrapped: a line that
+   wraps to three lines is no longer a line. */
+.cmd-text {
+  min-width: 0;
+  flex: 1;
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  color: var(--ink-mute);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cmd-row.state-running .cmd-text {
+  color: var(--ink-faint);
+}
+
+/* The only status colour on the row. Semantic, not decorative — a red exit
+   code is the one thing that must survive a skim. */
+.cmd-note {
+  flex: none;
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  color: var(--err);
+}
+
+.cmd-time {
+  flex: none;
+  font-size: var(--text-2xs);
+  color: var(--ink-faint);
+  font-variant-numeric: tabular-nums;
+}
+
+.cmd-body {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-left: 15px;
+  padding: 10px 14px;
+  border-left: 1px solid var(--border);
+  animation: disclose-in var(--t-fast) var(--ease-out) both;
+}
+
+/* Captured output, verbatim. Scrolls in its own box: a build log must never
+   set the width of the conversation, and a long one must not push the rest of
+   the turn off screen. */
+.cmd-output {
+  margin: 0;
+  max-height: 320px;
+  overflow: auto;
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  line-height: 1.55;
+  color: var(--ink-mute);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.cmd-summary,
+.cmd-exit,
+.cmd-empty {
+  margin: 0;
+  font-size: var(--text-xs);
+  color: var(--ink-faint);
+}
+
+.cmd-exit {
+  font-family: var(--font-mono);
+}
+
+.cmd-row.state-error .cmd-exit {
+  color: var(--err);
+}
+
+/* --- File change ---------------------------------------------------------- */
+
+/* A container, because this is what the reader came for. One card per report,
+   one row per file — the change to the game, not the tool call that made it. */
+
+.filechange-card {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-2);
+  overflow: hidden;
+}
+
+.filechange-rows {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.filechange-row + .filechange-row {
+  border-top: 1px solid var(--border);
+}
+
+.filechange-line {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 8px 12px;
+  border: 0;
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+  font-size: var(--text-sm);
+  color: var(--ink-mute);
+  transition: background var(--t-fast) var(--ease-out);
+}
+
+.filechange-line:hover {
+  background: var(--bg-3);
+}
+
+/* The card clips to its radius (overflow: hidden), which would crop the global
+   focus ring down to whichever edge happened to fall inside — a keyboard user
+   would see a stray accent rule instead of a ring, and a sighted one would see
+   an ember line the design system doesn't have. Drawing the ring INSIDE the
+   row keeps it whole, and keeps it the same 2px accent ring as everywhere else. */
+.filechange-line:focus-visible {
+  outline-offset: -2px;
+}
+
+.filechange-verb {
+  flex: none;
+  color: var(--ink-mute);
+}
+
+/* Clipped from the LEFT (shortenPath), so the filename always survives —
+   which end of a path matters depends on the path, and this one is the name. */
+.filechange-path {
+  flex: 1;
+  min-width: 0;
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  color: var(--ink);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.filechange-counts {
+  display: inline-flex;
+  gap: 6px;
+  flex: none;
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+  font-variant-numeric: tabular-nums;
+}
+
+.count-add {
+  color: var(--ok);
+}
+
+.count-del {
+  color: var(--err);
+}
+
+.filechange-body {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 0 12px 10px;
+  animation: disclose-in var(--t-fast) var(--ease-out) both;
+}
+
+/* The patch. Colour carries the sign at LOW chroma — a diff is read, not
+   alarmed at, and full-strength --ok/--err across dozens of lines would turn
+   the card into a traffic light. No side stripes: the +/- is already there. */
+.filechange-diff {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  max-height: 320px;
+  overflow: auto;
+  padding: 8px 10px;
+  border-radius: var(--radius-sm);
+  background: var(--bg-0);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  line-height: 1.5;
+  white-space: pre;
+}
+
+.filechange-diff .diff-ctx {
+  color: var(--ink-faint);
+}
+
+.filechange-diff .diff-meta {
+  color: var(--ink-faint);
+  opacity: 0.75;
+}
+
+/* --ok and --err at HALF chroma, same hues (150 / 25). At full strength, a
+   forty-line patch reads as a traffic light; halved, the sign is still
+   instantly legible and the patch is still text. */
+.filechange-diff .diff-add {
+  color: oklch(0.76 0.07 150);
+}
+
+.filechange-diff .diff-del {
+  color: oklch(0.72 0.085 25);
+}
+
+.filechange-empty {
+  margin: 0;
+  font-size: var(--text-xs);
+  color: var(--ink-faint);
+}
+
+/* --- Subagent ------------------------------------------------------------- */
+
+/* A second actor, one level in. The indent is padding plus a 1px hairline —
+   enough to say "nested", never a coloured side-stripe. Its transcript is a
+   list of rows, not a card: a card inside a card is where this stops reading
+   as one conversation. */
+
+.subagent-card {
+  margin-left: 12px;
+  padding: 8px 12px;
+  border: 1px solid var(--border);
+  border-left: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--bg-1);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  /* A genuine new actor arriving — worth a small rise, unlike the rows. */
+  animation: subagent-enter var(--t) var(--ease-out) both;
+}
+
+@keyframes subagent-enter {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.subagent-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+  font-size: var(--text-sm);
+  color: var(--ink-mute);
+  transition: color var(--t-fast) var(--ease-out);
+}
+
+.subagent-head:hover {
+  color: var(--ink);
+}
+
+.subagent-dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  flex: none;
+  background: var(--ink-faint);
+  transition: background var(--t) var(--ease-out);
+}
+
+.subagent-card.state-running .subagent-dot {
+  background: var(--accent);
+}
+
+.subagent-card.state-ok .subagent-dot {
+  background: var(--ok);
+}
+
+.subagent-card.state-error .subagent-dot {
+  background: var(--err);
+}
+
+.subagent-title {
+  flex: 1;
+  min-width: 0;
+  color: var(--ink);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.subagent-role {
+  flex: none;
+  font-size: var(--text-2xs);
+  color: var(--ink-faint);
+}
+
+/* The one line a running subagent shows, and the conclusion it leaves behind.
+   --ink-mute, not --ink-faint: this is meant to be read. */
+.subagent-line {
+  margin: 0;
+  padding-left: 13px;
+  font-size: var(--text-xs);
+  line-height: 1.55;
+  color: var(--ink-mute);
+  overflow-wrap: anywhere;
+}
+
+.subagent-working {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--ink-faint);
+}
+
+.subagent-detail {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 6px 0 2px 13px;
+  animation: disclose-in var(--t-fast) var(--ease-out) both;
+}
+
+.subagent-row {
+  margin: 0;
+  font-size: var(--text-xs);
+  line-height: 1.55;
+  color: var(--ink-faint);
+  overflow-wrap: anywhere;
+}
+
+/* --- Reasoning ------------------------------------------------------------ */
+
+/* The working-out, not the answer: the faintest thing in the transcript, and
+   folded until asked for. */
+
+.reasoning-row {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.reasoning-line {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  align-self: flex-start;
+  padding: 3px 0;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+  color: var(--ink-faint);
+  font-size: var(--text-sm);
+  transition: color var(--t-fast) var(--ease-out);
+}
+
+.reasoning-line:hover {
+  color: var(--ink-mute);
+}
+
+/* --ink-mute once opened: a reader who opened it intends to READ it, and
+   --ink-faint is for metadata, not for prose. */
+.reasoning-body {
+  margin: 0;
+  margin-left: 15px;
+  padding: 8px 14px;
+  border-left: 1px solid var(--border);
+  color: var(--ink-mute);
+  font-size: var(--text-sm);
+  line-height: 1.6;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  animation: disclose-in var(--t-fast) var(--ease-out) both;
+}
+
+/* --- Approval ------------------------------------------------------------- */
+
+/* Rare and blocking, so it is the one thing in the transcript allowed to
+   interrupt: a container, a real entrance (--t-slow, the ceiling), and the
+   keyboard. The detail is verbatim in mono — "Allow?" with the command hidden
+   is not a question anyone can answer. */
+
+.approval {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px 14px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  background: var(--bg-2);
+  animation: approval-enter var(--t-slow) var(--ease-out) both;
+}
+
+@keyframes approval-enter {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.approval-title {
+  margin: 0;
+  color: var(--ink);
+  font-size: var(--text-sm);
+  text-wrap: pretty;
+}
+
+.approval-detail {
+  margin: 0;
+  max-height: 200px;
+  overflow: auto;
+  padding: 8px 10px;
+  border-radius: var(--radius-sm);
+  background: var(--bg-0);
+  color: var(--ink);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  line-height: 1.55;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.approval-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.approval-hint {
+  color: var(--ink-faint);
+  font-size: var(--text-2xs);
+}
+
+/* Answered. It stays exactly where it was asked, as one quiet line — what an
+   agent was allowed to do is part of the record of what happened. Fading in
+   at --t is the crossfade: the prompt it replaces is gone in the same frame. */
+.approval-record {
+  margin: 0;
+  color: var(--ink-faint);
+  font-size: var(--text-sm);
+  overflow-wrap: anywhere;
+  animation: chat-fade-in var(--t) var(--ease-out) both;
+}
+
+.approval-record .mono {
+  font-size: var(--text-xs);
+  color: var(--ink-mute);
+}
+
+/* Reduced motion: nothing in the transcript travels. Everything still ARRIVES
+   — an approval that appeared without any change at all would be missed — it
+   just crossfades in place. (base.css collapses the durations globally; this
+   is about the movement, which duration alone doesn't remove.) */
+@media (prefers-reduced-motion: reduce) {
+  .cmd-body,
+  .filechange-body,
+  .reasoning-body,
+  .subagent-detail,
+  .subagent-card,
+  .approval {
+    animation-name: chat-fade-in;
+  }
 }
 
 /* --- Empty state ---------------------------------------------------------- */
@@ -587,4 +1159,58 @@
 .composer-send.is-stop.btn:hover:not(:disabled) {
   background: var(--bg-1);
   border-color: var(--border-strong);
+}
+
+/* --------------------------------------------------------------------------
+   Provider settings
+   --------------------------------------------------------------------------
+   Rendered inside the Settings dialog (whose chrome lives in
+   panels/dialogs.css, and whose body metrics live with the code peek), but
+   the subject is this column: which agent answers the conversation. It is
+   kept here so the two providers stay one vocabulary with the header label
+   and the empty state, rather than drifting apart in three files.
+
+   Two sections, identical structure, separated by a hairline — the point of
+   the layout is that neither vendor is the afterthought. */
+
+.settings-provider {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.settings-provider + .settings-provider {
+  padding-top: 14px;
+  border-top: 1px solid var(--border);
+}
+
+.settings-provider-head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.settings-provider-name {
+  color: var(--ink);
+  font-size: var(--text-md);
+}
+
+/* The installed version, stated rather than hidden: when a CLI misbehaves,
+   which one it is is the first thing anybody asks. */
+.settings-provider-version {
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+  color: var(--ink-faint);
+}
+
+.settings-provider-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.settings-provider select.select {
+  align-self: flex-start;
+  min-width: 180px;
 }
