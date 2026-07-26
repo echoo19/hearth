@@ -8,6 +8,7 @@ import { detailIsFile, relativeTo, shortenPath, toolVerb } from '../src/componen
 import { activeSenses } from '../src/components/game/CapabilityStrip';
 import { capabilityLabel, connectionLabel } from '../src/components/shell/TopBar';
 import { isNearBottom } from '../src/components/chat/MessageList';
+import { anyChatProviderReady } from '../src/store';
 
 describe('composerBlockReason', () => {
   it('names the reason when the socket is down', () => {
@@ -125,6 +126,20 @@ describe('capabilityLabel', () => {
   it('falls back to the configured key before a driver has bound', () => {
     expect(capabilityLabel('connected', null, true)).toBe('Ready');
     expect(capabilityLabel('connected', null, false)).toBe('No agent connected');
+  });
+
+  it('counts a signed-in provider as ready, not only a stored key', () => {
+    // Someone signed in with ChatGPT and no Anthropic key can be answered, so
+    // the one line that says whether typing will do anything must say yes.
+    const providers = {
+      active: 'openai' as const,
+      anthropic: { hasKey: false, source: null },
+      openai: { installed: true, loggedIn: true, hasKey: false },
+    } as unknown as Parameters<typeof anyChatProviderReady>[1];
+    expect(anyChatProviderReady({ hasKey: false, source: null }, providers)).toBe(true);
+    expect(capabilityLabel('connected', null, anyChatProviderReady({ hasKey: false, source: null }, providers))).toBe(
+      'Ready',
+    );
   });
 });
 

@@ -11,7 +11,7 @@
  * pixel this takes is one they don't get.
  */
 import React from 'react';
-import { useApp } from '../../store';
+import { anyChatProviderReady, useApp } from '../../store';
 import { hearthNative } from '../../native';
 import { Icon } from '../ui';
 import { IconButton } from '../ui/Button';
@@ -38,7 +38,14 @@ export function connectionLabel(status: 'connected' | 'connecting' | 'disconnect
 export function capabilityLabel(
   status: 'connected' | 'connecting' | 'disconnected',
   driver: ChatDriverKind | null,
-  hasKey: boolean,
+  /**
+   * Whether ANY agent could answer — a stored key, or a provider that is
+   * signed in. Not just the Anthropic key: someone signed in with ChatGPT and
+   * no key at all was being told "No agent connected" while the app was
+   * perfectly able to answer them, which is the one thing this line exists to
+   * get right.
+   */
+  ready: boolean,
 ): string {
   if (status !== 'connected') return connectionLabel(status);
   // Every real backend reads the same here on purpose: WHICH agent answered is
@@ -46,7 +53,7 @@ export function capabilityLabel(
   // only "will anything happen if I type?".
   if (driver === 'agent-sdk' || driver === 'codex') return 'Agent connected';
   if (driver === 'stub') return 'No agent connected';
-  return hasKey ? 'Ready' : 'No agent connected';
+  return ready ? 'Ready' : 'No agent connected';
 }
 
 export function TopBar({ narrow }: { narrow: boolean }) {
@@ -54,7 +61,7 @@ export function TopBar({ narrow }: { narrow: boolean }) {
   const hasFolder = projectPath !== null;
   const wsStatus = useApp((s) => s.wsStatus);
   const driver = useApp((s) => s.chatDriver);
-  const hasKey = useApp((s) => s.settings?.hasKey === true);
+  const ready = useApp((s) => anyChatProviderReady(s.settings, s.providers));
   const narrowTab = useApp((s) => s.narrowTab);
   const setNarrowTab = useApp((s) => s.setNarrowTab);
   const openCodePeek = useApp((s) => s.openCodePeek);
@@ -62,7 +69,7 @@ export function TopBar({ narrow }: { narrow: boolean }) {
   const chats = useApp((s) => s.chats);
   const native = hearthNative();
 
-  const capability = capabilityLabel(wsStatus, driver, hasKey);
+  const capability = capabilityLabel(wsStatus, driver, ready);
   const chatTitle = chats.find((chat) => chat.id === activeChatId)?.title ?? 'New chat';
 
   // Home has nothing for this strip to name and nothing for it to open: no
