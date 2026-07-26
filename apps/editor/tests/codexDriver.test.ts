@@ -297,6 +297,31 @@ describe('CodexDriver approvals', () => {
     expect(server.replyFor(42)).toEqual({});
     driver.stop();
   });
+
+  /**
+   * Through the DRIVER, not through the pure describeQuestion helper. The
+   * helper being right proves nothing about whether anything calls it — which
+   * is exactly how this shipped unwired the first time.
+   */
+  it('shows the question the agent asked, and still answers it so the turn moves', async () => {
+    const { driver, server } = makeDriver();
+    await driver.start('chat-1', '/w/game');
+    const events = reader(driver.events).next(1);
+    server.emit({
+      id: 43,
+      method: 'item/tool/requestUserInput',
+      params: {
+        questions: [{ question: 'Pixel art or vector?', options: [{ label: 'Pixel' }, { label: 'Vector' }] }],
+      },
+    });
+    expect((await events)[0]).toEqual({
+      type: 'notice',
+      text: 'The agent asked: Pixel art or vector? (Pixel / Vector)',
+    });
+    // Answered regardless: an unanswered request pauses codex forever.
+    expect(server.replyFor(43)).toEqual({});
+    driver.stop();
+  });
 });
 
 /**

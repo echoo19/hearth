@@ -574,6 +574,15 @@ export class CodexDriver implements ChatDriver {
   private handleServerRequest(id: number | string, method: string, params: unknown): void {
     const conn = this.conn;
     if (!conn) return;
+    if (isQuestionRequest(method)) {
+      // The agent is asking, not acting. Show what it asked before answering
+      // with nothing, so the user can reply in their next message instead of
+      // wondering why it carried on without them.
+      const asked = describeQuestion(params);
+      if (asked) this.queue.push({ type: 'notice', text: asked });
+      conn.respond(id, {});
+      return;
+    }
     if (!isApprovalRequest(method)) {
       // An unknown server request still needs SOME reply; an empty result is
       // the least-surprising one, and unknown methods are expected on a
