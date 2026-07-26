@@ -23,8 +23,9 @@
  *           way to point it elsewhere. A symlink where the platform allows one,
  *           a copy where it doesn't.
  *
- * Both are re-applied every time a conversation binds, so switching a skill
- * off is felt on the next message rather than after a restart.
+ * Both are applied when a conversation BINDS its agent, not per message: the
+ * SDK's query and codex's thread are long-lived, so a skill switched on or off
+ * mid-conversation is felt by the next conversation, not the next sentence.
  */
 import { promises as fsp } from 'node:fs';
 import os from 'node:os';
@@ -250,12 +251,20 @@ export async function readSkillSource(id: string): Promise<SkillDraft | null> {
  * make a skill disappear mid-sentence.
  */
 export async function writeSkill(draft: SkillDraft, id?: string): Promise<SkillRecord | null> {
-  const existing = id ? safeSegment(id) : null;
-  let slug = existing;
-  if (!slug) {
-    const taken = new Set((await listSkills()).map((skill) => skill.id));
-    slug = uniqueSkillSlug(skillSlug(draft.name), taken);
+  if (id !== undefined) {
+    // Naming a skill to rewrite means rewriting THAT skill. An id that doesn't
+    // validate, or names nothing, used to fall through to the create path and
+    // quietly fork a duplicate under a fresh slug — so a stale id after a
+    // delete silently made a second skill instead of saying it was gone.
+    const target = safeSegment(id);
+    if (!target || !(await readSkill(target))) return null;
+    const dir = path.join(skillsRoot(), target);
+    await fsp.mkdir(dir, { recursive: true });
+    await fsp.writeFile(path.join(dir, SKILL_FILE), renderSkillFile(draft));
+    return readSkill(target);
   }
+  const taken = new Set((await listSkills()).map((skill) => skill.id));
+  const slug = uniqueSkillSlug(skillSlug(draft.name), taken);
   const dir = path.join(skillsRoot(), slug);
   await fsp.mkdir(dir, { recursive: true });
   await fsp.writeFile(path.join(dir, SKILL_FILE), renderSkillFile(draft));
@@ -334,10 +343,17 @@ export async function importSkill(
   const taken = new Set((await listSkills()).map((skill) => skill.id));
   const slug = uniqueSkillSlug(skillSlug(parsed.name !== '' ? parsed.name : fallbackName), taken);
   const dir = path.join(skillsRoot(), slug);
-  for (const file of cleaned) {
-    const abs = path.join(dir, file.relPath);
-    await fsp.mkdir(path.dirname(abs), { recursive: true });
-    await fsp.writeFile(abs, file.bytes);
+  try {
+    for (const file of cleaned) {
+      const abs = path.join(dir, file.relPath);
+      await fsp.mkdir(path.dirname(abs), { recursive: true });
+      await fsp.writeFile(abs, file.bytes);
+    }
+  } catch {
+    // A half-written skill is worse than none: it would list, and load into an
+    // agent, missing whatever failed.
+    await fsp.rm(dir, { recursive: true, force: true });
+    return { skill: null, error: 'That folder could not be written.' };
   }
   return { skill: await readSkill(slug) };
 }
@@ -345,6 +361,23 @@ export async function importSkill(
 // ---------------------------------------------------------------------------
 // Reaching the agents
 // ---------------------------------------------------------------------------
+
+/**
+ * Dropped into a COPIED skill so a later sync can tell its own copy from a
+ * folder the user created by hand. Only reached where the platform refuses a
+ * symlink (Windows without developer mode).
+ */
+const COPY_MARKER = '.hearth-copy';
+
+/** True when this directory is a copy Hearth made, not the user's own folder. */
+async function isOurCopy(dir: string): Promise<boolean> {
+  try {
+    await fsp.stat(path.join(dir, COPY_MARKER));
+    return true;
+  } catch {
+    return false;
+  }
+}
 
 /** Where the Agent SDK looks, relative to the folder it is working in. */
 export const CLAUDE_SKILLS_DIR = path.join('.claude', 'skills');
@@ -378,15 +411,20 @@ export async function syncSkillsIntoProject(projectRoot: string): Promise<string
         linked.push(skill.id);
         continue;
       }
-      // A real directory here belongs to the user, not to us.
-      if (current === null && existing.includes(skill.id)) continue;
-      if (current !== null) await fsp.rm(link, { force: true });
+      // A real directory here belongs to the user — unless it is a copy we
+      // made ourselves, which is stale and has to be replaced.
+      if (current === null && existing.includes(skill.id) && !(await isOurCopy(link))) continue;
+      await fsp.rm(link, { recursive: true, force: true });
       await fsp.symlink(skill.path, link, 'dir');
       linked.push(skill.id);
     } catch {
       try {
         await fsp.rm(link, { recursive: true, force: true });
         await fsp.cp(skill.path, link, { recursive: true });
+        // Mark it, because a copy is indistinguishable from a folder the user
+        // put here — and without the mark it could never be refreshed when the
+        // skill changed, nor removed when the skill was switched off.
+        await fsp.writeFile(path.join(link, COPY_MARKER), `${skill.path}\n`);
         linked.push(skill.id);
       } catch {
         /* a skill that cannot be mirrored is simply not offered */
@@ -394,13 +432,19 @@ export async function syncSkillsIntoProject(projectRoot: string): Promise<string
     }
   }
 
-  // Clean up what we linked before and no longer should.
+  // Clean up what we put here before and no longer should — links AND copies.
+  // A skill switched off has to actually go away; leaving a copy behind would
+  // keep it live to the agent while the panel says it is off.
   const wanted = new Set(skills.map((skill) => skill.id));
   for (const name of existing) {
     if (wanted.has(name)) continue;
     const link = path.join(target, name);
     const points = await fsp.readlink(link).catch(() => null);
-    if (points && points.startsWith(skillsRoot() + path.sep)) await fsp.rm(link, { force: true });
+    if (points && points.startsWith(skillsRoot() + path.sep)) {
+      await fsp.rm(link, { force: true });
+    } else if (points === null && (await isOurCopy(link))) {
+      await fsp.rm(link, { recursive: true, force: true });
+    }
   }
   return linked;
 }

@@ -125,6 +125,14 @@ describe('the folder', () => {
     expect(await listSkills()).toHaveLength(1);
   });
 
+  it('refuses to rewrite a skill that is not there, rather than forking a new one', async () => {
+    // A stale id (a delete that raced a save, or a client bug) used to fall
+    // through to the create path and quietly mint a duplicate.
+    expect(await writeSkill({ name: 'Ghost', description: 'a', body: 'b' }, 'ghost')).toBeNull();
+    expect(await writeSkill({ name: 'Ghost', description: 'a', body: 'b' }, '../evil')).toBeNull();
+    expect(await listSkills()).toEqual([]);
+  });
+
   it('hands the editor back what was written', async () => {
     await writeSkill({ name: 'Sound', description: 'Making noise.', body: 'Short samples.' });
     expect(await readSkillSource('sound')).toEqual({
@@ -250,6 +258,27 @@ describe('reaching the Agent SDK', () => {
     await writeSkill({ name: 'Hearth one', description: 'a', body: 'b' });
     await syncSkillsIntoProject(project);
     expect(await fsp.readFile(path.join(mine, 'SKILL.md'), 'utf8')).toBe('mine');
+  });
+
+  it('refreshes and removes a COPIED skill, not just a linked one', async () => {
+    // The Windows path: where a symlink is refused the skill is copied, and a
+    // copy that can never be refreshed or removed would leave a switched-off
+    // skill live to the agent.
+    await writeSkill({ name: 'Copied', description: 'a', body: 'first' });
+    const link = path.join(project, CLAUDE_SKILLS_DIR, 'copied');
+    await fsp.mkdir(path.dirname(link), { recursive: true });
+    await fsp.cp(path.join(skillsRoot(), 'copied'), link, { recursive: true });
+    await fsp.writeFile(path.join(link, '.hearth-copy'), `${path.join(skillsRoot(), 'copied')}\n`);
+
+    // An edit reaches it…
+    await writeSkill({ name: 'Copied', description: 'a', body: 'second' }, 'copied');
+    await syncSkillsIntoProject(project);
+    expect(await fsp.readFile(path.join(link, 'SKILL.md'), 'utf8')).toContain('second');
+
+    // …and switching it off actually removes it.
+    await setSkillEnabled('copied', false);
+    await syncSkillsIntoProject(project);
+    await expect(fsp.stat(link)).rejects.toThrow();
   });
 
   it('is safe to run twice', async () => {

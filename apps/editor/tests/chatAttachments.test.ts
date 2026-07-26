@@ -19,6 +19,7 @@ import {
   ATTACHMENTS_DIR,
   MAX_ATTACHMENTS,
   MAX_ATTACHMENT_BYTES,
+  MAX_MESSAGE_BYTES,
   base64Bytes,
   isInlineImage,
   parseAttachmentInputs,
@@ -78,6 +79,22 @@ describe('parsing what arrived on the wire', () => {
     const huge = 'A'.repeat(MAX_ATTACHMENT_BYTES * 2);
     expect(base64Bytes(huge)).toBeGreaterThan(MAX_ATTACHMENT_BYTES);
     expect(parseAttachmentInputs([{ name: 'big.bin', mimeType: 'application/zip', data: huge }])).toEqual([]);
+  });
+
+  it('stops at the per-message budget, so one message still fits down the socket', () => {
+    // Eight files each just under the per-file cap would be ~128 MB of base64
+    // in one frame — over the socket's limit, which would drop the connection
+    // and lose the message with no explanation.
+    const big = 'A'.repeat(Math.ceil((MAX_ATTACHMENT_BYTES - 1024) / 3) * 4);
+    const many = Array.from({ length: MAX_ATTACHMENTS }, (_, i) => ({
+      name: `f${i}.bin`,
+      mimeType: 'application/octet-stream',
+      data: big,
+    }));
+    const parsed = parseAttachmentInputs(many);
+    const total = parsed.reduce((sum, a) => sum + base64Bytes(a.data), 0);
+    expect(total).toBeLessThanOrEqual(MAX_MESSAGE_BYTES);
+    expect(parsed.length).toBeLessThan(MAX_ATTACHMENTS);
   });
 
   it('is not fooled by a non-array', () => {

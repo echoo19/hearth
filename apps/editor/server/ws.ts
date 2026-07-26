@@ -230,7 +230,12 @@ export function attachWebSocket(
     ) => Promise<ChatDriver>;
   },
 ): void {
-  const wss = new WebSocketServer({ noServer: true });
+  // An explicit ceiling rather than ws's silent 100 MiB default: attachments
+  // are the only thing that makes a frame big, and a limit the app does not
+  // state is a limit that shows up as a dropped socket. Comfortably above one
+  // maximal message (MAX_MESSAGE_BYTES, base64-expanded) and far below anything
+  // that would be worth sending.
+  const wss = new WebSocketServer({ noServer: true, maxPayload: 64 * 1024 * 1024 });
   const channels = new Map<string, ProjectChannel>(); // key: resolved project root
   const nodeFs = new NodeFileSystem();
   const ptyManager = new PtyManager(ptyBackend);

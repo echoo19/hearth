@@ -571,7 +571,11 @@ export function applyChatEvent(
     case 'image':
       return replace([
         ...last.parts,
-        { kind: 'image', id: event.toolId, path: event.path, caption: event.caption },
+        // Prefixed, not the bare toolId: a generated image arrives alongside
+        // the tool row for the call that made it, and two parts sharing a
+        // React key means the second one does not reliably render — which
+        // would be the picture the whole feature exists to show.
+        { kind: 'image', id: `img:${event.toolId}`, path: event.path, caption: event.caption },
       ]);
     case 'notice':
       return replace([...last.parts, { kind: 'notice', text: event.text }]);

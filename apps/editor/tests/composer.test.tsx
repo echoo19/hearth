@@ -11,10 +11,11 @@
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import React from 'react';
-import { render, screen, fireEvent, cleanup, act } from '@testing-library/react';
+import { render, screen, fireEvent, cleanup, act, waitFor } from '@testing-library/react';
 import { Composer } from '../src/components/chat/Composer';
 import { setModelChoice } from '../src/chat/modelChoice';
 import { useApp } from '../src/store';
+import { MAX_ATTACHMENTS, MAX_ATTACHMENT_BYTES } from '../src/chat/attachments';
 
 type State = ReturnType<typeof useApp.getState>;
 
@@ -156,6 +157,45 @@ describe('the in-chat variant', () => {
     expect(screen.queryByRole('button', { name: 'Send' })).toBeNull();
     fireEvent.click(screen.getByRole('button', { name: 'Stop' }));
     expect(useApp.getState().chatBusy).toBe(false);
+  });
+});
+
+/**
+ * Attaching several files at once.
+ *
+ * The caps are per-message, so they have to be judged against a count that is
+ * true for every file in the batch. Reading that count through a functional
+ * setState looked right and was not — React skips the eager updater once an
+ * update is pending, so from the second file on nothing was checked at all.
+ */
+describe('the attachment tray', () => {
+  function drop(files: File[]): void {
+    const items = files.map((file) => ({ kind: 'file', getAsFile: () => file }));
+    fireEvent.drop(document.querySelector('.composer-card')!, {
+      dataTransfer: { items, files, types: ['Files'] },
+    });
+  }
+
+  const png = (name: string, size = 64): File =>
+    new File([new Uint8Array(size)], name, { type: 'image/png' });
+
+  it('stops at the ceiling however many are dropped at once', async () => {
+    render(<Composer />);
+    drop(Array.from({ length: 20 }, (_, i) => png(`shot-${i}.png`)));
+    // FileReader settles on its own turns; wait for the tray to fill.
+    await waitFor(() => expect(document.querySelectorAll('.attach-item').length).toBe(MAX_ATTACHMENTS));
+    // …and stay there rather than creeping past it a beat later.
+    await new Promise((resolve) => setTimeout(resolve, 30));
+    expect(document.querySelectorAll('.attach-item').length).toBe(MAX_ATTACHMENTS);
+  });
+
+  it('refuses an oversized file even when a small one was dropped with it', async () => {
+    render(<Composer />);
+    drop([png('small.png'), png('huge.png', MAX_ATTACHMENT_BYTES + 1)]);
+    await waitFor(() => expect(document.querySelectorAll('.attach-item').length).toBe(1));
+    const names = [...document.querySelectorAll('.attach-item')].map((el) => el.getAttribute('title') ?? '');
+    expect(names.some((title) => title.includes('huge.png'))).toBe(false);
+    expect(names.some((title) => title.includes('small.png'))).toBe(true);
   });
 });
 

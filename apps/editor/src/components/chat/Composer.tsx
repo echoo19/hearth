@@ -111,24 +111,36 @@ export function Composer({ variant = 'chat' }: { variant?: ComposerVariant } = {
   const [starting, setStarting] = useState(false);
   const [attachments, setAttachments] = useState<PendingAttachment[]>([]);
   const [dropping, setDropping] = useState(false);
+  // The tray, readable synchronously — see addFiles.
+  const trayRef = useRef<readonly PendingAttachment[]>(attachments);
+  trayRef.current = attachments;
   const ref = useRef<HTMLTextAreaElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
   const isHome = variant === 'home';
 
-  // Files can arrive faster than state settles (a drop of six at once), so the
-  // count is read from the setter rather than from the render's closure.
+  // Six files dropped at once are six decisions, and they all have to be made
+  // against the same running count. Reading it through a functional setState
+  // looked like it did that and did not: React only runs the updater eagerly
+  // while no update is pending, so from the SECOND file on the check silently
+  // passed — both the count cap and the size cap. The tray is mirrored in a
+  // ref, which is true synchronously, and the whole batch is judged before any
+  // of it is read.
   const addFiles = useCallback(
     async (files: readonly File[]): Promise<void> => {
+      const accepted: File[] = [];
+      let count = trayRef.current.length;
+      let bytes = trayRef.current.reduce((sum, attachment) => sum + attachment.bytes, 0);
       for (const file of files) {
-        let rejection: string | null = null;
-        setAttachments((current) => {
-          rejection = attachmentRejection(file, current.length);
-          return current;
-        });
+        const rejection = attachmentRejection(file, count, bytes);
         if (rejection) {
           useApp.getState().log('warn', 'app', rejection);
           continue;
         }
+        accepted.push(file);
+        count += 1;
+        bytes += file.size;
+      }
+      for (const file of accepted) {
         try {
           const attachment = await readAttachment(file);
           setAttachments((current) => [...current, attachment]);
@@ -150,8 +162,6 @@ export function Composer({ variant = 'chat' }: { variant?: ComposerVariant } = {
   // The tray holds object URLs, and only the tray does — what goes into a sent
   // message is a data URL (see sendChat), so these can be released the moment
   // the tray lets go of them without ever breaking a picture on screen.
-  const trayRef = useRef<readonly PendingAttachment[]>(attachments);
-  trayRef.current = attachments;
   useEffect(() => () => releaseAttachments(trayRef.current), []);
 
   // A prompt handed over by another surface lands here, focused and ready to

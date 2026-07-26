@@ -21,6 +21,9 @@ export const MAX_ATTACHMENTS = 8;
  */
 export const MAX_ATTACHMENT_BYTES = 12 * 1024 * 1024;
 
+/** Matches MAX_MESSAGE_BYTES in server/chatAttachments.ts — see the note there. */
+export const MAX_MESSAGE_BYTES = 24 * 1024 * 1024;
+
 /**
  * Longest edge an image is scaled down to. Both model APIs downscale larger
  * images on their side anyway, so shrinking first costs nothing in fidelity
@@ -66,12 +69,18 @@ export function attachmentPayload(attachment: PendingAttachment): AttachmentPayl
 export function attachmentRejection(
   file: { name: string; size: number },
   existingCount: number,
+  existingBytes = 0,
 ): string | null {
   if (existingCount >= MAX_ATTACHMENTS) return `You can attach up to ${MAX_ATTACHMENTS} files at a time.`;
   if (file.size > MAX_ATTACHMENT_BYTES) {
     return `${file.name} is larger than ${Math.round(MAX_ATTACHMENT_BYTES / (1024 * 1024))} MB.`;
   }
   if (file.size === 0) return `${file.name} is empty.`;
+  // The whole message has to fit down one socket frame, so the budget is
+  // shared: a file can be small enough on its own and still not fit.
+  if (existingBytes + file.size > MAX_MESSAGE_BYTES) {
+    return `That is more than ${Math.round(MAX_MESSAGE_BYTES / (1024 * 1024))} MB in one message.`;
+  }
   return null;
 }
 

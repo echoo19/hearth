@@ -768,8 +768,8 @@ export class AgentSdkDriver implements ChatDriver {
     this.projectRoot = projectRoot;
     // The SDK discovers skills from the filesystem around its cwd and offers
     // no way to point it elsewhere, so Hearth's skills are mirrored into the
-    // folder first. Re-done on every bind, which is what makes switching one
-    // off take effect on the next message rather than the next restart.
+    // folder first. Done per BIND, not per message: this query is long-lived,
+    // so a skill switched off mid-conversation is felt by the next one.
     await syncSkillsIntoProject(projectRoot).catch(() => []);
     const stream = this.sdk.query({
       prompt: this.turns,
@@ -846,17 +846,20 @@ export class AgentSdkDriver implements ChatDriver {
 
   send(text: string, _agent?: AgentTurnOptions, attachments?: readonly ChatAttachment[]): void {
     if (this.stopped) return;
-    if (!attachments || attachments.length === 0) {
-      // The overwhelmingly common turn, kept synchronous and kept as a plain
-      // string: exactly what this driver has always queued.
-      this.turns.push({ type: 'user', message: { role: 'user', content: text } });
-      return;
-    }
-    // Attachments have to be read off disk, and a turn must never overtake the
-    // one before it, so every send with files goes through one chain.
+    // EVERY turn goes through the chain, including the ones with nothing
+    // attached. Sending the plain ones straight to the queue was the obvious
+    // optimisation and it reordered the conversation: a message typed while a
+    // few images were still being read off disk reached the model FIRST, so
+    // the agent answered the follow-up without the pictures and then found
+    // pictures attached to nothing.
     this.sends = this.sends
       .then(async () => {
-        const content = await sdkUserContent(text, attachments);
+        const content =
+          attachments && attachments.length > 0
+            ? await sdkUserContent(text, attachments)
+            : // No attachments: a plain string, exactly as this driver has
+              // always queued it.
+              text;
         if (!this.stopped) this.turns.push({ type: 'user', message: { role: 'user', content } });
       })
       .catch((err: Error) => {

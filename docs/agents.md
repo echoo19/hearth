@@ -51,7 +51,8 @@ and CLI — see [mcp.md](./mcp.md) and [cli.md](./cli.md).
 
 Drop a file onto the composer, paste one, or pick it from **+ → Add photos &
 files…**. All three do the same thing. Up to eight files per message, 12 MB
-each; PNG, JPEG and WebP images longer than 1568 px on their longest edge are
+each and 24 MB in total — one message travels down one socket frame, so the
+budget is shared; PNG, JPEG and WebP images longer than 1568 px on their longest edge are
 scaled down first, because both APIs would downscale them anyway (an animated
 GIF is sent untouched, so it doesn't become one frame). A message that is only
 a picture is a message — you don't have to type anything with it.

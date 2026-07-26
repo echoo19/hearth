@@ -278,6 +278,52 @@ describe('describeToolInput', () => {
 });
 
 describe('AgentSdkDriver', () => {
+  /**
+   * A turn must never overtake the one before it.
+   *
+   * Attachments have to be read off disk before the turn can be built, so a
+   * plain message sent while that read is in flight used to be queued FIRST —
+   * the agent answered the follow-up with no pictures in context, then found
+   * pictures attached to nothing.
+   */
+  it('keeps turns in the order they were sent, even while a slow one is read', async () => {
+    const prompts: unknown[] = [];
+    const sdk = {
+      query: (args: unknown) => {
+        const stream = (args as { prompt: AsyncIterable<unknown> }).prompt;
+        void (async () => {
+          for await (const turn of stream) prompts.push(turn);
+        })();
+        return (async function* () {
+          /* no events needed: this is about input order */
+        })();
+      },
+    };
+    const driver = new AgentSdkDriver(sdk, 'sk-test');
+    await driver.start('s1', '/w/game');
+
+    const attachment = {
+      name: 'shot.png',
+      mimeType: 'image/png',
+      path: '/w/game/shot.png',
+      relPath: 'shot.png',
+      bytes: 3,
+    };
+    driver.send('FIRST, with a picture', undefined, [attachment]);
+    driver.send('SECOND, plain');
+    await new Promise((resolve) => setTimeout(resolve, 50));
+
+    const texts = prompts.map((turn) => {
+      const content = (turn as { message: { content: unknown } }).message.content;
+      return typeof content === 'string'
+        ? content
+        : (content as { type: string; text?: string }[]).map((block) => block.text ?? block.type).join('|');
+    });
+    expect(texts[0]).toContain('FIRST');
+    expect(texts[1]).toContain('SECOND');
+    driver.stop();
+  });
+
   it('maps a scripted SDK stream onto chat events, cwd-bound to the folder', async () => {
     let options: Record<string, unknown> = {};
     const sdk = {

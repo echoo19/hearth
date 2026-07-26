@@ -37,6 +37,17 @@ export const MAX_ATTACHMENTS = 8;
  */
 export const MAX_ATTACHMENT_BYTES = 12 * 1024 * 1024;
 
+/**
+ * Ceiling on ONE message's attachments, decoded and added up.
+ *
+ * Not a second guess at the per-file cap: eight files at the per-file limit is
+ * ~128 MB of base64 in a single socket frame, which is over ws's own default
+ * and would drop the connection — the user losing both the message and the
+ * socket, with nothing to tell them an attachment caused it. This keeps a
+ * legitimate maximal message comfortably deliverable.
+ */
+export const MAX_MESSAGE_BYTES = 24 * 1024 * 1024;
+
 /** How long a stored filename may get before it is truncated (extension kept). */
 const MAX_NAME_LENGTH = 60;
 
@@ -122,12 +133,16 @@ export function base64Bytes(data: string): number {
 export function parseAttachmentInputs(raw: unknown): AttachmentInput[] {
   if (!Array.isArray(raw)) return [];
   const out: AttachmentInput[] = [];
+  let total = 0;
   for (const row of raw) {
     if (out.length >= MAX_ATTACHMENTS) break;
     if (!row || typeof row !== 'object') continue;
     const { name, mimeType, data } = row as Record<string, unknown>;
     if (typeof data !== 'string' || data === '') continue;
-    if (base64Bytes(data) > MAX_ATTACHMENT_BYTES) continue;
+    const bytes = base64Bytes(data);
+    if (bytes > MAX_ATTACHMENT_BYTES) continue;
+    if (total + bytes > MAX_MESSAGE_BYTES) break;
+    total += bytes;
     out.push({
       name: safeAttachmentName(name),
       mimeType: typeof mimeType === 'string' && mimeType !== '' ? mimeType : 'application/octet-stream',
