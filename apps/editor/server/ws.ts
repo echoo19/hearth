@@ -241,6 +241,22 @@ export function attachWebSocket(
   const chatSessions = new Map<string, ChatSession>();
   const socketChat = new Map<WebSocket, string>();
 
+  /**
+   * One promise chain of conversation operations per socket. chat-new,
+   * chat-open and chat-send are all async (they touch disk), but the client
+   * sends them in an order that MEANS something — "start a chat, then send
+   * this into it". Run concurrently, a send can outrun the create it was
+   * meant to land in and mint a second chat for the same first message.
+   */
+  const chatOps = new WeakMap<WebSocket, Promise<void>>();
+  function enqueueChatOp(socket: WebSocket, op: () => Promise<void>): void {
+    const prev = chatOps.get(socket) ?? Promise.resolve();
+    // A failed op must not wedge every later one; it has already reported
+    // whatever it had to say to the socket.
+    const next = prev.then(op, op).catch(() => {});
+    chatOps.set(socket, next);
+  }
+
   function detachedKey(root: string, sessionId: string): string {
     return `${root}\u0000${sessionId}`;
   }
@@ -707,21 +723,21 @@ export function attachWebSocket(
             stopPty(ws);
             break;
           case 'chat-new':
-            void (async () => {
+            enqueueChatOp(ws, async () => {
               const chat = await createChat(root);
               await announceChats(root);
               await openChatForSocket(root, ws, chat.id);
-            })();
+            });
             break;
           case 'chat-open':
-            void openChatForSocket(root, ws, typeof frame.chatId === 'string' ? frame.chatId : '');
+            enqueueChatOp(ws, () => openChatForSocket(root, ws, typeof frame.chatId === 'string' ? frame.chatId : ''));
             break;
           case 'chat-send':
             {
               const text = typeof frame.text === 'string' ? frame.text : '';
               if (text.trim() === '') break;
               const agent = parseAgentOptions(frame.agent);
-              void (async () => {
+              enqueueChatOp(ws, async () => {
                 const session = await ensureChat(root, ws, agent);
                 // Binding may still be in flight from a previous send; the
                 // driver is queued-input based, so waiting for it is enough.
@@ -731,7 +747,7 @@ export function attachWebSocket(
                 await appendChatRecord(root, bound.chatId, { role: 'user', ts: new Date().toISOString(), text });
                 await announceChats(root); // the first turn names the chat
                 bound.driver?.send(text, agent ?? undefined);
-              })();
+              });
             }
             break;
           case 'chat-approval':

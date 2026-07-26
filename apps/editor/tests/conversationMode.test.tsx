@@ -36,6 +36,7 @@ vi.mock('../src/api', async (importOriginal) => ({
 }));
 
 import { apiAppSettings } from '../src/api';
+import type { ChatProviderStatus } from '../src/types';
 import { ChatColumn } from '../src/components/chat/ChatColumn';
 import { PaneStack } from '../src/components/game/PaneStack';
 import { terminalStatusLabel } from '../src/components/chat/TerminalPane';
@@ -115,9 +116,27 @@ describe('per-folder persistence', () => {
   });
 });
 
+/** A providers read-out with the given OpenAI facts and no Anthropic key. */
+function providersWith(openai: Partial<{ loggedIn: boolean; hasKey: boolean }>): ChatProviderStatus {
+  return {
+    anthropic: { hasKey: false, source: null },
+    openai: {
+      installed: false,
+      version: null,
+      loggedIn: false,
+      authMode: null,
+      email: null,
+      planType: null,
+      hasKey: false,
+      ...openai,
+    },
+    active: null,
+  };
+}
+
 describe('first-run default vs. an explicit choice', () => {
-  it('derives the mode from the key the first time a folder resolves settings', async () => {
-    resetStore({ conversationModePinned: false, settings: null });
+  it('lands in the terminal when neither a key nor a sign-in can answer', async () => {
+    resetStore({ conversationModePinned: false, settings: null, providers: providersWith({}) });
     vi.mocked(apiAppSettings).mockResolvedValue({ hasKey: false, source: null });
 
     await act(async () => {
@@ -126,6 +145,31 @@ describe('first-run default vs. an explicit choice', () => {
 
     expect(useApp.getState().conversationMode).toBe('terminal');
     expect(useApp.getState().conversationModePinned).toBe(true);
+  });
+
+  it('lands in the chat when a signed-in Codex can answer, key or no key', async () => {
+    resetStore({ conversationModePinned: false, settings: null, providers: providersWith({ loggedIn: true }) });
+    vi.mocked(apiAppSettings).mockResolvedValue({ hasKey: false, source: null });
+
+    await act(async () => {
+      await useApp.getState().refreshSettings();
+    });
+
+    expect(useApp.getState().conversationMode).toBe('chat');
+    expect(useApp.getState().conversationModePinned).toBe(true);
+  });
+
+  it('waits for the providers read before deciding, so codex is never missed', async () => {
+    resetStore({ conversationModePinned: false, settings: null, providers: null });
+    vi.mocked(apiAppSettings).mockResolvedValue({ hasKey: false, source: null });
+
+    await act(async () => {
+      await useApp.getState().refreshSettings();
+    });
+
+    // Settings alone must not park the folder in the terminal — the providers
+    // read may still reveal a signed-in Codex.
+    expect(useApp.getState().conversationModePinned).toBe(false);
   });
 
   it('never moves the column once the user has chosen — even if a key appears', async () => {

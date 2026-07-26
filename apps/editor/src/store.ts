@@ -282,11 +282,22 @@ export function conversationModeStorageKey(projectPath: string): string {
 
 /**
  * Where a folder with no stored preference lands on its FIRST run: the chat if
- * a key can answer it, the terminal if nothing can. Pure — this is the whole
+ * anything can answer it, the terminal if nothing can. Pure — this is the whole
  * "sensible default" rule, checkable without a store.
  */
-export function defaultConversationMode(hasKey: boolean): ConversationMode {
-  return hasKey ? 'chat' : 'terminal';
+export function defaultConversationMode(canChat: boolean): ConversationMode {
+  return canChat ? 'chat' : 'terminal';
+}
+
+/**
+ * Whether ANY backend could answer a chat turn. An Anthropic key is not the
+ * only door: a signed-in Codex (or a stored OpenAI key) answers just as well,
+ * and a folder that lands in the terminal despite one reads as broken.
+ */
+export function anyChatProviderReady(settings: AppSettingsInfo | null, providers: ChatProviderStatus | null): boolean {
+  if (settings?.hasKey) return true;
+  if (!providers) return false;
+  return providers.anthropic.hasKey || providers.openai.loggedIn || providers.openai.hasKey;
 }
 
 /** The folder's stored preference, or null when it has never picked one. */
@@ -656,8 +667,8 @@ export const useApp = create<AppState>((set, get) => {
    * has been connected for a while, but the first message of a brand-new
    * project races the connection it was just handed.
    */
-  function waitForConnection(timeoutMs = CONNECT_WAIT_MS): Promise<boolean> {
-    if (get().wsStatus === 'connected') return Promise.resolve(true);
+  function waitForState(ready: (state: AppState) => boolean, timeoutMs: number): Promise<boolean> {
+    if (ready(get())) return Promise.resolve(true);
     return new Promise((resolve) => {
       let unsubscribe: (() => void) | null = null;
       const timer = setTimeout(() => {
@@ -665,11 +676,38 @@ export const useApp = create<AppState>((set, get) => {
         resolve(false);
       }, timeoutMs);
       unsubscribe = useApp.subscribe((state) => {
-        if (state.wsStatus !== 'connected') return;
+        if (!ready(state)) return;
         clearTimeout(timer);
         unsubscribe?.();
         resolve(true);
       });
+    });
+  }
+
+  /**
+   * Resolve once the folder's socket is up AND a conversation is open in it.
+   * The second half matters as much as the first: a send that beats the
+   * `chat-opened` replay gets its optimistic bubble wiped by that replay, and
+   * a send the server receives before the conversation binds would mint a
+   * second chat for the same first message.
+   */
+  function waitForChatSurface(timeoutMs = CONNECT_WAIT_MS): Promise<boolean> {
+    return waitForState((state) => state.wsStatus === 'connected' && state.activeChatId !== null, timeoutMs);
+  }
+
+  /**
+   * First run for a folder: land in whichever half of the column can actually
+   * answer. Needs BOTH reads (settings and providers) before it decides — a
+   * key-less folder with a signed-in Codex must not get pinned to the terminal
+   * by whichever read happens to land first.
+   */
+  function maybeSettleConversationMode(): void {
+    const state = get();
+    if (state.conversationModePinned) return;
+    if (state.settings === null || state.providers === null) return;
+    set({
+      conversationMode: defaultConversationMode(anyChatProviderReady(state.settings, state.providers)),
+      conversationModePinned: true,
     });
   }
 
@@ -1068,6 +1106,7 @@ export const useApp = create<AppState>((set, get) => {
       const providers = await apiChatProviders(project);
       if (get().projectPath !== project) return; // folder changed mid-flight
       set({ providers });
+      maybeSettleConversationMode();
     },
 
     async startOpenAiLogin() {
@@ -1170,10 +1209,14 @@ export const useApp = create<AppState>((set, get) => {
         if (!opened.ok) {
           return fail(opened.error ?? 'Could not open the folder that was just made.');
         }
-        // The send needs the socket the open just started. Wait for it rather
-        // than firing into a closed connection; if it never comes, hand the
-        // words to the composer instead of dropping them on the floor.
-        if (!(await waitForConnection())) {
+        // The first thing this folder ever did was receive a chat message, so
+        // that is the mode it opens in — the settle heuristic must not park a
+        // key-less folder in the terminal over the top of the words just sent.
+        get().setConversationMode('chat');
+        // The send needs the conversation the open just started, not merely
+        // the socket. Wait for it; if it never comes, hand the words to the
+        // composer instead of dropping them on the floor.
+        if (!(await waitForChatSurface())) {
           set({ pendingPrompt: trimmed });
           return fail('The folder opened, but nothing is listening yet. Your message is in the composer.');
         }
@@ -1235,12 +1278,7 @@ export const useApp = create<AppState>((set, get) => {
       const settings = await apiAppSettings(project);
       if (get().projectPath !== project) return;
       set({ settings });
-      // First run for this folder: land in whichever half of the column can
-      // actually answer. A failed read (settings === null) settles nothing, so
-      // the next refresh still gets to decide.
-      if (settings && !get().conversationModePinned) {
-        set({ conversationMode: defaultConversationMode(settings.hasKey), conversationModePinned: true });
-      }
+      maybeSettleConversationMode();
     },
 
     async startSweep() {

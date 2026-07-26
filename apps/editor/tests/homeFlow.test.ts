@@ -34,9 +34,10 @@ import { setModelChoice } from '../src/chat/modelChoice';
 import { useApp } from '../src/store';
 
 /**
- * A socket that connects on the next tick, like a real one. The store waits
- * for `wsStatus === 'connected'` before sending, so a fake that is open the
- * instant it is constructed would test nothing.
+ * A socket that connects on the next tick and answers `chat-new` with a
+ * `chat-opened` on the tick after, like the real server. Both delays matter:
+ * the store waits for `wsStatus === 'connected'` AND an open conversation
+ * before sending, so a fake that skipped either would test nothing.
  */
 class FakeSocket {
   static instances: FakeSocket[] = [];
@@ -62,6 +63,16 @@ class FakeSocket {
 
   send(data: string): void {
     this.sent.push(data);
+    const frame = JSON.parse(data) as { type: string };
+    if (frame.type === 'chat-new') {
+      const ts = new Date().toISOString();
+      const reply = JSON.stringify({
+        type: 'chat-opened',
+        chat: { id: 'chat-1', title: 'New chat', createdAt: ts, updatedAt: ts },
+        records: [],
+      });
+      setTimeout(() => this.onmessage?.({ data: reply }), 0);
+    }
   }
 
   close(): void {
@@ -111,6 +122,10 @@ describe('startFromHome', () => {
     // The transcript shows the turn immediately — the user's words are on
     // screen before the agent says anything.
     expect(useApp.getState().messages[0]?.role).toBe('user');
+    // The first thing this folder did was receive a chat message, so it is
+    // pinned to chat — the key-derived settle must not park it in the terminal.
+    expect(useApp.getState().conversationMode).toBe('chat');
+    expect(useApp.getState().conversationModePinned).toBe(true);
   });
 
   it('asks for the conversation before it sends into it', async () => {
