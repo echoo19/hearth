@@ -10,7 +10,12 @@ export interface HearthNative {
   pickProjectFolder(): Promise<string | null>;
   pickDirectory(): Promise<string | null>;
   revealInFolder(path: string): Promise<void>;
-  /** Godot-style window sizing: compact launcher vs full editor. */
+  /**
+   * Tell the main process which folder the window is on (it owns the title).
+   * The window is always at working size now — the compact launcher window is
+   * gone — so 'launcher' survives only as an alias of 'editor', kept in the
+   * union so a renderer and a preload of different vintages still agree.
+   */
   setWindowMode(mode: 'launcher' | 'editor', title?: string): Promise<void>;
   /**
    * Push the serialized application menu to the main process (macOS native

@@ -51,6 +51,7 @@ export function capabilityLabel(
 
 export function TopBar({ narrow }: { narrow: boolean }) {
   const projectPath = useApp((s) => s.projectPath);
+  const hasFolder = projectPath !== null;
   const wsStatus = useApp((s) => s.wsStatus);
   const driver = useApp((s) => s.chatDriver);
   const hasKey = useApp((s) => s.settings?.hasKey === true);
@@ -63,6 +64,19 @@ export function TopBar({ narrow }: { narrow: boolean }) {
 
   const capability = capabilityLabel(wsStatus, driver, hasKey);
   const chatTitle = chats.find((chat) => chat.id === activeChatId)?.title ?? 'New chat';
+
+  // Home has nothing for this strip to name and nothing for it to open: no
+  // conversation, no socket, no files, and settings are saved per folder. It
+  // stays as the drag region and says nothing — an empty capability pill and a
+  // Settings button that can't save would both be chrome about nothing.
+  if (!hasFolder) {
+    return (
+      <header className="topbar is-empty">
+        <span className="topbar-spacer" />
+        {native && native.platform !== 'darwin' && <span className="topbar-window-controls" aria-hidden="true" />}
+      </header>
+    );
+  }
 
   return (
     <header className="topbar">

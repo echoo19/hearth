@@ -23,9 +23,8 @@ import path from 'node:path';
  *
  * Gate B — brand moments only: the Bricolage display face (`--font-display` /
  *   the literal family name) is reserved for a fixed allowlist of brand
- *   moments — the toolbar wordmark, launcher wordmark + section headings,
- *   modal/dialog titles, and panel empty-state headings. It may be defined in
- *   fonts.css/tokens.css but referenced nowhere else.
+ *   moments — modal/dialog titles and panel empty-state headings. It may be
+ *   defined in fonts.css/tokens.css but referenced nowhere else.
  *
  * Gate C — same token discipline, but for inline `fontSize` in TS/TSX under
  *   `apps/editor/src/**`: every `fontSize:` (object literal) or JSX
@@ -124,9 +123,6 @@ const FONT_DEF_FILES = new Set(['tokens.css', 'fonts.css']);
  * rule from the design spec.
  */
 const BRAND_MOMENT_SELECTORS = new Set<string>([
-  '.launcher-brand h1', // launcher wordmark heading
-  '.launcher-door h2', // launcher door headings
-  '.launcher-section', // launcher section label headings
   '.modal-title', // modal / dialog titles
   '.empty-state > span:not(.empty-icon):not(.hint)', // panel empty-state headings
   '.chat-empty-lead', // conversation empty state — the app's first sentence

@@ -7,7 +7,12 @@
 
 :root {
   /* Surfaces: neutral charcoal, not fire-tinted. */
-  --bg-0: oklch(0.115 0.006 285); /* window chrome, deepest */
+  --bg-0: oklch(0.115 0.006 285); /* window chrome, deepest — the sidebar rail */
+  /* The main content surface: one step off the rail, so the conversation and
+     the home screen read as lit and the rail recedes behind them. Between
+     bg-0 and bg-1 on purpose — a full step would make the column look like a
+     floating card rather than the page. */
+  --bg-05: oklch(0.135 0.007 285);
   --bg-1: oklch(0.15 0.008 285);  /* panels */
   --bg-2: oklch(0.19 0.01 285); /* inputs, cards, tab strip */
   --bg-3: oklch(0.245 0.012 285); /* hover */
@@ -80,6 +85,13 @@
      dense secondary rows only. */
   --ctl-h: 36px;
   --ctl-h-sm: 30px;
+  /* Chat-scale controls — composer buttons, the model selector pill, primary
+     buttons on Home. Named separately from --ctl-h so the dense panels can
+     shrink theirs later without dragging the conversation down with them. */
+  --ctl-h-lg: 36px;
+  /* A navigation row in the rail: New chat, a project, a conversation. Shorter
+     than a control because a list of them is scanned, not operated. */
+  --row-h: 32px;
 
   /* Motion: ease-out, state-conveying only. One easing curve for the whole
      app. Three durations cover everything — --t-fast for the snappy stuff
@@ -99,9 +111,9 @@
   --font-ui: 'Archivo Variable', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
   --font-mono: 'IBM Plex Mono', ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
 
-  /* Brand display face — Bricolage Grotesque, for brand moments ONLY (wordmark,
-     launcher headings, dialog titles, empty-state headings). Falls back to the
-     UI font so nothing loses legibility if the webfont fails. */
+  /* Brand display face — Bricolage Grotesque, for brand moments ONLY (dialog
+     titles, empty-state headings). Falls back to the UI font so nothing loses
+     legibility if the webfont fails. */
   --font-display: 'Bricolage Grotesque Variable', var(--font-ui);
 
   /* Type scale: one ramp for the whole app, sized for a modern desktop app

@@ -1,0 +1,91 @@
+/* Home — the app before it is a project.
+
+   One centred column: greeting, composer, one quiet line. It sits slightly
+   above optical centre (the composer, not the whole column, should land where
+   the eye rests) and it does not animate in — a screen that performs on every
+   launch stops being a place and starts being an intro. */
+
+.home {
+  display: flex;
+  justify-content: center;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 0 24px 8vh;
+}
+
+.home-column {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 20px;
+  width: 100%;
+  max-width: 46rem;
+}
+
+.home-greeting {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 0;
+  font-size: var(--text-2xl);
+  font-weight: 500;
+  letter-spacing: -0.015em;
+  line-height: 1.25;
+  color: var(--ink);
+  text-wrap: balance;
+}
+
+.home-mark {
+  display: inline-flex;
+  flex: none;
+  color: var(--flame-brand);
+}
+
+/* The one line under the composer. It says where the work will land and
+   offers the other door — nothing else, because everything added here is a
+   reason not to type. */
+.home-note {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  padding: 0 4px;
+  font-size: var(--text-sm);
+  color: var(--ink-mute);
+}
+
+.home-note .mono {
+  font-size: var(--text-sm);
+  color: var(--ink);
+}
+
+.home-note-sep {
+  color: var(--ink-faint);
+}
+
+.home-open {
+  border: 0;
+  padding: 0;
+  background: transparent;
+  color: var(--ink-mute);
+  font: inherit;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  text-decoration-color: var(--border-strong);
+  cursor: pointer;
+  transition: color var(--t-fast) var(--ease-out), text-decoration-color var(--t-fast) var(--ease-out);
+}
+
+.home-open:hover {
+  color: var(--ink);
+  text-decoration-color: var(--ink-mute);
+}
+
+.home-error {
+  margin: 0;
+  padding: 10px 12px;
+  border-radius: var(--radius);
+  background: var(--err-faint);
+  color: var(--err);
+  font-size: var(--text-sm);
+}

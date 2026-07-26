@@ -17,6 +17,7 @@ import { create } from 'zustand';
 import {
   apiAppSettings,
   apiChatProviders,
+  apiCreateWorkspace,
   apiDeleteChat,
   apiGameStatus,
   apiListChats,
@@ -24,6 +25,7 @@ import {
   apiOpenAiLogin,
   apiOpenWorkspace,
   apiProbeStatus,
+  apiRecentChats,
   apiRenameChat,
   apiStartSweep,
 } from './api';
@@ -44,11 +46,15 @@ import type {
   FileChangeEntry,
   GameStatus,
   JournalEntry,
+  RecentChatEntry,
   Sense,
   ServerMeta,
+  UpdateReadyInfo,
   WorkspaceInfo,
 } from './types';
 import type { WsFrame } from '../server/ws';
+import { getModelChoice } from './chat/modelChoice';
+import { hearthNative } from './native';
 import {
   ensureAgentPtySessionId,
   getAgentSessionSummary,
@@ -102,6 +108,13 @@ export interface AppState {
   chats: ChatSummary[];
   /** Which one the window is looking at. */
   activeChatId: string | null;
+  /**
+   * Every conversation on this machine, across folders — what the rail's
+   * Recents list shows. Global on purpose: a chat is the unit of work, and
+   * which folder it happens to live in is a detail the user shouldn't have to
+   * reopen a project to remember.
+   */
+  recentChats: RecentChatEntry[];
 
   // --- Game pane ------------------------------------------------------------
   game: GameStatus;
@@ -144,8 +157,16 @@ export interface AppState {
   /** Narrow layout only: the conversation and the pane stack become tabs. */
   narrowTab: 'chat' | 'pane';
   codePeek: { open: boolean; path: string | null };
-  /** Prompt handed over from the launcher, consumed by the composer on mount. */
+  /** Prompt carried across a folder open, consumed by the composer on mount. */
   pendingPrompt: string | null;
+  /**
+   * A first message from Home is making a folder, opening it and sending —
+   * three round trips behind one keystroke. Held so the home composer can
+   * refuse a second submit rather than minting a second project.
+   */
+  homeBusy: boolean;
+  /** Set when an update is downloaded and waiting for a relaunch. */
+  updateReady: UpdateReadyInfo | null;
 
   /**
    * External changes (a CLI/agent mutating a Hearth project) as they land.
@@ -178,6 +199,20 @@ export interface AppState {
   renameChat(chatId: string, title: string): Promise<void>;
   deleteChat(chatId: string): Promise<void>;
   refreshChats(): Promise<void>;
+  /** Re-read the global conversation list (all folders). Safe to over-call. */
+  refreshRecentChats(): Promise<void>;
+  /** Open a conversation from the global list, changing folders if it needs to. */
+  openRecentChat(entry: RecentChatEntry): Promise<void>;
+  /**
+   * The first sentence, with no folder open: make one from the prompt, open
+   * it, start a conversation, and send. The whole point of Home — a project
+   * is a consequence of talking, not a prerequisite for it.
+   */
+  startFromHome(text: string): Promise<{ ok: boolean; error?: string }>;
+  /** Subscribe to the main process's update-ready signal. Returns unsubscribe. */
+  watchUpdates(): () => void;
+  /** Quit and install the downloaded update (the rail's banner button). */
+  relaunchToUpdate(): Promise<void>;
   consumePendingPrompt(): string | null;
   refreshGame(): Promise<void>;
   refreshSettings(): Promise<void>;
@@ -206,6 +241,10 @@ const SIDEBAR_KEY = 'hearth:sidebarCollapsed';
 const CONVERSATION_MODE_PREFIX = 'hearth:conversationMode:';
 const WS_BACKOFF_INITIAL_MS = 1000;
 const WS_BACKOFF_MAX_MS = 5000;
+/** Coalescing window for the global Recents read — see scheduleRecentChats. */
+const RECENT_CHATS_DEBOUNCE_MS = 400;
+/** How long Home's first message waits for the new folder's socket. */
+const CONNECT_WAIT_MS = 8000;
 /** How often the game pane re-checks whether a game exists / changed. */
 export const GAME_POLL_MS = 1500;
 
@@ -606,6 +645,43 @@ export const useApp = create<AppState>((set, get) => {
     get().sendFrame(frame);
   }
 
+  /**
+   * The global Recents list is a fan-out read across every recent folder, and
+   * the things that invalidate it (a title landing, a turn finishing, a chat
+   * being deleted) arrive in bursts. Coalesce them into one read.
+   */
+  /**
+   * Resolve once this folder's socket is up, or false if it takes too long.
+   * Only `startFromHome` needs this: every other send happens in a window that
+   * has been connected for a while, but the first message of a brand-new
+   * project races the connection it was just handed.
+   */
+  function waitForConnection(timeoutMs = CONNECT_WAIT_MS): Promise<boolean> {
+    if (get().wsStatus === 'connected') return Promise.resolve(true);
+    return new Promise((resolve) => {
+      let unsubscribe: (() => void) | null = null;
+      const timer = setTimeout(() => {
+        unsubscribe?.();
+        resolve(false);
+      }, timeoutMs);
+      unsubscribe = useApp.subscribe((state) => {
+        if (state.wsStatus !== 'connected') return;
+        clearTimeout(timer);
+        unsubscribe?.();
+        resolve(true);
+      });
+    });
+  }
+
+  let recentChatsTimer: ReturnType<typeof setTimeout> | null = null;
+  function scheduleRecentChats(): void {
+    if (recentChatsTimer) return;
+    recentChatsTimer = setTimeout(() => {
+      recentChatsTimer = null;
+      void get().refreshRecentChats();
+    }, RECENT_CHATS_DEBOUNCE_MS);
+  }
+
   function wsUrl(project: string): string {
     const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
     return `${proto}//${location.host}/api/ws?project=${encodeURIComponent(project)}`;
@@ -658,6 +734,9 @@ export const useApp = create<AppState>((set, get) => {
         return;
       case 'chat-list':
         set({ chats: frame.chats });
+        // The index changed (a chat was created, renamed, retitled, deleted),
+        // which is exactly what the global list is a view of.
+        scheduleRecentChats();
         return;
       case 'chat-opened':
         // A `chat-new` that has landed becomes a plain "open this one" intent,
@@ -676,7 +755,11 @@ export const useApp = create<AppState>((set, get) => {
         // per dialect.
         const event = normalizeChatEvent(frame.event);
         set((state) => ({ messages: applyChatEvent(state.messages, event) }));
-        if (event.type === 'turn-complete') set({ chatBusy: false });
+        if (event.type === 'turn-complete') {
+          set({ chatBusy: false });
+          // A finished turn moves this chat to the top of every list it is in.
+          scheduleRecentChats();
+        }
         if (event.type === 'error') {
           set({ chatBusy: false, chatError: event.message });
           get().log('error', 'agent', event.message);
@@ -776,6 +859,7 @@ export const useApp = create<AppState>((set, get) => {
     providers: null,
     chats: [],
     activeChatId: null,
+    recentChats: [],
 
     game: EMPTY_GAME,
     senses: [],
@@ -798,6 +882,8 @@ export const useApp = create<AppState>((set, get) => {
     narrowTab: 'chat',
     codePeek: { open: false, path: null },
     pendingPrompt: null,
+    homeBusy: false,
+    updateReady: null,
 
     journalFeed: [],
     agentStatus: 'idle',
@@ -870,6 +956,7 @@ export const useApp = create<AppState>((set, get) => {
         get().refreshSettings(),
         get().refreshProviders(),
         get().refreshChats(),
+        get().refreshRecentChats(),
       ]);
       // Land in the most recent conversation, or start the folder's first one.
       // Either way the window opens on a conversation, never on nothing.
@@ -911,12 +998,20 @@ export const useApp = create<AppState>((set, get) => {
         codePeek: { open: false, path: null },
         pendingPrompt: null,
       });
+      // recentChats deliberately survives: it spans folders, and the rail is
+      // the first thing a user looks at after closing one.
     },
 
     sendChat(text) {
       const trimmed = text.trim();
       if (trimmed === '' || get().chatBusy) return;
-      if (!get().sendFrame({ type: 'chat-send', text: trimmed })) {
+      // Every turn carries who should answer it and how hard to think, rather
+      // than the server remembering a setting: the selector can change between
+      // two messages in the same conversation, and the turn is the unit that
+      // choice applies to. Additive on the wire — a server that predates the
+      // field ignores it, which is why it is omitted rather than sent as null.
+      const agent = getModelChoice();
+      if (!get().sendFrame({ type: 'chat-send', text: trimmed, ...(agent ? { agent } : {}) })) {
         get().log('error', 'app', 'Not connected — wait a moment and send again.');
         return;
       }
@@ -1031,6 +1126,74 @@ export const useApp = create<AppState>((set, get) => {
       if (!project) return;
       const chats = await apiListChats(project);
       if (get().projectPath === project) set({ chats });
+    },
+
+    async refreshRecentChats() {
+      // No project guard: this list spans folders and is the only thing the
+      // rail has to show before one is open.
+      set({ recentChats: await apiRecentChats() });
+    },
+
+    async openRecentChat(entry) {
+      if (get().projectPath !== entry.project.path) {
+        const res = await get().openWorkspace(entry.project.path);
+        // A folder that has moved or been deleted takes its conversations with
+        // it; say so once rather than opening an empty transcript.
+        if (!res.ok) {
+          get().log('error', 'app', res.error ?? `Could not open ${entry.project.name}.`);
+          return;
+        }
+      }
+      get().openChat(entry.id);
+    },
+
+    async startFromHome(text) {
+      const trimmed = text.trim();
+      if (trimmed === '' || get().homeBusy) return { ok: false };
+      set({ homeBusy: true, chatError: null });
+      // Failures land in chatError as well as the return value: whoever called
+      // this may be a composer that doesn't render one, and a first message
+      // that silently goes nowhere is the worst thing this path can do.
+      const fail = (error: string): { ok: false; error: string } => {
+        set({ chatError: error });
+        return { ok: false, error };
+      };
+      try {
+        const created = await apiCreateWorkspace(trimmed);
+        if (!created.ok || !created.info) {
+          return fail(created.error ?? 'Could not make a folder for that.');
+        }
+        // openWorkspace lands in the folder's newest conversation, or starts
+        // one — a folder made a millisecond ago has none, so that is already
+        // the blank chat this message belongs in.
+        const opened = await get().openWorkspace(created.info.path);
+        if (!opened.ok) {
+          return fail(opened.error ?? 'Could not open the folder that was just made.');
+        }
+        // The send needs the socket the open just started. Wait for it rather
+        // than firing into a closed connection; if it never comes, hand the
+        // words to the composer instead of dropping them on the floor.
+        if (!(await waitForConnection())) {
+          set({ pendingPrompt: trimmed });
+          return fail('The folder opened, but nothing is listening yet. Your message is in the composer.');
+        }
+        get().sendChat(trimmed);
+        return { ok: true };
+      } finally {
+        set({ homeBusy: false });
+      }
+    },
+
+    watchUpdates() {
+      const native = hearthNative();
+      // Optional on the preload: a renderer that has updated ahead of its
+      // preload (which is exactly the post-update boot) must not throw here.
+      if (!native?.onUpdateReady) return () => {};
+      return native.onUpdateReady((info) => set({ updateReady: info }));
+    },
+
+    async relaunchToUpdate() {
+      await hearthNative()?.relaunchToUpdate?.();
     },
 
     consumePendingPrompt() {

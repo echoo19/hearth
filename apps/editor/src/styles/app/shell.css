@@ -14,12 +14,15 @@
   background: var(--bg-0);
 }
 
+/* The content surface, one step lighter than the rail behind it: the rail is
+   part of the window, this is the page. */
 .app-main {
   display: grid;
   grid-template-rows: auto 1fr;
   flex: 1;
   min-width: 0;
   min-height: 0;
+  background: var(--bg-05);
 }
 
 
@@ -27,18 +30,30 @@
    Top bar
    -------------------------------------------------------------------------- */
 
-/* Slim and quiet: it names the folder, reports whether anything is listening,
-   and holds the two things that open over the app. Nothing else earns a place
-   in permanent chrome. */
+/* Slim and quiet: it names the conversation, reports whether anything is
+   listening, and holds the two things that open over the app. It sits ON the
+   content surface rather than above it as a chrome strip — no fill of its own,
+   and the hairline only appears once there is content to separate from. */
 .topbar {
   display: flex;
   align-items: center;
   gap: 10px;
-  height: 48px;
-  padding: 0 12px;
-  border-bottom: 1px solid var(--border);
-  background: var(--bg-0);
+  height: 44px;
+  padding: 0 10px;
+  background: transparent;
   flex: none;
+  /* macOS draws no title bar of its own, so this strip is a drag handle too.
+     Its controls opt back out below. */
+  -webkit-app-region: drag;
+}
+
+.topbar > * {
+  -webkit-app-region: no-drag;
+}
+
+/* Home: nothing to name, so nothing but the drag region and Settings. */
+.topbar.is-empty {
+  border-bottom: 0;
 }
 
 .topbar-name {
@@ -51,12 +66,13 @@
   white-space: nowrap;
 }
 
+/* No border: the read-out is a state, not a control, and a pill outline in
+   permanent chrome reads as something you can press. */
 .topbar-capability {
   display: inline-flex;
   align-items: center;
   gap: 7px;
-  padding: 5px 12px 5px 10px;
-  border: 1px solid var(--border);
+  padding: 4px 8px;
   border-radius: 999px;
   font-size: var(--text-xs);
   color: var(--ink-mute);
@@ -94,12 +110,10 @@
   flex: none;
 }
 
-/* The app's segmented control, defined once and used twice: the narrow-layout
-   region switch here in the top bar, and the conversation column's Chat /
-   Terminal switch (styles/app/chat.css). Both mean the same thing — two views
-   of one place — so they must not look like two different controls. */
-.topbar-switch,
-.conversation-switch {
+/* The narrow-layout region switch. The sidebar's Chat | Terminal pill is its
+   own control (styles/app/sidebar.css); this one only appears when the window
+   is too narrow for two columns. */
+.topbar-switch {
   display: inline-flex;
   gap: 3px;
   padding: 3px;

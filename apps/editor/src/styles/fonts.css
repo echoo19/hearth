@@ -2,8 +2,8 @@
    Archivo Variable = UI chrome; IBM Plex Mono = values/scripts/console — the
    same two workhorse families as the website, so engine and site read as one
    product. Bricolage Grotesque Variable is loaded here too but used ONLY for
-   brand moments (--font-display): the wordmark, launcher headings, dialog
-   titles, and panel empty-state headings. It is never the chrome font. */
+   brand moments (--font-display): dialog titles and panel empty-state
+   headings. It is never the chrome font. */
 @import '@fontsource-variable/archivo/wdth.css';
 @import '@fontsource/ibm-plex-mono/400.css';
 @import '@fontsource/ibm-plex-mono/500.css';

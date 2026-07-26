@@ -1,9 +1,9 @@
 import React, { useEffect, useState } from 'react';
 import { useApp } from './store';
 import { hearthNative, type HearthNative } from './native';
-import { Launcher } from './components/Launcher';
 import { TopBar } from './components/shell/TopBar';
 import { Sidebar, SIDEBAR_RAIL_PX, SIDEBAR_WIDTH_PX } from './components/shell/Sidebar';
+import { Home } from './components/home/Home';
 import { ChatColumn } from './components/chat/ChatColumn';
 import { PaneStack } from './components/game/PaneStack';
 import { CodePeek } from './components/code/CodePeek';
@@ -18,40 +18,31 @@ export default function App() {
 
   useEffect(() => {
     void useApp.getState().loadMeta();
+    // The global conversation list is what the rail shows before any folder
+    // is open, so it is read at boot rather than on the first open.
+    void useApp.getState().refreshRecentChats();
+    return useApp.getState().watchUpdates();
   }, []);
 
-  // Compact window while choosing a folder, full window once one is open. The
-  // browser tab title tracks the same name, harmlessly duplicated in Electron
-  // where the native title bar already won.
+  // The browser tab title tracks the same name the native title bar shows,
+  // harmlessly duplicated in Electron.
   useEffect(() => {
-    if (!projectPath && native) {
-      void native.setWindowMode('launcher').catch((error: unknown) => {
-        console.error('Failed to enter launcher window mode.', error);
-      });
-    }
     document.title = projectPath && projectName ? `${projectName} · Hearth` : 'Hearth';
-  }, [native, projectPath, projectName]);
+  }, [projectPath, projectName]);
 
-  if (!projectPath) return <Launcher />;
-  if (native) {
-    return <NativeGate key={projectPath} native={native} projectPath={projectPath} projectName={projectName} />;
-  }
+  // There is no launcher window any more: the app opens at working size and
+  // stays there, with or without a folder. NativeGate is keyed by the folder
+  // so the shell still remounts when one changes.
+  if (native) return <NativeGate key={projectPath ?? 'home'} native={native} projectName={projectName} />;
   return <Shell />;
 }
 
 /**
- * Electron only: the main process resizes the window for the working layout,
- * and the shell waits for that to settle so it measures its final size once
- * rather than laying out twice.
+ * Electron only: tell the main process which folder the window is on (it owns
+ * the title) and wait for that round trip before measuring the layout, so the
+ * shell lays out once rather than twice.
  */
-function NativeGate({
-  native,
-  projectName,
-}: {
-  native: HearthNative;
-  projectPath: string;
-  projectName: string | null;
-}) {
+function NativeGate({ native, projectName }: { native: HearthNative; projectName: string | null }) {
   const [ready, setReady] = useState(false);
 
   useEffect(() => {
@@ -62,7 +53,7 @@ function NativeGate({
       },
       (error: unknown) => {
         if (cancelled) return;
-        console.error('Failed to enter editor window mode.', error);
+        console.error('Failed to set the window mode.', error);
         setReady(true);
       },
     );
@@ -111,8 +102,13 @@ export function useNarrowLayout(): boolean {
  * conversation itself, then the game and its supporting surfaces. Three fixed
  * regions, no draggable panel system — the arrangement is the product's
  * opinion, not a preference. Only the rail moves, and only between two states.
+ *
+ * With no folder open the two regions collapse to Home: a greeting and a
+ * composer. The rail is there either way — the app is never a modal dialog
+ * asking permission to exist.
  */
 function Shell() {
+  const hasFolder = useApp((s) => s.projectPath !== null);
   const narrow = useNarrowLayout();
   const narrowTab = useApp((s) => s.narrowTab);
   useNativeMenu();
@@ -122,14 +118,18 @@ function Shell() {
       <Sidebar />
       <div className="app-main">
         <TopBar narrow={narrow} />
-        <div className="app-body">
-          <div className="app-region" data-active={!narrow || narrowTab === 'chat'}>
-            <ChatColumn />
+        {hasFolder ? (
+          <div className="app-body">
+            <div className="app-region" data-active={!narrow || narrowTab === 'chat'}>
+              <ChatColumn />
+            </div>
+            <div className="app-region" data-active={!narrow || narrowTab === 'pane'}>
+              <PaneStack />
+            </div>
           </div>
-          <div className="app-region" data-active={!narrow || narrowTab === 'pane'}>
-            <PaneStack />
-          </div>
-        </div>
+        ) : (
+          <Home />
+        )}
       </div>
       <CodePeek />
       <SettingsDialog />

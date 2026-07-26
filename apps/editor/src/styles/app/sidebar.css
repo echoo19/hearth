@@ -1,9 +1,9 @@
 /* The left rail.
 
-   A second neutral layer under the conversation column: --bg-0, the same as
-   the window chrome, so the conversation (--bg-1) reads as the lit surface and
-   the rail recedes behind it. Hairline right border, no shadow — it is part of
-   the window, not floating over it.
+   A second neutral layer under the content: --bg-0, the same as the window
+   chrome, so the main area (--bg-05) reads as the lit surface and the rail
+   recedes behind it. Hairline right border, no shadow — it is part of the
+   window, not floating over it.
 
    Motion: exactly one animated thing, the width. Collapsing is a deliberate,
    occasional act and the rail carrying the layout with it is the whole point;
@@ -26,138 +26,167 @@
   width: 60px;
 }
 
-/* --- Head ----------------------------------------------------------------- */
+/* --- Title bar ------------------------------------------------------------
 
-.sidebar-head {
+   The window's drag handle. On macOS the frame is hidden and the traffic
+   lights are drawn into this strip, so it also reserves the height they need;
+   everywhere else the OS still draws a frame and this is just somewhere to
+   grab. Children opt back out of dragging or they would not be clickable. */
+
+.sidebar-titlebar {
   display: flex;
   align-items: center;
-  gap: 9px;
-  height: 48px;
-  padding: 0 10px 0 16px;
+  justify-content: flex-end;
+  height: 44px;
+  padding: 0 6px 0 12px;
   flex: none;
+  -webkit-app-region: drag;
 }
 
-.sidebar-mark {
+.sidebar[data-platform='darwin'] .sidebar-titlebar {
+  height: 52px;
+  /* Clear of the traffic lights (positioned at x:18 by electron/main.ts). */
+  padding-left: 84px;
+}
+
+.sidebar-titlebar-actions {
   display: inline-flex;
-  color: var(--flame-brand);
-  flex: none;
+  align-items: center;
+  gap: 2px;
+  -webkit-app-region: no-drag;
 }
 
-.sidebar-wordmark {
-  flex: 1;
-  min-width: 0;
-  font-size: var(--text-sm);
-  font-weight: 600;
-  letter-spacing: -0.005em;
-  color: var(--ink);
-  white-space: nowrap;
-  opacity: 1;
-  transition: opacity var(--t) var(--ease-out);
+.titlebar-btn {
+  color: var(--ink-mute);
 }
 
-.sidebar.is-collapsed .sidebar-wordmark {
-  opacity: 0;
-  pointer-events: none;
-}
-
-/* Points at the edge it will move toward: ‹ to collapse, › to expand. */
+/* Points at the edge it will move toward. */
 .sidebar-toggle {
-  flex: none;
   transform: rotate(180deg);
-  transition: transform var(--t) var(--ease-out);
 }
 
-.sidebar-toggle.is-collapsed {
-  transform: rotate(0deg);
-}
+/* --- Search ---------------------------------------------------------------
 
-/* Collapsed, the mark and the expand control share one 60px cell: the mark is
-   what you see, the control is what you reach for — revealed on hover or
-   keyboard focus, the way a logo that doubles as a control should behave. */
-.sidebar.is-collapsed .sidebar-head {
-  position: relative;
-  padding: 0;
-  justify-content: center;
-  gap: 0;
-}
+   Opened from the title bar, not permanently present: most sessions never
+   search, and a box that is always there is a box that is always empty. */
 
-.sidebar.is-collapsed .sidebar-mark {
-  transition: opacity var(--t-fast) var(--ease-out);
-}
-
-.sidebar.is-collapsed .sidebar-toggle {
-  position: absolute;
-  inset: 6px auto auto 12px;
-  opacity: 0;
-  transition: opacity var(--t-fast) var(--ease-out), transform var(--t) var(--ease-out);
-}
-
-.sidebar.is-collapsed .sidebar-head:hover .sidebar-mark,
-.sidebar.is-collapsed .sidebar-head:focus-within .sidebar-mark {
-  opacity: 0;
-}
-
-.sidebar.is-collapsed .sidebar-head:hover .sidebar-toggle,
-.sidebar.is-collapsed .sidebar-head:focus-within .sidebar-toggle {
-  opacity: 1;
-}
-
-/* --- New chat ------------------------------------------------------------- */
-
-.sidebar-actions {
-  padding: 2px 12px 10px;
+.sidebar-search {
+  padding: 0 10px 8px;
   flex: none;
 }
 
-.sidebar.is-collapsed .sidebar-actions {
-  padding: 2px 0 10px;
-  display: flex;
-  justify-content: center;
+.sidebar-search .input {
+  width: 100%;
+  height: var(--row-h);
+  font-size: var(--text-sm);
 }
 
-/* The rail's primary action. Bordered rather than filled: the app already has
-   one ember-filled button (Playtest), and two competing solids in one window
-   is a fight neither wins. The ember lives in the glyph. */
-.sidebar-new {
+/* --- Chat / Terminal ------------------------------------------------------ */
+
+.sidebar-modes {
+  padding: 0 10px 8px;
+  flex: none;
+}
+
+.sidebar-switch {
+  display: flex;
+  gap: 3px;
+  padding: 3px;
+  border-radius: 999px;
+  background: var(--bg-2);
+}
+
+.sidebar-switch .switch-tab {
+  flex: 1;
+  height: 26px;
+  border-radius: 999px;
+  padding: 0 10px;
+}
+
+.sidebar-switch .switch-tab[aria-selected='true'] {
+  box-shadow: inset 0 0 0 1px var(--border);
+}
+
+.sidebar-switch .switch-tab[aria-disabled='true'] {
+  color: var(--ink-faint);
+  cursor: default;
+}
+
+.sidebar-switch .switch-tab[aria-disabled='true']:hover {
+  color: var(--ink-faint);
+}
+
+/* --- Nav rows -------------------------------------------------------------
+
+   New chat, Open folder. One shape for every act the rail offers: icon,
+   label, quiet hover. No filled button — the app has one ember-filled control
+   (Send) and two competing solids in one window is a fight neither wins. */
+
+.sidebar-nav {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding: 0 10px 10px;
+  flex: none;
+}
+
+.sidebar.is-collapsed .sidebar-nav {
+  align-items: center;
+  padding: 0 0 10px;
+}
+
+.nav-row {
   display: flex;
   align-items: center;
   gap: 10px;
   width: 100%;
-  height: var(--ctl-h);
-  padding: 0 10px;
-  border: 1px solid var(--border);
+  height: var(--row-h);
+  padding: 0 8px;
+  border: 0;
   border-radius: var(--radius);
-  background: var(--bg-1);
+  background: transparent;
   color: var(--ink);
   font-family: inherit;
   font-size: var(--text-sm);
+  text-align: left;
   cursor: pointer;
-  transition: background var(--t-fast) var(--ease-out), border-color var(--t-fast) var(--ease-out);
+  transition: background var(--t-fast) var(--ease-out);
 }
 
-.sidebar.is-collapsed .sidebar-new {
-  width: var(--ctl-h);
-  justify-content: center;
-  padding: 0;
-  color: var(--accent);
-}
-
-.sidebar-new:hover {
+.nav-row:hover {
   background: var(--bg-2);
-  border-color: var(--border-strong);
 }
 
-.sidebar-new:active {
+.nav-row:active {
   background: var(--bg-3);
 }
 
-.sidebar-new-glyph {
-  display: inline-flex;
-  color: var(--accent);
-  flex: none;
+.nav-row.is-icon {
+  width: var(--row-h);
+  justify-content: center;
+  padding: 0;
+  color: var(--ink-mute);
 }
 
-.sidebar-label {
+.nav-row.is-icon:hover {
+  color: var(--ink);
+}
+
+.nav-glyph {
+  display: inline-flex;
+  flex: none;
+  color: var(--ink-mute);
+}
+
+.nav-row:hover .nav-glyph {
+  color: var(--accent);
+}
+
+.sidebar-expand {
+  transform: rotate(0deg);
+}
+
+.nav-label {
   white-space: nowrap;
   overflow: hidden;
 }
@@ -169,7 +198,7 @@
   min-height: 0;
   overflow-y: auto;
   overflow-x: hidden;
-  padding: 0 8px 12px;
+  padding: 0 10px 12px;
   opacity: 1;
   transition: opacity var(--t) var(--ease-out);
 }
@@ -182,7 +211,7 @@
 }
 
 .sidebar-section + .sidebar-section {
-  margin-top: 18px;
+  margin-top: 14px;
 }
 
 /* Sentence case, not a tracked all-caps eyebrow: it names a list, it isn't a
@@ -192,7 +221,7 @@
   padding: 6px 8px;
   font-size: var(--text-xs);
   font-weight: 500;
-  color: var(--ink-faint);
+  color: var(--ink-mute);
   white-space: nowrap;
 }
 
@@ -201,7 +230,7 @@
   padding: 2px 8px 6px;
   font-size: var(--text-xs);
   line-height: 1.55;
-  color: var(--ink-faint);
+  color: var(--ink-mute);
 }
 
 .chat-list,
@@ -217,7 +246,8 @@
   position: relative;
   display: flex;
   align-items: center;
-  border-radius: var(--radius-sm);
+  min-height: var(--row-h);
+  border-radius: var(--radius);
   transition: background var(--t-fast) var(--ease-out);
 }
 
@@ -233,11 +263,12 @@
   flex: 1;
   min-width: 0;
   display: flex;
-  align-items: baseline;
+  align-items: center;
   gap: 8px;
   border: 0;
   background: transparent;
-  padding: 7px 8px;
+  padding: 0 8px;
+  height: var(--row-h);
   text-align: left;
   font-family: inherit;
   cursor: pointer;
@@ -274,7 +305,8 @@
   opacity: 0;
 }
 
-.chat-actions {
+.chat-actions,
+.folder-actions {
   position: absolute;
   right: 4px;
   display: inline-flex;
@@ -283,7 +315,9 @@
 }
 
 .chat-row:hover .chat-actions,
-.chat-row:focus-within .chat-actions {
+.chat-row:focus-within .chat-actions,
+.folder-row:hover .folder-actions,
+.folder-row:focus-within .folder-actions {
   opacity: 1;
 }
 
@@ -321,19 +355,20 @@
 /* --- Folders -------------------------------------------------------------- */
 
 .folder-row {
+  position: relative;
   display: flex;
-  align-items: baseline;
+  align-items: center;
   gap: 8px;
   width: 100%;
+  min-height: var(--row-h);
+  padding: 0 8px;
   border: 0;
   background: transparent;
-  border-radius: var(--radius-sm);
-  padding: 7px 8px;
+  border-radius: var(--radius);
   text-align: left;
   font-family: inherit;
   font-size: var(--text-sm);
   color: var(--ink-mute);
-  cursor: pointer;
   transition: background var(--t-fast) var(--ease-out), color var(--t-fast) var(--ease-out);
 }
 
@@ -344,19 +379,31 @@
 
 .folder-row.is-current {
   color: var(--ink);
-  cursor: default;
 }
 
-.folder-row.is-current:hover {
+/* The whole row is the target; the button carries no chrome of its own. */
+.folder-open {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  height: var(--row-h);
+  border: 0;
+  padding: 0;
   background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
 }
 
 .folder-row.is-action {
-  color: var(--ink-faint);
+  color: var(--ink-mute);
+  cursor: pointer;
 }
 
 .folder-row.is-action:hover {
-  color: var(--ink-mute);
+  color: var(--ink);
 }
 
 .folder-name {
@@ -371,11 +418,152 @@
   flex: none;
   font-size: var(--text-2xs);
   color: var(--ink-faint);
+  opacity: 1;
+  transition: opacity var(--t-fast) var(--ease-out);
+}
+
+.folder-row:hover .folder-note,
+.folder-row:focus-within .folder-note {
+  opacity: 0;
+}
+
+/* --- Foot: the update, and who you are ------------------------------------
+
+   Pinned below the lists because neither is work — one is the app asking for
+   a restart, the other is the app saying who it is signed in as. */
+
+.sidebar-foot {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 8px 10px 10px;
+  flex: none;
+}
+
+.sidebar.is-collapsed .sidebar-foot {
+  align-items: center;
+  padding: 8px 0 10px;
+}
+
+/* An update waiting to install. The one card in the rail — it is not
+   navigation, it is the only thing here that asks for something. */
+.update-card {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 8px 9px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--bg-1);
+}
+
+.sidebar.is-collapsed .update-card {
+  display: none;
+}
+
+.update-mark {
+  display: inline-flex;
+  flex: none;
+  color: var(--flame-brand);
+}
+
+.update-text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.update-lead {
+  font-size: var(--text-sm);
+  color: var(--ink);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.update-version {
+  font-size: var(--text-2xs);
+  color: var(--ink-mute);
+}
+
+.update-go {
+  flex: none;
+  color: var(--ink-mute);
+}
+
+/* Who this Hearth answers as. A row, not a card: it is a place to go, and it
+   is the last thing in the rail rather than the loudest. */
+.account-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 6px 8px;
+  border: 0;
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--ink);
+  font-family: inherit;
+  font-size: var(--text-sm);
+  text-align: left;
+  cursor: pointer;
+  transition: background var(--t-fast) var(--ease-out);
+}
+
+.account-row:hover {
+  background: var(--bg-2);
+}
+
+.account-row.is-collapsed {
+  width: auto;
+  padding: 4px;
+}
+
+.account-avatar {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  background: var(--accent);
+  color: var(--accent-ink);
+  font-size: var(--text-xs);
+  font-weight: 600;
+}
+
+.account-text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.account-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.account-status {
+  font-size: var(--text-2xs);
+  color: var(--ink-mute);
+}
+
+.account-chevron {
+  display: inline-flex;
+  flex: none;
+  color: var(--ink-mute);
+  transform: rotate(90deg);
 }
 
 /* --- Connectors & Skills --------------------------------------------------
 
-   The two folds under Projects: what this Hearth can reach, and what it knows
+   The two folds under Recents: what this Hearth can reach, and what it knows
    how to do. Secondary by construction — they fold away, they carry no colour
    except the one ember dot that means "this is genuinely running", and in the
    collapsed rail they inherit .sidebar-scroll's fade like everything else.
@@ -394,7 +582,7 @@
   width: 100%;
   padding: 6px 8px;
   border: 0;
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius);
   background: transparent;
   /* Inherits the heading's size, weight and colour: this is the same label it
      always was, now with a hinge. */
@@ -406,7 +594,7 @@
 }
 
 .harness-disclosure:hover {
-  color: var(--ink-mute);
+  color: var(--ink);
 }
 
 .harness-caret {
@@ -431,8 +619,9 @@
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 7px 8px;
-  border-radius: var(--radius-sm);
+  min-height: var(--row-h);
+  padding: 0 8px;
+  border-radius: var(--radius);
   font-size: var(--text-sm);
   color: var(--ink-mute);
   transition:
@@ -526,7 +715,7 @@
   margin: 2px 0;
   padding: 8px;
   border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius);
   background: var(--bg-1);
 }
 
@@ -555,7 +744,7 @@
   padding: 0 8px;
   font-size: var(--text-2xs);
   line-height: 1.55;
-  color: var(--ink-faint);
+  color: var(--ink-mute);
   animation: harness-note-in var(--t) var(--ease-out);
 }
 
