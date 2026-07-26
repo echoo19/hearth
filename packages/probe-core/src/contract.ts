@@ -1,0 +1,211 @@
+/**
+ * The probe contract: the capability surface Hearth needs from any game under
+ * test. One contract, two ways to satisfy it: authored-in (a shim the building
+ * agent writes into its own game) or adapted-on (an engine connector).
+ *
+ * Design rules, binding for every implementation and consumer:
+ * - Capabilities are DECLARED, never assumed. A detector that needs a sense an
+ *   implementation lacks must be skipped with an explicit SkippedDetector
+ *   entry, never silently passed.
+ * - Nothing here assumes determinism. The bot's own RNG is seeded and replays
+ *   exactly; the game's response is treated as a distribution.
+ * - Nothing here assumes an engine, a scene format, or 2D pixels. Positions
+ *   are world units; coverage keys are opaque strings.
+ */
+
+/** What a game-under-test implementation can actually see and do. */
+export interface ProbeCapabilities {
+  /** Declared input vocabulary. Empty arrays are valid (pointer-only games). */
+  input: {
+    actions: string[];
+    axes: string[];
+    pointer: boolean;
+  };
+  senses: {
+    /** T1: exception/error stream (console errors, push_error, window.onerror). */
+    errors: boolean;
+    /** T1: scene/level-change signal. */
+    scenes: boolean;
+    /** T1: named game-event stream. */
+    events: boolean;
+    /** T0/T1: entity enumeration with world positions + liveness. */
+    entities: boolean;
+    /** T1: screenshot (PNG). Unlocks pixel novelty, black-screen, evidence shots. */
+    screenshot: boolean;
+    /** T2: walkable-region / occupancy query. Unlocks wander frontier, sealed-region, coverage. */
+    nav: boolean;
+    /** T2: cheap episode reset to initial state. */
+    reset: boolean;
+  };
+  /** Logical viewport in the game's own coordinate space. */
+  viewport: { width: number; height: number };
+}
+
+export interface ProbeEntity {
+  id: string;
+  name?: string;
+  tags?: string[];
+  /** World position. */
+  x: number;
+  y: number;
+  /** False once destroyed/disabled. */
+  alive: boolean;
+}
+
+export interface ProbeError {
+  message: string;
+  /** Best-effort source location, e.g. "player.js:31". */
+  where?: string;
+  at: ProbeInstant;
+}
+
+/** A moment in a run. `frame` is the probe's monotonic sample counter (always present); `ms` is game wall-clock when known. */
+export interface ProbeInstant {
+  frame: number;
+  ms?: number;
+}
+
+/** What one step/sample of the game reported. Deltas since the previous step. */
+export interface StepObservation {
+  frame: number;
+  ms?: number;
+  newErrors: ProbeError[];
+  /** Current scene/level identifier, null when the sense is absent. */
+  sceneId: string | null;
+  /** Names of game events emitted since last step (duplicates allowed). */
+  newEvents: string[];
+}
+
+export interface NavGrid {
+  originX: number;
+  originY: number;
+  cellSize: number;
+  cols: number;
+  rows: number;
+  /** Row-major; true = solid/unwalkable. */
+  solid: boolean[];
+}
+
+export type PointerKind = 'move' | 'down' | 'up' | 'click';
+
+/**
+ * The minimal interface the sweep loop drives. Optional methods MUST be
+ * present exactly when the corresponding capability is declared true.
+ */
+export interface GameUnderTest {
+  readonly capabilities: ProbeCapabilities;
+  /** Bring the game to a playable state. Resolves when input will be accepted. */
+  start(): Promise<void>;
+  stop(): Promise<void>;
+  /**
+   * Advance/sample one unit of game time and return what changed.
+   * Implementations choose the unit (a fixed tick when they control time, a
+   * sample window when they don't) but MUST keep it roughly uniform in-run.
+   */
+  step(): Promise<StepObservation>;
+  setActionDown(name: string): Promise<void>;
+  setActionUp(name: string): Promise<void>;
+  setAxis(name: string, value: number): Promise<void>;
+  sendPointer(x: number, y: number, kind: PointerKind): Promise<void>;
+  /** capabilities.senses.entities */
+  listEntities?(): Promise<ProbeEntity[]>;
+  /** capabilities.senses.entities — resolve by id, then exact name, then tag. */
+  findEntity?(ref: string): Promise<ProbeEntity | null>;
+  /** capabilities.senses.screenshot — PNG bytes. */
+  screenshot?(): Promise<Uint8Array>;
+  /** capabilities.senses.nav */
+  navGrid?(): Promise<NavGrid | null>;
+  /** capabilities.senses.reset */
+  reset?(): Promise<void>;
+}
+
+// ---------------------------------------------------------------------------
+// Verdicts, findings, evidence — the reporting contract (engine-agnostic).
+// ---------------------------------------------------------------------------
+
+export type Severity = 'blocker' | 'issue' | 'note';
+
+export interface Finding {
+  /** Short kebab-case slug, e.g. "sealed-region", "unresponsive-input". */
+  kind: string;
+  severity: Severity;
+  summary: string;
+  detail?: string;
+  at?: ProbeInstant;
+  /** Relative path (within the evidence dir) of a captured screenshot, when available. */
+  shot?: string;
+  evidence?: Record<string, unknown>;
+}
+
+export interface SkippedDetector {
+  kind: string;
+  /** Human-readable, names the missing capability. */
+  reason: string;
+}
+
+/** Worst-to-best precedence: error > stuck > objective-failed > completed > ran-clean. */
+export type Verdict = 'error' | 'stuck' | 'objective-failed' | 'completed' | 'ran-clean';
+
+export interface Objective {
+  type: 'reach' | 'survive' | 'event' | 'property';
+  /** reach: entity ref or "x,y" point. property: entity ref. */
+  target?: string;
+  tolerance?: number;
+  frames?: number;
+  event?: string;
+  count?: number;
+  property?: string;
+  greaterThan?: number;
+  lessThan?: number;
+  equals?: number | string | boolean;
+}
+
+export interface ObjectiveOutcome {
+  objective: Objective;
+  achieved: boolean;
+  failed: boolean;
+  achievedAt?: ProbeInstant;
+}
+
+export interface RunResult {
+  policy: string;
+  seed: number;
+  verdict: Verdict;
+  frames: number;
+  wallMs: number;
+  findings: Finding[];
+  skipped: SkippedDetector[];
+  objectives: ObjectiveOutcome[];
+  firstError?: ProbeError;
+  /** Opaque novelty/coverage keys visited (cell ids, scene ids, hash buckets). */
+  coverageKeys: string[];
+  /** Relative paths of captured screenshots within the evidence dir. */
+  shots: string[];
+}
+
+export interface SweepFailure {
+  policy: string;
+  seed: number;
+  verdict: Verdict;
+  at?: ProbeInstant;
+  detail: string;
+  shot?: string;
+}
+
+export interface SweepReport {
+  /** What was swept: a project dir, URL, or connector label. */
+  target: string;
+  policies: string[];
+  seeds: number[];
+  runs: number;
+  verdicts: Record<Verdict, number>;
+  /** Deduped, severity-sorted, capped (foldFindings discipline). */
+  findings: Finding[];
+  skipped: SkippedDetector[];
+  /** Worst-first, capped at 5. */
+  failures: SweepFailure[];
+  framesSimulated: number;
+  wallMs: number;
+  /** Absolute path of this sweep's evidence directory. */
+  evidenceDir: string;
+}

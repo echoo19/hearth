@@ -18,6 +18,8 @@ export default defineConfig({
       '@hearth/runtime/ui': path.resolve(__dirname, 'packages/runtime/src/ui.ts'),
       '@hearth/runtime': pkg('runtime'),
       '@hearth/playtest': pkg('playtest'),
+      '@hearth/probe-core': pkg('probe-core'),
+      '@hearth/adapter-web': pkg('adapter-web'),
     },
   },
   test: {
