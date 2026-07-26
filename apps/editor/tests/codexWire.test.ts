@@ -59,7 +59,13 @@ describe('item mapping', () => {
     expect(codexItemKind('fileChange')).toBe('file-change');
     expect(codexItemKind('mcpToolCall')).toBe('mcp');
     expect(codexItemKind('webSearch')).toBe('web-search');
-    expect(codexItemKind('somethingNewInV3')).toBeNull();
+    // An item type from a codex we have never seen still gets a row: silence
+    // would mean the app shows less than the terminal it replaced.
+    expect(codexItemKind('somethingNewInV3')).toBe('other');
+    // The ones handled elsewhere (streamed prose, the plan card, images) are
+    // the only ones that are deliberately not tool rows.
+    expect(codexItemKind('agentMessage')).toBeNull();
+    expect(codexItemKind('plan')).toBeNull();
   });
 
   it('maps per-item status, treating an unknown status as success', () => {
@@ -184,7 +190,12 @@ describe('mapCodexNotification', () => {
   it('ignores a method it has never heard of', () => {
     expect(mapCodexNotification('thread/somethingFromTheFuture', { anything: true })).toEqual([]);
     expect(mapCodexNotification('item/agentMessage/delta', null)).toEqual([]);
-    expect(mapCodexNotification('item/started', { item: { type: 'imageGeneration', id: 'z' } })).toEqual([]);
+  });
+
+  it('opens a row for an image the agent is generating, rather than nothing', () => {
+    expect(mapCodexNotification('item/started', { item: { type: 'imageGeneration', id: 'z' } })).toEqual([
+      { type: 'tool-begin', toolId: 'z', kind: 'other', title: 'Generating an image' },
+    ]);
   });
 });
 

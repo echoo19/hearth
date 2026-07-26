@@ -29,6 +29,7 @@
 import path from 'node:path';
 import { promises as fsp } from 'node:fs';
 import { isInlineImage, type ChatAttachment } from './chatAttachments.js';
+import { syncSkillsIntoProject } from './skills.js';
 
 export type { ChatAttachment } from './chatAttachments.js';
 
@@ -93,6 +94,25 @@ export type ChatEvent =
   | { type: 'subagent-start'; agentId: string; role?: string; title: string }
   | { type: 'subagent-delta'; agentId: string; chunk: string }
   | { type: 'subagent-end'; agentId: string; status: ToolStatus; summary?: string }
+  /**
+   * The agent's plan for the work, replaced whole each time it changes. Both
+   * backends have one — codex streams a `plan` item, the Agent SDK writes a
+   * todo list through a tool — and until now neither reached the transcript,
+   * which meant the app showed less of what the agent was doing than the
+   * terminal it replaced.
+   */
+  | { type: 'plan-update'; planId: string; text: string }
+  /**
+   * An image the agent made or looked at, as a path in the project. Rendered,
+   * not named: a generated sprite the user cannot see is not a result.
+   */
+  | { type: 'image'; toolId: string; path: string; caption?: string }
+  /**
+   * Something happened that isn't an action and isn't prose — the context was
+   * compacted, the agent waited, a review mode opened. One quiet line, because
+   * these explain later behaviour that would otherwise look like a bug.
+   */
+  | { type: 'notice'; text: string }
   | { type: 'turn-complete' }
   | { type: 'error'; message: string }
   // --- legacy v0 members, read-only ----------------------------------------
@@ -496,6 +516,15 @@ export function mapSdkMessage(message: unknown): ChatEvent[] {
       if (!block) continue;
       if (block.type !== 'tool_use' || typeof block.id !== 'string' || typeof block.name !== 'string') continue;
       const { id, name, input } = block as { id: string; name: string; input: unknown };
+      // The todo list is the SDK's plan. It arrives as a tool call whose
+      // input IS the plan, so it becomes the plan card rather than a tool row
+      // nobody would open — the terminal shows this prominently and the app
+      // used to show nothing at all.
+      if (name === 'TodoWrite') {
+        const text = sdkTodoText(input);
+        if (text) out.push({ type: 'plan-update', planId: 'todo', text });
+        continue;
+      }
       if (name === 'Task') {
         const params = asRecord(input);
         const role = typeof params?.subagent_type === 'string' ? params.subagent_type : undefined;
@@ -542,6 +571,25 @@ export function mapSdkMessage(message: unknown): ChatEvent[] {
     }
   }
   return out;
+}
+
+/**
+ * Render a TodoWrite input as the plan text. Checkbox lines, because that is
+ * what a todo list is and it survives being read as plain text.
+ */
+export function sdkTodoText(input: unknown): string | null {
+  const todos = asRecord(input)?.todos;
+  if (!Array.isArray(todos) || todos.length === 0) return null;
+  const lines: string[] = [];
+  for (const raw of todos) {
+    const todo = asRecord(raw);
+    const content = todo?.content ?? todo?.activeForm;
+    if (typeof content !== 'string' || content.trim() === '') continue;
+    const status = typeof todo?.status === 'string' ? todo.status : 'pending';
+    const mark = status === 'completed' ? '[x]' : status === 'in_progress' ? '[~]' : '[ ]';
+    lines.push(`${mark} ${content.trim()}`);
+  }
+  return lines.length > 0 ? lines.join('\n') : null;
 }
 
 /** Flatten a tool_result's content into a short one-line summary. */
@@ -718,6 +766,11 @@ export class AgentSdkDriver implements ChatDriver {
 
   async start(_sessionId: string, projectRoot: string): Promise<void> {
     this.projectRoot = projectRoot;
+    // The SDK discovers skills from the filesystem around its cwd and offers
+    // no way to point it elsewhere, so Hearth's skills are mirrored into the
+    // folder first. Re-done on every bind, which is what makes switching one
+    // off take effect on the next message rather than the next restart.
+    await syncSkillsIntoProject(projectRoot).catch(() => []);
     const stream = this.sdk.query({
       prompt: this.turns,
       options: {

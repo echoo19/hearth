@@ -13,6 +13,7 @@ import { greetingFor } from '../home/Home';
 import { Button } from '../ui/Button';
 import { ApprovalPrompt } from './ApprovalPrompt';
 import { SentAttachments } from './AttachmentTray';
+import { ImageCard, NoticeRow, PlanCard } from './PlanCard';
 import { CommandRow } from './CommandRow';
 import { FileChangeCard } from './FileChangeCard';
 import { ReasoningRow } from './ReasoningRow';
@@ -108,6 +109,12 @@ function Part({ part }: { part: ChatPart }) {
       return <SubagentCard part={part} />;
     case 'approval':
       return <ApprovalPrompt part={part} />;
+    case 'plan':
+      return <PlanCard part={part} />;
+    case 'image':
+      return <ImageCard part={part} />;
+    case 'notice':
+      return <NoticeRow part={part} />;
     default:
       return <ToolChip part={part} />;
   }
@@ -119,7 +126,7 @@ function Part({ part }: { part: ChatPart }) {
  * id the driver gave it, which survives the parts around it changing.
  */
 function partKey(part: ChatPart, index: number): string {
-  return part.kind === 'text' || part.kind === 'reasoning' ? `p${index}` : part.id;
+  return part.kind === 'text' || part.kind === 'reasoning' || part.kind === 'notice' ? `p${index}` : part.id;
 }
 
 function Turn({ message }: { message: ChatMessage }) {
@@ -159,6 +166,10 @@ export function turnGrowth(message: ChatMessage | undefined): number {
     case 'command':
       return message.parts.length + tail.output.length;
     case 'subagent':
+      return message.parts.length + tail.text.length;
+    // A plan is replaced in place, so its length is the only thing that says
+    // it changed — without this the view stops following while a plan grows.
+    case 'plan':
       return message.parts.length + tail.text.length;
     default:
       return message.parts.length;

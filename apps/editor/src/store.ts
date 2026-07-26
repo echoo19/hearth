@@ -558,6 +558,23 @@ export function applyChatEvent(
             : part,
         ),
       );
+    case 'plan-update': {
+      // One card per plan: a revision replaces the list in place, so the
+      // transcript shows the plan as it stands rather than every draft of it.
+      const parts = last.parts.slice();
+      const at = parts.findIndex((part) => part.kind === 'plan' && part.id === event.planId);
+      const card: ChatPart = { kind: 'plan', id: event.planId, text: event.text };
+      if (at === -1) parts.push(card);
+      else parts[at] = card;
+      return replace(parts);
+    }
+    case 'image':
+      return replace([
+        ...last.parts,
+        { kind: 'image', id: event.toolId, path: event.path, caption: event.caption },
+      ]);
+    case 'notice':
+      return replace([...last.parts, { kind: 'notice', text: event.text }]);
     case 'turn-complete':
       // Drop a turn that produced nothing at all rather than leaving an empty
       // bubble behind.

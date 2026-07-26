@@ -37,6 +37,7 @@ import {
   type ChatEvent,
 } from '../chat.js';
 import { loginShellPathEnv } from '../shellEnv.js';
+import { skillsRoot } from '../skills.js';
 import {
   CODEX_CLIENT_INFO,
   CODEX_TESTED_VERSION,
@@ -44,8 +45,10 @@ import {
   codexInputItems,
   codexTurnOverrides,
   decodeRpcChunk,
+  describeQuestion,
   encodeRpc,
   isApprovalRequest,
+  isQuestionRequest,
   mapCodexAccount,
   mapCodexApproval,
   mapCodexLoginStart,
@@ -519,6 +522,18 @@ export class CodexDriver implements ChatDriver {
     this.conn = conn;
     conn.attach(this.connect(this.bin, projectRoot, this.env));
     await conn.initialize();
+
+    // Point codex at Hearth's skills folder. `skills/extraRoots/set` is a real
+    // method on this protocol (verified against CODEX_TESTED_VERSION by
+    // probing the binary's own generated schema).
+    //
+    // Sent, not awaited: the app-server handles stdin requests in order, so
+    // this is applied before the `thread/start` below it either way, and
+    // waiting for a reply would hang the whole bind against a build that never
+    // sends one.
+    void conn.request('skills/extraRoots/set', { extraRoots: [skillsRoot()] }).catch(() => {
+      /* an older codex simply has no extra roots */
+    });
 
     // Resume when we know this conversation's thread, else start a new one.
     // A resume against a thread codex has forgotten must not strand the

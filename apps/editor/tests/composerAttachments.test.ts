@@ -142,7 +142,7 @@ describe('sending', () => {
   });
 
   it('puts the files on the frame beside the words', () => {
-    const sendFrame = vi.fn(() => true);
+    const sendFrame = vi.fn((_frame: unknown) => true);
     useApp.setState({ sendFrame });
     useApp.getState().sendChat('look at this', [attachment]);
     const frame = sendFrame.mock.calls[0][0] as { attachments?: unknown[] };
@@ -150,7 +150,7 @@ describe('sending', () => {
   });
 
   it('sends a picture with no words at all', () => {
-    const sendFrame = vi.fn(() => true);
+    const sendFrame = vi.fn((_frame: unknown) => true);
     useApp.setState({ sendFrame });
     useApp.getState().sendChat('', [attachment]);
     expect(sendFrame).toHaveBeenCalledTimes(1);
@@ -158,14 +158,14 @@ describe('sending', () => {
   });
 
   it('still refuses a message that is nothing at all', () => {
-    const sendFrame = vi.fn(() => true);
+    const sendFrame = vi.fn((_frame: unknown) => true);
     useApp.setState({ sendFrame });
     useApp.getState().sendChat('   ', []);
     expect(sendFrame).not.toHaveBeenCalled();
   });
 
   it('shows the bubble from bytes it already has, not from a blob it will revoke', () => {
-    useApp.setState({ sendFrame: vi.fn(() => true) });
+    useApp.setState({ sendFrame: vi.fn((_frame: unknown) => true) });
     useApp.getState().sendChat('look', [attachment]);
     expect(useApp.getState().messages[0].attachments?.[0].url).toBe('data:image/png;base64,AAA');
   });

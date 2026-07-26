@@ -103,7 +103,27 @@ function str(value: unknown): string | undefined {
 // Items
 // ---------------------------------------------------------------------------
 
-/** codex's `ThreadItem.type` -> our provider-agnostic tool kind. */
+/**
+ * Item types this file handles somewhere OTHER than as a tool row: streamed
+ * prose, the plan card, images, notices, subagents. Everything else — known or
+ * not — becomes a tool row, which is what stops a codex release adding an item
+ * type that silently disappears from the transcript.
+ */
+const NON_TOOL_ITEMS = new Set([
+  'agentMessage',
+  'reasoning',
+  'userMessage',
+  'plan',
+  'subAgentActivity',
+  'collabAgentToolCall',
+  'imageGeneration',
+  'imageView',
+  'contextCompaction',
+  'sleep',
+  'enteredReviewMode',
+  'exitedReviewMode',
+]);
+
 export function codexItemKind(itemType: string): ToolKind | null {
   switch (itemType) {
     case 'commandExecution':
@@ -116,7 +136,10 @@ export function codexItemKind(itemType: string): ToolKind | null {
     case 'webSearch':
       return 'web-search';
     default:
-      return null;
+      // Not "unknown, so drop it" — unknown, so show it plainly. A row titled
+      // with the item's own type is a worse label than a hand-written one and
+      // a far better outcome than nothing.
+      return NON_TOOL_ITEMS.has(itemType) ? null : 'other';
   }
 }
 
@@ -168,6 +191,8 @@ export function codexItemTitle(item: Record<string, unknown>): string {
       return str(item.tool) ?? 'tool';
     case 'webSearch':
       return str(item.query) ?? 'web search';
+    case 'hookPrompt':
+      return 'hook';
     default:
       return String(item.type ?? 'tool');
   }
@@ -207,6 +232,16 @@ export function mapCodexNotification(method: string, params: unknown): ChatEvent
       const chunk = decodeDelta(p.delta);
       return toolId && chunk ? [{ type: 'tool-output-delta', toolId, chunk }] : [];
     }
+    case 'item/plan/delta':
+    case 'turn/plan/updated': {
+      // The plan arrives as whole text, not as an append, so the card is
+      // replaced rather than grown.
+      const text = str(p.text) ?? str(p.plan) ?? str(p.delta);
+      const planId = str(p.itemId) ?? 'plan';
+      return text ? [{ type: 'plan-update', planId, text }] : [];
+    }
+    case 'thread/compacted':
+      return [{ type: 'notice', text: 'Earlier turns were summarised to make room.' }];
     case 'item/started':
       return mapItemStarted(asRecord(p.item));
     case 'item/completed':
@@ -246,14 +281,72 @@ function decodeDelta(raw: unknown): string | undefined {
   return value;
 }
 
+/**
+ * The item types that are their own thing rather than a tool row, mapped for
+ * both `item/started` and `item/completed`. Returns null when the item is not
+ * one of them, so the caller falls through to the tool-row path.
+ */
+function mapSpecialItem(item: Record<string, unknown>, id: string, done: boolean): ChatEvent[] | null {
+  switch (item.type) {
+    case 'subAgentActivity':
+      if (done) return [{ type: 'subagent-end', agentId: id, status: item.kind === 'interrupted' ? 'error' : 'ok' }];
+      if (item.kind !== 'started') return [];
+      return [
+        { type: 'subagent-start', agentId: id, role: str(item.agentPath), title: str(item.agentPath) ?? 'Subagent' },
+      ];
+    // A collab call IS a nested agent — the same card, so a delegated task
+    // reads the same whichever mechanism codex used to delegate it.
+    case 'collabAgentToolCall':
+      if (done) {
+        return [{ type: 'subagent-end', agentId: id, status: codexStatus(item.status), summary: str(item.prompt) }];
+      }
+      return [
+        {
+          type: 'subagent-start',
+          agentId: id,
+          role: str(item.tool),
+          title: str(item.prompt)?.slice(0, 120) ?? str(item.tool) ?? 'Agent',
+        },
+      ];
+    case 'plan': {
+      const text = str(item.text);
+      return text ? [{ type: 'plan-update', planId: id, text }] : [];
+    }
+    case 'imageGeneration': {
+      if (!done) return [{ type: 'tool-begin', toolId: id, kind: 'other', title: 'Generating an image' }];
+      const saved = str(item.savedPath);
+      const events: ChatEvent[] = [];
+      if (saved) events.push({ type: 'image', toolId: id, path: saved, caption: str(item.revisedPrompt) });
+      events.push({ type: 'tool-end', toolId: id, status: codexStatus(item.status) });
+      return events;
+    }
+    case 'imageView': {
+      if (done) return [];
+      const viewed = str(item.path);
+      return viewed ? [{ type: 'image', toolId: id, path: viewed, caption: 'Looked at this' }] : [];
+    }
+    case 'contextCompaction':
+      return done ? [{ type: 'notice', text: 'Earlier turns were summarised to make room.' }] : [];
+    case 'sleep': {
+      if (done) return [];
+      const ms = typeof item.durationMs === 'number' ? item.durationMs : 0;
+      return [{ type: 'notice', text: `Waiting ${Math.max(1, Math.round(ms / 1000))}s.` }];
+    }
+    case 'enteredReviewMode':
+      return done ? [] : [{ type: 'notice', text: 'Reviewing the changes.' }];
+    case 'exitedReviewMode':
+      return done ? [{ type: 'notice', text: 'Finished reviewing.' }] : [];
+    default:
+      return null;
+  }
+}
+
 function mapItemStarted(item: Record<string, unknown> | null): ChatEvent[] {
   if (!item) return [];
   const id = str(item.id);
   if (!id) return [];
-  if (item.type === 'subAgentActivity') {
-    if (item.kind !== 'started') return [];
-    return [{ type: 'subagent-start', agentId: id, role: str(item.agentPath), title: str(item.agentPath) ?? 'Subagent' }];
-  }
+  const special = mapSpecialItem(item, id, false);
+  if (special) return special;
   const kind = codexItemKind(String(item.type ?? ''));
   if (!kind) return [];
   const events: ChatEvent[] = [
@@ -272,9 +365,8 @@ function mapItemCompleted(item: Record<string, unknown> | null): ChatEvent[] {
   if (!item) return [];
   const id = str(item.id);
   if (!id) return [];
-  if (item.type === 'subAgentActivity') {
-    return [{ type: 'subagent-end', agentId: id, status: item.kind === 'interrupted' ? 'error' : 'ok' }];
-  }
+  const special = mapSpecialItem(item, id, true);
+  if (special) return special;
   const kind = codexItemKind(String(item.type ?? ''));
   if (!kind) return [];
   const events: ChatEvent[] = [];
@@ -310,6 +402,44 @@ const APPROVAL_METHODS = new Set([
 
 export function isApprovalRequest(method: string): boolean {
   return APPROVAL_METHODS.has(method);
+}
+
+/** Server requests that are the agent ASKING something rather than doing it. */
+const QUESTION_METHODS = new Set(['item/tool/requestUserInput', 'mcpServer/elicitation/request']);
+
+export function isQuestionRequest(method: string): boolean {
+  return QUESTION_METHODS.has(method);
+}
+
+/**
+ * Flatten a `requestUserInput` into one readable line for the transcript.
+ *
+ * Hearth has no picker for these yet, and codex resolves them on its own
+ * timer, so the honest thing is to SHOW what was asked: an agent that quietly
+ * asked a question and moved on is the kind of gap that makes people go back
+ * to the terminal. Answering in the next message still works, because the
+ * agent is in the same conversation.
+ */
+export function describeQuestion(params: unknown): string | null {
+  const p = asRecord(params) ?? {};
+  const questions = Array.isArray(p.questions) ? p.questions : [];
+  const lines: string[] = [];
+  for (const raw of questions) {
+    const question = asRecord(raw);
+    const text = str(question?.question) ?? str(question?.header);
+    if (!text) continue;
+    const options = Array.isArray(question?.options) ? question.options : [];
+    const labels = options
+      .map((option) => str(asRecord(option)?.label))
+      .filter((label): label is string => Boolean(label));
+    lines.push(labels.length > 0 ? `${text} (${labels.join(' / ')})` : text);
+  }
+  // An elicitation carries a plain message rather than a question list.
+  if (lines.length === 0) {
+    const message = str(p.message) ?? str(asRecord(p.params)?.message);
+    if (message) lines.push(message);
+  }
+  return lines.length > 0 ? `The agent asked: ${lines.join(' · ')}` : null;
 }
 
 export interface CodexApproval {

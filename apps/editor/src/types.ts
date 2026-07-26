@@ -124,6 +124,9 @@ export type ChatEvent =
   | { type: 'subagent-start'; agentId: string; role?: string; title: string }
   | { type: 'subagent-delta'; agentId: string; chunk: string }
   | { type: 'subagent-end'; agentId: string; status: ToolStatus; summary?: string }
+  | { type: 'plan-update'; planId: string; text: string }
+  | { type: 'image'; toolId: string; path: string; caption?: string }
+  | { type: 'notice'; text: string }
   | { type: 'turn-complete' }
   | { type: 'error'; message: string }
   // --- legacy v0 members, kept so old persisted transcripts still replay ---
@@ -177,6 +180,32 @@ export interface ChatCommandPart {
   startedAt?: number;
 }
 
+/**
+ * What the agent says it is going to do, replaced whole whenever it changes.
+ * One card per plan rather than one per revision — a transcript with five
+ * stale copies of the same list in it is a transcript nobody reads.
+ */
+export interface ChatPlanPart {
+  kind: 'plan';
+  id: string;
+  text: string;
+}
+
+/** An image the agent made, or looked at. */
+export interface ChatImagePart {
+  kind: 'image';
+  id: string;
+  /** Absolute or project-relative path; the renderer resolves it. */
+  path: string;
+  caption?: string;
+}
+
+/** One quiet line explaining something that happened to the conversation. */
+export interface ChatNoticePart {
+  kind: 'notice';
+  text: string;
+}
+
 export interface ChatFileChangePart {
   kind: 'file-change';
   id: string;
@@ -218,7 +247,10 @@ export type ChatPart =
   | ChatCommandPart
   | ChatFileChangePart
   | ChatSubagentPart
-  | ChatApprovalPart;
+  | ChatApprovalPart
+  | ChatPlanPart
+  | ChatImagePart
+  | ChatNoticePart;
 
 /**
  * A file the user sent with a turn, as the transcript shows it back.

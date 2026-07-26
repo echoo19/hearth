@@ -126,7 +126,14 @@ describe('CodexDriver handshake', () => {
     await driver.start('chat-1', '/w/game');
 
     const methods = server.sent.filter((m) => m.method).map((m) => m.method);
-    expect(methods.slice(0, 3)).toEqual(['initialize', 'initialized', 'thread/start']);
+    // Skills are registered between the handshake and the thread, so a turn
+    // can use one on the very first message.
+    expect(methods.slice(0, 4)).toEqual([
+      'initialize',
+      'initialized',
+      'skills/extraRoots/set',
+      'thread/start',
+    ]);
     expect(server.requestsFor('initialize')[0].clientInfo).toMatchObject({ name: 'hearth' });
     expect(server.requestsFor('thread/start')[0].cwd).toBe('/w/game');
     driver.stop();

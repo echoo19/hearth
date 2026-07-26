@@ -1488,3 +1488,109 @@
   border-color: var(--accent);
   box-shadow: var(--shadow-2), inset 0 0 0 1px var(--accent);
 }
+
+/* ---------------------------------------------------------------------------
+   Plans, images and notices
+
+   Three things the terminal shows that the transcript used to swallow. A plan
+   is a checklist that gets replaced in place; an image is shown, not named;
+   a notice is one grey line explaining something that happened TO the
+   conversation rather than in it.
+   --------------------------------------------------------------------------- */
+
+.plan-card {
+  margin: 2px 0;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg, 12px);
+  background: var(--bg-1);
+}
+
+.plan-title {
+  margin: 0 0 8px;
+  color: var(--ink-mute);
+  font-size: var(--text-xs);
+  letter-spacing: 0.02em;
+}
+
+.plan-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.plan-item {
+  display: flex;
+  align-items: baseline;
+  gap: 9px;
+  font-size: var(--text-sm);
+  line-height: 1.55;
+}
+
+/* One small mark per row, three states. A ring is waiting, a filled ember dot
+   is the line being worked on now, a muted dot is done. */
+.plan-mark {
+  flex: none;
+  width: 7px;
+  height: 7px;
+  margin-top: 1px;
+  border: 1px solid var(--border-strong);
+  border-radius: 50%;
+  transform: translateY(-1px);
+}
+
+.plan-item.is-active .plan-mark {
+  border-color: var(--accent);
+  background: var(--accent);
+}
+
+.plan-item.is-done .plan-mark {
+  border-color: var(--ink-faint, var(--ink-mute));
+  background: var(--ink-faint, var(--ink-mute));
+}
+
+.plan-text {
+  color: var(--ink);
+  overflow-wrap: anywhere;
+}
+
+.plan-item.is-done .plan-text {
+  color: var(--ink-mute);
+  text-decoration: line-through;
+  text-decoration-color: var(--border-strong);
+}
+
+.image-card {
+  margin: 4px 0;
+}
+
+.image-card img {
+  display: block;
+  max-width: min(420px, 100%);
+  max-height: 360px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius, 8px);
+}
+
+.image-card figcaption {
+  margin-top: 6px;
+  color: var(--ink-mute);
+  font-size: var(--text-xs);
+  line-height: 1.5;
+  text-wrap: pretty;
+}
+
+.chat-notice {
+  margin: 2px 0;
+  color: var(--ink-mute);
+  font-size: var(--text-sm);
+}
+
+.chat-notice-path {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  overflow-wrap: anywhere;
+}
