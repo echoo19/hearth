@@ -37,9 +37,65 @@ import { NodeFileSystem, loadPlayerBundle } from '@hearth/core/node';
 import { listTemplates, getTemplatePath, scaffoldFromTemplate } from '@hearth/templates';
 import { isRequestAllowed } from './originGuard.js';
 import { ensureHearthMcpConfig } from './mcpConfig.js';
+import { readAppSettings, writeAppSettings, resolveApiKey } from './chat.js';
+import { EVIDENCE_DIR } from './evidenceWatcher.js';
 import { attachWebSocket, type ExportFrame, type ExportStage, type DesktopExportResult } from './ws.js';
 
 export { attachWebSocket } from './ws.js';
+
+// ---------------------------------------------------------------------------
+// Static mounts
+//
+// The game pane iframes whatever web game the agent built, and the evidence
+// rail shows screenshots the probe captured. Both are files inside the user's
+// project folder, so they are served from mounts OUTSIDE /api/:
+//
+//   /game/<key>/<rel>       — the project folder
+//   /evidence/<key>/<rel>   — the project's .hearth/evidence folder
+//
+// `<key>` is the base64url-encoded absolute project root. Encoding the root
+// into the path (rather than a ?project= query) is what makes a game's own
+// relative asset URLs — `./main.js`, `assets/sprite.png` — resolve correctly
+// from inside the iframe, since they resolve against the mount as their base.
+// ---------------------------------------------------------------------------
+
+export const GAME_MOUNT = '/game/';
+export const EVIDENCE_MOUNT = '/evidence/';
+
+export function encodeRootKey(root: string): string {
+  return Buffer.from(root, 'utf8').toString('base64url');
+}
+
+export function decodeRootKey(key: string): string | null {
+  try {
+    const decoded = Buffer.from(key, 'base64url').toString('utf8');
+    return decoded.trim() === '' ? null : decoded;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Paths this server owns. Both transports (the Vite dev-server middleware and
+ * the Electron main process's http server) ask this before falling through to
+ * their own static UI handling, so the mounts can never be shadowed by an
+ * index.html fallback.
+ */
+export function isHearthServerPath(pathname: string): boolean {
+  return pathname.startsWith('/api/') || pathname.startsWith(GAME_MOUNT) || pathname.startsWith(EVIDENCE_MOUNT);
+}
+
+/**
+ * Where a project's web game lives, in priority order. Zero required
+ * conventions is the point: the agent builds however it likes, and Hearth
+ * looks in the handful of places a web game plausibly lands.
+ */
+export const GAME_ENTRY_CANDIDATES = ['index.html', 'game/index.html', 'dist/index.html', 'public/index.html'];
+
+/** Directories never walked when timestamping a game (noise, and potentially huge). */
+const MTIME_SKIP_DIRS = new Set(['node_modules', '.git', '.hearth', 'dist-electron', '.next', 'release']);
+/** Upper bound on files visited per mtime scan, so a fat project can't stall the poll. */
+const MTIME_FILE_BUDGET = 600;
 
 // ---------------------------------------------------------------------------
 // Result shapes
@@ -138,6 +194,15 @@ interface RecentEntry {
 }
 
 const CONTENT_TYPES: Record<string, string> = {
+  // The static mounts serve whatever web game the agent built, so the full
+  // browser-document set matters here, not just editor asset types.
+  html: 'text/html; charset=utf-8',
+  htm: 'text/html; charset=utf-8',
+  css: 'text/css; charset=utf-8',
+  mjs: 'text/javascript',
+  wasm: 'application/wasm',
+  ico: 'image/x-icon',
+  map: 'application/json',
   svg: 'image/svg+xml',
   png: 'image/png',
   jpg: 'image/jpeg',
@@ -229,6 +294,54 @@ async function pathExists(p: string): Promise<boolean> {
   }
 }
 
+async function isDirectory(p: string): Promise<boolean> {
+  try {
+    return (await fsp.stat(p)).isDirectory();
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Newest mtime (ms) anywhere under `dir`, ignoring the skip list and stopping
+ * after MTIME_FILE_BUDGET entries. This is the game pane's reload signal: the
+ * agent rewriting any source file bumps it, and the pane reloads the iframe.
+ * Deliberately a timestamp rather than a content hash — cheap enough to poll,
+ * and "something changed" is all the pane needs to know.
+ */
+export async function newestMtimeMs(dir: string): Promise<number> {
+  let newest = 0;
+  let budget = MTIME_FILE_BUDGET;
+  const stack = [dir];
+  while (stack.length > 0 && budget > 0) {
+    const current = stack.pop()!;
+    let entries: import('node:fs').Dirent[];
+    try {
+      entries = await fsp.readdir(current, { withFileTypes: true });
+    } catch {
+      continue;
+    }
+    for (const entry of entries) {
+      if (budget-- <= 0) break;
+      if (entry.name.startsWith('.') && entry.name !== '.hearth') {
+        if (entry.isDirectory()) continue;
+      }
+      const full = path.join(current, entry.name);
+      if (entry.isDirectory()) {
+        if (!MTIME_SKIP_DIRS.has(entry.name)) stack.push(full);
+        continue;
+      }
+      try {
+        const stat = await fsp.stat(full);
+        if (stat.mtimeMs > newest) newest = stat.mtimeMs;
+      } catch {
+        /* vanished mid-walk */
+      }
+    }
+  }
+  return newest;
+}
+
 /**
  * Agent tool locations. In the packaged desktop app, single-file bundles
  * ship next to the Electron main (HEARTH_TOOLS_DIR is set by
@@ -269,6 +382,14 @@ function errorEnvelope(command: string, code: string, message: string): CommandR
 export function createProjectServerContext(options: ProjectServerOptions = {}) {
   const nodeFs = new NodeFileSystem();
   const sessions = new Map<string, HearthSession>();
+  /**
+   * Every folder this server has been asked to open this run — Hearth projects
+   * AND plain folders (the app opens whatever folder the agent is going to
+   * build in, which need not contain a hearth.json). It is the read jail for
+   * the file routes and the static mounts: a request must name a root that was
+   * deliberately opened, and every path is still resolved inside it.
+   */
+  const openedRoots = new Set<string>();
   // The on-disk journal seq each cached session had seen, last time we
   // checked or updated it — see getSession's self-healing reload below.
   const seenSeq = new Map<string, number>();
@@ -514,11 +635,180 @@ export function createProjectServerContext(options: ProjectServerOptions = {}) {
     }
   }
 
+  /** Is `root` readable through the file routes / static mounts? */
+  function isOpenRoot(root: string): boolean {
+    return openedRoots.has(root) || sessions.has(root);
+  }
+
+  /**
+   * What the client is told about agent credentials: whether a usable key
+   * exists and where it came from — never the key itself.
+   */
+  async function settingsSummary(root: string): Promise<JsonResult> {
+    const stored = (await readAppSettings(root)).apiKey?.trim();
+    const resolved = await resolveApiKey(root);
+    return {
+      status: 200,
+      body: { ok: true, hasKey: resolved !== null, source: stored ? 'project' : resolved ? 'environment' : null },
+    };
+  }
+
   const ctx = {
     repoRoot,
     sessions,
     /** Desktop-export progress bus; ws.ts subscribes and fans frames to sockets. */
     exportBus,
+
+    /**
+     * Open any folder as the working folder. Unlike `openProject` this does
+     * NOT require a hearth.json: the app's whole premise is that the agent
+     * builds a game in a folder however it wants, so an empty folder is a
+     * perfectly good starting point. A folder that also happens to be a Hearth
+     * project reports `isHearthProject` so callers can offer more.
+     */
+    async openWorkspace(rawPath: unknown): Promise<JsonResult> {
+      if (typeof rawPath !== 'string' || rawPath.trim() === '') {
+        return { status: 400, body: { ok: false, error: 'Missing "path" (absolute folder).' } };
+      }
+      const root = path.resolve(rawPath.trim());
+      if (!(await isDirectory(root))) {
+        return { status: 400, body: { ok: false, error: `Not a folder: ${root}` } };
+      }
+      openedRoots.add(root);
+      const name = path.basename(root) || root;
+      const isHearthProject = await pathExists(path.join(root, 'hearth.json'));
+      await addRecent(root, name);
+      return { status: 200, body: { ok: true, path: root, name, isHearthProject } };
+    },
+
+    /** Recently opened folders, each flagged with whether it still exists. */
+    async recentWorkspaces(): Promise<JsonResult> {
+      const entries = await readRecents();
+      const projects = await Promise.all(
+        entries.map(async (e) => ({ path: e.path, name: e.name, exists: await isDirectory(e.path) })),
+      );
+      return { status: 200, body: { ok: true, projects } };
+    },
+
+    /**
+     * Whether this folder currently holds a playable web game, where its entry
+     * point is, and how fresh it is. The game pane polls this: a changed
+     * `mtime` is its cue to reload the iframe.
+     */
+    async gameStatus(project: unknown): Promise<JsonResult> {
+      if (typeof project !== 'string' || project.trim() === '') {
+        return { status: 400, body: { ok: false, error: 'Missing "project".' } };
+      }
+      const root = path.resolve(project);
+      if (!isOpenRoot(root)) return { status: 403, body: { ok: false, error: 'Folder is not open.' } };
+      for (const candidate of GAME_ENTRY_CANDIDATES) {
+        const abs = resolveInside(root, candidate);
+        if (!abs || !(await pathExists(abs))) continue;
+        const mtime = await newestMtimeMs(path.dirname(abs));
+        return { status: 200, body: { ok: true, present: true, entry: candidate, mtime } };
+      }
+      return { status: 200, body: { ok: true, present: false, entry: null, mtime: 0 } };
+    },
+
+    /**
+     * What Hearth can currently sense about this game. A stub for v0 — the
+     * probe adapters land next and will report their real capability set here;
+     * the shape is already the one the capability strip renders.
+     */
+    async probeStatus(project: unknown): Promise<JsonResult> {
+      if (typeof project !== 'string' || project.trim() === '') {
+        return { status: 400, body: { ok: false, error: 'Missing "project".' } };
+      }
+      return { status: 200, body: { ok: true, senses: ['preview'] } };
+    },
+
+    /**
+     * Flat, read-only listing of the folder's files for the code peek. Skips
+     * the noise directories, caps the result, and never leaves the root.
+     */
+    async listFiles(project: unknown): Promise<JsonResult> {
+      if (typeof project !== 'string' || project.trim() === '') {
+        return { status: 400, body: { ok: false, error: 'Missing "project".' } };
+      }
+      const root = path.resolve(project);
+      if (!isOpenRoot(root)) return { status: 403, body: { ok: false, error: 'Folder is not open.' } };
+      const files: { path: string; size: number }[] = [];
+      const stack = [root];
+      let budget = 2000;
+      while (stack.length > 0 && budget > 0) {
+        const dir = stack.pop()!;
+        let entries: import('node:fs').Dirent[];
+        try {
+          entries = await fsp.readdir(dir, { withFileTypes: true });
+        } catch {
+          continue;
+        }
+        for (const entry of entries) {
+          if (budget-- <= 0) break;
+          if (entry.isDirectory()) {
+            if (!MTIME_SKIP_DIRS.has(entry.name) && !entry.name.startsWith('.')) stack.push(path.join(dir, entry.name));
+            continue;
+          }
+          const abs = path.join(dir, entry.name);
+          const rel = path.relative(root, abs).split(path.sep).join('/');
+          try {
+            files.push({ path: rel, size: (await fsp.stat(abs)).size });
+          } catch {
+            /* vanished mid-walk */
+          }
+        }
+      }
+      files.sort((a, b) => a.path.localeCompare(b.path));
+      return { status: 200, body: { ok: true, files } };
+    },
+
+    /**
+     * Agent settings for this folder. The key itself never leaves the server —
+     * the client only learns whether one is configured, and where it came from.
+     */
+    async getAppSettings(project: unknown): Promise<JsonResult> {
+      if (typeof project !== 'string' || project.trim() === '') {
+        return { status: 400, body: { ok: false, error: 'Missing "project".' } };
+      }
+      return settingsSummary(path.resolve(project));
+    },
+
+    async setAppSettings(project: unknown, apiKey: unknown): Promise<JsonResult> {
+      if (typeof project !== 'string' || project.trim() === '') {
+        return { status: 400, body: { ok: false, error: 'Missing "project".' } };
+      }
+      if (typeof apiKey !== 'string') {
+        return { status: 400, body: { ok: false, error: '"apiKey" must be a string.' } };
+      }
+      const root = path.resolve(project);
+      if (!isOpenRoot(root)) return { status: 403, body: { ok: false, error: 'Folder is not open.' } };
+      await writeAppSettings(root, { apiKey });
+      return settingsSummary(root);
+    },
+
+    /**
+     * Serve a file from one of the static mounts. `key` is the base64url
+     * project root; `rel` is resolved inside it (or inside its evidence dir),
+     * and anything escaping is refused.
+     */
+    async serveMounted(mount: 'game' | 'evidence', key: string, rel: string): Promise<FileResult> {
+      const root = decodeRootKey(key);
+      if (!root) return { status: 400, body: { ok: false, error: 'Malformed mount key.' } };
+      const resolvedRoot = path.resolve(root);
+      if (!isOpenRoot(resolvedRoot)) return { status: 403, body: { ok: false, error: 'Folder is not open.' } };
+      const base = mount === 'evidence' ? path.join(resolvedRoot, EVIDENCE_DIR) : resolvedRoot;
+      const abs = path.resolve(base, rel === '' ? '.' : rel);
+      if (abs !== base && !abs.startsWith(base + path.sep)) {
+        return { status: 403, body: { ok: false, error: 'Path escapes the mount.' } };
+      }
+      try {
+        const stat = await fsp.stat(abs);
+        if (stat.isDirectory()) return { status: 404, body: { ok: false, error: 'Not a file.' } };
+        return { status: 200, contentType: contentTypeFor(abs), data: new Uint8Array(await fsp.readFile(abs)) };
+      } catch {
+        return { status: 404, body: { ok: false, error: `Not found: ${rel}` } };
+      }
+    },
 
     async openProject(rawPath: unknown): Promise<JsonResult> {
       if (typeof rawPath !== 'string' || rawPath.trim() === '') {
@@ -532,6 +822,7 @@ export function createProjectServerContext(options: ProjectServerOptions = {}) {
           return { status: 500, body: { ok: false, error: result.errors[0]?.message ?? 'inspectProject failed' } };
         }
         const info = result.data as { name?: string };
+        openedRoots.add(root);
         await addRecent(root, info?.name ?? path.basename(root));
         await provisionAgentMcp(root);
         return { status: 200, body: { ok: true, path: root, info: result.data } };
@@ -585,6 +876,7 @@ export function createProjectServerContext(options: ProjectServerOptions = {}) {
         const session = await getSession(target);
         const result = await session.execute('inspectProject');
         const info = result.data as { name?: string };
+        openedRoots.add(target);
         await addRecent(target, info?.name ?? name.trim());
         await provisionAgentMcp(target);
         return { status: 200, body: { ok: true, path: target, info: result.data } };
@@ -1022,8 +1314,8 @@ export function createProjectServerContext(options: ProjectServerOptions = {}) {
         return { status: 400, body: { ok: false, error: 'Requires "project" and "path" query params.' } };
       }
       const root = path.resolve(project);
-      if (!sessions.has(root) && !(await pathExists(path.join(root, 'hearth.json')))) {
-        return { status: 403, body: { ok: false, error: `Not an open Hearth project: ${root}` } };
+      if (!isOpenRoot(root) && !(await pathExists(path.join(root, 'hearth.json')))) {
+        return { status: 403, body: { ok: false, error: `Not an open Hearth folder: ${root}` } };
       }
       const abs = resolveInside(root, relPath);
       if (!abs) {
@@ -1047,8 +1339,8 @@ export function createProjectServerContext(options: ProjectServerOptions = {}) {
         return { status: 400, body: { ok: false, error: 'Requires "project", "op", and "path".' } };
       }
       const root = path.resolve(project);
-      if (!sessions.has(root) && !(await pathExists(path.join(root, 'hearth.json')))) {
-        return { status: 403, body: { ok: false, error: `Not an open Hearth project: ${root}` } };
+      if (!isOpenRoot(root) && !(await pathExists(path.join(root, 'hearth.json')))) {
+        return { status: 403, body: { ok: false, error: `Not an open Hearth folder: ${root}` } };
       }
       const abs = resolveInside(root, relPath === '' ? '.' : relPath);
       if (!abs) {
@@ -1156,7 +1448,67 @@ async function route(ctx: ProjectServerContext, req: IncomingMessage, res: Serve
   const method = req.method ?? 'GET';
   const key = `${method} ${url.pathname}`;
 
+  // Static mounts come before the route table: their paths are open-ended
+  // (`/game/<key>/whatever/the/game/ships`), not a fixed set of endpoints.
+  for (const [mount, prefix] of [
+    ['game', GAME_MOUNT],
+    ['evidence', EVIDENCE_MOUNT],
+  ] as const) {
+    if (!url.pathname.startsWith(prefix)) continue;
+    const rest = url.pathname.slice(prefix.length);
+    const slash = rest.indexOf('/');
+    const rootKey = slash === -1 ? rest : rest.slice(0, slash);
+    const relRaw = slash === -1 ? '' : rest.slice(slash + 1);
+    let rel: string;
+    try {
+      rel = decodeURIComponent(relRaw);
+    } catch {
+      return sendJson(res, 400, { ok: false, error: 'Malformed path.' });
+    }
+    const result = await ctx.serveMounted(mount, rootKey, rel === '' ? 'index.html' : rel);
+    if (result.data !== undefined) {
+      res.statusCode = result.status;
+      res.setHeader('Content-Type', result.contentType ?? 'application/octet-stream');
+      // Never cached: the whole point of the pane is that it shows what the
+      // agent just wrote, and a reload must fetch the new bytes.
+      res.setHeader('Cache-Control', 'no-store');
+      res.end(Buffer.from(result.data));
+      return;
+    }
+    return sendJson(res, result.status, result.body);
+  }
+
   switch (key) {
+    case 'POST /api/workspace/open': {
+      const body = await readJsonBody(req);
+      const result = await ctx.openWorkspace(body.path);
+      return sendJson(res, result.status, result.body);
+    }
+    case 'GET /api/workspace/recent': {
+      const result = await ctx.recentWorkspaces();
+      return sendJson(res, result.status, result.body);
+    }
+    case 'GET /api/game/status': {
+      const result = await ctx.gameStatus(q.get('project'));
+      return sendJson(res, result.status, result.body);
+    }
+    case 'GET /api/probe/status': {
+      const result = await ctx.probeStatus(q.get('project'));
+      return sendJson(res, result.status, result.body);
+    }
+    case 'GET /api/files': {
+      const result = await ctx.listFiles(q.get('project'));
+      return sendJson(res, result.status, result.body);
+    }
+    case 'GET /api/app/settings': {
+      const result = await ctx.getAppSettings(q.get('project'));
+      return sendJson(res, result.status, result.body);
+    }
+    case 'POST /api/app/settings': {
+      const body = await readJsonBody(req);
+      const result = await ctx.setAppSettings(body.project, body.apiKey);
+      return sendJson(res, result.status, result.body);
+    }
     case 'POST /api/project/open': {
       const body = await readJsonBody(req);
       const result = await ctx.openProject(body.path);
@@ -1245,7 +1597,10 @@ export function hearthProjectServer(options: ProjectServerOptions = {}): Plugin 
     name: 'hearth-project-server',
     configureServer(server) {
       server.middlewares.use((req, res, next) => {
-        if (!req.url?.startsWith('/api/')) return next();
+        // /api/* plus the /game/ and /evidence/ static mounts; everything else
+        // is Vite's (the editor UI itself).
+        const pathname = new URL(req.url ?? '/', 'http://localhost').pathname;
+        if (!isHearthServerPath(pathname)) return next();
         route(ctx, req, res).catch((err: unknown) => {
           sendJson(res, 500, { ok: false, error: (err as Error).message ?? 'Internal error' });
         });

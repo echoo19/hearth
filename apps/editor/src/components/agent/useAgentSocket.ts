@@ -1,8 +1,8 @@
 /**
- * State for the embedded agent terminal's pty session, layered on top of the
- * store's shared WS connection (see ../../store.ts — one socket per project,
- * carrying both `journal` and `pty-*` frames; this module only ever touches
- * the latter).
+ * State for the embedded terminal's pty session, layered on top of the store's
+ * shared WS connection (see ../../store.ts — one socket per open folder,
+ * multiplexing journal / evidence / chat / pty frames; this module only ever
+ * touches the `pty-*` ones).
  *
  * Three layers, each independently testable:
  *  - A pure reducer (`reduceAgentSocket`) turning pty-* frames into a
@@ -11,11 +11,11 @@
  *    instance replays exactly the scrollback it missed, without re-writing
  *    bytes it already rendered or losing bytes evicted by the cap.
  *  - A tiny external store (module-level, not React state) wrapping the
- *    reducer, so the buffered session survives the Agent panel's own
- *    component tree unmounting — closing and reopening the panel's dockview
- *    tab must not lose scrollback while the underlying pty (and the WS
- *    connection feeding it) is still alive. `useAgentSocket()` is the React
- *    seam onto that external store.
+ *    reducer, so the buffered session survives the terminal's own component
+ *    tree unmounting — switching away from the Terminal tab and back must not
+ *    lose scrollback while the underlying pty (and the WS connection feeding
+ *    it) is still alive. `useAgentSocket()` is the React seam onto that
+ *    external store.
  */
 import { useCallback, useSyncExternalStore } from 'react';
 import { useEditor } from '../../store';
@@ -340,15 +340,15 @@ export interface AgentSocket {
   sendResize(cols: number, rows: number): void;
 }
 
-const NOT_CONNECTED_MSG = 'Agent terminal: the editor connection is down; wait a moment and try again.';
+const NOT_CONNECTED_MSG = 'Terminal: the connection is down. Wait a moment and try again.';
 
 export function useAgentSocket(): AgentSocket {
   const session = useSyncExternalStore(subscribeAgentSocket, getAgentSessionSummary, getAgentSessionSummary);
 
   const start = useCallback(() => {
     const editor = useEditor.getState();
-    if (!editor.sendAgentFrame({ type: 'pty-start', sessionId: ensureAgentPtySessionId() })) {
-      editor.log('error', 'editor', NOT_CONNECTED_MSG);
+    if (!editor.sendFrame({ type: 'pty-start', sessionId: ensureAgentPtySessionId() })) {
+      editor.log('error', 'app', NOT_CONNECTED_MSG);
       return false;
     }
     markAgentStarted('shell');
@@ -360,16 +360,16 @@ export function useAgentSocket(): AgentSocket {
     // either way: an unreachable server-side pty (if one still lingers
     // detached) is reaped by its linger timeout, and an explicit restart
     // spawns fresh rather than reattaching to a stopped session.
-    useEditor.getState().sendAgentFrame({ type: 'pty-stop' });
+    useEditor.getState().sendFrame({ type: 'pty-stop' });
     markAgentStopped();
   }, []);
 
   const sendInput = useCallback((data: string) => {
-    useEditor.getState().sendAgentFrame({ type: 'pty-input', data });
+    useEditor.getState().sendFrame({ type: 'pty-input', data });
   }, []);
 
   const sendResize = useCallback((cols: number, rows: number) => {
-    useEditor.getState().sendAgentFrame({ type: 'pty-resize', cols, rows });
+    useEditor.getState().sendFrame({ type: 'pty-resize', cols, rows });
   }, []);
 
   return { session, start, stop, sendInput, sendResize };

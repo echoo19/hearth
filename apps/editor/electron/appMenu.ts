@@ -32,7 +32,11 @@ export function buildAppMenuTemplate(
     return template;
   }
 
-  for (const section of model) {
+  for (const [index, section] of model.entries()) {
+    // The renderer's model carries only Hearth's own menus (File / View /
+    // Help); copy-paste and window management are Electron's standard roles,
+    // slotted into their conventional positions around them.
+    if (index === 1) template.push({ role: 'editMenu' });
     template.push({
       label: section.label,
       submenu: section.items.map((item): MenuItemConstructorOptions => {
@@ -53,6 +57,7 @@ export function buildAppMenuTemplate(
       }),
     });
   }
+  template.push({ role: 'windowMenu' });
 
   return template;
 }

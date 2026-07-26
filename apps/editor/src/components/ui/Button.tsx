@@ -1,15 +1,15 @@
 /**
- * Button / IconButton — the editor's shared button primitives.
+ * Button / IconButton — the app's shared button primitives.
  *
- * Thin by design: this task introduces the primitive, not a new look — both
- * components render the exact `.btn` class family the editor already ships
- * (`.btn`, `.btn-primary`, `.btn-danger`, `.btn-ghost`, `.btn-sm`). Any new
- * rule this primitive needs lives in `styles/primitives/button.css`, not
- * here and not in `primitives.css`.
+ * Thin by design: both render the `.btn` class family, whose look and metrics
+ * live in `styles/primitives.css` (comfortable --ctl-h height, generous
+ * radius, hairline border, ghost as the icon-control default).
  *
- * IconButton always wraps itself in `Tooltip` (T3) — an icon-only control
- * needs a discoverable label whether or not it's hovered, so `label` is
- * required and doubles as both the `aria-label` and the tooltip content.
+ * IconButton always wraps itself in `Tooltip` — an icon-only control needs a
+ * discoverable label whether or not it's hovered, so `label` is required and
+ * doubles as both the `aria-label` and the tooltip content. It defaults to the
+ * ghost variant and a square `.btn-icon` box, which is the app's icon-control
+ * idiom everywhere.
  */
 import { forwardRef, type ButtonHTMLAttributes, type ReactNode } from 'react';
 import { Icon } from '../ui';
@@ -62,21 +62,20 @@ export interface IconButtonProps extends ButtonHTMLAttributes<HTMLButtonElement>
   /** Glyph size in px, passed through to Icon (defaults to Icon's own 12). */
   iconSize?: number;
   /**
-   * Skip the `.btn` base/variant/size classes and render `className` verbatim.
-   * For icon-only controls that ride an existing bespoke class family (the
-   * `.icon-btn` cluster in Hierarchy / Inspector / Animator / InputSettings /
-   * PostEffects, the code tab close, chip removes) so migrating them to
-   * IconButton keeps the exact same visual while still getting the tooltip +
-   * required aria-label.
+   * Skip the `.btn` base/variant/size classes and render `className`
+   * verbatim, for an icon-only control that rides its own bespoke class
+   * family while still getting the tooltip and the required aria-label.
    */
   bare?: boolean;
 }
 
 export const IconButton = forwardRef<HTMLButtonElement, IconButtonProps>(function IconButton(
-  { icon, label, shortcut, side, variant = 'default', size = 'md', iconSize, bare, className, type = 'button', ...rest },
+  { icon, label, shortcut, side, variant = 'ghost', size = 'md', iconSize, bare, className, type = 'button', ...rest },
   ref,
 ) {
-  const cls = bare ? (className ?? '') : btnClassName(variant, size, className);
+  // Icon-only controls are square ghost targets by default (see `.btn-icon`):
+  // a row of bordered boxes reads as a dense toolbar, which this app is not.
+  const cls = bare ? (className ?? '') : btnClassName(variant, size, ['btn-icon', className].filter(Boolean).join(' '));
   return (
     <Tooltip content={label} shortcut={shortcut} side={side}>
       <button ref={ref} type={type} aria-label={label} className={cls} {...rest}>

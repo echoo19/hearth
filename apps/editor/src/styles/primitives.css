@@ -8,18 +8,15 @@
    stop, or is it reached by roving-tabindex arrow keys inside a focusable
    container?
 
-   • display:none  — for action CLUSTERS inside a roving-tabindex container
-     (Hierarchy `.tree-actions`, Assets `.asset-card-actions`). The buttons are
-     tabIndex=-1 and reached with arrow keys, so hiding them fully costs no tab
-     stop and keeps the resting row/card clean. The container's own
-     `:focus-within` re-shows them for keyboard users. Flipping these to opacity
-     would re-add ~N tab stops per row and undo the roving-tabindex work (L-016).
+   • display:none  — for action CLUSTERS inside a roving-tabindex container.
+     The buttons are tabIndex=-1 and reached with arrow keys, so hiding them
+     fully costs no tab stop and keeps the resting row clean. The container's
+     own `:focus-within` re-shows them for keyboard users.
 
-   • opacity:0  — for a STANDALONE control that must stay Tab-reachable
-     (Inspector `.field-revert-btn`, dockview `.hearth-tab-close`, Code
-     `.code-tab-close`). It keeps its place in layout and the tab order; the
-     reveal is purely visual. Timing is always var(--t-fast) so every opacity
-     reveal fades in at the same speed.
+   • opacity:0  — for a STANDALONE control that must stay Tab-reachable. It
+     keeps its place in layout and the tab order; the reveal is purely visual.
+     Timing is always var(--t-fast) so every opacity reveal fades in at the
+     same speed.
 
    Both variants MUST provide focus parity: reveal on the container's
    `:focus-within` and/or the control's own `:focus-visible`, so nothing
@@ -31,17 +28,21 @@
    Controls
    -------------------------------------------------------------------------- */
 
+/* The default button: comfortable, hairline-bordered, generously rounded.
+   Sized off --ctl-h so every control in the app agrees on one height. */
 .btn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 6px;
+  gap: 8px;
   height: var(--ctl-h);
-  padding: 0 12px;
-  border: 1px solid var(--border-strong);
+  padding: 0 18px;
+  border: 1px solid var(--border);
   border-radius: var(--radius);
   background: var(--bg-2);
   color: var(--ink);
+  font-size: var(--text-sm);
+  font-weight: 500;
   cursor: pointer;
   white-space: nowrap;
   user-select: none;
@@ -58,7 +59,7 @@
 
 .btn:active:not(:disabled) {
   background: var(--bg-1);
-  transform: scale(0.98);
+  transform: scale(0.985);
 }
 
 .btn:disabled {
@@ -94,6 +95,8 @@
   border-color: var(--err);
 }
 
+/* Ghost: the default for icon-only controls. Transparent until hovered, so a
+   row of them reads as one quiet cluster rather than a toolbar of boxes. */
 .btn-ghost {
   border-color: transparent;
   background: transparent;
@@ -105,40 +108,36 @@
   color: var(--ink);
 }
 
+/* The one compact variant, for dense secondary rows. Still a real hit target
+   — this is smaller, not small. */
 .btn-sm {
   height: var(--ctl-h-sm);
-  padding: 0 8px;
+  padding: 0 12px;
   border-radius: var(--radius-sm);
-  font-size: var(--text-sm);
+  font-size: var(--text-xs);
 }
 
-/* Play/Stop: the one control that owns the toolbar. */
-.btn-play {
-  min-width: 76px;
+/* An icon-only ghost button: a square hit target, no text padding. Applied by
+   composing `btn btn-ghost btn-icon`. */
+.btn-icon {
+  width: var(--ctl-h);
+  padding: 0;
 }
 
-.btn-stop {
-  min-width: 76px;
-  background: var(--err-soft);
-  border-color: oklch(0.7 0.17 25 / 0.5);
-  color: var(--err);
-  font-weight: 600;
-}
-
-.btn-stop:hover:not(:disabled) {
-  background: oklch(0.7 0.17 25 / 0.22);
-  border-color: var(--err);
+.btn-icon.btn-sm {
+  width: var(--ctl-h-sm);
 }
 
 .input,
 .select,
 .textarea {
   height: var(--ctl-h);
-  padding: 0 8px;
-  border: 1px solid var(--border-strong);
+  padding: 0 12px;
+  border: 1px solid var(--border);
   border-radius: var(--radius);
   background: var(--bg-0);
   color: var(--ink);
+  font-size: var(--text-sm);
   min-width: 0;
   transition: border-color var(--t) var(--ease-out);
 }
@@ -206,26 +205,25 @@
   padding-right: 24px;
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' stroke='%23968fa4' fill='none' stroke-width='1.5'/%3E%3C/svg%3E");
   background-repeat: no-repeat;
-  background-position: right 8px center;
+  background-position: right 12px center;
   cursor: pointer;
 }
 
-/* Compact select variant, metrics matched to .btn-sm (22px / --radius-sm) —
-   use next to btn-sm buttons (e.g. the toolbar) so control heights don't mix. */
+/* Compact select, metrics matched to .btn-sm so control heights never mix. */
 .select-sm {
   height: var(--ctl-h-sm);
-  padding: 0 24px 0 8px;
+  padding: 0 28px 0 12px;
   border-radius: var(--radius-sm);
-  font-size: var(--text-sm);
+  font-size: var(--text-xs);
 }
 
 .textarea {
   height: auto;
-  padding: 6px 8px;
-  font-family: var(--font-mono);
+  padding: 10px 12px;
+  font-family: var(--font-ui);
   font-size: var(--text-sm);
   resize: vertical;
-  line-height: 1.5;
+  line-height: 1.55;
 }
 
 input[type='number'] {

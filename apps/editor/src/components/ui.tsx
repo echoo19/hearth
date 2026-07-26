@@ -1,18 +1,14 @@
 /**
- * Small shared UI primitives: icons, modal dialog, confirm dialog, and the
- * scalar field editors (NumberField/TextField/ColorField) every typed
- * Inspector control is built from.
+ * Small shared UI primitives: the icon set, the modal dialog, the confirm
+ * dialog, and the scalar field editors (NumberField / TextField / ColorField)
+ * that every typed control in the app is built from.
  */
-import React, { useCallback, useEffect, useId, useRef, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useId, useRef, useState, type ReactNode } from 'react';
 import { Button } from './ui/Button';
 
 // ---------------------------------------------------------------------------
 // Field editors: value type decides the control. All commit on blur / Enter.
-// Shared by Inspector.tsx, PostEffectsField.tsx, InputSettings.tsx, and
-// anything else editing a typed scalar — kept here (rather than in
-// Inspector.tsx) so those consumers don't have to import Inspector.tsx just
-// to reach a field primitive, which used to create a circular import between
-// Inspector.tsx and PostEffectsField.tsx.
+// Shared by every surface that edits a typed scalar.
 //
 // Rejection contract. A field's local `draft` only re-syncs
 // from the `value` prop, so a commit the consumer rejects — one that leaves
@@ -408,15 +404,14 @@ const ICON_PATHS: Record<string, ReactNode> = {
       <path d="M6 5v2M6 8.2v.05" />
     </>
   ),
-  // Prefabs are "tracked stamps" (see wave design doc) — a stamp base with
-  // its handle arch, distinct from `duplicate`'s overlapping-squares glyph.
+  // A stamp base with its handle arch, distinct from `duplicate`'s
+  // overlapping-squares glyph.
   prefab: (
     <>
       <rect x="2.5" y="6" width="7" height="3.5" rx="1" />
       <path d="M4.5 6V4.2A1.5 1.5 0 0 1 6 2.7v0a1.5 1.5 0 0 1 1.5 1.5V6" />
     </>
   ),
-  // ---- Toolbar / application-menu glyphs -----------------------------------
   // Undo / Redo: curved "return" arrows (↩ / ↪), reading as step-back /
   // step-forward rather than plain page navigation.
   undo: (
@@ -438,28 +433,28 @@ const ICON_PATHS: Record<string, ReactNode> = {
       <path d="M2.5 7v2.5h7V7" />
     </>
   ),
-  // Checkpoint: a planted flag — a marked point you can return to.
+  // A planted flag — a marked point you can return to.
   checkpoint: (
     <>
       <path d="M3.2 10V2.2" />
       <path d="M3.2 2.8h5.2L7 4.6l1.4 1.8H3.2z" />
     </>
   ),
-  // Review: an eye — "see what changed since your last checkpoint".
+  // An eye — "see what changed".
   review: (
     <>
       <path d="M1.5 6S3.5 3 6 3s4.5 3 4.5 3-2 3-4.5 3S1.5 6 1.5 6z" />
       <circle cx="6" cy="6" r="1.25" />
     </>
   ),
-  // Debug: a bug — collider/velocity overlay toggle.
+  // A bug.
   debug: (
     <>
       <ellipse cx="6" cy="6.4" rx="2.3" ry="2.7" />
       <path d="M6 3.7V2.4M4.1 4.1 3 3M7.9 4.1 9 3M3.7 6.2H1.9M10.1 6.2H8.3M3.9 8.4 2.6 9.4M8.1 8.4l1.3 1M3.7 6.4h4.6" />
     </>
   ),
-  // Close (project): a door with an arrow leaving — "log out" of the editor.
+  // A door with an arrow leaving — close the open folder.
   close: (
     <>
       <path d="M6.5 2.5H3v7h3.5" />
@@ -481,14 +476,14 @@ const ICON_PATHS: Record<string, ReactNode> = {
       <circle cx="9.25" cy="6" r="0.9" fill="currentColor" stroke="none" />
     </>
   ),
-  // Search: magnifying glass — the Assets panel's name/type filter.
+  // Magnifying glass — filter/search.
   search: (
     <>
       <circle cx="5.1" cy="5.1" r="3.1" />
       <path d="M7.5 7.5L10.2 10.2" />
     </>
   ),
-  // Gear: Agent panel's settings menu trigger (mode ladder / re-detect / manual setup).
+  // Gear — settings.
   gear: (
     <>
       <circle cx="6" cy="6" r="1.7" />
@@ -513,45 +508,6 @@ export function Icon({ name, size = 12 }: { name: string; size?: number }) {
       {ICON_PATHS[name] ?? ICON_PATHS.entity}
     </svg>
   );
-}
-
-export function componentIcon(type: string): string {
-  switch (type) {
-    case 'Camera':
-      return 'camera';
-    case 'Text':
-      return 'text';
-    case 'SpriteRenderer':
-      return 'image';
-    case 'Tilemap':
-      return 'grid';
-    case 'Script':
-      return 'script';
-    case 'AudioSource':
-      return 'audio';
-    case 'PhysicsBody':
-      return 'physics';
-    case 'Collider':
-      return 'collider';
-    case 'Light2D':
-      return 'light';
-    case 'LineRenderer':
-      return 'line';
-    case 'ParticleEmitter':
-      return 'particles';
-    case 'SpriteAnimator':
-      return 'animator';
-    default:
-      return 'entity';
-  }
-}
-
-/** Pick the icon that best describes an entity from its components. */
-export function entityIcon(components: Record<string, unknown>): string {
-  for (const type of ['Camera', 'Text', 'Tilemap', 'SpriteRenderer', 'Script', 'AudioSource']) {
-    if (components[type]) return componentIcon(type);
-  }
-  return 'entity';
 }
 
 // ---------------------------------------------------------------------------
@@ -666,30 +622,5 @@ export function ConfirmDialog({
         </Button>
       </div>
     </Modal>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// Copyable code block
-// ---------------------------------------------------------------------------
-
-export function CodeBlock({ code }: { code: string }) {
-  const [copied, setCopied] = React.useState(false);
-  return (
-    <div className="code-block">
-      <pre>{code}</pre>
-      <Button
-        variant="ghost"
-        size="sm"
-        className="copy-btn"
-        onClick={() => {
-          void navigator.clipboard.writeText(code);
-          setCopied(true);
-          window.setTimeout(() => setCopied(false), 1200);
-        }}
-      >
-        {copied ? 'Copied' : 'Copy'}
-      </Button>
-    </div>
   );
 }

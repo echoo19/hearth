@@ -17,24 +17,24 @@ dialog.modal {
   margin: auto;
   width: fit-content;
   height: fit-content;
-  border: 1px solid var(--border-strong);
-  border-radius: var(--radius-lg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-xl);
   background: var(--bg-1);
   color: var(--ink);
   padding: 0;
-  min-width: 340px;
-  max-width: 440px;
-  box-shadow: 0 18px 50px oklch(0 0 0 / 0.5);
+  min-width: 380px;
+  max-width: 520px;
+  box-shadow: var(--shadow-2);
 }
 
 dialog.modal[open] {
-  animation: modal-in var(--t) var(--ease-out);
+  animation: modal-in var(--t-slow) var(--ease-out);
 }
 
 @keyframes modal-in {
   from {
     opacity: 0;
-    transform: scale(0.97) translateY(4px);
+    transform: scale(0.97) translateY(6px);
   }
 }
 
@@ -53,16 +53,16 @@ dialog.modal[open]::backdrop {
 }
 
 .modal-title {
-  padding: 12px 16px;
-  border-bottom: 1px solid var(--border);
+  padding: 18px 22px 14px;
   /* Brand moment: Bricolage display face. */
   font-family: var(--font-display);
+  font-size: var(--text-lg);
   font-weight: 600;
   letter-spacing: -0.01em;
 }
 
 .modal-body {
-  padding: 14px 16px;
+  padding: 0 22px 4px;
   display: flex;
   flex-direction: column;
   gap: 10px;
@@ -76,15 +76,14 @@ dialog.modal[open]::backdrop {
 .modal-actions {
   display: flex;
   justify-content: flex-end;
-  gap: 8px;
-  padding: 12px 16px;
-  border-top: 1px solid var(--border);
+  gap: 10px;
+  padding: 18px 22px 20px;
 }
 
 .form-field {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 6px;
 }
 
 /* --------------------------------------------------------------------------

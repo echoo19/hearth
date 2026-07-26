@@ -25,6 +25,7 @@ import {
   handleApiRequest,
   attachWebSocket,
   resolveToolPaths,
+  isHearthServerPath,
 } from '../server/projectServer.js';
 import { ensureHearthShim, hearthPtyEnv } from '../server/hearthShim.js';
 import { applyAppMenu, buildAppMenuTemplate } from './appMenu.js';
@@ -61,7 +62,10 @@ function startServer(uiRoot: string): Promise<{ port: number; close: () => void 
   const ctx = createProjectServerContext();
   const server = http.createServer((req, res) => {
     const url = new URL(req.url ?? '/', 'http://localhost');
-    if (url.pathname.startsWith('/api/')) {
+    // /api/* plus the /game/ and /evidence/ static mounts (the project's own
+    // files). Checked before the SPA fallback below, which would otherwise
+    // answer a missing game asset with the editor's index.html.
+    if (isHearthServerPath(url.pathname)) {
       handleApiRequest(ctx, req, res).catch((err: unknown) => {
         res.statusCode = 500;
         res.setHeader('Content-Type', 'application/json');
@@ -368,11 +372,11 @@ async function main(): Promise<void> {
  */
 /**
  * Verify the native menu path end-to-end on the main side: build the same
- * template the renderer's model produces, find File → Save checkpoint, and
- * confirm clicking it dispatches `menu:invoke(checkpoint)`. The renderer half
+ * template the renderer's model produces, find File → Open folder…, and
+ * confirm clicking it dispatches `menu:invoke(open-folder)`. The renderer half
  * (model item id → onSelect) is covered by apps/editor/tests/appMenu.test.ts;
  * this pins the model → native Menu → IPC half that only exists in a real
- * Electron process. Kept structural (no project needed) so it runs in SMOKE.
+ * Electron process. Kept structural (no folder needed) so it runs in SMOKE.
  */
 function smokeTestMenu(): void {
   const invoked: string[] = [];
@@ -380,9 +384,9 @@ function smokeTestMenu(): void {
     {
       label: 'File',
       items: [
-        { id: 'new-scene', label: 'New scene…', enabled: false },
+        { id: 'open-folder', label: 'Open folder…', accelerator: 'CmdOrCtrl+O', enabled: true },
         { type: 'separator' },
-        { id: 'checkpoint', label: 'Save checkpoint', accelerator: 'Shift+CmdOrCtrl+S', enabled: true },
+        { id: 'close-folder', label: 'Close folder', enabled: false },
       ],
     },
   ];
@@ -390,12 +394,14 @@ function smokeTestMenu(): void {
   const menu = Menu.buildFromTemplate(template);
   const file = menu.items.find((i) => i.label === 'File');
   if (!file?.submenu) throw new Error('[smoke] native File menu missing');
-  const checkpoint = file.submenu.items.find((i) => i.id === 'checkpoint');
-  if (!checkpoint) throw new Error('[smoke] native File → Save checkpoint missing');
-  if (!checkpoint.enabled) throw new Error('[smoke] Save checkpoint should be enabled');
-  checkpoint.click();
-  if (!invoked.includes('checkpoint')) throw new Error('[smoke] Checkpoint click did not dispatch menu:invoke');
-  console.log('[smoke] native File → Checkpoint dispatches menu:invoke(checkpoint)');
+  const openFolder = file.submenu.items.find((i) => i.id === 'open-folder');
+  if (!openFolder) throw new Error('[smoke] native File → Open folder… missing');
+  if (!openFolder.enabled) throw new Error('[smoke] Open folder… should be enabled');
+  const closeFolder = file.submenu.items.find((i) => i.id === 'close-folder');
+  if (closeFolder?.enabled) throw new Error('[smoke] Close folder should be disabled with no folder open');
+  openFolder.click();
+  if (!invoked.includes('open-folder')) throw new Error('[smoke] Open folder… click did not dispatch menu:invoke');
+  console.log('[smoke] native File → Open folder… dispatches menu:invoke(open-folder)');
 }
 
 async function smokeTestPty(): Promise<void> {

@@ -1,0 +1,181 @@
+/* Code peek: a read-only drawer over the app.
+
+   It slides in from the right because that is where it came from — the Files
+   button and the tool chips both sit on that side. The exit is subtler than
+   the entrance: attention is already moving back to the conversation. */
+
+.peek-scrim {
+  position: fixed;
+  inset: 0;
+  z-index: var(--z-modal-backdrop);
+  background: var(--scrim);
+  animation: peek-scrim-in var(--t) var(--ease-out) both;
+}
+
+@keyframes peek-scrim-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.code-peek {
+  position: fixed;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  z-index: var(--z-modal);
+  width: min(760px, 92vw);
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  background: var(--bg-1);
+  border-left: 1px solid var(--border);
+  box-shadow: var(--shadow-2);
+  animation: peek-in var(--t-slow) var(--ease-out) both;
+}
+
+@keyframes peek-in {
+  from {
+    opacity: 0;
+    transform: translateX(16px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.peek-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  height: 52px;
+  padding: 0 10px 0 20px;
+  border-bottom: 1px solid var(--border);
+}
+
+.peek-title {
+  flex: 1;
+  min-width: 0;
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  font-weight: 500;
+  color: var(--ink-mute);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  direction: rtl;
+  text-align: left;
+}
+
+.peek-body {
+  display: grid;
+  grid-template-columns: 264px minmax(0, 1fr);
+  min-height: 0;
+}
+
+.peek-list {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  border-right: 1px solid var(--border);
+  min-height: 0;
+}
+
+.peek-filter {
+  margin: 12px;
+  width: calc(100% - 24px);
+}
+
+.peek-files {
+  overflow-y: auto;
+  min-height: 0;
+  padding: 0 8px 16px;
+}
+
+.peek-file {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  width: 100%;
+  padding: 7px 10px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+  color: var(--ink-mute);
+  transition: background var(--t-fast) var(--ease-out), color var(--t-fast) var(--ease-out);
+}
+
+.peek-file:hover {
+  background: var(--bg-2);
+  color: var(--ink);
+}
+
+.peek-file[aria-current='true'] {
+  background: var(--accent-soft);
+  color: var(--ink);
+}
+
+.peek-file-name {
+  flex: 1;
+  min-width: 0;
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  direction: rtl;
+  text-align: left;
+}
+
+.peek-file-size {
+  flex: none;
+  font-size: var(--text-xs);
+  color: var(--ink-faint);
+}
+
+.peek-view {
+  overflow: auto;
+  min-height: 0;
+  background: var(--bg-0);
+}
+
+.peek-code {
+  margin: 0;
+  padding: 20px 24px;
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  line-height: 1.6;
+  color: var(--ink-mute);
+  tab-size: 2;
+  /* Wrap rather than scroll sideways: this is a glance at a file, and a line
+     you have to scroll to find is a line you didn't read. */
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.peek-empty {
+  margin: 0;
+  padding: 20px 24px;
+  color: var(--ink-faint);
+  font-size: var(--text-sm);
+}
+
+/* Settings dialog body (Modal chrome comes from panels/dialogs.css). */
+.settings-body {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: min(460px, 80vw);
+}
+
+.settings-note {
+  margin: 0;
+  color: var(--ink-faint);
+  font-size: var(--text-sm);
+  line-height: 1.55;
+  max-width: 52ch;
+}

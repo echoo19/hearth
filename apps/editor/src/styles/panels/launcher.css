@@ -1,8 +1,5 @@
-/* Launcher */
-
-/* --------------------------------------------------------------------------
-   Launcher
-   -------------------------------------------------------------------------- */
+/* Launcher: two doors and a list of recents. The first screen anyone sees, so
+   it carries the wordmark and the display face; everything past it is chrome. */
 
 .launcher {
   height: 100%;
@@ -10,120 +7,128 @@
   display: flex;
   flex-direction: column;
   align-items: center;
-  padding: 10vh 24px 48px;
-  background:
-    radial-gradient(640px 320px at 50% -80px, var(--accent-faint), transparent 70%),
-    var(--bg-0);
+  gap: 32px;
+  padding: 9vh 24px 48px;
+  background: var(--bg-0);
 }
 
 .launcher-brand {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 8px;
-  margin-bottom: 44px;
-  text-align: center;
+  gap: 6px;
 }
 
 .launcher-brand h1 {
-  /* Brand moment: Bricolage display face. */
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0;
   font-family: var(--font-display);
   font-size: var(--text-3xl);
   font-weight: 700;
   letter-spacing: -0.02em;
-  display: flex;
-  align-items: center;
-  gap: 11px;
+}
+
+.launcher-brand .flame {
+  display: inline-flex;
+  color: var(--flame-brand);
 }
 
 .launcher-brand .tagline {
   margin: 0;
   color: var(--ink-mute);
-  font-size: var(--text-lg);
+  font-size: var(--text-md);
 }
 
-.launcher-columns {
+.launcher-doors {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(320px, 420px));
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
   gap: 20px;
-  justify-content: center;
   width: 100%;
-  max-width: 900px;
-  align-items: start;
+  max-width: 880px;
 }
 
-.launcher-card {
-  background: var(--bg-1);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-lg);
-  padding: 20px;
+.launcher-door {
   display: flex;
   flex-direction: column;
-  gap: 12px;
-  box-shadow: 0 1px 2px oklch(0 0 0 / 0.2);
+  gap: 14px;
+  align-items: flex-start;
+  padding: 24px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-xl);
+  background: var(--bg-1);
+  box-shadow: var(--shadow-1);
 }
 
-.launcher-card h2 {
-  /* Brand moment: Bricolage display face. */
+.launcher-door h2 {
+  margin: 0;
   font-family: var(--font-display);
-  font-size: var(--text-lg);
+  font-size: var(--text-xl);
   font-weight: 600;
   letter-spacing: -0.01em;
 }
 
-.launcher-card .row {
-  display: flex;
-  gap: 8px;
+.launcher-prompt {
+  width: 100%;
+  resize: vertical;
+  min-height: 84px;
+  font-size: var(--text-md);
+  border-radius: var(--radius-lg);
 }
 
-.launcher-card .row .input {
+.launcher-hint {
+  margin: 0;
+  color: var(--ink-faint);
+  font-size: var(--text-sm);
+  line-height: 1.55;
+  max-width: 46ch;
+}
+
+.launcher-door .row {
+  display: flex;
+  gap: 8px;
+  width: 100%;
+}
+
+.launcher-door .row .input {
   flex: 1;
+  min-width: 0;
 }
 
 .launcher-section {
-  margin-top: 10px;
-  /* Brand moment: Bricolage display face (uppercase keeps its wider tracking). */
+  margin: 8px 0 0;
   font-family: var(--font-display);
-  font-size: var(--text-xs);
+  font-size: var(--text-md);
   font-weight: 600;
-  letter-spacing: 0.05em;
-  text-transform: uppercase;
-  color: var(--ink-faint);
+  color: var(--ink-mute);
 }
 
-.launcher-error {
-  color: var(--err);
-  font-size: var(--text-sm);
-  white-space: pre-wrap;
-}
-
-/* An independent scroll region per list (LAUNCHER-1 / L-100): with a full
-   Recent list + several examples, the unbounded page could stretch well past
-   a typical viewport with no way to see "Examples" without scrolling past a
-   lopsided Open-a-project card. Capping each list's own height keeps the
-   Open card roughly balanced against the New-project card and keeps
-   Examples reachable near the fold regardless of how many Recent entries
-   accumulate. */
 .launcher-list {
   display: flex;
   flex-direction: column;
-  max-height: 220px;
-  overflow-y: auto;
+  gap: 3px;
+  width: 100%;
+}
+
+.launcher-empty {
+  color: var(--ink-faint);
+  font-size: var(--text-sm);
+  padding: 6px 0;
 }
 
 .launcher-item {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
+  display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 7px 10px;
-  margin: 0 -10px;
+  gap: 12px;
+  width: 100%;
+  padding: 10px 12px;
+  border: 0;
   border-radius: var(--radius);
-  border: none;
-  background: none;
-  color: var(--ink);
-  cursor: pointer;
+  background: transparent;
   text-align: left;
+  cursor: pointer;
+  color: var(--ink);
   transition: background var(--t-fast) var(--ease-out);
 }
 
@@ -140,131 +145,45 @@
   display: flex;
   flex-direction: column;
   gap: 1px;
+  flex: 1;
   min-width: 0;
 }
 
 .launcher-item .item-name {
-  font-weight: 600;
+  font-size: var(--text-md);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .launcher-item .item-path {
-  color: var(--ink-faint);
-  font-size: var(--text-xs);
   font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  color: var(--ink-faint);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-
-.launcher-item .item-desc {
-  color: var(--ink-mute);
-  font-size: var(--text-sm);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  direction: rtl;
+  text-align: left;
 }
 
 .launcher-item .item-go {
   display: inline-flex;
   color: var(--ink-faint);
   opacity: 0;
-  transition: opacity var(--t-fast) var(--ease-out);
+  transform: translateX(-2px);
+  transition: opacity var(--t-fast) var(--ease-out), transform var(--t-fast) var(--ease-out);
 }
 
 .launcher-item:hover:not(:disabled) .item-go,
 .launcher-item:focus-visible .item-go {
   opacity: 1;
+  transform: none;
 }
 
-.launcher-empty {
-  color: var(--ink-faint);
+.launcher-error {
+  color: var(--err);
   font-size: var(--text-sm);
-  padding: 4px 0;
+  max-width: 60ch;
+  text-align: center;
 }
-
-/* Template picker: radio-group of selectable tiles on the New-project form. */
-.tpl-picker {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 8px;
-}
-
-/* Narrow enough that four tiles fit one row; drops to two-up on small widths. */
-@media (max-width: 380px) {
-  .tpl-picker {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-}
-
-.tpl-card {
-  display: grid;
-  grid-template-rows: auto auto auto;
-  gap: 3px;
-  padding: 10px 9px 11px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  background: var(--bg-2);
-  cursor: pointer;
-  transition:
-    border-color var(--t-fast) var(--ease-out),
-    background var(--t-fast) var(--ease-out);
-}
-
-/* The native radio drives state and keyboard nav, but stays visually hidden
-   (not display:none, so it keeps focus + arrow-key group navigation). */
-.tpl-card input {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  margin: -1px;
-  padding: 0;
-  border: 0;
-  clip: rect(0 0 0 0);
-  clip-path: inset(50%);
-  overflow: hidden;
-  white-space: nowrap;
-}
-
-.tpl-card:hover {
-  border-color: var(--border-strong);
-  background: var(--bg-3);
-}
-
-.tpl-card[data-selected='true'] {
-  border-color: var(--accent);
-  background: var(--accent-soft);
-}
-
-/* Focus ring follows the (hidden) radio for full keyboard visibility. */
-.tpl-card:has(input:focus-visible) {
-  outline: 2px solid var(--accent);
-  outline-offset: 1px;
-}
-
-.tpl-card-glyph {
-  display: inline-flex;
-  color: var(--ink-mute);
-}
-
-.tpl-card[data-selected='true'] .tpl-card-glyph {
-  color: var(--accent);
-}
-
-.tpl-card-name {
-  font-size: var(--text-sm);
-  font-weight: 600;
-  color: var(--ink);
-}
-
-.tpl-card-desc {
-  font-size: var(--text-xs);
-  line-height: 1.35;
-  color: var(--ink-mute);
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .tpl-card {
-    transition: none;
-  }
-}
-

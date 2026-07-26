@@ -8,7 +8,7 @@
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 5px 10px;
+  padding: 10px 16px;
   border-bottom: 1px solid var(--border);
   flex: none;
   flex-wrap: wrap;
@@ -18,7 +18,7 @@
   flex: 1;
   min-height: 0;
   overflow-y: auto;
-  padding: 10px;
+  padding: 16px;
 }
 
 .empty-state {
@@ -54,6 +54,7 @@
 .empty-state .hint {
   color: var(--ink-faint);
   font-size: var(--text-sm);
+  line-height: 1.6;
   max-width: 52ch;
 }
 
@@ -62,6 +63,7 @@
    Same 52ch measure cap as .hint — the block now spans wide containers. */
 .empty-state > span:not(.empty-icon):not(.hint) {
   font-family: var(--font-display);
+  font-size: var(--text-lg);
   font-weight: 600;
   letter-spacing: -0.01em;
   max-width: 52ch;

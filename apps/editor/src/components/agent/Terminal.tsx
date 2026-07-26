@@ -13,8 +13,8 @@
  * reattaching after the panel was closed replays the buffered session.
  *
  * Disposing this component tears down the xterm instance but never touches
- * the pty: hiding/closing the Agent panel's dockview tab must not kill a
- * running shell session, only stop rendering it.
+ * the pty: switching away from the Terminal tab must not kill a running shell
+ * session, only stop rendering it.
  */
 import React, { useEffect, useRef, useSyncExternalStore } from 'react';
 import { Terminal as XTerm } from '@xterm/xterm';
@@ -28,7 +28,7 @@ import {
   subscribeAgentSocket,
 } from './useAgentSocket';
 
-// Matches the editor's charcoal ember palette (styles.css :root) — xterm needs
+// Matches the app's charcoal + ember palette (styles/tokens.css) — xterm needs
 // literal color strings for its theme, not CSS custom properties.
 const XTERM_THEME = {
   background: 'oklch(0.115 0.006 285)',
@@ -108,8 +108,8 @@ export function Terminal({ onData, onResize }: TerminalProps) {
     term.onData((data) => onDataRef.current(data));
 
     // Fit to the container and tell the pty — but only when the grid really
-    // changed (a hidden dockview tab reports zero size; fit() is then a no-op
-    // and re-sending the same cols/rows would be noise).
+    // changed (a hidden container reports zero size; fit() is then a no-op and
+    // re-sending the same cols/rows would be noise).
     let lastCols = -1;
     let lastRows = -1;
     function fitAndReport(): void {

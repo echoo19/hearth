@@ -1,0 +1,387 @@
+/* The conversation column: the app's primary surface.
+
+   A user turn is a quiet raised block; an agent turn is plain text on the
+   column with no container at all, so it reads like a page rather than a
+   stack of cards. Tool activity is one dim line each, inline. */
+
+.chat-column {
+  display: grid;
+  grid-template-rows: minmax(0, 1fr) auto;
+  min-height: 0;
+  background: var(--bg-1);
+}
+
+.chat-scroll {
+  overflow-y: auto;
+  min-height: 0;
+  padding: 24px 24px 8px;
+}
+
+.chat-turns {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+  /* One measure for the whole conversation, centred in the column. */
+  max-width: 68ch;
+  margin: 0 auto;
+  padding-bottom: 12px;
+}
+
+/* --- Turns ---------------------------------------------------------------- */
+
+.msg {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  /* Enter: a short rise + fade. Purpose is continuity — a turn arrives, it
+     doesn't blink into place. Only transform/opacity. */
+  animation: msg-enter var(--t-slow) var(--ease-out) both;
+}
+
+@keyframes msg-enter {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* A user turn is a subtly distinct block, not a coloured bubble: same neutral
+   family as everything else, one step lifted, generously rounded. */
+.msg-user {
+  align-self: flex-end;
+  max-width: 88%;
+  padding: 12px 16px;
+  border-radius: var(--radius-lg);
+  background: var(--bg-2);
+  border: 1px solid var(--border);
+}
+
+.msg-text {
+  margin: 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  text-wrap: pretty;
+  font-size: var(--text-md);
+  line-height: 1.65;
+}
+
+.msg-agent .msg-text {
+  color: var(--ink);
+}
+
+.msg-user .msg-text {
+  color: var(--ink);
+}
+
+/* Working: an honest "something is happening" bar, only shown before the
+   first token of a turn arrives, and gone the moment text starts. */
+.msg-working {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  color: var(--ink-faint);
+  font-size: var(--text-sm);
+}
+
+.working-bar {
+  position: relative;
+  width: 44px;
+  height: 2px;
+  border-radius: 1px;
+  background: var(--bg-3);
+  overflow: hidden;
+}
+
+.working-bar::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  width: 40%;
+  border-radius: 1px;
+  background: var(--accent);
+  animation: working-sweep 1100ms var(--ease-out) infinite;
+}
+
+@keyframes working-sweep {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(250%);
+  }
+}
+
+/* --- Tool activity -------------------------------------------------------- */
+
+.tool-chip {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.tool-chip-line {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  width: 100%;
+  padding: 5px 0;
+  border: 0;
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+  color: var(--ink-faint);
+  font-size: var(--text-sm);
+  transition: color var(--t-fast) var(--ease-out);
+}
+
+.tool-chip-line:hover {
+  color: var(--ink-mute);
+}
+
+.tool-dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  flex: none;
+  background: var(--ink-faint);
+  transition: background var(--t) var(--ease-out);
+}
+
+.tool-chip.state-running .tool-dot {
+  background: var(--accent);
+}
+
+.tool-chip.state-ok .tool-dot {
+  background: var(--ok);
+}
+
+.tool-chip.state-error .tool-dot {
+  background: var(--err);
+}
+
+.tool-verb {
+  color: var(--ink-mute);
+  flex: none;
+}
+
+.tool-detail {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+
+/* Expanded detail. Opacity only — the disclosure itself is instant, which is
+   right for a control the reader may open and close repeatedly. */
+.tool-chip-body {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-left: 14px;
+  padding: 12px 14px;
+  border-left: 1px solid var(--border);
+  color: var(--ink-mute);
+  font-size: var(--text-xs);
+  animation: tool-body-in 120ms var(--ease-out) both;
+}
+
+@keyframes tool-body-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.tool-body-name {
+  color: var(--ink-faint);
+}
+
+.tool-body-detail {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  overflow-wrap: anywhere;
+  color: var(--ink);
+}
+
+.tool-open {
+  align-self: flex-start;
+  border: 0;
+  background: transparent;
+  padding: 0;
+  color: var(--accent);
+  font-size: var(--text-xs);
+  cursor: pointer;
+}
+
+.tool-open:hover {
+  color: var(--accent-hover);
+}
+
+/* --- Empty state ---------------------------------------------------------- */
+
+/* Shares the composer's measure so its left edge lines up with the box the
+   reader is about to type in. */
+.chat-empty {
+  max-width: 68ch;
+  margin: 12vh auto 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.chat-empty-lead {
+  margin: 0;
+  font-family: var(--font-display);
+  font-weight: 600;
+  letter-spacing: -0.015em;
+  font-size: var(--text-2xl);
+  color: var(--ink);
+}
+
+.chat-empty-hint {
+  margin: 0;
+  max-width: 52ch;
+  color: var(--ink-mute);
+  font-size: var(--text-md);
+  text-wrap: pretty;
+}
+
+.chat-empty-examples {
+  margin: 6px 0 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  color: var(--ink-faint);
+  font-size: var(--text-sm);
+}
+
+.chat-empty-examples li::before {
+  content: '“';
+}
+
+.chat-empty-examples li::after {
+  content: '”';
+}
+
+/* --- Composer ------------------------------------------------------------- */
+
+/* The signature element. A large floating container: generous radius, one
+   hairline border, a soft shadow lifting it off the column, and a filled
+   ember send button inside it. Everything else in the app is quieter than
+   this on purpose. */
+
+.composer {
+  padding: 8px 24px 24px;
+  flex: none;
+}
+
+.composer-field {
+  max-width: 68ch;
+  margin: 0 auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-xl);
+  background: var(--bg-2);
+  box-shadow: var(--shadow-2);
+  transition: border-color var(--t) var(--ease-out);
+}
+
+.composer-field:focus-within {
+  border-color: var(--border-strong);
+}
+
+.composer-input {
+  display: block;
+  width: 100%;
+  resize: none;
+  border: 0;
+  outline: none;
+  background: transparent;
+  color: var(--ink);
+  font-family: var(--font-ui);
+  font-size: var(--text-md);
+  line-height: 1.6;
+  padding: 16px 18px 6px;
+  max-height: 200px;
+  overflow-y: auto;
+}
+
+.composer-input::placeholder {
+  color: var(--ink-faint);
+}
+
+/* The field owns the focus treatment; the bare textarea inside must not draw
+   the shared base ring on top of it. */
+.composer-input:focus-visible {
+  outline: none;
+}
+
+.composer-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 2px 10px 10px 18px;
+}
+
+/* A quiet status line, not a control: what will happen, or why nothing will. */
+.composer-note {
+  flex: 1;
+  min-width: 0;
+  color: var(--ink-faint);
+  font-size: var(--text-xs);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Send: the app's one filled, circular, ember control. */
+.composer-send.btn {
+  border-radius: 50%;
+  border-color: var(--accent);
+  background: var(--accent);
+  color: var(--accent-ink);
+}
+
+.composer-send.btn:hover:not(:disabled) {
+  background: var(--accent-hover);
+  border-color: var(--accent-hover);
+}
+
+.composer-send.btn:active:not(:disabled) {
+  background: var(--accent-down);
+}
+
+.composer-send.btn:disabled {
+  background: var(--bg-3);
+  border-color: transparent;
+  color: var(--ink-faint);
+  opacity: 1;
+}
+
+/* The send glyph is a chevron; point it the way the message goes. */
+.composer-send:not(.is-stop) svg {
+  transform: rotate(-90deg);
+}
+
+/* Stop keeps the circle but drops the fill — interrupting is not a primary
+   action, it is a way out of one. */
+.composer-send.is-stop.btn {
+  background: var(--bg-3);
+  border-color: var(--border-strong);
+  color: var(--ink);
+}
+
+.composer-send.is-stop.btn:hover:not(:disabled) {
+  background: var(--bg-1);
+  border-color: var(--border-strong);
+}

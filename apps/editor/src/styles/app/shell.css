@@ -1,0 +1,168 @@
+/* App shell: the top strip and the two regions under it.
+   Two fixed regions, no panel system. The conversation column is lifted one
+   surface step (bg-1) because it is the primary surface; the game side stays
+   at the window's own bg-0 so the running game is the brightest thing on
+   screen. */
+
+.app-shell {
+  display: grid;
+  grid-template-rows: auto 1fr;
+  height: 100%;
+  min-height: 0;
+  background: var(--bg-0);
+}
+
+/* --------------------------------------------------------------------------
+   Top bar
+   -------------------------------------------------------------------------- */
+
+/* Slim and quiet: it names the folder, reports whether anything is listening,
+   and holds the two things that open over the app. Nothing else earns a place
+   in permanent chrome. */
+.topbar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  height: 48px;
+  padding: 0 12px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-0);
+  flex: none;
+}
+
+.topbar-mark {
+  display: inline-flex;
+  color: var(--flame-brand);
+  flex: none;
+}
+
+.topbar-name {
+  font-size: var(--text-sm);
+  font-weight: 500;
+  color: var(--ink);
+  max-width: 26ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.topbar-capability {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 5px 12px 5px 10px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  font-size: var(--text-xs);
+  color: var(--ink-mute);
+  white-space: nowrap;
+}
+
+.capability-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--ink-faint);
+  flex: none;
+  transition: background var(--t) var(--ease-out);
+}
+
+.topbar-capability.status-connected .capability-dot {
+  background: var(--ok);
+}
+
+.topbar-capability.status-connecting .capability-dot {
+  background: var(--warn);
+}
+
+.topbar-capability.status-disconnected .capability-dot {
+  background: var(--err);
+}
+
+.topbar-spacer {
+  flex: 1;
+}
+
+/* Reserve for overlaid window controls (non-macOS shells). */
+.topbar-window-controls {
+  width: 96px;
+  flex: none;
+}
+
+/* Narrow layout: one region at a time, chosen from the top bar. */
+.topbar-switch {
+  display: inline-flex;
+  gap: 3px;
+  padding: 3px;
+  border-radius: var(--radius);
+  background: var(--bg-2);
+}
+
+.switch-tab {
+  border: 0;
+  background: transparent;
+  border-radius: var(--radius-sm);
+  padding: 0 14px;
+  height: var(--ctl-h-sm);
+  font-size: var(--text-xs);
+  color: var(--ink-mute);
+  cursor: pointer;
+  transition: color var(--t-fast) var(--ease-out), background var(--t-fast) var(--ease-out);
+}
+
+.switch-tab:hover {
+  color: var(--ink);
+}
+
+.switch-tab[aria-selected='true'] {
+  background: var(--bg-3);
+  color: var(--ink);
+}
+
+/* --------------------------------------------------------------------------
+   Regions
+   -------------------------------------------------------------------------- */
+
+.app-body {
+  display: grid;
+  /* Conversation leads; the cap keeps an ultrawide window from turning it
+     into an unreadable measure and starving the game. */
+  grid-template-columns: clamp(420px, 52%, 780px) minmax(0, 1fr);
+  min-height: 0;
+  overflow: hidden;
+}
+
+.app-region {
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.app-region > * {
+  flex: 1;
+  min-width: 0;
+}
+
+.app-region:first-child {
+  border-right: 1px solid var(--border);
+}
+
+/* Below the breakpoint the two regions stack into one, switched from the top
+   bar — the game pane becomes a tab rather than a squeezed column. */
+.app-shell.is-narrow .app-body {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.app-shell.is-narrow .app-region {
+  grid-row: 1;
+  grid-column: 1;
+}
+
+.app-shell.is-narrow .app-region[data-active='false'] {
+  display: none;
+}
+
+.app-shell.is-narrow .app-region:first-child {
+  border-right: 0;
+}

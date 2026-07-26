@@ -1,16 +1,16 @@
 /* ==========================================================================
-   Hearth Editor — design tokens & app styles.
-   Dark by intent: game editors are lived-in tools; the scene canvas is the
-   brightest thing on screen and colored game content must pop against calm,
-   charcoal neutrals. Ember carries commands without tinting the panels.
+   Hearth — design tokens & app styles.
 
-   This file is a plain @import manifest. The real rules live in styles/*, one
-   file per concern, imported in exact source order so the cascade is identical
-   to the old single file (no @layer — specificity semantics are unchanged).
-   Panel work should touch only the matching styles/panels/*.css file.
+   Dark by intent: this is a tool people sit inside for hours, and the game
+   running in the pane must be the brightest, most colourful thing on screen.
+   Ember carries actions without tinting any surface.
+
+   A plain @import manifest. Rules live in styles/*, one file per concern, in
+   exact source order so the cascade is explicit (no @layer — specificity
+   semantics stay as written).
    ========================================================================== */
 
-/* Foundation: fonts, tokens, base resets, shared primitives, workspace shell. */
+/* Foundation: fonts, tokens, base resets, shared primitives. */
 @import './styles/fonts.css';
 @import './styles/tokens.css';
 @import './styles/base.css';
@@ -18,22 +18,17 @@
 @import './styles/primitives/tooltip.css';
 @import './styles/primitives/menu.css';
 @import './styles/primitives/button.css';
-@import './styles/workspace.css';
 
-/* Panels, in source order. */
-@import './styles/panels/hierarchy.css';
-@import './styles/panels/sceneview.css';
-@import './styles/panels/inspector.css';
-@import './styles/panels/animator.css';
-@import './styles/panels/input.css';
+/* The app shell and its surfaces. */
+@import './styles/app/shell.css';
+@import './styles/app/chat.css';
+@import './styles/app/game.css';
+@import './styles/app/evidence.css';
+@import './styles/app/peek.css';
+
+/* Shared panel chrome, and the surfaces that predate the shell. */
 @import './styles/panels/common.css';
-@import './styles/panels/assets.css';
 @import './styles/panels/console.css';
-@import './styles/panels/changes.css';
 @import './styles/panels/agent.css';
-@import './styles/panels/code.css';
 @import './styles/panels/dialogs.css';
 @import './styles/panels/launcher.css';
-@import './styles/panels/export.css';
-@import './styles/panels/live.css';
-@import './styles/panels/gamesettings.css';

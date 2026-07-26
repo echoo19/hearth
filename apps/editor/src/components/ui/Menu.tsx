@@ -2,20 +2,20 @@
  * Menu primitive. One implementation of the toolbar dropdown menu
  * (trigger button + popover) whose open/close, click-outside, Escape,
  * focus-return, and arrow-key roving focus were previously copy-pasted into
- * SceneMenu and the toolbar's View menu (now MenuBar).
+ * the app's native-menu fallback surfaces.
  *
  * Two behavioral contracts callers depend on (see `installMenuDismiss`):
  *
  *  1. Escape closes the menu AND stops propagation. The keydown listener lives
  *     at DOCUMENT level (bubble phase). The keydown bubble path is
  *     target -> … -> document -> window, so the document listener runs BEFORE
- *     SceneView's window-level Escape-deselect listener; stopPropagation() then
+ *     a window-level Escape listener; stopPropagation() then
  *     keeps that listener from also clearing the current entity selection.
  *
  *  2. Click-outside detection is a WINDOW listener in the CAPTURE phase.
- *     SceneView's canvas pointer handlers stopPropagation() in the bubble
+ *     a canvas's pointer handlers may stopPropagation() in the bubble
  *     phase; a bubble/document pointerdown listener would never fire for a
- *     click that lands on the scene canvas, leaving the menu stuck open.
+ *     click that lands on such a canvas, leaving the menu stuck open.
  *     Capture runs top-down (window first), before any handler can stop it.
  */
 import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
@@ -111,7 +111,7 @@ export function installMenuDismiss(opts: {
 
   // Capture phase (true): fires before any bubble-phase stopPropagation.
   win.addEventListener('pointerdown', onPointerDown, true);
-  // Document (bubble): runs before SceneView's window-level Escape listener.
+  // Document (bubble): runs before any window-level Escape listener.
   doc.addEventListener('keydown', onKeyDown);
   return () => {
     win.removeEventListener('pointerdown', onPointerDown, true);
@@ -456,7 +456,7 @@ export function MenuButton({
     }
     // Enter/Space activate the focused item natively (it is a <button>).
     // Escape is handled by the document listener in installMenuDismiss so it can
-    // stopPropagation before SceneView's window-level deselect listener.
+    // stopPropagation before any window-level Escape listener.
   }
 
   function selectItem(item: MenuItemAction) {

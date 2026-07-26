@@ -124,12 +124,13 @@ const FONT_DEF_FILES = new Set(['tokens.css', 'fonts.css']);
  * rule from the design spec.
  */
 const BRAND_MOMENT_SELECTORS = new Set<string>([
-  '.toolbar .wordmark', // toolbar wordmark
   '.launcher-brand h1', // launcher wordmark heading
-  '.launcher-card h2', // launcher section headings
+  '.launcher-door h2', // launcher door headings
   '.launcher-section', // launcher section label headings
   '.modal-title', // modal / dialog titles
   '.empty-state > span:not(.empty-icon):not(.hint)', // panel empty-state headings
+  '.chat-empty-lead', // conversation empty state — the app's first sentence
+  '.game-empty-lead', // game pane empty state heading
 ]);
 
 /**
@@ -141,11 +142,6 @@ const PINNED_LITERAL_ALLOWLIST: Record<string, Set<string>> = {
   // xterm's constructor option is typed as `number` — it cannot take a CSS
   // var string. See the inline comment at Terminal.tsx's `fontSize: 12`.
   'Terminal.tsx': new Set(['12']),
-  // SceneView renders entity content on the zoomed/panned canvas, not editor
-  // chrome: `t.fontSize` is the user's per-entity game data, and `11 / view.s`
-  // counter-scales a screen-space gizmo label against the camera zoom. Both
-  // are canvas math, not UI type-scale literals.
-  'SceneView.tsx': new Set(['t.fontSize ?? 16', '11 / view.s']),
 };
 
 function collectFiles(dir: string, extensions: string[]): string[] {

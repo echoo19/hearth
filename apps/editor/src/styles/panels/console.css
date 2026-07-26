@@ -4,14 +4,16 @@
 .console-list {
   font-family: var(--font-mono);
   font-size: var(--text-sm);
-  padding: 6px 0;
+  padding: 10px 0;
 }
 
+/* One roomy line per entry — this is read, not scanned like a log tail. */
 .console-line {
   position: relative;
   display: flex;
-  gap: 8px;
-  padding: 2px 10px 2px 24px;
+  gap: 12px;
+  padding: 5px 16px 5px 30px;
+  line-height: 1.55;
   align-items: baseline;
 }
 
@@ -19,8 +21,8 @@
 .console-line::before {
   content: '';
   position: absolute;
-  left: 10px;
-  top: 8px;
+  left: 16px;
+  top: 11px;
   width: 6px;
   height: 6px;
   border-radius: 50%;
@@ -39,7 +41,7 @@
 
 .console-source {
   flex: none;
-  width: 66px;
+  width: 56px;
   color: var(--ink-faint);
 }
 

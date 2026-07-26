@@ -1,12 +1,16 @@
+/**
+ * Raw output, as a tab under the game pane. Everything the app itself, the
+ * agent layer, or the running game had to say, with timestamps.
+ */
 import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
-import { useEditor } from '../store';
-import type { ConsoleEntry, ValidationReport } from '../types';
+import { useApp } from '../store';
+import type { ConsoleEntry } from '../types';
 import { Icon } from './ui';
 import { Button } from './ui/Button';
 import { Tooltip } from './ui/Tooltip';
 
 /**
- * Level-filter chips (L-064 / CONSOLE-CHANGES-9): 'all' or a single level.
+ * Level-filter chips: 'all' or a single level.
  * Kept as a plain union (not a Set) — one chip active at a time reads better
  * than combinable toggles for a three-level console.
  */
@@ -18,9 +22,8 @@ export function filterConsoleEntries(entries: readonly ConsoleEntry[], filter: C
 }
 
 /**
- * Plain-text form of the visible entries for the Copy affordance (L-065 /
- * CONSOLE-CHANGES-10): one line per entry, script location appended when the
- * entry links one.
+ * Plain-text form of the visible entries for the Copy affordance: one line
+ * per entry, file location appended when the entry links one.
  */
 export function consoleEntriesText(entries: readonly ConsoleEntry[]): string {
   return entries
@@ -32,21 +35,14 @@ export function consoleEntriesText(entries: readonly ConsoleEntry[]): string {
 }
 
 /**
- * Clickable `path:line` suffix for a Console entry that names an exact
- * script location (a runtime error or a hot-reload compile failure — see
- * store.ts's `formatRuntimeError`/`applyReload`). `line` is null when only
- * the file is known; the click still opens it, just at the top.
+ * Clickable `path:line` suffix for a Console entry that names a file. The
+ * click opens that file in the code peek.
  *
- * Styling lives in the `.console-link` rule in styles.css (base ink-faint,
- * ember hover, mono font, focus-visible ring). Keyboard focus is a real
- * `<button>` — reachable in Console tab order and activatable with Enter/Space.
+ * Pulled to module scope (not a component-local closure) so the click
+ * behavior is unit-testable without a DOM.
  */
-// Click behavior, pulled out of the JSX closure (module scope, not a
-// component-local closure) so it's unit-testable without a DOM — mirrors
-// Hierarchy.tsx's isActivationKey. `line: null` maps to `undefined` for
-// openScriptAt, which opens the file at the top.
-export function openConsoleLink(link: NonNullable<ConsoleEntry['link']>, openScriptAt: (path: string, line?: number) => void): void {
-  openScriptAt(link.path, link.line ?? undefined);
+export function openConsoleLink(link: NonNullable<ConsoleEntry['link']>, openFile: (path: string) => void): void {
+  openFile(link.path);
 }
 
 /**
@@ -62,13 +58,12 @@ export function isNearBottom(metrics: { scrollHeight: number; scrollTop: number;
 }
 
 /**
- * The scrollTop to reapply when the Console panel is revealed after dockview
- * detached its DOM (a sibling tab activating detaches the panel element, which
- * resets the browser's scrollTop to 0 — so on reveal the view silently sits at
- * the top even with zero new entries). Restores the user's intent: snap to the
- * bottom when they were parked there (auto-follow), else restore the saved
- * offset. Pure (no DOM) so the reveal-restore decision is unit-testable without
- * a real layout — jsdom reports zero metrics, same reason isNearBottom is pure.
+ * The scrollTop to apply when the Console surface mounts. A fresh mount starts
+ * at scrollTop 0, which reads as "stuck at the top" on a full console.
+ * Restores the intent instead: snap to the bottom when parked there
+ * (auto-follow), else the saved offset. Pure (no DOM) so the decision is
+ * unit-testable without a real layout — jsdom reports zero metrics, the same
+ * reason isNearBottom is pure.
  */
 export function scrollRestoreTop(
   metrics: { scrollHeight: number },
@@ -79,12 +74,12 @@ export function scrollRestoreTop(
 }
 
 function ConsoleLink({ link }: { link: NonNullable<ConsoleEntry['link']> }) {
-  const openScriptAt = useEditor((s) => s.openScriptAt);
+  const openCodePeek = useApp((s) => s.openCodePeek);
   const label = link.line != null ? `${link.path}:${link.line}` : link.path;
 
   return (
     <Tooltip content={`Open ${label}`}>
-      <button type="button" className="console-link" onClick={() => openConsoleLink(link, openScriptAt)}>
+      <button type="button" className="console-link" onClick={() => openConsoleLink(link, openCodePeek)}>
         {label}
       </button>
     </Tooltip>
@@ -92,14 +87,9 @@ function ConsoleLink({ link }: { link: NonNullable<ConsoleEntry['link']> }) {
 }
 
 export function ConsolePanel() {
-  const entries = useEditor((s) => s.consoleEntries);
-  const clearConsole = useEditor((s) => s.clearConsole);
-  const exec = useEditor((s) => s.exec);
-  const log = useEditor((s) => s.log);
-  // Whether the Console tab is currently visible (dockview mirrors this into
-  // the store via ConsolePanelHost). Used below to restore scroll on reveal.
-  const consoleOpen = useEditor((s) => s.consoleOpen);
-  const setConsoleAtBottom = useEditor((s) => s.setConsoleAtBottom);
+  const entries = useApp((s) => s.consoleEntries);
+  const clearConsole = useApp((s) => s.clearConsole);
+  const setConsoleAtBottom = useApp((s) => s.setConsoleAtBottom);
   const [filter, setFilter] = useState<ConsoleFilter>('all');
   const [copied, setCopied] = useState(false);
   const visible = filterConsoleEntries(entries, filter);
@@ -114,19 +104,16 @@ export function ConsolePanel() {
    */
   const stickToBottomRef = useRef(true);
   /**
-   * The last user-intended scroll offset, retained across a dockview
-   * detach/reveal (the browser resets the live element's scrollTop to 0 when
-   * the panel DOM is detached). Paired with `stickToBottomRef`, this is the
-   * scroll INTENT we restore on reveal — see the layout effect below.
+   * The last user-intended scroll offset. Paired with `stickToBottomRef`,
+   * this is the scroll INTENT restored on mount — see the layout effect below.
    */
   const lastScrollTopRef = useRef(0);
 
-  // Key on the last entry's id, NOT entries.length: the list is capped at
-  // MAX_CONSOLE, so once the cap is hit length pins forever and a
-  // length-keyed effect goes dormant mid-list while entries keep arriving
-  // (CONSOLE-CHANGES-1). The id is monotonic, so this re-fires on every real
-  // append. Combined with the scroll-lock guard it also fixes the "any new
-  // line yanks you back to bottom" complaint (CONSOLE-CHANGES-2).
+  // Key on the last entry's id, NOT entries.length: the list is capped, so
+  // once the cap is hit length pins forever and a length-keyed effect goes
+  // dormant mid-list while entries keep arriving. The id is monotonic, so this
+  // re-fires on every real append; combined with the scroll-lock guard, a new
+  // line never yanks a reader who scrolled up back to the bottom.
   const lastEntryId = entries.length > 0 ? entries[entries.length - 1].id : 0;
 
   useEffect(() => {
@@ -135,25 +122,21 @@ export function ConsolePanel() {
   }, [lastEntryId]);
 
   /**
-   * Restore the scroll intent on (re)mount and whenever the Console tab is
-   * revealed. Dockview keeps the panel component mounted but DETACHES its DOM
-   * when a sibling tab activates; the browser resets the reattached element's
-   * scrollTop to 0, so without this the view sat at the top on every reveal
-   * even with no new entries. A layout effect (before paint, no flash) keyed on
-   * `consoleOpen` — the visibility signal dockview already feeds the store —
-   * covers both the initial mount and every hide→reveal.
+   * Land at the live tail on mount. The Console is a tab whose surface is
+   * unmounted while another tab shows, so every reveal is a fresh mount and
+   * the browser starts it at scrollTop 0 — which reads as "stuck at the top"
+   * on a full console. A layout effect (before paint, no flash).
    */
   useLayoutEffect(() => {
     const el = bodyRef.current;
-    if (!el || !consoleOpen) return;
+    if (!el) return;
     el.scrollTop = scrollRestoreTop(el, stickToBottomRef.current, lastScrollTopRef.current);
-  }, [consoleOpen]);
+  }, []);
 
   function handleScroll() {
     const el = bodyRef.current;
-    // A detached/hidden panel reports clientHeight 0; ignore the scroll events
-    // that fire around a dockview hide/reveal (scrollTop reset to 0) so they
-    // don't clobber the saved intent we're about to restore.
+    // A hidden surface reports clientHeight 0; ignore the scroll events that
+    // fire around a reveal so they don't clobber the restored intent.
     if (!el || el.clientHeight === 0) return;
     // Within ~24px of the bottom counts as "parked at the bottom" so a
     // sub-pixel rounding or a short overscroll doesn't unstick auto-follow.
@@ -164,25 +147,6 @@ export function ConsolePanel() {
     if (atBottom !== stickToBottomRef.current) setConsoleAtBottom(atBottom);
     stickToBottomRef.current = atBottom;
     lastScrollTopRef.current = el.scrollTop;
-  }
-
-  async function validate() {
-    const result = await exec<ValidationReport>('validateProject', {}, { quiet: true });
-    if (!result.success || !result.data) return;
-    const report = result.data;
-    for (const issue of report.errors) {
-      log('error', 'validate', `[${issue.code}] ${issue.message}`);
-    }
-    for (const issue of report.warnings) {
-      log('warn', 'validate', `[${issue.code}] ${issue.message}`);
-    }
-    if (report.valid && report.warnings.length === 0) {
-      log('info', 'validate', 'Project is valid, with no errors or warnings.');
-    } else if (report.valid) {
-      log('info', 'validate', `Project is valid with ${report.warnings.length} warning(s).`);
-    } else {
-      log('error', 'validate', `Validation failed: ${report.errors.length} error(s), ${report.warnings.length} warning(s).`);
-    }
   }
 
   function copyVisible() {
@@ -201,11 +165,7 @@ export function ConsolePanel() {
   return (
     <>
       <div className="panel-toolbar">
-        <Button size="sm" onClick={() => void validate()}>
-          Validate project
-        </Button>
-        <span className="panel-divider" />
-        {/* Level filter chips (L-064) — one active at a time, like a segmented control. */}
+        {/* Level filter chips — one active at a time, like a segmented control. */}
         <span role="group" aria-label="Filter console by level" style={{ display: 'inline-flex', gap: 2 }}>
           {FILTERS.map((f) => (
             <Button
@@ -235,14 +195,10 @@ export function ConsolePanel() {
             <span className="empty-icon" aria-hidden="true">
               <Icon name="script" size={16} />
             </span>
-            <span>Console is quiet</span>
+            <span>Nothing to report</span>
             <span className="hint">
-              Command results, warnings, validation reports, and runtime logs from the Game preview show up
-              here with timestamps.
+              Errors from the agent layer and from the running game land here, with timestamps.
             </span>
-            <Button size="sm" onClick={() => void validate()}>
-              Validate project
-            </Button>
           </div>
         ) : visible.length === 0 ? (
           <div className="empty-state">

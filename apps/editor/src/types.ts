@@ -1,138 +1,26 @@
 /**
- * Client-side shapes for data crossing the /api boundary.
- * Command payload types mirror what the core inspect commands return.
+ * Client-side shapes for data crossing the /api and WebSocket boundaries.
  */
-import type {
-  CommandResult,
-  DesktopBuildResult,
-  DesktopPlatform,
-  GameStateEntry,
-  InputMappings,
-  JournalEntry,
-  ProjectDiff,
-  ScriptDiagnostic,
-  StateMachineData,
-} from '@hearth/core';
+import type { CommandResult, JournalEntry } from '@hearth/core';
 
-export type {
-  CommandResult,
-  DesktopBuildResult,
-  DesktopPlatform,
-  GameStateEntry,
-  JournalEntry,
-  ProjectDiff,
-  ScriptDiagnostic,
-};
+export type { CommandResult, JournalEntry };
 
-export interface Vec2 {
-  x: number;
-  y: number;
-}
+// ---------------------------------------------------------------------------
+// Folders
+// ---------------------------------------------------------------------------
 
-export interface SceneListItem {
-  id: string;
-  name: string;
+/** A folder the app has open. Not necessarily a Hearth project — usually just
+ * the folder the agent is building a game in. */
+export interface WorkspaceInfo {
   path: string;
-  entityCount: number;
-}
-
-/** What the exported player shows while the game loads (see core's LoadingSettingsSchema). */
-export interface LoadingSettings {
-  backgroundColor: string;
-  /** Sprite asset id shown centered while loading, or null for none. */
-  image: string | null;
-  spinner: boolean;
-}
-
-export interface BuildSettings {
-  width: number;
-  height: number;
-  backgroundColor: string;
-  targetFps: number;
-  fixedTimestep: number;
-  title: string;
-  /** Sprite asset id used as the native app/window icon, or null for none. */
-  icon: string | null;
-  loading: LoadingSettings;
-}
-
-export interface ProjectInfo {
-  id: string;
   name: string;
-  description: string;
-  hearthVersion: string;
-  formatVersion: number;
-  initialScene: string | null;
-  scenes: SceneListItem[];
-  assetCount: number;
-  scriptCount: number;
-  /** Project-relative paths of every script file (Code panel's script picker). */
-  scripts: string[];
-  playtestCount: number;
-  inputActions: Record<string, string[]>;
-  inputMappings: InputMappings;
-  buildSettings: BuildSettings;
-  codeStyle?: { formatOnSave: boolean };
-  /** Declared game state (hearth.json `gameState`), keyed by state key. */
-  gameState?: Record<string, GameStateEntry>;
+  isHearthProject: boolean;
 }
 
-/** Entity shape from inspectScene with full=true. */
-export interface SceneEntity {
-  id: string;
-  name: string;
-  parentId: string | null;
-  enabled: boolean;
-  tags: string[];
-  components: Record<string, Record<string, unknown>>;
-  position: Vec2 | null;
-  children: string[];
-  /** Set on a prefab instance's root entity only; links back to the source asset. */
-  prefab?: { asset: string };
-}
-
-export interface SceneData {
-  id: string;
-  name: string;
-  isInitial: boolean;
-  entityCount: number;
-  entities: SceneEntity[];
-}
-
-export interface AssetItem {
-  id: string;
-  name: string;
-  type: 'sprite' | 'tile' | 'audio' | 'animation' | 'font' | 'data' | 'other' | 'prefab' | 'stateMachine';
+export interface RecentWorkspace {
   path: string;
-  metadata: Record<string, unknown>;
-  /** Fresh-from-disk summary attached by inspectAssets for `type: 'prefab'` assets only. */
-  prefab?: { entityCount: number; rootComponents: string[] };
-  /** Full parsed document attached by inspectAssets for `type: 'stateMachine'` assets only. */
-  stateMachine?: StateMachineData;
-}
-
-export interface ComponentDoc {
-  type: string;
-  description: string;
-  defaults: Record<string, unknown>;
-  /** Enum options per field (e.g. `{ shape: ['rectangle', 'circle', ...] }`), empty when the component has none. */
-  enums: Record<string, string[]>;
-}
-
-export interface ValidationIssue {
-  severity: 'error' | 'warning';
-  code: string;
-  message: string;
-  scene?: string;
-  entity?: string;
-  asset?: string;
-  script?: string;
-}
-
-export interface ValidationReport {
-  valid: boolean;
-  errors: ValidationIssue[];
-  warnings: ValidationIssue[];
+  name: string;
+  exists: boolean;
 }
 
 export interface ServerMeta {
@@ -144,20 +32,116 @@ export interface ServerMeta {
   toolPaths?: { cli: string; mcp: string; bundled: boolean };
 }
 
-export interface RecentProject {
-  path: string;
-  name: string;
-  exists: boolean;
+// ---------------------------------------------------------------------------
+// Game pane
+// ---------------------------------------------------------------------------
+
+/** GET /api/game/status — is there a game to show, and how fresh is it? */
+export interface GameStatus {
+  present: boolean;
+  /** Folder-relative entry document, e.g. `index.html`. Null when absent. */
+  entry: string | null;
+  /** Newest mtime under the entry's folder; a change is the reload cue. */
+  mtime: number;
 }
 
-export interface ExampleProject {
+/** GET /api/probe/status — what Hearth can currently sense about the game. */
+export type Sense = 'preview' | 'errors' | 'screenshots' | 'entities' | 'events';
+
+/** One file in the folder, for the code peek. */
+export interface ProjectFile {
   path: string;
-  name: string;
-  description: string;
+  size: number;
 }
+
+/** GET /api/app/settings — whether an agent key is configured, and from where. */
+export interface AppSettingsInfo {
+  hasKey: boolean;
+  source: 'project' | 'environment' | null;
+}
+
+// ---------------------------------------------------------------------------
+// Conversation
+// ---------------------------------------------------------------------------
+
+export type ChatDriverKind = 'stub' | 'agent-sdk';
+
+/** One thing the driver did. Mirrors server/chat.ts's ChatEvent. */
+export type ChatEvent =
+  | { type: 'text-delta'; text: string }
+  | { type: 'tool-start'; id: string; name: string; detail?: string }
+  | { type: 'tool-end'; id: string; ok: boolean; detail?: string }
+  | { type: 'done' }
+  | { type: 'error'; message: string };
+
+export type ToolState = 'running' | 'ok' | 'error';
+
+export interface ChatToolPart {
+  kind: 'tool';
+  id: string;
+  name: string;
+  detail?: string;
+  state: ToolState;
+}
+
+export interface ChatTextPart {
+  kind: 'text';
+  text: string;
+}
+
+/**
+ * A turn is an ordered list of parts, not a text blob plus a tool list: what
+ * the agent said between two tool calls belongs between them on screen.
+ */
+export type ChatPart = ChatTextPart | ChatToolPart;
+
+export interface ChatMessage {
+  id: string;
+  role: 'user' | 'agent';
+  parts: ChatPart[];
+  /** Still receiving events (drives the working indicator). Agent turns only. */
+  streaming: boolean;
+}
+
+// ---------------------------------------------------------------------------
+// Evidence
+// ---------------------------------------------------------------------------
+
+/** Verdict vocabulary shared with the probe (packages/probe-core). */
+export type Verdict = string;
+
+/**
+ * One line of `.hearth/evidence/journal.jsonl`. Structurally mirrors
+ * probe-core's `EvidenceEvent`; `kind` stays open so an event this build
+ * doesn't know renders as a plain note rather than disappearing.
+ */
+export interface EvidenceEvent {
+  kind: string;
+  seq: number;
+  ts: string;
+  sweepId?: string;
+  target?: string;
+  policies?: string[];
+  seeds?: number[];
+  policy?: string;
+  seed?: number;
+  verdict?: Verdict;
+  frames?: number;
+  verdicts?: Record<string, number>;
+  findings?: { kind?: string; detail?: string; shot?: string }[];
+  reportPath?: string;
+  path?: string;
+  caption?: string;
+  text?: string;
+  source?: string;
+}
+
+// ---------------------------------------------------------------------------
+// Console
+// ---------------------------------------------------------------------------
 
 export type ConsoleLevel = 'info' | 'warn' | 'error';
-export type ConsoleSource = 'command' | 'runtime' | 'validate' | 'editor';
+export type ConsoleSource = 'agent' | 'game' | 'app';
 
 export interface ConsoleEntry {
   id: number;
@@ -165,74 +149,6 @@ export interface ConsoleEntry {
   level: ConsoleLevel;
   source: ConsoleSource;
   message: string;
-  /**
-   * Present when this entry names an exact script location (a runtime error
-   * or a hot-reload compile failure). `line` is null when the location is
-   * only a file (no line number extractable) — clicking still opens the
-   * file, just at the top. See ConsolePanel's `.console-link` button and
-   * `openScriptAt`.
-   */
+  /** Present when the entry names a file; clicking opens it in the code peek. */
   link?: { path: string; line: number | null };
-}
-
-/** One entry from the `listHistory` command. `undone` means it's ahead of the cursor (redoable). */
-export interface HistoryEntry {
-  seq: number;
-  command: string;
-  summary: string;
-  timestamp: string;
-  undone: boolean;
-}
-
-export interface HistoryList {
-  entries: HistoryEntry[];
-  cursor: number;
-}
-
-// ---------------------------------------------------------------------------
-// Desktop / web export
-// ---------------------------------------------------------------------------
-
-/** Signing rung the host environment selects (mirrors @hearth/shipping). */
-export type SigningMode = 'adhoc' | 'identity' | 'identity+notarize';
-
-/** GET /api/export/capability payload. */
-export interface ExportCapability {
-  ok: boolean;
-  capability: { mode: SigningMode; identity?: string };
-  platforms: DesktopPlatform[];
-}
-
-/** exportDesktop's result data (carried by an export-done frame). */
-export interface DesktopExportResult {
-  outDir: string;
-  slug: string;
-  builds: DesktopBuildResult[];
-}
-
-/** Packaging stage a progress frame reports (mirrors @hearth/shipping). */
-export type ExportStage = 'stage' | 'download' | 'package' | 'sign' | 'notarize' | 'zip';
-
-/**
- * WS frames for a running desktop export job (POST /api/export/desktop).
- * Progress streams as `export-progress`, then exactly one terminal frame:
- * `export-done` on success or `export-error` on failure (a per-platform
- * failure carries the `platform`). The export dialog consumes these.
- */
-export type ExportProgressFrame = {
-  type: 'export-progress';
-  jobId: string;
-  platform: DesktopPlatform | null;
-  stage: ExportStage;
-  message: string;
-};
-export type ExportDoneFrame = { type: 'export-done'; jobId: string; result: DesktopExportResult };
-export type ExportErrorFrame = { type: 'export-error'; jobId: string; platform?: DesktopPlatform; message: string };
-export type ExportFrame = ExportProgressFrame | ExportDoneFrame | ExportErrorFrame;
-
-/** POST /api/export/desktop response. */
-export interface StartDesktopExportResult {
-  ok: boolean;
-  jobId?: string;
-  error?: string;
 }

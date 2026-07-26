@@ -1,62 +1,61 @@
 /**
- * Unread console badge (B5 review follow-up, T9-U8): the error badge used to
- * count only while the Console tab was hidden (`!consoleOpen`). It now also
- * counts errors that land while the Console is open but scrolled away from the
- * bottom — the reader can't see new lines there either. Returning to the
- * bottom (or revealing the tab) clears it.
+ * Unread console badge. An error counts as unread whenever the reader can't
+ * see the live tail: the Console tab isn't showing, OR it is showing but they
+ * have scrolled up to reread something. Returning to the bottom on a visible
+ * tab clears it.
  */
 import { beforeEach, describe, expect, it } from 'vitest';
-import { useEditor } from '../src/store';
+import { useApp, type PaneTab } from '../src/store';
 
-function reset(open: boolean, atBottom: boolean) {
-  useEditor.setState({ consoleEntries: [], consoleUnread: 0, consoleOpen: open, consoleAtBottom: atBottom });
+function reset(paneTab: PaneTab, atBottom: boolean): void {
+  useApp.setState({ consoleEntries: [], consoleUnread: 0, paneTab, consoleAtBottom: atBottom });
 }
 
-describe('console unread badge — scrolled-away counting', () => {
-  beforeEach(() => reset(false, true));
+describe('console unread badge', () => {
+  beforeEach(() => reset('game', true));
 
-  it('counts an error while the Console tab is hidden (existing behavior)', () => {
-    useEditor.getState().log('error', 'runtime', 'boom');
-    expect(useEditor.getState().consoleUnread).toBe(1);
+  it('counts an error while another tab is showing', () => {
+    useApp.getState().log('error', 'game', 'boom');
+    expect(useApp.getState().consoleUnread).toBe(1);
   });
 
   it('does not count non-errors', () => {
-    useEditor.getState().log('info', 'editor', 'fine');
-    useEditor.getState().log('warn', 'editor', 'hmm');
-    expect(useEditor.getState().consoleUnread).toBe(0);
+    useApp.getState().log('info', 'app', 'fine');
+    useApp.getState().log('warn', 'app', 'hmm');
+    expect(useApp.getState().consoleUnread).toBe(0);
   });
 
-  it('does not count while the Console is open and parked at the bottom', () => {
-    reset(true, true);
-    useEditor.getState().log('error', 'runtime', 'boom');
-    expect(useEditor.getState().consoleUnread).toBe(0);
+  it('does not count while the Console is showing and parked at the bottom', () => {
+    reset('console', true);
+    useApp.getState().log('error', 'game', 'boom');
+    expect(useApp.getState().consoleUnread).toBe(0);
   });
 
-  it('counts while the Console is open but scrolled away from the bottom', () => {
-    reset(true, false);
-    useEditor.getState().log('error', 'runtime', 'boom');
-    useEditor.getState().log('error', 'runtime', 'boom2');
-    expect(useEditor.getState().consoleUnread).toBe(2);
+  it('counts while the Console is showing but scrolled away from the bottom', () => {
+    reset('console', false);
+    useApp.getState().log('error', 'game', 'boom');
+    useApp.getState().log('error', 'game', 'boom2');
+    expect(useApp.getState().consoleUnread).toBe(2);
   });
 
-  it('scrolling back to the bottom while open clears the badge', () => {
-    reset(true, false);
-    useEditor.getState().log('error', 'runtime', 'boom');
-    useEditor.getState().setConsoleAtBottom(true);
-    expect(useEditor.getState().consoleUnread).toBe(0);
-    expect(useEditor.getState().consoleAtBottom).toBe(true);
+  it('scrolling back to the bottom while showing clears the badge', () => {
+    reset('console', false);
+    useApp.getState().log('error', 'game', 'boom');
+    useApp.getState().setConsoleAtBottom(true);
+    expect(useApp.getState().consoleUnread).toBe(0);
+    expect(useApp.getState().consoleAtBottom).toBe(true);
   });
 
-  it('scrolling to the bottom while the tab is hidden does NOT clear (nothing was seen)', () => {
-    reset(false, false);
-    useEditor.getState().log('error', 'runtime', 'boom');
-    useEditor.getState().setConsoleAtBottom(true);
-    expect(useEditor.getState().consoleUnread).toBe(1);
+  it('scrolling to the bottom on a hidden tab does NOT clear (nothing was seen)', () => {
+    reset('game', false);
+    useApp.getState().log('error', 'game', 'boom');
+    useApp.getState().setConsoleAtBottom(true);
+    expect(useApp.getState().consoleUnread).toBe(1);
   });
 
-  it('revealing the Console tab still clears the badge', () => {
-    useEditor.getState().log('error', 'runtime', 'boom');
-    useEditor.getState().setConsoleOpen(true);
-    expect(useEditor.getState().consoleUnread).toBe(0);
+  it('switching to the Console tab clears the badge', () => {
+    useApp.getState().log('error', 'game', 'boom');
+    useApp.getState().setPaneTab('console');
+    expect(useApp.getState().consoleUnread).toBe(0);
   });
 });

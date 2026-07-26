@@ -6,9 +6,16 @@
  *  - journal: external-change awareness (a CLI/MCP agent mutating the
  *    project makes the editor notice and refresh). Broadcast to every
  *    socket subscribed to that project root.
+ *  - evidence: new lines in `.hearth/evidence/journal.jsonl` — what the probe
+ *    saw when it played the game. Broadcast like journal (any socket on that
+ *    root wants them), and fed by the same watcher-per-root pattern.
  *  - pty-*: the embedded project shell spawned via PtyManager. A terminal is per-client,
  *    not broadcast: pty-data/pty-exit/pty-error only ever go back over the
  *    same socket whose pty-start spawned (or reattached) that connection's pty.
+ *  - chat-*: the conversation. Per-client like the pty (a turn belongs to the
+ *    window that asked for it), driven by a ChatDriver bound to the project
+ *    root — see chat.ts. Deliberately independent of the pty channel: a chat
+ *    failure must never take the terminal down, and vice versa.
  *
  * One socket subscribes to exactly one project (?project=<absolute path> on
  * the upgrade request). Sockets sharing a project root share a single
@@ -29,6 +36,8 @@ import path from 'node:path';
 import { type JournalEntry, type DesktopPlatform, type DesktopBuildResult } from '@hearth/core';
 import { NodeFileSystem } from '@hearth/core/node';
 import { startJournalWatcher } from './journalWatcher.js';
+import { startEvidenceWatcher, type EvidenceEvent } from './evidenceWatcher.js';
+import { createChatDriver, type ChatDriver, type ChatDriverKind, type ChatEvent } from './chat.js';
 import { type ProjectServerContext, resolveToolPaths } from './projectServer.js';
 import { PtyManager, ScrollbackBuffer, type PtyBackend, type PtyHandle } from './ptyManager.js';
 import { ensureHearthShim, hearthPtyEnv } from './hearthShim.js';
@@ -58,6 +67,14 @@ export type ExportFrame =
 
 export type WsFrame =
   | { type: 'journal'; entries: JournalEntry[] }
+  | { type: 'evidence'; events: EvidenceEvent[] }
+  // Conversation. `chat-send` is the only client->server frame that matters;
+  // the server lazily binds a driver on the first one. `chat-ready` reports
+  // which backend answered so the UI can name it honestly.
+  | { type: 'chat-send'; text: string } // client -> server
+  | { type: 'chat-cancel' } // client -> server
+  | { type: 'chat-ready'; driver: ChatDriverKind }
+  | { type: 'chat-event'; event: ChatEvent }
   | { type: 'pty-data'; data: string }
   | { type: 'pty-exit'; code: number }
   | { type: 'pty-input'; data: string } // client -> server
@@ -77,6 +94,13 @@ export type WsFrame =
 interface ProjectChannel {
   sockets: Set<WebSocket>;
   dispose: () => void;
+}
+
+/** One socket's conversation. `driver` is null only while the backend binds. */
+interface ChatSession {
+  id: string;
+  root: string;
+  driver: ChatDriver | null;
 }
 
 interface PtySession {
@@ -127,7 +151,11 @@ export function attachWebSocket(
   ctx: ProjectServerContext,
   ptyBackend?: PtyBackend,
   ptyEnvForTests?: () => Promise<NodeJS.ProcessEnv>,
-  opts?: { detachLingerMs?: number },
+  opts?: {
+    detachLingerMs?: number;
+    /** Test seam: stand in a scripted ChatDriver instead of resolving a real backend. */
+    createChatDriver?: (projectRoot: string) => Promise<ChatDriver>;
+  },
 ): void {
   const wss = new WebSocketServer({ noServer: true });
   const channels = new Map<string, ProjectChannel>(); // key: resolved project root
@@ -137,6 +165,11 @@ export function attachWebSocket(
   const ptySessions = new Map<WebSocket, PtySession>(); // attached sessions
   const detachedPtys = new Map<string, PtySession>(); // key: root NUL sessionId
   let nextPtyKey = 0;
+  const makeChatDriver = opts?.createChatDriver ?? createChatDriver;
+  // One conversation per socket. Bound lazily on the first chat-send so a
+  // window that never talks never resolves an agent backend.
+  const chatSessions = new Map<WebSocket, ChatSession>();
+  let nextChatId = 0;
 
   function detachedKey(root: string, sessionId: string): string {
     return `${root}\u0000${sessionId}`;
@@ -354,11 +387,67 @@ export function attachWebSocket(
     }
   }
 
+  // --- Conversation ---------------------------------------------------------
+
+  /**
+   * Bind a ChatDriver to this socket and pump its events back as chat-event
+   * frames. Binding is per-socket and idempotent; the drain loop lives for the
+   * socket's lifetime (the driver's iterable ends when `stop()` is called).
+   */
+  async function ensureChat(root: string, socket: WebSocket): Promise<ChatSession | null> {
+    const existing = chatSessions.get(socket);
+    if (existing) return existing.driver ? existing : null; // still binding
+    const session: ChatSession = { id: `chat-${++nextChatId}`, root, driver: null };
+    chatSessions.set(socket, session);
+
+    let driver: ChatDriver;
+    try {
+      driver = await makeChatDriver(root);
+      await driver.start(session.id, root);
+    } catch (err) {
+      chatSessions.delete(socket);
+      send(socket, { type: 'chat-event', event: { type: 'error', message: (err as Error).message } });
+      return null;
+    }
+    // The socket dropped while the backend was resolving: tear the driver down
+    // rather than leaving an orphaned agent process attached to nothing.
+    if (chatSessions.get(socket) !== session || socket.readyState !== WebSocket.OPEN) {
+      driver.stop();
+      chatSessions.delete(socket);
+      return null;
+    }
+    session.driver = driver;
+    send(socket, { type: 'chat-ready', driver: driver.kind });
+    void (async () => {
+      try {
+        for await (const event of driver.events) {
+          if (chatSessions.get(socket) !== session) break;
+          send(socket, { type: 'chat-event', event });
+        }
+      } catch (err) {
+        if (chatSessions.get(socket) === session) {
+          send(socket, { type: 'chat-event', event: { type: 'error', message: (err as Error).message } });
+        }
+      }
+    })();
+    return session;
+  }
+
+  function stopChat(socket: WebSocket): void {
+    const session = chatSessions.get(socket);
+    if (!session) return;
+    chatSessions.delete(socket);
+    session.driver?.stop();
+  }
+
   function getChannel(root: string): ProjectChannel {
     const existing = channels.get(root);
     if (existing) return existing;
     const sockets = new Set<WebSocket>();
-    const dispose = startJournalWatcher(root, nodeFs, (entries) => {
+    const disposeEvidence = startEvidenceWatcher(root, (events) => {
+      broadcast(sockets, { type: 'evidence', events });
+    });
+    const disposeJournal = startJournalWatcher(root, nodeFs, (entries) => {
       // External change: the on-disk project moved without this context's
       // cached session knowing. Drop the cache BEFORE broadcasting, so any
       // /api/command that arrives after the frame re-opens from disk.
@@ -367,13 +456,22 @@ export function attachWebSocket(
       }
       broadcast(sockets, { type: 'journal', entries });
     });
-    const channel: ProjectChannel = { sockets, dispose };
+    const channel: ProjectChannel = {
+      sockets,
+      dispose: () => {
+        disposeJournal();
+        disposeEvidence();
+      },
+    };
     channels.set(root, channel);
     return channel;
   }
 
   function releaseSocket(root: string, socket: WebSocket): void {
     detachPty(socket);
+    // Unlike a pty, a conversation is not resumable across a socket drop: the
+    // driver holds an in-process agent, so it dies with its window.
+    stopChat(socket);
     const channel = channels.get(root);
     if (!channel) return;
     channel.sockets.delete(socket);
@@ -449,6 +547,25 @@ export function attachWebSocket(
             // way a pty dies client-side is a fresh pty-start superseding it.
             stopPty(ws);
             break;
+          case 'chat-send':
+            {
+              const text = typeof frame.text === 'string' ? frame.text : '';
+              if (text.trim() === '') break;
+              void (async () => {
+                const session = chatSessions.get(ws) ?? (await ensureChat(root, ws));
+                // Binding may still be in flight from a previous send; the
+                // driver is queued-input based, so waiting for it is enough.
+                const bound = session ?? chatSessions.get(ws) ?? null;
+                bound?.driver?.send(text);
+              })();
+            }
+            break;
+          case 'chat-cancel':
+            // Cancelling ends the conversation's backend; the next send binds
+            // a fresh one. Coarse by design for v0 — a half-cancelled agent is
+            // worse than a clean restart.
+            stopChat(ws);
+            break;
           default:
             break; // journal/pty-data/pty-exit/pty-error are server->client only
         }
@@ -471,5 +588,7 @@ export function attachWebSocket(
     detachedPtys.clear();
     ptySessions.clear();
     ptyManager.killAll();
+    for (const session of chatSessions.values()) session.driver?.stop();
+    chatSessions.clear();
   });
 }

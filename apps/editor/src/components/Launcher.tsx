@@ -1,39 +1,40 @@
+/**
+ * Two doors.
+ *
+ * Start from a prompt: pick an empty folder, and the thing you typed is
+ * waiting in the composer when the app opens. Or open a folder you already
+ * have. That's the whole launcher — there is nothing to configure before the
+ * first sentence.
+ */
 import React, { useEffect, useState } from 'react';
-import { useEditor } from '../store';
-import { apiRecentProjects, apiExampleProjects } from '../api';
-import type { ExampleProject, RecentProject } from '../types';
+import { useApp } from '../store';
+import { apiRecentWorkspaces } from '../api';
+import type { RecentWorkspace } from '../types';
 import { Icon } from './ui';
 import { Button } from './ui/Button';
 import { Tooltip } from './ui/Tooltip';
-import { TemplatePicker } from './TemplatePicker';
-import { WorkspacePicker } from './WorkspacePicker';
-import type { WorkspaceTemplate } from '../workspace/layout';
 import { hearthNative } from '../native';
 
-/** Which of Launcher's two primary actions (if any) is currently in flight. */
-export type LauncherBusyAction = 'create' | 'open' | null;
+/** Which door is currently in flight, if any. */
+export type LauncherBusy = 'start' | 'open' | null;
 
 /**
- * Label for the Create-project / Open buttons while busy (LAUNCHER-2 /
- * L-102) — previously they only went `disabled` (opacity 0.45) with a static
- * label, so a slow filesystem gave no feedback that anything was happening.
- * Pure, so it's unit-tested without a DOM (this repo has no jsdom/RTL).
+ * Label for a door's button while it works. Pure, so the busy contract is
+ * unit-tested without a DOM: a slow filesystem must never look like nothing
+ * happened.
  */
-export function launcherButtonLabel(action: LauncherBusyAction, kind: 'create' | 'open', idleLabel: string): string {
-  if (action !== kind) return idleLabel;
-  return kind === 'create' ? 'Creating…' : 'Opening…';
+export function launcherButtonLabel(busy: LauncherBusy, kind: 'start' | 'open', idle: string): string {
+  if (busy !== kind) return idle;
+  return kind === 'start' ? 'Opening…' : 'Opening…';
 }
 
 /**
- * Run one busy action with a guaranteed reset: `setBusy(kind)` before, and
- * `setBusy(null)` in a `finally` — a thrown/rejected `fn` (network drop
- * inside openProject/createProject) must never leave the whole launcher
- * stuck disabled on a stale "Creating…"/"Opening…". Exported for the same
- * DOM-free unit-test treatment as launcherButtonLabel.
+ * Run one door with a guaranteed reset, so a rejected picker or a failed open
+ * can't strand the launcher disabled.
  */
-export async function withBusyAction<T>(
-  kind: Exclude<LauncherBusyAction, null>,
-  setBusy: (action: LauncherBusyAction) => void,
+export async function withBusy<T>(
+  kind: Exclude<LauncherBusy, null>,
+  setBusy: (busy: LauncherBusy) => void,
   fn: () => Promise<T>,
 ): Promise<T> {
   setBusy(kind);
@@ -45,71 +46,46 @@ export async function withBusyAction<T>(
 }
 
 export function Launcher() {
-  const meta = useEditor((s) => s.meta);
-  const openProject = useEditor((s) => s.openProject);
-  const createProject = useEditor((s) => s.createProject);
-
-  const [recents, setRecents] = useState<RecentProject[]>([]);
-  const [examples, setExamples] = useState<ExampleProject[]>([]);
-  const [name, setName] = useState('');
-  const [dir, setDir] = useState('');
-  const [description, setDescription] = useState('');
-  const [template, setTemplate] = useState(''); // '' = Blank
-  const [workspace, setWorkspace] = useState<WorkspaceTemplate>('agent');
+  const openWorkspace = useApp((s) => s.openWorkspace);
+  const [recents, setRecents] = useState<RecentWorkspace[]>([]);
+  const [prompt, setPrompt] = useState('');
   const [openPath, setOpenPath] = useState('');
-  const [createError, setCreateError] = useState('');
-  const [openError, setOpenError] = useState('');
-  const [busyAction, setBusyAction] = useState<LauncherBusyAction>(null);
-  const busy = busyAction !== null;
-
-  useEffect(() => {
-    void apiRecentProjects().then(setRecents);
-    void apiExampleProjects().then(setExamples);
-  }, []);
-
-  const defaultDir = meta ? `${meta.home}/HearthProjects` : '';
+  const [error, setError] = useState('');
+  const [busy, setBusy] = useState<LauncherBusy>(null);
   const native = hearthNative();
 
-  async function browseCreateDir() {
-    const picked = await native?.pickDirectory();
-    if (picked) setDir(picked);
-  }
+  useEffect(() => {
+    void apiRecentWorkspaces().then(setRecents);
+  }, []);
 
-  async function browseOpenProject() {
-    const picked = await native?.pickProjectFolder();
-    if (picked) {
-      setOpenPath(picked);
-      await handleOpen(picked, setOpenError);
-    }
-  }
-
-  async function handleCreate(e: React.FormEvent) {
-    e.preventDefault();
-    if (!name.trim()) {
-      setCreateError('Give the project a name.');
-      return;
-    }
-    setCreateError('');
-    const res = await withBusyAction('create', setBusyAction, () =>
-      createProject(
-        dir.trim() || defaultDir,
-        name.trim(),
-        description.trim() || undefined,
-        template || undefined,
-        workspace,
-      ),
-    );
-    if (!res.ok) setCreateError(res.error ?? 'Failed to create project.');
-  }
-
-  async function handleOpen(path: string, setError: (msg: string) => void) {
+  async function open(path: string, carriedPrompt?: string): Promise<void> {
     if (!path.trim()) {
-      setError('Enter the path of a folder containing hearth.json.');
+      setError('Choose a folder to work in.');
       return;
     }
     setError('');
-    const res = await withBusyAction('open', setBusyAction, () => openProject(path.trim()));
-    if (!res.ok) setError(res.error ?? 'Failed to open project.');
+    const res = await withBusy('open', setBusy, () => openWorkspace(path.trim(), carriedPrompt));
+    if (!res.ok) setError(res.error ?? 'Could not open that folder.');
+  }
+
+  async function startFromPrompt(): Promise<void> {
+    if (!native) {
+      setError('Type a folder path below to open one in the browser.');
+      return;
+    }
+    setError('');
+    const picked = await withBusy('start', setBusy, () => native.pickDirectory());
+    if (!picked) return;
+    await open(picked, prompt);
+  }
+
+  async function browseOpen(): Promise<void> {
+    if (!native) return;
+    const picked = await native.pickDirectory();
+    if (picked) {
+      setOpenPath(picked);
+      await open(picked);
+    }
   }
 
   return (
@@ -121,141 +97,62 @@ export function Launcher() {
           </span>
           Hearth
         </h1>
-        <p className="tagline">The 2D engine built for humans + coding agents</p>
+        <p className="tagline">Say what you want to play. It gets built here.</p>
       </header>
 
-      <div className="launcher-columns">
-        <section className="launcher-card">
-          <h2>New project</h2>
-          <form onSubmit={handleCreate} style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-            <div className="form-field">
-              <label className="field-label" htmlFor="np-name">
-                Name
-              </label>
-              <input
-                id="np-name"
-                className="input"
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                placeholder="My Platformer"
-                autoFocus
-              />
-            </div>
-            <div className="form-field">
-              <label className="field-label" htmlFor="np-dir">
-                Location (the project is created in a subfolder here)
-              </label>
-              <div className="row">
-                <input
-                  id="np-dir"
-                  className="input mono"
-                  value={dir}
-                  onChange={(e) => setDir(e.target.value)}
-                  placeholder={defaultDir || '/path/to/projects'}
-                />
-                {native && (
-                  <Button disabled={busy} onClick={() => void browseCreateDir()}>
-                    Browse…
-                  </Button>
-                )}
-              </div>
-            </div>
-            <div className="form-field">
-              <label className="field-label" htmlFor="np-desc">
-                Description (optional)
-              </label>
-              <input
-                id="np-desc"
-                className="input"
-                value={description}
-                onChange={(e) => setDescription(e.target.value)}
-                placeholder="A tiny game to build with an agent"
-              />
-            </div>
-            <div className="form-field">
-              <label className="field-label">Workspace</label>
-              <WorkspacePicker value={workspace} onChange={setWorkspace} disabled={busy} />
-            </div>
-            <div className="form-field">
-              {/* Group caption for the radiogroup; the picker carries its own aria-label. */}
-              <label className="field-label">Start from</label>
-              <TemplatePicker value={template} onChange={setTemplate} disabled={busy} />
-            </div>
-            {createError && <div className="launcher-error">{createError}</div>}
-            <div>
-              <Button variant="primary" type="submit" disabled={busy}>
-                {launcherButtonLabel(busyAction, 'create', 'Create project')}
-              </Button>
-            </div>
-          </form>
+      <div className="launcher-doors">
+        <section className="launcher-door">
+          <h2>Start from a prompt</h2>
+          <textarea
+            className="textarea launcher-prompt"
+            rows={3}
+            value={prompt}
+            placeholder="a top-down space shooter with asteroids"
+            aria-label="What do you want to make?"
+            onChange={(e) => setPrompt(e.target.value)}
+          />
+          <p className="launcher-hint">Pick an empty folder. Your words are waiting in the composer when it opens.</p>
+          <Button variant="primary" disabled={busy !== null} onClick={() => void startFromPrompt()}>
+            {launcherButtonLabel(busy, 'start', 'Choose a folder…')}
+          </Button>
         </section>
 
-        <section className="launcher-card">
-          <h2>Open a project</h2>
+        <section className="launcher-door">
+          <h2>Open a folder</h2>
           <div className="row">
             <input
               className="input mono"
               value={openPath}
+              placeholder="/absolute/path/to/folder"
+              aria-label="Folder path"
               onChange={(e) => setOpenPath(e.target.value)}
-              placeholder="/absolute/path/to/project"
               onKeyDown={(e) => {
-                if (e.key === 'Enter') void handleOpen(openPath, setOpenError);
+                if (e.key === 'Enter') void open(openPath);
               }}
             />
-            <Button disabled={busy} onClick={() => void handleOpen(openPath, setOpenError)}>
-              {launcherButtonLabel(busyAction, 'open', 'Open')}
+            <Button disabled={busy !== null} onClick={() => void open(openPath)}>
+              {launcherButtonLabel(busy, 'open', 'Open')}
             </Button>
             {native && (
-              <Button variant="primary" disabled={busy} onClick={() => void browseOpenProject()}>
-                Open Folder…
+              <Button disabled={busy !== null} onClick={() => void browseOpen()}>
+                Browse…
               </Button>
             )}
           </div>
-          {openError && <div className="launcher-error">{openError}</div>}
 
           <h3 className="launcher-section">Recent</h3>
           <div className="launcher-list">
-            {recents.length === 0 && (
-              <div className="launcher-empty">Projects you open will show up here.</div>
-            )}
-            {/* Styled tooltip (L-103 / LAUNCHER-3): the CSS-truncated path's
-                full form — often the only disambiguator between same-named
-                projects — shows on hover AND keyboard focus, instead of the
-                slow native title. */}
-            {recents.map((r) => (
-              <Tooltip key={r.path} content={r.exists ? r.path : `${r.path} (moved or deleted)`}>
+            {recents.length === 0 && <div className="launcher-empty">Folders you open show up here.</div>}
+            {recents.map((recent) => (
+              <Tooltip key={recent.path} content={recent.exists ? recent.path : `${recent.path} (moved or deleted)`}>
                 <button
                   className="launcher-item"
-                  disabled={busy || !r.exists}
-                  onClick={() => void handleOpen(r.path, setOpenError)}
+                  disabled={busy !== null || !recent.exists}
+                  onClick={() => void open(recent.path)}
                 >
                   <span className="item-text">
-                    <span className="item-name">{r.name}</span>
-                    <span className="item-path">{r.exists ? r.path : 'moved or deleted'}</span>
-                  </span>
-                  <span className="item-go" aria-hidden="true">
-                    <Icon name="chevron" />
-                  </span>
-                </button>
-              </Tooltip>
-            ))}
-          </div>
-
-          <h3 className="launcher-section">Examples</h3>
-          <div className="launcher-list">
-            {examples.length === 0 && (
-              <div className="launcher-empty">No example projects yet.</div>
-            )}
-            {examples.map((ex) => (
-              <Tooltip key={ex.path} content={ex.path}>
-                <button
-                  className="launcher-item"
-                  disabled={busy}
-                  onClick={() => void handleOpen(ex.path, setOpenError)}
-                >
-                  <span className="item-text">
-                    <span className="item-name">{ex.name}</span>
-                    <span className="item-desc">{ex.description}</span>
+                    <span className="item-name">{recent.name}</span>
+                    <span className="item-path">{recent.exists ? recent.path : 'moved or deleted'}</span>
                   </span>
                   <span className="item-go" aria-hidden="true">
                     <Icon name="chevron" />
@@ -266,6 +163,8 @@ export function Launcher() {
           </div>
         </section>
       </div>
+
+      {error && <div className="launcher-error">{error}</div>}
     </div>
   );
 }

@@ -1,60 +1,61 @@
 import React, { useEffect, useState } from 'react';
-import type { DockviewApi } from 'dockview-react';
-import { useEditor } from './store';
+import { useApp } from './store';
 import { hearthNative, type HearthNative } from './native';
 import { Launcher } from './components/Launcher';
-import { Toolbar } from './components/Toolbar';
-import { ShortcutSheet } from './components/ShortcutSheet';
-import { Workspace } from './workspace/Workspace';
-import { layoutStorageKey } from './workspace/layout';
-import { installKeybinds } from './keybinds';
-import { useUnsavedScriptsCloseGuard } from './unsavedScriptsCloseGuard';
+import { TopBar } from './components/shell/TopBar';
+import { ChatColumn } from './components/chat/ChatColumn';
+import { PaneStack } from './components/game/PaneStack';
+import { CodePeek } from './components/code/CodePeek';
+import { SettingsDialog } from './components/shell/SettingsDialog';
+import { useNativeMenu } from './menu/nativeMenu';
+import { NARROW_BREAKPOINT_PX } from './store';
 
 export default function App() {
-  const projectPath = useEditor((s) => s.projectPath);
-  const projectName = useEditor((s) => s.info?.name);
+  const projectPath = useApp((s) => s.projectPath);
+  const projectName = useApp((s) => s.projectName);
   const native = hearthNative();
 
   useEffect(() => {
-    void useEditor.getState().loadMeta();
+    void useApp.getState().loadMeta();
   }, []);
 
-  // Desktop app: compact project-manager window when no project is open,
-  // full editor window once one is (Godot-style). No-op in the browser.
-  // The browser tab title (and, harmlessly, the Electron document title —
-  // the native title bar is already driven by setWindowMode above) tracks
-  // the same project name so a browser tab reads "MyGame — Hearth" instead
-  // of a bare "Hearth Editor" once a project is open.
+  // Compact window while choosing a folder, full window once one is open. The
+  // browser tab title tracks the same name, harmlessly duplicated in Electron
+  // where the native title bar already won.
   useEffect(() => {
     if (!projectPath && native) {
       void native.setWindowMode('launcher').catch((error: unknown) => {
         console.error('Failed to enter launcher window mode.', error);
       });
     }
-    document.title = projectPath && projectName ? `${projectName} · Hearth` : 'Hearth Editor';
+    document.title = projectPath && projectName ? `${projectName} · Hearth` : 'Hearth';
   }, [native, projectPath, projectName]);
 
   if (!projectPath) return <Launcher />;
   if (native) {
-    return <NativeEditorGate key={projectPath} native={native} projectPath={projectPath} projectName={projectName} />;
+    return <NativeGate key={projectPath} native={native} projectPath={projectPath} projectName={projectName} />;
   }
-  return <EditorShell projectPath={projectPath} />;
+  return <Shell />;
 }
 
-function NativeEditorGate({
+/**
+ * Electron only: the main process resizes the window for the working layout,
+ * and the shell waits for that to settle so it measures its final size once
+ * rather than laying out twice.
+ */
+function NativeGate({
   native,
-  projectPath,
   projectName,
 }: {
   native: HearthNative;
   projectPath: string;
-  projectName: string | undefined;
+  projectName: string | null;
 }) {
   const [ready, setReady] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
-    void native.setWindowMode('editor', projectName).then(
+    void native.setWindowMode('editor', projectName ?? undefined).then(
       () => {
         if (!cancelled) setReady(true);
       },
@@ -69,27 +70,52 @@ function NativeEditorGate({
     };
   }, [native, projectName]);
 
-  return ready ? <EditorShell projectPath={projectPath} /> : null;
+  return ready ? <Shell /> : null;
 }
 
-function EditorShell({ projectPath }: { projectPath: string }) {
-  const projectId = useEditor((s) => s.info?.id);
-  const hasUnsavedScripts = useEditor((s) => s.hasUnsavedScripts);
-  const [dock, setDock] = useState<DockviewApi | null>(null);
-  const storageKey = layoutStorageKey(projectId ?? projectPath);
+/**
+ * Whether the window is too narrow for two columns. A single matchMedia
+ * listener rather than a resize handler: the only thing the layout cares about
+ * is which side of the breakpoint it's on.
+ */
+export function useNarrowLayout(): boolean {
+  const [narrow, setNarrow] = useState(
+    () => typeof window !== 'undefined' && window.matchMedia?.(`(max-width: ${NARROW_BREAKPOINT_PX - 1}px)`).matches === true,
+  );
+  useEffect(() => {
+    const query = window.matchMedia?.(`(max-width: ${NARROW_BREAKPOINT_PX - 1}px)`);
+    if (!query) return;
+    const onChange = (e: MediaQueryListEvent): void => setNarrow(e.matches);
+    setNarrow(query.matches);
+    query.addEventListener('change', onChange);
+    return () => query.removeEventListener('change', onChange);
+  }, []);
+  return narrow;
+}
 
-  // All keyboard shortcuts run through the central registry (keybinds.ts):
-  // undo/redo, duplicate/delete/nudge, focus, play, checkpoint, and the `?`
-  // cheat sheet. One window listener, installed once for the editor session.
-  useEffect(() => installKeybinds(() => useEditor.getState()), []);
-  useUnsavedScriptsCloseGuard(hasUnsavedScripts);
+/**
+ * The working layout: conversation on the left, the game and its supporting
+ * surfaces on the right. Two fixed regions, no draggable panel system — the
+ * arrangement is the product's opinion, not a preference.
+ */
+function Shell() {
+  const narrow = useNarrowLayout();
+  const narrowTab = useApp((s) => s.narrowTab);
+  useNativeMenu();
 
   return (
-    <div className="shell">
-      <Toolbar dock={dock} storageKey={storageKey} />
-      {/* Keyed per project so each project restores its own saved layout. */}
-      <Workspace key={storageKey} storageKey={storageKey} onReady={setDock} />
-      <ShortcutSheet />
+    <div className={`app-shell${narrow ? ' is-narrow' : ''}`}>
+      <TopBar narrow={narrow} />
+      <div className="app-body">
+        <div className="app-region" data-active={!narrow || narrowTab === 'chat'}>
+          <ChatColumn />
+        </div>
+        <div className="app-region" data-active={!narrow || narrowTab === 'pane'}>
+          <PaneStack />
+        </div>
+      </div>
+      <CodePeek />
+      <SettingsDialog />
     </div>
   );
 }

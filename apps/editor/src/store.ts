@@ -1,30 +1,37 @@
 /**
- * Editor state. One zustand store: open project, current scene (full data),
- * selection, console, diff. Every mutation goes through `exec()`, which POSTs
- * a core command and refreshes the model from the source of truth.
+ * App state. One zustand store covering the five things the app is:
+ *
+ *   1. an open folder (and the socket to its server),
+ *   2. a conversation,
+ *   3. a game pane,
+ *   4. an evidence feed,
+ *   5. the small amount of pane/drawer state the shell needs.
+ *
+ * Everything live — conversation events, evidence, terminal bytes, external
+ * file changes — arrives on ONE WebSocket per folder, multiplexed by frame
+ * type (see server/ws.ts). The terminal's own buffer deliberately lives
+ * outside this store (components/agent/useAgentSocket.ts) so it survives its
+ * tab being hidden.
  */
 import { create } from 'zustand';
-import { apiCommand, apiMeta, apiOpenProject, apiCreateProject, fileUrl } from './api';
-import { classifyLocal, classifyJournal } from './livePatch';
-import { getGameView } from './gameViewRef';
+import { apiAppSettings, apiGameStatus, apiMeta, apiOpenWorkspace, apiProbeStatus } from './api';
 import type {
-  AssetItem,
-  CommandResult,
-  ComponentDoc,
+  AppSettingsInfo,
+  ChatDriverKind,
+  ChatEvent,
+  ChatMessage,
+  ChatPart,
   ConsoleEntry,
   ConsoleLevel,
   ConsoleSource,
-  GameStateEntry,
+  EvidenceEvent,
+  GameStatus,
   JournalEntry,
-  ProjectDiff,
-  ProjectInfo,
-  SceneData,
+  Sense,
   ServerMeta,
-  Vec2,
+  WorkspaceInfo,
 } from './types';
 import type { WsFrame } from '../server/ws';
-import type { WorkspaceTemplate } from './workspace/layout';
-import type { RuntimeErrorEntry } from './runtimeBridge';
 import {
   ensureAgentPtySessionId,
   getAgentSessionSummary,
@@ -35,323 +42,96 @@ import {
   resetAgentSocket,
   type AgentStatus,
 } from './components/agent/useAgentSocket';
-import { ingestExportFrame, resetExportJob } from './components/exportJob';
-import { createNudgeQueue } from './nudgeQueue';
 
-export interface EditorState {
+/** Which surface the right-hand stack is showing. */
+export type PaneTab = 'game' | 'terminal' | 'console';
+
+/** Below this width the game pane can't hold its own column and becomes a tab. */
+export const NARROW_BREAKPOINT_PX = 900;
+
+export interface AppState {
   meta: ServerMeta | null;
+
+  // --- Folder ---------------------------------------------------------------
   projectPath: string | null;
-  info: ProjectInfo | null;
-  sceneId: string | null;
-  scene: SceneData | null;
-  assets: AssetItem[];
-  componentDocs: ComponentDoc[];
-  /**
-   * The open project's declared `gameState`, keyed by state key, mirrored off
-   * `info` so it refreshes with every other project fact. The Inspector needs
-   * the declared keys to offer Text.binding a dropdown instead of a free-text
-   * field, since a typed key is the whole point of declaring it. `{}` when the
-   * project declares none, or while no project is open.
-   */
-  gameState: Record<string, GameStateEntry>;
-  selection: string | null;
+  projectName: string | null;
+  isHearthProject: boolean;
+  wsStatus: 'connected' | 'connecting' | 'disconnected';
+
+  // --- Conversation ---------------------------------------------------------
+  messages: ChatMessage[];
+  /** True from send until the turn's `done`/`error` — gates the composer. */
+  chatBusy: boolean;
+  /** Which backend answered, once the server has bound one. */
+  chatDriver: ChatDriverKind | null;
+  chatError: string | null;
+  settings: AppSettingsInfo | null;
+
+  // --- Game pane ------------------------------------------------------------
+  game: GameStatus;
+  senses: Sense[];
+  /** Bumped whenever the game's files change, so the iframe reloads. */
+  gameNonce: number;
+
+  // --- Evidence -------------------------------------------------------------
+  evidence: EvidenceEvent[];
+  evidenceOpen: boolean;
+
+  // --- Console --------------------------------------------------------------
   consoleEntries: ConsoleEntry[];
   consoleUnread: number;
-  /** Whether the Console panel is currently visible in the workspace (its tab selected). */
-  consoleOpen: boolean;
-  /**
-   * Whether the Console view is parked at (or near) the bottom of its scroll —
-   * mirrored from ConsolePanel's own scroll handler. While the user is
-   * scrolled up rereading earlier output they can't see new lines, so errors
-   * arriving then count toward `consoleUnread` even with the tab visible
-   * (B5 review follow-up on the unread badge).
-   */
   consoleAtBottom: boolean;
-  diff: ProjectDiff | null;
+
+  // --- Shell ----------------------------------------------------------------
+  paneTab: PaneTab;
+  /** Narrow layout only: the conversation and the pane stack become tabs. */
+  narrowTab: 'chat' | 'pane';
+  codePeek: { open: boolean; path: string | null };
+  /** Prompt handed over from the launcher, consumed by the composer on mount. */
+  pendingPrompt: string | null;
+
   /**
-   * Bumped after every successful mutating exec(). A lightweight "something
-   * changed" signal for panels that re-query read-only commands on change
-   * (e.g. the Diff panel's history list) without per-command wiring.
-   */
-  commandSeq: number;
-  /**
-   * Recent journal entries pushed over the WS channel (own commands too, so
-   * a future timeline UI can show everything) — newest last, capped so it
-   * never grows unbounded across a long session.
+   * External changes (a CLI/agent mutating a Hearth project) as they land.
+   * Nothing renders these today; they exist because the socket already
+   * carries them and they are the cheapest "something on disk moved" signal.
    */
   journalFeed: JournalEntry[];
-  /** Status of the /api/ws connection for the open project (or 'disconnected' when none is open). */
-  wsStatus: 'connected' | 'connecting' | 'disconnected';
-  playing: boolean;
-  /**
-   * A structural change (new/removed entity or component, settings, a reparent,
-   * a new script) landed while a preview is running — the live world can't be
-   * patched in place, so the Toolbar shows a "Scene changed — Restart" badge.
-   * Set by the live dispatcher (local exec + external journal), cleared on
-   * Play/Stop/restart. Only meaningful while `playing`.
-   */
-  pendingRestart: boolean;
-  /**
-   * Structured runtime errors (the full RuntimeError incl. script/line) from
-   * the current run, newest last and capped. Fed by GamePreview's
-   * onErrorEntry; a fresh Play/restart/scene-switch clears it. These are turned
-   * into clickable script-panel diagnostics elsewhere — this only records them.
-   */
-  runtimeErrors: RuntimeErrorEntry[];
-  /**
-   * Play-mode debug pause: freezes the running game in place without
-   * stopping the run — distinct from `playing`/Stop, which tears the preview
-   * down. Only meaningful while `playing`; Play/Stop both reset it to false.
-   */
-  paused: boolean;
-  /**
-   * True when the current `paused` state was entered automatically because the
-   * Game tab was hidden (switching to Code/Scene), NOT by an explicit toolbar
-   * Pause. Distinguishes the two so switching back to Game auto-resumes a
-   * tab-paused run while preserving an explicit user pause. Only meaningful
-   * while `playing && paused`; any explicit setPaused, Play/Stop, or restart
-   * clears it. See setGameTabVisible (L-067).
-   */
-  pausedByTab: boolean;
-  /** Bumped every time playback starts, so the preview restarts from the current scene state. */
-  runNonce: number;
-  /**
-   * Game preview debug overlay (collider outlines, velocity vectors, light
-   * radii — wired to PixiSceneView.setDebugDraw). Off by default; resets to
-   * false whenever the preview remounts (new Play, scene switch, close), no
-   * persistence across sessions this wave.
-   */
-  debugDraw: boolean;
 
-  /** Embedded agent terminal (Agent panel): high-level status.
-   * The pty session itself (scrollback and all) lives outside zustand (see
-   * components/agent/useAgentSocket.ts) so it survives that panel's own
-   * component tree unmounting; `agentStatus` is mirrored from that store by
-   * a single subscription registered there — never set by hand here — so
-   * other panels (and the Agent panel's activity timeline) can select it without a
-   * second source of truth. */
+  /** Terminal session status, mirrored from useAgentSocket's external store. */
   agentStatus: AgentStatus;
-  /** Whether `snapshotProject` has succeeded at least once this editor session
-   * (any panel — DiffPanel's Snapshot button and the Agent panel's Timeline
-   * both funnel through `exec()`, which is what flips this). Resets when the
-   * project changes; the flag is purely "have I seen a baseline get taken
-   * this session", not a read of what's on disk. */
-  snapshotTaken: boolean;
-  /** Bumped to ask the workspace shell to focus the Diff panel
-   * ("Review changes"). A counter rather than a boolean so repeated requests
-   * while already on the Diff panel still register as a change; mirrors the
-   * `playing` -> "surface the Game panel" pattern in Workspace.tsx. */
-  diffFocusRequest: number;
-  /**
-   * World-space center of the current SceneView viewport, kept in sync by
-   * SceneView on every pan/zoom/fit. Consumers outside SceneView (e.g.
-   * AssetsPanel's "Add to scene") read this instead of reaching into
-   * SceneView internals; null before any SceneView has mounted/measured a
-   * host size, in which case callers fall back to (0,0).
-   */
-  sceneViewCenter: Vec2 | null;
-  /** Whether the keyboard-shortcut cheat sheet overlay is open. */
-  shortcutSheetOpen: boolean;
-  /**
-   * Bumped to ask SceneView to center+fit the camera on the current
-   * selection (the `f` shortcut). A counter rather than a boolean so a
-   * repeat request re-focuses even when the selection hasn't changed —
-   * mirrors the `diffFocusRequest` seam above.
-   */
-  focusSelectionRequest: number;
-  /**
-   * Bumped to ask the Hierarchy to open its delete-confirm dialog for the
-   * current selection. The Delete/Backspace keybind routes through here so the
-   * keyboard path and the row trash button share ONE deletion contract — both
-   * confirm (HIER-3). A counter (not a boolean) so a repeat request re-opens
-   * even when the selection hasn't changed; mirrors `focusSelectionRequest`.
-   */
-  deleteSelectionRequest: number;
-  /**
-   * Imperative "open this script in the Code panel" request, mirroring the
-   * `diffFocusRequest` seam. Any panel (Inspector's Script component,
-   * Assets, a diagnostic) calls `openScriptAt(path, line?)`; the workspace
-   * shell surfaces the Code panel and CodePanel opens/activates that buffer,
-   * scrolling to `line` (1-based) with a transient highlight when set. The
-   * `nonce` makes a repeat request for the already-open script still fire.
-   */
-  codeOpenRequest: { path: string; line?: number; nonce: number } | null;
-  /**
-   * Imperative "open the Code panel's search bar" request, mirroring
-   * `diffFocusRequest`'s bare counter — search mode has no payload, just an
-   * open-or-refocus signal, so a plain nonce is enough (the workspace shell
-   * surfaces the Code panel; CodePanel flips into search mode and re-focuses
-   * the query input on every bump, even if it was already open).
-   */
-  codeSearchRequest: number;
-  /**
-   * Imperative "open the Animator editor for this state-machine asset" request
-   * mirroring `codeOpenRequest`. The Assets card's "Edit" action and
-   * the Inspector's AnimationStateMachine row call `openAnimatorFor(assetId)`;
-   * the workspace shell surfaces the Animator panel and AnimatorEditor loads
-   * that asset's document. The `nonce` re-fires a repeat open of the same asset.
-   */
-  animatorTarget: { assetId: string; nonce: number } | null;
-  /**
-   * Whether the Code panel currently holds at least one dirty (unsaved) script
-   * buffer. Published by CodePanel while it's mounted (the buffer list is its
-   * local state); reset on project change/close and when the panel unmounts.
-   * The Code panel is the one surface where auto-save is off, so this is the
-   * only unsaved work a project close could silently discard — `closeProject`
-   * routes through `requestCloseProject()` which consults this flag (L-058).
-   */
-  hasUnsavedScripts: boolean;
-  /**
-   * Whether the Animator editor currently holds a dirty (unsaved) draft for
-   * the state-machine asset it has open. Published by AnimatorEditor while
-   * mounted (its `dirty` derivation is local state); reset on project
-   * change/close and when the panel unmounts. Like `hasUnsavedScripts`, the
-   * Animator is a deliberate non-autosave surface (ANIMATOR-4) with its own
-   * scoped mod+s save — this flag lets the *global* mod+s keybind give an
-   * honest "you have unsaved edits" message instead of claiming autosave
-   * when DOM focus is outside the Animator at keypress time (PANELS-1),
-   * rather than auto-saving from global scope (which stays out of bounds).
-   */
-  hasUnsavedAnimatorDraft: boolean;
-  /**
-   * Bumped by `requestCloseProject()` when a close needs the user to confirm
-   * discarding unsaved scripts. CodePanel watches it (and surfaces a confirm
-   * dialog); Workspace reveals the Code panel on the same signal so the dialog
-   * isn't rendered inside a display:none dock panel. A counter, so a second
-   * close attempt after a cancel still re-triggers.
-   */
-  closeProjectRequest: number;
-  /** Active workspace template driving the panel layout preset (see workspace/layout); null before one is applied. */
-  workspaceTemplate: WorkspaceTemplate | null;
-  /** Workspace template requested by `createProject`, awaiting `consumePendingWorkspaceTemplate` once the new project's shell mounts. */
-  pendingWorkspaceTemplate: WorkspaceTemplate | null;
-  /** Bumped by `setWorkspaceTemplate` on every apply/reset so auto-reveal state (see `nextAutoReveal`) re-arms for the new layout. */
-  layoutAppliedNonce: number;
 
-  /** Sends a pty-* frame over the shared WS socket; a no-op (returns false) when disconnected. */
-  sendAgentFrame(frame: WsFrame): boolean;
-  requestDiffFocus(): void;
-  setSceneViewCenter(center: Vec2 | null): void;
-  setShortcutSheet(open: boolean): void;
-  toggleShortcutSheet(): void;
-  requestFocusSelection(): void;
-  /**
-   * Ask the Hierarchy to confirm deleting the current selection (bumps
-   * `deleteSelectionRequest`). Used by the Delete/Backspace keybind so it opens
-   * the same ConfirmDialog as the row trash button instead of deleting
-   * silently (HIER-3).
-   */
-  requestDeleteSelection(): void;
-  /** Open (and surface) a script in the Code panel, optionally scrolling to
-   * a 1-based line. See `codeOpenRequest`. */
-  openScriptAt(path: string, line?: number): void;
-  /** Open (and surface) the Code panel's search bar. See `codeSearchRequest`. */
-  requestCodeSearch(): void;
-  /** Open (and surface) the Animator editor targeting a state-machine asset. See `animatorTarget`. */
-  openAnimatorFor(assetId: string): void;
-  /** Shortcut actions, each backed by an exec() where it mutates. */
-  togglePlay(): void;
-  checkpoint(): Promise<void>;
-  /**
-   * Undo / Redo the last command. Both the toolbar arrows, the Edit menu, and
-   * the ⌘Z / ⇧⌘Z keybinds route through here so every trigger logs the same
-   * friendly "reverted …"/"reapplied …" line (TOOLBAR-6). A no-op at the ends
-   * of history — exec() returns success:false and nothing is logged.
-   */
-  undo(): Promise<void>;
-  redo(): Promise<void>;
-  duplicateSelection(): Promise<void>;
-  /**
-   * Move the selection by (dx, dy) scene pixels. Arrow-key presses accumulate
-   * and are debounced (~300ms) into ONE moveEntity exec per burst, so a run
-   * of nudges collapses to a single undo step. The scene is updated
-   * optimistically for immediate feedback; the debounced exec persists it.
-   */
-  nudgeSelection(dx: number, dy: number): void;
-
+  // --- Actions --------------------------------------------------------------
   loadMeta(): Promise<void>;
-  openProject(path: string): Promise<{ ok: boolean; error?: string }>;
-  createProject(
-    dir: string,
-    name: string,
-    description?: string,
-    template?: string,
-    workspace?: WorkspaceTemplate,
-  ): Promise<{ ok: boolean; error?: string }>;
-  /** Apply (or clear, with `null`) the active workspace template and re-arm auto-reveal. See `workspaceTemplate`. */
-  setWorkspaceTemplate(template: WorkspaceTemplate | null): void;
-  /** Read and clear the workspace template requested by the last `createProject` call. See `pendingWorkspaceTemplate`. */
-  consumePendingWorkspaceTemplate(): WorkspaceTemplate | null;
-  /** Publish whether the Code panel holds unsaved script buffers (see `hasUnsavedScripts`). */
-  setUnsavedScripts(has: boolean): void;
-  /** Publish whether the Animator holds a dirty draft (see `hasUnsavedAnimatorDraft`). */
-  setUnsavedAnimatorDraft(has: boolean): void;
-  /**
-   * Close the project, but guard unsaved script buffers first: with dirty
-   * scripts open, bump `closeProjectRequest` so the Code panel can confirm the
-   * discard; otherwise close immediately. The "Close project" menu item routes
-   * here instead of calling `closeProject()` directly (L-058).
-   */
-  requestCloseProject(): void;
-  closeProject(): void;
-  selectScene(sceneId: string): Promise<void>;
-  select(entityId: string | null): void;
-  setConsoleOpen(open: boolean): void;
-  /**
-   * Mirror whether the Console view is scrolled to the bottom (see
-   * `consoleAtBottom`). Returning to the bottom while the tab is visible
-   * clears the unread badge — the new lines are now on screen.
-   */
-  setConsoleAtBottom(atBottom: boolean): void;
-  setPlaying(playing: boolean): void;
-  /** Restart the running preview from the current scene, clearing the restart badge (the badge's action). */
-  restartPlay(): void;
-  /** Record a structured runtime error from the running preview (feeds the Console's diagnostics). */
-  recordRuntimeError(error: RuntimeErrorEntry): void;
-  /**
-   * Mirror one EXTERNAL journal entry (source !== 'editor') into the running
-   * preview: hot-reload scripts, live-patch properties (scene-guarded, values
-   * resolved via one read-only query per entity), or raise the restart badge.
-   * The WS journal handler's per-entry step, run after refresh(); a no-op
-   * unless `playing`. Exposed on the store (rather than staying a private
-   * closure) so tests can drive the live-dispatch path without a socket.
-   */
-  applyExternalJournalEntry(entry: JournalEntry): Promise<void>;
-  setPaused(paused: boolean): void;
-  /**
-   * Sync the Game tab's visibility into the play session (L-067). Hiding the
-   * tab pauses a running preview — freezing the simulation and suspending
-   * audio (the render ticker and gamepad polling continue by design; see
-   * PixiSceneView.pause) — instead of stopping it, so switching to Code to
-   * hot-reload no longer tears the run down; showing it again auto-resumes
-   * UNLESS the user had explicitly paused first. A no-op when not playing.
-   */
-  setGameTabVisible(visible: boolean): void;
-  setDebugDraw(on: boolean): void;
-  /** `link`: when present, ConsolePanel renders a clickable `path:line` suffix that jumps to it via `openScriptAt`. */
+  openWorkspace(path: string, prompt?: string): Promise<{ ok: boolean; error?: string }>;
+  closeWorkspace(): void;
+  sendChat(text: string): void;
+  cancelChat(): void;
+  consumePendingPrompt(): string | null;
+  refreshGame(): Promise<void>;
+  refreshSettings(): Promise<void>;
+  setPaneTab(tab: PaneTab): void;
+  setNarrowTab(tab: 'chat' | 'pane'): void;
+  setEvidenceOpen(open: boolean): void;
+  openCodePeek(path?: string): void;
+  closeCodePeek(): void;
   log(level: ConsoleLevel, source: ConsoleSource, message: string, link?: ConsoleEntry['link']): void;
   clearConsole(): void;
-  refresh(): Promise<void>;
-  refreshDiff(): Promise<void>;
-  /**
-   * Execute a core command against the open project. Errors and warnings land
-   * in the Console; successful mutations trigger a model refresh.
-   */
-  exec<T = unknown>(name: string, params?: unknown, opts?: { quiet?: boolean }): Promise<CommandResult<T>>;
-  /**
-   * Run a read-only command silently: no Console noise on success, still
-   * logs (and swallows to `null`) on failure — see the module-level `query`
-   * helper this wraps. Exposed on the store (rather than staying a private
-   * closure) so panels like the Code panel can back their own read-only
-   * queries (e.g. `checkScript` for lint) without a bespoke fetch path.
-   */
-  query<T = unknown>(name: string, params?: unknown): Promise<T | null>;
+  setConsoleAtBottom(atBottom: boolean): void;
+  /** Sends a frame over the shared socket; false when it isn't connected. */
+  sendFrame(frame: WsFrame): boolean;
 }
 
-/** The full editor store (state + actions) as returned by `useEditor.getState()`. */
-export type EditorStore = EditorState;
+const MAX_CONSOLE = 500;
+const MAX_JOURNAL_FEED = 200;
+const MAX_EVIDENCE = 400;
+const LAST_WORKSPACE_KEY = 'hearth:lastWorkspace';
+const WS_BACKOFF_INITIAL_MS = 1000;
+const WS_BACKOFF_MAX_MS = 5000;
+/** How often the game pane re-checks whether a game exists / changed. */
+export const GAME_POLL_MS = 1500;
 
 let entryId = 0;
+let messageId = 0;
 
 function timestamp(): string {
   return new Date().toTimeString().slice(0, 8);
@@ -361,361 +141,86 @@ function makeEntry(level: ConsoleLevel, source: ConsoleSource, message: string, 
   return { id: ++entryId, time: timestamp(), level, source, message, link };
 }
 
-/**
- * Plain-language, entity-first Console message for a runtime error:
- * e.g. "Enemy hit an error in scripts/enemy.lua:12 — attempt to index a nil
- * value". Falls back gracefully as script/line go missing (no script at all
- * for a global/engine-level error; no line when it isn't extractable).
- */
-function formatRuntimeError(error: RuntimeErrorEntry): string {
-  const who = error.entity ?? 'Script';
-  if (!error.script) return `${who} hit an error: ${error.message}`;
-  const where = error.line != null ? `${error.script}:${error.line}` : error.script;
-  return `${who} hit an error in ${where}: ${error.message}`;
+const EMPTY_GAME: GameStatus = { present: false, entry: null, mtime: 0 };
+
+// ---------------------------------------------------------------------------
+// Conversation reducer — pure, so the streaming assembly is unit-testable
+// without a socket or a React tree.
+// ---------------------------------------------------------------------------
+
+export function makeUserMessage(text: string): ChatMessage {
+  return { id: `m${++messageId}`, role: 'user', parts: [{ kind: 'text', text }], streaming: false };
+}
+
+export function makeAgentMessage(): ChatMessage {
+  return { id: `m${++messageId}`, role: 'agent', parts: [], streaming: true };
 }
 
 /**
- * Recover a 1-based source line from a runtime error message that carries it
- * inline as "<script>:<line>". Load-time compile failures surface the line in
- * the message ("Failed to load script foo.lua: foo.lua:14: 'end' expected …")
- * but leave `RuntimeError.line` null — only the reload path populates it — so
- * the Console link opened the file at the top instead of the failing line
- * (CONSOLE-CHANGES-3 / L-061). The script path can appear more than once in
- * the message (a "Failed to load script <path>:" prefix), so match only the
- * occurrence immediately followed by a line number. Returns null when no such
- * `<script>:<digits>` pattern is present.
+ * Fold one ChatEvent into the message list. Text deltas extend the trailing
+ * text part (or open one), so a run of deltas is one paragraph rather than a
+ * thousand fragments; a tool call closes the current text part, which is what
+ * makes chips land inline where they actually happened.
+ *
+ * Returns the same array identity when nothing applies, so React skips work.
  */
-function lineFromMessage(script: string, message: string): number | null {
-  const escaped = script.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  const match = new RegExp(`${escaped}:(\\d+)`).exec(message);
-  return match ? Number.parseInt(match[1], 10) : null;
-}
+export function applyChatEvent(messages: ChatMessage[], event: ChatEvent): ChatMessage[] {
+  const lastIndex = messages.length - 1;
+  const last = lastIndex >= 0 ? messages[lastIndex] : null;
+  if (!last || last.role !== 'agent' || !last.streaming) return messages;
 
-const MAX_CONSOLE = 500;
-const MAX_JOURNAL_FEED = 200;
-const MAX_RUNTIME_ERRORS = 200;
-const LAST_PROJECT_KEY = 'hearth:lastProject';
-const WS_BACKOFF_INITIAL_MS = 1000;
-const WS_BACKOFF_MAX_MS = 5000;
+  const replace = (parts: ChatPart[], streaming = true): ChatMessage[] => {
+    const next = messages.slice();
+    next[lastIndex] = { ...last, parts, streaming };
+    return next;
+  };
 
-/**
- * Plain-language labels for the highest-traffic core commands, used in place
- * of the raw camelCase command name in Console lines (exec()'s error/warning/
- * summary log calls, and refreshDiff()'s diffProject error). Every mutating
- * action in the app funnels through exec(), so this is the actual "voice" of
- * the Console for command results — falling back to the raw name keeps
- * anything not yet in the map working, just less polished.
- */
-const COMMAND_LABELS: Record<string, string> = {
-  createEntity: 'Create entity',
-  deleteEntity: 'Delete entity',
-  moveEntity: 'Move entity',
-  setComponentProperty: 'Edit component',
-  editScript: 'Save script',
-  snapshotProject: 'Save checkpoint',
-  revertProject: 'Restore checkpoint',
-  syncPrefabInstances: 'Sync prefab instances',
-  diffProject: 'Review changes',
-};
-
-/** Plain-language label for a command name, falling back to the raw name. */
-export function commandLabel(name: string): string {
-  return COMMAND_LABELS[name] ?? name;
-}
-
-export const useEditor = create<EditorState>((set, get) => {
-  /** Run a read-only command without console noise (errors still logged). */
-  async function query<T>(name: string, params: unknown = {}): Promise<T | null> {
-    const project = get().projectPath;
-    if (!project) return null;
-    const result = await apiCommand<T>(project, name, params);
-    if (!result.success) {
-      for (const err of result.errors) {
-        get().log('error', 'command', `${commandLabel(name)}: ${err.message}`);
-      }
-      return null;
+  switch (event.type) {
+    case 'text-delta': {
+      const parts = last.parts.slice();
+      const tail = parts[parts.length - 1];
+      if (tail && tail.kind === 'text') parts[parts.length - 1] = { kind: 'text', text: tail.text + event.text };
+      else parts.push({ kind: 'text', text: event.text });
+      return replace(parts);
     }
-    return result.data;
+    case 'tool-start':
+      return replace([
+        ...last.parts,
+        { kind: 'tool', id: event.id, name: event.name, detail: event.detail, state: 'running' },
+      ]);
+    case 'tool-end':
+      return replace(
+        last.parts.map((part) =>
+          part.kind === 'tool' && part.id === event.id
+            ? { ...part, state: event.ok ? 'ok' : 'error', detail: event.detail ?? part.detail }
+            : part,
+        ),
+      );
+    case 'done':
+      // Drop a turn that produced nothing at all rather than leaving an empty
+      // bubble behind.
+      if (last.parts.length === 0) return messages.slice(0, lastIndex);
+      return replace(last.parts, false);
+    case 'error':
+      return replace([...last.parts, { kind: 'text', text: event.message }], false);
+    default:
+      return messages;
   }
+}
 
-  // --- WebSocket channel (journal push + external-change awareness) -------
-  //
-  // Connects lazily once a project is open, reconnects on drop with capped
-  // exponential backoff, and tears itself down on project close. `wsEpoch`
-  // invalidates callbacks/timers from a superseded connection attempt (a
-  // project switch, or an explicit disconnect) so a stale reconnect never
-  // resurrects a socket for a project that's no longer open.
+// ---------------------------------------------------------------------------
+
+export const useApp = create<AppState>((set, get) => {
+  // --- WebSocket ------------------------------------------------------------
+  // One socket per open folder; reconnects with capped backoff and tears down
+  // on close. `wsEpoch` invalidates handlers from a superseded attempt so a
+  // stale reconnect can't resurrect a socket for a folder that's been closed.
   let ws: WebSocket | null = null;
   let wsReconnectTimer: ReturnType<typeof setTimeout> | null = null;
   let wsBackoffMs = WS_BACKOFF_INITIAL_MS;
   let wsEpoch = 0;
-  // The project the current agent session belongs to: a reconnect to the SAME
-  // project keeps the session (the server-side pty survives socket drops,
-  // detached), while a different project must never inherit it.
   let wsAgentProject: string | null = null;
-
-  // Dedupe concurrent loadMeta() calls: React.StrictMode double-invokes
-  // App.tsx's mount effect in dev, and loadMeta's own `!projectPath` guard
-  // can't catch the second call because the first is still awaiting the
-  // async open — without this, both calls race past the guard and open (and
-  // log "Opened project…" for) the same last-project twice. Dev-only in
-  // practice (StrictMode doesn't double-invoke effects in production), but
-  // memoizing the in-flight call is correct regardless of the cause.
   let loadMetaPromise: Promise<void> | null = null;
-
-  // --- Arrow-key nudge: accumulate presses, debounce to one moveEntity ------
-  // The in-flight burst lives outside zustand (its base position and running
-  // delta are bookkeeping, not rendered state) in nudgeQueue.ts, which owns
-  // the accumulate/debounce/flush contract. This closure just supplies the
-  // `moveEntity` exec that a flush performs. Callers that tear down the
-  // current scene/project (closeProject, selectScene, afterOpen) must flush
-  // or clear the queue themselves — see those call sites below — so a
-  // pending burst never fires ~300ms later against a scene/project that's
-  // no longer open.
-  const nudgeQueue = createNudgeQueue((p) => {
-    const position = { x: p.base.x + p.accum.x, y: p.base.y + p.accum.y };
-    void get().exec('moveEntity', { scene: p.scene, entity: p.entity, position }, { quiet: true });
-  });
-
-  /** Return a copy of `scene` with `entityId`'s Transform.position set to `pos`. */
-  function withEntityPosition(scene: SceneData, entityId: string, pos: Vec2): SceneData {
-    return {
-      ...scene,
-      entities: scene.entities.map((e) => {
-        if (e.id !== entityId) return e;
-        const transform = (e.components.Transform ?? {}) as Record<string, unknown>;
-        return {
-          ...e,
-          components: { ...e.components, Transform: { ...transform, position: { x: pos.x, y: pos.y } } },
-        };
-      }),
-    };
-  }
-
-  // --- Live update dispatch --------------------------------------------------
-  // Apply a classified LiveAction against the running preview. Patches go
-  // straight to the live PixiSceneView (independent of the authored-scene
-  // refresh); reloads hot-swap a script's source; structural changes raise
-  // the restart badge. All best-effort: a stale entity ref just returns false.
-
-  /** Split a "Camera.ambientLight" property into [componentType, "ambientLight"]. */
-  function splitProperty(property: string): [string, string] {
-    const dot = property.indexOf('.');
-    return dot === -1 ? [property, ''] : [property.slice(0, dot), property.slice(dot + 1)];
-  }
-
-  /**
-   * The project's declared `gameState`, normalized off `inspectProject`.
-   * Optional on the wire so an older server (or a project predating the field)
-   * just reports no declared keys, which the Text-binding control already has
-   * to explain for a project that declares none.
-   */
-  function gameStateOf(info: ProjectInfo): Record<string, GameStateEntry> {
-    const declared = info.gameState;
-    if (typeof declared !== 'object' || declared === null || Array.isArray(declared)) return {};
-    return declared;
-  }
-
-  /** Fetch a script's current on-disk source (used for external/format reloads). */
-  async function fetchScriptSource(path: string): Promise<string | null> {
-    const project = get().projectPath;
-    if (!project) return null;
-    try {
-      const res = await fetch(fileUrl(project, path));
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      return await res.text();
-    } catch (err) {
-      get().log('error', 'runtime', `Hot-reload failed: ${path}: ${(err as Error).message}`, {
-        path,
-        line: null,
-      });
-      return null;
-    }
-  }
-
-  /** Hot-reload one script, logging the console notice (structured to support the Console's clickable-link diagnostics). */
-  async function applyReload(path: string, source: string | undefined): Promise<void> {
-    const view = getGameView();
-    if (!view?.reloadScript) return;
-    const src = source ?? (await fetchScriptSource(path));
-    if (src === null) return;
-    const result = await view.reloadScript(path, src);
-    if (result.ok) {
-      const n = result.entities;
-      get().log('info', 'runtime', `Hot-reloaded ${path} (${n} ${n === 1 ? 'entity' : 'entities'})`);
-    } else {
-      const at = result.line != null ? `${path}:${result.line}` : path;
-      get().log('error', 'runtime', `Hot-reload failed: ${at}: ${result.message}`, {
-        path,
-        line: result.line,
-      });
-    }
-  }
-
-  /** Live-patch one component property on the running preview. */
-  function applyPatch(entity: string, property: string, value: unknown): void {
-    const [type, rest] = splitProperty(property);
-    if (!rest) return;
-    getGameView()?.patchComponent?.(entity, type, rest, value);
-  }
-
-  /** Read a dot-path value out of an entity's component bag (external patch resolution). */
-  function readComponentPath(components: Record<string, unknown> | undefined, property: string): unknown {
-    const [type, rest] = splitProperty(property);
-    let node: unknown = components?.[type];
-    for (const key of rest.split('.')) {
-      if (node === null || typeof node !== 'object') return undefined;
-      node = (node as Record<string, unknown>)[key];
-    }
-    return node;
-  }
-
-  /** Re-apply one component's top-level values onto the running preview, leaf by leaf. */
-  function applyComponentResync(entity: string, type: string, component: unknown): void {
-    if (component === null || typeof component !== 'object') return;
-    for (const [key, leaf] of Object.entries(component as Record<string, unknown>)) {
-      applyPatch(entity, `${type}.${key}`, leaf);
-    }
-  }
-
-  /**
-   * Resync a revertPrefabOverride scope onto the running preview from the
-   * refreshed authored scene. `property` encodes the scope the revert touched:
-   * '' = the whole entity (every component), a bare component name = that whole
-   * component, a dotted path = a single field. Patches leaf-by-leaf (never
-   * replacing a component object) so aliases like RuntimeEntity.transform
-   * survive, and stays scoped so components the revert didn't touch keep their
-   * live runtime state.
-   */
-  function applyResync(entity: string, components: Record<string, unknown> | undefined, property: string): void {
-    if (property === '') {
-      for (const [type, value] of Object.entries(components ?? {})) applyComponentResync(entity, type, value);
-      return;
-    }
-    if (!property.includes('.')) {
-      applyComponentResync(entity, property, components?.[property]);
-      return;
-    }
-    const value = readComponentPath(components, property);
-    if (value !== undefined) applyPatch(entity, property, value);
-  }
-
-  /** Live-swap a state-machine asset's parsed doc on the running preview (asm-reload). */
-  async function applyAsmReload(assetId: string): Promise<void> {
-    const view = getGameView();
-    if (!view?.reloadStateMachineAsset) return;
-    try {
-      const n = await view.reloadStateMachineAsset(assetId);
-      if (n > 0) {
-        get().log('info', 'runtime', `State machine updated (${n} ${n === 1 ? 'entity' : 'entities'} reset)`);
-      }
-    } catch (err) {
-      get().log('error', 'runtime', `State machine live-update failed: ${(err as Error).message}`);
-    }
-  }
-
-  /** Accumulate a valueless patch under its entity so a multi-key resolve costs one query. */
-  function groupValueless(
-    groups: Map<string, { scene: string; entity: string; properties: string[] }>,
-    scene: string,
-    entity: string,
-    property: string,
-  ): void {
-    const key = `${scene}\x00${entity}`;
-    const group = groups.get(key) ?? { scene, entity, properties: [] };
-    group.properties.push(property);
-    groups.set(key, group);
-  }
-
-  /**
-   * Resolve grouped valueless patches against the freshly-refreshed authored
-   * scene (one read-only query per entity), then patch the live preview. A ''
-   * property means "resync the whole entity" (see applyEntityResync).
-   */
-  async function resolveValuelessGroups(
-    groups: Map<string, { scene: string; entity: string; properties: string[] }>,
-  ): Promise<void> {
-    for (const group of groups.values()) {
-      const ent = await query<{ components?: Record<string, unknown> }>('inspectEntity', {
-        scene: group.scene,
-        entity: group.entity,
-      });
-      if (!ent) continue;
-      for (const property of group.properties) applyResync(group.entity, ent.components, property);
-    }
-  }
-
-  /** Run the live actions for a just-succeeded LOCAL exec (only while playing). */
-  async function applyLocalActions(command: string, params: Record<string, unknown>, data: unknown): Promise<void> {
-    const localSource = command === 'editScript' ? (data as { source?: unknown } | null)?.source : undefined;
-    // Local commands always target the current scene, so no scene guard is
-    // needed; valueless patches (setTileAutotile, revertPrefabOverride carry no
-    // value in params) resolve against the just-refreshed authored scene, same
-    // as the external path.
-    const resolveGroups = new Map<string, { scene: string; entity: string; properties: string[] }>();
-    for (const action of classifyLocal(command, params, data)) {
-      if (action.kind === 'patch') {
-        if (action.hasValue) applyPatch(action.entity, action.property, action.value);
-        else groupValueless(resolveGroups, action.scene, action.entity, action.property);
-      } else if (action.kind === 'reload') {
-        await applyReload(action.path, typeof localSource === 'string' ? localSource : undefined);
-      } else if (action.kind === 'asm-reload') {
-        await applyAsmReload(action.assetId);
-      } else if (action.kind === 'structural') set({ pendingRestart: true });
-    }
-    await resolveValuelessGroups(resolveGroups);
-  }
-
-  /**
-   * Whether an external patch targeting `scene` refers to the scene the
-   * preview is running. The running scene is the store's current `sceneId`:
-   * GamePreview mounts that scene and remounts whenever it changes, so from
-   * the editor's side they can never diverge. The runtime CAN scene-switch
-   * internally mid-run (ctx.scenes.load) without the store tracking it —
-   * accepted: a patch skipped for the wrong reason is honest (same latitude
-   * as an entity-id miss), whereas applying a cross-scene patch is silently
-   * wrong — patchComponent resolves entity refs by id OR name, so a
-   * same-named entity in the running scene would take the other scene's
-   * value. Journal details carry the scene as the external tool passed it —
-   * an id or a human name (the CLI takes names) — so match either.
-   */
-  function isRunningScene(scene: string): boolean {
-    const { sceneId, scene: sceneData, info } = get();
-    if (!sceneId) return false;
-    if (scene === sceneId) return true;
-    const runningName =
-      sceneData?.id === sceneId ? sceneData.name : info?.scenes.find((s) => s.id === sceneId)?.name;
-    return runningName !== undefined && scene === runningName;
-  }
-
-  /** Run the live actions for an EXTERNAL journal entry (refresh already ran; only while playing). */
-  async function applyJournalActions(entry: JournalEntry): Promise<void> {
-    // Valueless patches are grouped per entity before resolving, so a
-    // multi-key setProperties costs ONE inspectEntity query, not one per key.
-    const resolveGroups = new Map<string, { scene: string; entity: string; properties: string[] }>();
-    for (const action of classifyJournal(entry)) {
-      if (action.kind === 'reload') await applyReload(action.path, undefined);
-      else if (action.kind === 'asm-reload') await applyAsmReload(action.assetId);
-      else if (action.kind === 'structural') set({ pendingRestart: true });
-      else if (action.kind === 'patch' && !action.hasValue) {
-        if (!isRunningScene(action.scene)) continue;
-        const key = `${action.scene}\u0000${action.entity}`;
-        const group = resolveGroups.get(key) ?? { scene: action.scene, entity: action.entity, properties: [] };
-        group.properties.push(action.property);
-        resolveGroups.set(key, group);
-      }
-    }
-    for (const group of resolveGroups.values()) {
-      // No value in the journal detail: resolve the current values from the
-      // freshly-refreshed authored scene via one read-only query, then patch.
-      const ent = await query<{ components?: Record<string, unknown> }>('inspectEntity', {
-        scene: group.scene,
-        entity: group.entity,
-      });
-      if (!ent) continue;
-      for (const property of group.properties) applyResync(group.entity, ent.components, property);
-    }
-  }
 
   function wsUrl(project: string): string {
     const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
@@ -738,32 +243,58 @@ export const useEditor = create<EditorState>((set, get) => {
     }
   }
 
-  function pushJournalFeed(entries: JournalEntry[]): void {
-    set((state) => ({
-      journalFeed: [...state.journalFeed, ...entries].slice(-MAX_JOURNAL_FEED),
-    }));
-  }
-
   function scheduleReconnect(project: string, epoch: number): void {
     const delay = wsBackoffMs;
     wsBackoffMs = Math.min(wsBackoffMs * 2, WS_BACKOFF_MAX_MS);
     wsReconnectTimer = setTimeout(() => {
       wsReconnectTimer = null;
-      if (epoch !== wsEpoch) return; // superseded by a project switch/close
+      if (epoch !== wsEpoch) return;
       connectWs(project);
     }, delay);
+  }
+
+  function handleFrame(frame: WsFrame): void {
+    switch (frame.type) {
+      case 'journal':
+        set((state) => ({ journalFeed: [...state.journalFeed, ...frame.entries].slice(-MAX_JOURNAL_FEED) }));
+        return;
+      case 'evidence':
+        set((state) => ({ evidence: [...state.evidence, ...frame.events].slice(-MAX_EVIDENCE) }));
+        return;
+      case 'chat-ready':
+        set({ chatDriver: frame.driver });
+        return;
+      case 'chat-event': {
+        const event = frame.event;
+        set((state) => ({ messages: applyChatEvent(state.messages, event) }));
+        if (event.type === 'done') set({ chatBusy: false });
+        if (event.type === 'error') {
+          set({ chatBusy: false, chatError: event.message });
+          get().log('error', 'agent', event.message);
+        }
+        return;
+      }
+      case 'pty-data':
+      case 'pty-exit':
+      case 'pty-error':
+        ingestPtyFrame(frame);
+        return;
+      case 'pty-attach':
+        ingestPtyAttach(frame);
+        return;
+      default:
+        return; // client -> server frames, and anything this build doesn't know
+    }
   }
 
   function connectWs(project: string): void {
     const epoch = ++wsEpoch;
     teardownSocket();
-    // A different project must never inherit the previous one's agent
-    // session or export job. A same-project reconnect (sleep/wake, network
-    // blip) keeps both: the server-side pty survives the drop detached, and
-    // the session reattaches in onopen below.
+    // A different folder must never inherit the previous one's terminal
+    // session; a same-folder reconnect keeps it (the server-side pty survives
+    // the drop detached and is reattached in onopen below).
     if (wsAgentProject !== project) {
       resetAgentSocket();
-      resetExportJob();
       wsAgentProject = project;
     }
     set({ wsStatus: 'connecting' });
@@ -774,10 +305,6 @@ export const useEditor = create<EditorState>((set, get) => {
       if (epoch !== wsEpoch) return;
       wsBackoffMs = WS_BACKOFF_INITIAL_MS;
       set({ wsStatus: 'connected' });
-      // The drop happened under a live session: reattach to the surviving
-      // server-side pty (or get a fresh shell if it died meanwhile). Sent
-      // here — not from the Agent panel — so reattach works even while the
-      // panel's tab is closed.
       if (getAgentSessionSummary().status === 'reconnecting') {
         socket.send(JSON.stringify({ type: 'pty-start', sessionId: ensureAgentPtySessionId() }));
         markAgentStarted('shell');
@@ -791,370 +318,84 @@ export const useEditor = create<EditorState>((set, get) => {
       } catch {
         return;
       }
-      if (frame.type === 'journal') {
-        pushJournalFeed(frame.entries);
-        const external = frame.entries.filter((entry) => entry.source !== 'editor');
-        if (external.length > 0) {
-          set((state) => ({ commandSeq: state.commandSeq + 1 }));
-          void (async () => {
-            await get().refresh();
-            // Mirror external changes into the running preview. The action
-            // no-ops per entry unless `playing` (so a Stop landing mid-batch
-            // halts the mirroring) — a fresh Play picks up the
-            // already-refreshed authored scene instead.
-            for (const entry of external) await get().applyExternalJournalEntry(entry);
-            // Keep "Restore checkpoint" (bound to diff?.hasChanges) honest as
-            // soon as the Timeline shows the new row, not only after a manual
-            // refreshDiff() — an external `hearth create entity` etc. must not
-            // leave the button stale (AGENT-2 / L-090). Coalesced: an agent
-            // bursting commands lands many journal frames close together, and
-            // diffProject walks the whole project — one in-flight request plus
-            // one trailing catch-up beats a pile-up of N concurrent diffs.
-            await coalescedDiffRefresh();
-          })();
-        }
-        return;
-      }
-      if (frame.type === 'pty-data' || frame.type === 'pty-exit' || frame.type === 'pty-error') {
-        ingestPtyFrame(frame);
-        return;
-      }
-      if (frame.type === 'pty-attach') {
-        // The server handed our surviving pty back: its buffered tail
-        // replaces the buffer the reattach pty-start just reset.
-        ingestPtyAttach(frame);
-        return;
-      }
-      if (frame.type === 'export-progress' || frame.type === 'export-done' || frame.type === 'export-error') {
-        // Desktop export job progress (POST /api/export/desktop), broadcast to
-        // every socket for this project root; the Export dialog subscribes via
-        // useExportJob(). Fed here (not in the dialog) so a running job keeps
-        // advancing even while the dialog is closed.
-        ingestExportFrame(frame);
-        return;
-      }
-      // pty-input/pty-resize/pty-start/pty-stop are client -> server only.
+      handleFrame(frame);
     };
     socket.onclose = () => {
       if (epoch !== wsEpoch) return;
       ws = null;
       set({ wsStatus: 'disconnected' });
-      // The server detaches (not kills) a session-tokened pty when its
-      // socket drops (see ws.ts detachPty): mark the session reconnecting —
-      // scrollback and the running shell both survive — and reattach in
-      // onopen once the reconnect lands.
       markAgentDisconnected();
+      // A conversation does not survive a socket drop (the driver holds an
+      // in-process agent), so an in-flight turn is over.
+      if (get().chatBusy) {
+        set((state) => ({
+          chatBusy: false,
+          messages: state.messages.map((m) => (m.streaming ? { ...m, streaming: false } : m)),
+        }));
+      }
       scheduleReconnect(project, epoch);
     };
   }
 
   function disconnectWs(): void {
-    wsEpoch++; // invalidate any in-flight handlers/reconnect timers
+    wsEpoch++;
     wsBackoffMs = WS_BACKOFF_INITIAL_MS;
-    // Deliberate teardown (project switch/close): kill the server-side pty
-    // now rather than leaving it to linger detached until its reap timeout.
-    // Best-effort — a downed socket means there is nothing left to stop or
-    // the linger timeout will handle it.
     if (ws && ws.readyState === WebSocket.OPEN) {
       ws.send(JSON.stringify({ type: 'pty-stop' }));
+      ws.send(JSON.stringify({ type: 'chat-cancel' }));
     }
     teardownSocket();
     set({ wsStatus: 'disconnected' });
     wsAgentProject = null;
     resetAgentSocket();
-    resetExportJob();
-  }
-
-  /**
-   * Refresh the Changes-panel diff after an undo/redo, but only when a
-   * baseline is actually being tracked — a checkpoint was taken this session
-   * (`snapshotTaken`) or a diff is currently displayed (`diff`). Without the
-   * guard, undo/redo with no checkpoint would call diffProject, hit NOT_FOUND,
-   * and log a "Review changes: no checkpoint …" info line on every keypress.
-   * With a baseline, this keeps the diff body honest immediately after Undo/
-   * Redo instead of after a manual Refresh or a tab blur/refocus
-   * (CONSOLE-CHANGES-6 / L-060).
-   */
-  async function refreshDiffIfTracking(): Promise<void> {
-    if (get().snapshotTaken || get().diff !== null) await get().refreshDiff();
-  }
-
-  // Coalescing wrapper for the WS journal handler (AGENT-2 / L-090): an agent
-  // bursting commands lands many journal frames back-to-back, each wanting a
-  // diff refresh, and diffProject walks the whole project. While one request
-  // is in flight, further calls just mark a trailing catch-up — when the
-  // in-flight one settles, exactly one more runs (picking up everything that
-  // arrived meanwhile). N bursts cost at most 2 diffs, and the last one always
-  // reflects the final on-disk state.
-  let diffRefreshInFlight = false;
-  let diffRefreshQueued = false;
-  async function coalescedDiffRefresh(): Promise<void> {
-    if (diffRefreshInFlight) {
-      diffRefreshQueued = true;
-      return;
-    }
-    diffRefreshInFlight = true;
-    try {
-      await refreshDiffIfTracking();
-    } finally {
-      diffRefreshInFlight = false;
-      if (diffRefreshQueued) {
-        diffRefreshQueued = false;
-        void coalescedDiffRefresh();
-      }
-    }
-  }
-
-  // --- Undo/redo serialization --------------------------------------------
-  // Rapid ⌘Z / ⇧⌘Z mashing fires one /api/command per keypress. Undo/redo is a
-  // read-modify-write on the on-disk history cursor (session.execute reads a
-  // `before` snapshot and the HistoryStore reads/advances index.json), so two
-  // in-flight requests race and some presses are silently lost. Chain every
-  // undo/redo through one per-store promise so a request never departs before
-  // the previous one has fully landed (executed + refreshed): mashing 10× then
-  // applies 10 undos in order, UI reflecting the final position. The server
-  // also holds a per-project mutex (projectServer.ts) so a concurrent embedded
-  // agent CLI can't interleave either; the two layers are complementary.
-  let historyChain: Promise<void> = Promise.resolve();
-  function queueHistoryOp(task: () => Promise<void>): Promise<void> {
-    // Run after the tail regardless of its outcome, and keep the chain alive
-    // past a rejection so one failed op doesn't wedge the queue.
-    const run = historyChain.then(task, task);
-    historyChain = run.catch(() => undefined);
-    return run;
-  }
-
-  async function afterOpen(path: string, info: ProjectInfo): Promise<void> {
-    // A pending nudge burst belongs to whatever project/scene was open before
-    // this call (openProject reopening the same path, or switching to a
-    // different one) — its scene/entity ids are meaningless in the freshly
-    // loaded project, so drop it rather than flush a moveEntity against a
-    // scene that may no longer exist.
-    nudgeQueue.clear();
-    try {
-      localStorage.setItem(LAST_PROJECT_KEY, path);
-    } catch {
-      /* private mode etc. */
-    }
-    set({
-      projectPath: path,
-      info,
-      sceneId: info.initialScene ?? info.scenes[0]?.id ?? null,
-      scene: null,
-      selection: null,
-      workspaceTemplate: null,
-      diff: null,
-      assets: [],
-      // Refreshed from the newly-opened project's hearth.json by refresh()
-      // below; cleared here so the previous project's declared keys can never
-      // show up in this one's Text.binding dropdown, even for a frame.
-      gameState: {},
-      journalFeed: [],
-      playing: false,
-      pendingRestart: false,
-      runtimeErrors: [],
-      paused: false,
-      pausedByTab: false,
-      debugDraw: false,
-      snapshotTaken: false,
-      sceneViewCenter: null,
-      hasUnsavedScripts: false,
-      hasUnsavedAnimatorDraft: false,
-      // A pending "open this script" request belongs to the project being left;
-      // clearing it stops a stale request from re-opening the prior project's
-      // script in the freshly-opened one when the Code panel remounts (L-058).
-      codeOpenRequest: null,
-    });
-    get().log('info', 'editor', `Opened project "${info.name}" (${info.scenes.length} scene${info.scenes.length === 1 ? '' : 's'})`);
-    connectWs(path);
-    const docs = await query<{ components: ComponentDoc[] }>('inspectComponents');
-    if (docs) set({ componentDocs: docs.components });
-    await get().refresh();
   }
 
   return {
     meta: null,
     projectPath: null,
-    info: null,
-    sceneId: null,
-    scene: null,
-    assets: [],
-    componentDocs: [],
-    gameState: {},
-    selection: null,
-    workspaceTemplate: null,
-    pendingWorkspaceTemplate: null,
-    layoutAppliedNonce: 0,
+    projectName: null,
+    isHearthProject: false,
+    wsStatus: 'disconnected',
+
+    messages: [],
+    chatBusy: false,
+    chatDriver: null,
+    chatError: null,
+    settings: null,
+
+    game: EMPTY_GAME,
+    senses: [],
+    gameNonce: 0,
+
+    evidence: [],
+    evidenceOpen: true,
+
     consoleEntries: [],
     consoleUnread: 0,
-    consoleOpen: false,
     consoleAtBottom: true,
-    diff: null,
-    commandSeq: 0,
+
+    paneTab: 'game',
+    narrowTab: 'chat',
+    codePeek: { open: false, path: null },
+    pendingPrompt: null,
+
     journalFeed: [],
-    wsStatus: 'disconnected',
-    playing: false,
-    pendingRestart: false,
-    runtimeErrors: [],
-    paused: false,
-    pausedByTab: false,
-    runNonce: 0,
-    debugDraw: false,
-
     agentStatus: 'idle',
-    snapshotTaken: false,
-    diffFocusRequest: 0,
-    sceneViewCenter: null,
-    shortcutSheetOpen: false,
-    focusSelectionRequest: 0,
-    deleteSelectionRequest: 0,
-    codeOpenRequest: null,
-    codeSearchRequest: 0,
-    animatorTarget: null,
-    hasUnsavedScripts: false,
-    hasUnsavedAnimatorDraft: false,
-    closeProjectRequest: 0,
-
-    requestDiffFocus() {
-      set((state) => ({ diffFocusRequest: state.diffFocusRequest + 1 }));
-    },
-
-    setSceneViewCenter(center) {
-      set({ sceneViewCenter: center });
-    },
-
-    setShortcutSheet(open) {
-      set({ shortcutSheetOpen: open });
-    },
-
-    toggleShortcutSheet() {
-      set((state) => ({ shortcutSheetOpen: !state.shortcutSheetOpen }));
-    },
-
-    requestFocusSelection() {
-      if (!get().selection) return;
-      set((state) => ({ focusSelectionRequest: state.focusSelectionRequest + 1 }));
-    },
-
-    requestDeleteSelection() {
-      if (!get().selection) return;
-      // The confirm dialog is Hierarchy-owned: with the panel closed there is
-      // no consumer, and a silently swallowed keypress is a mystery. Name the
-      // reason instead. (DOM probe mirrors installKeybinds' dialog[open] check;
-      // with a selection the scene has entities, so a mounted Hierarchy always
-      // renders its tree.)
-      if (typeof document !== 'undefined' && !document.querySelector('[aria-label="Scene hierarchy"]')) {
-        get().log('info', 'editor', 'Open the Hierarchy panel to delete entities.');
-        return;
-      }
-      set((state) => ({ deleteSelectionRequest: state.deleteSelectionRequest + 1 }));
-    },
-
-    openScriptAt(path, line) {
-      set((state) => ({ codeOpenRequest: { path, line, nonce: (state.codeOpenRequest?.nonce ?? 0) + 1 } }));
-    },
-
-    requestCodeSearch() {
-      set((state) => ({ codeSearchRequest: state.codeSearchRequest + 1 }));
-    },
-
-    openAnimatorFor(assetId) {
-      set((state) => ({ animatorTarget: { assetId, nonce: (state.animatorTarget?.nonce ?? 0) + 1 } }));
-    },
-
-    togglePlay() {
-      get().setPlaying(!get().playing);
-    },
-
-    async checkpoint() {
-      const result = await get().exec<{ scenes: number }>('snapshotProject', {}, { quiet: true });
-      if (result.success) {
-        get().log('info', 'command', 'Checkpoint saved. The Changes panel now compares against this checkpoint.');
-        // Refresh the Changes panel against the just-taken checkpoint so a
-        // focused Changes tab reflects the new baseline immediately, not only
-        // after a manual Refresh or a tab blur/refocus (CONSOLE-CHANGES-5 /
-        // L-060). A snapshot always establishes a baseline, so this never
-        // hits the "no checkpoint" info-log path.
-        await get().refreshDiff();
-      }
-    },
-
-    // quiet: the friendly log lines below replace exec()'s generic
-    // changed-summary; shared by the toolbar arrows, the Edit menu, and the
-    // ⌘Z/⇧⌘Z keybinds so every trigger reads the same (TOOLBAR-6).
-    async undo() {
-      // Queued so a burst of ⌘Z applies each undo sequentially (see queueHistoryOp).
-      await queueHistoryOp(async () => {
-        const result = await get().exec<{ undone: string; seq: number }>('undo', {}, { quiet: true });
-        if (result.success && result.data) {
-          get().log('info', 'command', `Undo: reverted "${result.data.undone}" (#${result.data.seq}).`);
-          await refreshDiffIfTracking();
-        }
-      });
-    },
-
-    async redo() {
-      // Shares undo's queue so interleaved ⌘Z/⇧⌘Z presses stay strictly ordered.
-      await queueHistoryOp(async () => {
-        const result = await get().exec<{ redone: string; seq: number }>('redo', {}, { quiet: true });
-        if (result.success && result.data) {
-          get().log('info', 'command', `Redo: reapplied "${result.data.redone}" (#${result.data.seq}).`);
-          await refreshDiffIfTracking();
-        }
-      });
-    },
-
-    async duplicateSelection() {
-      const { selection, sceneId } = get();
-      if (!selection || !sceneId) return;
-      const result = await get().exec<{ entityId: string }>('duplicateEntity', { scene: sceneId, entity: selection });
-      // Select the fresh copy so a follow-up nudge/duplicate acts on it.
-      if (result.success && result.data) get().select(result.data.entityId);
-    },
-
-    nudgeSelection(dx, dy) {
-      const { selection, sceneId, scene } = get();
-      if (!selection || !sceneId || !scene) return;
-      const entity = scene.entities.find((e) => e.id === selection);
-      if (!entity) return;
-      const transform = entity.components.Transform as { position?: Vec2 } | undefined;
-      const pos = transform?.position;
-      const next = nudgeQueue.nudge({
-        scene: sceneId,
-        entity: selection,
-        base: { x: pos?.x ?? 0, y: pos?.y ?? 0 },
-        dx,
-        dy,
-      });
-      // Optimistic: move it now for instant feedback; the debounced exec
-      // (nudgeQueue's flush callback) persists it and refresh() reconciles
-      // against the source of truth.
-      set((state) => ({ scene: state.scene ? withEntityPosition(state.scene, selection, next) : state.scene }));
-    },
-
-    sendAgentFrame(frame) {
-      if (!ws || ws.readyState !== WebSocket.OPEN) return false;
-      ws.send(JSON.stringify(frame));
-      return true;
-    },
 
     async loadMeta() {
       if (loadMetaPromise) return loadMetaPromise;
       loadMetaPromise = (async () => {
         const meta = await apiMeta();
         if (meta) set({ meta });
-        // Reopen the last project after a page reload (dev HMR, F5).
+        // Reopen the last folder after a reload (dev HMR, F5).
         if (!get().projectPath) {
           let last: string | null = null;
           try {
-            last = localStorage.getItem(LAST_PROJECT_KEY);
+            last = localStorage.getItem(LAST_WORKSPACE_KEY);
           } catch {
-            /* ignore */
+            /* private mode */
           }
-          if (last) {
-            const res = await apiOpenProject(last);
-            if (res.ok && res.path && res.info) await afterOpen(res.path, res.info);
-          }
+          if (last) await get().openWorkspace(last);
         }
       })();
       try {
@@ -1164,220 +405,143 @@ export const useEditor = create<EditorState>((set, get) => {
       }
     },
 
-    async openProject(path) {
-      // A pending workspace choice belongs to whatever createProject call queued
-      // it; if that call failed (or this open is unrelated), it must not leak
-      // into and restyle this project once its shell mounts.
-      set({ pendingWorkspaceTemplate: null });
-      const res = await apiOpenProject(path);
-      if (!res.ok || !res.path || !res.info) {
-        return { ok: false, error: res.error ?? 'Failed to open project' };
-      }
-      await afterOpen(res.path, res.info);
-      return { ok: true };
-    },
-
-    async createProject(dir, name, description, template, workspace) {
-      set({ pendingWorkspaceTemplate: workspace ?? null });
-      const res = await apiCreateProject(dir, name, description, template);
-      if (!res.ok || !res.path || !res.info) {
-        set({ pendingWorkspaceTemplate: null });
-        return { ok: false, error: res.error ?? 'Failed to create project' };
-      }
-      await afterOpen(res.path, res.info);
-      return { ok: true };
-    },
-
-    setWorkspaceTemplate(template) {
-      set({ workspaceTemplate: template, layoutAppliedNonce: get().layoutAppliedNonce + 1 });
-    },
-
-    consumePendingWorkspaceTemplate() {
-      const pending = get().pendingWorkspaceTemplate;
-      if (pending) set({ pendingWorkspaceTemplate: null });
-      return pending;
-    },
-
-    setUnsavedScripts(has) {
-      if (get().hasUnsavedScripts !== has) set({ hasUnsavedScripts: has });
-    },
-
-    setUnsavedAnimatorDraft(has) {
-      if (get().hasUnsavedAnimatorDraft !== has) set({ hasUnsavedAnimatorDraft: has });
-    },
-
-    requestCloseProject() {
-      if (get().hasUnsavedScripts) {
-        set((state) => ({ closeProjectRequest: state.closeProjectRequest + 1 }));
-      } else {
-        get().closeProject();
-      }
-    },
-
-    closeProject() {
-      // Drop any pending nudge burst without flushing: the project (and its
-      // API base) is going away, so a moveEntity fired ~300ms from now would
-      // either hit a closed project or silently no-op — neither is right.
-      nudgeQueue.clear();
+    async openWorkspace(path, prompt) {
+      const res = await apiOpenWorkspace(path);
+      if (!res.ok || !res.info) return { ok: false, error: res.error ?? 'Could not open that folder.' };
+      const info: WorkspaceInfo = res.info;
       try {
-        localStorage.removeItem(LAST_PROJECT_KEY);
+        localStorage.setItem(LAST_WORKSPACE_KEY, info.path);
+      } catch {
+        /* private mode */
+      }
+      set({
+        projectPath: info.path,
+        projectName: info.name,
+        isHearthProject: info.isHearthProject,
+        messages: [],
+        chatBusy: false,
+        chatDriver: null,
+        chatError: null,
+        evidence: [],
+        journalFeed: [],
+        game: EMPTY_GAME,
+        senses: [],
+        gameNonce: 0,
+        paneTab: 'game',
+        narrowTab: 'chat',
+        codePeek: { open: false, path: null },
+        pendingPrompt: prompt?.trim() ? prompt.trim() : null,
+      });
+      connectWs(info.path);
+      await Promise.all([get().refreshGame(), get().refreshSettings()]);
+      return { ok: true };
+    },
+
+    closeWorkspace() {
+      try {
+        localStorage.removeItem(LAST_WORKSPACE_KEY);
       } catch {
         /* ignore */
       }
       disconnectWs();
       set({
         projectPath: null,
-        info: null,
-        sceneId: null,
-        scene: null,
-        assets: [],
-        gameState: {},
-        selection: null,
-        workspaceTemplate: null,
-        diff: null,
+        projectName: null,
+        isHearthProject: false,
+        messages: [],
+        chatBusy: false,
+        chatDriver: null,
+        chatError: null,
+        settings: null,
+        evidence: [],
         journalFeed: [],
-        playing: false,
-        pendingRestart: false,
-        runtimeErrors: [],
-        paused: false,
-        pausedByTab: false,
-        debugDraw: false,
-        snapshotTaken: false,
-        sceneViewCenter: null,
-        hasUnsavedScripts: false,
-        hasUnsavedAnimatorDraft: false,
-        codeOpenRequest: null,
+        game: EMPTY_GAME,
+        senses: [],
+        codePeek: { open: false, path: null },
+        pendingPrompt: null,
       });
     },
 
-    async selectScene(sceneId) {
-      // A pending nudge burst targets the scene being left; land it now
-      // (synchronously, not waiting out the debounce) so the move isn't lost
-      // and doesn't fire later against whatever scene is current by then.
-      nudgeQueue.flush();
-      // A center measured against the previous scene's viewport doesn't apply
-      // here; SceneView re-measures and pushes a fresh one once mounted.
-      set({ sceneId, selection: null, playing: false, pendingRestart: false, runtimeErrors: [], paused: false, pausedByTab: false, debugDraw: false, sceneViewCenter: null });
-      await get().refresh();
-    },
-
-    select(entityId) {
-      set({ selection: entityId });
-    },
-
-    setConsoleOpen(open) {
-      // Seeing the console clears the unread badge, as clicking the tab used to.
-      set(open ? { consoleOpen: true, consoleUnread: 0 } : { consoleOpen: false });
-    },
-
-    setConsoleAtBottom(atBottom) {
-      set((state) => ({
-        consoleAtBottom: atBottom,
-        // Scrolling back down to the live tail while the tab is visible means
-        // the reader has now seen the newest lines; a hidden tab keeps its
-        // badge until it's actually revealed.
-        consoleUnread: atBottom && state.consoleOpen ? 0 : state.consoleUnread,
-      }));
-    },
-
-    setPlaying(playing) {
-      // Play always runs the scene as it is now (Godot-style); Stop freezes it.
-      // Starting a run remounts the preview (see GamePreview's runNonce effect),
-      // so debugDraw resets to off along with it — no persistence across runs.
-      // Either direction also clears a lingering debug pause: a fresh Play
-      // should never come up paused, and Stop has nothing left to pause.
-      set((state) => ({
-        playing,
-        paused: false,
-        pausedByTab: false,
-        // Either direction clears a pending restart: Play/Stop both remount or
-        // tear down the preview, so a queued "restart to apply" is moot. The
-        // fresh run also starts with a clean runtime-error list.
-        pendingRestart: false,
-        runtimeErrors: [],
-        runNonce: playing ? state.runNonce + 1 : state.runNonce,
-        debugDraw: playing ? false : state.debugDraw,
-      }));
-    },
-
-    restartPlay() {
-      // The restart badge's action: replay the current scene from scratch
-      // (same remount path as a fresh Play) and clear the badge.
-      set((state) => ({
-        playing: true,
-        paused: false,
-        pausedByTab: false,
-        pendingRestart: false,
-        runtimeErrors: [],
-        runNonce: state.runNonce + 1,
-        debugDraw: false,
-      }));
-    },
-
-    recordRuntimeError(error) {
-      set((state) => ({ runtimeErrors: [...state.runtimeErrors.slice(-MAX_RUNTIME_ERRORS + 1), error] }));
-      // A hot-reload compile failure is already surfaced as a single
-      // "Hot-reload failed: …" line by applyReload (which logs the {ok:false}
-      // result of view.reloadScript). The runtime ALSO bridges that same error
-      // here — reloadScript calls recordError(phase:'reload') internally, which
-      // reaches onErrorEntry → recordRuntimeError — so logging it again would
-      // double every hot-reload error in the Console (CONSOLE-CHANGES-4 /
-      // L-062). Keep recording it into runtimeErrors, but skip the duplicate
-      // Console line for the reload phase; applyReload owns that line.
-      if (error.phase === 'reload') return;
-      // Recover the failing line from the message when the runtime didn't
-      // populate error.line (load-time compile failures — L-061) so the
-      // Console link jumps to the exact line like the reload path does.
-      const line = error.line ?? (error.script ? lineFromMessage(error.script, error.message) : null);
-      const resolved = error.line == null && line != null ? { ...error, line } : error;
-      const link = error.script ? { path: error.script, line } : undefined;
-      get().log('error', 'runtime', formatRuntimeError(resolved), link);
-    },
-
-    async applyExternalJournalEntry(entry) {
-      // Per-entry (not per-batch) playing check: a Stop that lands while a
-      // batch of external entries is being mirrored stops the rest too.
-      if (!get().playing) return;
-      await applyJournalActions(entry);
-    },
-
-    setPaused(paused) {
-      // An explicit toolbar Pause/Resume makes the user the owner of the pause
-      // state: clear pausedByTab so a later Game-tab hide/show won't auto-resume
-      // (or re-pause) against their intent.
-      set({ paused, pausedByTab: false });
-    },
-
-    setGameTabVisible(visible) {
-      const state = get();
-      // Only a live run has anything to pause/resume; ignore visibility churn
-      // (StrictMode remounts, layout restores) while stopped.
-      if (!state.playing) return;
-      if (!visible) {
-        // Hiding the Game tab pauses a running preview so switching to Code to
-        // edit/hot-reload no longer stops the run (L-067). If the user already
-        // paused explicitly, leave it alone — pausedByTab stays false so we
-        // won't auto-resume it on return.
-        if (!state.paused) set({ paused: true, pausedByTab: true });
-      } else {
-        // Back on the Game tab: auto-resume only the pause WE introduced on
-        // hide; an explicit user pause (pausedByTab === false) is preserved.
-        if (state.pausedByTab) set({ paused: false, pausedByTab: false });
+    sendChat(text) {
+      const trimmed = text.trim();
+      if (trimmed === '' || get().chatBusy) return;
+      if (!get().sendFrame({ type: 'chat-send', text: trimmed })) {
+        get().log('error', 'app', 'Not connected — wait a moment and send again.');
+        return;
       }
+      set((state) => ({
+        messages: [...state.messages, makeUserMessage(trimmed), makeAgentMessage()],
+        chatBusy: true,
+        chatError: null,
+      }));
     },
 
-    setDebugDraw(on) {
-      set({ debugDraw: on });
+    cancelChat() {
+      get().sendFrame({ type: 'chat-cancel' });
+      set((state) => ({
+        chatBusy: false,
+        messages: state.messages.map((m) => (m.streaming ? { ...m, streaming: false } : m)),
+      }));
+    },
+
+    consumePendingPrompt() {
+      const pending = get().pendingPrompt;
+      if (pending) set({ pendingPrompt: null });
+      return pending;
+    },
+
+    async refreshGame() {
+      const project = get().projectPath;
+      if (!project) return;
+      const [status, senses] = await Promise.all([apiGameStatus(project), apiProbeStatus(project)]);
+      if (get().projectPath !== project) return; // folder changed mid-flight
+      if (senses.length > 0) set({ senses });
+      if (!status) return;
+      const previous = get().game;
+      const changed = status.present !== previous.present || status.entry !== previous.entry || status.mtime !== previous.mtime;
+      if (!changed) return;
+      set((state) => ({
+        game: status,
+        // Only a game that was already on screen needs a reload nonce; the
+        // first appearance mounts a fresh iframe anyway.
+        gameNonce: previous.present && status.present ? state.gameNonce + 1 : state.gameNonce,
+      }));
+    },
+
+    async refreshSettings() {
+      const project = get().projectPath;
+      if (!project) return;
+      const settings = await apiAppSettings(project);
+      if (get().projectPath === project) set({ settings });
+    },
+
+    setPaneTab(tab) {
+      set(tab === 'console' ? { paneTab: tab, consoleUnread: 0 } : { paneTab: tab });
+    },
+
+    setNarrowTab(tab) {
+      set({ narrowTab: tab });
+    },
+
+    setEvidenceOpen(open) {
+      set({ evidenceOpen: open });
+    },
+
+    openCodePeek(path) {
+      set((state) => ({ codePeek: { open: true, path: path ?? state.codePeek.path } }));
+    },
+
+    closeCodePeek() {
+      set((state) => ({ codePeek: { open: false, path: state.codePeek.path } }));
     },
 
     log(level, source, message, link) {
       set((state) => ({
         consoleEntries: [...state.consoleEntries.slice(-MAX_CONSOLE + 1), makeEntry(level, source, message, link)],
-        // An error is "unread" when the reader can't currently see the live
-        // tail: the tab is hidden, OR it's visible but scrolled up rereading
-        // earlier output (consoleAtBottom mirrors the panel's scroll-lock).
+        // An error is unread when the reader can't see the live tail: the
+        // Console tab isn't showing, or it is but they've scrolled up.
         consoleUnread:
-          level === 'error' && (!state.consoleOpen || !state.consoleAtBottom)
+          level === 'error' && (state.paneTab !== 'console' || !state.consoleAtBottom)
             ? state.consoleUnread + 1
             : state.consoleUnread,
       }));
@@ -1387,98 +551,24 @@ export const useEditor = create<EditorState>((set, get) => {
       set({ consoleEntries: [], consoleUnread: 0 });
     },
 
-    async refresh() {
-      const { projectPath } = get();
-      if (!projectPath) return;
-
-      const info = await query<ProjectInfo>('inspectProject');
-      if (!info) return;
-
-      // Keep the current scene when it still exists; fall back sensibly.
-      let sceneId = get().sceneId;
-      if (!sceneId || !info.scenes.some((s) => s.id === sceneId)) {
-        sceneId = info.initialScene ?? info.scenes[0]?.id ?? null;
-      }
-
-      const [scene, assetData] = await Promise.all([
-        sceneId ? query<SceneData>('inspectScene', { scene: sceneId, full: true }) : Promise.resolve(null),
-        query<{ assets: AssetItem[] }>('inspectAssets'),
-      ]);
-      const selection = get().selection;
-      set({
-        info,
-        gameState: gameStateOf(info),
-        sceneId,
-        scene: scene ?? null,
-        assets: assetData?.assets ?? [],
-        selection: scene && selection && scene.entities.some((e) => e.id === selection) ? selection : null,
-      });
+    setConsoleAtBottom(atBottom) {
+      set((state) => ({
+        consoleAtBottom: atBottom,
+        consoleUnread: atBottom && state.paneTab === 'console' ? 0 : state.consoleUnread,
+      }));
     },
 
-    async refreshDiff() {
-      const project = get().projectPath;
-      if (!project) return;
-      const result = await apiCommand<ProjectDiff>(project, 'diffProject');
-      if (result.success && result.data) {
-        set({ diff: result.data });
-      } else {
-        set({ diff: null });
-        for (const err of result.errors) {
-          get().log(err.code === 'NOT_FOUND' ? 'info' : 'error', 'command', `${commandLabel('diffProject')}: ${err.message}`);
-        }
-      }
+    sendFrame(frame) {
+      if (!ws || ws.readyState !== WebSocket.OPEN) return false;
+      ws.send(JSON.stringify(frame));
+      return true;
     },
-
-    async exec(name, params = {}, opts = {}) {
-      const project = get().projectPath;
-      if (!project) {
-        return {
-          success: false,
-          command: name,
-          data: null,
-          errors: [{ code: 'NO_PROJECT', message: 'No project open' }],
-          warnings: [],
-          changed: [],
-          files: [],
-          suggestions: [],
-        } as CommandResult<never>;
-      }
-      const result = await apiCommand(project, name, params);
-      for (const err of result.errors) {
-        // Empty history isn't an error worth a Console badge (same treatment
-        // as refreshDiff's NOT_FOUND for a missing baseline below).
-        const emptyHistory = (name === 'undo' || name === 'redo') && err.code === 'NOT_FOUND';
-        get().log(emptyHistory ? 'info' : 'error', 'command', `${commandLabel(name)}: ${err.message}`);
-      }
-      for (const warning of result.warnings) {
-        get().log('warn', 'command', `${commandLabel(name)}: ${warning.message}`);
-      }
-      if (result.success && !opts.quiet && result.changed.length > 0) {
-        const summary = result.changed
-          .map((c) => `${c.action} ${c.kind}${c.name ? ` "${c.name}"` : ''}`)
-          .slice(0, 3)
-          .join(', ');
-        get().log('info', 'command', `${commandLabel(name)}: ${summary}${result.changed.length > 3 ? ', …' : ''}`);
-      }
-      if (result.success && (result.changed.length > 0 || result.files.length > 0)) {
-        set((state) => ({ commandSeq: state.commandSeq + 1 }));
-        await get().refresh();
-        // Mirror the change into the running preview (live patch / hot-reload /
-        // restart badge). Only while playing; params carry every value locally,
-        // so live-patching works fully regardless of what the journal records.
-        if (get().playing) {
-          await applyLocalActions(name, (params ?? {}) as Record<string, unknown>, result.data);
-        }
-      }
-      // Centralized here (rather than in each caller) so any surface that
-      // triggers a snapshot — DiffPanel's button or the Agent panel's
-      // Timeline — flips the same session-scoped "have I snapshotted" flag.
-      if (result.success && name === 'snapshotProject') {
-        set({ snapshotTaken: true });
-      }
-      return result as CommandResult<never>;
-    },
-
-    query,
   };
 });
+
+/**
+ * Back-compat alias. The terminal layer (useAgentSocket.ts) mirrors its status
+ * into this store and is shared verbatim with the previous shell.
+ */
+export const useEditor = useApp;
+export type EditorStore = AppState;

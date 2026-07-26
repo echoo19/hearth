@@ -1,50 +1,98 @@
 // @vitest-environment jsdom
 /**
- * useShowInWindowMenuBar — review fix.
- *
- * Pins the platform gate documented at nativeMenu.ts:55: the in-window
- * MenuBar renders everywhere except Electron on macOS, where the native
- * application menu (menu/nativeMenu.ts's useNativeAppMenu) takes over.
- * `native === null` covers both the plain browser and the not-yet-detected
- * startup tick, including a macOS browser tab — the in-window bar must still
- * show there since there's no native menu to fall back to.
+ * The native-menu bridge. `useNativeAppMenu` ships the serialized model to the
+ * main process and routes a `menu:invoke <id>` echo back to the matching
+ * model item's live `onSelect` — the half that only exists in the renderer.
  */
-import { describe, it, expect, vi } from 'vitest';
-import { renderHook } from '@testing-library/react';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { cleanup, renderHook } from '@testing-library/react';
+import { useNativeAppMenu } from '../src/menu/nativeMenu';
+import type { AppMenuSection } from '../src/menu/appMenu';
 
-let nativeMock: { platform: string; setAppMenu?: () => void } | null = null;
+interface NativeStub {
+  platform: string;
+  setAppMenu?: ReturnType<typeof vi.fn>;
+  onMenuInvoke?: ReturnType<typeof vi.fn>;
+}
 
-vi.mock('../src/native', () => ({
-  hearthNative: () => nativeMock,
-}));
+function installNative(native: NativeStub | null): NativeStub | null {
+  if (native) (window as unknown as { hearthNative?: NativeStub }).hearthNative = native;
+  else delete (window as unknown as { hearthNative?: NativeStub }).hearthNative;
+  return native;
+}
 
-import { useShowInWindowMenuBar } from '../src/menu/nativeMenu';
+function macNative(): NativeStub & { invoke: (id: string) => void } {
+  let handler: ((id: string) => void) | null = null;
+  const native = {
+    platform: 'darwin',
+    setAppMenu: vi.fn(),
+    onMenuInvoke: vi.fn((cb: (id: string) => void) => {
+      handler = cb;
+      return () => {
+        handler = null;
+      };
+    }),
+    invoke: (id: string) => handler?.(id),
+  };
+  installNative(native);
+  return native;
+}
 
-describe('useShowInWindowMenuBar', () => {
-  it('shows the in-window bar when there is no native bridge (browser)', () => {
-    nativeMock = null;
-    const { result } = renderHook(() => useShowInWindowMenuBar());
-    expect(result.current).toBe(true);
+function sections(onSelect: () => void): AppMenuSection[] {
+  return [
+    {
+      id: 'file',
+      label: 'File',
+      items: [
+        { id: 'open-folder', label: 'Open folder…', enabled: true, onSelect },
+        { separator: true },
+        { id: 'close-folder', label: 'Close folder', enabled: false, onSelect: () => undefined },
+      ],
+    },
+  ];
+}
+
+afterEach(() => {
+  cleanup();
+  installNative(null);
+});
+
+describe('useNativeAppMenu', () => {
+  it('pushes the serialized model to the main process', () => {
+    const native = macNative();
+    renderHook(() => useNativeAppMenu(sections(vi.fn())));
+    expect(native.setAppMenu).toHaveBeenCalledTimes(1);
+    const pushed = native.setAppMenu!.mock.calls[0][0];
+    expect(pushed[0].label).toBe('File');
+    expect(pushed[0].items[0]).toMatchObject({ id: 'open-folder', enabled: true });
+    expect(pushed[0].items[1]).toEqual({ type: 'separator' });
   });
 
-  it('hides the in-window bar on a healthy Electron macOS build (native menu takes over)', () => {
-    // Healthy build: the preload exposes setAppMenu, so the native menu owns it.
-    nativeMock = { platform: 'darwin', setAppMenu: () => {} };
-    const { result } = renderHook(() => useShowInWindowMenuBar());
-    expect(result.current).toBe(false);
+  it('routes a menu:invoke echo to the matching item onSelect', () => {
+    const native = macNative();
+    const onSelect = vi.fn();
+    renderHook(() => useNativeAppMenu(sections(onSelect)));
+    native.invoke('open-folder');
+    expect(onSelect).toHaveBeenCalledTimes(1);
   });
 
-  it('shows the in-window bar on macOS when the preload lacks setAppMenu (stale preload, L-123 hardening)', () => {
-    // A stale/failed preload can't install the native menu — fall back to the
-    // in-window bar instead of stranding the user with no menu at all.
-    nativeMock = { platform: 'darwin' };
-    const { result } = renderHook(() => useShowInWindowMenuBar());
-    expect(result.current).toBe(true);
+  it('ignores an id no item claims', () => {
+    const native = macNative();
+    const onSelect = vi.fn();
+    renderHook(() => useNativeAppMenu(sections(onSelect)));
+    native.invoke('not-a-menu-item');
+    expect(onSelect).not.toHaveBeenCalled();
   });
 
-  it('shows the in-window bar on Electron Windows', () => {
-    nativeMock = { platform: 'win32' };
-    const { result } = renderHook(() => useShowInWindowMenuBar());
-    expect(result.current).toBe(true);
+  it('restores the baseline menu on unmount', () => {
+    const native = macNative();
+    const view = renderHook(() => useNativeAppMenu(sections(vi.fn())));
+    view.unmount();
+    expect(native.setAppMenu).toHaveBeenLastCalledWith(null);
+  });
+
+  it('does nothing in the browser, where there is no application menu', () => {
+    installNative(null);
+    expect(() => renderHook(() => useNativeAppMenu(sections(vi.fn())))).not.toThrow();
   });
 });

@@ -32,11 +32,9 @@ export default defineConfig({
       { find: '@hearth/playtest', replacement: src('packages/playtest/src/index.ts') },
     ],
   },
-  // The runtime package is developed in parallel and may not exist yet; it is
-  // only dynamically imported behind a server-side availability check.
-  // pixi.js is pre-bundled so its first use doesn't trigger a dev full-reload.
+  // Both packages are only ever dynamically imported behind a server-side
+  // availability check, and may not be built yet.
   optimizeDeps: {
-    include: ['pixi.js'],
     exclude: ['@hearth/runtime', '@hearth/playtest'],
   },
   server: {
