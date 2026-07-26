@@ -1,6 +1,6 @@
 # Hearth Roadmap
 
-**v0.1.0 is the current release** — the first release of the agent-first
+**v1.3.0 is the current release** — the first release of the agent-first
 Hearth app (conversation with a coding agent, an always-on game pane, and bot
 playtesting that leaves evidence behind). The version line was reset
 deliberately at the pivot. Everything below this paragraph is the history of
