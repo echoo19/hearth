@@ -4,7 +4,9 @@
  * shell running the user's own CLI agent, and the choice is theirs.
  *
  * These pin the four contracts that make that true rather than merely present:
- *   1. the header switch moves the column and the choice persists per folder;
+ *   1. choosing a mode moves the column and the choice persists per folder
+ *      (the control itself now lives in the sidebar, not in this column — see
+ *      the sidebar's own tests for the pill);
  *   2. flipping back to chat HIDES the terminal — the xterm host stays mounted,
  *      because unmounting it would drop the pty's scrollback and (worse)
  *      re-attaching a second instance would double-render the session;
@@ -61,7 +63,8 @@ function resetStore(over: Partial<ReturnType<typeof useApp.getState>> = {}): voi
   });
 }
 
-const modeTab = (name: 'Chat' | 'Terminal') => screen.getByRole('tab', { name });
+/** What the sidebar's mode pill does, without depending on the sidebar. */
+const chooseMode = (mode: 'chat' | 'terminal') => act(() => useApp.getState().setConversationMode(mode));
 const terminalLayer = () => document.querySelector('.conversation-layer.is-terminal');
 const chatLayer = () => document.querySelector('.conversation-layer.is-chat');
 
@@ -149,37 +152,40 @@ describe('first-run default vs. an explicit choice', () => {
   });
 });
 
-describe('the mode switch in the conversation header', () => {
-  it('offers exactly Chat and Terminal, with the current one selected', () => {
+describe('the conversation head', () => {
+  it('carries no mode control of its own — that pill lives in the sidebar', () => {
     render(<ChatColumn />);
-    const tabs = screen.getAllByRole('tab');
-    expect(tabs.map((tab) => tab.textContent)).toEqual(['Chat', 'Terminal']);
-    expect(modeTab('Chat').getAttribute('aria-selected')).toBe('true');
-    expect(modeTab('Terminal').getAttribute('aria-selected')).toBe('false');
+    expect(screen.queryAllByRole('tab')).toHaveLength(0);
+    expect(document.querySelector('.conversation-switch')).toBeNull();
   });
 
-  it('switches to the terminal, and back, updating the store and the selection', () => {
+  it('reads out who would answer while in chat mode', () => {
+    render(<ChatColumn />);
+    expect(document.querySelector('.conversation-provider')).not.toBeNull();
+  });
+
+  it('switches the column to the terminal, and back, off the store', () => {
     render(<ChatColumn />);
 
-    fireEvent.click(modeTab('Terminal'));
+    chooseMode('terminal');
     expect(useApp.getState().conversationMode).toBe('terminal');
-    expect(modeTab('Terminal').getAttribute('aria-selected')).toBe('true');
+    expect(terminalLayer()?.getAttribute('data-active')).toBe('true');
 
-    fireEvent.click(modeTab('Chat'));
+    chooseMode('chat');
     expect(useApp.getState().conversationMode).toBe('chat');
-    expect(modeTab('Chat').getAttribute('aria-selected')).toBe('true');
+    expect(chatLayer()?.getAttribute('data-active')).toBe('true');
   });
 
   it('persists the switch for this folder', () => {
     render(<ChatColumn />);
-    fireEvent.click(modeTab('Terminal'));
+    chooseMode('terminal');
     expect(localStorage.getItem(conversationModeStorageKey(PROJECT))).toBe('terminal');
   });
 
   it('names the folder the shell is running in, but only in terminal mode', () => {
     render(<ChatColumn />);
     expect(document.querySelector('.terminal-cwd')).toBeNull();
-    fireEvent.click(modeTab('Terminal'));
+    chooseMode('terminal');
     expect(document.querySelector('.terminal-cwd')?.textContent).toContain('game');
   });
 });
@@ -193,19 +199,19 @@ describe('the terminal survives the toggle', () => {
   it('keeps the xterm host mounted after switching back to chat', () => {
     render(<ChatColumn />);
 
-    fireEvent.click(modeTab('Terminal'));
+    chooseMode('terminal');
     const mounted = terminalLayer();
     expect(mounted).not.toBeNull();
     expect(mounted?.getAttribute('data-active')).toBe('true');
 
-    fireEvent.click(modeTab('Chat'));
+    chooseMode('chat');
     // Still the SAME element: hidden, never unmounted. Unmounting would drop
     // the pty's scrollback, and a later remount would attach a second view.
     expect(terminalLayer()).toBe(mounted);
     expect(mounted?.getAttribute('data-active')).toBe('false');
     expect(mounted?.getAttribute('aria-hidden')).toBe('true');
 
-    fireEvent.click(modeTab('Terminal'));
+    chooseMode('terminal');
     expect(terminalLayer()).toBe(mounted);
     expect(mounted?.getAttribute('data-active')).toBe('true');
   });
@@ -213,7 +219,7 @@ describe('the terminal survives the toggle', () => {
   it('keeps the chat layer mounted too, so the transcript is not rebuilt per toggle', () => {
     render(<ChatColumn />);
     const chat = chatLayer();
-    fireEvent.click(modeTab('Terminal'));
+    chooseMode('terminal');
     expect(chatLayer()).toBe(chat);
     expect(chat?.getAttribute('data-active')).toBe('false');
   });

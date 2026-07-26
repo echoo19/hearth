@@ -23,35 +23,47 @@ import { createPortal } from 'react-dom';
 import { Icon } from '../ui';
 import { Tooltip } from './Tooltip';
 
-export type MenuItem =
-  | {
-      label: string;
-      icon?: string;
-      shortcut?: string;
-      danger?: boolean;
-      disabled?: boolean;
-      /**
-       * One short line explaining why the item is disabled. When set on a
-       * disabled item, the item is wrapped in a Tooltip so hovering/focusing
-       * it explains why instead of just looking greyed out.
-       */
-      disabledReason?: string;
-      /** Present (true/false) → renders as a menuitemcheckbox with a ✓ gutter. */
-      checked?: boolean;
-      /** Defaults to true. Multi-toggle items (e.g. panel visibility) set false. */
-      closeOnSelect?: boolean;
-      onSelect: () => void;
-    }
-  | { separator: true };
+export interface MenuItemAction {
+  label: string;
+  icon?: string;
+  shortcut?: string;
+  danger?: boolean;
+  disabled?: boolean;
+  /**
+   * One short line explaining why the item is disabled. When set on a
+   * disabled item, the item is wrapped in a Tooltip so hovering/focusing
+   * it explains why instead of just looking greyed out.
+   */
+  disabledReason?: string;
+  /** Present (true/false) → renders as a menuitemcheckbox with a ✓ gutter. */
+  checked?: boolean;
+  /** Defaults to true. Multi-toggle items (e.g. panel visibility) set false. */
+  closeOnSelect?: boolean;
+  onSelect: () => void;
+}
 
-export type MenuItemAction = Exclude<MenuItem, { separator: true }>;
+/**
+ * A group label inside a menu — a name plus one optional trailing note (a
+ * status, a count). Not focusable and not selectable: it exists so a long
+ * menu can be read in sections instead of as one list.
+ */
+export interface MenuItemHeader {
+  header: string;
+  note?: string;
+}
+
+export type MenuItem = MenuItemAction | { separator: true } | MenuItemHeader;
 
 export function isSeparator(item: MenuItem): item is { separator: true } {
   return 'separator' in item;
 }
 
+export function isHeader(item: MenuItem): item is MenuItemHeader {
+  return 'header' in item;
+}
+
 function isFocusable(item: MenuItem): boolean {
-  return !isSeparator(item) && !item.disabled;
+  return !isSeparator(item) && !isHeader(item) && !item.disabled;
 }
 
 /**
@@ -142,6 +154,14 @@ export function MenuItems({
         if (isSeparator(item)) {
           return <div key={`sep-${i}`} className="menu-separator" role="separator" />;
         }
+        if (isHeader(item)) {
+          return (
+            <div key={`head-${i}`} className="menu-header" role="presentation">
+              <span className="menu-header-name">{item.header}</span>
+              {item.note && <span className="menu-header-note">{item.note}</span>}
+            </div>
+          );
+        }
         const isCheckbox = typeof item.checked === 'boolean';
         // Disabled items with a `disabledReason` stay reachable by pointer and
         // focus so the explanatory Tooltip can actually show — the native
@@ -181,12 +201,15 @@ export function MenuItems({
             )}
           </button>
         );
+        // Position, not label, is the identity: two groups in one menu can
+        // legitimately offer the same word (a "Default" per provider).
+        const key = `${i}-${item.label}`;
         return showReason ? (
-          <Tooltip key={item.label} content={item.disabledReason!}>
+          <Tooltip key={key} content={item.disabledReason!}>
             {itemButton}
           </Tooltip>
         ) : (
-          <React.Fragment key={item.label}>{itemButton}</React.Fragment>
+          <React.Fragment key={key}>{itemButton}</React.Fragment>
         );
       })}
     </>
@@ -364,6 +387,8 @@ export interface MenuButtonProps {
   align?: 'left' | 'right';
   disabled?: boolean;
   triggerClassName?: string;
+  /** Extra class on the popover, for a surface that needs its own metrics. */
+  popoverClassName?: string;
 }
 
 export function MenuButton({
@@ -373,6 +398,7 @@ export function MenuButton({
   align = 'left',
   disabled,
   triggerClassName = 'btn btn-sm',
+  popoverClassName,
 }: MenuButtonProps) {
   const [open, setOpen] = useState(false);
   const [focused, setFocused] = useState(-1);
@@ -481,7 +507,7 @@ export function MenuButton({
         createPortal(
           <div
             ref={popoverRef}
-            className="menu-popover"
+            className={popoverClassName ? `menu-popover ${popoverClassName}` : 'menu-popover'}
             role="menu"
             aria-label={label}
             onKeyDown={onKeyDown}

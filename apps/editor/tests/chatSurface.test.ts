@@ -3,7 +3,7 @@
  * and the tool chip's labelling. All DOM-free.
  */
 import { describe, expect, it } from 'vitest';
-import { composerBlockReason, isSendChord } from '../src/components/chat/Composer';
+import { composerBlockReason, composerKeyAction } from '../src/components/chat/Composer';
 import { detailIsFile, relativeTo, shortenPath, toolVerb } from '../src/components/chat/ToolChip';
 import { activeSenses } from '../src/components/game/CapabilityStrip';
 import { capabilityLabel, connectionLabel } from '../src/components/shell/TopBar';
@@ -24,15 +24,34 @@ describe('composerBlockReason', () => {
   });
 });
 
-describe('isSendChord', () => {
-  it('sends on ⌘↵ and Ctrl+↵', () => {
-    expect(isSendChord({ key: 'Enter', metaKey: true, ctrlKey: false })).toBe(true);
-    expect(isSendChord({ key: 'Enter', metaKey: false, ctrlKey: true })).toBe(true);
+describe('composerKeyAction — Enter sends, Shift+Enter breaks the line', () => {
+  const key = (over: Partial<Parameters<typeof composerKeyAction>[0]> = {}) =>
+    composerKeyAction({ key: 'Enter', metaKey: false, ctrlKey: false, shiftKey: false, altKey: false, ...over });
+
+  it('sends on a bare Enter — the idiom every other chat app uses', () => {
+    expect(key()).toBe('send');
   });
 
-  it('leaves a bare Enter to insert a newline', () => {
-    expect(isSendChord({ key: 'Enter', metaKey: false, ctrlKey: false })).toBe(false);
-    expect(isSendChord({ key: 'a', metaKey: true, ctrlKey: false })).toBe(false);
+  it('keeps the ⌘↵ / Ctrl+↵ chord this app shipped with', () => {
+    expect(key({ metaKey: true })).toBe('send');
+    expect(key({ ctrlKey: true })).toBe('send');
+    // Even held together with Shift, an explicit chord is an explicit send.
+    expect(key({ metaKey: true, shiftKey: true })).toBe('send');
+  });
+
+  it('breaks the line on Shift+Enter and Alt+Enter', () => {
+    expect(key({ shiftKey: true })).toBe('newline');
+    expect(key({ altKey: true })).toBe('newline');
+  });
+
+  it('stays out of the way of an IME composition', () => {
+    // Enter is confirming a candidate here; sending would eat the choice.
+    expect(key({ isComposing: true })).toBeNull();
+  });
+
+  it('claims nothing but Enter', () => {
+    expect(key({ key: 'a' })).toBeNull();
+    expect(key({ key: 'Tab' })).toBeNull();
   });
 });
 

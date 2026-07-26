@@ -1,24 +1,19 @@
 /**
- * The conversation column's one strip of chrome: which kind of conversation
- * this is, and — in terminal mode — where it is running.
+ * The conversation column's one strip of chrome: who is answering, and — in
+ * terminal mode — where the shell is running.
  *
- * The segmented control is the same primitive as the narrow-layout switch in
- * the top bar (`.switch-tab`), deliberately: this is a choice between two views
- * of one thing, which is what that control already means in this app. Nothing
- * else earns a place here — the column belongs to what is being said in it.
+ * Choosing BETWEEN the two kinds of conversation is not done here: that pill
+ * lives in the sidebar, next to everything else that decides what the main
+ * area shows. What is left is a read-out, and it is deliberately thin — the
+ * column belongs to what is being said in it.
  */
 import React from 'react';
-import { useApp, type ConversationMode } from '../../store';
+import { useApp } from '../../store';
 import type { ChatDriverKind, ChatProviderStatus } from '../../types';
 import { useAgentSocket } from '../agent/useAgentSocket';
 import { Button } from '../ui/Button';
 import { Tooltip } from '../ui/Tooltip';
 import { terminalStatusLabel } from './TerminalPane';
-
-const MODES: { id: ConversationMode; label: string }[] = [
-  { id: 'chat', label: 'Chat' },
-  { id: 'terminal', label: 'Terminal' },
-];
 
 /**
  * Who is answering, in the name a user would use for it — not the driver's.
@@ -73,29 +68,11 @@ function TerminalContext() {
 
 export function ConversationHead() {
   const mode = useApp((s) => s.conversationMode);
-  const setMode = useApp((s) => s.setConversationMode);
   const providers = useApp((s) => s.providers);
   const driver = useApp((s) => s.chatDriver);
 
   return (
     <div className="conversation-head">
-      <div className="conversation-switch" role="tablist" aria-label="Conversation mode">
-        {MODES.map((entry) => (
-          <button
-            key={entry.id}
-            type="button"
-            role="tab"
-            className="switch-tab"
-            aria-selected={mode === entry.id}
-            onClick={() => setMode(entry.id)}
-          >
-            {entry.label}
-          </button>
-        ))}
-      </div>
-
-      <span className="conversation-head-spacer" />
-
       {/* Chat mode's one read-out: which agent would answer. Same quiet
           register as the terminal's status — a label, not a control. */}
       {mode === 'chat' && <span className="conversation-provider">{providerLabel(providers, driver)}</span>}

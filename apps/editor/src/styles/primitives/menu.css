@@ -71,6 +71,35 @@
   text-align: center;
 }
 
+/* A group label. Reads as a caption, not as an item you failed to click:
+   smaller, muted, and with the note (a status, a count) pushed to the far
+   edge so the two never look like one sentence. */
+.menu-header {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  padding: 8px 10px 4px;
+  font-size: var(--text-2xs);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--ink-mute);
+}
+
+.menu-header-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.menu-header-note {
+  flex: none;
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--ink-mute);
+}
+
 .menu-separator {
   height: 1px;
   margin: 4px 6px;

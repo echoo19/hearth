@@ -1,8 +1,10 @@
 /* The conversation column: the app's primary surface.
 
-   A user turn is a quiet raised block; an agent turn is plain text on the
-   column with no container at all, so it reads like a page rather than a
-   stack of cards. Tool activity is one dim line each, inline.
+   Sized like a modern chat app rather than an IDE panel — one comfortable
+   measure down the middle, 15px prose, and a composer card that is the loudest
+   thing on screen. A user turn is a quiet raised block; an agent turn is plain
+   text on the column with no container at all, so it reads like a page rather
+   than a stack of cards. Tool activity is one line each, inline.
 
    The column is one of two things — a chat with the built-in agent, or a real
    shell running the user's own CLI agent. Both live in the same grid cell and
@@ -12,20 +14,29 @@
   display: grid;
   grid-template-rows: auto minmax(0, 1fr);
   min-height: 0;
-  background: var(--bg-1);
+  /* Sits on the main area's surface, one step lighter than the sidebar rail.
+     The fallback keeps this file standalone-correct before the token lands. */
+  background: var(--bg-05, var(--bg-1));
+
+  /* One measure for the transcript, the composer and the empty state, so all
+     three share a left edge. ~736px: wide enough for a code block, narrow
+     enough that prose still scans in one eye movement. */
+  --chat-measure: 46rem;
+  --chat-gutter: 28px;
 }
 
-/* --- Mode header ---------------------------------------------------------- */
+/* --- Head ----------------------------------------------------------------- */
 
-/* Slim, and borderless in chat mode on purpose: the top bar already draws a
-   hairline 48px above, and a second one would turn the column's opening into a
-   stack of chrome. The switch simply floats on the column. */
+/* A read-out, not a toolbar: choosing between chat and terminal happens in the
+   sidebar. Borderless in chat mode on purpose — the top bar already draws a
+   hairline above, and a second one would turn the column's opening into a
+   stack of chrome. */
 .conversation-head {
   display: flex;
   align-items: center;
   gap: 10px;
-  height: 44px;
-  padding: 0 14px;
+  height: 40px;
+  padding: 0 var(--chat-gutter);
   flex: none;
 }
 
@@ -35,18 +46,12 @@
   border-bottom: 1px solid var(--border);
 }
 
-.conversation-head-spacer {
-  flex: 1;
-  min-width: 0;
-}
-
 /* Chat mode's answer to "who am I talking to?", in the same quiet register as
-   the terminal's session status on the opposite side of the same header. A
-   label, not a control — changing the answer happens in Settings. */
+   the terminal's session status. A label, not a control. */
 .conversation-provider {
   flex: none;
   font-size: var(--text-xs);
-  color: var(--ink-faint);
+  color: var(--ink-mute);
 }
 
 /* --- Mode layers ---------------------------------------------------------- */
@@ -102,20 +107,16 @@
 .chat-scroll {
   overflow-y: auto;
   min-height: 0;
-  /* Less at the top than the column used to carry: the mode header above it is
-     doing that job now, and stacking both would open the conversation on a
-     band of nothing. */
-  padding: 12px 24px 8px;
+  padding: 8px var(--chat-gutter) 8px;
 }
 
 .chat-turns {
   display: flex;
   flex-direction: column;
-  gap: 24px;
-  /* One measure for the whole conversation, centred in the column. */
-  max-width: 68ch;
+  gap: 26px;
+  max-width: var(--chat-measure);
   margin: 0 auto;
-  padding-bottom: 12px;
+  padding-bottom: 16px;
 }
 
 /* --- Turns ---------------------------------------------------------------- */
@@ -123,7 +124,7 @@
 .msg {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 12px;
   /* Enter: a short rise + fade. Purpose is continuity — a turn arrives, it
      doesn't blink into place. Only transform/opacity. */
   animation: msg-enter var(--t-slow) var(--ease-out) both;
@@ -141,14 +142,14 @@
 }
 
 /* A user turn is a subtly distinct block, not a coloured bubble: same neutral
-   family as everything else, one step lifted, generously rounded. */
+   family as everything else, one step lifted, generously rounded, and no
+   border — the fill is already the whole signal. */
 .msg-user {
   align-self: flex-end;
-  max-width: 88%;
-  padding: 12px 16px;
-  border-radius: var(--radius-lg);
+  max-width: 80%;
+  padding: 11px 16px;
+  border-radius: var(--radius-lg, 12px);
   background: var(--bg-2);
-  border: 1px solid var(--border);
 }
 
 .msg-text {
@@ -157,7 +158,7 @@
   overflow-wrap: anywhere;
   text-wrap: pretty;
   font-size: var(--text-md);
-  line-height: 1.65;
+  line-height: 1.68;
 }
 
 .msg-agent .msg-text {
@@ -175,7 +176,7 @@
   align-items: center;
   gap: 8px;
   margin: 0;
-  color: var(--ink-faint);
+  color: var(--ink-mute);
   font-size: var(--text-sm);
 }
 
@@ -220,18 +221,20 @@
   align-items: center;
   gap: 9px;
   width: 100%;
-  padding: 5px 0;
+  padding: 6px 10px;
   border: 0;
+  border-radius: var(--radius, 8px);
   background: transparent;
   text-align: left;
   cursor: pointer;
-  color: var(--ink-faint);
+  color: var(--ink-mute);
   font-size: var(--text-sm);
-  transition: color var(--t-fast) var(--ease-out);
+  transition: background var(--t-fast) var(--ease-out), color var(--t-fast) var(--ease-out);
 }
 
 .tool-chip-line:hover {
-  color: var(--ink-mute);
+  background: var(--bg-1);
+  color: var(--ink);
 }
 
 .tool-dot {
@@ -275,9 +278,10 @@
   display: flex;
   flex-direction: column;
   gap: 6px;
-  margin-left: 14px;
+  margin-left: 10px;
   padding: 12px 14px;
-  border-left: 1px solid var(--border);
+  border-radius: var(--radius, 8px);
+  background: var(--bg-1);
   color: var(--ink-mute);
   font-size: var(--text-xs);
   animation: tool-body-in 120ms var(--ease-out) both;
@@ -293,7 +297,7 @@
 }
 
 .tool-body-name {
-  color: var(--ink-faint);
+  color: var(--ink-mute);
 }
 
 .tool-body-detail {
@@ -325,6 +329,10 @@
    worth finding again is a BOX. A command ran and worked — that is a line. A
    file changed, an agent was delegated, permission was asked — those are the
    three things a reader scans back for, and only those get a container.
+
+   Lines and boxes now share one shape: a --radius block on --bg-1, one step
+   below the column, which is what makes a run of them read as a single
+   apparatus rather than a pile of unrelated widgets.
 
    Disclosure everywhere is click-triggered and frequent, so none of it
    animates height (a layout property, and the reveal would judder against the
@@ -390,20 +398,22 @@
 .cmd-line {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 9px;
   width: 100%;
-  padding: 4px 0;
+  padding: 7px 12px;
   border: 0;
-  background: transparent;
+  border-radius: var(--radius, 8px);
+  background: var(--bg-1);
   text-align: left;
   cursor: pointer;
-  color: var(--ink-faint);
+  color: var(--ink-mute);
   font-size: var(--text-sm);
-  transition: color var(--t-fast) var(--ease-out);
+  transition: background var(--t-fast) var(--ease-out), color var(--t-fast) var(--ease-out);
 }
 
 .cmd-line:hover {
-  color: var(--ink-mute);
+  background: var(--bg-2);
+  color: var(--ink);
 }
 
 .cmd-verb {
@@ -418,14 +428,14 @@
   flex: 1;
   font-family: var(--font-mono);
   font-size: var(--text-xs);
-  color: var(--ink-mute);
+  color: var(--ink);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .cmd-row.state-running .cmd-text {
-  color: var(--ink-faint);
+  color: var(--ink-mute);
 }
 
 /* The only status colour on the row. Semantic, not decorative — a red exit
@@ -440,7 +450,7 @@
 .cmd-time {
   flex: none;
   font-size: var(--text-2xs);
-  color: var(--ink-faint);
+  color: var(--ink-mute);
   font-variant-numeric: tabular-nums;
 }
 
@@ -448,9 +458,9 @@
   display: flex;
   flex-direction: column;
   gap: 6px;
-  margin-left: 15px;
   padding: 10px 14px;
-  border-left: 1px solid var(--border);
+  border-radius: var(--radius, 8px);
+  background: var(--bg-1);
   animation: disclose-in var(--t-fast) var(--ease-out) both;
 }
 
@@ -474,7 +484,7 @@
 .cmd-empty {
   margin: 0;
   font-size: var(--text-xs);
-  color: var(--ink-faint);
+  color: var(--ink-mute);
 }
 
 .cmd-exit {
@@ -492,8 +502,8 @@
 
 .filechange-card {
   border: 1px solid var(--border);
-  border-radius: var(--radius);
-  background: var(--bg-2);
+  border-radius: var(--radius-lg, 12px);
+  background: var(--bg-1);
   overflow: hidden;
 }
 
@@ -510,9 +520,9 @@
 .filechange-line {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 9px;
   width: 100%;
-  padding: 8px 12px;
+  padding: 9px 14px;
   border: 0;
   background: transparent;
   text-align: left;
@@ -523,7 +533,7 @@
 }
 
 .filechange-line:hover {
-  background: var(--bg-3);
+  background: var(--bg-2);
 }
 
 /* The card clips to its radius (overflow: hidden), which would crop the global
@@ -574,7 +584,7 @@
   display: flex;
   flex-direction: column;
   gap: 8px;
-  padding: 0 12px 10px;
+  padding: 0 12px 12px;
   animation: disclose-in var(--t-fast) var(--ease-out) both;
 }
 
@@ -587,22 +597,23 @@
   margin: 0;
   max-height: 320px;
   overflow: auto;
-  padding: 8px 10px;
-  border-radius: var(--radius-sm);
+  padding: 10px 12px;
+  border-radius: var(--radius, 8px);
   background: var(--bg-0);
   font-family: var(--font-mono);
   font-size: var(--text-xs);
-  line-height: 1.5;
+  line-height: 1.55;
   white-space: pre;
 }
 
+/* Context lines are the code the patch lands in — read at full strength.
+   Hunk headers are the patch's own bookkeeping, so they step back. */
 .filechange-diff .diff-ctx {
-  color: var(--ink-faint);
+  color: var(--ink);
 }
 
 .filechange-diff .diff-meta {
-  color: var(--ink-faint);
-  opacity: 0.75;
+  color: var(--ink-mute);
 }
 
 /* --ok and --err at HALF chroma, same hues (150 / 25). At full strength, a
@@ -619,26 +630,25 @@
 .filechange-empty {
   margin: 0;
   font-size: var(--text-xs);
-  color: var(--ink-faint);
+  color: var(--ink-mute);
 }
 
 /* --- Subagent ------------------------------------------------------------- */
 
-/* A second actor, one level in. The indent is padding plus a 1px hairline —
-   enough to say "nested", never a coloured side-stripe. Its transcript is a
-   list of rows, not a card: a card inside a card is where this stops reading
-   as one conversation. */
+/* A second actor, one level in. The indent is padding plus the same block
+   shape as everything else — enough to say "nested", never a coloured
+   side-stripe. Its transcript is a list of rows, not a card: a card inside a
+   card is where this stops reading as one conversation. */
 
 .subagent-card {
   margin-left: 12px;
-  padding: 8px 12px;
+  padding: 10px 14px;
   border: 1px solid var(--border);
-  border-left: 1px solid var(--border-strong);
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius-lg, 12px);
   background: var(--bg-1);
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 5px;
   /* A genuine new actor arriving — worth a small rise, unlike the rows. */
   animation: subagent-enter var(--t) var(--ease-out) both;
 }
@@ -706,7 +716,7 @@
 .subagent-role {
   flex: none;
   font-size: var(--text-2xs);
-  color: var(--ink-faint);
+  color: var(--ink-mute);
 }
 
 /* The one line a running subagent shows, and the conclusion it leaves behind.
@@ -714,8 +724,8 @@
 .subagent-line {
   margin: 0;
   padding-left: 13px;
-  font-size: var(--text-xs);
-  line-height: 1.55;
+  font-size: var(--text-sm);
+  line-height: 1.6;
   color: var(--ink-mute);
   overflow-wrap: anywhere;
 }
@@ -724,7 +734,7 @@
   display: flex;
   align-items: center;
   gap: 8px;
-  color: var(--ink-faint);
+  color: var(--ink-mute);
 }
 
 .subagent-detail {
@@ -738,14 +748,14 @@
 .subagent-row {
   margin: 0;
   font-size: var(--text-xs);
-  line-height: 1.55;
-  color: var(--ink-faint);
+  line-height: 1.6;
+  color: var(--ink-mute);
   overflow-wrap: anywhere;
 }
 
 /* --- Reasoning ------------------------------------------------------------ */
 
-/* The working-out, not the answer: the faintest thing in the transcript, and
+/* The working-out, not the answer: the quietest thing in the transcript, and
    folded until asked for. */
 
 .reasoning-row {
@@ -759,29 +769,31 @@
   align-items: center;
   gap: 8px;
   align-self: flex-start;
-  padding: 3px 0;
+  padding: 5px 10px;
   border: 0;
+  border-radius: var(--radius, 8px);
   background: transparent;
   cursor: pointer;
-  color: var(--ink-faint);
+  color: var(--ink-mute);
   font-size: var(--text-sm);
-  transition: color var(--t-fast) var(--ease-out);
+  transition: background var(--t-fast) var(--ease-out), color var(--t-fast) var(--ease-out);
 }
 
 .reasoning-line:hover {
-  color: var(--ink-mute);
+  background: var(--bg-1);
+  color: var(--ink);
 }
 
 /* --ink-mute once opened: a reader who opened it intends to READ it, and
    --ink-faint is for metadata, not for prose. */
 .reasoning-body {
   margin: 0;
-  margin-left: 15px;
-  padding: 8px 14px;
-  border-left: 1px solid var(--border);
+  padding: 12px 14px;
+  border-radius: var(--radius, 8px);
+  background: var(--bg-1);
   color: var(--ink-mute);
   font-size: var(--text-sm);
-  line-height: 1.6;
+  line-height: 1.65;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
   animation: disclose-in var(--t-fast) var(--ease-out) both;
@@ -797,10 +809,10 @@
 .approval {
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  padding: 12px 14px;
+  gap: 10px;
+  padding: 14px 16px;
   border: 1px solid var(--border-strong);
-  border-radius: var(--radius);
+  border-radius: var(--radius-lg, 12px);
   background: var(--bg-2);
   animation: approval-enter var(--t-slow) var(--ease-out) both;
 }
@@ -819,7 +831,7 @@
 .approval-title {
   margin: 0;
   color: var(--ink);
-  font-size: var(--text-sm);
+  font-size: var(--text-md);
   text-wrap: pretty;
 }
 
@@ -827,8 +839,8 @@
   margin: 0;
   max-height: 200px;
   overflow: auto;
-  padding: 8px 10px;
-  border-radius: var(--radius-sm);
+  padding: 10px 12px;
+  border-radius: var(--radius, 8px);
   background: var(--bg-0);
   color: var(--ink);
   font-family: var(--font-mono);
@@ -845,7 +857,7 @@
 }
 
 .approval-hint {
-  color: var(--ink-faint);
+  color: var(--ink-mute);
   font-size: var(--text-2xs);
 }
 
@@ -854,15 +866,16 @@
    at --t is the crossfade: the prompt it replaces is gone in the same frame. */
 .approval-record {
   margin: 0;
-  color: var(--ink-faint);
+  color: var(--ink-mute);
   font-size: var(--text-sm);
   overflow-wrap: anywhere;
   animation: chat-fade-in var(--t) var(--ease-out) both;
 }
 
 .approval-record .mono {
+  font-family: var(--font-mono);
   font-size: var(--text-xs);
-  color: var(--ink-mute);
+  color: var(--ink);
 }
 
 /* Reduced motion: nothing in the transcript travels. Everything still ARRIVES
@@ -875,57 +888,43 @@
   .reasoning-body,
   .subagent-detail,
   .subagent-card,
-  .approval {
+  .approval,
+  .msg {
     animation-name: chat-fade-in;
   }
 }
 
 /* --- Empty state ---------------------------------------------------------- */
 
-/* Shares the composer's measure so its left edge lines up with the box the
-   reader is about to type in. */
+/* An open folder with nothing said in it yet. One line, centred on the
+   composer's measure so it sits directly above the box the reader is about to
+   type in — the same shape as Home, one size down, because this is the second
+   time they have seen it rather than the first. */
 .chat-empty {
-  max-width: 68ch;
-  margin: 12vh auto 0;
+  max-width: var(--chat-measure);
+  margin: 16vh auto 0;
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 12px;
+  text-align: center;
+  align-items: center;
 }
 
 .chat-empty-lead {
   margin: 0;
-  font-family: var(--font-display);
-  font-weight: 600;
-  letter-spacing: -0.015em;
-  font-size: var(--text-2xl);
+  font-weight: 500;
+  letter-spacing: -0.01em;
+  font-size: var(--text-xl);
   color: var(--ink);
+  text-wrap: balance;
 }
 
 .chat-empty-hint {
   margin: 0;
-  max-width: 52ch;
+  max-width: 46ch;
   color: var(--ink-mute);
-  font-size: var(--text-md);
-  text-wrap: pretty;
-}
-
-.chat-empty-examples {
-  margin: 6px 0 0;
-  padding: 0;
-  list-style: none;
-  display: flex;
-  flex-direction: column;
-  gap: 5px;
-  color: var(--ink-faint);
   font-size: var(--text-sm);
-}
-
-.chat-empty-examples li::before {
-  content: '“';
-}
-
-.chat-empty-examples li::after {
-  content: '”';
+  text-wrap: pretty;
 }
 
 /* The two ways forward when no key is configured. Both are real controls and
@@ -933,8 +932,10 @@
 .chat-empty-actions {
   display: flex;
   align-items: center;
+  justify-content: center;
+  flex-wrap: wrap;
   gap: 8px;
-  margin-top: 8px;
+  margin-top: 4px;
 }
 
 /* --------------------------------------------------------------------------
@@ -992,7 +993,7 @@
 .terminal-cwd-status {
   flex: none;
   font-size: var(--text-xs);
-  color: var(--ink-faint);
+  color: var(--ink-mute);
 }
 
 /* Shown once per install: the whole "bring your own agent" idea in one line.
@@ -1002,16 +1003,16 @@
   align-items: baseline;
   gap: 10px;
   margin: 0;
-  padding: 9px 10px 9px 14px;
+  padding: 10px 12px 10px var(--chat-gutter);
   flex: none;
-  color: var(--ink-faint);
+  color: var(--ink-mute);
   font-size: var(--text-xs);
   text-wrap: pretty;
 }
 
 .terminal-hint code {
   font-size: var(--text-xs);
-  color: var(--ink-mute);
+  color: var(--ink);
 }
 
 .terminal-hint-text {
@@ -1024,20 +1025,20 @@
   align-items: center;
   justify-content: center;
   flex: none;
-  width: 18px;
-  height: 18px;
+  width: 20px;
+  height: 20px;
   padding: 0;
   border: 0;
   border-radius: var(--radius-sm);
   background: transparent;
-  color: var(--ink-faint);
+  color: var(--ink-mute);
   cursor: pointer;
   transition: color var(--t-fast) var(--ease-out), background var(--t-fast) var(--ease-out);
 }
 
 .terminal-hint-dismiss:hover {
   background: var(--bg-2);
-  color: var(--ink-mute);
+  color: var(--ink);
 }
 
 .terminal-idle {
@@ -1045,33 +1046,48 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  color: var(--ink-faint);
+  color: var(--ink-mute);
   font-size: var(--text-sm);
 }
 
-/* --- Composer ------------------------------------------------------------- */
+/* --------------------------------------------------------------------------
+   Composer
+   --------------------------------------------------------------------------
+   The signature element, and the only place in the app allowed to be this
+   large. One card: what you type on top, everything that qualifies it along
+   the bottom. The same card serves Home and the docked position under a
+   transcript, so the app's front door and its working surface are literally
+   the same control.
 
-/* The signature element. A large floating container: generous radius, one
-   hairline border, a soft shadow lifting it off the column, and a filled
-   ember send button inside it. Everything else in the app is quieter than
-   this on purpose. */
+   No accent ring on focus: the card is already the loudest thing on screen,
+   and flooding its border with ember on every click would make typing feel
+   like an alarm. The border simply firms up. */
 
 .composer {
-  padding: 8px 24px 24px;
+  padding: 6px var(--chat-gutter) 22px;
   flex: none;
 }
 
-.composer-field {
-  max-width: 68ch;
+.composer-home {
+  /* Home has no transcript above it: the card is the page, and it carries its
+     own measure rather than inheriting the column's. */
+  --chat-measure: 46rem;
+  --chat-gutter: 0px;
+  padding: 0;
+  width: 100%;
+}
+
+.composer-card {
+  max-width: var(--chat-measure);
   margin: 0 auto;
   border: 1px solid var(--border);
-  border-radius: var(--radius-xl);
-  background: var(--bg-2);
+  border-radius: var(--radius-xl, 16px);
+  background: var(--bg-1);
   box-shadow: var(--shadow-2);
   transition: border-color var(--t) var(--ease-out);
 }
 
-.composer-field:focus-within {
+.composer-card:focus-within {
   border-color: var(--border-strong);
 }
 
@@ -1086,79 +1102,194 @@
   font-family: var(--font-ui);
   font-size: var(--text-md);
   line-height: 1.6;
-  padding: 16px 18px 6px;
+  padding: 15px 18px 4px;
   max-height: 200px;
   overflow-y: auto;
 }
 
+/* --ink-mute, not --ink-faint: a placeholder is read, and it is the only copy
+   in the card until something is typed. */
 .composer-input::placeholder {
-  color: var(--ink-faint);
+  color: var(--ink-mute);
 }
 
-/* The field owns the focus treatment; the bare textarea inside must not draw
+/* The card owns the focus treatment; the bare textarea inside must not draw
    the shared base ring on top of it. */
 .composer-input:focus-visible {
   outline: none;
 }
 
-.composer-actions {
+.composer-row {
   display: flex;
   align-items: center;
-  gap: 12px;
-  padding: 2px 10px 10px 18px;
+  gap: 6px;
+  padding: 6px 8px 8px 10px;
 }
 
-/* A quiet status line, not a control: what will happen, or why nothing will. */
+.composer-row-gap {
+  flex: 1;
+  min-width: 0;
+}
+
+/* A quiet status line, not a control: what is in the way, or nothing at all. */
 .composer-note {
   flex: 1;
   min-width: 0;
-  color: var(--ink-faint);
+  padding-left: 4px;
+  color: var(--ink-mute);
   font-size: var(--text-xs);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-/* Send: the app's one filled, circular, ember control. */
-.composer-send.btn {
+/* The + : attachments and context, in the corner both reference apps put it. */
+.composer-plus {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  border: 1px solid var(--border);
   border-radius: 50%;
-  border-color: var(--accent);
-  background: var(--accent);
-  color: var(--accent-ink);
+  background: transparent;
+  color: var(--ink-mute);
+  cursor: pointer;
+  transition: background var(--t-fast) var(--ease-out), color var(--t-fast) var(--ease-out),
+    border-color var(--t-fast) var(--ease-out);
 }
 
-.composer-send.btn:hover:not(:disabled) {
-  background: var(--accent-hover);
-  border-color: var(--accent-hover);
-}
-
-.composer-send.btn:active:not(:disabled) {
-  background: var(--accent-down);
-}
-
-.composer-send.btn:disabled {
-  background: var(--bg-3);
-  border-color: transparent;
-  color: var(--ink-faint);
-  opacity: 1;
-}
-
-/* The send glyph is a chevron; point it the way the message goes. */
-.composer-send:not(.is-stop) svg {
-  transform: rotate(-90deg);
-}
-
-/* Stop keeps the circle but drops the fill — interrupting is not a primary
-   action, it is a way out of one. */
-.composer-send.is-stop.btn {
-  background: var(--bg-3);
+.composer-plus:hover {
+  background: var(--bg-2);
   border-color: var(--border-strong);
   color: var(--ink);
 }
 
-.composer-send.is-stop.btn:hover:not(:disabled) {
-  background: var(--bg-1);
-  border-color: var(--border-strong);
+/* Who answers. A text pill: no border at rest, because a control inside a
+   control reads as clutter — it only draws a surface once pointed at. */
+.model-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex: none;
+  height: 30px;
+  max-width: 15rem;
+  padding: 0 9px;
+  border: 0;
+  border-radius: var(--radius, 8px);
+  background: transparent;
+  color: var(--ink-mute);
+  font-family: var(--font-ui);
+  font-size: var(--text-sm);
+  cursor: pointer;
+  transition: background var(--t-fast) var(--ease-out), color var(--t-fast) var(--ease-out);
+}
+
+.model-pill:hover,
+.model-pill[aria-expanded='true'] {
+  background: var(--bg-2);
+  color: var(--ink);
+}
+
+.model-pill-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.model-pill-effort {
+  flex: none;
+  color: var(--ink-mute);
+}
+
+.model-pill svg {
+  flex: none;
+  transform: rotate(90deg);
+  color: var(--ink-mute);
+}
+
+/* Send: the app's one filled, circular, ember control. */
+.composer-send {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: var(--accent);
+  color: var(--accent-ink);
+  cursor: pointer;
+  transition: background var(--t-fast) var(--ease-out), color var(--t-fast) var(--ease-out);
+}
+
+.composer-send:hover:not(:disabled) {
+  background: var(--accent-hover);
+}
+
+.composer-send:active:not(:disabled) {
+  background: var(--accent-down);
+}
+
+/* Quiet rather than half-transparent: a disabled send is a normal resting
+   state here (the box is empty most of the time), not an error. */
+.composer-send:disabled {
+  background: var(--bg-3);
+  color: var(--ink-mute);
+  cursor: default;
+}
+
+/* Stop keeps the circle but drops the fill — interrupting is not a primary
+   action, it is a way out of one. */
+.composer-send.is-stop {
+  background: var(--bg-3);
+  border: 1px solid var(--border-strong);
+  color: var(--ink);
+}
+
+.composer-send.is-stop:hover {
+  background: var(--bg-2);
+}
+
+/* --- Composer menus ------------------------------------------------------- */
+
+/* Both of the composer's popovers open upward from a control at the bottom of
+   the screen, so they grow from where they were summoned. 150ms, scale and
+   opacity only. */
+@keyframes composer-menu-in {
+  from {
+    opacity: 0;
+    transform: scale(0.97) translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.menu-popover.model-menu,
+.menu-popover.composer-menu {
+  animation: composer-menu-in var(--t) var(--ease-out) both;
+}
+
+.menu-popover.model-menu {
+  min-width: 232px;
+  transform-origin: bottom right;
+}
+
+.menu-popover.composer-menu {
+  transform-origin: bottom left;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .menu-popover.model-menu,
+  .menu-popover.composer-menu {
+    animation-name: chat-fade-in;
+  }
 }
 
 /* --------------------------------------------------------------------------
@@ -1200,7 +1331,7 @@
 .settings-provider-version {
   font-family: var(--font-mono);
   font-size: var(--text-2xs);
-  color: var(--ink-faint);
+  color: var(--ink-mute);
 }
 
 .settings-provider-actions {

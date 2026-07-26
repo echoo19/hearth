@@ -6,9 +6,10 @@
  * they read a page, not pick it out of a card. Tool activity lands inline
  * between paragraphs, exactly where it happened.
  */
-import React, { useEffect, useLayoutEffect, useRef } from 'react';
+import React, { useEffect, useLayoutEffect, useMemo, useRef } from 'react';
 import { useApp } from '../../store';
 import type { ChatMessage, ChatPart } from '../../types';
+import { greetingFor } from '../home/Home';
 import { Button } from '../ui/Button';
 import { ApprovalPrompt } from './ApprovalPrompt';
 import { CommandRow } from './CommandRow';
@@ -30,6 +31,15 @@ export function isNearBottom(
 }
 
 /**
+ * The greeting an empty chat opens with — the same rotating line Home uses,
+ * one size down. Two different greetings for the same moment would read as
+ * two different apps, so this borrows rather than repeats.
+ */
+function chatEmptyGreeting(): string {
+  return greetingFor(new Date().getHours(), Math.floor(Date.now() / 86_400_000));
+}
+
+/**
  * Nothing has been said yet. The one place in the app with a little warmth —
  * it is the first thing a new user reads, and "type what you want" is the
  * entire onboarding.
@@ -42,21 +52,19 @@ export function isNearBottom(
 function ChatEmptyState({ hasAgent }: { hasAgent: boolean }) {
   const setConversationMode = useApp((s) => s.setConversationMode);
   const startOpenAiLogin = useApp((s) => s.startOpenAiLogin);
+  // Read the clock once per mount: a line that re-rolls under the reader is
+  // the app fidgeting.
+  const greeting = useMemo(chatEmptyGreeting, []);
   return (
     <div className="chat-empty">
-      <p className="chat-empty-lead">What are we making?</p>
-      <p className="chat-empty-hint">
-        {hasAgent
-          ? 'Describe the game. It gets built in this folder, and shows up in the pane beside you.'
-          : 'No agent is connected yet. Sign in with ChatGPT, add an Anthropic key, or run your own CLI agent in the terminal.'}
-      </p>
-      {hasAgent ? (
-        <ul className="chat-empty-examples">
-          <li>a top-down space shooter with asteroids</li>
-          <li>a one-screen platformer, three levels</li>
-          <li>snake, but the walls wrap</li>
-        </ul>
-      ) : (
+      <p className="chat-empty-lead">{greeting}</p>
+      {!hasAgent && (
+        <p className="chat-empty-hint">
+          No agent is connected yet. Sign in with ChatGPT, add an Anthropic key, or run your own CLI agent
+          in the terminal.
+        </p>
+      )}
+      {hasAgent ? null : (
         // Three ways forward, and none of them is the consolation prize: the
         // two built-in agents are one click each, and the terminal is the
         // third first-class answer rather than what's left over.
