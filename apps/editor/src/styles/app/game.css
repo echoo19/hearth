@@ -343,47 +343,5 @@
   text-align: center;
 }
 
-/* --- Terminal tab --------------------------------------------------------- */
-
-.terminal-tab {
-  display: flex;
-  flex-direction: column;
-  flex: 1;
-  min-height: 0;
-  background: var(--bg-0);
-}
-
-.terminal-bar {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 8px 12px;
-  border-bottom: 1px solid var(--border);
-  flex: none;
-}
-
-.terminal-status {
-  font-size: var(--text-xs);
-  color: var(--ink-mute);
-}
-
-.terminal-status.status-running {
-  color: var(--ok);
-}
-
-.terminal-status.status-reconnecting {
-  color: var(--warn);
-}
-
-.terminal-bar-spacer {
-  flex: 1;
-}
-
-.terminal-idle {
-  flex: 1;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: var(--ink-faint);
-  font-size: var(--text-sm);
-}
+/* The shell used to be a third tab here. It is a conversation, not a readout,
+   so it moved into the conversation column — see styles/app/chat.css. */

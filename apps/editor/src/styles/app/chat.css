@@ -2,19 +2,101 @@
 
    A user turn is a quiet raised block; an agent turn is plain text on the
    column with no container at all, so it reads like a page rather than a
-   stack of cards. Tool activity is one dim line each, inline. */
+   stack of cards. Tool activity is one dim line each, inline.
+
+   The column is one of two things — a chat with the built-in agent, or a real
+   shell running the user's own CLI agent. Both live in the same grid cell and
+   cross-fade between them; neither is a fallback for the other. */
 
 .chat-column {
   display: grid;
-  grid-template-rows: minmax(0, 1fr) auto;
+  grid-template-rows: auto minmax(0, 1fr);
   min-height: 0;
   background: var(--bg-1);
+}
+
+/* --- Mode header ---------------------------------------------------------- */
+
+/* Slim, and borderless in chat mode on purpose: the top bar already draws a
+   hairline 48px above, and a second one would turn the column's opening into a
+   stack of chrome. The switch simply floats on the column. */
+.conversation-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  height: 44px;
+  padding: 0 14px;
+  flex: none;
+}
+
+/* Terminal mode earns the rule: below it is a hard-edged, darker surface, and
+   the header is genuinely a different plane from it. */
+.chat-column[data-mode='terminal'] .conversation-head {
+  border-bottom: 1px solid var(--border);
+}
+
+.conversation-head-spacer {
+  flex: 1;
+  min-width: 0;
+}
+
+/* --- Mode layers ---------------------------------------------------------- */
+
+/* Both modes occupy the same cell so the swap can't move anything around it,
+   and so the terminal keeps its measured size while hidden — a collapsed
+   container would make xterm refit twice per toggle. */
+.conversation-stack {
+  display: grid;
+  min-height: 0;
+  min-width: 0;
+}
+
+.conversation-layer {
+  grid-area: 1 / 1;
+  display: grid;
+  min-height: 0;
+  min-width: 0;
+  /* Continuity, not decoration: the column becomes a different thing, and a
+     hard cut reads as a repaint bug. Transform + opacity only, and a
+     transition rather than a keyframe so a fast double-toggle retargets
+     mid-flight instead of queueing. */
+  transition: opacity var(--t) var(--ease-out), transform var(--t) var(--ease-out), visibility 0s;
+}
+
+.conversation-layer.is-chat {
+  grid-template-rows: minmax(0, 1fr) auto;
+}
+
+.conversation-layer.is-terminal {
+  grid-template-rows: minmax(0, 1fr);
+}
+
+.conversation-layer[data-active='false'] {
+  opacity: 0;
+  /* `visibility` (not `display`) keeps the layer laid out and out of the tab
+     order at once. Held until the fade finishes so the exit is visible. */
+  visibility: hidden;
+  transform: translateY(4px);
+  pointer-events: none;
+  transition: opacity var(--t) var(--ease-out), transform var(--t) var(--ease-out), visibility 0s linear var(--t);
+}
+
+/* The swap still happens; it just happens at once. */
+@media (prefers-reduced-motion: reduce) {
+  .conversation-layer,
+  .conversation-layer[data-active='false'] {
+    transform: none;
+    transition-delay: 0s;
+  }
 }
 
 .chat-scroll {
   overflow-y: auto;
   min-height: 0;
-  padding: 24px 24px 8px;
+  /* Less at the top than the column used to carry: the mode header above it is
+     doing that job now, and stacking both would open the conversation on a
+     band of nothing. */
+  padding: 12px 24px 8px;
 }
 
 .chat-turns {
@@ -272,6 +354,127 @@
 
 .chat-empty-examples li::after {
   content: '”';
+}
+
+/* The two ways forward when no key is configured. Both are real controls and
+   both are ordinary: the terminal is not a consolation prize. */
+.chat-empty-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+/* --------------------------------------------------------------------------
+   Terminal mode
+   --------------------------------------------------------------------------
+   The other half of this column. Darker than the chat side because it matches
+   the xterm canvas exactly (styles/tokens.css --bg-0 is xterm's background) —
+   any other surface here would show a seam around the grid. */
+
+.terminal-pane {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  min-width: 0;
+  background: var(--bg-0);
+}
+
+/* Where the shell is. The folder name, not the path — the path is one hover
+   away and the name is the answer to "where am I?". */
+.terminal-cwd {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  color: var(--ink-mute);
+}
+
+.terminal-cwd-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.terminal-dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  flex: none;
+  background: var(--ink-faint);
+  transition: background var(--t) var(--ease-out);
+}
+
+.terminal-cwd.status-running .terminal-dot {
+  background: var(--ok);
+}
+
+.terminal-cwd.status-reconnecting .terminal-dot {
+  background: var(--warn);
+}
+
+/* Only ever rendered when the session is NOT simply running — a healthy shell
+   says nothing. */
+.terminal-cwd-status {
+  flex: none;
+  font-size: var(--text-xs);
+  color: var(--ink-faint);
+}
+
+/* Shown once per install: the whole "bring your own agent" idea in one line.
+   A note on the surface, not a banner — no fill, no icon, no border. */
+.terminal-hint {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  margin: 0;
+  padding: 9px 10px 9px 14px;
+  flex: none;
+  color: var(--ink-faint);
+  font-size: var(--text-xs);
+  text-wrap: pretty;
+}
+
+.terminal-hint code {
+  font-size: var(--text-xs);
+  color: var(--ink-mute);
+}
+
+.terminal-hint-text {
+  flex: 1;
+  min-width: 0;
+}
+
+.terminal-hint-dismiss {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--ink-faint);
+  cursor: pointer;
+  transition: color var(--t-fast) var(--ease-out), background var(--t-fast) var(--ease-out);
+}
+
+.terminal-hint-dismiss:hover {
+  background: var(--bg-2);
+  color: var(--ink-mute);
+}
+
+.terminal-idle {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--ink-faint);
+  font-size: var(--text-sm);
 }
 
 /* --- Composer ------------------------------------------------------------- */

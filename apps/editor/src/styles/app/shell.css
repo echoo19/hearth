@@ -94,8 +94,12 @@
   flex: none;
 }
 
-/* Narrow layout: one region at a time, chosen from the top bar. */
-.topbar-switch {
+/* The app's segmented control, defined once and used twice: the narrow-layout
+   region switch here in the top bar, and the conversation column's Chat /
+   Terminal switch (styles/app/chat.css). Both mean the same thing — two views
+   of one place — so they must not look like two different controls. */
+.topbar-switch,
+.conversation-switch {
   display: inline-flex;
   gap: 3px;
   padding: 3px;

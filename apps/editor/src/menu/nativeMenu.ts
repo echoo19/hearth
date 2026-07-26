@@ -62,6 +62,7 @@ export function useNativeAppMenu(sections: AppMenuSection[]): void {
 export function useNativeMenu(): void {
   const native = hearthNative();
   const projectPath = useApp((s) => s.projectPath);
+  const conversationMode = useApp((s) => s.conversationMode);
   const paneTab = useApp((s) => s.paneTab);
   const evidenceOpen = useApp((s) => s.evidenceOpen);
   const codePeekOpen = useApp((s) => s.codePeek.open);
@@ -80,7 +81,7 @@ export function useNativeMenu(): void {
         checkForUpdates: native?.checkForUpdates ? () => void native.checkForUpdates?.() : null,
       }),
     // The store fields the model reads; getState() inside supplies the rest.
-    [native, projectPath, paneTab, evidenceOpen, codePeekOpen],
+    [native, projectPath, conversationMode, paneTab, evidenceOpen, codePeekOpen],
   );
 
   useNativeAppMenu(sections);

@@ -19,10 +19,12 @@ import type { AppState } from '../src/store';
 function mockStore(over: Partial<AppState> = {}): AppState {
   return {
     projectPath: '/work/game',
+    conversationMode: 'chat',
     paneTab: 'game',
     evidenceOpen: true,
     codePeek: { open: false, path: null },
     closeWorkspace: vi.fn(),
+    setConversationMode: vi.fn(),
     setPaneTab: vi.fn(),
     setEvidenceOpen: vi.fn(),
     openCodePeek: vi.fn(),
@@ -71,10 +73,34 @@ describe('buildAppMenu', () => {
   });
 
   it('checks the current pane and nothing else', () => {
-    const sections = buildAppMenu(mockStore({ paneTab: 'terminal' }), baseCtx());
+    const sections = buildAppMenu(mockStore({ paneTab: 'console' }), baseCtx());
     expect(item(sections, 'pane:game').checked).toBe(false);
-    expect(item(sections, 'pane:terminal').checked).toBe(true);
-    expect(item(sections, 'pane:console').checked).toBe(false);
+    expect(item(sections, 'pane:console').checked).toBe(true);
+  });
+
+  it('offers the two surfaces the pane stack actually has — the shell is not one of them', () => {
+    const sections = buildAppMenu(mockStore(), baseCtx());
+    const ids = items(sections, 'view').map((entry) => entry.id);
+    expect(ids).toContain('pane:game');
+    expect(ids).toContain('pane:console');
+    expect(ids).not.toContain('pane:terminal');
+  });
+
+  it('checks the current conversation mode — the terminal is reachable from View', () => {
+    const chat = buildAppMenu(mockStore({ conversationMode: 'chat' }), baseCtx());
+    expect(item(chat, 'mode:chat').checked).toBe(true);
+    expect(item(chat, 'mode:terminal').checked).toBe(false);
+
+    const terminal = buildAppMenu(mockStore({ conversationMode: 'terminal' }), baseCtx());
+    expect(item(terminal, 'mode:chat').checked).toBe(false);
+    expect(item(terminal, 'mode:terminal').checked).toBe(true);
+  });
+
+  it('routes a conversation-mode selection to the store', () => {
+    const setConversationMode = vi.fn();
+    const sections = buildAppMenu(mockStore({ setConversationMode }), baseCtx());
+    item(sections, 'mode:terminal').onSelect();
+    expect(setConversationMode).toHaveBeenCalledWith('terminal');
   });
 
   it('reflects the evidence rail and code peek as checkboxes', () => {

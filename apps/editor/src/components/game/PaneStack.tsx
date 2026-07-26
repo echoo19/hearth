@@ -1,21 +1,24 @@
 /**
  * The right-hand stack: the game, with its supporting surfaces stacked under
- * it — what the probe saw (the evidence rail), and the two places raw output
- * goes (Terminal, Console).
+ * it — what the probe saw (the evidence rail), and where raw output goes
+ * (Console).
  *
- * The game is the default and stays the default. Tabs, not a panel system:
- * three surfaces, one visible, no arranging.
+ * The shell is deliberately NOT here. A terminal running the user's own CLI
+ * agent is a conversation, not a readout, so it lives in the conversation
+ * column (components/chat/TerminalPane.tsx) as the other half of that column's
+ * mode switch.
+ *
+ * The game is the default and stays the default. Tabs, not a panel system: two
+ * surfaces, one visible, no arranging.
  */
 import React from 'react';
 import { useApp, type PaneTab } from '../../store';
 import { GamePane } from './GamePane';
-import { TerminalTab } from './TerminalTab';
 import { ConsolePanel } from '../ConsolePanel';
 import { EvidenceRail } from '../evidence/EvidenceRail';
 
 const TABS: { id: PaneTab; label: string }[] = [
   { id: 'game', label: 'Game' },
-  { id: 'terminal', label: 'Terminal' },
   { id: 'console', label: 'Console' },
 ];
 
@@ -28,7 +31,6 @@ export function PaneStack() {
     <section className="pane-stack" aria-label="Game">
       <div className="pane-surface">
         {paneTab === 'game' && <GamePane />}
-        {paneTab === 'terminal' && <TerminalTab />}
         {paneTab === 'console' && <ConsolePanel />}
       </div>
 

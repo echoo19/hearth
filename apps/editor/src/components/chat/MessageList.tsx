@@ -9,6 +9,7 @@
 import React, { useEffect, useLayoutEffect, useRef } from 'react';
 import { useApp } from '../../store';
 import type { ChatMessage } from '../../types';
+import { Button } from '../ui/Button';
 import { ToolChip } from './ToolChip';
 
 /**
@@ -27,21 +28,38 @@ export function isNearBottom(
  * Nothing has been said yet. The one place in the app with a little warmth —
  * it is the first thing a new user reads, and "type what you want" is the
  * entire onboarding.
+ *
+ * With no key configured there are exactly two ways forward and both are
+ * offered as real controls: bring your own CLI agent (one click away, in this
+ * same column), or give the built-in one a key. Neither is the fallback.
  */
 function ChatEmptyState({ hasAgent }: { hasAgent: boolean }) {
+  const setConversationMode = useApp((s) => s.setConversationMode);
   return (
     <div className="chat-empty">
       <p className="chat-empty-lead">What are we making?</p>
       <p className="chat-empty-hint">
         {hasAgent
           ? 'Describe the game. It gets built in this folder, and shows up in the pane beside you.'
-          : 'No agent is connected yet. Add a key in Settings, or run your own agent in the Terminal tab.'}
+          : 'No agent is connected yet. Run your own CLI agent in the terminal, or add a key so the built-in one can answer.'}
       </p>
-      <ul className="chat-empty-examples">
-        <li>a top-down space shooter with asteroids</li>
-        <li>a one-screen platformer, three levels</li>
-        <li>snake, but the walls wrap</li>
-      </ul>
+      {hasAgent ? (
+        <ul className="chat-empty-examples">
+          <li>a top-down space shooter with asteroids</li>
+          <li>a one-screen platformer, three levels</li>
+          <li>snake, but the walls wrap</li>
+        </ul>
+      ) : (
+        <div className="chat-empty-actions">
+          <Button onClick={() => setConversationMode('terminal')}>Switch to Terminal</Button>
+          <Button
+            variant="ghost"
+            onClick={() => window.dispatchEvent(new CustomEvent('hearth:open-settings'))}
+          >
+            Add a key in Settings
+          </Button>
+        </div>
+      )}
     </div>
   );
 }

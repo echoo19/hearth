@@ -9,7 +9,7 @@
  * Window menus are supplied by Electron itself, so this model only carries
  * what is genuinely Hearth's.
  */
-import type { AppState, PaneTab } from '../store';
+import type { AppState, ConversationMode, PaneTab } from '../store';
 
 export interface AppMenuItemModel {
   /** Stable id — used for IPC dispatch (menu:invoke) and tests. */
@@ -50,10 +50,15 @@ export interface AppMenuContext {
 /** Where Help → Documentation points. */
 export const DOCS_URL = 'https://hearthengine.com';
 
-/** The three surfaces the right-hand stack can show, in View-menu order. */
+/** What the conversation column can be, in View-menu order. */
+const CONVERSATION_MODES: { id: ConversationMode; label: string }[] = [
+  { id: 'chat', label: 'Chat' },
+  { id: 'terminal', label: 'Terminal' },
+];
+
+/** The two surfaces the right-hand stack can show, in View-menu order. */
 const PANE_TABS: { id: PaneTab; label: string }[] = [
   { id: 'game', label: 'Game' },
-  { id: 'terminal', label: 'Terminal' },
   { id: 'console', label: 'Console' },
 ];
 
@@ -75,6 +80,18 @@ export function buildAppMenu(store: AppState, ctx: AppMenuContext): AppMenuSecti
     id: 'view',
     label: 'View',
     items: [
+      // The conversation column first — it is the primary surface, and the
+      // terminal is only reachable from here now that it isn't a pane tab.
+      ...CONVERSATION_MODES.map(
+        (entry): AppMenuItemModel => ({
+          id: `mode:${entry.id}`,
+          label: entry.label,
+          enabled: hasFolder,
+          checked: store.conversationMode === entry.id,
+          onSelect: () => store.setConversationMode(entry.id),
+        }),
+      ),
+      { separator: true },
       ...PANE_TABS.map(
         (tab): AppMenuItemModel => ({
           id: `pane:${tab.id}`,

@@ -10,8 +10,8 @@
  * Everything live — conversation events, evidence, terminal bytes, external
  * file changes — arrives on ONE WebSocket per folder, multiplexed by frame
  * type (see server/ws.ts). The terminal's own buffer deliberately lives
- * outside this store (components/agent/useAgentSocket.ts) so it survives its
- * tab being hidden.
+ * outside this store (components/agent/useAgentSocket.ts) so it survives the
+ * conversation column switching away from terminal mode.
  */
 import { create } from 'zustand';
 import {
@@ -56,7 +56,16 @@ import {
 } from './components/agent/useAgentSocket';
 
 /** Which surface the right-hand stack is showing. */
-export type PaneTab = 'game' | 'terminal' | 'console';
+export type PaneTab = 'game' | 'console';
+
+/**
+ * What the conversation column IS right now. Both are first-class ways to talk
+ * to an agent: `chat` is the built-in driver (Agent SDK or the stub), `terminal`
+ * is the user's own CLI agent — `claude`, `codex`, anything — in a real shell in
+ * the project folder. The terminal is not a fallback; it is the other half of
+ * the same column.
+ */
+export type ConversationMode = 'chat' | 'terminal';
 
 /** Below this width the game pane can't hold its own column and becomes a tab. */
 export const NARROW_BREAKPOINT_PX = 900;
@@ -111,6 +120,15 @@ export interface AppState {
   // --- Shell ----------------------------------------------------------------
   /** Left rail collapsed to icons. Persisted — it is a workspace preference. */
   sidebarCollapsed: boolean;
+  /** Chat or terminal in the conversation column. Persisted per folder. */
+  conversationMode: ConversationMode;
+  /**
+   * Whether `conversationMode` is settled — a stored preference was found, or
+   * the user picked one. While false the first settings read still gets to
+   * choose the mode (chat with a key, terminal without). Once true, nothing
+   * moves the column out from under the user.
+   */
+  conversationModePinned: boolean;
   paneTab: PaneTab;
   /** Narrow layout only: the conversation and the pane stack become tabs. */
   narrowTab: 'chat' | 'pane';
@@ -147,6 +165,8 @@ export interface AppState {
   /** Play the game and stream what the probe finds into the evidence rail. */
   startSweep(): Promise<void>;
   setSidebarCollapsed(collapsed: boolean): void;
+  /** Explicit pick — persisted for this folder and never re-derived after. */
+  setConversationMode(mode: ConversationMode): void;
   setPaneTab(tab: PaneTab): void;
   setNarrowTab(tab: 'chat' | 'pane'): void;
   setEvidenceOpen(open: boolean): void;
@@ -164,6 +184,7 @@ const MAX_JOURNAL_FEED = 200;
 const MAX_EVIDENCE = 400;
 const LAST_WORKSPACE_KEY = 'hearth:lastWorkspace';
 const SIDEBAR_KEY = 'hearth:sidebarCollapsed';
+const CONVERSATION_MODE_PREFIX = 'hearth:conversationMode:';
 const WS_BACKOFF_INITIAL_MS = 1000;
 const WS_BACKOFF_MAX_MS = 5000;
 /** How often the game pane re-checks whether a game exists / changed. */
@@ -188,6 +209,44 @@ function readSidebarCollapsed(): boolean {
     return localStorage.getItem(SIDEBAR_KEY) === '1';
   } catch {
     return false; // private mode: expanded is the better default
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Conversation mode — per folder, because which agent you talk to is a property
+// of the project, not of the app. Same storage mechanism as the sidebar
+// preference, keyed by the folder's root path.
+// ---------------------------------------------------------------------------
+
+export function conversationModeStorageKey(projectPath: string): string {
+  return `${CONVERSATION_MODE_PREFIX}${projectPath}`;
+}
+
+/**
+ * Where a folder with no stored preference lands on its FIRST run: the chat if
+ * a key can answer it, the terminal if nothing can. Pure — this is the whole
+ * "sensible default" rule, checkable without a store.
+ */
+export function defaultConversationMode(hasKey: boolean): ConversationMode {
+  return hasKey ? 'chat' : 'terminal';
+}
+
+/** The folder's stored preference, or null when it has never picked one. */
+export function readConversationMode(projectPath: string): ConversationMode | null {
+  let raw: string | null = null;
+  try {
+    raw = localStorage.getItem(conversationModeStorageKey(projectPath));
+  } catch {
+    return null; // private mode: fall back to the derived default
+  }
+  return raw === 'chat' || raw === 'terminal' ? raw : null;
+}
+
+function writeConversationMode(projectPath: string, mode: ConversationMode): void {
+  try {
+    localStorage.setItem(conversationModeStorageKey(projectPath), mode);
+  } catch {
+    /* private mode: the preference just doesn't persist */
   }
 }
 
@@ -517,6 +576,8 @@ export const useApp = create<AppState>((set, get) => {
     consoleAtBottom: true,
 
     sidebarCollapsed: readSidebarCollapsed(),
+    conversationMode: 'chat',
+    conversationModePinned: false,
     paneTab: 'game',
     narrowTab: 'chat',
     codePeek: { open: false, path: null },
@@ -558,6 +619,10 @@ export const useApp = create<AppState>((set, get) => {
       } catch {
         /* private mode */
       }
+      // A folder that has picked a mode before opens in it. One that hasn't
+      // opens provisionally in chat and is settled by refreshSettings below,
+      // which is the first moment anyone knows whether a key exists.
+      const storedMode = readConversationMode(info.path);
       set({
         projectPath: info.path,
         projectName: info.name,
@@ -575,6 +640,8 @@ export const useApp = create<AppState>((set, get) => {
         shimDetected: false,
         gameNonce: 0,
         sweep: { ...IDLE_SWEEP },
+        conversationMode: storedMode ?? 'chat',
+        conversationModePinned: storedMode !== null,
         paneTab: 'game',
         narrowTab: 'chat',
         codePeek: { open: false, path: null },
@@ -616,6 +683,8 @@ export const useApp = create<AppState>((set, get) => {
         senses: [],
         shimDetected: false,
         sweep: { ...IDLE_SWEEP },
+        conversationMode: 'chat',
+        conversationModePinned: false,
         codePeek: { open: false, path: null },
         pendingPrompt: null,
       });
@@ -724,7 +793,14 @@ export const useApp = create<AppState>((set, get) => {
       const project = get().projectPath;
       if (!project) return;
       const settings = await apiAppSettings(project);
-      if (get().projectPath === project) set({ settings });
+      if (get().projectPath !== project) return;
+      set({ settings });
+      // First run for this folder: land in whichever half of the column can
+      // actually answer. A failed read (settings === null) settles nothing, so
+      // the next refresh still gets to decide.
+      if (settings && !get().conversationModePinned) {
+        set({ conversationMode: defaultConversationMode(settings.hasKey), conversationModePinned: true });
+      }
     },
 
     async startSweep() {
@@ -753,6 +829,12 @@ export const useApp = create<AppState>((set, get) => {
         /* private mode: the preference just doesn't persist */
       }
       set({ sidebarCollapsed: collapsed });
+    },
+
+    setConversationMode(mode) {
+      const project = get().projectPath;
+      if (project) writeConversationMode(project, mode);
+      set({ conversationMode: mode, conversationModePinned: true });
     },
 
     setPaneTab(tab) {
