@@ -1113,7 +1113,7 @@ export function createProjectServerContext(options: ProjectServerOptions = {}) {
               const message: ProbeBusMessage = { root, frame: { type: 'probe-frame', data } };
               probeBus.emit('frame', message);
             },
-            onThought: (text) => emitTester(root, { type: 'tester-thought', text }),
+            onThought: (text, turn) => emitTester(root, { type: 'tester-thought', text, turn }),
             onPhase: (phase: TesterPhase) => emitTester(root, { type: 'tester-phase', phase }),
           });
           emitTester(root, { type: 'tester-done', note });

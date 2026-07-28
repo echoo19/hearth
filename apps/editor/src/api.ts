@@ -20,6 +20,7 @@ import type {
   ServerMeta,
   WorkspaceInfo,
 } from './types';
+import type { TesterNote } from '../server/tester/types';
 
 async function postJson<T>(url: string, body: unknown): Promise<T> {
   const res = await fetch(url, {
@@ -164,6 +165,49 @@ export async function apiProbeStatus(project: string): Promise<ProbeStatus | nul
   return {
     senses: Array.isArray(body.senses) ? body.senses : [],
     shimDetected: body.shimDetected === true,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// The private tester
+// ---------------------------------------------------------------------------
+
+/** What the history route hands back: every session, oldest first, plus memory. */
+export interface TesterHistory {
+  sessions: TesterNote[];
+  /** The tester's durable notes about this game, as markdown. */
+  memory: string;
+  running: boolean;
+  /** Turns a session is allowed, so the budget can be shown before it is spent. */
+  maxSteps: number;
+}
+
+/**
+ * Ask the tester to play. Answers immediately: the session itself runs on the
+ * server for minutes afterwards and reports over the socket.
+ */
+export async function apiTesterPlay(
+  project: string,
+  maxSteps?: number,
+): Promise<{ ok: boolean; session?: number; maxSteps?: number; error?: string }> {
+  return postJson('/api/tester/play', { project, maxSteps });
+}
+
+export async function apiTesterStop(project: string): Promise<{ ok: boolean; error?: string }> {
+  return postJson('/api/tester/stop', { project });
+}
+
+export async function apiTesterHistory(project: string): Promise<TesterHistory | null> {
+  const body = await getJson<TesterHistory>(
+    `/api/tester/history?project=${encodeURIComponent(project)}`,
+    'apiTesterHistory',
+  );
+  if (!body) return null;
+  return {
+    sessions: Array.isArray(body.sessions) ? body.sessions : [],
+    memory: typeof body.memory === 'string' ? body.memory : '',
+    running: body.running === true,
+    maxSteps: typeof body.maxSteps === 'number' ? body.maxSteps : 0,
   };
 }
 

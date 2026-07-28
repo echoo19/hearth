@@ -105,7 +105,7 @@ export type ExportFrame =
 export type TesterFrame =
   | { type: 'tester-started'; session: number; maxSteps: number }
   | { type: 'tester-phase'; phase: TesterPhase }
-  | { type: 'tester-thought'; text: string }
+  | { type: 'tester-thought'; text: string; turn: number }
   | { type: 'tester-done'; note: TesterNote }
   | { type: 'tester-error'; message: string };
 

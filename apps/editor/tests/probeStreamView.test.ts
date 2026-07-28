@@ -1,30 +1,30 @@
 /**
- * The honesty rule for the stage while a playtest runs.
+ * The honesty rule for the stage while the tester plays.
  *
- * The bot plays in a browser of its own, so the pane can be in one of two
- * genuinely different situations: it has the bot's picture, or it does not.
- * Only the first is allowed to say the stage is the bot's, and neither is
- * allowed to say nothing at all. A glowing ring around a game standing still
- * with no words on it is the bug this whole path exists to fix.
+ * The tester plays in a browser of its own, so a stage can be in one of two
+ * genuinely different situations: it has the tester's picture, or it does not.
+ * Only the first is allowed to say the stage is the tester's, and neither is
+ * allowed to say nothing at all. A lit frame around a game standing still with
+ * no words on it is the bug this whole path exists to fix.
  *
- * Pure, so the rule is checkable without a browser, a socket or a sweep.
+ * Pure, so the rule is checkable without a browser, a socket or a session.
  */
 import { describe, expect, it } from 'vitest';
 import { probeNote, stageNoteStatus } from '../src/components/game/ProbeStage';
 import { probeFrameSrc } from '../src/probeStream';
 
 describe('probeNote', () => {
-  it('says the stage belongs to the bot only when the picture is really arriving', () => {
-    expect(probeNote('live')).toMatch(/bot/i);
-    expect(probeNote('live')).toMatch(/view/i);
+  it('says the stage belongs to the tester only when the picture is really arriving', () => {
+    expect(probeNote('live')).toMatch(/tester/i);
+    expect(probeNote('live')).toMatch(/playing/i);
   });
 
-  it('never goes quiet while a sweep is up', () => {
+  it('never goes quiet while a session is up', () => {
     expect(probeNote('starting')).toBeTruthy();
     expect(probeNote('hidden')).toBeTruthy();
   });
 
-  it('says where the bot actually is when there is no picture of it', () => {
+  it('says where the tester actually is when there is no picture of it', () => {
     expect(probeNote('hidden')).toMatch(/off screen/i);
   });
 
@@ -34,11 +34,11 @@ describe('probeNote', () => {
 });
 
 describe('stageNoteStatus', () => {
-  it('leaves nothing unsaid while the app believes a sweep is running', () => {
+  it('leaves nothing unsaid while the app believes a session is running', () => {
     expect(probeNote(stageNoteStatus('off', true))).toBeTruthy();
   });
 
-  it('says nothing when no sweep is running', () => {
+  it('says nothing when nothing is playing', () => {
     expect(stageNoteStatus('off', false)).toBe('off');
   });
 

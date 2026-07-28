@@ -14,10 +14,12 @@ import React from 'react';
 import { useApp, type PaneTab } from '../../store';
 import { GamePane } from './GamePane';
 import { ConsolePanel } from '../ConsolePanel';
+import { TesterStage } from '../tester/TesterStage';
 import { IconButton } from '../ui/Button';
 
 const TABS: { id: PaneTab; label: string }[] = [
   { id: 'game', label: 'Game' },
+  { id: 'tester', label: 'Tester' },
   { id: 'console', label: 'Console' },
 ];
 
@@ -26,11 +28,13 @@ export function PaneStack() {
   const setPaneTab = useApp((s) => s.setPaneTab);
   const setPaneOpen = useApp((s) => s.setPaneOpen);
   const consoleUnread = useApp((s) => s.consoleUnread);
+  const testerRunning = useApp((s) => s.tester.running || s.tester.starting);
 
   return (
     <section className="pane-stack" aria-label="Game">
       <div className="pane-surface">
         {paneTab === 'game' && <GamePane />}
+        {paneTab === 'tester' && <TesterStage />}
         {paneTab === 'console' && <ConsolePanel />}
       </div>
 
@@ -49,6 +53,12 @@ export function PaneStack() {
               <span className="pane-tab-badge" aria-label={`${consoleUnread} unread`}>
                 {consoleUnread > 99 ? '99+' : consoleUnread}
               </span>
+            )}
+            {/* A session runs for minutes, and the person who started it is
+                free to go and look at something else. The tab says it is still
+                going without pulling them back to it. */}
+            {tab.id === 'tester' && testerRunning && (
+              <span className="pane-tab-dot" aria-label="playing" />
             )}
           </button>
         ))}

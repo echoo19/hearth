@@ -9,17 +9,19 @@
  * That shape is measured from the running document when it can be (same-origin
  * mount, so the canvas is readable) and falls back to 16:9 when it can't.
  *
- * Beyond that the pane has two states: nothing yet, and running. It used to
- * have a third, for a sweep driving the game from inside the app, with the
- * stage glowing and the bot's own session streamed onto it. Playtesting is the
- * agent's business now and runs out of process, so the pane has nothing to say
- * about it. The stream's client half (../../probeStream.ts, ./ProbeStage.tsx)
- * is kept for whatever renders a driven session next.
+ * Beyond that the pane has two states: nothing yet, and running. What it does
+ * NOT do is show the tester's session. The tester plays in a browser of its own
+ * and its picture belongs on its own tab (../tester/TesterStage.tsx); painting
+ * it over this game would take the person's own session away from them while
+ * they were using it. All this pane owes the tester is a line saying where it
+ * is, so a game standing still beside a running session is never mistaken for a
+ * game that has stopped working.
  */
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useApp, GAME_POLL_MS } from '../../store';
 import { gameUrl } from '../../api';
 import { CapabilityStrip } from './CapabilityStrip';
+import { ProbeNote, stageNoteStatus } from './ProbeStage';
 
 /** What a game is assumed to be shaped like until it says otherwise. */
 export const FALLBACK_ASPECT = 16 / 9;
@@ -93,6 +95,7 @@ export function GamePane() {
   const game = useApp((s) => s.game);
   const gameNonce = useApp((s) => s.gameNonce);
   const refreshGame = useApp((s) => s.refreshGame);
+  const testerRunning = useApp((s) => s.tester.running || s.tester.starting);
   const frameRef = useRef<HTMLIFrameElement>(null);
   const stageRef = useRef<HTMLDivElement>(null);
   const [size, setSize] = useState<{ width: number; height: number } | null>(null);
@@ -165,6 +168,10 @@ export function GamePane() {
               onLoad={measure}
               sandbox="allow-scripts allow-pointer-lock allow-forms allow-modals allow-popups allow-same-origin"
             />
+            {/* `off` unless the app believes a session is running, which is the
+                whole rule: this stage never carries the tester's picture, so
+                the only thing it can honestly say is where the tester is. */}
+            <ProbeNote status={stageNoteStatus('off', testerRunning)} />
           </div>
         </div>
       ) : (

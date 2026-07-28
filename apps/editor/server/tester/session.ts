@@ -75,8 +75,12 @@ export interface RunTesterSessionOptions {
   maxSteps?: number;
   /** Every live picture of the tester's browser, for the pane. */
   onFrame?: (data: string) => void;
-  /** The tester's own words, as they arrive. */
-  onThought?: (text: string) => void;
+  /**
+   * The tester's own words, as they arrive. `turn` counts the questions asked
+   * of it, so a reader can tell one thought from the next: the text arrives in
+   * fragments and nothing else in the stream says where one answer ends.
+   */
+  onThought?: (text: string, turn: number) => void;
   /** Where the session has got to. */
   onPhase?: (phase: TesterPhase) => void;
   /** The stop control. Honoured between turns and inside one. */
@@ -109,12 +113,14 @@ function describeVerdict(verdict: ChangeVerdict): string {
  */
 function makeAsk(
   driver: ChatDriver,
-  onThought?: (text: string) => void,
+  onThought?: (text: string, turn: number) => void,
   signal?: AbortSignal,
 ): (text: string, attachments?: ChatAttachment[]) => Promise<string> {
   const events = driver.events[Symbol.asyncIterator]();
   let interrupted = false;
+  let turn = 0;
   return async function ask(text: string, attachments?: ChatAttachment[]): Promise<string> {
+    turn += 1;
     driver.send(text, undefined, attachments);
     let reply = '';
     for (;;) {
@@ -123,7 +129,7 @@ function makeAsk(
       const event = normalizeChatEvent(next.value as ChatEvent);
       if (event.type === 'message-delta') {
         reply += event.text;
-        onThought?.(event.text);
+        onThought?.(event.text, turn);
       } else if (event.type === 'approval-request') {
         driver.approve?.(event.approvalId, 'deny');
       } else if (event.type === 'error') {

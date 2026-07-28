@@ -25,6 +25,9 @@ import {
   apiOpenWorkspace,
   apiPersonalization,
   apiProbeStatus,
+  apiTesterHistory,
+  apiTesterPlay,
+  apiTesterStop,
   apiRecentChats,
   apiRenameChat,
   apiSavePersonalization,
@@ -60,6 +63,8 @@ import type {
   WorkspaceInfo,
 } from './types';
 import type { WsFrame } from '../server/ws';
+import type { TesterPhase } from '../server/tester/session';
+import type { TesterNote } from '../server/tester/types';
 import { agentForTurn, getModelChoice } from './chat/modelChoice';
 import { hearthNative } from './native';
 import { showToast } from './toast';
@@ -77,7 +82,54 @@ import {
 } from './components/agent/useAgentSocket';
 
 /** Which surface the right-hand stack is showing. */
-export type PaneTab = 'game' | 'console';
+export type PaneTab = 'game' | 'console' | 'tester';
+
+/**
+ * One answer from the tester, assembled from the fragments it arrives in.
+ * `turn` is which question it was answering: the text streams in pieces and
+ * nothing else in the frame says where one thought ends and the next begins.
+ */
+export interface TesterThought {
+  turn: number;
+  text: string;
+}
+
+/** The tester, as this window currently understands it. */
+export interface TesterState {
+  /** A session is playing right now. */
+  running: boolean;
+  /** A play request is in flight, before the server has said yes. */
+  starting: boolean;
+  /** Which session number is playing, or the last one that did. */
+  session: number | null;
+  phase: TesterPhase | null;
+  /** Turns this session may spend. Shown before it is spent, not after. */
+  maxSteps: number;
+  thoughts: TesterThought[];
+  /** The note the last session wrote, so the pane can end on a result. */
+  lastNote: TesterNote | null;
+  error: string | null;
+  /** Every session in the folder, oldest first. Filled by the history screen. */
+  sessions: TesterNote[];
+  /** What the tester says it knows about this game, as markdown. */
+  memory: string;
+  /** True once the history has been read at least once for this folder. */
+  historyLoaded: boolean;
+}
+
+const EMPTY_TESTER: TesterState = {
+  running: false,
+  starting: false,
+  session: null,
+  phase: null,
+  maxSteps: 0,
+  thoughts: [],
+  lastNote: null,
+  error: null,
+  sessions: [],
+  memory: '',
+  historyLoaded: false,
+};
 
 /**
  * A message someone typed while the agent was still answering the last one.
@@ -157,6 +209,9 @@ export interface AppState {
   shimDetected: boolean;
   /** Bumped whenever the game's files change, so the iframe reloads. */
   gameNonce: number;
+
+  // --- The private tester ---------------------------------------------------
+  tester: TesterState;
 
   // --- Console --------------------------------------------------------------
   consoleEntries: ConsoleEntry[];
@@ -335,6 +390,16 @@ export interface AppState {
    */
   startTerminalCli(cli: AgentCliInfo): void;
   setPaneTab(tab: PaneTab): void;
+  /**
+   * Ask the tester to play. Never called by anything but a person: the tester
+   * has no schedule and does not run on save, because every session spends
+   * model calls on the user's own quota.
+   */
+  playTester(): Promise<void>;
+  /** Stop the session that is playing. It still writes down what it saw. */
+  stopTester(): Promise<void>;
+  /** Re-read the folder's sessions and memory from disk. */
+  refreshTesterHistory(): Promise<void>;
   /** Show or hide the playtest column. An explicit pick, remembered per folder. */
   setPaneOpen(open: boolean): void;
   /** Aim the new-chat composer at a project, or at one that doesn't exist yet. */
@@ -359,6 +424,12 @@ export interface AppState {
 
 const MAX_CONSOLE = 500;
 const MAX_JOURNAL_FEED = 200;
+/**
+ * How many of the tester's answers a window keeps. A session is capped at a few
+ * dozen turns, so this is a ceiling on a runaway rather than a trim anyone will
+ * see: the whole session is on disk in its transcript either way.
+ */
+const MAX_TESTER_THOUGHTS = 200;
 const LAST_WORKSPACE_KEY = 'hearth:lastWorkspace';
 const SIDEBAR_KEY = 'hearth:sidebarCollapsed';
 const CONVERSATION_MODE_PREFIX = 'hearth:conversationMode:';
@@ -1140,6 +1211,57 @@ export const useApp = create<AppState>((set, get) => {
         }
         return;
       }
+      case 'tester-started':
+        set((state) => ({
+          tester: {
+            ...state.tester,
+            running: true,
+            starting: false,
+            session: frame.session,
+            maxSteps: frame.maxSteps,
+            phase: 'opening',
+            thoughts: [],
+            lastNote: null,
+            error: null,
+          },
+        }));
+        return;
+      case 'tester-phase':
+        set((state) => ({ tester: { ...state.tester, phase: frame.phase } }));
+        return;
+      case 'tester-thought':
+        set((state) => {
+          const thoughts = state.tester.thoughts;
+          const last = thoughts[thoughts.length - 1];
+          // The text arrives in fragments; `turn` is what says whether this one
+          // continues the answer above it or starts a new one.
+          const next =
+            last && last.turn === frame.turn
+              ? [...thoughts.slice(0, -1), { turn: last.turn, text: last.text + frame.text }]
+              : [...thoughts, { turn: frame.turn, text: frame.text }];
+          return { tester: { ...state.tester, thoughts: next.slice(-MAX_TESTER_THOUGHTS) } };
+        });
+        return;
+      case 'tester-done':
+        set((state) => ({
+          tester: {
+            ...state.tester,
+            running: false,
+            starting: false,
+            phase: 'finished',
+            lastNote: frame.note,
+            // The note is on disk now, so the history this window holds is one
+            // session out of date.
+            sessions: [...state.tester.sessions.filter((s) => s.session !== frame.note.session), frame.note],
+          },
+        }));
+        return;
+      case 'tester-error':
+        set((state) => ({
+          tester: { ...state.tester, running: false, starting: false, phase: null, error: frame.message },
+        }));
+        get().log('error', 'app', `Tester: ${frame.message}`);
+        return;
       case 'pty-data':
       case 'pty-exit':
       case 'pty-error':
@@ -1240,6 +1362,7 @@ export const useApp = create<AppState>((set, get) => {
     senses: [],
     shimDetected: false,
     gameNonce: 0,
+    tester: EMPTY_TESTER,
 
     consoleEntries: [],
     consoleUnread: 0,
@@ -1320,6 +1443,9 @@ export const useApp = create<AppState>((set, get) => {
         senses: [],
         shimDetected: false,
         gameNonce: 0,
+        // The tester belongs to the folder, so nothing about the last one
+        // survives into this one.
+        tester: EMPTY_TESTER,
         conversationMode: storedMode ?? 'chat',
         conversationModePinned: storedMode !== null,
         paneTab: 'game',
@@ -1864,6 +1990,65 @@ export const useApp = create<AppState>((set, get) => {
 
     setPaneTab(tab) {
       set(tab === 'console' ? { paneTab: tab, consoleUnread: 0 } : { paneTab: tab });
+    },
+
+    async playTester() {
+      const project = get().projectPath;
+      if (!project || get().tester.running || get().tester.starting) return;
+      // The pane comes forward and lands on the tester before the request goes
+      // out. A tester playing somewhere the person who asked for it cannot see
+      // is indistinguishable from nothing happening.
+      set((state) => ({
+        paneTab: 'tester',
+        paneOpen: true,
+        paneChoice: true,
+        tester: { ...state.tester, starting: true, error: null, thoughts: [], lastNote: null },
+      }));
+      const result = await apiTesterPlay(project);
+      if (get().projectPath !== project) return;
+      if (!result.ok) {
+        set((state) => ({
+          tester: { ...state.tester, starting: false, error: result.error ?? 'The tester could not start.' },
+        }));
+        return;
+      }
+      // `running` is left to the tester-started frame: the socket is what knows
+      // the session is really under way, and setting it here would leave a
+      // window claiming a session that died on the way up.
+      set((state) => ({
+        tester: { ...state.tester, session: result.session ?? null, maxSteps: result.maxSteps ?? state.tester.maxSteps },
+      }));
+    },
+
+    async stopTester() {
+      const project = get().projectPath;
+      if (!project) return;
+      await apiTesterStop(project);
+    },
+
+    async refreshTesterHistory() {
+      const project = get().projectPath;
+      if (!project) return;
+      const history = await apiTesterHistory(project);
+      if (!history || get().projectPath !== project) return;
+      set((state) => ({
+        tester: {
+          ...state.tester,
+          sessions: history.sessions,
+          memory: history.memory,
+          historyLoaded: true,
+          maxSteps: state.tester.maxSteps || history.maxSteps,
+          // A session outlives the window watching it: the server keeps playing
+          // through a reload or a dropped socket. Without this the window comes
+          // back believing nothing is running and offers to start a second one.
+          running: state.tester.running || history.running,
+          session: state.tester.session ?? history.sessions[history.sessions.length - 1]?.session ?? null,
+          // A window that has just opened has watched nothing, but the folder
+          // remembers. Without this the surface says "nothing said yet" beside a
+          // history full of sessions.
+          lastNote: state.tester.lastNote ?? history.sessions[history.sessions.length - 1] ?? null,
+        },
+      }));
     },
 
     setPaneOpen(open) {

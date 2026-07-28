@@ -127,6 +127,7 @@ const BRAND_MOMENT_SELECTORS = new Set<string>([
   '.empty-state > span:not(.empty-icon):not(.hint)', // panel empty-state headings
   '.chat-empty-lead', // conversation empty state — the app's first sentence
   '.game-empty-lead', // game pane empty state heading
+  '.tester-empty-lead', // tester pane empty state heading, the same moment as above
 ]);
 
 /**

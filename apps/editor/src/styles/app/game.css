@@ -50,8 +50,10 @@
    max-* pair is the fallback for engines without container query units. */
 .game-stage {
   --game-aspect: 1.7778;
-  /* The probe's picture and its note are laid over the game, inside the same
-     rounded, clipped box. */
+  /* The tester's note is laid over the game, inside the same rounded, clipped
+     box. Its picture is not: that belongs on the tester's own tab, because
+     this game is the person's own session and painting over it would take it
+     away from them mid-play. */
   position: relative;
   width: min(100cqw, calc(100cqh * var(--game-aspect)));
   max-width: 100%;
@@ -65,45 +67,6 @@
   /* Only when the shape actually changes — a measured canvas replacing the
      16:9 assumption — and only the box, never its contents. */
   transition: width var(--t-slow) var(--ease-out), aspect-ratio var(--t-slow) var(--ease-out);
-}
-
-/* Something else is holding the controls. A game moving on its own with no
-   explanation reads as a bug, so the stage breathes ember for as long as the
-   sweep runs — the one place in the app where the accent moves.
-
-   1600ms, well outside the --t-* set: those durations answer a gesture, and
-   this answers nothing. It is an ambient state that has to be noticeable
-   without being urgent, and a pulse fast enough to read as feedback would keep
-   claiming the eye back from the game it is meant to be framing.
-
-   `ease-in-out` rather than the app's --ease-out token, because `alternate`
-   plays the curve backwards on every other pass: an ease-out run in reverse is
-   an ease-in, and the two meet at the turnaround with a visible kink.
-
-   No fill-mode. `both` would hold the `from` frame whenever the animation
-   doesn't run at all — a background tab, a headless render — and leave the
-   stage wearing a ring nobody asked for long after the sweep ended. */
-.game-stage.is-driven {
-  animation: game-driven 1600ms ease-in-out infinite alternate;
-}
-
-@keyframes game-driven {
-  from {
-    box-shadow: var(--shadow-2), 0 0 0 1px var(--accent-soft), 0 0 0 0 var(--accent-faint);
-  }
-  to {
-    box-shadow: var(--shadow-2), 0 0 0 2px var(--accent), 0 0 26px 4px var(--accent-soft);
-  }
-}
-
-/* Reduced motion: a steady ring, not nothing. The state still has to be
-   legible — it is the difference between "your game is broken" and "a bot is
-   playing it" — so the pulse becomes the brightest frame, held. */
-@media (prefers-reduced-motion: reduce) {
-  .game-stage.is-driven {
-    animation: none;
-    box-shadow: var(--shadow-2), 0 0 0 2px var(--accent), 0 0 26px 4px var(--accent-soft);
-  }
 }
 
 .game-frame {
@@ -135,13 +98,13 @@
   }
 }
 
-/* --- The bot's session ---------------------------------------------------- */
+/* --- The tester's session -------------------------------------------------- */
 
-/* What the probe's own browser is showing, over the top of your game while it
-   plays (see ProbeStage.tsx). Matte black behind it because the stream is
-   letterboxed: the probe drives a 960x540 viewport, the stage is shaped like
-   whatever this game's canvas is, and the two rarely agree. Filling the
-   difference with the stage's own background would read as part of the game.
+/* What the tester's own browser is showing (see ProbeStage.tsx). Matte black
+   behind it because the stream is letterboxed: the tester drives a 960x540
+   viewport, the stage it is shown on is shaped like whatever fits, and the two
+   rarely agree. Filling the difference with the surface's own background would
+   read as part of the game.
 
    Scaled up from 640 wide by the browser's default smoothing, deliberately:
    this is a picture of a game, not the game, and a sharpened upscale would
@@ -159,7 +122,7 @@
 /* Whose game is on screen. Top-left, small, and out of the way of the action
    strip at the bottom. It is not a badge for a feature: it is the sentence
    that keeps the pane honest, so it is present for every state of a running
-   sweep, including the one where there is no picture at all. */
+   session, including the one where there is no picture at all. */
 .probe-note {
   position: absolute;
   top: 8px;
@@ -187,9 +150,9 @@
 }
 
 /* Live is the only state that gets the accent, because it is the only one
-   where the ember ring around the stage and the picture inside it are saying
-   the same thing. Static: the stage is already breathing, and a second moving
-   thing in the same box would be noise. */
+   where a game really is moving inside the frame this sits on. Static: the
+   picture behind it is already moving, and a second moving thing in the same
+   box would be noise. */
 .probe-note.is-live {
   color: var(--accent);
 }
@@ -306,9 +269,8 @@
    something that plays it. It was reading as a chip in a row of chips.
 
    The lift is a resting shadow and a hairline of its own colour, not a glow
-   and not motion. The stage already breathes ember while a sweep runs (see
-   .game-stage.is-driven), and a button that animated at rest would be
-   competing with the game it sits under for the whole session. */
+   and not motion: a button that animated at rest would be competing with the
+   game it sits under for as long as the folder is open. */
 .playtest-btn {
   display: inline-flex;
   align-items: center;
@@ -442,6 +404,16 @@
   color: var(--err);
   font-size: var(--text-2xs);
   text-align: center;
+}
+
+/* A session is still playing on a tab nobody is looking at. Quieter than the
+   unread badge next to it: that one counts errors, and this one only says
+   "still going". */
+.pane-tab-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--accent);
 }
 
 /* Pushes the close control to the far end of the strip, away from the tabs:

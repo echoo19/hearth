@@ -1,0 +1,240 @@
+/* The tester at work.
+
+   The picture is the subject; the thinking is the caption beside it. Everything
+   here is sized so that ordering survives the pane getting narrow: the frame
+   keeps the room, and the thoughts move underneath rather than squeezing it. */
+
+.tester-pane {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-0);
+  /* Queried by .tester-body below. The pane is a column of the window rather
+     than a page, so its own width is what decides the layout, not the
+     viewport's. */
+  container-type: inline-size;
+}
+
+/* --- The bar -------------------------------------------------------------- */
+
+.tester-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-05);
+}
+
+.tester-bar-gap {
+  flex: 1;
+}
+
+/* Something is happening that the person did not do. One small ember thing on
+   the surface, and only while it is true. */
+.tester-live {
+  width: 7px;
+  height: 7px;
+  flex: none;
+  border-radius: 50%;
+  background: var(--ink-faint);
+  opacity: 0.5;
+}
+
+.tester-live.is-live {
+  background: var(--accent);
+  opacity: 1;
+  /* Slow enough to read as ambient rather than as feedback: it answers no
+     gesture. The frame beside it is already moving, so this only has to say
+     "still going" when the picture has nothing new in it. */
+  animation: tester-breathe 2200ms ease-in-out infinite alternate;
+}
+
+@keyframes tester-breathe {
+  from {
+    opacity: 0.45;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tester-live.is-live {
+    animation: none;
+    opacity: 1;
+  }
+}
+
+.tester-status {
+  margin: 0;
+  color: var(--ink);
+  font-size: var(--text-sm);
+}
+
+.tester-budget {
+  color: var(--ink-faint);
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+  font-variant-numeric: tabular-nums;
+}
+
+.tester-error {
+  margin: 10px 12px 0;
+  padding: 8px 10px;
+  border: 1px solid var(--err-soft);
+  border-radius: var(--radius-sm);
+  background: var(--err-faint);
+  color: var(--ink);
+  font-size: var(--text-xs);
+}
+
+/* --- Picture and thinking ------------------------------------------------- */
+
+.tester-body {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  /* Narrow: the picture on top, the thinking under it. The frame keeps the
+     larger share because it is what is being watched. */
+  grid-template-rows: minmax(0, 1fr) minmax(96px, 38%);
+  grid-template-columns: minmax(0, 1fr);
+}
+
+@container (min-width: 680px) {
+  .tester-body {
+    grid-template-rows: minmax(0, 1fr);
+    grid-template-columns: minmax(0, 1fr) minmax(220px, 300px);
+  }
+
+  .tester-think {
+    border-top: 0;
+    border-left: 1px solid var(--border);
+  }
+}
+
+/* The matte the picture sits on. Darker than the pane so a letterboxed frame
+   reads as a picture of a game rather than as part of the surface. */
+.tester-view {
+  position: relative;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  background: var(--canvas-bg);
+}
+
+/* Between sessions: how the last one ended, centred in the space the picture
+   was in, so the surface does not go blank the moment it finishes. */
+.tester-view-rest {
+  height: 100%;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: radial-gradient(120% 90% at 50% 38%, oklch(0.19 0.012 285) 0%, var(--canvas-bg) 62%);
+}
+
+.tester-rest-line {
+  margin: 0;
+  max-width: 40ch;
+  text-align: center;
+  color: var(--ink-mute);
+  font-size: var(--text-sm);
+  text-wrap: pretty;
+}
+
+.tester-think {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  padding: 12px;
+  gap: 8px;
+  border-top: 1px solid var(--border);
+  background: var(--bg-0);
+}
+
+.tester-think-title {
+  margin: 0;
+  color: var(--ink-mute);
+  font-size: var(--text-xs);
+  font-weight: 600;
+}
+
+.tester-think-empty {
+  margin: 0;
+  color: var(--ink-faint);
+  font-size: var(--text-xs);
+}
+
+.tester-thoughts {
+  flex: 1;
+  min-height: 0;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.tester-thought {
+  color: var(--ink-mute);
+  font-size: var(--text-sm);
+  line-height: 1.5;
+  text-wrap: pretty;
+  /* The tester writes one thing per line when it has a list of them, and
+     collapsing those into a paragraph turned six observations into a wall. */
+  white-space: pre-wrap;
+}
+
+/* What it is thinking right now, against everything it has already said. */
+.tester-thought:last-child {
+  color: var(--ink);
+}
+
+/* --- Nothing has played here yet ------------------------------------------ */
+
+.tester-empty {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 24px;
+  text-align: center;
+  background: radial-gradient(120% 90% at 50% 38%, oklch(0.19 0.012 285) 0%, var(--canvas-bg) 62%);
+}
+
+/* The shape of what will appear, the same idiom the game pane uses when it has
+   nothing to show: a frame waiting, not an illustration. */
+.tester-empty-frame {
+  width: min(52%, 320px);
+  aspect-ratio: 16 / 10;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: oklch(0.13 0.008 285);
+  box-shadow: inset 0 1px 0 oklch(1 0 0 / 0.03);
+  margin-bottom: 6px;
+}
+
+.tester-empty-lead {
+  margin: 0;
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: var(--text-md);
+  color: var(--ink);
+  text-wrap: balance;
+}
+
+.tester-empty-hint {
+  margin: 0 0 6px;
+  max-width: 46ch;
+  color: var(--ink-mute);
+  font-size: var(--text-xs);
+  line-height: 1.55;
+  text-wrap: pretty;
+}

@@ -391,17 +391,17 @@ What is genuinely new is the thinking column beside the frame, and the stop cont
 
 Design: invoke the `impeccable` skill before writing the component. The frame is the subject and the thinking is secondary; the thoughts column must not out-shout the game. Quiet, restrained, no raw JSON, no em dashes. Reduced motion must be honoured. The stop control has to be reachable at all times while a session runs.
 
-- [ ] **Step 1: Write the failing test** covering: the stage renders the latest frame; thoughts append in order; the stop control is present while running and absent when idle; nothing renders when no session has run.
+- [x] **Step 1: Write the failing test** covering: the stage renders the latest frame; thoughts append in order; the stop control is present while running and absent when idle; nothing renders when no session has run.
 
-- [ ] **Step 2: Run it and watch it fail.**
+- [x] **Step 2: Run it and watch it fail.**
 
-- [ ] **Step 3: Implement the component, the store state and the api calls.**
+- [x] **Step 3: Implement the component, the store state and the api calls.**
 
-- [ ] **Step 4: Run the test.** Expected: PASS.
+- [x] **Step 4: Run the test.** Expected: PASS.
 
-- [ ] **Step 5: Verify in the browser.** Check `document.visibilityState` is `visible` FIRST; a hidden tab freezes rAF and IntersectionObserver and will make a working reveal look broken.
+- [x] **Step 5: Verify in the browser.** Check `document.visibilityState` is `visible` FIRST; a hidden tab freezes rAF and IntersectionObserver and will make a working reveal look broken.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 cd /Users/jakekang/projects/hearth/hearth-engine
