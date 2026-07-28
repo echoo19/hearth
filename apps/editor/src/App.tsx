@@ -5,7 +5,6 @@ import { TopBar } from './components/shell/TopBar';
 import { Sidebar, SIDEBAR_RAIL_PX, SIDEBAR_WIDTH_PX } from './components/shell/Sidebar';
 import { Home } from './components/home/Home';
 import { SkillsScreen } from './components/skills/SkillsScreen';
-import { PlaytestScreen } from './components/playtest/PlaytestScreen';
 import { ProjectHome } from './components/project/ProjectHome';
 import { ChatColumn } from './components/chat/ChatColumn';
 import { PaneStack } from './components/game/PaneStack';
@@ -139,8 +138,6 @@ function Shell() {
         <TopBar narrow={narrow} paneOpen={paneOpen} />
         {screen === 'skills' ? (
           <SkillsScreen />
-        ) : screen === 'playtest' ? (
-          <PlaytestScreen />
         ) : hasFolder && projectView && !composing ? (
           <ProjectHome />
         ) : hasFolder && !composing ? (

@@ -22,13 +22,11 @@ function mockStore(over: Partial<AppState> = {}): AppState {
     conversationMode: 'chat',
     paneTab: 'game',
     paneOpen: true,
-    evidenceOpen: true,
     codePeek: { open: false, path: null },
     closeWorkspace: vi.fn(),
     setConversationMode: vi.fn(),
     setPaneTab: vi.fn(),
     setPaneOpen: vi.fn(),
-    setEvidenceOpen: vi.fn(),
     openCodePeek: vi.fn(),
     closeCodePeek: vi.fn(),
     ...over,
@@ -108,12 +106,11 @@ describe('buildAppMenu', () => {
     expect(setConversationMode).toHaveBeenCalledWith('terminal');
   });
 
-  it('reflects the evidence rail and code peek as checkboxes', () => {
+  it('reflects code peek as a checkbox', () => {
     const sections = buildAppMenu(
-      mockStore({ evidenceOpen: false, codePeek: { open: true, path: 'src/game.js' } }),
+      mockStore({ codePeek: { open: true, path: 'src/game.js' } }),
       baseCtx(),
     );
-    expect(item(sections, 'evidence').checked).toBe(false);
     expect(item(sections, 'files').checked).toBe(true);
   });
 

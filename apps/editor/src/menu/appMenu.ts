@@ -120,13 +120,6 @@ export function buildAppMenu(store: AppState, ctx: AppMenuContext): AppMenuSecti
       ),
       { separator: true },
       {
-        id: 'evidence',
-        label: 'Playtests',
-        enabled: hasFolder,
-        checked: store.evidenceOpen,
-        onSelect: () => store.setEvidenceOpen(!store.evidenceOpen),
-      },
-      {
         id: 'files',
         label: 'Files',
         accelerator: 'CmdOrCtrl+P',

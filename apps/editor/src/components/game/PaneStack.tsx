@@ -1,7 +1,6 @@
 /**
- * The right-hand stack: the game, with its supporting surfaces stacked under
- * it — what the probe saw (the evidence rail), and where raw output goes
- * (Console).
+ * The right-hand stack: the game, with where raw output goes (Console) beside
+ * it.
  *
  * The shell is deliberately NOT here. A terminal running the user's own CLI
  * agent is a conversation, not a readout, so it lives in the conversation
@@ -15,7 +14,6 @@ import React from 'react';
 import { useApp, type PaneTab } from '../../store';
 import { GamePane } from './GamePane';
 import { ConsolePanel } from '../ConsolePanel';
-import { EvidenceRail } from '../evidence/EvidenceRail';
 import { IconButton } from '../ui/Button';
 
 const TABS: { id: PaneTab; label: string }[] = [
@@ -35,8 +33,6 @@ export function PaneStack() {
         {paneTab === 'game' && <GamePane />}
         {paneTab === 'console' && <ConsolePanel />}
       </div>
-
-      <EvidenceRail />
 
       <div className="pane-tabs" role="tablist" aria-label="Playtest column">
         {TABS.map((tab) => (

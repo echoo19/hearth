@@ -41,7 +41,7 @@ The `hearth-probe` CLI, the probe packages, the shim launcher in `hearthShim.ts`
 - Consumes: nothing from earlier tasks.
 - Produces: a build with no playtest or evidence components. Task 2 relies on `openScreen('playtest')` no longer being reachable from any component.
 
-- [ ] **Step 1: Find every reference before deleting anything**
+- [x] **Step 1: Find every reference before deleting anything**
 
 ```bash
 cd apps/editor
@@ -50,7 +50,7 @@ rg -n --text "PlaytestScreen|EvidenceRail|evidenceRows|playtestPanels|usePlaytes
 
 Record the list. Every hit outside the deleted files is an edit this task owns.
 
-- [ ] **Step 2: Delete the components, styles and their tests**
+- [x] **Step 2: Delete the components, styles and their tests**
 
 ```bash
 cd apps/editor
@@ -59,7 +59,7 @@ git rm src/styles/app/playtest.css src/styles/app/evidence.css
 git rm tests/playtesters.test.ts tests/playtestSurface.test.ts tests/evidenceRows.test.ts tests/evidenceHistory.test.ts
 ```
 
-- [ ] **Step 3: Remove the two `@import` lines from `src/styles.css`**
+- [x] **Step 3: Remove the two `@import` lines from `src/styles.css`**
 
 Delete exactly these lines:
 
@@ -68,21 +68,21 @@ Delete exactly these lines:
 @import './styles/app/evidence.css';
 ```
 
-- [ ] **Step 4: Remove the screen route, the rail and the menu item**
+- [x] **Step 4: Remove the screen route, the rail and the menu item**
 
 In `src/App.tsx`, remove the `PlaytestScreen` import and its branch in the screen switch. In `PaneStack.tsx` and `GamePane.tsx`, remove the `EvidenceRail` import and its JSX. In `src/menu/appMenu.ts`, remove the item whose `id` is `'evidence'`.
 
-- [ ] **Step 5: Typecheck**
+- [x] **Step 5: Typecheck**
 
 Run: `cd apps/editor && npx tsc --noEmit -p tsconfig.json`
 Expected: PASS. Any error naming a deleted symbol is a reference Step 1 missed; fix it here.
 
-- [ ] **Step 6: Run the suite**
+- [x] **Step 6: Run the suite**
 
 Run: `cd apps/editor && npx vitest run`
 Expected: PASS. Tests that fail only because they assert a deleted surface belong to Task 2; if one fails here, note it and leave it.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 cd apps/editor

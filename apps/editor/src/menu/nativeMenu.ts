@@ -64,7 +64,6 @@ export function useNativeMenu(): void {
   const projectPath = useApp((s) => s.projectPath);
   const conversationMode = useApp((s) => s.conversationMode);
   const paneTab = useApp((s) => s.paneTab);
-  const evidenceOpen = useApp((s) => s.evidenceOpen);
   const codePeekOpen = useApp((s) => s.codePeek.open);
 
   const sections = useMemo(
@@ -81,7 +80,7 @@ export function useNativeMenu(): void {
         checkForUpdates: native?.checkForUpdates ? () => void native.checkForUpdates?.() : null,
       }),
     // The store fields the model reads; getState() inside supplies the rest.
-    [native, projectPath, conversationMode, paneTab, evidenceOpen, codePeekOpen],
+    [native, projectPath, conversationMode, paneTab, codePeekOpen],
   );
 
   useNativeAppMenu(sections);
