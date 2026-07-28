@@ -20,7 +20,7 @@
  * nothing did.
  */
 import type { ProbeState } from '@hearth/probe-core';
-import type { ChangeVerdict, TesterObservation } from './types.js';
+import type { ChangeVerdict, TesterObservation, TesterProposal } from './types.js';
 
 /** What the tester decided to do with one frame. */
 export type Decision =
@@ -109,9 +109,9 @@ const ROLE = [
 ].join('\n');
 
 /**
- * The four prompts of a session, in the order they are sent: settle in, then
- * write down this session, then compare with last time, then rewrite memory.
- * The play turns happen between the first and the second.
+ * The five prompts of a session, in the order they are sent: settle in, write
+ * down this session, compare it with last time, say what is worth changing,
+ * rewrite memory. The play turns happen between the first and the second.
  */
 export function testerPrompts(ctx: TesterPromptContext): string[] {
   const memory = ctx.memory.trim() === '' ? 'You have never played this game before.' : ctx.memory.trim();
@@ -176,6 +176,24 @@ export function testerPrompts(ctx: TesterPromptContext): string[] {
     'than no playtester at all.',
   ].join('\n');
 
+  // Asked last of the questions about this session, so nothing it wants
+  // changed can rewrite what it already said it saw.
+  const plan = [
+    'Last question about this session, and nothing is a common answer to it.',
+    '',
+    'Is anything you saw worth changing? Only from the pictures, and only pointing at the',
+    'ones you saw it in. One line each:',
+    '',
+    '  BUG <picture numbers>: <what went wrong>',
+    '  IDEA <picture numbers>: <what you would rather it did>',
+    '',
+    'BUG is for something you watched go wrong. IDEA is for a preference, and a preference is',
+    'all it can be: you cannot tell whether a game is fun, so do not write as though you can.',
+    '',
+    'If nothing is worth changing, reply with NOTHING on its own. Finding something every time',
+    'you play is how a playtester ends up inventing work, so say nothing when there is nothing.',
+  ].join('\n');
+
   const remember = [
     'Last thing. Rewrite what you know about this game, for yourself to read next time.',
     '',
@@ -184,7 +202,7 @@ export function testerPrompts(ctx: TesterPromptContext): string[] {
     'you now know was wrong. Reply with the markdown and nothing else.',
   ].join('\n');
 
-  return [briefing, observe, compare, remember];
+  return [briefing, observe, compare, plan, remember];
 }
 
 /**
@@ -277,6 +295,30 @@ export function parseObservations(
     // after a placement is something only this session knows.
     const reached = placedFromFrame !== null && frame >= placedFromFrame ? 'placed' : 'played';
     out.push({ frame, text: body, reached });
+  }
+  return out;
+}
+
+/**
+ * What the tester says is worth changing, read out of its reply.
+ *
+ * Nothing is added here. A reply with no BUG or IDEA line produces no
+ * proposals, which is the answer a session on a game with nothing wrong with it
+ * should give. `report.ts` decides which of these survive.
+ */
+export function parseProposals(text: string): TesterProposal[] {
+  const out: TesterProposal[] = [];
+  for (const line of text.split('\n')) {
+    const match = /^[^\S\n]*(BUG|IDEA)[^\S\n]*([\d,\s]*):(.*)$/i.exec(line);
+    if (!match) continue;
+    const body = match[3].trim();
+    if (body === '') continue;
+    const evidence: number[] = [];
+    for (const digits of match[2].match(/\d+/g) ?? []) {
+      const frame = Number.parseInt(digits, 10);
+      if (frame >= 1 && !evidence.includes(frame)) evidence.push(frame);
+    }
+    out.push({ kind: match[1].toUpperCase() === 'BUG' ? 'bug' : 'suggestion', text: body, evidence });
   }
   return out;
 }

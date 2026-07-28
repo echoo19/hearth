@@ -232,13 +232,13 @@ git commit -m "Let the tester ask to be put somewhere"
 - The required `regression` line always appears, including when nothing got worse.
 - Prose, not a JSON blob. The agent is another reader, not a parser.
 
-- [ ] **Step 1: Write the failing test** covering each of the four rules above, plus: a session with no placed observations carries no reachability caveat (do not warn about a thing that did not happen), and an empty observation list still produces a readable report.
+- [x] **Step 1: Write the failing test** covering each of the four rules above, plus: a session with no placed observations carries no reachability caveat (do not warn about a thing that did not happen), and an empty observation list still produces a readable report.
 
-- [ ] **Step 2: Run it and watch it fail.**
+- [x] **Step 2: Run it and watch it fail.**
 
-- [ ] **Step 3: Implement `renderReport`.** Then run the prose through the `humanizer` skill and fix what it finds before moving on. This text is read by a person every session.
+- [x] **Step 3: Implement `renderReport`.** Then run the prose through the `humanizer` skill and fix what it finds before moving on. This text is read by a person every session.
 
-- [ ] **Step 4: Add the plan of action.**
+- [x] **Step 4: Add the plan of action.**
 
 `proposalsFrom(note: TesterNote): Proposal[]`, where a `Proposal` is `{id, kind: 'bug' | 'suggestion', text, evidence: number[], reached: 'played' | 'placed'}`. `evidence` holds frame indices.
 
@@ -249,9 +249,9 @@ Four rules, each of which needs a test:
 3. **A proposal drawn from a `placed` observation is marked `placed`.** Approving it must not silently import the premise that a player can reach that content.
 4. **Proposals come from observations, not from a catalogue.** Nothing may be generated that could have been written without playing this specific game.
 
-- [ ] **Step 5: Run the test.** Expected: PASS.
+- [x] **Step 5: Run the test.** Expected: PASS.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add apps/editor/server apps/editor/tests/testerReport.test.ts

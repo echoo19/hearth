@@ -36,6 +36,21 @@ export function observationReach(observation: TesterObservation): ObservationRea
   return observation.reached === 'placed' ? 'placed' : 'played';
 }
 
+/**
+ * Something the tester thinks is worth changing, in its own words.
+ *
+ * `kind` is the tester's own claim about what sort of thing it is, and the two
+ * are never merged: it watched the crash happen, and it did not watch the jump
+ * being unfair. Written as it arrived, so `report.ts` can be the one place that
+ * decides what survives.
+ */
+export interface TesterProposal {
+  kind: 'bug' | 'suggestion';
+  text: string;
+  /** Pictures it is pointing at. One that points at nothing does not survive. */
+  evidence: number[];
+}
+
 /** The tester's verdict on what you changed since it last played. */
 export interface ChangeVerdict {
   /** What it understood you changed, in its own words. */
@@ -57,6 +72,11 @@ export interface TesterNote {
    */
   regression: string;
   observations: TesterObservation[];
+  /**
+   * What it thinks is worth changing, which is allowed to be nothing at all.
+   * Absent on notes written before the plan of action existed.
+   */
+  proposals?: TesterProposal[];
   /** What it still could not work out. Carried into the next session. */
   openQuestions: string[];
   steps: number;

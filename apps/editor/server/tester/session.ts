@@ -35,6 +35,7 @@ import {
 import {
   decideFromReply,
   parseObservations,
+  parseProposals,
   parseQuestions,
   parseVerdict,
   playPrompt,
@@ -43,7 +44,7 @@ import {
   REGRESSION_REMINDER,
   type TesterControls,
 } from './prompt.js';
-import type { ChangeVerdict, TesterNote, TesterObservation } from './types.js';
+import type { ChangeVerdict, TesterNote, TesterObservation, TesterProposal } from './types.js';
 
 /** The default step ceiling. Every turn is a model call on the user's own quota. */
 export const DEFAULT_MAX_STEPS = 24;
@@ -244,7 +245,7 @@ export async function runTesterSession(opts: RunTesterSessionOptions): Promise<T
   const previous = past.length > 0 ? past[past.length - 1] : null;
   const changes = await changesSince(root, previous?.finishedAt ?? null);
   const memory = await readMemory(root);
-  const [briefing, observePrompt, comparePrompt, rememberPrompt] = testerPrompts({
+  const [briefing, observePrompt, comparePrompt, planPrompt, rememberPrompt] = testerPrompts({
     memory,
     changes,
     lastVerdict: previous ? describeVerdict(previous.onTheChange) : null,
@@ -346,6 +347,7 @@ export async function runTesterSession(opts: RunTesterSessionOptions): Promise<T
   }
 
   let observations: TesterObservation[] = [];
+  let proposals: TesterProposal[] = [];
   let openQuestions: string[] = [];
   let onTheChange: ChangeVerdict = {
     seen: 'It did not get far enough to say.',
@@ -379,6 +381,10 @@ export async function runTesterSession(opts: RunTesterSessionOptions): Promise<T
       onTheChange = parsed.onTheChange;
       regression = parsed.regression;
 
+      const planReply = await ask(planPrompt);
+      transcript.push('## What it would change', '', planReply.trim(), '');
+      proposals = parseProposals(planReply);
+
       onPhase?.('writing');
       const nextMemory = await ask(rememberPrompt);
       if (nextMemory.trim() !== '') await writeMemory(root, `${nextMemory.trim()}\n`);
@@ -409,6 +415,7 @@ export async function runTesterSession(opts: RunTesterSessionOptions): Promise<T
     onTheChange,
     regression,
     observations,
+    proposals,
     openQuestions,
     steps,
     stopped,
