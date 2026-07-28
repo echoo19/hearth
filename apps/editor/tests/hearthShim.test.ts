@@ -54,6 +54,35 @@ describe('ensureHearthShim', () => {
     const b = await ensureHearthShim(path.join(os.tmpdir(), `cli-b-${Date.now()}.mjs`));
     expect(a).not.toBe(b);
   });
+
+  it('also writes a `hearth-probe` launcher pointing at the probe CLI when one is given', async () => {
+    const cliPath = path.join(os.tmpdir(), `fake-cli-probe-${Date.now()}.mjs`);
+    const probeCliPath = path.join(os.tmpdir(), `fake-probe-${Date.now()}.mjs`);
+    const dir = await ensureHearthShim(cliPath, probeCliPath);
+    const hearthShimPath = path.join(dir, process.platform === 'win32' ? 'hearth.cmd' : 'hearth');
+    const probeShimPath = path.join(dir, process.platform === 'win32' ? 'hearth-probe.cmd' : 'hearth-probe');
+    const hearthContents = await fsp.readFile(hearthShimPath, 'utf8');
+    const probeContents = await fsp.readFile(probeShimPath, 'utf8');
+    expect(hearthContents).toContain(cliPath);
+    expect(probeContents).toContain(probeCliPath);
+    // Same shape as any other launcher: `node <target> "$@"`.
+    expect(probeContents).toBe(shimScript(probeCliPath, process.execPath));
+  });
+
+  it('writes no `hearth-probe` launcher when no probe CLI is given', async () => {
+    const cliPath = path.join(os.tmpdir(), `fake-cli-noprobe-${Date.now()}.mjs`);
+    const dir = await ensureHearthShim(cliPath);
+    const probeShimPath = path.join(dir, process.platform === 'win32' ? 'hearth-probe.cmd' : 'hearth-probe');
+    await expect(fsp.access(probeShimPath)).rejects.toThrow();
+  });
+
+  it('gives the same cliPath different dirs with and without a probe (cache key includes the probe path)', async () => {
+    const cliPath = path.join(os.tmpdir(), `fake-cli-both-${Date.now()}.mjs`);
+    const probeCliPath = path.join(os.tmpdir(), `fake-probe-both-${Date.now()}.mjs`);
+    const withoutProbe = await ensureHearthShim(cliPath);
+    const withProbe = await ensureHearthShim(cliPath, probeCliPath);
+    expect(withoutProbe).not.toBe(withProbe);
+  });
 });
 
 describe('hearthPtyEnv', () => {

@@ -321,8 +321,11 @@ describe('mapCodexModels', () => {
   };
 
   it('keeps the visible models, in order, and marks the account default', () => {
+    // `isDefault` rather than a `note: 'Default'` string: the UI has to tell
+    // the account's default model apart from the "let the provider decide"
+    // row, and both were reading as the word "Default".
     expect(mapCodexModels(response)).toEqual([
-      { id: 'gpt-5.6-sol', label: 'GPT-5.6-Sol', note: 'Default' },
+      { id: 'gpt-5.6-sol', label: 'GPT-5.6-Sol', isDefault: true },
       { id: 'gpt-5.6-luna', label: 'GPT-5.6-Luna' },
     ]);
   });

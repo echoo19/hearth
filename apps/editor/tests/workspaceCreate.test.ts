@@ -17,6 +17,7 @@ import {
   PROJECTS_DIR_NAME,
   SLUG_MAX_CHARS,
   resolveProjectsHome,
+  slugFromName,
   slugFromPrompt,
   uniqueFolderName,
 } from '../server/workspaceSlug';
@@ -43,6 +44,34 @@ beforeAll(async () => {
 
 afterAll(async () => {
   await fsp.rm(tmp, { recursive: true, force: true });
+});
+
+describe('slugFromName — a typed name is not a prompt', () => {
+  it('keeps every word, because every word was chosen', () => {
+    // Run through the prompt rule these lose their whole meaning: all three
+    // words of "My New Game" are stopwords, so it fell through to the generic
+    // fallback, and "My Space Game" came out as bare `space`.
+    expect(slugFromName('My New Game')).toBe('my-new-game');
+    expect(slugFromName('My Space Game')).toBe('my-space-game');
+    expect(slugFromPrompt('My New Game')).toBe(FALLBACK_SLUG);
+  });
+
+  it('applies the same character rules as the prompt path', () => {
+    expect(slugFromName("Don't Starve — Clone!")).toBe('dont-starve-clone');
+    expect(slugFromName('  Tower   Defense  ')).toBe('tower-defense');
+  });
+
+  it('still names something when the name is only punctuation', () => {
+    expect(slugFromName('!!!')).toBe(FALLBACK_SLUG);
+    expect(slugFromName('   ')).toBe(FALLBACK_SLUG);
+    expect(slugFromName(undefined)).toBe(FALLBACK_SLUG);
+  });
+
+  it('caps length the way the prompt path does', () => {
+    const slug = slugFromName('extraordinarily complicated interdimensional bureaucracy');
+    expect(slug.length).toBeLessThanOrEqual(SLUG_MAX_CHARS);
+    expect(slug.endsWith('-')).toBe(false);
+  });
 });
 
 describe('slugFromPrompt', () => {

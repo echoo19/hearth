@@ -59,6 +59,16 @@ beforeEach(async () => {
   localStorage.clear();
   resetHarnessRegistryCache();
   installFetch();
+  // jsdom implements neither showModal nor close; the confirmation guarding a
+  // removal only needs them to be open/close toggles.
+  const proto = HTMLDialogElement.prototype as unknown as Record<string, unknown>;
+  proto.showModal = function (this: HTMLDialogElement) {
+    this.open = true;
+  };
+  proto.close = function (this: HTMLDialogElement) {
+    this.open = false;
+    this.dispatchEvent(new Event('close'));
+  };
 });
 
 afterEach(async () => {
@@ -112,8 +122,8 @@ describe('what the rows say', () => {
   it('offers rename/remove on the folder’s own rows and nothing on built-ins', async () => {
     await mount();
     await addConnector('Acme MCP', 'mcp', '');
-    expect(screen.queryByRole('button', { name: /Connector options — Web games/ })).toBeNull();
-    expect(screen.getByRole('button', { name: /Connector options — Acme MCP/ })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: /Connector options for Web games/ })).toBeNull();
+    expect(screen.getByRole('button', { name: /Connector options for Acme MCP/ })).toBeTruthy();
   });
 });
 
@@ -123,7 +133,7 @@ describe('adding something', () => {
     await addConnector('Acme MCP', 'engine', 'http://localhost:9000');
 
     // The optimistic row lands first; the receipt appears when the write does.
-    await screen.findByText('Saved — activates in a future update.');
+    await screen.findByText('Saved. Activates in a future update.');
 
     expect((await onDisk()).connectors).toEqual([
       {
@@ -159,7 +169,7 @@ describe('adding something', () => {
 
     await screen.findByText('Disk is full.');
     expect(screen.getByLabelText('Connector name')).toBeTruthy();
-    expect(screen.queryByText('Saved — activates in a future update.')).toBeNull();
+    expect(screen.queryByText('Saved. Activates in a future update.')).toBeNull();
     await waitFor(() => expect(screen.queryByText('Acme MCP')).toBeNull());
   });
 });
@@ -168,7 +178,7 @@ describe('changing something', () => {
   it('renames a row in place', async () => {
     await mount();
     await addConnector('Acme MCP', 'mcp', '');
-    fireEvent.click(screen.getByRole('button', { name: /Connector options — Acme MCP/ }));
+    fireEvent.click(screen.getByRole('button', { name: /Connector options for Acme MCP/ }));
     fireEvent.click(await screen.findByRole('menuitem', { name: 'Rename' }));
 
     const input = screen.getByLabelText('Acme MCP name') as HTMLInputElement;
@@ -181,11 +191,16 @@ describe('changing something', () => {
     );
   });
 
-  it('removes a row it added', async () => {
+  it('removes a row it added, once the removal is confirmed', async () => {
     await mount();
     await addConnector('Acme MCP', 'mcp', '');
-    fireEvent.click(screen.getByRole('button', { name: /Connector options — Acme MCP/ }));
+    fireEvent.click(screen.getByRole('button', { name: /Connector options for Acme MCP/ }));
     fireEvent.click(await screen.findByRole('menuitem', { name: 'Remove' }));
+
+    // Remove sits next to Rename in an overflow menu and rewrites the
+    // project's registry, so it asks first.
+    expect(await screen.findByText(/will be removed from this project/)).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Remove' }));
 
     await waitFor(() => expect(screen.queryByText('Acme MCP')).toBeNull());
     // The built-ins are untouched — they were never in the file to begin with.

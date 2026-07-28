@@ -205,7 +205,7 @@ describe('the + menu', () => {
     const asked = vi.fn();
     window.addEventListener('hearth:open-folder', asked);
     fireEvent.click(screen.getByRole('button', { name: 'Add context' }));
-    fireEvent.click(screen.getByRole('menuitem', { name: 'Open folder…' }));
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Open a project…' }));
     window.removeEventListener('hearth:open-folder', asked);
     expect(asked).toHaveBeenCalledTimes(1);
   });
@@ -229,7 +229,13 @@ describe('the model pill', () => {
 
     fireEvent.click(pill);
     const headers = [...document.querySelectorAll('.menu-header-name')].map((el) => el.textContent);
-    expect(headers).toEqual(['Claude', 'ChatGPT', 'Effort']);
+    // The picker answers "how do you want to work", not just "which model":
+    // Chat is what Hearth drives itself over an API or an OAuth session, and
+    // Terminal is a CLI on this machine, started in a real shell. Each vendor
+    // group's header names its own backend, so the separate Agent section that
+    // briefly led this menu was the same question asked twice. Effort is
+    // absent until a model that declares efforts is picked.
+    expect(headers).toEqual(['Chat', 'Claude', 'ChatGPT', 'Terminal']);
     expect(screen.getByRole('menuitemcheckbox', { name: 'Opus 5' })).toBeTruthy();
   });
 

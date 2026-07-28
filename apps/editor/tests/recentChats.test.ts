@@ -74,6 +74,9 @@ describe('recentChats', () => {
     expect(chats[0]).toEqual({
       id: 'b1',
       title: 'Space pirates',
+      // Every record written before the field existed is a chat, and the rail
+      // marks a row by kind, so the entry has to carry it out of here.
+      kind: 'chat',
       createdAt: '2026-01-02T00:00:00.000Z',
       updatedAt: '2026-01-04T00:00:00.000Z',
       project: { path: beta, name: 'beta' },

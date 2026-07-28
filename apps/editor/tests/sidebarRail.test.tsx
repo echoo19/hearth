@@ -7,7 +7,7 @@
  *      shows, and opening it opens its folder first;
  *   2. it never offers an action it can't perform: rename/delete belong to the
  *      folder's own index, so they appear only for the folder that is open,
- *      and Terminal is unavailable (with a reason) until there is one;
+ *      and the mode switch is not here at all (it moved to the column);
  *   3. search hides rows and nothing else — an empty box hides nothing;
  *   4. the update banner is present exactly when an update is, and its button
  *      really does relaunch.
@@ -194,8 +194,8 @@ describe('Recents, across folders', () => {
     render(<Sidebar />);
 
     await screen.findByText('Mine');
-    expect(screen.getByRole('button', { name: /Conversation options — Mine/ })).toBeTruthy();
-    expect(screen.queryByRole('button', { name: /Conversation options — Theirs/ })).toBeNull();
+    expect(screen.getByRole('button', { name: /Conversation options for Mine/ })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: /Conversation options for Theirs/ })).toBeNull();
   });
 });
 
@@ -209,7 +209,7 @@ describe('search', () => {
     await waitFor(() => expect(screen.getByText('other')).toBeTruthy());
 
     fireEvent.click(screen.getByRole('button', { name: 'Search' }));
-    const box = screen.getByLabelText('Search chats and folders');
+    const box = screen.getByLabelText('Search projects and chats');
 
     fireEvent.change(box, { target: { value: 'aster' } });
     expect(screen.queryByText('Platformer')).toBeNull();
@@ -224,25 +224,19 @@ describe('search', () => {
     reset({ recentChats: [chat('a', 'Asteroids')] });
     render(<Sidebar />);
     fireEvent.click(screen.getByRole('button', { name: 'Search' }));
-    fireEvent.change(screen.getByLabelText('Search chats and folders'), { target: { value: 'zzz' } });
-    expect(screen.getByText('Nothing matches that.')).toBeTruthy();
+    fireEvent.change(screen.getByLabelText('Search projects and chats'), { target: { value: 'zzz' } });
+    expect(screen.getByText('No chats match that.')).toBeTruthy();
   });
 });
 
 describe('the Chat / Terminal switch', () => {
-  it('cannot reach the terminal without a folder, and says why', () => {
-    render(<Sidebar />);
-    const terminal = screen.getByRole('tab', { name: 'Terminal' });
-    expect(terminal.getAttribute('aria-disabled')).toBe('true');
-    fireEvent.click(terminal);
-    expect(useApp.getState().conversationMode).toBe('chat');
-  });
-
-  it('switches the column once a folder is open', () => {
+  it('is not in the rail — it moved to the conversation it changes', () => {
+    // The rail is Projects and Chats. A mode control belonged to neither list,
+    // and sat above both pretending to. Its behaviour is covered where it now
+    // lives, in conversationMode.test.tsx.
     reset({ projectPath: HERE, projectName: 'game' });
     render(<Sidebar />);
-    fireEvent.click(screen.getByRole('tab', { name: 'Terminal' }));
-    expect(useApp.getState().conversationMode).toBe('terminal');
+    expect(screen.queryByRole('tab', { name: 'Terminal' })).toBeNull();
   });
 });
 
@@ -278,29 +272,36 @@ describe('opening a folder', () => {
     delete (window as unknown as { hearthNative?: unknown }).hearthNative;
   });
 
-  it('offers the same act as a nav row', async () => {
-    const pickDirectory = vi.fn(async () => ELSEWHERE);
-    const openWorkspace = vi.fn(async () => ({ ok: true }));
-    (window as unknown as { hearthNative: unknown }).hearthNative = { pickDirectory, platform: 'darwin' };
-    reset({ openWorkspace });
+  it('is no longer a row in the rail', () => {
+    // Projects are the unit now, and "open some directory" is a File-menu act
+    // (⌘O) rather than a third thing competing with the two lists.
     render(<Sidebar />);
-
-    fireEvent.click(screen.getByRole('button', { name: 'Open folder…' }));
-
-    await waitFor(() => expect(openWorkspace).toHaveBeenCalledWith(ELSEWHERE));
-    delete (window as unknown as { hearthNative?: unknown }).hearthNative;
+    expect(screen.queryByRole('button', { name: 'Open folder…' })).toBeNull();
   });
 });
 
 describe('the collapsed rail', () => {
   it('keeps the acts and drops the lists', () => {
-    reset({ sidebarCollapsed: true, recentChats: [chat('a', 'Asteroids')] });
+    reset({
+      sidebarCollapsed: true,
+      recentChats: [chat('a', 'Asteroids')],
+      projectPath: '/work/game',
+      projectName: 'game',
+    });
     render(<Sidebar />);
 
     expect(screen.getByRole('button', { name: 'New chat' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Skills' })).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Expand sidebar' })).toBeTruthy();
-    // The switch has nothing honest to say at 60px; the View menu still has it.
-    expect(screen.queryByRole('tab', { name: 'Terminal' })).toBeNull();
+  });
+
+  it('keeps both acts with nothing open at all', () => {
+    // Neither depends on a project: New chat asks which one, and Skills are
+    // the user's rather than any project's.
+    reset({ sidebarCollapsed: true });
+    render(<Sidebar />);
+    expect(screen.getByRole('button', { name: 'New chat' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Skills' })).toBeTruthy();
   });
 });
 
@@ -313,7 +314,35 @@ describe('the account row', () => {
 
   it('opens a menu with Settings', async () => {
     render(<Sidebar />);
-    fireEvent.click(screen.getByRole('button', { name: /Account — Hearth/ }));
+    fireEvent.click(screen.getByRole('button', { name: /Account: Hearth/ }));
     expect(await screen.findByRole('menuitem', { name: 'Settings…' })).toBeTruthy();
+  });
+
+  it('opens Settings with no project open', async () => {
+    // It used to be gated on having a folder, from when Settings was nothing
+    // but the two API-key fields that save into a project. Clicking it with no
+    // project did nothing at all, which reads as a broken menu rather than as
+    // a refusal. Every pane but one is about the person, not the project.
+    render(<Sidebar />);
+    expect(useApp.getState().projectPath).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: /Account: Hearth/ }));
+    const item = await screen.findByRole('menuitem', { name: 'Settings…' });
+    expect(item.getAttribute('aria-disabled')).toBeNull();
+    expect((item as HTMLButtonElement).disabled).toBe(false);
+
+    const opened = vi.fn();
+    window.addEventListener('hearth:open-settings', opened);
+    fireEvent.click(item);
+    window.removeEventListener('hearth:open-settings', opened);
+    expect(opened).toHaveBeenCalledTimes(1);
+  });
+
+  it('leaves checking for updates to Settings, where the version is', async () => {
+    // Two doors to the same act, one of them next to the number it reports on
+    // and one of them not, only makes the reader wonder if they differ.
+    render(<Sidebar />);
+    fireEvent.click(screen.getByRole('button', { name: /Account: Hearth/ }));
+    await screen.findByRole('menuitem', { name: 'Settings…' });
+    expect(screen.queryByRole('menuitem', { name: /Check for updates/ })).toBeNull();
   });
 });

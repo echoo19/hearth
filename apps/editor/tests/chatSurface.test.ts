@@ -5,23 +5,20 @@
 import { describe, expect, it } from 'vitest';
 import { composerBlockReason, composerKeyAction } from '../src/components/chat/Composer';
 import { detailIsFile, relativeTo, shortenPath, toolVerb } from '../src/components/chat/ToolChip';
-import { activeSenses } from '../src/components/game/CapabilityStrip';
 import { capabilityLabel, connectionLabel } from '../src/components/shell/TopBar';
 import { isNearBottom } from '../src/components/chat/MessageList';
 import { anyChatProviderReady } from '../src/store';
 
 describe('composerBlockReason', () => {
   it('names the reason when the socket is down', () => {
-    expect(composerBlockReason({ connected: false, busy: false, empty: false })).toBe('Reconnecting…');
+    expect(composerBlockReason({ connected: false })).toBe('Reconnecting…');
   });
 
-  it('names the reason (and the way out) while a turn is running', () => {
-    expect(composerBlockReason({ connected: true, busy: true, empty: false })).toContain('Stop');
-  });
-
-  it('gives no reason for an empty box — that is not a failure state', () => {
-    expect(composerBlockReason({ connected: true, busy: false, empty: true })).toBeNull();
-    expect(composerBlockReason({ connected: true, busy: false, empty: false })).toBeNull();
+  it('says nothing at all once the socket is up', () => {
+    // Including while a turn is running: that state belongs to the transcript
+    // (WorkingRow), not to a caption under the box. A note here beside a Stop
+    // button was the app explaining its own controls.
+    expect(composerBlockReason({ connected: true })).toBeNull();
   });
 });
 
@@ -94,52 +91,48 @@ describe('detailIsFile', () => {
   });
 });
 
-describe('activeSenses', () => {
-  it('lights nothing while there is no game', () => {
-    expect(activeSenses(['preview'], false).size).toBe(0);
+// The `activeSenses` suite lived here. The capability chip row it backed was
+// removed from the game pane, and with it the function — the game pane's strip
+// now carries only its two actions.
+
+describe('capabilityLabel — silence is the resting state', () => {
+  it('says nothing at all when everything is working', () => {
+    // It used to read "Ready" / "Agent connected" whenever things were fine.
+    // A tool that keeps announcing it is connected invites the reader to
+    // wonder how often it isn't, and a localhost socket being up is not news.
+    expect(capabilityLabel('connected', 'agent-sdk', true)).toBeNull();
+    expect(capabilityLabel('connected', 'codex', true)).toBeNull();
+    expect(capabilityLabel('connected', null, true)).toBeNull();
   });
 
-  it('always includes what a plain web game gives up for free', () => {
-    const senses = activeSenses([], true);
-    expect(senses.has('preview')).toBe(true);
-    expect(senses.has('errors')).toBe(true);
-    expect(senses.has('screenshots')).toBe(true);
-    expect(senses.has('entities')).toBe(false);
-  });
-
-  it('adds the deeper senses only when the server reports them', () => {
-    expect(activeSenses(['entities', 'events'], true).has('entities')).toBe(true);
-  });
-});
-
-describe('capabilityLabel', () => {
-  it('reports the connection first — nothing else matters while it is down', () => {
-    expect(capabilityLabel('connecting', 'agent-sdk', true)).toBe(connectionLabel('connecting'));
-    expect(capabilityLabel('disconnected', 'agent-sdk', true)).toBe('Disconnected');
-  });
-
-  it('distinguishes a real agent from the stub', () => {
-    expect(capabilityLabel('connected', 'agent-sdk', true)).toBe('Agent connected');
+  it('still says when nothing could answer a turn', () => {
+    // This one is not reassurance, it is the difference between typing doing
+    // something and typing doing nothing — and it is the reader's to fix.
     expect(capabilityLabel('connected', 'stub', false)).toBe('No agent connected');
+    expect(capabilityLabel('connected', null, false)).toBe('No agent connected');
   });
 
-  it('falls back to the configured key before a driver has bound', () => {
-    expect(capabilityLabel('connected', null, true)).toBe('Ready');
-    expect(capabilityLabel('connected', null, false)).toBe('No agent connected');
+  it('keeps quiet about a connection that comes straight back', () => {
+    // A blip narrated is the same self-doubt in a shorter sentence.
+    expect(capabilityLabel('connecting', 'agent-sdk', true)).toBeNull();
+    expect(capabilityLabel('disconnected', 'agent-sdk', true)).toBeNull();
+  });
+
+  it('speaks once the wait is long enough to be felt', () => {
+    expect(capabilityLabel('connecting', 'agent-sdk', true, true)).toBe(connectionLabel('connecting'));
+    expect(capabilityLabel('disconnected', 'agent-sdk', true, true)).toBe('Disconnected');
   });
 
   it('counts a signed-in provider as ready, not only a stored key', () => {
     // Someone signed in with ChatGPT and no Anthropic key can be answered, so
-    // the one line that says whether typing will do anything must say yes.
+    // they must not be told nothing is connected.
     const providers = {
       active: 'openai' as const,
       anthropic: { hasKey: false, source: null },
       openai: { installed: true, loggedIn: true, hasKey: false },
     } as unknown as Parameters<typeof anyChatProviderReady>[1];
     expect(anyChatProviderReady({ hasKey: false, source: null }, providers)).toBe(true);
-    expect(capabilityLabel('connected', null, anyChatProviderReady({ hasKey: false, source: null }, providers))).toBe(
-      'Ready',
-    );
+    expect(capabilityLabel('connected', null, anyChatProviderReady({ hasKey: false, source: null }, providers))).toBeNull();
   });
 });
 

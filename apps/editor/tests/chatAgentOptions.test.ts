@@ -50,7 +50,12 @@ describe('parseAgentOptions', () => {
 
   it('drops values it does not recognise rather than failing the turn', () => {
     expect(parseAgentOptions({ provider: 'deepmind', model: 'claude-opus-5' })).toEqual({ model: 'claude-opus-5' });
-    expect(parseAgentOptions({ effort: 'extreme' })).toBeNull();
+    // Effort is NOT a closed set. A live `model/list` reports low, medium,
+    // high, xhigh, max and ultra, with different per-model defaults, so a
+    // hardcoded three-way union silently dropped the rest. The shape is still
+    // checked — `effort: 9` below is still refused — but an unfamiliar WORD is
+    // the binary's business, not ours.
+    expect(parseAgentOptions({ effort: 'extreme' })).toEqual({ effort: 'extreme' });
     expect(parseAgentOptions({ model: 42 })).toBeNull();
     expect(parseAgentOptions('opus')).toBeNull();
     expect(parseAgentOptions(['opus'])).toBeNull();

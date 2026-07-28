@@ -21,11 +21,13 @@ function mockStore(over: Partial<AppState> = {}): AppState {
     projectPath: '/work/game',
     conversationMode: 'chat',
     paneTab: 'game',
+    paneOpen: true,
     evidenceOpen: true,
     codePeek: { open: false, path: null },
     closeWorkspace: vi.fn(),
     setConversationMode: vi.fn(),
     setPaneTab: vi.fn(),
+    setPaneOpen: vi.fn(),
     setEvidenceOpen: vi.fn(),
     openCodePeek: vi.fn(),
     closeCodePeek: vi.fn(),
@@ -64,11 +66,14 @@ describe('buildAppMenu', () => {
     expect(sections.map((section) => section.id)).toEqual(['file', 'view', 'help']);
   });
 
-  it('leaves Open folder available with no folder open, but disables the rest', () => {
+  it('leaves the two things that do not need a folder available, and disables the rest', () => {
     const sections = buildAppMenu(mockStore({ projectPath: null }), baseCtx());
     expect(item(sections, 'open-folder').enabled).toBe(true);
+    // Settings is mostly about this computer rather than this project: which
+    // agent answers, the standing instructions, the update check. Someone with
+    // no project open is exactly the person who needs to reach it.
+    expect(item(sections, 'settings').enabled).toBe(true);
     expect(item(sections, 'close-folder').enabled).toBe(false);
-    expect(item(sections, 'settings').enabled).toBe(false);
     for (const entry of items(sections, 'view')) expect(entry.enabled).toBe(false);
   });
 
@@ -119,6 +124,27 @@ describe('buildAppMenu', () => {
     expect(setPaneTab).toHaveBeenCalledWith('console');
   });
 
+  it('opens the playtest column when a surface is picked while it is closed', () => {
+    // Otherwise View > Console ticks a tab in a column nobody can see.
+    const setPaneOpen = vi.fn();
+    const sections = buildAppMenu(mockStore({ paneOpen: false, setPaneOpen }), baseCtx());
+    item(sections, 'pane:console').onSelect();
+    expect(setPaneOpen).toHaveBeenCalledWith(true);
+  });
+
+  it('leaves an already-open column alone', () => {
+    const setPaneOpen = vi.fn();
+    const sections = buildAppMenu(mockStore({ paneOpen: true, setPaneOpen }), baseCtx());
+    item(sections, 'pane:game').onSelect();
+    expect(setPaneOpen).not.toHaveBeenCalled();
+  });
+
+  it('shows no surface as current while the column is closed', () => {
+    const sections = buildAppMenu(mockStore({ paneOpen: false, paneTab: 'game' }), baseCtx());
+    expect(item(sections, 'pane:game').checked).toBe(false);
+    expect(item(sections, 'pane').checked).toBe(false);
+  });
+
   it('toggles the code peek closed when it is already open', () => {
     const openCodePeek = vi.fn();
     const closeCodePeek = vi.fn();
@@ -148,7 +174,7 @@ describe('serializeAppMenu', () => {
     const openFolder = file.items.find((entry) => entry.id === 'open-folder')!;
     expect(openFolder).toEqual({
       id: 'open-folder',
-      label: 'Open folder…',
+      label: 'Open a project…',
       accelerator: 'CmdOrCtrl+O',
       enabled: true,
       checked: undefined,
@@ -163,7 +189,7 @@ describe('serializeAppMenu', () => {
   });
 
   it('marks checkbox items with a boolean and plain items with undefined', () => {
-    const serialized = serializeAppMenu(buildAppMenu(mockStore({ paneTab: 'game' }), baseCtx()));
+    const serialized = serializeAppMenu(buildAppMenu(mockStore({ paneTab: 'game', paneOpen: true }), baseCtx()));
     const view = serialized.find((section) => section.label === 'View')!;
     expect(view.items.find((entry) => entry.id === 'pane:game')!.checked).toBe(true);
     const help = serialized.find((section) => section.label === 'Help')!;

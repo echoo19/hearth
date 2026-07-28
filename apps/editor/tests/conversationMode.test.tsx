@@ -197,10 +197,23 @@ describe('first-run default vs. an explicit choice', () => {
 });
 
 describe('the conversation head', () => {
-  it('carries no mode control of its own — that pill lives in the sidebar', () => {
+  it('states the kind rather than offering to change it', () => {
+    // A conversation is a chat or a terminal from the moment it starts, and
+    // one cannot become the other: what ran in a shell is not replayable as a
+    // transcript. So the head reports the kind where it used to switch it, and
+    // changing kind means starting a conversation.
     render(<ChatColumn />);
-    expect(screen.queryAllByRole('tab')).toHaveLength(0);
-    expect(document.querySelector('.conversation-switch')).toBeNull();
+    expect(screen.queryByRole('tab')).toBeNull();
+    expect(document.querySelector('.conversation-kind')?.textContent).toBe('Chat');
+  });
+
+  it('will not start a terminal conversation without a project', () => {
+    // The shell runs in the project folder, so with no folder open there is
+    // nothing to start and nowhere to write the record. The refusal moved into
+    // the store when the switch was removed.
+    useApp.setState({ projectPath: null, conversationMode: 'chat' });
+    useApp.getState().setConversationMode('terminal');
+    expect(useApp.getState().conversationMode).toBe('chat');
   });
 
   it('reads out who would answer while in chat mode', () => {
@@ -277,30 +290,41 @@ describe('the terminal survives the toggle', () => {
 
 describe('the chat empty state without a key', () => {
   beforeEach(() => {
-    resetStore({ settings: { hasKey: false, source: null } });
+    // `chatDriver: 'stub'` is the part that makes this state real: the socket
+    // bound and found nothing to talk to. Settings alone is not enough to say
+    // so, because a CLI agent needs no key.
+    resetStore({ settings: { hasKey: false, source: null }, chatDriver: 'stub' });
   });
 
-  it('offers switching to the terminal as a real control, not as prose', () => {
-    render(<ChatColumn />);
-    const button = screen.getByRole('button', { name: 'Switch to Terminal' });
-    fireEvent.click(button);
-    expect(useApp.getState().conversationMode).toBe('terminal');
-    expect(terminalLayer()).not.toBeNull();
-  });
-
-  it('keeps adding a key as the other way forward', () => {
+  it('offers exactly one way forward, and it is Settings', () => {
+    // It used to offer three (terminal, ChatGPT sign-in, add a key), which is
+    // three chances to pick the wrong one. Settings is where all of those
+    // routes already live, so the empty state points at the room rather than
+    // reproducing its doors.
     render(<ChatColumn />);
     const opened = vi.fn();
     window.addEventListener('hearth:open-settings', opened);
-    fireEvent.click(screen.getByRole('button', { name: 'Add a key in Settings' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Open Settings' }));
     window.removeEventListener('hearth:open-settings', opened);
     expect(opened).toHaveBeenCalledTimes(1);
+    expect(screen.queryByRole('button', { name: 'Switch to Terminal' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Sign in with ChatGPT' })).toBeNull();
   });
 
-  it('does not push either way once an agent is connected', () => {
-    resetStore({ settings: { hasKey: true, source: 'project' } });
+  it('does not push once an agent is connected', () => {
+    resetStore({ settings: { hasKey: true, source: 'project' }, chatDriver: 'agent-sdk' });
     render(<ChatColumn />);
-    expect(screen.queryByRole('button', { name: 'Switch to Terminal' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Open Settings' })).toBeNull();
+  });
+
+  it('says nothing at all while it does not know yet', () => {
+    // The first moment of a new chat: the socket has not said which driver
+    // bound and the settings call has not returned. Reporting that as "no
+    // agent is connected" told people with a working setup that it was broken.
+    resetStore({ settings: null, providers: null, chatDriver: null });
+    render(<ChatColumn />);
+    expect(screen.queryByText(/No agent is connected/)).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Open Settings' })).toBeNull();
   });
 });
 

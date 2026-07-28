@@ -59,11 +59,28 @@ describe('applyChatEvent', () => {
     expect(messages[0].role).toBe('user');
   });
 
-  it('renders an error as the turn ending with the reason visible', () => {
+  it('ends the turn with the reason, in the app’s voice rather than the agent’s', () => {
     let messages = conversation();
     messages = applyChatEvent(messages, { type: 'error', message: 'no credit' });
-    expect(textOf(messages[1])).toBe('no credit');
+    const tail = messages[1].parts[messages[1].parts.length - 1];
+
+    // Not a text part. Appended as one it rendered in the agent's own voice and
+    // typography, so a rate limit or an expired login was indistinguishable
+    // from something the model had decided to say.
+    expect(tail).toEqual({
+      kind: 'notice',
+      text: 'no credit',
+      tone: 'error',
+      retryText: 'make a shooter',
+    });
+    expect(textOf(messages[1])).toBe('');
     expect(messages[1].streaming).toBe(false);
+  });
+
+  it('carries the lost prompt so the failure can offer to send it again', () => {
+    const messages = applyChatEvent(conversation(), { type: 'error', message: 'overloaded' });
+    const tail = messages[1].parts[messages[1].parts.length - 1];
+    expect(tail.kind === 'notice' && tail.retryText).toBe('make a shooter');
   });
 
   it('ignores events when no turn is open, without changing identity', () => {
