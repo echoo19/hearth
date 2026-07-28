@@ -1117,7 +1117,7 @@ export class PixiSceneView {
         this.opts.onLog?.({
           frame: this.session.frame,
           level: 'warn',
-          message: `Sheet frame "${frameName}" not found on asset "${asset?.name ?? assetId}" — drawing the whole texture`,
+          message: `Sheet frame "${frameName}" not found on asset "${asset?.name ?? assetId}", so the whole texture is drawn`,
         });
       }
       return base;

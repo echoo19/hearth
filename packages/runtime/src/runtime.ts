@@ -1179,7 +1179,7 @@ export class SceneRuntime {
       this.checkpointPoints.get(entity.id) ?? respawn.point ?? this.spawnPoints.get(entity.id);
     if (!target) {
       throw new Error(
-        `ctx.respawn: "${entity.name}" has no respawn point — set Respawn.point or enable useSpawnPosition`,
+        `ctx.respawn: "${entity.name}" has no respawn point. Set Respawn.point or enable useSpawnPosition`,
       );
     }
     const transform = entity.components.Transform;

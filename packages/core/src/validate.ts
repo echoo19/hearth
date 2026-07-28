@@ -1010,9 +1010,9 @@ export async function validateProject(store: ProjectStore): Promise<ValidationRe
                 code: 'PIXEL_ART_STRETCHED',
                 message:
                   `Entity "${entity.name}" SpriteRenderer stretches pixel art ${source} (${nativeW}×${nativeH}) ` +
-                  `to ${c.SpriteRenderer.width}×${c.SpriteRenderer.height} — ${sx === sy ? 'a non-integer' : 'an aspect-distorting'} scale that smears texels. ` +
+                  `to ${c.SpriteRenderer.width}×${c.SpriteRenderer.height}, ${sx === sy ? 'a non-integer' : 'an aspect-distorting'} scale that smears texels. ` +
                   `For a surface/platform use renderMode 'tile' (or a Tilemap); otherwise keep the box at an integer scale of the native size (e.g. ${nativeW * 2}×${nativeH * 2}). ` +
-                  `Genuinely non-pixel art (a photo, a painted backdrop) may scale freely — mark the asset pixelArt:false to opt out`,
+                  `Genuinely non-pixel art (a photo, a painted backdrop) may scale freely. Mark the asset pixelArt:false to opt out`,
                 scene: sceneId,
                 entity: entity.id,
                 asset: srAsset.id,
@@ -1149,8 +1149,8 @@ export async function validateProject(store: ProjectStore): Promise<ValidationRe
             severity: 'warning',
             code: 'SPRITE_COLLIDER_FEET_MISMATCH',
             message:
-              `Entity "${entity.name}" sprite bottom (${spriteBottom}) and collider bottom (${colliderBottom}) differ by ${Math.abs(mismatch)}px — ` +
-              `the art will visibly ${mismatch > 0 ? 'sink into' : 'float above'} surfaces it rests on. ` +
+              `Entity "${entity.name}" sprite bottom (${spriteBottom}) and collider bottom (${colliderBottom}) differ by ${Math.abs(mismatch)}px, ` +
+              `so the art will visibly ${mismatch > 0 ? 'sink into' : 'float above'} surfaces it rests on. ` +
               `Align the feet with Collider.offset.y = ${fixOffsetY} (or size the collider to match the sprite)`,
             scene: sceneId,
             entity: entity.id,

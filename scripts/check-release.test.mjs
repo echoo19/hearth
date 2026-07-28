@@ -389,6 +389,15 @@ async function writeFakeTools(root, {
   const dist = path.join(root, 'dist');
   await mkdir(dist, { recursive: true });
   await writeFile(path.join(dist, 'hearth-cli.mjs'), `console.log(${JSON.stringify(cliVersion)});\n`);
+  // The probe pair and its shim asset: smoke-tools requires them to exist and
+  // exercises the CLI half, so the fakes answer --version and reach the MCP
+  // serving banner the way the real bundles do.
+  await writeFile(path.join(dist, 'hearth-probe.mjs'), `console.log('0.1.0');\n`);
+  await writeFile(
+    path.join(dist, 'hearth-probe-mcp.mjs'),
+    `console.error('hearth-probe-mcp: serving the probe for ' + process.cwd());\nsetInterval(() => {}, 1000);\n`,
+  );
+  await writeFile(path.join(dist, 'probe-shim.js'), '/* fake shim */\n');
   await writeFile(
     path.join(dist, 'hearth-mcp.mjs'),
     `import readline from 'node:readline';

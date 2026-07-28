@@ -230,7 +230,7 @@ export function setSmParam(
   const p = asset.params[name];
   if (!p) throw new Error(`ctx.animator.setParam: unknown param "${name}"`);
   if (p.type === 'trigger') {
-    throw new Error(`ctx.animator.setParam: "${name}" is a trigger param — use ctx.animator.fire`);
+    throw new Error(`ctx.animator.setParam: "${name}" is a trigger param. Use ctx.animator.fire`);
   }
   if (p.type === 'bool') {
     if (typeof value !== 'boolean') {

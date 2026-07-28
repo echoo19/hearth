@@ -123,6 +123,9 @@ jobs:
         run: |
           cp apps/editor/dist-electron/hearth-cli.mjs artifacts/
           cp apps/editor/dist-electron/hearth-mcp.mjs artifacts/
+          cp apps/editor/dist-electron/hearth-probe.mjs artifacts/
+          cp apps/editor/dist-electron/hearth-probe-mcp.mjs artifacts/
+          cp apps/editor/dist-electron/probe-shim.js artifacts/
           cp apps/editor/dist-electron/hearth-player.js artifacts/
           ls -la artifacts/
           # --latest is explicit on purpose. gh's default is "automatic based

@@ -23,7 +23,7 @@ try {
 } catch (err) {
   if (err?.code === 'ERR_MODULE_NOT_FOUND') {
     console.error(
-      'bench: could not resolve @hearth/core or @hearth/runtime — run `npm run build:packages` first (or use `npm run bench`).',
+      'bench: could not resolve @hearth/core or @hearth/runtime. Run `npm run build:packages` first (or use `npm run bench`).',
     );
     process.exit(1);
   }

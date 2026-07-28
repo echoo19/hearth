@@ -94,7 +94,7 @@ function summarizeItem(obj: Record<string, unknown>): string {
     const head = `${obj.policy ?? '?'}/${obj.seed ?? '?'} ${obj.verdict}`;
     const detail = s('detail');
     const repro = s('repro');
-    return [head, detail ? `— ${detail}` : '', repro ? `\n      repro: ${repro}` : ''].join(' ').trim();
+    return [detail ? `${head}: ${detail}` : head, repro ? `\n      repro: ${repro}` : ''].join(' ').trim();
   }
   const salient = s('message') ?? s('detail') ?? s('name') ?? s('reason');
   if (salient) return salient;

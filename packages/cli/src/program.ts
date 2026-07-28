@@ -1261,7 +1261,7 @@ export function buildProgram(): Command {
     program
       .command('remember <note>')
       .description(
-        'record a durable note in project memory (.hearth/memory.md) that survives across sessions — a decision, ' +
+        'record a durable note in project memory (.hearth/memory.md) that survives across sessions: a decision, ' +
           'a todo, or a gotcha already hit; read it back with `hearth recall`',
       )
       .option('--section <section>', 'note | decision | todo | gotcha (default: note)'),
@@ -1518,14 +1518,14 @@ export function buildProgram(): Command {
         'play a scene headlessly with seeded bot policies across many seeds and report softlocks, crashes, ' +
           'and unreached objectives (token-frugal summary; full per-run detail lands in .hearth/sweeps/). Scene ' +
           'defaults to the initial scene. --bake freezes one failing (or passing) run into a scripted regression ' +
-          'playtest instead of sweeping — it requires exactly one policy and exactly one seed.',
+          'playtest instead of sweeping. It requires exactly one policy and exactly one seed.',
       )
       .option('--policies <csv>', 'comma-separated bot policies to run: mash, wander, seek, idle (default: mash)')
       .option('--seeds <n>', 'seeds per policy: seedStart..seedStart+seeds-1 (default: 8)', (v) => parseInt(v, 10))
       .option('--seed-start <n>', 'seed offset, so a sweep can extend an earlier one (default: 0)', (v) => parseInt(v, 10))
       .option('--max-frames <n>', 'per-run frame cap (default: 600)', (v) => parseInt(v, 10))
       .option('--avatar <ref>', 'entity id/name/tag the bots steer (default: the sole input-reading entity)')
-      .option('--target <ref|x,y>', 'seek only: where to go — an entity ref or a world point "x,y"')
+      .option('--target <ref|x,y>', 'seek only: where to go, an entity ref or a world point "x,y"')
       .option(
         '--objective <json>',
         'declared success/failure criterion (repeatable); see docs/playtesting.md for the objective shapes',
@@ -1533,7 +1533,7 @@ export function buildProgram(): Command {
         [] as string[],
       )
       .option('--stuck-after <n>', 'frames with no novelty before a run is judged stuck (default: 180)', (v) => parseInt(v, 10))
-      .option('--heatmap', 'include the ASCII coverage grid in the report (token cost — off by default)')
+      .option('--heatmap', 'include the ASCII coverage grid in the report (token cost, so off by default)')
       .option('--bake <name>', 'freeze one (policy, seed) run into a playtest instead of sweeping'),
   ).action(async (scene: string | undefined, opts, cmd) => {
     const policies = opts.policies !== undefined ? parseList(opts.policies) : undefined;

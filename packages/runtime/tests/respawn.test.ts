@@ -87,7 +87,7 @@ describe('Respawn.useSpawnPosition', () => {
     respawn(rt);
     expect(rt.errors.length).toBe(1);
     expect(rt.errors[0].message).toBe(
-      'ctx.respawn: "Player" has no respawn point — set Respawn.point or enable useSpawnPosition',
+      'ctx.respawn: "Player" has no respawn point. Set Respawn.point or enable useSpawnPosition',
     );
     expect(posOf(rt, 'Player')).toEqual({ x: 99, y: 99 });
   });
