@@ -424,15 +424,15 @@ git commit -m "Show the tester playing"
 
 The verdict on your last change comes first. Past verdicts stay visible beside the current one, so a reversal is legible to the reader even when the tester does not flag it: that is the third sycophancy defence and it lives here.
 
-- [ ] **Step 1: Write the failing test** covering: the newest verdict leads; a session whose verdict contradicts the one before it is marked as a reversal; the `regression` line is always rendered, including when it says nothing got worse; an observation with no frame is not shown as evidence; an empty history reads as "has not played yet" rather than as "found nothing".
+- [x] **Step 1: Write the failing test** covering: the newest verdict leads; a session whose verdict contradicts the one before it is marked as a reversal; the `regression` line is always rendered, including when it says nothing got worse; an observation with no frame is not shown as evidence; an empty history reads as "has not played yet" rather than as "found nothing".
 
-- [ ] **Step 2: Run it and watch it fail.**
+- [x] **Step 2: Run it and watch it fail.**
 
-- [ ] **Step 3: Implement `testerRows.ts`, then the component.**
+- [x] **Step 3: Implement `testerRows.ts`, then the component.**
 
-- [ ] **Step 4: Run the test.** Expected: PASS.
+- [x] **Step 4: Run the test.** Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 cd /Users/jakekang/projects/hearth/hearth-engine

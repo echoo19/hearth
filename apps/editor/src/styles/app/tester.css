@@ -19,10 +19,14 @@
 
 /* --- The bar -------------------------------------------------------------- */
 
+/* Wraps rather than squeezes. The stop control has to stay reachable at every
+   width, and a row that shrank its buttons to fit would be the one place in the
+   app where a control changes size to accommodate a sentence. */
 .tester-bar {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: 10px;
+  gap: 8px 10px;
   padding: 10px 12px;
   border-bottom: 1px solid var(--border);
   background: var(--bg-05);
@@ -30,6 +34,10 @@
 
 .tester-bar-gap {
   flex: 1;
+}
+
+.tester-bar .btn {
+  flex: none;
 }
 
 /* Something is happening that the person did not do. One small ember thing on
@@ -237,4 +245,185 @@
   font-size: var(--text-xs);
   line-height: 1.55;
   text-wrap: pretty;
+}
+
+/* --- The history ---------------------------------------------------------- */
+
+/* A reading column, not a dashboard. Every row here is a paragraph about
+   someone's game, so the measure is set for reading and the only colour on the
+   surface is the one carrying the verdict. */
+.tester-history-body {
+  max-width: 68ch;
+  margin: 0 auto;
+  padding: 28px 24px 64px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.tester-session {
+  padding: 18px 0 22px;
+  border-bottom: 1px solid var(--border);
+}
+
+.tester-session:last-of-type {
+  border-bottom: 0;
+}
+
+/* The answer to the question the reader arrived with, given the room to be
+   read first. Everything below it is the working. */
+.tester-session.is-lead {
+  padding-top: 4px;
+}
+
+.tester-session-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 6px 12px;
+  margin-bottom: 12px;
+}
+
+.tester-verdict {
+  margin: 0;
+  font-size: var(--text-md);
+  font-weight: 600;
+  color: var(--ink);
+  text-wrap: balance;
+}
+
+.tester-session.is-lead .tester-verdict {
+  font-size: var(--text-lg);
+}
+
+/* The one place a verdict is allowed to carry colour, and only the two that
+   are actually a judgement. "No difference" and a first look are findings, not
+   outcomes, and colouring them would make every session look like a score. */
+.tester-verdict.tone-better {
+  color: var(--ok);
+}
+
+.tester-verdict.tone-worse {
+  color: var(--err);
+}
+
+.tester-session-when {
+  color: var(--ink-faint);
+  font-size: var(--text-xs);
+  white-space: nowrap;
+}
+
+.tester-said {
+  margin: 0 0 10px;
+  color: var(--ink-mute);
+  font-size: var(--text-sm);
+  line-height: 1.6;
+  text-wrap: pretty;
+}
+
+.tester-said-label {
+  display: block;
+  margin-bottom: 2px;
+  color: var(--ink-faint);
+  font-size: var(--text-2xs);
+}
+
+/* The tester never answered the one question it is required to answer. Said
+   in the row rather than left to be read as "nothing got worse". */
+.tester-said.is-unanswered {
+  color: var(--warn);
+}
+
+.tester-saw {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+/* A fixed column for the picture number, so a long claim wraps BESIDE its
+   anchor rather than under it and the anchors line up down the page. */
+.tester-saw-row {
+  display: grid;
+  grid-template-columns: 4.75rem minmax(0, 1fr);
+  gap: 10px;
+  align-items: baseline;
+}
+
+@media (max-width: 520px) {
+  .tester-saw-row {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 2px;
+  }
+}
+
+/* Which picture the claim is anchored to. A claim with no picture behind it
+   never reaches this list at all (see testerRows.ts). */
+.tester-saw-frame {
+  flex: none;
+  color: var(--ink-faint);
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+}
+
+.tester-session-foot {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+  margin: 14px 0 0;
+  color: var(--ink-faint);
+  font-size: var(--text-xs);
+}
+
+.tester-previously {
+  color: var(--ink-faint);
+}
+
+.tester-reversal {
+  color: var(--warn);
+}
+
+.tester-memory {
+  margin-top: 20px;
+  padding: 16px 18px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--bg-1);
+}
+
+.tester-memory-title {
+  margin: 0 0 6px;
+  font-size: var(--text-sm);
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.tester-memory-note {
+  margin: 0 0 12px;
+  color: var(--ink-faint);
+  font-size: var(--text-xs);
+  line-height: 1.6;
+}
+
+.tester-memory-path {
+  margin: 0 4px;
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+  color: var(--ink-mute);
+}
+
+/* Its own words, as it wrote them. Line breaks are the tester's, and a person
+   editing the file will see exactly this text back. */
+.tester-memory-body {
+  color: var(--ink-mute);
+  font-size: var(--text-sm);
+  line-height: 1.6;
+  white-space: pre-wrap;
+}
+
+.tester-history-empty {
+  padding: 48px 0;
+  text-align: center;
 }

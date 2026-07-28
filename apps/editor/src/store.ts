@@ -278,7 +278,7 @@ export interface AppState {
    * the open project already decide between them. Leaving a screen restores
    * that arrangement untouched, which is why nothing else is stored here.
    */
-  screen: 'skills' | null;
+  screen: 'skills' | 'tester' | null;
   /** Prompt carried across a folder open, consumed by the composer on mount. */
   pendingPrompt: string | null;
   /**
@@ -409,7 +409,7 @@ export interface AppState {
   /** Come back up from a conversation to the project it belongs to. */
   showProject(): void;
   /** Open a full screen over the work. */
-  openScreen(screen: 'skills'): void;
+  openScreen(screen: 'skills' | 'tester'): void;
   /** Leave it. The work underneath is exactly as it was left. */
   closeScreen(): void;
   setNarrowTab(tab: 'chat' | 'pane'): void;
@@ -1464,6 +1464,10 @@ export const useApp = create<AppState>((set, get) => {
         get().refreshProviders(),
         get().refreshChats(),
         get().refreshRecentChats(),
+        // Read once on open, so a window that arrives while a session is
+        // already playing says so everywhere rather than only on the surface
+        // that happens to ask.
+        get().refreshTesterHistory(),
       ]);
       // Land in the most recent conversation, or start the folder's first one.
       // Either way the window opens on a conversation, never on nothing.
@@ -2002,6 +2006,16 @@ export const useApp = create<AppState>((set, get) => {
         paneTab: 'tester',
         paneOpen: true,
         paneChoice: true,
+        // Play can be pressed from the history screen, which is a place the app
+        // has gone to. Leave it: watching is the point, and a session playing
+        // behind a page of past sessions is the failure this feature exists to
+        // avoid.
+        screen: null,
+        composing: false,
+        projectView: false,
+        // Narrow layouts put the pane on a tab of its own, so opening the
+        // column is not the same as being able to see it.
+        narrowTab: 'pane',
         tester: { ...state.tester, starting: true, error: null, thoughts: [], lastNote: null },
       }));
       const result = await apiTesterPlay(project);

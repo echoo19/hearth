@@ -145,6 +145,7 @@ export function TesterStage() {
   const playTester = useApp((s) => s.playTester);
   const stopTester = useApp((s) => s.stopTester);
   const refreshTesterHistory = useApp((s) => s.refreshTesterHistory);
+  const openScreen = useApp((s) => s.openScreen);
   const thoughtsRef = useRef<HTMLOListElement>(null);
 
   const streamStatus = useSyncExternalStore(subscribeProbeStatus, probeStreamStatus);
@@ -206,6 +207,13 @@ export function TesterStage() {
         </p>
         {turnLine && <span className="tester-budget">{turnLine}</span>}
         <span className="tester-bar-gap" />
+        {/* The pane shows this session; the history is what the tester is
+            actually for. Quiet, because it is a way out rather than the act. */}
+        {tester.sessions.length > 0 && (
+          <Button variant="ghost" onClick={() => openScreen('tester')}>
+            Every session
+          </Button>
+        )}
         {tester.running || tester.starting ? (
           <Button icon="stop" onClick={() => void stopTester()}>
             Stop

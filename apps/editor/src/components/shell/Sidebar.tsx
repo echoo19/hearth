@@ -650,6 +650,12 @@ export function Sidebar() {
           onClick={newChat}
         />
         <NavRow icon="sparkle" label="Skills" collapsed={collapsed} onClick={() => openScreen('skills')} />
+        {/* The tester belongs to a game, so it is only offered when there is
+            one open. Beside Skills rather than buried in the pane, because the
+            history outlives any one session and is read on its own. */}
+        {projectPath !== null && (
+          <NavRow icon="bot" label="Tester" collapsed={collapsed} onClick={() => openScreen('tester')} />
+        )}
       </div>
 
       <div className="sidebar-scroll">
