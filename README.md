@@ -17,12 +17,17 @@
 
 ## What it is
 
-You type what you want to play. A coding agent builds it however it likes:
-plain web tech, whatever libraries it reaches for, no format Hearth imposes.
-Hearth adds what a chat window can't. The game runs beside the conversation and
-stays running while the agent edits, and the agent can open it in a real browser
-to check its own work. And the agent is yours: a Claude key, a ChatGPT sign-in,
-or any CLI you already run.
+Type what you want to play. A coding agent builds it, and the game appears in
+the pane next to the conversation and keeps running while the agent works. Ask
+for a change and watch it land, rather than reading a summary of it.
+
+Nothing about your game has to be shaped for Hearth. There is no project format,
+no scene file, no engine to learn. The agent writes plain files into a folder on
+your computer, using whatever it thinks fits, and Hearth stays out of the way.
+Building here should feel no different from a coding agent in a terminal with
+nothing in your way, except that you can see what you are making.
+
+And the agent is whichever one you already pay for.
 
 ## Get it
 
@@ -41,34 +46,42 @@ git clone https://github.com/echoo19/hearth.git && cd hearth
 npm install && npm run dev     # the app at http://localhost:5173
 ```
 
-## How a session works
+## A playtester who remembers
 
-**You say it.** The window opens on a greeting and a composer. Type
-`a tiny roguelike where the walls move` and send.
+Every project gets one. It plays your game, keeps notes on what it found, and
+reads those notes back before it plays again. So it does not arrive blank each
+time. It arrives knowing where it got stuck last week, and goes to see whether
+you fixed it.
 
-**A folder appears.** Hearth names it from your words, creates
-`~/Hearth/tiny-roguelike-where-walls`, opens it, and starts the conversation
-inside it. Opening a folder you already have is one click in the sidebar.
+That memory is what lets it answer the question you actually ask after every
+change, and the one nothing without a history can: **did that help?**
 
-**The agent builds.** It writes plain files into that folder. Hearth doesn't
-care what they are as long as a browser can run them, so there's no project
-format to satisfy and no scene file to learn.
+Here is a real session, the second one it played on a small platformer, after
+the jump height went up:
 
-**The pane keeps up.** The game runs in the pane on the right while the agent
-works, picking up changes as the files land, so you watch the change happen
-instead of reading a summary of it.
+> **It says your last change helped.**
+>
+> *What it thought you changed.* The player's jump height was changed.
+>
+> *Why it says that.* This time I saw the score reach 1 on picture 3, while
+> last time I never collected any coins.
+>
+> *Anything worse.* Nothing got worse.
+>
+> *Still could not work out.* I could not work out how to reliably land on the
+> first platform.
 
-**The agent checks its own work.** After a change lands it can open the game in
-a real browser, press a few keys, and see whether it still runs. You don't have
-to ask. This catches the blunt failures: the game throwing an error, drawing
-nothing at all, or sitting there while nothing happens. None of that needs any
-cooperation from your game, so it holds whatever the agent built.
+Every claim is pinned to the frame it happened on, so you can go and look. Its
+memory is a plain markdown file in your project, so when it gets something wrong
+about your game you open it and fix the line. Its old sessions never get
+rewritten, so you can catch it changing its mind.
 
-It won't tell you whether the game is any good. Fun, feel, pacing and difficulty
-are still yours to judge. This is a check the agent runs, not a surface you
-operate, so there's no button for it. You can run the same thing yourself from a
-terminal with `hearth-probe sweep .`; see [docs/playtesting.md](docs/playtesting.md)
-and [docs/cli.md](docs/cli.md).
+It is not a good player and it will not pretend to be. Anything that wants
+reflexes will beat it, and what it writes down is what it tried and where it
+failed, never a claim that it finished. It will not tell you whether your game
+is fun either. That part is still yours.
+
+Landing in the next release.
 
 ## Bring your own agent
 
@@ -100,47 +113,32 @@ Setup, keys, attachments, skills, and approvals:
 is also an MCP server and a CLI ([docs/mcp.md](docs/mcp.md),
 [docs/cli.md](docs/cli.md)).
 
-## The probe, for game authors
+## Your files, your folder, no lock-in
 
-With no cooperation at all, the probe opens your game, sends input, watches for
-errors, and takes screenshots. That baseline is what most sweeps run on.
+Every project is an ordinary folder under `~/Hearth`. Move it, back it up, open
+it in any editor, put it on GitHub, or walk away from Hearth entirely and take
+the game with you. Nothing lives in a database, nothing lives in the cloud, and
+there is nothing to export because it was never trapped anywhere.
 
-If you want the bots to see more, the game can say so. Drop in `probe-shim.js`,
-describe your world (action names, entities, current scene, an event or two),
-and you get entity tracking, named events, scene changes, and cheap resets.
-It's a single file you own with no build step, and it does nothing until a
-probe reads it. See [docs/probe-shim.md](docs/probe-shim.md), or
-[docs/connect-your-engine.md](docs/connect-your-engine.md) for games that don't
+Your conversations sit in there too, so the history of how the game got made
+travels with it. [docs/projects-and-chats.md](docs/projects-and-chats.md) has
+the layout if you want it.
+
+## If your game wants to say more about itself
+
+Everything above works on a game that has never heard of Hearth. Open it, press
+keys, watch for errors, look at frames.
+
+A game can offer more if it wants to. Drop in a small file, name your entities
+and your actions, and the tester can see what it is looking at instead of
+guessing from pixels. It is one file you own, with no build step, and it does
+nothing at all until something asks. See
+[docs/probe-shim.md](docs/probe-shim.md), or
+[docs/connect-your-engine.md](docs/connect-your-engine.md) for games that do not
 run in a browser.
 
-## Where things live
-
-Projects are folders under `~/Hearth`, one per game, and they're yours: move
-them, back them up, open them in any editor. Inside each, `.hearth/chats` holds
-the conversations as JSONL and `.hearth/evidence` holds sweep reports, run
-records, and screenshots. The rest is your game, in whatever files the agent
-wrote. Nothing lives in a database or in the cloud.
-[docs/projects-and-chats.md](docs/projects-and-chats.md) has the layout.
-
-## What's being built now
-
-**The private tester.** A playtester that belongs to your project rather than to
-a conversation. Because it remembers every previous time it played, it can
-answer the one question a fresh pair of eyes never can: did the change you just
-made help? Before it starts, it opens the notes it left last time, so it turns
-up already knowing where it got stuck. Play it across a month and it starts
-noticing things no single session could, like the fact that you have raised the
-jump three times and the level has stopped being tense.
-
-Its memory is a plain markdown file in your project folder. When it has got
-something wrong about your game, you open the file and fix the line. The
-sessions sit beside it in order and never get rewritten, so you can catch it
-contradicting itself.
-
-It will not be good at your game, and it will not pretend to be. Every session
-spends model calls on your own quota, against a budget you can see. Design notes
-are in [apps/editor/docs/superpowers/specs](apps/editor/docs/superpowers/specs).
-**This is not shipped yet**, so nothing above is in a release you can download.
+This is an offer, never a requirement. A game that says nothing is a first-class
+game.
 
 ## The engine that came before
 
