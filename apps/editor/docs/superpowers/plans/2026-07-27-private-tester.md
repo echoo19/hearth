@@ -177,7 +177,7 @@ git commit -m "Add the tester memory store"
 
 Read `.hearth/log/commands.jsonl` (the project journal) and the chat records under `.hearth/chats/*.jsonl`. Use what the project recorded rather than a git diff: the journal carries intent, and a diff does not.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```ts
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
@@ -222,21 +222,21 @@ describe('changesSince', () => {
 });
 ```
 
-- [ ] **Step 2: Run it and watch it fail**
+- [x] **Step 2: Run it and watch it fail**
 
 Run: `cd apps/editor && npx vitest run tests/testerChanges.test.ts`
 Expected: FAIL, module not found.
 
-- [ ] **Step 3: Implement `changes.ts`**
+- [x] **Step 3: Implement `changes.ts`**
 
 Parse the JSONL defensively, exactly as `parseEvidenceLines` in `server/evidenceWatcher.ts` does: skip blank lines, skip lines that fail `JSON.parse`, skip entries with no usable `ts`. Filter to `ts > since` when `since` is non-null. Render as one bullet per entry. Return a sentence containing the word "nothing" when the result is empty.
 
-- [ ] **Step 4: Run the test**
+- [x] **Step 4: Run the test**
 
 Run: `cd apps/editor && npx vitest run tests/testerChanges.test.ts`
 Expected: PASS, 4 tests.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 cd /Users/jakekang/projects/hearth/hearth-engine
