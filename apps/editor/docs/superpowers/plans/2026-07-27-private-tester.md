@@ -20,6 +20,17 @@
 - Read `docs/superpowers/specs/2026-07-27-private-tester-design.md` before starting. It is the authority; this plan implements it.
 - The tester NEVER runs on its own. No schedule, no run-on-save. It plays when asked.
 
+## Definition of done
+
+This feature is the product's flagship. A green test suite is the floor, not the bar. It is not finished until all four of these are true, demonstrated rather than asserted:
+
+1. **It actually works.** A real session runs against a real game in the real app and writes a real note. Not a mocked loop, not a unit test. If you cannot make a live session complete end to end, the feature is not done and you must say so plainly rather than reporting the tests green.
+2. **The user can watch it.** The frame is on screen while it plays, updating, with the tester's thinking arriving beside it. A tester playing somewhere the person who asked for it cannot see is indistinguishable from nothing happening, which is the exact failure that sank the feature this replaces.
+3. **It is legible without training.** Someone who has never read this plan opens the history and understands what their tester thinks about their game. No raw JSON, no verdict vocabulary they have to learn, no bare enum values rendered as-is.
+4. **It looks like the rest of the app.** Quiet, restrained, ember only where it earns it. Invoke the `impeccable` skill before writing any component and follow it. A surface that looks bolted on is not done.
+
+Browser verification is required for Tasks 5 and 6, not optional. Check `document.visibilityState` is `visible` FIRST: a hidden tab freezes rAF and IntersectionObserver, and a working reveal will look broken.
+
 ## Shared types
 
 Every task depends on these. They live in `server/tester/types.ts`, created in Task 1.
@@ -362,12 +373,21 @@ git commit -m "Serve the tester over routes and the live channel"
 
 **Files:**
 - Create: `apps/editor/src/components/tester/TesterStage.tsx`, `apps/editor/src/styles/app/tester.css`
+- Modify: `apps/editor/src/probeStream.ts`, `apps/editor/src/components/game/ProbeStage.tsx`, `apps/editor/src/components/game/GamePane.tsx`
 - Modify: `apps/editor/src/store.ts`, `apps/editor/src/api.ts`, `apps/editor/src/styles.css`, `apps/editor/src/components/game/PaneStack.tsx`
 - Test: `apps/editor/tests/testerStage.test.tsx`
 
 **Interfaces:**
 - Consumes: Task 4's routes and socket frame.
 - Produces: a pane that shows the game as the tester plays it with its thinking streaming beside the frame.
+
+**START BY READING `src/probeStream.ts` AND `src/components/game/ProbeStage.tsx`.** They already do most of this and you are rewiring them, not writing them.
+
+They were built to show a bot playing: `openProbeStream(root)` opens the viewer socket, `subscribeProbeFrames(listener)` hands out base64 JPEG frames, and `ProbeFrames` renders them onto a matte stage. The retirement that preceded this plan removed their only trigger, because the thing that used to set "something is playing" was the sweep runner and that is gone. The components themselves were deliberately left on disk for you.
+
+So: drive them from tester state instead of sweep state, and keep the existing frame path rather than inventing a second one. `GamePane.tsx` had an `is-driven` treatment and a `ProbeNote` that were unwired at the same time; its header comment still describes the stream's client half and is a good starting point. `src/styles/app/game.css` around line 141 still carries the matte-stage styling.
+
+What is genuinely new is the thinking column beside the frame, and the stop control.
 
 Design: invoke the `impeccable` skill before writing the component. The frame is the subject and the thinking is secondary; the thoughts column must not out-shout the game. Quiet, restrained, no raw JSON, no em dashes. Reduced motion must be honoured. The stop control has to be reachable at all times while a session runs.
 
@@ -442,3 +462,11 @@ cd /Users/jakekang/projects/hearth/hearth-engine && npx vitest run
 - [ ] **Step 3: End-to-end on a real game.** Open `packages/examples/mini-platformer` in the app, ask the tester to play, watch it in the pane, stop it mid-session, then confirm a note landed in `.hearth/tester/sessions/0001/` and that `memory.md` is readable prose a person could edit.
 
 - [ ] **Step 4: Play it twice.** Change something in the game, run a second session, and confirm the verdict is about the change and that the history shows both. This is the acceptance test for the whole feature: without it, the tester is just a slow bot.
+
+- [ ] **Step 5: Check it against the Definition of done, honestly.**
+
+Go back to the four conditions at the top of this plan and answer each one with evidence rather than intent. Take a screenshot of the tester playing and a screenshot of the history and look at them. If a condition is not met, say which one and why, and do not describe the feature as finished. A report that says "tests pass" while a live session has never completed is a false report.
+
+- [ ] **Step 6: Design pass.**
+
+Invoke `impeccable` and run its `audit` command over the two new surfaces: contrast, focus states, heading order, keyboard reachability of the stop control, and behaviour at 320px through 1440px. Fix what you find. Then look at the surfaces beside the rest of the app and ask whether they read as the same product. Fix what does not.
