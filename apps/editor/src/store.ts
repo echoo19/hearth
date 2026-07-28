@@ -1,13 +1,12 @@
 /**
- * App state. One zustand store covering the five things the app is:
+ * App state. One zustand store covering the four things the app is:
  *
  *   1. an open folder (and the socket to its server),
  *   2. a conversation,
  *   3. a game pane,
- *   4. an evidence feed,
- *   5. the small amount of pane/drawer state the shell needs.
+ *   4. the small amount of pane/drawer state the shell needs.
  *
- * Everything live — conversation events, evidence, terminal bytes, external
+ * Everything live — conversation events, terminal bytes, external
  * file changes — arrives on ONE WebSocket per folder, multiplexed by frame
  * type (see server/ws.ts). The terminal's own buffer deliberately lives
  * outside this store (components/agent/useAgentSocket.ts) so it survives the
@@ -19,19 +18,16 @@ import {
   apiChatProviders,
   apiCreateWorkspace,
   apiDeleteChat,
-  apiEvidenceHistory,
   apiGameStatus,
   apiListChats,
   apiMeta,
   apiOpenAiLogin,
   apiOpenWorkspace,
   apiPersonalization,
-  apiPlaytestView,
   apiProbeStatus,
   apiRecentChats,
   apiRenameChat,
   apiSavePersonalization,
-  apiStartSweep,
   projectFileUrl,
   type Personalization,
   type PersonalizationInfo,
@@ -53,11 +49,9 @@ import type {
   ConsoleEntry,
   ConsoleLevel,
   ConsoleSource,
-  EvidenceEvent,
   FileChangeEntry,
   GameStatus,
   JournalEntry,
-  PlaytestView,
   RecentChatEntry,
   Sense,
   ServerMeta,
@@ -159,32 +153,10 @@ export interface AppState {
   // --- Game pane ------------------------------------------------------------
   game: GameStatus;
   senses: Sense[];
-  /** The last sweep found a probe shim, so the deeper senses are real. */
+  /** The last probe read found a shim, so the deeper senses are real. */
   shimDetected: boolean;
   /** Bumped whenever the game's files change, so the iframe reloads. */
   gameNonce: number;
-
-  // --- Playtest -------------------------------------------------------------
-  /**
-   * The running sweep, as the Playtest button reports it. `done`/`total` come
-   * from the evidence feed itself (one run-finished per completed run), so the
-   * progress a user sees is the same evidence the rail is filling with.
-   */
-  sweep: { running: boolean; done: number; total: number | null; error: string | null };
-  /**
-   * The newest sweep, one row per playtester: what each bot did, and the
-   * reason the ones that could not play give. Read from the files the sweep
-   * writes rather than from the journal, because a skip reason exists only in
-   * the report and a running sweep's forecast only in the runner.
-   *
-   * Null until something reads it. It also carries the only honest denominator
-   * the Playtest button has: see plannedRuns below.
-   */
-  playtest: PlaytestView | null;
-
-  // --- Evidence -------------------------------------------------------------
-  evidence: EvidenceEvent[];
-  evidenceOpen: boolean;
 
   // --- Console --------------------------------------------------------------
   consoleEntries: ConsoleEntry[];
@@ -242,20 +214,16 @@ export interface AppState {
   projectView: boolean;
   /**
    * A full screen that sits over the work, rather than beside it. Skills is
-   * the first: it is a library you browse and edit, which is a place, not a
-   * question to answer and dismiss. A dialog would put a page-sized surface
-   * behind a scrim and take the window's own back button away from it.
+   * the only one so far: it is a library you browse and edit, which is a
+   * place, not a question to answer and dismiss. A dialog would put a
+   * page-sized surface behind a scrim and take the window's own back button
+   * away from it.
    *
    * `null` means the work itself — whatever `composing` / `projectView` and
    * the open project already decide between them. Leaving a screen restores
    * that arrangement untouched, which is why nothing else is stored here.
    */
-  /**
-   * `playtest` is the second: the bots that play your game, one panel each.
-   * It is a place for the same reason Skills is — you sit and watch it — and
-   * it does not replace the Playtest button, which still lives in the column.
-   */
-  screen: 'skills' | 'playtest' | null;
+  screen: 'skills' | null;
   /** Prompt carried across a folder open, consumed by the composer on mount. */
   pendingPrompt: string | null;
   /**
@@ -349,19 +317,6 @@ export interface AppState {
    * thing the pane has to be able to say out loud.
    */
   savePersonalization(patch: Partial<Personalization>): Promise<boolean>;
-  /** Play the game and stream what the probe finds into the evidence rail. */
-  startSweep(): Promise<void>;
-  /** Re-read the playtest view for the open folder. */
-  refreshPlaytest(): Promise<void>;
-  /**
-   * Fill the evidence rail from the folder's journal.
-   *
-   * Playtests belong to the folder, not to this window's socket, so the rail
-   * is loaded from disk on open and the live channel appends to it. Without
-   * this a second window, or a socket that reconnected while another still
-   * held the channel, shows nothing for a folder full of them.
-   */
-  refreshEvidence(): Promise<void>;
   setSidebarCollapsed(collapsed: boolean): void;
   /**
    * Ask for a kind of conversation, and persist it for this folder.
@@ -389,11 +344,10 @@ export interface AppState {
   /** Come back up from a conversation to the project it belongs to. */
   showProject(): void;
   /** Open a full screen over the work. */
-  openScreen(screen: 'skills' | 'playtest'): void;
+  openScreen(screen: 'skills'): void;
   /** Leave it. The work underneath is exactly as it was left. */
   closeScreen(): void;
   setNarrowTab(tab: 'chat' | 'pane'): void;
-  setEvidenceOpen(open: boolean): void;
   openCodePeek(path?: string): void;
   closeCodePeek(): void;
   log(level: ConsoleLevel, source: ConsoleSource, message: string, link?: ConsoleEntry['link']): void;
@@ -405,7 +359,6 @@ export interface AppState {
 
 const MAX_CONSOLE = 500;
 const MAX_JOURNAL_FEED = 200;
-const MAX_EVIDENCE = 400;
 const LAST_WORKSPACE_KEY = 'hearth:lastWorkspace';
 const SIDEBAR_KEY = 'hearth:sidebarCollapsed';
 const CONVERSATION_MODE_PREFIX = 'hearth:conversationMode:';
@@ -433,7 +386,6 @@ function makeEntry(level: ConsoleLevel, source: ConsoleSource, message: string, 
 let queuedId = 0;
 
 const EMPTY_GAME: GameStatus = { present: false, entry: null, mtime: 0 };
-const IDLE_SWEEP = { running: false, done: 0, total: null, error: null } as const;
 
 function readSidebarCollapsed(): boolean {
   try {
@@ -917,105 +869,6 @@ export function replayTranscript(records: readonly ChatRecord[], project = ''): 
   return messages.map((message) => (message.streaming ? { ...message, streaming: false } : message));
 }
 
-/**
- * Add evidence to what is already held, keyed on `seq`.
- *
- * Evidence arrives from two places now — a read of the folder's journal when
- * it opens, and the socket as the probe writes more — and they overlap by
- * design: the socket's watcher replays from the top of the file for whoever
- * starts it, so the first window would otherwise show every sweep twice. `seq`
- * is the journal's own line number and the only identity an event has, so it
- * is what decides whether something is new.
- *
- * Ordered by `seq` rather than by arrival, because a replay is history and
- * history is not news; capped at the newest `MAX_EVIDENCE`, which is the rail's
- * appetite, not the folder's.
- */
-export function mergeEvidence(
-  current: readonly EvidenceEvent[],
-  incoming: readonly EvidenceEvent[],
-): EvidenceEvent[] {
-  if (incoming.length === 0) return current as EvidenceEvent[];
-  const bySeq = new Map<number, EvidenceEvent>();
-  for (const event of current) bySeq.set(event.seq, event);
-  // Later wins: an event re-read from the file is the file's version of it,
-  // and the file is the record.
-  for (const event of incoming) bySeq.set(event.seq, event);
-  const merged = [...bySeq.values()].sort((a, b) => a.seq - b.seq);
-  return merged.length > MAX_EVIDENCE ? merged.slice(-MAX_EVIDENCE) : merged;
-}
-
-/**
- * Which of `incoming` this store has not already folded into sweep progress.
- *
- * Progress is a running total, so an event counted twice moves the counter
- * twice. History read on open must not count at all: a sweep that finished
- * last week is not one run of progress on this window's Playtest button.
- */
-export function unseenEvidence(
-  current: readonly EvidenceEvent[],
-  incoming: readonly EvidenceEvent[],
-): EvidenceEvent[] {
-  if (current.length === 0) return [...incoming];
-  const seen = new Set(current.map((event) => event.seq));
-  return incoming.filter((event) => !seen.has(event.seq));
-}
-
-/**
- * Fold a batch of evidence events into playtest progress. `sweep-started`
- * declares the denominator (policies x seeds), each `run-finished` advances,
- * and `sweep-finished` ends it. Pure, so the button's state is testable
- * without a socket.
- */
-export function applySweepProgress(
-  current: AppState['sweep'],
-  events: readonly EvidenceEvent[],
-): AppState['sweep'] {
-  let next = current;
-  for (const event of events) {
-    switch (event.kind) {
-      case 'sweep-started':
-        next = {
-          running: true,
-          done: 0,
-          total: event.policies.length * event.seeds.length || null,
-          error: null,
-        };
-        break;
-      case 'run-finished':
-        next = { ...next, running: true, done: next.done + 1 };
-        break;
-      case 'sweep-finished':
-        next = { ...next, running: false };
-        break;
-      default:
-        break;
-    }
-  }
-  return next;
-}
-
-/**
- * How many runs the sweep on the browser will ACTUALLY do, or null when that
- * is not yet knowable.
- *
- * `sweep-started` declares policies x seeds, which is what was asked for. Bots
- * the game cannot support are skipped rather than run, so that number can
- * overstate the work by half, and a progress count whose denominator is never
- * reached is the kind of small lie that makes a person stop trusting the rest.
- * Only the runner's plan knows which ones were dropped, so only a read of the
- * playtest view can correct it.
- *
- * Pure, so the correction is testable without a sweep.
- */
-export function plannedRuns(view: PlaytestView): number | null {
-  const sweep = view.sweep;
-  // A finished sweep's rows describe the LAST run, not the one starting up.
-  if (!view.running || sweep === null || sweep.finished) return null;
-  const runnable = sweep.policies.filter((policy) => policy.skipReason === null).length;
-  return runnable > 0 && sweep.seeds.length > 0 ? runnable * sweep.seeds.length : null;
-}
-
 // ---------------------------------------------------------------------------
 
 export const useApp = create<AppState>((set, get) => {
@@ -1226,17 +1079,6 @@ export const useApp = create<AppState>((set, get) => {
       case 'journal':
         set((state) => ({ journalFeed: [...state.journalFeed, ...frame.entries].slice(-MAX_JOURNAL_FEED) }));
         return;
-      case 'evidence':
-        set((state) => ({
-          evidence: mergeEvidence(state.evidence, frame.events),
-          // Only what this window has not already seen. The watcher replays
-          // the whole journal to the socket that starts it, and every one of
-          // those lines is also in the history read on open, so counting them
-          // again would run the progress bar through a sweep that finished
-          // before the window existed.
-          sweep: applySweepProgress(state.sweep, unseenEvidence(state.evidence, frame.events)),
-        }));
-        return;
       case 'chat-ready':
         set({ chatDriver: frame.driver });
         return;
@@ -1399,12 +1241,6 @@ export const useApp = create<AppState>((set, get) => {
     shimDetected: false,
     gameNonce: 0,
 
-    sweep: { ...IDLE_SWEEP },
-    playtest: null,
-
-    evidence: [],
-    evidenceOpen: true,
-
     consoleEntries: [],
     consoleUnread: 0,
     consoleAtBottom: true,
@@ -1479,14 +1315,11 @@ export const useApp = create<AppState>((set, get) => {
         chats: [],
         activeChatId: null,
         queued: [],
-        evidence: [],
         journalFeed: [],
         game: EMPTY_GAME,
         senses: [],
         shimDetected: false,
         gameNonce: 0,
-        sweep: { ...IDLE_SWEEP },
-    playtest: null,
         conversationMode: storedMode ?? 'chat',
         conversationModePinned: storedMode !== null,
         paneTab: 'game',
@@ -1505,9 +1338,6 @@ export const useApp = create<AppState>((set, get) => {
         get().refreshProviders(),
         get().refreshChats(),
         get().refreshRecentChats(),
-        // The rail is about the folder, so it fills when the folder opens
-        // rather than when a sweep happens to run in this window.
-        get().refreshEvidence(),
       ]);
       // Land in the most recent conversation, or start the folder's first one.
       // Either way the window opens on a conversation, never on nothing.
@@ -1543,13 +1373,10 @@ export const useApp = create<AppState>((set, get) => {
         chats: [],
         activeChatId: null,
         queued: [],
-        evidence: [],
         journalFeed: [],
         game: EMPTY_GAME,
         senses: [],
         shimDetected: false,
-        sweep: { ...IDLE_SWEEP },
-    playtest: null,
         conversationMode: 'chat',
         conversationModePinned: false,
         paneOpen: false,
@@ -1906,16 +1733,7 @@ export const useApp = create<AppState>((set, get) => {
         set((state) => ({
           senses: probe.senses,
           shimDetected: probe.shimDetected,
-          // The server is the authority on whether a sweep is running: a reload
-          // mid-sweep must still show the spinner, and a sweep that died
-          // without writing a `sweep-finished` line must still release it.
-          sweep: probe.playing === state.sweep.running ? state.sweep : { ...state.sweep, running: probe.playing },
         }));
-        // Only while one is running, and only from the poll that is already
-        // happening: this is what corrects the button's denominator once the
-        // runner knows which bots the game cannot support. The screen does its
-        // own faster read; this is for the window that never opens it.
-        if (probe.playing) void get().refreshPlaytest();
       }
       if (!status) return;
       const previous = get().game;
@@ -1955,54 +1773,6 @@ export const useApp = create<AppState>((set, get) => {
       if (!info) return false;
       set({ personalization: info });
       return true;
-    },
-
-    async startSweep() {
-      const project = get().projectPath;
-      if (!project || get().sweep.running) return;
-      // Optimistic: the button must react to the press, not to the round trip.
-      // `total` stays null until sweep-started declares it.
-      set({ sweep: { running: true, done: 0, total: null, error: null } });
-      const result = await apiStartSweep(project);
-      if (get().projectPath !== project) return;
-      if (result.ok) {
-        set((state) => ({ sweep: { ...state.sweep, total: result.total ?? state.sweep.total } }));
-        return;
-      }
-      // A 409 means one is already running — the spinner is telling the truth,
-      // so leave it up rather than flashing an error at a working feature.
-      if (result.busy) return;
-      set({ sweep: { ...IDLE_SWEEP, error: result.error ?? 'The playtest could not start.' } });
-      get().log('error', 'app', result.error ?? 'The playtest could not start.');
-    },
-
-    async refreshPlaytest() {
-      const project = get().projectPath;
-      if (!project) {
-        set({ playtest: null });
-        return;
-      }
-      const view = await apiPlaytestView(project);
-      // A failed read leaves the last good answer up: blanking it would look
-      // exactly like "no playtest has ever run here", which is a claim a
-      // dropped request has no business making.
-      if (view === null || get().projectPath !== project) return;
-      const total = plannedRuns(view);
-      set((state) => ({
-        playtest: view,
-        sweep: total !== null && total !== state.sweep.total ? { ...state.sweep, total } : state.sweep,
-      }));
-    },
-
-    async refreshEvidence() {
-      const project = get().projectPath;
-      if (!project) return;
-      const events = await apiEvidenceHistory(project);
-      if (events.length === 0 || get().projectPath !== project) return;
-      // Merged, not assigned: the socket may already have delivered some of
-      // this, and a sweep running right now is writing more of it while this
-      // request is in the air.
-      set((state) => ({ evidence: mergeEvidence(state.evidence, events) }));
     },
 
     setSidebarCollapsed(collapsed) {
@@ -2108,9 +1878,6 @@ export const useApp = create<AppState>((set, get) => {
       set({ narrowTab: tab });
     },
 
-    setEvidenceOpen(open) {
-      set({ evidenceOpen: open });
-    },
 
     openCodePeek(path) {
       set((state) => ({ codePeek: { open: true, path: path ?? state.codePeek.path } }));

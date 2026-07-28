@@ -9,25 +9,17 @@
  * That shape is measured from the running document when it can be (same-origin
  * mount, so the canvas is readable) and falls back to 16:9 when it can't.
  *
- * Beyond that the pane has three states — nothing yet, running, and being
- * driven by the probe. The third one matters because the inputs stop being
- * yours: a game moving on its own with no explanation reads as a bug, so while
- * a sweep is up the stage glows to say plainly that something else is playing.
- *
- * That third state used to be a glow and nothing else, which was a lie by
- * omission: the bot plays in a browser of its own, so the stage under the glow
- * was your own untouched session sitting perfectly still. It now shows the
- * bot's session instead, streamed frame by frame (see ../../probeStream.ts),
- * with a note naming whose game is on screen. When there is no stream to show
- * (no browser on this machine, nothing arriving), the note says that plainly
- * rather than letting the ring imply a game that is not moving is being played.
+ * Beyond that the pane has two states: nothing yet, and running. It used to
+ * have a third, for a sweep driving the game from inside the app, with the
+ * stage glowing and the bot's own session streamed onto it. Playtesting is the
+ * agent's business now and runs out of process, so the pane has nothing to say
+ * about it. The stream's client half (../../probeStream.ts, ./ProbeStage.tsx)
+ * is kept for whatever renders a driven session next.
  */
-import React, { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useApp, GAME_POLL_MS } from '../../store';
 import { gameUrl } from '../../api';
-import { closeProbeStream, openProbeStream, probeStreamStatus, subscribeProbeStatus } from '../../probeStream';
 import { CapabilityStrip } from './CapabilityStrip';
-import { ProbeFrames, ProbeNote, stageNoteStatus } from './ProbeStage';
 
 /** What a game is assumed to be shaped like until it says otherwise. */
 export const FALLBACK_ASPECT = 16 / 9;
@@ -101,8 +93,6 @@ export function GamePane() {
   const game = useApp((s) => s.game);
   const gameNonce = useApp((s) => s.gameNonce);
   const refreshGame = useApp((s) => s.refreshGame);
-  const sweepRunning = useApp((s) => s.sweep.running);
-  const probeStatus = useSyncExternalStore(subscribeProbeStatus, probeStreamStatus, probeStreamStatus);
   const frameRef = useRef<HTMLIFrameElement>(null);
   const stageRef = useRef<HTMLDivElement>(null);
   const [size, setSize] = useState<{ width: number; height: number } | null>(null);
@@ -117,16 +107,6 @@ export function GamePane() {
     const id = window.setInterval(() => void refreshGame(), GAME_POLL_MS);
     return () => window.clearInterval(id);
   }, [projectPath, refreshGame]);
-
-  // Only while a sweep is up: the picture of a run is worth a socket exactly
-  // as long as there is a run, and a window that never playtests never opens
-  // one. The store's flag is the authority on that (the server reports it on
-  // reload too), so a sweep that started in another window is watched here.
-  useEffect(() => {
-    if (!sweepRunning || !projectPath) return;
-    openProbeStream(projectPath);
-    return () => closeProbeStream();
-  }, [sweepRunning, projectPath]);
 
   // Games commonly size their canvas a frame or two after load (engine boot,
   // a resize handler), so `load` is a first look, not the last word.
@@ -155,13 +135,9 @@ export function GamePane() {
     <div className="game-pane">
       {game.present && game.entry && projectPath ? (
         <div className="game-stage-wrap">
-          {/* `is-driven` is the only thing that says the hands on the controls
-              are not yours. It is on the stage rather than on the frame so the
-              glow sits outside the game's own pixels — nothing here is allowed
-              to change what the player would actually see. */}
           <div
             ref={stageRef}
-            className={`game-stage${sweepRunning ? ' is-driven' : ''}`}
+            className="game-stage"
             style={{ '--game-aspect': aspect } as React.CSSProperties}
           >
             <iframe
@@ -189,12 +165,6 @@ export function GamePane() {
               onLoad={measure}
               sandbox="allow-scripts allow-pointer-lock allow-forms allow-modals allow-popups allow-same-origin"
             />
-            {/* Over the iframe, never instead of it. The game underneath is
-                still someone's live session, and unmounting it to make room for
-                a picture would throw away whatever state they were in, and
-                put a reload flash on the end of every playtest. */}
-            {probeStatus === 'live' && <ProbeFrames />}
-            <ProbeNote status={stageNoteStatus(probeStatus, sweepRunning)} />
           </div>
         </div>
       ) : (

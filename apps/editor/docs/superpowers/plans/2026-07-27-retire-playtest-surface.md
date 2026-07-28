@@ -105,25 +105,25 @@ git commit -m "Remove the playtest screen and evidence rail"
 - Consumes: Task 1's deletions.
 - Produces: an `AppState` with no `sweep`, `playtest`, `evidence` or `evidenceOpen` keys, and no `startSweep`, `refreshPlaytest`, `refreshEvidence` or `setEvidenceOpen` actions. Task 3 relies on `apiStartSweep`, `apiPlaytestView` and `apiEvidenceHistory` no longer existing.
 
-- [ ] **Step 1: Reduce `CapabilityStrip.tsx` to the Play control**
+- [x] **Step 1: Reduce `CapabilityStrip.tsx` to the Play control**
 
 Delete `PlaytestButton`, `playtestLabel` and `playtestBlockReason` entirely. The strip keeps only the `IconButton` with `icon="play"`. Rewrite the file's header comment so it describes one action rather than two; the existing comment claims "the pane's two actions" and would be a lie.
 
-- [ ] **Step 2: Remove the store state and actions**
+- [x] **Step 2: Remove the store state and actions**
 
 In `src/store.ts` delete: the `sweep`, `playtest`, `evidence` and `evidenceOpen` fields from `AppState` and from every initial-state and reset object; the `startSweep`, `refreshPlaytest`, `refreshEvidence` and `setEvidenceOpen` actions and their interface declarations; the `mergeEvidence`, `unseenEvidence`, `applySweepProgress`, `plannedRuns` and `IDLE_SWEEP` helpers; the `MAX_EVIDENCE` constant; the `case 'evidence':` arm in `handleFrame`; and the `sweep:` line in the `refreshProbe` setter.
 
-- [ ] **Step 3: Remove the client API functions**
+- [x] **Step 3: Remove the client API functions**
 
 In `src/api.ts` delete `apiStartSweep`, `apiPlaytestView`, `apiEvidenceHistory`, the `SweepStartResult` interface, and the now-unused `PlaytestView` and `EvidenceEvent` type imports.
 
 In `src/types.ts` delete the `PlaytestView`, `PlaytestSweep`, `PlaytestPolicy` and `PlaytestRun` re-exports and the `EvidenceEvent` re-export, keeping `Finding` only if something still imports it (check with rg before deleting).
 
-- [ ] **Step 4: Fix the test mocks**
+- [x] **Step 4: Fix the test mocks**
 
 `tests/homeFlow.test.ts` mocks `apiStartSweep` and `apiEvidenceHistory`; `tests/paneColumn.test.tsx` may reference the rail. Remove those mock entries and any assertion about a Playtest control.
 
-- [ ] **Step 5: Typecheck, then run the suite**
+- [x] **Step 5: Typecheck, then run the suite**
 
 ```bash
 cd apps/editor
@@ -132,7 +132,7 @@ npx tsc --noEmit -p tsconfig.json && npx vitest run
 
 Expected: both PASS.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 cd apps/editor

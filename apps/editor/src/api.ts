@@ -10,11 +10,9 @@ import type {
   ChatProviderStatus,
   ChatSummary,
   ContextFile,
-  EvidenceEvent,
   ModelPrefsInfo,
   RecentChatEntry,
   GameStatus,
-  PlaytestView,
   ProbeStatus,
   ProjectFile,
   RecentWorkspace,
@@ -165,85 +163,8 @@ export async function apiProbeStatus(project: string): Promise<ProbeStatus | nul
   if (!body) return null;
   return {
     senses: Array.isArray(body.senses) ? body.senses : [],
-    playing: body.playing === true,
     shimDetected: body.shimDetected === true,
   };
-}
-
-/**
- * The newest sweep, one row per playtester, including the ones that did not
- * play and the reason each of them gives. Null on a transport failure, which
- * the screen shows as "cannot read" rather than as "nothing has run".
- */
-export function apiPlaytestView(project: string): Promise<PlaytestView | null> {
-  return getJson<PlaytestView>(
-    `/api/probe/playtesters?project=${encodeURIComponent(project)}`,
-    'apiPlaytestView',
-  ) as Promise<PlaytestView | null>;
-}
-
-/**
- * The folder's playtest history, oldest first.
- *
- * Playtests belong to a folder, not to a socket: the live channel replays only
- * for whoever opened it, so a second window or a reconnect would otherwise
- * show an empty rail for a project full of them. This fills the rail on open
- * and the socket appends to it from there.
- *
- * An empty array on a transport failure. The rail's own copy already tells
- * the difference between "nothing has run" and "there is a game to run", and
- * a folder that cannot be read is not worth a third message.
- */
-export async function apiEvidenceHistory(project: string): Promise<EvidenceEvent[]> {
-  const body = await getJson<{ events: EvidenceEvent[] }>(
-    `/api/probe/evidence?project=${encodeURIComponent(project)}`,
-    'apiEvidenceHistory',
-  );
-  return Array.isArray(body?.events) ? body.events : [];
-}
-
-/** What POST /api/probe/sweep answers: started, or why not (409 = one already is). */
-export interface SweepStartResult {
-  ok: boolean;
-  /** Number of runs the sweep will do, so progress has a denominator. */
-  total?: number;
-  error?: string;
-  busy?: boolean;
-}
-
-/**
- * Ask the probe to play the game. Returns as soon as the sweep STARTS —
- * everything it finds arrives on the evidence channel, so there is nothing to
- * wait for here.
- */
-export async function apiStartSweep(
-  project: string,
-  request: { policies?: string[]; seeds?: number[]; maxSteps?: number } = {},
-): Promise<SweepStartResult> {
-  try {
-    const res = await fetch('/api/probe/sweep', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ project, ...request }),
-    });
-    const body = (await res.json()) as {
-      ok?: boolean;
-      error?: string;
-      policies?: string[];
-      seeds?: number[];
-    };
-    if (!body.ok) {
-      return { ok: false, busy: res.status === 409, error: body.error ?? 'The playtest could not start.' };
-    }
-    const total = (body.policies?.length ?? 0) * (body.seeds?.length ?? 0);
-    return { ok: true, total: total > 0 ? total : undefined };
-  } catch (err) {
-    // The browser's own failure text ("Failed to fetch") tells a person
-    // nothing about their game. The real error still goes to the console,
-    // where it is useful.
-    console.error('starting a playtest: request failed', err);
-    return { ok: false, error: "The playtest could not start. Hearth's own server did not answer." };
-  }
 }
 
 // ---------------------------------------------------------------------------

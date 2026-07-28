@@ -1,14 +1,15 @@
 /**
- * The client shares the probe's SCHEMA, not its code.
+ * The client may share the probe's SCHEMA, never its code.
  *
  * `@hearth/probe-core` is a Node package — it writes files and reads
  * directories — so a value import from anything under `src/` would drag
- * `node:fs` into the browser bundle. The editor's client is allowed to import
- * its *types* (that is the whole point: one evidence schema, not a mirror of
- * one), and every such import must be erasable.
+ * `node:fs` into the browser bundle. Types are fine, because they are erased;
+ * values are not.
  *
- * Enforced structurally rather than by convention, because the failure is
- * silent at authoring time and loud only at bundle time.
+ * Nothing under `src/` names the probe at all right now: playtesting is the
+ * agent's business and runs out of process. The rule is kept because the next
+ * surface that wants to show a probe run will reach for these types again, and
+ * the failure is silent at authoring time and loud only at bundle time.
  */
 import { describe, expect, it } from 'vitest';
 import fs from 'node:fs';
@@ -50,11 +51,6 @@ describe('probe-core is a type-only dependency of the client', () => {
       }
     }
     expect(offenders).toEqual([]);
-  });
-
-  it('the client actually names the probe schema rather than mirroring it', () => {
-    const types = fs.readFileSync(path.join(SRC_DIR, 'types.ts'), 'utf8');
-    expect(types).toMatch(/export type \{[^}]*EvidenceEvent[^}]*\} from '@hearth\/probe-core'/);
   });
 
   it('no built client bundle carries probe-core code', () => {

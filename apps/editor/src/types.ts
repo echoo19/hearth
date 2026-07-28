@@ -5,13 +5,6 @@ import type { CommandResult, JournalEntry } from '@hearth/core';
 
 export type { CommandResult, JournalEntry };
 
-/**
- * The evidence schema is the probe's, not a mirror of it. This is a TYPE-only
- * import: `@hearth/probe-core` is a Node package (it writes files), and the
- * import is erased at build time, so nothing from it reaches the browser
- * bundle. Verified by tests/probeTypes.test.ts.
- */
-export type { EvidenceEvent, Finding } from '@hearth/probe-core';
 export type { ChatRecord, ChatSummary } from '../server/chatStore';
 export type { StoredAttachment } from '../server/chatAttachments';
 // Imported as well as re-exported, for the same reason ProjectIdentity is.
@@ -72,21 +65,12 @@ export interface GameStatus {
 /** GET /api/probe/status — what Hearth can currently sense about the game. */
 export type Sense = 'preview' | 'errors' | 'screenshots' | 'entities' | 'events' | 'scenes';
 
-/** GET /api/probe/status — the full read-out, including whether one is running. */
+/** GET /api/probe/status — the full read-out of what Hearth can sense. */
 export interface ProbeStatus {
   senses: Sense[];
-  /** A sweep is running for this folder right now. */
-  playing: boolean;
-  /** The last sweep found a probe shim, so the deeper senses are real. */
+  /** The last probe read found a shim, so the deeper senses are real. */
   shimDetected: boolean;
 }
-
-/**
- * GET /api/probe/playtesters: the newest sweep, one row per playtester.
- * The server's shape, not a copy of it: the fold that builds these lives
- * beside the files it reads.
- */
-export type { PlaytestPolicy, PlaytestRun, PlaytestSweep, PlaytestView } from '../server/playtestView';
 
 /**
  * One file in a project's context folder (`.hearth/context/`). `lines` is the
@@ -492,17 +476,6 @@ export interface RecentChatEntry {
 export interface UpdateReadyInfo {
   version: string;
 }
-
-// ---------------------------------------------------------------------------
-// Evidence
-// ---------------------------------------------------------------------------
-
-/**
- * Verdict vocabulary shared with the probe. Deliberately WIDER than
- * probe-core's closed union: the rail must render a verdict a newer probe
- * invents (as a neutral chip) rather than dropping the row.
- */
-export type Verdict = string;
 
 // ---------------------------------------------------------------------------
 // Console
