@@ -38,7 +38,22 @@ import { listTemplates, getTemplatePath, scaffoldFromTemplate } from '@hearth/te
 import { isRequestAllowed } from './originGuard.js';
 import { GAME_ENTRY_CANDIDATES } from './agentFacts.js';
 import { ensureHearthMcpConfig } from './mcpConfig.js';
-import { readAppSettings, writeAppSettings, resolveApiKey, type AppSettings } from './chat.js';
+import {
+  createChatDriver,
+  readAppSettings,
+  writeAppSettings,
+  resolveApiKey,
+  type AppSettings,
+  type ChatDriver,
+} from './chat.js';
+import { listSessions, nextSessionId as nextTesterSessionId, readMemory } from './tester/memory.js';
+import {
+  runTesterSession,
+  DEFAULT_MAX_STEPS,
+  MAX_MAX_STEPS,
+  type TesterGame,
+  type TesterPhase,
+} from './tester/session.js';
 import { readProjectIdentity, writeProjectIdentity } from './projectIdentity.js';
 import {
   contextDir,
@@ -53,7 +68,13 @@ import { resolveProjectsHome, slugFromName, slugFromPrompt, uniqueFolderName } f
 import { readCapabilities, sensesFromCapabilities } from './probeCapabilities.js';
 import { EVIDENCE_DIR } from './evidenceWatcher.js';
 import { collectUsage } from './usage.js';
-import { attachWebSocket, type ExportFrame, type ExportStage, type DesktopExportResult } from './ws.js';
+import {
+  attachWebSocket,
+  type ExportFrame,
+  type ExportStage,
+  type DesktopExportResult,
+  type TesterFrame,
+} from './ws.js';
 import { attachProbeStream, type ProbeBusMessage } from './probeStream.js';
 
 export { attachWebSocket } from './ws.js';
@@ -158,6 +179,16 @@ export interface ProjectServerOptions {
    * suites can inject a stub and never touch the real toolchain.
    */
   packageDesktop?: PackageDesktopFn;
+  /**
+   * Test seam: stand in the tester's model backend and its browser. Defaults to
+   * the user's configured agent and a real headless Chromium, so a suite that
+   * did not inject these would spend someone's quota to prove a route returns
+   * 409.
+   */
+  testerDeps?: {
+    createDriver?: (root: string) => Promise<ChatDriver>;
+    openGame?: (opts: { dir: string; onFrame?: (data: string) => void }) => Promise<TesterGame>;
+  };
 }
 
 /** Native desktop targets offered by exportDesktop, surfaced on the capability route. */
@@ -504,6 +535,22 @@ export function createProjectServerContext(options: ProjectServerOptions = {}) {
   // decides who is watching. Nothing is retained here: an unwatched sweep
   // emits into an empty room, which costs one JSON.stringify it skips.
   const probeBus = new EventEmitter();
+
+  // The tester's own channel: what it is thinking, where it has got to, and the
+  // note it ends with. Separate from the picture bus above because the two have
+  // genuinely different lifetimes and audiences — the frames go straight to an
+  // <img> outside React, and these are small and belong in application state.
+  const testerBus = new EventEmitter();
+  interface TesterJob {
+    root: string;
+    session: number;
+    controller: AbortController;
+    done: Promise<void>;
+  }
+  const testerJobs = new Map<string, TesterJob>();
+  const emitTester = (root: string, frame: TesterFrame): void => {
+    testerBus.emit('frame', { root, frame });
+  };
 
   // Desktop-export progress bus. One export runs at a time; the running job
   // routes packageDesktop's onProgress and its terminal result onto this bus,
@@ -1000,6 +1047,132 @@ export function createProjectServerContext(options: ProjectServerOptions = {}) {
           ok: true,
           senses: sensesFromCapabilities(record, game !== null),
           shimDetected: record?.shimDetected === true,
+        },
+      };
+    },
+
+    // --- The private tester ---------------------------------------------------
+
+    /** The tester's channel; ws.ts subscribes and fans frames to the folder's sockets. */
+    testerBus,
+
+    /** The in-flight session for `root`, so callers (and tests) can await it. */
+    testerJob(root: string): Promise<void> | undefined {
+      return testerJobs.get(path.resolve(root))?.done;
+    },
+
+    /**
+     * Play the game.
+     *
+     * The session runs off the request: it takes minutes and has its own
+     * channel, so the response only says it started and which session number it
+     * claimed. One at a time per folder, and a second ask while one is playing
+     * is a 409 rather than a queue — two testers in one folder would both try to
+     * claim the same session id and only one of them could have it.
+     *
+     * Never scheduled and never automatic. It plays when asked, because every
+     * turn costs the person whose game it is.
+     */
+    async startTesterSession(project: unknown, maxSteps?: unknown): Promise<JsonResult> {
+      if (typeof project !== 'string' || project.trim() === '') {
+        return { status: 400, body: { ok: false, error: 'Missing "project".' } };
+      }
+      const root = path.resolve(project);
+      if (!isOpenRoot(root)) return { status: 403, body: { ok: false, error: 'Folder is not open.' } };
+      if (testerJobs.has(root)) {
+        return { status: 409, body: { ok: false, error: 'The tester is already playing this game.' } };
+      }
+      const game = await resolveGameEntry(root);
+      if (!game) {
+        return { status: 400, body: { ok: false, error: 'No game to play yet. Nothing in this folder runs.' } };
+      }
+      const asked = typeof maxSteps === 'number' ? Math.floor(maxSteps) : Number.NaN;
+      const budget = Number.isFinite(asked) && asked > 0 ? Math.min(asked, MAX_MAX_STEPS) : DEFAULT_MAX_STEPS;
+      const session = await nextTesterSessionId(root);
+
+      let driver: ChatDriver;
+      try {
+        driver = await (options.testerDeps?.createDriver ?? ((r: string) => createChatDriver(r)))(root);
+      } catch (err) {
+        return { status: 500, body: { ok: false, error: `Could not reach your agent: ${(err as Error).message}` } };
+      }
+
+      const controller = new AbortController();
+      const done = (async (): Promise<void> => {
+        emitTester(root, { type: 'tester-started', session, maxSteps: budget });
+        try {
+          await driver.start(`tester-${session}`, root);
+          const note = await runTesterSession({
+            root,
+            dir: path.dirname(game.abs),
+            driver,
+            maxSteps: budget,
+            signal: controller.signal,
+            openGame: options.testerDeps?.openGame,
+            onFrame: (data) => {
+              const message: ProbeBusMessage = { root, frame: { type: 'probe-frame', data } };
+              probeBus.emit('frame', message);
+            },
+            onThought: (text) => emitTester(root, { type: 'tester-thought', text }),
+            onPhase: (phase: TesterPhase) => emitTester(root, { type: 'tester-phase', phase }),
+          });
+          emitTester(root, { type: 'tester-done', note });
+        } catch (err) {
+          emitTester(root, { type: 'tester-error', message: (err as Error).message });
+        } finally {
+          // Said explicitly rather than left to be inferred from frames
+          // stopping, so the pane hands the stage back to the person's own game
+          // at the moment it stops being a lie to show the tester's.
+          const message: ProbeBusMessage = { root, frame: { type: 'probe-end' } };
+          probeBus.emit('frame', message);
+          try {
+            driver.stop();
+          } catch {
+            /* a driver that is already gone is the outcome we wanted */
+          }
+          testerJobs.delete(root);
+        }
+      })();
+      testerJobs.set(root, { root, session, controller, done });
+      return { status: 200, body: { ok: true, started: true, session, maxSteps: budget } };
+    },
+
+    /**
+     * Stop the session that is playing. The session still writes its note: the
+     * person asked it to stop playing, not to forget what it saw.
+     */
+    async stopTesterSession(project: unknown): Promise<JsonResult> {
+      if (typeof project !== 'string' || project.trim() === '') {
+        return { status: 400, body: { ok: false, error: 'Missing "project".' } };
+      }
+      const root = path.resolve(project);
+      if (!isOpenRoot(root)) return { status: 403, body: { ok: false, error: 'Folder is not open.' } };
+      const job = testerJobs.get(root);
+      if (!job) return { status: 200, body: { ok: true, stopped: false } };
+      job.controller.abort();
+      return { status: 200, body: { ok: true, stopped: true } };
+    },
+
+    /**
+     * Every session this folder's tester has played, oldest first, plus the
+     * memory it keeps. Read from disk on every call: these are files a person
+     * can edit by hand, and the folder is the only thing every reader shares.
+     */
+    async testerHistory(project: unknown): Promise<JsonResult> {
+      if (typeof project !== 'string' || project.trim() === '') {
+        return { status: 400, body: { ok: false, error: 'Missing "project".' } };
+      }
+      const root = path.resolve(project);
+      if (!isOpenRoot(root)) return { status: 403, body: { ok: false, error: 'Folder is not open.' } };
+      const [sessions, memory] = await Promise.all([listSessions(root), readMemory(root)]);
+      return {
+        status: 200,
+        body: {
+          ok: true,
+          sessions,
+          memory,
+          running: testerJobs.has(root),
+          maxSteps: DEFAULT_MAX_STEPS,
         },
       };
     },
@@ -1980,6 +2153,20 @@ async function route(ctx: ProjectServerContext, req: IncomingMessage, res: Serve
     }
     case 'GET /api/probe/status': {
       const result = await ctx.probeStatus(q.get('project'));
+      return sendJson(res, result.status, result.body);
+    }
+    case 'POST /api/tester/play': {
+      const body = await readJsonBody(req);
+      const result = await ctx.startTesterSession(body.project, body.maxSteps);
+      return sendJson(res, result.status, result.body);
+    }
+    case 'POST /api/tester/stop': {
+      const body = await readJsonBody(req);
+      const result = await ctx.stopTesterSession(body.project);
+      return sendJson(res, result.status, result.body);
+    }
+    case 'GET /api/tester/history': {
+      const result = await ctx.testerHistory(q.get('project'));
       return sendJson(res, result.status, result.body);
     }
     case 'GET /api/chats': {

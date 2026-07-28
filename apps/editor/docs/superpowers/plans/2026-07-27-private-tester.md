@@ -349,17 +349,17 @@ git commit -m "Add the tester play loop"
 
 Reuse `attachProbeStream(httpServer, ctx.probeBus)` for frames; it already exists and already carries base64 JPEGs from `onFrame`. Only one session may run per project at a time; a second `play` returns 409, the same shape the old sweep route used.
 
-- [ ] **Step 1: Write the failing test** covering: play starts a session and returns 200; a second play while one runs returns 409; stop aborts a running session; history returns sessions oldest first; every route rejects a folder that is not open with 403.
+- [x] **Step 1: Write the failing test** covering: play starts a session and returns 200; a second play while one runs returns 409; stop aborts a running session; history returns sessions oldest first; every route rejects a folder that is not open with 403.
 
-- [ ] **Step 2: Run it and watch it fail.** Run: `cd apps/editor && npx vitest run tests/testerRoutes.test.ts`
+- [x] **Step 2: Run it and watch it fail.** Run: `cd apps/editor && npx vitest run tests/testerRoutes.test.ts`
 
-- [ ] **Step 3: Implement the routes and the socket frame.**
+- [x] **Step 3: Implement the routes and the socket frame.**
 
-- [ ] **Step 4: Run the test.** Expected: PASS.
+- [x] **Step 4: Run the test.** Expected: PASS.
 
-- [ ] **Step 5: Restart the dev server and confirm `/api/tester/history` answers on a real project.**
+- [x] **Step 5: Restart the dev server and confirm `/api/tester/history` answers on a real project.**
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 cd /Users/jakekang/projects/hearth/hearth-engine

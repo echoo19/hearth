@@ -69,6 +69,8 @@ import { PtyManager, ScrollbackBuffer, type PtyBackend, type PtyHandle } from '.
 import { ensureHearthShim, hearthPtyEnv } from './hearthShim.js';
 import { loginShellPathEnv } from './shellEnv.js';
 import { isRequestAllowed } from './originGuard.js';
+import type { TesterPhase } from './tester/session.js';
+import type { TesterNote } from './tester/types.js';
 
 /** Desktop-packaging stages, mirroring @hearth/shipping's PackageStage. */
 export type ExportStage = 'stage' | 'download' | 'package' | 'sign' | 'notarize' | 'zip';
@@ -90,6 +92,22 @@ export type ExportFrame =
   | { type: 'export-progress'; jobId: string; platform: DesktopPlatform | null; stage: ExportStage; message: string }
   | { type: 'export-done'; jobId: string; result: DesktopExportResult }
   | { type: 'export-error'; jobId: string; platform?: DesktopPlatform; message: string };
+
+/**
+ * Server->client frames for a running tester session.
+ *
+ * The pictures do not come this way: they ride the probe stream's own socket,
+ * because ten JPEGs a second do not belong in application state. What comes
+ * here is small and changes a handful of times a session, which is exactly what
+ * the shared channel is for. `tester-thought` carries the tester's prose as it
+ * arrives, so a person can read along with the frame beside it.
+ */
+export type TesterFrame =
+  | { type: 'tester-started'; session: number; maxSteps: number }
+  | { type: 'tester-phase'; phase: TesterPhase }
+  | { type: 'tester-thought'; text: string }
+  | { type: 'tester-done'; note: TesterNote }
+  | { type: 'tester-error'; message: string };
 
 export type WsFrame =
   | { type: 'journal'; entries: JournalEntry[] }
@@ -145,7 +163,8 @@ export type WsFrame =
   // tail of everything the pty emitted (capped — `dropped` counts evicted
   // earlier bytes), sent before live pty-data streaming resumes.
   | { type: 'pty-attach'; replay: string; dropped: number }
-  | ExportFrame;
+  | ExportFrame
+  | TesterFrame;
 
 interface ProjectChannel {
   sockets: Set<WebSocket>;
@@ -355,6 +374,16 @@ export function attachWebSocket(
     if (channel) broadcast(channel.sockets, frame);
   };
   ctx.exportBus.on('frame', onExportFrame);
+
+  // The tester's thinking, on the same terms as export progress: the session
+  // runs off the request that started it, and every window on the folder gets
+  // to watch. A tester playing where the person who asked for it cannot see is
+  // indistinguishable from nothing happening.
+  const onTesterFrame = ({ root, frame }: { root: string; frame: TesterFrame }): void => {
+    const channel = channels.get(root);
+    if (channel) broadcast(channel.sockets, frame);
+  };
+  ctx.testerBus.on('frame', onTesterFrame);
 
   // Provider auth changes arrive from OUTSIDE the socket — an HTTP settings
   // save, or a ChatGPT sign-in that completed in the user's browser minutes
@@ -841,6 +870,7 @@ export function attachWebSocket(
 
   httpServer.on('close', () => {
     ctx.exportBus.off('frame', onExportFrame);
+    ctx.testerBus.off('frame', onTesterFrame);
     providerBus.off('changed', onProviderChange);
     for (const channel of channels.values()) channel.dispose();
     channels.clear();
