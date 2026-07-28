@@ -444,7 +444,7 @@ export async function openWebGame(opts: OpenWebGameOptions = {}): Promise<WebGam
    */
   const enterState = async (id: string): Promise<void> => {
     await releaseAll();
-    await requirePage().evaluate<void>((stateId: string) => {
+    await requirePage().evaluate<void, string>((stateId: string) => {
       const probe = (globalThis as PageGlobal).__hearthProbe;
       try {
         probe?.enterState?.(stateId);
