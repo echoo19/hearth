@@ -1,8 +1,12 @@
 # Playtesting
 
-Press **Playtest** and Hearth plays your game for you: seeded bots drive it
-many times over, watchers look for the failures a person would notice, and
+Ask your agent to playtest and it plays your game for you: seeded bots drive
+it many times over, watchers look for the failures a person would notice, and
 everything they saw lands on disk as files you and your agent can read.
+
+There is nothing to press. Playtesting is a tool the agent reaches for, run
+with `hearth-probe sweep .` ([cli.md](./cli.md)), and its evidence is plain
+files you can open yourself.
 
 The part that matters: this works **no matter what the agent built**. The
 probe opens the game like a browser would, presses real keys, moves a real
@@ -103,9 +107,9 @@ Everything a sweep learns is written under the project, in plain files:
 ```
 
 Sweep ids are zero-padded sequence numbers (`0001`), not timestamps, so a path
-stays stable and can be pasted into a conversation. The journal is what the
-app's Playtests rail renders while the sweep is still running; the same files
-are there afterwards for anything else that wants to read them.
+stays stable and can be pasted into a conversation. The journal is appended as
+the sweep runs, so anything following along has something to read before it
+finishes; the same files are there afterwards.
 
 The report is deliberately small: findings are deduped and capped at 8 total
 and 3 per kind, failures at 5, worst-first. Per-episode depth lives in
@@ -113,9 +117,9 @@ and 3 per kind, failures at 5, worst-first. Per-episode depth lives in
 
 ## Reading a report back
 
-In the app, results land in the Playtests rail and can be handed straight to
-the conversation. Outside it, the CLI and the MCP server print the same folded
-summary from the same files ([cli.md](./cli.md), [mcp.md](./mcp.md)):
+The CLI and the MCP server print the same folded summary from the same files
+([cli.md](./cli.md), [mcp.md](./mcp.md)), so your agent reads a sweep the same
+way you would:
 
 ```
 ✗ sweep 0003 — ~/Hearth/tiny-roguelike

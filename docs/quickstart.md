@@ -49,25 +49,28 @@ seconds." Each message is a turn; the pane reloads when the files land. Drop a
 screenshot or a reference image onto the composer when a picture says it faster
 — an image on its own is a message ([agents.md](./agents.md)).
 
-## 5. Press Playtest
+## 5. Ask for a playtest
 
-The button under the game pane sends bots in. They press real keys, move a real
-mouse, take screenshots and collect errors — with no cooperation from the game
-at all, because the probe treats it as a page rather than a project.
+Say "playtest it" and your agent sends bots in. They press real keys, move a
+real mouse, take screenshots and collect errors — with no cooperation from the
+game at all, because the probe treats it as a page rather than a project.
 
-Verdicts stream into the Playtests rail as each episode finishes:
+It runs `hearth-probe sweep .`, which is on its PATH, and reads the verdicts
+back to you when the episodes finish:
 
 ```
 6 runs: error 1, ran-clean 5 — 1 failing
   [blocker] crash: game threw: Cannot read properties of null (leaf.js:31)
 ```
 
+You can run the same command yourself in the folder and get the same files.
+
 ## 6. Read the evidence
 
 Every run leaves files under `.hearth/evidence/` in the folder: a report per
 sweep, one file per episode, and the screenshots the findings point at. Open
-the rail, or hand the report back to the agent — "the playtest found a crash in
-leaf.js, fix it and run it again" — and the loop closes.
+them yourself, or hand the report back to the agent — "the playtest found a
+crash in leaf.js, fix it and run it again" — and the loop closes.
 
 Read the `not checked` list next to the findings. A sweep of a game that says
 nothing about itself can only check for crashes and blank screens; that isn't a

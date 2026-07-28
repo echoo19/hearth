@@ -3,8 +3,8 @@
 `hearth-probe-mcp` is the probe for an agent that speaks MCP and is working
 *outside* the Hearth app — Claude Code in a terminal, or any other MCP client.
 It exposes the same five operations the CLI does, over stdio, and writes the
-same evidence files: a sweep run from Claude Code and a sweep run by pressing
-Playtest in the app are byte-for-byte the same record, because both go through
+same evidence files: a sweep run from Claude Code and a sweep run from the
+`hearth-probe` CLI are byte-for-byte the same record, because both go through
 the same evidence store.
 
 ## Register it
@@ -69,9 +69,9 @@ next.
   sweeps/0001/shots/*.png                frames the findings point at
 ```
 
-If the Hearth app has that folder open, its Playtests rail renders those files
-as they land — an agent sweeping from outside and a person watching inside see
-the same run. The layout and what to read first are in
+Those files are the whole record, and they are the same ones a sweep run from
+the CLI leaves behind. An agent sweeping over MCP and a person reading the
+folder afterwards see the same run. The layout and what to read first are in
 [playtesting.md](./playtesting.md).
 
 ## Reading results honestly

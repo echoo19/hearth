@@ -226,29 +226,29 @@ git commit -m "Remove the server routes that fed the playtest surface"
 - Consumes: Tasks 1 to 3. The docs must describe the app as it is after them.
 - Produces: docs with no reference to a Playtest button, a Playtesters screen or an evidence rail. `hearth-website`'s `scripts/sync-docs.mjs` copies these verbatim, so an error here ships to the marketing site.
 
-- [ ] **Step 1: Locate the generated docs**
+- [x] **Step 1: Locate the generated docs**
 
 ```bash
 cd /Users/jakekang/projects/hearth/hearth-engine
 rg -ln --text "Playtesters|Press Playtest|evidence rail" docs/
 ```
 
-- [ ] **Step 2: Rewrite the three docs**
+- [x] **Step 2: Rewrite the three docs**
 
 Remove every reference to a Playtest button, a Playtesters screen, an evidence rail, or any in-app playtest UI. Keep the `hearth-probe` CLI documentation, the shim contract and the evidence file layout: all of that is still true and is how the agent uses the capability. Reframe playtesting as something the agent runs, not something the user operates.
 
 `agents.md` additionally describes a "Skills fold with per-row dots and Manage skills…" which is a release behind. Correct it to what the working tree actually ships.
 
-- [ ] **Step 3: Update `agentFacts.ts`**
+- [x] **Step 3: Update `agentFacts.ts`**
 
 The paragraph telling the agent about `hearth-probe sweep .` STAYS; that is the whole point. Remove only sentences that describe app surfaces the agent should tell the user to press. Check the file for "playtest evidence lands in .hearth/evidence/" and keep it, since that is still where it lands.
 
-- [ ] **Step 4: Run the agent-facts test**
+- [x] **Step 4: Run the agent-facts test**
 
 Run: `cd apps/editor && npx vitest run tests/agentFacts.test.ts`
 Expected: PASS. If it asserts removed copy, update the assertion to the new text rather than deleting the test.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 cd /Users/jakekang/projects/hearth/hearth-engine

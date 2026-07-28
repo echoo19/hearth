@@ -83,10 +83,11 @@ machine, not per project**: something you taught your agent once should still
 be known in the next game you start. `~/.hearth/skills.json` records which ones
 are switched off.
 
-The **Skills** fold in the sidebar lists what you have, each with a dot for on
-or off. Clicking a row — or **Manage skills…** — opens the panel, where every
-skill has a switch, an edit and a delete, with a search box above them and a
-**+** offering three ways to make one:
+**Skills** in the sidebar opens a screen listing what you have, one row per
+skill: its name, the sentence saying when to use it, and a note naming who
+installed it when that was not you. An off skill says so. Each row's menu has
+open or edit, turn on or off, and delete for the ones Hearth owns. Above the
+rows are a search box and a **+** offering three ways to make one:
 
 - **Create with chat** puts a request in the composer for you to send. The
   agent has file tools and is already in the folder, so it writes the skill
@@ -96,7 +97,9 @@ skill has a switch, an edit and a delete, with a search box above them and a
 - **Upload from your computer** takes a folder you already have. It has to
   contain a `SKILL.md`, and the whole folder has to be under 4 MB and 64 files.
 
-Deleting a skill removes the folder from your computer.
+Deleting a skill removes the folder from your computer. The ones found in
+Claude Code's and Codex's own folders open read-only: they are those tools'
+files, and Hearth does not edit or delete them on their behalf.
 
 Reaching each backend takes one step, and they are different steps. Both are
 re-applied every time a conversation binds, so switching a skill off is felt on
@@ -207,10 +210,9 @@ conversation, which is the workaround until there is a real answer surface.
 ## Where the work lands
 
 Your agent writes ordinary files into the folder; the pane reloads when they
-change; the Playtest button plays what's there. Nothing about that requires the
-agent's cooperation — but an agent Hearth binds is told the room it is in: a
-short block of environment facts rides in its system prompt saying where the
-pane looks for a game (`index.html`, then `game/`, `dist/`, `public/`), where
+change. Nothing about that requires the agent's cooperation — but an agent
+Hearth binds is told the room it is in: a short block of environment facts
+rides in its system prompt saying where the pane looks for a game (`index.html`, then `game/`, `dist/`, `public/`), where
 playtest evidence lands (`.hearth/evidence/`), and that `.hearth/context/`
 holds the files you added for it. Facts only — what game to make, and how,
 still comes entirely from you.

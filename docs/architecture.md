@@ -143,17 +143,19 @@ implemented differently ([connect-your-engine.md](./connect-your-engine.md)).
 ## The evidence bus
 
 `.hearth/evidence` is the neutral bus between whatever ran the probe and
-whatever renders it. A sweep started by the Playtest button, by the CLI, or by
-an agent over MCP writes the same files: an append-only `journal.jsonl`, a
-folded `report.json` per sweep, per-episode JSON, and screenshots.
+whatever reads it. A sweep started from the CLI or by an agent over MCP writes
+the same files: an append-only `journal.jsonl`, a folded `report.json` per
+sweep, per-episode JSON, and screenshots.
 
-The app tails that journal and broadcasts new lines to every socket on the
-root. There is no second progress channel — **the journal is the progress**, so
-what the rail shows and what an agent reads back can never disagree. The
-watcher uses a directory `fs.watch` as its primary signal with a 2-second poll
-as a fallback, debounced, and treats a missing or half-written file as the
-normal case rather than an error — delivery is keyed on a sequence number, not
-a byte offset, so a line written while it reads is picked up on the next pass.
+There is no second progress channel — **the journal is the progress**, so two
+readers of one sweep can never disagree about it. It is appended as the sweep
+runs, keyed on a sequence number rather than a byte offset, so anything
+following along can re-read it at any point and a half-written trailing line is
+simply picked up whole next time.
+
+The app does not run sweeps and has no surface for them. It serves the evidence
+folder over `/evidence/` and counts the sweeps under it for the usage read-out;
+everything else about a sweep belongs to whoever ran it.
 
 ## Reload, by polling
 

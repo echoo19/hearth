@@ -64,9 +64,10 @@ mid-conversation; doing it properly means the driver learning to rebind.
 for "how I like sprites drawn" and wrong for "how this game's save format
 works". Scoping some of them to a folder is the obvious next shape.
 
-**Reading evidence back.** The report is written for a context window, but
-moving a finding from the rail into the conversation is still a copy. Closing
-that loop properly is a small feature that changes how the app feels.
+**Reading evidence back.** The report is written for a context window, and an
+agent that ran the sweep already has it. Getting a finding in front of a person
+without making them open files is still unsolved. Closing that loop properly is
+a small feature that changes how the app feels.
 
 ## Further out
 

@@ -63,10 +63,11 @@ export function hearthFactsPrompt(options: AgentFactsOptions): string {
       'and how the game is built is entirely up to you. If you use a build step, put the output at one of ' +
       'those entries so the pane (and playtests) can find it.',
 
-    'The person can press Playtest at any time: seeded bots play the game headlessly — real keys, real ' +
-      'pointer, screenshots, console errors — and write everything under .hearth/evidence/. ' +
-      'journal.jsonl is the live stream; sweeps/<n>/report.json holds the verdicts and findings; ' +
-      'sweeps/<n>/shots/ the frames findings point at. When a playtest comes up, read those files.',
+    'A playtest sends seeded bots at the game headlessly — real keys, real pointer, screenshots, ' +
+      'console errors — and writes everything under .hearth/evidence/. journal.jsonl is appended as it ' +
+      'runs; sweeps/<n>/report.json holds the verdicts and findings; sweeps/<n>/shots/ the frames ' +
+      'findings point at. When a playtest comes up, read those files. Playtesting has no surface in the ' +
+      'app: it is run from a shell, never by the person pressing something.',
 
     'Which bots can play is decided by what the game tells them. With no cooperation, only random-input ' +
       'bots run: they find crashes, not progress. A game that installs the probe shim (window.__hearthProbe, ' +
@@ -76,8 +77,8 @@ export function hearthFactsPrompt(options: AgentFactsOptions): string {
   ];
   if (options.probeCli) {
     parts.push(
-      'You can playtest yourself, too: `hearth-probe sweep .` runs the same bots from your shell and ' +
-        'writes the same evidence, `hearth-probe screenshot .` captures a frame of the running game, ' +
+      'Playtesting is yours to run: `hearth-probe sweep .` drives those bots from your shell and ' +
+        'writes that evidence, `hearth-probe screenshot .` captures a frame of the running game, ' +
         '`hearth-probe shim .` installs the reference shim (its header documents every hook), and ' +
         '`hearth-probe --help` lists the rest.',
     );

@@ -34,6 +34,13 @@ describe('hearthFactsPrompt without the probe', () => {
     expect(text).toContain('.hearth/context/');
   });
 
+  // Playtesting is passive now. An agent that tells the person to press a
+  // button they cannot find is worse than one that never mentions playtesting.
+  it('never sends the person to a playtest control', () => {
+    expect(text).not.toContain('press Playtest');
+    expect(text).not.toContain('Playtest button');
+  });
+
   it('says nothing about hearth-probe when the CLI is not on PATH', () => {
     expect(text).not.toContain('hearth-probe');
   });
