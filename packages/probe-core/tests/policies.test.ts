@@ -31,6 +31,7 @@ function context(over: Partial<PolicyContext> = {}): PolicyContext {
       screenshot: true,
       nav: true,
       reset: true,
+      states: false,
     },
     viewport: { width: 640, height: 480 },
   };

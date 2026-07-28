@@ -38,6 +38,7 @@ const FULL: ProbeCapabilities = {
     screenshot: true,
     nav: true,
     reset: true,
+    states: false,
   },
   viewport: { width: 320, height: 240 },
 };

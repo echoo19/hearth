@@ -55,7 +55,7 @@ No raw JSON anywhere a person can see it. No bare enum values rendered as-is.
 **Interfaces:**
 - Produces: `ProbeState` (`{id: string, label: string, detail?: string}`), `capabilities.senses.states: boolean`, and optional `listStates?(): Promise<ProbeState[]>` / `enterState?(id: string): Promise<void>` on `GameUnderTest`. Tasks 2, 4 and 5 consume these.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```ts
 import { describe, it, expect } from 'vitest';
@@ -93,13 +93,13 @@ describe('normalizeStates', () => {
 });
 ```
 
-- [ ] **Step 2: Run it and watch it fail.** Run: `cd packages/probe-core && npx vitest run tests/stateCapability.test.ts`
+- [x] **Step 2: Run it and watch it fail.** Run: `cd packages/probe-core && npx vitest run tests/stateCapability.test.ts`
 
-- [ ] **Step 3: Implement.** Add `ProbeState`, the `states` sense, the two optional methods, and `normalizeStates`. Defensive parsing throughout: this reads whatever a game wrote and must never throw on it. Document in the type's comment that Hearth does not interpret `id` or `label`, with a one-line note on why.
+- [x] **Step 3: Implement.** Add `ProbeState`, the `states` sense, the two optional methods, and `normalizeStates`. Defensive parsing throughout: this reads whatever a game wrote and must never throw on it. Document in the type's comment that Hearth does not interpret `id` or `label`, with a one-line note on why.
 
-- [ ] **Step 4: Run the test.** Expected: PASS, 5 tests.
+- [x] **Step 4: Run the test.** Expected: PASS, 5 tests.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 cd /Users/jakekang/projects/hearth/hearth-engine

@@ -147,4 +147,5 @@ export const SENSE_LABEL: Record<CapabilityKey, string> = {
   screenshot: 'screenshots',
   nav: 'nav grid',
   reset: 'episode reset',
+  states: 'the states the game can be put into',
 };

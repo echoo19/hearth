@@ -36,6 +36,8 @@ export interface ProbeCapabilities {
     nav: boolean;
     /** T2: cheap episode reset to initial state. */
     reset: boolean;
+    /** T2: the game can list the situations it can be put into, and enter one. */
+    states: boolean;
   };
   /** Logical viewport in the game's own coordinate space. */
   viewport: { width: number; height: number };
@@ -50,6 +52,46 @@ export interface ProbeEntity {
   y: number;
   /** False once destroyed/disabled. */
   alive: boolean;
+}
+
+/**
+ * One situation the game says it can be put into.
+ *
+ * Hearth never interprets `id` or `label`. It asks a game where it can put
+ * itself and picks one of the answers, and what a state means stays the game's
+ * business: a chapter, a lane, a scenario, a fiscal year, a save slot. The
+ * moment this type decided what a state was, every game that disagreed would
+ * stop fitting.
+ */
+export interface ProbeState {
+  id: string;
+  /** Human-readable, for the report and the UI. */
+  label: string;
+  /** Optional free-form detail the game wants a reader to have. */
+  detail?: string;
+}
+
+/**
+ * Read a state list out of whatever a game handed back.
+ *
+ * This parses something a game author wrote, so it never throws and never
+ * invents: an entry without a usable id is dropped rather than given one, and
+ * a game that declared nothing gets an empty list rather than an error.
+ */
+export function normalizeStates(raw: unknown): ProbeState[] {
+  if (!Array.isArray(raw)) return [];
+  const out: ProbeState[] = [];
+  for (const entry of raw) {
+    if (!entry || typeof entry !== 'object') continue;
+    const record = entry as { id?: unknown; label?: unknown; detail?: unknown };
+    const id = typeof record.id === 'string' ? record.id.trim() : '';
+    if (id === '') continue;
+    const label = typeof record.label === 'string' && record.label.trim() !== '' ? record.label.trim() : id;
+    const state: ProbeState = { id, label };
+    if (typeof record.detail === 'string' && record.detail.trim() !== '') state.detail = record.detail.trim();
+    out.push(state);
+  }
+  return out;
 }
 
 export interface ProbeError {
@@ -117,6 +159,10 @@ export interface GameUnderTest {
   navGrid?(): Promise<NavGrid | null>;
   /** capabilities.senses.reset */
   reset?(): Promise<void>;
+  /** capabilities.senses.states — the situations this game can be put into. */
+  listStates?(): Promise<ProbeState[]>;
+  /** capabilities.senses.states — put the game into one of them, by its own id. */
+  enterState?(id: string): Promise<void>;
 }
 
 // ---------------------------------------------------------------------------

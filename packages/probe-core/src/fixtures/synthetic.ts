@@ -176,6 +176,7 @@ class SyntheticGame {
         screenshot: true,
         nav: true,
         reset: true,
+        states: false,
         ...options.senses,
       },
       viewport: { width: COLS * CELL, height: ROWS * CELL },
