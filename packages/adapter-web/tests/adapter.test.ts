@@ -56,6 +56,7 @@ describe('capability honesty', () => {
           events: false,
           entities: false,
           nav: false,
+          states: false,
         });
         expect(game.capabilities.viewport).toEqual({ width: 960, height: 540 });
         expect(game.capabilities.input.pointer).toBe(true);
@@ -103,6 +104,7 @@ describe('capability honesty', () => {
           entities: true,
           // The runner exposes no nav grid, so nav stays off even with a shim.
           nav: false,
+          states: false,
         });
         // The shim narrows the input vocabulary to what the game understands.
         expect(game.capabilities.input.actions).toEqual(['jump', 'left', 'right']);

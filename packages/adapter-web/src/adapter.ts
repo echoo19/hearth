@@ -31,8 +31,10 @@ import type {
   ProbeCapabilities,
   ProbeEntity,
   ProbeError,
+  ProbeState,
   StepObservation,
 } from '@hearth/probe-core';
+import { normalizeStates } from '@hearth/probe-core';
 import { launchChromium, startScreencast, type PwBrowser, type PwPage } from './chromium.js';
 import { openStatic, type StaticServer } from './server.js';
 
@@ -240,6 +242,8 @@ interface PageShim {
   drainEvents?: () => unknown;
   navGrid?: () => unknown;
   reset?: () => unknown;
+  listStates?: () => unknown;
+  enterState?: (id: string) => unknown;
 }
 
 interface PageGlobal {
@@ -257,6 +261,11 @@ interface ShimDescriptor {
   hasEvents: boolean;
   hasNav: boolean;
   hasReset: boolean;
+  /**
+   * Both hooks, together. A list the adapter cannot act on is not the
+   * capability, so the descriptor carries the pair rather than each half.
+   */
+  hasStates: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -284,6 +293,7 @@ export async function openWebGame(opts: OpenWebGameOptions = {}): Promise<WebGam
       entities: false,
       screenshot: true,
       nav: false,
+      states: false,
       // Always available: worst case it's a full page reload — slow, but a
       // real return to the initial state. The shim can make it cheap.
       reset: true,
@@ -363,6 +373,7 @@ export async function openWebGame(opts: OpenWebGameOptions = {}): Promise<WebGam
         hasEvents: typeof probe.drainEvents === 'function',
         hasNav: typeof probe.navGrid === 'function',
         hasReset: typeof probe.reset === 'function',
+        hasStates: typeof probe.listStates === 'function' && typeof probe.enterState === 'function',
       };
     });
     shim = found;
@@ -393,6 +404,7 @@ export async function openWebGame(opts: OpenWebGameOptions = {}): Promise<WebGam
       capabilities.input.axes = axisNamesFrom(actionKeys).filter((a) => declared.has(a));
     }
     capabilities.senses.nav = shim.hasNav ? (await readNavGrid()) !== null : false;
+    capabilities.senses.states = shim.hasStates;
   };
 
   const readNavGrid = async (): Promise<NavGrid | null> => {
@@ -406,6 +418,41 @@ export async function openWebGame(opts: OpenWebGameOptions = {}): Promise<WebGam
       }
     });
     return normalizeNavGrid(raw);
+  };
+
+  /**
+   * Whatever the game called its own situations. Hearth reads the names and
+   * hands them on; it never learns what one means.
+   */
+  const readStates = async (): Promise<ProbeState[]> => {
+    const raw = await requirePage().evaluate<unknown>(() => {
+      const probe = (globalThis as PageGlobal).__hearthProbe;
+      if (!probe || typeof probe.listStates !== 'function') return [];
+      try {
+        return probe.listStates() ?? [];
+      } catch {
+        return [];
+      }
+    });
+    return normalizeStates(raw);
+  };
+
+  /**
+   * Ask the game to put itself somewhere. Whether it did, and what that even
+   * means, is the game's business: the caller is told the request went in, not
+   * that it landed.
+   */
+  const enterState = async (id: string): Promise<void> => {
+    await releaseAll();
+    await requirePage().evaluate<void>((stateId: string) => {
+      const probe = (globalThis as PageGlobal).__hearthProbe;
+      try {
+        probe?.enterState?.(stateId);
+      } catch {
+        /* a broken hook must not kill the session */
+      }
+    }, id);
+    await settle();
   };
 
   const readEntities = async (): Promise<ProbeEntity[]> => {
@@ -608,6 +655,8 @@ export async function openWebGame(opts: OpenWebGameOptions = {}): Promise<WebGam
     delete game.listEntities;
     delete game.findEntity;
     delete game.navGrid;
+    delete game.listStates;
+    delete game.enterState;
 
     if (capabilities.senses.entities) {
       game.listEntities = readEntities;
@@ -615,6 +664,10 @@ export async function openWebGame(opts: OpenWebGameOptions = {}): Promise<WebGam
     }
     if (capabilities.senses.nav) {
       game.navGrid = readNavGrid;
+    }
+    if (capabilities.senses.states) {
+      game.listStates = readStates;
+      game.enterState = enterState;
     }
     game.reset = async () => {
       const target = requirePage();

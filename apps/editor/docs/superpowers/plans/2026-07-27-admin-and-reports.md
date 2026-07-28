@@ -119,15 +119,15 @@ git commit -m "Let a game name the states it can be put into"
 - Consumes: Task 1.
 - Produces: `openWebGame` returning a game whose `listStates`/`enterState` bridge to `window.__hearthProbe.listStates()` / `.enterState(id)` when the page provides them, and whose `capabilities.senses.states` is true only when it really does.
 
-- [ ] **Step 1: Write the failing test** covering: a page exposing both hooks reports `states: true` and round-trips the list; a page exposing neither reports `states: false` and leaves both methods undefined; a page exposing `listStates` but not `enterState` reports `states: false`, since a list you cannot act on is not the capability.
+- [x] **Step 1: Write the failing test** covering: a page exposing both hooks reports `states: true` and round-trips the list; a page exposing neither reports `states: false` and leaves both methods undefined; a page exposing `listStates` but not `enterState` reports `states: false`, since a list you cannot act on is not the capability.
 
-- [ ] **Step 2: Run it and watch it fail.**
+- [x] **Step 2: Run it and watch it fail.**
 
-- [ ] **Step 3: Implement the bridge and extend the reference shim.** The shim's header documents every hook and is what game authors read; add the two, with an example that is deliberately NOT a platformer level list, so nobody reads the docs and concludes this is for levels.
+- [x] **Step 3: Implement the bridge and extend the reference shim.** The shim's header documents every hook and is what game authors read; add the two, with an example that is deliberately NOT a platformer level list, so nobody reads the docs and concludes this is for levels.
 
-- [ ] **Step 4: Run the test.** Expected: PASS.
+- [x] **Step 4: Run the test.** Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add packages/adapter-web packages/probe-core

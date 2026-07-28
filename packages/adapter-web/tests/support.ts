@@ -9,6 +9,7 @@ const HERE = path.dirname(fileURLToPath(import.meta.url));
 export const FIXTURES = path.resolve(HERE, '../fixtures');
 export const RUNNER_DIR = path.join(FIXTURES, 'runner');
 export const BLANK_DIR = path.join(FIXTURES, 'blank');
+export const STATES_DIR = path.join(FIXTURES, 'states');
 
 export interface OpenFixture {
   game: WebGameUnderTest;

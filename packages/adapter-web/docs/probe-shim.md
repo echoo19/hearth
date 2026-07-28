@@ -54,6 +54,12 @@ window.__hearthProbe = {
     cols: number, rows: number, solid: boolean[]   // row-major, true = solid
   } | null,
   reset?(): void,                    // restart the episode in place
+
+  // Both or neither. Half the pair declares none of the capability.
+  listStates?(): Array<{             // situations the game can be put into
+    id: string, label: string, detail?: string
+  }>,
+  enterState?(id: string): void,     // put it into one of them
 }
 ```
 
@@ -115,6 +121,7 @@ Two things follow from that table:
 | `scene()` | `senses.scenes` | scene-change novelty, per-level attribution |
 | `navGrid()` | `senses.nav` | `wander`, pathfinding `seek`, sealed-region and reachability checks |
 | `reset()` | fast `senses.reset` | cheap episode restarts (without it, reset is a full page reload — still valid, just slow) |
+| `listStates()` + `enterState()` | `senses.states` | your private tester can ask to be put somewhere instead of replaying the opening every session |
 | *(nothing)* | `senses.errors`, `senses.screenshot`, slow `senses.reset` | crash detection, black-screen and pixel-novelty checks, evidence shots |
 
 ### `emit(name)`
@@ -188,6 +195,46 @@ Put the game back to the start of the episode *in the page*, without a reload:
 respawn the player, reset the score, reload the level. The shim clears the event
 buffer around your reset. If you don't provide it, the probe reloads the whole
 page instead — correct, just an order of magnitude slower per episode.
+
+### `listStates()` / `enterState(id)`
+
+Where your game can put itself, and how. Provide both or neither: a list
+nothing can act on leaves `senses.states` false.
+
+The names are yours. Nothing outside your game reads them for meaning, so a
+state is whatever you can restore, and the examples below are all the same call
+as far as Hearth is concerned.
+
+```js
+// A management sim
+listStates: () => [
+  { id: 'y1-spring', label: 'Year one, the spring intake' },
+  { id: 'y3-deficit', label: 'Year three, already in deficit',
+    detail: 'two departments unstaffed' },
+],
+enterState: (id) => loadScenario(id),
+```
+
+```js
+// A team shooter
+listStates: () => [
+  { id: 'mid-6min', label: 'Mid lane, six minutes in' },
+  { id: 'last-stand', label: 'Defending the final point' },
+],
+enterState: (id) => setupSituation(id),
+```
+
+`label` is what a person reads in the report, so write it for them. `detail` is
+for anything they would want alongside it, such as the state of the economy or
+which abilities are unlocked. An entry with no `id` is dropped rather than given
+one.
+
+Your tester is offered these and may ask for one. It is never told to, because
+the opening of a game is the part a first session is most valuable for.
+
+Anything it sees after being put somewhere is recorded as **placed** rather than
+played, and the report says so. Being dropped into the audit week tells you
+about the audit week; it tells you nothing about whether anyone can get there.
 
 ### `actions` / `axes`
 

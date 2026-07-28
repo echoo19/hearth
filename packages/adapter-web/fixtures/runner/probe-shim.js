@@ -27,6 +27,26 @@
  *       reset: function () { startLevel(currentLevel.name); },
  *     });
  *
+ * If your game can jump straight to a situation, say which ones and how. The
+ * names are yours and nothing outside your game reads them for meaning, so a
+ * situation can be anything you can restore. A management sim might offer:
+ *
+ *     window.__hearthProbe.configure({
+ *       listStates: function () {
+ *         return [
+ *           { id: 'y1-spring', label: 'Year one, the spring intake' },
+ *           { id: 'y3-deficit', label: 'Year three, already in deficit',
+ *             detail: 'two departments unstaffed' },
+ *         ];
+ *       },
+ *       enterState: function (id) { loadScenario(id); },
+ *     });
+ *
+ * Give both or neither: a list nothing can act on does not turn the capability
+ * on. Your tester is told these exist and may ask for one, and anything it
+ * sees after being put somewhere is reported as placed rather than reached, so
+ * a finding from here never passes itself off as proof a player can get there.
+ *
  * ...and announce interesting moments as they happen:
  *
  *     window.__hearthProbe.emit('jump');
@@ -58,6 +78,7 @@
   /* Bounded so a chatty game can never grow the buffer without limit. */
   var MAX_EVENTS = 512;
   var MAX_ENTITIES = 512;
+  var MAX_STATES = 256;
 
   var events = [];
   var probe = { version: 1 };
@@ -165,6 +186,47 @@
     };
   }
 
+  /**
+   * The situations this game can be put into, and putting it into one.
+   *
+   * The names are yours. Nothing outside your game reads them for meaning, so
+   * whatever a "situation" is here is up to you: a quarter, a save slot, a
+   * squad composition, a point on a clock.
+   */
+  function wrapListStates(fn) {
+    return function listStates() {
+      var list;
+      try {
+        list = fn();
+      } catch (err) {
+        return [];
+      }
+      if (!Array.isArray(list)) return [];
+      var out = [];
+      for (var i = 0; i < list.length && out.length < MAX_STATES; i++) {
+        var raw = list[i];
+        if (!raw || typeof raw !== 'object') continue;
+        var id = raw.id == null ? '' : String(raw.id);
+        if (!id) continue;
+        var state = { id: id, label: raw.label == null ? id : String(raw.label) };
+        if (raw.detail != null) state.detail = String(raw.detail);
+        out.push(state);
+      }
+      return out;
+    };
+  }
+
+  function wrapEnterState(fn) {
+    return function enterState(id) {
+      events = [];
+      try {
+        fn(String(id));
+      } catch (err) {
+        /* a broken hook must not kill the probe run */
+      }
+    };
+  }
+
   function stringList(value) {
     if (!Array.isArray(value)) return null;
     var out = [];
@@ -186,6 +248,12 @@
     if (typeof spec.entities === 'function') probe.entities = wrapEntities(spec.entities);
     if (typeof spec.navGrid === 'function') probe.navGrid = wrapNavGrid(spec.navGrid);
     if (typeof spec.reset === 'function') probe.reset = wrapReset(spec.reset);
+    // Both or neither. A list of places a probe cannot be put is a menu, not a
+    // capability, so half of the pair is declared as none of it.
+    if (typeof spec.listStates === 'function' && typeof spec.enterState === 'function') {
+      probe.listStates = wrapListStates(spec.listStates);
+      probe.enterState = wrapEnterState(spec.enterState);
+    }
     var actions = stringList(spec.actions);
     if (actions) probe.actions = actions;
     var axes = stringList(spec.axes);
