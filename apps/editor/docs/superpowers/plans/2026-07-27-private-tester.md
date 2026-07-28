@@ -263,7 +263,7 @@ The loop, per the spec: open the game with `openWebGame({ dir, onFrame })`, `sta
 1. The tester writes this session's observations BEFORE it is shown its own previous verdict. Order the prompts so that is structurally true, not merely requested.
 2. The final prompt asks for `regression` as a required answer.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Test the loop against a fake `GameUnderTest` and a fake `ChatDriver`. No browser, no model.
 
@@ -309,25 +309,25 @@ describe('testerPrompts', () => {
 });
 ```
 
-- [ ] **Step 2: Run it and watch it fail**
+- [x] **Step 2: Run it and watch it fail**
 
 Run: `cd apps/editor && npx vitest run tests/testerSession.test.ts`
 Expected: FAIL, module not found.
 
-- [ ] **Step 3: Implement `prompt.ts`**
+- [x] **Step 3: Implement `prompt.ts`**
 
 `decideFromReply(text): Decision` where `Decision` is `{kind:'actions', actions:string[]} | {kind:'pointer', x:number, y:number, click:boolean} | {kind:'done'} | {kind:'wait'}`. Parse the `ACTION:`, `CLICK:` and `DONE` markers case-insensitively; anything unrecognised is `wait`. `testerPrompts(ctx): string[]` returns the ordered prompts, observation before comparison.
 
-- [ ] **Step 4: Implement `session.ts`**
+- [x] **Step 4: Implement `session.ts`**
 
 Drive the loop as described. Honour `signal` between every turn so the stop control is responsive. On any throw, still write a note with `stopped: 'error'`: a session that crashed is still a session that happened, and losing its record is worse than recording a failure.
 
-- [ ] **Step 5: Run the test**
+- [x] **Step 5: Run the test**
 
 Run: `cd apps/editor && npx vitest run tests/testerSession.test.ts`
 Expected: PASS, 6 tests.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 cd /Users/jakekang/projects/hearth/hearth-engine
