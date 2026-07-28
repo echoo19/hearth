@@ -138,7 +138,7 @@ export async function probeResponsiveness(
         kind: 'unresponsive-input',
         severity: 'note',
         summary: `${kind} "${label}" produced no observable change from the opening state`,
-        detail: `held "${label}" for ${PROBE_FRAMES} frames and nothing moved, played, or fired beyond the no-input baseline — it may only respond in a later game state`,
+        detail: `held "${label}" for ${PROBE_FRAMES} frames and nothing moved, played, or fired beyond the no-input baseline. It may only respond in a later game state`,
         evidence: { input: label, control: kind },
       });
     }

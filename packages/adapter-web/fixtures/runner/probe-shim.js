@@ -12,8 +12,17 @@
  *       actions: ['left', 'right', 'jump'],
  *       scene: function () { return currentLevel.name; },
  *       entities: function () {
- *         return [{ id: 'player', name: 'player', tags: ['player'],
- *                   x: player.x, y: player.y, alive: player.hp > 0 }];
+ *         return [
+ *           { id: 'player', name: 'player', tags: ['player'],
+ *             x: player.x, y: player.y, alive: player.hp > 0 },
+ *           { id: 'goal', name: 'goal', tags: ['objective'],
+ *             x: goal.x, y: goal.y, alive: !goal.taken },
+ *         ];
+ *       },
+ *       navGrid: function () {
+ *         return { originX: 0, originY: 0, cellSize: 32,
+ *                  cols: level.cols, rows: level.rows,
+ *                  solid: level.tiles.map(function (t) { return t.blocks; }) };
  *       },
  *       reset: function () { startLevel(currentLevel.name); },
  *     });
@@ -21,6 +30,18 @@
  * ...and announce interesting moments as they happen:
  *
  *     window.__hearthProbe.emit('jump');
+ *
+ * Which hooks you provide decides WHICH BOTS CAN PLAY:
+ *
+ *   nothing             idle and mash. mash presses buttons at random: it can
+ *                       find a crash, but it cannot get anywhere on purpose.
+ *   entities            seek plays. It steers straight at the entity you tagged
+ *                       'objective' (or at a target the caller names) and mashes
+ *                       when it stops getting closer. No pathfinding, so it will
+ *                       not solve a maze or get around a C-shaped wall.
+ *   entities + navGrid  seek paths to its target instead of walking at it, and
+ *                       wander explores the walkable cells it has not seen yet.
+ *                       Sealed-off regions get reported too.
  *
  * This is code you own, not a dependency: no build step, no imports, no
  * framework, and it does nothing at all unless a probe reads it. Every hook

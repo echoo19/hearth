@@ -25,6 +25,8 @@ import type {
   Finding,
   GameUnderTest,
   Objective,
+  PolicyMode,
+  PolicyStatus,
   ProbeEntity,
   ProbeError,
   ProbeInstant,
@@ -49,7 +51,14 @@ import { resolveEntityRef } from './entities.js';
 import { collectFailures, decideVerdict, foldFindings, foldSkipped, tallyVerdicts } from './fold.js';
 import { InputQueue, type InputMutation } from './input.js';
 import { evaluateObjectives, makeLiveObjectives, toOutcomes } from './objectives.js';
-import { createPolicy, policyUnavailable, STEERING_POLICIES, type Point } from './policies/index.js';
+import {
+  createPolicy,
+  policyMode,
+  policyUnavailable,
+  DIRECT_MODE_NOTE,
+  STEERING_POLICIES,
+  type Point,
+} from './policies/index.js';
 import { decodePng, type RgbaImage } from './png.js';
 import { createRng } from './rng.js';
 import type { MovementBasis } from './steer.js';
@@ -71,6 +80,13 @@ export const PIXEL_ONLY_SCREENSHOT_EVERY = 10;
 export const DEFAULT_BUDGET = 400_000;
 /** Screenshots persisted per run (the rest are analyzed in memory and dropped). */
 const SHOTS_PER_RUN = 4;
+/**
+ * The entity ref seek aims at when the caller names no target. Games that tag
+ * the thing the player is trying to reach (the shim docs' own example does) get
+ * a working seek with no configuration; games that do not are skipped with a
+ * reason that says exactly which two ways there are to fix it.
+ */
+export const DEFAULT_SEEK_TARGET_REF = 'objective';
 
 export interface SweepOptions {
   /** Policy names to run (unavailable ones are skipped, not silently dropped). */
@@ -113,10 +129,27 @@ export async function runSweep(game: GameUnderTest, opts: SweepOptions): Promise
   const cost = opts.policies.length * opts.seeds.length * maxSteps;
   if (cost > budget) {
     throw new Error(
-      `runSweep: budget exceeded — ${opts.policies.length} policies x ${opts.seeds.length} seeds x ` +
+      `runSweep: budget exceeded. ${opts.policies.length} policies x ${opts.seeds.length} seeds x ` +
         `${maxSteps} steps = ${cost} steps, over the ${budget} cap. Cut seeds or maxSteps.`,
     );
   }
+
+  const { sweepId, dir } = await opts.evidence.beginSweep(target, opts.policies, opts.seeds);
+  await appendEvidence(opts.evidence, {
+    kind: 'sweep-started',
+    sweepId,
+    target,
+    policies: opts.policies,
+    seeds: opts.seeds,
+  });
+
+  // Everything downstream reads capabilities, so nothing may read them before
+  // this line. An adapter does not know what the game declares until the game
+  // is open: the web adapter detects the page's shim during start() and only
+  // then turns on entities/nav/scenes. Gating a policy or sizing a detector any
+  // earlier judges every game by the zero-cooperation floor, which is how a
+  // game that declares entities still got only idle and mash.
+  await game.start();
 
   const capabilities = game.capabilities;
   const config: DetectorConfig = {
@@ -131,31 +164,25 @@ export async function runSweep(game: GameUnderTest, opts: SweepOptions): Promise
     ...opts.detectors,
   };
 
-  const { sweepId, dir } = await opts.evidence.beginSweep(target, opts.policies, opts.seeds);
-  await appendEvidence(opts.evidence, {
-    kind: 'sweep-started',
-    sweepId,
-    target,
-    policies: opts.policies,
-    seeds: opts.seeds,
-  });
-
   const skipped: SkippedDetector[] = [];
   const preludeFindings: Finding[] = [];
   const runnable: string[] = [];
+  /** Per-policy skip reasons, so the report can answer "why not?" per bot. */
+  const skipReasons = new Map<string, string>();
+  const skipPolicy = (name: string, reason: string): void => {
+    if (skipReasons.has(name)) return;
+    skipReasons.set(name, reason);
+    skipped.push({ kind: `policy:${name}`, reason });
+  };
   for (const name of opts.policies) {
-    const reason =
-      name === 'seek' && opts.seekTarget === undefined
-        ? 'seek needs a target (seekTarget): an entity ref, "x,y", or a point'
-        : policyUnavailable(name, capabilities);
+    const reason = policyUnavailable(name, capabilities);
     if (reason === null) runnable.push(name);
-    else skipped.push({ kind: `policy:${name}`, reason });
+    else skipPolicy(name, reason);
   }
 
   const actions = [...capabilities.input.actions].sort();
   const axes = [...capabilities.input.axes].sort();
 
-  await game.start();
   const runs: RunResult[] = [];
   try {
     // --- prelude: who is the avatar, what moves it, and do the controls work?
@@ -169,6 +196,24 @@ export async function runSweep(game: GameUnderTest, opts: SweepOptions): Promise
         reason: 'no entity enumeration: the probe cannot tell which thing is the player',
       });
     }
+
+    // seek's goal, resolved against a live snapshot: the caller's if they named
+    // one, otherwise whatever the game itself tagged as the objective.
+    let seekTarget = opts.seekTarget;
+    if (runnable.includes('seek') && seekTarget === undefined) {
+      const entities = game.listEntities ? await game.listEntities() : [];
+      const found = resolveEntityRef(entities, DEFAULT_SEEK_TARGET_REF);
+      if (found) seekTarget = found.id;
+      else {
+        skipPolicy(
+          'seek',
+          `seek needs a target: pass seekTarget (an entity ref, "x,y", or a point), or tag the ` +
+            `thing the player is meant to reach "${DEFAULT_SEEK_TARGET_REF}" in entities()`,
+        );
+        runnable.splice(runnable.indexOf('seek'), 1);
+      }
+    }
+
     const needsBasis = runnable.some((p) => STEERING_POLICIES.has(p));
     if (capabilities.senses.entities && (needsBasis || avatarRef === null)) {
       const probe = await probeMovement(game, { actions, axes, avatarRef, minDisplacement: config.moveEpsilon });
@@ -181,10 +226,10 @@ export async function runSweep(game: GameUnderTest, opts: SweepOptions): Promise
     if (needsBasis && (basis === null || basis.entries.length === 0)) {
       for (let i = runnable.length - 1; i >= 0; i--) {
         if (!STEERING_POLICIES.has(runnable[i])) continue;
-        skipped.push({
-          kind: `policy:${runnable[i]}`,
-          reason: 'no declared input measurably moved any entity, so there is nothing to steer with',
-        });
+        skipPolicy(
+          runnable[i],
+          'no declared input measurably moved any entity, so there is nothing to steer with',
+        );
         runnable.splice(i, 1);
       }
     }
@@ -225,7 +270,7 @@ export async function runSweep(game: GameUnderTest, opts: SweepOptions): Promise
           avatarRef,
           basis,
           objectives: opts.objectives ?? [],
-          seekTarget: opts.seekTarget,
+          seekTarget,
           evidence: opts.evidence,
           sweepId,
         });
@@ -238,6 +283,7 @@ export async function runSweep(game: GameUnderTest, opts: SweepOptions): Promise
           seed: run.seed,
           verdict: run.verdict,
           frames: run.frames,
+          ...(run.mode ? { mode: run.mode } : {}),
         });
       }
     }
@@ -249,6 +295,7 @@ export async function runSweep(game: GameUnderTest, opts: SweepOptions): Promise
   const report: SweepReport = {
     target,
     policies: runnable,
+    policyStatus: buildPolicyStatus(opts.policies, runs, skipReasons),
     seeds: opts.seeds,
     runs: runs.length,
     verdicts: tallyVerdicts(runs),
@@ -270,6 +317,45 @@ export async function runSweep(game: GameUnderTest, opts: SweepOptions): Promise
   return report;
 }
 
+/**
+ * One row per requested policy: what it did, or why it did not. A policy that
+ * never ran is a result, not an absence, and this is where a reader (an agent
+ * reading report.json, a panel in the app) gets both without parsing the
+ * `policy:<name>` skip kinds or diffing two string arrays.
+ */
+export function buildPolicyStatus(
+  requested: readonly string[],
+  runs: readonly RunResult[],
+  skipReasons: ReadonlyMap<string, string>,
+): PolicyStatus[] {
+  const seen = new Set<string>();
+  const status: PolicyStatus[] = [];
+  for (const policy of requested) {
+    if (seen.has(policy)) continue;
+    seen.add(policy);
+    const mine = runs.filter((r) => r.policy === policy);
+    const reason = skipReasons.get(policy);
+    if (mine.length === 0) {
+      status.push({
+        policy,
+        status: 'skipped',
+        runs: 0,
+        reason: reason ?? 'the policy did not run and the sweep recorded no reason',
+      });
+      continue;
+    }
+    const mode: PolicyMode = mine[0].mode ?? 'full';
+    status.push({
+      policy,
+      status: 'ran',
+      runs: mine.length,
+      mode,
+      ...(mode === 'direct' ? { modeNote: DIRECT_MODE_NOTE } : {}),
+    });
+  }
+  return status;
+}
+
 interface RunOptions {
   policy: string;
   seed: number;
@@ -289,6 +375,10 @@ export async function runOne(game: GameUnderTest, opts: RunOptions): Promise<Run
   const capabilities = game.capabilities;
   const { config } = opts;
   const navGrid = capabilities.senses.nav && game.navGrid ? await game.navGrid() : null;
+  // Read off the grid the run actually holds, not the declared sense: a game
+  // that declares nav but has no grid for this scene leaves the bot in exactly
+  // the same position as one that never declared it.
+  const { mode } = policyMode(opts.policy, navGrid);
   let entities = await listEntities(game);
   let avatar = pickAvatar(entities, opts.avatarRef);
   const spawn = avatar ? { x: avatar.x, y: avatar.y } : null;
@@ -439,6 +529,7 @@ export async function runOne(game: GameUnderTest, opts: RunOptions): Promise<Run
   return {
     policy: opts.policy,
     seed: opts.seed,
+    mode,
     verdict,
     frames,
     wallMs: Date.now() - startedAt,

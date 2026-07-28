@@ -37,7 +37,7 @@ export function deadControlFindings(input: DeadControlInput): Finding[] {
         kind: 'dead-control',
         severity: 'issue',
         summary: `${kind} "${name}" is declared but no script reads it`,
-        detail: `nothing calls ctx.input for "${name}" — remove it from the input map or wire it up`,
+        detail: `nothing calls ctx.input for "${name}". Remove it from the input map or wire it up`,
         evidence: { input: name, control: kind, confidence: 'no-source-reference' },
       });
     } else {
@@ -45,7 +45,7 @@ export function deadControlFindings(input: DeadControlInput): Finding[] {
         kind: 'dead-control',
         severity: 'note',
         summary: `${kind} "${name}" is referenced but was never exercised in this sweep`,
-        detail: `a script reads "${name}" but the bots never triggered that path — it may only apply in a state they didn't reach`,
+        detail: `a script reads "${name}" but the bots never triggered that path, so it may only apply in a state they didn't reach`,
         evidence: { input: name, control: kind, confidence: 'never-read' },
       });
     }

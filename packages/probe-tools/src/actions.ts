@@ -120,7 +120,7 @@ export async function sweepCommand(input: SweepInput): Promise<Envelope<SweepVie
       warnings.push({
         code: 'POLICIES_SKIPPED',
         message:
-          `${notRun.join(', ')} did not run against this game — see "not checked" for the missing ` +
+          `${notRun.join(', ')} did not run against this game. See "not checked" for the missing ` +
           'capability. Install the probe shim (hearth-probe shim) to unlock the deeper senses.',
       });
     }
@@ -208,7 +208,7 @@ export async function reportCommand(input: TargetInput): Promise<Envelope<SweepV
       return fail(
         command,
         ERROR_CODES.NO_EVIDENCE,
-        `no finished sweep under ${target.root} — run: hearth-probe sweep ${target.root}`,
+        `no finished sweep under ${target.root}. Run: hearth-probe sweep ${target.root}`,
       );
     }
     return ok(command, sweepView(latest.report));
@@ -255,7 +255,7 @@ export async function capabilitiesCommand(
       missingSenses,
       advice: game.shimDetected
         ? missingSenses.length === 0
-          ? 'every sense is declared — no detector will be skipped'
+          ? 'every sense is declared, so no detector will be skipped'
           : `the shim is installed but declares no ${missingSenses.join('/')} hook; add it to deepen the sweep`
         : 'no probe shim detected: the sweep can only see errors and pixels. Run hearth-probe shim to install it, then declare entities()/scene()/reset().',
     });
@@ -321,6 +321,10 @@ export async function resolveShimSource(): Promise<string> {
   } catch {
     // The export map is unreachable from here; PROBE_SHIM_PATH may still be good.
   }
+  // The single-file bundles (hearth-probe.mjs in a packaged Hearth install)
+  // have no @hearth/adapter-web on disk at all; there, build-electron ships
+  // probe-shim.js next to the entry file, so look beside whatever is running.
+  if (process.argv[1]) candidates.push(path.join(path.dirname(process.argv[1]), SHIM_FILENAME));
   for (const candidate of candidates) {
     if (await exists(candidate)) return candidate;
   }

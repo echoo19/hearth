@@ -40,7 +40,11 @@ export {
 export {
   canLaunchChromium,
   launchChromium,
+  startScreencast,
   CHROMIUM_MISSING_ERROR,
+  SCREENCAST_INTERVAL_MS,
+  SCREENCAST_MAX_EDGE,
+  SCREENCAST_QUALITY,
   type PwBrowser,
   type PwPage,
 } from './chromium.js';

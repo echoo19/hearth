@@ -51,7 +51,7 @@ export class BlackScreenDetector extends BaseDetector {
         severity: 'blocker',
         summary: `the screen was blank for ${span} steps from step ${this.flagged.since.frame}`,
         detail:
-          `mean luminance ${this.flagged.mean.toFixed(3)} with near-zero variance — ` +
+          `mean luminance ${this.flagged.mean.toFixed(3)} with near-zero variance: ` +
           `nothing is being drawn (a fade that never lifted, a failed load, or a dead render loop)`,
         at: this.flagged.at,
         ...(this.flagged.shot ? { shot: this.flagged.shot } : {}),

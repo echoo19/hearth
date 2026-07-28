@@ -67,7 +67,7 @@ export class WallBumpDetector extends BaseDetector {
         severity: 'note',
         summary: `the avatar pushed ${heading} for ${steps} steps at (${where.x}, ${where.y}) and went nowhere`,
         detail:
-          `held a steering direction through a stretch with no progress and gained no ground along it — ` +
+          `held a steering direction through a stretch with no progress and gained no ground along it: ` +
           `an unintended barrier, or a spot the walking bot cannot get past`,
         at,
         evidence: { steps, intent, position: where },

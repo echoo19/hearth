@@ -312,7 +312,7 @@ export async function runBotRun(store: ProjectStore, config: BotRunConfig): Prom
       kind: 'fade-softlock',
       severity: 'issue',
       summary: `stuck behind a full-screen fade (overlay ${overlayAtStuck.toFixed(2)}) since frame ${stuckAtFrame}`,
-      detail: `the screen faded and never lifted — a fade-in or transition likely never completed`,
+      detail: `the screen faded and never lifted: a fade-in or transition likely never completed`,
       frame: stuckAtFrame,
     });
   }
@@ -324,7 +324,7 @@ export async function runBotRun(store: ProjectStore, config: BotRunConfig): Prom
       kind: 'wall-bump',
       severity: 'note',
       summary: `the avatar spent most of the stall pressed against a wall`,
-      detail: `${stallWallFrames} of the last ${config.stuckAfter} frames were wall contact — an unintended barrier or a spot the bot can't get past`,
+      detail: `${stallWallFrames} of the last ${config.stuckAfter} frames were wall contact: an unintended barrier or a spot the bot can't get past`,
       frame: stuckAtFrame,
     });
   }
@@ -339,8 +339,8 @@ export async function runBotRun(store: ProjectStore, config: BotRunConfig): Prom
       severity: 'issue',
       summary: `seek stalled before reaching ${where}`,
       detail:
-        `the target may need a jump or a route the walking bot can't follow — ` +
-        `try the wander policy, or declare a reach objective to assert it directly`,
+        `the target may need a jump or a route the walking bot can't follow. ` +
+        `Try the wander policy, or declare a reach objective to assert it directly`,
       frame: stuckAtFrame,
     });
   }

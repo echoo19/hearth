@@ -73,6 +73,11 @@ window.__hearthProbe.configure({
     { id: 'goal', name: 'goal', tags: ['objective'],
       x: goal.x, y: goal.y, alive: !goal.taken },
   ],
+  navGrid: () => ({
+    originX: 0, originY: 0, cellSize: TILE,
+    cols: level.cols, rows: level.rows,
+    solid: level.tiles.map((t) => t.blocks),   // row-major, true = unwalkable
+  }),
   reset: () => startLevel(currentLevel.name),
 });
 ```
@@ -81,14 +86,34 @@ window.__hearthProbe.configure({
 it passes. Hooks are wrapped: one that throws degrades that single sense (empty
 list, `null` scene) instead of taking down the run.
 
+## Which bots can play
+
+What you declare decides whether a playtest is a bot pressing buttons at random
+or a bot trying to finish your game.
+
+| You provide | Who plays | What they can do |
+| --- | --- | --- |
+| *(nothing)* | `idle`, `mash` | `mash` presses random buttons. It finds crashes and dead controls; it will not clear a pit except by accident. |
+| `entities()` | `+ seek` | `seek` steers straight at the entity tagged `objective` (or a target you name) and mashes when it stops getting closer. **No pathfinding**: it cannot solve a maze or round a C-shaped wall, and the report marks such a run `mode: "direct"`. |
+| `entities()` + `navGrid()` | `+ wander`, full `seek` | `seek` paths to its target over the walkable cells instead of walking at it. `wander` explores the cells it has not visited, which is what turns up sealed-off regions and unreachable pickups. |
+
+Two things follow from that table:
+
+- Tag the thing the player is meant to reach with `tags: ['objective']`. That is
+  the ref `seek` aims at when nobody names a target, so tagging it is the whole
+  setup step.
+- `navGrid()` is the difference between "the bot walked at the exit" and "the
+  bot found a route to the exit". A `direct` seek that never arrives means the
+  BOT could not get there, not that a player cannot.
+
 ## What each hook unlocks
 
 | You provide | Capability | What it buys |
 | --- | --- | --- |
-| `entities()` | `senses.entities` | position-based objectives, movement/stuck detection, wall-bump analysis, entity coverage keys |
+| `entities()` | `senses.entities` | `seek`, position-based objectives, movement/stuck detection, wall-bump analysis, entity coverage keys |
 | `drainEvents()` + `emit()` | `senses.events` | event objectives ("did `goal` ever fire?"), progress signals |
 | `scene()` | `senses.scenes` | scene-change novelty, per-level attribution |
-| `navGrid()` | `senses.nav` | frontier-seeking exploration, sealed-region and reachability checks |
+| `navGrid()` | `senses.nav` | `wander`, pathfinding `seek`, sealed-region and reachability checks |
 | `reset()` | fast `senses.reset` | cheap episode restarts (without it, reset is a full page reload — still valid, just slow) |
 | *(nothing)* | `senses.errors`, `senses.screenshot`, slow `senses.reset` | crash detection, black-screen and pixel-novelty checks, evidence shots |
 
@@ -130,6 +155,32 @@ Row-major `solid[]` of length `cols * rows`, `true` meaning unwalkable. Return
 `null` when the current scene has no meaningful grid — the adapter probes the
 grid once at startup and declares `senses.nav` false if it gets `null`, so a
 game that only sometimes has a grid stays honest.
+
+You do not need a tile engine to have one. Any coarse occupancy answer works:
+walk your solid rects and stamp the cells they cover, sample your collision
+query on a grid, or hand-write the row of booleans for a small level. Cells can
+be as big as the avatar; the grid is used for routing and coverage, not physics.
+
+```js
+navGrid: () => {
+  const cellSize = 32;
+  const cols = Math.ceil(WORLD_W / cellSize);
+  const rows = Math.ceil(WORLD_H / cellSize);
+  const solid = new Array(cols * rows).fill(false);
+  for (const wall of walls) {
+    for (let r = Math.floor(wall.y / cellSize); r <= Math.floor((wall.y + wall.h) / cellSize); r++) {
+      for (let c = Math.floor(wall.x / cellSize); c <= Math.floor((wall.x + wall.w) / cellSize); c++) {
+        if (r >= 0 && r < rows && c >= 0 && c < cols) solid[r * cols + c] = true;
+      }
+    }
+  }
+  return { originX: 0, originY: 0, cellSize, cols, rows, solid };
+}
+```
+
+Without it, `wander` does not run at all (there is no frontier to explore) and
+`seek` runs in `direct` mode: it walks the straight line to its target. Both
+facts land in the report, per policy, rather than being inferred.
 
 ### `reset()`
 

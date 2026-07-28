@@ -211,8 +211,8 @@ export async function captureSequence(
   const frames = computeFrames(from, opts.to, opts.step);
   if (frames.length > MAX_SEQUENCE_FRAMES) {
     throw new Error(
-      `captureSequence: ${frames.length} frames requested, over the ${MAX_SEQUENCE_FRAMES}-frame cap — ` +
-        'raise `step` (or narrow the from/to range) to capture fewer frames.',
+      `captureSequence: ${frames.length} frames requested, over the ${MAX_SEQUENCE_FRAMES}-frame cap. ` +
+        'Raise `step` (or narrow the from/to range) to capture fewer frames.',
     );
   }
 

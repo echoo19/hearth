@@ -94,7 +94,7 @@ export function emit(
 function renderScreenshot(data: ScreenshotData): string[] {
   const size = data.width && data.height ? ` (${data.width}x${data.height})` : '';
   return [
-    `✓ screenshot — ${data.url}`,
+    `✓ screenshot: ${data.url}`,
     `  after ${data.afterSteps} steps${size}, ${data.bytes} bytes`,
     `  saved: ${data.path}`,
   ];
@@ -102,7 +102,7 @@ function renderScreenshot(data: ScreenshotData): string[] {
 
 function renderShim(data: ShimData): string[] {
   return [
-    `✓ shim ${data.overwrote ? 'replaced' : 'installed'} — ${data.path}`,
+    `✓ shim ${data.overwrote ? 'replaced' : 'installed'}: ${data.path}`,
     '  load it before your game code:',
     ...data.snippet.split('\n').map((line) => `    ${line}`),
     '  then call window.__hearthProbe.configure({ entities, scene, reset, actions })',
@@ -116,7 +116,7 @@ function renderCapabilities(data: CapabilitiesData): string[] {
     .filter(([, on]) => on)
     .map(([name]) => name);
   return [
-    `✓ capabilities — ${data.url}`,
+    `✓ capabilities: ${data.url}`,
     `  shim: ${data.shimDetected ? 'detected' : 'absent'}`,
     `  senses: ${declared.join(', ') || 'none'}`,
     `  missing: ${data.missingSenses.join(', ') || 'none'}`,

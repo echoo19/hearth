@@ -23,6 +23,7 @@ import {
   MAX_FAILURES,
   MAX_FINDINGS,
   type Finding,
+  type PolicyStatus,
   type SkippedDetector,
   type SweepFailure,
   type SweepReport,
@@ -71,6 +72,12 @@ export interface SweepView {
   passed: boolean;
   findings: Finding[];
   skipped: SkippedDetector[];
+  /**
+   * One row per policy the caller asked for: whether it played, in what mode,
+   * and if it never played, why not. Empty for reports written before the
+   * field existed.
+   */
+  policyStatus: PolicyStatus[];
   failures: FailureView[];
   framesSimulated: number;
   wallMs: number;
@@ -117,6 +124,7 @@ export function sweepView(report: SweepReport): SweepView {
     passed: failingRuns === 0 && blockers === 0,
     findings: report.findings,
     skipped: report.skipped,
+    policyStatus: report.policyStatus ?? [],
     failures: report.failures.map((failure) => ({
       ...failure,
       repro: reproCommand(report.target, failure.policy, failure.seed),
@@ -136,7 +144,7 @@ export function verdictLine(view: Pick<SweepView, 'runs' | 'verdicts' | 'failing
     (v) => `${v} ${view.verdicts[v]}`,
   );
   const tally = parts.length > 0 ? parts.join(', ') : 'no runs';
-  const suffix = view.failingRuns > 0 ? ` — ${view.failingRuns} failing` : ' — all clean';
+  const suffix = view.failingRuns > 0 ? ` (${view.failingRuns} failing)` : ' (all clean)';
   return `${view.runs} runs: ${tally}${suffix}`;
 }
 
@@ -165,7 +173,7 @@ export function renderFinding(finding: Finding, indent = '    '): string[] {
 /** One failure, fully rendered — with the repro on its own line, ready to copy. */
 export function renderFailure(failure: FailureView, indent = '    '): string[] {
   return [
-    `${indent}- ${failure.policy}/${failure.seed} ${failure.verdict}${instant(failure.at)} — ${elide(failure.detail)}`,
+    `${indent}- ${failure.policy}/${failure.seed} ${failure.verdict}${instant(failure.at)}: ${elide(failure.detail)}`,
     `${indent}    repro: ${failure.repro}`,
   ];
 }
@@ -176,9 +184,17 @@ export function renderFailure(failure: FailureView, indent = '    '): string[] {
  */
 export function renderSweepHuman(view: SweepView): string[] {
   const lines: string[] = [];
-  lines.push(`${view.passed ? '✓' : '✗'} sweep ${view.sweepId} — ${view.target}`);
+  lines.push(`${view.passed ? '✓' : '✗'} sweep ${view.sweepId}: ${view.target}`);
   lines.push(`  ${verdictLine(view)}`);
   lines.push(`  policies: ${view.policies.join(', ') || 'none ran'} · seeds: ${formatSeeds(view.seeds)}`);
+
+  // A bot that played with less than it wanted has to say so here, next to its
+  // name: a `direct` seek that never arrived is a weaker claim than a `full`
+  // one, and the difference is invisible in the verdict tally.
+  for (const status of view.policyStatus) {
+    if (status.status !== 'ran' || !status.mode || status.mode === 'full') continue;
+    lines.push(`    ${status.policy} ran in ${status.mode} mode: ${elide(status.modeNote ?? '', 160)}`);
+  }
 
   if (view.findings.length === 0) {
     lines.push('  findings: none');
@@ -202,7 +218,7 @@ export function renderSweepHuman(view: SweepView): string[] {
   lines.push(`  evidence: ${view.evidenceDir}`);
   lines.push(`  full detail: ${view.reportPath}`);
   if (view.findingsAtCap || view.failuresAtCap) {
-    lines.push('  (lists are folded to their caps — report.json and runs/*.json have the rest)');
+    lines.push('  (lists are folded to their caps, so the rest is in report.json and runs/*.json)');
   }
   return lines;
 }

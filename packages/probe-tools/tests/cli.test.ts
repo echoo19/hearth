@@ -126,7 +126,7 @@ describe('hearth-probe, without a browser', () => {
     try {
       await seedEvidence(root, '0001');
       const { text } = await runCli(['report', root]);
-      expect(text).toContain('6 runs: error 1, stuck 1, ran-clean 4 — 2 failing');
+      expect(text).toContain('6 runs: error 1, stuck 1, ran-clean 4 (2 failing)');
       expect(text).toContain('[blocker] unhandled-error');
       expect(text).toContain('[note] black-screen');
       expect(text).toContain('repro: hearth-probe sweep');

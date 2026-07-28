@@ -110,6 +110,16 @@ export class Steerer {
     return this.active === null ? null : this.desired;
   }
 
+  /**
+   * The name of the control being held right now, or null. A policy that mashes
+   * random inputs AROUND its own steering (seek's recovery does) has to know
+   * which single control it must not touch, or it fights itself.
+   */
+  get activeInputName(): string | null {
+    if (this.active === null) return null;
+    return this.active.input.kind === 'action' ? this.active.input.action : this.active.input.axis;
+  }
+
   private releaseHeld(input: InputSink): void {
     if (!this.active) return;
     const held = this.active;

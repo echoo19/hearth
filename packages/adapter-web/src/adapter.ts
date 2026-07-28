@@ -33,7 +33,7 @@ import type {
   ProbeError,
   StepObservation,
 } from '@hearth/probe-core';
-import { launchChromium, type PwBrowser, type PwPage } from './chromium.js';
+import { launchChromium, startScreencast, type PwBrowser, type PwPage } from './chromium.js';
 import { openStatic, type StaticServer } from './server.js';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
@@ -81,6 +81,16 @@ export interface OpenWebGameOptions {
   actionKeys?: Record<string, string>;
   /** Wall-clock length of one `step()` sample window. Default 100ms. */
   stepMs?: number;
+  /**
+   * Called with a base64 JPEG roughly ten times a second, for as long as the
+   * game is open: what the page the probe is driving looks like right now.
+   *
+   * Here so a caller can SHOW the run. A probe playing a game somewhere the
+   * person who asked for it cannot see is indistinguishable from nothing
+   * happening. Entirely optional and entirely best-effort: if the screencast
+   * cannot start, the run is unaffected and this is simply never called.
+   */
+  onFrame?: (data: string) => void;
 }
 
 export interface WebGameUnderTest extends GameUnderTest {
@@ -283,6 +293,7 @@ export async function openWebGame(opts: OpenWebGameOptions = {}): Promise<WebGam
 
   let browser: PwBrowser | null = null;
   let page: PwPage | null = null;
+  let stopScreencast: (() => Promise<void>) | null = null;
   let stopped = false;
   let frame = 0;
   let startedAt = 0;
@@ -464,6 +475,16 @@ export async function openWebGame(opts: OpenWebGameOptions = {}): Promise<WebGam
         if (isBrowserNoise(loc?.url)) return;
         recordError(message.text(), formatLocation(loc?.url, loc?.lineNumber));
       });
+      // Before the first navigation, so a watcher sees the game load rather
+      // than joining once it is already running. Best-effort: a browser
+      // without a CDP session is still a browser that can play the game.
+      if (opts.onFrame) {
+        try {
+          stopScreencast = await startScreencast(page, opts.onFrame);
+        } catch {
+          stopScreencast = null;
+        }
+      }
       await page.goto(server.url, { waitUntil: 'load' });
       await settle();
       await detectShim();
@@ -475,6 +496,12 @@ export async function openWebGame(opts: OpenWebGameOptions = {}): Promise<WebGam
       if (stopped) return;
       stopped = true;
       await releaseAll();
+      try {
+        await stopScreencast?.();
+      } catch {
+        // the session is going away with the page anyway
+      }
+      stopScreencast = null;
       try {
         await page?.close();
       } catch {

@@ -41,7 +41,7 @@ export class SealedRegionDetector extends BaseDetector {
         severity: 'issue',
         summary: `${sealed} walkable cells (${Math.round(ratio * 100)}%) are sealed off from the avatar's spawn`,
         detail:
-          `static geometry only — legitimate if a door, teleport, or moving platform opens the ` +
+          `static geometry only, so this is legitimate if a door, teleport, or moving platform opens the ` +
           `region at runtime. Sample sealed points: ${at}`,
         evidence: {
           sealedCells: sealed,

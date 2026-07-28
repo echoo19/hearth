@@ -13,7 +13,7 @@
  * Sweep ids are zero-padded sequence numbers ("0001"), not timestamps, so
  * paths are stable and sortable.
  */
-import type { Finding, RunResult, SweepReport, Verdict } from './contract.js';
+import type { Finding, PolicyMode, RunResult, SweepReport, Verdict } from './contract.js';
 
 export const EVIDENCE_DIR = '.hearth/evidence';
 export const EVIDENCE_JOURNAL = `${EVIDENCE_DIR}/journal.jsonl`;
@@ -38,6 +38,8 @@ export type EvidenceEvent =
       seed: number;
       verdict: Verdict;
       frames: number;
+      /** Absent means `full`. See PolicyMode: a degraded run says so as it lands. */
+      mode?: PolicyMode;
     }
   | {
       kind: 'sweep-finished';

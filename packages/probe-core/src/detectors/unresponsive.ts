@@ -247,15 +247,15 @@ export async function probeInputResponse(
   const unresponsive = controls.map((c) => c.label).filter((label) => responsiveRepeats.get(label) === 0);
   const allDead = unresponsive.length === controls.length;
   const basis = pixels
-    ? 'pixel-based: no entity sense, so this compares frame hashes against a no-input control window'
-    : 'compares avatar displacement and new events against a no-input control window';
+    ? 'This check is pixel-based: with no entity sense it compares frame hashes against a no-input control window'
+    : 'This compares avatar displacement and new events against a no-input control window';
   const findings: Finding[] = unresponsive.map((label) => ({
     kind: 'unresponsive-input',
     severity: allDead ? ('blocker' as const) : ('issue' as const),
     summary: `"${label}" produced no observable change in ${cfg.repeats} probes`,
     detail:
       `held "${label}" for ${cfg.windowSteps} steps, ${cfg.repeats} times, and nothing moved or fired ` +
-      `beyond the no-input baseline — ${basis}. It may still respond in a later game state.`,
+      `beyond the no-input baseline. ${basis}. It may still respond in a later game state.`,
     evidence: { input: label, windowSteps: cfg.windowSteps, repeats: cfg.repeats, pixelBased: pixels },
   }));
   if (allDead && findings.length > 0) {
@@ -263,7 +263,7 @@ export async function probeInputResponse(
       kind: 'unresponsive-input',
       severity: 'blocker',
       summary: `none of the ${controls.length} declared controls did anything`,
-      detail: `every declared control was held and probed ${cfg.repeats} times with no observable response — ${basis}`,
+      detail: `every declared control was held and probed ${cfg.repeats} times with no observable response. ${basis}`,
       evidence: { controls: unresponsive },
     });
   }

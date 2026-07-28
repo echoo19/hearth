@@ -208,14 +208,14 @@ describe('the human report', () => {
   const text = lines.join('\n');
 
   it('opens with a verdict tally that drops the zero buckets', () => {
-    expect(verdictLine(view)).toBe('6 runs: error 1, stuck 1, ran-clean 4 — 2 failing');
-    expect(text).toContain('6 runs: error 1, stuck 1, ran-clean 4 — 2 failing');
+    expect(verdictLine(view)).toBe('6 runs: error 1, stuck 1, ran-clean 4 (2 failing)');
+    expect(text).toContain('6 runs: error 1, stuck 1, ran-clean 4 (2 failing)');
     expect(text).not.toContain('objective-failed 0');
   });
 
   it('says "all clean" when nothing failed', () => {
     const clean = sweepView(cannedReport({ verdicts: { ...emptyVerdicts(), 'ran-clean': 6 }, failures: [] }));
-    expect(verdictLine(clean)).toBe('6 runs: ran-clean 6 — all clean');
+    expect(verdictLine(clean)).toBe('6 runs: ran-clean 6 (all clean)');
   });
 
   it('renders every finding instead of collapsing them into a count', () => {
@@ -232,7 +232,7 @@ describe('the human report', () => {
   });
 
   it('prints each failure with its repro on its own line', () => {
-    expect(text).toContain('- mash/3 error at frame 12 — TypeError: player.update is not a function');
+    expect(text).toContain('- mash/3 error at frame 12: TypeError: player.update is not a function');
     expect(text).toContain("repro: hearth-probe sweep '/tmp/my game' --policies mash --seeds 1 --seed-start 3");
     expect(renderFailure(view.failures[1]!)).toHaveLength(2);
   });
@@ -281,7 +281,7 @@ describe('emit', () => {
     const io = captureIo();
     emit(io, ok('sweep', sweepView(cannedReport()), [{ code: 'POLICIES_SKIPPED', message: 'wander did not run' }]), {}, renderSweepHuman);
     expect(io.text()).toContain('warning [POLICIES_SKIPPED]: wander did not run');
-    expect(io.text()).toContain('✗ sweep 0002 — /tmp/my game');
+    expect(io.text()).toContain('✗ sweep 0002: /tmp/my game');
   });
 
   it('exits 0 on success, 1 on error, and 1 on a sweep that ran fine but found failures', () => {

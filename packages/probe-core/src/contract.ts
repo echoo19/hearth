@@ -143,6 +143,35 @@ export interface SkippedDetector {
   reason: string;
 }
 
+/**
+ * How much of a policy's machinery the game's declared senses could support.
+ * `full` is the designed behavior. Anything else is a NAMED degradation, and it
+ * travels with the result so nobody reads a degraded run as proof of more than
+ * it is: `direct` means seek steered straight at its target with no nav grid to
+ * path over, so it never routed around anything.
+ */
+export type PolicyMode = 'full' | 'direct';
+
+/**
+ * What became of one requested policy across a whole sweep: did it play, how
+ * well-equipped was it, and if it never played, why not.
+ *
+ * One entry per policy the caller asked for, in the order they asked, so a UI
+ * can render a panel per playtester without inferring anything.
+ */
+export interface PolicyStatus {
+  policy: string;
+  status: 'ran' | 'skipped';
+  /** Runs completed under this policy. 0 when skipped. */
+  runs: number;
+  /** Only when skipped. Human-readable, names the missing capability. */
+  reason?: string;
+  /** Only when it ran. */
+  mode?: PolicyMode;
+  /** Only when it ran in a mode other than `full`: what that mode cannot do. */
+  modeNote?: string;
+}
+
 /** Worst-to-best precedence: error > stuck > objective-failed > completed > ran-clean. */
 export type Verdict = 'error' | 'stuck' | 'objective-failed' | 'completed' | 'ran-clean';
 
@@ -170,6 +199,8 @@ export interface ObjectiveOutcome {
 export interface RunResult {
   policy: string;
   seed: number;
+  /** Which mode the policy actually played in. Absent means `full`. */
+  mode?: PolicyMode;
   verdict: Verdict;
   frames: number;
   wallMs: number;
@@ -195,7 +226,18 @@ export interface SweepFailure {
 export interface SweepReport {
   /** What was swept: a project dir, URL, or connector label. */
   target: string;
+  /** The policies that actually ran. */
   policies: string[];
+  /**
+   * Every policy the caller asked for, ran or not, in the order asked. The
+   * per-policy view: a skipped bot and its reason are as much a result as a
+   * verdict tally, and this is where a UI reads both.
+   *
+   * `runSweep` always writes it. Optional only because reports written before
+   * it existed are still on disk and still valid, so every reader has to cope
+   * with its absence anyway.
+   */
+  policyStatus?: PolicyStatus[];
   seeds: number[];
   runs: number;
   verdicts: Record<Verdict, number>;
