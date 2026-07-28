@@ -262,7 +262,7 @@ git commit -m "Correct the docs for passive playtesting"
 
 **Files:** none modified unless a defect is found.
 
-- [ ] **Step 1: Typecheck everything**
+- [x] **Step 1: Typecheck everything**
 
 ```bash
 cd /Users/jakekang/projects/hearth/hearth-engine
@@ -272,7 +272,7 @@ for p in probe-core adapter-web probe-tools; do npx tsc --noEmit -p packages/$p/
 
 Expected: all PASS.
 
-- [ ] **Step 2: Run every suite once, in sequence**
+- [x] **Step 2: Run every suite once, in sequence**
 
 ```bash
 cd /Users/jakekang/projects/hearth/hearth-engine/apps/editor && npx vitest run
@@ -281,7 +281,7 @@ cd /Users/jakekang/projects/hearth/hearth-engine && npx vitest run
 
 Never both at once. Expected: PASS.
 
-- [ ] **Step 3: Confirm the capability still works from a shell**
+- [x] **Step 3: Confirm the capability still works from a shell**
 
 ```bash
 cd /Users/jakekang/projects/hearth/hearth-engine
@@ -290,6 +290,6 @@ node packages/probe-tools/dist/cli.js sweep packages/examples/mini-platformer
 
 Expected: a sweep runs and writes `.hearth/evidence/`. If the CLI is not built, build it first. This is the acceptance test for the whole plan: the agent's capability is intact while the surface is gone.
 
-- [ ] **Step 4: Confirm the surface is gone in the running app**
+- [x] **Step 4: Confirm the surface is gone in the running app**
 
 Restart the dev server on port 5173. Open a project with a game. Expected: a Play control and no Playtest button, no Playtests rail below the pane, and no way to reach a Playtesters screen.
