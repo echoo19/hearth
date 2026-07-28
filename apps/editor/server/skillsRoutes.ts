@@ -13,6 +13,12 @@
  * imported path through `safeRelativePath`, and the request shapes are checked
  * with zod before anything touches the disk.
  *
+ * Some of what the list returns was only ever read — skills found in Claude
+ * Code's and codex's own folders. Those can be switched on and off like any
+ * other and nothing else, so the write actions refuse them here with a
+ * sentence rather than letting the disk layer answer null and look like a
+ * skill that went missing.
+ *
  * Written against a host object rather than the http types so the behaviour is
  * testable without booting a server — the same shape harnessRegistry.ts uses.
  */
@@ -22,11 +28,13 @@ import {
   deleteSkill,
   importSkill,
   listSkills,
+  readSkill,
   readSkillSource,
   setSkillEnabled,
   skillsRoot,
   writeSkill,
   type SkillRecord,
+  type SkillSourceId,
 } from './skills.js';
 
 export interface SkillsResult {
@@ -76,6 +84,32 @@ export async function getSkillSource(id: unknown): Promise<SkillsResult> {
   return draft ? { status: 200, body: { ok: true, draft } } : { status: 404, body: { ok: false, error: 'No such skill.' } };
 }
 
+/** What the user calls the thing whose folder a skill was found in. */
+const AGENT: Record<SkillSourceId, string> = { hearth: 'Hearth', claude: 'Claude Code', codex: 'codex' };
+
+/**
+ * Refuse a write aimed at a skill Hearth only reads.
+ *
+ * `writeSkill` and `deleteSkill` both answer null for a discovered id, which
+ * is the right answer on disk and a useless one on screen — indistinguishable
+ * from a skill that isn't there. So the check happens here as well, ahead of
+ * them, purely so the person gets told which agent's skill they just tried to
+ * edit and what they can still do with it.
+ */
+async function readOnlyRefusal(id: string, verb: 'edit' | 'delete'): Promise<SkillsResult | null> {
+  const skill = await readSkill(id);
+  if (!skill || skill.editable) return null;
+  const owner = AGENT[skill.source];
+  // No name in front: a skill's `name` comes from frontmatter someone else
+  // wrote, and a sentence starting in whatever case they used reads like a
+  // bug. The folder path is the specific part, and it is the part that helps.
+  const tail =
+    verb === 'edit'
+      ? `Hearth can switch it on or off, but it does not edit that folder. The file is at ${skill.path}.`
+      : `Hearth can switch it off, but it does not delete that folder. It is at ${skill.path}.`;
+  return { status: 403, body: { ok: false, error: `That skill belongs to ${owner}. ${tail}` } };
+}
+
 /**
  * Apply one change. Every branch answers with the full list, because the panel
  * is a list and re-reading the folder after a write is what keeps it honest
@@ -98,10 +132,14 @@ export async function postSkills(raw: unknown): Promise<SkillsResult> {
       return skill ? answer({ skill }) : { status: 500, body: { ok: false, error: 'Could not write that skill.' } };
     }
     case 'update': {
+      const refused = await readOnlyRefusal(request.id, 'edit');
+      if (refused) return refused;
       const skill = await writeSkill(request.draft, request.id);
       return skill ? answer({ skill }) : { status: 404, body: { ok: false, error: 'No such skill.' } };
     }
     case 'delete': {
+      const refused = await readOnlyRefusal(request.id, 'delete');
+      if (refused) return refused;
       const removed = await deleteSkill(request.id);
       return removed ? answer() : { status: 404, body: { ok: false, error: 'No such skill.' } };
     }

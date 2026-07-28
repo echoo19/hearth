@@ -36,21 +36,35 @@ import {
 import { NodeFileSystem, loadPlayerBundle } from '@hearth/core/node';
 import { listTemplates, getTemplatePath, scaffoldFromTemplate } from '@hearth/templates';
 import { isRequestAllowed } from './originGuard.js';
+import { GAME_ENTRY_CANDIDATES } from './agentFacts.js';
 import { ensureHearthMcpConfig } from './mcpConfig.js';
 import { readAppSettings, writeAppSettings, resolveApiKey, type AppSettings } from './chat.js';
+import { readProjectIdentity, writeProjectIdentity } from './projectIdentity.js';
+import {
+  contextDir,
+  deleteContextFile,
+  listContextFiles,
+  readContextFile,
+  saveContextFiles,
+} from './projectContext.js';
 import { announceProviders, beginOpenAiLogin, readChatProviders } from './chatProviders.js';
-import { createChat, deleteChat, listChats, renameChat } from './chatStore.js';
-import { resolveProjectsHome, slugFromPrompt, uniqueFolderName } from './workspaceSlug.js';
+import { createChat, deleteChat, listChats, renameChat, type ChatKind } from './chatStore.js';
+import { resolveProjectsHome, slugFromName, slugFromPrompt, uniqueFolderName } from './workspaceSlug.js';
 import {
   planSweep,
+  registeredPolicies,
   readCapabilities,
   sensesFromCapabilities,
   SweepBusyError,
   SweepRunner,
   type SweepDeps,
 } from './probeSweep.js';
-import { EVIDENCE_DIR } from './evidenceWatcher.js';
+import { EVIDENCE_DIR, readEvidenceHistory } from './evidenceWatcher.js';
+import { setHearthHost } from './hearthShim.js';
+import { readPlaytestView } from './playtestView.js';
+import { collectUsage } from './usage.js';
 import { attachWebSocket, type ExportFrame, type ExportStage, type DesktopExportResult } from './ws.js';
+import { attachProbeStream, type ProbeBusMessage } from './probeStream.js';
 
 export { attachWebSocket } from './ws.js';
 
@@ -72,6 +86,14 @@ export { attachWebSocket } from './ws.js';
 
 export const GAME_MOUNT = '/game/';
 export const EVIDENCE_MOUNT = '/evidence/';
+
+/**
+ * Most evidence a single read will hand back. A journal grows for the life of
+ * a folder and the rail only ever shows the recent end of it, so the ceiling
+ * is here rather than in the reader: an old project should not send a megabyte
+ * of history to fill one collapsed line.
+ */
+export const EVIDENCE_HISTORY_MAX = 400;
 
 export function encodeRootKey(root: string): string {
   return Buffer.from(root, 'utf8').toString('base64url');
@@ -97,11 +119,12 @@ export function isHearthServerPath(pathname: string): boolean {
 }
 
 /**
- * Where a project's web game lives, in priority order. Zero required
- * conventions is the point: the agent builds however it likes, and Hearth
- * looks in the handful of places a web game plausibly lands.
+ * Where a project's web game lives, in priority order. Declared in
+ * agentFacts.ts — a leaf module — because the same list is also STATED to the
+ * agent in its system prompt, and two copies of "where the pane looks" would
+ * drift into an agent being told the wrong place.
  */
-export const GAME_ENTRY_CANDIDATES = ['index.html', 'game/index.html', 'dist/index.html', 'public/index.html'];
+export { GAME_ENTRY_CANDIDATES };
 
 /** Directories never walked when timestamping a game (noise, and potentially huge). */
 const MTIME_SKIP_DIRS = new Set(['node_modules', '.git', '.hearth', 'dist-electron', '.next', 'release']);
@@ -210,6 +233,13 @@ async function attachZipSizes(root: string, builds: DesktopBuildResult[]): Promi
   );
 }
 
+/**
+ * The project documents the renderer may read and write. An allowlist, not a
+ * path parameter: this pair is reachable from the browser, and "any file in
+ * the project" is a far larger promise than the one screen using it needs.
+ */
+const PROJECT_DOCS = ['AGENTS.md'] as const;
+
 interface RecentEntry {
   path: string;
   name: string;
@@ -224,6 +254,12 @@ interface RecentEntry {
 export interface RecentChatEntry {
   id: string;
   title: string;
+  /**
+   * Chat or terminal session — carried so the rail can say which one a row is
+   * without opening it. Read from the folder's index, where a record written
+   * before kinds existed already reads as 'chat'.
+   */
+  kind: ChatKind;
   createdAt: string;
   updatedAt: string;
   project: { path: string; name: string };
@@ -387,16 +423,30 @@ export async function newestMtimeMs(dir: string): Promise<number> {
  * electron/main.ts); from a repo checkout we point at the built packages
  * instead. Shared by `meta()` and the terminal PATH shim.
  */
-export async function resolveToolPaths(repoRoot: string): Promise<{ cli: string; mcp: string; bundled: boolean }> {
+export async function resolveToolPaths(
+  repoRoot: string,
+): Promise<{ cli: string; mcp: string; probe: string | null; bundled: boolean }> {
   const toolsDir = process.env.HEARTH_TOOLS_DIR;
   const bundledCli = toolsDir ? path.join(toolsDir, 'hearth-cli.mjs') : null;
   const bundledMcp = toolsDir ? path.join(toolsDir, 'hearth-mcp.mjs') : null;
   if (bundledCli && bundledMcp && (await pathExists(bundledCli)) && (await pathExists(bundledMcp))) {
-    return { cli: bundledCli, mcp: bundledMcp, bundled: true };
+    // The probe is best-effort in BOTH branches: an app updated in place can
+    // carry a tools dir from before the probe shipped, and a checkout may not
+    // have built probe-tools. Null means "not on this machine today" — the
+    // shim skips it and the agent is never told about a command that 127s.
+    const bundledProbe = path.join(toolsDir!, 'hearth-probe.mjs');
+    return {
+      cli: bundledCli,
+      mcp: bundledMcp,
+      probe: (await pathExists(bundledProbe)) ? bundledProbe : null,
+      bundled: true,
+    };
   }
+  const repoProbe = path.join(repoRoot, 'packages', 'probe-tools', 'dist', 'cli.js');
   return {
     cli: path.join(repoRoot, 'packages', 'cli', 'dist', 'main.js'),
     mcp: path.join(repoRoot, 'packages', 'mcp-server', 'dist', 'main.js'),
+    probe: (await pathExists(repoProbe)) ? repoProbe : null,
     bundled: false,
   };
 }
@@ -472,10 +522,25 @@ export function createProjectServerContext(options: ProjectServerOptions = {}) {
       return packageDesktop(opts);
     });
 
+  // A running sweep's picture. Same split as the export bus below: the runner
+  // emits frames tagged with the folder they came from, and probeStream.ts
+  // decides who is watching. Nothing is retained here: an unwatched sweep
+  // emits into an empty room, which costs one JSON.stringify it skips.
+  const probeBus = new EventEmitter();
+
   // Playtest sweeps. One runner for the whole server; it enforces one sweep at
   // a time per project root (see probeSweep.ts) the same way the mutation lock
   // above serializes command dispatch.
-  const sweeps = new SweepRunner(options.sweepDeps ?? {});
+  const sweeps = new SweepRunner(options.sweepDeps ?? {}, {
+    onFrame(root, data) {
+      const message: ProbeBusMessage = { root, frame: { type: 'probe-frame', data } };
+      probeBus.emit('frame', message);
+    },
+    onEnd(root) {
+      const message: ProbeBusMessage = { root, frame: { type: 'probe-end' } };
+      probeBus.emit('frame', message);
+    },
+  });
 
   // Desktop-export progress bus. One export runs at a time; the running job
   // routes packageDesktop's onProgress and its terminal result onto this bus,
@@ -510,21 +575,55 @@ export function createProjectServerContext(options: ProjectServerOptions = {}) {
     return runtimeHooksPromise;
   }
 
-  async function readRecents(): Promise<RecentEntry[]> {
+  /**
+   * The recents list, and whether it could actually be read.
+   *
+   * The second half matters more than it looks. Every caller used to get a
+   * bare `[]` for "no file yet" AND for "the file is there but unreadable",
+   * and `addRecent` writes back whatever it was given — so one transient read
+   * error (a half-written file, a racing second server) silently replaced a
+   * list of twelve projects with a list of one. That is not a stale cache; it
+   * is the user's project list, gone, with nothing to say it happened.
+   */
+  async function readRecentsState(): Promise<{ entries: RecentEntry[]; readable: boolean }> {
+    let raw: string;
     try {
-      const raw = await fsp.readFile(recentsFile, 'utf8');
+      raw = await fsp.readFile(recentsFile, 'utf8');
+    } catch (err) {
+      // Genuinely absent is a normal first run; anything else is a failure we
+      // must not treat as "the list is empty".
+      const missing = (err as { code?: string }).code === 'ENOENT';
+      return { entries: [], readable: missing };
+    }
+    try {
       const parsed = JSON.parse(raw);
-      return Array.isArray(parsed) ? parsed : [];
+      return Array.isArray(parsed) ? { entries: parsed, readable: true } : { entries: [], readable: false };
     } catch {
-      return [];
+      return { entries: [], readable: false };
     }
   }
 
+  async function readRecents(): Promise<RecentEntry[]> {
+    return (await readRecentsState()).entries;
+  }
+
   async function addRecent(projectPath: string, name: string): Promise<void> {
-    const entries = (await readRecents()).filter((e) => e.path !== projectPath);
+    const state = await readRecentsState();
+    const entries = state.entries.filter((e) => e.path !== projectPath);
     entries.unshift({ path: projectPath, name, openedAt: new Date().toISOString() });
     await fsp.mkdir(path.dirname(recentsFile), { recursive: true });
-    await fsp.writeFile(recentsFile, JSON.stringify(entries.slice(0, 12), null, 2) + '\n');
+    // Unreadable but present: keep a copy before replacing it. Whatever was in
+    // there is the user's list, and "we could not parse it" is not permission
+    // to delete it.
+    if (!state.readable) {
+      await fsp.copyFile(recentsFile, `${recentsFile}.bak`).catch(() => {});
+    }
+    // Write-then-rename, so a reader never sees a half-written file. That race
+    // is what corrupted the list in the first place: two servers on the same
+    // home directory, one reading while the other was mid-write.
+    const temp = `${recentsFile}.${process.pid}.tmp`;
+    await fsp.writeFile(temp, JSON.stringify(entries.slice(0, 12), null, 2) + '\n');
+    await fsp.rename(temp, recentsFile);
   }
 
   /**
@@ -741,6 +840,8 @@ export function createProjectServerContext(options: ProjectServerOptions = {}) {
     sessions,
     /** Desktop-export progress bus; ws.ts subscribes and fans frames to sockets. */
     exportBus,
+    /** Running-sweep frames; probeStream.ts subscribes and fans them to viewers. */
+    probeBus,
 
     openWorkspace: openWorkspaceImpl,
 
@@ -751,11 +852,15 @@ export function createProjectServerContext(options: ProjectServerOptions = {}) {
      * like `openWorkspace`: same recents registration, same response shape.
      */
     async createWorkspace(prompt: unknown, name?: unknown): Promise<JsonResult> {
-      const source = typeof name === 'string' && name.trim() !== '' ? name : typeof prompt === 'string' ? prompt : '';
+      // A typed name and a first message are not the same kind of text, so
+      // they do not get the same slug rule: every word of a name was chosen,
+      // while a prompt is mostly scaffolding. See workspaceSlug.ts.
+      const typed = typeof name === 'string' && name.trim() !== '' ? name.trim() : null;
+      const source = typed ?? (typeof prompt === 'string' ? prompt : '');
       const home = resolveProjectsHome(options.projectsDir);
       try {
         await fsp.mkdir(home, { recursive: true });
-        const folder = await uniqueFolderName(home, slugFromPrompt(source));
+        const folder = await uniqueFolderName(home, typed ? slugFromName(typed) : slugFromPrompt(source));
         const target = path.join(home, folder);
         await fsp.mkdir(target, { recursive: true });
         return await openWorkspaceImpl(target);
@@ -781,6 +886,7 @@ export function createProjectServerContext(options: ProjectServerOptions = {}) {
             return (await listChats(entry.path)).map((chat) => ({
               id: chat.id,
               title: chat.title,
+              kind: chat.kind,
               createdAt: chat.createdAt,
               updatedAt: chat.updatedAt,
               project: { path: entry.path, name: entry.name || path.basename(entry.path) },
@@ -804,9 +910,93 @@ export function createProjectServerContext(options: ProjectServerOptions = {}) {
     async recentWorkspaces(): Promise<JsonResult> {
       const entries = await readRecents();
       const projects = await Promise.all(
-        entries.map(async (e) => ({ path: e.path, name: e.name, exists: await isDirectory(e.path) })),
+        entries.map(async (e) => ({
+          path: e.path,
+          name: e.name,
+          exists: await isDirectory(e.path),
+          // Carried in the list rather than fetched per row: the rail paints
+          // every project's mark on first render, and six round trips to draw
+          // six glyphs would be six chances to flash the wrong colour.
+          identity: await readProjectIdentity(e.path),
+        })),
       );
       return { status: 200, body: { ok: true, projects } };
+    },
+
+    /**
+     * What this machine has made with Hearth — counted, never metered. Like
+     * skills, this is about the person and not about one open folder, so it
+     * takes no `project`; it reads the same recents list every other global
+     * route reads. See server/usage.ts for what is and is not countable.
+     */
+    async usage(): Promise<JsonResult> {
+      return { status: 200, body: { ok: true, usage: await collectUsage({ recentsFile }) } };
+    },
+
+    /**
+     * Give a project a mark and a colour, or clear one back to derived. The
+     * rail is the only caller; it writes what the picker chose and re-reads
+     * the list.
+     */
+    /**
+     * Read one of the project's own standing documents — today only AGENTS.md,
+     * the instructions every agent reads on its own.
+     *
+     * Deliberately an allowlist rather than an arbitrary path: this is a
+     * read/write pair reachable from the renderer, and "any file in the
+     * project" is a much larger promise than the one screen using it needs.
+     * A document that does not exist yet reads as empty rather than 404 —
+     * "you have not written instructions" is not an error.
+     */
+    async projectDoc(project: unknown, name: unknown): Promise<JsonResult> {
+      const doc = PROJECT_DOCS.find((entry) => entry === name);
+      if (typeof project !== 'string' || project.trim() === '' || !doc) {
+        return { status: 400, body: { ok: false, error: 'Missing "project" or unknown document.' } };
+      }
+      const root = path.resolve(project);
+      if (!(await isDirectory(root))) {
+        return { status: 404, body: { ok: false, error: 'That project is not on disk any more.' } };
+      }
+      try {
+        return { status: 200, body: { ok: true, text: await fsp.readFile(path.join(root, doc), 'utf8') } };
+      } catch {
+        return { status: 200, body: { ok: true, text: '' } };
+      }
+    },
+
+    /** Write one back. An empty body removes the file rather than leaving a blank one. */
+    async writeProjectDoc(project: unknown, name: unknown, text: unknown): Promise<JsonResult> {
+      const doc = PROJECT_DOCS.find((entry) => entry === name);
+      if (typeof project !== 'string' || project.trim() === '' || !doc || typeof text !== 'string') {
+        return { status: 400, body: { ok: false, error: 'Missing "project", "text", or unknown document.' } };
+      }
+      const root = path.resolve(project);
+      if (!(await isDirectory(root))) {
+        return { status: 404, body: { ok: false, error: 'That project is not on disk any more.' } };
+      }
+      const file = path.join(root, doc);
+      try {
+        if (text.trim() === '') await fsp.rm(file, { force: true });
+        else await fsp.writeFile(file, text.endsWith('\n') ? text : text + '\n');
+        return { status: 200, body: { ok: true } };
+      } catch (err) {
+        return { status: 500, body: { ok: false, error: `Could not write ${doc}: ${(err as Error).message}` } };
+      }
+    },
+
+    async setProjectIdentity(project: unknown, icon: unknown, color: unknown): Promise<JsonResult> {
+      if (typeof project !== 'string' || project.trim() === '') {
+        return { status: 400, body: { ok: false, error: 'Missing "project".' } };
+      }
+      const root = path.resolve(project);
+      if (!(await isDirectory(root))) {
+        return { status: 404, body: { ok: false, error: 'That project is not on disk any more.' } };
+      }
+      const identity = await writeProjectIdentity(root, {
+        ...(icon === undefined ? {} : { icon: typeof icon === 'string' ? icon : '' }),
+        ...(color === undefined ? {} : { color: typeof color === 'string' ? color : '' }),
+      });
+      return { status: 200, body: { ok: true, identity } };
     },
 
     /**
@@ -872,7 +1062,10 @@ export function createProjectServerContext(options: ProjectServerOptions = {}) {
       if (!game) {
         return { status: 400, body: { ok: false, error: 'No game to play yet — nothing in this folder runs.' } };
       }
-      const plan = planSweep((request ?? {}) as Parameters<typeof planSweep>[0]);
+      // With nothing named, ask every playtester the registry knows. The ones
+      // this game cannot support are skipped WITH A REASON, which is the only
+      // way that reason ever reaches anybody.
+      const plan = planSweep((request ?? {}) as Parameters<typeof planSweep>[0], await registeredPolicies());
       try {
         const job = sweeps.start({
           root,
@@ -890,6 +1083,53 @@ export function createProjectServerContext(options: ProjectServerOptions = {}) {
         }
         return { status: 500, body: { ok: false, error: (err as Error).message } };
       }
+    },
+
+    /**
+     * The same sweep the rail shows, cut the other way: one row per
+     * playtester rather than one line per event. The journal answers "what
+     * happened, when"; this answers "did wander play, and if not, why not" —
+     * which is the question a skipped bot's reason is the answer to.
+     *
+     * Read from files on every call rather than held in memory: a sweep can be
+     * started from the CLI or by an agent, and the folder is the only thing
+     * both sides share.
+     */
+    async playtestView(project: unknown): Promise<JsonResult> {
+      if (typeof project !== 'string' || project.trim() === '') {
+        return { status: 400, body: { ok: false, error: 'Missing "project".' } };
+      }
+      const root = path.resolve(project);
+      if (!isOpenRoot(root)) return { status: 403, body: { ok: false, error: 'Folder is not open.' } };
+      const job = sweeps.jobFor(root);
+      const view = await readPlaytestView({
+        root,
+        known: await registeredPolicies(),
+        running: job !== undefined,
+        plan: job?.policyPlan ?? null,
+      });
+      return { status: 200, body: { ok: true, ...view } };
+    },
+
+    /**
+     * The folder's playtest history, read from its journal.
+     *
+     * The socket carries new evidence as it is written, which is right for a
+     * sweep happening now and useless for one that happened last week: the
+     * watcher replays only for whoever started it, so a second window, or a
+     * socket that reconnects while another still holds the channel, sees an
+     * empty rail. Playtests belong to the folder rather than to a connection,
+     * so the rail is filled from here on open and the socket only appends.
+     */
+    async evidenceHistory(project: unknown, limit: unknown): Promise<JsonResult> {
+      if (typeof project !== 'string' || project.trim() === '') {
+        return { status: 400, body: { ok: false, error: 'Missing "project".' } };
+      }
+      const root = path.resolve(project);
+      if (!isOpenRoot(root)) return { status: 403, body: { ok: false, error: 'Folder is not open.' } };
+      const asked = typeof limit === 'string' ? Number.parseInt(limit, 10) : Number.NaN;
+      const cap = Number.isFinite(asked) && asked > 0 ? Math.min(asked, EVIDENCE_HISTORY_MAX) : EVIDENCE_HISTORY_MAX;
+      return { status: 200, body: { ok: true, events: await readEvidenceHistory(root, cap) } };
     },
 
     /** The in-flight sweep for `root`, so callers (and tests) can await it. */
@@ -939,6 +1179,69 @@ export function createProjectServerContext(options: ProjectServerOptions = {}) {
       const removed = await deleteChat(root, chatId);
       if (!removed) return { status: 404, body: { ok: false, error: 'No such conversation.' } };
       return { status: 200, body: { ok: true, chats: await listChats(root) } };
+    },
+
+    // --- Context files ------------------------------------------------------
+    //
+    // Background reading the user hands the project: everything lives in
+    // `.hearth/context/`, so it travels with the folder and can be committed.
+    // All four routes answer with the same list the pane renders, which is why
+    // the mutating ones re-read rather than trusting the caller to merge.
+
+    /** What the project has been told about itself, newest first. */
+    async listContext(project: unknown): Promise<JsonResult> {
+      if (typeof project !== 'string' || project.trim() === '') {
+        return { status: 400, body: { ok: false, error: 'Missing "project".' } };
+      }
+      const root = path.resolve(project);
+      if (!(await isDirectory(root))) {
+        return { status: 404, body: { ok: false, error: 'That project is not on disk any more.' } };
+      }
+      return { status: 200, body: { ok: true, dir: contextDir(root), files: await listContextFiles(root) } };
+    },
+
+    /**
+     * Take dropped files. The response is the whole list rather than just what
+     * landed, so a drop that lost a file to a size cap shows the truth
+     * immediately instead of on the next refresh.
+     */
+    async addContextFiles(project: unknown, files: unknown): Promise<JsonResult> {
+      if (typeof project !== 'string' || project.trim() === '') {
+        return { status: 400, body: { ok: false, error: 'Missing "project".' } };
+      }
+      const root = path.resolve(project);
+      if (!(await isDirectory(root))) {
+        return { status: 404, body: { ok: false, error: 'That project is not on disk any more.' } };
+      }
+      const saved = await saveContextFiles(root, files);
+      return { status: 200, body: { ok: true, saved, dir: contextDir(root), files: await listContextFiles(root) } };
+    },
+
+    async removeContextFile(project: unknown, name: unknown): Promise<JsonResult> {
+      if (typeof project !== 'string' || project.trim() === '') {
+        return { status: 400, body: { ok: false, error: 'Missing "project".' } };
+      }
+      const root = path.resolve(project);
+      if (!(await isDirectory(root))) {
+        return { status: 404, body: { ok: false, error: 'That project is not on disk any more.' } };
+      }
+      const removed = await deleteContextFile(root, name);
+      if (!removed) return { status: 404, body: { ok: false, error: 'No such context file.' } };
+      return { status: 200, body: { ok: true, dir: contextDir(root), files: await listContextFiles(root) } };
+    },
+
+    /** One file's text for the preview sheet; binary and oversized read as 404. */
+    async readContextText(project: unknown, name: unknown): Promise<JsonResult> {
+      if (typeof project !== 'string' || project.trim() === '') {
+        return { status: 400, body: { ok: false, error: 'Missing "project".' } };
+      }
+      const root = path.resolve(project);
+      if (!(await isDirectory(root))) {
+        return { status: 404, body: { ok: false, error: 'That project is not on disk any more.' } };
+      }
+      const text = await readContextFile(root, name);
+      if (text === null) return { status: 404, body: { ok: false, error: 'Nothing to preview.' } };
+      return { status: 200, body: { ok: true, text } };
     },
 
     /**
@@ -1746,6 +2049,27 @@ async function route(ctx: ProjectServerContext, req: IncomingMessage, res: Serve
     return (await import('./skillsRoutes.js')).routeSkills(req, res, url.pathname);
   }
 
+  // Which agent CLIs are installed is a fact about the machine, not the folder
+  // — and the composer's picker asks it on Home too, where there is no folder
+  // to scope it to. Like skills, it takes no `project`; unlike skills it only
+  // reads, and only from PATH.
+  if (url.pathname === '/api/agent-clis') {
+    return (await import('./agentClis.js')).routeAgentClis(req, res);
+  }
+
+  // Personalization is the other one: a name and standing instructions belong
+  // to the person, so like skills the route takes no `project` and validates
+  // everything itself.
+  if (url.pathname === '/api/personalization') {
+    return (await import('./personalization.js')).routePersonalization(req, res);
+  }
+
+  // Which models the user wants offered. Also the person's, not the folder's,
+  // and read by the composer's picker on Home where there is no folder at all.
+  if (url.pathname === '/api/model-prefs') {
+    return (await import('./modelPrefs.js')).routeModelPrefs(req, res);
+  }
+
   switch (key) {
     case 'POST /api/workspace/open': {
       const body = await readJsonBody(req);
@@ -1759,6 +2083,24 @@ async function route(ctx: ProjectServerContext, req: IncomingMessage, res: Serve
     }
     case 'GET /api/workspace/recent': {
       const result = await ctx.recentWorkspaces();
+      return sendJson(res, result.status, result.body);
+    }
+    case 'GET /api/usage': {
+      const result = await ctx.usage();
+      return sendJson(res, result.status, result.body);
+    }
+    case 'POST /api/workspace/identity': {
+      const body = await readJsonBody(req);
+      const result = await ctx.setProjectIdentity(body.project, body.icon, body.color);
+      return sendJson(res, result.status, result.body);
+    }
+    case 'GET /api/project/doc': {
+      const result = await ctx.projectDoc(q.get('project'), q.get('name'));
+      return sendJson(res, result.status, result.body);
+    }
+    case 'POST /api/project/doc': {
+      const body = await readJsonBody(req);
+      const result = await ctx.writeProjectDoc(body.project, body.name, body.text);
       return sendJson(res, result.status, result.body);
     }
     case 'GET /api/chats/recent': {
@@ -1778,6 +2120,14 @@ async function route(ctx: ProjectServerContext, req: IncomingMessage, res: Serve
       const result = await ctx.startProbeSweep(body.project, body);
       return sendJson(res, result.status, result.body);
     }
+    case 'GET /api/probe/playtesters': {
+      const result = await ctx.playtestView(q.get('project'));
+      return sendJson(res, result.status, result.body);
+    }
+    case 'GET /api/probe/evidence': {
+      const result = await ctx.evidenceHistory(q.get('project'), q.get('limit'));
+      return sendJson(res, result.status, result.body);
+    }
     case 'GET /api/chats': {
       const result = await ctx.listProjectChats(q.get('project'));
       return sendJson(res, result.status, result.body);
@@ -1795,6 +2145,27 @@ async function route(ctx: ProjectServerContext, req: IncomingMessage, res: Serve
     case 'POST /api/chats/delete': {
       const body = await readJsonBody(req);
       const result = await ctx.deleteProjectChat(body.project, body.chatId);
+      return sendJson(res, result.status, result.body);
+    }
+    case 'GET /api/context': {
+      const result = await ctx.listContext(q.get('project'));
+      return sendJson(res, result.status, result.body);
+    }
+    case 'POST /api/context': {
+      // Context files arrive base64-encoded like an asset import, so the body
+      // limit has to cover the ~4/3 inflation plus JSON overhead; the real
+      // per-file and per-request caps are enforced in projectContext.
+      const body = await readJsonBody(req, 72 * 1024 * 1024);
+      const result = await ctx.addContextFiles(body.project, body.files);
+      return sendJson(res, result.status, result.body);
+    }
+    case 'POST /api/context/delete': {
+      const body = await readJsonBody(req);
+      const result = await ctx.removeContextFile(body.project, body.name);
+      return sendJson(res, result.status, result.body);
+    }
+    case 'GET /api/context/file': {
+      const result = await ctx.readContextText(q.get('project'), q.get('name'));
       return sendJson(res, result.status, result.body);
     }
     case 'GET /api/files': {
@@ -1921,7 +2292,25 @@ export function hearthProjectServer(options: ProjectServerOptions = {}): Plugin 
       // certs), which this dev server never uses; attachWebSocket only
       // needs the plain node:http surface (`.on('upgrade'/'close', ...)`).
       if (server.httpServer) {
-        attachWebSocket(server.httpServer as import('node:http').Server, ctx);
+        const httpServer = server.httpServer as import('node:http').Server;
+        // Record where we ended up listening, so a probe run from an agent's
+        // shell can hand its sweep back to this server instead of driving a
+        // second browser nobody can see. Read from the socket rather than from
+        // config: the configured port is a request, and the bound one is what
+        // a child process would actually have to reach.
+        const publishHost = (): void => {
+          const address = httpServer.address();
+          if (address === null || typeof address === 'string') return;
+          const host = address.family === 'IPv6' ? '[::1]' : '127.0.0.1';
+          setHearthHost(`http://${host}:${address.port}`);
+        };
+        if (httpServer.listening) publishHost();
+        else httpServer.once('listening', publishHost);
+        httpServer.once('close', () => setHearthHost(null));
+        attachWebSocket(httpServer, ctx);
+        // Its own upgrade listener on its own path, so a window that never
+        // playtests never holds a socket for pictures of one.
+        attachProbeStream(httpServer, ctx.probeBus);
       }
     },
   };

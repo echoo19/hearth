@@ -6,8 +6,15 @@
  * project root:
  *
  *   .hearth/chats/
- *     index.json          — [{ id, title, createdAt, updatedAt }], newest first
+ *     index.json          — [{ id, title, kind, createdAt, updatedAt }], newest first
  *     <chatId>.jsonl      — one JSON line per turn/tool event
+ *
+ * `kind` is what the conversation IS: a chat with the built-in agent, or a
+ * terminal session. It is written once, at creation, and no function here
+ * changes it afterwards — reopening a conversation must give you back the
+ * thing you left, not a surface that can be flipped into something else.
+ * A terminal record stores no transcript: the shell's output belongs to a pty
+ * that dies with the process, and pretending otherwise would be a fiction.
  *
  * The jsonl line shape deliberately mirrors what already crosses the socket
  * (server/chat.ts's `ChatEvent`), so replay is the same fold the live stream
@@ -39,10 +46,40 @@ export const TITLE_MAX = 60;
 /** The default name a chat carries until its first user message names it. */
 export const UNTITLED = 'New chat';
 
+/**
+ * The default name a terminal session carries. Terminal records are never
+ * named by a first user message the way chats are — nothing is typed at
+ * Hearth in one, it is typed at a shell — so this is the name it keeps until
+ * someone renames it.
+ */
+export const UNTITLED_TERMINAL = 'Terminal';
+
+/**
+ * Which kind of conversation a record is.
+ *
+ * Decided when the conversation is created and never after. A chat is a chat
+ * for its whole life and a terminal session is a terminal session: to work the
+ * other way you start another conversation, which is why nothing in this
+ * module takes a kind for a record that already exists.
+ */
+export type ChatKind = 'chat' | 'terminal';
+
+/** The name a conversation of this kind starts with. */
+export function defaultChatTitle(kind: ChatKind): string {
+  return kind === 'terminal' ? UNTITLED_TERMINAL : UNTITLED;
+}
+
 /** One conversation, as the sidebar lists it. */
 export interface ChatSummary {
   id: string;
   title: string;
+  /**
+   * Chat or terminal. Written at creation, carried forever, and settable
+   * nowhere else — see ChatKind. Records written before this field existed
+   * have none, and `parseChatIndex` reads those as 'chat' rather than
+   * rewriting the file, so every summary that leaves this module has one.
+   */
+  kind: ChatKind;
   /** ISO timestamps. */
   createdAt: string;
   updatedAt: string;
@@ -154,9 +191,16 @@ export function parseChatIndex(raw: unknown): ChatSummary[] {
     const id = safeChatId(row.id);
     if (!id) continue;
     const createdAt = typeof row.createdAt === 'string' ? row.createdAt : new Date().toISOString();
+    // Defaulted rather than carried through, and the default is deliberate:
+    // every index written before `kind` existed holds conversations that were
+    // chats, so a missing (or unrecognised) value reads as 'chat'. The row is
+    // never dropped for it and the file is never rewritten to add it — the
+    // next write does that on its own.
+    const kind: ChatKind = row.kind === 'terminal' ? 'terminal' : 'chat';
     const summary: ChatSummary = {
       id,
-      title: typeof row.title === 'string' && row.title.trim() !== '' ? row.title : UNTITLED,
+      title: typeof row.title === 'string' && row.title.trim() !== '' ? row.title : defaultChatTitle(kind),
+      kind,
       createdAt,
       updatedAt: typeof row.updatedAt === 'string' ? row.updatedAt : createdAt,
     };
@@ -168,8 +212,14 @@ export function parseChatIndex(raw: unknown): ChatSummary[] {
   return sortChats(out);
 }
 
-/** Newest activity first; ties break on id so the order is stable. */
-export function sortChats(chats: ChatSummary[]): ChatSummary[] {
+/**
+ * Newest activity first; ties break on id so the order is stable.
+ *
+ * Generic over the two fields it actually reads, so ordering is one rule
+ * rather than a rule about summaries — and so a caller holding a richer row
+ * gets its own type back rather than a widened one.
+ */
+export function sortChats<T extends { id: string; updatedAt: string }>(chats: T[]): T[] {
   return chats
     .slice()
     .sort((a, b) => (a.updatedAt === b.updatedAt ? a.id.localeCompare(b.id) : b.updatedAt.localeCompare(a.updatedAt)));
@@ -219,11 +269,29 @@ export function listChats(root: string): Promise<ChatSummary[]> {
   return serialize(root, () => readIndexUnlocked(root));
 }
 
-/** Start a conversation. It is listed immediately, named on its first turn. */
-export function createChat(root: string, title = UNTITLED): Promise<ChatSummary> {
+/**
+ * Start a conversation. It is listed immediately, and a chat is named on its
+ * first turn.
+ *
+ * `kind` is the one thing decided here that can never be decided again: this
+ * is the only place a record's kind is written, which is what makes "a chat is
+ * a chat forever" a property of the store rather than a habit of the UI.
+ */
+export function createChat(
+  root: string,
+  options: { title?: string; kind?: ChatKind } = {},
+): Promise<ChatSummary> {
+  const kind: ChatKind = options.kind === 'terminal' ? 'terminal' : 'chat';
+  const named = options.title?.replace(/\s+/g, ' ').trim().slice(0, TITLE_MAX) ?? '';
   return serialize(root, async () => {
     const now = new Date().toISOString();
-    const chat: ChatSummary = { id: randomUUID(), title, createdAt: now, updatedAt: now };
+    const chat: ChatSummary = {
+      id: randomUUID(),
+      title: named === '' ? defaultChatTitle(kind) : named,
+      kind,
+      createdAt: now,
+      updatedAt: now,
+    };
     await writeIndexUnlocked(root, [chat, ...(await readIndexUnlocked(root))]);
     // Touch the transcript so an opened-but-silent chat reads back as empty
     // rather than missing.
@@ -247,8 +315,13 @@ export function appendChatRecord(root: string, chatId: string, record: ChatRecor
     const file = chatFilePath(root, id);
     await fsp.mkdir(path.dirname(file), { recursive: true });
     await fsp.appendFile(file, `${JSON.stringify(record)}\n`, 'utf8');
+    // Spread first, so `kind` (and anything else the record already carries)
+    // survives every append: activity changes when a conversation last moved,
+    // never what kind of conversation it is.
     const next: ChatSummary = { ...chats[index], updatedAt: record.ts };
-    if (record.role === 'user' && next.title === UNTITLED) next.title = userRecordTitle(record);
+    if (record.role === 'user' && next.kind === 'chat' && next.title === UNTITLED) {
+      next.title = userRecordTitle(record);
+    }
     chats[index] = next;
     await writeIndexUnlocked(root, chats);
     return next;

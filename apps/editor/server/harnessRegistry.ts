@@ -440,6 +440,10 @@ export async function routeHarnessRegistry(
     }
     return sendJson(res, 405, { ok: false, error: `Method not allowed: ${req.method}` });
   } catch (err) {
-    return sendJson(res, 400, { ok: false, error: (err as Error).message });
+    // Whatever went wrong here is a JS error message, and the rail renders
+    // this string verbatim to a person making a game. Keep the detail in the
+    // server log and answer with a sentence someone can act on.
+    console.error('harness registry: request failed', err);
+    return sendJson(res, 400, { ok: false, error: 'That request could not be read.' });
   }
 }

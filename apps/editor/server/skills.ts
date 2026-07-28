@@ -37,8 +37,54 @@ export function hearthHome(): string {
   return override && override !== '' ? path.resolve(override) : path.join(os.homedir(), '.hearth');
 }
 
+/** Overridable for tests; otherwise Claude Code's folder in the user's home. */
+export function claudeHome(): string {
+  const override = process.env.HEARTH_CLAUDE_HOME?.trim();
+  return override && override !== '' ? path.resolve(override) : path.join(os.homedir(), '.claude');
+}
+
+/** Overridable for tests; otherwise codex's folder in the user's home. */
+export function codexHome(): string {
+  const override = process.env.HEARTH_CODEX_HOME?.trim();
+  return override && override !== '' ? path.resolve(override) : path.join(os.homedir(), '.codex');
+}
+
 export function skillsRoot(): string {
   return path.join(hearthHome(), 'skills');
+}
+
+/** Which agent's folder a skill was found in. */
+export type SkillSourceId = 'hearth' | 'claude' | 'codex';
+
+export interface SkillSource {
+  source: SkillSourceId;
+  /** Absolute path to the folder skills are read from. */
+  dir: string;
+  /** Whether Hearth may rewrite or delete what it finds here. */
+  editable: boolean;
+}
+
+/**
+ * Every folder a skill can be found in, in the order they win ties.
+ *
+ * Only Hearth's own folder is written to. The other two are the user's actual
+ * agents — skills they already wrote, in this same format, one directory over
+ * — and a Skills screen saying "no skills yet" while eighteen of them sit on
+ * disk is lying about the machine. So they are read, and only read:
+ * `~/.claude/skills/impeccable` belongs to Claude Code, and a game-making app
+ * that deleted it would be indefensible.
+ *
+ * `~/.claude/plugins/**` is deliberately absent. Those skills arrive and leave
+ * with a plugin manager, there are hundreds of them, and listing them would
+ * bury the handful the user actually wrote under things they never chose one
+ * by one.
+ */
+export function skillSources(): SkillSource[] {
+  return [
+    { source: 'hearth', dir: skillsRoot(), editable: true },
+    { source: 'claude', dir: path.join(claudeHome(), 'skills'), editable: false },
+    { source: 'codex', dir: path.join(codexHome(), 'skills'), editable: false },
+  ];
 }
 
 /** Where the disabled list lives — beside the folder, never inside it. */
@@ -65,6 +111,10 @@ export interface SkillRecord {
   files: number;
   /** ISO, from the SKILL.md's mtime — what "edited just now" reads from. */
   updatedAt: string;
+  /** Which agent's folder this skill was found in. */
+  source: SkillSourceId;
+  /** Whether Hearth may rewrite or delete it. False for anything discovered. */
+  editable: boolean;
 }
 
 /** What a create/edit sends. Body is the markdown under the frontmatter. */
@@ -112,10 +162,35 @@ export function parseSkillFile(text: string): { name: string; description: strin
   const match = /^---\r?\n([\s\S]*?)\r?\n---\r?\n?/.exec(text);
   if (!match) return { name: '', description: '', body: text.trim() };
   const fields: Record<string, string> = {};
-  for (const line of match[1].split(/\r?\n/)) {
-    const field = /^([A-Za-z_-]+):\s*(.*)$/.exec(line);
+  const lines = match[1].split(/\r?\n/);
+  for (let i = 0; i < lines.length; i += 1) {
+    const field = /^([A-Za-z_-]+):\s*(.*)$/.exec(lines[i]);
     if (!field) continue;
-    fields[field[1].toLowerCase()] = field[2].trim().replace(/^["']|["']$/g, '');
+    const key = field[1].toLowerCase();
+    const raw = field[2].trim();
+    // A block scalar — `description: >` or `description: |`, with optional
+    // chomping and indent indicators. The value is not on this line; it is the
+    // indented lines under it. Handling this is not scope creep into being a
+    // YAML parser: skills written by hand routinely use `>` for a description
+    // too long for one line, and reading the marker as the value put a literal
+    // ">" on screen where the sentence should be.
+    const block = /^([|>])[+-]?\d*$/.exec(raw);
+    if (block) {
+      const collected: string[] = [];
+      while (i + 1 < lines.length) {
+        const next = lines[i + 1];
+        // Blank lines belong to the block; a line at column 0 ends it.
+        if (next.trim() !== '' && !/^\s/.test(next)) break;
+        collected.push(next.trim());
+        i += 1;
+      }
+      // `>` folds its lines into one paragraph, `|` keeps them apart. Either
+      // way trailing blank lines are chomping noise, not content.
+      while (collected.length > 0 && collected[collected.length - 1] === '') collected.pop();
+      fields[key] = block[1] === '>' ? collected.join(' ').replace(/\s+/g, ' ').trim() : collected.join('\n').trim();
+      continue;
+    }
+    fields[key] = raw.replace(/^["']|["']$/g, '');
   }
   return {
     name: fields.name ?? '',
@@ -159,6 +234,22 @@ export function safeRelativePath(raw: string): string | null {
 // The disabled list
 // ---------------------------------------------------------------------------
 
+/**
+ * How a skill is named inside `~/.hearth/skills.json`.
+ *
+ * A bare id means a Hearth skill — which is what every entry in every existing
+ * skills.json already means, because that file predates there being anywhere
+ * else to read from. Keeping the bare form is the whole compatibility rule:
+ * nobody's switched-off list resets because Hearth learned to look in two more
+ * folders. Discovered skills are qualified with the agent they came from,
+ * since `claude/humanizer` and a Hearth `humanizer` are two different folders
+ * that a single flat name could not tell apart. The forms cannot collide:
+ * `safeSegment` refuses a `/`, so a bare id is never `claude/…`.
+ */
+export function disabledKey(source: SkillSourceId, id: string): string {
+  return source === 'hearth' ? id : `${source}/${id}`;
+}
+
 async function readDisabled(): Promise<Set<string>> {
   try {
     const raw = JSON.parse(await fsp.readFile(skillsConfigPath(), 'utf8')) as { disabled?: unknown };
@@ -177,31 +268,74 @@ async function writeDisabled(disabled: ReadonlySet<string>): Promise<void> {
 // Reading
 // ---------------------------------------------------------------------------
 
-/** Everything in the skills folder, alphabetical. Never throws. */
-export async function listSkills(): Promise<SkillRecord[]> {
-  const root = skillsRoot();
-  const disabled = await readDisabled();
-  let entries: string[];
-  try {
-    entries = (await fsp.readdir(root, { withFileTypes: true }))
-      .filter((entry) => entry.isDirectory() && !entry.name.startsWith('.'))
-      .map((entry) => entry.name);
-  } catch {
-    return [];
+/**
+ * Which root an id actually names, hearth first.
+ *
+ * The id stays the folder name — that is the name agents match on, the name in
+ * the disabled list, the name of the link in a project — so the same name can
+ * genuinely exist in two roots. Hearth's copy wins and the discovered one is
+ * dropped: a skill someone wrote here shadows one they were given, which is
+ * also what the agents themselves do, since they match on folder name and only
+ * one folder of a given name can win there either.
+ */
+export async function resolveSkillSource(id: string): Promise<SkillSource | null> {
+  const segment = safeSegment(id);
+  if (!segment) return null;
+  for (const source of skillSources()) {
+    try {
+      await fsp.stat(path.join(source.dir, segment, SKILL_FILE));
+      return source;
+    } catch {
+      /* not in this root, try the next */
+    }
   }
+  return null;
+}
+
+/** Every skill in every root, hearth's first, alphabetical within each. Never throws. */
+export async function listSkills(): Promise<SkillRecord[]> {
+  const disabled = await readDisabled();
   const skills: SkillRecord[] = [];
-  for (const id of entries.sort()) {
-    const record = await readSkill(id, disabled);
-    if (record) skills.push(record);
+  const seen = new Set<string>();
+  for (const source of skillSources()) {
+    let entries: string[];
+    try {
+      entries = (await fsp.readdir(source.dir, { withFileTypes: true }))
+        // A symlinked skill is still a skill: the discovered roots belong to
+        // other people's setups, where linking a folder in is ordinary.
+        .filter((entry) => (entry.isDirectory() || entry.isSymbolicLink()) && !entry.name.startsWith('.'))
+        .map((entry) => entry.name);
+    } catch {
+      // A root that is missing or unreadable is simply not a place skills came
+      // from today. It must never take the rest of the list down with it.
+      continue;
+    }
+    for (const id of entries.sort()) {
+      if (seen.has(id)) continue;
+      const record = await readSkillAt(source, id, disabled);
+      if (!record) continue;
+      seen.add(id);
+      skills.push(record);
+    }
   }
   return skills;
 }
 
 /** One skill, or null when the folder holds no SKILL.md to read. */
 export async function readSkill(id: string, disabled?: ReadonlySet<string>): Promise<SkillRecord | null> {
+  const source = await resolveSkillSource(id);
+  return source ? readSkillAt(source, id, disabled) : null;
+}
+
+/** The same read, once the root is already known — what listing walks with. */
+async function readSkillAt(
+  source: SkillSource,
+  id: string,
+  disabled?: ReadonlySet<string>,
+): Promise<SkillRecord | null> {
   const segment = safeSegment(id);
   if (!segment) return null;
-  const dir = path.join(skillsRoot(), segment);
+  const dir = path.join(source.dir, segment);
   const file = path.join(dir, SKILL_FILE);
   try {
     const [text, stat, contents] = await Promise.all([
@@ -218,21 +352,25 @@ export async function readSkill(id: string, disabled?: ReadonlySet<string>): Pro
       name: parsed.name !== '' ? parsed.name : segment,
       description: parsed.description,
       path: dir,
-      enabled: !off.has(segment),
+      enabled: !off.has(disabledKey(source.source, segment)),
       files: contents.length,
       updatedAt: stat.mtime.toISOString(),
+      source: source.source,
+      editable: source.editable,
     };
   } catch {
     return null;
   }
 }
 
-/** The markdown body, for the editor. */
+/** The markdown body, for the editor — from whichever root the skill is in. */
 export async function readSkillSource(id: string): Promise<SkillDraft | null> {
   const segment = safeSegment(id);
   if (!segment) return null;
+  const source = await resolveSkillSource(segment);
+  if (!source) return null;
   try {
-    const text = await fsp.readFile(path.join(skillsRoot(), segment, SKILL_FILE), 'utf8');
+    const text = await fsp.readFile(path.join(source.dir, segment, SKILL_FILE), 'utf8');
     const parsed = parseSkillFile(text);
     return { name: parsed.name !== '' ? parsed.name : segment, description: parsed.description, body: parsed.body };
   } catch {
@@ -249,6 +387,11 @@ export async function readSkillSource(id: string): Promise<SkillDraft | null> {
  * A rename keeps the folder: the folder name is the identity an agent has
  * already been told about, and shuffling it under a running conversation would
  * make a skill disappear mid-sentence.
+ *
+ * Nothing here writes outside `skillsRoot()`. An id is resolved to the root it
+ * actually lives in and refused unless that root is Hearth's own, because the
+ * cost of getting this wrong is not a failed request — it is overwriting a
+ * skill the user wrote for Claude Code months ago.
  */
 export async function writeSkill(draft: SkillDraft, id?: string): Promise<SkillRecord | null> {
   if (id !== undefined) {
@@ -257,12 +400,17 @@ export async function writeSkill(draft: SkillDraft, id?: string): Promise<SkillR
     // quietly fork a duplicate under a fresh slug — so a stale id after a
     // delete silently made a second skill instead of saying it was gone.
     const target = safeSegment(id);
-    if (!target || !(await readSkill(target))) return null;
-    const dir = path.join(skillsRoot(), target);
+    if (!target) return null;
+    const source = await resolveSkillSource(target);
+    if (!source || !source.editable) return null;
+    const dir = path.join(source.dir, target);
     await fsp.mkdir(dir, { recursive: true });
     await fsp.writeFile(path.join(dir, SKILL_FILE), renderSkillFile(draft));
-    return readSkill(target);
+    return readSkillAt(source, target);
   }
+  // Taken names span every root, not just Hearth's: minting `humanizer` here
+  // when Claude Code already has one would shadow theirs and leave the user
+  // with two things of one name, only one of which any agent would load.
   const taken = new Set((await listSkills()).map((skill) => skill.id));
   const slug = uniqueSkillSlug(skillSlug(draft.name), taken);
   const dir = path.join(skillsRoot(), slug);
@@ -274,7 +422,12 @@ export async function writeSkill(draft: SkillDraft, id?: string): Promise<SkillR
 export async function deleteSkill(id: string): Promise<boolean> {
   const segment = safeSegment(id);
   if (!segment) return false;
-  const dir = path.join(skillsRoot(), segment);
+  const source = await resolveSkillSource(segment);
+  // Discovered skills are not Hearth's to remove. The folder belongs to
+  // another agent, and the user did not install a game-making app to have it
+  // delete their toolkit.
+  if (!source || !source.editable) return false;
+  const dir = path.join(source.dir, segment);
   if (!dir.startsWith(skillsRoot() + path.sep)) return false;
   // `rm --force` succeeds on a folder that was never there, so existence is
   // checked first: "deleted" has to mean something was.
@@ -289,21 +442,28 @@ export async function deleteSkill(id: string): Promise<boolean> {
     return false;
   }
   const disabled = await readDisabled();
-  if (disabled.delete(segment)) await writeDisabled(disabled);
+  if (disabled.delete(disabledKey(source.source, segment))) await writeDisabled(disabled);
   return true;
 }
 
+/**
+ * Switch a skill on or off. Works on discovered skills too, and has to:
+ * read-only means Hearth will not rewrite someone's folder, not that the user
+ * cannot say no to a skill they can see in the list.
+ */
 export async function setSkillEnabled(id: string, enabled: boolean): Promise<SkillRecord | null> {
   const segment = safeSegment(id);
   if (!segment) return null;
   // Only skills that exist get an entry: a disabled list that accumulates
   // names of things that were never here is a file that only ever grows.
-  if (!(await readSkill(segment))) return null;
+  const source = await resolveSkillSource(segment);
+  if (!source) return null;
   const disabled = await readDisabled();
-  if (enabled) disabled.delete(segment);
-  else disabled.add(segment);
+  const key = disabledKey(source.source, segment);
+  if (enabled) disabled.delete(key);
+  else disabled.add(key);
   await writeDisabled(disabled);
-  return readSkill(segment);
+  return readSkillAt(source, segment);
 }
 
 /** One file of an uploaded skill folder. */
@@ -340,6 +500,10 @@ export async function importSkill(
   if (!manifest) return { skill: null, error: `That folder has no ${SKILL_FILE} in it.` };
 
   const parsed = parseSkillFile(manifest.bytes.toString('utf8'));
+  // An import always lands in Hearth's own root, and the slug steps aside for
+  // every name already visible — including discovered ones — so there is no
+  // arrangement of inputs where this writes into another agent's folder or
+  // quietly buries a skill that was already there.
   const taken = new Set((await listSkills()).map((skill) => skill.id));
   const slug = uniqueSkillSlug(skillSlug(parsed.name !== '' ? parsed.name : fallbackName), taken);
   const dir = path.join(skillsRoot(), slug);
@@ -353,7 +517,7 @@ export async function importSkill(
     // A half-written skill is worse than none: it would list, and load into an
     // agent, missing whatever failed.
     await fsp.rm(dir, { recursive: true, force: true });
-    return { skill: null, error: 'That folder could not be written.' };
+    return { skill: null, error: 'Hearth could not save that skill to disk.' };
   }
   return { skill: await readSkill(slug) };
 }
@@ -390,6 +554,21 @@ export const CLAUDE_SKILLS_DIR = path.join('.claude', 'skills');
  * (Windows without developer mode). Links Hearth previously made and no longer
  * wants are removed — a skill switched off has to actually go away — and
  * anything the user put there by hand is left strictly alone.
+ *
+ * Discovered skills are mirrored like any other, which is worth saying out
+ * loud because it looks redundant: Claude Code already reads
+ * `~/.claude/skills` for itself. It is not redundant for the query Hearth
+ * opens. That query is the Agent SDK with the project as its cwd and no
+ * setting sources, so the project folder is the only discovery path Hearth
+ * controls; skipping the mirror would leave a switch marked ON that did
+ * nothing, which is a worse lie than a duplicate link. Where the CLI does read
+ * both, the link points at the very same folder, so it resolves to one file
+ * either way.
+ *
+ * The reverse is honest too, and narrower than it looks: switching a
+ * discovered skill off removes the link HEARTH made. It cannot stop Claude
+ * Code from reading its own folder when the user runs the CLI themselves.
+ * Hearth only ever controls what Hearth put there.
  */
 export async function syncSkillsIntoProject(projectRoot: string): Promise<string[]> {
   const skills = (await listSkills()).filter((skill) => skill.enabled);
@@ -435,12 +614,18 @@ export async function syncSkillsIntoProject(projectRoot: string): Promise<string
   // Clean up what we put here before and no longer should — links AND copies.
   // A skill switched off has to actually go away; leaving a copy behind would
   // keep it live to the agent while the panel says it is off.
+  //
+  // Every root counts, not just Hearth's: a link into `~/.claude/skills` is
+  // still a link Hearth made, and recognising only its own root would strand
+  // exactly the skills it can least afford to strand — a discovered one
+  // switched off would stay live to the agent while the panel said it was off.
+  const roots = skillSources().map((source) => source.dir + path.sep);
   const wanted = new Set(skills.map((skill) => skill.id));
   for (const name of existing) {
     if (wanted.has(name)) continue;
     const link = path.join(target, name);
     const points = await fsp.readlink(link).catch(() => null);
-    if (points && points.startsWith(skillsRoot() + path.sep)) {
+    if (points && roots.some((root) => points.startsWith(root))) {
       await fsp.rm(link, { force: true });
     } else if (points === null && (await isOurCopy(link))) {
       await fsp.rm(link, { recursive: true, force: true });

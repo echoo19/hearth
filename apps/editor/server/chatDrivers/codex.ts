@@ -26,23 +26,28 @@
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
 import { constants as fsConstants, promises as fsp } from 'node:fs';
 import path from 'node:path';
+import { composeAgentInstructions, hearthFactsPrompt } from '../agentFacts.js';
 import {
   EventQueue,
   readAppSettings,
   resolveOpenAiKey,
+  type AgentToolAccess,
   type AgentTurnOptions,
   type ApprovalDecision,
   type ChatAttachment,
   type ChatDriver,
   type ChatEvent,
 } from '../chat.js';
+import { hearthPtyEnv } from '../hearthShim.js';
+import { readPersonalPrompt } from '../personalization.js';
 import { loginShellPathEnv } from '../shellEnv.js';
-import { skillsRoot } from '../skills.js';
+import { CLAUDE_SKILLS_DIR, skillSources, skillsRoot } from '../skills.js';
 import {
   CODEX_CLIENT_INFO,
   CODEX_TESTED_VERSION,
   codexApprovalReply,
   codexInputItems,
+  codexThreadInstructions,
   codexTurnOverrides,
   decodeRpcChunk,
   describeQuestion,
@@ -483,6 +488,12 @@ export class CodexDriver implements ChatDriver {
   private threadId: string | null = null;
   private turnId: string | null = null;
   private stopped = false;
+  /**
+   * Every folder a skill could be read from, resolved at bind. codex reports
+   * no skill of its own (see `codexSkillRead`), so recognising one means
+   * recognising its path, and these are the paths.
+   */
+  private skillRoots: string[] = [];
   /** Turns queued before the thread finished starting. */
   private backlog: { text: string; agent?: AgentTurnOptions; attachments?: readonly ChatAttachment[] }[] = [];
   private ready = false;
@@ -503,6 +514,8 @@ export class CodexDriver implements ChatDriver {
      * applies to it.
      */
     private readonly defaultAgent: AgentTurnOptions | null = null,
+    /** Hearth tooling this machine offers the agent. Null means none. */
+    private readonly tools: AgentToolAccess | null = null,
   ) {}
 
   get events(): AsyncIterable<ChatEvent> {
@@ -510,6 +523,14 @@ export class CodexDriver implements ChatDriver {
   }
 
   async start(_sessionId: string, projectRoot: string): Promise<void> {
+    // Hearth's own folder plus the two agents' folders we discover from, and
+    // the project mirror the Agent SDK reads: a skill can be reached through
+    // any of them, and a row that only recognised one root would go quiet
+    // depending on where the user happened to keep the skill.
+    this.skillRoots = [
+      ...skillSources().map((source) => source.dir),
+      path.join(projectRoot, CLAUDE_SKILLS_DIR),
+    ];
     const conn = new CodexConnection(
       (method, params) => this.handleNotification(method, params),
       (id, method, params) => this.handleServerRequest(id, method, params),
@@ -535,6 +556,15 @@ export class CodexDriver implements ChatDriver {
       /* an older codex simply has no extra roots */
     });
 
+    // The house facts first, then the user's standing preferences — read
+    // fresh at bind for the same reason the skills above are. See
+    // `codexThreadInstructions` for why this rides on `thread/start` alone
+    // and not on the resume beside it.
+    const instructions = composeAgentInstructions(
+      hearthFactsPrompt({ probeCli: this.tools?.probeCli === true }),
+      await readPersonalPrompt(),
+    );
+
     // Resume when we know this conversation's thread, else start a new one.
     // A resume against a thread codex has forgotten must not strand the
     // conversation, so it falls back to a fresh thread.
@@ -546,7 +576,9 @@ export class CodexDriver implements ChatDriver {
         thread = null;
       }
     }
-    if (!thread) thread = await conn.request('thread/start', { cwd: projectRoot });
+    if (!thread) {
+      thread = await conn.request('thread/start', { cwd: projectRoot, ...codexThreadInstructions(instructions) });
+    }
     const id = readThreadId(thread);
     if (id) {
       this.threadId = id;
@@ -563,7 +595,7 @@ export class CodexDriver implements ChatDriver {
       this.turnId = p.turn?.id ?? null;
     }
     if (method === 'turn/completed') this.turnId = null;
-    for (const event of mapCodexNotification(method, params)) this.queue.push(event);
+    for (const event of mapCodexNotification(method, params, this.skillRoots)) this.queue.push(event);
   }
 
   /**
@@ -676,11 +708,16 @@ export async function createCodexDriver(
     onThreadId?: (threadId: string) => void;
     /** The choice the binding turn expressed, applied to turns that omit one. */
     agent?: AgentTurnOptions | null;
+    /** Hearth tooling on this machine (shim dir + probe), from ws.ts. */
+    tools?: AgentToolAccess | null;
   },
 ): Promise<ChatDriver | null> {
   const bin = await resolveCodexBinary(projectRoot);
   if (!bin) return null;
-  const env = await codexEnv(projectRoot);
+  let env = await codexEnv(projectRoot);
+  // Same PATH the embedded terminal gets: `hearth`, and `hearth-probe` when
+  // this machine has one, resolve inside every shell codex runs.
+  if (opts?.tools?.shimDir) env = hearthPtyEnv(env, opts.tools.shimDir);
   const status = await readCodexStatus(projectRoot);
   if (!status.loggedIn) return null;
   return new CodexDriver(
@@ -690,5 +727,6 @@ export async function createCodexDriver(
     opts?.onThreadId ?? (() => undefined),
     spawnCodexTransport,
     opts?.agent ?? null,
+    opts?.tools ?? null,
   );
 }

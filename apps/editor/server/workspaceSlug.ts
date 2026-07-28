@@ -108,6 +108,38 @@ export function slugFromPrompt(raw: unknown): string {
 }
 
 /**
+ * A folder name for a name someone actually typed.
+ *
+ * The difference from `slugFromPrompt` is the stopword list, and it matters:
+ * a prompt is a sentence with scaffolding in it, so dropping "make me a" is
+ * what saves the folder from being called `make-me-a`. A NAME has no
+ * scaffolding — every word in it was chosen. Running one through the prompt
+ * rule turns "My New Game" into `new-game` (all three words are stopwords, so
+ * it falls through to the generic fallback) and "My Space Game" into `space`,
+ * which reads as the app ignoring what it just asked for.
+ *
+ * Everything else is shared: same character rules, same caps, same guarantee
+ * of a non-empty result — a name of pure punctuation still has to land
+ * somewhere.
+ */
+export function slugFromName(raw: unknown): string {
+  const text = typeof raw === 'string' ? raw : '';
+  const words = text
+    .toLowerCase()
+    .replace(/['’]/g, '')
+    .split(/[^a-z0-9]+/)
+    .filter((word) => word !== '')
+    .slice(0, SLUG_MAX_WORDS);
+  if (words.length === 0) return FALLBACK_SLUG;
+  const joined = words.join('-');
+  if (joined.length <= SLUG_MAX_CHARS) return joined;
+  const cut = joined.slice(0, SLUG_MAX_CHARS);
+  const dash = cut.lastIndexOf('-');
+  const trimmed = (dash > SLUG_MAX_CHARS * 0.5 ? cut.slice(0, dash) : cut).replace(/-+$/, '');
+  return trimmed === '' ? FALLBACK_SLUG : trimmed;
+}
+
+/**
  * Where auto-created projects go: an explicit override (tests), else
  * HEARTH_PROJECTS_DIR, else `~/Hearth`. Read at call time rather than cached,
  * so a test that sets the env var doesn't depend on import order.

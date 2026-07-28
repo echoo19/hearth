@@ -31,7 +31,10 @@ const projectDir = process.argv[3]
 
 const cli = path.join(distDir, 'hearth-cli.mjs');
 const mcp = path.join(distDir, 'hearth-mcp.mjs');
-for (const f of [cli, mcp]) {
+const probe = path.join(distDir, 'hearth-probe.mjs');
+const probeMcp = path.join(distDir, 'hearth-probe-mcp.mjs');
+const probeShim = path.join(distDir, 'probe-shim.js');
+for (const f of [cli, mcp, probe, probeMcp, probeShim]) {
   if (!existsSync(f)) {
     console.error(`[smoke-tools] missing ${f} — run \`npm run app:bundle\` first`);
     process.exit(1);
@@ -58,6 +61,53 @@ if (cliVersion !== expectedVersion) {
   fail(`hearth-cli.mjs reported ${cliVersion || 'no version'}; expected ${expectedVersion}`);
 }
 console.log(`[smoke-tools] CLI ok: ${cliVersion}`);
+
+// 1b. The probe CLI bundle must run and print its version. Same failure class
+// as the v1.3.0–v1.3.2 engine tools (an ESM bundle that throws at eval), so
+// the same guard: actually execute the shipped artifact.
+const probeOut = await new Promise((resolve) => {
+  const child = spawn(process.execPath, [probe, '--version'], { stdio: ['ignore', 'pipe', 'pipe'] });
+  let out = '';
+  let err = '';
+  child.stdout.on('data', (d) => (out += d));
+  child.stderr.on('data', (d) => (err += d));
+  child.on('close', (code) => resolve({ code, out, err }));
+});
+if (probeOut.code !== 0) fail(`hearth-probe.mjs --version exited ${probeOut.code}: ${probeOut.err || probeOut.out}`);
+if (!/^\d+\.\d+\.\d+/.test(probeOut.out.trim())) {
+  fail(`hearth-probe.mjs printed no version (got: ${JSON.stringify(probeOut.out.trim().slice(0, 80))})`);
+}
+console.log(`[smoke-tools] probe CLI ok: ${probeOut.out.trim()}`);
+
+// 1c. The probe MCP bundle must evaluate and reach its serving state. It
+// announces itself on stderr once the stdio transport is connected, so wait
+// for that banner (or an early exit, which is the startup-crash class this
+// smoke exists to catch) and then kill it.
+await new Promise((resolve, reject) => {
+  const child = spawn(process.execPath, [probeMcp, '--project', projectDir], {
+    stdio: ['pipe', 'pipe', 'pipe'],
+  });
+  let err = '';
+  const timer = setTimeout(() => {
+    child.kill();
+    reject(new Error(`hearth-probe-mcp.mjs did not reach serving state (stderr: ${err.slice(-300)})`));
+  }, 20000);
+  child.stderr.on('data', (d) => {
+    err += d;
+    if (err.includes('serving the probe for')) {
+      clearTimeout(timer);
+      child.kill();
+      resolve(undefined);
+    }
+  });
+  child.on('close', (code) => {
+    clearTimeout(timer);
+    if (!err.includes('serving the probe for')) {
+      reject(new Error(`hearth-probe-mcp.mjs exited ${code} before serving: ${err.slice(-300)}`));
+    }
+  });
+}).catch((e) => fail(e.message));
+console.log('[smoke-tools] probe MCP ok');
 
 // 2. The MCP bundle must boot and serve tools over stdio.
 const mcpChild = spawn(process.execPath, [mcp, '--project', projectDir, '--mode', 'read-only'], {

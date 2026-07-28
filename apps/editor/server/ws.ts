@@ -48,6 +48,7 @@ import {
   createChatDriver,
   endsTurn,
   parseAgentOptions,
+  type AgentToolAccess,
   type AgentTurnOptions,
   type ApprovalDecision,
   type ChatDriver,
@@ -63,6 +64,7 @@ import {
   readTranscript,
   safeChatId,
   setChatThreadId,
+  type ChatKind,
   type ChatRecord,
   type ChatSummary,
 } from './chatStore.js';
@@ -111,7 +113,13 @@ export type WsFrame =
   // arrival — see chatAttachments.ts.
   | { type: 'chat-send'; text: string; agent?: unknown; attachments?: unknown } // client -> server
   | { type: 'chat-cancel' } // client -> server
-  | { type: 'chat-new' } // client -> server
+  // `kind` is the whole choice between a chat and a terminal session, and it
+  // is made HERE — at creation — because a conversation cannot change kind
+  // afterwards. Optional so a client that predates it still starts a chat,
+  // which is what it always meant. `title` names a session nothing will ever
+  // name for it (a terminal takes no first message); omitted for a chat, which
+  // is named by what is first asked of it.
+  | { type: 'chat-new'; kind?: ChatKind; title?: string } // client -> server
   | { type: 'chat-open'; chatId: string } // client -> server
   // The answer to an `approval-request` event. The agent's turn is genuinely
   // BLOCKED until this arrives, which is why it rides the same socket as the
@@ -288,7 +296,7 @@ export function attachWebSocket(
         const baseEnv = (await loginShellPathEnv()) ?? process.env; // never throws
         try {
           const toolPaths = await resolveToolPaths(ctx.repoRoot);
-          const shimDir = await ensureHearthShim(toolPaths.cli);
+          const shimDir = await ensureHearthShim(toolPaths.cli, toolPaths.probe);
           return hearthPtyEnv(baseEnv, shimDir);
         } catch {
           return baseEnv;
@@ -296,6 +304,27 @@ export function attachWebSocket(
       })();
     }
     return ptyEnvPromise;
+  }
+
+  // What of Hearth's tooling a bound agent may reach: the shim dir (with
+  // `hearth`, and `hearth-probe` when this machine has one) for its PATH, and
+  // whether the probe paragraph of the system-prompt facts is true. Resolved
+  // once — tool paths are stable for a server process — and null on any
+  // failure, which the drivers treat as "no tools" rather than an error.
+  let agentToolsPromise: Promise<AgentToolAccess | null> | null = null;
+  function getAgentTools(): Promise<AgentToolAccess | null> {
+    if (!agentToolsPromise) {
+      agentToolsPromise = (async (): Promise<AgentToolAccess | null> => {
+        try {
+          const toolPaths = await resolveToolPaths(ctx.repoRoot);
+          const shimDir = await ensureHearthShim(toolPaths.cli, toolPaths.probe);
+          return { shimDir, probeCli: toolPaths.probe !== null };
+        } catch {
+          return null;
+        }
+      })();
+    }
+    return agentToolsPromise;
   }
 
   async function getPtyEnvWithinTimeout(): Promise<NodeJS.ProcessEnv> {
@@ -537,7 +566,8 @@ export function attachWebSocket(
     let chatId = socketChat.get(socket);
     if (!chatId) {
       // A send with no chat opened yet (an older client, or a window that never
-      // asked): start one rather than dropping the turn on the floor.
+      // asked): start one rather than dropping the turn on the floor. A chat,
+      // necessarily — words were sent to an agent, which is what a chat is.
       chatId = (await createChat(root)).id;
       socketChat.set(socket, chatId);
       void announceChats(root);
@@ -563,6 +593,7 @@ export function attachWebSocket(
         // The binding turn's choice decides WHICH backend answers, so it has
         // to be known before the driver is built, not just when it is sent.
         agent: agent ?? null,
+        tools: await getAgentTools(),
       });
       await driver.start(session.chatId, root);
     } catch (err) {
@@ -732,11 +763,18 @@ export function attachWebSocket(
             stopPty(ws);
             break;
           case 'chat-new':
-            enqueueChatOp(ws, async () => {
-              const chat = await createChat(root);
-              await announceChats(root);
-              await openChatForSocket(root, ws, chat.id);
-            });
+            {
+              // Validated rather than trusted: anything that is not the one
+              // other kind is a chat, so a garbled frame starts the harmless
+              // thing instead of being rejected.
+              const kind: ChatKind = frame.kind === 'terminal' ? 'terminal' : 'chat';
+              const title = typeof frame.title === 'string' ? frame.title : undefined;
+              enqueueChatOp(ws, async () => {
+                const chat = await createChat(root, { kind, title });
+                await announceChats(root);
+                await openChatForSocket(root, ws, chat.id);
+              });
+            }
             break;
           case 'chat-open':
             enqueueChatOp(ws, () => openChatForSocket(root, ws, typeof frame.chatId === 'string' ? frame.chatId : ''));

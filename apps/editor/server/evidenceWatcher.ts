@@ -64,6 +64,31 @@ export function parseEvidenceLines(text: string, since: number): EvidenceEvent[]
 }
 
 /**
+ * Everything the journal already holds for `root`, oldest first, capped to the
+ * newest `limit` events.
+ *
+ * The watcher above is a tail, and a tail only replays for whoever started it.
+ * A second window on the same folder, or a socket that reconnects while
+ * another one is still holding the channel open, joins a watcher that has
+ * already delivered its history and so sees an empty rail for a folder full of
+ * playtests. This is the other half: the file is the record, and anyone can
+ * read it at any time.
+ *
+ * A missing file is a folder that has never been played, which is the normal
+ * case and not an error.
+ */
+export async function readEvidenceHistory(root: string, limit: number): Promise<EvidenceEvent[]> {
+  let text: string;
+  try {
+    text = await fsp.readFile(path.join(root, EVIDENCE_JOURNAL), 'utf8');
+  } catch {
+    return [];
+  }
+  const events = parseEvidenceLines(text, 0);
+  return limit > 0 && events.length > limit ? events.slice(-limit) : events;
+}
+
+/**
  * Start following `root`'s evidence journal. `onEvents` receives each batch of
  * events with `seq` greater than everything already delivered. Returns a
  * disposer; safe to call more than once.

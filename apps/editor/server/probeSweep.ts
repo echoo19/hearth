@@ -18,6 +18,12 @@
  *    in a browser automation stack that a plain editor session should never
  *    touch, and tests stand in a fake game instead of launching Chromium.
  *
+ * The browser it drives is a second one, not the pane's iframe: that session
+ * is the person's own, and a bot holding its keys would be playing over their
+ * shoulder. So the run is streamed instead: a `SweepWatcher` gets the frames
+ * the probe's page is drawing, and probeStream.ts carries them to the stage.
+ * Nothing about the sweep depends on anyone watching.
+ *
  * When a sweep finishes, the adapter's DECLARED capabilities are written to
  * `.hearth/evidence/capabilities.json`. That file is what turns the capability
  * strip from a guess into a read-out: senses the game actually proved it has.
@@ -30,14 +36,31 @@ import type { EvidenceEvent, EvidenceStore, GameUnderTest, ProbeCapabilities, Sw
 export const CAPABILITIES_FILE = path.join('.hearth', 'evidence', 'capabilities.json');
 
 /**
- * Defaults sized for a button press, not a CI run: two policies that need no
- * cooperation from the game, two seeds each, and short runs — enough for a
- * verdict distribution and a handful of frames within about half a minute.
- * Callers that want a deeper sweep pass their own.
+ * The fallback when the registry cannot be read: two policies that need no
+ * cooperation from the game. Normally every registered playtester is asked,
+ * including the ones this game cannot support — a policy that is asked and
+ * skipped leaves a reason on the record, and a policy that is never asked
+ * leaves nothing at all, which is how the good bots came to look absent
+ * rather than unsupported.
  */
 export const DEFAULT_SWEEP_POLICIES = ['mash', 'idle'];
 export const DEFAULT_SWEEP_SEEDS = [1, 2];
-export const DEFAULT_SWEEP_MAX_STEPS = 60;
+/**
+ * Long enough for a bot to actually finish something.
+ *
+ * This was 60, which at the adapter's 100ms step is six seconds of game time.
+ * That was a fair budget when the only bots asked were idle (presses nothing)
+ * and mash (random input), because neither has anything to complete. It stopped
+ * being fair the moment the steering bots could run: measured on the demo game,
+ * seek reaches the goal at 61, 116, 216 and 255 steps, so a 60-step cap cut
+ * every single successful run off just before it succeeded, and the playtest
+ * reported failure at a bot that was winning.
+ *
+ * A run that satisfies its objective ends early, so this is a ceiling rather
+ * than a duration: seek pays what it needs and stops. idle and mash do spend
+ * the whole budget, which is what makes this a real cost and not a free number.
+ */
+export const DEFAULT_SWEEP_MAX_STEPS = 300;
 /** Upper bounds on what a client may ask for, so one POST can't run for hours. */
 export const MAX_SWEEP_SEEDS = 8;
 export const MAX_SWEEP_STEPS = 2000;
@@ -66,7 +89,7 @@ export interface OpenedGame extends GameUnderTest {
  * imported on first use.
  */
 export interface SweepDeps {
-  openGame(opts: { dir: string; headless: boolean }): Promise<OpenedGame>;
+  openGame(opts: { dir: string; headless: boolean; onFrame?: (data: string) => void }): Promise<OpenedGame>;
   runSweep(
     game: GameUnderTest,
     opts: { policies: string[]; seeds: number[]; evidence: EvidenceStore; target: string; maxSteps: number },
@@ -78,8 +101,13 @@ export interface SweepDeps {
  * Clamp a request into something runnable. Unknown policy names are left to
  * runSweep, which records them as skips with a reason — that is more honest
  * than silently dropping them here.
+ *
+ * `available` is what to run when the caller names nothing: the registry's own
+ * list, resolved by the route. It is a parameter rather than a lookup so this
+ * stays pure and so a caller with no way to read the registry still gets a
+ * plan it can run.
  */
-export function planSweep(request: SweepRequest | undefined): SweepPlan {
+export function planSweep(request: SweepRequest | undefined, available?: readonly string[]): SweepPlan {
   const asked = Array.isArray(request?.policies)
     ? request.policies.filter((name): name is string => typeof name === 'string' && name.trim() !== '')
     : [];
@@ -87,11 +115,62 @@ export function planSweep(request: SweepRequest | undefined): SweepPlan {
     ? request.seeds.filter((seed): seed is number => Number.isFinite(seed)).map((seed) => Math.trunc(seed))
     : [];
   const maxSteps = Number.isFinite(request?.maxSteps) ? Math.trunc(request!.maxSteps!) : DEFAULT_SWEEP_MAX_STEPS;
+  const fallback = available !== undefined && available.length > 0 ? available : DEFAULT_SWEEP_POLICIES;
   return {
-    policies: asked.length > 0 ? [...new Set(asked)] : [...DEFAULT_SWEEP_POLICIES],
+    policies: asked.length > 0 ? [...new Set(asked)] : [...fallback],
     seeds: seeds.length > 0 ? [...new Set(seeds)].slice(0, MAX_SWEEP_SEEDS) : [...DEFAULT_SWEEP_SEEDS],
     maxSteps: Math.min(Math.max(maxSteps, 1), MAX_SWEEP_STEPS),
   };
+}
+
+/** What the registry says about one requested policy, before any of it runs. */
+export interface PolicyPlan {
+  policy: string;
+  /**
+   * Why it cannot run against this game, in the registry's own words, or null
+   * when it can. Same function the sweep asks, same capabilities object, asked
+   * a moment earlier. That is what lets the app show a skip reason while the
+   * sweep is still going instead of only in the report at the end.
+   */
+  unavailable: string | null;
+}
+
+let registryCache: Promise<string[]> | null = null;
+
+/**
+ * Every playtester the probe registry knows, in registry order.
+ *
+ * Read from the registry rather than listed here on purpose: the set of bots
+ * is probe-core's to decide, and a copy of it in the app would go stale the
+ * first time one is added. An empty list means the package could not be
+ * loaded, and every caller falls back rather than claiming there are none.
+ */
+export async function registeredPolicies(): Promise<string[]> {
+  registryCache ??= (async () => {
+    try {
+      const { policyRegistry } = await import('@hearth/probe-core');
+      return Object.keys(policyRegistry);
+    } catch {
+      return [];
+    }
+  })();
+  return registryCache;
+}
+
+/**
+ * What each requested policy can do against this game. Best-effort: a plan
+ * that cannot be made is simply absent, and the report still says at the end.
+ */
+export async function policyPlanFor(
+  policies: readonly string[],
+  capabilities: ProbeCapabilities,
+): Promise<PolicyPlan[] | null> {
+  try {
+    const { policyUnavailable } = await import('@hearth/probe-core');
+    return policies.map((policy) => ({ policy, unavailable: policyUnavailable(policy, capabilities) }));
+  } catch {
+    return null;
+  }
 }
 
 /** The real deps, resolved on first use so nothing loads a browser stack eagerly. */
@@ -99,7 +178,7 @@ export function defaultSweepDeps(): SweepDeps {
   return {
     async openGame(opts) {
       const { openWebGame } = await import('@hearth/adapter-web');
-      return openWebGame({ dir: opts.dir, headless: opts.headless });
+      return openWebGame({ dir: opts.dir, headless: opts.headless, onFrame: opts.onFrame });
     },
     async runSweep(game, opts) {
       const { runSweep } = await import('@hearth/probe-core');
@@ -174,12 +253,38 @@ export interface SweepJob {
   plan: SweepPlan;
   startedAt: number;
   promise: Promise<SweepReport | null>;
+  /**
+   * What the registry says about each requested policy, filled in the moment
+   * the game opens and its capabilities are readable. Null until then, and
+   * null forever if probe-core could not be asked.
+   *
+   * A forecast, not a record. It is right about every policy the capability
+   * gate decides, because it asks the same function with the same input; the
+   * sweep can still drop a steering policy in its prelude when no declared
+   * input measurably moves anything, and only the report knows about that.
+   */
+  policyPlan: PolicyPlan[] | null;
+}
+
+/**
+ * Where a running sweep's picture goes. The runner does not know what a
+ * socket is (the same split as the journal and the export bus): it hands
+ * frames to whoever asked, tagged with the folder they came from.
+ */
+export interface SweepWatcher {
+  /** One base64 JPEG of the page the probe is driving, about ten a second. */
+  onFrame(root: string, data: string): void;
+  /** The run is over, whether it finished or failed. Always called exactly once. */
+  onEnd(root: string): void;
 }
 
 export class SweepRunner {
   private readonly active = new Map<string, SweepJob>();
 
-  constructor(private readonly deps: Partial<SweepDeps> = {}) {}
+  constructor(
+    private readonly deps: Partial<SweepDeps> = {},
+    private readonly watcher?: SweepWatcher,
+  ) {}
 
   /** The job currently running for `root`, if any. */
   jobFor(root: string): SweepJob | undefined {
@@ -207,31 +312,53 @@ export class SweepRunner {
       plan: opts.plan,
       startedAt: Date.now(),
       promise: Promise.resolve(null),
+      policyPlan: null,
     };
     this.active.set(opts.root, job);
-    job.promise = this.run(opts).finally(() => {
+    job.promise = this.run(opts, job).finally(() => {
       if (this.active.get(opts.root) === job) this.active.delete(opts.root);
+      // Said here rather than in run()'s happy path so a sweep that threw
+      // (a missing browser, a game that would not open) still puts the
+      // watcher's own game back instead of leaving it on a frozen frame.
+      this.watcher?.onEnd(opts.root);
     });
     // The caller may not await; a rejection must not become an unhandled one.
     void job.promise.catch(() => undefined);
     return job;
   }
 
-  private async run(opts: { root: string; dir: string; target: string; plan: SweepPlan }): Promise<SweepReport | null> {
+  private async run(
+    opts: { root: string; dir: string; target: string; plan: SweepPlan },
+    job: SweepJob,
+  ): Promise<SweepReport | null> {
     const fallback = defaultSweepDeps();
     const openGame = this.deps.openGame ?? fallback.openGame;
     const runSweep = this.deps.runSweep ?? fallback.runSweep;
     const evidence = await (this.deps.createStore ?? fallback.createStore)(opts.root);
 
+    const watcher = this.watcher;
     let game: OpenedGame;
     try {
-      game = await openGame({ dir: opts.dir, headless: true });
+      // Headless, and watched. The probe cannot play in the pane's own iframe
+      // (that session belongs to whoever is sitting at the app), so it opens its
+      // own browser and streams what it sees back out. See probeStream.ts.
+      game = await openGame({
+        dir: opts.dir,
+        headless: true,
+        onFrame: watcher ? (data) => watcher.onFrame(opts.root, data) : undefined,
+      });
     } catch (err) {
       // A missing browser is the common failure and it is not a crash — say so
       // in the same feed the results would have appeared in.
       await note(evidence, `Playtest could not start: ${(err as Error).message}`);
       throw err;
     }
+
+    // The game is open, so what it declares is readable — and every policy the
+    // capability gate will refuse can be named NOW rather than in the report
+    // half a minute later. Without this, a bot that never had a chance sits
+    // looking queued for the length of the sweep.
+    job.policyPlan = await policyPlanFor(opts.plan.policies, game.capabilities);
 
     try {
       const report = await runSweep(game, {

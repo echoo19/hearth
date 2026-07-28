@@ -87,11 +87,22 @@ const toolAliases = {
   '@hearth/playtest': path.join(repoRoot, 'packages', 'playtest', 'src', 'index.ts'),
   '@hearth/runtime/lua': path.join(repoRoot, 'packages', 'runtime', 'src', 'lua.ts'),
   '@hearth/runtime': path.join(repoRoot, 'packages', 'runtime', 'src', 'index.ts'),
+  // The probe pair bundles from src like everything above, so a stale dist
+  // can never ship. (`@hearth/adapter-web/shim` is resolved at RUNTIME via
+  // createRequire, never imported statically, so the bare alias is safe.)
+  '@hearth/probe-core': path.join(repoRoot, 'packages', 'probe-core', 'src', 'index.ts'),
+  '@hearth/adapter-web': path.join(repoRoot, 'packages', 'adapter-web', 'src', 'index.ts'),
 };
 
 for (const [entry, outfile] of [
   [path.join(repoRoot, 'packages', 'cli', 'src', 'main.ts'), 'hearth-cli.mjs'],
   [path.join(repoRoot, 'packages', 'mcp-server', 'src', 'main.ts'), 'hearth-mcp.mjs'],
+  // The probe pair: what lets an agent (or a user's shell) playtest a web
+  // game from outside the app — the same sweep the Playtest button runs.
+  // Same external/lazy rules as the engine tools; playwright-core is reached
+  // only via a dynamic import inside the adapter's launchChromium().
+  [path.join(repoRoot, 'packages', 'probe-tools', 'src', 'cli.ts'), 'hearth-probe.mjs'],
+  [path.join(repoRoot, 'packages', 'probe-tools', 'src', 'mcp.ts'), 'hearth-probe-mcp.mjs'],
 ]) {
   await build({
     entryPoints: [entry],
@@ -148,4 +159,13 @@ for (const [entry, outfile] of [
 const playerSrc = path.join(repoRoot, 'packages', 'runtime', 'player', 'hearth-player.js');
 await copyFile(playerSrc, path.join(appRoot, 'dist-electron', 'hearth-player.js'));
 
-console.log('dist-electron/ ready (main + preload + hearth-cli.mjs + hearth-mcp.mjs + hearth-player.js)');
+// The reference probe shim ships next to the probe tools for the same reason
+// the player ships next to the CLI: `hearth-probe shim` copies it into a game,
+// and in a packaged install the adapter-web package it normally resolves from
+// does not exist on disk (resolveShimSource's next-to-entry fallback).
+const shimSrc = path.join(repoRoot, 'packages', 'adapter-web', 'shim', 'probe-shim.js');
+await copyFile(shimSrc, path.join(appRoot, 'dist-electron', 'probe-shim.js'));
+
+console.log(
+  'dist-electron/ ready (main + preload + hearth-cli.mjs + hearth-mcp.mjs + hearth-probe.mjs + hearth-probe-mcp.mjs + hearth-player.js + probe-shim.js)',
+);

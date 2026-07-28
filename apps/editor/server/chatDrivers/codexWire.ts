@@ -199,6 +199,53 @@ export function codexItemTitle(item: Record<string, unknown>): string {
 }
 
 // ---------------------------------------------------------------------------
+// Skills
+// ---------------------------------------------------------------------------
+
+/**
+ * Which skill a shell command is reading, or null.
+ *
+ * This is inference, and it is inference because codex offers nothing else.
+ * The protocol has `skills/list`, `skills/extraRoots/set`, `skills/config/write`
+ * and a `skills/changed` invalidation ping, and `UserInput` has a `skill`
+ * variant for a person picking one in a composer, but `ThreadItem`, the union
+ * every transcript row is built from, has NO skill member on
+ * CODEX_TESTED_VERSION. Skills reach the model as prose in the system prompt,
+ * and codex's own instructions for using one are: "the main agent must read
+ * its `SKILL.md` completely before taking task actions." Reading that file
+ * through the shell IS the invocation, and the path in the command names the
+ * skill.
+ *
+ * So this reads the path rather than guessing at intent, and refuses anything
+ * ambiguous: the command has to name exactly one `<root>/<id>/SKILL.md`, one
+ * level under a known skills root, with `<id>` shaped like a folder name. A
+ * sweep across several skills at once (a grep over a glob of skill folders)
+ * names none of them in particular and yields null, which leaves the ordinary
+ * command row in place.
+ *
+ * Separators are normalised and the comparison is case-folded so a Windows
+ * command reading a backslashed path under `.hearth\skills` still matches the
+ * root it came from.
+ */
+export function codexSkillRead(command: string | undefined, roots: readonly string[]): string | null {
+  if (!command || roots.length === 0) return null;
+  const haystack = command.replace(/\\/g, '/');
+  const prefixes = roots.map((root) => `${root.replace(/\\/g, '/').replace(/\/+$/, '')}/`.toLowerCase());
+  const found = new Set<string>();
+  for (const match of haystack.matchAll(/([^\s'"`;|&<>()]+)\/SKILL\.md/gi)) {
+    const dir = match[1];
+    const cut = dir.lastIndexOf('/');
+    if (cut <= 0) continue;
+    const id = dir.slice(cut + 1);
+    // A glob or a traversal segment is not a skill the row can name.
+    if (!/^[A-Za-z0-9._-]+$/.test(id) || id.startsWith('.')) continue;
+    const parent = `${dir.slice(0, cut)}/`.toLowerCase();
+    if (prefixes.includes(parent)) found.add(id);
+  }
+  return found.size === 1 ? [...found][0] : null;
+}
+
+// ---------------------------------------------------------------------------
 // Notifications -> ChatEvents
 // ---------------------------------------------------------------------------
 
@@ -211,8 +258,13 @@ export function codexItemTitle(item: Record<string, unknown>): string {
  * notifications, so their `item/started` and `item/completed` are deliberately
  * ignored — emitting the completed item's full text as well would print every
  * answer twice.
+ *
+ * `skillRoots` are the folders skills live in on this machine, used only to
+ * recognise a shell command that is reading one (see `codexSkillRead`).
+ * Optional: without them every command stays a command, which is exactly what
+ * this did before skills were surfaced.
  */
-export function mapCodexNotification(method: string, params: unknown): ChatEvent[] {
+export function mapCodexNotification(method: string, params: unknown, skillRoots: readonly string[] = []): ChatEvent[] {
   const p = asRecord(params);
   if (!p) return [];
 
@@ -243,9 +295,9 @@ export function mapCodexNotification(method: string, params: unknown): ChatEvent
     case 'thread/compacted':
       return [{ type: 'notice', text: 'Earlier turns were summarised to make room.' }];
     case 'item/started':
-      return mapItemStarted(asRecord(p.item));
+      return mapItemStarted(asRecord(p.item), skillRoots);
     case 'item/completed':
-      return mapItemCompleted(asRecord(p.item));
+      return mapItemCompleted(asRecord(p.item), skillRoots);
     case 'turn/completed':
       return [{ type: 'turn-complete' }];
     case 'error': {
@@ -341,12 +393,20 @@ function mapSpecialItem(item: Record<string, unknown>, id: string, done: boolean
   }
 }
 
-function mapItemStarted(item: Record<string, unknown> | null): ChatEvent[] {
+function mapItemStarted(item: Record<string, unknown> | null, skillRoots: readonly string[]): ChatEvent[] {
   if (!item) return [];
   const id = str(item.id);
   if (!id) return [];
   const special = mapSpecialItem(item, id, false);
   if (special) return special;
+  // A read of a skill's SKILL.md REPLACES the command row rather than sitting
+  // beside it: the command is the mechanism, the skill is the thing that
+  // happened, and printing both would say the same event twice. The command
+  // itself stays as the row's detail, so opening it shows what actually ran.
+  const skill = item.type === 'commandExecution' ? codexSkillRead(str(item.command), skillRoots) : null;
+  if (skill) {
+    return [{ type: 'tool-begin', toolId: id, kind: 'skill', title: skill, detail: str(item.command) }];
+  }
   const kind = codexItemKind(String(item.type ?? ''));
   if (!kind) return [];
   const events: ChatEvent[] = [
@@ -361,12 +421,18 @@ function mapItemStarted(item: Record<string, unknown> | null): ChatEvent[] {
   return events;
 }
 
-function mapItemCompleted(item: Record<string, unknown> | null): ChatEvent[] {
+function mapItemCompleted(item: Record<string, unknown> | null, skillRoots: readonly string[]): ChatEvent[] {
   if (!item) return [];
   const id = str(item.id);
   if (!id) return [];
   const special = mapSpecialItem(item, id, true);
   if (special) return special;
+  // Settles the skill row opened above. No summary: the captured output of
+  // this command is the skill's own text, and a whole SKILL.md pasted into a
+  // row's detail is not what "what happened" means.
+  if (item.type === 'commandExecution' && codexSkillRead(str(item.command), skillRoots)) {
+    return [{ type: 'tool-end', toolId: id, status: codexStatus(item.status) }];
+  }
   const kind = codexItemKind(String(item.type ?? ''));
   if (!kind) return [];
   const events: ChatEvent[] = [];
@@ -493,11 +559,38 @@ export function codexApprovalReply(method: string, decision: ApprovalDecision): 
 // Models and per-turn overrides
 // ---------------------------------------------------------------------------
 
-/** One model the codex account can answer with, as the selector shows it. */
+/**
+ * One reasoning effort a model accepts. The id is the token codex wants on
+ * `turn/start`; the description is the binary's own one-liner for it. There is
+ * deliberately no display name here — codex doesn't ship one, so naming these
+ * is presentation, and presentation is the client's job.
+ */
+export interface CodexEffortOption {
+  id: string;
+  description?: string;
+}
+
+/**
+ * One model the codex account can answer with, as the selector shows it.
+ *
+ * Everything past `id`/`label` is the binary's own catalogue entry, carried
+ * through rather than summarised: which efforts THIS model accepts, which one
+ * it uses when none is sent, and the sentence codex itself uses to describe it.
+ * Offering an effort a model rejects is the same class of mistake as inventing
+ * a model id, and only the binary knows the answer.
+ */
 export interface CodexModelInfo {
   id: string;
   label: string;
   note?: string;
+  /** codex's own one-line description, e.g. "Fast and affordable…". */
+  description?: string;
+  /** This is the model codex picks when no model is named. */
+  isDefault?: boolean;
+  /** Efforts this model accepts, in the binary's order. Absent = it said none. */
+  efforts?: CodexEffortOption[];
+  /** The effort this model uses when the turn names none. */
+  defaultEffort?: string;
 }
 
 /**
@@ -519,6 +612,40 @@ export function codexTurnOverrides(agent: AgentTurnOptions | null | undefined): 
   if (typeof agent.model === 'string' && agent.model !== '') out.model = agent.model;
   if (agent.effort) out.effort = agent.effort;
   return out;
+}
+
+/**
+ * The standing-instructions field to put on a `thread/start`.
+ *
+ * `ThreadStartParams` on CODEX_TESTED_VERSION carries TWO instruction fields
+ * and they are not interchangeable:
+ *
+ *  - `baseInstructions` REPLACES codex's own system prompt. The binary's
+ *    embedded copy of that prompt begins "You are Codex, a coding agent based
+ *    on GPT-5" and runs to several thousand words of tool and editing rules;
+ *    sending a user's house rules there would delete all of it.
+ *  - `developerInstructions` is an ADDITIONAL developer message. This is the
+ *    one we want.
+ *
+ * Neither field is documented in the generated schema, so the difference was
+ * established by running the real binary rather than by reading the names: a
+ * thread started with `developerInstructions: "always begin your reply with
+ * PLATYPUS"`, in a folder whose AGENTS.md said "the codeword is TANGERINE",
+ * answered "PLATYPUS. The project codeword is TANGERINE." Both were honoured,
+ * which is the two things that had to be true — the text reaches the model,
+ * and it does not displace the project's own instructions.
+ *
+ * `thread/resume` declares the same field, and it is deliberately NOT sent
+ * there. Two more runs against the binary showed why: instructions given at
+ * `thread/start` survive a resume on their own, and instructions passed to a
+ * `thread/resume` are ignored. Sending it on resume would be a line of code
+ * that looks like it does something and does not.
+ *
+ * Absent when there is nothing to say — an explicit null would be a request to
+ * clear instructions, which is not what "the user set no preferences" means.
+ */
+export function codexThreadInstructions(personal: string | null): { developerInstructions?: string } {
+  return personal ? { developerInstructions: personal } : {};
 }
 
 /**
@@ -551,9 +678,34 @@ export function codexInputItems(text: string, attachments: readonly ChatAttachme
 }
 
 /**
+ * The `supportedReasoningEfforts` array of one model row.
+ *
+ * `ReasoningEffortOption` on CODEX_TESTED_VERSION is
+ * `{ reasoningEffort: string, description: string }`, and a real `model/list`
+ * for a ChatGPT Plus account returns six of them for GPT-5.6-Sol
+ * (`low medium high xhigh max ultra`) and four for GPT-5.4. Absent rather than
+ * empty when the model declares none: "this model has no effort dial" and "we
+ * don't know its efforts" both mean the same thing to the picker — don't offer
+ * one — and neither is a reason to guess.
+ */
+function codexEfforts(raw: unknown): CodexEffortOption[] | undefined {
+  if (!Array.isArray(raw)) return undefined;
+  const efforts: CodexEffortOption[] = [];
+  for (const entry of raw) {
+    const option = asRecord(entry);
+    const id = str(option?.reasoningEffort);
+    if (!id) continue;
+    const description = str(option?.description);
+    efforts.push(description ? { id, description } : { id });
+  }
+  return efforts.length > 0 ? efforts : undefined;
+}
+
+/**
  * Read `model/list`'s result into the selector's vocabulary. Hidden models are
- * dropped (codex hides them from its own picker for a reason), and the
- * account's default is noted so the UI can say which one "Default" means.
+ * dropped (codex hides them from its own picker for a reason); everything else
+ * the row declares about itself is carried through, because the alternative is
+ * a picker that shows six identical rows named "Default".
  */
 export function mapCodexModels(result: unknown): CodexModelInfo[] {
   const data = asRecord(result)?.data;
@@ -565,7 +717,15 @@ export function mapCodexModels(result: unknown): CodexModelInfo[] {
     const id = str(model.id) ?? str(model.model);
     if (!id) continue;
     const entry: CodexModelInfo = { id, label: str(model.displayName) ?? id };
-    if (model.isDefault === true) entry.note = 'Default';
+    const description = str(model.description);
+    if (description) entry.description = description;
+    if (model.isDefault === true) entry.isDefault = true;
+    const efforts = codexEfforts(model.supportedReasoningEfforts);
+    if (efforts) entry.efforts = efforts;
+    const defaultEffort = str(model.defaultReasoningEffort);
+    // Only when the model actually accepts it — a default outside the
+    // supported set would be a suggestion the picker could not offer.
+    if (defaultEffort && efforts?.some((e) => e.id === defaultEffort)) entry.defaultEffort = defaultEffort;
     models.push(entry);
   }
   return models;

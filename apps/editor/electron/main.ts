@@ -27,6 +27,7 @@ import {
   resolveToolPaths,
   isHearthServerPath,
 } from '../server/projectServer.js';
+import { attachProbeStream } from '../server/probeStream.js';
 import { ensureHearthShim, hearthPtyEnv } from '../server/hearthShim.js';
 import { applyAppMenu, buildAppMenuTemplate } from './appMenu.js';
 import { resolveUpdatePolicy } from './updaterPolicy.js';
@@ -96,6 +97,8 @@ function startServer(uiRoot: string): Promise<{ port: number; close: () => void 
     fs.createReadStream(finalPath).pipe(res);
   });
   attachWebSocket(server, ctx);
+  // The running-sweep picture rides its own upgrade path; see probeStream.ts.
+  attachProbeStream(server, ctx.probeBus);
   return new Promise((resolve, reject) => {
     server.on('error', reject);
     // Port 0 = pick any free port; loopback only.
@@ -114,10 +117,10 @@ function registerDialogHandlers(getWindow: () => BrowserWindow | null): void {
   ipcMain.handle('hearth:pick-project-folder', async () => {
     const win = getWindow();
     const result = await dialog.showOpenDialog(win!, {
-      title: 'Open Hearth Project',
-      message: 'Choose a folder containing hearth.json',
+      title: 'Open a Hearth project',
+      message: 'Choose a folder that contains hearth.json',
       properties: ['openDirectory'],
-      buttonLabel: 'Open Project',
+      buttonLabel: 'Open',
     });
     return result.canceled ? null : result.filePaths[0] ?? null;
   });
@@ -125,10 +128,10 @@ function registerDialogHandlers(getWindow: () => BrowserWindow | null): void {
   ipcMain.handle('hearth:pick-directory', async () => {
     const win = getWindow();
     const result = await dialog.showOpenDialog(win!, {
-      title: 'Choose Location',
-      message: 'The project is created in a subfolder here',
+      title: 'Open a folder',
+      message: 'Pick a folder to work in, or make a new one',
       properties: ['openDirectory', 'createDirectory'],
-      buttonLabel: 'Choose',
+      buttonLabel: 'Open',
     });
     return result.canceled ? null : result.filePaths[0] ?? null;
   });
@@ -467,7 +470,7 @@ async function smokeTestPty(): Promise<void> {
  */
 async function smokeTestHearthShim(): Promise<void> {
   const toolPaths = await resolveToolPaths(process.cwd());
-  const shimDir = await ensureHearthShim(toolPaths.cli);
+  const shimDir = await ensureHearthShim(toolPaths.cli, toolPaths.probe);
   const nodePty = await import('@lydell/node-pty');
   const shell = process.platform === 'win32' ? 'powershell.exe' : process.env.SHELL || '/bin/bash';
   const marker = 'hearth-shim-ok';

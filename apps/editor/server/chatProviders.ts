@@ -29,12 +29,35 @@ import { CODEX_INSTALL_HINT, readCodexStatus, startCodexLogin, type CodexStatus 
 
 export { CODEX_INSTALL_HINT };
 
-/** One model a provider offers, in the words the selector shows. */
+/** One reasoning effort a model accepts, as its own backend declared it. */
+export interface ProviderEffortOption {
+  id: string;
+  description?: string;
+}
+
+/**
+ * One model a provider offers, in the words the selector shows.
+ *
+ * The optional half is the backend's own catalogue entry and is only ever as
+ * full as that backend is willing to say. Codex answers all of it from
+ * `model/list`; Anthropic has no equivalent call, so its rows carry a curated
+ * note and nothing else. A field that is absent means "this backend didn't
+ * say", and the picker's answer to that is to offer no control — never to
+ * invent one.
+ */
 export interface ProviderModelInfo {
   /** Wire id. The empty string means "whatever the provider defaults to". */
   id: string;
   label: string;
   note?: string;
+  /** The backend's own one-line description of the model. */
+  description?: string;
+  /** This is the model the backend picks when the turn names none. */
+  isDefault?: boolean;
+  /** Efforts THIS model accepts. Absent = it has no effort dial to offer. */
+  efforts?: ProviderEffortOption[];
+  /** The effort it uses when the turn names none. */
+  defaultEffort?: string;
 }
 
 /**
@@ -56,8 +79,10 @@ export const ANTHROPIC_MODELS: ProviderModelInfo[] = [
 export const OPENAI_FALLBACK_MODELS: ProviderModelInfo[] = [{ id: '', label: 'Default' }];
 
 /**
- * The selector's OpenAI list: whatever the binary reported, always led by a
- * "Default" row so the user can hand the choice back to codex's own config.
+ * The selector's OpenAI list: whatever the binary reported, always led by the
+ * empty-id row so the user can hand the choice back to codex's own config.
+ * That row is the one entry here that is ours rather than the binary's — the
+ * client names it (see `modelGroups`), so both providers word it the same way.
  */
 export function openAiModels(status: CodexStatus): ProviderModelInfo[] {
   const probed = status.models ?? [];

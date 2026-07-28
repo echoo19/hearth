@@ -28,7 +28,10 @@
  */
 import path from 'node:path';
 import { promises as fsp } from 'node:fs';
+import { composeAgentInstructions, hearthFactsPrompt } from './agentFacts.js';
 import { isInlineImage, type ChatAttachment } from './chatAttachments.js';
+import { hearthPtyEnv } from './hearthShim.js';
+import { readPersonalPrompt } from './personalization.js';
 import { syncSkillsIntoProject } from './skills.js';
 
 export type { ChatAttachment } from './chatAttachments.js';
@@ -37,8 +40,18 @@ export type { ChatAttachment } from './chatAttachments.js';
 // Wire shapes
 // ---------------------------------------------------------------------------
 
-/** What a tool call fundamentally IS, for rendering purposes. */
-export type ToolKind = 'command' | 'file-change' | 'mcp' | 'web-search' | 'other';
+/**
+ * What a tool call fundamentally IS, for rendering purposes.
+ *
+ * `skill` is here rather than in a channel of its own because a skill IS a
+ * tool call to both backends, and routing it through the existing tool path
+ * means it settles, errors and replays by the code that already does that for
+ * every other call. What it is NOT is a generic tool: the app asks people to
+ * install and curate skills, so "the agent used the one you switched on" has
+ * to be visible, and a row titled `Skill` next to `Read` and `Bash` said
+ * nothing.
+ */
+export type ToolKind = 'command' | 'file-change' | 'mcp' | 'web-search' | 'skill' | 'other';
 
 /** How a tool call, or a subagent, finished. */
 export type ToolStatus = 'ok' | 'error' | 'declined';
@@ -160,8 +173,20 @@ export type ChatDriverKind = 'stub' | 'agent-sdk' | 'codex';
 /** Which vendor answers. Auth for each is configured independently. */
 export type ChatProvider = 'anthropic' | 'openai';
 
-/** How hard a reasoning model should think. Only Codex exposes this. */
-export type ReasoningEffort = 'low' | 'medium' | 'high';
+/**
+ * How hard a reasoning model should think. Only Codex exposes this, and the
+ * vocabulary is genuinely OPEN: `ReasoningEffort` in the binary's own
+ * `codex app-server generate-ts` output is `string`, and a real `model/list`
+ * on CODEX_TESTED_VERSION returns six of them for one model —
+ * `low medium high xhigh max ultra` — with the supported set and the default
+ * differing per model.
+ *
+ * So this is not a union. A closed one would silently drop the efforts the
+ * user's own account offers, which is the same failure as inventing model ids:
+ * the authoritative list comes from the binary, per model, and the picker only
+ * ever offers what a model declared.
+ */
+export type ReasoningEffort = string;
 
 /**
  * Who should answer THIS turn, and how. The composer sends it with every user
@@ -180,8 +205,16 @@ export interface AgentTurnOptions {
 }
 
 /**
+ * Is this a plausible effort token? Shape only, never a list of known words:
+ * the words are the model's to name (see ReasoningEffort). This exists so a
+ * number, an object or a paragraph can't be forwarded to codex as an effort,
+ * not to second-guess the catalogue the picker read out of the binary.
+ */
+const EFFORT_TOKEN = /^[a-z][a-z0-9-]{0,23}$/;
+
+/**
  * Read the `agent` field off a wire frame. Tolerant on purpose: an unknown
- * provider, a non-string model or a made-up effort are dropped rather than
+ * provider, a non-string model or an unusable effort are dropped rather than
  * failing the turn, and a frame with nothing usable yields null (which every
  * caller treats as "no choice expressed").
  */
@@ -191,7 +224,7 @@ export function parseAgentOptions(raw: unknown): AgentTurnOptions | null {
   const out: AgentTurnOptions = {};
   if (record.provider === 'anthropic' || record.provider === 'openai') out.provider = record.provider;
   if (typeof record.model === 'string' && record.model.trim() !== '') out.model = record.model.trim();
-  if (record.effort === 'low' || record.effort === 'medium' || record.effort === 'high') out.effort = record.effort;
+  if (typeof record.effort === 'string' && EFFORT_TOKEN.test(record.effort.trim())) out.effort = record.effort.trim();
   return Object.keys(out).length > 0 ? out : null;
 }
 
@@ -446,9 +479,30 @@ export function sdkToolKind(name: string): ToolKind {
     case 'WebFetch':
     case 'WebSearch':
       return 'web-search';
+    // The SDK invokes a skill as an ordinary tool named `Skill`, whose input
+    // carries the skill's own name. Established by reading the tool's schema
+    // out of the shipped binary, not guessed:
+    //   skill: string  "The name of a skill from the available-skills list"
+    //   args:  string  optional
+    case 'Skill':
+      return 'skill';
     default:
       return 'other';
   }
+}
+
+/**
+ * The skill a `Skill` call names, and the words it was handed. Null for
+ * anything else, and for a call whose input arrived without a usable name:
+ * "the agent used a skill but we cannot say which" is not worth a row.
+ */
+export function sdkSkillCall(name: string, input: unknown): { skill: string; args?: string } | null {
+  if (name !== 'Skill') return null;
+  const record = asRecord(input);
+  const skill = record?.skill;
+  if (typeof skill !== 'string' || skill.trim() === '') return null;
+  const args = record?.args;
+  return { skill: skill.trim(), args: typeof args === 'string' && args.trim() !== '' ? args.trim() : undefined };
 }
 
 /** Plain-language one-liner for a tool call, e.g. `npm test` for a Bash call. */
@@ -456,7 +510,7 @@ export function sdkToolTitle(name: string, input: unknown): string {
   const record = asRecord(input);
   const command = record?.command;
   if (sdkToolKind(name) === 'command' && typeof command === 'string' && command.trim() !== '') return command;
-  return name;
+  return sdkSkillCall(name, input)?.skill ?? name;
 }
 
 /** The file a file-change tool touched, and whether it created it. */
@@ -533,8 +587,16 @@ export function mapSdkMessage(message: unknown): ChatEvent[] {
         out.push({ type: 'subagent-start', agentId: id, role, title });
         continue;
       }
-      const kind = sdkToolKind(name);
-      out.push({ type: 'tool-begin', toolId: id, kind, title: sdkToolTitle(name, input), detail: describeToolInput(input) });
+      // A Skill call whose input never named a skill falls back to a plain
+      // tool row: "Used Skill skill" is worse than the generic line it
+      // replaced, and the row exists to name the skill or not be there.
+      const call = sdkSkillCall(name, input);
+      const kind = sdkToolKind(name) === 'skill' && !call ? 'other' : sdkToolKind(name);
+      // A skill's detail is what it was ASKED to do. `describeToolInput` would
+      // find nothing on a Skill call (its keys are paths, commands and
+      // queries), so the row would be unopenable and the arguments lost.
+      const detail = kind === 'skill' ? call?.args : describeToolInput(input);
+      out.push({ type: 'tool-begin', toolId: id, kind, title: sdkToolTitle(name, input), detail });
       if (kind === 'file-change') {
         const change = sdkFileChange(name, input);
         if (change) out.push({ type: 'file-change', toolId: id, files: [change] });
@@ -732,6 +794,20 @@ export async function sdkUserContent(
  * outside the folder goes through `canUseTool`, which is the approval seam —
  * it raises an `approval-request` and blocks the turn on the answer.
  */
+/**
+ * What of Hearth's own tooling this machine can offer a bound agent. Resolved
+ * once by the caller that owns tool paths (ws.ts, via resolveToolPaths +
+ * ensureHearthShim) and injected, so this module never has to know where
+ * bundles live. Absent entirely in tests and degraded setups — the drivers
+ * treat that as "no tools", never as an error.
+ */
+export interface AgentToolAccess {
+  /** Directory holding the `hearth`/`hearth-probe` launchers, for PATH. */
+  shimDir: string | null;
+  /** True when that directory actually contains a working `hearth-probe`. */
+  probeCli: boolean;
+}
+
 export class AgentSdkDriver implements ChatDriver {
   readonly kind = 'agent-sdk' as const;
   private queue = new EventQueue<ChatEvent>();
@@ -758,6 +834,8 @@ export class AgentSdkDriver implements ChatDriver {
      * restarting the agent mid-conversation.
      */
     private readonly model: string | null = null,
+    /** Hearth tooling this machine offers the agent. Null means none. */
+    private readonly tools: AgentToolAccess | null = null,
   ) {}
 
   get events(): AsyncIterable<ChatEvent> {
@@ -771,14 +849,37 @@ export class AgentSdkDriver implements ChatDriver {
     // folder first. Done per BIND, not per message: this query is long-lived,
     // so a skill switched off mid-conversation is felt by the next one.
     await syncSkillsIntoProject(projectRoot).catch(() => []);
+    // The user's standing preferences, read fresh for the same reason the
+    // skills are: they are files a person edits while Hearth is running.
+    const personal = await readPersonalPrompt();
+    // The house facts come first, then the person's own voice — see
+    // agentFacts.ts for what is (and deliberately is not) said there.
+    const append = composeAgentInstructions(
+      hearthFactsPrompt({ probeCli: this.tools?.probeCli === true }),
+      personal,
+    );
+    // The shim dir carries `hearth` and (when present) `hearth-probe`, so the
+    // Bash the agent runs finds the same tools the embedded terminal does.
+    const env = this.tools?.shimDir
+      ? hearthPtyEnv(process.env, this.tools.shimDir)
+      : { ...process.env };
     const stream = this.sdk.query({
       prompt: this.turns,
       options: {
         cwd: projectRoot,
         permissionMode: 'acceptEdits',
         includePartialMessages: true,
-        env: { ...process.env, ANTHROPIC_API_KEY: this.apiKey },
+        env: { ...env, ANTHROPIC_API_KEY: this.apiKey },
         ...(this.model ? { model: this.model } : {}),
+        // APPEND to the preset, never replace it. `systemPrompt` also accepts
+        // a bare string, and passing one here would substitute a paragraph of
+        // house rules for the entire working prompt — the tool instructions
+        // included — which reads as "the agent stopped being able to edit
+        // files" rather than as a settings bug. The append always carries the
+        // house facts; personalization rides after them when set.
+        ...(append
+          ? { systemPrompt: { type: 'preset' as const, preset: 'claude_code' as const, append } }
+          : {}),
         canUseTool: (toolName: string, input: unknown) => this.askPermission(toolName, input),
       },
     });
@@ -909,6 +1010,8 @@ export async function createChatDriver(
     onThreadId?: (threadId: string) => void;
     /** The turn that is binding this driver, when it expressed a choice. */
     agent?: AgentTurnOptions | null;
+    /** Hearth tooling on this machine (shim dir + probe), from ws.ts. */
+    tools?: AgentToolAccess | null;
     loadAgentSdk?: typeof loadAgentSdk;
     createCodexDriver?: (
       projectRoot: string,
@@ -916,6 +1019,7 @@ export async function createChatDriver(
         resumeThreadId?: string | null;
         onThreadId?: (threadId: string) => void;
         agent?: AgentTurnOptions | null;
+        tools?: AgentToolAccess | null;
       },
     ) => Promise<ChatDriver | null>;
   },
@@ -930,6 +1034,7 @@ export async function createChatDriver(
         resumeThreadId?: string | null;
         onThreadId?: (threadId: string) => void;
         agent?: AgentTurnOptions | null;
+        tools?: AgentToolAccess | null;
       },
     ) => {
       // Imported lazily so a project that never uses OpenAI never pays for
@@ -946,7 +1051,7 @@ export async function createChatDriver(
     // Only an anthropic-targeted choice names an anthropic model; a codex
     // model id must never reach the SDK.
     const model = agent && (agent.provider ?? 'anthropic') === 'anthropic' ? (agent.model ?? null) : null;
-    return sdk ? new AgentSdkDriver(sdk, key, model) : null;
+    return sdk ? new AgentSdkDriver(sdk, key, model, options?.tools ?? null) : null;
   };
   const openai = async (): Promise<ChatDriver | null> => {
     try {
@@ -954,6 +1059,7 @@ export async function createChatDriver(
         resumeThreadId: options?.resumeThreadId ?? null,
         onThreadId: options?.onThreadId,
         agent,
+        tools: options?.tools ?? null,
       });
     } catch {
       return null;
