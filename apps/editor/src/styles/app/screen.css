@@ -1,0 +1,88 @@
+/* Full screens: the chrome they share.
+
+   A screen takes the whole working area — everything right of the rail, under
+   the top bar — rather than floating over it. The header is its only chrome:
+   a way back that names its destination, the screen's own name, and its
+   primary act. */
+
+.screen {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+  background: var(--bg-05, var(--bg-1));
+}
+
+.screen-head {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  align-items: center;
+  gap: 12px;
+  flex: none;
+  height: 52px;
+  padding: 0 16px;
+  border-bottom: 1px solid var(--border);
+}
+
+/* The lead and actions slots hold their width whether or not they have
+   anything in them, so the title sits still while the screen changes under
+   it. */
+.screen-head-lead {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+}
+
+.screen-head-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  min-width: 0;
+}
+
+.screen-head-title {
+  margin: 0;
+  font-size: var(--text-sm);
+  font-weight: 500;
+  color: var(--ink-mute);
+  white-space: nowrap;
+}
+
+.screen-back {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  max-width: 100%;
+  padding: 6px 10px 6px 6px;
+  border: 0;
+  border-radius: var(--radius);
+  background: transparent;
+  font: inherit;
+  font-size: var(--text-sm);
+  color: var(--ink-mute);
+  cursor: pointer;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  transition: background var(--t-fast) var(--ease-out), color var(--t-fast) var(--ease-out);
+}
+
+.screen-back:hover {
+  background: var(--bg-2);
+  color: var(--ink);
+}
+
+/* The icon set has one chevron and it points forward; back is the same shape
+   turned around, rather than a second glyph that has to be kept in step. */
+.screen-back svg {
+  transform: rotate(180deg);
+}
+
+/* The screen's own scrolling body. Screens are pages: the header stays, the
+   content moves under it. */
+.screen-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}

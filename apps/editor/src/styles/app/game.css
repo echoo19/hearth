@@ -38,7 +38,9 @@
   min-height: 0;
   display: grid;
   place-items: center;
-  padding: 24px 24px 62px;
+  /* Bottom clears the absolute-positioned capability strip (49px) plus a
+     small visual gap, so the stage never sits under the overlay. */
+  padding: 24px 24px 60px;
   container-type: size;
   background: var(--canvas-bg);
 }
@@ -48,6 +50,9 @@
    max-* pair is the fallback for engines without container query units. */
 .game-stage {
   --game-aspect: 1.7778;
+  /* The probe's picture and its note are laid over the game, inside the same
+     rounded, clipped box. */
+  position: relative;
   width: min(100cqw, calc(100cqh * var(--game-aspect)));
   max-width: 100%;
   max-height: 100%;
@@ -60,6 +65,45 @@
   /* Only when the shape actually changes — a measured canvas replacing the
      16:9 assumption — and only the box, never its contents. */
   transition: width var(--t-slow) var(--ease-out), aspect-ratio var(--t-slow) var(--ease-out);
+}
+
+/* Something else is holding the controls. A game moving on its own with no
+   explanation reads as a bug, so the stage breathes ember for as long as the
+   sweep runs — the one place in the app where the accent moves.
+
+   1600ms, well outside the --t-* set: those durations answer a gesture, and
+   this answers nothing. It is an ambient state that has to be noticeable
+   without being urgent, and a pulse fast enough to read as feedback would keep
+   claiming the eye back from the game it is meant to be framing.
+
+   `ease-in-out` rather than the app's --ease-out token, because `alternate`
+   plays the curve backwards on every other pass: an ease-out run in reverse is
+   an ease-in, and the two meet at the turnaround with a visible kink.
+
+   No fill-mode. `both` would hold the `from` frame whenever the animation
+   doesn't run at all — a background tab, a headless render — and leave the
+   stage wearing a ring nobody asked for long after the sweep ended. */
+.game-stage.is-driven {
+  animation: game-driven 1600ms ease-in-out infinite alternate;
+}
+
+@keyframes game-driven {
+  from {
+    box-shadow: var(--shadow-2), 0 0 0 1px var(--accent-soft), 0 0 0 0 var(--accent-faint);
+  }
+  to {
+    box-shadow: var(--shadow-2), 0 0 0 2px var(--accent), 0 0 26px 4px var(--accent-soft);
+  }
+}
+
+/* Reduced motion: a steady ring, not nothing. The state still has to be
+   legible — it is the difference between "your game is broken" and "a bot is
+   playing it" — so the pulse becomes the brightest frame, held. */
+@media (prefers-reduced-motion: reduce) {
+  .game-stage.is-driven {
+    animation: none;
+    box-shadow: var(--shadow-2), 0 0 0 2px var(--accent), 0 0 26px 4px var(--accent-soft);
+  }
 }
 
 .game-frame {
@@ -89,6 +133,70 @@
   to {
     opacity: 1;
   }
+}
+
+/* --- The bot's session ---------------------------------------------------- */
+
+/* What the probe's own browser is showing, over the top of your game while it
+   plays (see ProbeStage.tsx). Matte black behind it because the stream is
+   letterboxed: the probe drives a 960x540 viewport, the stage is shaped like
+   whatever this game's canvas is, and the two rarely agree. Filling the
+   difference with the stage's own background would read as part of the game.
+
+   Scaled up from 640 wide by the browser's default smoothing, deliberately:
+   this is a picture of a game, not the game, and a sharpened upscale would
+   claim a fidelity the stream does not have. */
+.probe-frame {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  background: oklch(0.08 0.004 285);
+  animation: game-in var(--t-slow) var(--ease-out) both;
+}
+
+/* Whose game is on screen. Top-left, small, and out of the way of the action
+   strip at the bottom. It is not a badge for a feature: it is the sentence
+   that keeps the pane honest, so it is present for every state of a running
+   sweep, including the one where there is no picture at all. */
+.probe-note {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 9px 3px 7px;
+  border-radius: 999px;
+  background: var(--overlay-bg);
+  backdrop-filter: blur(6px);
+  color: var(--ink-mute);
+  font-size: var(--text-2xs);
+  letter-spacing: 0.01em;
+  /* Above the stream, and never in the way of a pointer aimed at the game. */
+  pointer-events: none;
+}
+
+.probe-note-dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: currentColor;
+  opacity: 0.5;
+}
+
+/* Live is the only state that gets the accent, because it is the only one
+   where the ember ring around the stage and the picture inside it are saying
+   the same thing. Static: the stage is already breathing, and a second moving
+   thing in the same box would be noise. */
+.probe-note.is-live {
+  color: var(--accent);
+}
+
+.probe-note.is-live .probe-note-dot {
+  background: var(--accent);
+  opacity: 1;
 }
 
 .game-empty {
@@ -134,8 +242,11 @@
   text-wrap: pretty;
 }
 
-/* --- Capability strip ----------------------------------------------------- */
+/* --- Action strip --------------------------------------------------------- */
 
+/* The strip used to carry a row of capability chips on the left. They named
+   things rather than offering them, so they are gone and only the two actions
+   remain — pushed to the trailing edge, away from the game's own content. */
 .capability-strip {
   position: absolute;
   left: 0;
@@ -143,86 +254,85 @@
   bottom: 0;
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 9px 12px 9px 10px;
+  justify-content: flex-end;
+  gap: 6px;
+  padding: 8px 12px 8px 10px;
   background: var(--overlay-bg);
   border-top: 1px solid var(--border);
   backdrop-filter: blur(6px);
 }
 
-/* Only the read-out scrolls. The Playtest button beside it is `flex: none`,
-   so a narrow pane clips chips, never the action. */
-.capability-senses {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  flex: 1;
-  min-width: 0;
-  overflow-x: auto;
-  scrollbar-width: none;
-}
+/* --- Play ----------------------------------------------------------------- */
 
-.capability-senses::-webkit-scrollbar {
-  display: none;
-}
-
-.sense-chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 3px 10px 3px 8px;
-  border-radius: 999px;
-  font-size: var(--text-xs);
-  letter-spacing: 0.01em;
-  color: var(--ink-faint);
-  white-space: nowrap;
-  cursor: default;
-  transition: color var(--t) var(--ease-out);
-}
-
-.sense-chip.is-on {
-  color: var(--ink-mute);
-}
-
-.sense-dot {
-  width: 5px;
-  height: 5px;
-  border-radius: 50%;
-  background: var(--guide);
+/* Opens the game in a real browser window, where it can actually be played.
+   A ghost icon on the `.btn btn-ghost btn-icon btn-sm` chassis, which already
+   carries the hover, press and focus states; all this adds is the unavailable
+   case, which the chassis expresses through `:disabled` and this control
+   cannot use (see the aria-disabled note in CapabilityStrip.tsx). */
+/* It keeps the ghost's weight, deliberately — Playtest is the filled one and
+   the note below says why — but it does not keep the ghost's invisibility. On
+   an otherwise empty strip, next to a filled pill, a borderless glyph read as
+   a mark rather than as something to press, which is the wrong reading for the
+   control a maker reaches for most. A resting hairline and the block fill make
+   it a button without making it a second primary. */
+.play-btn {
   flex: none;
-  transition: background var(--t) var(--ease-out);
+  border: 1px solid var(--border);
+  background: var(--bg-2);
 }
 
-.sense-chip.is-on .sense-dot {
-  background: var(--ok);
+/* `:hover` and `:active` in primitives.css guard on `:not(:disabled)`, which
+   an aria-disabled button still passes — so both have to be answered here, or
+   an unavailable control would still light up and dip under the pointer. The
+   edge goes too: an unavailable control that still looks pressable is worse
+   than one that looks like nothing. */
+.play-btn[aria-disabled='true'],
+.play-btn[aria-disabled='true']:hover,
+.play-btn[aria-disabled='true']:active {
+  border-color: transparent;
+  background: transparent;
+  color: var(--ink-faint);
+  transform: none;
+  cursor: default;
 }
 
 /* --- Playtest ------------------------------------------------------------- */
 
-/* The pane's one action, and one of only two ember-filled controls in the app.
-   It sits in the strip because what it does is turn the strip's read-out into
-   evidence. */
+/* The pane's primary action, and one of only two ember-filled controls in the
+   app. It is filled and Play beside it is not, because handing the game to
+   something that is not you is the larger of the two decisions. */
+/* Sized a step above the controls around it, because it is not one of them:
+   everything else in this strip adjusts the view, and this hands the game to
+   something that plays it. It was reading as a chip in a row of chips.
+
+   The lift is a resting shadow and a hairline of its own colour, not a glow
+   and not motion. The stage already breathes ember while a sweep runs (see
+   .game-stage.is-driven), and a button that animated at rest would be
+   competing with the game it sits under for the whole session. */
 .playtest-btn {
   display: inline-flex;
   align-items: center;
   gap: 8px;
   flex: none;
-  height: var(--ctl-h-sm);
-  padding: 0 14px;
+  height: 32px;
+  padding: 0 16px;
   border: 0;
   border-radius: 999px;
   background: var(--accent);
   color: var(--accent-ink);
   font-family: inherit;
-  font-size: var(--text-xs);
+  font-size: var(--text-sm);
   font-weight: 600;
   letter-spacing: 0.01em;
+  box-shadow: var(--shadow-1), 0 0 0 1px var(--accent-soft);
   cursor: pointer;
-  transition: background var(--t-fast) var(--ease-out), opacity var(--t-fast) var(--ease-out);
+  transition: background var(--t-fast) var(--ease-out), box-shadow var(--t-fast) var(--ease-out),
+    opacity var(--t-fast) var(--ease-out);
 }
 
 .playtest-btn:hover {
   background: var(--accent-hover);
+  box-shadow: var(--shadow-1), 0 0 0 3px var(--accent-soft);
 }
 
 .playtest-btn:active {
@@ -238,18 +348,9 @@
 .playtest-btn[aria-disabled='true']:not(.is-running) {
   background: var(--bg-3);
   color: var(--ink-faint);
+  /* Nothing to lift off the strip when there is nothing to press. */
+  box-shadow: none;
   cursor: default;
-}
-
-/* A play triangle, drawn rather than iconed: the icon set's `play` glyph is
-   sized for 12px stroke chrome, and this is a filled 7px mark on a solid. */
-.playtest-glyph {
-  width: 0;
-  height: 0;
-  flex: none;
-  border-left: 7px solid currentColor;
-  border-top: 4.5px solid transparent;
-  border-bottom: 4.5px solid transparent;
 }
 
 .playtest-spinner {
@@ -341,6 +442,18 @@
   color: var(--err);
   font-size: var(--text-2xs);
   text-align: center;
+}
+
+/* Pushes the close control to the far end of the strip, away from the tabs:
+   dismissing the column and switching what it shows are different sizes of
+   decision and should not sit side by side. */
+.pane-tabs-gap {
+  flex: 1;
+  min-width: 12px;
+}
+
+.pane-close {
+  align-self: center;
 }
 
 /* The shell used to be a third tab here. It is a conversation, not a readout,

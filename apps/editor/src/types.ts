@@ -11,9 +11,16 @@ export type { CommandResult, JournalEntry };
  * import is erased at build time, so nothing from it reaches the browser
  * bundle. Verified by tests/probeTypes.test.ts.
  */
-export type { EvidenceEvent } from '@hearth/probe-core';
+export type { EvidenceEvent, Finding } from '@hearth/probe-core';
 export type { ChatRecord, ChatSummary } from '../server/chatStore';
 export type { StoredAttachment } from '../server/chatAttachments';
+// Imported as well as re-exported, for the same reason ProjectIdentity is.
+import type { ChatKind } from '../server/chatStore';
+export type { ChatKind };
+// Imported as well as re-exported: this file uses it below, and a bare
+// `export type … from` does not bring the name into local scope.
+import type { ProjectIdentity } from '../server/projectIdentity';
+export type { ProjectIdentity };
 
 // ---------------------------------------------------------------------------
 // Folders
@@ -31,6 +38,12 @@ export interface RecentWorkspace {
   path: string;
   name: string;
   exists: boolean;
+  /**
+   * What the project chose to look like, if anything. Absent fields are
+   * derived from the path by the renderer — see src/projects/identity.ts, and
+   * note the resolution is per-field, not all-or-nothing.
+   */
+  identity?: ProjectIdentity;
 }
 
 export interface ServerMeta {
@@ -38,8 +51,9 @@ export interface ServerMeta {
   home: string;
   hearthVersion: string;
   runtimeAvailable: boolean;
-  /** Where the agent tools live (bundled single files in the desktop app). */
-  toolPaths?: { cli: string; mcp: string; bundled: boolean };
+  /** Where the agent tools live (bundled single files in the desktop app).
+   * `probe` is null on a machine that has no hearth-probe build today. */
+  toolPaths?: { cli: string; mcp: string; probe: string | null; bundled: boolean };
 }
 
 // ---------------------------------------------------------------------------
@@ -67,6 +81,26 @@ export interface ProbeStatus {
   shimDetected: boolean;
 }
 
+/**
+ * GET /api/probe/playtesters: the newest sweep, one row per playtester.
+ * The server's shape, not a copy of it: the fold that builds these lives
+ * beside the files it reads.
+ */
+export type { PlaytestPolicy, PlaytestRun, PlaytestSweep, PlaytestView } from '../server/playtestView';
+
+/**
+ * One file in a project's context folder (`.hearth/context/`). `lines` is the
+ * line count for text and null for anything else — a card must not claim a
+ * line count for a PNG.
+ */
+export interface ContextFile {
+  name: string;
+  bytes: number;
+  lines: number | null;
+  ext: string;
+  modifiedAt: string;
+}
+
 /** One file in the folder, for the code peek. */
 export interface ProjectFile {
   path: string;
@@ -88,7 +122,7 @@ export type ChatDriverKind = 'stub' | 'agent-sdk' | 'codex';
 /** Which vendor's agent answers a turn. */
 export type ChatProvider = 'anthropic' | 'openai';
 
-export type ToolKind = 'command' | 'file-change' | 'mcp' | 'web-search' | 'other';
+export type ToolKind = 'command' | 'file-change' | 'mcp' | 'web-search' | 'skill' | 'other';
 export type ToolStatus = 'ok' | 'error' | 'declined';
 export type ApprovalKind = 'command' | 'file-change';
 export type ApprovalDecision = 'allow' | 'deny';
@@ -147,6 +181,18 @@ export interface ChatTextPart {
 export interface ChatReasoningPart {
   kind: 'reasoning';
   text: string;
+  /**
+   * When the first token of this thought arrived, in `Date.now()` terms. Same
+   * arrangement as a command's: no driver reports a duration, so the only way
+   * to say how long a model thought is to watch its deltas arrive.
+   */
+  startedAt?: number;
+  /**
+   * How long the thinking ran — first delta to last. Undefined on a replayed
+   * transcript, where every delta lands in the same millisecond and the honest
+   * answer is to say nothing (see DURATION_FLOOR_MS in chat/duration.ts).
+   */
+  durationMs?: number;
 }
 
 /** Any tool that isn't a shell command: reads, searches, MCP calls. */
@@ -175,9 +221,27 @@ export interface ChatCommandPart {
    * When the row opened, in `Date.now()` terms — the only way to know how long
    * a command took, since no driver reports it. A replayed transcript folds in
    * milliseconds, so the duration it computes is ~0 and is simply not shown
-   * (see DURATION_FLOOR_MS in CommandRow.tsx): no duration beats a wrong one.
+   * (see DURATION_FLOOR_MS in chat/duration.ts): no duration beats a wrong one.
    */
   startedAt?: number;
+}
+
+/**
+ * A skill the agent reached for.
+ *
+ * Its own row rather than a tool chip because a skill is the one piece of the
+ * agent's equipment the user chose: they installed it, they switched it on,
+ * and until now the only sign it had ever been read was a line in the
+ * transcript indistinguishable from a file read.
+ */
+export interface ChatSkillPart {
+  kind: 'skill';
+  id: string;
+  /** What the skill is called: the SDK's own name for it, or the folder name. */
+  name: string;
+  /** What it was asked to do, when the driver reports it. */
+  detail?: string;
+  state: ToolState;
 }
 
 /**
@@ -204,6 +268,15 @@ export interface ChatImagePart {
 export interface ChatNoticePart {
   kind: 'notice';
   text: string;
+  /**
+   * An error tone means the turn did not finish, and the line is the app
+   * speaking rather than the agent. Without it a rate limit or an expired
+   * login rendered in the agent's own voice, indistinguishable from something
+   * it had decided to tell you.
+   */
+  tone?: 'info' | 'error';
+  /** The prompt to put back, so a turn lost to a transient failure is one press to retry. */
+  retryText?: string;
 }
 
 export interface ChatFileChangePart {
@@ -245,6 +318,7 @@ export type ChatPart =
   | ChatReasoningPart
   | ChatToolPart
   | ChatCommandPart
+  | ChatSkillPart
   | ChatFileChangePart
   | ChatSubagentPart
   | ChatApprovalPart
@@ -275,6 +349,12 @@ export interface ChatMessage {
   parts: ChatPart[];
   /** Still receiving events (drives the working indicator). Agent turns only. */
   streaming: boolean;
+  /**
+   * When the turn opened, in `Date.now()` terms — what the working indicator
+   * counts from. Agent turns only, and absent on a replayed one, where the
+   * elapsed time would be a measure of how fast the file was read.
+   */
+  startedAt?: number;
   /** What was attached to this turn. User turns only. */
   attachments?: ChatAttachmentView[];
 }
@@ -309,23 +389,84 @@ export interface ChatProviderStatus {
   active: ChatProvider | null;
 }
 
-/** One model a provider offers, in the words the selector shows. */
+/**
+ * One reasoning effort a model accepts, named by its own backend. There is no
+ * display name because codex ships none — the words are ours to choose, and
+ * `effortDisplayName` in chat/modelChoice is where that happens.
+ */
+export interface EffortOption {
+  id: string;
+  /** The backend's own one-liner, e.g. "Balances speed and reasoning depth". */
+  description?: string;
+}
+
+/**
+ * One model a provider offers, in the words the selector shows.
+ *
+ * The optional half is the backend's own catalogue and is only as full as that
+ * backend says. Codex answers all of it from `model/list` — including which
+ * efforts THIS model accepts, which differs per model. Anthropic has no such
+ * call, so its rows carry a curated note and nothing else. Absent means "not
+ * offered", which the picker renders as no control rather than a guess.
+ */
 export interface ProviderModelInfo {
   /** Wire id (e.g. `claude-opus-5`). Empty string means the provider default. */
   id: string;
   label: string;
   note?: string;
+  description?: string;
+  /** The model this provider picks when the turn names none. */
+  isDefault?: boolean;
+  efforts?: EffortOption[];
+  defaultEffort?: string;
 }
 
 /**
  * The user's standing choice of who answers and how hard it thinks. `model`
  * null means the provider's default; `effort` only applies where the provider
  * supports it (Codex).
+ *
+ * `effort` is a plain string rather than a union because the vocabulary is the
+ * model's, not ours: one real `model/list` offers `low medium high xhigh max
+ * ultra`, and the accepted set differs from model to model. The picker only
+ * ever offers what a model declared, and `agentForTurn` drops one a model has
+ * since stopped accepting.
  */
 export interface AgentChoice {
   provider: ChatProvider;
   model: string | null;
-  effort: 'low' | 'medium' | 'high' | null;
+  effort: string | null;
+}
+
+/**
+ * One agent CLI the picker can offer for terminal mode, as the server found it
+ * (see server/agentClis.ts).
+ *
+ * `installed` is measured against the user's login-shell PATH, never assumed:
+ * an entry that reads false is shown as unavailable rather than offered, and
+ * `installHint` is the only thing Hearth claims to know about how to fix that.
+ * There is deliberately nothing here about models or capabilities — Hearth
+ * types the command into a shell and knows no more than that.
+ */
+export interface AgentCliInfo {
+  id: string;
+  /** The word typed into the shell. */
+  command: string;
+  label: string;
+  installed: boolean;
+  /** A published install command, or null when Hearth does not know one. */
+  installHint: string | null;
+}
+
+/**
+ * Which models the user has switched off (server/modelPrefs.ts). Keys are
+ * `provider:modelId`. Disabled rather than enabled is stored on purpose: a
+ * model nobody has seen yet has to default to available.
+ */
+export interface ModelPrefsInfo {
+  disabled: string[];
+  /** Where the list is written, so the pane can say. */
+  file: string;
 }
 
 /**
@@ -335,6 +476,14 @@ export interface AgentChoice {
 export interface RecentChatEntry {
   id: string;
   title: string;
+  /**
+   * Chat or terminal session, so a row can say which it is without being
+   * opened. Optional on the wire on purpose: this list also gets folded
+   * together with a folder's own chats (see mergeRecentChats), and a missing
+   * answer reads as 'chat' — the same default the index itself applies to
+   * records written before kinds existed.
+   */
+  kind?: ChatKind;
   updatedAt: string;
   project: { path: string; name: string };
 }

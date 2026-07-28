@@ -18,7 +18,10 @@ dialog.modal {
   width: fit-content;
   height: fit-content;
   border: 1px solid var(--border);
-  border-radius: var(--radius-xl);
+  /* --radius-lg, not -xl: dialogs sit on the panel/card step of the radius
+     scale (tokens.css) — --radius-xl is reserved for the composer. The
+     shortcut sheet below already agrees. */
+  border-radius: var(--radius-lg);
   background: var(--bg-1);
   color: var(--ink);
   padding: 0;
@@ -121,9 +124,13 @@ dialog.shortcut-sheet {
   padding: 0;
   width: min(640px, calc(100vw - 48px));
   max-height: min(78vh, 720px);
-  box-shadow: 0 20px 56px oklch(0 0 0 / 0.55);
+  /* Same elevation as dialog.modal: both are top-layer surfaces over the
+     scrim, and two different shadows for one plane read as a mistake. */
+  box-shadow: var(--shadow-2);
 }
 
+/* --t, not --t-slow like dialog.modal: this sheet is keyboard-summoned, and
+   an entrance answering a keystroke should be at the fast end of the scale. */
 dialog.shortcut-sheet[open] {
   animation: modal-in var(--t) var(--ease-out);
 }
@@ -189,7 +196,7 @@ dialog.shortcut-sheet[open]::backdrop {
   align-items: center;
   justify-content: space-between;
   gap: 16px;
-  padding: 5px 0;
+  padding: 6px 0;
   font-size: var(--text-sm);
   border-bottom: 1px solid transparent;
 }
@@ -276,7 +283,7 @@ kbd.shortcut-keys {
   height: var(--ctl-h);
   padding: 0 11px;
   border: 1px solid var(--border);
-  border-radius: var(--radius, 8px);
+  border-radius: var(--radius);
   background: var(--bg-0);
   color: var(--ink-mute);
   transition: border-color var(--t-fast) var(--ease-out);
@@ -467,7 +474,7 @@ kbd.shortcut-keys {
   height: 26px;
   padding: 0;
   border: 0;
-  border-radius: var(--radius, 8px);
+  border-radius: var(--radius);
   background: transparent;
   color: var(--ink-mute);
   opacity: 0;

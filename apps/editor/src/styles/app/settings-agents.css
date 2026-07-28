@@ -1,0 +1,649 @@
+/* Settings — the Agents pane: chat harnesses, and the models each one drives.
+
+   The pane is a LIST, not a grid of tiles. Every row is the same four-part
+   shape — chevron, mark, identity, state-or-action — so the eye reads down one
+   column of names and one column of states rather than re-parsing each row's
+   arrangement. That uniformity is the whole design: with three states, two
+   connection styles and a dozen models in play, a layout that varied per
+   harness would read as random.
+
+   Detail is disclosed, never splayed. A collapsed row is two lines and one
+   control. Everything else — keys, sign-in, the install, the model switches —
+   lives inside the row it belongs to and only when that row is open. */
+
+.set-agents {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 22px;
+}
+
+/* --- Nothing connected yet ------------------------------------------------ */
+
+/* The first thing most people ever see on this pane, so it is not styled as a
+   warning and not as a card in the list below. It reads as a paragraph with a
+   button: one recommendation, one action, one quieter alternative. The accent
+   is on the button alone — the block itself stays a plain panel, because an
+   empty state that shouts is an empty state that feels like an error. */
+.set-agent-start {
+  margin-top: 20px;
+  padding: 15px 17px 16px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-lg);
+  background: var(--bg-2);
+}
+
+.set-agent-start-title {
+  margin: 0;
+  font-size: var(--text-sm);
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.set-agent-start-body {
+  margin: 6px 0 0;
+  max-width: 62ch;
+  font-size: var(--text-xs);
+  line-height: 1.6;
+  color: var(--ink-mute);
+  text-wrap: pretty;
+}
+
+.set-agent-start-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 14px;
+  margin-top: 13px;
+}
+
+/* The alternative sits on the same line as the recommendation, in link weight,
+   so it reads as "or" rather than as a second thing to weigh up. */
+.set-agent-start-actions .set-agent-more {
+  margin-top: 0;
+}
+
+/* No folder open: keys have nowhere to go. Said once, at the top, rather than
+   as a disabled tooltip on every control that would have failed. */
+.set-agent-notice {
+  margin: 18px 0 0;
+  padding: 11px 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-1);
+  font-size: var(--text-xs);
+  line-height: 1.55;
+  color: var(--ink-mute);
+  text-wrap: pretty;
+}
+
+/* --- The row -------------------------------------------------------------- */
+
+.set-agent {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--bg-1);
+  transition:
+    border-color var(--t) var(--ease-out),
+    background var(--t) var(--ease-out);
+}
+
+.set-agent:hover {
+  border-color: var(--border-strong);
+}
+
+/* The one that answers. A full ring rather than a stripe down one edge: the
+   row is the choice, so the whole row is what gets marked. */
+.set-agent[data-active='true'] {
+  border-color: var(--accent);
+  background: var(--accent-faint);
+}
+
+/* An open row sits forward of its neighbours, because it is now the subject
+   rather than one of a list. Never at the cost of the accent ring: which
+   harness answers your messages outranks which one you happen to have open,
+   so the active row keeps its own outline while expanded. */
+.set-agent[data-open='true']:not([data-active='true']) {
+  border-color: var(--border-strong);
+  background: var(--bg-1);
+}
+
+.set-agent-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 56px;
+  padding: 10px 14px 10px 8px;
+}
+
+/* --- The disclosure ------------------------------------------------------- */
+
+/* The identity block IS the button. A large target rather than a chevron you
+   have to aim at, and it carries the aria-expanded that names the state. */
+.set-agent-disclose {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  padding: 4px 6px;
+  border: 0;
+  border-radius: var(--radius);
+  background: none;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: background var(--t-fast) var(--ease-out);
+}
+
+.set-agent-disclose:hover {
+  background: var(--bg-2);
+}
+
+.set-agent-disclose:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.set-agent-chevron {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 14px;
+  color: var(--ink-faint);
+  transition: transform var(--t) var(--ease-out), color var(--t-fast) var(--ease-out);
+}
+
+.set-agent-disclose:hover .set-agent-chevron {
+  color: var(--ink-mute);
+}
+
+/* The glyph points right at rest, which is the standard "there is more in
+   here" of a closed disclosure; a quarter turn is the standard "it is open". */
+.set-agent[data-open='true'] .set-agent-chevron {
+  transform: rotate(90deg);
+}
+
+/* The rotation is the only thing that says "this is now open" before the body
+   paints. Reduced motion keeps the end state and drops the sweep. */
+@media (prefers-reduced-motion: reduce) {
+  .set-agent-chevron {
+    transition: color var(--t-fast) var(--ease-out);
+  }
+}
+
+/* The mark sits in a tile so a coloured logo and a monochrome one read as the
+   same kind of object at the same size. */
+.set-agent-mark {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-2);
+  color: var(--ink);
+}
+
+.set-agent-id {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.set-agent-name {
+  font-size: var(--text-sm);
+  font-weight: 600;
+  color: var(--ink);
+}
+
+/* Two facts, same order on every row: what it drives, then how it is reached.
+   The second is a whole sentence written by providerStatus and can run long,
+   so it wraps to a second line rather than being cut off mid-clause — a status
+   the reader cannot finish is worse than a row one line taller. Two lines is
+   the ceiling, and `min-height` on the head keeps a one-line row and a
+   two-line row close enough that the list still reads as a column. */
+.set-agent-sub {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  overflow: hidden;
+  min-width: 0;
+  font-size: var(--text-xs);
+  line-height: 1.5;
+  color: var(--ink-faint);
+}
+
+.set-agent-catalogue {
+  color: var(--ink-mute);
+}
+
+/* Inline-block so it rides along inside the clamped text flow rather than
+   being laid out as a flex child the clamp cannot see. */
+.set-agent-dotsep {
+  display: inline-block;
+  width: 3px;
+  height: 3px;
+  margin: 0 5px;
+  border-radius: 50%;
+  background: currentColor;
+  vertical-align: 2px;
+  opacity: 0.55;
+}
+
+/* --- State, or the way in ------------------------------------------------- */
+
+/* One slot, two mutually exclusive contents: a badge when the harness works,
+   the button that makes it work when it does not. Never both, and never a
+   label describing what the machine is short of. */
+.set-agent-meta {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.set-agent-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 9px;
+  border-radius: 999px;
+  background: var(--bg-2);
+  font-size: var(--text-2xs);
+  color: var(--ink-mute);
+  white-space: nowrap;
+}
+
+.set-agent-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+  opacity: 0.7;
+}
+
+.set-agent-badge[data-state='connected'] {
+  background: var(--ok-soft);
+  color: var(--ok);
+}
+
+.set-agent-badge[data-state='connecting'] {
+  background: var(--warn-soft);
+  color: var(--warn);
+}
+
+.set-agent-badge.is-active {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+/* A sign-in that is waiting on a browser window somewhere else must not look
+   like a row sitting still. The duration is outside the --t-* set on purpose
+   and by the same licence as the field-reject shake in primitives.css: those
+   tokens size responses to a press, and a two-beat wait is neither. */
+.set-agent-badge[data-state='connecting'] .set-agent-dot {
+  animation: set-agent-breathe 1.6s var(--ease-out) infinite;
+}
+
+@keyframes set-agent-breathe {
+  0%,
+  100% {
+    opacity: 0.28;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+/* The global reduce rule flattens the duration; this settles what it flattens
+   to, so the dot holds at full strength instead of freezing mid-fade. */
+@media (prefers-reduced-motion: reduce) {
+  .set-agent-badge[data-state='connecting'] .set-agent-dot {
+    animation: none;
+    opacity: 1;
+  }
+}
+
+/* --- The body ------------------------------------------------------------- */
+
+.set-agent-body {
+  padding: 2px 16px 15px;
+  border-top: 1px solid var(--border);
+  margin: 0 1px;
+  animation: set-agent-open var(--t) var(--ease-out);
+}
+
+/* The body arrives rather than appearing. Opacity and a short lift only: the
+   height is not animated, because a settings row whose contents reflow while
+   the reader is reaching for a switch is worse than an honest jump. */
+@keyframes set-agent-open {
+  from {
+    opacity: 0;
+    transform: translateY(-3px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .set-agent-body {
+    animation: none;
+  }
+}
+
+.set-agent-section {
+  padding-top: 14px;
+}
+
+.set-agent-section + .set-agent-section {
+  margin-top: 4px;
+  border-top: 1px solid var(--guide);
+}
+
+.set-agent-section-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.set-agent-section-title {
+  margin: 0;
+  font-size: var(--text-2xs);
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: var(--ink-mute);
+}
+
+/* "3 of 4 offered". The one number on this pane, and it answers the question
+   the switches below it raise. */
+.set-agent-count {
+  font-size: var(--text-2xs);
+  color: var(--ink-faint);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.set-agent-hint {
+  margin: 7px 0 0;
+  max-width: 64ch;
+  font-size: var(--text-xs);
+  line-height: 1.6;
+  color: var(--ink-mute);
+  text-wrap: pretty;
+}
+
+/* Rows inside a row are the same aligned rows the rest of Settings uses, one
+   notch shorter — the enclosure is already there, so the row does not need to
+   carry as much air of its own. */
+.set-agent .set-rows {
+  margin-top: 8px;
+}
+
+.set-agent .set-row {
+  min-height: 38px;
+  padding: 8px 0;
+}
+
+/* "Harness default" ahead of the model's own description. A tag rather than a
+   second line, because it qualifies the name and belongs beside it. */
+.set-agent-tag {
+  display: inline-block;
+  margin-right: 7px;
+  padding: 1px 6px;
+  border-radius: var(--radius-sm);
+  background: var(--bg-2);
+  font-size: var(--text-2xs);
+  color: var(--ink-mute);
+  vertical-align: 1px;
+}
+
+/* Why this one switch will not move. Said on the row, in the row's own voice,
+   rather than as a tooltip nobody hovers. */
+.set-agent-locked {
+  color: var(--ink-faint);
+}
+
+/* The wire id, shown when the backend described the model no other way. It is
+   what actually gets sent, so it is set in mono like every other value in this
+   app rather than dressed up as prose. */
+.set-agent-modelid {
+  font-size: var(--text-2xs);
+  color: var(--ink-faint);
+}
+
+/* --- The model switch ----------------------------------------------------- */
+
+/* A real checkbox with role="switch", sized and painted by the track behind
+   it. The input keeps its own focus, keyboard and label semantics; nothing
+   here reinvents the control, it only dresses it. */
+.set-agent-switch {
+  position: relative;
+  display: inline-grid;
+  place-items: center;
+  width: 34px;
+  height: 20px;
+}
+
+.set-agent-switch input {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.set-agent-switch input:disabled {
+  cursor: default;
+}
+
+.set-agent-switch-track {
+  pointer-events: none;
+  display: block;
+  width: 34px;
+  height: 20px;
+  border: 1px solid var(--border-strong);
+  border-radius: 999px;
+  background: var(--bg-2);
+  transition:
+    background var(--t-fast) var(--ease-out),
+    border-color var(--t-fast) var(--ease-out);
+}
+
+.set-agent-switch-thumb {
+  display: block;
+  width: 14px;
+  height: 14px;
+  margin: 2px;
+  border-radius: 50%;
+  background: var(--ink-faint);
+  transition:
+    transform var(--t) var(--ease-out),
+    background var(--t-fast) var(--ease-out);
+}
+
+.set-agent-switch input:checked ~ .set-agent-switch-track {
+  border-color: var(--accent);
+  background: var(--accent);
+}
+
+.set-agent-switch input:checked ~ .set-agent-switch-track .set-agent-switch-thumb {
+  transform: translateX(14px);
+  background: var(--accent-ink);
+}
+
+.set-agent-switch input:hover:not(:disabled) ~ .set-agent-switch-track {
+  border-color: var(--accent-hover);
+}
+
+.set-agent-switch input:focus-visible ~ .set-agent-switch-track {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.set-agent-switch input:disabled ~ .set-agent-switch-track {
+  opacity: 0.55;
+}
+
+/* The thumb slides; that is the whole animation and it is the state change
+   itself. Under reduced motion it still has to move, so the slide is cut and
+   the colour carries it. */
+@media (prefers-reduced-motion: reduce) {
+  .set-agent-switch-thumb {
+    transition: background var(--t-fast) var(--ease-out);
+  }
+}
+
+/* --- Install -------------------------------------------------------------- */
+
+.set-agent-install {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 10px;
+}
+
+.set-agent-command {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 6px 6px 6px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-0);
+}
+
+.set-agent-command code {
+  min-width: 0;
+  overflow-x: auto;
+  font-size: var(--text-xs);
+  color: var(--ink);
+  white-space: nowrap;
+}
+
+.set-agent-command-actions {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+
+/* Installing software is side-effectful, so it is confirmed — inline, under
+   the command it is confirming, with the command still on screen. A modal
+   would have hidden the very thing being agreed to. */
+.set-agent-confirm {
+  padding: 11px 13px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  background: var(--bg-2);
+}
+
+.set-agent-confirm .set-agent-hint {
+  margin-top: 0;
+}
+
+.set-agent-confirm-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 11px;
+}
+
+/* --- Paste-and-go, and taking it back ------------------------------------- */
+
+.set-agent-connect {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  margin-top: 11px;
+}
+
+.set-agent-field-label {
+  font-size: var(--text-xs);
+  color: var(--ink-mute);
+}
+
+.set-agent-field-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.set-agent-input {
+  flex: 1;
+  min-width: 0;
+}
+
+.set-agent-manage {
+  display: flex;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+/* The quieter second path — a link in weight, a button in behaviour. */
+.set-agent-more {
+  display: block;
+  margin-top: 11px;
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  font-size: var(--text-xs);
+  color: var(--ink-mute);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  cursor: pointer;
+  transition: color var(--t-fast) var(--ease-out);
+}
+
+.set-agent-more:hover {
+  color: var(--ink);
+}
+
+.set-agent-more:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+  border-radius: var(--radius-sm);
+}
+
+/* --- Footnotes ------------------------------------------------------------ */
+
+.set-agent-foot {
+  margin: 16px 0 0;
+  max-width: 64ch;
+  font-size: var(--text-xs);
+  line-height: 1.6;
+  color: var(--ink-faint);
+  text-wrap: pretty;
+}
+
+.set-agent-foot + .set-agent-foot {
+  margin-top: 8px;
+}
+
+/* --- Narrow ---------------------------------------------------------------- */
+
+/* Under ~560px the state column and the identity column stop fitting on one
+   line. The row wraps rather than ellipsising the name: which harness this is
+   is the one thing that must never be cut. */
+@media (max-width: 560px) {
+  .set-agent-head {
+    flex-wrap: wrap;
+  }
+
+  .set-agent-disclose {
+    flex: 1 1 100%;
+  }
+
+  .set-agent-meta {
+    flex: 1 1 100%;
+    justify-content: flex-end;
+  }
+}

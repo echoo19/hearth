@@ -4,12 +4,17 @@
  * WebSocket instead; see store.ts.
  */
 import type {
+  AgentCliInfo,
   AppSettingsInfo,
   ChatProvider,
   ChatProviderStatus,
   ChatSummary,
+  ContextFile,
+  EvidenceEvent,
+  ModelPrefsInfo,
   RecentChatEntry,
   GameStatus,
+  PlaytestView,
   ProbeStatus,
   ProjectFile,
   RecentWorkspace,
@@ -60,12 +65,21 @@ export async function apiOpenWorkspace(path: string): Promise<{ ok: boolean; inf
 }
 
 /**
- * Make a folder for a game nobody has named yet: the server derives a slug
- * from the prompt, creates it under the projects home (~/Hearth), and opens
- * it exactly as /api/workspace/open would.
+ * Make a folder for a game that doesn't have one yet: the server derives a
+ * slug, creates it under the projects home (~/Hearth), and opens it exactly as
+ * /api/workspace/open would.
+ *
+ * Two ways in, because there are two moments this happens. From Home the first
+ * message IS the project, so the folder is named after the `prompt`. From the
+ * rail there is no message yet, so a `name` is asked for and the server prefers
+ * it over the prompt. Both arguments are optional and either alone is enough —
+ * the prompt stays first so the Home call site reads as it always did.
  */
-export async function apiCreateWorkspace(prompt?: string): Promise<{ ok: boolean; info?: WorkspaceInfo; error?: string }> {
-  const res = await postJson<OpenResult>('/api/workspace/create', { prompt });
+export async function apiCreateWorkspace(
+  prompt?: string,
+  name?: string,
+): Promise<{ ok: boolean; info?: WorkspaceInfo; error?: string }> {
+  const res = await postJson<OpenResult>('/api/workspace/create', { prompt, name });
   if (!res.ok || !res.path) return { ok: false, error: res.error ?? 'Could not create a folder.' };
   return {
     ok: true,
@@ -82,6 +96,59 @@ export async function apiRecentChats(): Promise<RecentChatEntry[]> {
 export async function apiRecentWorkspaces(): Promise<RecentWorkspace[]> {
   const body = await getJson<{ projects: RecentWorkspace[] }>('/api/workspace/recent', 'apiRecentWorkspaces');
   return body?.projects ?? [];
+}
+
+/**
+ * Give a project a mark and a colour. An empty string clears a field back to
+ * the one derived from its path, which is what the picker's Reset sends.
+ */
+export async function apiSetProjectIdentity(
+  project: string,
+  patch: { icon?: string; color?: string },
+): Promise<boolean> {
+  const res = await postJson<{ ok: boolean }>('/api/workspace/identity', { project, ...patch });
+  return res?.ok === true;
+}
+
+// ---------------------------------------------------------------------------
+// A project's own material: the instructions every conversation in it starts
+// with, and the files the agent should have read. Both live in the project
+// folder rather than in the app, so they survive it.
+// ---------------------------------------------------------------------------
+
+/** Read one text document from the project root (e.g. AGENTS.md). */
+export async function apiProjectDoc(project: string, name: string): Promise<string | null> {
+  const body = await getJson<{ text: string }>(
+    `/api/project/doc?project=${encodeURIComponent(project)}&name=${encodeURIComponent(name)}`,
+    'apiProjectDoc',
+  );
+  return body?.text ?? null;
+}
+
+export async function apiWriteProjectDoc(project: string, name: string, text: string): Promise<boolean> {
+  const res = await postJson<{ ok: boolean }>('/api/project/doc', { project, name, text });
+  return res?.ok === true;
+}
+
+export async function apiContextFiles(project: string): Promise<ContextFile[]> {
+  const body = await getJson<{ files: ContextFile[] }>(
+    `/api/context?project=${encodeURIComponent(project)}`,
+    'apiContextFiles',
+  );
+  return body?.files ?? [];
+}
+
+export async function apiSaveContextFiles(
+  project: string,
+  files: readonly { name: string; data: string }[],
+): Promise<ContextFile[]> {
+  const res = await postJson<{ files: ContextFile[] }>('/api/context', { project, files });
+  return res?.files ?? [];
+}
+
+export async function apiDeleteContextFile(project: string, name: string): Promise<ContextFile[]> {
+  const res = await postJson<{ files: ContextFile[] }>('/api/context/delete', { project, name });
+  return res?.files ?? [];
 }
 
 export function apiMeta(): Promise<ServerMeta | null> {
@@ -101,6 +168,38 @@ export async function apiProbeStatus(project: string): Promise<ProbeStatus | nul
     playing: body.playing === true,
     shimDetected: body.shimDetected === true,
   };
+}
+
+/**
+ * The newest sweep, one row per playtester, including the ones that did not
+ * play and the reason each of them gives. Null on a transport failure, which
+ * the screen shows as "cannot read" rather than as "nothing has run".
+ */
+export function apiPlaytestView(project: string): Promise<PlaytestView | null> {
+  return getJson<PlaytestView>(
+    `/api/probe/playtesters?project=${encodeURIComponent(project)}`,
+    'apiPlaytestView',
+  ) as Promise<PlaytestView | null>;
+}
+
+/**
+ * The folder's playtest history, oldest first.
+ *
+ * Playtests belong to a folder, not to a socket: the live channel replays only
+ * for whoever opened it, so a second window or a reconnect would otherwise
+ * show an empty rail for a project full of them. This fills the rail on open
+ * and the socket appends to it from there.
+ *
+ * An empty array on a transport failure. The rail's own copy already tells
+ * the difference between "nothing has run" and "there is a game to run", and
+ * a folder that cannot be read is not worth a third message.
+ */
+export async function apiEvidenceHistory(project: string): Promise<EvidenceEvent[]> {
+  const body = await getJson<{ events: EvidenceEvent[] }>(
+    `/api/probe/evidence?project=${encodeURIComponent(project)}`,
+    'apiEvidenceHistory',
+  );
+  return Array.isArray(body?.events) ? body.events : [];
 }
 
 /** What POST /api/probe/sweep answers: started, or why not (409 = one already is). */
@@ -139,7 +238,11 @@ export async function apiStartSweep(
     const total = (body.policies?.length ?? 0) * (body.seeds?.length ?? 0);
     return { ok: true, total: total > 0 ? total : undefined };
   } catch (err) {
-    return { ok: false, error: (err as Error).message };
+    // The browser's own failure text ("Failed to fetch") tells a person
+    // nothing about their game. The real error still goes to the console,
+    // where it is useful.
+    console.error('starting a playtest: request failed', err);
+    return { ok: false, error: "The playtest could not start. Hearth's own server did not answer." };
   }
 }
 
@@ -201,6 +304,103 @@ export async function apiSaveProviderSettings(
 ): Promise<AppSettingsInfo | null> {
   const body = await postJson<AppSettingsInfo & { ok: boolean }>('/api/app/settings', { project, ...patch });
   return body.ok ? { hasKey: body.hasKey, source: body.source } : null;
+}
+
+// ---------------------------------------------------------------------------
+// Personalization: what to call you, and the instructions that apply to every
+// game rather than to one. Kept in `~/.hearth`, so unlike almost everything
+// else here these routes take no project.
+// ---------------------------------------------------------------------------
+
+export interface Personalization {
+  /** What the agent should call you. Empty means no preference. */
+  name: string;
+  /** Standing instructions for every project. Markdown, as typed. */
+  instructions: string;
+}
+
+/** Where the server put each of them — shown so someone can go and look. */
+export interface PersonalizationFiles {
+  name: string;
+  instructions: string;
+}
+
+export interface PersonalizationInfo {
+  personalization: Personalization;
+  files: PersonalizationFiles;
+}
+
+function readPersonalizationBody(body: Partial<PersonalizationInfo> | null): PersonalizationInfo | null {
+  const values = body?.personalization;
+  const files = body?.files;
+  if (!values || !files) return null;
+  return {
+    personalization: { name: values.name ?? '', instructions: values.instructions ?? '' },
+    files: { name: files.name ?? '', instructions: files.instructions ?? '' },
+  };
+}
+
+/**
+ * Which agent CLIs this machine has (server/agentClis.ts). Null when the read
+ * did not land — the picker shows "checking" for that rather than an empty
+ * list, because "none installed" and "not asked yet" are different answers and
+ * only one of them is the machine's.
+ *
+ * Takes no project: what is installed is a fact about the machine, and the
+ * picker asks on Home too.
+ */
+export async function apiAgentClis(): Promise<AgentCliInfo[] | null> {
+  const body = await getJson<{ clis: AgentCliInfo[] }>('/api/agent-clis', 'apiAgentClis');
+  return Array.isArray(body?.clis) ? body.clis : null;
+}
+
+export async function apiPersonalization(): Promise<PersonalizationInfo | null> {
+  return readPersonalizationBody(await getJson<PersonalizationInfo>('/api/personalization', 'apiPersonalization'));
+}
+
+/**
+ * Which models the user switched off (server/modelPrefs.ts). Also unscoped:
+ * it is a preference about the person, and the composer's picker asks for it
+ * on Home where there is no folder.
+ *
+ * Null on a failed read, which the caller treats as "nothing is switched off"
+ * rather than as an empty catalogue.
+ */
+export async function apiModelPrefs(): Promise<ModelPrefsInfo | null> {
+  const body = await getJson<ModelPrefsInfo>('/api/model-prefs', 'apiModelPrefs');
+  if (!body) return null;
+  return {
+    disabled: Array.isArray(body.disabled) ? body.disabled.filter((id): id is string => typeof id === 'string') : [],
+    file: typeof body.file === 'string' ? body.file : '',
+  };
+}
+
+/**
+ * Switch one model on or off. One model per call, never the whole list: the
+ * server holds entries for models this client cannot see, and sending a list
+ * built from what it can see would quietly delete them.
+ */
+export async function apiSetModelEnabled(model: string, enabled: boolean): Promise<ModelPrefsInfo | null> {
+  try {
+    const body = await postJson<Partial<ModelPrefsInfo> & { ok: boolean }>('/api/model-prefs', { model, enabled });
+    if (!body.ok || !Array.isArray(body.disabled)) return null;
+    return {
+      disabled: body.disabled.filter((id): id is string => typeof id === 'string'),
+      file: typeof body.file === 'string' ? body.file : '',
+    };
+  } catch (err) {
+    console.error('apiSetModelEnabled: request failed', err);
+    return null;
+  }
+}
+
+/**
+ * Change one or both. Omitting a field leaves it alone; sending an empty
+ * string clears it, which is a real instruction and not the same as omitting.
+ */
+export async function apiSavePersonalization(patch: Partial<Personalization>): Promise<PersonalizationInfo | null> {
+  const body = await postJson<Partial<PersonalizationInfo> & { ok: boolean }>('/api/personalization', patch);
+  return body.ok ? readPersonalizationBody(body) : null;
 }
 
 /**
@@ -281,4 +481,22 @@ export function projectFileUrl(project: string, relPath: string): string {
 /** URL for a file inside `.hearth/evidence/` (screenshots, reports). */
 export function evidenceUrl(project: string, relPath: string): string {
   return `/evidence/${rootKey(project)}/${relPath.replace(/^\.hearth\/evidence\//, '')}`;
+}
+
+// ---------------------------------------------------------------------------
+// Usage
+//
+// Counts of what is on this machine's disk — folders opened, conversations
+// held, playtests run. Like personalization and skills, it is about the person
+// rather than one open folder, so the route takes no project.
+// ---------------------------------------------------------------------------
+
+import type { UsageReport } from '../server/usage';
+
+export type { UsageProject, UsageReport, UsageSkills } from '../server/usage';
+
+/** Read the counts. Null when the server could not be reached. */
+export async function apiUsage(): Promise<UsageReport | null> {
+  const body = await getJson<{ usage: UsageReport }>('/api/usage', 'apiUsage');
+  return body?.usage ?? null;
 }

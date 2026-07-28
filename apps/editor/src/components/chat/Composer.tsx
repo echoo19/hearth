@@ -18,6 +18,8 @@ import { Icon } from '../ui';
 import { MenuButton } from '../ui/Menu';
 import { ModelSelector } from './ModelSelector';
 import { AttachmentTray } from './AttachmentTray';
+import { ProjectSelector } from '../../projects/ProjectSelector';
+import { ToastHost } from '../ui/Toast';
 import {
   attachmentRejection,
   filesFromTransfer,
@@ -30,22 +32,20 @@ import {
 export const COMPOSER_MAX_PX = 200;
 
 /** Where the composer is mounted, which is the only thing that differs. */
-export type ComposerVariant = 'chat' | 'home';
+export type ComposerVariant = 'chat' | 'home' | 'project';
 
 /**
  * Why the composer can't send right now, or null when it can. Pure, so the
  * disabled contract is unit-testable without a DOM: the composer must never
  * be disabled without a visible reason.
+ *
+ * A running turn is deliberately NOT a reason. It shows as a live line in the
+ * transcript (see WorkingRow) where the reader is already looking, and the
+ * Stop button next to this note is its own explanation — a caption reading
+ * "press Stop to interrupt" beside a Stop button was the app narrating itself.
  */
-export function composerBlockReason(opts: {
-  connected: boolean;
-  busy: boolean;
-  empty: boolean;
-}): string | null {
-  if (!opts.connected) return 'Reconnecting…';
-  if (opts.busy) return 'Working — press Stop to interrupt.';
-  if (opts.empty) return null;
-  return null;
+export function composerBlockReason(opts: { connected: boolean }): string | null {
+  return opts.connected ? null : 'Reconnecting…';
 }
 
 /**
@@ -85,6 +85,7 @@ function ArrowUp() {
 const PLACEHOLDER: Record<ComposerVariant, string> = {
   chat: 'Describe the game you want',
   home: 'What are we making?',
+  project: 'Write a message…',
 };
 
 /**
@@ -116,7 +117,11 @@ export function Composer({ variant = 'chat' }: { variant?: ComposerVariant } = {
   trayRef.current = attachments;
   const ref = useRef<HTMLTextAreaElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
-  const isHome = variant === 'home';
+  // Both blank surfaces start a conversation rather than continuing one, so
+  // they share the submit path. They differ only in whether the project is
+  // still a question: on a project's own screen it is already answered.
+  const isHome = variant === 'home' || variant === 'project';
+  const picksProject = variant === 'home';
 
   // Six files dropped at once are six decisions, and they all have to be made
   // against the same running count. Reading it through a functional setState
@@ -186,8 +191,14 @@ export function Composer({ variant = 'chat' }: { variant?: ComposerVariant } = {
   // An attachment is content: a picture with no words is a message, so the
   // empty box stops being a reason not to send once something is in the tray.
   const empty = text.trim() === '' && attachments.length === 0;
-  const blocked = isHome ? null : composerBlockReason({ connected, busy: chatBusy, empty });
-  const canSend = (isHome || connected) && !busy && !empty;
+  const blocked = isHome ? null : composerBlockReason({ connected });
+  // A running turn no longer blocks the box. What you type goes into the queue
+  // and leaves the moment the turn is over (see store.drainQueue), which is
+  // what every chat app people already use does — the alternative loses the
+  // thought at exactly the moment someone has it.
+  const canSend = (isHome || connected) && !empty && (isHome ? !busy : true);
+  /** A turn is running, so the next Enter queues rather than sends. */
+  const queueing = busy && !isHome;
 
   function send(): void {
     if (!canSend) return;
@@ -216,6 +227,9 @@ export function Composer({ variant = 'chat' }: { variant?: ComposerVariant } = {
 
   return (
     <div className={`composer composer-${variant}`}>
+      {/* Anything the app has to tell you about a send appears here, directly
+          over the box you sent from. */}
+      <ToastHost />
       <div
         className={dropping ? 'composer-card is-dropping' : 'composer-card'}
         onDragOver={(e) => {
@@ -296,7 +310,7 @@ export function Composer({ variant = 'chat' }: { variant?: ComposerVariant } = {
                 onSelect: () => fileRef.current?.click(),
               },
               {
-                label: 'Open folder…',
+                label: 'Open a project…',
                 icon: 'folder',
                 // The sidebar owns the native picker; this is the one surface
                 // that needs it without owning it.
@@ -311,17 +325,31 @@ export function Composer({ variant = 'chat' }: { variant?: ComposerVariant } = {
           />
           {/* A quiet status line, not a control: shown only when there is
               actually something in the way. */}
+          {/* Where this message lands, chosen the same way the model is: on
+              the turn, before it goes. Only on the blank surface — inside a
+              conversation the answer is already settled. */}
+          {picksProject && <ProjectSelector />}
           {blocked ? <span className="composer-note">{blocked}</span> : <span className="composer-row-gap" />}
           <ModelSelector />
-          {busy && !isHome ? (
+          {/* Stop belongs to the running turn and stays reachable while one is
+              running. Send appears beside it the moment there is something to
+              send — two circles only when both actually mean something. */}
+          {queueing && (
             <Tooltip content="Stop">
               <button type="button" className="composer-send is-stop" aria-label="Stop" onClick={interruptChat}>
                 <Icon name="stop" size={9} />
               </button>
             </Tooltip>
-          ) : (
-            <Tooltip content="Send" shortcut="↵">
-              <button type="button" className="composer-send" aria-label="Send" disabled={!canSend} onClick={send}>
+          )}
+          {(!queueing || !empty) && (
+            <Tooltip content={queueing ? 'Send when this turn finishes' : 'Send'} shortcut="↵">
+              <button
+                type="button"
+                className="composer-send"
+                aria-label={queueing ? 'Send when this turn finishes' : 'Send'}
+                disabled={!canSend}
+                onClick={send}
+              >
                 <ArrowUp />
               </button>
             </Tooltip>

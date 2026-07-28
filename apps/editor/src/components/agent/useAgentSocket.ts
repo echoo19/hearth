@@ -16,9 +16,15 @@
  *    lose scrollback while the underlying pty (and the WS connection feeding
  *    it) is still alive. `useAgentSocket()` is the React seam onto that
  *    external store.
+ *  - A second pure planner (`planTerminalLaunch`) for the composer's terminal
+ *    options: what picking "Claude Code" should actually do given the session
+ *    there is right now. See the note above it — the short version is that
+ *    Hearth types the command into a shell it started, so the only agent it
+ *    can honestly claim to know about is the one it typed.
  */
 import { useCallback, useSyncExternalStore } from 'react';
 import { useEditor } from '../../store';
+import type { AgentCliInfo } from '../../types';
 import type { WsFrame } from '../../../server/ws';
 
 export type PtyCommand = 'shell';
@@ -198,6 +204,85 @@ export function planTerminalWrite(cursor: TerminalWriteCursor, state: Scrollback
 }
 
 // ---------------------------------------------------------------------------
+// Terminal launch planning — pure. What picking one of the composer's terminal
+// options should do, given the session that is there right now.
+// ---------------------------------------------------------------------------
+
+/**
+ * Everything the decision depends on. Passed in rather than read, so all seven
+ * outcomes are checkable without a socket, a store or a render.
+ */
+export interface TerminalLaunchRequest {
+  cli: AgentCliInfo;
+  status: AgentStatus;
+  /** What Hearth typed into the current session, if anything. */
+  launched: LaunchedCli | null;
+  /** The shared WS connection is up. */
+  connected: boolean;
+  /** A folder is open. The terminal runs in it, so without one there is none. */
+  hasProject: boolean;
+}
+
+/**
+ * `start`  spawn the shell, then type the command into it.
+ * `type`   a shell is already up with nothing of ours in it: type the command.
+ * `show`   this is already what is running here; just go and look at it.
+ * `blocked` nothing happens, and this sentence says why.
+ */
+export type TerminalLaunchPlan =
+  | { action: 'start'; input: string }
+  | { action: 'type'; input: string }
+  | { action: 'show' }
+  | { action: 'blocked'; reason: string };
+
+/** The keystrokes: the command, then Return. */
+export function terminalLaunchInput(command: string): string {
+  return `${command}\n`;
+}
+
+/**
+ * What picking a terminal option does.
+ *
+ * The one genuinely hard case is a session that is already running something.
+ * Hearth cannot see whether the agent it typed in is still there — a pty is
+ * bytes, not a process tree — so it has two honest options and one dishonest
+ * one. The dishonest one is typing the new command anyway: inside a running
+ * agent that is not a command at all, it is a sentence the agent reads as a
+ * prompt. Between refusing and killing the session, this refuses, because
+ * killing throws away work the user cannot get back, and says which agent is
+ * in the way and how to clear it. The picker renders that as a disabled row
+ * with the reason attached, so it is read before the click rather than after.
+ *
+ * The cost is a stale refusal: quit the agent back to a prompt and Hearth
+ * still thinks it is there, until the shell exits or Stop is pressed. That is
+ * the price of not lying about what it can see.
+ */
+export function planTerminalLaunch(request: TerminalLaunchRequest): TerminalLaunchPlan {
+  const { cli, status, launched, connected, hasProject } = request;
+  if (!cli.installed) {
+    const hint = cli.installHint ? ` Install it with ${cli.installHint}.` : '';
+    return { action: 'blocked', reason: `Hearth did not find ${cli.command} on your PATH.${hint}` };
+  }
+  if (!hasProject) {
+    return { action: 'blocked', reason: 'Open a project first. The terminal runs in the project folder.' };
+  }
+  const live = status === 'running' || status === 'reconnecting';
+  // Asking for what is already there is not a launch, it is a way back to it.
+  if (live && launched?.id === cli.id) return { action: 'show' };
+  if (!connected || status === 'reconnecting') {
+    return { action: 'blocked', reason: 'The terminal is not connected yet. Try again in a moment.' };
+  }
+  if (status === 'running' && launched !== null) {
+    return {
+      action: 'blocked',
+      reason: `Hearth started ${launched.label} in this terminal. Stop the session to start something else.`,
+    };
+  }
+  if (status === 'running') return { action: 'type', input: terminalLaunchInput(cli.command) };
+  return { action: 'start', input: terminalLaunchInput(cli.command) };
+}
+
+// ---------------------------------------------------------------------------
 // External store: module-level, outside React, so it outlives the Agent
 // panel's component tree. Fed by store.ts's WS message handler
 // (ingestPtyFrame/ingestPtyAttach) and by the start/stop actions below
@@ -209,6 +294,27 @@ export function planTerminalWrite(cursor: TerminalWriteCursor, state: Scrollback
 
 type Listener = () => void;
 
+/** The agent CLI Hearth typed into this session, as the picker names it. */
+export interface LaunchedCli {
+  id: string;
+  label: string;
+}
+
+/**
+ * What Hearth started in the current pty, or null for a plain shell.
+ *
+ * Module state rather than reducer state, for the same reason
+ * `agentPtySessionId` is: it is not derived from the pty's bytes, and the
+ * reducer's job is to turn frames into a buffer. It also has to SURVIVE a
+ * reconnect — the server hands the same pty back, with the same agent still
+ * running in it, and store.ts's reattach goes through `markAgentStarted`.
+ *
+ * The honest reading of a non-null value is "Hearth typed this command in",
+ * not "this program is running now": if the user quits the agent back to the
+ * prompt, nothing tells us. Everything downstream is worded that way.
+ */
+let launchedCli: LaunchedCli | null = null;
+
 /**
  * The session minus its scrollback. This is what React components subscribe
  * to: its object identity only changes when one of these fields changes, so
@@ -216,7 +322,10 @@ type Listener = () => void;
  * nothing — the Terminal component consumes scrollback imperatively via
  * subscribeAgentSocket/getAgentSocketSnapshot instead.
  */
-export type AgentSessionSummary = Omit<AgentSocketState, 'scrollback' | 'droppedBytes'>;
+export type AgentSessionSummary = Omit<AgentSocketState, 'scrollback' | 'droppedBytes'> & {
+  /** See `launchedCli` — what Hearth started here, not what is running now. */
+  cli: LaunchedCli | null;
+};
 
 function deriveSummary(state: AgentSocketState): AgentSessionSummary {
   return {
@@ -225,6 +334,7 @@ function deriveSummary(state: AgentSocketState): AgentSessionSummary {
     command: state.command,
     exitCode: state.exitCode,
     errorMessage: state.errorMessage,
+    cli: launchedCli,
   };
 }
 
@@ -240,7 +350,8 @@ function commit(next: AgentSocketState): void {
     prev.epoch !== next.epoch ||
     prev.command !== next.command ||
     prev.exitCode !== next.exitCode ||
-    prev.errorMessage !== next.errorMessage
+    prev.errorMessage !== next.errorMessage ||
+    agentSessionSummary.cli !== launchedCli
   ) {
     agentSessionSummary = deriveSummary(next);
   }
@@ -248,7 +359,22 @@ function commit(next: AgentSocketState): void {
 }
 
 export function ingestPtyFrame(frame: PtyServerFrame): void {
+  // The pty is gone, so whatever was running in it is gone with it. Clearing
+  // here (rather than only on an explicit stop) is what keeps a later pick
+  // from being refused by a session that no longer exists.
+  if (frame.type === 'pty-exit' || frame.type === 'pty-error') launchedCli = null;
   commit(reduceAgentSocket(agentSocketState, { type: 'frame', frame }));
+}
+
+/**
+ * Record what Hearth just typed into this session — or null to say "a plain
+ * shell", which is what an explicit Start gives you. Notifies through the same
+ * path as everything else, so the picker's ticks follow the real session.
+ */
+export function markAgentCli(cli: LaunchedCli | null): void {
+  if (launchedCli?.id === cli?.id) return;
+  launchedCli = cli;
+  commit(agentSocketState);
 }
 
 export function ingestPtyAttach(frame: PtyAttachFrame): void {
@@ -264,6 +390,7 @@ export function markAgentStopped(): void {
   // socket was down), a later Restart must spawn fresh, not reattach to the
   // stopped-but-lingering session (its linger timeout will reap it).
   agentPtySessionId = null;
+  launchedCli = null; // the session it was typed into is over
   commit(reduceAgentSocket(agentSocketState, { type: 'stop' }));
 }
 
@@ -273,6 +400,7 @@ export function markAgentDisconnected(): void {
 
 export function resetAgentSocket(): void {
   agentPtySessionId = null; // the server session dies with a deliberate teardown
+  launchedCli = null;
   commit(reduceAgentSocket(agentSocketState, { type: 'reset' }));
 }
 
@@ -352,6 +480,9 @@ export function useAgentSocket(): AgentSocket {
       return false;
     }
     markAgentStarted('shell');
+    // A plain Start is a plain shell: whatever a previous session had typed
+    // into it is not in this one.
+    markAgentCli(null);
     return true;
   }, []);
 

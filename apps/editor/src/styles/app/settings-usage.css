@@ -1,0 +1,173 @@
+/* Settings — the Usage pane.
+
+   Deliberately almost nothing. The pane is counts of files, and the honest
+   shape for counts is the aligned label/value row the rest of the settings
+   dialog already uses — so the totals borrow `.set-row` wholesale and this
+   file only adds the two things it does not have: a number that lines up with
+   the numbers above it, and a compact per-folder list.
+
+   No hero metric, no card grid, no gradient, no coloured stripe. A dashboard
+   here would be a bigger claim than the data can support: there is no account
+   behind Hearth, nothing is metered, and a surface that LOOKS like a billing
+   page is a lie told in layout rather than in words. */
+
+/* Reading, and failed: quiet asides rather than content, so they sit at hint
+   weight. */
+.set-usage-note {
+  margin: 18px 0 0;
+  font-size: var(--text-sm);
+  color: var(--ink-mute);
+}
+
+/* The whole answer arrives at once after a disk read, so it fades rather than
+   appearing mid-sentence. Opacity only — nothing moves. */
+.set-usage-body {
+  animation: set-usage-in var(--t) var(--ease-out);
+}
+
+@keyframes set-usage-in {
+  from {
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .set-usage-body {
+    animation: none;
+  }
+}
+
+/* A fresh install. Not an error state and not styled like one: there is
+   nothing wrong, there is just nothing yet. */
+.set-usage-empty {
+  margin: 22px 0 0;
+  max-width: 52ch;
+  font-size: var(--text-sm);
+  line-height: 1.6;
+  color: var(--ink-mute);
+  text-wrap: pretty;
+}
+
+/* --- The numbers ---------------------------------------------------------- */
+
+/* Tabular figures so the column of counts reads as a column: a 9 under a 1
+   should not shift the digit above it sideways. */
+.set-usage-figure {
+  font-size: var(--text-md);
+  font-variant-numeric: tabular-nums;
+  color: var(--ink);
+}
+
+/* The rows whose answer is words rather than a count ("7 of 9 switched on").
+   Smaller than a figure, because a sentence at figure size shouts. */
+.set-usage-value {
+  font-size: var(--text-sm);
+  font-variant-numeric: tabular-nums;
+  color: var(--ink-mute);
+  text-align: right;
+}
+
+/* --- Folder by folder ----------------------------------------------------- */
+
+.set-usage-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+/* Two lines, two columns: what it is called and when it was last touched on
+   the first, where it lives and what is in it on the second. Every folder is
+   the same four cells in the same four places, which is what lets the list be
+   scanned instead of read. */
+.set-usage-item {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 2px 20px;
+  align-items: baseline;
+  padding: 11px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.set-usage-list > .set-usage-item:last-child {
+  border-bottom: 0;
+}
+
+.set-usage-item-name {
+  grid-column: 1;
+  min-width: 0;
+  overflow: hidden;
+  font-size: var(--text-sm);
+  color: var(--ink);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.set-usage-item-when {
+  grid-column: 2;
+  font-size: var(--text-xs);
+  font-variant-numeric: tabular-nums;
+  color: var(--ink-faint);
+  white-space: nowrap;
+}
+
+/* The path is the identifying detail, not the headline — it is here so two
+   folders with the same name can be told apart, and it gets out of the way
+   otherwise. Truncates at the end and carries the full path as a native title
+   (a non-interactive span, which is exactly what that attribute is for). */
+.set-usage-item-path {
+  grid-column: 1;
+  min-width: 0;
+  overflow: hidden;
+  font-size: var(--text-xs);
+  color: var(--ink-faint);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.set-usage-item-facts {
+  grid-column: 2;
+  font-size: var(--text-xs);
+  color: var(--ink-mute);
+  white-space: nowrap;
+}
+
+/* A folder that has been deleted still belongs in the list — it is part of
+   what this machine did — so it dims rather than disappearing. */
+.set-usage-item.is-gone .set-usage-item-name {
+  color: var(--ink-mute);
+}
+
+.set-usage-gone {
+  color: var(--ink-faint);
+}
+
+/* --- The disclaimer ------------------------------------------------------- */
+
+/* The most important sentence on the pane, set at its quietest. Saying "no
+   tokens, no spend" loudly would draw the eye to money, which is the one
+   subject this pane has nothing to do with. */
+.set-usage-foot {
+  margin: 26px 0 0;
+  max-width: 62ch;
+  padding-top: 16px;
+  border-top: 1px solid var(--border);
+  font-size: var(--text-xs);
+  line-height: 1.6;
+  color: var(--ink-faint);
+  text-wrap: pretty;
+}
+
+/* Narrow window: the dialog is 94vw and the rail eats 232px of it, so the
+   two-column folder row can run out of room. Stack it rather than letting the
+   name and the facts collide. */
+@media (max-width: 720px) {
+  .set-usage-item {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .set-usage-item-when,
+  .set-usage-item-facts {
+    grid-column: 1;
+    white-space: normal;
+  }
+}

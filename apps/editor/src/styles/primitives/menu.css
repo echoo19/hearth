@@ -22,9 +22,63 @@
   background: var(--bg-1);
   border: 1px solid var(--border-strong);
   border-radius: var(--radius);
-  box-shadow: 0 8px 24px oklch(0 0 0 / 0.4);
+  box-shadow: var(--shadow-2);
   display: flex;
   flex-direction: column;
+}
+
+/* --- A flyout hanging off one item ---------------------------------------
+
+   For a choice that is not a list of commands — a grid of swatches, a picker.
+   It opens to the right, level with its own row, and the menu stays up behind
+   it so the thing being changed is still in view. */
+
+.menu-sub {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Marks the row as leading somewhere, in the same place every menu puts it. */
+.menu-more {
+  display: inline-flex;
+  margin-left: auto;
+  color: var(--ink-faint);
+}
+
+/* The popover API's UA stylesheet sets `overflow: auto` on every [popover],
+   which clips a child positioned outside the panel — so the flyout existed,
+   had width, had opacity 1, and painted nowhere. Unclipped only while one is
+   actually open, so a long menu keeps its scroll the rest of the time. */
+.menu-popover:has(.menu-flyout) {
+  overflow: visible;
+}
+
+.menu-flyout {
+  position: absolute;
+  left: 100%;
+  top: -5px;
+  margin-left: 6px;
+  z-index: 1;
+  padding: 8px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  background: var(--bg-1);
+  box-shadow: var(--shadow-2);
+  /* No `both`. A fill-mode reveal holds the `from` frame whenever animations
+     do not actually run — a hidden tab, a headless render — and the panel
+     would ship invisible. Visible is the default state; the animation only
+     decorates the arrival. */
+  animation: menu-flyout-in var(--t-fast) var(--ease-out);
+}
+
+/* Opens from the edge it is attached to, so the direction carries the
+   relationship rather than being a generic fade. */
+@keyframes menu-flyout-in {
+  from {
+    opacity: 0;
+    transform: translateX(-4px);
+  }
 }
 
 .menu-item {

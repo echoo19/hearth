@@ -81,40 +81,10 @@
   font-size: var(--text-sm);
 }
 
-/* --- Chat / Terminal ------------------------------------------------------ */
-
-.sidebar-modes {
-  padding: 0 10px 8px;
-  flex: none;
-}
-
-.sidebar-switch {
-  display: flex;
-  gap: 3px;
-  padding: 3px;
-  border-radius: 999px;
-  background: var(--bg-2);
-}
-
-.sidebar-switch .switch-tab {
-  flex: 1;
-  height: 26px;
-  border-radius: 999px;
-  padding: 0 10px;
-}
-
-.sidebar-switch .switch-tab[aria-selected='true'] {
-  box-shadow: inset 0 0 0 1px var(--border);
-}
-
-.sidebar-switch .switch-tab[aria-disabled='true'] {
-  color: var(--ink-faint);
-  cursor: default;
-}
-
-.sidebar-switch .switch-tab[aria-disabled='true']:hover {
-  color: var(--ink-faint);
-}
+/* The Chat / Terminal pill used to live here, then in the conversation's own
+   head, and now nowhere: a conversation is one or the other for its whole life,
+   so there was nothing left for a switch to switch. What kind a conversation is
+   is drawn on its row instead — see .chat-marks below. */
 
 /* --- Nav rows -------------------------------------------------------------
 
@@ -135,19 +105,26 @@
   padding: 0 0 10px;
 }
 
+/* The two general acts sit above two lists of nouns, and at the same size and
+   weight as those nouns they read as the first two entries of the Projects
+   list rather than as things you DO. So they are a step larger, a step
+   heavier, and given their own row height: the rail now has three ranks, and
+   the eye can tell an act from a project from a conversation without reading
+   any of them. */
 .nav-row {
   display: flex;
   align-items: center;
   gap: 10px;
   width: 100%;
-  height: var(--row-h);
+  height: var(--nav-h);
   padding: 0 8px;
   border: 0;
   border-radius: var(--radius);
   background: transparent;
   color: var(--ink);
   font-family: inherit;
-  font-size: var(--text-sm);
+  font-size: var(--text-md);
+  font-weight: 500;
   text-align: left;
   cursor: pointer;
   transition: background var(--t-fast) var(--ease-out);
@@ -161,8 +138,22 @@
   background: var(--bg-3);
 }
 
+/* Unavailable, not absent. It keeps its pointer events on purpose — the
+   tooltip saying why is the whole point of showing the row at all — so the
+   hover fill is what has to go, or it would look pressable. */
+.nav-row[aria-disabled='true'] {
+  color: var(--ink-faint);
+  cursor: default;
+}
+
+.nav-row[aria-disabled='true']:hover,
+.nav-row[aria-disabled='true']:active {
+  background: transparent;
+}
+
 .nav-row.is-icon {
-  width: var(--row-h);
+  width: var(--nav-h);
+  height: var(--nav-h);
   justify-content: center;
   padding: 0;
   color: var(--ink-mute);
@@ -225,6 +216,17 @@
   white-space: nowrap;
 }
 
+/* A heading that also carries an act (Projects, and its "+"). The heading keeps
+   its own padding so the label lands exactly where a plain one does — nothing
+   shifts by a pixel because a list gained a control. */
+.sidebar-section-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  padding-right: 4px;
+}
+
 .sidebar-empty {
   margin: 0;
   padding: 2px 8px 6px;
@@ -234,6 +236,7 @@
 }
 
 .chat-list,
+.project-list,
 .folder-list {
   display: flex;
   flex-direction: column;
@@ -285,6 +288,9 @@
   flex: 1;
   min-width: 0;
   font-size: var(--text-sm);
+  /* Stated, not inherited: the projects above are bold on purpose, and a
+     conversation picking that up would flatten the two lists back together. */
+  font-weight: 400;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -322,7 +328,8 @@
 }
 
 .chat-more,
-.harness-more {
+.harness-more,
+.section-add {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -337,9 +344,39 @@
 }
 
 .chat-more:hover,
-.harness-more:hover {
+.harness-more:hover,
+.section-add:hover {
   background: var(--bg-3);
   color: var(--ink);
+}
+
+/* The Projects heading's "+" — the same 24px ghost box as a row's overflow
+   control, and the same manners: quiet until the list it belongs to is under
+   the pointer. It is a real button the whole time (only its opacity moves), so
+   Tab still reaches it, and :focus-within is what shows it to whoever got
+   there without a mouse. The transition restates background/colour because it
+   replaces the shared rule's, not adds to it. */
+.section-add {
+  flex: none;
+  opacity: 0;
+  transition:
+    opacity var(--t-fast) var(--ease-out),
+    background var(--t-fast) var(--ease-out),
+    color var(--t-fast) var(--ease-out);
+}
+
+.sidebar-section:hover .section-add,
+.sidebar-section:focus-within .section-add {
+  opacity: 1;
+}
+
+/* The reveal is a fade, so it owes an answer: it arrives at once instead. It
+   still arrives — hiding it from someone who asked motion to stop would be
+   taking away the act rather than the animation. */
+@media (prefers-reduced-motion: reduce) {
+  .section-add {
+    transition: none;
+  }
 }
 
 .chat-row.is-renaming {
@@ -350,6 +387,241 @@
   width: 100%;
   height: var(--ctl-h-sm);
   font-size: var(--text-sm);
+}
+
+/* --- Projects -------------------------------------------------------------
+
+   A project is a game, and the list of them is the most important thing in the
+   rail. Each row carries a mark — a glyph in the project's own colour — because
+   six games are otherwise six near-identical strings, and colour is what makes
+   one findable without reading. */
+
+.project-row {
+  position: relative;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  min-height: var(--row-h);
+  border-radius: var(--radius);
+  transition: background var(--t-fast) var(--ease-out);
+}
+
+.project-row:hover,
+.project-row.is-open {
+  background: var(--bg-2);
+}
+
+.project-open {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  height: var(--row-h);
+  padding: 0 8px;
+  border: 0;
+  background: transparent;
+  color: var(--ink-mute);
+  font: inherit;
+  font-size: var(--text-sm);
+  text-align: left;
+  cursor: pointer;
+  transition: color var(--t-fast) var(--ease-out);
+}
+
+.project-row:hover .project-open,
+.project-row.is-open .project-open {
+  color: var(--ink);
+}
+
+/* A project is a container and a conversation is a thing inside one, so the
+   project carries the weight and the conversation does not. Same size: this is
+   a difference in rank, not in importance, and bumping the size too would
+   start a third list. */
+.project-name {
+  flex: 1;
+  min-width: 0;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* The mark. `--mark` is set per instance from the resolved palette entry, so
+   hover and selected states can tint from it without recomputing anything. */
+.project-mark {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  color: var(--mark, var(--ink-mute));
+}
+
+/* On a chat row it is a badge, not a subject: smaller, and dimmed until the
+   row is the one you are looking at, so a list of twenty chats reads as text
+   with quiet colour rather than as a column of dots. */
+.chat-mark {
+  opacity: 0.75;
+  transition: opacity var(--t-fast) var(--ease-out);
+}
+
+.chat-row:hover .chat-mark,
+.chat-row.is-active .chat-mark {
+  opacity: 1;
+}
+
+/* The two marks a conversation row leads with: whose it is, then what it is.
+   Held together in one cluster with a tighter gap than .chat-open's, so they
+   read as a single stamp rather than as two competing columns — and so the
+   title starts on the same left edge on every row, which is what makes a list
+   of twenty scannable. */
+.chat-marks {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+/* Quieter than the project's mark, which carries colour: this one only has to
+   separate a shell from a transcript, and it brightens with the row like
+   everything else in it. */
+.chat-kind {
+  display: inline-flex;
+  color: var(--ink-faint);
+  transition: color var(--t-fast) var(--ease-out);
+}
+
+.chat-row:hover .chat-kind,
+.chat-row.is-active .chat-kind {
+  color: var(--ink-mute);
+}
+
+/* The two transitions above are colour and opacity on a hover, which is the
+   one motion this list has. Reduced motion removes the fade rather than the
+   state: the row still changes, it just arrives already changed. */
+@media (prefers-reduced-motion: reduce) {
+  .chat-mark,
+  .chat-kind {
+    transition: none;
+  }
+}
+
+.project-actions {
+  flex: none;
+  display: flex;
+  align-items: center;
+  padding-right: 4px;
+  opacity: 0;
+  transition: opacity var(--t-fast) var(--ease-out);
+}
+
+.project-row:hover .project-actions,
+.project-row:focus-within .project-actions {
+  opacity: 1;
+}
+
+/* --- Naming a new one -----------------------------------------------------
+
+   The dialog behind the Projects heading's "+". Its chrome is the shared modal
+   (panels/dialogs.css); all that belongs here is the width the one question
+   needs and the two lines under the field. It lives in this file rather than
+   with the other dialogs because it is the rail's act — the surface exists
+   only to serve that heading. */
+
+.new-project-body {
+  min-width: min(340px, 80vw);
+}
+
+/* What actually happens, said before it happens: a folder appears on their
+   computer. Faint, because it is a fact to be glanced at, not an instruction —
+   the selector carries .new-project-body so it outranks `.modal-body p`. */
+.new-project-body .new-project-note {
+  color: var(--ink-faint);
+  font-size: var(--text-xs);
+  line-height: 1.55;
+  max-width: 46ch;
+}
+
+/* The server's reason for refusing. Same place, same size, the one colour in
+   the dialog — a create that failed must not read like one that worked. */
+.new-project-body .new-project-error {
+  color: var(--err);
+  font-size: var(--text-xs);
+  line-height: 1.55;
+  max-width: 46ch;
+}
+
+/* --- Choosing what a project looks like ----------------------------------
+
+   Lives in a flyout off the row's own menu (see .menu-flyout), so the list it
+   has to be distinct within stays on screen while you try colours. Two rows,
+   both real buttons. */
+
+.identity-picker {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+/* Grid, not wrap: eight colours on one line and twelve marks on two, always.
+   Letting them reflow gave a ragged 7+1 that read as an accident. */
+.identity-row {
+  display: grid;
+  grid-template-columns: repeat(8, 16px);
+  gap: 6px;
+  justify-content: space-between;
+}
+
+.identity-row.is-glyphs {
+  grid-template-columns: repeat(6, 22px);
+  gap: 4px;
+}
+
+.identity-swatch {
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: var(--mark);
+  cursor: pointer;
+  /* The ring is drawn outside the circle so selecting one doesn't change its
+     size — a swatch grid that reflows on click is a swatch grid you misclick. */
+  box-shadow: 0 0 0 0 transparent;
+  transition: box-shadow var(--t-fast) var(--ease-out);
+}
+
+.identity-swatch:hover {
+  box-shadow: 0 0 0 2px var(--bg-3);
+}
+
+.identity-swatch[aria-pressed='true'] {
+  box-shadow: 0 0 0 2px var(--bg-1), 0 0 0 3px var(--mark);
+}
+
+.identity-glyph {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-sm, 6px);
+  background: transparent;
+  color: var(--ink-faint);
+  cursor: pointer;
+  transition: background var(--t-fast) var(--ease-out), color var(--t-fast) var(--ease-out);
+}
+
+.identity-glyph:hover {
+  background: var(--bg-3);
+  color: var(--ink);
+}
+
+.identity-glyph[aria-pressed='true'] {
+  background: var(--bg-3);
+  color: var(--mark);
 }
 
 /* --- Folders -------------------------------------------------------------- */

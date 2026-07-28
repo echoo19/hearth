@@ -1,22 +1,32 @@
 /**
  * The app's one strip of chrome: which conversation is open, whether anything
- * is listening, and the two things that open over everything else (files and
- * settings).
+ * is listening, and whether the game is beside it.
  *
  * The folder — its name, its recents, closing it — moved to the sidebar, which
  * is where folders now live. What is left is state the sidebar cannot show:
  * the conversation you are IN, and whether typing into it will do anything.
  *
+ * There is no Files button. A file browser is not something anyone opens for
+ * its own sake — every time it is genuinely wanted, it is wanted for a
+ * specific file, and those all have their own way in (a file-change card, a
+ * tool row, a console link, ⌘P).
+ *
  * Deliberately thin — the conversation and the game are the app, and every
  * pixel this takes is one they don't get.
  */
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { anyChatProviderReady, useApp } from '../../store';
 import { hearthNative } from '../../native';
-import { Icon } from '../ui';
 import { IconButton } from '../ui/Button';
 import { Tooltip } from '../ui/Tooltip';
 import type { ChatDriverKind } from '../../types';
+
+/**
+ * How long a connection may be away before the strip mentions it. Long enough
+ * that a reconnect nobody noticed stays unmentioned, short enough that someone
+ * staring at a dead app is not left guessing.
+ */
+const RECONNECT_GRACE_MS = 1600;
 
 /** Human label for the connection state, used as the dot's accessible name. */
 export function connectionLabel(status: 'connected' | 'connecting' | 'disconnected'): string {
@@ -31,9 +41,22 @@ export function connectionLabel(status: 'connected' | 'connecting' | 'disconnect
 }
 
 /**
- * What the app can currently do, as one short phrase. This is the top bar's
- * capability read-out: the honest answer to "is anything going to happen if I
- * type?", which is a different question from whether the socket is up.
+ * What the app has to say about itself right now — which, when everything is
+ * working, is nothing.
+ *
+ * This used to read "Ready" or "Agent connected" whenever things were fine.
+ * That is the app congratulating itself for functioning, and it backfires: a
+ * tool that keeps announcing it is connected invites the reader to wonder how
+ * often it isn't. A localhost socket that is up is not news. Silence is the
+ * correct resting state, and it makes the two states that ARE news impossible
+ * to miss.
+ *
+ * `slow` is what stops the strip flickering on every reconnect. A socket that
+ * drops and comes back inside a second is not something the reader has to
+ * know about — narrating it would recreate exactly the problem this removes.
+ * Only a wait long enough to be felt gets a word.
+ *
+ * Returns null when there is nothing worth saying.
  */
 export function capabilityLabel(
   status: 'connected' | 'connecting' | 'disconnected',
@@ -42,21 +65,42 @@ export function capabilityLabel(
    * Whether ANY agent could answer — a stored key, or a provider that is
    * signed in. Not just the Anthropic key: someone signed in with ChatGPT and
    * no key at all was being told "No agent connected" while the app was
-   * perfectly able to answer them, which is the one thing this line exists to
-   * get right.
+   * perfectly able to answer them.
    */
   ready: boolean,
-): string {
-  if (status !== 'connected') return connectionLabel(status);
-  // Every real backend reads the same here on purpose: WHICH agent answered is
-  // the conversation header's business, not the top bar's. This line answers
-  // only "will anything happen if I type?".
-  if (driver === 'agent-sdk' || driver === 'codex') return 'Agent connected';
+  /** The connection has been down long enough to be worth reporting. */
+  slow = false,
+): string | null {
+  if (status !== 'connected') return slow ? connectionLabel(status) : null;
+  // Connected, but nothing on the other end that could answer a turn. This one
+  // stays: it is the difference between "typing will work" and "typing will
+  // do nothing", and it is the reader's to fix.
   if (driver === 'stub') return 'No agent connected';
-  return ready ? 'Ready' : 'No agent connected';
+  if (driver === 'agent-sdk' || driver === 'codex') return null;
+  return ready ? null : 'No agent connected';
 }
 
-export function TopBar({ narrow }: { narrow: boolean }) {
+/**
+ * True once the connection has been unavailable for `graceMs` without
+ * recovering. Resets the moment it comes back, so a blip never gets a word.
+ */
+export function useSlowConnection(
+  status: 'connected' | 'connecting' | 'disconnected',
+  graceMs = RECONNECT_GRACE_MS,
+): boolean {
+  const [slow, setSlow] = useState(false);
+  useEffect(() => {
+    if (status === 'connected') {
+      setSlow(false);
+      return;
+    }
+    const timer = setTimeout(() => setSlow(true), graceMs);
+    return () => clearTimeout(timer);
+  }, [status, graceMs]);
+  return slow;
+}
+
+export function TopBar({ narrow, paneOpen = false }: { narrow: boolean; paneOpen?: boolean }) {
   const projectPath = useApp((s) => s.projectPath);
   const hasFolder = projectPath !== null;
   const wsStatus = useApp((s) => s.wsStatus);
@@ -64,18 +108,29 @@ export function TopBar({ narrow }: { narrow: boolean }) {
   const ready = useApp((s) => anyChatProviderReady(s.settings, s.providers));
   const narrowTab = useApp((s) => s.narrowTab);
   const setNarrowTab = useApp((s) => s.setNarrowTab);
-  const openCodePeek = useApp((s) => s.openCodePeek);
+  const setPaneOpen = useApp((s) => s.setPaneOpen);
   const activeChatId = useApp((s) => s.activeChatId);
+  const composing = useApp((s) => s.composing);
+  const projectView = useApp((s) => s.projectView);
   const chats = useApp((s) => s.chats);
   const native = hearthNative();
 
-  const capability = capabilityLabel(wsStatus, driver, ready);
-  const chatTitle = chats.find((chat) => chat.id === activeChatId)?.title ?? 'New chat';
+  const slow = useSlowConnection(wsStatus);
+  const capability = capabilityLabel(wsStatus, driver, ready, slow);
+  // While the blank surface is up there is no conversation to name yet, and
+  // naming the last one makes the strip look like it never left it.
+  const chatTitle = projectView
+    ? // The project's own screen already carries its name, twice the size and
+      // with its mark beside it. Repeating it up here would be chrome about
+      // something the eye has already landed on.
+      ''
+    : composing
+      ? 'New chat'
+      : (chats.find((chat) => chat.id === activeChatId)?.title ?? 'New chat');
 
   // Home has nothing for this strip to name and nothing for it to open: no
-  // conversation, no socket, no files, and settings are saved per folder. It
-  // stays as the drag region and says nothing — an empty capability pill and a
-  // Settings button that can't save would both be chrome about nothing.
+  // conversation, no socket, no files. It stays as the drag region and says
+  // nothing — an empty capability pill would be chrome about nothing.
   if (!hasFolder) {
     return (
       <header className="topbar is-empty">
@@ -87,17 +142,24 @@ export function TopBar({ narrow }: { narrow: boolean }) {
 
   return (
     <header className="topbar">
-      <Tooltip content={projectPath ?? ''}>
-        <span className="topbar-name">{chatTitle}</span>
-      </Tooltip>
+      {chatTitle !== '' && (
+        <Tooltip content={projectPath ?? ''}>
+          <span className="topbar-name">{chatTitle}</span>
+        </Tooltip>
+      )}
 
-      <span className={`topbar-capability status-${wsStatus}`}>
-        <span className="capability-dot" aria-hidden="true" />
-        {capability}
-      </span>
+      {/* Absent entirely when there is nothing wrong. An empty pill sitting
+          there would be the same claim in a quieter voice, and it would still
+          take the space that the conversation's own name should have. */}
+      {capability !== null && (
+        <span className={`topbar-capability status-${wsStatus}`} role="status">
+          <span className="capability-dot" aria-hidden="true" />
+          {capability}
+        </span>
+      )}
 
-      {narrow && (
-        <div className="topbar-switch" role="tablist" aria-label="Layout">
+      {narrow && paneOpen && (
+        <div className="topbar-switch" role="tablist" aria-label="Conversation or game">
           {(
             [
               ['chat', 'Conversation'],
@@ -120,13 +182,20 @@ export function TopBar({ narrow }: { narrow: boolean }) {
 
       <span className="topbar-spacer" />
 
-      <IconButton icon="folder" label="Files" iconSize={15} onClick={() => openCodePeek()} />
+      {/* The one control for the playtest column. It reads as a toggle rather
+          than as a link to a place, because that is what it is — the column is
+          part of this window, not somewhere else. */}
       <IconButton
-        icon="gear"
-        label="Settings"
-        iconSize={15}
-        onClick={() => window.dispatchEvent(new CustomEvent('hearth:open-settings'))}
+        icon="play"
+        label={paneOpen ? 'Hide playtest' : 'Show playtest'}
+        iconSize={13}
+        aria-pressed={paneOpen}
+        onClick={() => setPaneOpen(!paneOpen)}
       />
+      {/* There is no Settings button here. Settings belong to the account, and
+          the account row at the foot of the sidebar already opens them (along
+          with ⌘,) — a second door to the same room only makes the reader
+          wonder whether the two lead somewhere different. */}
       {/* Room for the window controls on platforms that overlay them. macOS
           draws them in the native title bar above this strip, so on that
           platform the reserve is zero. */}

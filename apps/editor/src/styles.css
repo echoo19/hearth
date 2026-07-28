@@ -23,10 +23,18 @@
 @import './styles/app/shell.css';
 @import './styles/app/sidebar.css';
 @import './styles/app/home.css';
+@import './styles/app/screen.css';
+@import './styles/app/skills.css';
+@import './styles/app/settings.css';
+@import './styles/app/settings-agents.css';
+@import './styles/app/settings-usage.css';
+@import './styles/app/project.css';
 @import './styles/app/chat.css';
 @import './styles/app/game.css';
+@import './styles/app/playtest.css';
 @import './styles/app/evidence.css';
 @import './styles/app/peek.css';
+@import './styles/app/toast.css';
 
 /* Shared panel chrome, and the surfaces that predate the shell. */
 @import './styles/panels/common.css';

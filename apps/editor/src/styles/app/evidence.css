@@ -123,7 +123,7 @@
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  padding: 3px 11px;
+  padding: 3px 10px;
   border-radius: 999px;
   font-size: var(--text-xs);
   background: var(--bg-3);
@@ -211,4 +211,32 @@
   border-radius: var(--radius-sm);
   border: 1px solid var(--border);
   background: var(--canvas-bg);
+}
+
+/* The last line of the newest sweep card: through to the per-bot breakdown.
+   Aligned to the card's own left edge with a negative inset that cancels its
+   padding, so the words start where the card's text starts and the control
+   reads as the card's own closing line rather than a button laid on top. */
+.sweep-more {
+  align-self: flex-start;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  margin-left: -6px;
+  padding: 4px 6px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  font-family: inherit;
+  font-size: var(--text-xs);
+  color: var(--ink-mute);
+  cursor: pointer;
+  transition: background var(--t-fast) var(--ease-out), color var(--t-fast) var(--ease-out);
+}
+
+/* --bg-3, not the --bg-2 a quiet control usually lifts to: the card is already
+   --bg-2, so that would be a hover you cannot see. */
+.sweep-more:hover {
+  background: var(--bg-3);
+  color: var(--ink);
 }

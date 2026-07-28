@@ -10,6 +10,7 @@
 import React from 'react';
 import { useApp } from '../../store';
 import { projectFileUrl } from '../../api';
+import { Icon } from '../ui';
 import type { ChatImagePart, ChatNoticePart, ChatPlanPart } from '../../types';
 
 /** `[x] done`, `[~] doing`, `[ ] to do` — the three states a plan line has. */
@@ -58,7 +59,7 @@ export function ImageCard({ part }: { part: ChatImagePart }) {
   if (!src) {
     return (
       <p className="chat-notice">
-        An image at <span className="chat-notice-path">{part.path}</span>
+        Can't show this image. It's at <span className="chat-notice-path">{part.path}</span>
       </p>
     );
   }
@@ -70,6 +71,32 @@ export function ImageCard({ part }: { part: ChatImagePart }) {
   );
 }
 
+/**
+ * A quiet line about the conversation, and the one case where it is not quiet.
+ *
+ * An error tone marks a turn that did not finish. It gets a mark and a tinted
+ * rule so it reads as the app speaking, because the alternative, which is what
+ * this used to be, was an error rendered in the agent's own voice where
+ * nothing distinguished "the model said this" from "the model never ran".
+ *
+ * The retry sends the same prompt again rather than resuming, since a turn
+ * that failed this way produced nothing to resume from.
+ */
 export function NoticeRow({ part }: { part: ChatNoticePart }) {
-  return <p className="chat-notice">{part.text}</p>;
+  const sendChat = useApp((s) => s.sendChat);
+  if (part.tone !== 'error') return <p className="chat-notice">{part.text}</p>;
+
+  return (
+    <div className="chat-notice is-error" role="status">
+      <span className="chat-notice-mark" aria-hidden="true">
+        <Icon name="warning" size={12} />
+      </span>
+      <p className="chat-notice-text">{part.text}</p>
+      {part.retryText && (
+        <button type="button" className="chat-notice-retry" onClick={() => sendChat(part.retryText as string)}>
+          Try again
+        </button>
+      )}
+    </div>
+  );
 }

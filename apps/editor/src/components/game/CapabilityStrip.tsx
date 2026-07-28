@@ -1,51 +1,33 @@
 /**
- * What Hearth can currently see of this game, and the one thing it can do with
- * it — along the pane's bottom edge.
+ * The pane's two actions, along its bottom edge: play the game yourself, or
+ * hand it to the probe.
  *
- * Any web game gives up preview, errors and screenshots for free. Entities,
- * events and scenes need the game to say something about itself, so they show
- * as available-but-off until the probe finds it does: the strip is an honest
- * capability read-out, not a feature list.
+ * These are different acts — who is holding the controls — so they are
+ * different controls and share no glyph. Play is the quiet one: it just gets
+ * you to the game the way a player would meet it. Playtest gives the controls
+ * away to something that is not you, which is the app's other primary action
+ * (the composer being the first), so it is the second and last ember-filled
+ * control in the window. While it runs it reports how far it has got, counted
+ * from the same evidence stream the rail is filling with — there is no
+ * separate progress to disagree with.
  *
- * Playtest is the app's other primary action (the composer being the first),
- * so it is the second and last ember-filled control in the window. While it
- * runs it reports how far it has got, counted from the same evidence stream
- * the rail is filling with — there is no separate progress to disagree with.
+ * The chip row that used to name what Hearth could see has gone. It was a
+ * feature list wearing a status line's clothes: nothing was ever done in
+ * response to it, and it competed for the eye with the two things here that
+ * are actually actions.
+ *
+ * A "Playtesters" link sat between them for a while and has gone the same way.
+ * It was navigation with nothing behind it until a sweep had run, and it asked
+ * to be read on every glance at the game to say something only worth reading
+ * afterwards. The per-bot breakdown is now reached from the sweep it describes,
+ * down in the rail, where the reader is already looking at that sweep.
  */
 import React from 'react';
 import { useApp } from '../../store';
-import type { Sense } from '../../types';
+import { gameUrl } from '../../api';
+import { Icon } from '../ui';
+import { IconButton } from '../ui/Button';
 import { Tooltip } from '../ui/Tooltip';
-
-interface SenseSpec {
-  id: Sense;
-  label: string;
-  /** Why this sense is on, or what it would take to turn it on. */
-  hint: string;
-}
-
-/** Every sense the strip can show, in the order it shows them. */
-export const SENSES: SenseSpec[] = [
-  { id: 'preview', label: 'Preview', hint: 'The game is running here.' },
-  { id: 'errors', label: 'Errors', hint: 'Crashes and console errors are captured while it runs.' },
-  { id: 'screenshots', label: 'Shots', hint: 'Frames can be captured from the running game.' },
-  { id: 'entities', label: 'Entities', hint: 'Needs the game to expose its objects.' },
-  { id: 'events', label: 'Events', hint: 'Needs the game to report what happens.' },
-  { id: 'scenes', label: 'Scenes', hint: 'Needs the game to report which scene it is in.' },
-];
-
-/**
- * Senses a plain web game gives up with no cooperation at all. Reported by the
- * server too, but pinned here so the strip is never empty while the first
- * status request is in flight.
- */
-export const ZERO_COOPERATION_SENSES: Sense[] = ['preview', 'errors', 'screenshots'];
-
-/** Which senses to light, given what the server reported and whether a game exists. */
-export function activeSenses(reported: Sense[], gamePresent: boolean): Set<Sense> {
-  if (!gamePresent) return new Set();
-  return new Set<Sense>([...ZERO_COOPERATION_SENSES, ...reported]);
-}
 
 /**
  * What the Playtest button says. Pure, so the progress contract is testable:
@@ -60,61 +42,90 @@ export function playtestLabel(sweep: { running: boolean; done: number; total: nu
 
 /** Why Playtest can't run right now, or null when it can. */
 export function playtestBlockReason(opts: { gamePresent: boolean; running: boolean }): string | null {
-  if (!opts.gamePresent) return 'Nothing to play yet — there is no game in this folder.';
+  if (!opts.gamePresent) return 'Nothing to play yet. There is no game in this project.';
   if (opts.running) return 'A playtest is running. Results land in Playtests below.';
   return null;
 }
 
-export function CapabilityStrip() {
-  const reported = useApp((s) => s.senses);
-  const gamePresent = useApp((s) => s.game.present);
+/**
+ * The button itself, so the strip and the Playtesters screen press the same
+ * one. Two buttons that started the same sweep would eventually stop agreeing
+ * about what it says while it runs.
+ */
+export function PlaytestButton() {
+  const game = useApp((s) => s.game);
   const sweep = useApp((s) => s.sweep);
   const startSweep = useApp((s) => s.startSweep);
-  const active = activeSenses(reported, gamePresent);
-  const blocked = playtestBlockReason({ gamePresent, running: sweep.running });
+  const blocked = playtestBlockReason({ gamePresent: game.present, running: sweep.running });
+
+  return (
+    <Tooltip content={blocked ?? 'Play the game many ways and write down what happened.'} side="top">
+      {/* aria-disabled, not the `disabled` attribute: a natively disabled
+          button dispatches no pointer events, so the tooltip explaining WHY
+          it is unavailable would never show — the exact failure the Menu
+          primitive's disabledReason path solves the same way. */}
+      <button
+        type="button"
+        className={`playtest-btn${sweep.running ? ' is-running' : ''}`}
+        aria-disabled={blocked !== null}
+        onClick={() => {
+          if (blocked === null) void startSweep();
+        }}
+      >
+        {/* A robot head, never the play triangle. The whole difference
+            between this button and the one beside it is who is holding the
+            controls, and that has to be legible before the label is read. */}
+        {sweep.running ? <span className="playtest-spinner" aria-hidden="true" /> : <Icon name="bot" size={13} />}
+        {playtestLabel(sweep)}
+      </button>
+    </Tooltip>
+  );
+}
+
+export function CapabilityStrip() {
+  const projectPath = useApp((s) => s.projectPath);
+  const game = useApp((s) => s.game);
+  const gameNonce = useApp((s) => s.gameNonce);
+  const gamePresent = game.present;
+  // Everything the URL needs, or nothing: an entry-less or folder-less game is
+  // showing an empty state anyway, so there is nowhere to send the player.
+  const playUrl = gamePresent && game.entry && projectPath ? gameUrl(projectPath, game.entry, gameNonce) : null;
 
   return (
     <div className="capability-strip">
-      {/* The read-out scrolls when the pane is narrow; the action never does.
-          A primary action that can be scrolled out of reach is not one. */}
-      <div className="capability-senses" role="group" aria-label="What Hearth can see">
-        {SENSES.map((sense) => {
-          const on = active.has(sense.id);
-          return (
-            <Tooltip key={sense.id} content={on ? sense.hint : `Not available. ${sense.hint}`} side="top">
-              {/* Focusable so the hint is reachable by keyboard too — the chips
-                  describe state, they don't do anything, so they are not
-                  buttons. */}
-              <span className={`sense-chip${on ? ' is-on' : ''}`} tabIndex={0}>
-                <span className="sense-dot" aria-hidden="true" />
-                {sense.label}
-              </span>
-            </Tooltip>
-          );
-        })}
-      </div>
+      {/* Play means play — the game in a plain browser window, at the same
+          localhost URL the pane is already serving. The pane's own iframe is
+          sandboxed and letterboxed onto a stage, which is right for watching
+          and wrong for playing: this hands over real keyboard focus, real
+          fullscreen, the page a player would actually get.
 
-      <Tooltip content={blocked ?? 'Play the game many ways and write down what happened.'} side="top">
-        {/* aria-disabled, not the `disabled` attribute: a natively disabled
-            button dispatches no pointer events, so the tooltip explaining WHY
-            it is unavailable would never show — the exact failure the Menu
-            primitive's disabledReason path solves the same way. */}
-        <button
-          type="button"
-          className={`playtest-btn${sweep.running ? ' is-running' : ''}`}
-          aria-disabled={blocked !== null}
-          onClick={() => {
-            if (blocked === null) void startSweep();
-          }}
-        >
-          {sweep.running ? (
-            <span className="playtest-spinner" aria-hidden="true" />
-          ) : (
-            <span className="playtest-glyph" aria-hidden="true" />
-          )}
-          {playtestLabel(sweep)}
-        </button>
-      </Tooltip>
+          A ghost icon rather than a second filled button: two ember controls
+          side by side would mean the strip has no primary action at all.
+
+          `aria-label` is passed explicitly to override IconButton's default of
+          reusing the tooltip text — the accessible name stays short while the
+          hint is free to explain why the control is unavailable. */}
+      <IconButton
+        icon="play"
+        size="sm"
+        side="top"
+        className="play-btn"
+        label={
+          playUrl
+            ? 'Play it yourself in a browser window.'
+            : 'Nothing to play yet. There is no game in this project.'
+        }
+        aria-label="Play the game"
+        aria-disabled={playUrl === null}
+        onClick={() => {
+          // noopener/noreferrer: the game is untrusted code from whatever the
+          // agent wrote, and a handle back to this window is not something it
+          // needs in order to be played.
+          if (playUrl) window.open(playUrl, '_blank', 'noopener,noreferrer');
+        }}
+      />
+
+      <PlaytestButton />
     </div>
   );
 }

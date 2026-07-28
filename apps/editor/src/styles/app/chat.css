@@ -23,6 +23,17 @@
      enough that prose still scans in one eye movement. */
   --chat-measure: 46rem;
   --chat-gutter: 28px;
+
+  /* The machinery's inner grid. Every folded block in a turn starts flush with
+     the prose; its chevron sits --fold-gutter in, its own text starts at
+     --fold-text (gutter + the 9px chevron + an 8px gap), and a block that also
+     carries a state dot continues at --fold-say (+ the 5px dot + another 8px).
+     Named here rather than repeated so a turn holding a fold, three commands
+     and a file report lines up as one column instead of four stacked things
+     that each chose their own indent. */
+  --fold-gutter: 12px;
+  --fold-text: 29px;
+  --fold-say: 42px;
 }
 
 /* --- Head ----------------------------------------------------------------- */
@@ -38,6 +49,118 @@
   height: 40px;
   padding: 0 var(--chat-gutter);
   flex: none;
+}
+
+/* In chat mode the head shares the transcript's measure, so its label starts
+   on the same left edge as the first paragraph under it. This is invisible in
+   a split window and obvious in a wide one — with the playtest column closed
+   the conversation can be 1400px across, and a read-out pinned to the far left
+   of a centred transcript reads as a misalignment, because it is one.
+   Terminal mode is excluded: it draws a rule across the whole column, and a
+   rule that stops short of the edges is a different, worse thing. */
+.chat-column[data-mode='chat'] .conversation-head {
+  width: 100%;
+  max-width: calc(var(--chat-measure) + var(--chat-gutter) * 2);
+  margin: 0 auto;
+}
+
+/* The way back to the project, wearing `.screen-back` (styles/app/screen.css)
+   rather than a look of its own: a conversation and a full screen are both
+   places you leave, and leaving should be one control in this app, not two
+   that nearly match. What is adjusted here is only what this strip demands —
+   the head's other elements are --text-xs, and this is the one item allowed to
+   give up width when the column narrows, because the project you would be
+   going back to is the one label here worth reading in full.
+
+   The chevron is turned here as well as in screen.css. That file rotates it
+   via `.screen-back .icon`, and the Icon component renders a bare <svg> with
+   no class at all, so the rule matches nothing; targeting the element is what
+   the rest of this file already does (see .project-select). */
+.conversation-back {
+  flex: 0 1 auto;
+  min-width: 0;
+  gap: 4px;
+  padding: 4px 8px 4px 6px;
+  font-size: var(--text-xs);
+}
+
+.conversation-back svg {
+  flex: none;
+  transform: rotate(180deg);
+}
+
+.conversation-back-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* What kind of conversation this is, stated rather than offered. The choice
+   is made when a conversation starts and cannot be changed inside one, so the
+   head reads "Chat" or "Terminal" in the same quiet weight as the provider
+   beside it. Wears .conversation-provider; this hook exists so the two can be
+   told apart later without moving anything. */
+.conversation-kind {
+  flex: none;
+}
+
+/* --- Which project the next message lands in ------------------------------
+
+   On the blank composer only. Reads as a chip in the project's own colour, so
+   the thing you are about to write into is identified the same way it is in
+   the rail — one mark learned once. */
+
+.project-select {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex: none;
+  max-width: 15rem;
+  height: 26px;
+  padding: 0 8px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--ink-mute);
+  font: inherit;
+  font-size: var(--text-xs);
+  cursor: pointer;
+  transition: background var(--t-fast) var(--ease-out), color var(--t-fast) var(--ease-out);
+}
+
+.project-select:hover {
+  background: var(--bg-2);
+  color: var(--ink);
+}
+
+/* The chevron ships pointing right (it is a disclosure mark elsewhere); on a
+   menu trigger it has to point at where the menu opens. */
+.project-select > svg:last-child {
+  flex: none;
+  transform: rotate(90deg);
+  color: var(--ink-faint);
+}
+
+.project-select-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* A project that does not exist yet has no mark to wear, so it gets the same
+   plus the menu item uses — the shape of "make one". */
+.project-select-new {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  border: 1px dashed var(--border-strong);
+  color: var(--ink-faint);
 }
 
 /* Terminal mode earns the rule: below it is a hard-edged, darker surface, and
@@ -110,10 +233,15 @@
   padding: 8px var(--chat-gutter) 8px;
 }
 
+/* Spacing is the transcript's grouping signal. A question and the answer under
+   it are ONE exchange, so the air belongs between exchanges rather than spread
+   evenly through them: 16px inside an exchange, 34px before the next one (see
+   `.msg + .msg-user`). The old flat 24px made the column an even stack, which
+   is half the reason a reader had to read to find their own last message. */
 .chat-turns {
   display: flex;
   flex-direction: column;
-  gap: 26px;
+  gap: 16px;
   max-width: var(--chat-measure);
   margin: 0 auto;
   padding-bottom: 16px;
@@ -141,15 +269,37 @@
   }
 }
 
-/* A user turn is a subtly distinct block, not a coloured bubble: same neutral
-   family as everything else, one step lifted, generously rounded, and no
-   border — the fill is already the whole signal. */
+/* A user turn is an authored block: same neutral family as everything else,
+   generously rounded, no colour. What it now also has is an EDGE, because the
+   fill on its own was never carrying this.
+
+   Measured on the real surface: the column is --bg-05 and this fill is --bg-2,
+   which is a 1.08:1 step. Over a screenful of alternating turns the eye adapts
+   that away entirely and the transcript reads as one undifferentiated column.
+   A 1px --border hairline is 1.57:1 against the column, and a hard line is
+   read where a large flat field is not, so the block's shape registers at a
+   glance without the turn getting any louder. Still no accent: ember is for
+   actions, and a tinted bubble would turn a work surface into a phone
+   messenger.
+
+   The edge is also the transcript's author signal, and it only means one
+   thing. Nothing the machine produces is outlined (see the machinery family
+   below), so an outline means a person spoke and a plain grey block means work
+   happened. The reader never has to read a word to tell those apart. */
 .msg-user {
   align-self: flex-end;
   max-width: 80%;
-  padding: 11px 16px;
-  border-radius: var(--radius-lg, 12px);
+  padding: 12px 16px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
   background: var(--bg-2);
+}
+
+/* The start of a new exchange. Paired with the 16px base gap this puts 34px
+   above a question and 16px under it, so a question and its answer bind and
+   the exchanges separate. */
+.msg + .msg-user {
+  margin-top: 18px;
 }
 
 .msg-text {
@@ -171,40 +321,145 @@
 
 /* Working: an honest "something is happening" bar, only shown before the
    first token of a turn arrives, and gone the moment text starts. */
+/* The turn is still being written. One heartbeat, not two: the mark and the
+   word share a period, a curve and a phase, so the line breathes as a single
+   object rather than fidgeting in two places.
+
+   This is the app's one deliberate departure from --ease-out, and it is not a
+   style choice. --ease-out is asymmetric by design: it decelerates INTO a
+   resting state, which is right for a transition that ends. A breath does not
+   end — it turns around — and an asymmetric curve on a symmetric loop visibly
+   snaps at each turn. `alternate` plus a sine-shaped in-out curve eases both
+   ways, so the reversal has no seam in it. Durations likewise: --t / --t-slow
+   size a response to an action, and nothing here is responding to anything. */
 .msg-working {
   display: flex;
-  align-items: center;
+  align-items: baseline;
   gap: 8px;
   margin: 0;
   color: var(--ink-mute);
   font-size: var(--text-sm);
 }
 
-.working-bar {
-  position: relative;
-  width: 44px;
-  height: 2px;
-  border-radius: 1px;
-  background: var(--bg-3);
-  overflow: hidden;
+.working-pulse,
+.working-label {
+  /* Symmetric sine-ish easing, and one shared phase — see the note above. */
+  animation-duration: 1200ms;
+  animation-timing-function: cubic-bezier(0.45, 0, 0.55, 1);
+  animation-iteration-count: infinite;
+  animation-direction: alternate;
 }
 
-.working-bar::after {
-  content: '';
-  position: absolute;
-  inset: 0;
-  width: 40%;
-  border-radius: 1px;
+.working-pulse {
+  flex: none;
+  align-self: center;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
   background: var(--accent);
-  animation: working-sweep 1100ms var(--ease-out) infinite;
+  animation-name: working-pulse;
+  /* Promote once, so the loop composites instead of repainting the row. */
+  will-change: transform, opacity;
 }
 
-@keyframes working-sweep {
+.working-label {
+  animation-name: working-breathe;
+  will-change: opacity;
+}
+
+/* Tabular figures so a counter ticking past 9s doesn't shift the line. */
+.working-elapsed {
+  color: var(--ink-faint);
+  font-size: var(--text-xs);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Shallow on purpose. A dot that halves in size reads as a throb; this is a
+   breath, and the amplitude is the difference. */
+@keyframes working-pulse {
   from {
-    transform: translateX(-100%);
+    transform: scale(0.84);
+    opacity: 0.5;
   }
   to {
-    transform: translateX(250%);
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+@keyframes working-breathe {
+  from {
+    opacity: 0.68;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+/* The global reduce rule collapses the duration, which would freeze both of
+   these on their dimmest frame. Working still has to be legible, so the
+   motion is replaced rather than merely stopped. */
+@media (prefers-reduced-motion: reduce) {
+  .working-pulse {
+    transform: none;
+    opacity: 1;
+  }
+
+  .working-label {
+    opacity: 1;
+  }
+}
+
+/* --- Queued messages ------------------------------------------------------ */
+
+/* Typed, not yet said. Same right-hand alignment and shape as a real user
+   turn so it is obviously the same thing waiting its go — outlined rather than
+   filled, because the difference between "sent" and "about to be sent" has to
+   survive a glance. */
+.queued {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 8px;
+}
+
+.queued-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  max-width: 80%;
+  padding: 8px 8px 8px 14px;
+  border: 1px dashed var(--border-strong);
+  border-radius: var(--radius-lg);
+  color: var(--ink-mute);
+  font-size: var(--text-md);
+  animation: queued-in var(--t) var(--ease-out) both;
+}
+
+.queued-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.queued-count {
+  flex: none;
+  color: var(--ink-faint);
+  font-size: var(--text-xs);
+}
+
+.queued-remove {
+  flex: none;
+  width: 22px;
+  height: 22px;
+  color: var(--ink-faint);
+}
+
+@keyframes queued-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
   }
 }
 
@@ -216,25 +471,9 @@
   gap: 4px;
 }
 
+/* Metrics, fill and hover all come from the machinery family above. */
 .tool-chip-line {
-  display: flex;
-  align-items: center;
-  gap: 9px;
   width: 100%;
-  padding: 6px 10px;
-  border: 0;
-  border-radius: var(--radius, 8px);
-  background: transparent;
-  text-align: left;
-  cursor: pointer;
-  color: var(--ink-mute);
-  font-size: var(--text-sm);
-  transition: background var(--t-fast) var(--ease-out), color var(--t-fast) var(--ease-out);
-}
-
-.tool-chip-line:hover {
-  background: var(--bg-1);
-  color: var(--ink);
 }
 
 .tool-dot {
@@ -278,22 +517,10 @@
   display: flex;
   flex-direction: column;
   gap: 6px;
-  margin-left: 10px;
-  padding: 12px 14px;
-  border-radius: var(--radius, 8px);
-  background: var(--bg-1);
+  padding: 10px var(--fold-gutter);
   color: var(--ink-mute);
   font-size: var(--text-xs);
-  animation: tool-body-in 120ms var(--ease-out) both;
-}
-
-@keyframes tool-body-in {
-  from {
-    opacity: 0;
-  }
-  to {
-    opacity: 1;
-  }
+  animation: chat-fade-in var(--t-fast) var(--ease-out) both;
 }
 
 .tool-body-name {
@@ -325,14 +552,29 @@
    Transcript grammar
    --------------------------------------------------------------------------
    Everything below is one decision applied consistently: the transcript is a
-   READING surface, so activity that scrolls past is a LINE and only activity
-   worth finding again is a BOX. A command ran and worked — that is a line. A
-   file changed, an agent was delegated, permission was asked — those are the
-   three things a reader scans back for, and only those get a container.
+   READING surface. What the agent SAYS is the content; every command it ran,
+   every file it touched and every helper it delegated to is supporting
+   evidence, and evidence stays folded and stays quiet.
 
-   Lines and boxes now share one shape: a --radius block on --bg-1, one step
-   below the column, which is what makes a run of them read as a single
-   apparatus rather than a pile of unrelated widgets.
+   So there is one machinery family, not four widgets. A command row, a tool
+   chip, a file report and a subagent are the same object: a --radius block on
+   --bg-2, closed, flush with the prose, chevron on --fold-gutter, text on
+   --fold-text. None of them is outlined, because an outline in this transcript
+   means a person spoke (see .msg-user). A run of them closes up to 4px so that
+   a turn which edits three files and runs four commands reads as one piece of
+   work with prose breathing either side of it, not as seven cards.
+
+   Quiet is achieved by taking weight OFF the machinery, never by dimming the
+   prose: the blocks step down through size (13px, mono detail at 12px) and
+   --ink-mute chrome, while what the agent actually said stays 15px --ink.
+
+   A collapsed block still has to be scannable without being opened, so each
+   one states what happened, what it happened to, and how it came out —
+   `Edited src/scene/index.js  +5 −1`, `Ran npm test  1.2s`, `exit 128`. The
+   fold hides detail, never information.
+
+   The one exception is the approval: it is a question addressed to the reader,
+   it blocks, and it keeps its container, its border and its full weight.
 
    Disclosure everywhere is click-triggered and frequent, so none of it
    animates height (a layout property, and the reveal would judder against the
@@ -366,12 +608,20 @@
   }
 }
 
+/* Fixed 9px box, not shrink-to-fit: a tool row with nothing to disclose leaves
+   the mark out and keeps the space, so its verb still lands on --fold-text
+   with every other row's. */
 .cmd-chevron,
 .filechange-chevron,
 .reasoning-chevron,
-.subagent-chevron {
+.skill-use-chevron,
+.subagent-chevron,
+.tool-chip-chevron {
   display: inline-flex;
   flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 9px;
   color: var(--ink-faint);
   transition: transform var(--t-fast) var(--ease-out);
 }
@@ -379,8 +629,93 @@
 [data-open='true'] > .cmd-line > .cmd-chevron,
 [data-open='true'] > .filechange-line > .filechange-chevron,
 [data-open='true'] > .reasoning-line > .reasoning-chevron,
-[data-open='true'] > .subagent-head > .subagent-chevron {
+[data-open='true'] > .skill-use-line > .skill-use-chevron,
+[data-open='true'] > .subagent-head > .subagent-chevron,
+[data-open='true'] > .tool-chip-line > .tool-chip-chevron {
   transform: rotate(90deg);
+}
+
+/* --- The machinery family ------------------------------------------------- */
+
+/* One block, four kinds. Everything the agent DID wears this: same fill, same
+   radius, same left edge as the prose above it, no outline. */
+.tool-chip-line,
+.cmd-line,
+.skill-use-line,
+.filechange-card,
+.subagent-card {
+  border-radius: var(--radius);
+  background: var(--bg-2);
+}
+
+/* One row, four kinds. The chevron column and the text column are the same in
+   all of them, which is what makes a mixed run read as a single column. */
+.tool-chip-line,
+.cmd-line,
+.skill-use-line,
+.filechange-line,
+.subagent-head,
+.reasoning-line {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px var(--fold-gutter);
+  border: 0;
+  text-align: left;
+  cursor: pointer;
+  font-size: var(--text-sm);
+  color: var(--ink-mute);
+  transition: background var(--t-fast) var(--ease-out), color var(--t-fast) var(--ease-out);
+}
+
+/* Hover has to be FELT, and on this surface a fill step is nearly nothing:
+   --bg-2 over the column is 1.08:1, which is why the old bg-1/bg-2 hovers were
+   invisible and these rows read as text rather than as controls. --bg-3 is the
+   scale's hover step and the one that actually registers, so every row in the
+   family answers the pointer the same way. */
+.tool-chip-line:hover,
+.cmd-line:hover,
+.skill-use-line:hover,
+.filechange-line:hover,
+.subagent-head:hover,
+.reasoning-line:hover {
+  background: var(--bg-3);
+  color: var(--ink);
+}
+
+/* A turn that runs four commands and edits three files is ONE piece of work.
+   Consecutive machinery closes from the turn's 12px to 4px so a run of it
+   reads as a block with prose either side, rather than as a stack of cards. */
+.msg > :is(.tool-chip, .cmd-row, .skill-use, .filechange-card, .subagent-card)
+  + :is(.tool-chip, .cmd-row, .skill-use, .filechange-card, .subagent-card) {
+  margin-top: -8px;
+}
+
+/* Two helpers in one turn are a SET, so they join outright the way two files
+   inside one file report already do: no gap, a hairline between them, and the
+   meeting corners squared. The reader counts rows to count helpers. */
+.msg > .subagent-card + .subagent-card {
+  margin-top: -12px;
+  border-top: 1px solid var(--border);
+  border-top-left-radius: 0;
+  border-top-right-radius: 0;
+}
+
+.msg > .subagent-card:has(+ .subagent-card) {
+  border-bottom-left-radius: 0;
+  border-bottom-right-radius: 0;
+}
+
+/* Disclosed detail. Same fill as the row it hangs off, so an open block is one
+   object; the block's own gutter rather than the text column, because a build
+   log or a patch needs the width more than it needs to line up. */
+.cmd-body,
+.tool-chip-body,
+.skill-use-body,
+.reasoning-body,
+.filechange-body {
+  border-radius: var(--radius);
+  background: var(--bg-2);
 }
 
 /* --- Command -------------------------------------------------------------- */
@@ -395,25 +730,9 @@
   gap: 4px;
 }
 
+/* Metrics, fill and hover all come from the machinery family above. */
 .cmd-line {
-  display: flex;
-  align-items: center;
-  gap: 9px;
   width: 100%;
-  padding: 7px 12px;
-  border: 0;
-  border-radius: var(--radius, 8px);
-  background: var(--bg-1);
-  text-align: left;
-  cursor: pointer;
-  color: var(--ink-mute);
-  font-size: var(--text-sm);
-  transition: background var(--t-fast) var(--ease-out), color var(--t-fast) var(--ease-out);
-}
-
-.cmd-line:hover {
-  background: var(--bg-2);
-  color: var(--ink);
 }
 
 .cmd-verb {
@@ -458,9 +777,7 @@
   display: flex;
   flex-direction: column;
   gap: 6px;
-  padding: 10px 14px;
-  border-radius: var(--radius, 8px);
-  background: var(--bg-1);
+  padding: 10px var(--fold-gutter);
   animation: disclose-in var(--t-fast) var(--ease-out) both;
 }
 
@@ -495,15 +812,101 @@
   color: var(--err);
 }
 
+/* --- Skill ---------------------------------------------------------------- */
+
+/* The one piece of the agent's equipment the user chose. It still reads as
+   machinery (same block, same fill, same chevron column), because a skill
+   being used is supporting evidence like everything else in this family; what
+   it gets is a sentence that names it, so the curation the Skills screen asks
+   for finally shows up somewhere. */
+
+.skill-use {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+/* Metrics, fill and hover all come from the machinery family above. */
+.skill-use-line {
+  width: 100%;
+}
+
+/* The sparkle sits in the state-dot's slot: a 5px box on --fold-text with a
+   9px glyph centred on it, overhanging by 2px either side. That is what keeps
+   the first word on --fold-say with a tool chip's and a subagent's, instead of
+   pushing this row's text 4px right of every other row in the turn.
+
+   Deliberately NOT coloured by state, unlike the dots it stands in for: this
+   mark says "skill", not "running / ok / failed". A row that failed says so in
+   words, which is the one case that needs saying. */
+.skill-use-mark {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 5px;
+  /* --ink-mute rather than the dots' --ink-faint: a 5px filled circle carries
+     at that weight and a 9px two-stroke glyph does not, and a mark nobody can
+     resolve is decoration. Still one step below the name beside it. */
+  color: var(--ink-mute);
+}
+
+.skill-use-verb {
+  flex: none;
+  color: var(--ink-mute);
+}
+
+/* Which skill. The only thing on the row at full strength, and clipped rather
+   than wrapped, because a line that wraps is no longer a line. */
+.skill-use-name {
+  min-width: 0;
+  color: var(--ink);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.skill-use.state-running .skill-use-name {
+  color: var(--ink-mute);
+}
+
+/* Closes the sentence: "Used brainstorming skill". Stepped back so the name
+   between the two muted words is what the eye lands on. */
+.skill-use-tag {
+  flex: none;
+  color: var(--ink-mute);
+}
+
+/* The only status colour on the row, and the same one a non-zero exit gets. */
+.skill-use-note {
+  flex: none;
+  margin-left: auto;
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  color: var(--err);
+}
+
+/* What it was asked to do. Same shape as a tool chip's body, and it borrows
+   that body's two spans outright rather than restating them. */
+.skill-use-body {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px var(--fold-gutter);
+  color: var(--ink-mute);
+  font-size: var(--text-xs);
+  animation: chat-fade-in var(--t-fast) var(--ease-out) both;
+}
+
 /* --- File change ---------------------------------------------------------- */
 
-/* A container, because this is what the reader came for. One card per report,
-   one row per file — the change to the game, not the tool call that made it. */
+/* One block per report, one row per file — the change to the game, not the
+   tool call that made it. It reports the most, so it is the block a reader is
+   most likely to open, but it is still machinery: no outline, and the same
+   fill and radius as a command row. The hairline-joined rows inside are the
+   pattern every other grouped run in the transcript copies. */
 
 .filechange-card {
-  border: 1px solid var(--border);
-  border-radius: var(--radius-lg, 12px);
-  background: var(--bg-1);
   overflow: hidden;
 }
 
@@ -517,23 +920,11 @@
   border-top: 1px solid var(--border);
 }
 
+/* Metrics, hover and colour come from the machinery family above; only the
+   fill differs, because the block behind it already carries one. */
 .filechange-line {
-  display: flex;
-  align-items: center;
-  gap: 9px;
   width: 100%;
-  padding: 9px 14px;
-  border: 0;
   background: transparent;
-  text-align: left;
-  cursor: pointer;
-  font-size: var(--text-sm);
-  color: var(--ink-mute);
-  transition: background var(--t-fast) var(--ease-out);
-}
-
-.filechange-line:hover {
-  background: var(--bg-2);
 }
 
 /* The card clips to its radius (overflow: hidden), which would crop the global
@@ -584,7 +975,7 @@
   display: flex;
   flex-direction: column;
   gap: 8px;
-  padding: 0 12px 12px;
+  padding: 0 var(--fold-gutter) 12px;
   animation: disclose-in var(--t-fast) var(--ease-out) both;
 }
 
@@ -598,7 +989,7 @@
   max-height: 320px;
   overflow: auto;
   padding: 10px 12px;
-  border-radius: var(--radius, 8px);
+  border-radius: var(--radius);
   background: var(--bg-0);
   font-family: var(--font-mono);
   font-size: var(--text-xs);
@@ -635,22 +1026,31 @@
 
 /* --- Subagent ------------------------------------------------------------- */
 
-/* A second actor, one level in. The indent is padding plus the same block
-   shape as everything else — enough to say "nested", never a coloured
-   side-stripe. Its transcript is a list of rows, not a card: a card inside a
-   card is where this stops reading as one conversation. */
+/* A second actor, and now one row like every other. It used to be a bordered
+   card indented 12px from its siblings, which bought nothing: the indent was
+   the only thing in a turn that broke the left edge, and readers correctly
+   read a nested outlined card as "something important is going on in here"
+   when what is going on is a helper doing legwork.
+
+   So: flush, unoutlined, the family fill, and the whole of its transcript
+   behind the same chevron the rows around it use. What stays outside the fold
+   is a single line — who it was, what it reported, how it ended — because that
+   is the level at which `Edited src/scene/index.js +5 −1` works.
+
+   Nesting is now said by the indent INSIDE the block: the head is a row, and
+   what the helper said hangs under the head's title on --fold-say. */
 
 .subagent-card {
-  margin-left: 12px;
-  padding: 10px 14px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-lg, 12px);
-  background: var(--bg-1);
   display: flex;
   flex-direction: column;
-  gap: 5px;
   /* A genuine new actor arriving — worth a small rise, unlike the rows. */
   animation: subagent-enter var(--t) var(--ease-out) both;
+}
+
+/* Closed, the head IS the block, so it owns the whole padding box. Open, the
+   block has to close under what it revealed. */
+.subagent-card[data-open='true'] {
+  padding-bottom: 8px;
 }
 
 @keyframes subagent-enter {
@@ -664,23 +1064,13 @@
   }
 }
 
+/* Metrics, colour and hover come from the machinery family above. Only the top
+   corners are rounded here: the head is the block's own lid, and a full radius
+   on it would draw a second rounded rect inside the first on hover. */
 .subagent-head {
-  display: flex;
-  align-items: center;
-  gap: 8px;
   width: 100%;
-  padding: 0;
-  border: 0;
   background: transparent;
-  text-align: left;
-  cursor: pointer;
-  font-size: var(--text-sm);
-  color: var(--ink-mute);
-  transition: color var(--t-fast) var(--ease-out);
-}
-
-.subagent-head:hover {
-  color: var(--ink);
+  border-radius: var(--radius) var(--radius) 0 0;
 }
 
 .subagent-dot {
@@ -704,9 +1094,11 @@
   background: var(--err);
 }
 
+/* What it was. Capped rather than greedy so the outcome beside it is never
+   pushed off the row: the row has to answer both questions at a glance. */
 .subagent-title {
-  flex: 1;
-  min-width: 0;
+  flex: none;
+  max-width: 45%;
   color: var(--ink);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -719,11 +1111,23 @@
   color: var(--ink-mute);
 }
 
-/* The one line a running subagent shows, and the conclusion it leaves behind.
-   --ink-mute, not --ink-faint: this is meant to be read. */
+/* How it ended, on the row itself and clipped to one line — the subagent's
+   answer to `+5 −1`. The whole of what it said is one click away; this is the
+   part a reader scanning back through a turn needs without clicking. */
+.subagent-outcome {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* The conclusion it left behind, wrapped in full once the block is open.
+   --ink-mute, not --ink-faint: this is meant to be read. Hung on --fold-say so
+   it starts under the head's title rather than under its chevron. */
 .subagent-line {
   margin: 0;
-  padding-left: 13px;
+  padding: 4px var(--fold-gutter) 0 var(--fold-say);
   font-size: var(--text-sm);
   line-height: 1.6;
   color: var(--ink-mute);
@@ -731,17 +1135,24 @@
 }
 
 .subagent-working {
-  display: flex;
+  display: inline-flex;
   align-items: center;
   gap: 8px;
   color: var(--ink-mute);
 }
 
+/* Everything the helper actually wrote, once asked for. Hung on --fold-say
+   with the conclusion above it, and bounded: a helper can return a hundred
+   lines, and letting that set the height of the turn would push the agent's
+   own next sentence off the screen. Same 320px ceiling and same own-scroll as
+   a captured command log. */
 .subagent-detail {
   display: flex;
   flex-direction: column;
   gap: 4px;
-  padding: 6px 0 2px 13px;
+  max-height: 320px;
+  overflow: auto;
+  padding: 6px var(--fold-gutter) 2px var(--fold-say);
   animation: disclose-in var(--t-fast) var(--ease-out) both;
 }
 
@@ -764,33 +1175,21 @@
   gap: 4px;
 }
 
+/* The one member of the family with no fill at rest: the working-out is
+   quieter than the work. It still takes the family's gutter, so its chevron
+   lands on the same line as every other chevron in the turn, and it still
+   lights on --bg-3 under the pointer so it reads as something you can open. */
 .reasoning-line {
-  display: flex;
-  align-items: center;
-  gap: 8px;
   align-self: flex-start;
-  padding: 5px 10px;
-  border: 0;
-  border-radius: var(--radius, 8px);
+  border-radius: var(--radius);
   background: transparent;
-  cursor: pointer;
-  color: var(--ink-mute);
-  font-size: var(--text-sm);
-  transition: background var(--t-fast) var(--ease-out), color var(--t-fast) var(--ease-out);
-}
-
-.reasoning-line:hover {
-  background: var(--bg-1);
-  color: var(--ink);
 }
 
 /* --ink-mute once opened: a reader who opened it intends to READ it, and
    --ink-faint is for metadata, not for prose. */
 .reasoning-body {
   margin: 0;
-  padding: 12px 14px;
-  border-radius: var(--radius, 8px);
-  background: var(--bg-1);
+  padding: 10px var(--fold-gutter);
   color: var(--ink-mute);
   font-size: var(--text-sm);
   line-height: 1.65;
@@ -812,7 +1211,7 @@
   gap: 10px;
   padding: 14px 16px;
   border: 1px solid var(--border-strong);
-  border-radius: var(--radius-lg, 12px);
+  border-radius: var(--radius-lg);
   background: var(--bg-2);
   animation: approval-enter var(--t-slow) var(--ease-out) both;
 }
@@ -840,7 +1239,7 @@
   max-height: 200px;
   overflow: auto;
   padding: 10px 12px;
-  border-radius: var(--radius, 8px);
+  border-radius: var(--radius);
   background: var(--bg-0);
   color: var(--ink);
   font-family: var(--font-mono);
@@ -912,7 +1311,11 @@
 
 .chat-empty-lead {
   margin: 0;
-  font-weight: 500;
+  /* Brand moment: the same display face every other empty-state heading in
+     the app wears (game.css .game-empty-lead, panels/common.css) — this one
+     had drifted onto the UI font. */
+  font-family: var(--font-display);
+  font-weight: 600;
   letter-spacing: -0.01em;
   font-size: var(--text-xl);
   color: var(--ink);
@@ -1066,6 +1469,8 @@
 .composer {
   padding: 6px var(--chat-gutter) 22px;
   flex: none;
+  /* The toast slot hangs off the top of this box, so this is its origin. */
+  position: relative;
 }
 
 .composer-home {
@@ -1081,7 +1486,7 @@
   max-width: var(--chat-measure);
   margin: 0 auto;
   border: 1px solid var(--border);
-  border-radius: var(--radius-xl, 16px);
+  border-radius: var(--radius-xl);
   background: var(--bg-1);
   box-shadow: var(--shadow-2);
   transition: border-color var(--t) var(--ease-out);
@@ -1102,7 +1507,7 @@
   font-family: var(--font-ui);
   font-size: var(--text-md);
   line-height: 1.6;
-  padding: 15px 18px 4px;
+  padding: 16px 18px 4px;
   max-height: 200px;
   overflow-y: auto;
 }
@@ -1176,9 +1581,9 @@
   flex: none;
   height: 30px;
   max-width: 15rem;
-  padding: 0 9px;
+  padding: 0 10px;
   border: 0;
-  border-radius: var(--radius, 8px);
+  border-radius: var(--radius);
   background: transparent;
   color: var(--ink-mute);
   font-family: var(--font-ui);
@@ -1276,9 +1681,24 @@
   animation: composer-menu-in var(--t) var(--ease-out) both;
 }
 
+/* Wider than the composer's other menu, and capped: this one lists the agents,
+   then every model each of them reported, then that model's own efforts. The
+   cap is what keeps a full codex catalogue from becoming a menu the length of
+   the window. */
 .menu-popover.model-menu {
-  min-width: 232px;
+  min-width: 264px;
+  max-height: min(70vh, 560px);
+  overflow-y: auto;
   transform-origin: bottom right;
+}
+
+/* The trailing note on a picker row is prose — "Default", "Signed in",
+   "Fastest" — not a keystroke, so it drops the shared monospace that exists
+   for ⌘K everywhere else. */
+.menu-popover.model-menu .menu-shortcut {
+  font-family: var(--font-ui);
+  font-size: var(--text-xs);
+  color: var(--ink-faint);
 }
 
 .menu-popover.composer-menu {
@@ -1376,7 +1796,7 @@
   display: flex;
   align-items: center;
   max-width: 100%;
-  border-radius: var(--radius, 8px);
+  border-radius: var(--radius);
   background: var(--bg-2);
   overflow: hidden;
 }
@@ -1408,7 +1828,7 @@
   height: auto;
   max-width: 100%;
   max-height: 320px;
-  border-radius: var(--radius, 8px);
+  border-radius: var(--radius);
   object-fit: contain;
 }
 
@@ -1419,9 +1839,9 @@
   min-width: 0;
   max-width: 15rem;
   height: 32px;
-  padding: 0 11px;
+  padding: 0 12px;
   border: 1px solid var(--border);
-  border-radius: var(--radius, 8px);
+  border-radius: var(--radius);
   color: var(--ink-mute);
   font-size: var(--text-sm);
 }
@@ -1498,12 +1918,15 @@
    conversation rather than in it.
    --------------------------------------------------------------------------- */
 
+/* Unfolded, because a plan is a commitment the reader is meant to check, not
+   evidence they might look up. It still wears the machinery block rather than
+   an outline: an outline in this transcript means a person said it, and this
+   is the agent's own list. */
 .plan-card {
   margin: 2px 0;
-  padding: 12px 14px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-lg, 12px);
-  background: var(--bg-1);
+  padding: 12px var(--fold-gutter);
+  border-radius: var(--radius);
+  background: var(--bg-2);
 }
 
 .plan-title {
@@ -1525,7 +1948,7 @@
 .plan-item {
   display: flex;
   align-items: baseline;
-  gap: 9px;
+  gap: 8px;
   font-size: var(--text-sm);
   line-height: 1.55;
 }
@@ -1572,7 +1995,7 @@
   max-width: min(420px, 100%);
   max-height: 360px;
   border: 1px solid var(--border);
-  border-radius: var(--radius, 8px);
+  border-radius: var(--radius);
 }
 
 .image-card figcaption {
@@ -1589,8 +2012,125 @@
   font-size: var(--text-sm);
 }
 
+/* A turn that did not finish.
+
+   The transcript's rule is that an outline means a person spoke and a plain
+   grey block means the machine worked. This is neither: it is the app saying
+   the work never happened, so it takes the machinery fill and adds the one
+   tinted mark in the column. Tint on the mark and not on the card, because a
+   red block at the end of a turn reads as an alarm and most of what lands here
+   is a rate limit someone can simply retry. */
+.chat-notice.is-error {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 2px 0;
+  padding: 9px 10px 9px 12px;
+  border-radius: var(--radius);
+  background: var(--bg-2);
+}
+
+.chat-notice-mark {
+  display: flex;
+  flex: none;
+  color: var(--err);
+}
+
+.chat-notice-text {
+  margin: 0;
+  flex: 1;
+  min-width: 0;
+  font-size: var(--text-sm);
+  line-height: 1.55;
+  color: var(--ink);
+  text-wrap: pretty;
+}
+
+/* The way back to what you were doing. Quiet, because a failure that offers a
+   loud button invites hammering it at a service that is already refusing. */
+.chat-notice-retry {
+  flex: none;
+  padding: 4px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: transparent;
+  font: inherit;
+  font-size: var(--text-xs);
+  color: var(--ink-mute);
+  cursor: pointer;
+  transition: background var(--t-fast) var(--ease-out), color var(--t-fast) var(--ease-out);
+}
+
+.chat-notice-retry:hover {
+  background: var(--bg-3);
+  color: var(--ink);
+}
+
 .chat-notice-path {
   font-family: var(--font-mono);
   font-size: var(--text-xs);
   overflow-wrap: anywhere;
+}
+
+/* --- What a finished turn offers ------------------------------------------ */
+
+/* Copy, and whatever joins it later.
+
+   Held invisible until the turn is hovered or something in it takes focus,
+   because a transcript is read far more than it is acted on and a button under
+   every answer becomes furniture. The row keeps its space at rest rather than
+   appearing from nothing: a control that pushes the prose as the pointer
+   crosses it makes the whole column twitch. */
+.turn-actions {
+  display: flex;
+  gap: 2px;
+  margin-top: -4px;
+  opacity: 0;
+  transition: opacity var(--t-fast) var(--ease-out);
+}
+
+.msg:hover .turn-actions,
+.turn-actions:focus-within {
+  opacity: 1;
+}
+
+/* The glyph sits on the prose's own left edge.
+
+   The button still carries padding, because a 12px icon is not a pointer
+   target, but that padding used to push the glyph 8px right of every line of
+   text above it: the row measured as aligned while the only thing anyone can
+   see in it did not. The negative margin gives the hit area back its size
+   without spending it on the visible edge. */
+.turn-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  margin-left: -6px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--ink-faint);
+  cursor: pointer;
+  transition: background var(--t-fast) var(--ease-out), color var(--t-fast) var(--ease-out);
+}
+
+.turn-action:hover {
+  background: var(--bg-2);
+  color: var(--ink-mute);
+}
+
+/* Keyboard reach must not depend on the pointer: a focused control reveals its
+   whole row through :focus-within above, and says so here. */
+.turn-action:focus-visible {
+  opacity: 1;
+  color: var(--ink-mute);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .turn-actions {
+    transition: none;
+  }
 }

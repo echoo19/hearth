@@ -1,10 +1,17 @@
 /**
  * A delegated agent, working inside this turn.
  *
- * A subagent is a genuine second actor, not a tool call, so it gets a
- * container and a small indent — enough to say "this happened one level in",
- * never enough to become a card inside a card. Its own transcript stays
- * folded: what the reader needs is that it is running, and what it concluded.
+ * A subagent is a genuine second actor, but it is still the agent's legwork
+ * rather than the agent's answer, so it reads as one row in the same folded
+ * machinery family as a command or a file report — not as an outlined card
+ * standing beside the prose.
+ *
+ * The collapsed row carries the three things a reader scanning back needs:
+ * what it was, how it ended, and what it reported, the last of those clipped
+ * to the line. Everything it wrote is behind the chevron, in place, because a
+ * panel or a dialog for something read at a glance is a heavier promise than
+ * the content makes good on, and because opening in place is what every other
+ * fold in this transcript does.
  */
 import React, { useState } from 'react';
 import type { ChatSubagentPart } from '../../types';
@@ -42,27 +49,56 @@ export function SubagentCard({ part }: { part: ChatSubagentPart }) {
         <span className="subagent-dot" aria-hidden="true" />
         <span className="subagent-title">{part.title}</span>
         {part.role && <span className="subagent-role">{part.role}</span>}
+        {/* The outcome, on the row. A helper that reported nothing at all still
+            has to say how it ended, or a collapsed row would read as a helper
+            that never came back. One that is still going says so with the same
+            mark the turn's own working line uses: one "still going" idiom in
+            the app, whoever is doing the going.
+
+            Once the block is open the same sentence is below it in full, so
+            the slot empties rather than printing it twice — kept in the row so
+            the title and the role hold their places through the toggle. */}
+        <span className="subagent-outcome">
+          {open && line ? null : (line ??
+            (running ? (
+              <span className="subagent-working">
+                <span className="working-pulse" aria-hidden="true" />
+                <span className="working-label">Working</span>
+              </span>
+            ) : (
+              subagentOutcome(part.state)
+            )))}
+        </span>
       </button>
-      {line && <p className="subagent-line">{line}</p>}
-      {running && !line && (
-        <p className="subagent-line subagent-working">
-          <span className="working-bar" aria-hidden="true" />
-          Working
-        </p>
-      )}
       {open && (
-        <div className="subagent-detail">
-          {rows.length === 0 ? (
-            <p className="subagent-row subagent-empty">Nothing reported yet.</p>
-          ) : (
-            rows.map((row, index) => (
-              <p key={index} className="subagent-row">
-                {row}
-              </p>
-            ))
-          )}
-        </div>
+        <>
+          {/* Clipped on the row, whole once opened. */}
+          {line && <p className="subagent-line">{line}</p>}
+          <div className="subagent-detail">
+            {rows.length === 0 ? (
+              <p className="subagent-row subagent-empty">Nothing reported yet.</p>
+            ) : (
+              rows.map((row, index) => (
+                <p key={index} className="subagent-row">
+                  {row}
+                </p>
+              ))
+            )}
+          </div>
+        </>
       )}
     </div>
   );
+}
+
+/** How a helper ended, for a collapsed row that has nothing else to show. */
+export function subagentOutcome(state: ChatSubagentPart['state']): string {
+  switch (state) {
+    case 'running':
+      return 'Working';
+    case 'error':
+      return 'Failed';
+    default:
+      return 'Done';
+  }
 }

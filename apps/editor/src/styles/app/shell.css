@@ -171,6 +171,17 @@
   border-right: 1px solid var(--border);
 }
 
+/* No playtest column: the conversation takes the window. The measure cap moves
+   onto the column itself (chat-column centres its own content), so a full-width
+   window gives a wider page rather than a 780px one pinned to the left. */
+.app-body.is-solo {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.app-body.is-solo .app-region:first-child {
+  border-right: 0;
+}
+
 /* Below the breakpoint the two regions stack into one, switched from the top
    bar — the game pane becomes a tab rather than a squeezed column. */
 .app-shell.is-narrow .app-body {

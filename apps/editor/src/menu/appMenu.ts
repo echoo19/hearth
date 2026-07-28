@@ -69,10 +69,15 @@ export function buildAppMenu(store: AppState, ctx: AppMenuContext): AppMenuSecti
     id: 'file',
     label: 'File',
     items: [
-      { id: 'open-folder', label: 'Open folder…', accelerator: 'CmdOrCtrl+O', enabled: true, onSelect: ctx.onOpenFolder },
-      { id: 'close-folder', label: 'Close folder', enabled: hasFolder, onSelect: () => store.closeWorkspace() },
+      { id: 'open-folder', label: 'Open a project…', accelerator: 'CmdOrCtrl+O', enabled: true, onSelect: ctx.onOpenFolder },
+      { id: 'close-folder', label: 'Close project', enabled: hasFolder, onSelect: () => store.closeWorkspace() },
       { separator: true },
-      { id: 'settings', label: 'Settings…', accelerator: 'CmdOrCtrl+,', enabled: hasFolder, onSelect: ctx.onOpenSettings },
+      // Not gated on a folder. Most of what settings holds is about this
+      // computer rather than this project (which agent answers, the standing
+      // instructions, the update check), and someone with no project open is
+      // exactly the person who needs to reach it. The rail's copy of this item
+      // lost the same gate for the same reason.
+      { id: 'settings', label: 'Settings…', accelerator: 'CmdOrCtrl+,', enabled: true, onSelect: ctx.onOpenSettings },
     ],
   };
 
@@ -92,13 +97,25 @@ export function buildAppMenu(store: AppState, ctx: AppMenuContext): AppMenuSecti
         }),
       ),
       { separator: true },
+      {
+        id: 'pane',
+        label: 'Playtest column',
+        enabled: hasFolder,
+        checked: store.paneOpen,
+        onSelect: () => store.setPaneOpen(!store.paneOpen),
+      },
       ...PANE_TABS.map(
         (tab): AppMenuItemModel => ({
           id: `pane:${tab.id}`,
           label: tab.label,
+          // Picking a surface is a way of asking for the column, so it opens
+          // one that is closed rather than checking a tab nobody can see.
           enabled: hasFolder,
-          checked: store.paneTab === tab.id,
-          onSelect: () => store.setPaneTab(tab.id),
+          checked: store.paneOpen && store.paneTab === tab.id,
+          onSelect: () => {
+            store.setPaneTab(tab.id);
+            if (!store.paneOpen) store.setPaneOpen(true);
+          },
         }),
       ),
       { separator: true },

@@ -1,8 +1,9 @@
 /* Code peek: a read-only drawer over the app.
 
-   It slides in from the right because that is where it came from — the Files
-   button and the tool chips both sit on that side. The exit is subtler than
-   the entrance: attention is already moving back to the conversation. */
+   It slides in from the right because that is where it came from — every way
+   in (a file-change card, a tool row, a console link) sits on that side. The
+   exit is subtler than the entrance: attention is already moving back to the
+   conversation. */
 
 .peek-scrim {
   position: fixed;
@@ -99,7 +100,7 @@
   align-items: baseline;
   gap: 10px;
   width: 100%;
-  padding: 7px 10px;
+  padding: 6px 10px;
   border: 0;
   border-radius: var(--radius-sm);
   background: transparent;

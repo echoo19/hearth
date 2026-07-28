@@ -1,0 +1,548 @@
+/* Skills — the library screen and its editor.
+
+   The modal this screen replaced left its own `.skill-*` / `.skills-*` rules
+   behind in panels/dialogs.css, which is imported AFTER this file and would
+   therefore win any tie. Nothing here reuses one of those names, and the
+   editor's rules are scoped under `.skills-screen` on top of that — so the
+   dead rules can be deleted later without anyone having to check this file
+   first.
+
+   The list is a reading column, not a full-bleed table. A skill list is
+   scanned the way a page is — name, then the one line saying when to use it —
+   so it is centred and capped at a comfortable measure, sitting directly on
+   the screen background with no card around it. A card would say "this panel
+   floats over something"; the whole point of the screen is that it doesn't. */
+
+.skills-page {
+  width: 100%;
+  max-width: 760px;
+  margin: 0 auto;
+  padding: 40px 32px 64px;
+}
+
+/* --- The masthead --------------------------------------------------------- */
+
+/* Title and controls on one line, aligned to the top of the title block, so
+   the search field sits level with the word "Skills" rather than floating
+   between the title and its subtitle. */
+.skills-masthead {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 24px;
+  margin-bottom: 28px;
+}
+
+.skills-masthead-text {
+  min-width: 0;
+}
+
+.skills-heading {
+  margin: 0;
+  font-size: var(--text-3xl);
+  font-weight: 600;
+  letter-spacing: -0.025em;
+  color: var(--ink);
+}
+
+.skills-lede {
+  margin: 6px 0 0;
+  font-size: var(--text-sm);
+  line-height: 1.5;
+  color: var(--ink-mute);
+}
+
+.skills-tools {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 8px;
+  /* Optically level with the title's cap height rather than its box. */
+  padding-top: 6px;
+}
+
+/* A pill with no border at rest: at this size a hairline box would read as a
+   form field waiting to be filled in, and this one is a shortcut, not a step.
+   The ring appears when it is being used. */
+.skills-find {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: var(--ctl-h);
+  padding: 0 14px;
+  border-radius: 999px;
+  background: var(--bg-2);
+  color: var(--ink-faint);
+  transition: background var(--t-fast) var(--ease-out), box-shadow var(--t-fast) var(--ease-out);
+}
+
+.skills-find:hover {
+  background: var(--bg-3);
+}
+
+.skills-find:focus-within {
+  background: var(--bg-3);
+  box-shadow: 0 0 0 2px var(--accent);
+}
+
+.skills-find-input {
+  width: 170px;
+  min-width: 0;
+  border: 0;
+  padding: 0;
+  background: transparent;
+  font: inherit;
+  font-size: var(--text-sm);
+  color: var(--ink);
+}
+
+/* The pill carries the focus ring for the field inside it — a second outline
+   drawn inside the first is two rings for one control. */
+.skills-find-input:focus,
+.skills-find-input:focus-visible {
+  outline: none;
+}
+
+.skills-find-input::placeholder {
+  color: var(--ink-faint);
+}
+
+/* Round, and exactly as tall as the field beside it: two shapes at one height
+   read as one control group. */
+.skills-new {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: var(--ctl-h);
+  height: var(--ctl-h);
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: var(--bg-2);
+  color: var(--ink);
+  cursor: pointer;
+  transition: background var(--t-fast) var(--ease-out), color var(--t-fast) var(--ease-out);
+}
+
+.skills-new:hover,
+.skills-new[aria-expanded='true'] {
+  background: var(--bg-3);
+}
+
+/* --- The list ------------------------------------------------------------- */
+
+.skills-group + .skills-group {
+  margin-top: 26px;
+}
+
+/* "Installed" and "Created by me" — and a heading only exists while its group
+   does, so a library with nothing installed shows no heading at all rather
+   than one heading over everything. */
+.skills-group-title {
+  margin: 0 0 6px;
+  padding: 0 10px;
+  font-size: var(--text-xs);
+  font-weight: 600;
+  color: var(--ink-mute);
+}
+
+.skills-rows {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.skills-item {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  border-radius: var(--radius-lg);
+  transition: background var(--t-fast) var(--ease-out);
+}
+
+.skills-item:hover,
+.skills-item:focus-within {
+  background: var(--bg-2);
+}
+
+/* The whole row opens the skill, so the row IS the button — everything except
+   the overflow menu lives inside it. */
+.skills-item-open {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+  padding: 10px;
+  border: 0;
+  border-radius: var(--radius-lg);
+  background: transparent;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.skills-item-tile {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  border-radius: var(--radius);
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-size: var(--text-md);
+  font-weight: 600;
+  line-height: 1;
+}
+
+.skills-item-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.skills-item-name {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  font-size: var(--text-sm);
+  color: var(--ink);
+}
+
+.skills-item-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* One line, clipped. A description is a sentence about when to reach for the
+   skill; the list only needs enough of it to recognise the skill by, and the
+   editor has the whole thing. */
+.skills-item-desc {
+  overflow: hidden;
+  font-size: var(--text-xs);
+  color: var(--ink-mute);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Whose folder this one is. Quiet on purpose: it is an answer to a question
+   the "Installed" heading raises, not a badge competing with the name. Only
+   drawn for skills Hearth found somewhere else. */
+.skills-item-source {
+  flex: none;
+  padding: 1px 6px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  color: var(--ink-faint);
+  font-size: var(--text-2xs);
+  white-space: nowrap;
+}
+
+/* Off is a state an agent can feel, so the list has to show it rather than
+   only offer it in a menu. A word, not a shade: dimming alone reads as
+   "unimportant", which is not the same claim. */
+.skills-item-off {
+  flex: none;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: var(--bg-3);
+  color: var(--ink-faint);
+  font-size: var(--text-2xs);
+  letter-spacing: 0.02em;
+}
+
+.skills-item.is-off .skills-item-tile {
+  background: var(--bg-2);
+  color: var(--ink-faint);
+}
+
+.skills-item.is-off .skills-item-name,
+.skills-item.is-off .skills-item-desc {
+  color: var(--ink-faint);
+}
+
+/* The menu primitive wraps its trigger in a positioned span; the row treats
+   that wrapper as the button it contains. */
+.skills-item .menu-root {
+  flex: none;
+}
+
+/* Hidden until the row is pointed at or the button is focused: a column of
+   permanent ellipses is a list that looks like it is asking to be managed.
+   `opacity` rather than `display`, so it stays in the tab order. */
+.skills-item-more {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: var(--ctl-h-sm);
+  height: var(--ctl-h-sm);
+  margin-right: 8px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--ink-mute);
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity var(--t-fast) var(--ease-out), background var(--t-fast) var(--ease-out),
+    color var(--t-fast) var(--ease-out);
+}
+
+.skills-item:hover .skills-item-more,
+.skills-item-more:focus-visible,
+.skills-item-more[aria-expanded='true'] {
+  opacity: 1;
+}
+
+.skills-item-more:hover {
+  background: var(--bg-3);
+  color: var(--ink);
+}
+
+/* --- Nothing to show ------------------------------------------------------ */
+
+.skills-blank {
+  padding: 56px 0;
+  text-align: center;
+}
+
+.skills-blank-lead {
+  margin: 0;
+  font-size: var(--text-md);
+  color: var(--ink);
+}
+
+.skills-blank-hint {
+  max-width: 44ch;
+  margin: 8px auto 0;
+  font-size: var(--text-sm);
+  line-height: 1.6;
+  color: var(--ink-mute);
+}
+
+.skills-notice {
+  margin: 0 0 16px;
+  padding: 10px 12px;
+  border-radius: var(--radius);
+  background: var(--err-faint);
+  font-size: var(--text-sm);
+  line-height: 1.5;
+  color: var(--err);
+}
+
+/* Where they actually are. The layout this screen follows has no such line,
+   because its skills are not files anywhere the user can reach; Hearth's are,
+   and saying so is the honest difference. */
+.skills-where {
+  margin: 28px 0 0;
+  padding: 0 10px;
+  font-size: var(--text-xs);
+  color: var(--ink-faint);
+  overflow-wrap: anywhere;
+}
+
+/* --- The editor ----------------------------------------------------------- */
+
+/* The instructions field takes whatever height is left, so this body lays out
+   rather than scrolls: the textarea scrolls its own content instead. */
+.skills-screen .skill-edit-scroll {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.skills-screen .skill-edit {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 16px;
+  width: 100%;
+  max-width: 760px;
+  min-height: 0;
+  margin: 0 auto;
+  padding: 28px 32px 32px;
+}
+
+/* Why this page cannot be typed in. A plain line above the fields rather than
+   a warning stripe: nothing has gone wrong, the skill simply belongs to
+   somebody else. */
+.skills-screen .skill-edit-note {
+  flex: none;
+  margin: 0;
+  padding: 0 2px;
+  font-size: var(--text-sm);
+  line-height: 1.55;
+  color: var(--ink-mute);
+  overflow-wrap: anywhere;
+}
+
+/* Read-only fields still have to look like the values they are, not like
+   disabled controls waiting to be enabled — the text is the point. */
+.skills-screen .skill-edit-value[readonly],
+.skills-screen .skill-edit-body[readonly] {
+  color: var(--ink-mute);
+  cursor: default;
+}
+
+.skills-screen .skill-edit-body[readonly] {
+  border-style: dashed;
+}
+
+/* Name and description sit in one filled block rather than as two loose
+   fields: they are what the skill IS, and the instructions below are what it
+   says. Filled, not bordered — a border here would make the block compete
+   with the editor under it. */
+.skills-screen .skill-edit-card {
+  flex: none;
+  border-radius: var(--radius-lg);
+  background: var(--bg-2);
+  overflow: hidden;
+}
+
+.skills-screen .skill-edit-field {
+  display: grid;
+  grid-template-columns: 130px minmax(0, 1fr);
+  align-items: center;
+  gap: 12px;
+  padding: 10px 16px;
+}
+
+.skills-screen .skill-edit-field + .skill-edit-field {
+  border-top: 1px solid var(--border);
+}
+
+.skills-screen .skill-edit-label {
+  font-size: var(--text-sm);
+  color: var(--ink-mute);
+}
+
+.skills-screen .skill-edit-value {
+  width: 100%;
+  height: var(--ctl-h-sm);
+  border: 0;
+  padding: 0;
+  background: transparent;
+  font: inherit;
+  font-size: var(--text-sm);
+  color: var(--ink);
+}
+
+/* The description is a textarea that grows with its sentence (its height is
+   set from scrollHeight on mount). It has to shed the fixed control height and
+   the resize grip: this is a field that sizes itself, and a drag handle would
+   invite the reader to fight it. */
+.skills-screen .skill-edit-value.is-wrapping {
+  height: auto;
+  min-height: var(--ctl-h-sm);
+  line-height: 1.5;
+  padding: 5px 0;
+  resize: none;
+  overflow: hidden;
+}
+
+.skills-screen .skill-edit-value::placeholder {
+  color: var(--ink-faint);
+}
+
+.skills-screen .skill-edit-value:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+  border-radius: var(--radius-sm);
+}
+
+.skills-screen .skill-edit-card-foot {
+  display: flex;
+  justify-content: flex-end;
+  padding: 10px 16px;
+  border-top: 1px solid var(--border);
+}
+
+/* A markdown file, set like one. Monospace is not decoration here: the thing
+   being written is read back by an agent as a file, and the alignment of a
+   list or a fenced block is part of what it means. */
+.skills-screen .skill-edit-body {
+  flex: 1;
+  min-height: 240px;
+  padding: 16px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--bg-1);
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  line-height: 1.65;
+  color: var(--ink);
+  resize: none;
+  transition: border-color var(--t-fast) var(--ease-out);
+}
+
+.skills-screen .skill-edit-body::placeholder {
+  color: var(--ink-faint);
+}
+
+.skills-screen .skill-edit-body:focus-visible {
+  outline: none;
+  border-color: var(--accent);
+}
+
+/* --- Narrow --------------------------------------------------------------- */
+
+/* Below this the title and its controls stop fitting on one line, and the
+   editor's label column starts squeezing the value it labels. */
+@media (max-width: 720px) {
+  .skills-page {
+    padding: 28px 20px 48px;
+  }
+
+  .skills-masthead {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 16px;
+  }
+
+  .skills-tools {
+    padding-top: 0;
+  }
+
+  .skills-find {
+    flex: 1;
+  }
+
+  .skills-find-input {
+    width: 100%;
+  }
+
+  .skills-screen .skill-edit {
+    padding: 20px 20px 24px;
+  }
+
+  .skills-screen .skill-edit-field {
+    grid-template-columns: minmax(0, 1fr);
+    align-items: start;
+    gap: 2px;
+  }
+}
+
+/* --- Motion --------------------------------------------------------------- */
+
+/* Everything above moves only to say something changed — a hover, a focus, a
+   control appearing. With motion turned down the state changes still land;
+   they just land at once. */
+@media (prefers-reduced-motion: reduce) {
+  .skills-find,
+  .skills-new,
+  .skills-item,
+  .skills-item-more,
+  .skills-screen .skill-edit-body {
+    transition: none;
+  }
+}

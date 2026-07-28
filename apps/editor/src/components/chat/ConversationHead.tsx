@@ -1,16 +1,25 @@
 /**
- * The conversation column's one strip of chrome: who is answering, and — in
- * terminal mode — where the shell is running.
+ * The conversation column's one strip of chrome: the way back to the project,
+ * which kind of conversation this is, who is answering, and — in terminal mode
+ * — where the shell is running.
  *
- * Choosing BETWEEN the two kinds of conversation is not done here: that pill
- * lives in the sidebar, next to everything else that decides what the main
- * area shows. What is left is a read-out, and it is deliberately thin — the
- * column belongs to what is being said in it.
+ * Everything here is a read-out or a way out; it is deliberately thin, because
+ * the column belongs to what is being said in it.
+ *
+ * There used to be a Chat / Terminal switch here, and it was a lie: a
+ * conversation is one or the other for its whole life (server/chatStore.ts
+ * writes `kind` once, at creation), so flipping the column moved you to a
+ * different surface without moving you to a different conversation. The choice
+ * is made where it belongs now — when a conversation is STARTED, from the
+ * composer's model picker, whose Terminal group starts a terminal session with
+ * that CLI in it. What is left here is the read-out that switch was pretending
+ * to be.
  */
 import React from 'react';
-import { useApp } from '../../store';
+import { useApp, type ConversationMode } from '../../store';
 import type { ChatDriverKind, ChatProviderStatus } from '../../types';
 import { useAgentSocket } from '../agent/useAgentSocket';
+import { Icon } from '../ui';
 import { Button } from '../ui/Button';
 import { Tooltip } from '../ui/Tooltip';
 import { terminalStatusLabel } from './TerminalPane';
@@ -66,6 +75,64 @@ function TerminalContext() {
   );
 }
 
+/**
+ * The way out of a conversation, back to the project it belongs to.
+ *
+ * A conversation is somewhere you go INTO — from the project's own screen,
+ * from the rail — and until now the only way out was to find the project again
+ * in the rail. The label is the project's name rather than "Back", for the
+ * same reason a screen's header carries one: a way out is only useful if it
+ * says where it comes out.
+ *
+ * It wears `.screen-back` (ui/ScreenHeader, styles/app/screen.css) rather than
+ * inventing a second look. This strip is not a ScreenHeader — it is a mode
+ * switch, so it has no three-slot grid to sit in — but the CONTROL is the same
+ * control, and the app should have one back affordance, not two that nearly
+ * match. `.conversation-back` adjusts only what this strip demands; see the
+ * note in chat.css.
+ */
+function BackToProject() {
+  const projectName = useApp((s) => s.projectName);
+  const hasProject = useApp((s) => s.projectPath !== null);
+  const showProject = useApp((s) => s.showProject);
+
+  // No open project, no destination. Home's composer and a conversation with
+  // no folder behind it must not sprout a control that leads nowhere.
+  if (!hasProject) return null;
+
+  // The name is set alongside the path on every open; the fallback is for the
+  // instant between the two, and says the kind of place rather than guessing.
+  const label = projectName ?? 'Project';
+
+  return (
+    <button
+      type="button"
+      className="screen-back conversation-back"
+      // The visible label is the name on its own; a screen reader hearing only
+      // "Ember" would not know it is a way out. Spoken name contains the
+      // visible one, so voice control still finds it by what is printed.
+      aria-label={`Back to ${label}`}
+      onClick={showProject}
+    >
+      <Icon name="chevron" size={13} />
+      <span className="conversation-back-name">{label}</span>
+    </button>
+  );
+}
+
+/**
+ * What kind of conversation this is, in one word.
+ *
+ * A read-out, not a control, and it takes the slot the switch used to hold:
+ * the fact is still worth stating (a shell and a transcript are different
+ * enough that you want to know which one you are in before you type), but it
+ * is a fact about the conversation rather than a setting on it. To have the
+ * other kind, start one.
+ */
+export function conversationKindLabel(mode: ConversationMode): string {
+  return mode === 'terminal' ? 'Terminal' : 'Chat';
+}
+
 export function ConversationHead() {
   const mode = useApp((s) => s.conversationMode);
   const providers = useApp((s) => s.providers);
@@ -73,8 +140,13 @@ export function ConversationHead() {
 
   return (
     <div className="conversation-head">
-      {/* Chat mode's one read-out: which agent would answer. Same quiet
-          register as the terminal's status — a label, not a control. */}
+      {/* Leaving first, on the left, the way it reads on every screen. */}
+      <BackToProject />
+      {/* Wears the same quiet label treatment as the read-outs beside it —
+          this strip has one register, and everything in it is either a fact or
+          a way out. */}
+      <span className="conversation-provider conversation-kind">{conversationKindLabel(mode)}</span>
+      {/* Chat mode's other read-out: which agent would answer. */}
       {mode === 'chat' && <span className="conversation-provider">{providerLabel(providers, driver)}</span>}
       {mode === 'terminal' && <TerminalContext />}
     </div>

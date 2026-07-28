@@ -26,7 +26,7 @@ const HINT_KEY = 'hearth:terminalHintSeen';
  * your own CLI agent is a first-class way to use Hearth — is learned once and
  * then permanently known.
  */
-export const TERMINAL_HINT = 'Run claude, codex, or any CLI here — Playtest and evidence work the same.';
+export const TERMINAL_HINT = 'Run claude, codex, or any CLI here. Playtest and evidence work the same.';
 
 export function readTerminalHintSeen(): boolean {
   try {
@@ -93,12 +93,12 @@ export function TerminalPane() {
       {!hintSeen && (
         <p className="terminal-hint">
           <span className="terminal-hint-text">
-            Run <code>claude</code>, <code>codex</code>, or any CLI here — Playtest and evidence work the same.
+            Run <code>claude</code>, <code>codex</code>, or any CLI here. Playtest and evidence work the same.
           </span>
           <IconButton
             bare
             icon="cross"
-            label="Dismiss"
+            label="Dismiss hint"
             iconSize={9}
             className="terminal-hint-dismiss"
             onClick={dismissHint}

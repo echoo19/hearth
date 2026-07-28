@@ -92,6 +92,9 @@
   /* A navigation row in the rail: New chat, a project, a conversation. Shorter
      than a control because a list of them is scanned, not operated. */
   --row-h: 32px;
+  /* The two general acts at the top of the rail. Taller than a list row
+     because they are acts rather than entries: see .nav-row in sidebar.css. */
+  --nav-h: 38px;
 
   /* Motion: ease-out, state-conveying only. One easing curve for the whole
      app. Three durations cover everything — --t-fast for the snappy stuff

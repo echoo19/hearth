@@ -14,7 +14,7 @@
  * merely registered, the word "soon" for the things that don't exist yet.
  */
 import React, { useEffect, useRef, useState } from 'react';
-import { Icon } from '../components/ui';
+import { ConfirmDialog, Icon } from '../components/ui';
 import { MenuButton } from '../components/ui/Menu';
 import { Tooltip } from '../components/ui/Tooltip';
 import {
@@ -29,7 +29,7 @@ import {
 import { useHarnessRegistry, type HarnessRegistryApi } from './useRegistry';
 
 /** What a save says. Honest about the gap between recorded and running. */
-const SAVED_NOTE = 'Saved — activates in a future update.';
+const SAVED_NOTE = 'Saved. Activates in a future update.';
 /** Long enough to read once, short enough not to become furniture. */
 const NOTE_MS = 6000;
 
@@ -322,6 +322,10 @@ function Section({ collection, title, addLabel, api, children }: SectionProps) {
  */
 export function HarnessSections({ projectPath }: { projectPath: string | null }) {
   const api = useHarnessRegistry(projectPath);
+  // Removal is one click inside an overflow menu, right next to Rename, and it
+  // rewrites the project's registry file. Close enough to a harmless action to
+  // be worth a question first.
+  const [pendingRemove, setPendingRemove] = useState<ConnectorEntry | null>(null);
   if (!projectPath) return null;
 
   const connectors: ConnectorEntry[] = api.registry.connectors;
@@ -336,13 +340,30 @@ export function HarnessSections({ projectPath }: { projectPath: string | null })
             detail={connector.detail}
             status={connector.status}
             builtin={api.isBuiltin('connectors', connector.id)}
-            menuLabel={`Connector options — ${connector.name}`}
+            menuLabel={`Connector options for ${connector.name}`}
             onRename={(name) => void api.rename('connectors', connector.id, name)}
-            onRemove={() => void api.remove('connectors', connector.id)}
+            onRemove={() => setPendingRemove(connector)}
           />
         ))}
       </Section>
 
+      <ConfirmDialog
+        open={pendingRemove !== null}
+        title="Remove connector"
+        body={
+          pendingRemove
+            ? `“${pendingRemove.name}” will be removed from this project. You can add it again later.`
+            : ''
+        }
+        confirmLabel="Remove"
+        danger
+        onCancel={() => setPendingRemove(null)}
+        onConfirm={() => {
+          const entry = pendingRemove;
+          setPendingRemove(null);
+          if (entry) void api.remove('connectors', entry.id);
+        }}
+      />
     </>
   );
 }

@@ -124,6 +124,14 @@
   padding: 0;
 }
 
+/* A ghost button that is also a toggle has to look different when it is ON,
+   or the state lives only in the tooltip. Ink, not accent: this is "currently
+   showing", which is a fact about the window, not a call to action. */
+.btn-ghost[aria-pressed='true'] {
+  background: var(--bg-3);
+  color: var(--ink);
+}
+
 .btn-icon.btn-sm {
   width: var(--ctl-h-sm);
 }

@@ -19,24 +19,32 @@ import {
   apiChatProviders,
   apiCreateWorkspace,
   apiDeleteChat,
+  apiEvidenceHistory,
   apiGameStatus,
   apiListChats,
   apiMeta,
   apiOpenAiLogin,
   apiOpenWorkspace,
+  apiPersonalization,
+  apiPlaytestView,
   apiProbeStatus,
   apiRecentChats,
   apiRenameChat,
+  apiSavePersonalization,
   apiStartSweep,
   projectFileUrl,
+  type Personalization,
+  type PersonalizationInfo,
 } from './api';
 import { attachmentPayload, type PendingAttachment } from './chat/attachments';
 import type {
+  AgentCliInfo,
   AppSettingsInfo,
   ApprovalDecision,
   ChatAttachmentView,
   ChatDriverKind,
   ChatEvent,
+  ChatKind,
   ChatMessage,
   ChatPart,
   ChatProviderStatus,
@@ -49,6 +57,7 @@ import type {
   FileChangeEntry,
   GameStatus,
   JournalEntry,
+  PlaytestView,
   RecentChatEntry,
   Sense,
   ServerMeta,
@@ -57,15 +66,18 @@ import type {
   WorkspaceInfo,
 } from './types';
 import type { WsFrame } from '../server/ws';
-import { getModelChoice } from './chat/modelChoice';
+import { agentForTurn, getModelChoice } from './chat/modelChoice';
 import { hearthNative } from './native';
+import { showToast } from './toast';
 import {
   ensureAgentPtySessionId,
   getAgentSessionSummary,
   ingestPtyAttach,
   ingestPtyFrame,
+  markAgentCli,
   markAgentDisconnected,
   markAgentStarted,
+  planTerminalLaunch,
   resetAgentSocket,
   type AgentStatus,
 } from './components/agent/useAgentSocket';
@@ -74,13 +86,31 @@ import {
 export type PaneTab = 'game' | 'console';
 
 /**
+ * A message someone typed while the agent was still answering the last one.
+ *
+ * It is the same payload `sendChat` takes, held rather than dropped. Note the
+ * attachments keep their base64 `data`: the composer's object URLs are revoked
+ * the moment its tray lets go, so anything queued has to carry its own bytes.
+ */
+export interface QueuedMessage {
+  id: string;
+  text: string;
+  attachments: readonly PendingAttachment[];
+}
+
+/**
  * What the conversation column IS right now. Both are first-class ways to talk
  * to an agent: `chat` is the built-in driver (Agent SDK or the stub), `terminal`
  * is the user's own CLI agent — `claude`, `codex`, anything — in a real shell in
  * the project folder. The terminal is not a fallback; it is the other half of
  * the same column.
+ *
+ * The same vocabulary as a conversation record's `kind` (server/chatStore.ts),
+ * and no longer an independent choice: the open conversation's kind is what
+ * the column shows, because a conversation cannot change kind. What used to be
+ * a switch inside a conversation is now a choice made when one is started.
  */
-export type ConversationMode = 'chat' | 'terminal';
+export type ConversationMode = ChatKind;
 
 /** Below this width the game pane can't hold its own column and becomes a tab. */
 export const NARROW_BREAKPOINT_PX = 900;
@@ -98,6 +128,12 @@ export interface AppState {
   messages: ChatMessage[];
   /** True from send until the turn's `done`/`error` — gates the composer. */
   chatBusy: boolean;
+  /**
+   * Messages typed while a turn was running, oldest first. They are not on the
+   * wire and not in the transcript yet — they are held here until the turn
+   * they interrupted is over. Empty almost always.
+   */
+  queued: QueuedMessage[];
   /** Which backend answered, once the server has bound one. */
   chatDriver: ChatDriverKind | null;
   chatError: string | null;
@@ -135,6 +171,16 @@ export interface AppState {
    * progress a user sees is the same evidence the rail is filling with.
    */
   sweep: { running: boolean; done: number; total: number | null; error: string | null };
+  /**
+   * The newest sweep, one row per playtester: what each bot did, and the
+   * reason the ones that could not play give. Read from the files the sweep
+   * writes rather than from the journal, because a skip reason exists only in
+   * the report and a running sweep's forecast only in the runner.
+   *
+   * Null until something reads it. It also carries the only honest denominator
+   * the Playtest button has: see plannedRuns below.
+   */
+  playtest: PlaytestView | null;
 
   // --- Evidence -------------------------------------------------------------
   evidence: EvidenceEvent[];
@@ -158,9 +204,58 @@ export interface AppState {
    */
   conversationModePinned: boolean;
   paneTab: PaneTab;
+  /**
+   * Whether the playtest column has the right half of the window. False is the
+   * resting state: a conversation with nothing to play beside it should be a
+   * conversation, full width, the way every other chat app looks.
+   */
+  paneOpen: boolean;
+  /**
+   * The open folder's own answer to that, or null while it has never given
+   * one. Distinct from `paneOpen` because the two disagree on purpose: a new
+   * conversation closes the column without forgetting that this folder likes
+   * it open, so the next game to appear brings it back.
+   */
+  paneChoice: boolean | null;
   /** Narrow layout only: the conversation and the pane stack become tabs. */
   narrowTab: 'chat' | 'pane';
   codePeek: { open: boolean; path: string | null };
+  /**
+   * The new-chat surface is showing: greeting, composer, project selector.
+   * Home and New chat are the same screen — the only difference is whether a
+   * project happens to be open behind it.
+   */
+  composing: boolean;
+  /**
+   * Which project the next message starts in. A path, or null meaning "a new
+   * one", which is created from the message itself when it is sent.
+   */
+  composeTarget: string | null;
+  /**
+   * The project's own screen is showing: its name, what it is for, its chats,
+   * its instructions and its context — rather than any one conversation.
+   *
+   * This is what clicking a project in the rail lands on. A project holds MANY
+   * conversations, and dropping straight into the most recent one made the
+   * other twelve invisible and the project itself unaddressable.
+   */
+  projectView: boolean;
+  /**
+   * A full screen that sits over the work, rather than beside it. Skills is
+   * the first: it is a library you browse and edit, which is a place, not a
+   * question to answer and dismiss. A dialog would put a page-sized surface
+   * behind a scrim and take the window's own back button away from it.
+   *
+   * `null` means the work itself — whatever `composing` / `projectView` and
+   * the open project already decide between them. Leaving a screen restores
+   * that arrangement untouched, which is why nothing else is stored here.
+   */
+  /**
+   * `playtest` is the second: the bots that play your game, one panel each.
+   * It is a place for the same reason Skills is — you sit and watch it — and
+   * it does not replace the Playtest button, which still lives in the column.
+   */
+  screen: 'skills' | 'playtest' | null;
   /** Prompt carried across a folder open, consumed by the composer on mount. */
   pendingPrompt: string | null;
   /**
@@ -171,6 +266,12 @@ export interface AppState {
   homeBusy: boolean;
   /** Set when an update is downloaded and waiting for a relaunch. */
   updateReady: UpdateReadyInfo | null;
+  /**
+   * What to call the user and the instructions that apply to every game.
+   * Null until Settings asks for it: this lives in `~/.hearth` and is read by
+   * one pane, so paying for it on every boot would be paying for nothing.
+   */
+  personalization: PersonalizationInfo | null;
 
   /**
    * External changes (a CLI/agent mutating a Hearth project) as they land.
@@ -192,13 +293,32 @@ export interface AppState {
   cancelChat(): void;
   /** Stop the running turn but keep the session, so the next message continues. */
   interruptChat(): void;
+  /** Take a message back out of the queue before it is ever sent. */
+  unqueueChat(id: string): void;
+  /**
+   * Apply one frame from the folder's socket. The socket's own `onmessage`
+   * is a JSON.parse and a call to this, so everything the server can tell the
+   * app arrives through here — which is also what makes the whole inbound half
+   * reachable from a test without a live server.
+   */
+  receiveFrame(frame: WsFrame): void;
   /** Answer a blocking ask, and show the answer without waiting for the round trip. */
   approveChat(approvalId: string, decision: ApprovalDecision): void;
   refreshProviders(): Promise<void>;
   /** Begin the ChatGPT device flow and open the page it hands back. */
   startOpenAiLogin(): Promise<void>;
-  /** Start a fresh conversation and switch to it. */
+  /**
+   * Start a fresh conversation in the open folder and switch to it. A folder
+   * is required — see `newProject` for the other half of that rule.
+   */
   newChat(): void;
+  /**
+   * Begin a new game. There is no name field: Hearth's projects are made by
+   * describing one, so this returns to the surface where the first message
+   * creates the folder (see `startFromHome`). Leaving the current folder IS
+   * the act — a new project is a different folder by definition.
+   */
+  newProject(): void;
   /** Switch to an existing conversation, replaying it from disk. */
   openChat(chatId: string): void;
   renameChat(chatId: string, title: string): Promise<void>;
@@ -221,12 +341,57 @@ export interface AppState {
   consumePendingPrompt(): string | null;
   refreshGame(): Promise<void>;
   refreshSettings(): Promise<void>;
+  /** Read `~/.hearth`'s name and standing instructions. Safe to call twice. */
+  loadPersonalization(): Promise<void>;
+  /**
+   * Change one or both. Omit a field to leave it alone; an empty string
+   * clears it. Answers false when the write did not land, which is the only
+   * thing the pane has to be able to say out loud.
+   */
+  savePersonalization(patch: Partial<Personalization>): Promise<boolean>;
   /** Play the game and stream what the probe finds into the evidence rail. */
   startSweep(): Promise<void>;
+  /** Re-read the playtest view for the open folder. */
+  refreshPlaytest(): Promise<void>;
+  /**
+   * Fill the evidence rail from the folder's journal.
+   *
+   * Playtests belong to the folder, not to this window's socket, so the rail
+   * is loaded from disk on open and the live channel appends to it. Without
+   * this a second window, or a socket that reconnected while another still
+   * held the channel, shows nothing for a folder full of them.
+   */
+  refreshEvidence(): Promise<void>;
   setSidebarCollapsed(collapsed: boolean): void;
-  /** Explicit pick — persisted for this folder and never re-derived after. */
+  /**
+   * Ask for a kind of conversation, and persist it for this folder.
+   *
+   * A conversation's kind is fixed when it is created, so this is no longer a
+   * switch: asking for the other kind while one is open STARTS a new
+   * conversation of that kind. With nothing open — Home, the blank composer —
+   * there is no record to contradict, and it simply aims the column.
+   */
   setConversationMode(mode: ConversationMode): void;
+  /**
+   * Have the conversation in the terminal, with this CLI running in it: switch
+   * modes, make sure there is a shell, and type the command into it. Refusals
+   * (nothing installed, no folder, an agent already in there) go to the
+   * Console and change nothing — see planTerminalLaunch for which is which.
+   */
+  startTerminalCli(cli: AgentCliInfo): void;
   setPaneTab(tab: PaneTab): void;
+  /** Show or hide the playtest column. An explicit pick, remembered per folder. */
+  setPaneOpen(open: boolean): void;
+  /** Aim the new-chat composer at a project, or at one that doesn't exist yet. */
+  setComposeTarget(path: string | null): void;
+  /** Open a project and land on its own screen rather than in a conversation. */
+  openProject(path: string): Promise<void>;
+  /** Come back up from a conversation to the project it belongs to. */
+  showProject(): void;
+  /** Open a full screen over the work. */
+  openScreen(screen: 'skills' | 'playtest'): void;
+  /** Leave it. The work underneath is exactly as it was left. */
+  closeScreen(): void;
   setNarrowTab(tab: 'chat' | 'pane'): void;
   setEvidenceOpen(open: boolean): void;
   openCodePeek(path?: string): void;
@@ -244,6 +409,7 @@ const MAX_EVIDENCE = 400;
 const LAST_WORKSPACE_KEY = 'hearth:lastWorkspace';
 const SIDEBAR_KEY = 'hearth:sidebarCollapsed';
 const CONVERSATION_MODE_PREFIX = 'hearth:conversationMode:';
+const PANE_OPEN_PREFIX = 'hearth:pane:';
 const WS_BACKOFF_INITIAL_MS = 1000;
 const WS_BACKOFF_MAX_MS = 5000;
 /** Coalescing window for the global Recents read — see scheduleRecentChats. */
@@ -264,6 +430,8 @@ function makeEntry(level: ConsoleLevel, source: ConsoleSource, message: string, 
   return { id: ++entryId, time: timestamp(), level, source, message, link };
 }
 
+let queuedId = 0;
+
 const EMPTY_GAME: GameStatus = { present: false, entry: null, mtime: 0 };
 const IDLE_SWEEP = { running: false, done: 0, total: null, error: null } as const;
 
@@ -283,6 +451,18 @@ function readSidebarCollapsed(): boolean {
 
 export function conversationModeStorageKey(projectPath: string): string {
   return `${CONVERSATION_MODE_PREFIX}${projectPath}`;
+}
+
+/**
+ * What kind of conversation a record is, for anything that has to draw it.
+ *
+ * One rule in one place, because three surfaces ask it (the rail, the project
+ * screen, the column) and they must never disagree. A record with no answer is
+ * a chat: conversations written before kinds existed were all chats, and the
+ * index says so too (server/chatStore.ts, parseChatIndex).
+ */
+export function conversationKind(chat: { kind?: ChatKind }): ChatKind {
+  return chat.kind === 'terminal' ? 'terminal' : 'chat';
 }
 
 /**
@@ -325,6 +505,37 @@ function writeConversationMode(projectPath: string, mode: ConversationMode): voi
 }
 
 // ---------------------------------------------------------------------------
+// The playtest column — per folder, for the same reason the mode is: whether
+// you want half the window given to a running game is a fact about the project
+// you are in, not about the app. A folder with no game in it yet has nothing to
+// show there, so the column starts closed and opens itself the moment one
+// appears (see refreshGame) — unless this folder has said otherwise.
+// ---------------------------------------------------------------------------
+
+export function paneOpenStorageKey(projectPath: string): string {
+  return `${PANE_OPEN_PREFIX}${projectPath}`;
+}
+
+/** The folder's stored choice, or null when nobody has made one. */
+export function readPaneOpen(projectPath: string): boolean | null {
+  let raw: string | null = null;
+  try {
+    raw = localStorage.getItem(paneOpenStorageKey(projectPath));
+  } catch {
+    return null; // private mode: no choice on record
+  }
+  return raw === '1' ? true : raw === '0' ? false : null;
+}
+
+function writePaneOpen(projectPath: string, open: boolean): void {
+  try {
+    localStorage.setItem(paneOpenStorageKey(projectPath), open ? '1' : '0');
+  } catch {
+    /* private mode: the preference just doesn't persist */
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Conversation reducer — pure, so the streaming assembly is unit-testable
 // without a socket or a React tree.
 // ---------------------------------------------------------------------------
@@ -341,8 +552,19 @@ export function makeUserMessage(text: string, attachments?: readonly ChatAttachm
   };
 }
 
-export function makeAgentMessage(): ChatMessage {
-  return { id: `m${++messageId}`, role: 'agent', parts: [], streaming: true };
+/**
+ * `startedAt` is passed only by the live path. A replayed turn is assembled
+ * from a file in a few milliseconds, and a stopwatch started there would be
+ * timing the disk.
+ */
+export function makeAgentMessage(startedAt?: number): ChatMessage {
+  return {
+    id: `m${++messageId}`,
+    role: 'agent',
+    parts: [],
+    streaming: true,
+    ...(startedAt === undefined ? {} : { startedAt }),
+  };
 }
 
 /**
@@ -414,6 +636,25 @@ function mergeFileChanges(existing: FileChangeEntry[], incoming: FileChangeEntry
  *
  * Returns the same array identity when nothing applies, so React skips work.
  */
+/**
+ * The prompt that started the turn currently being written, if it can still be
+ * found. Used only to offer a retry after a failure, so an empty answer just
+ * means the row shows no retry rather than anything going wrong.
+ */
+export function lastUserText(messages: ChatMessage[]): string | undefined {
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const message = messages[i];
+    if (message.role !== 'user') continue;
+    const text = message.parts
+      .filter((part): part is Extract<ChatPart, { kind: 'text' }> => part.kind === 'text')
+      .map((part) => part.text)
+      .join('\n')
+      .trim();
+    return text === '' ? undefined : text;
+  }
+  return undefined;
+}
+
 export function applyChatEvent(
   messages: ChatMessage[],
   incoming: ChatEvent,
@@ -443,29 +684,41 @@ export function applyChatEvent(
       const parts = last.parts.slice();
       const tail = parts[parts.length - 1];
       if (tail && tail.kind === 'reasoning') {
-        parts[parts.length - 1] = { kind: 'reasoning', text: tail.text + event.text };
+        // Every delta moves the end of the thought, so the duration is right
+        // the moment the last one lands — nothing has to close the part.
+        parts[parts.length - 1] = {
+          ...tail,
+          text: tail.text + event.text,
+          durationMs: tail.startedAt === undefined ? tail.durationMs : now - tail.startedAt,
+        };
       } else {
-        parts.push({ kind: 'reasoning', text: event.text });
+        parts.push({ kind: 'reasoning', text: event.text, startedAt: now });
       }
       return replace(parts);
     }
-    case 'tool-begin':
+    case 'tool-begin': {
       // A shell command is the one tool with a body worth keeping, so it opens
-      // its own part with a capture buffer. Everything else is a chip.
-      return replace([
-        ...last.parts,
-        event.kind === 'command'
-          ? {
-              kind: 'command',
-              id: event.toolId,
-              title: event.title,
-              detail: event.detail,
-              output: '',
-              state: 'running',
-              startedAt: now,
-            }
-          : { kind: 'tool', id: event.toolId, name: event.title, detail: event.detail, state: 'running' },
-      ]);
+      // its own part with a capture buffer. A skill gets a row of its own
+      // because it is a thing the user installed rather than a thing the agent
+      // came with. Everything else is a chip.
+      let opened: ChatPart;
+      if (event.kind === 'command') {
+        opened = {
+          kind: 'command',
+          id: event.toolId,
+          title: event.title,
+          detail: event.detail,
+          output: '',
+          state: 'running',
+          startedAt: now,
+        };
+      } else if (event.kind === 'skill') {
+        opened = { kind: 'skill', id: event.toolId, name: event.title, detail: event.detail, state: 'running' };
+      } else {
+        opened = { kind: 'tool', id: event.toolId, name: event.title, detail: event.detail, state: 'running' };
+      }
+      return replace([...last.parts, opened]);
+    }
     case 'tool-output-delta':
       return replace(
         last.parts.map((part) =>
@@ -492,6 +745,13 @@ export function applyChatEvent(
           }
           if (part.kind === 'tool' && part.id === event.toolId) {
             return { ...part, state: settled, detail: event.summary ?? part.detail };
+          }
+          // The summary is deliberately dropped for a skill: what a Skill call
+          // returns is the skill's own instructions, and pasting a whole
+          // SKILL.md under the row would bury the one thing it exists to say.
+          // The detail it keeps is what the skill was ASKED to do.
+          if (part.kind === 'skill' && part.id === event.toolId) {
+            return { ...part, state: settled };
           }
           return part;
         }),
@@ -585,7 +845,15 @@ export function applyChatEvent(
       if (last.parts.length === 0) return messages.slice(0, lastIndex);
       return replace(last.parts, false);
     case 'error':
-      return replace([...last.parts, { kind: 'text', text: event.message }], false);
+      // A failed turn is the app speaking, not the agent. Appended as a text
+      // part this used to render in the agent's own voice and typography, so
+      // "rate limit exceeded" or an expired login read as something the model
+      // had chosen to say. It carries the prompt that was lost so the row can
+      // offer to send it again.
+      return replace(
+        [...last.parts, { kind: 'notice', text: event.message, tone: 'error', retryText: lastUserText(messages) }],
+        false,
+      );
     default:
       return messages;
   }
@@ -650,6 +918,50 @@ export function replayTranscript(records: readonly ChatRecord[], project = ''): 
 }
 
 /**
+ * Add evidence to what is already held, keyed on `seq`.
+ *
+ * Evidence arrives from two places now — a read of the folder's journal when
+ * it opens, and the socket as the probe writes more — and they overlap by
+ * design: the socket's watcher replays from the top of the file for whoever
+ * starts it, so the first window would otherwise show every sweep twice. `seq`
+ * is the journal's own line number and the only identity an event has, so it
+ * is what decides whether something is new.
+ *
+ * Ordered by `seq` rather than by arrival, because a replay is history and
+ * history is not news; capped at the newest `MAX_EVIDENCE`, which is the rail's
+ * appetite, not the folder's.
+ */
+export function mergeEvidence(
+  current: readonly EvidenceEvent[],
+  incoming: readonly EvidenceEvent[],
+): EvidenceEvent[] {
+  if (incoming.length === 0) return current as EvidenceEvent[];
+  const bySeq = new Map<number, EvidenceEvent>();
+  for (const event of current) bySeq.set(event.seq, event);
+  // Later wins: an event re-read from the file is the file's version of it,
+  // and the file is the record.
+  for (const event of incoming) bySeq.set(event.seq, event);
+  const merged = [...bySeq.values()].sort((a, b) => a.seq - b.seq);
+  return merged.length > MAX_EVIDENCE ? merged.slice(-MAX_EVIDENCE) : merged;
+}
+
+/**
+ * Which of `incoming` this store has not already folded into sweep progress.
+ *
+ * Progress is a running total, so an event counted twice moves the counter
+ * twice. History read on open must not count at all: a sweep that finished
+ * last week is not one run of progress on this window's Playtest button.
+ */
+export function unseenEvidence(
+  current: readonly EvidenceEvent[],
+  incoming: readonly EvidenceEvent[],
+): EvidenceEvent[] {
+  if (current.length === 0) return [...incoming];
+  const seen = new Set(current.map((event) => event.seq));
+  return incoming.filter((event) => !seen.has(event.seq));
+}
+
+/**
  * Fold a batch of evidence events into playtest progress. `sweep-started`
  * declares the denominator (policies x seeds), each `run-finished` advances,
  * and `sweep-finished` ends it. Pure, so the button's state is testable
@@ -681,6 +993,27 @@ export function applySweepProgress(
     }
   }
   return next;
+}
+
+/**
+ * How many runs the sweep on the browser will ACTUALLY do, or null when that
+ * is not yet knowable.
+ *
+ * `sweep-started` declares policies x seeds, which is what was asked for. Bots
+ * the game cannot support are skipped rather than run, so that number can
+ * overstate the work by half, and a progress count whose denominator is never
+ * reached is the kind of small lie that makes a person stop trusting the rest.
+ * Only the runner's plan knows which ones were dropped, so only a read of the
+ * playtest view can correct it.
+ *
+ * Pure, so the correction is testable without a sweep.
+ */
+export function plannedRuns(view: PlaytestView): number | null {
+  const sweep = view.sweep;
+  // A finished sweep's rows describe the LAST run, not the one starting up.
+  if (!view.running || sweep === null || sweep.finished) return null;
+  const runnable = sweep.policies.filter((policy) => policy.skipReason === null).length;
+  return runnable > 0 && sweep.seeds.length > 0 ? runnable * sweep.seeds.length : null;
 }
 
 // ---------------------------------------------------------------------------
@@ -754,6 +1087,66 @@ export const useApp = create<AppState>((set, get) => {
    * key-less folder with a signed-in Codex must not get pinned to the terminal
    * by whichever read happens to land first.
    */
+  /**
+   * Show this half of the column, and remember it for the folder.
+   *
+   * The plumbing behind the mode, with no opinion about whether the move is
+   * allowed — that opinion lives in `setConversationMode`, which is what the
+   * UI calls. This one is used where the kind is already settled: opening a
+   * conversation (the record says which), and starting a new chat.
+   */
+  function applyConversationMode(mode: ConversationMode): void {
+    const project = get().projectPath;
+    if (project) writeConversationMode(project, mode);
+    set({ conversationMode: mode, conversationModePinned: true });
+  }
+
+  /** The conversation this window has open, as its record. Null on Home. */
+  function activeConversation(): ChatSummary | null {
+    const state = get();
+    if (state.activeChatId === null) return null;
+    return state.chats.find((chat) => chat.id === state.activeChatId) ?? null;
+  }
+
+  /**
+   * Start a NEW conversation of this kind. The only way to get one, now that a
+   * conversation's kind is fixed when it is created.
+   *
+   * A chat is not created here: the blank composer is where a chat begins and
+   * the first message is what makes the record, which is why a project is
+   * never littered with empty chats nobody said anything in. A terminal
+   * session has no first message to wait for — the shell is the conversation —
+   * so its record is asked for straight away.
+   */
+  function startConversationOfKind(kind: ConversationMode, title?: string): void {
+    if (kind === 'chat') {
+      get().newChat();
+      return;
+    }
+    // The shell runs IN the project folder, so without one there is nothing to
+    // start and nowhere to write the record.
+    if (get().projectPath === null) return;
+    // Same clearing as openChat: whatever was queued was meant for the
+    // conversation being left, and must not land in this one.
+    set({ composing: false, projectView: false, screen: null, chatBusy: false, chatError: null, queued: [] });
+    applyConversationMode('terminal');
+    requestChat({ type: 'chat-new', kind: 'terminal', ...(title === undefined ? {} : { title }) });
+  }
+
+  /**
+   * Show a terminal conversation: the one that is already open if it is one,
+   * a new one otherwise. Coming BACK to a running session must not mint a
+   * second record for it.
+   */
+  function enterTerminalConversation(title?: string): void {
+    const active = activeConversation();
+    if (active !== null && conversationKind(active) === 'terminal') {
+      applyConversationMode('terminal');
+      return;
+    }
+    startConversationOfKind('terminal', title);
+  }
+
   function maybeSettleConversationMode(): void {
     const state = get();
     if (state.conversationModePinned) return;
@@ -771,6 +1164,30 @@ export const useApp = create<AppState>((set, get) => {
       recentChatsTimer = null;
       void get().refreshRecentChats();
     }, RECENT_CHATS_DEBOUNCE_MS);
+  }
+
+  /**
+   * Send the next message someone typed while the agent was still answering.
+   *
+   * One at a time, and only ever through `sendChat`, so a queued turn is
+   * indistinguishable from a typed one by the time it reaches the wire — it
+   * carries the same model choice, the same attachments, and lands in the
+   * transcript the same way. The rest of the queue stays put and goes on the
+   * turn after that.
+   *
+   * Deliberately NOT called after an error or a dropped socket: firing the
+   * next message into a conversation that just failed is how one bad turn
+   * becomes three.
+   */
+  function drainQueue(): void {
+    const [next, ...rest] = get().queued;
+    if (!next) return;
+    // A send into a dead socket fails with a log line and takes the message
+    // with it, which is precisely the thing a queue exists to prevent. Leave
+    // it where it is; the reconnect drains it (see the `chat-opened` case).
+    if (get().wsStatus !== 'connected') return;
+    set({ queued: rest });
+    get().sendChat(next.text, next.attachments);
   }
 
   function wsUrl(project: string): string {
@@ -811,8 +1228,13 @@ export const useApp = create<AppState>((set, get) => {
         return;
       case 'evidence':
         set((state) => ({
-          evidence: [...state.evidence, ...frame.events].slice(-MAX_EVIDENCE),
-          sweep: applySweepProgress(state.sweep, frame.events),
+          evidence: mergeEvidence(state.evidence, frame.events),
+          // Only what this window has not already seen. The watcher replays
+          // the whole journal to the socket that starts it, and every one of
+          // those lines is also in the history read on open, so counting them
+          // again would run the progress bar through a sweep that finished
+          // before the window existed.
+          sweep: applySweepProgress(state.sweep, unseenEvidence(state.evidence, frame.events)),
         }));
         return;
       case 'chat-ready':
@@ -833,12 +1255,30 @@ export const useApp = create<AppState>((set, get) => {
         // A `chat-new` that has landed becomes a plain "open this one" intent,
         // so a later reconnect resumes this chat instead of minting another.
         chatIntent = { type: 'chat-open', chatId: frame.chat.id };
+        // The record decides what the column shows. This is the whole of the
+        // rule "a conversation has a kind": whatever the window was showing a
+        // moment ago, it now shows the thing that was opened.
+        applyConversationMode(conversationKind(frame.chat));
         set({
           activeChatId: frame.chat.id,
           messages: replayTranscript(frame.records, get().projectPath ?? ''),
           chatBusy: false,
           chatError: null,
+          // A conversation is open, so the blank composer has been answered.
+          //
+          // `projectView` is deliberately NOT cleared here. Opening a project
+          // also opens its newest conversation underneath (that is what
+          // connects the socket), and this frame arrives well after
+          // `openProject` has said which screen it wants — clearing it here
+          // made the project screen appear and then vanish. Leaving a
+          // conversation for its project is an explicit act, so it is cleared
+          // by the explicit actions instead: `openChat` and `newChat`.
+          composing: false,
         });
+        // Switching conversations empties the queue, so anything still in it
+        // here survived a dropped socket rather than belonging to somewhere
+        // else. The connection is back; send it.
+        drainQueue();
         return;
       case 'chat-event': {
         // Normalize here as well as inside the fold, so the turn-ending rules
@@ -850,6 +1290,7 @@ export const useApp = create<AppState>((set, get) => {
           set({ chatBusy: false });
           // A finished turn moves this chat to the top of every list it is in.
           scheduleRecentChats();
+          drainQueue();
         }
         if (event.type === 'error') {
           set({ chatBusy: false, chatError: event.message });
@@ -944,6 +1385,7 @@ export const useApp = create<AppState>((set, get) => {
 
     messages: [],
     chatBusy: false,
+    queued: [],
     chatDriver: null,
     chatError: null,
     settings: null,
@@ -958,6 +1400,7 @@ export const useApp = create<AppState>((set, get) => {
     gameNonce: 0,
 
     sweep: { ...IDLE_SWEEP },
+    playtest: null,
 
     evidence: [],
     evidenceOpen: true,
@@ -970,11 +1413,18 @@ export const useApp = create<AppState>((set, get) => {
     conversationMode: 'chat',
     conversationModePinned: false,
     paneTab: 'game',
+    paneOpen: false,
+    paneChoice: null,
+    composing: false,
+    composeTarget: null,
+    projectView: false,
+    screen: null,
     narrowTab: 'chat',
     codePeek: { open: false, path: null },
     pendingPrompt: null,
     homeBusy: false,
     updateReady: null,
+    personalization: null,
 
     journalFeed: [],
     agentStatus: 'idle',
@@ -1016,6 +1466,7 @@ export const useApp = create<AppState>((set, get) => {
       // opens provisionally in chat and is settled by refreshSettings below,
       // which is the first moment anyone knows whether a key exists.
       const storedMode = readConversationMode(info.path);
+      const storedPane = readPaneOpen(info.path);
       set({
         projectPath: info.path,
         projectName: info.name,
@@ -1027,6 +1478,7 @@ export const useApp = create<AppState>((set, get) => {
         providers: null,
         chats: [],
         activeChatId: null,
+        queued: [],
         evidence: [],
         journalFeed: [],
         game: EMPTY_GAME,
@@ -1034,9 +1486,14 @@ export const useApp = create<AppState>((set, get) => {
         shimDetected: false,
         gameNonce: 0,
         sweep: { ...IDLE_SWEEP },
+    playtest: null,
         conversationMode: storedMode ?? 'chat',
         conversationModePinned: storedMode !== null,
         paneTab: 'game',
+        // Opening a folder never opens the playtest column by itself. Either
+        // this folder asked for it, or a game shows up and it opens then.
+        paneOpen: storedPane ?? false,
+        paneChoice: storedPane,
         narrowTab: 'chat',
         codePeek: { open: false, path: null },
         pendingPrompt: prompt?.trim() ? prompt.trim() : null,
@@ -1048,13 +1505,20 @@ export const useApp = create<AppState>((set, get) => {
         get().refreshProviders(),
         get().refreshChats(),
         get().refreshRecentChats(),
+        // The rail is about the folder, so it fills when the folder opens
+        // rather than when a sweep happens to run in this window.
+        get().refreshEvidence(),
       ]);
       // Land in the most recent conversation, or start the folder's first one.
       // Either way the window opens on a conversation, never on nothing.
       const chats = get().chats;
       if (get().projectPath === info.path) {
+        // `chat-new` directly, not `newChat()`: that action shows the blank
+        // NEW-CHAT SURFACE, which is a different thing from asking the server
+        // for an empty conversation. Opening a project has to land on a real
+        // one, or the socket has nothing to send into.
         if (chats.length > 0) get().openChat(chats[0].id);
-        else get().newChat();
+        else requestChat({ type: 'chat-new' });
       }
       return { ok: true };
     },
@@ -1078,14 +1542,18 @@ export const useApp = create<AppState>((set, get) => {
         providers: null,
         chats: [],
         activeChatId: null,
+        queued: [],
         evidence: [],
         journalFeed: [],
         game: EMPTY_GAME,
         senses: [],
         shimDetected: false,
         sweep: { ...IDLE_SWEEP },
+    playtest: null,
         conversationMode: 'chat',
         conversationModePinned: false,
+        paneOpen: false,
+        paneChoice: null,
         codePeek: { open: false, path: null },
         pendingPrompt: null,
       });
@@ -1097,13 +1565,27 @@ export const useApp = create<AppState>((set, get) => {
       const trimmed = text.trim();
       const files = attachments ?? [];
       // A picture on its own is a message; nothing at all is not.
-      if ((trimmed === '' && files.length === 0) || get().chatBusy) return;
+      if (trimmed === '' && files.length === 0) return;
+      // A turn already running is not a reason to lose what someone typed.
+      // The thought arrives while the agent is mid-answer — that is WHEN
+      // people think of things — so it waits its turn instead of being
+      // swallowed by a disabled box. Drained by `drainQueue` (see below).
+      if (get().chatBusy) {
+        set((state) => ({
+          queued: [...state.queued, { id: `q${++queuedId}`, text: trimmed, attachments: files }],
+        }));
+        return;
+      }
       // Every turn carries who should answer it and how hard to think, rather
       // than the server remembering a setting: the selector can change between
       // two messages in the same conversation, and the turn is the unit that
       // choice applies to. Additive on the wire — a server that predates the
       // field ignores it, which is why it is omitted rather than sent as null.
-      const agent = getModelChoice();
+      // Reconciled against what the backends currently report they can run: a
+      // stored effort the chosen model has stopped accepting is dropped rather
+      // than failing the turn on a token picked for a different model. A choice
+      // of null still sends no `agent` field at all.
+      const agent = agentForTurn(getModelChoice(), get().providers);
       if (
         !get().sendFrame({
           type: 'chat-send',
@@ -1112,7 +1594,12 @@ export const useApp = create<AppState>((set, get) => {
           ...(files.length > 0 ? { attachments: files.map(attachmentPayload) } : {}),
         })
       ) {
-        get().log('error', 'app', 'Not connected — wait a moment and send again.');
+        // Said out loud, not only to the console. The console panel lives
+        // behind a tab in the game pane, so someone who pressed send and saw
+        // nothing happen had no reason to go looking for the explanation.
+        const note = 'Not connected. Wait a moment and send again.';
+        get().log('error', 'app', note);
+        showToast(note, 'error');
         return;
       }
       // The bubble shows the bytes the browser already has. When this chat is
@@ -1127,7 +1614,7 @@ export const useApp = create<AppState>((set, get) => {
         url: `data:${file.mimeType};base64,${file.data}`,
       }));
       set((state) => ({
-        messages: [...state.messages, makeUserMessage(trimmed, shown), makeAgentMessage()],
+        messages: [...state.messages, makeUserMessage(trimmed, shown), makeAgentMessage(Date.now())],
         chatBusy: true,
         chatError: null,
       }));
@@ -1153,6 +1640,18 @@ export const useApp = create<AppState>((set, get) => {
         chatBusy: false,
         messages: state.messages.map((m) => (m.streaming ? { ...m, streaming: false } : m)),
       }));
+      // "Stop, do this instead" is the whole reason someone queues a message
+      // during a turn they can see going wrong. The agent is still bound, so
+      // the next one continues the same conversation.
+      drainQueue();
+    },
+
+    unqueueChat(id) {
+      set((state) => ({ queued: state.queued.filter((message) => message.id !== id) }));
+    },
+
+    receiveFrame(frame) {
+      handleFrame(frame);
     },
 
     approveChat(approvalId, decision) {
@@ -1187,7 +1686,9 @@ export const useApp = create<AppState>((set, get) => {
       if (!project) return;
       const result = await apiOpenAiLogin(project);
       if (!result.ok || !result.authUrl) {
-        get().log('error', 'app', result.error ?? 'Could not start the ChatGPT sign-in.');
+        const note = result.error ?? 'Could not start the ChatGPT sign-in.';
+        get().log('error', 'app', note);
+        showToast(note, 'error');
         return;
       }
       // The flow finishes in a real browser (it is an OAuth page, and Codex
@@ -1196,16 +1697,71 @@ export const useApp = create<AppState>((set, get) => {
       window.open(result.authUrl, '_blank', 'noopener,noreferrer');
     },
 
+    newProject() {
+      if (get().projectPath === null) return; // already there
+      get().closeWorkspace();
+    },
+
     newChat() {
-      // Clear the surface immediately: pressing New chat must feel like a blank
-      // page, not like waiting for the server to agree.
-      set({ messages: [], chatBusy: false, chatError: null, activeChatId: null });
-      requestChat({ type: 'chat-new' });
+      // New chat does not create anything. It shows the same blank surface
+      // Home shows — a greeting, a composer, and a project to aim it at —
+      // because "what am I working on" is the same question whether or not a
+      // project is already open. The conversation is created by the message.
+      //
+      // The playtest column goes with it: the last conversation's game sitting
+      // beside a blank page is the old page refusing to leave. `paneChoice` is
+      // untouched, so a project that likes the column open gets it back.
+      set({
+        composing: true,
+        projectView: false,
+        screen: null,
+        composeTarget: get().projectPath,
+        messages: [],
+        chatBusy: false,
+        chatError: null,
+        paneOpen: false,
+        queued: [],
+      });
+      // A new chat is a chat. Leaving the column in the terminal would show a
+      // shell to someone who just asked for a blank page to write on.
+      applyConversationMode('chat');
+    },
+
+    setComposeTarget(path) {
+      set({ composeTarget: path });
+    },
+
+    async openProject(path) {
+      // Land on the project, not in one of its conversations. `openWorkspace`
+      // still opens the newest chat behind this — that is what connects the
+      // socket and populates the lists — but the screen shown on top is the
+      // project's own, which is the thing that was clicked.
+      set({ projectView: true, composing: false, screen: null });
+      if (get().projectPath !== path) await get().openWorkspace(path);
+      // openWorkspace lands in a conversation and clears projectView with it,
+      // so the intent is re-asserted once the round trip is done.
+      if (get().projectPath === path) set({ projectView: true, composing: false });
+    },
+
+    showProject() {
+      set({ projectView: true, composing: false, screen: null });
+    },
+
+    openScreen(screen) {
+      set({ screen });
+    },
+
+    closeScreen() {
+      set({ screen: null });
     },
 
     openChat(chatId) {
+      // Asking for a conversation is asking to leave the project screen, even
+      // when that conversation is already the active one underneath it.
+      set({ projectView: false, screen: null });
       if (get().activeChatId === chatId) return;
-      set({ chatBusy: false, chatError: null });
+      // Anything still queued was meant for the conversation being left.
+      set({ chatBusy: false, chatError: null, queued: [] });
       requestChat({ type: 'chat-open', chatId });
     },
 
@@ -1229,7 +1785,11 @@ export const useApp = create<AppState>((set, get) => {
         set({ activeChatId: null });
         get().openChat(chats[0].id);
       } else {
-        get().newChat();
+        // The project still exists and is still open; it just has no
+        // conversations left, so it needs a real empty one rather than the
+        // blank surface that asks which project to use.
+        set({ messages: [], activeChatId: null });
+        requestChat({ type: 'chat-new' });
       }
     },
 
@@ -1252,7 +1812,9 @@ export const useApp = create<AppState>((set, get) => {
         // A folder that has moved or been deleted takes its conversations with
         // it; say so once rather than opening an empty transcript.
         if (!res.ok) {
-          get().log('error', 'app', res.error ?? `Could not open ${entry.project.name}.`);
+          const note = res.error ?? `Could not open ${entry.project.name}.`;
+          get().log('error', 'app', note);
+          showToast(note, 'error');
           return;
         }
       }
@@ -1272,28 +1834,44 @@ export const useApp = create<AppState>((set, get) => {
         return { ok: false, error };
       };
       try {
-        const created = await apiCreateWorkspace(trimmed);
-        if (!created.ok || !created.info) {
-          return fail(created.error ?? 'Could not make a folder for that.');
+        // Aimed at a project that already exists: open it if it isn't open,
+        // then start a fresh conversation in it. Aimed at nothing: the message
+        // names the project, and creating it is the first thing that happens.
+        const target = get().composeTarget;
+        let root = target;
+        if (root === null) {
+          const created = await apiCreateWorkspace(trimmed);
+          if (!created.ok || !created.info) {
+            return fail(created.error ?? 'Could not start a project for that.');
+          }
+          root = created.info.path;
         }
-        // openWorkspace lands in the folder's newest conversation, or starts
-        // one — a folder made a millisecond ago has none, so that is already
-        // the blank chat this message belongs in.
-        const opened = await get().openWorkspace(created.info.path);
-        if (!opened.ok) {
-          return fail(opened.error ?? 'Could not open the folder that was just made.');
+        if (get().projectPath !== root) {
+          const opened = await get().openWorkspace(root);
+          if (!opened.ok) {
+            return fail(opened.error ?? 'Could not open that project.');
+          }
+        } else {
+          // Already here, so the only thing missing is somewhere to put the
+          // message: a project sitting on a finished conversation must not
+          // have this one appended to it.
+          requestChat({ type: 'chat-new' });
         }
         // The first thing this folder ever did was receive a chat message, so
         // that is the mode it opens in — the settle heuristic must not park a
         // key-less folder in the terminal over the top of the words just sent.
-        get().setConversationMode('chat');
+        // The conversation asked for above is a chat, so this only has to move
+        // the column; asking through setConversationMode would try to start a
+        // second one.
+        applyConversationMode('chat');
         // The send needs the conversation the open just started, not merely
         // the socket. Wait for it; if it never comes, hand the words to the
         // composer instead of dropping them on the floor.
         if (!(await waitForChatSurface())) {
           set({ pendingPrompt: trimmed });
-          return fail('The folder opened, but nothing is listening yet. Your message is in the composer.');
+          return fail('The project opened, but nothing is listening yet. Your message is in the composer.');
         }
+        set({ composing: false });
         get().sendChat(trimmed, files);
         return { ok: true };
       } finally {
@@ -1333,16 +1911,26 @@ export const useApp = create<AppState>((set, get) => {
           // without writing a `sweep-finished` line must still release it.
           sweep: probe.playing === state.sweep.running ? state.sweep : { ...state.sweep, running: probe.playing },
         }));
+        // Only while one is running, and only from the poll that is already
+        // happening: this is what corrects the button's denominator once the
+        // runner knows which bots the game cannot support. The screen does its
+        // own faster read; this is for the window that never opens it.
+        if (probe.playing) void get().refreshPlaytest();
       }
       if (!status) return;
       const previous = get().game;
       const changed = status.present !== previous.present || status.entry !== previous.entry || status.mtime !== previous.mtime;
       if (!changed) return;
+      // A game arriving where there was none is the one moment the playtest
+      // column earns half the window, so that is when it lets itself in — once,
+      // and never against a folder that has closed it.
+      const appeared = status.present && !previous.present;
       set((state) => ({
         game: status,
         // Only a game that was already on screen needs a reload nonce; the
         // first appearance mounts a fresh iframe anyway.
         gameNonce: previous.present && status.present ? state.gameNonce + 1 : state.gameNonce,
+        paneOpen: appeared && state.paneChoice !== false ? true : state.paneOpen,
       }));
     },
 
@@ -1353,6 +1941,20 @@ export const useApp = create<AppState>((set, get) => {
       if (get().projectPath !== project) return;
       set({ settings });
       maybeSettleConversationMode();
+    },
+
+    async loadPersonalization() {
+      const info = await apiPersonalization();
+      // A failed read leaves whatever is already loaded in place. Blanking it
+      // would look exactly like the user's own text having been lost.
+      if (info) set({ personalization: info });
+    },
+
+    async savePersonalization(patch) {
+      const info = await apiSavePersonalization(patch);
+      if (!info) return false;
+      set({ personalization: info });
+      return true;
     },
 
     async startSweep() {
@@ -1374,6 +1976,35 @@ export const useApp = create<AppState>((set, get) => {
       get().log('error', 'app', result.error ?? 'The playtest could not start.');
     },
 
+    async refreshPlaytest() {
+      const project = get().projectPath;
+      if (!project) {
+        set({ playtest: null });
+        return;
+      }
+      const view = await apiPlaytestView(project);
+      // A failed read leaves the last good answer up: blanking it would look
+      // exactly like "no playtest has ever run here", which is a claim a
+      // dropped request has no business making.
+      if (view === null || get().projectPath !== project) return;
+      const total = plannedRuns(view);
+      set((state) => ({
+        playtest: view,
+        sweep: total !== null && total !== state.sweep.total ? { ...state.sweep, total } : state.sweep,
+      }));
+    },
+
+    async refreshEvidence() {
+      const project = get().projectPath;
+      if (!project) return;
+      const events = await apiEvidenceHistory(project);
+      if (events.length === 0 || get().projectPath !== project) return;
+      // Merged, not assigned: the socket may already have delivered some of
+      // this, and a sweep running right now is writing more of it while this
+      // request is in the air.
+      set((state) => ({ evidence: mergeEvidence(state.evidence, events) }));
+    },
+
     setSidebarCollapsed(collapsed) {
       try {
         localStorage.setItem(SIDEBAR_KEY, collapsed ? '1' : '0');
@@ -1384,13 +2015,93 @@ export const useApp = create<AppState>((set, get) => {
     },
 
     setConversationMode(mode) {
-      const project = get().projectPath;
-      if (project) writeConversationMode(project, mode);
-      set({ conversationMode: mode, conversationModePinned: true });
+      // The shell runs in the project folder. The switch this replaced said so
+      // by disabling its Terminal tab without one; the refusal has to live
+      // here now, or aiming the column at Home lands on a terminal that cannot
+      // start and cannot explain itself.
+      if (mode === 'terminal' && get().projectPath === null) return;
+      const active = activeConversation();
+      // Nothing open to contradict (Home, a window that has not landed in a
+      // conversation yet), or the open one is already the kind being asked
+      // for: this is just aiming the column, which is what it always was.
+      if (active === null || conversationKind(active) === mode) {
+        applyConversationMode(mode);
+        return;
+      }
+      // Asking for the other kind while a conversation is open is not a switch
+      // any more — the record cannot change what it is. Starting another one is
+      // the honest answer, and it is the same act the composer's Terminal rows
+      // perform.
+      startConversationOfKind(mode);
+    },
+
+    /**
+     * Picking a terminal option in the composer, all the way through.
+     *
+     * The shell is spawned exactly as the Start button spawns it, and the
+     * command is TYPED into it rather than replacing it: when the agent exits
+     * the user is left at a working prompt instead of a dead session, and the
+     * reattach path (ws.ts keeps the pty alive across a dropped socket) needs
+     * to know nothing about any of this.
+     *
+     * The keystrokes go out immediately after pty-start. That is safe by the
+     * server's own contract: input arriving before the pty has spawned is
+     * queued on the session and flushed once it has (`pendingInput` in ws.ts).
+     * Nothing is re-sent afterwards, and the reconnect path in connectWs()
+     * sends pty-start alone — so a socket drop reattaches to the agent that is
+     * already there rather than starting a second one inside it.
+     */
+    startTerminalCli(cli) {
+      const state = get();
+      const session = getAgentSessionSummary();
+      const plan = planTerminalLaunch({
+        cli,
+        status: session.status,
+        launched: session.cli,
+        connected: state.wsStatus === 'connected',
+        hasProject: state.projectPath !== null,
+      });
+      if (plan.action === 'blocked') {
+        // The picker disables these rows and shows the same sentence, so this
+        // is the backstop for a click against a stale menu.
+        get().log('error', 'app', plan.reason);
+        return;
+      }
+      if (plan.action === 'show') {
+        enterTerminalConversation(cli.label);
+        return;
+      }
+      const down = 'Terminal: the connection is down. Wait a moment and try again.';
+      if (plan.action === 'start') {
+        if (!get().sendFrame({ type: 'pty-start', sessionId: ensureAgentPtySessionId() })) {
+          get().log('error', 'app', down);
+          return;
+        }
+        // Marked running before the mode flips, because TerminalPane starts a
+        // shell of its own when it mounts onto an idle session — and a second
+        // pty-start would supersede this one, taking the queued command with it.
+        markAgentStarted('shell');
+      }
+      if (!get().sendFrame({ type: 'pty-input', data: plan.input })) {
+        get().log('error', 'app', down);
+        return;
+      }
+      markAgentCli({ id: cli.id, label: cli.label });
+      // The session gets a conversation of its own, named after the CLI, so it
+      // is listed and reopenable like everything else the user has made.
+      enterTerminalConversation(cli.label);
     },
 
     setPaneTab(tab) {
       set(tab === 'console' ? { paneTab: tab, consoleUnread: 0 } : { paneTab: tab });
+    },
+
+    setPaneOpen(open) {
+      const project = get().projectPath;
+      if (project) writePaneOpen(project, open);
+      // Closing the column in the narrow layout would otherwise leave the
+      // window on a tab that no longer exists.
+      set(open ? { paneOpen: true, paneChoice: true } : { paneOpen: false, paneChoice: false, narrowTab: 'chat' });
     },
 
     setNarrowTab(tab) {

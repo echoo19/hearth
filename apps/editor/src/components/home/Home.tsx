@@ -1,17 +1,20 @@
 /**
- * Home — what the app is before it is a project.
+ * The blank surface: a greeting, a composer, and which project the message
+ * lands in. This is BOTH the app's first screen and what New chat shows, on
+ * purpose — "what are we working on" is the same question whether or not a
+ * project is already open, and having two screens ask it differently was the
+ * app disagreeing with itself.
  *
- * A greeting and a composer, centred, and nothing else. No cards, no feature
- * grid, no "get started" checklist: the first thing anyone should do here is
- * type a sentence, and every additional element on this screen is a reason not
- * to. The folder comes after — sending from here makes one (see
- * `startFromHome` in store.ts), which is the whole point of the screen.
+ * Nothing else is on it. No cards, no feature grid, no "get started"
+ * checklist: the one thing to do here is type a sentence, and every other
+ * element is a reason not to. Where it lands is a control ON the composer
+ * (see ProjectSelector), not a step before it — the project is created by the
+ * message when it needs to be (`startFromHome` in store.ts).
  */
 import React, { useMemo } from 'react';
 import { useApp } from '../../store';
 import { Composer } from '../chat/Composer';
 import { Icon } from '../ui';
-import { useOpenFolder } from '../shell/useOpenFolder';
 
 /**
  * The greeting, by hour of day. Four times of day, two lines each, chosen by
@@ -55,7 +58,7 @@ function todaySeed(now: number = Date.now()): number {
 
 export function Home() {
   const error = useApp((s) => s.chatError);
-  const openFolder = useOpenFolder();
+  const target = useApp((s) => s.composeTarget);
   // Read the clock once per mount. A greeting that re-rolls under the user is
   // the app fidgeting.
   const greeting = useMemo(() => greetingFor(new Date().getHours(), todaySeed()), []);
@@ -78,15 +81,13 @@ export function Home() {
           </p>
         )}
 
-        <p className="home-note">
-          Chats become folders in <span className="mono">~/Hearth</span>
-          <span className="home-note-sep" aria-hidden="true">
-            ·
-          </span>
-          <button type="button" className="home-open" onClick={() => void openFolder()}>
-            Open a folder…
-          </button>
-        </p>
+        {/* Only said when it is actually about to happen. Inside an existing
+            project this line would be describing something else's behaviour. */}
+        {target === null && (
+          <p className="home-note">
+            New projects are made in <span className="mono">~/Hearth</span>, named after what you ask for
+          </p>
+        )}
       </div>
     </main>
   );

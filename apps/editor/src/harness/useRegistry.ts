@@ -78,6 +78,24 @@ function messageFrom(body: unknown, fallback: string): string {
   return typeof error === 'string' && error.trim() !== '' ? error : fallback;
 }
 
+/**
+ * A failure someone wrote the words for — the server's own explanation, or one
+ * of the fallbacks below. Everything else caught here is the browser talking,
+ * and the browser says things like "Failed to fetch".
+ */
+class RegistryError extends Error {}
+
+/**
+ * What the rail shows when a read or write fails. An explanation we wrote goes
+ * through unchanged; anything else becomes the plain sentence the caller
+ * supplied, and the original goes to the console for whoever is debugging it.
+ */
+function humanError(err: unknown, fallback: string): string {
+  if (err instanceof RegistryError) return err.message;
+  console.error('harness registry: request failed', err);
+  return fallback;
+}
+
 /** Read the folder's registry. Coalesced: a second call while one is in flight joins it. */
 export function loadRegistry(project: string): Promise<void> {
   const running = inflight.get(project);
@@ -89,11 +107,15 @@ export function loadRegistry(project: string): Promise<void> {
       const res = await fetch(`${HARNESS_ROUTE}?project=${encodeURIComponent(project)}`);
       const body = (await res.json()) as Partial<HarnessRegistryPayload> & { ok?: boolean };
       if (!res.ok || !body.ok || !body.registry || !body.builtins) {
-        throw new Error(messageFrom(body, 'Could not read this folder’s connectors and skills.'));
+        throw new RegistryError(messageFrom(body, 'Could not read this folder’s connectors and skills.'));
       }
       setState(project, { registry: body.registry, builtins: body.builtins, loading: false, error: null });
     } catch (err) {
-      setState(project, { ...getState(project), loading: false, error: (err as Error).message });
+      const error = humanError(
+        err,
+        'Could not read this folder’s connectors and skills. Hearth’s own server did not answer.',
+      );
+      setState(project, { ...getState(project), loading: false, error });
     } finally {
       inflight.delete(project);
     }
@@ -130,7 +152,7 @@ async function mutate(project: string, body: MutationBody, optimistic: HarnessRe
     });
     const payload = (await res.json()) as Partial<HarnessRegistryPayload> & { ok?: boolean };
     if (!res.ok || !payload.ok || !payload.registry || !payload.builtins) {
-      throw new Error(messageFrom(payload, 'That change could not be saved.'));
+      throw new RegistryError(messageFrom(payload, 'That change could not be saved.'));
     }
     setState(project, {
       registry: payload.registry,
@@ -140,7 +162,7 @@ async function mutate(project: string, body: MutationBody, optimistic: HarnessRe
     });
     return { ok: true };
   } catch (err) {
-    const error = (err as Error).message;
+    const error = humanError(err, 'That change could not be saved. Hearth’s own server did not answer.');
     setState(project, { ...before, error });
     return { ok: false, error };
   }

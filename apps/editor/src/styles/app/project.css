@@ -1,0 +1,365 @@
+/* A project's own screen.
+
+   Two columns: the work on the left (what this game is, the composer, every
+   conversation in it) and what the agent brings on the right (instructions,
+   context). The left column changes every session; the right column is the
+   thing that makes the left column good, so it is quieter and narrower but
+   never hidden behind a tab.
+
+   Below the breakpoint the right column falls under the left rather than
+   shrinking — two 300px columns are two unreadable columns. */
+
+.proj {
+  min-height: 0;
+  overflow: hidden;
+  background: var(--bg-05, var(--bg-1));
+}
+
+.proj-scroll {
+  height: 100%;
+  overflow-y: auto;
+  padding: 8px 32px 48px;
+}
+
+.proj-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 300px;
+  gap: 32px;
+  max-width: 1080px;
+  margin: 0 auto;
+}
+
+@media (max-width: 1100px) {
+  .proj-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.proj-main {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  /* The 12px the breadcrumb used to carry on its own. It lives on the column
+     now so both columns still start on the same line — the same number is on
+     .proj-side for exactly that reason. */
+  padding-top: 12px;
+}
+
+/* --- Where you are --------------------------------------------------------
+
+   The mark and the name, and nothing above them. A "Projects /" breadcrumb
+   used to sit here; its one clickable crumb closed the project rather than
+   going to a list of them, because there is no such screen — the rail is the
+   list. The rest of it repeated the title directly underneath. Both are gone;
+   closing lives in this header's own menu, under its own name. */
+
+.proj-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+/* The mark, at the one size where it is a portrait of the project rather than
+   a bullet in a list. */
+.proj-mark {
+  flex: none;
+}
+
+.proj-title {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  font-size: var(--text-2xl);
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  color: var(--ink);
+  overflow-wrap: anywhere;
+}
+
+.proj-head-actions {
+  flex: none;
+  display: flex;
+  align-items: center;
+}
+
+/* --- The project's conversations ------------------------------------------ */
+
+.proj-list {
+  display: flex;
+  flex-direction: column;
+}
+
+/* Chats and terminal sessions are both conversations, but they are not the
+   same kind of record — one flat list means reading every title to find the
+   one you meant. The heading only appears when that group has something in it. */
+.proj-list-title {
+  margin: 18px 0 4px;
+  font-size: var(--text-xs);
+  font-weight: 500;
+  color: var(--ink-mute);
+}
+
+.proj-chat {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  padding: 12px 10px;
+  border: 0;
+  border-bottom: 1px solid var(--border);
+  border-radius: 0;
+  background: transparent;
+  font: inherit;
+  font-size: var(--text-md);
+  color: var(--ink);
+  text-align: left;
+  cursor: pointer;
+  transition: background var(--t-fast) var(--ease-out);
+}
+
+.proj-chat:hover {
+  background: var(--bg-2);
+}
+
+.proj-chat-glyph {
+  display: inline-flex;
+  flex: none;
+  color: var(--ink-faint);
+}
+
+.proj-chat-title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.proj-chat-when {
+  flex: none;
+  font-size: var(--text-xs);
+  color: var(--ink-faint);
+  white-space: nowrap;
+}
+
+.proj-empty {
+  margin: 20px 0 0;
+  font-size: var(--text-sm);
+  line-height: 1.6;
+  color: var(--ink-mute);
+}
+
+/* --- What the agent brings ------------------------------------------------ */
+
+.proj-side {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding-top: 12px;
+  min-width: 0;
+}
+
+.proj-card {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--bg-1);
+  transition: border-color var(--t-fast) var(--ease-out);
+}
+
+/* Dropping files onto the context card is the fastest way to fill it, so the
+   card says it can take them rather than making you find the +. */
+.proj-card.is-dropping {
+  border-color: var(--accent);
+}
+
+.proj-card-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.proj-card-title {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  font-size: var(--text-sm);
+  font-weight: 500;
+  color: var(--ink);
+}
+
+.proj-card-add {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--ink-mute);
+  cursor: pointer;
+  transition: background var(--t-fast) var(--ease-out), color var(--t-fast) var(--ease-out);
+}
+
+.proj-card-add:hover {
+  background: var(--bg-3);
+  color: var(--ink);
+}
+
+.proj-card-hint,
+.proj-card-note {
+  margin: 0;
+  font-size: var(--text-xs);
+  line-height: 1.55;
+  color: var(--ink-mute);
+}
+
+.proj-card-note {
+  color: var(--ink-faint);
+}
+
+.proj-card-error {
+  margin: 0;
+  font-size: var(--text-xs);
+  color: var(--err);
+}
+
+/* --- Instructions --------------------------------------------------------- */
+
+/* Read far more often than written, so the resting state is text and the
+   editor is one click away — a live textarea invites a stray keystroke into
+   the thing every future turn reads. */
+.proj-instructions-read {
+  display: block;
+  width: 100%;
+  border: 0;
+  padding: 0;
+  background: transparent;
+  font: inherit;
+  font-size: var(--text-sm);
+  line-height: 1.6;
+  color: var(--ink-mute);
+  text-align: left;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  cursor: text;
+}
+
+.proj-instructions-read:hover {
+  color: var(--ink);
+}
+
+.proj-instructions-edit {
+  width: 100%;
+  min-height: 140px;
+  resize: vertical;
+  padding: 8px 10px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  background: var(--bg-0);
+  color: var(--ink);
+  font-family: inherit;
+  font-size: var(--text-sm);
+  line-height: 1.6;
+}
+
+/* --- Context -------------------------------------------------------------- */
+
+.proj-context-search {
+  width: 100%;
+  height: var(--ctl-h-sm);
+  font-size: var(--text-xs);
+}
+
+/* Cards, because these are objects rather than commands: name, size, kind.
+   Two up at this width — one column reads as a list, three as a grid of
+   unreadable stubs. */
+.proj-context-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.proj-context-card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-height: 92px;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-2);
+}
+
+.proj-context-name {
+  font-size: var(--text-xs);
+  line-height: 1.4;
+  color: var(--ink);
+  overflow-wrap: anywhere;
+}
+
+.proj-context-size {
+  font-size: var(--text-2xs);
+  color: var(--ink-faint);
+}
+
+.proj-context-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: auto;
+}
+
+.proj-context-ext {
+  padding: 1px 6px;
+  border-radius: var(--radius-sm);
+  background: var(--bg-3);
+  color: var(--ink-mute);
+  font-size: var(--text-2xs);
+  letter-spacing: 0.02em;
+}
+
+/* Appears on hover/focus only: a grid of cards each wearing a delete button is
+   a grid that looks like it is asking to be emptied. */
+.proj-context-remove {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--ink-faint);
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity var(--t-fast) var(--ease-out), color var(--t-fast) var(--ease-out);
+}
+
+.proj-context-card:hover .proj-context-remove,
+.proj-context-remove:focus-visible {
+  opacity: 1;
+}
+
+.proj-context-remove:hover {
+  color: var(--err);
+}
+
+/* The composer on this screen carries no measure cap: it is one column of a
+   two-column page, and the page already constrains it. */
+.proj .composer {
+  padding: 0;
+}
+
+.proj .composer-card {
+  max-width: none;
+}

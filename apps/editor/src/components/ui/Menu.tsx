@@ -18,7 +18,7 @@
  *     click that lands on such a canvas, leaving the menu stuck open.
  *     Capture runs top-down (window first), before any handler can stop it.
  */
-import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { Icon } from '../ui';
 import { Tooltip } from './Tooltip';
@@ -39,6 +39,16 @@ export interface MenuItemAction {
   checked?: boolean;
   /** Defaults to true. Multi-toggle items (e.g. panel visibility) set false. */
   closeOnSelect?: boolean;
+  /**
+   * Content for a flyout that opens to the RIGHT of this item, the way a
+   * submenu does everywhere else. Present → the item does not close the menu
+   * when chosen; it toggles the flyout, and `onSelect` is not called.
+   *
+   * Deliberately arbitrary content rather than a nested MenuItem[]: the one
+   * thing this exists for is a picker (swatches, a grid) that is not a list of
+   * commands, and forcing it into rows would be the wrong control.
+   */
+  submenu?: ReactNode;
   onSelect: () => void;
 }
 
@@ -195,6 +205,10 @@ export function MenuItems({
   onSelectItem?: (item: MenuItemAction, index: number) => void;
   itemRefs?: React.MutableRefObject<(HTMLButtonElement | null)[]>;
 }) {
+  // At most one flyout at a time — a menu with two panels hanging off it is a
+  // menu nobody can aim at.
+  const [openSub, setOpenSub] = useState<number | null>(null);
+
   return (
     <>
       {items.map((item, i) => {
@@ -232,8 +246,18 @@ export function MenuItems({
             onFocus={() => {
               if (!item.disabled) onFocusIndex?.(i);
             }}
+            aria-haspopup={item.submenu ? 'menu' : undefined}
+            aria-expanded={item.submenu ? openSub === i : undefined}
             onClick={() => {
-              if (!item.disabled) onSelectItem?.(item, i);
+              if (item.disabled) return;
+              // A flyout parent is not a command: choosing it opens the panel
+              // and leaves the menu standing, so the panel has something to
+              // hang off.
+              if (item.submenu) {
+                setOpenSub((current) => (current === i ? null : i));
+                return;
+              }
+              onSelectItem?.(item, i);
             }}
           >
             <span className="menu-check" aria-hidden="true">
@@ -246,8 +270,28 @@ export function MenuItems({
                 {item.shortcut}
               </span>
             )}
+            {item.submenu && (
+              <span className="menu-more" aria-hidden="true">
+                <Icon name="chevron" size={10} />
+              </span>
+            )}
           </button>
         );
+
+        if (item.submenu) {
+          // The wrapper is what the flyout is positioned against, so the panel
+          // opens level with its own row rather than with the menu's top.
+          return (
+            <div className="menu-sub" key={`${i}-${item.label}`}>
+              {itemButton}
+              {openSub === i && (
+                <div className="menu-flyout" role="group" aria-label={item.label}>
+                  {item.submenu}
+                </div>
+              )}
+            </div>
+          );
+        }
         // Position, not label, is the identity: two groups in one menu can
         // legitimately offer the same word (a "Default" per provider).
         const key = `${i}-${item.label}`;

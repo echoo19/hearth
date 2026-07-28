@@ -32,7 +32,7 @@ function FindingCard({ finding, project }: { finding: SweepFinding; project: str
   );
 }
 
-function SweepCard({ row, project }: { row: SweepRow; project: string }) {
+function SweepCard({ row, project, onOpen }: { row: SweepRow; project: string; onOpen?: () => void }) {
   // Shots already shown beside a finding don't need repeating in the strip.
   const findingShots = new Set(row.findings.map((finding) => finding.shot).filter(Boolean));
   const looseShots = row.shots.filter((shot) => !findingShots.has(shot));
@@ -68,6 +68,18 @@ function SweepCard({ row, project }: { row: SweepRow; project: string }) {
           ))}
         </div>
       )}
+      {/* The way through to the per-bot breakdown, attached to the sweep it is
+          about rather than parked under the game as a standing menu word.
+          Offered on the newest card only, because that is the sweep the screen
+          reads: a link on an older one would quietly show a different sweep's
+          bots. What earns the trip is the half a card cannot hold — which
+          playtesters never got to play, and what stopped each of them. */}
+      {onOpen && (
+        <button type="button" className="sweep-more" onClick={onOpen}>
+          Which playtesters played
+          <Icon name="chevron" size={11} />
+        </button>
+      )}
     </article>
   );
 }
@@ -90,7 +102,11 @@ export function EvidenceRail() {
   const project = useApp((s) => s.projectPath);
   const gamePresent = useApp((s) => s.game.present);
   const running = useApp((s) => s.sweep.running);
+  const openScreen = useApp((s) => s.openScreen);
   const rows = foldEvidence(evidence);
+  // The playtest screen reads the newest sweep on disk, so only the newest
+  // card here can honestly link to it.
+  const newestSweep = rows.find((row) => row.kind === 'sweep');
 
   return (
     <div className={`evidence-rail${open ? ' is-open' : ''}`}>
@@ -113,7 +129,12 @@ export function EvidenceRail() {
           ) : (
             rows.map((row) =>
               row.kind === 'sweep' ? (
-                <SweepCard key={row.id} row={row} project={project ?? ''} />
+                <SweepCard
+                  key={row.id}
+                  row={row}
+                  project={project ?? ''}
+                  onOpen={row === newestSweep ? () => openScreen('playtest') : undefined}
+                />
               ) : (
                 <p key={row.id} className="evidence-note">
                   {row.text}

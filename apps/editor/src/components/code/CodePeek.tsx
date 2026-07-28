@@ -98,7 +98,7 @@ export function CodePeek() {
             />
             <div className="peek-files">
               {visible.length === 0 ? (
-                <p className="peek-empty">{files.length === 0 ? 'This folder is empty.' : 'Nothing matches.'}</p>
+                <p className="peek-empty">{files.length === 0 ? 'This project has no files yet.' : 'Nothing matches.'}</p>
               ) : (
                 visible.map((file) => (
                   <button

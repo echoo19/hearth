@@ -79,7 +79,7 @@ export function attachmentRejection(
   // The whole message has to fit down one socket frame, so the budget is
   // shared: a file can be small enough on its own and still not fit.
   if (existingBytes + file.size > MAX_MESSAGE_BYTES) {
-    return `That is more than ${Math.round(MAX_MESSAGE_BYTES / (1024 * 1024))} MB in one message.`;
+    return `${file.name} would take this message over ${Math.round(MAX_MESSAGE_BYTES / (1024 * 1024))} MB.`;
   }
   return null;
 }

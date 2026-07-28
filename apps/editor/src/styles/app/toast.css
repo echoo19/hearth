@@ -1,0 +1,107 @@
+/* The transient message slot.
+
+   Anchored to the bottom of the chat column and centred over it rather than
+   pinned to a window corner: what it reports is almost always about the
+   message someone just sent, so it belongs near the composer they sent it
+   from. Pointer events are off on the host so a card floating over the
+   transcript never swallows a click meant for the text underneath. */
+
+.toast-host {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: calc(100% + 10px);
+  display: flex;
+  justify-content: center;
+  z-index: var(--z-toast);
+  pointer-events: none;
+}
+
+.toast {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  max-width: min(520px, 100%);
+  padding: 9px 9px 9px 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-3);
+  box-shadow: var(--shadow-2);
+  pointer-events: auto;
+  animation: toast-in 180ms var(--ease-out) both;
+}
+
+/* An error states its nature with a tinted edge and a mark, not with a red
+   card. A block of colour at the bottom of the screen reads as an alarm, and
+   most of what arrives here is recoverable. */
+.toast.is-error {
+  border-color: var(--err-soft);
+  background: var(--bg-3);
+}
+
+.toast-mark {
+  display: flex;
+  flex: none;
+  color: var(--err);
+}
+
+.toast-text {
+  margin: 0;
+  min-width: 0;
+  font-size: var(--text-sm);
+  line-height: 1.5;
+  color: var(--ink);
+  text-wrap: pretty;
+}
+
+/* The one action a toast may carry. Styled as a link rather than a button so
+   it stays quieter than the sentence it follows. */
+.toast-action {
+  flex: none;
+  padding: 4px 8px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  font: inherit;
+  font-size: var(--text-sm);
+  font-weight: 500;
+  color: var(--accent);
+  cursor: pointer;
+  transition: background var(--t-fast) var(--ease-out);
+}
+
+.toast-action:hover {
+  background: var(--bg-2);
+}
+
+.toast-close {
+  flex: none;
+  color: var(--ink-faint);
+}
+
+@keyframes toast-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* The card still needs to arrive, it just stops travelling to get here. */
+@media (prefers-reduced-motion: reduce) {
+  .toast {
+    animation: toast-fade 120ms var(--ease-out) both;
+  }
+
+  @keyframes toast-fade {
+    from {
+      opacity: 0;
+    }
+    to {
+      opacity: 1;
+    }
+  }
+}

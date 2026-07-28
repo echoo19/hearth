@@ -17,8 +17,14 @@ import { ImageCard, NoticeRow, PlanCard } from './PlanCard';
 import { CommandRow } from './CommandRow';
 import { FileChangeCard } from './FileChangeCard';
 import { ReasoningRow } from './ReasoningRow';
+import { SkillRow } from './SkillRow';
 import { SubagentCard } from './SubagentCard';
 import { ToolChip } from './ToolChip';
+import { WorkingRow } from './WorkingRow';
+import { QueuedMessages } from './QueuedMessages';
+import { useCopy } from '../../useCopy';
+import { Icon } from '../ui';
+import { Tooltip } from '../ui/Tooltip';
 
 /**
  * Whether a scroll container is parked at (or within `slack` px of) its
@@ -42,6 +48,36 @@ function chatEmptyGreeting(): string {
 }
 
 /**
+ * Whether anything can answer, and crucially whether we know yet.
+ *
+ * The third state is the whole point. `openWorkspace` and `closeWorkspace`
+ * reset `settings`, `providers` and `chatDriver` to null, so for the first
+ * moment of every new chat all three signals read false while the socket binds
+ * and the settings call is still in flight. Treating that window as "nothing
+ * connected" told people with a perfectly good setup that they had no agent,
+ * seemingly at random, and the message went away on its own a moment later.
+ *
+ * So absence of evidence is reported as `unknown` and says nothing at all. A
+ * driver that bound as the stub IS an answer: the server looked and found
+ * nothing to talk to.
+ */
+export type AgentReadiness = 'unknown' | 'connected' | 'missing';
+
+export function agentReadiness(state: {
+  chatDriver: string | null;
+  providers: { active?: unknown } | null;
+  settings: { hasKey?: boolean } | null;
+}): AgentReadiness {
+  if (state.chatDriver === 'agent-sdk' || state.chatDriver === 'codex') return 'connected';
+  if (state.providers?.active != null || state.settings?.hasKey === true) return 'connected';
+  // Only the bound driver can prove absence. Settings returning "no key" does
+  // not mean nothing can answer: the socket may still be about to bind a CLI
+  // agent that needs no key at all. Waiting for the driver is the difference
+  // between reporting a fact and guessing during a race.
+  return state.chatDriver === null ? 'unknown' : 'missing';
+}
+
+/**
  * Nothing has been said yet. The one place in the app with a little warmth —
  * it is the first thing a new user reads, and "type what you want" is the
  * entire onboarding.
@@ -51,37 +87,29 @@ function chatEmptyGreeting(): string {
  * a key, or bring your own CLI agent (one click away, in this same column).
  * None of them is the fallback.
  */
-function ChatEmptyState({ hasAgent }: { hasAgent: boolean }) {
-  const setConversationMode = useApp((s) => s.setConversationMode);
-  const startOpenAiLogin = useApp((s) => s.startOpenAiLogin);
+function ChatEmptyState({ agent }: { agent: AgentReadiness }) {
   // Read the clock once per mount: a line that re-rolls under the reader is
   // the app fidgeting.
   const greeting = useMemo(chatEmptyGreeting, []);
   return (
     <div className="chat-empty">
       <p className="chat-empty-lead">{greeting}</p>
-      {!hasAgent && (
-        <p className="chat-empty-hint">
-          No agent is connected yet. Sign in with ChatGPT, add an Anthropic key, or run your own CLI agent
-          in the terminal.
-        </p>
-      )}
-      {hasAgent ? null : (
-        // Three ways forward, and none of them is the consolation prize: the
-        // two built-in agents are one click each, and the terminal is the
-        // third first-class answer rather than what's left over.
-        <div className="chat-empty-actions">
-          <Button onClick={() => setConversationMode('terminal')}>Switch to Terminal</Button>
-          <Button variant="ghost" onClick={() => void startOpenAiLogin()}>
-            Sign in with ChatGPT
-          </Button>
-          <Button
-            variant="ghost"
-            onClick={() => window.dispatchEvent(new CustomEvent('hearth:open-settings'))}
-          >
-            Add a key in Settings
-          </Button>
-        </div>
+      {/* Only once we actually know. `unknown` is the first moment of a new
+          chat, before the socket has said which driver bound and before the
+          settings call has returned, and claiming "no agent" there was telling
+          people their working setup was broken. */}
+      {agent === 'missing' && (
+        <>
+          <p className="chat-empty-hint">No agent is connected yet.</p>
+          {/* One way forward. Settings is where every route in (sign in, paste
+              a key, point at a CLI) already lives, so offering three shortcuts
+              here was three chances to pick the wrong one. */}
+          <div className="chat-empty-actions">
+            <Button onClick={() => window.dispatchEvent(new CustomEvent('hearth:open-settings'))}>
+              Open Settings
+            </Button>
+          </div>
+        </>
       )}
     </div>
   );
@@ -92,17 +120,19 @@ function ChatEmptyState({ hasAgent }: { hasAgent: boolean }) {
  * and nowhere else, so the vocabulary is readable in one place.
  *
  * Prose is the only thing with no container at all — the reader should read
- * the agent the way they read a page. Commands and reasoning are lines; only
- * a file change, a delegated agent, and an ask earn a box.
+ * the agent the way they read a page. Commands, skills and reasoning are
+ * lines; only a file change, a delegated agent, and an ask earn a box.
  */
-function Part({ part }: { part: ChatPart }) {
+function Part({ part, live }: { part: ChatPart; live: boolean }) {
   switch (part.kind) {
     case 'text':
       return <p className="msg-text">{part.text}</p>;
     case 'reasoning':
-      return <ReasoningRow part={part} />;
+      return <ReasoningRow part={part} live={live} />;
     case 'command':
       return <CommandRow part={part} />;
+    case 'skill':
+      return <SkillRow part={part} />;
     case 'file-change':
       return <FileChangeCard part={part} />;
     case 'subagent':
@@ -129,22 +159,84 @@ function partKey(part: ChatPart, index: number): string {
   return part.kind === 'text' || part.kind === 'reasoning' || part.kind === 'notice' ? `p${index}` : part.id;
 }
 
+/**
+ * What a turn says, as plain text.
+ *
+ * Prose and plans only. Copying a turn is for taking away what was written,
+ * so a captured build log and a diff stay out of it: someone pasting an
+ * answer into a note wants the answer, and the machinery is recoverable from
+ * the transcript itself. Blank when a turn was pure tool work, which is what
+ * hides the control.
+ */
+export function turnPlainText(message: ChatMessage): string {
+  return message.parts
+    .filter((part): part is Extract<ChatPart, { kind: 'text' | 'plan' }> => part.kind === 'text' || part.kind === 'plan')
+    .map((part) => part.text.trim())
+    .filter((text) => text !== '')
+    .join('\n\n');
+}
+
+/**
+ * The controls that belong to a finished turn.
+ *
+ * Held at zero opacity until the turn is hovered or something inside it takes
+ * focus, so a long conversation is not a column of buttons. It stays in the
+ * layout rather than appearing from nothing, because a row that pushes the
+ * text as it arrives makes the whole transcript twitch under the pointer.
+ *
+ * Never shown on a streaming turn: copying half a sentence is not useful, and
+ * a control that appears mid-answer invites pressing it too early.
+ *
+ * Agent turns only. Your own message is already a bordered block, and putting
+ * a control inside it would grow the block on every turn to offer back the
+ * text you just typed.
+ */
+function TurnActions({ message }: { message: ChatMessage }) {
+  const { copied, copy } = useCopy();
+  const text = turnPlainText(message);
+  if (message.role !== 'agent' || message.streaming || text === '') return null;
+
+  return (
+    <div className="turn-actions">
+      {/* Icon alone. The word "Copy" beside it doubled the control's width to
+          repeat what the glyph already says, and the confirmation now lands as
+          the tick rather than as text that reflows the row. */}
+      <Tooltip content={copied ? 'Copied' : 'Copy'} side="top">
+        <button
+          type="button"
+          className="turn-action"
+          onClick={() => copy(text)}
+          aria-label={copied ? 'Copied' : 'Copy message'}
+        >
+          <Icon name={copied ? 'check' : 'copy'} size={12} />
+        </button>
+      </Tooltip>
+    </div>
+  );
+}
+
 function Turn({ message }: { message: ChatMessage }) {
-  const showWorking = message.streaming && message.parts.length === 0;
+  const last = message.parts.length - 1;
+  // A live reasoning fold is already a working line — it says "Thinking",
+  // carries the pulse and counts. Drawing another one under it would print the
+  // same word twice.
+  const thinking = message.streaming && message.parts[last]?.kind === 'reasoning';
   return (
     <article className={`msg msg-${message.role}`}>
       {/* Above the words, the way it was assembled: you attach the picture,
           then say what to do with it. */}
       {message.attachments ? <SentAttachments attachments={message.attachments} /> : null}
       {message.parts.map((part, index) => (
-        <Part key={partKey(part, index)} part={part} />
+        // Only the trailing part of a streaming turn is still being written;
+        // everything above it is finished, whatever the turn as a whole is
+        // doing.
+        <Part key={partKey(part, index)} part={part} live={message.streaming && index === last} />
       ))}
-      {showWorking && (
-        <p className="msg-working">
-          <span className="working-bar" aria-hidden="true" />
-          Working
-        </p>
-      )}
+      {/* Shown for the whole turn, not just its empty opening: the reader
+          should never have to look at the send button to find out whether
+          anything is still happening. */}
+      {message.streaming && !thinking && <WorkingRow message={message} />}
+      <TurnActions message={message} />
     </article>
   );
 }
@@ -178,15 +270,7 @@ export function turnGrowth(message: ChatMessage | undefined): number {
 
 export function MessageList() {
   const messages = useApp((s) => s.messages);
-  // "Something can answer": a bound driver that isn't the stub, a provider the
-  // server says is active, or — before either has been read — a stored key.
-  const hasAgent = useApp(
-    (s) =>
-      s.chatDriver === 'agent-sdk' ||
-      s.chatDriver === 'codex' ||
-      s.providers?.active != null ||
-      s.settings?.hasKey === true,
-  );
+  const agent = useApp(agentReadiness);
   const scrollRef = useRef<HTMLDivElement>(null);
   const followRef = useRef(true);
 
@@ -214,12 +298,14 @@ export function MessageList() {
   return (
     <div className="chat-scroll" ref={scrollRef}>
       {messages.length === 0 ? (
-        <ChatEmptyState hasAgent={hasAgent} />
+        <ChatEmptyState agent={agent} />
       ) : (
         <div className="chat-turns">
           {messages.map((message) => (
             <Turn key={message.id} message={message} />
           ))}
+          {/* Below the running turn, where they will appear once sent. */}
+          <QueuedMessages />
         </div>
       )}
     </div>

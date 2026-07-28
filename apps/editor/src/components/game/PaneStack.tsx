@@ -16,6 +16,7 @@ import { useApp, type PaneTab } from '../../store';
 import { GamePane } from './GamePane';
 import { ConsolePanel } from '../ConsolePanel';
 import { EvidenceRail } from '../evidence/EvidenceRail';
+import { IconButton } from '../ui/Button';
 
 const TABS: { id: PaneTab; label: string }[] = [
   { id: 'game', label: 'Game' },
@@ -25,6 +26,7 @@ const TABS: { id: PaneTab; label: string }[] = [
 export function PaneStack() {
   const paneTab = useApp((s) => s.paneTab);
   const setPaneTab = useApp((s) => s.setPaneTab);
+  const setPaneOpen = useApp((s) => s.setPaneOpen);
   const consoleUnread = useApp((s) => s.consoleUnread);
 
   return (
@@ -36,7 +38,7 @@ export function PaneStack() {
 
       <EvidenceRail />
 
-      <div className="pane-tabs" role="tablist" aria-label="Pane">
+      <div className="pane-tabs" role="tablist" aria-label="Playtest column">
         {TABS.map((tab) => (
           <button
             key={tab.id}
@@ -54,6 +56,19 @@ export function PaneStack() {
             )}
           </button>
         ))}
+        <span className="pane-tabs-gap" />
+        {/* The way out. It sits in the pane's own strip rather than floating
+            over the game, because a control on top of a running game is a
+            control the player can hit by accident. */}
+        {/* `cross`, not `close` — the latter is a door-with-an-arrow, which
+            means "leave the folder". This dismisses a column. */}
+        <IconButton
+          icon="cross"
+          label="Close playtest"
+          iconSize={12}
+          className="pane-close"
+          onClick={() => setPaneOpen(false)}
+        />
       </div>
     </section>
   );

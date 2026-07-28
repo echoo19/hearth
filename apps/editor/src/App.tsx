@@ -4,10 +4,14 @@ import { hearthNative, type HearthNative } from './native';
 import { TopBar } from './components/shell/TopBar';
 import { Sidebar, SIDEBAR_RAIL_PX, SIDEBAR_WIDTH_PX } from './components/shell/Sidebar';
 import { Home } from './components/home/Home';
+import { SkillsScreen } from './components/skills/SkillsScreen';
+import { PlaytestScreen } from './components/playtest/PlaytestScreen';
+import { ProjectHome } from './components/project/ProjectHome';
 import { ChatColumn } from './components/chat/ChatColumn';
 import { PaneStack } from './components/game/PaneStack';
 import { CodePeek } from './components/code/CodePeek';
 import { SettingsDialog } from './components/shell/SettingsDialog';
+import { ShortcutLayer } from './components/shell/ShortcutLayer';
 import { useNativeMenu } from './menu/nativeMenu';
 import { NARROW_BREAKPOINT_PX } from './store';
 
@@ -109,23 +113,46 @@ export function useNarrowLayout(): boolean {
  */
 function Shell() {
   const hasFolder = useApp((s) => s.projectPath !== null);
+  // New chat and Home are the same screen. `composing` is what New chat sets;
+  // no project open means there is nothing else it could be showing anyway.
+  const composing = useApp((s) => s.composing);
+  // Clicking a project lands on the project, not in one of its conversations.
+  const projectView = useApp((s) => s.projectView);
   const narrow = useNarrowLayout();
   const narrowTab = useApp((s) => s.narrowTab);
+  // The playtest column is a guest, not a fixture: with nothing to play the
+  // conversation takes the whole window, which is what a chat app looks like.
+  const paneOpen = useApp((s) => s.paneOpen);
   useNativeMenu();
+  // Narrow puts the two regions on tabs; with no second region there is no tab
+  // to be on, so the conversation is always the active one.
+  const chatActive = !narrow || !paneOpen || narrowTab === 'chat';
+  // A screen is a place the app goes, not a sheet over the place it was. It
+  // takes the whole working area and owns its own way back; what it covered is
+  // untouched underneath and returns exactly as it was left.
+  const screen = useApp((s) => s.screen);
 
   return (
     <div className={`app-shell${narrow ? ' is-narrow' : ''}`}>
       <Sidebar />
       <div className="app-main">
-        <TopBar narrow={narrow} />
-        {hasFolder ? (
-          <div className="app-body">
-            <div className="app-region" data-active={!narrow || narrowTab === 'chat'}>
+        <TopBar narrow={narrow} paneOpen={paneOpen} />
+        {screen === 'skills' ? (
+          <SkillsScreen />
+        ) : screen === 'playtest' ? (
+          <PlaytestScreen />
+        ) : hasFolder && projectView && !composing ? (
+          <ProjectHome />
+        ) : hasFolder && !composing ? (
+          <div className={`app-body${paneOpen ? '' : ' is-solo'}`}>
+            <div className="app-region" data-active={chatActive}>
               <ChatColumn />
             </div>
-            <div className="app-region" data-active={!narrow || narrowTab === 'pane'}>
-              <PaneStack />
-            </div>
+            {paneOpen && (
+              <div className="app-region" data-active={!narrow || narrowTab === 'pane'}>
+                <PaneStack />
+              </div>
+            )}
           </div>
         ) : (
           <Home />
@@ -133,6 +160,9 @@ function Shell() {
       </div>
       <CodePeek />
       <SettingsDialog />
+      {/* Renders nothing. It is where the window-wide keyboard shortcuts live,
+          mounted once so they work whatever surface is on screen. */}
+      <ShortcutLayer />
     </div>
   );
 }

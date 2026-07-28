@@ -205,7 +205,9 @@ export function ConsolePanel() {
             <span className="empty-icon" aria-hidden="true">
               <Icon name="script" size={16} />
             </span>
-            <span>No {filter} entries</span>
+            {/* The level in the words the chips use — `warn` is a log token,
+                not something anyone says out loud. */}
+            <span>{filter === 'error' ? 'No errors' : filter === 'warn' ? 'No warnings' : 'Nothing at info level'}</span>
             <Button size="sm" onClick={() => setFilter('all')}>
               Show all
             </Button>

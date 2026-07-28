@@ -1,0 +1,294 @@
+/* Settings: the two-column panel and the rows every pane is built from.
+
+   Wide and quiet. A settings surface is read far more often than it is
+   changed, so the panel gives the reading column real room and keeps every
+   control on one vertical line — twelve settings should read as a list, not as
+   twelve small arrangements. */
+
+dialog.modal.is-settings {
+  /* Fills the window rather than sitting in it: there are enough panes here
+     that a 720px box would put half of them behind a scroll. */
+  max-width: min(980px, 94vw);
+  width: min(980px, 94vw);
+  height: min(720px, 88vh);
+  max-height: 88vh;
+}
+
+.settings-panel {
+  display: grid;
+  grid-template-columns: 232px minmax(0, 1fr);
+  min-height: 0;
+  height: 100%;
+}
+
+/* --- The rail of panes ---------------------------------------------------- */
+
+.set-rail {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-height: 0;
+  padding: 12px 10px;
+  border-right: 1px solid var(--border);
+  background: var(--bg-05, var(--bg-0));
+  overflow-y: auto;
+}
+
+.set-rail-search {
+  flex: none;
+  margin-bottom: 10px;
+}
+
+/* The rail's own group headings — "Settings", "Customize". Quieter and
+   smaller than the pane headings on the right, because they label a list of
+   destinations rather than the thing you came to read. */
+.set-rail-title {
+  margin: 12px 8px 4px;
+  font-size: var(--text-2xs);
+  font-weight: 500;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+}
+
+.set-rail-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 7px 9px;
+  border: 0;
+  border-radius: var(--radius);
+  background: transparent;
+  font: inherit;
+  font-size: var(--text-sm);
+  color: var(--ink-mute);
+  text-align: left;
+  cursor: pointer;
+  transition: background var(--t-fast) var(--ease-out), color var(--t-fast) var(--ease-out);
+}
+
+.set-rail-item:hover {
+  background: var(--bg-2);
+  color: var(--ink);
+}
+
+.set-rail-item[aria-current='true'] {
+  background: var(--bg-3);
+  color: var(--ink);
+}
+
+.set-rail-item svg {
+  flex: none;
+  color: var(--ink-faint);
+}
+
+.set-rail-item[aria-current='true'] svg {
+  color: var(--ink);
+}
+
+/* --- The pane ------------------------------------------------------------- */
+
+.set-pane {
+  min-width: 0;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 26px 32px 40px;
+}
+
+.set-pane-title {
+  margin: 0 0 4px;
+  font-size: var(--text-xl);
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  color: var(--ink);
+}
+
+.set-pane-lead {
+  margin: 0 0 8px;
+  max-width: 62ch;
+  font-size: var(--text-sm);
+  line-height: 1.6;
+  color: var(--ink-mute);
+  text-wrap: pretty;
+}
+
+/* --- Groups and rows ------------------------------------------------------ */
+
+.set-group {
+  margin-top: 26px;
+}
+
+.set-group-title {
+  margin: 0 0 2px;
+  font-size: var(--text-md);
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.set-row {
+  display: flex;
+  align-items: center;
+  gap: 24px;
+  min-height: 52px;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+/* Controls that carry their own internals — a text area, a picker — get the
+   full width instead of being squeezed into the right column. Squeezing them
+   is what knocks the aligned rows around them out of line. */
+.set-row.is-stacked {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 10px;
+}
+
+.set-row-text {
+  flex: 1;
+  min-width: 0;
+}
+
+.set-row-label {
+  display: block;
+  font-size: var(--text-sm);
+  color: var(--ink);
+}
+
+.set-row-hint {
+  margin: 3px 0 0;
+  max-width: 58ch;
+  font-size: var(--text-xs);
+  line-height: 1.55;
+  color: var(--ink-mute);
+  text-wrap: pretty;
+}
+
+.set-row-control {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  min-width: 0;
+}
+
+/* Stacked rows hand the whole width to the control, so it must stop being a
+   trailing item and start being a block. */
+.set-row.is-stacked .set-row-control {
+  flex: 1;
+  justify-content: stretch;
+  align-items: stretch;
+}
+
+/* The last row in a group has the group's own gap under it; a second hairline
+   there reads as an empty row. */
+.set-rows > .set-row:last-child {
+  border-bottom: 0;
+}
+
+/* A settings field is the app's standard input, sized for the right column
+   rather than for a form. */
+.set-field {
+  width: 260px;
+  max-width: 100%;
+  height: var(--ctl-h-sm);
+}
+
+.set-row.is-stacked .set-field {
+  width: 100%;
+}
+
+/* --- What the shell adds on top of the rows above --------------------------
+
+   The panel is the dialog's whole content. `Modal` still renders its title for
+   the accessible name, but every pane carries its own heading, so a second one
+   at the top of the panel would be a title above a title — it is hidden the
+   sr-only way rather than dropped, because a dialog with no accessible name
+   announces as "dialog" and nothing else. */
+
+dialog.modal.is-settings {
+  /* The rail's own background runs to the edge; without this it squares off
+     the dialog's rounded corners. */
+  overflow: hidden;
+}
+
+dialog.modal.is-settings .modal-title {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  clip-path: inset(50%);
+}
+
+/* Each heading's own items. The rail is a flex column of headings and lists,
+   so the list has to be a column of its own rather than a block that collapses
+   the gap between rows. */
+.set-rail-group {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+/* A search that found nothing says so. An empty rail reads as a panel that
+   failed to load, which is a different and much worse thing to think. */
+.set-rail-empty {
+  margin: 14px 9px 0;
+  font-size: var(--text-xs);
+  line-height: 1.5;
+  color: var(--ink-faint);
+  text-wrap: pretty;
+}
+
+/* A value the row states rather than lets you change — a version, a path.
+   Quieter than the label it answers, because the label is the question. */
+.set-value {
+  font-size: var(--text-sm);
+  color: var(--ink-mute);
+}
+
+/* The one control that cannot sit in the right column: standing instructions
+   are a paragraph, and a box three lines tall asks for three lines of them. */
+.set-textarea {
+  width: 100%;
+  min-height: 190px;
+  resize: vertical;
+}
+
+/* Something went wrong with a save. Below the group, not inside a row: it is
+   about the pane's last action, not about one setting. */
+.set-status {
+  margin: 16px 0 0;
+  font-size: var(--text-xs);
+  color: var(--err);
+}
+
+/* The way out.
+
+   Floated over the pane's top-right rather than placed in a header strip: the
+   panel has no header of its own (each pane carries its own heading) and no
+   footer (every pane commits its own changes as they are made), so there was
+   nowhere for a Done button to live and nothing but Escape to close with. */
+.set-close {
+  position: absolute;
+  top: 14px;
+  right: 16px;
+  z-index: 1;
+}
+
+/* The pane scrolls; the button must not scroll away with it. */
+.settings-panel {
+  position: relative;
+}
+
+/* Keep the close button clear of a pane's first line of text. */
+.set-pane .set-pane-title,
+.set-pane .set-pane-lead {
+  padding-right: 40px;
+}

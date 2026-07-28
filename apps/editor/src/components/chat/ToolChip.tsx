@@ -8,6 +8,7 @@
 import React, { useState } from 'react';
 import type { ChatToolPart } from '../../types';
 import { useApp } from '../../store';
+import { Icon } from '../ui';
 
 /**
  * Plain-language verb for a tool name. The agent's tool vocabulary is its
@@ -58,13 +59,22 @@ export function ToolChip({ part }: { part: ChatToolPart }) {
   const isFile = detailIsFile(detail);
 
   return (
-    <div className={`tool-chip state-${part.state}`}>
+    <div className={`tool-chip state-${part.state}`} data-open={open}>
       <button
         type="button"
         className="tool-chip-line"
-        aria-expanded={open}
-        onClick={() => setOpen((v) => !v)}
+        // A chip with no detail has nothing to open, so it must not announce
+        // itself as a disclosure. It stays a button for the focus ring and the
+        // hover the rest of the family has, and does nothing when pressed.
+        aria-expanded={detail ? open : undefined}
+        onClick={() => detail && setOpen((v) => !v)}
       >
+        {/* The mark is drawn only when there is something behind it, but the
+            column it sits in is always there, so a chip with no detail still
+            lines its verb up with every other row in the turn. */}
+        <span className="tool-chip-chevron" aria-hidden="true">
+          {detail ? <Icon name="chevron" size={9} /> : null}
+        </span>
         <span className="tool-dot" aria-hidden="true" />
         <span className="tool-verb">{toolVerb(part.name)}</span>
         {detail && <span className="tool-detail">{shortenPath(detail, projectPath)}</span>}

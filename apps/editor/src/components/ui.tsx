@@ -311,6 +311,22 @@ const ICON_PATHS: Record<string, ReactNode> = {
     />
   ),
   plus: <path d="M6 2.5v7M2.5 6h7" />,
+  // A pencil over a page — "start writing", the compose mark every mail and
+  // chat app opens with. Distinct from `pencil`, which means rename-this-thing.
+  compose: (
+    <>
+      <path d="M9.5 6.4V9a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V3.5a1 1 0 0 1 1-1h2.6" />
+      <path d="M7.6 2.4 9.7 4.5l-3.2 3.2-2.2.3.3-2.2z" />
+    </>
+  ),
+  // Four-point star with a small companion: a capability, not a rating. Used
+  // for Skills, where the thing being named is "something it knows how to do".
+  sparkle: (
+    <>
+      <path d="M5 1.8 6 4.3l2.5 1L6 6.3 5 8.8 4 6.3 1.5 5.3 4 4.3z" />
+      <path d="M9.2 7.2l.5 1.2 1.2.5-1.2.5-.5 1.2-.5-1.2-1.2-.5 1.2-.5z" />
+    </>
+  ),
   cross: <path d="M3 3l6 6M9 3l-6 6" />,
   chevron: <path d="M4.5 2.5L8 6l-3.5 3.5" />,
   entity: <rect x="2.5" y="2.5" width="7" height="7" rx="1" />,
@@ -332,6 +348,16 @@ const ICON_PATHS: Record<string, ReactNode> = {
   // Folder: a script-tree directory (Code panel's nested scripts/ listing).
   folder: <path d="M1.5 9V3.5a1 1 0 0 1 1-1h2.3l1 1.2h3.7a1 1 0 0 1 1 1V9a1 1 0 0 1-1 1h-7a1 1 0 0 1-1-1z" />,
   play: <path d="M3.5 2.5l6 3.5-6 3.5z" fill="currentColor" />,
+  // A small robot head: antenna, square face, two eyes. This is what makes
+  // Playtest legible as "something else plays it" rather than "you play it",
+  // which is the whole distinction between it and `play`.
+  bot: (
+    <>
+      <path d="M6 1.4v1.5" />
+      <rect x="2.2" y="3" width="7.6" height="6.2" rx="1.6" />
+      <path d="M4.6 5.6v.9M7.4 5.6v.9" />
+    </>
+  ),
   stop: <rect x="3" y="3" width="6" height="6" fill="currentColor" stroke="none" />,
   pause: (
     <>
