@@ -1,7 +1,12 @@
 # The desktop app
 
 Hearth is an Electron app. One window: conversations on the left, the
-conversation and the game pane in the middle and on the right.
+conversation in the middle, and the game beside it once there is one to play.
+
+The game column is not permanent furniture. It opens itself the first time a
+game appears in the folder, closes from the **×** in its own tab strip or the
+play button in the top bar, and remembers what you chose for that folder.
+Starting a new conversation puts it away.
 
 ## Install
 

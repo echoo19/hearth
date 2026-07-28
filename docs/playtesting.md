@@ -26,10 +26,18 @@ so read the tally as a distribution. One clean run proves nothing.
 | `mash` | Random weighted-persistence input on every declared action, axis and pointer. The default. | At least one declared action, axis, or pointer. |
 | `idle` | No input at all. Catches games that break when the player does nothing. | Nothing. |
 | `wander` | Steers toward unvisited walkable cells. Coverage. | Entities **and** a nav grid. |
-| `seek` | Beelines toward a target. Verification. | Entities **and** a nav grid. |
+| `seek` | Heads for a target (the entity tagged `objective` unless you name one). Verification. | Entities. A nav grid upgrades it. |
 
 A policy the game can't support does not run and does not quietly pass: it is
-recorded in `skipped` with a reason naming the missing sense.
+recorded in `skipped` with a reason naming the missing sense, and the report's
+`policyStatus` carries one row per requested policy: `ran` or `skipped`, the
+reason when skipped, and the mode when it ran.
+
+`seek` is the one policy that degrades instead of skipping. With a nav grid it
+paths to its target; without one it runs in `direct` mode, walking the straight
+line and mashing when it stops getting closer. That mode is recorded on every
+run and in `policyStatus`, because a `direct` seek that never arrives means the
+bot could not get there, not that the target is unreachable.
 
 ### Seeds
 

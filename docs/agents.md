@@ -154,6 +154,26 @@ remembered as a standing policy — there is no "always allow" — but the quest
 and your answer are both written into the transcript, so the record of what you
 let an agent do is permanent.
 
+## While a turn is running
+
+The foot of the turn carries a live line — a mark, a word, and a clock past a
+few seconds — so you never have to guess whether the agent is thinking or
+stuck. It says **Running** while a shell command is out, **Thinking** while the
+model is reasoning, **Waiting for you** while an approval is unanswered, and
+**Working** the rest of the time. A finished thought collapses into
+`Thought for 12.3s`, which opens to show the reasoning behind it.
+
+You can keep typing. A message sent while the agent is still answering is
+**queued** rather than refused: it appears under the transcript in the place it
+will occupy, and goes out on its own the moment the turn ends. Queued messages
+leave one at a time, oldest first, and each can be taken back before it is sent.
+
+Pressing **Stop** ends the turn and releases the next queued message, which
+makes "stop — do it this way instead" a single motion. A turn that ends in an
+*error* does not release anything: one bad turn should not become three. The
+queue is emptied when you switch conversations, since it belonged to the one
+you left.
+
 ## What the transcript shows
 
 The app is meant to be a complete view of what the agent did, not a summary of
@@ -188,6 +208,16 @@ conversation, which is the workaround until there is a real answer surface.
 
 Your agent writes ordinary files into the folder; the pane reloads when they
 change; the Playtest button plays what's there. Nothing about that requires the
-agent to know Hearth exists. If you want to *tell* it, point it at
-[playtesting.md](./playtesting.md) and [probe-shim.md](./probe-shim.md) — the
-shim is the one thing a game can do to make its own playtests see more.
+agent's cooperation — but an agent Hearth binds is told the room it is in: a
+short block of environment facts rides in its system prompt saying where the
+pane looks for a game (`index.html`, then `game/`, `dist/`, `public/`), where
+playtest evidence lands (`.hearth/evidence/`), and that `.hearth/context/`
+holds the files you added for it. Facts only — what game to make, and how,
+still comes entirely from you.
+
+The same goes for tools: `hearth` and `hearth-probe` are on the PATH of the
+embedded terminal *and* of every agent Hearth binds, so an agent can run its
+own sweeps (`hearth-probe sweep .`) and read the results back without you
+pressing anything. [playtesting.md](./playtesting.md) covers what a sweep
+does; [probe-shim.md](./probe-shim.md) is the one thing a game can do to make
+its own playtests see more.

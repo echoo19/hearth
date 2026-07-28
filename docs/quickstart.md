@@ -40,6 +40,10 @@ you're looking at is always the newest one. Approvals appear inline when the
 agent wants to touch something outside the folder or run something that doesn't
 obviously stay inside it.
 
+The game column opens itself the moment there is a game in the folder. Close it
+with the **×** in its tab strip when you want the whole window for the
+conversation; the play button in the top bar brings it back.
+
 Keep talking to it. "The leaves fall too fast." "Add a wind gust every ten
 seconds." Each message is a turn; the pane reloads when the files land. Drop a
 screenshot or a reference image onto the composer when a picture says it faster

@@ -9,13 +9,14 @@ the same evidence store.
 
 ## Register it
 
-The server ships in `@hearth/probe-tools`; build it from a source checkout
-(see [cli.md](./cli.md#getting-it)), then point your client at it. One server
+The server ships with each release as a single-file `hearth-probe-mcp.mjs`
+bundle (or build `@hearth/probe-tools` from a source checkout — see
+[cli.md](./cli.md#getting-it)), then point your client at it. One server
 serves one project root, given at launch:
 
 ```bash
 claude mcp add hearth-probe -- \
-  node /abs/path/to/hearth/packages/probe-tools/dist/mcp.js --project ~/Hearth/tiny-roguelike
+  node /abs/path/to/hearth-probe-mcp.mjs --project ~/Hearth/tiny-roguelike
 ```
 
 The generic MCP client config is the same shape everywhere:

@@ -12,8 +12,19 @@ build → hearth-probe sweep → read the findings → fix → sweep again
 
 ## Getting it
 
-`hearth-probe` lives in `@hearth/probe-tools` in the Hearth monorepo. Today the
-way to get it is a source checkout:
+If you use the Hearth app, you already have it: `hearth-probe` is on the PATH
+of the embedded terminal and of every agent the app binds, next to `hearth`.
+
+Standalone, it ships with each release as a single-file bundle — download
+`hearth-probe.mjs` (and `probe-shim.js`, which `hearth-probe shim` copies into
+a game) from the [latest release](https://github.com/echoo19/hearth/releases/latest)
+and run it with any Node ≥ 20:
+
+```bash
+node hearth-probe.mjs --help
+```
+
+Or from a source checkout of the monorepo (`@hearth/probe-tools`):
 
 ```bash
 git clone https://github.com/echoo19/hearth.git && cd hearth
