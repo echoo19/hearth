@@ -83,7 +83,7 @@ export interface TesterNote {
 - Consumes: nothing.
 - Produces: `TESTER_DIR`, `readMemory(root): Promise<string>`, `writeMemory(root, text): Promise<void>`, `listSessions(root): Promise<TesterNote[]>`, `nextSessionId(root): Promise<number>`, `sessionDir(root, id): string`, `writeNote(root, note): Promise<void>`. Tasks 3, 4 and 6 all use these.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```ts
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
@@ -141,21 +141,21 @@ describe('tester memory', () => {
 });
 ```
 
-- [ ] **Step 2: Run it and watch it fail**
+- [x] **Step 2: Run it and watch it fail**
 
 Run: `cd apps/editor && npx vitest run tests/testerMemory.test.ts`
 Expected: FAIL, cannot resolve `../server/tester/memory`.
 
-- [ ] **Step 3: Implement `types.ts` and `memory.ts`**
+- [x] **Step 3: Implement `types.ts` and `memory.ts`**
 
 Put the shared types above into `types.ts` verbatim. In `memory.ts`: `TESTER_DIR = path.join('.hearth', 'tester')`; sessions live at `<root>/.hearth/tester/sessions/<4-digit id>/note.json`; `memory.md` sits at `<root>/.hearth/tester/memory.md`. `writeMemory` creates parents. `writeNote` throws if the directory already exists (use `fsp.mkdir` with `recursive: false` and let `EEXIST` surface as a thrown Error mentioning "already"). `listSessions` reads the sessions directory, sorts by numeric id, and drops entries that fail to parse.
 
-- [ ] **Step 4: Run the test**
+- [x] **Step 4: Run the test**
 
 Run: `cd apps/editor && npx vitest run tests/testerMemory.test.ts`
 Expected: PASS, 6 tests.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 cd /Users/jakekang/projects/hearth/hearth-engine
