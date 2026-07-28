@@ -125,20 +125,22 @@ wrote. Nothing lives in a database or in the cloud.
 ## What's being built now
 
 **The private tester.** A playtester that belongs to your project rather than to
-a conversation. It plays the game, and because it remembers every previous time
-it played, it can answer the question a fresh pair of eyes never can: did the
-change you just made help? It reads its own past notes before it starts, so it
-arrives knowing where it got stuck last time, and it forms opinions across
-sessions that no single playthrough produces.
+a conversation. Because it remembers every previous time it played, it can
+answer the one question a fresh pair of eyes never can: did the change you just
+made help? Before it starts, it opens the notes it left last time, so it turns
+up already knowing where it got stuck. Play it across a month and it starts
+noticing things no single session could, like the fact that you have raised the
+jump three times and the level has stopped being tense.
 
-Its memory is a plain markdown file in your project folder, so you can read what
-it believes about your game and correct it by hand. Its session history is
-append-only, so you can catch it contradicting itself.
+Its memory is a plain markdown file in your project folder. When it has got
+something wrong about your game, you open the file and fix the line. The
+sessions sit beside it in order and never get rewritten, so you can catch it
+contradicting itself.
 
-It will not be good at your game, and it will not pretend to be. It costs model
-calls on your own quota. Design notes are in
-[apps/editor/docs/superpowers/specs](apps/editor/docs/superpowers/specs). **This
-is not shipped yet**, so nothing above is in a release you can download.
+It will not be good at your game, and it will not pretend to be. Every session
+spends model calls on your own quota, against a budget you can see. Design notes
+are in [apps/editor/docs/superpowers/specs](apps/editor/docs/superpowers/specs).
+**This is not shipped yet**, so nothing above is in a release you can download.
 
 ## The engine that came before
 
