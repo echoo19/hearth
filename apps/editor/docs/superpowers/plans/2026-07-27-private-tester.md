@@ -444,7 +444,7 @@ git commit -m "Add the tester history"
 
 ### Task 7: Full verification
 
-- [ ] **Step 1: Typecheck everything.**
+- [x] **Step 1: Typecheck everything.**
 
 ```bash
 cd /Users/jakekang/projects/hearth/hearth-engine
@@ -452,21 +452,21 @@ npx tsc --noEmit -p apps/editor/tsconfig.json
 for p in probe-core adapter-web probe-tools; do npx tsc --noEmit -p packages/$p/tsconfig.json; done
 ```
 
-- [ ] **Step 2: Run both suites, in sequence, never at once.**
+- [x] **Step 2: Run both suites, in sequence, never at once.**
 
 ```bash
 cd /Users/jakekang/projects/hearth/hearth-engine/apps/editor && npx vitest run
 cd /Users/jakekang/projects/hearth/hearth-engine && npx vitest run
 ```
 
-- [ ] **Step 3: End-to-end on a real game.** Open `packages/examples/mini-platformer` in the app, ask the tester to play, watch it in the pane, stop it mid-session, then confirm a note landed in `.hearth/tester/sessions/0001/` and that `memory.md` is readable prose a person could edit.
+- [x] **Step 3: End-to-end on a real game.** Open `packages/examples/mini-platformer` in the app, ask the tester to play, watch it in the pane, stop it mid-session, then confirm a note landed in `.hearth/tester/sessions/0001/` and that `memory.md` is readable prose a person could edit.
 
-- [ ] **Step 4: Play it twice.** Change something in the game, run a second session, and confirm the verdict is about the change and that the history shows both. This is the acceptance test for the whole feature: without it, the tester is just a slow bot.
+- [x] **Step 4: Play it twice.** Change something in the game, run a second session, and confirm the verdict is about the change and that the history shows both. This is the acceptance test for the whole feature: without it, the tester is just a slow bot.
 
-- [ ] **Step 5: Check it against the Definition of done, honestly.**
+- [x] **Step 5: Check it against the Definition of done, honestly.**
 
 Go back to the four conditions at the top of this plan and answer each one with evidence rather than intent. Take a screenshot of the tester playing and a screenshot of the history and look at them. If a condition is not met, say which one and why, and do not describe the feature as finished. A report that says "tests pass" while a live session has never completed is a false report.
 
-- [ ] **Step 6: Design pass.**
+- [x] **Step 6: Design pass.**
 
 Invoke `impeccable` and run its `audit` command over the two new surfaces: contrast, focus states, heading order, keyboard reachability of the stop control, and behaviour at 320px through 1440px. Fix what you find. Then look at the surfaces beside the rest of the app and ask whether they read as the same product. Fix what does not.
