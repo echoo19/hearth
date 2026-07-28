@@ -315,23 +315,23 @@ This is the step the whole feature exists for. The tester proposes, the person d
 
 **Invoke `impeccable` before writing the component.** A list of checkboxes is the easiest thing in this codebase to make look generated. It is a decision surface: the person is committing work to an agent, so the weight of that has to be legible without being heavy. Bugs and suggestions must be visually distinct because they carry different confidence, and a `placed` proposal must show its caveat at the point of decision, not somewhere the reader has already scrolled past.
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 Cover: nothing is selected by default, so approval is always an explicit act; the approve control is disabled with nothing ticked; an empty plan of action renders as a plain statement that nothing needs changing and NOT as an error or an empty-state apology; bugs and suggestions are grouped and labelled; a `placed` proposal shows its provenance in the row itself; approving calls the action with exactly the ticked ids and no others; and approving opens a new conversation rather than sending into the current one.
 
-- [ ] **Step 2: Run them and watch them fail.**
+- [x] **Step 2: Run them and watch them fail.**
 
-- [ ] **Step 3: Implement selection and the approve action.**
+- [x] **Step 3: Implement selection and the approve action.**
 
 The seed sent to the new conversation carries the selected proposals and their frames, and nothing else. Unselected proposals must not appear in it: a proposal in the agent's context is a proposal it may act on, which would make the checkboxes decorative.
 
 The new conversation is an ordinary conversation. No special mode, no privileged status. Approval starts work; it does not hand over control.
 
-- [ ] **Step 4: Run the tests.** Expected: PASS.
+- [x] **Step 4: Run the tests.** Expected: PASS.
 
-- [ ] **Step 5: Verify the whole loop in the browser.** Trigger a playtest, watch it play, read the report, tick two of three proposals, approve, and confirm a new conversation opens carrying exactly those two. Check `document.visibilityState` is `visible` first.
+- [x] **Step 5: Verify the whole loop in the browser.** Trigger a playtest, watch it play, read the report, tick two of three proposals, approve, and confirm a new conversation opens carrying exactly those two. Check `document.visibilityState` is `visible` first.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add apps/editor/src apps/editor/server apps/editor/tests
@@ -342,7 +342,7 @@ git commit -m "Let the person approve a plan of action into a new conversation"
 
 ### Task 8: Verification, copy pass, design pass
 
-- [ ] **Step 1: Typecheck everything.**
+- [x] **Step 1: Typecheck everything.**
 
 ```bash
 cd /Users/jakekang/projects/hearth/hearth-engine
@@ -350,16 +350,16 @@ npx tsc --noEmit -p apps/editor/tsconfig.json
 for p in probe-core adapter-web probe-tools; do npx tsc --noEmit -p packages/$p/tsconfig.json; done
 ```
 
-- [ ] **Step 2: Run both suites, in sequence, never at once.**
+- [x] **Step 2: Run both suites, in sequence, never at once.**
 
-- [ ] **Step 3: The mold test.** Grep every type and public function you added for the words `level`, `scene`, `stage`, `tile`, `world`, `map`. Each hit is a place Hearth may have started assuming what a game is. Justify it or remove it, and report what you found either way.
+- [x] **Step 3: The mold test.** Grep every type and public function you added for the words `level`, `scene`, `stage`, `tile`, `world`, `map`. Each hit is a place Hearth may have started assuming what a game is. Justify it or remove it, and report what you found either way.
 
-- [ ] **Step 4: The no-declaration test.** Run a full session against a game that declares NO states, and confirm it works completely, the report says states were unavailable, and nothing reads as a failure. A game that cooperates with nothing must remain first-class.
+- [x] **Step 4: The no-declaration test.** Run a full session against a game that declares NO states, and confirm it works completely, the report says states were unavailable, and nothing reads as a failure. A game that cooperates with nothing must remain first-class.
 
-- [ ] **Step 5: The provenance test, end to end.** Against a game that DOES declare states: have the tester place itself somewhere, then confirm the note marks those observations `placed`, the report carries the reachability caveat, and the view shows it.
+- [x] **Step 5: The provenance test, end to end.** Against a game that DOES declare states: have the tester place itself somewhere, then confirm the note marks those observations `placed`, the report carries the reachability caveat, and the view shows it.
 
-- [ ] **Step 6: The empty-plan test.** Run a session against a game with nothing wrong with it and confirm the plan of action comes back empty, that this reads as a legitimate result rather than a failed run, and that the approve control is simply not offered. A tester that always finds something to fix is manufacturing work, and this is the check that catches it.
+- [x] **Step 6: The empty-plan test.** Run a session against a game with nothing wrong with it and confirm the plan of action comes back empty, that this reads as a legitimate result rather than a failed run, and that the approve control is simply not offered. A tester that always finds something to fix is manufacturing work, and this is the check that catches it.
 
-- [ ] **Step 7: Humanizer pass.** Invoke the `humanizer` skill on every user-visible string this plan added: the rendered report, the proposal text, the view's labels and empty states, and any copy in the shim docs. The proposals are the highest-risk prose in the feature, since they are generated per session and read at a moment of decision. Fix what it finds and report the tells it caught.
+- [x] **Step 7: Humanizer pass.** Invoke the `humanizer` skill on every user-visible string this plan added: the rendered report, the proposal text, the view's labels and empty states, and any copy in the shim docs. The proposals are the highest-risk prose in the feature, since they are generated per session and read at a moment of decision. Fix what it finds and report the tells it caught.
 
-- [ ] **Step 8: Design pass.** Invoke `impeccable` and run its `audit` over the report view: contrast, focus states, heading order, keyboard reachability, and 320px through 1440px. Then apply the AI slop test honestly and say whether it passes.
+- [x] **Step 8: Design pass.** Invoke `impeccable` and run its `audit` over the report view: contrast, focus states, heading order, keyboard reachability, and 320px through 1440px. Then apply the AI slop test honestly and say whether it passes.

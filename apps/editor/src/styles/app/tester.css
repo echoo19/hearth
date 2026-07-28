@@ -573,6 +573,9 @@ dialog.modal.report-modal {
   padding: 7px 8px;
   border-radius: var(--radius-sm);
   cursor: pointer;
+  /* A tick is a state change and reads better as one. Flattened by the global
+     prefers-reduced-motion rule in base.css. */
+  transition: background-color var(--t-fast) var(--ease-out);
 }
 
 .plan-pick input[type='checkbox'] {
@@ -596,8 +599,11 @@ dialog.modal.report-modal {
   line-height: 1.7;
 }
 
-/* Full-strength ink: it watched this one happen. */
+/* Full-strength ink: it watched this one happen. The measure matches the
+   report's prose, so a claim in the widest dialog still reads as a line rather
+   than a paragraph edge to edge. */
 .plan-claim {
+  max-width: 62ch;
   color: var(--ink);
   font-size: var(--text-sm);
   line-height: 1.6;
@@ -620,9 +626,10 @@ dialog.modal.report-modal {
 
 .plan-foot {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: flex-end;
-  gap: 12px;
+  gap: 8px 12px;
   margin-top: 14px;
 }
 
