@@ -281,17 +281,17 @@ git commit -m "Write the session report and its plan of action"
 - Keyboard reachable, escapable, focus returned on close.
 - No raw JSON, no bare enum values, no side-stripe accents, no card grid.
 
-- [ ] **Step 1: Write the failing test** covering: the control appears per session; opening renders the report; placed observations are marked; the caveat appears only when something was placed; Escape closes and returns focus.
+- [x] **Step 1: Write the failing test** covering: the control appears per session; opening renders the report; placed observations are marked; the caveat appears only when something was placed; Escape closes and returns focus.
 
-- [ ] **Step 2: Run it and watch it fail.**
+- [x] **Step 2: Run it and watch it fail.**
 
-- [ ] **Step 3: Implement.**
+- [x] **Step 3: Implement.**
 
-- [ ] **Step 4: Run the test.** Expected: PASS.
+- [x] **Step 4: Run the test.** Expected: PASS.
 
-- [ ] **Step 5: Verify in the browser.** Check `document.visibilityState` is `visible` FIRST; a hidden tab freezes rAF and IntersectionObserver and a working reveal will look broken.
+- [x] **Step 5: Verify in the browser.** Check `document.visibilityState` is `visible` FIRST; a hidden tab freezes rAF and IntersectionObserver and a working reveal will look broken.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add apps/editor/src apps/editor/tests/reportView.test.tsx

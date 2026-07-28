@@ -14,7 +14,7 @@
  *    the same silence.
  */
 import { MISSING_REGRESSION } from '../../../server/tester/prompt';
-import type { TesterNote } from '../../../server/tester/types';
+import { observationReach, type ObservationReach, type TesterNote } from '../../../server/tester/types';
 
 /** What the history says to a folder whose tester has never played. */
 export const TESTER_NEVER_PLAYED = 'Your tester has not played this game yet.';
@@ -25,6 +25,8 @@ export type VerdictTone = 'better' | 'worse' | 'same' | 'first';
 export interface TesterRowObservation {
   frame: number;
   text: string;
+  /** Whether the tester got there by playing or the game put it there. */
+  reached: ObservationReach;
 }
 
 export interface TesterRow {
@@ -131,9 +133,13 @@ export function testerRows(notes: readonly TesterNote[]): TesterRow[] {
       regressionAnswered: regression.answered,
       // A claim with no frame behind it is a claim, not evidence, so it is
       // dropped here rather than shown with an apology in the component.
-      observations: (note.observations ?? []).filter(
-        (observation) => typeof observation.frame === 'number' && observation.frame >= 1,
-      ),
+      observations: (note.observations ?? [])
+        .filter((observation) => typeof observation.frame === 'number' && observation.frame >= 1)
+        .map((observation) => ({
+          frame: observation.frame,
+          text: observation.text,
+          reached: observationReach(observation),
+        })),
       openQuestions: note.openQuestions ?? [],
       previously: previous ? headlineFor(previous.onTheChange.verdict) : null,
       reversal:

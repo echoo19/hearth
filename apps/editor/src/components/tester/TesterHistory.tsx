@@ -13,10 +13,12 @@
  * The rules about what may be claimed live in testerRows.ts, which is pure. All
  * this file does is put them on screen.
  */
-import React, { useEffect } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { useApp } from '../../store';
+import type { TesterNote } from '../../../server/tester/types';
 import { Button } from '../ui/Button';
 import { ScreenHeader } from '../ui/ScreenHeader';
+import { ReportView } from './ReportView';
 import { testerRows, TESTER_NEVER_PLAYED, type TesterRow } from './testerRows';
 
 /** When it played, in the terms a person thinks in rather than a timestamp. */
@@ -32,7 +34,9 @@ export function playedWhen(iso: string, now: number = Date.now()): string {
   return `${days} ${days === 1 ? 'day' : 'days'} ago`;
 }
 
-function Session({ row, lead }: { row: TesterRow; lead: boolean }) {
+function Session({ row, note, lead }: { row: TesterRow; note: TesterNote; lead: boolean }) {
+  const [reading, setReading] = useState(false);
+  const trigger = useRef<HTMLButtonElement>(null);
   return (
     <article className={`tester-session${lead ? ' is-lead' : ''}`}>
       <div className="tester-session-head">
@@ -64,7 +68,12 @@ function Session({ row, lead }: { row: TesterRow; lead: boolean }) {
           <ul className="tester-saw">
             {row.observations.map((observation) => (
               <li key={`${observation.frame}-${observation.text}`} className="tester-saw-row">
-                <span className="tester-saw-frame">Picture {observation.frame}</span>
+                <span className="tester-saw-frame">
+                  Picture {observation.frame}
+                  {/* Said on the row, because a claim about somewhere the game
+                      put it is a claim about that place and nothing else. */}
+                  {observation.reached === 'placed' && <span className="tester-saw-placed">placed here</span>}
+                </span>
                 <span>{observation.text}</span>
               </li>
             ))}
@@ -90,7 +99,12 @@ function Session({ row, lead }: { row: TesterRow; lead: boolean }) {
             the failure this whole surface is built to make visible. */}
         {row.previously && <span className="tester-previously">Last time: {row.previously}</span>}
         {row.reversal && <span className="tester-reversal">{row.reversal}</span>}
+        <button ref={trigger} type="button" className="tester-read" onClick={() => setReading(true)}>
+          Read the whole session
+        </button>
       </p>
+
+      <ReportView note={note} open={reading} onClose={() => setReading(false)} returnFocusTo={trigger} />
     </article>
   );
 }
@@ -108,6 +122,7 @@ export function TesterHistory() {
   }, [refreshTesterHistory]);
 
   const rows = testerRows(tester.sessions);
+  const notes = new Map(tester.sessions.map((session) => [session.session, session]));
 
   return (
     <div className="screen tester-history">
@@ -139,7 +154,12 @@ export function TesterHistory() {
           ) : (
             <>
               {rows.map((row, index) => (
-                <Session key={row.session} row={row} lead={index === 0} />
+                <Session
+                  key={row.session}
+                  row={row}
+                  note={notes.get(row.session)!}
+                  lead={index === 0}
+                />
               ))}
 
               {/* Its own words about your game, and the one part of all this a

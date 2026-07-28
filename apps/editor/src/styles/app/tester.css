@@ -427,3 +427,103 @@
   padding: 48px 0;
   text-align: center;
 }
+
+/* --- One session, read in full -------------------------------------------- */
+
+/* Where a session opens from. A word in the footer rather than a button on the
+   card: reading is the quiet option here, and the loud one is Play. */
+.tester-read {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--ink-faint);
+  font: inherit;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  text-decoration-color: var(--border-strong);
+  cursor: pointer;
+}
+
+.tester-read:hover {
+  color: var(--accent);
+  text-decoration-color: currentColor;
+}
+
+/* Prose, so the dialog is measured for reading rather than filled. It also has
+   to survive a long session without pushing its own header off screen. */
+dialog.modal.report-modal {
+  max-height: min(82vh, 900px);
+  display: flex;
+  flex-direction: column;
+}
+
+.report {
+  min-height: 0;
+  overflow-y: auto;
+  padding: 0 22px 22px;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.report-ending {
+  margin: 0;
+  color: var(--ink-mute);
+  font-size: var(--text-sm);
+}
+
+.report-part {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.report-part-title {
+  margin: 0;
+  color: var(--ink-faint);
+  font-size: var(--text-2xs);
+  font-weight: 400;
+}
+
+.report-line {
+  margin: 0;
+  max-width: 62ch;
+  color: var(--ink-mute);
+  font-size: var(--text-sm);
+  line-height: 1.6;
+  text-wrap: pretty;
+}
+
+/* It never answered the one question it is required to answer. */
+.report-line.is-unanswered {
+  color: var(--warn);
+}
+
+/* What the reader needs before they read the list, not after. Full-strength
+   ink and the room around it are what make it land; a banner would make it
+   look like an error, and it is not one. */
+.report-caveat {
+  margin: 2px 0 6px;
+  max-width: 62ch;
+  color: var(--ink);
+  font-size: var(--text-sm);
+  line-height: 1.6;
+  text-wrap: pretty;
+}
+
+/* Under the picture number, in the same column, so a row that reads
+   differently at a glance is telling you something rather than decorating. */
+.tester-saw-placed {
+  display: block;
+  color: var(--warn);
+}
+
+@media (max-width: 520px) {
+  .tester-saw-placed {
+    display: inline;
+  }
+
+  .tester-saw-placed::before {
+    content: ', ';
+  }
+}

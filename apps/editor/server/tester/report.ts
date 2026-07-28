@@ -82,7 +82,7 @@ export function verdictSentence(note: TesterNote): string {
   }
   const word =
     verdict === 'better' ? 'helped' : verdict === 'worse' ? 'made things worse' : 'made no real difference';
-  return `It understood that ${seen}. That ${word}, because ${trimDot(why).slice(0, -1)}.`;
+  return `It understood that ${clause(seen)}. That ${word}, because ${clause(why)}.`;
 }
 
 /** True when anything in this session happened somewhere the game put the tester. */
@@ -93,6 +93,11 @@ export function anythingPlaced(note: TesterNote): boolean {
 function trimDot(text: string): string {
   const value = text.trim();
   return value.endsWith('.') || value.endsWith('!') || value.endsWith('?') ? value : `${value}.`;
+}
+
+/** A fragment the tester wrote, dropped mid-sentence into one of ours. */
+function clause(text: string): string {
+  return text.trim().replace(/[.!?]+$/, '');
 }
 
 /** A fragment the tester wrote, standing on its own line as a sentence. */
