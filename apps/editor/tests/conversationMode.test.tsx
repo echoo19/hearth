@@ -329,11 +329,11 @@ describe('the chat empty state without a key', () => {
 });
 
 describe('the game pane stack', () => {
-  it('shows Game and Console — the shell is not one of its surfaces', () => {
+  it('shows Game, Tester and Console — the shell is not one of its surfaces', () => {
     useApp.setState({ projectPath: null });
     render(<PaneStack />);
     const tabs = screen.getAllByRole('tab');
-    expect(tabs.map((tab) => tab.textContent)).toEqual(['Game', 'Console']);
+    expect(tabs.map((tab) => tab.textContent)).toEqual(['Game', 'Tester', 'Console']);
   });
 });
 

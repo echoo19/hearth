@@ -22,6 +22,7 @@ vi.mock('../src/api', () => ({
   apiAppSettings: vi.fn(async () => null),
   apiGameStatus: vi.fn(async () => null),
   apiProbeStatus: vi.fn(async () => null),
+  apiTesterHistory: vi.fn(async () => null),
   apiMeta: vi.fn(async () => null),
   apiOpenAiLogin: vi.fn(async () => ({ ok: false })),
   apiRenameChat: vi.fn(async () => null),
