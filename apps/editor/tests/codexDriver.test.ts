@@ -17,6 +17,7 @@ import { describe, expect, it } from 'vitest';
 import { CodexDriver, type CodexTransport } from '../server/chatDrivers/codex';
 import { encodeRpc } from '../server/chatDrivers/codexWire';
 import type { AgentTurnOptions, ChatEvent } from '../server/chat';
+import type { PermissionMode } from '../server/permissionMode';
 
 /**
  * A scripted `codex app-server`. `sent` records every line the driver wrote,
@@ -104,6 +105,7 @@ function makeDriver(opts?: {
   resume?: string | null;
   onThreadId?: (id: string) => void;
   agent?: AgentTurnOptions | null;
+  permissionMode?: PermissionMode;
 }): {
   driver: CodexDriver;
   server: FakeAppServer;
@@ -116,6 +118,8 @@ function makeDriver(opts?: {
     opts?.onThreadId ?? (() => undefined),
     () => server,
     opts?.agent ?? null,
+    null,
+    opts?.permissionMode,
   );
   return { driver, server };
 }
@@ -170,6 +174,55 @@ describe('CodexDriver handshake', () => {
     await driver.start('chat-1', '/w/game');
     expect(server.requestsFor('thread/start')).toHaveLength(1);
     driver.stop();
+  });
+});
+
+/**
+ * The permission policy is fixed when the thread opens, so it has to be on the
+ * request that opens it, either of them. Sending it on `thread/start` alone
+ * left every RESUMED conversation running under whatever `~/.codex/config.toml`
+ * defaults to, which for a folder codex does not trust is a READ-ONLY sandbox:
+ * the user approves a patch and the turn dies trying to write it. That is a
+ * bug Jake actually hit, and it would have read as intermittent because it only
+ * struck conversations that had been reopened.
+ */
+describe('CodexDriver permission policy', () => {
+  it('sends the policy and the sandbox on a fresh thread', async () => {
+    const { driver, server } = makeDriver();
+    await driver.start('chat-1', '/w/game');
+    expect(server.requestsFor('thread/start')[0]).toMatchObject({
+      approvalPolicy: 'on-request',
+      sandbox: 'workspace-write',
+    });
+    driver.stop();
+  });
+
+  it('sends them on a RESUME too, which is where the read-only default bites', async () => {
+    const { driver, server } = makeDriver({ resume: 'thread-old' });
+    await driver.start('chat-1', '/w/game');
+    expect(server.requestsFor('thread/resume')[0]).toMatchObject({
+      threadId: 'thread-old',
+      approvalPolicy: 'on-request',
+      sandbox: 'workspace-write',
+    });
+    driver.stop();
+  });
+
+  it('carries the chosen mode onto both requests', async () => {
+    for (const [mode, expected] of [
+      ['ask', { approvalPolicy: 'untrusted', sandbox: 'workspace-write' }],
+      ['skip', { approvalPolicy: 'never', sandbox: 'danger-full-access' }],
+    ] as const) {
+      const fresh = makeDriver({ permissionMode: mode });
+      await fresh.driver.start('chat-1', '/w/game');
+      expect(fresh.server.requestsFor('thread/start')[0]).toMatchObject(expected);
+      fresh.driver.stop();
+
+      const resumed = makeDriver({ permissionMode: mode, resume: 'thread-old' });
+      await resumed.driver.start('chat-1', '/w/game');
+      expect(resumed.server.requestsFor('thread/resume')[0]).toMatchObject(expected);
+      resumed.driver.stop();
+    }
   });
 });
 
@@ -258,6 +311,33 @@ describe('CodexDriver approvals', () => {
     expect(server.replyFor(99)).toEqual({ decision: 'accept' });
     // ...and every window watching the chat sees it settle.
     expect(await resolved).toEqual([{ type: 'approval-resolved', approvalId, decision: 'allow' }]);
+    driver.stop();
+  });
+
+  it('answers for the user under skip instead of putting a prompt on screen', async () => {
+    // The thread was started with `approvalPolicy: 'never'`, so codex should
+    // not ask. But `never` governs commands and patches, and this protocol has
+    // other things it can ask about, so a request CAN still arrive. Showing it
+    // would put Allow / Deny on screen under a pill that reads "No checks".
+    const { driver, server } = makeDriver({ permissionMode: 'skip' });
+    await driver.start('chat-1', '/w/game');
+    driver.send('go');
+
+    const events = reader(driver.events);
+    server.emit({
+      id: 42,
+      method: 'item/fileChange/requestApproval',
+      params: { threadId: 'thread-1', turnId: 't', itemId: 'i9', startedAtMs: 0 },
+    });
+    // Answered immediately, and with an allow: the user already said yes once,
+    // for the whole project.
+    expect(server.replyFor(42)).toEqual({ decision: 'accept' });
+
+    // And nothing reached the transcript. A turn-complete is pushed after, so
+    // the read below settles rather than hanging on an empty queue.
+    server.emit({ method: 'turn/completed', params: { threadId: 'thread-1', turn: { id: 't', status: 'completed', items: [] } } });
+    const [next] = await events.next(1);
+    expect(next).toEqual({ type: 'turn-complete' });
     driver.stop();
   });
 

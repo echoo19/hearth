@@ -142,9 +142,12 @@ describe('attachWebSocket', () => {
     client.close();
   });
 
-  it('allows the upgrade with a localhost Origin and still carries journal frames', async () => {
+  it('allows the upgrade with the server’s own origin and still carries journal frames', async () => {
+    // The server's OWN origin, not just any loopback one. A loopback origin on
+    // a different port is the game (see tests/gameOrigin.test.ts), and it is
+    // refused.
     const client = new WebSocket(`${baseUrl}/api/ws?project=${encodeURIComponent(projectRoot)}`, {
-      headers: { Origin: 'http://localhost:5173' },
+      headers: { Origin: baseUrl.replace('ws://', 'http://') },
     });
     const frames: WsFrame[] = [];
     await new Promise<void>((resolve, reject) => {

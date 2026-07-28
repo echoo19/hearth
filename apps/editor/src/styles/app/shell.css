@@ -25,6 +25,44 @@
   background: var(--bg-05);
 }
 
+/* The working area, and the only part of the window a project owns. Switching
+   project replays the entrance below; the rail and the top bar do not move,
+   because they are the same rail and the same window either way.
+
+   No fill-mode. `both` would hold the `from` frame whenever the animation does
+   not actually run (a hidden tab, a headless render), which is a working area
+   that never appears. The entrance decorates a surface that is already
+   visible. */
+.app-screen {
+  display: grid;
+  grid-template-rows: minmax(0, 1fr);
+  min-width: 0;
+  min-height: 0;
+  animation: screen-in var(--t-slow) var(--ease-out);
+}
+
+/* A short travel, from the side the new project is arriving on. Far enough to
+   read as movement, short enough that nothing has to be waited for: the rail
+   is still under the pointer and the next click has to land. */
+@keyframes screen-in {
+  from {
+    opacity: 0;
+    transform: translateX(14px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .app-screen {
+    animation-name: screen-fade-in;
+  }
+}
+
+@keyframes screen-fade-in {
+  from {
+    opacity: 0;
+  }
+}
+
 
 /* --------------------------------------------------------------------------
    Top bar
@@ -110,36 +148,12 @@
   flex: none;
 }
 
-/* The narrow-layout region switch. The sidebar's Chat | Terminal pill is its
-   own control (styles/app/sidebar.css); this one only appears when the window
-   is too narrow for two columns. */
+/* The narrow-layout region switch. Look and metrics are the Switch primitive's
+   (styles/primitives/switch.css) — the same control that heads the model
+   picker, so a switch means one thing everywhere. It only appears when the
+   window is too narrow for two columns. */
 .topbar-switch {
-  display: inline-flex;
-  gap: 3px;
-  padding: 3px;
-  border-radius: var(--radius);
-  background: var(--bg-2);
-}
-
-.switch-tab {
-  border: 0;
-  background: transparent;
-  border-radius: var(--radius-sm);
-  padding: 0 14px;
-  height: var(--ctl-h-sm);
-  font-size: var(--text-xs);
-  color: var(--ink-mute);
-  cursor: pointer;
-  transition: color var(--t-fast) var(--ease-out), background var(--t-fast) var(--ease-out);
-}
-
-.switch-tab:hover {
-  color: var(--ink);
-}
-
-.switch-tab[aria-selected='true'] {
-  background: var(--bg-3);
-  color: var(--ink);
+  flex: none;
 }
 
 /* --------------------------------------------------------------------------

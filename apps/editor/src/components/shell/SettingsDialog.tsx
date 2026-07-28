@@ -66,8 +66,19 @@ export function SettingsDialog() {
     };
   }, []);
 
+  // `closeButton={false}`: SettingsShell draws its own close, and the title
+  // the primitive's would sit beside is visually hidden here. Clipping a
+  // control out of sight leaves it in the tab order, which put focus on an
+  // invisible button the moment Settings opened, where Enter closed the dialog
+  // for no reason anyone could see.
   return (
-    <Modal open={open} title="Settings" className="is-settings" onClose={() => setOpen(false)}>
+    <Modal
+      open={open}
+      title="Settings"
+      className="is-settings"
+      closeButton={false}
+      onClose={() => setOpen(false)}
+    >
       <SettingsShell initialPane={pane} onClose={() => setOpen(false)} />
     </Modal>
   );

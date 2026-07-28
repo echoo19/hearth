@@ -115,6 +115,10 @@ beforeAll(async () => {
   root = path.join(tmp, 'game');
   await fsp.mkdir(root, { recursive: true });
   ctx = createProjectServerContext({ recentsFile: path.join(tmp, 'recents.json'), repoRoot: tmp });
+  // The /api/ws upgrade only accepts roots this server has been asked to open,
+  // so a suite that connects has to open the folder first, exactly as the app
+  // does before it connects its socket.
+  await ctx.openWorkspace(root);
   server = http.createServer();
   attachWebSocket(server, ctx, undefined, undefined, {
     createChatDriver: async () => {

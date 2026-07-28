@@ -191,13 +191,29 @@
   overflow-x: hidden;
   padding: 0 10px 12px;
   opacity: 1;
-  transition: opacity var(--t) var(--ease-out);
+  visibility: visible;
+  transition:
+    opacity var(--t) var(--ease-out),
+    visibility var(--t) var(--ease-out);
 }
 
-/* Collapsed, the lists have nothing legible to say — they fade out and stop
-   taking focus rather than being clipped mid-word. */
+/* Collapsed, the lists have nothing legible to say, so they fade out rather
+   than being clipped mid-word.
+
+   `visibility`, not `pointer-events` alone. Pointer-events is mouse-only: with
+   just that and opacity, the ~32 buttons in here stayed in the tab order and
+   in the accessibility tree, so four Tabs off "Expand sidebar" landed on an
+   invisible project row, screen readers read out the whole hidden list, and
+   focusing a row scrolled a container nobody could see (so the scroll position
+   had moved by the time the rail was expanded again). Visibility takes all
+   three away at once. It transitions as a discrete step that stays `visible`
+   until the fade is over, so the rail still fades instead of vanishing.
+
+   The `inert` attribute in Sidebar.tsx says the same thing to the DOM, so this
+   does not depend on a stylesheet having loaded. */
 .sidebar.is-collapsed .sidebar-scroll {
   opacity: 0;
+  visibility: hidden;
   pointer-events: none;
 }
 

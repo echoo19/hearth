@@ -39,6 +39,7 @@ import {
   clampAxis,
   installMenuDismiss,
   menuDropdownPosition,
+  MIN_MENU_HEIGHT,
   menuNavIndex,
   type MenuItem,
 } from '../src/components/ui/Menu';
@@ -109,7 +110,13 @@ describe('menuDropdownPosition — trigger-anchored + viewport-clamped (L-123)',
 
   it('left-anchors below the trigger when there is room', () => {
     const trigger = { left: 100, right: 140, top: 10, bottom: 30 };
-    expect(menuDropdownPosition(trigger, { w: 200, h: 150 }, vp, 'left')).toEqual({ left: 100, top: 34 });
+    // maxHeight is the room below (800 - 30 - 4 - 4), reported even though the
+    // 150px menu is nowhere near it.
+    expect(menuDropdownPosition(trigger, { w: 200, h: 150 }, vp, 'left')).toEqual({
+      left: 100,
+      top: 34,
+      maxHeight: 762,
+    });
   });
 
   it('clamps a left-anchored popover that would overflow the right edge', () => {
@@ -128,8 +135,32 @@ describe('menuDropdownPosition — trigger-anchored + viewport-clamped (L-123)',
 
   it('flips above the trigger when opening below would overflow the bottom', () => {
     const trigger = { left: 100, right: 140, top: 700, bottom: 780 };
-    // below = 784; 784 + 150 + 4 > 800 → flip above: 700 - 4 - 150 = 546.
+    // Only 16px below, 692 above → flip: 700 - 4 - 150 = 546.
     expect(menuDropdownPosition(trigger, { w: 200, h: 150 }, vp, 'left').top).toBe(546);
+  });
+
+  it('caps to the roomier side and scrolls when the menu fits on neither', () => {
+    // The composer-on-Home geometry: a 500px menu, ~380 above and ~290 below.
+    // Clamping the top alone used to slide it up over its own trigger and, at
+    // the wrong height, past the bottom edge. It now opens above, capped.
+    const trigger = { left: 100, right: 140, top: 390, bottom: 420 };
+    const placed = menuDropdownPosition(trigger, { w: 200, h: 500 }, vp, 'left');
+    expect(placed).toEqual({ left: 100, top: 4, maxHeight: 382 });
+    expect(placed.top + placed.maxHeight).toBeLessThanOrEqual(trigger.top - 4);
+  });
+
+  it('caps downward when below is the roomier side', () => {
+    const trigger = { left: 100, right: 140, top: 100, bottom: 130 };
+    const placed = menuDropdownPosition(trigger, { w: 200, h: 5000 }, vp, 'left');
+    // 92 above, 662 below → open below and scroll inside the 662.
+    expect(placed).toEqual({ left: 100, top: 134, maxHeight: 662 });
+    expect(placed.top + placed.maxHeight).toBeLessThanOrEqual(vp.h - 4);
+  });
+
+  it('never shrinks a menu below MIN_MENU_HEIGHT, even with no room at all', () => {
+    const trigger = { left: 100, right: 140, top: 10, bottom: 30 };
+    const placed = menuDropdownPosition(trigger, { w: 200, h: 400 }, { w: 1000, h: 60 }, 'left');
+    expect(placed.maxHeight).toBe(MIN_MENU_HEIGHT);
   });
 });
 

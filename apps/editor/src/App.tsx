@@ -35,16 +35,23 @@ export default function App() {
   }, [projectPath, projectName]);
 
   // There is no launcher window any more: the app opens at working size and
-  // stays there, with or without a folder. NativeGate is keyed by the folder
-  // so the shell still remounts when one changes.
-  if (native) return <NativeGate key={projectPath ?? 'home'} native={native} projectName={projectName} />;
+  // stays there, with or without a folder.
+  if (native) return <NativeGate native={native} projectName={projectName} />;
   return <Shell />;
 }
 
 /**
  * Electron only: tell the main process which folder the window is on (it owns
- * the title) and wait for that round trip before measuring the layout, so the
- * shell lays out once rather than twice.
+ * the native title) and hold the first paint until that round trip is done, so
+ * the shell lays out once rather than twice.
+ *
+ * Only the FIRST one. This used to be keyed by the folder, which tore the whole
+ * shell down and rebuilt it on every project switch: the rail went with it, and
+ * the gate below rendered nothing until the round trip came back, so switching
+ * projects meant a blank window and a rail that reappeared having lost its
+ * scroll. Everything a folder owns is already cleared by `openWorkspace`, so
+ * the remount was never what made the switch correct. The title is a message
+ * to the main process and nothing here has to wait for it.
  */
 function NativeGate({ native, projectName }: { native: HearthNative; projectName: string | null }) {
   const [ready, setReady] = useState(false);
@@ -112,7 +119,8 @@ export function useNarrowLayout(): boolean {
  * asking permission to exist.
  */
 function Shell() {
-  const hasFolder = useApp((s) => s.projectPath !== null);
+  const projectPath = useApp((s) => s.projectPath);
+  const hasFolder = projectPath !== null;
   // New chat and Home are the same screen. `composing` is what New chat sets;
   // no project open means there is nothing else it could be showing anyway.
   const composing = useApp((s) => s.composing);
@@ -137,6 +145,12 @@ function Shell() {
       <Sidebar />
       <div className="app-main">
         <TopBar narrow={narrow} paneOpen={paneOpen} />
+        {/* Keyed by the folder, so moving between projects replays the
+            entrance below and the working area arrives rather than blinks.
+            This is the ONLY thing the project still remounts: the rail, the
+            top bar and the window keep going, which is the whole difference
+            between switching project and reloading the app. */}
+        <div className="app-screen" key={projectPath ?? 'home'}>
         {screen === 'skills' ? (
           <SkillsScreen />
         ) : screen === 'tester' ? (
@@ -157,6 +171,7 @@ function Shell() {
         ) : (
           <Home />
         )}
+        </div>
       </div>
       <CodePeek />
       <SettingsDialog />

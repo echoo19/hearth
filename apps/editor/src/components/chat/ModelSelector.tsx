@@ -5,7 +5,10 @@
  * composer already has one and a control inside a control reads as clutter.
  *
  * The menu's first cut is not by vendor, it is by HOW THE AGENT IS REACHED,
- * because that is the difference a person actually feels:
+ * because that is the difference a person actually feels. It is a switch at
+ * the head of the menu rather than two headers down one list: the two sides
+ * are alternatives, not sections, and stacking them made a menu long enough
+ * that the terminal half was below the fold and the effort dial below that.
  *
  *   Chat      backends Hearth drives itself, over a key or a sign-in. Picking
  *             one changes who answers the next turn and nothing else.
@@ -65,6 +68,7 @@ import type { AgentCliInfo, AgentChoice, ChatProvider, ChatProviderStatus, Provi
 import { planTerminalLaunch, useAgentSocket } from '../agent/useAgentSocket';
 import { Icon } from '../ui';
 import { MenuButton, type MenuItem } from '../ui/Menu';
+import { Switch } from '../ui/Switch';
 
 /**
  * The row that hands the model choice back to the backend. Ours rather than
@@ -267,11 +271,29 @@ export function useAgentClis(): AgentCliRead {
   return read;
 }
 
-/** The Terminal group's trailing note: what state the read-out is in. */
+/**
+ * The line under the switch on the terminal side: what this half is, or what
+ * went wrong finding out. It doubles as the empty state's explanation, which
+ * is why the failure reads as a sentence rather than as a status word.
+ */
 export function agentCliNote(read: AgentCliRead): string {
-  if (read.state === 'loading') return 'Checking…';
-  if (read.state === 'failed') return 'Could not check your PATH';
-  return 'Your own CLI, in a shell';
+  if (read.state === 'loading') return 'Checking your PATH…';
+  if (read.state === 'failed') return 'Hearth could not read your PATH, so it cannot say what is installed.';
+  return 'Your own CLI, running in a shell.';
+}
+
+/** Which half of the menu is showing. */
+export type AgentSide = 'chat' | 'terminal';
+
+/**
+ * The side to open on. Whichever one the conversation is already using, so the
+ * menu opens onto the answer to "what is running this" rather than onto the
+ * side the reader has to switch away from. Terminal only counts as in use when
+ * a CLI is genuinely running here: a preference has no meaning on that side,
+ * because starting a CLI is the choice.
+ */
+export function defaultSide(terminalRunning: boolean): AgentSide {
+  return terminalRunning ? 'terminal' : 'chat';
 }
 
 export function ModelSelector() {
@@ -289,40 +311,88 @@ export function ModelSelector() {
   const hasProject = useApp((s) => s.projectPath !== null);
   const startTerminalCli = useApp((s) => s.startTerminalCli);
 
-  const items: MenuItem[] = [];
-  // Leads the menu, and says what the whole first half of it does: these
-  // backends answer here, in this column. The groups under it name which one
-  // is running the loop, so nothing about that choice is hidden — it is just
-  // asked once, in the place where it is already visible.
-  items.push({ header: 'Chat', note: 'Hearth runs the agent' });
+  // One plan per CLI, computed from the same function the store re-checks on
+  // click, so what is offered and what would happen cannot drift apart.
+  const cliPlans =
+    clis.state === 'ready'
+      ? clis.clis.map((cli) => ({
+          cli,
+          plan: planTerminalLaunch({ cli, status: session.status, launched: session.cli, connected, hasProject }),
+        }))
+      : [];
+  const terminalRunning = cliPlans.some((entry) => entry.plan.action === 'show');
 
-  for (const [index, group] of groups.entries()) {
-    if (index > 0) items.push({ separator: true });
-    // The note carries what a menu row's `shortcut` cannot: it is real text in
-    // the header, so "which backend, and is it set up" is readable rather than
-    // decorative.
-    items.push({ header: group.title, note: `${backendFor(group.provider).name} · ${group.availability.note}` });
-    for (const info of group.models) {
-      const model = modelIdFor(info);
+  // Which half is showing. Seeded from what is running, then the reader's, for
+  // as long as the composer lives: someone comparing the two sides should not
+  // have the menu jump back under them between openings.
+  const [side, setSide] = useState<AgentSide>(() => defaultSide(terminalRunning));
+
+  const items: MenuItem[] = [];
+
+  if (side === 'chat') {
+    for (const [index, group] of groups.entries()) {
+      if (index > 0) items.push({ separator: true });
+      // The note carries what a menu row's `shortcut` cannot: it is real text in
+      // the header, so "which backend, and is it set up" is readable rather than
+      // decorative.
+      items.push({ header: group.title, note: `${backendFor(group.provider).name} · ${group.availability.note}` });
+      for (const info of group.models) {
+        const model = modelIdFor(info);
+        items.push({
+          label: info.label,
+          shortcut: modelRowNote(info),
+          checked: isChosen(choice, group.provider, model),
+          onSelect: () => {
+            if (!group.availability.available) openSettings();
+            else setModelChoice(choiceForModel(getModelChoice(), group.provider, model, providers));
+          },
+        });
+      }
+      if (!group.availability.available) {
+        items.push({ label: 'Set up in Settings…', onSelect: openSettings });
+      }
+    }
+
+    // The ticks show what a turn sent right now WOULD carry, not what storage
+    // happens to hold: a stored effort the current model has stopped accepting
+    // is dropped on send, so it must not read as selected here either.
+    const sending = agentForTurn(choice, providers);
+
+    // Only when the chosen model said which efforts it takes. No catalogue means
+    // no dial — an effort a model rejects is a turn that fails on send. It stays
+    // on this side of the switch: on the terminal side the CLI owns its own
+    // settings and this dial would be a control over nothing.
+    if (efforts.length > 0 && sending) {
+      items.push({ separator: true });
+      items.push({ header: 'Effort', note: effectiveModel(sending, providers)?.label ?? '' });
+      // Named with what it resolves to, because "Automatic" on its own is the
+      // one row here that doesn't say what it does.
+      const modelDefault = effectiveModel(sending, providers)?.defaultEffort;
       items.push({
-        label: info.label,
-        shortcut: modelRowNote(info),
-        checked: isChosen(choice, group.provider, model),
+        label: 'Automatic',
+        shortcut: modelDefault ? effortDisplayName(modelDefault) : undefined,
+        checked: sending.effort === null,
         onSelect: () => {
-          if (!group.availability.available) openSettings();
-          else setModelChoice(choiceForModel(getModelChoice(), group.provider, model, providers));
+          const current = getModelChoice();
+          if (current) setModelChoice({ ...current, effort: null });
         },
       });
+      for (const option of efforts) {
+        items.push({
+          label: effortDisplayName(option.id),
+          checked: sending.effort === option.id,
+          onSelect: () => {
+            const current = getModelChoice();
+            if (current) setModelChoice({ ...current, effort: option.id });
+          },
+        });
+      }
     }
-    if (!group.availability.available) {
-      items.push({ label: 'Set up in Settings…', onSelect: openSettings });
-    }
-  }
-
-  items.push({ separator: true });
-  items.push({ header: 'Terminal', note: agentCliNote(clis) });
-  if (clis.state === 'ready') {
-    if (clis.clis.length === 0) {
+  } else {
+    // No group header on this side. There is one list, the switch above has
+    // just named it, and a header would be the third thing in a row to say
+    // "terminal" before the reader reaches a single CLI.
+    if (clis.state === 'ready' && cliPlans.length === 0) {
       items.push({
         label: 'Nothing installed',
         disabled: true,
@@ -330,16 +400,7 @@ export function ModelSelector() {
         onSelect: () => {},
       });
     }
-    for (const cli of clis.clis) {
-      // One plan per row, computed from the same function the store re-checks
-      // on click: what is offered and what would happen cannot drift apart.
-      const plan = planTerminalLaunch({
-        cli,
-        status: session.status,
-        launched: session.cli,
-        connected,
-        hasProject,
-      });
+    for (const { cli, plan } of cliPlans) {
       const blocked = plan.action === 'blocked';
       items.push({
         label: cli.label,
@@ -356,40 +417,6 @@ export function ModelSelector() {
     }
   }
 
-  // The ticks show what a turn sent right now WOULD carry, not what storage
-  // happens to hold: a stored effort the current model has stopped accepting
-  // is dropped on send, so it must not read as selected here either.
-  const sending = agentForTurn(choice, providers);
-
-  // Only when the chosen model said which efforts it takes. No catalogue means
-  // no dial — an effort a model rejects is a turn that fails on send.
-  if (efforts.length > 0 && sending) {
-    items.push({ separator: true });
-    items.push({ header: 'Effort', note: effectiveModel(sending, providers)?.label ?? '' });
-    // Named with what it resolves to, because "Automatic" on its own is the
-    // one row here that doesn't say what it does.
-    const modelDefault = effectiveModel(sending, providers)?.defaultEffort;
-    items.push({
-      label: 'Automatic',
-      shortcut: modelDefault ? effortDisplayName(modelDefault) : undefined,
-      checked: sending.effort === null,
-      onSelect: () => {
-        const current = getModelChoice();
-        if (current) setModelChoice({ ...current, effort: null });
-      },
-    });
-    for (const option of efforts) {
-      items.push({
-        label: effortDisplayName(option.id),
-        checked: sending.effort === option.id,
-        onSelect: () => {
-          const current = getModelChoice();
-          if (current) setModelChoice({ ...current, effort: option.id });
-        },
-      });
-    }
-  }
-
   return (
     <MenuButton
       label="Model"
@@ -397,6 +424,28 @@ export function ModelSelector() {
       items={items}
       triggerClassName="model-pill"
       popoverClassName="model-menu"
+      heading={
+        <>
+          <Switch
+            label="How the agent is reached"
+            className="switch-stretch"
+            value={side}
+            onChange={setSide}
+            options={[
+              { id: 'chat', label: 'Chat' },
+              { id: 'terminal', label: 'Terminal' },
+            ]}
+          />
+          {/* The one line each side needs. It is the difference the switch is
+              actually asking about, and two words cannot carry it. On the
+              terminal side it also reports the PATH read, so a list that is
+              empty because the walk failed does not look like a machine with
+              nothing installed. */}
+          <p className="model-menu-blurb">
+            {side === 'chat' ? 'Hearth runs the agent and answers here.' : agentCliNote(clis)}
+          </p>
+        </>
+      }
       trigger={
         <>
           <span className="model-pill-name">{modelChoiceLabel(choice, providers)}</span>

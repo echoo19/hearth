@@ -20,6 +20,10 @@ import { Icon } from '../ui';
  * to report still has to say that it failed.
  */
 export function commandStatusNote(part: Pick<ChatCommandPart, 'state' | 'exitCode'>): string | null {
+  // A command whose turn ended before it reported back. No exit code exists,
+  // because nothing ever collected one, so the row says what is actually known
+  // rather than borrowing the vocabulary of success or of failure.
+  if (part.state === 'stopped') return 'did not finish';
   if (part.state !== 'error') return null;
   return part.exitCode === undefined ? 'failed' : `exit ${part.exitCode}`;
 }

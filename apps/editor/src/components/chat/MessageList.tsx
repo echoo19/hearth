@@ -20,6 +20,7 @@ import { ReasoningRow } from './ReasoningRow';
 import { SkillRow } from './SkillRow';
 import { SubagentCard } from './SubagentCard';
 import { ToolChip } from './ToolChip';
+import { groupTranscriptParts, runIsLive, ToolRunGroup } from './ToolRun';
 import { WorkingRow } from './WorkingRow';
 import { QueuedMessages } from './QueuedMessages';
 import { useCopy } from '../../useCopy';
@@ -151,15 +152,6 @@ function Part({ part, live }: { part: ChatPart; live: boolean }) {
 }
 
 /**
- * A stable key for a part. Text and reasoning coalesce in place and have no
- * id of their own, so position is their identity; everything else keeps the
- * id the driver gave it, which survives the parts around it changing.
- */
-function partKey(part: ChatPart, index: number): string {
-  return part.kind === 'text' || part.kind === 'reasoning' || part.kind === 'notice' ? `p${index}` : part.id;
-}
-
-/**
  * What a turn says, as plain text.
  *
  * Prose and plans only. Copying a turn is for taking away what was written,
@@ -226,12 +218,23 @@ function Turn({ message }: { message: ChatMessage }) {
       {/* Above the words, the way it was assembled: you attach the picture,
           then say what to do with it. */}
       {message.attachments ? <SentAttachments attachments={message.attachments} /> : null}
-      {message.parts.map((part, index) => (
-        // Only the trailing part of a streaming turn is still being written;
-        // everything above it is finished, whatever the turn as a whole is
-        // doing.
-        <Part key={partKey(part, index)} part={part} live={message.streaming && index === last} />
-      ))}
+      {/* Folded first, drawn second. A run of consecutive commands is one item
+          here, so a turn that shells out eight times is eight lines while it
+          happens and one line afterwards. */}
+      {groupTranscriptParts(message.parts).map((item) =>
+        item.type === 'run' ? (
+          <ToolRunGroup
+            key={item.key}
+            parts={item.parts}
+            live={runIsLive(item.parts, message.streaming, item.startIndex + item.parts.length - 1 === last)}
+          />
+        ) : (
+          // Only the trailing part of a streaming turn is still being written;
+          // everything above it is finished, whatever the turn as a whole is
+          // doing.
+          <Part key={item.key} part={item.part} live={message.streaming && item.index === last} />
+        ),
+      )}
       {/* Shown for the whole turn, not just its empty opening: the reader
           should never have to look at the send button to find out whether
           anything is still happening. */}

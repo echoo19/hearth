@@ -107,6 +107,10 @@ beforeAll(async () => {
     recentsFile: path.join(tmpDir, 'recent-projects.json'),
     repoRoot: tmpDir,
   });
+  // The /api/ws upgrade only accepts roots this server has been asked to open,
+  // so a suite that connects has to open the folder first, exactly as the app
+  // does before it connects its socket.
+  await ctx.openWorkspace(projectRoot);
 
   backend = new FakeBackend();
   server = http.createServer((req, res) => {

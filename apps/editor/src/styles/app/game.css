@@ -38,11 +38,24 @@
   min-height: 0;
   display: grid;
   place-items: center;
-  /* Bottom clears the absolute-positioned capability strip (49px) plus a
-     small visual gap, so the stage never sits under the overlay. */
-  padding: 24px 24px 60px;
+  /* Symmetric now that the strip travels with the stage instead of being
+     pinned to the pane's bottom edge. The old asymmetric bottom existed to
+     clear an overlay that is no longer there. */
+  padding: 24px;
   container-type: size;
   background: var(--canvas-bg);
+}
+
+/* The game and the controls that act on it, as one centred object. Sizing
+   still resolves against .game-stage-wrap, which is the nearest size
+   container, so the stage keeps its exact letterboxing. */
+.game-stage-column {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  max-width: 100%;
+  max-height: 100%;
 }
 
 /* Letterboxed to the game's own shape: as wide as the matte allows, or as wide
@@ -50,14 +63,28 @@
    max-* pair is the fallback for engines without container query units. */
 .game-stage {
   --game-aspect: 1.7778;
+  /* Reserved for the strip below. The stage's height budget is the container's
+     height MINUS this, or a tall pane would let the stage take the whole
+     container and push the controls out of view. */
+  /* What the Play strip below actually occupies, taken out of the height the
+     stage may claim. COMPUTED, not measured by eye: this was written as a flat
+     44px while the strip is a 36px control under 12px of padding, so the stage
+     took 4px more than it was owed and `overflow: hidden` cropped that much off
+     the bottom of every game whose height was the binding constraint. A stage
+     that promises to letterbox rather than crop cannot be off by a constant.
+     Expressed against the same tokens the strip is built from, so the two
+     cannot drift apart again. Keep in step with `.game-stage-wrap
+     .capability-strip`'s padding below. */
+  --strip-pad: 12px;
+  --strip-h: calc(var(--ctl-h) + var(--strip-pad));
   /* The tester's note is laid over the game, inside the same rounded, clipped
      box. Its picture is not: that belongs on the tester's own tab, because
      this game is the person's own session and painting over it would take it
      away from them mid-play. */
   position: relative;
-  width: min(100cqw, calc(100cqh * var(--game-aspect)));
+  width: min(100cqw, calc((100cqh - var(--strip-h)) * var(--game-aspect)));
   max-width: 100%;
-  max-height: 100%;
+  max-height: calc(100% - var(--strip-h));
   aspect-ratio: var(--game-aspect);
   overflow: hidden;
   border: 1px solid var(--border);
@@ -225,6 +252,26 @@
   backdrop-filter: blur(6px);
 }
 
+/* With a game on screen the strip sits in the column, directly under the
+   stage and exactly as wide as it. It sheds the bar chrome there: a fill, a
+   rule and a blur all existed to separate an overlay from the game it lay
+   over, and nothing lies over anything now. What is left is a control under
+   a picture, aligned to its right edge. */
+.game-stage-wrap .capability-strip {
+  position: static;
+  flex: none;
+  /* Centred under the game rather than tucked into a corner. There is one
+     control here and it is the pane's primary action, so it sits on the
+     stage's own axis. */
+  justify-content: center;
+  /* The stage reserves exactly this above, as `--strip-h`. Changing it here
+     without changing it there crops the game. */
+  padding: var(--strip-pad, 12px) 0 0;
+  background: transparent;
+  border-top: 0;
+  backdrop-filter: none;
+}
+
 /* --- Play ----------------------------------------------------------------- */
 
 /* Opens the game in a real browser window, where it can actually be played.
@@ -238,10 +285,12 @@
    a mark rather than as something to press, which is the wrong reading for the
    control a maker reaches for most. A resting hairline and the block fill make
    it a button without making it a second primary. */
+/* The fill comes from `.btn-primary`; all this adds is the icon gap. The old
+   rule here set its own border and --bg-2 background, which was right for a
+   ghost icon and would now paint straight over the ember. */
 .play-btn {
   flex: none;
-  border: 1px solid var(--border);
-  background: var(--bg-2);
+  gap: 6px;
 }
 
 /* `:hover` and `:active` in primitives.css guard on `:not(:disabled)`, which

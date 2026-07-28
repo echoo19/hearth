@@ -428,6 +428,18 @@
   text-align: center;
 }
 
+/* Centred, so the shape of the block is the thing being read before any of the
+   words are. `pretty` only tidies the LAST line, which on a three-line centred
+   hint leaves the first two ragged and breaks a phrase across them ("whether
+   what you / changed since helped"). `balance` is the rule for short display
+   text and evens all three. The measure widens with it: 46ch was set for a
+   left-aligned paragraph and reads as a column here. */
+.tester-history-empty .tester-empty-hint {
+  max-width: 62ch;
+  margin-inline: auto;
+  text-wrap: balance;
+}
+
 /* --- One session, read in full -------------------------------------------- */
 
 /* Where a session opens from. A word in the footer rather than a button on the
@@ -450,8 +462,15 @@
 }
 
 /* Prose, so the dialog is measured for reading rather than filled. It also has
-   to survive a long session without pushing its own header off screen. */
-dialog.modal.report-modal {
+   to survive a long session without pushing its own header off screen.
+
+   `[open]` is load-bearing, not tidiness. A closed <dialog> is hidden by the
+   UA's own `dialog:not([open]) { display: none }`, and setting `display` here
+   unconditionally beat that rule: every closed report kept a box, sized by
+   `.modal`'s 380px min-width and two 1px borders, which drew a stray 380x2
+   line across the history. The history renders one of these per session, so
+   every session you had not opened left a line lying over the one you had. */
+dialog.modal.report-modal[open] {
   max-height: min(82vh, 900px);
   display: flex;
   flex-direction: column;

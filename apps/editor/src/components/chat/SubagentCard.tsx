@@ -91,13 +91,23 @@ export function SubagentCard({ part }: { part: ChatSubagentPart }) {
   );
 }
 
-/** How a helper ended, for a collapsed row that has nothing else to show. */
+/**
+ * How a helper ended, for a collapsed row that has nothing else to show.
+ *
+ * `stopped` is named rather than left to the default. A turn can end with a
+ * helper still open (the turn failed, the user interrupted, the driver died),
+ * and those rows are settled to `stopped` rather than left claiming to run.
+ * Falling through to "Done" would take the one case where nothing knows what
+ * happened and report it as success, which is the worst reading available.
+ */
 export function subagentOutcome(state: ChatSubagentPart['state']): string {
   switch (state) {
     case 'running':
       return 'Working';
     case 'error':
       return 'Failed';
+    case 'stopped':
+      return 'Stopped';
     default:
       return 'Done';
   }

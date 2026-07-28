@@ -25,6 +25,7 @@ import {
   writeAppSettings,
   type ChatEvent,
 } from '../server/chat';
+import type { PermissionMode } from '../server/permissionMode';
 
 async function drain(source: AsyncIterable<ChatEvent>, until: number): Promise<ChatEvent[]> {
   const out: ChatEvent[] = [];
@@ -430,22 +431,58 @@ describe('approval policy', () => {
 });
 
 describe('AgentSdkDriver approvals', () => {
-  /** Capture the `canUseTool` callback the driver hands the SDK. */
-  function driverWithPermission(): {
+  /** Capture the `canUseTool` callback, and the options, the driver hands the SDK. */
+  function driverWithPermission(mode?: PermissionMode): {
     driver: AgentSdkDriver;
     ask: (tool: string, input: unknown) => Promise<unknown>;
+    options: () => Record<string, unknown>;
   } {
     let canUseTool: ((tool: string, input: unknown) => Promise<unknown>) | null = null;
+    let captured: Record<string, unknown> = {};
     const sdk = {
       query: (args: unknown) => {
         const options = (args as { options: Record<string, unknown> }).options;
+        captured = options;
         canUseTool = options.canUseTool as typeof canUseTool;
         return (async function* () {})();
       },
     };
-    const driver = new AgentSdkDriver(sdk, 'sk-test');
-    return { driver, ask: (tool, input) => canUseTool!(tool, input) };
+    const driver = new AgentSdkDriver(sdk, 'sk-test', null, null, mode);
+    return { driver, ask: (tool, input) => canUseTool!(tool, input), options: () => captured };
   }
+
+  /**
+   * The SDK's own switch and Hearth's approval callback are two levers on the
+   * same decision, and a build where they disagree is worse than either one
+   * being wrong: the transcript would show approvals for work the SDK had
+   * already waved through, or none for work it was asking about.
+   */
+  it('sets the SDK’s permissionMode from the project’s mode, and the callback to match', async () => {
+    for (const [mode, expected] of [
+      ['ask', 'default'],
+      ['auto', 'acceptEdits'],
+      ['skip', 'bypassPermissions'],
+    ] as const) {
+      const { driver, options } = driverWithPermission(mode);
+      await driver.start('s1', '/w/game');
+      expect(options().permissionMode).toBe(expected);
+      driver.stop();
+    }
+  });
+
+  it('asks about work inside the folder in ask mode, and about nothing in skip', async () => {
+    const asking = driverWithPermission('ask');
+    await asking.driver.start('s1', '/w/game');
+    const iterator = asking.driver.events[Symbol.asyncIterator]();
+    void asking.ask('Write', { file_path: '/w/game/a.js' });
+    expect((await iterator.next()).value).toMatchObject({ type: 'approval-request', kind: 'file-change' });
+    asking.driver.stop();
+
+    const skipping = driverWithPermission('skip');
+    await skipping.driver.start('s1', '/w/game');
+    expect(await skipping.ask('Bash', { command: 'sudo rm -rf /' })).toMatchObject({ behavior: 'allow' });
+    skipping.driver.stop();
+  });
 
   it('auto-allows work inside the folder without troubling the user', async () => {
     const { driver, ask } = driverWithPermission();

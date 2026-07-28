@@ -17,6 +17,7 @@ import { Tooltip } from '../ui/Tooltip';
 import { Icon } from '../ui';
 import { MenuButton } from '../ui/Menu';
 import { ModelSelector } from './ModelSelector';
+import { PermissionSelector } from './PermissionSelector';
 import { AttachmentTray } from './AttachmentTray';
 import { ProjectSelector } from '../../projects/ProjectSelector';
 import { ToastHost } from '../ui/Toast';
@@ -330,6 +331,11 @@ export function Composer({ variant = 'chat' }: { variant?: ComposerVariant } = {
               conversation the answer is already settled. */}
           {picksProject && <ProjectSelector />}
           {blocked ? <span className="composer-note">{blocked}</span> : <span className="composer-row-gap" />}
+          {/* What the agent may do without asking, and who answers. In that
+              order, left to right: the model pill keeps the place beside Send
+              it has always had, and the new one arrives beside it rather than
+              under the reader's pointer. */}
+          <PermissionSelector />
           <ModelSelector />
           {/* Stop belongs to the running turn and stays reachable while one is
               running. Send appears beside it the moment there is something to

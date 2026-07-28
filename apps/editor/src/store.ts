@@ -23,7 +23,9 @@ import {
   apiMeta,
   apiOpenAiLogin,
   apiOpenWorkspace,
+  apiPermissionMode,
   apiPersonalization,
+  apiSetPermissionMode,
   apiProbeStatus,
   apiTesterApprove,
   apiTesterHistory,
@@ -56,6 +58,7 @@ import type {
   FileChangeEntry,
   GameStatus,
   JournalEntry,
+  PermissionMode,
   RecentChatEntry,
   Sense,
   ServerMeta,
@@ -133,6 +136,14 @@ const EMPTY_TESTER: TesterState = {
 };
 
 /**
+ * What a folder is on before its own answer arrives, and what a failed read
+ * leaves standing: today's behaviour, which asks before anything outside the
+ * project folder. Deliberately not `skip`. A mode nobody chose must never be
+ * the one that stops asking, so every fallback in this file lands here.
+ */
+export const DEFAULT_PERMISSION_MODE: PermissionMode = 'auto';
+
+/**
  * A message someone typed while the agent was still answering the last one.
  *
  * It is the same payload `sendChat` takes, held rather than dropped. Note the
@@ -191,6 +202,22 @@ export interface AppState {
    * changed (a login completing, a key being saved).
    */
   providers: ChatProviderStatus | null;
+  /**
+   * When the agent stops to ask before it runs a command or writes a file, in
+   * THIS folder. Not null while it is being read: a control over what the
+   * agent is allowed to do has to name a real behaviour at every moment, so it
+   * starts on the default and is corrected by the read a beat later. The
+   * correction can only ever loosen it towards what the project actually
+   * stored, never towards something the user never chose.
+   */
+  permissionMode: PermissionMode;
+  /**
+   * This folder has already been told what `skip` means, so choosing it again
+   * does not ask again. Stored per project by the server; false until the read
+   * lands, which is the safe way round (it costs one extra confirm, where the
+   * other way round costs the confirm entirely).
+   */
+  permissionSkipAcknowledged: boolean;
   /** Every conversation this folder holds, newest activity first. */
   chats: ChatSummary[];
   /** Which one the window is looking at. */
@@ -329,6 +356,16 @@ export interface AppState {
   /** Answer a blocking ask, and show the answer without waiting for the round trip. */
   approveChat(approvalId: string, decision: ApprovalDecision): void;
   refreshProviders(): Promise<void>;
+  /** Re-read the open folder's permission mode. Safe to over-call. */
+  refreshPermissionMode(): Promise<void>;
+  /**
+   * Choose a mode for the open folder, and remember it there.
+   *
+   * `acknowledgeSkip` records that this project has been shown what `skip`
+   * does. It travels WITH the mode rather than in a call of its own, so a
+   * project can never end up on skip having never been told what that is.
+   */
+  setPermissionMode(mode: PermissionMode, acknowledgeSkip?: boolean): Promise<void>;
   /** Begin the ChatGPT device flow and open the page it hands back. */
   startOpenAiLogin(): Promise<void>;
   /**
@@ -692,6 +729,40 @@ export function lastUserText(messages: ChatMessage[]): string | undefined {
   return undefined;
 }
 
+/**
+ * Close out every row that never reported a result.
+ *
+ * A turn can end with tool rows still open: it failed mid-command, someone
+ * pressed Stop, or the driver died. Ending a turn used to flip only the
+ * MESSAGE to not-streaming, so those rows kept `state: 'running'` for the life
+ * of the transcript, on disk, through a reload. A conversation that finished
+ * days ago went on spinning on a command that stopped with it, and the tool-run
+ * fold (which refuses to collapse a run holding a live member) stayed pinned
+ * open by one stale row.
+ *
+ * `stopped`, never `ok` and never `error`: nothing here knows the row
+ * succeeded, and a command someone interrupted did not necessarily fail. See
+ * ToolState in types.ts.
+ *
+ * Same array identity when nothing was open, so React skips the work.
+ */
+function settleOpenParts(parts: readonly ChatPart[]): ChatPart[] {
+  if (!parts.some((part) => 'state' in part && part.state === 'running')) return parts as ChatPart[];
+  return parts.map((part) => ('state' in part && part.state === 'running' ? { ...part, state: 'stopped' } : part));
+}
+
+/**
+ * A message that is no longer being written: nothing is streaming into it and
+ * nothing inside it is still claiming to run. Every place a turn ends goes
+ * through here, so there is one answer to "what does a half-finished turn look
+ * like afterwards" rather than one per ending.
+ */
+export function settleMessage(message: ChatMessage): ChatMessage {
+  const parts = settleOpenParts(message.parts);
+  if (!message.streaming && parts === message.parts) return message;
+  return { ...message, parts, streaming: false };
+}
+
 export function applyChatEvent(
   messages: ChatMessage[],
   incoming: ChatEvent,
@@ -716,6 +787,14 @@ export function applyChatEvent(
       if (tail && tail.kind === 'text') parts[parts.length - 1] = { kind: 'text', text: tail.text + event.text };
       else parts.push({ kind: 'text', text: event.text });
       return replace(parts);
+    }
+    // Closes the open piece of prose so the next one starts its own. It carries
+    // no text, so an already-closed message (or a turn that never wrote one) is
+    // a no-op rather than an empty paragraph in the transcript.
+    case 'message-end': {
+      const tail = last.parts[last.parts.length - 1];
+      if (!tail || tail.kind !== 'text' || tail.text === '') return messages;
+      return replace([...last.parts, { kind: 'text', text: '' }]);
     }
     case 'reasoning-delta': {
       const parts = last.parts.slice();
@@ -880,7 +959,10 @@ export function applyChatEvent(
       // Drop a turn that produced nothing at all rather than leaving an empty
       // bubble behind.
       if (last.parts.length === 0) return messages.slice(0, lastIndex);
-      return replace(last.parts, false);
+      // A turn that ended can hold no work in progress. Codex reports a failed
+      // turn as a completion, so this is also the ending a command killed
+      // mid-run arrives on.
+      return replace(settleOpenParts(last.parts), false);
     case 'error':
       // A failed turn is the app speaking, not the agent. Appended as a text
       // part this used to render in the agent's own voice and typography, so
@@ -888,7 +970,13 @@ export function applyChatEvent(
       // had chosen to say. It carries the prompt that was lost so the row can
       // offer to send it again.
       return replace(
-        [...last.parts, { kind: 'notice', text: event.message, tone: 'error', retryText: lastUserText(messages) }],
+        [
+          // Whatever was mid-flight stopped with the turn. The failure is the
+          // turn's, not necessarily the command's, so the row says it never
+          // finished rather than borrowing the error.
+          ...settleOpenParts(last.parts),
+          { kind: 'notice', text: event.message, tone: 'error', retryText: lastUserText(messages) },
+        ],
         false,
       );
     default:
@@ -951,7 +1039,7 @@ export function replayTranscript(records: readonly ChatRecord[], project = ''): 
     if (!last || last.role !== 'agent' || !last.streaming) messages = [...messages, makeAgentMessage()];
     messages = applyChatEvent(messages, record.event);
   }
-  return messages.map((message) => (message.streaming ? { ...message, streaming: false } : message));
+  return messages.map(settleMessage);
 }
 
 // ---------------------------------------------------------------------------
@@ -1009,14 +1097,35 @@ export const useApp = create<AppState>((set, get) => {
   }
 
   /**
-   * Resolve once the folder's socket is up AND a conversation is open in it.
-   * The second half matters as much as the first: a send that beats the
-   * `chat-opened` replay gets its optimistic bubble wiped by that replay, and
-   * a send the server receives before the conversation binds would mint a
-   * second chat for the same first message.
+   * Resolve once the folder's socket is up AND the conversation this send
+   * belongs in is the one open in it.
+   *
+   * Three silent failures live under this one wait:
+   *
+   *   1. a send that beats the socket goes nowhere at all;
+   *   2. a send that beats `chat-opened` has its optimistic bubbles wiped by
+   *      that frame's transcript replay, and every event after it lands on an
+   *      empty list (see applyChatEvent's early return), so the turn really
+   *      runs, spends real quota, and the window shows a blank page;
+   *   3. a send the server receives before the conversation binds mints a
+   *      SECOND chat for the same first message.
+   *
+   * `replacing` is why the test is not simply `activeChatId !== null`. When a
+   * brand-new conversation is being minted inside a folder that already has
+   * one open, "a conversation exists" was true before the request was even
+   * sent, so the wait resolved synchronously and failure 2 happened every
+   * time, which is exactly what the wait was written to prevent. Readiness
+   * for a NEW conversation means a DIFFERENT one is open, so the caller names
+   * the one it is leaving and that one does not count as an answer.
+   *
+   * Pass null when there is nothing to leave: opening a folder clears
+   * `activeChatId` itself, so any id that appears there is the new folder's.
    */
-  function waitForChatSurface(timeoutMs = CONNECT_WAIT_MS): Promise<boolean> {
-    return waitForState((state) => state.wsStatus === 'connected' && state.activeChatId !== null, timeoutMs);
+  function waitForChatSurface(replacing: string | null, timeoutMs = CONNECT_WAIT_MS): Promise<boolean> {
+    return waitForState(
+      (state) => state.wsStatus === 'connected' && state.activeChatId !== null && state.activeChatId !== replacing,
+      timeoutMs,
+    );
   }
 
   /**
@@ -1039,11 +1148,28 @@ export const useApp = create<AppState>((set, get) => {
     set({ conversationMode: mode, conversationModePinned: true });
   }
 
+  /**
+   * The record the server last opened for this window.
+   *
+   * `chats` is no longer a complete answer to "what am I in": a chat that has
+   * not been typed into yet is left out of every list (server/chatStore.ts),
+   * and it is precisely the one a window sits in between asking for a new chat
+   * and sending the first message. The opened record is the answer for that
+   * gap, and it is kept here rather than in state because only the actions
+   * below read it, so nothing should re-render for it.
+   */
+  let openedChat: ChatSummary | null = null;
+
   /** The conversation this window has open, as its record. Null on Home. */
   function activeConversation(): ChatSummary | null {
     const state = get();
     if (state.activeChatId === null) return null;
-    return state.chats.find((chat) => chat.id === state.activeChatId) ?? null;
+    return (
+      state.chats.find((chat) => chat.id === state.activeChatId) ??
+      // Guarded on the id, so a record left over from the conversation before
+      // this one can never answer for the one that is open.
+      (openedChat !== null && openedChat.id === state.activeChatId ? openedChat : null)
+    );
   }
 
   /**
@@ -1182,6 +1308,9 @@ export const useApp = create<AppState>((set, get) => {
         // A `chat-new` that has landed becomes a plain "open this one" intent,
         // so a later reconnect resumes this chat instead of minting another.
         chatIntent = { type: 'chat-open', chatId: frame.chat.id };
+        // The only place this window is told what kind of thing it is looking
+        // at while the conversation is still too new to be in any list.
+        openedChat = frame.chat;
         // The record decides what the column shows. This is the whole of the
         // rule "a conversation has a kind": whatever the window was showing a
         // moment ago, it now shows the thing that was opened.
@@ -1333,7 +1462,7 @@ export const useApp = create<AppState>((set, get) => {
       if (get().chatBusy) {
         set((state) => ({
           chatBusy: false,
-          messages: state.messages.map((m) => (m.streaming ? { ...m, streaming: false } : m)),
+          messages: state.messages.map(settleMessage),
         }));
       }
       scheduleReconnect(project, epoch);
@@ -1368,6 +1497,8 @@ export const useApp = create<AppState>((set, get) => {
     chatError: null,
     settings: null,
     providers: null,
+    permissionMode: DEFAULT_PERMISSION_MODE,
+    permissionSkipAcknowledged: false,
     chats: [],
     activeChatId: null,
     recentChats: [],
@@ -1449,6 +1580,23 @@ export const useApp = create<AppState>((set, get) => {
         chatDriver: null,
         chatError: null,
         providers: null,
+        // Which key answers for a folder is the folder's own answer: a project
+        // with its own key must not vouch for the next one for the length of a
+        // round trip. Null is the honest pre-read value, and it is also what
+        // holds `maybeSettleConversationMode` until BOTH reads land.
+        settings: null,
+        // The console is a record of what happened in a folder, so project A's
+        // stack traces have no business in project B's pane. Cleared here as
+        // well as on close, because a switch is a close and an open.
+        consoleEntries: [],
+        consoleUnread: 0,
+        consoleAtBottom: true,
+        // The folder being left does not lend this one its permissions. Back
+        // to the default until this folder's own answer lands below, so a
+        // project that had skipped every check cannot hand that to the next
+        // one for the length of a round trip.
+        permissionMode: DEFAULT_PERMISSION_MODE,
+        permissionSkipAcknowledged: false,
         chats: [],
         activeChatId: null,
         queued: [],
@@ -1470,12 +1618,20 @@ export const useApp = create<AppState>((set, get) => {
         narrowTab: 'chat',
         codePeek: { open: false, path: null },
         pendingPrompt: prompt?.trim() ? prompt.trim() : null,
+        // `screen`, `projectView` and `composing` are deliberately NOT set
+        // here. Opening a folder is not a view: `openProject` wants the
+        // project screen, `openRecentChat` wants a conversation, and
+        // `startFromHome` wants the one it is about to send into. Clearing
+        // them here made the project screen appear and then vanish mid-open
+        // (the same flicker `chat-opened` documents), so each caller says
+        // where it is going instead, before and after this round trip.
       });
       connectWs(info.path);
       await Promise.all([
         get().refreshGame(),
         get().refreshSettings(),
         get().refreshProviders(),
+        get().refreshPermissionMode(),
         get().refreshChats(),
         get().refreshRecentChats(),
         // Read once on open, so a window that arrives while a session is
@@ -1514,6 +1670,8 @@ export const useApp = create<AppState>((set, get) => {
         chatError: null,
         settings: null,
         providers: null,
+        permissionMode: DEFAULT_PERMISSION_MODE,
+        permissionSkipAcknowledged: false,
         chats: [],
         activeChatId: null,
         queued: [],
@@ -1521,15 +1679,40 @@ export const useApp = create<AppState>((set, get) => {
         game: EMPTY_GAME,
         senses: [],
         shimDetected: false,
+        gameNonce: 0,
+        // The tester belongs to the folder. Its history left standing is why
+        // the Tester screen went on offering a Play button for a game that was
+        // no longer open.
+        tester: EMPTY_TESTER,
+        // Errors are things that happened IN a folder. Carried across a close
+        // they read as errors in whatever is opened next.
+        consoleEntries: [],
+        consoleUnread: 0,
+        consoleAtBottom: true,
         conversationMode: 'chat',
         conversationModePinned: false,
+        paneTab: 'game',
         paneOpen: false,
         paneChoice: null,
+        narrowTab: 'chat',
         codePeek: { open: false, path: null },
         pendingPrompt: null,
+        // WHERE the window is, not just what it is holding. This is the half
+        // that kept being forgotten: a screen or a project view is a view OF a
+        // folder, so a closed folder cannot leave one of them up. The Tester
+        // screen survived a close and sat there reading "your tester has not
+        // played this game yet" with no game open at all.
+        screen: null,
+        projectView: false,
+        composing: false,
+        // The blank composer aimed at a folder that is no longer open would
+        // start the next message inside it.
+        composeTarget: null,
       });
       // recentChats deliberately survives: it spans folders, and the rail is
-      // the first thing a user looks at after closing one.
+      // the first thing a user looks at after closing one. So does
+      // `personalization`, which lives in ~/.hearth and belongs to the person,
+      // not to any one project.
     },
 
     sendChat(text, attachments) {
@@ -1595,7 +1778,7 @@ export const useApp = create<AppState>((set, get) => {
       get().sendFrame({ type: 'chat-cancel' });
       set((state) => ({
         chatBusy: false,
-        messages: state.messages.map((m) => (m.streaming ? { ...m, streaming: false } : m)),
+        messages: state.messages.map(settleMessage),
       }));
     },
 
@@ -1609,7 +1792,7 @@ export const useApp = create<AppState>((set, get) => {
       // a Stop that leaves the composer locked reads as a Stop that failed.
       set((state) => ({
         chatBusy: false,
-        messages: state.messages.map((m) => (m.streaming ? { ...m, streaming: false } : m)),
+        messages: state.messages.map(settleMessage),
       }));
       // "Stop, do this instead" is the whole reason someone queues a message
       // during a turn they can see going wrong. The agent is still bound, so
@@ -1648,8 +1831,53 @@ export const useApp = create<AppState>((set, get) => {
       if (!project) return;
       const providers = await apiChatProviders(project);
       if (get().projectPath !== project) return; // folder changed mid-flight
+      // A read that did not land leaves the last answer standing, the same way
+      // refreshPermissionMode does below. This route answers 403 for a root the
+      // server has not marked open yet, which includes the gap in the middle of
+      // a project switch, and writing that null through made the account row
+      // say "Not signed in" and the top bar "No agent connected" while the very
+      // same endpoint was still answering loggedIn: true on the next call.
+      // Uncertainty must never resolve into a confident "not connected".
+      //
+      // Nothing is settled from a failed read either: choosing chat or terminal
+      // for a folder on an answer nobody got is the same lie one step later.
+      if (!providers) return;
       set({ providers });
       maybeSettleConversationMode();
+    },
+
+    async refreshPermissionMode() {
+      const project = get().projectPath;
+      if (!project) return;
+      const info = await apiPermissionMode(project);
+      if (get().projectPath !== project) return; // folder changed mid-flight
+      // A read that did not land leaves the default standing rather than
+      // blanking the control: this is also what the very first run of a build
+      // whose server has not learned the route yet looks like, and the pill
+      // has to keep naming a real behaviour through it.
+      if (!info) return;
+      set({ permissionMode: info.mode, permissionSkipAcknowledged: info.skipAcknowledged });
+    },
+
+    async setPermissionMode(mode, acknowledgeSkip = false) {
+      const project = get().projectPath;
+      if (!project) return;
+      // The server first, the mirror second, unlike almost every other control
+      // in this file. A pill reading "Skip all checks" while the project on
+      // disk still says otherwise is a claim about what the agent may do, and
+      // that is the one kind of optimism worth paying a round trip to avoid.
+      const info = await apiSetPermissionMode(project, {
+        mode,
+        ...(acknowledgeSkip ? { skipAcknowledged: true } : {}),
+      });
+      if (get().projectPath !== project) return; // folder changed mid-flight
+      if (!info) {
+        const note = 'Could not save the permission setting.';
+        get().log('error', 'app', note);
+        showToast(note, 'error');
+        return;
+      }
+      set({ permissionMode: info.mode, permissionSkipAcknowledged: info.skipAcknowledged });
     },
 
     async startOpenAiLogin() {
@@ -1682,6 +1910,13 @@ export const useApp = create<AppState>((set, get) => {
       // The playtest column goes with it: the last conversation's game sitting
       // beside a blank page is the old page refusing to leave. `paneChoice` is
       // untouched, so a project that likes the column open gets it back.
+      //
+      // `activeChatId` is untouched too, and that is not an oversight: the
+      // previous conversation is still the one the server has open, and it
+      // stays that way until the first message asks for another. Nothing may
+      // read "a conversation is open" as "the surface is ready to be sent
+      // into": see waitForChatSurface, which takes the conversation being
+      // left as an argument for exactly this reason.
       set({
         composing: true,
         projectView: false,
@@ -1817,6 +2052,10 @@ export const useApp = create<AppState>((set, get) => {
           }
           root = created.info.path;
         }
+        // The conversation this message must NOT land in, for the wait below.
+        // Only the already-open branch has one: opening a folder clears
+        // `activeChatId`, and the chat it lands in is the new folder's.
+        let leaving: string | null = null;
         if (get().projectPath !== root) {
           const opened = await get().openWorkspace(root);
           if (!opened.ok) {
@@ -1825,7 +2064,10 @@ export const useApp = create<AppState>((set, get) => {
         } else {
           // Already here, so the only thing missing is somewhere to put the
           // message: a project sitting on a finished conversation must not
-          // have this one appended to it.
+          // have this one appended to it. `newChat` leaves that conversation
+          // open underneath the blank surface, so it is named here rather than
+          // inferred from the state.
+          leaving = get().activeChatId;
           requestChat({ type: 'chat-new' });
         }
         // The first thing this folder ever did was receive a chat message, so
@@ -1838,11 +2080,15 @@ export const useApp = create<AppState>((set, get) => {
         // The send needs the conversation the open just started, not merely
         // the socket. Wait for it; if it never comes, hand the words to the
         // composer instead of dropping them on the floor.
-        if (!(await waitForChatSurface())) {
+        if (!(await waitForChatSurface(leaving))) {
           set({ pendingPrompt: trimmed });
           return fail('The project opened, but nothing is listening yet. Your message is in the composer.');
         }
-        set({ composing: false });
+        // The message is about to land in a conversation, so the window shows
+        // that conversation. Neither the blank surface nor the project screen
+        // nor a full screen over the top may still be covering it, or the
+        // words go somewhere the person who typed them cannot see.
+        set({ composing: false, projectView: false, screen: null });
         get().sendChat(trimmed, files);
         return { ok: true };
       } finally {
@@ -1901,6 +2147,12 @@ export const useApp = create<AppState>((set, get) => {
       if (!project) return;
       const settings = await apiAppSettings(project);
       if (get().projectPath !== project) return;
+      // Same rule as refreshProviders above: null here is "the read did not
+      // land", not "this folder has no key", and the two must never be written
+      // to the same place. `openWorkspace` has already cleared this to null for
+      // the new folder, so a failed read leaves the honest pre-read value
+      // standing rather than unlearning an answer that did arrive.
+      if (!settings) return;
       set({ settings });
       maybeSettleConversationMode();
     },
@@ -2109,10 +2361,7 @@ export const useApp = create<AppState>((set, get) => {
       // Waiting for a DIFFERENT conversation, not merely for one: the folder
       // already had one open, so "a conversation exists" was true before this
       // began and would let the send land in the wrong place.
-      const landed = await waitForState(
-        (state) => state.wsStatus === 'connected' && state.activeChatId !== null && state.activeChatId !== before,
-        waitMs,
-      );
+      const landed = await waitForChatSurface(before, waitMs);
       if (!landed) {
         // Held in the composer rather than sent anywhere. The one place this
         // must never put approved work is the conversation being left.

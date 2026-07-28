@@ -228,15 +228,32 @@ describe('the model pill', () => {
     expect(pill.textContent).toContain('Auto');
 
     fireEvent.click(pill);
-    const headers = [...document.querySelectorAll('.menu-header-name')].map((el) => el.textContent);
     // The picker answers "how do you want to work", not just "which model":
     // Chat is what Hearth drives itself over an API or an OAuth session, and
-    // Terminal is a CLI on this machine, started in a real shell. Each vendor
-    // group's header names its own backend, so the separate Agent section that
-    // briefly led this menu was the same question asked twice. Effort is
-    // absent until a model that declares efforts is picked.
-    expect(headers).toEqual(['Chat', 'Claude', 'ChatGPT', 'Terminal']);
+    // Terminal is a CLI on this machine, started in a real shell. Those two are
+    // alternatives, so they are a switch at the head of the menu rather than
+    // two sections of one list. Only the chosen side's groups are below it, and
+    // each names its own backend, so the separate Agent section that briefly
+    // led this menu was the same question asked twice.
+    const sides = [...document.querySelectorAll('.menu-heading [role="tab"]')].map((el) => el.textContent);
+    expect(sides).toEqual(['Chat', 'Terminal']);
+
+    const headers = [...document.querySelectorAll('.menu-header-name')].map((el) => el.textContent);
+    // Chat is the side it opens on. Effort is absent until a model that
+    // declares efforts is picked.
+    expect(headers).toEqual(['Claude', 'ChatGPT']);
     expect(screen.getByRole('menuitemcheckbox', { name: 'Opus 5' })).toBeTruthy();
+  });
+
+  it('shows the machine’s CLIs, and only those, once the switch is on Terminal', () => {
+    render(<Composer />);
+    fireEvent.click(screen.getByRole('button', { name: 'Model' }));
+    fireEvent.click(screen.getByRole('tab', { name: 'Terminal' }));
+
+    // The models are gone rather than merely scrolled past: the point of the
+    // switch is that one side at a time is what you are choosing from.
+    expect(screen.queryByRole('menuitemcheckbox', { name: 'Opus 5' })).toBeNull();
+    expect(document.querySelector('.menu-heading .model-menu-blurb')?.textContent).toBeTruthy();
   });
 
   it('routes an unavailable provider to Settings instead of storing a dead choice', () => {

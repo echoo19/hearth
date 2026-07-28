@@ -1,0 +1,97 @@
+/* ==========================================================================
+   Permissions: the composer pill that says how much the agent asks before it
+   acts, and the small menu behind it.
+
+   Everything about the pill at rest is the model pill's (it carries
+   `.model-pill` for exactly that reason, see PermissionSelector.tsx). What
+   lives here is the one state that has to look different, and the menu's own
+   metrics.
+   ========================================================================== */
+
+.permission-pill-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* `skip` is the one resting state that should be noticeable, and the trap is
+   answering that with a permanent warning colour. A control someone chose on
+   purpose that then argues with them every time they glance at the row is the
+   app nagging, which is precisely what the stored acknowledgement exists to
+   stop; and a red that is on for hours stops being read as red at all.
+
+   So the pill keeps its hue, its size and its place, and changes WEIGHT: it
+   holds, permanently, the raised surface the other pills show only while
+   hovered or open, plus a hairline no other pill in this row has. It reads as
+   the one control here that is switched on, which is what it is, and being the
+   only filled shape on that side of the composer besides Send makes it
+   findable in peripheral vision without ever being loud.
+
+   --ink on --bg-2 rather than the resting --ink-mute: this is the one pill
+   whose text people will read from across a desk. Both clear 4.5:1 (see the
+   ramp in tokens.css); the full-strength ink is the extra bit of presence the
+   state gets in place of colour. */
+.permission-pill.is-skipping {
+  background: var(--bg-2);
+  border: 1px solid var(--border-strong);
+  color: var(--ink);
+}
+
+/* Hover still has to answer, and the base pill's hover rule is the same
+   specificity as the rule above, so it is restated here rather than left to
+   source order to lose. */
+.permission-pill.is-skipping:hover,
+.permission-pill.is-skipping[aria-expanded='true'] {
+  background: var(--bg-3);
+}
+
+/* Three rows, each a rule plus what it costs. Wide enough that no note wraps
+   onto its own line (a note that wraps stops reading as a note and starts
+   reading as a second row), and no taller than its own content: this list
+   cannot grow, so it never needs the model menu's cap or its scrollbar. */
+.menu-popover.permission-menu {
+  min-width: 300px;
+  /* Anchored to the pill it hangs off, like every other composer menu. */
+  transform-origin: bottom right;
+  /* No `both`, and no `forwards`: a fill mode holds the `from` frame whenever
+     the animation does not actually run, and the menu would ship invisible.
+
+     The `from` frame moves the menu and does NOT fade it, which is one step
+     further than that rule asks for, on evidence. A document that is not being
+     rendered (a hidden tab, a headless capture) never advances the animation
+     timeline at all, so its animations sit at `currentTime: 0` for as long as
+     it stays that way, fill mode or no fill mode. Anything this keyframe
+     touches is therefore a value the menu can be stuck at. Stuck 4px low and
+     2% small is a menu; stuck at zero opacity is a bug report. */
+  animation: permission-menu-in var(--t) var(--ease-out);
+}
+
+@keyframes permission-menu-in {
+  from {
+    transform: translateY(4px) scale(0.98);
+  }
+}
+
+/* The line above the rows: what this reaches, and what it does not. It is the
+   heading slot rather than a first row because it is not a choice, and it is
+   --ink-mute rather than the fainter caption colour because the second half of
+   it corrects an assumption someone would otherwise act on. */
+.permission-menu-blurb {
+  margin: 0;
+  font-size: var(--text-xs);
+  color: var(--ink-mute);
+}
+
+/* The trailing note on these rows is prose, not a keystroke, so it drops the
+   monospace the shortcut slot carries for ⌘K elsewhere.
+
+   --ink-mute, not the --ink-faint the model menu's notes use: those notes are
+   status words you can skip ("Default", "Signed in") and these are the whole
+   consequence of the row above them. --ink-faint on --bg-1 also lands within
+   rounding distance of the 4.5:1 floor, and text nobody is meant to skip does
+   not get to sit on that line. */
+.menu-popover.permission-menu .menu-shortcut {
+  font-family: var(--font-ui);
+  font-size: var(--text-xs);
+  color: var(--ink-mute);
+}

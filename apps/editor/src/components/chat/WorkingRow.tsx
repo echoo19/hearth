@@ -14,6 +14,7 @@
 import React, { useEffect, useState } from 'react';
 import type { ChatMessage } from '../../types';
 import { formatElapsed } from '../../chat/duration';
+import { Icon } from '../ui';
 
 /**
  * What the turn is busy with, in one word.
@@ -74,7 +75,15 @@ export function WorkingRow({ message }: { message: ChatMessage }) {
     // Polite, and only the label is announced: a counter re-read by a screen
     // reader every second is not information, it is interruption.
     <p className="msg-working" aria-live="polite">
-      <span className="working-pulse" aria-hidden="true" />
+      {/* The app's own flame, not the generic dot the other live rows use. This
+          is the one place a turn is being written right now, and a hearth with
+          something burning in it is a truer picture of that than a blinking
+          light. The wrapper exists so the flicker has something to pivot on:
+          the transform origin has to sit at the flame's base, and the Icon
+          renders a bare svg with no class of its own. See chat.css. */}
+      <span className="working-flame" aria-hidden="true">
+        <Icon name="fire" />
+      </span>
       <span className="working-label">{workingLabel(message)}</span>
       {counter && (
         <span className="working-elapsed" aria-hidden="true">

@@ -28,6 +28,7 @@ import {
   isHearthServerPath,
 } from '../server/projectServer.js';
 import { attachProbeStream } from '../server/probeStream.js';
+import { startGameServer, type GameServerHandle } from '../server/gameServer.js';
 import { ensureHearthShim, hearthPtyEnv } from '../server/hearthShim.js';
 import { applyAppMenu, buildAppMenuTemplate } from './appMenu.js';
 import { resolveUpdatePolicy } from './updaterPolicy.js';
@@ -71,14 +72,27 @@ const MIME: Record<string, string> = {
  * Serve the built UI (dist/) + the /api routes on a loopback-only port.
  * Serving over http (rather than file://) keeps the renderer identical to
  * browser mode — same-origin fetch('/api/...') works unchanged.
+ *
+ * The game mount does NOT ride this server. It gets a second loopback port of
+ * its own (server/gameServer.ts, whose header says why), started here so the
+ * packaged app has exactly the same origin boundary the dev server does. If
+ * that listener fails the pane says it has nowhere to serve the game from,
+ * which is the honest outcome: the alternative would be putting the agent's
+ * HTML back on the origin that spawns shells.
  */
-function startServer(uiRoot: string): Promise<{ port: number; close: () => void }> {
+async function startServer(uiRoot: string): Promise<{ port: number; close: () => void }> {
   const ctx = createProjectServerContext();
+  let game: GameServerHandle | null = null;
+  try {
+    game = await startGameServer(ctx);
+    ctx.setGameOrigin(game.origin);
+  } catch (err) {
+    console.error(`[hearth] game mount server could not start: ${(err as Error).message}`);
+  }
   const server = http.createServer((req, res) => {
     const url = new URL(req.url ?? '/', 'http://localhost');
-    // /api/* plus the /game/ and /evidence/ static mounts (the project's own
-    // files). Checked before the SPA fallback below, which would otherwise
-    // answer a missing game asset with the editor's index.html.
+    // /api/* only. Checked before the SPA fallback below, which would
+    // otherwise answer an API call with the editor's index.html.
     if (isHearthServerPath(url.pathname)) {
       handleApiRequest(ctx, req, res).catch((err: unknown) => {
         res.statusCode = 500;
@@ -105,7 +119,13 @@ function startServer(uiRoot: string): Promise<{ port: number; close: () => void 
     server.listen(0, '127.0.0.1', () => {
       const address = server.address();
       if (address && typeof address === 'object') {
-        resolve({ port: address.port, close: () => server.close() });
+        resolve({
+          port: address.port,
+          close: () => {
+            server.close();
+            game?.close();
+          },
+        });
       } else {
         reject(new Error('Could not determine server port'));
       }

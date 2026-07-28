@@ -51,12 +51,15 @@ import {
   type ChatDriverKind,
   type ChatEvent,
 } from './chat.js';
+import { readPermissionMode, type PermissionMode } from './permissionMode.js';
 import { providerBus, type ChatProviderStatus } from './chatProviders.js';
 import { parseAttachmentInputs, saveAttachments, storedAttachment } from './chatAttachments.js';
 import {
   appendChatRecord,
   createChat,
+  getChat,
   listChats,
+  prunePendingChats,
   readTranscript,
   safeChatId,
   setChatThreadId,
@@ -183,6 +186,14 @@ interface ChatSession {
   root: string;
   chatId: string;
   driver: ChatDriver | null;
+  /**
+   * The permission mode this driver was BUILT with. Both backends fix the
+   * policy when the session opens (codex at `thread/start`, the Agent SDK at
+   * `query()`), so this is not a cache of the preference, it is what the live
+   * agent is actually running under. `ensureChat` compares it to what is on
+   * disk and rebinds when they differ.
+   */
+  permissionMode: PermissionMode;
   sockets: Set<WebSocket>;
 }
 
@@ -248,6 +259,7 @@ export function attachWebSocket(
         resumeThreadId?: string | null;
         onThreadId?: (threadId: string) => void;
         agent?: AgentTurnOptions | null;
+        permissionMode?: PermissionMode | null;
       },
     ) => Promise<ChatDriver>;
   },
@@ -567,7 +579,10 @@ export function attachWebSocket(
   async function openChatForSocket(root: string, socket: WebSocket, chatId: string): Promise<void> {
     const id = safeChatId(chatId);
     if (!id) return;
-    const chat = (await listChats(root)).find((entry) => entry.id === id);
+    // By id rather than out of the list: a chat that has not been typed into
+    // yet is in no list at all (chatStore's pending rule), and it is exactly
+    // the one a window that just asked for a new chat is being pointed at.
+    const chat = await getChat(root, id);
     if (!chat) return;
     leaveChat(socket, { stopIfLast: true });
     socketChat.set(socket, id);
@@ -597,12 +612,37 @@ export function attachWebSocket(
       void announceChats(root);
     }
     const key = chatKey(root, chatId);
+    // Read fresh on every send, like the skills and the personal prompt the
+    // drivers re-read at bind: this is a file a person edits while Hearth is
+    // running, and one small read is cheaper than a turn running under the mode
+    // they just moved away from.
+    const permissionMode = await readPermissionMode(root);
     const existing = chatSessions.get(key);
-    if (existing) {
+    if (existing && existing.permissionMode === permissionMode) {
       existing.sockets.add(socket);
       return existing.driver ? existing : null; // still binding
     }
-    const session: ChatSession = { key, root, chatId, driver: null, sockets: new Set([socket]) };
+    // The mode moved under a live conversation. Neither backend can be told
+    // about it (codex fixed the policy at `thread/start`, the SDK at `query()`),
+    // so the agent is torn down and rebound here, BEFORE the turn that is
+    // waiting on this call. The alternative is a switch that silently does
+    // nothing until the next session, which for a permission control is the
+    // difference between a preference and a lie. Same coarse teardown as
+    // chat-cancel; the transcript is on disk and survives it.
+    if (existing) {
+      chatSessions.delete(key);
+      existing.driver?.stop();
+    }
+    const session: ChatSession = {
+      key,
+      root,
+      chatId,
+      driver: null,
+      permissionMode,
+      // Every window that was watching comes along, so a rebind does not leave
+      // the other one staring at an agent nothing is feeding any more.
+      sockets: new Set([socket, ...(existing?.sockets ?? [])]),
+    };
     chatSessions.set(key, session);
 
     let driver: ChatDriver;
@@ -610,7 +650,7 @@ export function attachWebSocket(
       // A conversation the OpenAI backend has answered before carries its
       // codex thread, so reopening it resumes that thread rather than handing
       // a fresh agent a transcript to read.
-      const summary = (await listChats(root)).find((entry) => entry.id === session.chatId);
+      const summary = await getChat(root, session.chatId);
       driver = await makeChatDriver(root, {
         resumeThreadId: summary?.codexThreadId ?? null,
         onThreadId: (threadId) => void setChatThreadId(root, session.chatId, threadId),
@@ -618,6 +658,7 @@ export function attachWebSocket(
         // to be known before the driver is built, not just when it is sent.
         agent: agent ?? null,
         tools: await getAgentTools(),
+        permissionMode,
       });
       await driver.start(session.chatId, root);
     } catch (err) {
@@ -727,13 +768,33 @@ export function attachWebSocket(
       return;
     }
 
+    // Layer 2. Even a caller that satisfies the origin rule does not get to
+    // name an arbitrary path: this socket carries `pty-start`, which spawns
+    // the user's login shell with `cwd` set to whatever `?project=` said. It
+    // used to resolve that path and start a channel on it with no containment
+    // check at all, so `?project=/Users/<name>` was a shell in the home
+    // directory. `isOpenRoot` is the same jail the file routes and the static
+    // mounts have always used: a folder somebody deliberately opened in this
+    // app, this run. It lives on the context now precisely so this line can
+    // exist (it was a closure inside createProjectServerContext before, which
+    // is why this handler never called it).
+    //
+    // Resolved before the check, because openedRoots holds resolved paths.
+    // Refused before the upgrade, so a rejected caller never holds a socket.
+    const projectParam = url.searchParams.get('project');
+    const resolvedRoot = projectParam ? path.resolve(projectParam) : null;
+    if (resolvedRoot !== null && !ctx.isOpenRoot(resolvedRoot)) {
+      socket.write('HTTP/1.1 403 Forbidden\r\n\r\n');
+      socket.destroy();
+      return;
+    }
+
     wss.handleUpgrade(req, socket, head, (ws) => {
-      const projectParam = url.searchParams.get('project');
-      if (!projectParam) {
+      if (resolvedRoot === null) {
         ws.close(1008, 'Missing "project" query parameter');
         return;
       }
-      const root = path.resolve(projectParam);
+      const root = resolvedRoot;
       const channel = getChannel(root);
       channel.sockets.add(ws);
 
@@ -790,6 +851,13 @@ export function attachWebSocket(
               const kind: ChatKind = frame.kind === 'terminal' ? 'terminal' : 'chat';
               const title = typeof frame.title === 'string' ? frame.title : undefined;
               enqueueChatOp(ws, async () => {
+                // Before minting another one. A chat that was never typed into
+                // is invisible, so nothing a person does will ever clear it;
+                // this is the only thing that does. `socketChat` is every
+                // conversation a window is looking at right now, across every
+                // folder this server has open, and naming them here is what
+                // makes the sweep unable to take a chat out from under one.
+                await prunePendingChats(root, { keepIds: socketChat.values() });
                 const chat = await createChat(root, { kind, title });
                 await announceChats(root);
                 await openChatForSocket(root, ws, chat.id);

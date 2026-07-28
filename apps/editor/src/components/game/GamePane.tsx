@@ -6,8 +6,8 @@
  * stretching it to whatever the pane happens to be is a lie about what the
  * player will see. So the pane is a dark matte and the game sits on a centred,
  * rounded stage sized to its own aspect, letterboxed, with margins around it.
- * That shape is measured from the running document when it can be (same-origin
- * mount, so the canvas is readable) and falls back to 16:9 when it can't.
+ * That shape is reported OUT of the running document (the game is cross-origin
+ * now, so it cannot be read in) and falls back to 16:9 until it arrives.
  *
  * Beyond that the pane has two states: nothing yet, and running. What it does
  * NOT do is show the tester's session. The tester plays in a browser of its own
@@ -17,7 +17,7 @@
  * is, so a game standing still beside a running session is never mistaken for a
  * game that has stopped working.
  */
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { useApp, GAME_POLL_MS } from '../../store';
 import { gameUrl } from '../../api';
 import { CapabilityStrip } from './CapabilityStrip';
@@ -43,27 +43,25 @@ export function stageAspect(size: { width: number; height: number } | null): num
 }
 
 /**
- * Read the game's own shape out of the loaded document: its largest canvas,
- * else the body. Same-origin (the game is served from this server's /game
- * mount), but a cross-origin or not-yet-ready document must never throw into
- * the render path — an unreadable document simply has no shape.
+ * The game's own shape, out of a `message` this pane received.
+ *
+ * The pane used to read `iframe.contentDocument` directly, which worked only
+ * because the game ran on the editor's origin, which is exactly what had to
+ * stop (see the sandbox comment below and server/gameServer.ts). The game
+ * origin now reports its largest canvas outward instead; every game document
+ * the mount serves carries the few lines that do it.
+ *
+ * Pure, and suspicious of its input: this listens to `window` on a page that
+ * frames untrusted code, so anything that is not the shape we asked for is
+ * simply not a size. Callers still check that the message came from the frame.
  */
-export function measureGameSize(frame: HTMLIFrameElement | null): { width: number; height: number } | null {
-  try {
-    const doc = frame?.contentDocument;
-    if (!doc) return null;
-    let best: { width: number; height: number } | null = null;
-    for (const canvas of Array.from(doc.querySelectorAll('canvas'))) {
-      const width = canvas.width || canvas.clientWidth;
-      const height = canvas.height || canvas.clientHeight;
-      if (width > 0 && height > 0 && (!best || width * height > best.width * best.height)) {
-        best = { width, height };
-      }
-    }
-    return best;
-  } catch {
-    return null; // cross-origin, or the document went away mid-read
-  }
+export function gameSizeFromMessage(data: unknown): { width: number; height: number } | null {
+  const payload = (data as { hearthGameSize?: unknown } | null)?.hearthGameSize;
+  if (typeof payload !== 'object' || payload === null) return null;
+  const { width, height } = payload as { width?: unknown; height?: unknown };
+  if (typeof width !== 'number' || typeof height !== 'number') return null;
+  if (!(width > 0) || !(height > 0)) return null;
+  return { width, height };
 }
 
 /**
@@ -79,13 +77,30 @@ export function frameScale(stageWidth: number, gameWidth: number): number {
 /**
  * Nothing to show yet. A soft preview frame rather than an illustration: the
  * shape of what will appear, so the pane reads as waiting rather than broken.
+ *
+ * The second copy is for the one case where there IS a game and the pane still
+ * cannot show it: the mount server never came up, so there is no origin to
+ * serve it from. Saying "no game yet" there would be a lie, and the fix is not
+ * something the person can do from this pane, so it says what happened.
  */
-function GameEmptyState() {
+function GameEmptyState({ reason }: { reason: 'none' | 'no-origin' }) {
   return (
     <div className="game-empty">
       <div className="game-empty-frame" aria-hidden="true" />
-      <p className="game-empty-lead">No game to show yet</p>
-      <p className="game-empty-hint">Ask for one. It appears here the moment there is something to run.</p>
+      {reason === 'no-origin' ? (
+        <>
+          <p className="game-empty-lead">Nowhere to run the game</p>
+          <p className="game-empty-hint">
+            Hearth serves your game on its own local port and that port could not be opened. Restarting Hearth
+            usually clears it.
+          </p>
+        </>
+      ) : (
+        <>
+          <p className="game-empty-lead">No game to show yet</p>
+          <p className="game-empty-hint">Ask for one. It appears here the moment there is something to run.</p>
+        </>
+      )}
     </div>
   );
 }
@@ -96,6 +111,10 @@ export function GamePane() {
   const gameNonce = useApp((s) => s.gameNonce);
   const refreshGame = useApp((s) => s.refreshGame);
   const testerRunning = useApp((s) => s.tester.running || s.tester.starting);
+  // Which loopback origin the game is served from. Learned from /api/meta at
+  // startup (the port is chosen then), never assumed, and never defaulted to
+  // this page's own origin.
+  const gameOrigin = useApp((s) => s.meta?.gameOrigin ?? null);
   const frameRef = useRef<HTMLIFrameElement>(null);
   const stageRef = useRef<HTMLDivElement>(null);
   const [size, setSize] = useState<{ width: number; height: number } | null>(null);
@@ -111,17 +130,26 @@ export function GamePane() {
     return () => window.clearInterval(id);
   }, [projectPath, refreshGame]);
 
-  // Games commonly size their canvas a frame or two after load (engine boot,
-  // a resize handler), so `load` is a first look, not the last word.
-  const measure = useCallback(() => {
-    setSize(measureGameSize(frameRef.current));
+  // Games commonly size their canvas a frame or two after load (engine boot, a
+  // resize handler), so the document keeps reporting for a while rather than
+  // announcing once. Every message is checked against THIS frame's window:
+  // `message` is a window-wide event, and a page that frames untrusted code
+  // must never take a stranger's word for what shape it is.
+  useEffect(() => {
+    const onMessage = (event: MessageEvent) => {
+      if (!frameRef.current || event.source !== frameRef.current.contentWindow) return;
+      const next = gameSizeFromMessage(event.data);
+      if (next) setSize(next);
+    };
+    window.addEventListener('message', onMessage);
+    return () => window.removeEventListener('message', onMessage);
   }, []);
 
+  // A new document has a new shape, and until it says what that is the stage
+  // must not keep the last game's.
   useEffect(() => {
     setSize(null);
-    const timers = [250, 900].map((delay) => window.setTimeout(measure, delay));
-    return () => timers.forEach((id) => window.clearTimeout(id));
-  }, [measure, game.entry, gameNonce]);
+  }, [game.entry, gameNonce]);
 
   // The stage's own width drives the scale a fixed-size game is drawn at, so a
   // 960x540 canvas fills a 600px stage instead of being cropped by it.
@@ -134,10 +162,16 @@ export function GamePane() {
     return () => observer.disconnect();
   }, [game.present, game.entry]);
 
+  const entry = game.present ? game.entry : null;
+  // A game the pane knows about but has no origin to serve from is a different
+  // state from no game at all, and the empty state says so.
+  const hasGame = entry !== null && projectPath !== null;
+
   return (
     <div className="game-pane">
-      {game.present && game.entry && projectPath ? (
+      {entry !== null && projectPath !== null && gameOrigin !== null ? (
         <div className="game-stage-wrap">
+          <div className="game-stage-column">
           <div
             ref={stageRef}
             className="game-stage"
@@ -163,9 +197,38 @@ export function GamePane() {
               // The nonce is part of the key AND the URL: remounting guarantees a
               // clean document even for a game that installed global state, and
               // the query defeats any cached bytes.
-              key={`${game.entry}#${gameNonce}`}
-              src={gameUrl(projectPath, game.entry, gameNonce)}
-              onLoad={measure}
+              key={`${entry}#${gameNonce}`}
+              src={gameUrl(gameOrigin, projectPath, entry, gameNonce)}
+              /* READ THIS BEFORE "FIXING" THE SANDBOX.
+               *
+               * `allow-scripts` together with `allow-same-origin` is famously
+               * a no-op sandbox: the frame ends up an ordinary document with
+               * its server's origin. That is DELIBERATE and it must stay.
+               * Taking `allow-same-origin` away gives the frame an opaque
+               * origin, and an opaque origin has no localStorage, no
+               * IndexedDB, no module workers, no canvas readback, and breaks
+               * several ordinary WASM setups. Half the games people make in
+               * Hearth would stop working, and Hearth does not get to decide
+               * which half. The sandbox is not what holds this line.
+               *
+               * What holds the line is the ORIGIN. `gameOrigin` is a second
+               * loopback server (server/gameServer.ts) that serves the
+               * project folder and nothing else: no API, no route table, no
+               * WebSocket upgrade. So the game is still same-origin with
+               * ITSELF (every capability above intact, relative asset URLs
+               * intact) and cross-origin to Hearth's control plane, which
+               * refuses it by port (server/originGuard.ts).
+               *
+               * This is not theoretical. When the game was served from the
+               * editor's own origin, one line of JavaScript in any game
+               * opened ws://<editor>/api/ws?project=<anything>, sent
+               * `pty-start`, and had an interactive login shell as the user.
+               * WebSocket does not do CORS, so nothing in the browser stood
+               * in the way. If you ever move the game back onto this origin,
+               * you put that back, and no sandbox string will save you: the
+               * moment you tighten the sandbox enough to stop it, you have
+               * broken the games.
+               */
               sandbox="allow-scripts allow-pointer-lock allow-forms allow-modals allow-popups allow-same-origin"
             />
             {/* `off` unless the app believes a session is running, which is the
@@ -173,11 +236,21 @@ export function GamePane() {
                 the only thing it can honestly say is where the tester is. */}
             <ProbeNote status={stageNoteStatus('off', testerRunning)} />
           </div>
+          {/* Under the game, not under the pane. The strip used to be pinned to
+              the pane's bottom edge, which put it a long way from the thing it
+              acts on whenever the game was shorter than the space it was given:
+              a wide, short game left the Play control stranded below a field of
+              empty matte. In the column it travels with the stage and lands
+              flush against its right edge. */}
+          <CapabilityStrip />
         </div>
+      </div>
       ) : (
-        <GameEmptyState />
+        <>
+          <GameEmptyState reason={hasGame ? 'no-origin' : 'none'} />
+          <CapabilityStrip />
+        </>
       )}
-      <CapabilityStrip />
     </div>
   );
 }

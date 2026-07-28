@@ -50,12 +50,17 @@ describe('root keys', () => {
 });
 
 describe('isHearthServerPath', () => {
-  it('claims the api and both static mounts, and nothing else', () => {
+  it('claims the api and nothing else', () => {
     expect(isHearthServerPath('/api/meta')).toBe(true);
-    expect(isHearthServerPath('/game/abc/index.html')).toBe(true);
-    expect(isHearthServerPath('/evidence/abc/shot.png')).toBe(true);
     expect(isHearthServerPath('/')).toBe(false);
     expect(isHearthServerPath('/assets/index-abc.js')).toBe(false);
+  });
+
+  it('does NOT claim the game or evidence mounts, which live on their own origin', () => {
+    // Project bytes must never be served from the origin that runs commands
+    // and spawns shells. See server/gameServer.ts.
+    expect(isHearthServerPath('/game/abc/index.html')).toBe(false);
+    expect(isHearthServerPath('/evidence/abc/shot.png')).toBe(false);
   });
 });
 

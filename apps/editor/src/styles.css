@@ -18,6 +18,7 @@
 @import './styles/primitives/tooltip.css';
 @import './styles/primitives/menu.css';
 @import './styles/primitives/button.css';
+@import './styles/primitives/switch.css';
 
 /* The app shell and its surfaces. */
 @import './styles/app/shell.css';
@@ -30,6 +31,7 @@
 @import './styles/app/settings-usage.css';
 @import './styles/app/project.css';
 @import './styles/app/chat.css';
+@import './styles/app/permissions.css';
 @import './styles/app/game.css';
 @import './styles/app/tester.css';
 @import './styles/app/peek.css';

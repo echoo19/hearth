@@ -27,6 +27,12 @@ vi.mock('../src/api', () => ({
   apiOpenAiLogin: vi.fn(async () => ({ ok: false })),
   apiRenameChat: vi.fn(async () => null),
   apiDeleteChat: vi.fn(async () => null),
+  // Every refresher `openWorkspace` fires has to be listed here. This mock
+  // replaces the module wholesale rather than spreading the real one, so an
+  // api function added later is undefined at the call site and the flow throws
+  // somewhere far from the cause. It has now cost two debugging sessions.
+  apiPermissionMode: vi.fn(async () => null),
+  apiSetPermissionMode: vi.fn(async () => null),
 }));
 
 import { apiCreateWorkspace, apiOpenWorkspace } from '../src/api';
@@ -43,6 +49,8 @@ class FakeSocket {
   static instances: FakeSocket[] = [];
   static readonly OPEN = 1;
   static autoOpen = true;
+  /** Every `chat-new` mints a DIFFERENT conversation, as the server does. */
+  static nextChatId = 1;
 
   readyState = 0;
   sent: string[] = [];
@@ -68,11 +76,16 @@ class FakeSocket {
       const ts = new Date().toISOString();
       const reply = JSON.stringify({
         type: 'chat-opened',
-        chat: { id: 'chat-1', title: 'New chat', createdAt: ts, updatedAt: ts },
+        chat: { id: `chat-${FakeSocket.nextChatId++}`, title: 'New chat', createdAt: ts, updatedAt: ts },
         records: [],
       });
       setTimeout(() => this.onmessage?.({ data: reply }), 0);
     }
+  }
+
+  /** Push a frame at the store the way the server would. */
+  deliver(frame: unknown): void {
+    this.onmessage?.({ data: JSON.stringify(frame) });
   }
 
   close(): void {
@@ -90,6 +103,7 @@ beforeEach(() => {
   setModelChoice(null);
   FakeSocket.instances = [];
   FakeSocket.autoOpen = true;
+  FakeSocket.nextChatId = 1;
   vi.stubGlobal('WebSocket', FakeSocket);
   vi.mocked(apiCreateWorkspace).mockResolvedValue({
     ok: true,
@@ -174,6 +188,61 @@ describe('startFromHome', () => {
     expect(useApp.getState().projectPath).toBeNull();
     // And it releases: a failed start must not lock the composer forever.
     expect(useApp.getState().homeBusy).toBe(false);
+  });
+
+  it('waits for the NEW conversation when the project is already open', async () => {
+    // The bug this pins: `newChat` inside an open project leaves the previous
+    // conversation open, so "a conversation exists" was already true and the
+    // wait resolved synchronously. `chat-send` went out first, the `chat-opened`
+    // that followed replayed an empty transcript over both bubbles, and every
+    // event after it hit applyChatEvent's empty-list early return. The user saw
+    // a cleared composer and a blank page while the turn really ran.
+    await useApp.getState().startFromHome('a top-down space shooter');
+    expect(useApp.getState().activeChatId).toBe('chat-1');
+
+    useApp.getState().newChat();
+    // The previous conversation is still the open one at this point. That is
+    // the state the wait has to tell apart from "the new one is ready".
+    expect(useApp.getState().activeChatId).toBe('chat-1');
+
+    const result = await useApp.getState().startFromHome('now make the enemies shoot back');
+    expect(result.ok).toBe(true);
+    // Let anything still in flight land. With the send racing ahead of the
+    // open, this is the tick the `chat-opened` for the new chat arrived on and
+    // replayed an empty transcript over the two bubbles already on screen.
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    // The message went into the conversation that was minted for it, not the
+    // one it was leaving.
+    expect(useApp.getState().activeChatId).toBe('chat-2');
+    const sends = frames().filter((frame) => frame.type === 'chat-send');
+    expect(sends).toHaveLength(2);
+    expect(sends[1].text).toBe('now make the enemies shoot back');
+
+    // And the transcript still holds it: both bubbles survived the replay.
+    const messages = useApp.getState().messages;
+    expect(messages.map((message) => message.role)).toEqual(['user', 'agent']);
+    expect(messages[0].parts).toEqual([{ kind: 'text', text: 'now make the enemies shoot back' }]);
+
+    // The reply lands too. On an empty list every chat-event is dropped, so
+    // this is the half the user actually complained about.
+    FakeSocket.instances[0].deliver({ type: 'chat-event', event: { type: 'message-delta', text: 'On it.' } });
+    expect(useApp.getState().messages[1].parts).toEqual([{ kind: 'text', text: 'On it.' }]);
+  });
+
+  it('leaves the project screen and the blank surface for the conversation it sent into', async () => {
+    await useApp.getState().startFromHome('a top-down space shooter');
+    // Someone reading the project's own screen, or a full screen over it, must
+    // not have their message land behind it.
+    useApp.setState({ projectView: true, screen: 'skills' });
+    useApp.getState().newChat();
+    useApp.setState({ projectView: true, screen: 'skills' });
+
+    await useApp.getState().startFromHome('add a boss');
+
+    expect(useApp.getState().projectView).toBe(false);
+    expect(useApp.getState().screen).toBeNull();
+    expect(useApp.getState().composing).toBe(false);
   });
 
   it('keeps the words in the composer when the socket never comes up', async () => {

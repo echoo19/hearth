@@ -342,12 +342,50 @@ export function clampAxis(desiredStart: number, size: number, viewport: number, 
 }
 
 /**
- * Position a trigger-anchored dropdown popover (MenuButton). Anchors the
- * popover's start edge to the trigger (left edge for `align:'left'`, right edge
- * for `'right'`), opens `gap` px below the trigger, and CLAMPS both axes into
- * the viewport so it can never render off any edge (L-123). Flips above the
- * trigger when opening below would overflow the bottom and there is more room
- * above. Pure — the flip/clamp math is unit-tested without a live DOM.
+ * Never squeeze a menu below this, however little room the window has left. A
+ * 20px sliver of a scroll container is not a control anyone can use, and a
+ * window that short is already broken by other means.
+ */
+export const MIN_MENU_HEIGHT = 96;
+
+/**
+ * How much vertical room a trigger leaves on each side of itself, gap and
+ * margin already taken out. Either can come back negative — a trigger flush
+ * against an edge has no room on that side, and saying so is the useful
+ * answer.
+ */
+export function menuSpace(
+  trigger: { top: number; bottom: number },
+  viewport: { h: number },
+  gap = 4,
+  margin = 4,
+): { above: number; below: number } {
+  return { above: trigger.top - gap - margin, below: viewport.h - trigger.bottom - gap - margin };
+}
+
+/**
+ * Position a trigger-anchored dropdown popover (MenuButton), and say how tall
+ * it is allowed to be where it lands.
+ *
+ * The horizontal half anchors the popover's start edge to the trigger (left
+ * edge for `align:'left'`, right edge for `'right'`) and clamps into the
+ * viewport so it can never render off an edge (L-123).
+ *
+ * The vertical half prefers below, flips above when the menu fits there and
+ * not below, and when it fits on NEITHER side takes the roomier one and caps
+ * the menu to it. The cap is the point: a menu longer than the window has to
+ * become a scrolling menu somewhere, and the only honest height is the space
+ * actually left at the spot it opens. Clamping the top alone was the old
+ * behaviour and it produced the two failures worth naming — a menu opened from
+ * a composer halfway down the window slid up over its own trigger, and one
+ * opened lower ran off the bottom edge, because a fixed stylesheet cap knows
+ * nothing about where the trigger is.
+ *
+ * `maxHeight` is always returned, not only when it bites: a menu that fits
+ * still wants the number, so the caller can hand back the same value on every
+ * placement rather than juggling a null.
+ *
+ * Pure — the flip/clamp/cap math is unit-tested without a live DOM.
  */
 export function menuDropdownPosition(
   trigger: { left: number; right: number; top: number; bottom: number },
@@ -356,18 +394,20 @@ export function menuDropdownPosition(
   align: 'left' | 'right' = 'left',
   gap = 4,
   margin = 4,
-): { left: number; top: number } {
+): { left: number; top: number; maxHeight: number } {
+  const space = menuSpace(trigger, viewport, gap, margin);
   const desiredLeft = align === 'right' ? trigger.right - size.w : trigger.left;
   const left = clampAxis(desiredLeft, size.w, viewport.w, margin);
-  const below = trigger.bottom + gap;
-  const above = trigger.top - gap - size.h;
-  let top: number;
-  if (below + size.h + margin > viewport.h && above >= margin) {
-    top = above; // flip above the trigger — more room there
-  } else {
-    top = clampAxis(below, size.h, viewport.h, margin);
+  if (size.h <= space.below) {
+    return { left, top: trigger.bottom + gap, maxHeight: Math.max(space.below, MIN_MENU_HEIGHT) };
   }
-  return { left, top };
+  if (size.h <= space.above) {
+    return { left, top: trigger.top - gap - size.h, maxHeight: Math.max(space.above, MIN_MENU_HEIGHT) };
+  }
+  // Fits nowhere: take the roomier side and scroll inside it.
+  const flip = space.above > space.below;
+  const maxHeight = Math.max(flip ? space.above : space.below, MIN_MENU_HEIGHT);
+  return { left, top: flip ? Math.max(trigger.top - gap - maxHeight, margin) : trigger.bottom + gap, maxHeight };
 }
 
 /**
@@ -485,6 +525,18 @@ export interface MenuButtonProps {
   triggerClassName?: string;
   /** Extra class on the popover, for a surface that needs its own metrics. */
   popoverClassName?: string;
+  /**
+   * Fixed content above the item list — a control that decides what the list
+   * contains, rather than another entry in it. It stays put while the items
+   * scroll under it, which is the whole reason it is not just a first item:
+   * a switch that decides what you are looking at cannot be the thing that
+   * scrolls out of view.
+   *
+   * Reachable by Tab, not by the arrow keys. Arrow keys rove the items, and a
+   * heading that joined that rotation would mean pressing Down from the last
+   * model landed on a control that reloads the list.
+   */
+  heading?: ReactNode;
 }
 
 export function MenuButton({
@@ -495,6 +547,7 @@ export function MenuButton({
   disabled,
   triggerClassName = 'btn btn-sm',
   popoverClassName,
+  heading,
 }: MenuButtonProps) {
   const [open, setOpen] = useState(false);
   const [focused, setFocused] = useState(-1);
@@ -502,7 +555,7 @@ export function MenuButton({
   // clamped `fixed` coords (see the layout effect) so it can never render off a
   // viewport edge — the L-123 failure — and escapes any ancestor overflow
   // clip, the same reason ContextMenu portals.
-  const [pos, setPos] = useState<{ left: number; top: number } | null>(null);
+  const [pos, setPos] = useState<{ left: number; top: number; maxHeight: number } | null>(null);
   const rootRef = useRef<HTMLSpanElement>(null);
   const buttonRef = useRef<HTMLButtonElement>(null);
   const popoverRef = useRef<HTMLDivElement>(null);
@@ -542,17 +595,25 @@ export function MenuButton({
       return;
     }
     const place = () => {
-      const trigger = buttonRef.current?.getBoundingClientRect();
-      const pop = popoverRef.current?.getBoundingClientRect();
-      if (!trigger || !pop) return;
-      setPos(
-        menuDropdownPosition(
-          trigger,
-          { w: pop.width, h: pop.height },
-          { w: window.innerWidth, h: window.innerHeight },
-          align,
-        ),
-      );
+      const button = buttonRef.current;
+      const pop = popoverRef.current;
+      if (!button || !pop) return;
+      const trigger = button.getBoundingClientRect();
+      const viewport = { w: window.innerWidth, h: window.innerHeight };
+      // Measure under the most generous cap either side could offer, so what
+      // is read back is the height the menu would really render at (its own
+      // stylesheet may impose a lower ceiling of its own) and so applying the
+      // final cap below can never feed back into the measurement it came from.
+      const space = menuSpace(trigger, viewport);
+      const room = Math.max(space.above, space.below, MIN_MENU_HEIGHT);
+      pop.style.setProperty('--menu-max-h', `${room}px`);
+      // offsetWidth/offsetHeight, not the bounding rect: these menus animate in
+      // under a scale transform, and a rect measured mid-animation is the
+      // SCALED box. That read the model menu ~15px shorter than it is and put
+      // its bottom edge that far past the window.
+      const next = menuDropdownPosition(trigger, { w: pop.offsetWidth, h: pop.offsetHeight }, viewport, align);
+      pop.style.setProperty('--menu-max-h', `${next.maxHeight}px`);
+      setPos(next);
     };
     place();
     window.addEventListener('resize', place);
@@ -614,13 +675,21 @@ export function MenuButton({
             onKeyDown={onKeyDown}
             // Fixed + clamped coords; hidden for the one pre-measure frame so it
             // never flashes at 0,0. useLayoutEffect sets `pos` before paint.
-            style={{
-              position: 'fixed',
-              left: pos ? pos.left : 0,
-              top: pos ? pos.top : 0,
-              visibility: pos ? 'visible' : 'hidden',
-            }}
+            //
+            // `--menu-max-h` is written here as well as imperatively during the
+            // measure, so a re-render for any other reason restates it rather
+            // than leaving the styling to a property React does not know it set.
+            style={
+              {
+                position: 'fixed',
+                left: pos ? pos.left : 0,
+                top: pos ? pos.top : 0,
+                visibility: pos ? 'visible' : 'hidden',
+                ...(pos ? { '--menu-max-h': `${pos.maxHeight}px` } : null),
+              } as React.CSSProperties
+            }
           >
+            {heading && <div className="menu-heading">{heading}</div>}
             <MenuItems items={items} focusedIndex={focused} onFocusIndex={setFocused} onSelectItem={selectItem} itemRefs={itemRefs} />
           </div>,
           menuPortalTarget(buttonRef.current),

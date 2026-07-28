@@ -9,6 +9,13 @@
  *     index.json          — [{ id, title, kind, createdAt, updatedAt }], newest first
  *     <chatId>.jsonl      — one JSON line per turn/tool event
  *
+ * A row can also be PENDING, which is the difference between a conversation
+ * existing and a conversation having happened. A chat is minted the moment a
+ * window needs somewhere to send (opening a project does exactly that), so
+ * listing every row put a "New chat" in the sidebar for every window anyone
+ * ever opened. A pending row is written and openable by id, and no list shows
+ * it until its first user message. See `ChatIndexRow.pending`.
+ *
  * `kind` is what the conversation IS: a chat with the built-in agent, or a
  * terminal session. It is written once, at creation, and no function here
  * changes it afterwards — reopening a conversation must give you back the
@@ -92,6 +99,29 @@ export interface ChatSummary {
    * driver falls back to a fresh thread).
    */
   codexThreadId?: string;
+}
+
+/**
+ * A row exactly as `index.json` holds it: a summary plus the one field that
+ * never leaves this module.
+ */
+export interface ChatIndexRow extends ChatSummary {
+  /**
+   * Created, but never spoken into.
+   *
+   * The window that started this chat is sitting in it right now, so the row
+   * has to exist (a send needs somewhere to land). Nobody else has any reason
+   * to know about it: it has no title anyone chose, no transcript, and until
+   * someone types it is indistinguishable from every other empty chat. So it
+   * is written and left out of every list, and `appendChatRecord` clears the
+   * flag on the first user message, which is the moment it became a
+   * conversation.
+   *
+   * Only ever `true`. A row that was never pending carries no field at all,
+   * which is what every index written before this existed looks like, so
+   * nothing already on disk is hidden by it.
+   */
+  pending?: true;
 }
 
 /** One line of a transcript. */
@@ -181,13 +211,18 @@ export function parseTranscript(text: string): ChatRecord[] {
   return out;
 }
 
-/** Coerce whatever is in index.json into summaries, dropping unusable rows. */
-export function parseChatIndex(raw: unknown): ChatSummary[] {
+/**
+ * Coerce whatever is in index.json into the rows it holds, pending included,
+ * dropping unusable ones. Internal: everything outside this module reads the
+ * index through `parseChatIndex`, which is the same thing minus the rows that
+ * are not conversations yet.
+ */
+function parseChatRows(raw: unknown): ChatIndexRow[] {
   if (!Array.isArray(raw)) return [];
-  const out: ChatSummary[] = [];
+  const out: ChatIndexRow[] = [];
   for (const entry of raw) {
     if (!entry || typeof entry !== 'object') continue;
-    const row = entry as Partial<ChatSummary>;
+    const row = entry as Partial<ChatIndexRow>;
     const id = safeChatId(row.id);
     if (!id) continue;
     const createdAt = typeof row.createdAt === 'string' ? row.createdAt : new Date().toISOString();
@@ -197,7 +232,7 @@ export function parseChatIndex(raw: unknown): ChatSummary[] {
     // never dropped for it and the file is never rewritten to add it — the
     // next write does that on its own.
     const kind: ChatKind = row.kind === 'terminal' ? 'terminal' : 'chat';
-    const summary: ChatSummary = {
+    const summary: ChatIndexRow = {
       id,
       title: typeof row.title === 'string' && row.title.trim() !== '' ? row.title : defaultChatTitle(kind),
       kind,
@@ -207,9 +242,43 @@ export function parseChatIndex(raw: unknown): ChatSummary[] {
     // Carried through rather than defaulted: an index written by an older
     // build simply has no thread to remember.
     if (typeof row.codexThreadId === 'string' && row.codexThreadId !== '') summary.codexThreadId = row.codexThreadId;
+    // A literal `true` and nothing else: a row that says `pending: false`
+    // describes a conversation that has happened, and carrying a field through
+    // that reads as the opposite of what it means would put it on the wire.
+    if (row.pending === true) summary.pending = true;
     out.push(summary);
   }
   return sortChats(out);
+}
+
+/**
+ * Coerce whatever is in index.json into the conversations a list may show.
+ *
+ * Rows that were started and never spoken into are dropped rather than
+ * defaulted: they are not conversations yet, and the whole point of the flag
+ * is that nothing outside this module has to know they exist.
+ */
+export function parseChatIndex(raw: unknown): ChatSummary[] {
+  return visibleChats(parseChatRows(raw));
+}
+
+/** The rows a list may show, in the order they were given. */
+function visibleChats(rows: readonly ChatIndexRow[]): ChatSummary[] {
+  return rows.filter((row) => row.pending !== true);
+}
+
+/**
+ * A row as everything outside this module sees it.
+ *
+ * Spread and delete rather than rebuilt from named fields: `codexThreadId`
+ * (and whatever a later change adds) has to survive being handed out, and a
+ * rebuild is a list that silently stops matching the type it copies.
+ */
+function withoutPending(row: ChatIndexRow): ChatSummary {
+  if (row.pending === undefined) return row;
+  const chat: ChatIndexRow = { ...row };
+  delete chat.pending;
+  return chat;
 }
 
 /**
@@ -246,15 +315,21 @@ function serialize<T>(root: string, task: () => Promise<T>): Promise<T> {
   return run;
 }
 
-async function readIndexUnlocked(root: string): Promise<ChatSummary[]> {
+/**
+ * The whole index, pending rows included. Every write path reads through here
+ * rather than through `parseChatIndex`: an index rewritten from the filtered
+ * view would delete the conversation the window that asked for the write is
+ * sitting in.
+ */
+async function readIndexUnlocked(root: string): Promise<ChatIndexRow[]> {
   try {
-    return parseChatIndex(JSON.parse(await fsp.readFile(chatIndexPath(root), 'utf8')));
+    return parseChatRows(JSON.parse(await fsp.readFile(chatIndexPath(root), 'utf8')));
   } catch {
     return []; // absent (a project that has never been talked to) or unreadable
   }
 }
 
-async function writeIndexUnlocked(root: string, chats: ChatSummary[]): Promise<void> {
+async function writeIndexUnlocked(root: string, chats: ChatIndexRow[]): Promise<void> {
   const file = chatIndexPath(root);
   await fsp.mkdir(path.dirname(file), { recursive: true });
   await fsp.writeFile(file, `${JSON.stringify(sortChats(chats), null, 2)}\n`, 'utf8');
@@ -264,14 +339,36 @@ async function writeIndexUnlocked(root: string, chats: ChatSummary[]): Promise<v
 // Public API
 // ---------------------------------------------------------------------------
 
-/** Every conversation this project has, newest activity first. */
+/**
+ * Every conversation this project has had, newest activity first.
+ *
+ * "Has had", not "holds": a chat nobody has typed into yet is left out. It is
+ * still openable by id (see `getChat`), which is what lets the window that
+ * started it keep working while no list mentions it.
+ */
 export function listChats(root: string): Promise<ChatSummary[]> {
-  return serialize(root, () => readIndexUnlocked(root));
+  return serialize(root, async () => visibleChats(await readIndexUnlocked(root)));
 }
 
 /**
- * Start a conversation. It is listed immediately, and a chat is named on its
- * first turn.
+ * One conversation by id, listed or not.
+ *
+ * The socket has to be able to open a conversation no list shows: a chat is
+ * pending from the moment it is created until its first message, and a window
+ * is sitting in it for the whole of that time. Looking it up through
+ * `listChats` would find nothing and the send would have nowhere to land.
+ */
+export function getChat(root: string, chatId: string): Promise<ChatSummary | null> {
+  const id = safeChatId(chatId);
+  if (!id) return Promise.resolve(null);
+  return serialize(root, async () => {
+    const row = (await readIndexUnlocked(root)).find((chat) => chat.id === id);
+    return row ? withoutPending(row) : null;
+  });
+}
+
+/**
+ * Start a conversation. A chat is named, and listed, on its first message.
  *
  * `kind` is the one thing decided here that can never be decided again: this
  * is the only place a record's kind is written, which is what makes "a chat is
@@ -285,18 +382,79 @@ export function createChat(
   const named = options.title?.replace(/\s+/g, ' ').trim().slice(0, TITLE_MAX) ?? '';
   return serialize(root, async () => {
     const now = new Date().toISOString();
-    const chat: ChatSummary = {
+    const row: ChatIndexRow = {
       id: randomUUID(),
       title: named === '' ? defaultChatTitle(kind) : named,
       kind,
       createdAt: now,
       updatedAt: now,
     };
-    await writeIndexUnlocked(root, [chat, ...(await readIndexUnlocked(root))]);
+    // Pending unless the record is already something someone asked for. A
+    // terminal session IS the conversation the moment it exists (its shell is
+    // running, and no first message will ever name it), and a chat created
+    // with a title was named on purpose. An unnamed chat has nothing in it and
+    // nothing to call it, so it waits to be spoken into.
+    if (kind === 'chat' && named === '') row.pending = true;
+    await writeIndexUnlocked(root, [row, ...(await readIndexUnlocked(root))]);
     // Touch the transcript so an opened-but-silent chat reads back as empty
     // rather than missing.
-    await fsp.writeFile(chatFilePath(root, chat.id), '', { flag: 'a' });
-    return chat;
+    await fsp.writeFile(chatFilePath(root, row.id), '', { flag: 'a' });
+    // Handed back without the flag: the caller opens this conversation and
+    // sends it to a window, and whether the index still hides it is between
+    // this module and the index.
+    return withoutPending(row);
+  });
+}
+
+/**
+ * How long a conversation nobody has spoken into is kept. See
+ * `prunePendingChats`.
+ */
+export const PENDING_TTL_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * Forget conversations that were started and never used.
+ *
+ * Nothing in the UI can clear a pending row, because nothing in the UI can see
+ * one: without this, every window that opened a project and closed it again
+ * would leave a row and an empty transcript behind for good. Two rules keep it
+ * from taking something real:
+ *
+ *  - `keepIds` names every conversation a window is currently sitting in. Those
+ *    are the ones a person can still type into, so they are never touched, at
+ *    any age.
+ *  - Everything else must have been created longer ago than `ttlMs`. A chat
+ *    with not one word in it a day later is not one anybody is waiting on.
+ *
+ * Returns the ids it forgot.
+ */
+export function prunePendingChats(
+  root: string,
+  options: { keepIds?: Iterable<string>; ttlMs?: number; now?: number } = {},
+): Promise<string[]> {
+  const keep = new Set(options.keepIds ?? []);
+  const ttlMs = options.ttlMs ?? PENDING_TTL_MS;
+  const now = options.now ?? Date.now();
+  return serialize(root, async () => {
+    const rows = await readIndexUnlocked(root);
+    const stale = new Set(
+      rows
+        .filter((row) => {
+          if (row.pending !== true || keep.has(row.id)) return false;
+          const created = Date.parse(row.createdAt);
+          // An unreadable date is not evidence of age: leave the row rather
+          // than delete a conversation on a guess.
+          return Number.isFinite(created) && now - created > ttlMs;
+        })
+        .map((row) => row.id),
+    );
+    if (stale.size === 0) return [];
+    await writeIndexUnlocked(
+      root,
+      rows.filter((row) => !stale.has(row.id)),
+    );
+    for (const id of stale) await fsp.rm(chatFilePath(root, id), { force: true });
+    return [...stale];
   });
 }
 
@@ -318,13 +476,19 @@ export function appendChatRecord(root: string, chatId: string, record: ChatRecor
     // Spread first, so `kind` (and anything else the record already carries)
     // survives every append: activity changes when a conversation last moved,
     // never what kind of conversation it is.
-    const next: ChatSummary = { ...chats[index], updatedAt: record.ts };
-    if (record.role === 'user' && next.kind === 'chat' && next.title === UNTITLED) {
-      next.title = userRecordTitle(record);
+    const next: ChatIndexRow = { ...chats[index], updatedAt: record.ts };
+    if (record.role === 'user') {
+      // A message is what turns a chat into a conversation, so this is the
+      // moment it joins the lists, under the name that message gives it. An
+      // agent record deliberately does NOT do this: a driver can emit before
+      // the user's own line has landed, and a chat appearing in the sidebar
+      // with nothing anyone typed in it is what the flag exists to prevent.
+      delete next.pending;
+      if (next.kind === 'chat' && next.title === UNTITLED) next.title = userRecordTitle(record);
     }
     chats[index] = next;
     await writeIndexUnlocked(root, chats);
-    return next;
+    return withoutPending(next);
   });
 }
 
@@ -352,7 +516,7 @@ export function renameChat(root: string, chatId: string, title: string): Promise
     if (index === -1) return null;
     chats[index] = { ...chats[index], title: name };
     await writeIndexUnlocked(root, chats);
-    return chats[index];
+    return withoutPending(chats[index]);
   });
 }
 
@@ -371,7 +535,7 @@ export function setChatThreadId(root: string, chatId: string, threadId: string):
     if (index === -1 || chats[index].codexThreadId === threadId) return null;
     chats[index] = { ...chats[index], codexThreadId: threadId };
     await writeIndexUnlocked(root, chats);
-    return chats[index];
+    return withoutPending(chats[index]);
   });
 }
 

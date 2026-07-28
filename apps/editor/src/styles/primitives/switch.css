@@ -1,0 +1,46 @@
+/* Switch primitive.
+   A track holding two or three options, one of them raised. The raised tab is
+   the only lit thing in the group, so "which mode am I in" is answered by
+   contrast rather than by reading the labels and comparing.
+
+   Metrics come from the small control height, so a switch sits level with the
+   pills and small buttons it shares a row with. */
+
+.switch {
+  display: inline-flex;
+  gap: 3px;
+  padding: 3px;
+  border-radius: var(--radius);
+  background: var(--bg-2);
+}
+
+.switch-tab {
+  border: 0;
+  background: transparent;
+  border-radius: var(--radius-sm);
+  padding: 0 14px;
+  height: var(--ctl-h-sm);
+  font-size: var(--text-xs);
+  color: var(--ink-mute);
+  cursor: pointer;
+  transition: color var(--t-fast) var(--ease-out), background var(--t-fast) var(--ease-out);
+}
+
+.switch-tab:hover {
+  color: var(--ink);
+}
+
+.switch-tab[aria-selected='true'] {
+  background: var(--bg-3);
+  color: var(--ink);
+}
+
+/* Each option carries the same weight whatever its label is, so the raised
+   block does not change width as the choice moves. */
+.switch-stretch {
+  display: flex;
+}
+
+.switch-stretch .switch-tab {
+  flex: 1;
+}

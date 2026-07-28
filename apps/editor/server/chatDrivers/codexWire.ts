@@ -39,6 +39,7 @@ import type {
   ToolStatus,
 } from '../chat.js';
 import { isInlineImage } from '../chatAttachments.js';
+import type { PermissionMode } from '../permissionMode.js';
 
 /** The codex build this adapter was written and verified against. */
 export const CODEX_TESTED_VERSION = '0.144.5';
@@ -299,7 +300,7 @@ export function mapCodexNotification(method: string, params: unknown, skillRoots
     case 'item/completed':
       return mapItemCompleted(asRecord(p.item), skillRoots);
     case 'turn/completed':
-      return [{ type: 'turn-complete' }];
+      return mapTurnCompleted(asRecord(p.turn));
     case 'error': {
       const error = asRecord(p.error);
       // `willRetry` means codex is handling it itself; surfacing that as a
@@ -393,6 +394,43 @@ function mapSpecialItem(item: Record<string, unknown>, id: string, done: boolean
   }
 }
 
+/**
+ * The end of a turn, which is not the same thing as a turn that worked.
+ *
+ * There is no `turn/failed` in this protocol. Every turn ends on
+ * `turn/completed`, and the Turn it carries holds a `status` of
+ * `completed | interrupted | failed | inProgress` with `error` populated only
+ * on `failed` (verified against the binary's own schema, codex-cli 0.144.5,
+ * `codex app-server generate-json-schema`). Reading the method and ignoring
+ * the status treats all four the same.
+ *
+ * That is the bug this exists to close, and it is a bad one because of how it
+ * presents: a turn that failed reported as a turn that finished. Jake hit it
+ * approving a file-change patch that codex then could not write, and what he
+ * saw was the conversation simply stopping mid-thought with nothing said. A
+ * silent stop sends you looking for the fault in your own prompt, which is the
+ * one place it is not.
+ *
+ * `turn-complete` still follows the error, because the turn IS over either way
+ * and the composer has to come back. What changes is that the reason is said
+ * out loud first.
+ */
+function mapTurnCompleted(turn: Record<string, unknown> | null): ChatEvent[] {
+  const status = str(turn?.status);
+  if (status === 'failed') {
+    const error = asRecord(turn?.error);
+    const detail = str(error?.additionalDetails);
+    const message = str(error?.message) ?? 'The agent stopped without saying why.';
+    return [{ type: 'error', message: detail ? `${message} ${detail}` : message }, { type: 'turn-complete' }];
+  }
+  // Interrupted is a stop someone asked for, so it is not an error, but it is
+  // also not silence: a turn that ends early with no word reads as a crash.
+  if (status === 'interrupted') {
+    return [{ type: 'notice', text: 'The turn was interrupted.' }, { type: 'turn-complete' }];
+  }
+  return [{ type: 'turn-complete' }];
+}
+
 function mapItemStarted(item: Record<string, unknown> | null, skillRoots: readonly string[]): ChatEvent[] {
   if (!item) return [];
   const id = str(item.id);
@@ -423,6 +461,12 @@ function mapItemStarted(item: Record<string, unknown> | null, skillRoots: readon
 
 function mapItemCompleted(item: Record<string, unknown> | null, skillRoots: readonly string[]): ChatEvent[] {
   if (!item) return [];
+  // The text already arrived through the delta stream, so the completed item's
+  // own copy is deliberately dropped (printing it would double every answer).
+  // What is NOT redundant is the fact that this message ENDED: nothing in the
+  // delta stream says so, and a turn writes several messages. Without this the
+  // next one is appended straight onto this one's last character.
+  if (item.type === 'agentMessage') return [{ type: 'message-end' }];
   const id = str(item.id);
   if (!id) return [];
   const special = mapSpecialItem(item, id, true);
@@ -646,6 +690,42 @@ export function codexTurnOverrides(agent: AgentTurnOptions | null | undefined): 
  */
 export function codexThreadInstructions(personal: string | null): { developerInstructions?: string } {
   return personal ? { developerInstructions: personal } : {};
+}
+
+/**
+ * The approval and sandbox fields for a `thread/start` or a `thread/resume`,
+ * given the mode the user chose for this project.
+ *
+ * `ThreadStartParams` and `ThreadResumeParams` on CODEX_TESTED_VERSION both
+ * carry `approvalPolicy` (`untrusted` | `on-request` | `never`, or a `granular`
+ * object we deliberately do not use) and `sandbox` (`read-only` |
+ * `workspace-write` | `danger-full-access`), read out of the binary's own
+ * `generate-json-schema` rather than from docs.
+ *
+ * Two things about this are load-bearing:
+ *
+ *  1. **Both fields are always sent, on BOTH methods.** Hearth used to send
+ *     neither, which meant codex fell back to whatever `~/.codex/config.toml`
+ *     said. On a machine whose config sets no sandbox, a folder that is not in
+ *     codex's `trust_level = "trusted"` list gets the read-only default, and an
+ *     approved patch then cannot be written: the turn dies right after the user
+ *     says yes. Hearth opens game folders the user never registered with codex,
+ *     so that is the NORMAL case here, not an edge one. Omitting these from the
+ *     resume alone would reproduce it on every reopened conversation and read
+ *     as an intermittent bug rather than a missing parameter.
+ *  2. **`ask` is `untrusted`, not `never`-with-prompts.** `untrusted` is what
+ *     makes codex raise an approval for anything it does not consider trivially
+ *     safe, which is the request Hearth's `ask` mode is making. The sandbox
+ *     stays `workspace-write` there for the same reason as in `auto`: the point
+ *     is that the user SEES each step, not that an approved step then fails.
+ */
+export function codexPermissionParams(mode: PermissionMode): {
+  approvalPolicy: 'untrusted' | 'on-request' | 'never';
+  sandbox: 'read-only' | 'workspace-write' | 'danger-full-access';
+} {
+  if (mode === 'ask') return { approvalPolicy: 'untrusted', sandbox: 'workspace-write' };
+  if (mode === 'skip') return { approvalPolicy: 'never', sandbox: 'danger-full-access' };
+  return { approvalPolicy: 'on-request', sandbox: 'workspace-write' };
 }
 
 /**

@@ -73,12 +73,24 @@ dialog.modal[open]::backdrop {
 }
 
 .modal-title {
+  display: flex;
+  align-items: center;
+  gap: 12px;
   padding: 18px 22px 14px;
   /* Brand moment: Bricolage display face. */
   font-family: var(--font-display);
   font-size: var(--text-lg);
   font-weight: 600;
   letter-spacing: -0.01em;
+}
+
+/* Pushed to the far edge, and quiet: it is the way out, not an answer to
+   whatever the dialog is asking. A dialog that ends in Cancel still keeps
+   Cancel as the thing to press. */
+.modal-close {
+  flex: none;
+  margin-left: auto;
+  margin-right: -6px;
 }
 
 .modal-body {

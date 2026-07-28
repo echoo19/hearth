@@ -329,7 +329,15 @@ describe('the codex backend', () => {
   it('leaves a resume alone, because codex ignores the field there', async () => {
     await writePersonalization({ instructions: 'Explain less.' });
     const server = await bindCodex(dirs.project, { resume: 'thread-1' });
-    expect(server.paramsFor('thread/resume')[0]).toEqual({ threadId: 'thread-1', cwd: dirs.project });
+    // The permission policy DOES ride on the resume (see codexPermissionParams);
+    // the instructions deliberately do not.
+    expect(server.paramsFor('thread/resume')[0]).not.toHaveProperty('developerInstructions');
+    expect(server.paramsFor('thread/resume')[0]).toEqual({
+      threadId: 'thread-1',
+      cwd: dirs.project,
+      approvalPolicy: 'on-request',
+      sandbox: 'workspace-write',
+    });
     // A resumed thread already carries what it was started with, verified
     // against the real binary — see codexThreadInstructions.
     expect(server.paramsFor('thread/start')).toHaveLength(0);

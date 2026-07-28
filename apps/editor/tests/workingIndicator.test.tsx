@@ -95,6 +95,18 @@ describe('the line in the transcript', () => {
     expect(screen.getByText('Running')).toBeTruthy();
   });
 
+  it('burns the flame, not the fallback square', () => {
+    // Icon resolves its glyph by string and silently falls back to `entity` (a
+    // rect) when the name misses, so a rename in ui.tsx would swap the brand
+    // mark for a generic box with nothing failing anywhere. Pin the shape: the
+    // wrapper the flicker pivots on is present, and what it holds is a path.
+    showTranscript([turn([])]);
+    const flame = document.querySelector('.msg-working .working-flame');
+    expect(flame).not.toBeNull();
+    expect(flame?.querySelector('svg > path')).not.toBeNull();
+    expect(flame?.querySelector('svg > rect')).toBeNull();
+  });
+
   it('is gone the moment the turn is', () => {
     showTranscript([turn([{ kind: 'text', text: 'Done.' }], false)]);
     expect(document.querySelector('.msg-working')).toBeNull();

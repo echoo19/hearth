@@ -410,6 +410,186 @@
   }
 }
 
+/* --- The flame in the working row ----------------------------------------- */
+
+/* The transcript's own working row carries the Hearth flame instead of the
+   shared dot, and it is the only thing in the line that moves. The word keeps
+   breathing in the reasoning line and the subagent card, where it is the sole
+   live mark; here it would be a second rhythm under a first, which is exactly
+   the two-place fidget the note above rejects, and this word sits at the foot
+   of prose someone is still reading. One live thing, and it is the flame. */
+.msg-working .working-label {
+  animation: none;
+  opacity: 1;
+}
+
+/* What makes fire read as alive is that it never repeats. A single looped
+   channel cannot do that at any amplitude: one track always returns to the
+   same beat, and the eye finds the beat in about four seconds and then reads
+   it as a spinner. So three things move on three periods that share no
+   noticeable common multiple (1.3s, 1.7s, 2.3s recombine only every ~8.5
+   minutes, longer than any turn anyone waits through), and the irregularity is
+   in their drift against each other rather than inside any one of them:
+
+     reach: the body stretching up off the base and settling
+     lean:  a small lateral tilt, pivoting on that same base
+     glow:  brightness, which in fire moves fastest and least evenly
+
+   They animate the individual `scale` / `rotate` properties rather than
+   `transform` on purpose. Two animations both writing `transform` clobber each
+   other, which would force reach and lean into one keyframe track sharing one
+   duration, collapsing the three periods back down to two and putting the beat
+   right back.
+
+   The durations sit outside the --t-* set on the same licence as the
+   field-reject shake in primitives.css and the sign-in breath in
+   settings-agents.css: those tokens size a response to an action, and nothing
+   here is responding to anything. Here there is a second reason, which is that
+   the three durations must be unequal and non-harmonic. That difference IS the
+   effect; a token set of three fixed values cannot express it.
+
+   Amplitudes are deliberately tiny (under 8% on scale, under 2.5deg of lean,
+   never dimmer than 0.74). This runs for minutes beside text being read: it
+   has to be findable in peripheral vision and ignorable in foveal.
+
+   Resting state is the visible state. No fill mode, no `both`, no `forwards`:
+   with the animations never running at all (hidden tab, headless render, reduce
+   on) the flame computes to upright, full size, full opacity from the base rule
+   below, so it can never ship as an invisible or half-scaled glyph the way a
+   fill-mode reveal does. See the notes in primitives/menu.css and shell.css. */
+.working-flame {
+  flex: none;
+  align-self: center;
+  display: inline-flex;
+  /* Not --flame-brand. That token is the wordmark's hotter orange, reserved
+     for brand moments; a status mark living inside a transcript belongs to the
+     UI accent so it cannot out-shout the message it is sitting under. */
+  color: var(--accent);
+  /* The glyph is ~6px of ink in a 12px box (see `fire` in ui.tsx), so the
+     8px gap would read as 11px and the flame would sit 3px right of where the
+     dot did. Pull both sides back to the optical gap. */
+  margin-inline: -3px;
+  /* Fire is anchored. The glyph's base sits at y=11 of its 12-unit box, so
+     every stretch and lean pivots there and the flame grows out of a fixed
+     foot instead of floating free. */
+  transform-origin: 50% 92%;
+  animation-name: working-flame-reach, working-flame-lean, working-flame-glow;
+  animation-duration: 1700ms, 2300ms, 1300ms;
+  /* Symmetric sine-ish easing, one value for all three. --ease-out decelerates
+     into a resting state, and none of these rest; see the note further up this
+     file for the full reason a loop cannot use it. */
+  animation-timing-function: cubic-bezier(0.45, 0, 0.55, 1);
+  animation-iteration-count: infinite;
+  /* Promote once, so the loop composites instead of repainting the row. */
+  will-change: transform, opacity;
+}
+
+/* Reach. The flame narrows as it climbs and spreads as it drops, the way a
+   real tongue trades height for width, so x and y move against each other
+   rather than together (together is a throb). Stops are unevenly spaced so it
+   lingers at some heights and snaps past others; the tallest lick lands at 76%,
+   late, so the cycle does not read as building to a middle and coming back. */
+@keyframes working-flame-reach {
+  0% {
+    scale: 1 1;
+  }
+  17% {
+    scale: 0.97 1.06;
+  }
+  31% {
+    scale: 1.03 0.95;
+  }
+  48% {
+    scale: 0.98 1.04;
+  }
+  59% {
+    scale: 1.02 0.99;
+  }
+  76% {
+    scale: 0.96 1.08;
+  }
+  88% {
+    scale: 1.02 0.97;
+  }
+  100% {
+    scale: 1 1;
+  }
+}
+
+/* Lean. Degrees this small are never consciously seen; what they do is stop
+   the silhouette from being vertically symmetric at any given instant, which
+   is most of what separates a flame from a shape being scaled. Weighted so it
+   spends more of the loop off-centre than centred. */
+@keyframes working-flame-lean {
+  0% {
+    rotate: 0deg;
+  }
+  21% {
+    rotate: -1.8deg;
+  }
+  39% {
+    rotate: 0.9deg;
+  }
+  55% {
+    rotate: 2.4deg;
+  }
+  68% {
+    rotate: -0.5deg;
+  }
+  84% {
+    rotate: -2.1deg;
+  }
+  100% {
+    rotate: 0deg;
+  }
+}
+
+/* Glow. Fire brightens faster than it dims, so the climbs get short gaps
+   between stops and the falls get long ones; the asymmetry is in the spacing,
+   not in the easing, which stays the same curve as the other two. The floor is
+   0.74 rather than something lower because below roughly that the mark stops
+   reading as ember against --ink-mute and starts reading as a glitch. */
+@keyframes working-flame-glow {
+  0% {
+    opacity: 0.92;
+  }
+  12% {
+    opacity: 1;
+  }
+  34% {
+    opacity: 0.78;
+  }
+  46% {
+    opacity: 0.97;
+  }
+  63% {
+    opacity: 0.84;
+  }
+  71% {
+    opacity: 1;
+  }
+  89% {
+    opacity: 0.74;
+  }
+  100% {
+    opacity: 0.92;
+  }
+}
+
+/* The global reduce rule flattens durations, which here would pin the flame on
+   whatever the 0% frame happens to be. Settle it explicitly instead: upright,
+   full size, full strength. The row still reads as working without any motion
+   at all, because the counter beside it ticks once a second. That is liveness
+   carried by changing text, which is what reduced motion asks for. */
+@media (prefers-reduced-motion: reduce) {
+  .working-flame {
+    animation: none;
+    scale: 1;
+    rotate: 0deg;
+    opacity: 1;
+  }
+}
+
 /* --- Queued messages ------------------------------------------------------ */
 
 /* Typed, not yet said. Same right-hand alignment and shape as a real user
@@ -495,6 +675,15 @@
 
 .tool-chip.state-error .tool-dot {
   background: var(--err);
+}
+
+/* A row whose turn ended before it reported back. Deliberately the resting
+   `--ink-faint`, not green and not red: nothing knows whether it worked, and
+   the two lit colours both claim an answer. Written out rather than left to
+   the base rule so a later state cannot inherit "looks settled" by accident. */
+.tool-chip.state-stopped .tool-dot,
+.subagent-card.state-stopped .subagent-dot {
+  background: var(--ink-faint);
 }
 
 .tool-verb {
@@ -614,6 +803,7 @@
 .cmd-chevron,
 .filechange-chevron,
 .reasoning-chevron,
+.run-chevron,
 .skill-use-chevron,
 .subagent-chevron,
 .tool-chip-chevron {
@@ -627,6 +817,7 @@
 }
 
 [data-open='true'] > .cmd-line > .cmd-chevron,
+[data-open='true'] > .run-summary > .run-chevron,
 [data-open='true'] > .filechange-line > .filechange-chevron,
 [data-open='true'] > .reasoning-line > .reasoning-chevron,
 [data-open='true'] > .skill-use-line > .skill-use-chevron,
@@ -652,6 +843,7 @@
    all of them, which is what makes a mixed run read as a single column. */
 .tool-chip-line,
 .cmd-line,
+.run-summary,
 .skill-use-line,
 .filechange-line,
 .subagent-head,
@@ -686,8 +878,8 @@
 /* A turn that runs four commands and edits three files is ONE piece of work.
    Consecutive machinery closes from the turn's 12px to 4px so a run of it
    reads as a block with prose either side, rather than as a stack of cards. */
-.msg > :is(.tool-chip, .cmd-row, .skill-use, .filechange-card, .subagent-card)
-  + :is(.tool-chip, .cmd-row, .skill-use, .filechange-card, .subagent-card) {
+.msg > :is(.tool-chip, .cmd-row, .run-group, .skill-use, .filechange-card, .subagent-card)
+  + :is(.tool-chip, .cmd-row, .run-group, .skill-use, .filechange-card, .subagent-card) {
   margin-top: -8px;
 }
 
@@ -716,6 +908,67 @@
 .filechange-body {
   border-radius: var(--radius);
   background: var(--bg-2);
+}
+
+/* --- A folded run --------------------------------------------------------- */
+
+/* Eight shell rows in a row is ~340px of transcript carrying almost nothing,
+   and a turn does that several times. Folded, the run is one line the reader
+   skips; the rows themselves are unchanged and one click away.
+
+   So this line has to be QUIETER than what it replaces, which is the opposite
+   of how a summary usually gets designed. It takes the family's metrics and
+   drops the fill: on this column a row with no --bg-2 under it reads as a
+   caption rather than as a control, which is exactly what a thing you skip
+   should read as. Hover puts the fill back, so the row under the pointer looks
+   like the block it is about to become.
+
+   Nothing here animates. The rows mount when the fold opens, and giving a
+   dozen of them an entrance would turn one click into a slot machine (the same
+   reason streamed rows have no entrance either). Height is never animated: it
+   is a layout property and the reveal would judder against the scroll. */
+
+.run-group,
+.run-rows {
+  display: flex;
+  flex-direction: column;
+  /* The 4px consecutive machinery closes to outside a fold, so opening one
+     does not make the run inside it read looser than the run beside it. */
+  gap: 4px;
+}
+
+.run-summary {
+  width: 100%;
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--ink-faint);
+}
+
+.run-summary:hover {
+  background: var(--bg-2);
+  color: var(--ink-mute);
+}
+
+.run-label {
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* The one status colour on the line, same as a command row's exit code: a
+   failure that only shows up after the fold is opened is a failure the fold
+   hid. */
+.run-failed {
+  color: var(--err);
+}
+
+/* And a run with a failure in it stops being the faintest thing in the turn.
+   Still not an alert (a failed command row doesn't shout either), just no
+   longer sized to be skipped. */
+.run-group[data-failed='true'] .run-summary {
+  color: var(--ink-mute);
 }
 
 /* --- Command -------------------------------------------------------------- */
@@ -810,6 +1063,13 @@
 
 .cmd-row.state-error .cmd-exit {
   color: var(--err);
+}
+
+/* "did not finish" is a fact about the row, not an error. Muted, so it reads
+   as an absence rather than as a second kind of failure. */
+.cmd-row.state-stopped .cmd-exit,
+.skill-use.state-stopped .skill-use-note {
+  color: var(--ink-faint);
 }
 
 /* --- Skill ---------------------------------------------------------------- */
@@ -1681,15 +1941,32 @@
   animation: composer-menu-in var(--t) var(--ease-out) both;
 }
 
-/* Wider than the composer's other menu, and capped: this one lists the agents,
-   then every model each of them reported, then that model's own efforts. The
-   cap is what keeps a full codex catalogue from becoming a menu the length of
-   the window. */
+/* Wider than the composer's other menu, and capped twice over: this one lists
+   the agents, then every model each of them reported, then that model's own
+   efforts, which on a full codex catalogue is longer than most windows.
+
+   `--menu-max-h` is the room the menu actually has where it opened, measured
+   against its trigger in JS. 560px is the taste half — even given a tall
+   monitor's worth of room, a picker the length of the screen is a scroll
+   through a wall, not a menu. Whichever is smaller wins, and anything past it
+   scrolls. */
 .menu-popover.model-menu {
   min-width: 264px;
-  max-height: min(70vh, 560px);
+  max-height: min(var(--menu-max-h, 100vh), 560px);
   overflow-y: auto;
   transform-origin: bottom right;
+}
+
+/* The switch at the head of the picker takes the full width, so the two sides
+   read as halves of one control rather than as a pill floating in a panel. */
+.model-menu .menu-heading .switch {
+  width: 100%;
+}
+
+.model-menu-blurb {
+  margin: 8px 2px 0;
+  font-size: var(--text-xs);
+  color: var(--ink-faint);
 }
 
 /* The trailing note on a picker row is prose — "Default", "Signed in",

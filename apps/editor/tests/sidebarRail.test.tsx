@@ -16,7 +16,7 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import React from 'react';
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 
 vi.mock('../src/harness/HarnessSections', () => ({ HarnessSections: () => null }));
 
@@ -33,6 +33,7 @@ import {
   mergeRecentChats,
   relativeTime,
 } from '../src/components/shell/Sidebar';
+import { FOCUS_SEARCH_EVENT } from '../src/components/shell/ShortcutLayer';
 import { useApp } from '../src/store';
 import type { ChatProviderStatus, RecentChatEntry } from '../src/types';
 
@@ -226,6 +227,72 @@ describe('search', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Search' }));
     fireEvent.change(screen.getByLabelText('Search projects and chats'), { target: { value: 'zzz' } });
     expect(screen.getByText('No chats match that.')).toBeTruthy();
+  });
+
+  it('puts the caret in the field when the shortcut opens it', () => {
+    reset({ recentChats: [chat('a', 'Asteroids')] });
+    render(<Sidebar />);
+
+    act(() => {
+      window.dispatchEvent(new CustomEvent(FOCUS_SEARCH_EVENT));
+    });
+
+    expect(document.activeElement).toBe(screen.getByLabelText('Search projects and chats'));
+  });
+
+  it('puts it there again when search was already open behind a collapsed rail', () => {
+    // The reported failure. `setSearching(true)` on an already-searching rail
+    // changes nothing, so the effect that focuses never re-ran and the direct
+    // call from the handler ran while the field was still unmounted (it renders
+    // only under `!collapsed && searching`). document.activeElement stayed on
+    // BODY and everything typed went nowhere.
+    reset({ recentChats: [chat('a', 'Asteroids')] });
+    render(<Sidebar />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Search' }));
+    fireEvent.change(screen.getByLabelText('Search projects and chats'), { target: { value: 'aster' } });
+    act(() => {
+      useApp.getState().setSidebarCollapsed(true);
+    });
+    expect(screen.queryByLabelText('Search projects and chats')).toBeNull();
+
+    act(() => {
+      window.dispatchEvent(new CustomEvent(FOCUS_SEARCH_EVENT));
+    });
+
+    const box = screen.getByLabelText('Search projects and chats') as HTMLInputElement;
+    expect(document.activeElement).toBe(box);
+    // And selected, so a second press means "search for something else".
+    expect(box.selectionStart).toBe(0);
+    expect(box.selectionEnd).toBe('aster'.length);
+  });
+});
+
+describe('the collapsed rail', () => {
+  it('takes its hidden lists out of the tab order and off the screen reader', async () => {
+    // Collapsed, the lists are hidden with opacity alone, which is mouse-only:
+    // 36 buttons existed and 4 were visible, so four Tabs off "Expand sidebar"
+    // landed on a project row drawn outside the 60px rail, screen readers read
+    // the whole hidden list out, and focusing a row scrolled a container nobody
+    // could see.
+    vi.mocked(apiRecentWorkspaces).mockResolvedValue([{ path: HERE, name: 'game', exists: true }]);
+    reset({ sidebarCollapsed: true, recentChats: [chat('a', 'Asteroids')] });
+    const { container } = render(<Sidebar />);
+
+    await waitFor(() => expect(container.querySelector('.sidebar-scroll')).toBeTruthy());
+    const lists = container.querySelector('.sidebar-scroll')!;
+    expect(lists.hasAttribute('inert')).toBe(true);
+    expect(lists.getAttribute('aria-hidden')).toBe('true');
+  });
+
+  it('gives them back the moment it is expanded', async () => {
+    vi.mocked(apiRecentWorkspaces).mockResolvedValue([{ path: HERE, name: 'game', exists: true }]);
+    reset({ sidebarCollapsed: false, recentChats: [chat('a', 'Asteroids')] });
+    const { container } = render(<Sidebar />);
+
+    const lists = container.querySelector('.sidebar-scroll')!;
+    expect(lists.hasAttribute('inert')).toBe(false);
+    expect(lists.hasAttribute('aria-hidden')).toBe(false);
   });
 });
 

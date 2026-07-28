@@ -20,6 +20,17 @@ apps/editor/release/
 # and must not leak in from an example project someone playtested locally.
 .hearth/evidence/
 .hearth/sweeps/
+# Conversations and tester sessions are the user's own record of working in a
+# folder. They are written into whichever project is open, which includes the
+# example games in this repo the moment anyone opens one, and a transcript of
+# someone's afternoon is not a source file.
+#
+# `**/` is load-bearing. A pattern with an interior slash is anchored to this
+# file's own directory, so the `.hearth/evidence/` and `.hearth/sweeps/` rules
+# above match only at the repo root, not inside an example project, which is
+# the one place their comment says they are for.
+**/.hearth/chats/
+**/.hearth/tester/
 
 # agent/automation scratch (never commit to the public repo)
 .scratch-audit/

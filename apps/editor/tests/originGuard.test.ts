@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { isRequestAllowed } from '../server/originGuard';
+import { isLoopbackRequest, isRequestAllowed } from '../server/originGuard';
 
 describe('isRequestAllowed', () => {
   it('allows requests with no Origin header (CLI/curl/non-browser)', () => {
@@ -47,10 +47,36 @@ describe('isRequestAllowed', () => {
     ).toEqual({ ok: false, reason: 'host' });
   });
 
-  it('allows matching loopback Origin and Host with different ports', () => {
+  it('rejects a loopback Origin on a DIFFERENT port from the server it is asking', () => {
+    // This is the game. It is served from its own loopback port so it cannot
+    // reach the control plane, and "any localhost origin is fine" was exactly
+    // what let it. A game that opens ws://<editor>/api/ws and sends pty-start
+    // gets a login shell, and WebSocket does no CORS, so this check is the
+    // only thing between a game and the user's machine.
     expect(
-      isRequestAllowed({ origin: 'http://127.0.0.1:5173', host: 'localhost:39271' }),
+      isRequestAllowed({ origin: 'http://127.0.0.1:52341', host: 'localhost:5173' }),
+    ).toEqual({ ok: false, reason: 'port' });
+  });
+
+  it('allows a loopback Origin whose port matches the Host it is asking', () => {
+    expect(
+      isRequestAllowed({ origin: 'http://127.0.0.1:5173', host: 'localhost:5173' }),
     ).toEqual({ ok: true });
+  });
+
+  it('treats the loopback spellings as one another’s aliases', () => {
+    // A browser derives Origin and Host from the same address bar, so the
+    // name can never actually disagree; pinning it would only break someone
+    // who typed the other spelling.
+    expect(isRequestAllowed({ origin: 'http://localhost:5173', host: '127.0.0.1:5173' })).toEqual({
+      ok: true,
+    });
+  });
+
+  it('judges a portless Host on the loopback rules alone', () => {
+    expect(isRequestAllowed({ origin: 'http://localhost:5173', host: 'localhost' })).toEqual({
+      ok: true,
+    });
   });
 
   it('allows requests with only a loopback Host header and no Origin', () => {
@@ -59,5 +85,30 @@ describe('isRequestAllowed', () => {
 
   it('rejects a non-loopback Host header with no Origin', () => {
     expect(isRequestAllowed({ host: 'evil.example' })).toEqual({ ok: false, reason: 'host' });
+  });
+});
+
+describe('isLoopbackRequest (the game mount)', () => {
+  it('allows a cross-port loopback Origin, which is the normal case', () => {
+    // The editor page frames the game from a different port on purpose, so
+    // the mount server must NOT apply the control plane's port rule.
+    expect(isLoopbackRequest({ origin: 'http://localhost:5173', host: '127.0.0.1:52341' })).toEqual({
+      ok: true,
+    });
+  });
+
+  it('allows a navigation, which carries no Origin at all', () => {
+    expect(isLoopbackRequest({ host: '127.0.0.1:52341' })).toEqual({ ok: true });
+  });
+
+  it('rejects a non-loopback Host (DNS rebinding at the project files)', () => {
+    expect(isLoopbackRequest({ host: 'evil.example' })).toEqual({ ok: false, reason: 'host' });
+  });
+
+  it('rejects a remote page reading the project folder', () => {
+    expect(isLoopbackRequest({ origin: 'https://evil.example', host: '127.0.0.1:52341' })).toEqual({
+      ok: false,
+      reason: 'origin',
+    });
   });
 });

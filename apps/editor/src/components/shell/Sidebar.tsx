@@ -43,6 +43,40 @@ export const SIDEBAR_RAIL_PX = 60;
 
 /** How many projects the list shows before it stops, beyond the open one. */
 const MAX_PROJECTS = 8;
+
+/**
+ * What to spread onto a region that is hidden right now: out of the tab order,
+ * out of the accessibility tree, and unclickable, in one attribute.
+ *
+ * Written as an object because React 18's JSX types predate `inert`. The empty
+ * string is the attribute's canonical present form; a boolean `true` would be
+ * serialised as `inert="true"` and a boolean `false` as `inert="false"`, which
+ * HTML reads as present either way.
+ */
+const INERT = { inert: '', 'aria-hidden': true } as unknown as React.HTMLAttributes<HTMLDivElement>;
+
+/**
+ * Hold a list still across re-reads.
+ *
+ * The server orders recents by last opened, so every time a project is opened
+ * the whole list comes back in a different order. That is the right answer for
+ * a "recent folders" menu and the wrong one for a rail you navigate by
+ * position: a list that reshuffles every time you use it is a list you have to
+ * re-read every time you use it.
+ *
+ * So the order settles the first time the rail sees a project and stays. Rows
+ * already known keep the positions they had; anything genuinely new goes to
+ * the front, where a project you just made is where you would look for it.
+ * Rows that have gone are simply absent.
+ *
+ * Pure, so the rule is testable without a rail.
+ */
+export function stableOrder<T extends { path: string }>(rows: readonly T[], previous: readonly string[]): T[] {
+  const rank = new Map(previous.map((path, index) => [path, index]));
+  const known = rows.filter((row) => rank.has(row.path)).sort((a, b) => rank.get(a.path)! - rank.get(b.path)!);
+  const fresh = rows.filter((row) => !rank.has(row.path));
+  return [...fresh, ...known];
+}
 /** How many conversations the Chats list shows unfiltered. */
 const MAX_RECENT_CHATS = 20;
 
@@ -498,6 +532,10 @@ export function Sidebar() {
   const [searching, setSearching] = useState(false);
   const [query, setQuery] = useState('');
   const searchRef = useRef<HTMLInputElement>(null);
+  // The order the rail is currently showing projects in, so the next read of
+  // recents can be laid back over it instead of replacing it. A ref rather
+  // than state: writing it must never be the thing that causes a render.
+  const order = useRef<string[]>([]);
 
   // The rail is the one component always mounted, so it is the one that serves
   // the composer's "Open folder…" request.
@@ -509,20 +547,38 @@ export function Sidebar() {
     void apiRecentWorkspaces().then(setRecents);
   }, [projectPath]);
 
+  // Bumped by the shortcut to mean "put the caret in the field", whether or not
+  // anything else about the rail changed. See the effect below.
+  const [focusSearch, setFocusSearch] = useState(0);
+
+  // The field is rendered only under `!collapsed && searching`, so the caret
+  // goes to it after the render that puts it on screen, never from the
+  // handler that asked, where it does not exist yet.
+  //
+  // `focusSearch` is in the deps because the two state values are not enough.
+  // The shortcut pressed while search is already open makes setSearching(true)
+  // a no-op, so nothing here changes, the effect never re-runs, and the
+  // shortcut appeared to do nothing at all: document.activeElement stayed on
+  // BODY and what was typed went nowhere. The bump is the ask itself, and it is
+  // always new.
   useEffect(() => {
-    if (searching) searchRef.current?.focus();
-  }, [searching]);
+    if (collapsed || !searching) return;
+    const box = searchRef.current;
+    if (!box) return;
+    box.focus();
+    // Selected as well as focused: a second press means "search for something
+    // else", so whatever is in there is ready to be typed over.
+    box.select();
+  }, [collapsed, searching, focusSearch]);
 
   // The search shortcut. It has to open the rail as well as the field: search
   // is hidden behind a toggle, and on a collapsed rail there is nothing on
-  // screen to type into. Pressing it while already searching re-focuses and
-  // selects, so a second press means "search for something else" rather than
-  // nothing at all.
+  // screen to type into.
   useEffect(() => {
     const onFocusSearch = (): void => {
       setCollapsed(false);
       setSearching(true);
-      searchRef.current?.select();
+      setFocusSearch((n) => n + 1);
     };
     window.addEventListener(FOCUS_SEARCH_EVENT, onFocusSearch);
     return () => window.removeEventListener(FOCUS_SEARCH_EVENT, onFocusSearch);
@@ -539,16 +595,40 @@ export function Sidebar() {
   );
 
   /**
-   * Every project, the open one included and first — it is one list now, not
-   * "the folder you're in" plus "some others". A project that has been moved
-   * or deleted is dropped rather than shown as a dead row.
+   * Every project this rail has seen, in an order that does not move.
+   *
+   * The server sorts recents by last opened, and this list used to hoist the
+   * open one to the top on top of that, so a click did two things at once: it
+   * selected a project AND rewrote the list under the pointer. Clicking the
+   * fourth row moved it to the first and shifted the three above it down, so
+   * the row you had just aimed at was somewhere else by the time you let go.
+   *
+   * The remembered order covers every project rather than the filtered view.
+   * A search that hides half the rail must not make the hidden half look new
+   * when the query is cleared.
+   */
+  const ordered = useMemo(
+    () => stableOrder(recents.filter((recent) => recent.exists), order.current),
+    // `order` is this memo's memory of what it last produced, not an input
+    // that should re-run it.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [recents],
+  );
+  order.current = ordered.map((project) => project.path);
+
+  /**
+   * What the rail shows: the remembered order, filtered, capped. The open
+   * project is added back when the cap would have hidden it — it is the one
+   * row that has to be on screen, and appending it is the only position that
+   * does not push everything else around.
    */
   const projects = useMemo(() => {
-    const rows = recents.filter((recent) => recent.exists && matchesQuery(recent.name, query));
-    const openRow = rows.find((row) => row.path === projectPath);
-    const rest = rows.filter((row) => row.path !== projectPath).slice(0, MAX_PROJECTS);
-    return openRow ? [openRow, ...rest] : rest;
-  }, [recents, query, projectPath]);
+    const matching = ordered.filter((project) => matchesQuery(project.name, query));
+    const capped = matching.slice(0, MAX_PROJECTS);
+    if (projectPath === null || capped.some((project) => project.path === projectPath)) return capped;
+    const open = matching.find((project) => project.path === projectPath);
+    return open ? [...capped, open] : capped;
+  }, [ordered, query, projectPath]);
 
   /** What a project stored, by path — how a chat row finds its own mark. */
   const identityOf = useMemo(() => {
@@ -658,7 +738,13 @@ export function Sidebar() {
         )}
       </div>
 
-      <div className="sidebar-scroll">
+      {/* Collapsed, this whole region is fully hidden (sidebar.css), and hidden
+          has to mean hidden to the keyboard and to a screen reader too, not
+          only to the eye. Without this the rail kept ~32 unreachable buttons in
+          the tab order: four Tabs off "Expand sidebar" put focus on a project
+          row drawn outside the 60px rail, and the hidden container scrolled to
+          chase it. */}
+      <div className="sidebar-scroll" {...(collapsed ? INERT : {})}>
         <section className="sidebar-section" aria-label="Projects">
           {/* The heading is where making another one belongs — beside the list
               it joins, not competing with New chat above. Quiet like every

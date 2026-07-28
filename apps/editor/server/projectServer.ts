@@ -82,6 +82,7 @@ import {
   type TesterFrame,
 } from './ws.js';
 import { attachProbeStream, type ProbeBusMessage } from './probeStream.js';
+import { startGameServer, type GameServerHandle } from './gameServer.js';
 
 export { attachWebSocket } from './ws.js';
 
@@ -90,7 +91,7 @@ export { attachWebSocket } from './ws.js';
 //
 // The game pane iframes whatever web game the agent built, and the evidence
 // rail shows screenshots the probe captured. Both are files inside the user's
-// project folder, so they are served from mounts OUTSIDE /api/:
+// project folder, served from two mounts:
 //
 //   /game/<key>/<rel>       — the project folder
 //   /evidence/<key>/<rel>   — the project's .hearth/evidence folder
@@ -99,11 +100,15 @@ export { attachWebSocket } from './ws.js';
 // into the path (rather than a ?project= query) is what makes a game's own
 // relative asset URLs — `./main.js`, `assets/sprite.png` — resolve correctly
 // from inside the iframe, since they resolve against the mount as their base.
+//
+// Both mounts are served by server/gameServer.ts on a SEPARATE loopback port,
+// not by this server. `serveMounted` below is still where the rules live (the
+// folder must be open, the path must not escape it); only the transport moved.
+// Read gameServer.ts's header for why: bytes the agent wrote must never be
+// handed to a browser on the same origin as the API that spawns shells.
 // ---------------------------------------------------------------------------
 
-export const GAME_MOUNT = '/game/';
-export const EVIDENCE_MOUNT = '/evidence/';
-
+export { GAME_MOUNT, EVIDENCE_MOUNT } from './gameServer.js';
 
 export function encodeRootKey(root: string): string {
   return Buffer.from(root, 'utf8').toString('base64url');
@@ -121,11 +126,17 @@ export function decodeRootKey(key: string): string | null {
 /**
  * Paths this server owns. Both transports (the Vite dev-server middleware and
  * the Electron main process's http server) ask this before falling through to
- * their own static UI handling, so the mounts can never be shadowed by an
+ * their own static UI handling, so the API can never be shadowed by an
  * index.html fallback.
+ *
+ * The /game/ and /evidence/ mounts used to be claimed here too. They are not
+ * any more, and must not come back: this origin runs the control plane, and a
+ * project's own HTML executing on it is the exact hole gameServer.ts exists to
+ * close. A stray /game/ request to this origin now falls through to the SPA
+ * fallback and gets the editor's own index.html, which is inert.
  */
 export function isHearthServerPath(pathname: string): boolean {
-  return pathname.startsWith('/api/') || pathname.startsWith(GAME_MOUNT) || pathname.startsWith(EVIDENCE_MOUNT);
+  return pathname.startsWith('/api/');
 }
 
 /**
@@ -489,10 +500,19 @@ export function createProjectServerContext(options: ProjectServerOptions = {}) {
    * Every folder this server has been asked to open this run — Hearth projects
    * AND plain folders (the app opens whatever folder the agent is going to
    * build in, which need not contain a hearth.json). It is the read jail for
-   * the file routes and the static mounts: a request must name a root that was
-   * deliberately opened, and every path is still resolved inside it.
+   * the file routes, the static mounts, AND the /api/ws upgrade: a request
+   * must name a root that was deliberately opened, and every path is still
+   * resolved inside it.
    */
   const openedRoots = new Set<string>();
+  /**
+   * Where the game mount is being served from this run (see gameServer.ts).
+   * Set once the loopback listener is up; null until then, and null forever if
+   * it could not start. The client is told over /api/meta and refuses to build
+   * a game URL without it, which is what stops a failed start from quietly
+   * falling back to this origin and reopening the hole.
+   */
+  let gameOrigin: string | null = null;
   // The on-disk journal seq each cached session had seen, last time we
   // checked or updated it — see getSession's self-healing reload below.
   const seenSeq = new Map<string, number>();
@@ -794,7 +814,20 @@ export function createProjectServerContext(options: ProjectServerOptions = {}) {
     }
   }
 
-  /** Is `root` readable through the file routes / static mounts? */
+  /**
+   * Is `root` readable through the file routes, the static mounts, or the
+   * WebSocket channel?
+   *
+   * A resolved absolute path, always. Every caller must resolve before asking:
+   * `openedRoots` holds resolved paths, so `isOpenRoot('/a/../a')` would say no
+   * about a folder that is open.
+   *
+   * This is also exported on the context (see below), which it was not for a
+   * long time, and that is why the /api/ws upgrade never called it: it was a
+   * closure ws.ts had no way to reach, so a socket could name ANY path on the
+   * disk and get a shell there. Anything that resolves a caller-supplied root
+   * asks this first.
+   */
   function isOpenRoot(root: string): boolean {
     return openedRoots.has(root) || sessions.has(root);
   }
@@ -854,6 +887,16 @@ export function createProjectServerContext(options: ProjectServerOptions = {}) {
   const ctx = {
     repoRoot,
     sessions,
+    /**
+     * The open-folder jail, reachable from the other transports. ws.ts gates
+     * its upgrade on this; see isOpenRoot above for what went wrong while it
+     * could not.
+     */
+    isOpenRoot,
+    /** Told by whoever started the game listener. See gameOrigin above. */
+    setGameOrigin(origin: string | null): void {
+      gameOrigin = origin;
+    },
     /** Desktop-export progress bus; ws.ts subscribes and fans frames to sockets. */
     exportBus,
     /** Running-sweep frames; probeStream.ts subscribes and fans them to viewers. */
@@ -1098,6 +1141,12 @@ export function createProjectServerContext(options: ProjectServerOptions = {}) {
 
       let driver: ChatDriver;
       try {
+        // Deliberately bound WITHOUT the project's permission mode, which is
+        // about the conversation the user is watching. Nobody is watching this
+        // one: under `ask` every step would raise an approval into an empty
+        // room and the session would wedge, and under `skip` an unattended
+        // agent would be running with no sandbox at all. It gets the default,
+        // which is what this has always run as.
         driver = await (options.testerDeps?.createDriver ?? ((r: string) => createChatDriver(r)))(root);
       } catch (err) {
         return { status: 500, body: { ok: false, error: `Could not reach your agent: ${(err as Error).message}` } };
@@ -2014,21 +2063,36 @@ export function createProjectServerContext(options: ProjectServerOptions = {}) {
       }
     },
 
+    /**
+     * Facts about this server that the UI needs before any folder is open.
+     *
+     * It used to also answer with `os.homedir()`, the repo root, and the
+     * absolute paths of the bundled CLI/MCP/probe binaries, to anyone who
+     * asked. Nothing in the client ever read them (the UI uses
+     * `hearthVersion`, and now `gameOrigin`), and handing an unauthenticated
+     * caller a map of the user's disk is what turned the /api/ws hole from a
+     * vulnerability into a point-and-shoot one: the attack did not have to
+     * guess a username, it just asked. So they are gone rather than gated.
+     *
+     * The route itself stays ungated, because it has to be: it is the first
+     * call the app makes, before any folder exists to authorize against. What
+     * protects it now is the same-origin rule in originGuard.ts, which no
+     * other page on the machine (the game included) can satisfy. What is left
+     * in the body is a version string, a capability bit, and a loopback port
+     * that is useless without an open folder to name.
+     */
     async meta(): Promise<JsonResult> {
       const runtimeAvailable =
         (await pathExists(path.join(repoRoot, 'packages', 'runtime', 'src', 'pixi', 'index.ts'))) ||
         (await pathExists(path.join(repoRoot, 'packages', 'runtime', 'dist', 'pixi', 'index.js')));
-      const toolPaths = await resolveToolPaths(repoRoot);
 
       return {
         status: 200,
         body: {
           ok: true,
-          repoRoot,
-          home: os.homedir(),
           hearthVersion: HEARTH_VERSION,
           runtimeAvailable,
-          toolPaths,
+          gameOrigin,
         },
       };
     },
@@ -2093,35 +2157,9 @@ async function route(ctx: ProjectServerContext, req: IncomingMessage, res: Serve
   const method = req.method ?? 'GET';
   const key = `${method} ${url.pathname}`;
 
-  // Static mounts come before the route table: their paths are open-ended
-  // (`/game/<key>/whatever/the/game/ships`), not a fixed set of endpoints.
-  for (const [mount, prefix] of [
-    ['game', GAME_MOUNT],
-    ['evidence', EVIDENCE_MOUNT],
-  ] as const) {
-    if (!url.pathname.startsWith(prefix)) continue;
-    const rest = url.pathname.slice(prefix.length);
-    const slash = rest.indexOf('/');
-    const rootKey = slash === -1 ? rest : rest.slice(0, slash);
-    const relRaw = slash === -1 ? '' : rest.slice(slash + 1);
-    let rel: string;
-    try {
-      rel = decodeURIComponent(relRaw);
-    } catch {
-      return sendJson(res, 400, { ok: false, error: 'Malformed path.' });
-    }
-    const result = await ctx.serveMounted(mount, rootKey, rel === '' ? 'index.html' : rel);
-    if (result.data !== undefined) {
-      res.statusCode = result.status;
-      res.setHeader('Content-Type', result.contentType ?? 'application/octet-stream');
-      // Never cached: the whole point of the pane is that it shows what the
-      // agent just wrote, and a reload must fetch the new bytes.
-      res.setHeader('Cache-Control', 'no-store');
-      res.end(Buffer.from(result.data));
-      return;
-    }
-    return sendJson(res, result.status, result.body);
-  }
+  // The /game/ and /evidence/ mounts were served here. They now live on their
+  // own loopback origin (server/gameServer.ts). Nothing that serves project
+  // bytes belongs on this origin.
 
   // The harness registry (connectors + skills) owns its own route module.
   if (url.pathname === '/api/harness/registry') return (await import('./harnessRegistry.js')).routeHarnessRegistry(ctx, req, res);
@@ -2151,6 +2189,15 @@ async function route(ctx: ProjectServerContext, req: IncomingMessage, res: Serve
   // and read by the composer's picker on Home where there is no folder at all.
   if (url.pathname === '/api/model-prefs') {
     return (await import('./modelPrefs.js')).routeModelPrefs(req, res);
+  }
+
+  // How much the agent may do without asking. Per PROJECT, unlike the three
+  // above, but stored per machine and never in the folder: see the header of
+  // permissionMode.ts for why a shared `skip` would be handing out remote code
+  // execution. It takes `project` and does its own validation, so it stays out
+  // of the context's open-folder table like the other route modules here.
+  if (url.pathname === '/api/permission-mode') {
+    return (await import('./permissionMode.js')).routePermissionMode(req, res);
   }
 
   switch (key) {
@@ -2365,10 +2412,22 @@ export function hearthProjectServer(options: ProjectServerOptions = {}): Plugin 
   const ctx = createProjectServerContext(options);
   return {
     name: 'hearth-project-server',
-    configureServer(server) {
+    async configureServer(server) {
+      // Started (and awaited) before the first request can arrive, so
+      // /api/meta never answers with a game origin the client would then have
+      // to poll for. A failure here leaves gameOrigin null and the pane says
+      // so; it must never fall back to serving the game from this origin.
+      let game: GameServerHandle | null = null;
+      try {
+        game = await startGameServer(ctx);
+        ctx.setGameOrigin(game.origin);
+      } catch (err) {
+        console.error(`[hearth] game mount server could not start: ${(err as Error).message}`);
+      }
+
       server.middlewares.use((req, res, next) => {
-        // /api/* plus the /game/ and /evidence/ static mounts; everything else
-        // is Vite's (the editor UI itself).
+        // /api/* only; everything else is Vite's (the editor UI itself). The
+        // game and evidence mounts are on `game` above, on their own origin.
         const pathname = new URL(req.url ?? '/', 'http://localhost').pathname;
         if (!isHearthServerPath(pathname)) return next();
         route(ctx, req, res).catch((err: unknown) => {
@@ -2386,6 +2445,9 @@ export function hearthProjectServer(options: ProjectServerOptions = {}): Plugin 
         // Its own upgrade listener on its own path, so a window that never
         // playtests never holds a socket for pictures of one.
         attachProbeStream(httpServer, ctx.probeBus);
+        // A dev-server restart re-runs this hook, so the previous run's
+        // listener has to go or its port leaks for the process's lifetime.
+        httpServer.on('close', () => game?.close());
       }
     },
   };

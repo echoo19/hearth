@@ -155,9 +155,9 @@ describe('the Terminal group’s read-out', () => {
   it('keeps "not asked yet" and "asked and got nothing" apart', () => {
     // A list that failed to load must not read as a machine with nothing on
     // it: one is Hearth's problem, the other is the user's.
-    expect(agentCliNote({ state: 'loading' })).toBe('Checking…');
-    expect(agentCliNote({ state: 'failed' })).toBe('Could not check your PATH');
-    expect(agentCliNote({ state: 'ready', clis: [] })).toBe('Your own CLI, in a shell');
+    expect(agentCliNote({ state: 'loading' })).toBe('Checking your PATH…');
+    expect(agentCliNote({ state: 'failed' })).toMatch(/could not read your PATH/);
+    expect(agentCliNote({ state: 'ready', clis: [] })).toBe('Your own CLI, running in a shell.');
   });
 });
 

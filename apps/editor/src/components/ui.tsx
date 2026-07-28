@@ -4,7 +4,7 @@
  * that every typed control in the app is built from.
  */
 import { useCallback, useEffect, useId, useRef, useState, type ReactNode } from 'react';
-import { Button } from './ui/Button';
+import { Button, IconButton } from './ui/Button';
 
 // ---------------------------------------------------------------------------
 // Field editors: value type decides the control. All commit on blur / Enter.
@@ -310,6 +310,23 @@ const ICON_PATHS: Record<string, ReactNode> = {
       stroke="none"
     />
   ),
+  // The same flame, lifted out of the hearth arch and standing on its own.
+  // Two reasons it exists rather than reusing `flame`: in the mark the flame is
+  // negative space, so at status-row size it is a four-pixel hole nobody can
+  // read; and a flame cut out of an arch cannot be stretched or leaned about
+  // its own base without dragging the arch with it, which is the whole point
+  // of the flicker in chat.css. Geometry is the mark's flame subpath, scaled
+  // 1.7x about its own axis so the base lands on y=11 of the 12-unit box.
+  // Anything animating this depends on that base (transform-origin: 50% 92%).
+  fire: (
+    <path
+      d="M5.975 9.65 C4.95 9.65 4.2 8.925 4.2 7.95 C4.2 6.725 5.35 6.225 6.1 4 C6.875 4.925 7.775 6.175 7.775 7.525 C7.775 8.8 6.975 9.65 5.975 9.65 Z"
+      transform="translate(-4.179 -5.405) scale(1.7)"
+      fill="currentColor"
+      fillRule="evenodd"
+      stroke="none"
+    />
+  ),
   plus: <path d="M6 2.5v7M2.5 6h7" />,
   // A pencil over a page — "start writing", the compose mark every mail and
   // chat app opens with. Distinct from `pencil`, which means rename-this-thing.
@@ -560,13 +577,16 @@ export function Modal({
   title,
   onClose,
   className,
+  closeButton = true,
   children,
 }: {
   open: boolean;
   title: string;
   onClose: () => void;
-  /** Extra classes on the dialog itself — `is-wide` for a panel, not a prompt. */
+  /** Extra classes on the dialog itself, `is-wide` for a panel, not a prompt. */
   className?: string;
+  /** False when the caller draws its own close. Defaults to true. */
+  closeButton?: boolean;
   children: ReactNode;
 }) {
   const ref = useRef<HTMLDialogElement>(null);
@@ -605,7 +625,32 @@ export function Modal({
       {open && (
         <>
           <div className="modal-title" id={titleId}>
-            {title}
+            <span>{title}</span>
+            {/* Every modal has a visible way out, not only the ones that
+                happen to end in a Cancel button. The tester's report is what
+                proved this belongs here rather than in each caller: it is a
+                panel to read, so it had no footer, so it had no control at
+                all and Escape was the only exit anyone could find.
+
+                `closeButton={false}` exists because visually hiding the title
+                is NOT enough to retire this. Settings hides `.modal-title`
+                with the clip-path idiom, which removes it from SIGHT and from
+                nothing else: the button stayed in the tab order, so opening
+                Settings put focus on a control nobody could see, and Enter
+                closed the dialog for no visible reason. A caller that brings
+                its own close says so, rather than hoping CSS hid this one. */}
+            {/* `cross`, not `close`: the glyph named close in this set is a
+                door with an arrow leaving it, which means "close the open
+                folder". Dismissing a dialog is the X everyone already knows. */}
+            {closeButton && (
+              <IconButton
+                icon="cross"
+                label="Close"
+                iconSize={13}
+                className="modal-close"
+                onClick={onClose}
+              />
+            )}
           </div>
           {children}
         </>

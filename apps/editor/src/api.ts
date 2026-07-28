@@ -11,6 +11,8 @@ import type {
   ChatSummary,
   ContextFile,
   ModelPrefsInfo,
+  PermissionMode,
+  PermissionModeInfo,
   RecentChatEntry,
   GameStatus,
   ProbeStatus,
@@ -294,6 +296,64 @@ export async function apiSaveProviderSettings(
 }
 
 // ---------------------------------------------------------------------------
+// How much the agent asks before it acts. Per project, because the answer is
+// about the folder you are working in and not about the person: one game you
+// are watching closely and one you are letting run are a normal pair.
+// ---------------------------------------------------------------------------
+
+/** Every mode the window knows how to honour, in menu order. */
+const PERMISSION_MODES: readonly PermissionMode[] = ['ask', 'auto', 'skip'];
+
+/**
+ * Read a body into an answer, or into nothing.
+ *
+ * The mode is checked against the list above rather than cast, because an
+ * unrecognised string is the one failure that must not be adopted: a mode the
+ * window cannot name is a mode it cannot show, and a permission setting the
+ * user cannot see is not one they can have meant. Null sends the caller back
+ * to its own default.
+ */
+function readPermissionMode(body: Partial<PermissionModeInfo> | null): PermissionModeInfo | null {
+  const mode = PERMISSION_MODES.find((known) => known === body?.mode);
+  if (!mode) return null;
+  return { mode, skipAcknowledged: body?.skipAcknowledged === true };
+}
+
+/**
+ * What this project asks for. Null when the read did not land, which the
+ * caller shows as the default rather than as an empty control.
+ */
+export async function apiPermissionMode(project: string): Promise<PermissionModeInfo | null> {
+  return readPermissionMode(
+    await getJson<PermissionModeInfo>(
+      `/api/permission-mode?project=${encodeURIComponent(project)}`,
+      'apiPermissionMode',
+    ),
+  );
+}
+
+/**
+ * Change the mode, the acknowledgement, or both in one write. Both optional:
+ * confirming what `skip` means is a single act, and sending it as two calls
+ * would leave a project that could be asked twice if the second one failed.
+ */
+export async function apiSetPermissionMode(
+  project: string,
+  patch: Partial<PermissionModeInfo>,
+): Promise<PermissionModeInfo | null> {
+  try {
+    const body = await postJson<Partial<PermissionModeInfo> & { ok: boolean }>('/api/permission-mode', {
+      project,
+      ...patch,
+    });
+    return body.ok ? readPermissionMode(body) : null;
+  } catch (err) {
+    console.error('apiSetPermissionMode: request failed', err);
+    return null;
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Personalization: what to call you, and the instructions that apply to every
 // game rather than to one. Kept in `~/.hearth`, so unlike almost everything
 // else here these routes take no project.
@@ -437,6 +497,14 @@ export function apiOpenAiLogin(project: string): Promise<{ ok: boolean; authUrl?
 
 // ---------------------------------------------------------------------------
 // Static mounts
+//
+// These are the only URLs in the app that are ABSOLUTE, and they have to be.
+// The game and evidence mounts are served from a second loopback origin (see
+// server/gameServer.ts) so that a game's own JavaScript is cross-origin to
+// this API and cannot reach the WebSocket channel that spawns shells. A
+// relative `/game/...` would put the agent's HTML back on the editor's origin,
+// which is the whole bug. `origin` comes from GET /api/meta, because the port
+// is picked at startup and there is nothing to hardcode.
 // ---------------------------------------------------------------------------
 
 /**
@@ -450,10 +518,16 @@ export function rootKey(project: string): string {
   return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
 }
 
-/** URL the game pane iframes. `cacheBust` forces a real reload after an edit. */
-export function gameUrl(project: string, entry: string, cacheBust?: number): string {
+/**
+ * URL the game pane iframes. `cacheBust` forces a real reload after an edit.
+ *
+ * `origin` is required, and callers must have one before they can build a URL
+ * at all. There is deliberately no relative fallback: a caller that does not
+ * know the game origin yet has to show nothing rather than reach for this one.
+ */
+export function gameUrl(origin: string, project: string, entry: string, cacheBust?: number): string {
   const suffix = cacheBust ? `?t=${cacheBust}` : '';
-  return `/game/${rootKey(project)}/${entry}${suffix}`;
+  return `${origin}/game/${rootKey(project)}/${entry}${suffix}`;
 }
 
 /**
@@ -465,9 +539,13 @@ export function projectFileUrl(project: string, relPath: string): string {
   return `/api/file?project=${encodeURIComponent(project)}&path=${encodeURIComponent(relPath)}`;
 }
 
-/** URL for a file inside `.hearth/evidence/` (screenshots, reports). */
-export function evidenceUrl(project: string, relPath: string): string {
-  return `/evidence/${rootKey(project)}/${relPath.replace(/^\.hearth\/evidence\//, '')}`;
+/**
+ * URL for a file inside `.hearth/evidence/` (screenshots, reports). Served
+ * from the game origin for the same reason the game is: these are the
+ * project's own bytes, and project bytes never come off the editor's origin.
+ */
+export function evidenceUrl(origin: string, project: string, relPath: string): string {
+  return `${origin}/evidence/${rootKey(project)}/${relPath.replace(/^\.hearth\/evidence\//, '')}`;
 }
 
 // ---------------------------------------------------------------------------

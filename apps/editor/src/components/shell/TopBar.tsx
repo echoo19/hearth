@@ -18,6 +18,7 @@ import React, { useEffect, useState } from 'react';
 import { anyChatProviderReady, useApp } from '../../store';
 import { hearthNative } from '../../native';
 import { IconButton } from '../ui/Button';
+import { Switch } from '../ui/Switch';
 import { Tooltip } from '../ui/Tooltip';
 import type { ChatDriverKind } from '../../types';
 
@@ -159,25 +160,16 @@ export function TopBar({ narrow, paneOpen = false }: { narrow: boolean; paneOpen
       )}
 
       {narrow && paneOpen && (
-        <div className="topbar-switch" role="tablist" aria-label="Conversation or game">
-          {(
-            [
-              ['chat', 'Conversation'],
-              ['pane', 'Game'],
-            ] as const
-          ).map(([id, label]) => (
-            <button
-              key={id}
-              type="button"
-              role="tab"
-              className="switch-tab"
-              aria-selected={narrowTab === id}
-              onClick={() => setNarrowTab(id)}
-            >
-              {label}
-            </button>
-          ))}
-        </div>
+        <Switch
+          label="Conversation or game"
+          className="topbar-switch"
+          value={narrowTab}
+          onChange={setNarrowTab}
+          options={[
+            { id: 'chat', label: 'Conversation' },
+            { id: 'pane', label: 'Game' },
+          ]}
+        />
       )}
 
       <span className="topbar-spacer" />

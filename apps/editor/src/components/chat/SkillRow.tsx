@@ -48,6 +48,9 @@ export function SkillRow({ part }: { part: ChatSkillPart }) {
         {/* A skill that failed to load did not run, and the row must not go on
             claiming it did. */}
         {part.state === 'error' && <span className="skill-use-note">failed</span>}
+        {/* Same reason as the command row: a read that never came back is not
+            a read that worked, and silence here reads as one. */}
+        {part.state === 'stopped' && <span className="skill-use-note">did not finish</span>}
       </button>
       {open && detail && (
         <div className="skill-use-body">

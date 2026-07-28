@@ -39,6 +39,7 @@ import {
   type ChatEvent,
 } from '../chat.js';
 import { hearthPtyEnv } from '../hearthShim.js';
+import { DEFAULT_PERMISSION_MODE, type PermissionMode } from '../permissionMode.js';
 import { readPersonalPrompt } from '../personalization.js';
 import { loginShellPathEnv } from '../shellEnv.js';
 import { CLAUDE_SKILLS_DIR, skillSources, skillsRoot } from '../skills.js';
@@ -47,6 +48,7 @@ import {
   CODEX_TESTED_VERSION,
   codexApprovalReply,
   codexInputItems,
+  codexPermissionParams,
   codexThreadInstructions,
   codexTurnOverrides,
   decodeRpcChunk,
@@ -516,6 +518,12 @@ export class CodexDriver implements ChatDriver {
     private readonly defaultAgent: AgentTurnOptions | null = null,
     /** Hearth tooling this machine offers the agent. Null means none. */
     private readonly tools: AgentToolAccess | null = null,
+    /**
+     * How much this project's agent may do without asking. Fixed at bind time
+     * because codex fixes the policy when the thread starts or resumes: there
+     * is no per-turn field for it, so a mode change is a rebind (ws.ts).
+     */
+    private readonly permissionMode: PermissionMode = DEFAULT_PERMISSION_MODE,
   ) {}
 
   get events(): AsyncIterable<ChatEvent> {
@@ -565,19 +573,34 @@ export class CodexDriver implements ChatDriver {
       await readPersonalPrompt(),
     );
 
+    // What the agent may do without asking, and how far its sandbox reaches.
+    // Sent on BOTH methods: a resumed thread that inherited codex's own default
+    // for an untrusted folder is read-only, and an approved patch against a
+    // read-only sandbox fails after the user has already said yes. See
+    // `codexPermissionParams`.
+    const permissions = codexPermissionParams(this.permissionMode);
+
     // Resume when we know this conversation's thread, else start a new one.
     // A resume against a thread codex has forgotten must not strand the
     // conversation, so it falls back to a fresh thread.
     let thread: unknown = null;
     if (this.resumeThreadId) {
       try {
-        thread = await conn.request('thread/resume', { threadId: this.resumeThreadId, cwd: projectRoot });
+        thread = await conn.request('thread/resume', {
+          threadId: this.resumeThreadId,
+          cwd: projectRoot,
+          ...permissions,
+        });
       } catch {
         thread = null;
       }
     }
     if (!thread) {
-      thread = await conn.request('thread/start', { cwd: projectRoot, ...codexThreadInstructions(instructions) });
+      thread = await conn.request('thread/start', {
+        cwd: projectRoot,
+        ...permissions,
+        ...codexThreadInstructions(instructions),
+      });
     }
     const id = readThreadId(thread);
     if (id) {
@@ -620,6 +643,22 @@ export class CodexDriver implements ChatDriver {
       // the least-surprising one, and unknown methods are expected on a
       // protocol that is still moving.
       conn.respond(id, {});
+      return;
+    }
+    // `skip` means the user already answered, once, for the whole project. The
+    // thread was started with `approvalPolicy: 'never'`, so codex should not be
+    // asking at all, but "should not" is not a guarantee: `never` governs
+    // commands and patches, and this protocol has other things it can ask about
+    // (a permissions request, an MCP elicitation, a tool wanting input). Any one
+    // of those arriving would put an Allow / Deny prompt on screen underneath a
+    // pill reading "No checks", which is the app contradicting itself about the
+    // one subject where it must not.
+    //
+    // Answered here rather than shown, which is what the Agent SDK side already
+    // does: `sdkApprovalFor` returns null under `skip` and `askPermission`
+    // allows. The two backends now behave the same way for the same reason.
+    if (this.permissionMode === 'skip') {
+      conn.respond(id, codexApprovalReply(method, 'allow'));
       return;
     }
     const approval = mapCodexApproval(method, params);
@@ -710,6 +749,8 @@ export async function createCodexDriver(
     agent?: AgentTurnOptions | null;
     /** Hearth tooling on this machine (shim dir + probe), from ws.ts. */
     tools?: AgentToolAccess | null;
+    /** This project's permission mode, read at bind time by ws.ts. */
+    permissionMode?: PermissionMode | null;
   },
 ): Promise<ChatDriver | null> {
   const bin = await resolveCodexBinary(projectRoot);
@@ -728,5 +769,6 @@ export async function createCodexDriver(
     spawnCodexTransport,
     opts?.agent ?? null,
     opts?.tools ?? null,
+    opts?.permissionMode ?? DEFAULT_PERMISSION_MODE,
   );
 }

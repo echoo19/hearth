@@ -31,10 +31,12 @@ import { promises as fsp } from 'node:fs';
 import { composeAgentInstructions, hearthFactsPrompt } from './agentFacts.js';
 import { isInlineImage, type ChatAttachment } from './chatAttachments.js';
 import { hearthPtyEnv } from './hearthShim.js';
+import { DEFAULT_PERMISSION_MODE, type PermissionMode } from './permissionMode.js';
 import { readPersonalPrompt } from './personalization.js';
 import { syncSkillsIntoProject } from './skills.js';
 
 export type { ChatAttachment } from './chatAttachments.js';
+export type { PermissionMode } from './permissionMode.js';
 
 // ---------------------------------------------------------------------------
 // Wire shapes
@@ -89,6 +91,18 @@ export type ChatEvent =
   // --- canonical vocabulary ------------------------------------------------
   /** Agent prose, streamed. */
   | { type: 'message-delta'; text: string }
+  /**
+   * The end of one piece of prose, carrying no text of its own.
+   *
+   * A turn is not one long answer. Backends emit several separate messages
+   * across it, and the deltas that stream them say nothing about where one
+   * stops. Appending blind glues the next message's first character onto the
+   * previous message's last one, which is how a transcript ends up reading
+   * "a visual game/UI task.Some of what we're working on" with the sentence
+   * boundary eaten. Worse than the missing space, the whole turn arrives as
+   * one undifferentiated wall instead of the paragraphs it was written as.
+   */
+  | { type: 'message-end' }
   /** Visible chain-of-thought summary, streamed. Rendered muted + collapsed. */
   | { type: 'reasoning-delta'; text: string }
   /** A tool call started. `title` is the one-line human summary. */
@@ -697,10 +711,40 @@ export function isInsideRoot(target: string, projectRoot: string): boolean {
 }
 
 /**
- * The default approval policy: work inside the open project folder proceeds
- * without interrupting the user (that is the whole point of the app — the
- * agent builds the game, it doesn't ask nine times per file), and anything
- * reaching OUTSIDE the folder becomes a real inline prompt.
+ * The SDK's own `permissionMode` for a Hearth mode.
+ *
+ * Verified against the installed binary's `--help` on the Agent SDK this app
+ * ships with: `acceptEdits`, `bypassPermissions`, `default` and `plan` are all
+ * accepted. Pure and separate from the policy below because the two are not the
+ * same lever: this one decides what the SDK decides on its own, the other
+ * decides what Hearth asks about. They have to agree, and they only agree if
+ * they are read side by side.
+ */
+export function sdkPermissionMode(mode: PermissionMode): 'default' | 'acceptEdits' | 'bypassPermissions' {
+  if (mode === 'ask') return 'default';
+  if (mode === 'skip') return 'bypassPermissions';
+  return 'acceptEdits';
+}
+
+/**
+ * The approval policy, given the mode the user chose for this project.
+ *
+ *  - `auto` (the default) is what Hearth has always done: work inside the open
+ *    project folder proceeds without interrupting the user (that is the whole
+ *    point of the app, the agent builds the game and doesn't ask nine times per
+ *    file), and anything reaching OUTSIDE the folder becomes a real inline
+ *    prompt.
+ *  - `ask` drops the inside-the-folder exemption. Every file change and every
+ *    command is raised, wherever it points.
+ *  - `skip` never raises anything, which is the whole promise of the mode. The
+ *    SDK is also in `bypassPermissions`, so in practice this callback is barely
+ *    consulted; returning null anyway means the two levers cannot disagree.
+ *
+ * `ask` raises for the two kinds this function CLASSIFIES, which is what
+ * `ApprovalKind` has room for (a command and a file change). A read or a web
+ * search has no approval kind to be raised as, and inventing one would change
+ * the vocabulary the transcript and the client are built on. Widening that is a
+ * contract change for both halves of the app, not a policy tweak.
  *
  * Pure, so the policy is unit-testable without an SDK. Returns null when the
  * call is auto-allowed, or the approval to raise.
@@ -709,13 +753,22 @@ export function sdkApprovalFor(
   toolName: string,
   input: unknown,
   projectRoot: string,
+  mode: PermissionMode = DEFAULT_PERMISSION_MODE,
 ): { kind: ApprovalKind; title: string; detail: string } | null {
+  if (mode === 'skip') return null;
   const kind = sdkToolKind(toolName);
   const record = asRecord(input);
   if (kind === 'file-change') {
     const file = record?.file_path ?? record?.path ?? record?.notebook_path;
     if (typeof file === 'string' && !isInsideRoot(file, projectRoot)) {
       return { kind: 'file-change', title: 'Write outside the project folder?', detail: file };
+    }
+    if (mode === 'ask') {
+      return {
+        kind: 'file-change',
+        title: 'Write this file?',
+        detail: typeof file === 'string' ? file : toolName,
+      };
     }
     return null; // acceptEdits, jailed to the folder
   }
@@ -725,9 +778,9 @@ export function sdkApprovalFor(
     // absolute path elsewhere, so the cwd jail is not a real boundary here.
     // Commands that only mention paths inside the folder are the common case
     // and stay quiet; anything else asks.
-    return commandLooksContained(command, projectRoot)
-      ? null
-      : { kind: 'command', title: 'Run this command?', detail: command };
+    return mode === 'ask' || !commandLooksContained(command, projectRoot)
+      ? { kind: 'command', title: 'Run this command?', detail: command }
+      : null;
   }
   return null;
 }
@@ -788,11 +841,13 @@ export async function sdkUserContent(
 /**
  * The Anthropic backend. Runs the Agent SDK in streaming-input mode with the
  * project folder as cwd, so everything the agent writes lands in the user's
- * project. `acceptEdits` is the default permission mode: the whole point of
- * the app is that the agent builds the game without a confirmation per file,
- * and the cwd jail keeps that scoped to the open project. Work that reaches
- * outside the folder goes through `canUseTool`, which is the approval seam —
- * it raises an `approval-request` and blocks the turn on the answer.
+ * project. The project's permission mode sets two things that have to agree:
+ * the SDK's own `permissionMode` (see `sdkPermissionMode`) and what Hearth
+ * raises through `canUseTool`, which is the approval seam. `auto`, the default,
+ * runs `acceptEdits`: the whole point of the app is that the agent builds the
+ * game without a confirmation per file, and the cwd jail keeps that scoped to
+ * the open project. Work that reaches outside the folder raises an
+ * `approval-request` and blocks the turn on the answer.
  */
 /**
  * What of Hearth's own tooling this machine can offer a bound agent. Resolved
@@ -836,6 +891,13 @@ export class AgentSdkDriver implements ChatDriver {
     private readonly model: string | null = null,
     /** Hearth tooling this machine offers the agent. Null means none. */
     private readonly tools: AgentToolAccess | null = null,
+    /**
+     * How much this project's agent may do without asking. Fixed at bind time
+     * for the same reason the model is: `permissionMode` is a `query()` option,
+     * and this driver runs ONE query for the whole session. Changing the mode
+     * mid-conversation therefore means rebinding, which is what ws.ts does.
+     */
+    private readonly permissionMode: PermissionMode = DEFAULT_PERMISSION_MODE,
   ) {}
 
   get events(): AsyncIterable<ChatEvent> {
@@ -867,7 +929,7 @@ export class AgentSdkDriver implements ChatDriver {
       prompt: this.turns,
       options: {
         cwd: projectRoot,
-        permissionMode: 'acceptEdits',
+        permissionMode: sdkPermissionMode(this.permissionMode),
         includePartialMessages: true,
         env: { ...env, ANTHROPIC_API_KEY: this.apiKey },
         ...(this.model ? { model: this.model } : {}),
@@ -922,7 +984,7 @@ export class AgentSdkDriver implements ChatDriver {
    * answers, which is exactly the blocking semantics the transcript shows.
    */
   private askPermission(toolName: string, input: unknown): Promise<unknown> {
-    const approval = sdkApprovalFor(toolName, input, this.projectRoot);
+    const approval = sdkApprovalFor(toolName, input, this.projectRoot, this.permissionMode);
     if (!approval || this.stopped) return Promise.resolve({ behavior: 'allow', updatedInput: input });
     const approvalId = `a${++this.nextApproval}`;
     this.queue.push({ type: 'approval-request', approvalId, ...approval });
@@ -1012,6 +1074,14 @@ export async function createChatDriver(
     agent?: AgentTurnOptions | null;
     /** Hearth tooling on this machine (shim dir + probe), from ws.ts. */
     tools?: AgentToolAccess | null;
+    /**
+     * How much this project's agent may do without asking. Read by the caller
+     * (ws.ts) at bind time rather than here, because the same caller is what
+     * has to notice a change and rebind: both backends fix the policy when the
+     * session opens, so a driver that read it itself would still be wrong the
+     * moment the user moved the switch.
+     */
+    permissionMode?: PermissionMode | null;
     loadAgentSdk?: typeof loadAgentSdk;
     createCodexDriver?: (
       projectRoot: string,
@@ -1020,6 +1090,7 @@ export async function createChatDriver(
         onThreadId?: (threadId: string) => void;
         agent?: AgentTurnOptions | null;
         tools?: AgentToolAccess | null;
+        permissionMode?: PermissionMode | null;
       },
     ) => Promise<ChatDriver | null>;
   },
@@ -1035,6 +1106,7 @@ export async function createChatDriver(
         onThreadId?: (threadId: string) => void;
         agent?: AgentTurnOptions | null;
         tools?: AgentToolAccess | null;
+        permissionMode?: PermissionMode | null;
       },
     ) => {
       // Imported lazily so a project that never uses OpenAI never pays for
@@ -1044,6 +1116,10 @@ export async function createChatDriver(
     });
 
   const agent = options?.agent ?? null;
+  // One mode for whichever backend answers: the user chose how much the AGENT
+  // may do, not how much this vendor's agent may do, so the fall-through below
+  // must not be able to change the answer.
+  const permissionMode = options?.permissionMode ?? DEFAULT_PERMISSION_MODE;
   const anthropic = async (): Promise<ChatDriver | null> => {
     const key = await resolveApiKey(projectRoot);
     if (!key) return null;
@@ -1051,7 +1127,7 @@ export async function createChatDriver(
     // Only an anthropic-targeted choice names an anthropic model; a codex
     // model id must never reach the SDK.
     const model = agent && (agent.provider ?? 'anthropic') === 'anthropic' ? (agent.model ?? null) : null;
-    return sdk ? new AgentSdkDriver(sdk, key, model, options?.tools ?? null) : null;
+    return sdk ? new AgentSdkDriver(sdk, key, model, options?.tools ?? null, permissionMode) : null;
   };
   const openai = async (): Promise<ChatDriver | null> => {
     try {
@@ -1060,6 +1136,7 @@ export async function createChatDriver(
         onThreadId: options?.onThreadId,
         agent,
         tools: options?.tools ?? null,
+        permissionMode,
       });
     } catch {
       return null;

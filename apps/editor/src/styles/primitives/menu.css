@@ -13,11 +13,20 @@
    coords are measured and clamped into the viewport in JS (see
    menuDropdownPosition / clampMenuOrigin) so a popover can never spill off a
    viewport edge (L-123) or be clipped by a panel's overflow. This rule owns
-   only the look; the inline styles own placement. */
+   only the look; the inline styles own placement.
+
+   `--menu-max-h` is the other half of that placement: the room left where the
+   menu actually opened, measured against its own trigger, written by
+   menuDropdownPosition. A menu longer than that room scrolls inside it. It is
+   a variable rather than an inline `max-height` so a menu with a ceiling of
+   its own (the model picker) can fold both into one min() instead of having
+   its stylesheet quietly overruled. Unset — the ContextMenu, which places
+   itself — means no cap. */
 .menu-popover {
   position: fixed;
   z-index: var(--z-dropdown);
   min-width: 200px;
+  max-height: var(--menu-max-h, none);
   padding: 4px;
   background: var(--bg-1);
   border: 1px solid var(--border-strong);
@@ -25,6 +34,29 @@
   box-shadow: var(--shadow-2);
   display: flex;
   flex-direction: column;
+}
+
+/* A control that decides what the list below it contains. Sticky against the
+   popover's own 4px padding, so it holds its place while the items scroll
+   under it, and opaque so they scroll UNDER rather than through. */
+.menu-heading {
+  position: sticky;
+  top: -4px;
+  z-index: 1;
+  margin: -4px -4px 4px;
+  padding: 8px;
+  background: var(--bg-1);
+  border-bottom: 1px solid var(--border);
+  border-radius: var(--radius) var(--radius) 0 0;
+}
+
+/* A row keeps its height in a menu that is scrolling. Flex items shrink by
+   default, and the failure that invites is a menu that answers "too long for
+   the window" by squashing every row a little instead of scrolling. Every
+   child rather than a list of row classes, because a disabled row arrives
+   wrapped in its Tooltip and would otherwise be the one that squashes. */
+.menu-popover > * {
+  flex: none;
 }
 
 /* --- A flyout hanging off one item ---------------------------------------
@@ -52,6 +84,9 @@
    actually open, so a long menu keeps its scroll the rest of the time. */
 .menu-popover:has(.menu-flyout) {
   overflow: visible;
+  /* And no cap while one is open: the panel hangs off a row, so a menu that
+     scrolled would carry it out of view. Menus with flyouts are short lists. */
+  max-height: none;
 }
 
 .menu-flyout {

@@ -17,6 +17,7 @@ import { createProjectServerContext, type ProjectServerContext } from '../server
 import { attachWebSocket, type WsFrame } from '../server/ws';
 import { EventQueue, type AgentTurnOptions, type ChatDriver, type ChatEvent } from '../server/chat';
 import { listChats, readTranscript } from '../server/chatStore';
+import { writePermissionMode, type PermissionMode } from '../server/permissionMode';
 
 /** A driver that answers every turn with a fixed script, and records its life. */
 class ScriptedDriver implements ChatDriver {
@@ -27,6 +28,8 @@ class ScriptedDriver implements ChatDriver {
   sentAgents: (AgentTurnOptions | undefined)[] = [];
   /** The choice this driver was BOUND with (decides which backend answers). */
   boundAgent: AgentTurnOptions | null | undefined;
+  /** The permission mode this driver was BOUND with. Fixed for its lifetime. */
+  boundPermissionMode: PermissionMode | null | undefined;
   startedIn: string | null = null;
   stopped = false;
 
@@ -57,6 +60,7 @@ let ctx: ProjectServerContext;
 let server: http.Server;
 let port: number;
 let drivers: ScriptedDriver[] = [];
+let previousHome: string | undefined;
 
 function connect(): Promise<WebSocket> {
   const socket = new WebSocket(`ws://127.0.0.1:${port}/api/ws?project=${encodeURIComponent(root)}`);
@@ -93,12 +97,22 @@ beforeAll(async () => {
   tmp = await fsp.mkdtemp(path.join(os.tmpdir(), 'hearth-wschat-'));
   root = path.join(tmp, 'game');
   await fsp.mkdir(root, { recursive: true });
+  // Per-machine preferences (the permission mode among them) are read while a
+  // driver binds, so the whole file runs against a throwaway ~/.hearth rather
+  // than whatever the person running the suite has chosen.
+  previousHome = process.env.HEARTH_HOME;
+  process.env.HEARTH_HOME = path.join(tmp, 'hearth-home');
   ctx = createProjectServerContext({ recentsFile: path.join(tmp, 'recents.json'), repoRoot: tmp });
+  // The /api/ws upgrade only accepts roots this server has been asked to open,
+  // so a suite that connects has to open the folder first, exactly as the app
+  // does before it connects its socket.
+  await ctx.openWorkspace(root);
   server = http.createServer();
   attachWebSocket(server, ctx, undefined, undefined, {
     createChatDriver: async (_root, options) => {
       const driver = new ScriptedDriver();
       driver.boundAgent = options?.agent;
+      driver.boundPermissionMode = options?.permissionMode;
       drivers.push(driver);
       return driver;
     },
@@ -109,6 +123,8 @@ beforeAll(async () => {
 
 afterAll(async () => {
   server.close();
+  if (previousHome === undefined) delete process.env.HEARTH_HOME;
+  else process.env.HEARTH_HOME = previousHome;
   await fsp.rm(tmp, { recursive: true, force: true });
 });
 
@@ -231,6 +247,62 @@ describe('chat channel', () => {
 });
 
 /**
+ * Changing the permission mode has to take effect on the NEXT turn.
+ *
+ * Neither backend can be told about it mid-session: codex fixes the policy at
+ * `thread/start` and the Agent SDK at `query()`. So a mode change that only
+ * applied to the following conversation would be a permission control that
+ * silently does nothing, which is worse than not offering one. ws.ts rebinds
+ * instead, and these pin both halves of that: it rebinds when the mode moved,
+ * and it does NOT when it did not (a rebind per turn would restart the agent
+ * and lose everything it had in context).
+ */
+describe('a permission mode change', () => {
+  it('binds the stored mode, and today’s default when nothing is stored', async () => {
+    drivers = [];
+    const socket = await connect();
+    socket.send(JSON.stringify({ type: 'chat-send', text: 'one' }));
+    await nextFrame(socket, (frame) => frame.type === 'chat-event' && frame.event.type === 'done');
+    expect(drivers[0].boundPermissionMode).toBe('auto');
+    socket.close();
+  });
+
+  it('rebuilds the driver before the next turn, and hands the new mode to it', async () => {
+    drivers = [];
+    const socket = await connect();
+    socket.send(JSON.stringify({ type: 'chat-send', text: 'one' }));
+    await nextFrame(socket, (frame) => frame.type === 'chat-event' && frame.event.type === 'done');
+
+    await writePermissionMode(root, 'skip');
+    socket.send(JSON.stringify({ type: 'chat-send', text: 'two' }));
+    await nextFrame(socket, (frame) => frame.type === 'chat-event' && frame.event.type === 'done');
+
+    expect(drivers).toHaveLength(2);
+    expect(drivers[0].stopped).toBe(true);
+    expect(drivers[1].boundPermissionMode).toBe('skip');
+    // The turn that triggered the rebind is answered by the NEW driver, not
+    // lost and not delivered to the one that was already torn down.
+    expect(drivers[1].sent).toEqual(['two']);
+    expect(drivers[0].sent).toEqual(['one']);
+
+    await writePermissionMode(root, 'auto');
+    socket.close();
+  });
+
+  it('keeps the same driver when the mode has not moved', async () => {
+    drivers = [];
+    const socket = await connect();
+    socket.send(JSON.stringify({ type: 'chat-send', text: 'one' }));
+    await nextFrame(socket, (frame) => frame.type === 'chat-event' && frame.event.type === 'done');
+    socket.send(JSON.stringify({ type: 'chat-send', text: 'two' }));
+    await nextFrame(socket, (frame) => frame.type === 'chat-event' && frame.event.type === 'done');
+    expect(drivers).toHaveLength(1);
+    expect(drivers[0].sent).toEqual(['one', 'two']);
+    socket.close();
+  });
+});
+
+/**
  * History is the part that outlives the process. These pin the promise the
  * sidebar makes: every turn is on disk as it streams, reopening a chat replays
  * it, and the index tracks what happened without the client maintaining it.
@@ -243,7 +315,28 @@ describe('chat history', () => {
     if (opened.type !== 'chat-opened') throw new Error('wrong frame');
     expect(opened.records).toEqual([]);
     expect(opened.chat.title).toBe('New chat');
-    expect((await listChats(root)).some((chat) => chat.id === opened.chat.id)).toBe(true);
+    // Opened, and in no list. A conversation nobody has said anything in is
+    // not one the sidebar should be offering to go back to.
+    expect((await listChats(root)).some((chat) => chat.id === opened.chat.id)).toBe(false);
+    socket.close();
+  });
+
+  it('lists the chat as soon as something is said in it, without being asked again', async () => {
+    const socket = await connect();
+    socket.send(JSON.stringify({ type: 'chat-new' }));
+    const opened = await nextFrame(socket, (frame) => frame.type === 'chat-opened');
+    if (opened.type !== 'chat-opened') throw new Error('wrong frame');
+
+    // The rail redraws on the broadcast, so the message landing has to be what
+    // sends it: nothing else is going to come along and refresh the list.
+    const listed = nextFrame(
+      socket,
+      (frame) => frame.type === 'chat-list' && frame.chats.some((chat) => chat.id === opened.chat.id),
+    );
+    socket.send(JSON.stringify({ type: 'chat-send', text: 'make a shooter' }));
+    const frame = await listed;
+    if (frame.type !== 'chat-list') throw new Error('wrong frame');
+    expect(frame.chats.find((chat) => chat.id === opened.chat.id)?.title).toBe('make a shooter');
     socket.close();
   });
 

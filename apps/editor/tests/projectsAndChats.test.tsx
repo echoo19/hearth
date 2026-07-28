@@ -25,7 +25,7 @@ vi.mock('../src/api', async (importOriginal) => ({
 }));
 
 import { apiRecentWorkspaces } from '../src/api';
-import { Sidebar } from '../src/components/shell/Sidebar';
+import { Sidebar, stableOrder } from '../src/components/shell/Sidebar';
 import { PROJECT_COLORS, PROJECT_ICONS, resolveIdentity } from '../src/projects/identity';
 import { useApp } from '../src/store';
 import type { RecentWorkspace } from '../src/types';
@@ -178,7 +178,7 @@ describe('what a project looks like', () => {
 });
 
 describe('the Projects list', () => {
-  it('shows every project as one list, the open one first', async () => {
+  it('shows every project as one list, in the order the server gave them', async () => {
     vi.mocked(apiRecentWorkspaces).mockResolvedValue([
       workspace('/work/other', 'other'),
       workspace(PROJECT, 'lighthouse'),
@@ -186,7 +186,9 @@ describe('the Projects list', () => {
     resetStore({ projectPath: PROJECT, projectName: 'lighthouse' });
     render(<Sidebar />);
     const names = await screen.findAllByText(/lighthouse|other/);
-    expect(names[0].textContent).toBe('lighthouse');
+    // The open project is marked, not moved. Hoisting it meant a click both
+    // selected a project and rewrote the list under the pointer.
+    expect(names.map((el) => el.textContent)).toEqual(['other', 'lighthouse']);
   });
 
   it('drops a project that is no longer on disk rather than showing a dead row', async () => {
@@ -202,5 +204,27 @@ describe('the Projects list', () => {
   it('teaches what a project is when there are none', () => {
     render(<Sidebar />);
     expect(screen.getByText('Every game you make is a project. Describe one to begin.')).toBeTruthy();
+  });
+});
+
+describe('stableOrder', () => {
+  const rows = (...paths: string[]) => paths.map((path) => ({ path }));
+
+  it('takes the incoming order the first time, when nothing is remembered', () => {
+    expect(stableOrder(rows('a', 'b', 'c'), [])).toEqual(rows('a', 'b', 'c'));
+  });
+
+  it('holds the remembered order however the server reshuffles', () => {
+    // The server sorts by last opened, so opening 'c' brings it back first.
+    // The rail must not move under the pointer for that.
+    expect(stableOrder(rows('c', 'a', 'b'), ['a', 'b', 'c'])).toEqual(rows('a', 'b', 'c'));
+  });
+
+  it('puts a project it has never seen at the front, where a new one is looked for', () => {
+    expect(stableOrder(rows('a', 'fresh', 'b'), ['a', 'b'])).toEqual(rows('fresh', 'a', 'b'));
+  });
+
+  it('drops what is gone without disturbing what is left', () => {
+    expect(stableOrder(rows('a', 'c'), ['a', 'b', 'c'])).toEqual(rows('a', 'c'));
   });
 });

@@ -15,7 +15,7 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { apiContextFiles, apiDeleteContextFile, apiSaveContextFiles } from '../../api';
 import { base64FromDataUrl } from '../../chat/attachments';
 import type { ContextFile } from '../../types';
-import { Icon } from '../ui';
+import { ConfirmDialog, Icon } from '../ui';
 
 /** `.md` → `MD`. The badge on a card, so the kind reads before the name does. */
 export function extLabel(name: string): string {
@@ -46,6 +46,11 @@ export function ProjectContext({ projectPath }: { projectPath: string }) {
   const [query, setQuery] = useState('');
   const [searching, setSearching] = useState(false);
   const [dropping, setDropping] = useState(false);
+  // The card whose X has been pressed, waiting on the confirm. Removing one of
+  // these deletes a real file out of `.hearth/context/` with no undo and no
+  // trash, and the X sits a few pixels from the card you meant to read. Chats
+  // and skills both ask first; the file you wrote at 2am gets the same.
+  const [pendingRemove, setPendingRemove] = useState<ContextFile | null>(null);
   const pickerRef = useRef<HTMLInputElement>(null);
 
   const refresh = useCallback(async () => {
@@ -161,7 +166,7 @@ export function ProjectContext({ projectPath }: { projectPath: string }) {
                   type="button"
                   className="proj-context-remove"
                   aria-label={`Remove ${file.name}`}
-                  onClick={() => void apiDeleteContextFile(projectPath, file.name).then(setFiles)}
+                  onClick={() => setPendingRemove(file)}
                 >
                   <Icon name="cross" size={10} />
                 </button>
@@ -170,6 +175,24 @@ export function ProjectContext({ projectPath }: { projectPath: string }) {
           ))}
         </div>
       )}
+
+      <ConfirmDialog
+        open={pendingRemove !== null}
+        title="Remove context file"
+        body={
+          pendingRemove
+            ? `“${pendingRemove.name}” will be deleted from .hearth/context. This can't be undone.`
+            : ''
+        }
+        confirmLabel="Remove"
+        danger
+        onCancel={() => setPendingRemove(null)}
+        onConfirm={() => {
+          const file = pendingRemove;
+          setPendingRemove(null);
+          if (file) void apiDeleteContextFile(projectPath, file.name).then(setFiles);
+        }}
+      />
     </section>
   );
 }

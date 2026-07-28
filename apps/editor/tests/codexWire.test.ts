@@ -179,11 +179,16 @@ describe('mapCodexNotification', () => {
     ).toEqual([]);
   });
 
-  it('does not double-render an agent message that was already streamed', () => {
+  it('closes an agent message without re-rendering the text it already streamed', () => {
     // agentMessage arrives as deltas AND as a completed item carrying the full
-    // text; emitting both would print every answer twice.
+    // text. Emitting the text again would print every answer twice, so it is
+    // dropped. The BOUNDARY is kept, because a turn writes several messages
+    // and nothing in the delta stream says where one stops: without it the
+    // next message is appended onto this one's last character, which is how
+    // "a visual game/UI task.Some of what we're working on" reached the
+    // transcript with the sentence break eaten.
     expect(mapCodexNotification('item/completed', { item: { type: 'agentMessage', id: 'm1', text: 'Hello' } })).toEqual(
-      [],
+      [{ type: 'message-end' }],
     );
   });
 

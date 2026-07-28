@@ -40,13 +40,20 @@ export interface RecentWorkspace {
 }
 
 export interface ServerMeta {
-  repoRoot: string;
-  home: string;
   hearthVersion: string;
   runtimeAvailable: boolean;
-  /** Where the agent tools live (bundled single files in the desktop app).
-   * `probe` is null on a machine that has no hearth-probe build today. */
-  toolPaths?: { cli: string; mcp: string; probe: string | null; bundled: boolean };
+  /**
+   * Absolute loopback origin the game mount is served from, e.g.
+   * `http://127.0.0.1:52341`. The port is picked at startup, so the client is
+   * told rather than assuming. Null means the mount server did not come up:
+   * the pane says it has nowhere to serve the game from and shows nothing,
+   * which is the only safe answer. See server/gameServer.ts.
+   *
+   * `home`, `repoRoot`, and `toolPaths` used to be here too. They were never
+   * read by anything, and an unauthenticated caller being handed the user's
+   * home directory is what made the /api/ws hole point-and-shoot.
+   */
+  gameOrigin: string | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -110,6 +117,35 @@ export type ToolKind = 'command' | 'file-change' | 'mcp' | 'web-search' | 'skill
 export type ToolStatus = 'ok' | 'error' | 'declined';
 export type ApprovalKind = 'command' | 'file-change';
 export type ApprovalDecision = 'allow' | 'deny';
+
+/**
+ * When the agent stops to ask before it acts, for one project.
+ *
+ *   ask   every command and every file change raises an approval. Not every
+ *         act: an approval is a `command` or a `file-change` (ApprovalKind),
+ *         so a read or a search has no kind it could be raised as and is not
+ *         interrupted. The composer's wording says so rather than promising
+ *         a completeness the union cannot deliver.
+ *   auto  work inside the project folder goes ahead; anything outside asks.
+ *   skip  nothing asks.
+ *
+ * Named for what happens rather than for the backends' own vocabulary (the
+ * Agent SDK calls the last one `bypassPermissions`), because this is a word
+ * the user reads in the composer, not a token on the wire.
+ */
+export type PermissionMode = 'ask' | 'auto' | 'skip';
+
+/**
+ * GET/POST /api/permission-mode: the project's answer, plus whether it has
+ * already been told what `skip` means. The acknowledgement is stored with the
+ * mode so that warning is a one-time conversation per project rather than a
+ * toll on every turn.
+ */
+export interface PermissionModeInfo {
+  mode: PermissionMode;
+  skipAcknowledged: boolean;
+}
+
 export type FileChangeKind = 'edit' | 'create' | 'delete';
 
 /** One file an agent touched, with the patch when the driver reports one. */
@@ -132,6 +168,8 @@ export interface FileChangeEntry {
  */
 export type ChatEvent =
   | { type: 'message-delta'; text: string }
+  /** One piece of prose ended. No text: it only marks where the next begins. */
+  | { type: 'message-end' }
   | { type: 'reasoning-delta'; text: string }
   | { type: 'tool-begin'; toolId: string; kind: ToolKind; title: string; detail?: string }
   | { type: 'tool-output-delta'; toolId: string; chunk: string }
@@ -153,8 +191,18 @@ export type ChatEvent =
   | { type: 'tool-end'; id: string; ok: boolean; detail?: string }
   | { type: 'done' };
 
-/** How far along one piece of tool activity is. Three states, one glyph each. */
-export type ToolState = 'running' | 'ok' | 'error';
+/**
+ * How far along one piece of tool activity is. One glyph each.
+ *
+ * `stopped` is the turn ending before this row did: the turn failed mid
+ * command, someone pressed Stop, or the driver died. It is a fourth state
+ * rather than either of the settled two because nothing knows a row that never
+ * reported succeeded, and an interrupted command did not necessarily fail. The
+ * only true thing left to say is that it never finished. Without it these rows
+ * kept `running` for the life of the transcript, on disk, and a conversation
+ * that ended days ago went on showing a spinner.
+ */
+export type ToolState = 'running' | 'ok' | 'error' | 'stopped';
 
 export interface ChatTextPart {
   kind: 'text';

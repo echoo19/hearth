@@ -391,12 +391,24 @@ describe('misc endpoints', () => {
     expect((result.body as { examples: unknown[] }).examples).toEqual([]);
   });
 
-  it('meta reports the repo root', async () => {
+  it('meta reports the version, the runtime bit, and where the game is served', async () => {
+    ctx.setGameOrigin('http://127.0.0.1:52341');
     const result = await ctx.meta();
     expect(result.status).toBe(200);
-    const body = result.body as { ok: boolean; repoRoot: string; runtimeAvailable: boolean };
+    const body = result.body as { ok: boolean; runtimeAvailable: boolean; gameOrigin: string | null };
     expect(body.ok).toBe(true);
-    expect(body.repoRoot).toBe(tmpDir);
     expect(typeof body.runtimeAvailable).toBe('boolean');
+    expect(body.gameOrigin).toBe('http://127.0.0.1:52341');
+  });
+
+  it('meta hands out no map of the user’s disk', async () => {
+    // The home directory and the tool paths used to be in here, unauthenticated.
+    // That is what turned the /api/ws hole into a point-and-shoot exploit: the
+    // attack did not have to guess a username, it asked.
+    const body = (await ctx.meta()).body as Record<string, unknown>;
+    expect(body).not.toHaveProperty('home');
+    expect(body).not.toHaveProperty('repoRoot');
+    expect(body).not.toHaveProperty('toolPaths');
+    expect(JSON.stringify(body)).not.toContain(os.homedir());
   });
 });
