@@ -148,7 +148,7 @@ git commit -m "Bridge the state hooks through the web adapter"
 
 Notes written before this task have no `reached`. Treat a missing value as `'played'`: the tester could not be placed anywhere when they were written, so that is the true answer rather than a guess.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```ts
 import { describe, it, expect } from 'vitest';
@@ -172,13 +172,13 @@ describe('observationReach', () => {
 });
 ```
 
-- [ ] **Step 2: Run it and watch it fail.**
+- [x] **Step 2: Run it and watch it fail.**
 
-- [ ] **Step 3: Implement.** Add the field and the reader.
+- [x] **Step 3: Implement.** Add the field and the reader.
 
-- [ ] **Step 4: Run the test.** Expected: PASS, 3 tests.
+- [x] **Step 4: Run the test.** Expected: PASS, 3 tests.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add apps/editor/server/tester apps/editor/tests/testerProvenance.test.ts
