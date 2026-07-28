@@ -58,6 +58,25 @@ describe('changesSince', () => {
     expect(await changesSince(root, '2026-01-02T00:00:00.000Z')).toContain('make the jump feel heavier');
   });
 
+  it('carries the fact that says what actually changed, not just the command name', async () => {
+    // "setComponentProperty Level 1" names a command. The property it set is
+    // the thing the tester is being asked to have an opinion about.
+    await journal([
+      {
+        ts: '2026-01-03T00:00:00.000Z',
+        summary: 'setComponentProperty Level 1',
+        ok: true,
+        detail: { entity: 'Player', property: 'CharacterController.jumpHeight' },
+      },
+    ]);
+    expect(await changesSince(root, null)).toContain('CharacterController.jumpHeight');
+  });
+
+  it('says when a recorded command failed, so its effects are not looked for', async () => {
+    await journal([{ ts: '2026-01-03T00:00:00.000Z', summary: 'setComponentProperty x', ok: false }]);
+    expect(await changesSince(root, null)).toMatch(/failed/i);
+  });
+
   it('skips lines that will not parse rather than giving up on the file', async () => {
     const file = path.join(root, '.hearth', 'log', 'commands.jsonl');
     await fsp.mkdir(path.dirname(file), { recursive: true });

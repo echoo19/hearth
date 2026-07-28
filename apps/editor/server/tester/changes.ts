@@ -55,6 +55,27 @@ async function readFileOrEmpty(file: string): Promise<string> {
   }
 }
 
+/**
+ * The small facts a journal entry carries beside its summary.
+ *
+ * A summary is terse by design ("setComponentProperty Level 1") and the fact
+ * that actually says what changed is in `detail`
+ * ("CharacterController.jumpHeight"). Without this the tester is asked whether
+ * your change helped while being told only that a command ran.
+ */
+function detailPhrase(detail: unknown): string {
+  if (!detail || typeof detail !== 'object' || Array.isArray(detail)) return '';
+  const parts: string[] = [];
+  for (const [key, value] of Object.entries(detail as Record<string, unknown>)) {
+    // Scalars only. A nested object here is a whole component, and pasting one
+    // into the prompt would bury the sentence it belongs to.
+    if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') {
+      parts.push(`${key}: ${String(value)}`);
+    }
+  }
+  return parts.length > 0 ? ` (${parts.join(', ')})` : '';
+}
+
 /** The journal's half: commands that ran, with the summary they recorded. */
 async function journalChanges(root: string): Promise<Change[]> {
   const text = await readFileOrEmpty(path.join(root, '.hearth', 'log', 'commands.jsonl'));
@@ -63,7 +84,11 @@ async function journalChanges(root: string): Promise<Change[]> {
     const ts = readString(entry.ts);
     const summary = readString(entry.summary) ?? readString(entry.command);
     if (!ts || !summary) continue;
-    out.push({ ts, text: summary });
+    // A command that failed changed nothing. Left in, because "someone tried
+    // this and it did not work" is a fact about the project, but never as
+    // something the tester should look for the effects of.
+    const failed = entry.ok === false ? ' (this one failed and changed nothing)' : '';
+    out.push({ ts, text: `${summary}${detailPhrase(entry.detail)}${failed}` });
   }
   return out;
 }
