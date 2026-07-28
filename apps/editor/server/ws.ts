@@ -1,14 +1,11 @@
 /**
  * The editor's WebSocket channel, mounted at /api/ws alongside the /api/*
- * HTTP routes (see projectServer.ts). It carries two kinds of frames over
+ * HTTP routes (see projectServer.ts). It carries several kinds of frames over
  * the same socket:
  *
  *  - journal: external-change awareness (a CLI/MCP agent mutating the
  *    project makes the editor notice and refresh). Broadcast to every
  *    socket subscribed to that project root.
- *  - evidence: new lines in `.hearth/evidence/journal.jsonl` — what the probe
- *    saw when it played the game. Broadcast like journal (any socket on that
- *    root wants them), and fed by the same watcher-per-root pattern.
  *  - pty-*: the embedded project shell spawned via PtyManager. A terminal is per-client,
  *    not broadcast: pty-data/pty-exit/pty-error only ever go back over the
  *    same socket whose pty-start spawned (or reattached) that connection's pty.
@@ -43,7 +40,6 @@ import path from 'node:path';
 import { type JournalEntry, type DesktopPlatform, type DesktopBuildResult } from '@hearth/core';
 import { NodeFileSystem } from '@hearth/core/node';
 import { startJournalWatcher } from './journalWatcher.js';
-import { startEvidenceWatcher, type EvidenceEvent } from './evidenceWatcher.js';
 import {
   createChatDriver,
   endsTurn,
@@ -97,7 +93,6 @@ export type ExportFrame =
 
 export type WsFrame =
   | { type: 'journal'; entries: JournalEntry[] }
-  | { type: 'evidence'; events: EvidenceEvent[] }
   // Conversation. A socket is looking at exactly one chat: `chat-new` starts
   // one, `chat-open` switches to an existing one, and both are answered with
   // `chat-opened` carrying that chat's transcript replayed from disk. The
@@ -657,9 +652,6 @@ export function attachWebSocket(
     const existing = channels.get(root);
     if (existing) return existing;
     const sockets = new Set<WebSocket>();
-    const disposeEvidence = startEvidenceWatcher(root, (events) => {
-      broadcast(sockets, { type: 'evidence', events });
-    });
     const disposeJournal = startJournalWatcher(root, nodeFs, (entries) => {
       // External change: the on-disk project moved without this context's
       // cached session knowing. Drop the cache BEFORE broadcasting, so any
@@ -673,7 +665,6 @@ export function attachWebSocket(
       sockets,
       dispose: () => {
         disposeJournal();
-        disposeEvidence();
       },
     };
     channels.set(root, channel);

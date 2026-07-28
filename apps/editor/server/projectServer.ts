@@ -50,18 +50,8 @@ import {
 import { announceProviders, beginOpenAiLogin, readChatProviders } from './chatProviders.js';
 import { createChat, deleteChat, listChats, renameChat, type ChatKind } from './chatStore.js';
 import { resolveProjectsHome, slugFromName, slugFromPrompt, uniqueFolderName } from './workspaceSlug.js';
-import {
-  planSweep,
-  registeredPolicies,
-  readCapabilities,
-  sensesFromCapabilities,
-  SweepBusyError,
-  SweepRunner,
-  type SweepDeps,
-} from './probeSweep.js';
-import { EVIDENCE_DIR, readEvidenceHistory } from './evidenceWatcher.js';
-import { setHearthHost } from './hearthShim.js';
-import { readPlaytestView } from './playtestView.js';
+import { readCapabilities, sensesFromCapabilities } from './probeCapabilities.js';
+import { EVIDENCE_DIR } from './evidenceWatcher.js';
 import { collectUsage } from './usage.js';
 import { attachWebSocket, type ExportFrame, type ExportStage, type DesktopExportResult } from './ws.js';
 import { attachProbeStream, type ProbeBusMessage } from './probeStream.js';
@@ -87,13 +77,6 @@ export { attachWebSocket } from './ws.js';
 export const GAME_MOUNT = '/game/';
 export const EVIDENCE_MOUNT = '/evidence/';
 
-/**
- * Most evidence a single read will hand back. A journal grows for the life of
- * a folder and the rail only ever shows the recent end of it, so the ceiling
- * is here rather than in the reader: an old project should not send a megabyte
- * of history to fill one collapsed line.
- */
-export const EVIDENCE_HISTORY_MAX = 400;
 
 export function encodeRootKey(root: string): string {
   return Buffer.from(root, 'utf8').toString('base64url');
@@ -175,12 +158,6 @@ export interface ProjectServerOptions {
    * suites can inject a stub and never touch the real toolchain.
    */
   packageDesktop?: PackageDesktopFn;
-  /**
-   * Test seam: override how a playtest sweep opens a game and runs. Defaults to
-   * the real `@hearth/adapter-web` + `@hearth/probe-core` pair, which launches
-   * headless Chromium — suites inject a fake game instead.
-   */
-  sweepDeps?: Partial<SweepDeps>;
 }
 
 /** Native desktop targets offered by exportDesktop, surfaced on the capability route. */
@@ -527,20 +504,6 @@ export function createProjectServerContext(options: ProjectServerOptions = {}) {
   // decides who is watching. Nothing is retained here: an unwatched sweep
   // emits into an empty room, which costs one JSON.stringify it skips.
   const probeBus = new EventEmitter();
-
-  // Playtest sweeps. One runner for the whole server; it enforces one sweep at
-  // a time per project root (see probeSweep.ts) the same way the mutation lock
-  // above serializes command dispatch.
-  const sweeps = new SweepRunner(options.sweepDeps ?? {}, {
-    onFrame(root, data) {
-      const message: ProbeBusMessage = { root, frame: { type: 'probe-frame', data } };
-      probeBus.emit('frame', message);
-    },
-    onEnd(root) {
-      const message: ProbeBusMessage = { root, frame: { type: 'probe-end' } };
-      probeBus.emit('frame', message);
-    },
-  });
 
   // Desktop-export progress bus. One export runs at a time; the running job
   // routes packageDesktop's onProgress and its terminal result onto this bus,
@@ -1036,105 +999,9 @@ export function createProjectServerContext(options: ProjectServerOptions = {}) {
         body: {
           ok: true,
           senses: sensesFromCapabilities(record, game !== null),
-          playing: sweeps.isBusy(root),
           shimDetected: record?.shimDetected === true,
         },
       };
-    },
-
-    /**
-     * Play the game. Resolves the same entry the pane is showing, hands its
-     * folder to the web adapter, and runs a seeded sweep whose milestones land
-     * in `.hearth/evidence/journal.jsonl` — already tailed by the evidence
-     * watcher, so the rail fills while this is still running.
-     *
-     * The job runs off the request (a sweep takes tens of seconds and its
-     * progress has its own channel); the response only says it started. A
-     * second request while one is running is a 409, never a queue.
-     */
-    async startProbeSweep(project: unknown, request: unknown): Promise<JsonResult> {
-      if (typeof project !== 'string' || project.trim() === '') {
-        return { status: 400, body: { ok: false, error: 'Missing "project".' } };
-      }
-      const root = path.resolve(project);
-      if (!isOpenRoot(root)) return { status: 403, body: { ok: false, error: 'Folder is not open.' } };
-      const game = await resolveGameEntry(root);
-      if (!game) {
-        return { status: 400, body: { ok: false, error: 'No game to play yet — nothing in this folder runs.' } };
-      }
-      // With nothing named, ask every playtester the registry knows. The ones
-      // this game cannot support are skipped WITH A REASON, which is the only
-      // way that reason ever reaches anybody.
-      const plan = planSweep((request ?? {}) as Parameters<typeof planSweep>[0], await registeredPolicies());
-      try {
-        const job = sweeps.start({
-          root,
-          dir: path.dirname(game.abs),
-          target: path.basename(root) || root,
-          plan,
-        });
-        return {
-          status: 200,
-          body: { ok: true, started: true, policies: job.plan.policies, seeds: job.plan.seeds, maxSteps: job.plan.maxSteps },
-        };
-      } catch (err) {
-        if (err instanceof SweepBusyError) {
-          return { status: 409, body: { ok: false, error: err.message } };
-        }
-        return { status: 500, body: { ok: false, error: (err as Error).message } };
-      }
-    },
-
-    /**
-     * The same sweep the rail shows, cut the other way: one row per
-     * playtester rather than one line per event. The journal answers "what
-     * happened, when"; this answers "did wander play, and if not, why not" —
-     * which is the question a skipped bot's reason is the answer to.
-     *
-     * Read from files on every call rather than held in memory: a sweep can be
-     * started from the CLI or by an agent, and the folder is the only thing
-     * both sides share.
-     */
-    async playtestView(project: unknown): Promise<JsonResult> {
-      if (typeof project !== 'string' || project.trim() === '') {
-        return { status: 400, body: { ok: false, error: 'Missing "project".' } };
-      }
-      const root = path.resolve(project);
-      if (!isOpenRoot(root)) return { status: 403, body: { ok: false, error: 'Folder is not open.' } };
-      const job = sweeps.jobFor(root);
-      const view = await readPlaytestView({
-        root,
-        known: await registeredPolicies(),
-        running: job !== undefined,
-        plan: job?.policyPlan ?? null,
-      });
-      return { status: 200, body: { ok: true, ...view } };
-    },
-
-    /**
-     * The folder's playtest history, read from its journal.
-     *
-     * The socket carries new evidence as it is written, which is right for a
-     * sweep happening now and useless for one that happened last week: the
-     * watcher replays only for whoever started it, so a second window, or a
-     * socket that reconnects while another still holds the channel, sees an
-     * empty rail. Playtests belong to the folder rather than to a connection,
-     * so the rail is filled from here on open and the socket only appends.
-     */
-    async evidenceHistory(project: unknown, limit: unknown): Promise<JsonResult> {
-      if (typeof project !== 'string' || project.trim() === '') {
-        return { status: 400, body: { ok: false, error: 'Missing "project".' } };
-      }
-      const root = path.resolve(project);
-      if (!isOpenRoot(root)) return { status: 403, body: { ok: false, error: 'Folder is not open.' } };
-      const asked = typeof limit === 'string' ? Number.parseInt(limit, 10) : Number.NaN;
-      const cap = Number.isFinite(asked) && asked > 0 ? Math.min(asked, EVIDENCE_HISTORY_MAX) : EVIDENCE_HISTORY_MAX;
-      return { status: 200, body: { ok: true, events: await readEvidenceHistory(root, cap) } };
-    },
-
-    /** The in-flight sweep for `root`, so callers (and tests) can await it. */
-    sweepJob(root: string) {
-      return sweeps.jobFor(path.resolve(root));
     },
 
     // --- Conversations ------------------------------------------------------
@@ -2115,19 +1982,6 @@ async function route(ctx: ProjectServerContext, req: IncomingMessage, res: Serve
       const result = await ctx.probeStatus(q.get('project'));
       return sendJson(res, result.status, result.body);
     }
-    case 'POST /api/probe/sweep': {
-      const body = await readJsonBody(req);
-      const result = await ctx.startProbeSweep(body.project, body);
-      return sendJson(res, result.status, result.body);
-    }
-    case 'GET /api/probe/playtesters': {
-      const result = await ctx.playtestView(q.get('project'));
-      return sendJson(res, result.status, result.body);
-    }
-    case 'GET /api/probe/evidence': {
-      const result = await ctx.evidenceHistory(q.get('project'), q.get('limit'));
-      return sendJson(res, result.status, result.body);
-    }
     case 'GET /api/chats': {
       const result = await ctx.listProjectChats(q.get('project'));
       return sendJson(res, result.status, result.body);
@@ -2293,20 +2147,6 @@ export function hearthProjectServer(options: ProjectServerOptions = {}): Plugin 
       // needs the plain node:http surface (`.on('upgrade'/'close', ...)`).
       if (server.httpServer) {
         const httpServer = server.httpServer as import('node:http').Server;
-        // Record where we ended up listening, so a probe run from an agent's
-        // shell can hand its sweep back to this server instead of driving a
-        // second browser nobody can see. Read from the socket rather than from
-        // config: the configured port is a request, and the bound one is what
-        // a child process would actually have to reach.
-        const publishHost = (): void => {
-          const address = httpServer.address();
-          if (address === null || typeof address === 'string') return;
-          const host = address.family === 'IPv6' ? '[::1]' : '127.0.0.1';
-          setHearthHost(`http://${host}:${address.port}`);
-        };
-        if (httpServer.listening) publishHost();
-        else httpServer.once('listening', publishHost);
-        httpServer.once('close', () => setHearthHost(null));
         attachWebSocket(httpServer, ctx);
         // Its own upgrade listener on its own path, so a window that never
         // playtests never holds a socket for pictures of one.

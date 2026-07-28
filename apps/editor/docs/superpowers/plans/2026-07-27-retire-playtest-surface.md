@@ -155,7 +155,7 @@ git commit -m "Remove the Playtest button and its store state"
 - Consumes: Task 2's removal of the client callers. No client code may still call these routes.
 - Produces: a server with no playtest routes. `probeStream.ts` and its `ctx.probeBus` MUST still exist and still be attached; the Private Tester plan consumes them.
 
-- [ ] **Step 1: Confirm nothing client-side still calls the routes**
+- [x] **Step 1: Confirm nothing client-side still calls the routes**
 
 ```bash
 cd apps/editor
@@ -164,14 +164,14 @@ rg -n --text "api/probe/(sweep|playtesters|evidence)" src/ server/
 
 Expected: hits only in `server/projectServer.ts`. Anything in `src/` means Task 2 is incomplete; stop and finish it first.
 
-- [ ] **Step 2: Delete the two server modules and their test**
+- [x] **Step 2: Delete the two server modules and their test**
 
 ```bash
 cd apps/editor
 git rm server/playtestView.ts server/probeSweep.ts tests/probeSweep.test.ts
 ```
 
-- [ ] **Step 3: Remove the routes, the ctx methods and the host wiring**
+- [x] **Step 3: Remove the routes, the ctx methods and the host wiring**
 
 In `server/projectServer.ts` remove the `'POST /api/probe/sweep'`, `'GET /api/probe/playtesters'` and `'GET /api/probe/evidence'` route cases; the `startProbeSweep`, `playtestView`, `evidenceHistory` and `sweepJob` ctx methods; the `EVIDENCE_HISTORY_MAX` constant; the `publishHost` block in `configureServer`; and every now-unused import from the deleted modules.
 
@@ -179,11 +179,11 @@ Keep `attachProbeStream(httpServer, ctx.probeBus)` and `EVIDENCE_MOUNT` / `serve
 
 In `server/hearthShim.ts` remove `hearthHost`, `setHearthHost`, `getHearthHost` and the `if (hearthHost !== null) next.HEARTH_HOST = hearthHost;` line from `hearthPtyEnv`. Restore that function's doc comment to describing PATH only.
 
-- [ ] **Step 4: Remove the evidence channel from the socket**
+- [x] **Step 4: Remove the evidence channel from the socket**
 
 In `server/ws.ts` remove the `startEvidenceWatcher` import, the `disposeEvidence` binding in `getChannel`, its call in `dispose`, and the `{ type: 'evidence'; events: EvidenceEvent[] }` arm of the frame union. Update the file's header comment, which currently documents `evidence` as one of the frame kinds.
 
-- [ ] **Step 5: Delete `evidenceWatcher.ts` if it is now orphaned**
+- [x] **Step 5: Delete `evidenceWatcher.ts` if it is now orphaned**
 
 ```bash
 cd apps/editor
@@ -192,7 +192,7 @@ rg -n --text "evidenceWatcher" server/ src/ tests/
 
 If the only hits are the file itself, `git rm server/evidenceWatcher.ts tests/evidenceWatcher.test.ts`. If `EVIDENCE_DIR` is still imported by `projectServer.ts` for the static mount, keep the file and delete only `startEvidenceWatcher`, `readEvidenceHistory` and `parseEvidenceLines`, trimming the header comment to match.
 
-- [ ] **Step 6: Typecheck, then run the suite**
+- [x] **Step 6: Typecheck, then run the suite**
 
 ```bash
 cd apps/editor
@@ -201,11 +201,11 @@ npx tsc --noEmit -p tsconfig.json && npx vitest run
 
 Expected: both PASS.
 
-- [ ] **Step 7: Restart the dev server and confirm the app still loads**
+- [x] **Step 7: Restart the dev server and confirm the app still loads**
 
 Server changes do not hot-reload. Restart it, then check the app returns 200 and the game pane renders with a Play control and no Playtest button.
 
-- [ ] **Step 8: Commit**
+- [x] **Step 8: Commit**
 
 ```bash
 cd apps/editor
