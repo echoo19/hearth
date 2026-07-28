@@ -64,8 +64,8 @@ describe('testerPrompts', () => {
 describe('parseObservations', () => {
   it('anchors each claim to the frame it was made about', () => {
     expect(parseObservations('SAW 3: I fell in the pit\nSAW 7: the coin did nothing', 10)).toEqual([
-      { frame: 3, text: 'I fell in the pit' },
-      { frame: 7, text: 'the coin did nothing' },
+      { frame: 3, text: 'I fell in the pit', reached: 'played' },
+      { frame: 7, text: 'the coin did nothing', reached: 'played' },
     ]);
   });
 

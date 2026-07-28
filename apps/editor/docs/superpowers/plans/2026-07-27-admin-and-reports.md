@@ -197,15 +197,15 @@ git commit -m "Record how the tester reached each thing it saw"
 - Consumes: Tasks 1 to 3.
 - Produces: a session that offers the declared states to the tester, applies `enterState` when it asks, and stamps every subsequent observation `'placed'` until the game is reset.
 
-- [ ] **Step 1: Write the failing test** covering: with no states declared the prompt never mentions them and every observation is `'played'`; with states declared the prompt lists them by label; choosing one calls `enterState` with that id; observations after a placement are `'placed'`; observations before it stay `'played'`; and an `enterState` that throws is recorded and does not kill the session.
+- [x] **Step 1: Write the failing test** covering: with no states declared the prompt never mentions them and every observation is `'played'`; with states declared the prompt lists them by label; choosing one calls `enterState` with that id; observations after a placement are `'placed'`; observations before it stay `'played'`; and an `enterState` that throws is recorded and does not kill the session.
 
-- [ ] **Step 2: Run it and watch it fail.**
+- [x] **Step 2: Run it and watch it fail.**
 
-- [ ] **Step 3: Implement.** The prompt must present states as an option, never an instruction: a tester told to skip ahead will stop playing the opening, which is the part a first session is most valuable for.
+- [x] **Step 3: Implement.** The prompt must present states as an option, never an instruction: a tester told to skip ahead will stop playing the opening, which is the part a first session is most valuable for.
 
-- [ ] **Step 4: Run the test.** Expected: PASS.
+- [x] **Step 4: Run the test.** Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add apps/editor/server/tester apps/editor/tests/testerStates.test.ts

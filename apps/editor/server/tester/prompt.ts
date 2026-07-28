@@ -19,11 +19,13 @@
  * never to a guess: an input nobody chose would put a claim in the note that
  * nothing did.
  */
+import type { ProbeState } from '@hearth/probe-core';
 import type { ChangeVerdict, TesterObservation } from './types.js';
 
 /** What the tester decided to do with one frame. */
 export type Decision =
   | { kind: 'actions'; actions: string[] }
+  | { kind: 'enter'; id: string }
   | { kind: 'pointer'; x: number; y: number; click: boolean }
   | { kind: 'done' }
   | { kind: 'wait' };
@@ -34,6 +36,7 @@ export const MISSING_REGRESSION = 'The tester did not say whether anything got w
 /** What the note says when it gave no readable verdict at all. */
 export const MISSING_VERDICT_WHY = 'The tester did not give a clear answer.';
 
+const ENTER_LINE = /^[^\S\n]*ENTER[^\S\n]*:(.*)$/im;
 const ACTION_LINE = /^[^\S\n]*ACTION[^\S\n]*:(.*)$/im;
 const CLICK_LINE = /^[^\S\n]*(CLICK|MOVE)[^\S\n]*:(.*)$/im;
 const DONE_LINE = /^[^\S\n]*DONE\b/im;
@@ -45,6 +48,15 @@ const DONE_LINE = /^[^\S\n]*DONE\b/im;
  * way, so the cost of continuing one turn too long is one turn.
  */
 export function decideFromReply(text: string): Decision {
+  // Asking to be moved comes first. A reply that asks to be put somewhere and
+  // holds a key in the same breath means the key was for after the move, and
+  // pressing it where the tester no longer wants to be is the wrong reading.
+  const enter = ENTER_LINE.exec(text);
+  if (enter) {
+    const id = enter[1].trim();
+    if (id !== '') return { kind: 'enter', id };
+  }
+
   const action = ACTION_LINE.exec(text);
   if (action) {
     const actions = action[1]
@@ -175,16 +187,53 @@ export function testerPrompts(ctx: TesterPromptContext): string[] {
   return [briefing, observe, compare, remember];
 }
 
+/**
+ * How the declared states are put to the tester.
+ *
+ * An offer, never an instruction. A tester told to skip ahead stops playing the
+ * opening, and the opening is the part a first session is worth the most for.
+ * The full list arrives once; after that it is one line, because a reminder
+ * repeated every turn reads as a nudge.
+ */
+function statesOffer(step: number, states: readonly ProbeState[]): string {
+  if (states.length === 0) return '';
+  if (step > 1) return '\nYou can still ask to be put somewhere with an ENTER line.';
+  const lines = states.map((state) => {
+    const detail = state.detail ? ` (${state.detail})` : '';
+    return `  ENTER: ${state.id}    ${state.label}${detail}`;
+  });
+  return [
+    '',
+    'This game can put you into any of these, if you want. You do not have to use them,',
+    'and what you find by playing from here is worth more.',
+    '',
+    ...lines,
+    '',
+    'Anything you see after being put somewhere is written down as placed rather than',
+    'reached, so it says nothing about whether a player can get there.',
+  ].join('\n');
+}
+
 /** What the tester is shown with each frame. Short: the picture is the message. */
-export function playPrompt(step: number, maxSteps: number, controls: TesterControls): string {
+export function playPrompt(
+  step: number,
+  maxSteps: number,
+  controls: TesterControls,
+  states: readonly ProbeState[] = [],
+): string {
   const left = maxSteps - step + 1;
   const inputs = controls.actions.length > 0 ? controls.actions.join(', ') : 'none detected';
   const axes = controls.axes.length > 0 ? `\nAxes you can drive: ${controls.axes.join(', ')}.` : '';
   const pointer = controls.pointer ? '\nYou can also click anywhere in the picture.' : '';
+  const offer = statesOffer(step, states);
+  const closing =
+    states.length > 0
+      ? 'One sentence, then one ACTION, CLICK, MOVE, ENTER or DONE line.'
+      : 'One sentence, then one ACTION, CLICK, MOVE or DONE line.';
   return [
     `Picture ${step}. You have ${left} ${left === 1 ? 'turn' : 'turns'} left.`,
-    `Inputs you can hold: ${inputs}.${axes}${pointer}`,
-    'One sentence, then one ACTION, CLICK, MOVE or DONE line.',
+    `Inputs you can hold: ${inputs}.${axes}${pointer}${offer}`,
+    closing,
   ].join('\n');
 }
 
@@ -206,8 +255,17 @@ function labelled(text: string, label: string): string | null {
  * is how many pictures the session actually took: a claim about picture forty of
  * a ten-picture session is a claim, not evidence, and is dropped here rather
  * than rendered with an apology later.
+ *
+ * `placedFromFrame` is the first picture taken after the game put the tester
+ * somewhere, or null when that never happened. Everything from there on is
+ * marked placed, because a claim about content the tester was dropped into says
+ * nothing about whether a player can arrive at it.
  */
-export function parseObservations(text: string, frameCount: number): TesterObservation[] {
+export function parseObservations(
+  text: string,
+  frameCount: number,
+  placedFromFrame: number | null = null,
+): TesterObservation[] {
   const out: TesterObservation[] = [];
   for (const line of text.split('\n')) {
     const match = /^[^\S\n]*SAW[^\S\n]*(\d+)[^\S\n]*:(.*)$/i.exec(line);
@@ -215,7 +273,10 @@ export function parseObservations(text: string, frameCount: number): TesterObser
     const frame = Number.parseInt(match[1], 10);
     const body = match[2].trim();
     if (body === '' || !(frame >= 1) || frame > frameCount) continue;
-    out.push({ frame, text: body });
+    // Written down rather than left to be inferred later: which pictures came
+    // after a placement is something only this session knows.
+    const reached = placedFromFrame !== null && frame >= placedFromFrame ? 'placed' : 'played';
+    out.push({ frame, text: body, reached });
   }
   return out;
 }

@@ -18,6 +18,7 @@
  */
 import { promises as fsp } from 'node:fs';
 import path from 'node:path';
+import type { ProbeState } from '@hearth/probe-core';
 import type { ChatAttachment } from '../chatAttachments.js';
 import { endsTurn, normalizeChatEvent, type ChatDriver, type ChatEvent } from '../chat.js';
 import { changesSince } from './changes.js';
@@ -52,7 +53,14 @@ export const MAX_MAX_STEPS = 60;
 /** Where the session has got to, for whoever is watching it play. */
 export type TesterPhase = 'opening' | 'playing' | 'reflecting' | 'writing' | 'finished';
 
-/** The one game surface this loop needs. Narrower than `GameUnderTest` on purpose. */
+/**
+ * The one game surface this loop needs. Narrower than `GameUnderTest` on
+ * purpose.
+ *
+ * `listStates` and `enterState` arrive together or not at all, and their
+ * presence is the whole declaration: the adapter deletes them when the game
+ * did not offer both, so there is nothing else to consult.
+ */
 export interface TesterGame {
   capabilities: { input: { actions: string[]; axes: string[]; pointer: boolean } };
   start(): Promise<void>;
@@ -63,6 +71,8 @@ export interface TesterGame {
   setAxis(name: string, value: number): Promise<void>;
   sendPointer(x: number, y: number, kind: string): Promise<void>;
   screenshot?(): Promise<Uint8Array>;
+  listStates?(): Promise<ProbeState[]>;
+  enterState?(id: string): Promise<void>;
 }
 
 export interface RunTesterSessionOptions {
@@ -148,15 +158,44 @@ function makeAsk(
   };
 }
 
-/** Play one turn's decision into the game. Returns false when the tester is done. */
-async function applyDecision(game: TesterGame, reply: string, held: Set<string>): Promise<boolean> {
+/** What one turn's decision did, for the loop and the transcript. */
+interface Applied {
+  /** False when the tester said it had seen enough. */
+  keepPlaying: boolean;
+  /** The state the game really was put into, when it was asked and agreed. */
+  entered?: ProbeState;
+  /** What the game said when it was asked and could not. */
+  enterFailed?: string;
+}
+
+/** Play one turn's decision into the game. */
+async function applyDecision(
+  game: TesterGame,
+  reply: string,
+  held: Set<string>,
+  states: readonly ProbeState[],
+): Promise<Applied> {
   const decision = decideFromReply(reply);
   // Whatever was held last turn is released first: a tester that says "right"
   // then "left" means it changed its mind, not that it is holding both.
   for (const name of held) await game.setActionUp(name).catch(() => {});
   held.clear();
 
-  if (decision.kind === 'done') return false;
+  if (decision.kind === 'done') return { keepPlaying: false };
+  if (decision.kind === 'enter') {
+    // Only a state the game itself named. An id nobody declared is ignored
+    // rather than sent on, the same way an undeclared input is.
+    const wanted = states.find((state) => state.id === decision.id);
+    if (!wanted || !game.enterState) return { keepPlaying: true };
+    try {
+      await game.enterState(wanted.id);
+      return { keepPlaying: true, entered: wanted };
+    } catch (err) {
+      // The game refused. That is worth writing down and is not worth ending a
+      // session over: the tester is still where it was and can carry on.
+      return { keepPlaying: true, enterFailed: (err as Error).message };
+    }
+  }
   if (decision.kind === 'actions') {
     for (const name of decision.actions) {
       const known = game.capabilities.input.actions.includes(name);
@@ -172,7 +211,7 @@ async function applyDecision(game: TesterGame, reply: string, held: Set<string>)
   } else if (decision.kind === 'pointer' && game.capabilities.input.pointer) {
     await game.sendPointer(decision.x, decision.y, decision.click ? 'click' : 'move').catch(() => {});
   }
-  return true;
+  return { keepPlaying: true };
 }
 
 /** The session's frames, written as it plays, so its claims have something behind them. */
@@ -222,6 +261,9 @@ export async function runTesterSession(opts: RunTesterSessionOptions): Promise<T
   let frameCount = 0;
   let crash: Error | null = null;
   let game: TesterGame | null = null;
+  let states: ProbeState[] = [];
+  /** The first picture taken after the game put the tester somewhere. */
+  let placedFromFrame: number | null = null;
 
   onPhase?.('opening');
   try {
@@ -240,6 +282,18 @@ export async function runTesterSession(opts: RunTesterSessionOptions): Promise<T
       pointer: game.capabilities.input.pointer,
     };
     const held = new Set<string>();
+
+    // What the game says it can put itself into, in its own words. A game that
+    // offers nothing is not asked again and is never told about the idea.
+    if (game.listStates && game.enterState) {
+      try {
+        states = await game.listStates();
+      } catch {
+        // A hook that throws leaves the capability unavailable for this
+        // session, which is the same answer as never having offered it.
+        states = [];
+      }
+    }
 
     onPhase?.('playing');
     for (let turn = 1; turn <= maxSteps; turn += 1) {
@@ -261,12 +315,21 @@ export async function runTesterSession(opts: RunTesterSessionOptions): Promise<T
           // anyway, rather than the session ending over one missed frame.
         }
       }
-      const prompt = playPrompt(turn, maxSteps, controls);
+      const prompt = playPrompt(turn, maxSteps, controls, states);
       const reply = await ask(turn === 1 ? `${briefing}\n\n${prompt}` : prompt, attachments);
       transcript.push(`## Picture ${frameCount}`, '', reply.trim(), '');
       steps = turn;
-      const keepPlaying = await applyDecision(game, reply, held);
-      if (!keepPlaying) break;
+      const applied = await applyDecision(game, reply, held, states);
+      if (applied.entered) {
+        // The next picture is the first one taken of somewhere the tester was
+        // put rather than got to. Everything from there is marked placed, and
+        // a second placement does not move the line back.
+        placedFromFrame ??= frameCount + 1;
+        transcript.push(`It asked to be put into ${applied.entered.label}, and the game did.`, '');
+      } else if (applied.enterFailed) {
+        transcript.push(`It asked to be put somewhere and the game could not: ${applied.enterFailed}`, '');
+      }
+      if (!applied.keepPlaying) break;
       await game.step();
       if (turn === maxSteps) stopped = 'budget';
       if (signal?.aborted) {
@@ -298,7 +361,7 @@ export async function runTesterSession(opts: RunTesterSessionOptions): Promise<T
       onPhase?.('reflecting');
       const seenReply = await ask(observePrompt);
       transcript.push('## What it saw', '', seenReply.trim(), '');
-      observations = parseObservations(seenReply, frameCount);
+      observations = parseObservations(seenReply, frameCount, placedFromFrame);
       openQuestions = parseQuestions(seenReply);
 
       // Only now is it shown its own previous verdict. Everything above is
