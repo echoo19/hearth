@@ -20,15 +20,15 @@
 You type what you want to play. A coding agent builds it however it likes:
 plain web tech, whatever libraries it reaches for, no format Hearth imposes.
 Hearth adds what a chat window can't. The game runs beside the conversation and
-stays running while the agent edits. Bots play it on request and leave evidence
-you and the agent can both read. And the agent is yours: a Claude key, a
-ChatGPT sign-in, or any CLI you already run.
+stays running while the agent edits, and the agent can open it in a real browser
+to check its own work. And the agent is yours: a Claude key, a ChatGPT sign-in,
+or any CLI you already run.
 
 ## Get it
 
 [Download the app](https://hearthengine.com/download) for macOS (`.dmg`),
 Windows (`.exe`), or Linux (`.AppImage` / `.deb`), or take it from the
-[latest release](https://github.com/echoo19/hearth/releases/latest) — the
+[latest release](https://github.com/echoo19/hearth/releases/latest). The
 current release is v1.5.0. macOS
 builds are Developer ID signed and notarized; Windows builds aren't code-signed
 yet, so SmartScreen wants **More info → Run anyway** the first time. After that
@@ -58,42 +58,17 @@ format to satisfy and no scene file to learn.
 works, picking up changes as the files land, so you watch the change happen
 instead of reading a summary of it.
 
-**You press Playtest.** Bots drive the game under seeded policies (mashing
-input, sitting idle) while detectors watch for crashes, stalls, unresponsive
-input, and black screens. Verdicts and screenshots stream into the evidence
-rail as they happen and land in `.hearth/evidence/`. A real report, from a
-sweep of the crash fixture in this repo:
+**The agent checks its own work.** After a change lands it can open the game in
+a real browser, press a few keys, and see whether it still runs. You don't have
+to ask. This catches the blunt failures: the game throwing an error, drawing
+nothing at all, or sitting there while nothing happens. None of that needs any
+cooperation from your game, so it holds whatever the agent built.
 
-```jsonc
-{
-  "target": "runner:crash-early",
-  "policies": ["mash", "idle"],
-  "seeds": [1, 2],
-  "runs": 4,
-  "verdicts": { "error": 4, "stuck": 0, "objective-failed": 0, "completed": 0, "ran-clean": 0 },
-  "findings": [
-    { "kind": "crash", "severity": "blocker", "at": { "frame": 24, "ms": 549 },
-      "summary": "game threw: Cannot set properties of null (setting 'solid') (game.js:85)",
-      "detail": "first unhandled error at step 24; the run stopped there" }
-  ],
-  "skipped": [
-    { "kind": "sealed-region", "reason": "needs nav grid, which this game does not declare" },
-    { "kind": "stuck", "reason": "policy \"idle\" injects no input, so a stall means nothing was tried" }
-  ],
-  "failures": [
-    { "policy": "mash", "seed": 1, "verdict": "error", "detail": "Cannot set properties of null…",
-      "shot": "sweeps/0001/shots/mash-1-final.png" }
-    // …three more, worst first
-  ],
-  "framesSimulated": 49,
-  "wallMs": 1393
-}
-```
-
-The `skipped` list matters as much as the findings do. A detector that needs a
-sense this game doesn't have gets reported as skipped, with the reason, and is
-never quietly counted as a pass. Then you read the report back, or hand it to
-the agent. More in [docs/playtesting.md](docs/playtesting.md).
+It won't tell you whether the game is any good. Fun, feel, pacing and difficulty
+are still yours to judge. This is a check the agent runs, not a surface you
+operate, so there's no button for it. You can run the same thing yourself from a
+terminal with `hearth-probe sweep .`; see [docs/playtesting.md](docs/playtesting.md)
+and [docs/cli.md](docs/cli.md).
 
 ## Bring your own agent
 
@@ -108,10 +83,10 @@ status from it. Models come live from the binary, reasoning effort included.
 
 **Anything else.** The sidebar has a Terminal beside Chat, with a real shell in
 it. Run `claude`, `codex`, or whatever CLI you like. Hearth watches the folder
-either way, so the pane and the playtests work the same.
+either way, so the pane keeps up whichever agent is doing the work.
 
 **Show it something.** Drop an image or a file onto the composer, paste one, or
-pick it — a message that is only a picture is a message. Attachments are saved
+pick it. A message that is only a picture is a message. Attachments are saved
 into the project and handed to the agent as a path; images go to the model as
 pixels either way.
 
@@ -146,6 +121,24 @@ the conversations as JSONL and `.hearth/evidence` holds sweep reports, run
 records, and screenshots. The rest is your game, in whatever files the agent
 wrote. Nothing lives in a database or in the cloud.
 [docs/projects-and-chats.md](docs/projects-and-chats.md) has the layout.
+
+## What's being built now
+
+**The private tester.** A playtester that belongs to your project rather than to
+a conversation. It plays the game, and because it remembers every previous time
+it played, it can answer the question a fresh pair of eyes never can: did the
+change you just made help? It reads its own past notes before it starts, so it
+arrives knowing where it got stuck last time, and it forms opinions across
+sessions that no single playthrough produces.
+
+Its memory is a plain markdown file in your project folder, so you can read what
+it believes about your game and correct it by hand. Its session history is
+append-only, so you can catch it contradicting itself.
+
+It will not be good at your game, and it will not pretend to be. It costs model
+calls on your own quota. Design notes are in
+[apps/editor/docs/superpowers/specs](apps/editor/docs/superpowers/specs). **This
+is not shipped yet**, so nothing above is in a release you can download.
 
 ## The engine that came before
 
