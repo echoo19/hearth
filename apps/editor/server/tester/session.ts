@@ -265,6 +265,8 @@ export async function runTesterSession(opts: RunTesterSessionOptions): Promise<T
   let states: ProbeState[] = [];
   /** The first picture taken after the game put the tester somewhere. */
   let placedFromFrame: number | null = null;
+  /** What the game called the first place it actually put the tester. */
+  let enteredLabel: string | null = null;
 
   onPhase?.('opening');
   try {
@@ -326,6 +328,7 @@ export async function runTesterSession(opts: RunTesterSessionOptions): Promise<T
         // put rather than got to. Everything from there is marked placed, and
         // a second placement does not move the line back.
         placedFromFrame ??= frameCount + 1;
+        enteredLabel ??= applied.entered.label;
         transcript.push(`It asked to be put into ${applied.entered.label}, and the game did.`, '');
       } else if (applied.enterFailed) {
         transcript.push(`It asked to be put somewhere and the game could not: ${applied.enterFailed}`, '');
@@ -415,6 +418,10 @@ export async function runTesterSession(opts: RunTesterSessionOptions): Promise<T
     onTheChange,
     regression,
     observations,
+    // Written every session, including the sessions where the answer is that
+    // the game named nowhere. A game that cooperates with nothing is a
+    // first-class outcome, and the report is where it gets said out loud.
+    placement: { offered: states.length, ...(enteredLabel === null ? {} : { entered: enteredLabel }) },
     proposals,
     openQuestions,
     steps,

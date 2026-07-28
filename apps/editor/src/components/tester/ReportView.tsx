@@ -15,6 +15,7 @@ import React, { useEffect, useRef } from 'react';
 import {
   anythingPlaced,
   endingSentence,
+  placementSentence,
   regressionSentence,
   verdictSentence,
   REACHABILITY_CAVEAT,
@@ -47,6 +48,7 @@ export function ReportView({
   const observations = note.observations ?? [];
   const questions = note.openQuestions ?? [];
   const regression = regressionSentence(note.regression);
+  const placement = placementSentence(note);
 
   return (
     <Modal open={open} title={`Session ${note.session}`} className="is-wide report-modal" onClose={onClose}>
@@ -62,6 +64,16 @@ export function ReportView({
           <h3 className="report-part-title">Anything worse</h3>
           <p className={`report-line${regression.answered ? '' : ' is-unanswered'}`}>{regression.text}</p>
         </section>
+
+        {/* Absent only for a session played before a game could name anywhere.
+            A game that names nothing still gets its sentence, because a
+            capability nobody mentions looks like one the report forgot. */}
+        {placement !== null && (
+          <section className="report-part">
+            <h3 className="report-part-title">Where it played</h3>
+            <p className="report-line">{placement}</p>
+          </section>
+        )}
 
         <section className="report-part">
           <h3 className="report-part-title">What it saw</h3>

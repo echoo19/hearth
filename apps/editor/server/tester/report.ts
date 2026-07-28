@@ -85,6 +85,28 @@ export function verdictSentence(note: TesterNote): string {
   return `It understood that ${clause(seen)}. That ${word}, because ${clause(why)}.`;
 }
 
+/**
+ * What the game offered by way of somewhere to be put, as a sentence.
+ *
+ * Null only for a session played before a game could name anywhere: that is a
+ * fact about Hearth at the time rather than about the game, and claiming the
+ * game named nothing would be putting words in its mouth. Every session that
+ * could have had the answer gets the sentence, including the sessions where
+ * the answer is none. A capability that goes unsaid is a capability whose
+ * absence looks like a shortcoming of the report.
+ */
+export function placementSentence(note: TesterNote): string | null {
+  const placement = note.placement;
+  if (!placement) return null;
+  if (placement.offered < 1) {
+    return 'The game named nowhere it could be put, so it played from the start.';
+  }
+  const count = `${counted(placement.offered)} ${placement.offered === 1 ? 'place' : 'places'}`;
+  return placement.entered
+    ? `The game named ${count} it could be put, and it asked for ${trimDot(placement.entered)}`
+    : `The game named ${count} it could be put. It played from the start anyway.`;
+}
+
 /** True when anything in this session happened somewhere the game put the tester. */
 export function anythingPlaced(note: TesterNote): boolean {
   return (note.observations ?? []).some((observation) => observationReach(observation) === 'placed');
@@ -146,18 +168,59 @@ export function proposalsFrom(note: TesterNote): Proposal[] {
   return out;
 }
 
-/** How one proposal reads in the report and in the seed sent to an agent. */
-export function proposalSentence(proposal: Proposal): string {
-  const pictures =
-    proposal.evidence.length === 1
-      ? `picture ${proposal.evidence[0]}`
-      : `pictures ${proposal.evidence.slice(0, -1).join(', ')} and ${proposal.evidence[proposal.evidence.length - 1]}`;
-  const lead = proposal.kind === 'bug' ? 'A bug it watched happen' : 'A preference, not something it saw go wrong';
-  // The caveat rides with the claim rather than trailing the section, so a
-  // reader deciding on this one line has it in front of them.
-  const placed =
-    proposal.reached === 'placed' ? ' It saw that where the game put it, not somewhere it reached.' : '';
-  return `${lead}, from ${pictures}: ${trimDot(proposal.text)}${placed}`;
+/**
+ * What a claim from somewhere the game put the tester is worth.
+ *
+ * One sentence, used wherever such a claim appears: the report, the row in the
+ * plan of action, and the message an agent receives. Rewording it per surface
+ * would leave a reader wondering whether three warnings meant three things.
+ */
+export const PLACED_CLAIM =
+  'The game put it there, so this says nothing about whether a player can reach it.';
+
+/** Said once over the bugs, rather than restated on every one of them. */
+export const PLAN_BUGS = 'It watched these go wrong';
+
+/** Said once over the rest. It cannot judge fun, and the heading admits it. */
+export const PLAN_PREFERENCES = 'These are preferences, and it cannot judge fun';
+
+/** Which pictures a claim rests on, worded as the rest of the report words it. */
+export function picturesFor(frames: readonly number[]): string {
+  if (frames.length === 1) return `Picture ${frames[0]}`;
+  return `Pictures ${frames.slice(0, -1).join(', ')} and ${frames[frames.length - 1]}`;
+}
+
+/**
+ * One proposal, anchored to its pictures the way the observations above it are.
+ *
+ * The kind is deliberately NOT repeated here. Three proposals that each open
+ * "A bug it watched happen" is a template, and a reader skims a template. It is
+ * said once per group instead, by `planLines`.
+ */
+export function proposalLine(proposal: Proposal): string {
+  const placed = proposal.reached === 'placed' ? ` ${PLACED_CLAIM}` : '';
+  return `${picturesFor(proposal.evidence)}: ${trimDot(proposal.text)}${placed}`;
+}
+
+/**
+ * A plan of action as prose, grouped by kind, for the report and for the
+ * message an agent receives. Empty in, empty out.
+ */
+export function planLines(plan: readonly Proposal[]): string[] {
+  const bugs = plan.filter((proposal) => proposal.kind === 'bug');
+  const preferences = plan.filter((proposal) => proposal.kind !== 'bug');
+  const lines: string[] = [];
+  if (bugs.length > 0) lines.push(`${PLAN_BUGS}.`, ...bugs.map(proposalLine));
+  if (preferences.length > 0) {
+    if (lines.length > 0) lines.push('');
+    lines.push(`${PLAN_PREFERENCES}.`, ...preferences.map(proposalLine));
+  }
+  return lines;
+}
+
+/** Small counts as words, the way a person writes them. */
+function counted(n: number): string {
+  return ['no', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine', 'ten'][n] ?? String(n);
 }
 
 /** A picture's file name, zero-padded the way the session wrote it. */
@@ -209,14 +272,13 @@ export function approvalSeed(
   }
   frames.sort((a, b) => a - b);
 
-  const many = picked.length > 1;
   const files = listed(frames.map(frameFile));
   const lines = [
     `Your tester played session ${note.session} of this game. Out of what it wrote down I picked ${
-      many ? `these ${picked.length}` : 'this one'
+      picked.length === 1 ? 'one thing' : `${counted(picked.length)} things`
     } to work on.`,
     '',
-    ...picked.map(proposalSentence),
+    ...planLines(picked),
     '',
     frames.length === 1
       ? `The picture behind that is in the project at ${framesPath}, as ${files}. Look at it before you change anything.`
@@ -246,6 +308,9 @@ export function renderReport(note: TesterNote): string {
 
   lines.push('Anything worse', regressionSentence(note.regression).text, '');
 
+  const placement = placementSentence(note);
+  if (placement !== null) lines.push('Where it played', placement, '');
+
   lines.push('What it saw');
   if (observations.length === 0) {
     lines.push('It did not write down anything it saw this session.');
@@ -272,7 +337,7 @@ export function renderReport(note: TesterNote): string {
     // going well should end here.
     lines.push('It found nothing here worth changing.');
   } else {
-    for (const proposal of plan) lines.push(proposalSentence(proposal));
+    lines.push(...planLines(plan));
   }
 
   return `${lines.join('\n').trimEnd()}\n`;

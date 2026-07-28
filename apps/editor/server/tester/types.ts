@@ -10,9 +10,10 @@
  *
  * 'played' means it got there by playing, so what it saw is also evidence that
  * the place is reachable. 'placed' means the game put it there on request, and
- * a finding from there is a finding about that content and nothing else: level
- * sixteen's exit could be broken and a report from level seventeen would still
- * read as glowing.
+ * a finding from there is a finding about that content and nothing else. A
+ * tester dropped into year three of a management sim can report that year
+ * three plays well while the budget rules make year two impossible to survive,
+ * and the report would still read as glowing.
  */
 export type ObservationReach = 'played' | 'placed';
 
@@ -51,6 +52,21 @@ export interface TesterProposal {
   evidence: number[];
 }
 
+/**
+ * Where the game said the tester could be put, and where it went.
+ *
+ * A fact about the game as it was when the session ran, which is why it is
+ * written down per session rather than read off the game later. Absent on
+ * notes written before a game could name anywhere at all, so a reader has to
+ * handle its absence rather than read a missing value as "it named nothing".
+ */
+export interface TesterPlacement {
+  /** How many situations the game named. Zero when it named none. */
+  offered: number;
+  /** What the game called the one it was put into, when it went somewhere. */
+  entered?: string;
+}
+
 /** The tester's verdict on what you changed since it last played. */
 export interface ChangeVerdict {
   /** What it understood you changed, in its own words. */
@@ -72,6 +88,12 @@ export interface TesterNote {
    */
   regression: string;
   observations: TesterObservation[];
+  /**
+   * What the game offered by way of somewhere to be put. Absent on notes
+   * written before a game could name anywhere, and never inferred: a capability
+   * Hearth did not have is a sentence in the report, not a silent gap.
+   */
+  placement?: TesterPlacement;
   /**
    * What it thinks is worth changing, which is allowed to be nothing at all.
    * Absent on notes written before the plan of action existed.

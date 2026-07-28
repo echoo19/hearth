@@ -6,7 +6,12 @@
  */
 import { describe, it, expect } from 'vitest';
 import { parseProposals, testerPrompts } from '../server/tester/prompt';
-import { proposalsFrom, renderReport, REACHABILITY_CAVEAT } from '../server/tester/report';
+import {
+  placementSentence,
+  proposalsFrom,
+  renderReport,
+  REACHABILITY_CAVEAT,
+} from '../server/tester/report';
 import type { TesterNote } from '../server/tester/types';
 
 function note(over: Partial<TesterNote> = {}): TesterNote {
@@ -66,6 +71,39 @@ describe('renderReport', () => {
     expect(text).toContain('Session 3');
     expect(text.toLowerCase()).toContain('did not write down anything');
     expect(text.length).toBeGreaterThan(80);
+  });
+});
+
+describe('placementSentence', () => {
+  it('says out loud that a game named nowhere, rather than going quiet', () => {
+    // A capability Hearth does not have has to be a sentence someone reads.
+    // Left unsaid, its absence looks like a gap in the report instead.
+    const text = placementSentence(note({ placement: { offered: 0 } }));
+    expect(text).toMatch(/named nowhere/i);
+    expect(text).toMatch(/played from the start/i);
+  });
+
+  it('names what the game offered and what the tester did with it', () => {
+    expect(placementSentence(note({ placement: { offered: 2 } }))).toMatch(/two places/);
+    expect(placementSentence(note({ placement: { offered: 2 } }))).toMatch(/from the start anyway/i);
+    expect(placementSentence(note({ placement: { offered: 2, entered: 'The week of the audit' } }))).toContain(
+      'The week of the audit',
+    );
+  });
+
+  it('counts one place as one place', () => {
+    expect(placementSentence(note({ placement: { offered: 1 } }))).toMatch(/one place\b/);
+  });
+
+  it('says nothing at all about a session played before any game could be asked', () => {
+    // Reading a missing field as "the game named nothing" would put a claim in
+    // the game's mouth that nobody ever made.
+    expect(placementSentence(note())).toBeNull();
+    expect(renderReport(note())).not.toMatch(/Where it played/);
+  });
+
+  it('reaches the report when it has something to say', () => {
+    expect(renderReport(note({ placement: { offered: 0 } }))).toMatch(/Where it played/);
   });
 });
 

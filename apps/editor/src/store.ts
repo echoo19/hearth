@@ -2117,7 +2117,7 @@ export const useApp = create<AppState>((set, get) => {
         // Held in the composer rather than sent anywhere. The one place this
         // must never put approved work is the conversation being left.
         set({ pendingPrompt: words });
-        return fail('Nothing opened to start that work in. Your message is waiting in the composer.');
+        return fail('No new chat opened, so nothing was sent. Your message is waiting in the composer.');
       }
       get().sendChat(words);
       return { ok: true };

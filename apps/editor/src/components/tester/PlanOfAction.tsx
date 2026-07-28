@@ -19,16 +19,17 @@
  * whose plan is never empty will start inventing work.
  */
 import React, { useMemo, useState } from 'react';
-import { proposalsFrom, type Proposal } from '../../../server/tester/report';
+import {
+  picturesFor,
+  proposalsFrom,
+  PLACED_CLAIM,
+  PLAN_BUGS,
+  PLAN_PREFERENCES,
+  type Proposal,
+} from '../../../server/tester/report';
 import type { TesterNote } from '../../../server/tester/types';
 import { useApp } from '../../store';
 import { Button } from '../ui/Button';
-
-/** Which pictures a claim rests on, said the way the rest of the report says it. */
-function pictures(frames: readonly number[]): string {
-  if (frames.length === 1) return `Picture ${frames[0]}`;
-  return `Pictures ${frames.slice(0, -1).join(', ')} and ${frames[frames.length - 1]}`;
-}
 
 function Row({
   proposal,
@@ -47,16 +48,12 @@ function Row({
           checked={ticked}
           onChange={(event) => onToggle(proposal.id, event.target.checked)}
         />
-        <span className="plan-frames">{pictures(proposal.evidence)}</span>
+        <span className="plan-frames">{picturesFor(proposal.evidence)}</span>
         <span className="plan-claim">
           {proposal.text}
           {/* On the row, where the decision is being made. A caveat further up
               the page arrives after the reader has already believed this. */}
-          {proposal.reached === 'placed' && (
-            <span className="plan-placed">
-              The game put it there, so this says nothing about whether a player can reach it.
-            </span>
-          )}
+          {proposal.reached === 'placed' && <span className="plan-placed">{PLACED_CLAIM}</span>}
         </span>
       </label>
     </li>
@@ -105,13 +102,13 @@ export function PlanOfAction({ note, onStarted }: { note: TesterNote; onStarted:
     <section className="report-part plan">
       <h3 className="report-part-title">Worth changing</h3>
       <p className="report-line">
-        Tick what you want done. Approving opens a new chat carrying those and the pictures behind
-        them, and nothing else.
+        Tick what you want done. Approving opens a new chat with those and the pictures behind them,
+        and leaves the rest of this here.
       </p>
 
       {bugs.length > 0 && (
         <div className="plan-group">
-          <h4 className="plan-group-title">It watched these go wrong</h4>
+          <h4 className="plan-group-title">{PLAN_BUGS}</h4>
           <ul className="plan-list">
             {bugs.map((proposal) => (
               <Row
@@ -127,7 +124,7 @@ export function PlanOfAction({ note, onStarted }: { note: TesterNote; onStarted:
 
       {preferences.length > 0 && (
         <div className="plan-group is-softer">
-          <h4 className="plan-group-title">These are preferences, and it cannot judge fun</h4>
+          <h4 className="plan-group-title">{PLAN_PREFERENCES}</h4>
           <ul className="plan-list">
             {preferences.map((proposal) => (
               <Row

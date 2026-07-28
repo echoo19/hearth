@@ -63,15 +63,15 @@ describe('the seed approval sends', () => {
 
   it('keeps a bug and a preference apart in the words it sends', () => {
     const seed = approvalSeed(note(), ['s3-p0', 's3-p1'], FRAMES);
-    expect(seed?.text).toMatch(/bug it watched happen/i);
-    expect(seed?.text).toMatch(/preference, not something it saw go wrong/i);
+    expect(seed?.text).toMatch(/it watched these go wrong/i);
+    expect(seed?.text).toMatch(/these are preferences, and it cannot judge fun/i);
   });
 
   it('carries the placed caveat with the claim it belongs to', () => {
     const seed = approvalSeed(note(), ['s3-p1'], FRAMES);
-    expect(seed?.text).toMatch(/where the game put it/i);
+    expect(seed?.text).toMatch(/game put it there/i);
     // And says nothing of the sort when the tester played its way there.
-    expect(approvalSeed(note(), ['s3-p0'], FRAMES)?.text).not.toMatch(/where the game put it/i);
+    expect(approvalSeed(note(), ['s3-p0'], FRAMES)?.text).not.toMatch(/game put it there/i);
   });
 
   it('gathers the pictures behind what was ticked, and only those', () => {
