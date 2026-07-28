@@ -197,6 +197,28 @@ export async function apiTesterStop(project: string): Promise<{ ok: boolean; err
   return postJson('/api/tester/stop', { project });
 }
 
+/** One picture behind an approved proposal, as the project stores it. */
+export interface ApprovedFrame {
+  frame: number;
+  /** Project-relative, posix, so it works as a link and as a path an agent reads. */
+  relPath: string;
+}
+
+/**
+ * Turn the proposals someone ticked into the message that starts work on them.
+ *
+ * The server writes it from the note on disk. The window sends ids and gets
+ * back words, so nothing that was left unticked can reach an agent through a
+ * message the window assembled for itself.
+ */
+export async function apiTesterApprove(
+  project: string,
+  session: number,
+  proposals: readonly string[],
+): Promise<{ ok: boolean; text?: string; frames?: ApprovedFrame[]; error?: string }> {
+  return postJson('/api/tester/approve', { project, session, proposals });
+}
+
 export async function apiTesterHistory(project: string): Promise<TesterHistory | null> {
   const body = await getJson<TesterHistory>(
     `/api/tester/history?project=${encodeURIComponent(project)}`,

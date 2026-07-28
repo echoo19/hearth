@@ -46,7 +46,13 @@ import {
   type AppSettings,
   type ChatDriver,
 } from './chat.js';
-import { listSessions, nextSessionId as nextTesterSessionId, readMemory } from './tester/memory.js';
+import {
+  framesDir,
+  listSessions,
+  nextSessionId as nextTesterSessionId,
+  readMemory,
+} from './tester/memory.js';
+import { approvalSeed, frameFile } from './tester/report.js';
 import {
   runTesterSession,
   DEFAULT_MAX_STEPS,
@@ -1177,6 +1183,43 @@ export function createProjectServerContext(options: ProjectServerOptions = {}) {
       };
     },
 
+    /**
+     * The message that starts work on part of a session's plan of action.
+     *
+     * Built here rather than in the window because the note is a file on disk
+     * and the ids are the only thing the window is entitled to be believed
+     * about. Anything not ticked never leaves this function: an unapproved
+     * proposal that reaches an agent is one it may act on.
+     */
+    async approveTesterProposals(project: unknown, session: unknown, proposals: unknown): Promise<JsonResult> {
+      if (typeof project !== 'string' || project.trim() === '') {
+        return { status: 400, body: { ok: false, error: 'Missing "project".' } };
+      }
+      if (typeof session !== 'number' || !Number.isFinite(session)) {
+        return { status: 400, body: { ok: false, error: 'Missing "session".' } };
+      }
+      const picked = Array.isArray(proposals) ? proposals.filter((id): id is string => typeof id === 'string') : [];
+      const root = path.resolve(project);
+      if (!isOpenRoot(root)) return { status: 403, body: { ok: false, error: 'Folder is not open.' } };
+      const note = (await listSessions(root)).find((entry) => entry.session === session);
+      if (!note) return { status: 404, body: { ok: false, error: `Session ${session} has no note to read.` } };
+      const dir = path.relative(root, framesDir(root, session)).split(path.sep).join('/');
+      const seed = approvalSeed(note, picked, dir);
+      if (!seed) {
+        return { status: 400, body: { ok: false, error: 'Nothing was picked from that session.' } };
+      }
+      return {
+        status: 200,
+        body: {
+          ok: true,
+          text: seed.text,
+          // Named as well as described, so a caller that wants to show or open
+          // a picture does not have to know how a session lays out its folder.
+          frames: seed.frames.map((frame) => ({ frame, relPath: `${dir}/${frameFile(frame)}` })),
+        },
+      };
+    },
+
     // --- Conversations ------------------------------------------------------
 
     /** Every conversation this folder holds, newest activity first. */
@@ -2167,6 +2210,11 @@ async function route(ctx: ProjectServerContext, req: IncomingMessage, res: Serve
     }
     case 'GET /api/tester/history': {
       const result = await ctx.testerHistory(q.get('project'));
+      return sendJson(res, result.status, result.body);
+    }
+    case 'POST /api/tester/approve': {
+      const body = await readJsonBody(req);
+      const result = await ctx.approveTesterProposals(body.project, body.session, body.proposals);
       return sendJson(res, result.status, result.body);
     }
     case 'GET /api/chats': {

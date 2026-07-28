@@ -160,6 +160,73 @@ export function proposalSentence(proposal: Proposal): string {
   return `${lead}, from ${pictures}: ${trimDot(proposal.text)}${placed}`;
 }
 
+/** A picture's file name, zero-padded the way the session wrote it. */
+export function frameFile(frame: number): string {
+  return `${String(frame).padStart(4, '0')}.png`;
+}
+
+/** Words, commas and a final "and", the way a person writes a short list. */
+function listed(items: readonly string[]): string {
+  if (items.length <= 1) return items[0] ?? '';
+  return `${items.slice(0, -1).join(', ')} and ${items[items.length - 1]}`;
+}
+
+/** What a person sends an agent when they approve part of a plan of action. */
+export interface ApprovalSeed {
+  /** The message itself, in the person's voice, since that is whose it is. */
+  text: string;
+  /** Pictures behind what was ticked, in the order they were taken. */
+  frames: number[];
+}
+
+/**
+ * The message that opens the new conversation, carrying the ticked proposals
+ * and nothing else.
+ *
+ * What is left out is the point. A proposal in an agent's context is a
+ * proposal it may act on, so a seed that carried the whole plan would make the
+ * ticking decorative. The rest of the session is left out for the same reason,
+ * and the last line says so rather than letting the agent read a short brief
+ * as a complete one.
+ *
+ * `framesPath` is where the session's pictures live, project-relative and
+ * posix, because the agent opens them with its own tools. Handing over a path
+ * rather than a copy is what the rest of the app does with an attachment, and
+ * it means a plan resting on twenty pictures loses none of them.
+ */
+export function approvalSeed(
+  note: TesterNote,
+  selected: readonly string[],
+  framesPath: string,
+): ApprovalSeed | null {
+  const wanted = new Set(selected);
+  const picked = proposalsFrom(note).filter((proposal) => wanted.has(proposal.id));
+  if (picked.length === 0) return null;
+
+  const frames: number[] = [];
+  for (const proposal of picked) {
+    for (const frame of proposal.evidence) if (!frames.includes(frame)) frames.push(frame);
+  }
+  frames.sort((a, b) => a - b);
+
+  const many = picked.length > 1;
+  const files = listed(frames.map(frameFile));
+  const lines = [
+    `Your tester played session ${note.session} of this game. Out of what it wrote down I picked ${
+      many ? `these ${picked.length}` : 'this one'
+    } to work on.`,
+    '',
+    ...picked.map(proposalSentence),
+    '',
+    frames.length === 1
+      ? `The picture behind that is in the project at ${framesPath}, as ${files}. Look at it before you change anything.`
+      : `The pictures behind those are in the project at ${framesPath}, as ${files}. Look at them before you change anything.`,
+    '',
+    'That is what I ticked and nothing else. The rest of the session is not here, so ask me instead of filling in the gaps.',
+  ];
+  return { text: `${lines.join('\n')}\n`, frames };
+}
+
 /**
  * The whole session, for whoever is reading it.
  *

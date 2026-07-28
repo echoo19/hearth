@@ -21,6 +21,7 @@ import {
 } from '../../../server/tester/report';
 import { observationReach, type TesterNote } from '../../../server/tester/types';
 import { Modal } from '../ui';
+import { PlanOfAction } from './PlanOfAction';
 
 export function ReportView({
   note,
@@ -100,6 +101,10 @@ export function ReportView({
             </ul>
           )}
         </section>
+
+        {/* Last, because it is what the reader does about everything above it.
+            Putting a decision before its evidence is asking for a guess. */}
+        <PlanOfAction note={note} onStarted={onClose} />
       </div>
     </Modal>
   );

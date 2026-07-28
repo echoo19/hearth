@@ -25,6 +25,7 @@ import {
   apiOpenWorkspace,
   apiPersonalization,
   apiProbeStatus,
+  apiTesterApprove,
   apiTesterHistory,
   apiTesterPlay,
   apiTesterStop,
@@ -400,6 +401,19 @@ export interface AppState {
   stopTester(): Promise<void>;
   /** Re-read the folder's sessions and memory from disk. */
   refreshTesterHistory(): Promise<void>;
+  /**
+   * Start work on the proposals someone ticked, in a conversation of their own.
+   *
+   * A NEW one, always. Approved work appended to whatever was open would land
+   * on top of a conversation already in the middle of something else, and the
+   * agent would have to guess which of the two it was being asked about.
+   */
+  approveProposals(
+    session: number,
+    proposals: readonly string[],
+    /** How long to wait for the new conversation. Only a test passes this. */
+    waitMs?: number,
+  ): Promise<{ ok: boolean; error?: string }>;
   /** Show or hide the playtest column. An explicit pick, remembered per folder. */
   setPaneOpen(open: boolean): void;
   /** Aim the new-chat composer at a project, or at one that doesn't exist yet. */
@@ -2063,6 +2077,50 @@ export const useApp = create<AppState>((set, get) => {
           lastNote: state.tester.lastNote ?? history.sessions[history.sessions.length - 1] ?? null,
         },
       }));
+    },
+
+    async approveProposals(session, proposals, waitMs = CONNECT_WAIT_MS) {
+      const project = get().projectPath;
+      // Nothing ticked is not a failure worth a message. The control that got
+      // here is disabled, so this is the belt on top of the braces.
+      if (!project || proposals.length === 0) return { ok: false };
+
+      const fail = (error: string): { ok: false; error: string } => {
+        get().log('error', 'app', error);
+        showToast(error, 'error');
+        return { ok: false, error };
+      };
+
+      // The words are written by the server from the note on disk. The window
+      // sends ids and nothing else, so an unticked proposal has no route into
+      // the message at all.
+      const seed = await apiTesterApprove(project, session, [...proposals]);
+      if (!seed.ok || !seed.text) return fail(seed.error ?? 'Could not put that plan into words.');
+      if (get().projectPath !== project) return { ok: false };
+
+      const words = seed.text;
+      // Leave the tester's screen. Approving starts work, and watching it start
+      // somewhere the person cannot see is the same as nothing happening.
+      set({ composing: false, projectView: false, screen: null, chatBusy: false, chatError: null, queued: [] });
+      applyConversationMode('chat');
+
+      const before = get().activeChatId;
+      requestChat({ type: 'chat-new' });
+      // Waiting for a DIFFERENT conversation, not merely for one: the folder
+      // already had one open, so "a conversation exists" was true before this
+      // began and would let the send land in the wrong place.
+      const landed = await waitForState(
+        (state) => state.wsStatus === 'connected' && state.activeChatId !== null && state.activeChatId !== before,
+        waitMs,
+      );
+      if (!landed) {
+        // Held in the composer rather than sent anywhere. The one place this
+        // must never put approved work is the conversation being left.
+        set({ pendingPrompt: words });
+        return fail('Nothing opened to start that work in. Your message is waiting in the composer.');
+      }
+      get().sendChat(words);
+      return { ok: true };
     },
 
     setPaneOpen(open) {

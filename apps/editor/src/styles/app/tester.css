@@ -527,3 +527,126 @@ dialog.modal.report-modal {
     content: ', ';
   }
 }
+
+/* --- The plan of action --------------------------------------------------- */
+
+/* Everything above this is the tester talking; here the reader answers. A rule
+   and some air mark the change of voice. A panel would make a decision look
+   like a callout, and a decision is not an aside. */
+.report-part.plan {
+  gap: 10px;
+  margin-top: 2px;
+  padding-top: 18px;
+  border-top: 1px solid var(--border);
+}
+
+.plan-group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.plan-group-title {
+  margin: 0;
+  color: var(--ink-mute);
+  font-size: var(--text-xs);
+  font-weight: 600;
+}
+
+.plan-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+}
+
+/* The whole row is the target, and its picture column is the one the
+   observations use, so the two lists share a spine down the page. */
+.plan-pick {
+  display: grid;
+  grid-template-columns: 14px 4.75rem minmax(0, 1fr);
+  gap: 4px 10px;
+  align-items: start;
+  margin: 0 -8px;
+  padding: 7px 8px;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+
+.plan-pick input[type='checkbox'] {
+  /* Optically on the first line of the claim rather than above it. */
+  margin-top: 2px;
+}
+
+.plan-pick:hover {
+  background: var(--bg-2);
+}
+
+/* Ticked rows read as a group without a second control to look at. */
+.plan-pick:has(input:checked) {
+  background: var(--accent-faint);
+}
+
+.plan-frames {
+  color: var(--ink-faint);
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+  line-height: 1.7;
+}
+
+/* Full-strength ink: it watched this one happen. */
+.plan-claim {
+  color: var(--ink);
+  font-size: var(--text-sm);
+  line-height: 1.6;
+  text-wrap: pretty;
+}
+
+/* A preference reads quieter than a fault, because it is worth less. Said in
+   the heading too, since ink alone is a legend nobody was taught. */
+.plan-group.is-softer .plan-claim {
+  color: var(--ink-mute);
+}
+
+.plan-placed {
+  display: block;
+  margin-top: 2px;
+  color: var(--warn);
+  font-size: var(--text-xs);
+  line-height: 1.5;
+}
+
+.plan-foot {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 12px;
+  margin-top: 14px;
+}
+
+.plan-count {
+  color: var(--ink-faint);
+  font-size: var(--text-xs);
+}
+
+/* Narrow: the picture number moves above the claim it anchors, the way the
+   observation rows do, and the tick keeps its own column beside both. */
+@media (max-width: 520px) {
+  .plan-pick {
+    grid-template-columns: 14px minmax(0, 1fr);
+  }
+
+  .plan-pick input[type='checkbox'] {
+    grid-row: 1 / span 2;
+  }
+
+  .plan-frames {
+    grid-column: 2;
+  }
+
+  .plan-claim {
+    grid-column: 2;
+  }
+}
