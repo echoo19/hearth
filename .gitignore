@@ -46,9 +46,13 @@ apps/editor/release/
 .scratch-audit/
 .hearth-tmp/
 scratch/
-# Internal SDD/agent workflow artifacts — root only, so example projects'
-# own .claude/skills scaffolding stays tracked.
+# Internal SDD/agent workflow artifacts. /.superpowers/, /.claude/, and
+# /.worktrees/ are anchored to the repo root only, so example projects' own
+# .claude/skills scaffolding stays tracked. docs/superpowers/ is deliberately
+# left unanchored — a nested copy (e.g. apps/editor/docs/superpowers/) is the
+# same internal artifact and must not slip through just because it isn't at
+# the root.
 /.superpowers/
-/docs/superpowers/
+docs/superpowers/
 /.claude/
 /.worktrees/
