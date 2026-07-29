@@ -26,7 +26,7 @@ import { promises as fsp } from 'node:fs';
 import { createRequire } from 'node:module';
 import os from 'node:os';
 import path from 'node:path';
-import { fileURLToPath, pathToFileURL } from 'node:url';
+import { fileURLToPath } from 'node:url';
 import { CJS_IMPORT_META } from '../scripts/cjsImportMeta.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -107,10 +107,20 @@ describe('the module url inside the desktop app bundle', () => {
 
   it('is the bundle it was compiled into once the build supplies it', async () => {
     const bundled = await bundleAndRequire('shimmed', 'export const seen: unknown = import.meta.url;\n', true);
-    // Through realpath, because the shim reads `__filename` and Node hands
-    // that out already resolved: on macOS the temp dir arrives as /var/... and
-    // comes back as /private/var/..., which is the same file said twice.
-    expect(bundled.exports.seen).toBe(pathToFileURL(await fsp.realpath(bundled.outfile)).href);
+    const seen = bundled.exports.seen;
+    // A string first, and separately, so that a shim which supplied nothing
+    // fails here saying so rather than inside the path conversion below.
+    expect(typeof seen).toBe('string');
+    // Both sides go through realpath, and BOTH is the point. Comparing a URL
+    // built here against one the shim built from `__filename` compares two
+    // spellings of one file, and every platform has its own way of spelling it
+    // twice: macOS hands back /var/... and /private/var/..., and Windows hands
+    // back the short 8.3 name from the temp dir it was given and the long name
+    // from everywhere else, so this read RUNNER~1 against runneradmin on CI
+    // while the product code was perfectly correct. Resolving each side to the
+    // real file asks the question actually worth asking, which is whether the
+    // bundle named itself, not how the name was spelled.
+    expect(await fsp.realpath(fileURLToPath(seen as string))).toBe(await fsp.realpath(bundled.outfile));
   });
 
   it('does not cost the bundle its strict mode on the way in', async () => {
