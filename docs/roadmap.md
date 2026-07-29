@@ -1,17 +1,17 @@
 # Roadmap
 
-**v1.6.1 is the current release** — the agent-first Hearth app: a conversation
+**v1.7.0 is the current release**: the agent-first Hearth app, a conversation
 with a coding agent, an always-on game pane, and a private tester that plays
 your game and tells you what it made of it. That app began at v1.3.0.
 
-Hearth used to be a 2D game engine. That engine is preserved — the
+Hearth used to be a 2D game engine. That engine is preserved on the
 [`engine-v1`](https://github.com/echoo19/hearth/tree/engine-v1) branch, final
-release v1.2.1 — and is no longer developed. Its own roadmap, with the full
+release v1.2.1, and is no longer developed. Its own roadmap, with the full
 0.1 → 1.2.1 history, is
 [on that branch](https://github.com/echoo19/hearth/tree/engine-v1/docs/roadmap.md).
 
-This page is the honest list of what's next and what is deliberately missing.
-No dates.
+This page is the honest list of what's next and what is deliberately missing,
+with no dates attached.
 
 ## Where the app is now
 
@@ -21,10 +21,10 @@ Shipped and in use:
   ([projects-and-chats.md](./projects-and-chats.md)).
 - The game runs beside the conversation and reloads when the agent writes.
 - The private tester: a model opens your game and plays it the way a person
-  would, keeps notes across sessions, and reports only what it actually saw,
-  with every claim anchored to a picture it took ([tester.md](./tester.md)).
-  Its plan of action arrives with nothing ticked, and approving sends the work
-  to your agent in a conversation of its own.
+  would, taps and holds real keys, keeps notes across sessions, and reports
+  only what it actually saw, with every claim anchored to a picture it took
+  ([tester.md](./tester.md)). Its plan of action arrives with nothing ticked,
+  and approving sends the work to your agent in a conversation of its own.
 - Bot sweeps at the zero-cooperation tier: seeded bots, crash / stuck /
   black-screen / wall-bump / sealed-region checks, verdicts, screenshots, and
   evidence on disk. The agent's tool, not the person's, and good at finding
@@ -32,11 +32,15 @@ Shipped and in use:
   ([playtesting.md](./playtesting.md)).
 - The optional `window.__hearthProbe` shim, for games that choose to say more
   about themselves ([probe-shim.md](./probe-shim.md)).
-- Four ways to bring an agent: an Anthropic key, ChatGPT through the
-  open-source Codex CLI, any CLI in the terminal, or an agent of your own
-  registered against a small stdio protocol, which answers in the conversation
-  like anything else ([agents.md](./agents.md),
-  [custom-agents.md](./custom-agents.md)).
+- Three ways to bring an agent: the Claude Code CLI you are signed into (an
+  API key is optional), ChatGPT through the open-source Codex CLI, or any CLI
+  in a terminal. The conversation drives the two CLIs Hearth integrates;
+  anything else you run yourself in the terminal, in the same folder
+  ([agents.md](./agents.md)).
+- Conversations that survive: each chat resumes its backend's own session
+  across reloads and restarts, Stop ends the turn without ending the agent,
+  and the model, agent and effort can change between two messages in the same
+  chat ([agents.md](./agents.md)).
 - Permission modes, per project: ask before every write, work freely inside the
   folder and ask outside it, or skip the checks. Honoured by every harness
   Hearth drives, and stored on your machine rather than in the project, so a
@@ -55,11 +59,11 @@ Shipped and in use:
 the only implementation of it today. Godot is the named next target, with no
 date attached ([connect-your-engine.md](./connect-your-engine.md)). Every
 connector inherits the existing policies, verdicts and evidence format
-unchanged — that is the point of keeping the contract narrow.
+unchanged; that is the point of keeping the contract narrow.
 
 **Richer senses.** More of what a bot can notice without the game's help:
 better novelty signals from pixels alone, audio, and more of the reasoning that
-currently needs entity positions. The rule stays the same — a sense that isn't
+currently needs entity positions. The rule stays the same: a sense that isn't
 there is declared absent, never faked.
 
 **Answering the agent.** A structured question with options now appears in the
@@ -67,11 +71,6 @@ transcript, but there is no picker for answering it: the request is answered
 empty so the turn doesn't wedge, and you reply in your next message instead
 ([agents.md](./agents.md)). A real answer surface is a small feature that
 removes a real reason to go back to the terminal.
-
-**Per-turn Claude models.** The Agent SDK binds its model when a conversation's
-stream opens, so a Claude model change applies to the next new chat rather than
-the next message. Faking it would mean silently restarting the agent
-mid-conversation; doing it properly means the driver learning to rebind.
 
 **Per-project skills.** Skills are global to the machine today, which is right
 for "how I like sprites drawn" and wrong for "how this game's save format
@@ -86,7 +85,7 @@ a small feature that changes how the app feels.
 
 Directional, no dates, nothing promised:
 
-- Deeper repro tooling — freezing a failing episode into a test that stays red
+- Deeper repro tooling: freezing a failing episode into a test that stays red
   until it's fixed.
 - Better shim ergonomics, so opting into deeper senses is a smaller decision.
 - Hearth Cloud: hosted services on top of the free local core. Nothing local
