@@ -25,6 +25,17 @@ import type { ChangeVerdict, TesterObservation, TesterProposal } from './types.j
 /** What the tester decided to do with one frame. */
 export type Decision =
   | { kind: 'actions'; actions: string[] }
+  /**
+   * Press and let go, rather than lean on it.
+   *
+   * This exists because its absence was being reported as other people's bugs.
+   * Holding was the only thing the tester could do, so on a racing game it held
+   * a steering input, watched the car spin, and wrote down that the controls
+   * were broken and the game was unpleasant to play. Nothing was broken: no
+   * human plays a racer by holding left, and the tester had no way to do
+   * anything else. A verb it does not have is a verdict it gets wrong.
+   */
+  | { kind: 'tap'; actions: string[] }
   | { kind: 'enter'; id: string }
   | { kind: 'pointer'; x: number; y: number; click: boolean }
   | { kind: 'done' }
@@ -48,9 +59,18 @@ export const UNCLEAR_VERDICT =
   'It answered the verdict question with something that is not better, worse or no difference, so no verdict is recorded for this session rather than a guess at which one it meant.';
 
 const ENTER_LINE = /^[^\S\n]*ENTER[^\S\n]*:(.*)$/im;
-const ACTION_LINE = /^[^\S\n]*ACTION[^\S\n]*:(.*)$/im;
+const ACTION_LINE = /^[^\S\n]*(?:ACTION|HOLD)[^\S\n]*:(.*)$/im;
+const TAP_LINE = /^[^\S\n]*TAP[^\S\n]*:(.*)$/im;
 const CLICK_LINE = /^[^\S\n]*(CLICK|MOVE)[^\S\n]*:(.*)$/im;
 const DONE_LINE = /^[^\S\n]*DONE\b/im;
+
+/** The names on one input line, with the ways of writing "nothing" dropped. */
+function inputNames(raw: string): string[] {
+  return raw
+    .split(/[,\s]+/)
+    .map((name) => name.trim())
+    .filter((name) => name !== '' && name.toLowerCase() !== 'none');
+}
 
 /**
  * Read one decision out of a reply. Order matters: an action or a click wins
@@ -68,12 +88,18 @@ export function decideFromReply(text: string): Decision {
     if (id !== '') return { kind: 'enter', id };
   }
 
+  // Tap is read before hold. A reply carrying both is a tester that meant the
+  // deliberate press and then restated it in the older word, and the briefing
+  // asks for one line either way.
+  const tap = TAP_LINE.exec(text);
+  if (tap) {
+    const actions = inputNames(tap[1]);
+    if (actions.length > 0) return { kind: 'tap', actions };
+  }
+
   const action = ACTION_LINE.exec(text);
   if (action) {
-    const actions = action[1]
-      .split(/[,\s]+/)
-      .map((name) => name.trim())
-      .filter((name) => name !== '' && name.toLowerCase() !== 'none');
+    const actions = inputNames(action[1]);
     if (actions.length > 0) return { kind: 'actions', actions };
   }
 
@@ -125,6 +151,38 @@ const ROLE = [
   'You are not a good player and you must never claim to be. Report what you tried and what',
   'happened, including failing. Never say you finished something you did not see finish.',
   'Answer from the pictures you are shown. Do not use tools and do not read the source.',
+  '',
+  'Because you are not a good player, when something goes wrong the first explanation to',
+  'reach for is that you played it wrong. Games are not usually broken. They are usually',
+  'played badly by someone who has only just met them, and that someone is you. A game that',
+  'resists you for a few turns is a game you have not learned yet, and learning it is the',
+  'job. Say a game got something wrong only once you have run out of ways you might have.',
+].join('\n');
+
+/**
+ * How to work an input, put to the tester before it touches one.
+ *
+ * The racing game is the case this is written against. The tester held a
+ * steering input, the car span, and the session reported broken controls and an
+ * unpleasant game. Both claims were false and neither was a reasoning failure:
+ * holding was the only thing it could do. Now that tapping exists, the tester
+ * has to be told that holding a direction is a choice with consequences rather
+ * than what pressing a key means, or it will keep making the same claim with a
+ * verb it could have avoided it with.
+ *
+ * The last line is the rule that matters. Everything above it is advice the
+ * tester can weigh; that one is a condition on a claim it is allowed to make.
+ */
+const HOW_TO_PLAY = [
+  'Most games are played in short presses. A player taps, lets go, looks, taps again. Steering,',
+  'turning, aiming and menus are almost always like this. Holding a direction down is a real',
+  'thing to do and sometimes the right one, but it is a deliberate choice, not what pressing a',
+  'key means: if you hold a direction and the game spins, drifts, overshoots or circles, that is',
+  'usually what holding a direction does, and the answer is to tap it instead and look again.',
+  '',
+  'So before you write down that a control is wrong, you must have tried it both ways, tapped',
+  'and held, and seen both. A control you only ever held is a control you have not finished',
+  'testing, and what it did while you leaned on it is not evidence about anybody else playing.',
 ].join('\n');
 
 /**
@@ -150,10 +208,13 @@ export function testerPrompts(ctx: TesterPromptContext): string[] {
     'You are about to be shown one picture of the game at a time. Each time, reply with a',
     'short sentence about what you see and then exactly one line of one of these forms:',
     '',
-    '  ACTION: <input names, comma separated>   hold these for the next moment of play',
+    '  TAP: <input names, comma separated>      press these and let go again',
+    '  HOLD: <input names, comma separated>     hold these down through the next moment of play',
     '  CLICK: <x>, <y>                          click at that pixel of the picture',
     '  MOVE: <x>, <y>                           move the pointer there without clicking',
     '  DONE                                     you have learned what you came to learn',
+    '',
+    HOW_TO_PLAY,
     '',
     'Say DONE when you have seen enough, and do not draw it out: every turn costs the person',
     'whose game this is. Reply with nothing else after that line.',
@@ -213,6 +274,21 @@ export function testerPrompts(ctx: TesterPromptContext): string[] {
     'BUG is for something you watched go wrong. IDEA is for a preference, and a preference is',
     'all it can be: you cannot tell whether a game is fun, so do not write as though you can.',
     '',
+    'Aim both at the game as a game, not at the feel of a keypress. The things worth a line are',
+    'the ones a person would still be asking about after ten minutes:',
+    '',
+    '  was there something to do, and could you work out what it was',
+    '  did the game tell you how you were doing, or leave you guessing',
+    '  did anything you did visibly change the game, or did it carry on the same',
+    '  was there anything after the first thing, or was that all of it',
+    '  did it end, or fail, or reset, in a way you could understand',
+    '',
+    'None of those needs you to be good at the game, which is why they are the ones you can',
+    'honestly answer. How a control feels under your fingers is the one thing you are worst',
+    'placed to judge: you have played this for a handful of turns, you cannot feel anything,',
+    'and you were leaning on keys a player would have tapped. Write about controls only when',
+    'you watched an input do nothing at all, or do something plainly wrong, both ways.',
+    '',
     'If nothing is worth changing, reply with NOTHING on its own. Finding something every time',
     'you play is how a playtester ends up inventing work, so say nothing when there is nothing.',
   ].join('\n');
@@ -226,6 +302,46 @@ export function testerPrompts(ctx: TesterPromptContext): string[] {
   ].join('\n');
 
   return [briefing, observe, compare, plan, remember];
+}
+
+/** Which inputs the tester tapped and which it only ever leaned on. */
+export interface InputUsage {
+  tapped: readonly string[];
+  held: readonly string[];
+}
+
+/**
+ * How it actually played, handed back to it before it says what is worth
+ * changing.
+ *
+ * The prompt already asks the tester not to blame a control it only held. This
+ * is the same rule enforced with a fact instead of a request, and it is here
+ * because the tester cannot check it on its own: by the time it is asked what
+ * to change, twenty turns have gone past and which inputs it leaned on is
+ * exactly the sort of thing it will reconstruct rather than remember. Reading
+ * its own record back to it costs one paragraph and removes the excuse.
+ *
+ * Empty when there is nothing to say, and silence is the common case. A game
+ * with no inputs, or a tester that tapped everything it touched, gets no
+ * paragraph at all rather than a reassuring one, because a note that appears
+ * every session stops being read.
+ */
+export function howYouPlayed(usage: InputUsage): string {
+  const onlyHeld = usage.held.filter((name) => !usage.tapped.includes(name));
+  if (onlyHeld.length === 0) return '';
+  const names = onlyHeld.join(', ');
+  return [
+    'Before you answer, here is how you actually played, from the record rather than from',
+    'memory:',
+    '',
+    onlyHeld.length === 1
+      ? `  You held ${names} down and never once tapped it.`
+      : `  You held these down and never once tapped them: ${names}.`,
+    '',
+    'A game can only answer what it was sent. Whatever that did is what holding it does, so it',
+    'is a fact about how you played and not something you watched the game get wrong. It does',
+    'not go in a BUG line.',
+  ].join('\n');
 }
 
 /**
@@ -267,8 +383,8 @@ function statesOffer(step: number, states: readonly ProbeState[]): string {
  */
 const READ_THE_SCREEN = [
   'Games usually tell you their own controls on screen, and that list is theirs rather than',
-  'mine. If the picture names a key, you can put that key on an ACTION line whether or not it',
-  'is listed above: single keys like R or 5, and named keys like Space, Enter, Escape or',
+  'mine. If the picture names a key, you can put that key on a TAP or HOLD line whether or not',
+  'it is listed above: single keys like R or 5, and named keys like Space, Enter, Escape or',
   'ArrowLeft, all reach the game. A word for an idea, like jump or restart, only reaches the',
   'game when it is one of the inputs listed above.',
 ].join('\n');
@@ -320,8 +436,8 @@ export function playPrompt(
   const offer = statesOffer(step, states);
   const closing =
     states.length > 0
-      ? 'One sentence, then one ACTION, CLICK, MOVE, ENTER or DONE line.'
-      : 'One sentence, then one ACTION, CLICK, MOVE or DONE line.';
+      ? 'One sentence, then one TAP, HOLD, CLICK, MOVE, ENTER or DONE line.'
+      : 'One sentence, then one TAP, HOLD, CLICK, MOVE or DONE line.';
   const turns = `You have ${left} ${left === 1 ? 'turn' : 'turns'} left.`;
   const heading =
     picture === null
@@ -329,7 +445,7 @@ export function playPrompt(
       : `Picture ${picture}. ${turns}`;
   return [
     heading,
-    `Inputs you can hold: ${inputs}.${axes}${pointer}${keys}${offer}${undeliveredNotice(undelivered)}`,
+    `Inputs you can tap or hold: ${inputs}.${axes}${pointer}${keys}${offer}${undeliveredNotice(undelivered)}`,
     closing,
   ].join('\n');
 }

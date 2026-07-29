@@ -40,6 +40,7 @@ import {
   parseVerdict,
   playPrompt,
   testerPrompts,
+  howYouPlayed,
   MISSING_REGRESSION,
   REGRESSION_REMINDER,
   type TesterControls,
@@ -280,17 +281,58 @@ interface Applied {
   undelivered: string[];
 }
 
+/**
+ * What is currently pressed, and how long each of it is meant to stay that way.
+ *
+ * The two lifetimes are the point. A held input stays down across the picture
+ * the tester looks at next, so it sees the game while it is being driven; a
+ * tapped one is let go the moment its step is over, so the next picture shows
+ * what the game did with a press and then settled into. Keeping them in
+ * separate sets is what lets both be true at once, and lets a turn that taps
+ * one input while holding another mean exactly that.
+ */
+interface Holds {
+  actions: Set<string>;
+  keys: Set<string>;
+  axes: Set<string>;
+  tapActions: Set<string>;
+  tapKeys: Set<string>;
+  tapAxes: Set<string>;
+}
+
+function newHolds(): Holds {
+  return {
+    actions: new Set(),
+    keys: new Set(),
+    axes: new Set(),
+    tapActions: new Set(),
+    tapKeys: new Set(),
+    tapAxes: new Set(),
+  };
+}
+
+/**
+ * Which inputs were tapped and which were leaned on, over the whole session.
+ *
+ * Kept so the tester can be shown its own record before it says what is worth
+ * changing. See `howYouPlayed` in prompt.ts for why that is worth a paragraph.
+ */
+interface Usage {
+  tapped: Set<string>;
+  held: Set<string>;
+}
+
 /** Play one turn's decision into the game. */
 async function applyDecision(
   game: TesterGame,
   reply: string,
-  held: Set<string>,
-  heldKeys: Set<string>,
-  heldAxes: Set<string>,
+  holds: Holds,
+  usage: Usage,
   states: readonly ProbeState[],
 ): Promise<Applied> {
   const decision = decideFromReply(reply);
   const undelivered: string[] = [];
+  const { actions: held, keys: heldKeys, axes: heldAxes } = holds;
   // Whatever was held last turn is released first: a tester that says "right"
   // then "left" means it changed its mind, not that it is holding both.
   for (const name of held) await game.setActionUp(name).catch(() => {});
@@ -332,12 +374,20 @@ async function applyDecision(
       return { keepPlaying: true, enterFailed: (err as Error).message, undelivered };
     }
   }
-  if (decision.kind === 'actions') {
+  if (decision.kind === 'actions' || decision.kind === 'tap') {
+    // One path presses; only where the name is remembered differs, and that is
+    // what decides whether it is still down when the next picture is taken.
+    const sustained = decision.kind === 'actions';
+    const intoAxes = sustained ? heldAxes : holds.tapAxes;
+    const intoActions = sustained ? held : holds.tapActions;
+    const intoKeys = sustained ? heldKeys : holds.tapKeys;
+    const verb = sustained ? 'holding' : 'tapping';
     for (const name of decision.actions) {
       if (game.capabilities.input.axes.includes(name)) {
         try {
           await game.setAxis(name, 1);
-          heldAxes.add(name);
+          intoAxes.add(name);
+          (sustained ? usage.held : usage.tapped).add(name);
         } catch (err) {
           undelivered.push(`"${name}" is an axis this game declared, and driving it failed: ${why(err)}.`);
         }
@@ -346,9 +396,10 @@ async function applyDecision(
       if (game.capabilities.input.actions.includes(name)) {
         try {
           await game.setActionDown(name);
-          held.add(name);
+          intoActions.add(name);
+          (sustained ? usage.held : usage.tapped).add(name);
         } catch (err) {
-          undelivered.push(`"${name}" is an input this game declared, and holding it failed: ${why(err)}.`);
+          undelivered.push(`"${name}" is an input this game declared, and ${verb} it failed: ${why(err)}.`);
         }
         continue;
       }
@@ -383,7 +434,8 @@ async function applyDecision(
       }
       try {
         await game.setKeyDown(key);
-        heldKeys.add(key);
+        intoKeys.add(key);
+        (sustained ? usage.held : usage.tapped).add(key);
       } catch (err) {
         undelivered.push(`The ${key} key could not be pressed: ${why(err)}.`);
       }
@@ -444,6 +496,9 @@ export async function runTesterSession(opts: RunTesterSessionOptions): Promise<T
   const ask = makeAsk(driver, onThought, signal);
   const transcript: string[] = [`# Session ${session}`, '', `Started ${startedAt}.`, ''];
 
+  /** How it played, read back to it before it says what is worth changing. */
+  const usage: Usage = { tapped: new Set(), held: new Set() };
+
   let stopped: TesterNote['stopped'] = 'done';
   let steps = 0;
   let frameCount = 0;
@@ -460,8 +515,19 @@ export async function runTesterSession(opts: RunTesterSessionOptions): Promise<T
     const open =
       opts.openGame ??
       (async (options): Promise<TesterGame> => {
-        const { openWebGame } = await import('@hearth/adapter-web');
-        return (await openWebGame({ dir: options.dir, onFrame: options.onFrame })) as unknown as TesterGame;
+        // The import is spoken for separately from the call because the two
+        // fail for completely different reasons and the note only ever shows
+        // one sentence. A game that will not open is about the game; a browser
+        // adapter that will not even load is about this build of Hearth, and
+        // the person reading the note is entitled to know which one they are
+        // looking at instead of being handed whatever the failure said.
+        const adapter = await import('@hearth/adapter-web').catch((err: unknown) => {
+          const reason = (err as Error)?.message?.trim();
+          throw new Error(
+            `Hearth could not load the browser its tester plays games in, so your game was never opened. This is a fault in Hearth rather than in your game. ${reason || 'No reason was given.'}`,
+          );
+        });
+        return (await adapter.openWebGame({ dir: options.dir, onFrame: options.onFrame })) as unknown as TesterGame;
       });
     game = await open({ dir, onFrame });
     await game.start();
@@ -475,9 +541,7 @@ export async function runTesterSession(opts: RunTesterSessionOptions): Promise<T
       // whose keypress would have nowhere to go.
       keys: typeof game.setKeyDown === 'function',
     };
-    const held = new Set<string>();
-    const heldKeys = new Set<string>();
-    const heldAxes = new Set<string>();
+    const holds = newHolds();
 
     // What the game says it can put itself into, in its own words. A game that
     // offers nothing is not asked again and is never told about the idea.
@@ -536,7 +600,7 @@ export async function runTesterSession(opts: RunTesterSessionOptions): Promise<T
       const reply = await ask(turn === 1 ? `${briefing}\n\n${prompt}` : prompt, attachments);
       transcript.push(`## Picture ${frameCount}`, '', reply.trim(), '');
       steps = turn;
-      const applied = await applyDecision(game, reply, held, heldKeys, heldAxes, states);
+      const applied = await applyDecision(game, reply, holds, usage, states);
       undelivered = applied.undelivered;
       // In the transcript as well as in the next prompt. A reader working out
       // why the tester said a game was stuck needs to see what never arrived.
@@ -553,15 +617,25 @@ export async function runTesterSession(opts: RunTesterSessionOptions): Promise<T
       }
       if (!applied.keepPlaying) break;
       await game.step();
+      // A tap is over the moment its step is. Let go here rather than at the
+      // top of the next decision, which is where a HOLD is let go, so the next
+      // picture shows the game after a press instead of during one. That
+      // difference is the entire reason the two verbs exist.
+      for (const name of holds.tapActions) await game.setActionUp(name).catch(() => {});
+      holds.tapActions.clear();
+      for (const key of holds.tapKeys) await game.setKeyUp?.(key).catch(() => {});
+      holds.tapKeys.clear();
+      for (const name of holds.tapAxes) await game.setAxis(name, 0).catch(() => {});
+      holds.tapAxes.clear();
       if (turn === maxSteps) stopped = 'budget';
       if (signal?.aborted) {
         stopped = 'user';
         break;
       }
     }
-    for (const name of held) await game.setActionUp(name).catch(() => {});
-    for (const key of heldKeys) await game.setKeyUp?.(key).catch(() => {});
-    for (const name of heldAxes) await game.setAxis(name, 0).catch(() => {});
+    for (const name of [...holds.actions, ...holds.tapActions]) await game.setActionUp(name).catch(() => {});
+    for (const key of [...holds.keys, ...holds.tapKeys]) await game.setKeyUp?.(key).catch(() => {});
+    for (const name of [...holds.axes, ...holds.tapAxes]) await game.setAxis(name, 0).catch(() => {});
   } catch (err) {
     crash = err as Error;
     stopped = 'error';
@@ -618,7 +692,10 @@ export async function runTesterSession(opts: RunTesterSessionOptions): Promise<T
       regression = parsed.regression;
       verdictGiven = true;
 
-      const planReply = await ask(planPrompt);
+      // The record of how it played rides with the question it could get wrong
+      // by forgetting, and only when there is something in it to say.
+      const record = howYouPlayed({ tapped: [...usage.tapped], held: [...usage.held] });
+      const planReply = await ask(record === '' ? planPrompt : `${planPrompt}\n\n${record}`);
       transcript.push('## What it would change', '', planReply.trim(), '');
       proposals = parseProposals(planReply);
 
