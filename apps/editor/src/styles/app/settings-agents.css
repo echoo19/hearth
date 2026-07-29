@@ -708,6 +708,66 @@
   margin-top: 0;
 }
 
+/* --- Folded detail --------------------------------------------------------- */
+
+/* Two true things that were printed open and turned a two-field form into a
+   page of grey text. Folded, not deleted: they are load-bearing when you want
+   them and noise when you do not, and nobody needs either before they have
+   registered anything. */
+.set-agent-details {
+  margin-top: 10px;
+}
+
+.set-agent-details > summary {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  width: fit-content;
+  padding: 2px 0;
+  font-size: var(--text-xs);
+  color: var(--ink-mute);
+  cursor: pointer;
+  /* The default marker sits on the baseline and drags the row's height around
+     as it rotates. A caret of our own, in the same weight as the pane's other
+     disclosure, keeps the line still. */
+  list-style: none;
+}
+
+.set-agent-details > summary::-webkit-details-marker {
+  display: none;
+}
+
+.set-agent-details > summary::before {
+  content: '';
+  width: 0;
+  height: 0;
+  border-left: 4px solid currentColor;
+  border-top: 3.5px solid transparent;
+  border-bottom: 3.5px solid transparent;
+  transition: transform 120ms ease;
+}
+
+.set-agent-details[open] > summary::before {
+  transform: rotate(90deg);
+}
+
+.set-agent-details > summary:hover,
+.set-agent-details[open] > summary {
+  color: var(--ink);
+}
+
+.set-agent-details > summary:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+  border-radius: var(--radius-sm);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .set-agent-details > summary::before {
+    transition: none;
+  }
+}
+
 /* --- Footnotes ------------------------------------------------------------ */
 
 .set-agent-foot {

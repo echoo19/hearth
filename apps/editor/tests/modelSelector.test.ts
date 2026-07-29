@@ -19,7 +19,6 @@
  */
 import { describe, expect, it } from 'vitest';
 import {
-  AUTOMATIC_MODEL,
   FALLBACK_MODELS,
   choiceForModel,
   isChosen,
@@ -137,23 +136,26 @@ describe('modelGroups', () => {
     expect(groups.map((g) => g.backend)).toEqual(['Claude Agent SDK', 'Codex CLI']);
   });
 
-  it('leads every group with the row that hands the choice back', () => {
+  it('offers no automatic row, so every row names the model that would answer', () => {
+    // The row that handed the choice back to the backend is gone. It read as a
+    // sensible default and was in practice the state nobody left, so the pill
+    // said "Claude" and which Claude was a fact nothing on screen carried.
     for (const group of modelGroups(bothReady())) {
-      expect(group.models[0]).toEqual(AUTOMATIC_MODEL);
-      expect(group.models.filter((m) => m.id === '')).toHaveLength(1);
+      expect(group.models.filter((m) => m.id === '')).toHaveLength(0);
     }
   });
 
   it('falls back to the curated Claude list before the server has described one', () => {
     const groups = modelGroups(null);
-    expect(groups[0].models.slice(1)).toEqual(FALLBACK_MODELS.anthropic);
+    expect(groups[0].models).toEqual(FALLBACK_MODELS.anthropic);
     expect(groups[0].models.map((m) => m.label)).toContain('Opus 5');
   });
 
   it('offers no invented ChatGPT model before the binary has been asked', () => {
-    // Which models a codex build can run is the binary's answer. Until it has
-    // given one there is exactly one honest row: let codex decide.
-    expect(modelGroups(null)[1].models).toEqual([AUTOMATIC_MODEL]);
+    // Which models a codex build can run is the binary's answer, and with the
+    // automatic row gone there is no honest row at all until it gives one. The
+    // menu says "No models reported" rather than inventing an id that fails.
+    expect(modelGroups(null)[1].models).toEqual([]);
   });
 
   it('prefers what the server curated over the fallback', () => {
@@ -162,32 +164,34 @@ describe('modelGroups', () => {
         anthropic: { hasKey: true, source: 'project', models: [{ id: 'claude-x', label: 'X' }] },
       }),
     );
-    expect(groups[0].models).toEqual([AUTOMATIC_MODEL, { id: 'claude-x', label: 'X' }]);
+    expect(groups[0].models).toEqual([{ id: 'claude-x', label: 'X' }]);
   });
 
   it('ignores an empty curated list rather than showing an empty group', () => {
     const groups = modelGroups(providers({ anthropic: { hasKey: true, source: 'project', models: [] } }));
-    expect(groups[0].models.slice(1)).toEqual(FALLBACK_MODELS.anthropic);
+    expect(groups[0].models).toEqual(FALLBACK_MODELS.anthropic);
   });
 
-  it('renames a backend’s own passthrough row instead of showing two of them', () => {
+  it('drops a backend’s own passthrough row rather than offering it', () => {
+    // codex sends an empty-id "whatever I default to" row. It is the same
+    // choice the automatic row was, arriving from the other direction, and it
+    // is filtered for the same reason.
     const status = providers({
       openai: { ...providers().openai, models: [{ id: '', label: 'Default' }, ...CODEX_MODELS] },
     });
     const openai = modelGroups(status)[1];
-    expect(openai.models.filter((m) => m.id === '')).toEqual([AUTOMATIC_MODEL]);
-    expect(openai.models.map((m) => m.id)).toEqual(['', 'gpt-5.6-sol', 'gpt-5.4-mini']);
+    expect(openai.models.map((m) => m.id)).toEqual(['gpt-5.6-sol', 'gpt-5.4-mini']);
   });
 
   it('never lists a model under the agent that cannot run it', () => {
     const groups = modelGroups(bothReady());
     const claude = groups[0].models.map((m) => m.id);
     const chatgpt = groups[1].models.map((m) => m.id);
-    expect(claude).toEqual(['', 'claude-opus-5', 'claude-sonnet-5']);
-    expect(chatgpt).toEqual(['', 'gpt-5.6-sol', 'gpt-5.4-mini']);
-    // The one id they share is the passthrough row, which means something
-    // different — and correct — on each side.
-    expect(claude.filter((id) => chatgpt.includes(id))).toEqual(['']);
+    expect(claude).toEqual(['claude-opus-5', 'claude-sonnet-5']);
+    expect(chatgpt).toEqual(['gpt-5.6-sol', 'gpt-5.4-mini']);
+    // Nothing at all in common now that the passthrough row is filtered out of
+    // both sides: every row in this menu is one named model under one backend.
+    expect(claude.filter((id) => chatgpt.includes(id))).toEqual([]);
   });
 
   it('carries the availability of each group so the header can state it', () => {

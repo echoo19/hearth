@@ -59,6 +59,7 @@ import {
   createChat,
   getChat,
   listChats,
+  markChatUsed,
   prunePendingChats,
   readTranscript,
   safeChatId,
@@ -1180,6 +1181,19 @@ export function attachWebSocket(
               const session = ptySessions.get(ws);
               if (session?.handle) ptyManager.write(session.key, frame.data);
               else if (session) session.pendingInput.push(frame.data);
+              // Typing at the prompt is a terminal conversation's first
+              // message: it is what turns a shell somebody opened and looked at
+              // into a session they had. See `markChatUsed`. Off the keystroke
+              // path entirely — queued on this socket's conversation chain and
+              // not awaited, because a keystroke must reach the pty at typing
+              // speed and nothing here changes what it does. Almost every call
+              // is a no-op read on an already-listed conversation.
+              const open = socketChat.get(ws);
+              if (session && open !== undefined) {
+                enqueueChatOp(ws, async () => {
+                  if (await markChatUsed(root, open)) await announceChats(root);
+                });
+              }
             }
             break;
           case 'pty-resize':

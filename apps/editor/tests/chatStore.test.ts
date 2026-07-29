@@ -23,6 +23,7 @@ import {
   deleteChat,
   getChat,
   listChats,
+  markChatUsed,
   parseChatIndex,
   parseTranscript,
   prunePendingChats,
@@ -380,9 +381,26 @@ describe('a chat nobody has spoken into', () => {
     expect((await listChats(root)).map((row) => row.id)).toEqual([old.id]);
   });
 
-  it('is the opposite of a terminal session, which IS a conversation the moment it exists', async () => {
-    const terminal = await createChat(root, { kind: 'terminal' });
+  it('is the same for a terminal, which is a session only once it is typed into', async () => {
+    // This used to assert the opposite, on the grounds that a terminal's shell
+    // is running the moment the record exists. True, and beside the point:
+    // opening a terminal and looking at the prompt is the same act as opening
+    // a chat and not typing, and it left a row in the rail every time.
+    const terminal = await createChat(root, { kind: 'terminal', title: 'Claude Code' });
+    expect(await listChats(root)).toEqual([]);
+    // A title does not make it real either. A terminal is named after the CLI
+    // Hearth is about to type, which is decided before anything has happened.
+    expect(await markChatUsed(root, terminal.id)).toBe(true);
     expect((await listChats(root)).map((row) => row.id)).toEqual([terminal.id]);
+    // Idempotent: every keystroke after the first calls this and does nothing.
+    expect(await markChatUsed(root, terminal.id)).toBe(false);
+    expect((await listChats(root)).map((row) => row.id)).toEqual([terminal.id]);
+  });
+
+  it('answers false for a conversation that is not there, rather than throwing', async () => {
+    // Called from a keystroke handler: a terminal whose conversation was
+    // deleted in another window must not fail the key.
+    expect(await markChatUsed(root, 'de1e7ed0-0000-4000-8000-000000000000')).toBe(false);
   });
 
   it('never carries the flag out of the store, so nothing else has to know', async () => {
@@ -573,6 +591,7 @@ describe('an index.json that was torn in half', () => {
 
   it('rebuilds a terminal session and a codex thread, which no transcript holds', async () => {
     const terminal = await createChat(root, { kind: 'terminal', title: 'my shell' });
+    await markChatUsed(root, terminal.id);
     const chat = await createChat(root);
     await appendChatRecord(root, chat.id, { role: 'user', ts: '2026-01-01T00:00:00.000Z', text: 'hello there' });
     await setChatThreadId(root, chat.id, 'thread-abc-123');

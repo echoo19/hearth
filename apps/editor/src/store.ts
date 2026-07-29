@@ -570,6 +570,20 @@ export interface AppState {
    * Console and change nothing — see planTerminalLaunch for which is which.
    */
   startTerminalCli(cli: AgentCliInfo): void;
+  /**
+   * A shell, with nothing typed into it.
+   *
+   * The row that makes the CLI list above it a convenience rather than a
+   * boundary. Every other way into the terminal starts a named program, so a
+   * menu of named programs read as the set of agents Hearth can run — and the
+   * terminal has always run whatever you type. This is that, offered.
+   *
+   * Deliberately does NOT call `markAgentCli`: Hearth typed nothing, so it
+   * knows nothing about what ends up running here, and claiming otherwise
+   * would block the next launch with a refusal naming a program the user never
+   * started.
+   */
+  openTerminal(): void;
   setPaneTab(tab: PaneTab): void;
   /**
    * Ask the tester to play. Never called by anything but a person: the tester
@@ -2668,6 +2682,32 @@ export const useApp = create<AppState>((set, get) => {
       // The session gets a conversation of its own, named after the CLI, so it
       // is listed and reopenable like everything else the user has made.
       enterTerminalConversation(cli.label);
+    },
+
+    openTerminal() {
+      const state = get();
+      if (state.projectPath === null) {
+        state.log('error', 'app', 'Open a project first. The terminal runs in the project folder.');
+        return;
+      }
+      const session = getAgentSessionSummary();
+      // Already live: this is a way back to it, not a second one. Same rule
+      // `planTerminalLaunch` applies, and the reason a running agent is not
+      // disturbed here — nothing is typed, so there is nothing to interrupt.
+      if (session.status === 'running' || session.status === 'reconnecting') {
+        enterTerminalConversation('Terminal');
+        return;
+      }
+      if (state.wsStatus !== 'connected') {
+        state.log('error', 'app', 'Terminal: the connection is down. Wait a moment and try again.');
+        return;
+      }
+      if (!state.sendFrame({ type: 'pty-start', sessionId: ensureAgentPtySessionId() })) {
+        state.log('error', 'app', 'Terminal: the connection is down. Wait a moment and try again.');
+        return;
+      }
+      markAgentStarted('shell');
+      enterTerminalConversation('Terminal');
     },
 
     setPaneTab(tab) {

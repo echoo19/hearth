@@ -389,20 +389,28 @@ export function effortDisplayName(id: string): string {
 
 /**
  * What the selector pill says. Resolves the model id against the providers
- * read-out when available, falls back to known labels, then to the raw id,
- * then to the provider's name; a null choice reads as "Auto".
+ * read-out when available, falls back to known labels, then to the raw id.
+ *
+ * NOTHING CHOSEN READS AS AN INSTRUCTION, not as a setting. It used to say
+ * "Auto", and a stored choice with a null model used to say the provider's
+ * name — so the pill read "Claude" while which Claude was a fact nothing on
+ * screen carried. There is no automatic row in the menu any more, so both of
+ * those states are now "not chosen yet", and the pill says the one thing that
+ * is true and useful about them: pick one.
  */
+export const NO_MODEL_CHOSEN_LABEL = 'Choose a model';
+
 export function modelChoiceLabel(
   choice: AgentChoice | null,
   providers: ChatProviderStatus | null,
   agents: readonly CustomAgentInfo[] = customAgents,
 ): string {
-  if (!choice) return 'Auto';
+  if (!choice) return NO_MODEL_CHOSEN_LABEL;
   // A named agent outranks the model half, because it is what would answer.
   // Falls back to the id rather than to a model name: the pill saying "Opus 5"
   // while a registered program answers is the lie this whole path avoids.
   if (choice.agentId) return chosenCustomAgent(choice, agents)?.label ?? choice.agentId;
-  if (choice.model === null) return providerDisplayName(choice.provider);
+  if (choice.model === null) return NO_MODEL_CHOSEN_LABEL;
   const described = providerModels(choice.provider, providers).find((m) => m.id === choice.model);
   return described?.label ?? KNOWN_MODEL_LABELS[choice.model] ?? choice.model;
 }

@@ -31,6 +31,7 @@ import {
   createChat,
   defaultChatTitle,
   listChats,
+  markChatUsed,
   parseChatIndex,
   renameChat,
   setChatThreadId,
@@ -100,6 +101,11 @@ describe('a terminal record', () => {
     const created = await createChat(root, { kind: 'terminal' });
     expect(created.kind).toBe('terminal');
 
+    // Listed only once it has been typed into. A terminal is pending from
+    // creation for the same reason a chat is: a shell somebody opened and
+    // looked at is not a session they had.
+    expect(await listChats(root)).toEqual([]);
+    await markChatUsed(root, created.id);
     const [listed] = await listChats(root);
     expect(listed.kind).toBe('terminal');
     expect(listed.id).toBe(created.id);
@@ -107,6 +113,7 @@ describe('a terminal record', () => {
 
   it('survives being written and parsed again', async () => {
     const created = await createChat(root, { kind: 'terminal', title: 'Claude Code' });
+    await markChatUsed(root, created.id);
     const raw: unknown = JSON.parse(await fsp.readFile(chatIndexPath(root), 'utf8'));
     const [parsed] = parseChatIndex(raw);
     expect(parsed).toEqual(created);
@@ -133,6 +140,7 @@ describe('a terminal record', () => {
 describe('the kind cannot be changed once the record exists', () => {
   it('survives a rename', async () => {
     const chat = await createChat(root, { kind: 'terminal' });
+    await markChatUsed(root, chat.id);
     const renamed = await renameChat(root, chat.id, 'The long build');
     expect(renamed?.title).toBe('The long build');
     expect(renamed?.kind).toBe('terminal');

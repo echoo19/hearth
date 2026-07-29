@@ -49,22 +49,54 @@ afterEach(async () => {
 });
 
 describe('the registry', () => {
-  it('knows the three CLIs, in a fixed order, each with a command to type', () => {
-    expect(AGENT_CLIS.map((cli) => cli.id)).toEqual(['claude', 'codex', 'hermes']);
-    expect(AGENT_CLIS.map((cli) => cli.command)).toEqual(['claude', 'codex', 'hermes']);
-    expect(AGENT_CLIS.map((cli) => cli.label)).toEqual(['Claude Code', 'Codex', 'Hermes']);
+  it('names the field rather than the two harnesses Hearth also drives in chat', () => {
+    // The assertion that matters is the SHAPE of this list, not its contents:
+    // it is a convenience list for a terminal that runs anything, so it has to
+    // be long enough that nobody reads it as the set of agents Hearth works
+    // with. Two entries did read that way. New entries are welcome and must
+    // not have to edit a test to land.
+    expect(AGENT_CLIS.length).toBeGreaterThanOrEqual(6);
+    const ids = AGENT_CLIS.map((cli) => cli.id);
+    // The two Hearth ships a chat driver for open the list, because they are
+    // the two a reader is most likely to be looking for.
+    expect(ids.slice(0, 2)).toEqual(['claude', 'codex']);
+    // ...and the list is not only those two, plus one.
+    expect(ids).toEqual(expect.arrayContaining(['gemini', 'opencode', 'aider', 'hermes']));
+  });
+
+  it('gives every entry a command to type and a name to show', () => {
+    for (const cli of AGENT_CLIS) {
+      expect(cli.command.trim(), cli.id).not.toBe('');
+      expect(cli.label.trim(), cli.id).not.toBe('');
+      // A command with a space in it would be typed into a shell verbatim and
+      // is nearly always a whole command line in the wrong field.
+      expect(cli.command, cli.id).not.toMatch(/\s/);
+    }
   });
 
   it('claims an install hint only where Hearth actually knows one', () => {
     // Hermes is a binary the user has. Hearth knows its name and nothing else,
-    // and inventing a package to install would be inventing a capability.
-    const hermes = AGENT_CLIS.find((cli) => cli.id === 'hermes');
-    expect(hermes?.installHint).toBeNull();
+    // and inventing a package to install would be inventing a capability. Same
+    // for anything that installs through a shell script or a platform tool:
+    // the hint is a command Hearth tells someone to run, so a guess is worse
+    // than silence.
+    expect(AGENT_CLIS.find((cli) => cli.id === 'hermes')?.installHint).toBeNull();
+    expect(AGENT_CLIS.find((cli) => cli.id === 'aider')?.installHint).toBeNull();
     expect(AGENT_CLIS.find((cli) => cli.id === 'codex')?.installHint).toBe('npm i -g @openai/codex');
+    // Every hint that IS given must be a single runnable line, not prose.
+    for (const cli of AGENT_CLIS) {
+      if (cli.installHint === null) continue;
+      expect(cli.installHint, cli.id).not.toMatch(/\n/);
+      expect(cli.installHint.trim(), cli.id).toBe(cli.installHint);
+    }
   });
 
   it('gives every entry its own id', () => {
     expect(new Set(AGENT_CLIS.map((cli) => cli.id)).size).toBe(AGENT_CLIS.length);
+  });
+
+  it('gives every entry its own command, so two rows cannot mean one binary', () => {
+    expect(new Set(AGENT_CLIS.map((cli) => cli.command)).size).toBe(AGENT_CLIS.length);
   });
 });
 
@@ -113,10 +145,12 @@ describe('detectAgentClis', () => {
     await writeBin(binDir, 'claude', 0o755);
     const found = await detectAgentClis({ PATH: binDir });
 
-    expect(found.map((cli) => cli.id)).toEqual(['claude', 'codex', 'hermes']);
-    expect(found.map((cli) => cli.installed)).toEqual([true, false, false]);
-    expect(found[0].path).toBe(path.join(binDir, 'claude'));
-    expect(found[1].path).toBeNull();
+    // The whole registry, in registry order, whatever it currently holds.
+    expect(found.map((cli) => cli.id)).toEqual(AGENT_CLIS.map((cli) => cli.id));
+    // Exactly the one that is really there, and it is not reported by position.
+    expect(found.filter((cli) => cli.installed).map((cli) => cli.id)).toEqual(['claude']);
+    expect(found.find((cli) => cli.id === 'claude')?.path).toBe(path.join(binDir, 'claude'));
+    expect(found.find((cli) => cli.id === 'codex')?.path).toBeNull();
   });
 
   it('reports nothing installed when PATH is empty rather than failing', async () => {
@@ -147,7 +181,7 @@ describe('detectAgentClis', () => {
     expect(result.status).toBe(200);
     const body = result.body as { ok: boolean; clis: { id: string }[] };
     expect(body.ok).toBe(true);
-    expect(body.clis.map((cli) => cli.id)).toEqual(['claude', 'codex', 'hermes']);
+    expect(body.clis.map((cli) => cli.id)).toEqual(AGENT_CLIS.map((cli) => cli.id));
   });
 });
 
@@ -157,7 +191,13 @@ describe('the Terminal group’s read-out', () => {
     // it: one is Hearth's problem, the other is the user's.
     expect(agentCliNote({ state: 'loading' })).toBe('Checking your PATH…');
     expect(agentCliNote({ state: 'failed' })).toMatch(/could not read your PATH/);
-    expect(agentCliNote({ state: 'ready', clis: [] })).toBe('Your own CLI, running in a shell.');
+    // The ready sentence has one job beyond not being a status word: it has to
+    // say the list under it is not the boundary. A machine with none of
+    // Hearth's shortlist installed can still run anything, and this is the only
+    // line on that side of the menu that gets to say so.
+    const ready = agentCliNote({ state: 'ready', clis: [] });
+    expect(ready).toMatch(/any CLI/i);
+    expect(ready).not.toMatch(/PATH/);
   });
 });
 

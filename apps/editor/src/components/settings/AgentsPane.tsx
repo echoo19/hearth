@@ -18,11 +18,15 @@
  * per model. Nothing about a harness appears anywhere but inside it, which is
  * what keeps this from becoming a wall of unrelated controls.
  *
- * THE TERMINAL IS NOT HERE, deliberately. It is free: the user runs whatever
- * CLI they like in a shell, and Hearth types a command and gets out of the
- * way. There is nothing to connect, nothing to pair, and nothing to configure,
- * so the pane says that in one line at the foot rather than growing a section
- * that would imply otherwise.
+ * THE TERMINAL HAS A CARD, and it has no controls on it (`TerminalSection`).
+ * That combination is the correction to what used to be here: one grey line at
+ * the very foot of the pane, under two other grey lines, saying the terminal
+ * was free. It is free — a shell in the open project, running as you, needing
+ * nothing connected or paired or configured — which is exactly why it is the
+ * broadest thing in the app and why burying it made a pane whose first two
+ * cards are named vendors read as "Hearth works with Claude and ChatGPT". It
+ * is the answer to "can I use X" for every X, so it says so at the size that
+ * claim deserves, and it still grows no controls, because there are none.
  *
  * WHAT IS LISTED, and why nothing else is. A harness row appears here only if
  * Hearth has a driver that can actually answer a turn with it — today the
@@ -31,6 +35,11 @@
  * would put a Connect button on screen that saves a credential nothing reads.
  * The registry is `AGENT_BACKENDS` in chat/modelChoice; adding an entry there
  * is what adding a harness looks like from this file.
+ *
+ * That shortlist is a fact about Hearth's DRIVERS and must never be allowed to
+ * read as the set of agents that work here, which is what the two sections
+ * below it exist to prevent: your own agent, registered, answering in the
+ * conversation; and the terminal, running anything at all.
  *
  * AND THEN THERE IS THE THIRD CARD, which is why that shortlist is honest
  * rather than limiting: `CustomAgentsSection` below, where the user registers
@@ -122,7 +131,7 @@ import {
   useModelChoice,
 } from '../../chat/modelChoice';
 import { HEARTH_AGENT_ENV_VARS } from '../../../server/chatDrivers/customWire';
-import { NOTHING_DISABLED, choiceForModel, modelGroups } from '../chat/ModelSelector';
+import { NOTHING_DISABLED, choiceForModel, modelGroups, useAgentClis } from '../chat/ModelSelector';
 import { useApp } from '../../store';
 import type {
   AgentChoice,
@@ -204,6 +213,17 @@ const CLOSE_SETTINGS_EVENT = 'hearth:close-settings';
  */
 export const ANTHROPIC_KEYS_URL = 'https://console.anthropic.com/settings/keys';
 export const OPENAI_KEYS_URL = 'https://platform.openai.com/api-keys';
+
+/**
+ * The protocol, written up.
+ *
+ * A link rather than the four paragraphs that used to be printed here. This
+ * pane's job is to get an agent registered; explaining stdin framing on the
+ * way past made the screen a wall of prose with a button buried in it, and
+ * "See docs/custom-agents.md" asked someone in a windowed app with no address
+ * bar to go and find a file in a repository they may not have cloned.
+ */
+export const CUSTOM_AGENTS_DOCS_URL = 'https://hearthengine.com/docs/custom-agents';
 
 export const KEY_SOURCE_URL: Record<ChatProvider, string> = {
   anthropic: ANTHROPIC_KEYS_URL,
@@ -863,9 +883,8 @@ function CustomAgentsSection() {
         </span>
       </div>
       <p className="set-agent-hint">
-        Any program that speaks the Hearth agent protocol can answer here. Hearth spawns it in the open project, writes
-        your message to its stdin as one line of JSON, and renders the events it writes back. A thirty line wrapper
-        around your own harness is enough. See docs/custom-agents.md.
+        Any program that speaks the Hearth agent protocol answers in the conversation, like the two above.{' '}
+        <ExternalLink href={CUSTOM_AGENTS_DOCS_URL}>How to write one</ExternalLink>
       </p>
 
       <div className="set-agents" role="list">
@@ -990,23 +1009,22 @@ function CustomAgentsSection() {
         </div>
       )}
 
-      <p className="set-agent-hint">
-        Hearth adds {HEARTH_AGENT_ENV_VARS.map((name) => name).join(', ')} to the environment and passes on everything
-        your login shell already has, which is the same environment the terminal here runs with. It adds no keys of its
-        own.
-      </p>
-      <p className="set-agent-hint">
-        Registered agents are kept{' '}
-        {file === '' ? (
-          'in your home folder, for this machine rather than for one project'
-        ) : (
-          <>
-            in <span className="mono">{file}</span>, for this machine rather than for one project
-          </>
-        )}
-        . They are deliberately never written into a project: a folder that carried a command line would run it on
-        whoever opened the folder next.
-      </p>
+      {/* The two facts worth keeping, folded away. Both are real and both were
+          load-bearing prose on this screen; neither is something you need
+          before you have registered anything, and printing them open turned a
+          two-field form into a page of small grey text. */}
+      <details className="set-agent-details">
+        <summary>Where these are kept, and what they run with</summary>
+        <p className="set-agent-hint">
+          Kept {file === '' ? 'in your home folder' : <span className="mono">{file}</span>}, for this machine rather
+          than for one project. Never written into a project: a folder carrying a command line would run it on whoever
+          opened the folder next.
+        </p>
+        <p className="set-agent-hint">
+          Hearth adds {HEARTH_AGENT_ENV_VARS.join(', ')} and passes on everything your login shell has. It adds no keys
+          of its own.
+        </p>
+      </details>
 
       <ConfirmDialog
         open={confirming !== null}
@@ -1037,6 +1055,46 @@ function CustomAgentsSection() {
         }}
         onCancel={() => setRemoving(null)}
       />
+    </section>
+  );
+}
+
+/**
+ * The terminal, said plainly and at full size.
+ *
+ * Nothing here is a control, which is the point: there is nothing to connect,
+ * nothing to pair, and nothing to configure. It is a shell in the open project
+ * running as you, so the honest description of what it supports is "whatever
+ * you have", and the named list is a keyboard shortcut rather than a
+ * compatibility matrix.
+ *
+ * The names are the SERVER's list (server/agentClis.ts), read the same way the
+ * composer's menu reads it, so this cannot drift into advertising a row the
+ * menu does not offer. Install state is deliberately not shown: this card is
+ * about what the terminal can run, not about what today's machine happens to
+ * have, and greying out most of the list would say the opposite of what the
+ * card is for.
+ */
+function TerminalSection() {
+  const clis = useAgentClis();
+  const names = clis.state === 'ready' ? clis.clis.map((cli) => cli.label) : [];
+  return (
+    <section className="set-agent-section">
+      <div className="set-agent-section-head">
+        <h3 className="set-agent-section-title">Terminal</h3>
+        <span className="set-agent-count">Nothing to set up</span>
+      </div>
+      <p className="set-agent-hint">
+        The terminal is a real shell in your open project, running as you. Any agent CLI you already have works there,
+        whether or not Hearth has heard of it. Start one from the model menu on the composer, or open a terminal and
+        type it yourself.
+      </p>
+      {names.length > 0 && (
+        <p className="set-agent-hint">
+          Hearth can type these for you: {names.join(', ')}. Anything else, you type. There is no difference to how it
+          runs.
+        </p>
+      )}
     </section>
   );
 }
@@ -1947,14 +2005,15 @@ export function AgentsPane() {
           it describes nothing and prints the command instead. */}
       <CustomAgentsSection />
 
-      <p className="set-agent-foot">
-        The two harnesses above are the ones Hearth ships a driver for, so a row appearing there means it works rather
-        than that it is planned. Anything else you use is your own agent, registered above.
-      </p>
-      <p className="set-agent-foot">
-        The terminal is yours and needs nothing set up here. It runs whatever agent CLI you already have. The model
-        menu can start the few Hearth knows by name; any other one you type in yourself, and it works the same.
-      </p>
+      {/* THE TERMINAL, given a card of its own.
+          It used to be one grey line at the very foot of this pane, under two
+          other grey lines, on a screen whose first two cards are named vendors
+          — so the pane read as "Hearth works with Claude and ChatGPT", and the
+          single most open thing in the app was the least visible thing on the
+          page. It is the answer to "can I use X", for every X, and it needs
+          nothing set up, so it says that at the size that claim deserves. */}
+      <TerminalSection />
+
       <p className="set-agent-foot">
         Keys are written to <span className="mono">.hearth/app.json</span> in the open project and are never read back
         into this pane. Which models you switched off is saved{' '}

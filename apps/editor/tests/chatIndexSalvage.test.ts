@@ -27,6 +27,7 @@ import {
   createChat,
   deleteChat,
   listChats,
+  markChatUsed,
   prunePendingChats,
   renameChat,
   setChatThreadId,
@@ -138,6 +139,10 @@ describe('a torn index read while the folder cannot be listed', () => {
 describe('a torn index with one unbalanced quote in it', () => {
   it('keeps the terminal session and the codex thread the rows are the only record of', async () => {
     const terminal = await createChat(root, { kind: 'terminal', title: 'my shell' });
+    // Used, so it is a session someone had rather than a shell they glanced at.
+    // A terminal is pending until its first keystroke; salvage has to carry a
+    // real one through, which is what this is here to prove.
+    await markChatUsed(root, terminal.id);
     const chat = await createChat(root);
     await appendChatRecord(root, chat.id, { role: 'user', ts: '2026-01-01T00:00:00.000Z', text: 'hello there' });
     await setChatThreadId(root, chat.id, 'thread-abc-123');
@@ -161,6 +166,8 @@ describe('a torn index with one unbalanced quote in it', () => {
   it('loses only the row the damage is inside', async () => {
     const first = await createChat(root, { kind: 'terminal', title: 'first shell' });
     const second = await createChat(root, { kind: 'terminal', title: 'second shell' });
+    await markChatUsed(root, first.id);
+    await markChatUsed(root, second.id);
 
     const whole = await fsp.readFile(chatIndexPath(root), 'utf8');
     // Whichever row the file happens to hold second: the damage below lands in

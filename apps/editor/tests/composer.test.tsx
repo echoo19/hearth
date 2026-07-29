@@ -225,10 +225,12 @@ describe('the + menu', () => {
 });
 
 describe('the model pill', () => {
-  it('reads "Auto" until a choice is made, and groups the menu by vendor', () => {
+  it('asks for a model until one is chosen, and groups the menu by vendor', () => {
     render(<Composer />);
     const pill = screen.getByRole('button', { name: 'Model' });
-    expect(pill.textContent).toContain('Auto');
+    // Not "Auto". There is no automatic row to be on, so nothing chosen is an
+    // instruction rather than a setting: the pill says what to do about it.
+    expect(pill.textContent).toContain('Choose a model');
 
     fireEvent.click(pill);
     // The picker answers "how do you want to work", not just "which model":

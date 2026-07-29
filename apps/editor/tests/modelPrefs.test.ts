@@ -258,23 +258,24 @@ describe('a switched-off model leaves the picker', () => {
   it('is gone from its group, and only from its group', () => {
     const off = new Set(['anthropic:claude-sonnet-5']);
     const groups = modelGroups(providers(), off);
-    expect(groups[0].models.map((m) => m.id)).toEqual(['', 'claude-opus-5']);
+    expect(groups[0].models.map((m) => m.id)).toEqual(['claude-opus-5']);
     // The other harness is untouched: the key is scoped by provider.
-    expect(groups[1].models.map((m) => m.id)).toEqual(['', 'gpt-5.6-sol', 'gpt-5.4-mini']);
+    expect(groups[1].models.map((m) => m.id)).toEqual(['gpt-5.6-sol', 'gpt-5.4-mini']);
   });
 
-  it('never removes the row that hands the choice back', () => {
-    // Automatic is not a model. Switching every named model off still leaves a
-    // harness able to answer, which is what makes the guard below a courtesy
-    // rather than the only thing standing between the user and a dead menu.
+  it('can be switched off down to an empty group, which is why the guard exists', () => {
+    // There is no automatic row to fall back on any more, so switching every
+    // named model off really does leave a harness with nothing to drive. That
+    // makes `canSetModelEnabled` the only thing standing between the user and
+    // a dead menu rather than a courtesy, and the menu says "No models
+    // reported" rather than showing a header over nothing.
     const off = new Set(['openai:gpt-5.6-sol', 'openai:gpt-5.4-mini']);
-    expect(modelGroups(providers(), off)[1].models.map((m) => m.id)).toEqual(['']);
+    expect(modelGroups(providers(), off)[1].models).toEqual([]);
   });
 
   it('shows everything again when Settings asks for the unfiltered catalogue', () => {
     const off = new Set(['anthropic:claude-sonnet-5']);
     expect(modelGroups(providers(), NOTHING_DISABLED)[0].models.map((m) => m.id)).toEqual([
-      '',
       'claude-opus-5',
       'claude-sonnet-5',
     ]);
@@ -284,7 +285,7 @@ describe('a switched-off model leaves the picker', () => {
 
   it('keeps an unknown switched-off id out without disturbing the rest', () => {
     const off = new Set(['anthropic:claude-opus-4-that-does-not-exist']);
-    expect(modelGroups(providers(), off)[0].models.map((m) => m.id)).toEqual(['', 'claude-opus-5', 'claude-sonnet-5']);
+    expect(modelGroups(providers(), off)[0].models.map((m) => m.id)).toEqual(['claude-opus-5', 'claude-sonnet-5']);
   });
 });
 

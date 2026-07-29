@@ -756,12 +756,28 @@ export function createChat(
       createdAt: now,
       updatedAt: now,
     };
-    // Pending unless the record is already something someone asked for. A
-    // terminal session IS the conversation the moment it exists (its shell is
-    // running, and no first message will ever name it), and a chat created
-    // with a title was named on purpose. An unnamed chat has nothing in it and
-    // nothing to call it, so it waits to be spoken into.
-    if (kind === 'chat' && named === '') row.pending = true;
+    // Pending until someone actually uses it, and that now includes a terminal.
+    //
+    // It used to read "a terminal session IS the conversation the moment it
+    // exists", on the grounds that its shell is running and no first message
+    // will ever name it. Both halves are true and the conclusion was still
+    // wrong: opening a terminal and looking at the prompt is the same act as
+    // opening a chat and not typing, and it left a row in the rail for it every
+    // single time. A shell that was started and never typed into is not a
+    // session anyone had.
+    //
+    // What clears it is the first thing typed at the pty (`markChatUsed`, from
+    // the socket's `pty-input`), which is this kind's equivalent of a first
+    // message.
+    //
+    // A terminal is pending even when it HAS a title, which is the one place
+    // the two kinds differ: a terminal's title is the CLI Hearth is about to
+    // type, decided before anything has happened, so it says nothing about
+    // whether the session was used. A chat's title, by contrast, is only ever
+    // set by something that already knows what the conversation is for
+    // (`approveProposals` writes its first message in the same breath), so a
+    // named chat is real from the start.
+    if (kind === 'terminal' || named === '') row.pending = true;
     await writeIndexUnlocked(root, [row, ...(await readIndexForWrite(root))]);
     // Touch the transcript so an opened-but-silent chat reads back as empty
     // rather than missing.
@@ -770,6 +786,49 @@ export function createChat(
     // sends it to a window, and whether the index still hides it is between
     // this module and the index.
     return withoutPending(row);
+  });
+}
+
+/**
+ * This conversation has now been used. Clears `pending`, once.
+ *
+ * A TERMINAL's first message. A chat joins the lists when a user record lands
+ * (`appendChatRecord`), and a terminal has no records at all — its scrollback
+ * is the pty's, not the transcript's — so without this it would either be
+ * listed from the moment it was created, which is what it used to do and what
+ * left a row behind for every shell anyone glanced at, or never be listed at
+ * all.
+ *
+ * The trigger is the first byte the person types at the prompt, which is the
+ * closest true equivalent of a first message: the shell's own output is not
+ * it, since a prompt draws itself whether or not anybody is there.
+ *
+ * Cheap and idempotent. Almost every call is on a conversation that is already
+ * listed — every keystroke after the first — so it reads, sees no flag, and
+ * writes nothing.
+ *
+ * Answers false when there was nothing to do, including for an id that no
+ * longer has a row: this is called from a keystroke handler, and a terminal
+ * whose conversation was deleted in another window is not an error worth
+ * failing a keystroke over.
+ */
+export function markChatUsed(root: string, chatId: string): Promise<boolean> {
+  const id = safeChatId(chatId);
+  if (!id) return Promise.resolve(false);
+  return serialize(root, async () => {
+    const read = await readIndexUnlocked(root);
+    const index = read.rows.findIndex((chat) => chat.id === id);
+    if (index === -1 || read.rows[index].pending !== true) return false;
+    // Only ever on a whole read. Rewriting an index we could not fully see is
+    // how the salvage path lost chats, and the flag is not worth that risk:
+    // the next keystroke tries again, and the pending sweep keeps this
+    // conversation as long as a window is sitting in it.
+    if (!read.whole) return false;
+    const next = { ...read.rows[index] };
+    delete next.pending;
+    read.rows[index] = next;
+    await writeIndexUnlocked(root, read.rows);
+    return true;
   });
 }
 

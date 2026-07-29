@@ -63,11 +63,34 @@ export interface AgentCli {
  * Fixed order so nothing reshuffles under the pointer as installs come and go.
  * Membership here is a claim about one thing only: that Hearth knows what to
  * type. Whether it is installed is measured below.
+ *
+ * THE LIST IS A CONVENIENCE, NOT A BOUNDARY, and that is the whole reason it
+ * is long rather than short. The terminal runs any command you type, so a CLI
+ * that is not here is not unsupported — it is one word of typing. A two-entry
+ * list read as the set of agents Hearth works with, which is the exact
+ * assumption this app must never plant, so the list now names the field rather
+ * than the two harnesses Hearth happens to also drive in chat. Every surface
+ * that renders it says out loud that anything else works too.
+ *
+ * Nothing here is an integration, a partnership or an endorsement. These are
+ * other people's programs, named so Hearth can type their name for you.
  */
 export const AGENT_CLIS: readonly AgentCli[] = [
   { id: 'claude', command: 'claude', label: 'Claude Code', installHint: 'npm i -g @anthropic-ai/claude-code' },
   { id: 'codex', command: 'codex', label: 'Codex', installHint: 'npm i -g @openai/codex' },
+  { id: 'gemini', command: 'gemini', label: 'Gemini CLI', installHint: 'npm i -g @google/gemini-cli' },
+  { id: 'opencode', command: 'opencode', label: 'opencode', installHint: 'npm i -g opencode-ai' },
+  { id: 'amp', command: 'amp', label: 'Amp', installHint: 'npm i -g @sourcegraph/amp' },
+  { id: 'crush', command: 'crush', label: 'Crush', installHint: 'npm i -g @charmland/crush' },
   { id: 'hermes', command: 'hermes', label: 'Hermes', installHint: null },
+  // No hint below this line, deliberately. These install through a shell
+  // script, a Python packaging tool, or a platform installer that differs per
+  // machine, and a hint is a command Hearth is telling someone to run. Naming
+  // the binary is a fact; guessing the package would be Hearth being confidently
+  // wrong in the one place a user cannot check it.
+  { id: 'aider', command: 'aider', label: 'Aider', installHint: null },
+  { id: 'goose', command: 'goose', label: 'Goose', installHint: null },
+  { id: 'cursor-agent', command: 'cursor-agent', label: 'Cursor CLI', installHint: null },
 ];
 
 /** A registry entry plus what this machine says about it. */

@@ -35,6 +35,22 @@
   color: var(--ink);
 }
 
+/* A mode that cannot be entered from here. Shown, not dropped: the two modes
+   are the subject of this control, and one of them vanishing reads as a bug
+   rather than as a rule. `--ink-faint` and no hover, so it is legible as text
+   and unmistakable as a control. The reason is on the accessible name, and the
+   blurb under the switch prints it in full — no tooltip, which would be
+   invisible to touch and to the keyboard and arrive too late to inform the
+   decision anyway. */
+.switch-tab[data-disabled='true'] {
+  color: var(--ink-faint);
+  cursor: not-allowed;
+}
+
+.switch-tab[data-disabled='true']:hover {
+  color: var(--ink-faint);
+}
+
 /* Each option carries the same weight whatever its label is, so the raised
    block does not change width as the choice moves. */
 .switch-stretch {
