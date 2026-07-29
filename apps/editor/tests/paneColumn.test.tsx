@@ -236,11 +236,19 @@ describe('the narrow layout’s tab', () => {
   });
 });
 
-describe('the close button', () => {
-  it('is there, and closes the column', () => {
+describe('closing the column', () => {
+  it('is not offered a second time inside the tab strip', () => {
+    // The top bar's toggle both opens and closes this column. A second way out
+    // at the far end of the tab strip was a control you had to find again in a
+    // different place from the one that put the column there.
     resetStore({ paneOpen: true });
     render(<PaneStack />);
-    fireEvent.click(screen.getByRole('button', { name: 'Close playtest' }));
+    expect(screen.queryByRole('button', { name: 'Close playtest' })).toBeNull();
+  });
+
+  it('still happens through the store the top bar drives', () => {
+    resetStore({ paneOpen: true });
+    act(() => useApp.getState().setPaneOpen(false));
     expect(paneOpen()).toBe(false);
     expect(readPaneOpen(PROJECT)).toBe(false);
   });

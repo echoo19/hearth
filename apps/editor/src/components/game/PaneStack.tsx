@@ -15,7 +15,6 @@ import { useApp, type PaneTab } from '../../store';
 import { GamePane } from './GamePane';
 import { ConsolePanel } from '../ConsolePanel';
 import { TesterStage } from '../tester/TesterStage';
-import { IconButton } from '../ui/Button';
 import { nextTabIndex, tabIds } from '../ui/tabKeys';
 
 const TABS: { id: PaneTab; label: string }[] = [
@@ -27,7 +26,6 @@ const TABS: { id: PaneTab; label: string }[] = [
 export function PaneStack() {
   const paneTab = useApp((s) => s.paneTab);
   const setPaneTab = useApp((s) => s.setPaneTab);
-  const setPaneOpen = useApp((s) => s.setPaneOpen);
   const consoleUnread = useApp((s) => s.consoleUnread);
   const testerRunning = useApp((s) => s.tester.running || s.tester.starting);
   const tabRefs = useRef<(HTMLButtonElement | null)[]>([]);
@@ -114,19 +112,10 @@ export function PaneStack() {
             )}
           </button>
         ))}
-        <span className="pane-tabs-gap" />
-        {/* The way out. It sits in the pane's own strip rather than floating
-            over the game, because a control on top of a running game is a
-            control the player can hit by accident. */}
-        {/* `cross`, not `close` — the latter is a door-with-an-arrow, which
-            means "leave the folder". This dismisses a column. */}
-        <IconButton
-          icon="cross"
-          label="Close playtest"
-          iconSize={12}
-          className="pane-close"
-          onClick={() => setPaneOpen(false)}
-        />
+        {/* No close control here. The column is toggled from the top bar,
+            where it is opened, and one control that both opens and closes is
+            easier to find again than a separate way out buried at the far end
+            of a tab strip. */}
       </div>
     </section>
   );

@@ -481,17 +481,5 @@
   background: var(--accent);
 }
 
-/* Pushes the close control to the far end of the strip, away from the tabs:
-   dismissing the column and switching what it shows are different sizes of
-   decision and should not sit side by side. */
-.pane-tabs-gap {
-  flex: 1;
-  min-width: 12px;
-}
-
-.pane-close {
-  align-self: center;
-}
-
 /* The shell used to be a third tab here. It is a conversation, not a readout,
    so it moved into the conversation column — see styles/app/chat.css. */
