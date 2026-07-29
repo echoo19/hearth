@@ -38,7 +38,7 @@ import {
 import { stringifyEnvelope, type Envelope } from './envelope.js';
 
 export const SERVER_NAME = 'hearth-probe-mcp';
-export const SERVER_VERSION = '0.1.0';
+export const SERVER_VERSION = '1.7.0';
 
 /**
  * Prepended to every tool description. Repeating the loop once per tool is

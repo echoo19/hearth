@@ -70,6 +70,7 @@ async function makeFixture() {
     mkdir(path.join(root, 'packages/core/src/schema'), { recursive: true }),
     mkdir(path.join(root, 'packages/cli/src'), { recursive: true }),
     mkdir(path.join(root, 'packages/mcp-server/src'), { recursive: true }),
+    mkdir(path.join(root, 'packages/probe-tools/src'), { recursive: true }),
     mkdir(path.join(root, 'docs/releases'), { recursive: true }),
   ]);
   await writeFile(
@@ -83,6 +84,14 @@ async function makeFixture() {
   await writeFile(
     path.join(root, 'packages/mcp-server/src/server.ts'),
     "const SERVER_VERSION = '1.2.1';\n",
+  );
+  await writeFile(
+    path.join(root, 'packages/probe-tools/src/cli.ts'),
+    "export const CLI_VERSION = '1.2.1';\n",
+  );
+  await writeFile(
+    path.join(root, 'packages/probe-tools/src/mcp.ts'),
+    "export const SERVER_VERSION = '1.2.1';\n",
   );
   await writeFile(path.join(root, 'README.md'), 'Current release: **v1.2.1**.\n');
   await writeFile(path.join(root, 'CONTRIBUTING.md'), 'Hearth is at v1.2.1.\n');

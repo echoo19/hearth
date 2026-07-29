@@ -13,7 +13,7 @@ import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { canLaunchChromium } from '@hearth/adapter-web';
-import { buildProgram }  from '../src/cli.js';
+import { buildProgram, CLI_VERSION }  from '../src/cli.js';
 import { reportCommand, shimCommand, sweepCommand, SHIM_FILENAME, SHIM_SNIPPET } from '../src/actions.js';
 import { findLatestSweep, listSweepIds } from '../src/store.js';
 import type { Envelope } from '../src/envelope.js';
@@ -51,6 +51,19 @@ async function seedEvidence(root: string, sweepId: string, overrides = {}): Prom
 }
 
 describe('hearth-probe, without a browser', () => {
+  // CLI_VERSION is a hand-maintained string (check-release.mjs pins it
+  // against the root package.json), not derived from package.json at
+  // runtime — so the thing worth pinning is that `--version` actually reports
+  // that constant, and that the constant has been bumped in step with this
+  // package rather than left at whatever it was scaffolded with.
+  it("reports CLI_VERSION, matching this package, as the program's --version", async () => {
+    const pkg = JSON.parse(
+      await readFile(new URL('../package.json', import.meta.url), 'utf8'),
+    ) as { version: string };
+    expect(CLI_VERSION).toBe(pkg.version);
+    expect(buildProgram().version()).toBe(CLI_VERSION);
+  });
+
   it('rejects an unknown policy by name and lists the real ones', async () => {
     const { code, text } = await runCli(['sweep', '--policies', 'chaos', '--json']);
     const envelope = parseJsonOutput(text);

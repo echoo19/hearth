@@ -12,6 +12,12 @@ const CONSTANTS = [
   ['packages/core/src/schema/project.ts', 'HEARTH_VERSION'],
   ['packages/cli/src/program.ts', 'VERSION'],
   ['packages/mcp-server/src/server.ts', 'SERVER_VERSION'],
+  // probe-tools ships its own CLI and MCP server, each self-reporting a
+  // version the same way the two surfaces above do — a hardcoded string
+  // pinned here so a version bump that misses it fails loudly instead of
+  // shipping a probe that lies about which Hearth it came from.
+  ['packages/probe-tools/src/cli.ts', 'CLI_VERSION'],
+  ['packages/probe-tools/src/mcp.ts', 'SERVER_VERSION'],
 ];
 
 export function parseArgs(argv) {

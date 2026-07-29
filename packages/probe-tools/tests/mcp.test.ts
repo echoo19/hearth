@@ -15,7 +15,7 @@ import path from 'node:path';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
-import { createProbeMcpServer }  from '../src/mcp.js';
+import { createProbeMcpServer, SERVER_VERSION }  from '../src/mcp.js';
 import { SHIM_FILENAME } from '../src/actions.js';
 import type { Envelope } from '../src/envelope.js';
 import type { SweepView } from '../src/format.js';
@@ -55,6 +55,28 @@ async function tempRoot(): Promise<string> {
 }
 
 describe('the probe MCP server', () => {
+  // SERVER_VERSION is a hand-maintained string (check-release.mjs pins it
+  // against the root package.json), not something derived from package.json
+  // at runtime — so the thing worth pinning here is that whatever the
+  // constant says is the exact version the wire protocol reports, and that it
+  // has actually been bumped in step with this package rather than left at
+  // whatever it was scaffolded with.
+  it('reports SERVER_VERSION, matching this package, over the wire', async () => {
+    const pkg = JSON.parse(
+      await readFile(new URL('../package.json', import.meta.url), 'utf8'),
+    ) as { version: string };
+    expect(SERVER_VERSION).toBe(pkg.version);
+
+    const root = await tempRoot();
+    const { client, close } = await connect(root);
+    try {
+      expect(client.getServerVersion()?.version).toBe(SERVER_VERSION);
+    } finally {
+      await close();
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
   it('lists exactly the five probe tools', async () => {
     const root = await tempRoot();
     const { client, close } = await connect(root);

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { normalizeStates } from '../src/contract';
+import { normalizeStates } from '../src/contract.js';
 
 describe('normalizeStates', () => {
   it('keeps whatever the game named, without interpreting it', () => {
