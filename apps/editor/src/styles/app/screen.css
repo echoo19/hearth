@@ -49,6 +49,20 @@
   white-space: nowrap;
 }
 
+/* A heading that takes focus on arrival (see ScreenHeader) but is not a
+   control. `:focus-visible` still draws for anyone navigating by keyboard,
+   which is who it is for; a ring on a title nobody asked to focus would read
+   as a control that does nothing. */
+.screen-head-title:focus {
+  outline: none;
+}
+
+.screen-head-title:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+  border-radius: 3px;
+}
+
 .screen-back {
   display: inline-flex;
   align-items: center;
