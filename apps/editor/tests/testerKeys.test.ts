@@ -219,18 +219,24 @@ describe('runTesterSession and the picture count', () => {
       // The counter used to move before the write resolved, so a failed write
       // left `frames` counting a file that is not on disk, and every reader
       // treats that count as the number of pictures that exist.
+      //
+      // The write is made to fail by putting a FILE where the frames directory
+      // goes, so writing inside it is not a directory on any platform. This
+      // used to chmod the directory read-only, which does nothing on Windows:
+      // Node's chmod there toggles a read-only attribute that does not stop a
+      // write into a directory, so the write succeeded, the count was 1, and
+      // the test passed on two platforms out of three.
       const written = await runTesterSession({
         root,
         dir: root,
         driver,
         maxSteps: 2,
         openGame: async () => {
-          await fsp.mkdir(frames, { recursive: true });
-          await fsp.chmod(frames, 0o500);
+          await fsp.mkdir(path.dirname(frames), { recursive: true });
+          await fsp.writeFile(frames, 'not a directory');
           return game as never;
         },
       });
-      await fsp.chmod(frames, 0o700).catch(() => {});
       expect(written.frames).toBe(0);
     });
   });

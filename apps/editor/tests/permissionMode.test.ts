@@ -33,6 +33,7 @@ import {
   readPermissionState,
   readSkipAcknowledged,
   writePermissionMode,
+  permissionKey,
   writeSkipAcknowledged,
 } from '../server/permissionMode';
 import { sdkApprovalFor, sdkPermissionMode } from '../server/chat';
@@ -40,8 +41,23 @@ import { codexPermissionParams } from '../server/chatDrivers/codexWire';
 
 let home = '';
 let previous: string | undefined;
-const PROJECT = '/w/game';
-const OTHER = '/w/other';
+/**
+ * Fixture paths, written the way the platform running the test writes them.
+ *
+ * These were POSIX literals, which is a claim that everyone runs macOS or
+ * Linux. `permissionKey` resolves what it is given, so on Windows `/w/game`
+ * becomes `D:\w\game`, and a test that hand-wrote `/w/game` into the file and
+ * then asked for `/w/game` back was asking a question the code had never been
+ * given the answer to. Eight tests failed on the Windows runner and none on
+ * anyone's Mac, which is the worst shape a test can have: green where it is
+ * written, red where it ships.
+ *
+ * `path.resolve` here rather than a hardcoded `C:\...`, so the fixture is
+ * whatever this platform means by that path, and the assertions below stay
+ * about behaviour rather than about separators.
+ */
+const PROJECT = path.resolve('/w/game');
+const OTHER = path.resolve('/w/other');
 
 beforeEach(async () => {
   previous = process.env.HEARTH_HOME;
@@ -87,13 +103,13 @@ describe('storage', () => {
   });
 
   it('treats the same folder spelled two ways as one project', async () => {
-    await writePermissionMode('/w/game/', 'ask');
-    expect(await readPermissionMode('/w/game')).toBe('ask');
+    await writePermissionMode(`${PROJECT}${path.sep}`, 'ask');
+    expect(await readPermissionMode(PROJECT)).toBe('ask');
   });
 
   it('defaults a project nobody has configured', async () => {
-    expect(await readPermissionMode('/w/never-seen')).toBe('auto');
-    expect(await readSkipAcknowledged('/w/never-seen')).toBe(false);
+    expect(await readPermissionMode(path.resolve('/w/never-seen'))).toBe('auto');
+    expect(await readSkipAcknowledged(path.resolve('/w/never-seen'))).toBe(false);
   });
 
   it('defaults when the file is missing, corrupt, or the wrong shape', async () => {
@@ -147,7 +163,7 @@ describe('storage', () => {
   it('writes a file a person can read and edit', async () => {
     await writePermissionMode(PROJECT, 'ask');
     const text = await readFile();
-    expect(JSON.parse(text)).toEqual({ projects: { [PROJECT]: { mode: 'ask', skipAcknowledged: false } } });
+    expect(JSON.parse(text)).toEqual({ projects: { [permissionKey(PROJECT)]: { mode: 'ask', skipAcknowledged: false } } });
     expect(text.endsWith('\n')).toBe(true);
   });
 
@@ -269,7 +285,11 @@ describe('the route', () => {
 // ---------------------------------------------------------------------------
 
 describe('the mapping', () => {
-  const root = '/w/game';
+  const root = path.resolve('/w/game');
+  /** A file inside the project, spelled the way this platform spells it. */
+  const inside = (rel: string): string => path.join(root, rel);
+  /** A file that is definitely not, on any platform. */
+  const outside = path.resolve('/etc/hosts');
 
   it('gives the Agent SDK the permissionMode its binary accepts', () => {
     expect(sdkPermissionMode('ask')).toBe('default');
@@ -294,7 +314,7 @@ describe('the mapping', () => {
   });
 
   it('asks about everything it classifies in ask mode, inside the folder included', () => {
-    expect(sdkApprovalFor('Write', { file_path: '/w/game/src/a.js' }, root, 'ask')).toMatchObject({
+    expect(sdkApprovalFor('Write', { file_path: inside('src/a.js') }, root, 'ask')).toMatchObject({
       kind: 'file-change',
     });
     expect(sdkApprovalFor('Bash', { command: 'npm test' }, root, 'ask')).toEqual({
@@ -303,29 +323,29 @@ describe('the mapping', () => {
       detail: 'npm test',
     });
     // Still asks about the things auto asks about, rather than replacing them.
-    expect(sdkApprovalFor('Write', { file_path: '/etc/hosts' }, root, 'ask')).toMatchObject({
+    expect(sdkApprovalFor('Write', { file_path: outside }, root, 'ask')).toMatchObject({
       kind: 'file-change',
-      detail: '/etc/hosts',
+      detail: outside,
     });
   });
 
   it('keeps today’s rule for auto, which is also what an unspecified mode gets', () => {
-    expect(sdkApprovalFor('Write', { file_path: '/w/game/src/a.js' }, root, 'auto')).toBeNull();
+    expect(sdkApprovalFor('Write', { file_path: inside('src/a.js') }, root, 'auto')).toBeNull();
     expect(sdkApprovalFor('Bash', { command: 'npm test' }, root, 'auto')).toBeNull();
-    expect(sdkApprovalFor('Write', { file_path: '/etc/hosts' }, root, 'auto')).toMatchObject({
+    expect(sdkApprovalFor('Write', { file_path: outside }, root, 'auto')).toMatchObject({
       kind: 'file-change',
     });
     expect(sdkApprovalFor('Bash', { command: 'sudo reboot' }, root, 'auto')).toMatchObject({ kind: 'command' });
     // The default argument is the same rule, so an omitted mode is never a
     // silent loosening.
-    expect(sdkApprovalFor('Write', { file_path: '/etc/hosts' }, root)).toEqual(
-      sdkApprovalFor('Write', { file_path: '/etc/hosts' }, root, DEFAULT_PERMISSION_MODE),
+    expect(sdkApprovalFor('Write', { file_path: outside }, root)).toEqual(
+      sdkApprovalFor('Write', { file_path: outside }, root, DEFAULT_PERMISSION_MODE),
     );
   });
 
   it('never asks in skip mode, whatever the call is', () => {
-    expect(sdkApprovalFor('Write', { file_path: '/etc/hosts' }, root, 'skip')).toBeNull();
+    expect(sdkApprovalFor('Write', { file_path: outside }, root, 'skip')).toBeNull();
     expect(sdkApprovalFor('Bash', { command: 'sudo rm -rf /' }, root, 'skip')).toBeNull();
-    expect(sdkApprovalFor('Edit', { file_path: '/w/game/a.js' }, root, 'skip')).toBeNull();
+    expect(sdkApprovalFor('Edit', { file_path: inside('a.js') }, root, 'skip')).toBeNull();
   });
 });

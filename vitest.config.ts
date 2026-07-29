@@ -29,6 +29,19 @@ export default defineConfig({
       'apps/*/tests/**/*.test.{ts,tsx}',
     ],
     environment: 'node',
-    testTimeout: 30000,
+    /**
+     * Generous, because the slowest tests here are not slow by accident: the
+     * CLI suite shells out to a real binary per case and the examples suite
+     * runs whole playtests. On a developer's machine those land around ten
+     * seconds; on the Windows CI runner the same cases measured 30.8s, 30.5s
+     * and 38.6s against a 30s ceiling, so the release build failed on the
+     * clock rather than on anything being wrong.
+     *
+     * Raising a timeout is usually how a real hang gets hidden, so the number
+     * is deliberate rather than doubled-until-green: 120s is far past any
+     * healthy case and still fails a genuine deadlock in reasonable time.
+     */
+    testTimeout: 120000,
+    hookTimeout: 120000,
   },
 });

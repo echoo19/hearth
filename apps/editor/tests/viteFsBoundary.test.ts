@@ -26,6 +26,7 @@
  *      because it did, and that let the game just `fetch()` these bytes and
  *      read the reply with no popup at all.
  */
+import path from 'node:path';
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import http from 'node:http';
 import { guardViteFs, fetchIntent, isViteFsPath } from '../server/projectServer';
@@ -168,6 +169,12 @@ describe('the dev server’s own settings', () => {
   it('LEGITIMATE: the repo is still allowed, because the aliases need it', () => {
     // Narrowing `allow` would break every `@hearth/*` import in the editor.
     expect(dev.fs.allow.length).toBe(1);
-    expect(dev.fs.allow[0].endsWith('hearth-engine')).toBe(true);
+    // The repo ROOT, computed the same way vite.config.ts computes it, rather
+    // than a basename. This asserted `endsWith('hearth-engine')`, which is the
+    // name of one particular clone on one particular machine: CI checks out to
+    // a directory named after the repository, so the test passed for whoever
+    // wrote it and failed for everybody else, including the release build.
+    // What matters is that the allowed root is the repo, not what it is called.
+    expect(dev.fs.allow[0]).toBe(path.resolve(__dirname, '../../..'));
   });
 });

@@ -21,6 +21,20 @@ function wait(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+/**
+ * Wait for something to become true rather than for a length of time.
+ *
+ * A fixed sleep is a bet on how fast the machine is, and these tests lost that
+ * bet on the Windows CI runner while passing on every developer's Mac: the
+ * spawn had not been recorded 100ms after the frame went out, so the handle
+ * was undefined and the assertion saw an empty list. Polling keeps the fast
+ * case fast, and a real failure still fails one deadline later.
+ */
+async function until(predicate: () => boolean, deadlineMs = 5000): Promise<void> {
+  const started = Date.now();
+  while (!predicate() && Date.now() - started < deadlineMs) await wait(10);
+}
+
 function deferred<T>(): { promise: Promise<T>; resolve: (value: T) => void } {
   let resolve!: (value: T) => void;
   const promise = new Promise<T>((done) => {
@@ -358,13 +372,14 @@ describe('pty-* frame routing over /api/ws', () => {
     const frames: WsFrame[] = [];
     client.on('message', (raw) => frames.push(JSON.parse(raw.toString()) as WsFrame));
     try {
+      const before = backend.spawns.length;
       client.send(JSON.stringify({ type: 'pty-start' }));
-      await wait(100);
+      await until(() => backend.spawns.length > before);
       const handle = backend.spawns[backend.spawns.length - 1].handle;
 
       handle.emitError(new Error('native pty unavailable'));
       client.send(JSON.stringify({ type: 'pty-input', data: 'must be dropped' }));
-      await wait(50);
+      await until(() => frames.some((f) => f.type === 'pty-error'));
 
       expect(frames).toContainEqual({ type: 'pty-error', message: 'native pty unavailable' });
       expect(handle.writes).toEqual([]);
