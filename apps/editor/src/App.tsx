@@ -12,6 +12,7 @@ import { ScreenBoundary } from './components/ScreenBoundary';
 import { PaneStack } from './components/game/PaneStack';
 import { CodePeek } from './components/code/CodePeek';
 import { SettingsDialog } from './components/shell/SettingsDialog';
+import { ProjectNamer } from './components/shell/NewProjectDialog';
 import { ShortcutLayer } from './components/shell/ShortcutLayer';
 import { useNativeMenu } from './menu/nativeMenu';
 import { NARROW_BREAKPOINT_PX } from './store';
@@ -187,6 +188,9 @@ function Shell() {
       </div>
       <CodePeek />
       <SettingsDialog />
+      {/* The one place a project gets named, wherever the asking came from:
+          the rail's New project, or a first message with nowhere to land. */}
+      <ProjectNamer />
       {/* Renders nothing. It is where the window-wide keyboard shortcuts live,
           mounted once so they work whatever surface is on screen. */}
       <ShortcutLayer />

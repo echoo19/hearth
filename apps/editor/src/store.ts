@@ -16,6 +16,7 @@ import { create } from 'zustand';
 import {
   apiAppSettings,
   apiChatProviders,
+  apiCloseWorkspace,
   apiCreateWorkspace,
   apiDeleteChat,
   apiGameStatus,
@@ -71,6 +72,7 @@ import type { TesterPhase } from '../server/tester/session';
 import type { TesterNote } from '../server/tester/types';
 import { agentForTurn, getModelChoice } from './chat/modelChoice';
 import { hearthNative } from './native';
+import { suggestProjectName } from './projects/suggestName';
 import { showToast } from './toast';
 import {
   ensureAgentPtySessionId,
@@ -307,6 +309,33 @@ export interface AppState {
    * that arrangement untouched, which is why nothing else is stored here.
    */
   screen: 'skills' | 'tester' | null;
+  /**
+   * Which project the tester screen is aimed at. Null means "whatever the
+   * picker resolves to", which is the most recent project.
+   *
+   * The tester screen is global — a history of every run across every game —
+   * but a run has to start somewhere, so the screen carries an aim the way the
+   * blank composer carries `composeTarget`. Separate from `projectPath` on
+   * purpose: standing on a global screen must not mean standing in a project,
+   * and reading the open folder to decide what to show is exactly the coupling
+   * that made Tester silently inherit whichever project was last clicked.
+   */
+  testerTarget: string | null;
+  /**
+   * A project is being named, with the first draft of the answer.
+   *
+   * Naming lives here rather than inside the dialog because two places ask for
+   * it — the rail's New project, and a first message with nowhere to land —
+   * and they have to be the SAME question. It used to be two: the rail asked,
+   * and the first message did not, so typing "a game where a raccoon steals
+   * bins" silently produced a folder the server had named for you, off a
+   * stopword list, with no chance to say otherwise. The name is the one thing
+   * about a project that is hard to change later, so it is asked for.
+   *
+   * Null means nothing is being named. The dialog is mounted once at the shell
+   * so that neither asker owns it.
+   */
+  naming: { suggestion: string } | null;
   /** Prompt carried across a folder open, consumed by the composer on mount. */
   pendingPrompt: string | null;
   /**
@@ -455,6 +484,18 @@ export interface AppState {
   setPaneOpen(open: boolean): void;
   /** Aim the new-chat composer at a project, or at one that doesn't exist yet. */
   setComposeTarget(path: string | null): void;
+  /** Aim the tester screen's Play at a project. Null means the most recent one. */
+  setTesterTarget(path: string | null): void;
+  /**
+   * Ask for a project name and wait for the answer.
+   *
+   * Resolves with the new folder's path, or null if the question was dismissed
+   * — which is an answer, not a failure, and the caller should quietly stop
+   * rather than report anything.
+   */
+  askProjectName(suggestion: string): Promise<string | null>;
+  /** The dialog's reply. A path if a folder was made, null if it was dismissed. */
+  answerProjectName(path: string | null): void;
   /** Open a project and land on its own screen rather than in a conversation. */
   openProject(path: string): Promise<void>;
   /** Come back up from a conversation to the project it belongs to. */
@@ -497,6 +538,20 @@ export const GAME_POLL_MS = 1500;
 let entryId = 0;
 let messageId = 0;
 
+/**
+ * Whoever is waiting on the naming dialog. Outside the store because a promise
+ * resolver is not state — nothing renders from it, and putting a function in
+ * the store would make every subscriber re-run when the dialog opens.
+ */
+let namingResolve: ((path: string | null) => void) | null = null;
+
+/** Settle the pending ask, at most once. Safe to call when nobody is waiting. */
+function answerNaming(path: string | null): void {
+  const resolve = namingResolve;
+  namingResolve = null;
+  resolve?.(path);
+}
+
 function timestamp(): string {
   return new Date().toTimeString().slice(0, 8);
 }
@@ -525,6 +580,32 @@ function readSidebarCollapsed(): boolean {
 
 export function conversationModeStorageKey(projectPath: string): string {
   return `${CONVERSATION_MODE_PREFIX}${projectPath}`;
+}
+
+/** A place that belongs to the person rather than to any one game. */
+export type GlobalPlace = 'new-chat' | 'skills' | 'tester';
+
+/**
+ * Which global screen you are standing on, or null for "inside a project".
+ *
+ * This is the app's one answer to "where am I", and the rail, the top bar and
+ * the screens themselves all have to give the same one. New chat, Skills and
+ * Tester belong to the person: a project may still be OPEN underneath (the
+ * socket stays up, the game keeps running, coming back is instant) but it is
+ * not SELECTED, and nothing may be drawn or announced as current while one of
+ * these is up.
+ *
+ * The distinction is the whole fix for the navigation confusion. The rail used
+ * to keep `aria-current` on both the open project and the active chat while
+ * Skills filled the window, so a screen reader was told you were in a
+ * conversation you could not see, and Tester silently inherited whichever
+ * project had last been clicked instead of saying which game it meant.
+ *
+ * Pure, and exported, so the rule is checkable without a store or a viewport.
+ */
+export function globalPlace(state: { screen: 'skills' | 'tester' | null; composing: boolean }): GlobalPlace | null {
+  if (state.screen !== null) return state.screen;
+  return state.composing ? 'new-chat' : null;
 }
 
 /**
@@ -1523,6 +1604,8 @@ export const useApp = create<AppState>((set, get) => {
     composeTarget: null,
     projectView: false,
     screen: null,
+    testerTarget: null,
+    naming: null,
     narrowTab: 'chat',
     codePeek: { open: false, path: null },
     pendingPrompt: null,
@@ -1659,6 +1742,14 @@ export const useApp = create<AppState>((set, get) => {
       } catch {
         /* ignore */
       }
+      // Closing is a fact about the SERVER, not only about this window. The
+      // set of folders the server will serve files from and accept sockets
+      // for used to only ever grow: a folder opened once stayed reachable for
+      // the life of the process, however emphatically it had been closed. Not
+      // awaited and not reported — nothing about this failing is something the
+      // person closing a project can act on, and the window has already left.
+      const closing = get().projectPath;
+      if (closing !== null) void apiCloseWorkspace(closing);
       disconnectWs();
       set({
         projectPath: null,
@@ -1937,6 +2028,34 @@ export const useApp = create<AppState>((set, get) => {
       set({ composeTarget: path });
     },
 
+    setTesterTarget(path) {
+      set({ testerTarget: path });
+    },
+
+    askProjectName(suggestion) {
+      // A second ask while one is up means the first was abandoned. Answer it
+      // null rather than leaving a promise that nothing will ever settle, or
+      // `startFromHome` would sit in its `finally` forever with `homeBusy`
+      // true and the composer locked.
+      answerNaming(null);
+      // The resolver is armed BEFORE the state moves, and that order is the
+      // whole of it: `set` notifies subscribers synchronously, so anything
+      // that answers the moment it sees the question — a test standing in for
+      // the dialog, or any future auto-answer — would otherwise call
+      // `answerNaming` while `namingResolve` was still null and the promise
+      // would hang forever with the composer locked behind it.
+      const waiting = new Promise<string | null>((resolve) => {
+        namingResolve = resolve;
+      });
+      set({ naming: { suggestion } });
+      return waiting;
+    },
+
+    answerProjectName(path) {
+      set({ naming: null });
+      answerNaming(path);
+    },
+
     async openProject(path) {
       // Land on the project, not in one of its conversations. `openWorkspace`
       // still opens the newest chat behind this — that is what connects the
@@ -1954,6 +2073,15 @@ export const useApp = create<AppState>((set, get) => {
     },
 
     openScreen(screen) {
+      // Nothing else moves. A global screen is not a view OF the open project,
+      // so it takes no aim from `projectPath`: Skills is the person's library
+      // and Tester is a history across every game. The folder underneath stays
+      // open and connected — the socket, the running game and the warm chat
+      // list are what make coming back instant — it simply stops being the
+      // answer to "where am I", which `globalPlace` is what decides.
+      //
+      // `composing` and `projectView` are deliberately left standing so that
+      // leaving returns to the exact arrangement the screen covered.
       set({ screen });
     },
 
@@ -2046,11 +2174,16 @@ export const useApp = create<AppState>((set, get) => {
         const target = get().composeTarget;
         let root = target;
         if (root === null) {
-          const created = await apiCreateWorkspace(trimmed);
-          if (!created.ok || !created.info) {
-            return fail(created.error ?? 'Could not start a project for that.');
-          }
-          root = created.info.path;
+          // Ask for the name rather than taking one from the sentence. The
+          // dialog does the creating, so what comes back is a folder that
+          // exists, and the field arrives holding a draft of the answer so the
+          // fast path is still one keystroke.
+          //
+          // Dismissed is not failed: nothing is said, nothing is created, and
+          // `{ ok: false }` with no error keeps the words in the composer
+          // exactly where they were typed.
+          root = await get().askProjectName(suggestProjectName(trimmed));
+          if (root === null) return { ok: false };
         }
         // The conversation this message must NOT land in, for the wait below.
         // Only the already-open branch has one: opening a folder clears

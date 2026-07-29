@@ -66,11 +66,15 @@ afterEach(() => {
   localStorage.clear();
 });
 
-describe('the two general acts', () => {
+describe('the general acts', () => {
   it('are the only ones the rail offers', () => {
     render(<Sidebar />);
     expect(screen.getByRole('button', { name: 'New chat' })).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Skills' })).toBeTruthy();
+    // Offered with nothing open. The history of playtests spans every game,
+    // so gating the row on an open folder meant reaching yesterday's run
+    // required first guessing which project it had come from.
+    expect(screen.getByRole('button', { name: 'Tester' })).toBeTruthy();
     // Opening an arbitrary directory is a File-menu act now; the rail is
     // Projects and Chats, and a third list of "folders" was the old model.
     expect(screen.queryByRole('button', { name: 'Open folder…' })).toBeNull();
@@ -78,13 +82,13 @@ describe('the two general acts', () => {
 
   it('keeps making a project out of the general acts and beside the list', () => {
     // Creating a project is not a general act — it belongs to the Projects
-    // list, the way New chat belongs to the app. So the nav strip holds two
-    // controls and no more, and the create lives on the section heading.
+    // list, the way New chat belongs to the app. So the nav strip holds the
+    // three global screens and no more, and the create lives on the heading.
     const { container } = render(<Sidebar />);
     const nav = container.querySelector('.sidebar-nav');
     expect(nav).toBeTruthy();
     expect(within(nav as HTMLElement).queryByRole('button', { name: /New project/ })).toBeNull();
-    expect(within(nav as HTMLElement).getAllByRole('button')).toHaveLength(2);
+    expect(within(nav as HTMLElement).getAllByRole('button')).toHaveLength(3);
 
     const head = container.querySelector('.sidebar-section-head');
     expect(head).toBeTruthy();

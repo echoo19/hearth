@@ -82,10 +82,12 @@ export function Home() {
         )}
 
         {/* Only said when it is actually about to happen. Inside an existing
-            project this line would be describing something else's behaviour. */}
+            project this line would be describing something else's behaviour.
+            It no longer promises a name: sending asks for one, with a draft
+            already filled in from what you wrote. */}
         {target === null && (
           <p className="home-note">
-            New projects are made in <span className="mono">~/Hearth</span>, named after what you ask for
+            Sending starts a new project in <span className="mono">~/Hearth</span>. You'll name it first.
           </p>
         )}
       </div>

@@ -66,6 +66,28 @@ export async function apiOpenWorkspace(path: string): Promise<{ ok: boolean; inf
 }
 
 /**
+ * Tell the server a folder is done: it drops out of the set of roots the
+ * server will serve files from, accept sockets for, or run anything in.
+ *
+ * Closing used to be client-state only, so a folder opened once stayed
+ * reachable for the life of the process and the jail only ever grew. Nothing
+ * here can fail in a way the person closing a project needs to hear about, so
+ * it answers void and the caller does not wait for it.
+ *
+ * Which is exactly why it swallows. Called and not awaited, any rejection is
+ * an unhandled one, and the moment it is most likely to reject — the server
+ * already gone, on the way out of the app — is the moment nobody is left to
+ * care. A server that is not there is not serving the folder either.
+ */
+export async function apiCloseWorkspace(path: string): Promise<void> {
+  try {
+    await postJson<{ ok?: boolean }>('/api/workspace/close', { path });
+  } catch (err) {
+    console.error('Could not tell the server the project was closed.', err);
+  }
+}
+
+/**
  * Make a folder for a game that doesn't have one yet: the server derives a
  * slug, creates it under the projects home (~/Hearth), and opens it exactly as
  * /api/workspace/open would.

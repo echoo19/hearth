@@ -4,9 +4,15 @@
  *
  * This is the product's whole opening move — type, press send, and a project
  * exists — so the things worth pinning are the ones that would silently lose a
- * user's words: the folder really is made from the prompt, the message is not
- * fired into a socket that hasn't opened yet, a second press can't mint a
- * second project, and a failure says so instead of doing nothing.
+ * user's words: the message is not fired into a socket that hasn't opened yet,
+ * a second press can't mint a second project, and a failure says so instead of
+ * doing nothing.
+ *
+ * The folder is no longer named FROM the prompt. Sending with nowhere to land
+ * asks (`askProjectName`), the dialog does the creating, and what comes back
+ * here is a folder that already exists. So these tests stand in for the dialog
+ * rather than asserting on `apiCreateWorkspace`, which the store no longer
+ * calls.
  *
  * The turn's model choice rides the same frame (see `sendChat`), so it is
  * checked here too — the send path is the only place that reads it.
@@ -33,6 +39,9 @@ vi.mock('../src/api', () => ({
   // somewhere far from the cause. It has now cost two debugging sessions.
   apiPermissionMode: vi.fn(async () => null),
   apiSetPermissionMode: vi.fn(async () => null),
+  // `closeWorkspace` runs in afterEach, so a missing entry here fails every
+  // test in the file at teardown rather than where the call is.
+  apiCloseWorkspace: vi.fn(async () => {}),
 }));
 
 import { apiCreateWorkspace, apiOpenWorkspace } from '../src/api';
@@ -98,6 +107,8 @@ function frames(): { type: string; [key: string]: unknown }[] {
   return FakeSocket.instances.flatMap((socket) => socket.sent.map((raw) => JSON.parse(raw)));
 }
 
+const PROJECT = '/home/me/Hearth/space-shooter';
+
 beforeEach(() => {
   localStorage.clear();
   setModelChoice(null);
@@ -116,19 +127,45 @@ beforeEach(() => {
   useApp.setState({ projectPath: null, projectName: null, homeBusy: false, chatError: null, messages: [] });
 });
 
+let unsubscribeDialog: (() => void) | null = null;
+
+/**
+ * Stand in for the naming dialog, which is what really creates the folder now.
+ * Answers whatever gets asked with `path`, or dismisses when given null.
+ *
+ * Returns the suggestions it saw, so a test can check that the draft put in
+ * front of the user came from what they typed.
+ */
+function standInForTheDialog(path: string | null = PROJECT): string[] {
+  const seen: string[] = [];
+  unsubscribeDialog = useApp.subscribe((state, previous) => {
+    if (state.naming === null || previous.naming !== null) return;
+    seen.push(state.naming.suggestion);
+    useApp.getState().answerProjectName(path);
+  });
+  return seen;
+}
+
 afterEach(() => {
+  unsubscribeDialog?.();
+  unsubscribeDialog = null;
   vi.unstubAllGlobals();
   vi.clearAllMocks();
   useApp.getState().closeWorkspace();
 });
 
 describe('startFromHome', () => {
-  it('makes a folder from the prompt, opens it, and sends the message', async () => {
+  it('asks for a name, opens the folder it gets back, and sends the message', async () => {
+    const suggestions = standInForTheDialog();
     const result = await useApp.getState().startFromHome('  a top-down space shooter  ');
 
     expect(result.ok).toBe(true);
-    expect(apiCreateWorkspace).toHaveBeenCalledWith('a top-down space shooter');
-    expect(useApp.getState().projectPath).toBe('/home/me/Hearth/space-shooter');
+    // Asked, once, with a draft taken from the words already typed. The store
+    // itself creates nothing: the dialog does, so a refusal can be shown next
+    // to the name that caused it.
+    expect(suggestions).toEqual(['Top-down space shooter']);
+    expect(apiCreateWorkspace).not.toHaveBeenCalled();
+    expect(useApp.getState().projectPath).toBe(PROJECT);
 
     const sends = frames().filter((frame) => frame.type === 'chat-send');
     expect(sends).toHaveLength(1);
@@ -143,6 +180,7 @@ describe('startFromHome', () => {
   });
 
   it('asks for the conversation before it sends into it', async () => {
+    standInForTheDialog();
     await useApp.getState().startFromHome('make a platformer');
     const types = frames().map((frame) => frame.type);
     expect(types.indexOf('chat-new')).toBeGreaterThanOrEqual(0);
@@ -151,6 +189,7 @@ describe('startFromHome', () => {
 
   it('carries the standing model choice on the turn', async () => {
     setModelChoice({ provider: 'anthropic', model: 'claude-opus-5', effort: null });
+    standInForTheDialog();
     await useApp.getState().startFromHome('make a platformer');
 
     const send = frames().find((frame) => frame.type === 'chat-send');
@@ -158,36 +197,44 @@ describe('startFromHome', () => {
   });
 
   it('leaves the agent field off entirely when nothing has been chosen', async () => {
+    standInForTheDialog();
     await useApp.getState().startFromHome('make a platformer');
     const send = frames().find((frame) => frame.type === 'chat-send');
     expect(send && 'agent' in send).toBe(false);
   });
 
   it('refuses a second press while the first is still in flight', async () => {
+    const suggestions = standInForTheDialog();
     const first = useApp.getState().startFromHome('one');
     const second = await useApp.getState().startFromHome('two');
 
     expect(second.ok).toBe(false);
     await first;
-    expect(apiCreateWorkspace).toHaveBeenCalledTimes(1);
+    // Asked once, so only one project can come of two presses.
+    expect(suggestions).toHaveLength(1);
   });
 
   it('sends nothing at all for an empty prompt', async () => {
+    const suggestions = standInForTheDialog();
     const result = await useApp.getState().startFromHome('   ');
     expect(result.ok).toBe(false);
-    expect(apiCreateWorkspace).not.toHaveBeenCalled();
+    expect(suggestions).toHaveLength(0);
   });
 
-  it('says why when the folder cannot be made, and stays on Home', async () => {
-    vi.mocked(apiCreateWorkspace).mockResolvedValue({ ok: false, error: 'Disk is full.' });
+  it('stops quietly when the name is not given, and says nothing about it', async () => {
+    // Dismissing the question is an answer, not a failure. Nothing is created,
+    // nothing is claimed to have gone wrong, and `{ ok: false }` with no error
+    // is what keeps the typed words in the composer (see Composer.send).
+    standInForTheDialog(null);
 
     const result = await useApp.getState().startFromHome('make a platformer');
 
-    expect(result).toEqual({ ok: false, error: 'Disk is full.' });
-    expect(useApp.getState().chatError).toBe('Disk is full.');
+    expect(result).toEqual({ ok: false });
+    expect(useApp.getState().chatError).toBeNull();
     expect(useApp.getState().projectPath).toBeNull();
-    // And it releases: a failed start must not lock the composer forever.
+    // And it releases: an abandoned start must not lock the composer forever.
     expect(useApp.getState().homeBusy).toBe(false);
+    expect(frames().some((frame) => frame.type === 'chat-send')).toBe(false);
   });
 
   it('waits for the NEW conversation when the project is already open', async () => {
@@ -197,6 +244,7 @@ describe('startFromHome', () => {
     // that followed replayed an empty transcript over both bubbles, and every
     // event after it hit applyChatEvent's empty-list early return. The user saw
     // a cleared composer and a blank page while the turn really ran.
+    standInForTheDialog();
     await useApp.getState().startFromHome('a top-down space shooter');
     expect(useApp.getState().activeChatId).toBe('chat-1');
 
@@ -231,6 +279,7 @@ describe('startFromHome', () => {
   });
 
   it('leaves the project screen and the blank surface for the conversation it sent into', async () => {
+    standInForTheDialog();
     await useApp.getState().startFromHome('a top-down space shooter');
     // Someone reading the project's own screen, or a full screen over it, must
     // not have their message land behind it.
@@ -249,6 +298,7 @@ describe('startFromHome', () => {
     FakeSocket.autoOpen = false;
     vi.useFakeTimers();
     try {
+      standInForTheDialog();
       const pending = useApp.getState().startFromHome('make a platformer');
       await vi.runAllTimersAsync();
       const result = await pending;

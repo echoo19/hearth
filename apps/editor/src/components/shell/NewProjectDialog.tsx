@@ -1,19 +1,25 @@
 /**
- * Naming a project that doesn't exist yet.
+ * Naming a project that doesn't exist yet. The ONE place that asks.
  *
- * Home makes projects the other way round — the first message names the folder,
- * so nobody is ever asked to fill in a form before they can say anything. From
- * the rail there is no message to take a name from, so this asks for one, and
- * asks for exactly one thing: a project is a game is a folder, and a folder
- * needs a name and nothing else.
+ * There used to be two ways to make a project and only one of them asked. The
+ * rail asked; a first message with nowhere to land did not, and the server
+ * named the folder off the sentence you had typed. So "a game where a raccoon
+ * steals bins" became a folder you had not chosen, and the name is the one
+ * thing about a project that is hard to change afterwards. Both routes come
+ * here now, and the message route arrives with a draft of the answer already
+ * in the field and selected, so it is still one keystroke to accept.
  *
- * The dialog owns the request rather than handing the name back to the rail,
+ * The dialog owns the request rather than handing the name back to its caller,
  * because the only honest place to show a refusal is next to the name that
  * caused it. A create that fails keeps the dialog, the typed name, and the
- * server's own reason; the dialog closes only once a folder really exists.
+ * server's own reason; it closes only once a folder really exists.
+ *
+ * Mounted once, at the shell, driven by `naming` in the store — so neither
+ * asker owns it and the two can never drift apart.
  */
 import React, { useEffect, useRef, useState } from 'react';
 import { apiCreateWorkspace } from '../../api';
+import { useApp } from '../../store';
 import { Modal } from '../ui';
 import { Button } from '../ui/Button';
 
@@ -26,17 +32,40 @@ export function canCreateProject(name: string, busy: boolean): boolean {
   return name.trim() !== '' && !busy;
 }
 
+/**
+ * The shell's single instance. Everything that wants a project asks the store
+ * (`askProjectName`) and waits; this is what answers.
+ */
+export function ProjectNamer() {
+  const naming = useApp((s) => s.naming);
+  const answer = useApp((s) => s.answerProjectName);
+  return (
+    <NewProjectDialog
+      open={naming !== null}
+      suggestion={naming?.suggestion ?? ''}
+      onCancel={() => answer(null)}
+      onCreated={(path) => answer(path)}
+    />
+  );
+}
+
 export function NewProjectDialog({
   open,
+  suggestion = '',
   onCancel,
   onCreated,
 }: {
   open: boolean;
+  /**
+   * A first draft of the name, from whatever the person was already saying.
+   * Arrives selected, so accepting it is Enter and replacing it is typing.
+   */
+  suggestion?: string;
   onCancel: () => void;
   /** The new folder, once it exists on disk and the server has opened it. */
   onCreated: (path: string) => void;
 }) {
-  const [name, setName] = useState('');
+  const [name, setName] = useState(suggestion);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -47,16 +76,20 @@ export function NewProjectDialog({
   useEffect(() => {
     generation.current++;
     if (!open) return;
-    // Every opening starts clean: a name typed into a dialog that was closed
-    // belongs to a decision already abandoned.
-    setName('');
+    // Every opening starts from the draft it was given, and nothing else: a
+    // name typed into a dialog that was closed belongs to a decision already
+    // abandoned.
+    setName(suggestion);
     setBusy(false);
     setError(null);
     // Effects run child-first, so Modal has already called showModal() (which
     // focuses the first focusable itself) by the time this lands — the field
     // is what should have the caret, and it wins by going last.
     inputRef.current?.focus();
-  }, [open]);
+    // Selected, not just filled. A draft you have to clear before you can
+    // disagree with it is a draft that gets accepted by default.
+    if (suggestion !== '') inputRef.current?.select();
+  }, [open, suggestion]);
 
   async function create(): Promise<void> {
     if (!canCreateProject(name, busy)) return;

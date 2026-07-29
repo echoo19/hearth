@@ -2,8 +2,11 @@
 /**
  * Starting a project from the rail.
  *
- * Home creates projects from the first message; this is the other door, for
- * when someone knows what they want to call it before they know what to say.
+ * Both doors come here now. The rail asks outright; a first message with
+ * nowhere to land asks too, arriving with a draft of the name already in the
+ * field. The dialog itself is mounted once at the shell (`ProjectNamer`) and
+ * driven by `naming` in the store, so the two askers cannot drift apart, which
+ * is why the rail tests below render the namer beside the rail.
  * Four things have to hold, and all of them are about not lying:
  *
  *   1. the name typed is the name sent — trimmed, and as the `name` argument,
@@ -34,7 +37,7 @@ vi.mock('../src/api', async (importOriginal) => ({
 }));
 
 import { apiCreateWorkspace, apiRecentWorkspaces } from '../src/api';
-import { NewProjectDialog, canCreateProject } from '../src/components/shell/NewProjectDialog';
+import { NewProjectDialog, ProjectNamer, canCreateProject } from '../src/components/shell/NewProjectDialog';
 import { Sidebar } from '../src/components/shell/Sidebar';
 import { useApp } from '../src/store';
 
@@ -191,23 +194,37 @@ describe('the dialog', () => {
 // ---------------------------------------------------------------------------
 
 describe('the control on the Projects heading', () => {
-  it('is there, named, and opens the question', () => {
-    render(<Sidebar />);
+  it('is there, named, and opens the question', async () => {
+    render(
+      <>
+        <Sidebar />
+        <ProjectNamer />
+      </>,
+    );
     const add = screen.getByRole('button', { name: 'New project…' });
     expect(add).toBeTruthy();
     // Nothing is asked before it is clicked.
     expect(screen.queryByLabelText('Project name')).toBeNull();
 
     fireEvent.click(add);
-    expect(nameField()).toBeTruthy();
+    await waitFor(() => expect(nameField()).toBeTruthy());
+    // Asked from the rail there is nothing to draft a name from, so the field
+    // is empty rather than guessing.
+    expect(nameField().value).toBe('');
   });
 
   it('creates the folder and lands on that project', async () => {
     const openProject = vi.fn(async () => {});
     reset({ openProject });
-    render(<Sidebar />);
+    render(
+      <>
+        <Sidebar />
+        <ProjectNamer />
+      </>,
+    );
 
     fireEvent.click(screen.getByRole('button', { name: 'New project…' }));
+    await waitFor(() => expect(nameField()).toBeTruthy());
     fireEvent.change(nameField(), { target: { value: 'Lighthouse' } });
     fireEvent.click(createButton());
 
@@ -216,7 +233,7 @@ describe('the control on the Projects heading', () => {
     await waitFor(() => expect(screen.queryByLabelText('Project name')).toBeNull());
   });
 
-  it('leaves the two general acts at two', () => {
+  it('keeps making a project off the rail\'s general acts', () => {
     render(<Sidebar />);
     // The act belongs to the Projects list, not to the rail's nav.
     expect(screen.getByRole('button', { name: 'New project…' }).closest('.sidebar-nav')).toBeNull();

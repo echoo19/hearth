@@ -138,6 +138,25 @@
   background: var(--bg-3);
 }
 
+/* WHERE YOU ARE, in the one language the rest of the app already uses for it
+   (Skills, Peek and Settings all tint the current row with the accent). The
+   rail was the only place that did not: current rows were filled with --bg-2,
+   which is exactly what hover paints, so "selected" and "the pointer is over
+   this" were the same picture and the rail could not answer "where am I" at
+   all once the pointer moved away. A tint rather than a left bar because
+   nothing else in this app marks position with a bar, and one surface
+   inventing its own vocabulary is how an interface starts to feel assembled
+   rather than designed. */
+.nav-row.is-active,
+.nav-row.is-active:hover {
+  background: var(--accent-soft);
+}
+
+.nav-row.is-active .nav-glyph,
+.nav-row.is-icon.is-active {
+  color: var(--accent);
+}
+
 /* Unavailable, not absent. It keeps its pointer events on purpose — the
    tooltip saying why is the whole point of showing the row at all — so the
    hover fill is what has to go, or it would look pressable. */
@@ -274,8 +293,11 @@
   background: var(--bg-2);
 }
 
-.chat-row.is-active {
-  background: var(--bg-2);
+/* See .nav-row.is-active: current is the accent tint everywhere in this app,
+   and painting it --bg-2 made it indistinguishable from hover. */
+.chat-row.is-active,
+.chat-row.is-active:hover {
+  background: var(--accent-soft);
 }
 
 .chat-open {
@@ -422,9 +444,14 @@
   transition: background var(--t-fast) var(--ease-out);
 }
 
-.project-row:hover,
-.project-row.is-open {
+.project-row:hover {
   background: var(--bg-2);
+}
+
+/* See .nav-row.is-active. */
+.project-row.is-open,
+.project-row.is-open:hover {
+  background: var(--accent-soft);
 }
 
 .project-open {

@@ -22,7 +22,7 @@
  * list of conversations has nothing useful to say at 60px.
  */
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { conversationKind, useApp } from '../../store';
+import { conversationKind, globalPlace, useApp } from '../../store';
 import { apiRecentWorkspaces, apiSetProjectIdentity } from '../../api';
 import type { ChatKind, ChatProviderStatus, ProjectIdentity, RecentChatEntry, RecentWorkspace } from '../../types';
 import { hearthNative } from '../../native';
@@ -32,7 +32,6 @@ import { ConfirmDialog, Icon } from '../ui';
 import { IconButton } from '../ui/Button';
 import { MenuButton, type MenuItem } from '../ui/Menu';
 import { Tooltip } from '../ui/Tooltip';
-import { NewProjectDialog } from './NewProjectDialog';
 import { useOpenFolderRequests } from './useOpenFolder';
 import { FOCUS_SEARCH_EVENT } from './ShortcutLayer';
 import { SHORTCUTS, shortcutLabel } from '../../shortcuts';
@@ -320,13 +319,17 @@ function ChatRow({
 function ProjectRow({
   project,
   open,
+  hasOpen,
   native,
   onOpen,
   onClose,
   onIdentity,
 }: {
   project: RecentWorkspace;
+  /** This project is where the app is standing. Drawn and announced. */
   open: boolean;
+  /** This project's folder is the open one, wherever the app is standing. */
+  hasOpen: boolean;
   native: ReturnType<typeof hearthNative>;
   onOpen: () => void;
   onClose: () => void;
@@ -345,7 +348,7 @@ function ProjectRow({
     ...(native
       ? [{ label: 'Reveal in Finder', icon: 'folder', onSelect: () => void native.revealInFolder(project.path) } as MenuItem]
       : []),
-    ...(open ? [{ label: 'Close project', icon: 'close', onSelect: onClose } as MenuItem] : []),
+    ...(hasOpen ? [{ label: 'Close project', icon: 'close', onSelect: onClose } as MenuItem] : []),
   ];
 
   return (
@@ -387,12 +390,20 @@ function NavRow({
   icon,
   label,
   collapsed,
+  active = false,
   disabledReason,
   onClick,
 }: {
   icon: string;
   label: string;
   collapsed: boolean;
+  /**
+   * You are standing on this screen. These rows carried no active state at
+   * all, which is why the rail could not answer "where am I" on Skills: the
+   * highlight in screenshots was `:hover` and vanished the moment the pointer
+   * moved. `aria-current="page"` rather than `"true"` because these ARE pages.
+   */
+  active?: boolean;
   disabledReason?: string;
   onClick: () => void;
 }) {
@@ -404,14 +415,16 @@ function NavRow({
       label={disabledReason ?? label}
       side="right"
       iconSize={16}
-      className="nav-row is-icon"
+      className={`nav-row is-icon${active ? ' is-active' : ''}`}
+      aria-current={active ? 'page' : undefined}
       aria-disabled={disabled || undefined}
       onClick={() => !disabled && onClick()}
     />
   ) : (
     <button
       type="button"
-      className="nav-row"
+      className={`nav-row${active ? ' is-active' : ''}`}
+      aria-current={active ? 'page' : undefined}
       aria-disabled={disabled || undefined}
       onClick={() => !disabled && onClick()}
     >
@@ -525,10 +538,16 @@ export function Sidebar() {
   const openProject = useApp((s) => s.openProject);
   const openScreen = useApp((s) => s.openScreen);
   const closeWorkspace = useApp((s) => s.closeWorkspace);
+  const askProjectName = useApp((s) => s.askProjectName);
+  // Where the app is standing. New chat, Skills and Tester belong to the
+  // person, not to a game, so while one of them fills the window NOTHING in
+  // the lists below is current — the folder is still open underneath, but it
+  // is not where you are. See `globalPlace`.
+  const place = useApp((s) => globalPlace(s));
+  const inProject = place === null;
   const native = hearthNative();
   const [recents, setRecents] = useState<RecentWorkspace[]>([]);
   const [pendingDelete, setPendingDelete] = useState<RecentChatEntry | null>(null);
-  const [naming, setNaming] = useState(false);
   const [searching, setSearching] = useState(false);
   const [query, setQuery] = useState('');
   const searchRef = useRef<HTMLInputElement>(null);
@@ -727,15 +746,29 @@ export function Sidebar() {
           icon="compose"
           label="New chat"
           collapsed={collapsed}
+          active={place === 'new-chat'}
           onClick={newChat}
         />
-        <NavRow icon="sparkle" label="Skills" collapsed={collapsed} onClick={() => openScreen('skills')} />
-        {/* The tester belongs to a game, so it is only offered when there is
-            one open. Beside Skills rather than buried in the pane, because the
-            history outlives any one session and is read on its own. */}
-        {projectPath !== null && (
-          <NavRow icon="bot" label="Tester" collapsed={collapsed} onClick={() => openScreen('tester')} />
-        )}
+        <NavRow
+          icon="sparkle"
+          label="Skills"
+          collapsed={collapsed}
+          active={place === 'skills'}
+          onClick={() => openScreen('skills')}
+        />
+        {/* Always offered, never gated on an open folder. A playtest belongs
+            to a game, but the HISTORY of playtests belongs to you: it spans
+            every game, it outlives any one session, and hiding the row until
+            something was open meant the only way to reach yesterday's run was
+            to first guess which project it came from. The screen names the
+            game it is aiming at, so nothing here has to be inferred. */}
+        <NavRow
+          icon="bot"
+          label="Tester"
+          collapsed={collapsed}
+          active={place === 'tester'}
+          onClick={() => openScreen('tester')}
+        />
       </div>
 
       {/* Collapsed, this whole region is fully hidden (sidebar.css), and hidden
@@ -759,7 +792,15 @@ export function Sidebar() {
               side="right"
               iconSize={13}
               className="section-add"
-              onClick={() => setNaming(true)}
+              // Creating lands you in the project, not in a list with a new
+              // row: the folder exists, it is empty, and the only useful next
+              // thing is to say what the game is. `openProject` is exactly
+              // that landing. Dismissing the question does nothing at all.
+              onClick={() => {
+                void askProjectName('').then((path) => {
+                  if (path !== null) void openProject(path);
+                });
+              }}
             />
           </div>
           <div className="project-list">
@@ -774,7 +815,13 @@ export function Sidebar() {
                 <ProjectRow
                   key={project.path}
                   project={project}
-                  open={project.path === projectPath}
+                  // Open AND current. On a global screen the folder is still
+                  // open — the socket is up and the game is running — but you
+                  // are not in it, so no row is marked. `open` is what draws
+                  // and announces the highlight; `hasOpen` below is what still
+                  // offers "Close project" for the folder that really is open.
+                  open={inProject && project.path === projectPath}
+                  hasOpen={project.path === projectPath}
                   native={native}
                   onOpen={() => void openProject(project.path)}
                   onClose={closeWorkspace}
@@ -797,7 +844,11 @@ export function Sidebar() {
                 <ChatRow
                   key={entry.id}
                   entry={entry}
-                  active={entry.id === activeChatId && entry.project.path === projectPath}
+                  // A conversation is only current when you are reading it. On
+                  // New chat, Skills or Tester it is merely the one the server
+                  // still has open, and marking it told a screen reader you
+                  // were in a conversation that was not on the screen.
+                  active={inProject && entry.id === activeChatId && entry.project.path === projectPath}
                   local={entry.project.path === projectPath}
                   identity={identityOf(entry.project.path)}
                   onOpen={() => void openRecentChat(entry)}
@@ -822,18 +873,6 @@ export function Sidebar() {
         <UpdateBanner />
         <AccountRow collapsed={collapsed} />
       </div>
-
-      {/* Creating lands you in the project, not in a list with a new row: the
-          folder exists, it is empty, and the only useful next thing is to say
-          what the game is. `openProject` is exactly that landing. */}
-      <NewProjectDialog
-        open={naming}
-        onCancel={() => setNaming(false)}
-        onCreated={(path) => {
-          setNaming(false);
-          void openProject(path);
-        }}
-      />
 
       <ConfirmDialog
         open={pendingDelete !== null}
