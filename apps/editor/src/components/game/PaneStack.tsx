@@ -32,10 +32,27 @@ export function PaneStack() {
 
   return (
     <section className="pane-stack" aria-label="Game">
+      {/* All three stay MOUNTED, and the two you are not looking at are hidden.
+          Rendering only the active tab unmounted the other two, which cost more
+          than a scroll position: leaving Game tore down the iframe, so coming
+          back RESTARTED the person's game from its first frame, and leaving
+          Tester threw away the session's picture and everything it had said.
+          A tab strip is a way of looking at three things, not a way of ending
+          two of them.
+
+          `hidden` rather than a class, because it is the one way of hiding
+          that the accessibility tree honours as well as the paint: a tab you
+          are not on should not be readable by a screen reader either. */}
       <div className="pane-surface">
-        {paneTab === 'game' && <GamePane />}
-        {paneTab === 'tester' && <TesterStage />}
-        {paneTab === 'console' && <ConsolePanel />}
+        <div className="pane-view" hidden={paneTab !== 'game'}>
+          <GamePane />
+        </div>
+        <div className="pane-view" hidden={paneTab !== 'tester'}>
+          <TesterStage />
+        </div>
+        <div className="pane-view" hidden={paneTab !== 'console'}>
+          <ConsolePanel />
+        </div>
       </div>
 
       <div className="pane-tabs" role="tablist" aria-label="Playtest column">

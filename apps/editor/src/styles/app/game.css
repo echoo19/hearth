@@ -18,6 +18,22 @@
   overflow: hidden;
 }
 
+/* One per tab, all three present, only one shown. The tab you are on fills the
+   surface exactly as it did when it was the only child; `hidden` takes the
+   others out of layout, out of paint and out of the accessibility tree, and
+   leaves their state alone.
+
+   `display: flex` has to beat the UA's `[hidden] { display: none }`, which a
+   bare `display` on the same element would do by accident in the wrong
+   direction. Scoping the flex to `:not([hidden])` keeps the UA rule winning
+   for the two that are away. */
+.pane-view:not([hidden]) {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+}
+
 /* --- Game ----------------------------------------------------------------- */
 
 .game-pane {
