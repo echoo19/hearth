@@ -12,8 +12,9 @@
  * touch React: the <img> subscribes by hand. What renders here is small and
  * changes a handful of times a session.
  */
-import React, { useEffect, useRef, useSyncExternalStore } from 'react';
+import React, { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { useApp, type TesterState } from '../../store';
+import type { TesterNote } from '../../../server/tester/types';
 import {
   closeProbeStream,
   openProbeStream,
@@ -23,6 +24,8 @@ import {
 import { ProbeFrames, ProbeNote, stageNoteStatus } from '../game/ProbeStage';
 import { Button } from '../ui/Button';
 import { Tooltip } from '../ui/Tooltip';
+import { ReportView } from './ReportView';
+import { readableNote } from './testerRows';
 
 /**
  * Why the tester cannot be asked to play, or null when it can.
@@ -171,6 +174,46 @@ export function PlayButton({
   );
 }
 
+/**
+ * The report for the session that just finished, offered where it finished.
+ *
+ * A session ended and left the pane saying so and nothing else, and the only
+ * route to what it decided was the Tester screen, find the session, open the
+ * whole thing. That is three moves away from the one surface the person was
+ * already watching, and the plan of action, the part that is actually theirs to
+ * approve, was at the bottom of the third one.
+ *
+ * Offered, never opened for them. A dialog that appears by itself over somebody
+ * who walked away while their tester played is a dialog they dismiss without
+ * reading, and the thing it interrupts might be anything.
+ */
+function FinishedReport({ note }: { note: TesterNote }) {
+  const [reading, setReading] = useState(false);
+  const trigger = useRef<HTMLButtonElement>(null);
+  // The same normalisation the history applies before it hands a note to the
+  // report. A note straight off disk can be missing anything, and the dialog
+  // reads it directly.
+  const readable = readableNote(note);
+  return (
+    <>
+      <button
+        ref={trigger}
+        type="button"
+        className="tester-read tester-rest-read"
+        onClick={() => setReading(true)}
+      >
+        Read the report
+      </button>
+      <ReportView
+        note={readable}
+        open={reading}
+        onClose={() => setReading(false)}
+        returnFocusTo={trigger}
+      />
+    </>
+  );
+}
+
 /** Nothing has ever played here. An invitation, not an empty log. */
 function TesterInvitation({ onPlay, blocked }: { onPlay: () => void; blocked: string | null }) {
   return (
@@ -242,6 +285,13 @@ export function TesterStage() {
   const neverPlayed = idle && tester.session === null && tester.sessions.length === 0;
   const turnLine = testerTurnLine(tester);
   const endingLine = testerEndingLine(tester);
+  // The session whose report this surface can offer. `lastNote` is this
+  // window's own session and is cleared the moment a new one starts; the fall
+  // back to the newest on disk is what makes the offer survive a reload.
+  const finished =
+    idle && !tester.error
+      ? (tester.lastNote ?? tester.sessions[tester.sessions.length - 1] ?? null)
+      : null;
 
   const blocked = whyNoPlay(gamePresent, tester.running, tester.starting);
 
@@ -302,6 +352,7 @@ export function TesterStage() {
           ) : (
             <div className="tester-view-rest">
               <p className="tester-rest-line">{endingLine ?? 'Nothing is playing.'}</p>
+              {finished && <FinishedReport key={finished.session} note={finished} />}
             </div>
           )}
         </div>

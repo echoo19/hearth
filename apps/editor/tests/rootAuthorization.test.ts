@@ -342,6 +342,100 @@ describe('POST /api/command: host paths must land in a folder the caller may nam
   });
 });
 
+describe('a hearth.json is not an authorization', () => {
+  // /api/file and /api/fs used to accept `isOpenRoot(root) || exists(root +
+  // '/hearth.json')`, so any folder on the disk carrying a manifest was
+  // readable and listable, open or not. A manifest is a FILE, and the agent
+  // (and anything the agent's game can drive) writes files.
+  let planted: string;
+
+  beforeAll(async () => {
+    planted = path.join(tmp, 'planted');
+    await fsp.mkdir(planted, { recursive: true });
+    await fsp.writeFile(path.join(planted, 'hearth.json'), JSON.stringify({ name: 'Looks Legit' }));
+    await fsp.writeFile(path.join(planted, 'loot.txt'), 'BYTES THIS TEST INVENTED');
+  });
+
+  it('THE ATTACK: a manifest in an unopened folder no longer opens /api/file', async () => {
+    const res = await fetch(
+      `${baseUrl}/api/file?project=${encodeURIComponent(planted)}&path=loot.txt`,
+      { headers: { Origin: sameOrigin } },
+    );
+    expect(res.status).toBe(403);
+    expect(await res.text()).not.toContain('BYTES THIS TEST INVENTED');
+  });
+
+  it('nor /api/fs, which would have listed the folder as well as read it', async () => {
+    const read = await fetch(
+      `${baseUrl}/api/fs?project=${encodeURIComponent(planted)}&op=read&path=loot.txt`,
+    );
+    expect(read.status).toBe(403);
+    const list = await fetch(`${baseUrl}/api/fs?project=${encodeURIComponent(planted)}&op=readdir&path=.`);
+    expect(list.status).toBe(403);
+  });
+
+  it('LEGITIMATE: opening that same folder is all it takes', async () => {
+    expect((await asEditor('/api/workspace/open', { path: planted })).status).toBe(200);
+    const res = await fetch(`${baseUrl}/api/file?project=${encodeURIComponent(planted)}&path=loot.txt`);
+    expect(res.status).toBe(200);
+    expect(await res.text()).toBe('BYTES THIS TEST INVENTED');
+    const list = await fetch(`${baseUrl}/api/fs?project=${encodeURIComponent(planted)}&op=readdir&path=.`);
+    expect(((await list.json()) as { entries: string[] }).entries).toContain('loot.txt');
+  });
+});
+
+describe('POST /api/workspace/close: the jail shrinks again', () => {
+  // `openedRoots` had no `.delete` anywhere, so every folder touched during a
+  // server run stayed reachable through /api/file, /api/fs, the /api/ws upgrade
+  // and both static mounts until the process exited.
+  let leaving: string;
+
+  beforeAll(async () => {
+    leaving = path.join(tmp, 'finished-with');
+    await fsp.mkdir(leaving, { recursive: true });
+    await fsp.writeFile(path.join(leaving, 'draft.txt'), 'A PROJECT THIS TEST INVENTED');
+  });
+
+  it('LEGITIMATE: while it is open, it reads, which is the point', async () => {
+    await asEditor('/api/workspace/open', { path: leaving });
+    const res = await fetch(`${baseUrl}/api/file?project=${encodeURIComponent(leaving)}&path=draft.txt`);
+    expect(res.status).toBe(200);
+  });
+
+  it('THE ATTACK: closing it actually closes it', async () => {
+    const closed = await asEditor('/api/workspace/close', { path: leaving });
+    expect(closed.status).toBe(200);
+    expect((await closed.json()).wasOpen).toBe(true);
+
+    const res = await fetch(`${baseUrl}/api/file?project=${encodeURIComponent(leaving)}&path=draft.txt`);
+    expect(res.status).toBe(403);
+    expect(await res.text()).not.toContain('A PROJECT THIS TEST INVENTED');
+    const list = await fetch(`${baseUrl}/api/fs?project=${encodeURIComponent(leaving)}&op=readdir&path=.`);
+    expect(list.status).toBe(403);
+  });
+
+  it('closes only the folder it was given', async () => {
+    await asEditor('/api/workspace/open', { path: opened });
+    await asEditor('/api/workspace/open', { path: leaving });
+    await asEditor('/api/workspace/close', { path: leaving });
+    const res = await fetch(`${baseUrl}/api/file?project=${encodeURIComponent(opened)}&path=index.html`);
+    expect(res.status).toBe(200);
+  });
+
+  it('LEGITIMATE: the closed folder is still on the recents list, and reopens', async () => {
+    // Recents are folders the user NAMED. Closing one is not forgetting it, and
+    // the rail still has to render the row.
+    const body = (await (await fetch(`${baseUrl}/api/workspace/recent`)).json()) as {
+      projects: { path: string }[];
+    };
+    expect(body.projects.some((p) => p.path === leaving)).toBe(true);
+    expect((await asEditor('/api/workspace/open', { path: leaving })).status).toBe(200);
+    expect(
+      (await fetch(`${baseUrl}/api/file?project=${encodeURIComponent(leaving)}&path=draft.txt`)).status,
+    ).toBe(200);
+  });
+});
+
 describe('a file this route serves can never become the editor', () => {
   // The game-origin split moved the game to its own port so agent-written code
   // could not reach the control plane. This route is the way back in: it serves

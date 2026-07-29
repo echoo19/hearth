@@ -183,7 +183,7 @@ function registerDialogHandlers(getWindow: () => BrowserWindow | null): void {
       win.setSize(Math.max(width, WINDOW_WIDTH), Math.max(height, WINDOW_HEIGHT), true);
       win.center();
     }
-    win.setTitle(title ? `${title} — Hearth` : 'Hearth');
+    win.setTitle(title ? `${title} · Hearth` : 'Hearth');
   });
 }
 

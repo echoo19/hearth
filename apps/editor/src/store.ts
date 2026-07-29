@@ -30,6 +30,7 @@ import {
   apiProbeStatus,
   apiTesterApprove,
   apiTesterHistory,
+  apiTesterHistoryAll,
   apiTesterPlay,
   apiTesterStop,
   apiRecentChats,
@@ -64,6 +65,7 @@ import type {
   Sense,
   ServerMeta,
   StoredAttachment,
+  TesterRunHistory,
   UpdateReadyInfo,
   WorkspaceInfo,
 } from './types';
@@ -336,6 +338,12 @@ export interface AppState {
    * so that neither asker owns it.
    */
   naming: { suggestion: string } | null;
+  /**
+   * Every recent playtest across every game, newest first, as the Tester
+   * screen shows it. Null until it has been read once, which is how the screen
+   * tells "no runs yet" from "not asked yet" without inventing a flag.
+   */
+  testerRuns: TesterRunHistory | null;
   /** Prompt carried across a folder open, consumed by the composer on mount. */
   pendingPrompt: string | null;
   /**
@@ -467,6 +475,16 @@ export interface AppState {
   stopTester(): Promise<void>;
   /** Re-read the folder's sessions and memory from disk. */
   refreshTesterHistory(): Promise<void>;
+  /**
+   * Every recent playtest across every game, for the Tester screen. Global, so
+   * it takes no project and does not care which folder is open.
+   */
+  refreshTesterRuns(): Promise<void>;
+  /**
+   * Play a session in a named project, opening it first if it is not the one
+   * already open. What the global Tester screen's Play does.
+   */
+  playTesterIn(path: string): Promise<void>;
   /**
    * Start work on the proposals someone ticked, in a conversation of their own.
    *
@@ -1606,6 +1624,7 @@ export const useApp = create<AppState>((set, get) => {
     screen: null,
     testerTarget: null,
     naming: null,
+    testerRuns: null,
     narrowTab: 'chat',
     codePeek: { open: false, path: null },
     pendingPrompt: null,
@@ -2395,6 +2414,29 @@ export const useApp = create<AppState>((set, get) => {
       set(tab === 'console' ? { paneTab: tab, consoleUnread: 0 } : { paneTab: tab });
     },
 
+    async playTesterIn(path) {
+      // The Tester screen is global, so its Play aims at a project that may not
+      // be the open one. Opening first is not a detour: a playtest needs the
+      // folder's game, its probe and its socket, all of which come from an
+      // open workspace, and the person watching needs to be in the game they
+      // asked to have played.
+      if (get().projectPath !== path) {
+        const opened = await get().openWorkspace(path);
+        if (!opened.ok) {
+          showToast(opened.error ?? 'Could not open that project.', 'error');
+          return;
+        }
+      }
+      // Asked for a game the folder does not have. Said out loud rather than by
+      // a button that quietly does nothing, because from a screen listing other
+      // games' playtests there is no way to tell which is which.
+      if (!get().game.present) {
+        showToast('There is no game in that project yet, so there is nothing for it to play.', 'error');
+        return;
+      }
+      await get().playTester();
+    },
+
     async playTester() {
       const project = get().projectPath;
       if (!project || get().tester.running || get().tester.starting) return;
@@ -2437,6 +2479,14 @@ export const useApp = create<AppState>((set, get) => {
       const project = get().projectPath;
       if (!project) return;
       await apiTesterStop(project);
+    },
+
+    async refreshTesterRuns() {
+      const runs = await apiTesterHistoryAll();
+      // A failed read keeps whatever was on screen. The alternative is a list
+      // of real playtests replaced by "nothing yet", which is a lie the screen
+      // has no way to take back.
+      if (runs) set({ testerRuns: runs });
     },
 
     async refreshTesterHistory() {

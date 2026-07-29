@@ -302,7 +302,7 @@ export async function postHarnessRegistry(host: HarnessHost, body: unknown): Pro
     if (!parsed.success) return fail(400, describeZodError(parsed.error));
     const id = parsed.data.id;
     const builtin = collection === 'connectors' ? BUILTIN_CONNECTOR_IDS : BUILTIN_SKILL_IDS;
-    if (builtin.has(id)) return fail(400, `“${id}” is built in — it can't be removed.`);
+    if (builtin.has(id)) return fail(400, `“${id}” is built in , it can't be removed.`);
     return serialize(root, async () => {
       const user = await readFileUnlocked(root);
       const before = user[collection].length;
@@ -322,7 +322,7 @@ export async function postHarnessRegistry(host: HarnessHost, body: unknown): Pro
     if (!parsed.success) return fail(400, describeZodError(parsed.error));
     const draft = parsed.data;
     if (draft.id && BUILTIN_CONNECTOR_IDS.has(draft.id)) {
-      return fail(400, `“${draft.id}” is built in — it can't be edited.`);
+      return fail(400, `“${draft.id}” is built in , it can't be edited.`);
     }
     return serialize(root, async () => {
       const user = await readFileUnlocked(root);
@@ -367,7 +367,7 @@ export async function postHarnessRegistry(host: HarnessHost, body: unknown): Pro
   if (!parsed.success) return fail(400, describeZodError(parsed.error));
   const draft = parsed.data;
   if (draft.id && BUILTIN_SKILL_IDS.has(draft.id)) {
-    return fail(400, `“${draft.id}” is built in — it can't be edited.`);
+    return fail(400, `“${draft.id}” is built in , it can't be edited.`);
   }
   return serialize(root, async () => {
     const user = await readFileUnlocked(root);

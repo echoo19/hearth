@@ -613,6 +613,27 @@ export async function openWebGame(opts: OpenWebGameOptions = {}): Promise<WebGam
       if (key) await releaseKey(key);
     },
 
+    /**
+     * The real keyboard, for a key the game never declared.
+     *
+     * A browser game states its own controls on screen far more often than it
+     * declares them to a shim, and this adapter has always been holding a real
+     * Chromium keyboard: `setActionDown` only ever looked the name up in
+     * `actionKeys` first. Exposing the keyboard directly costs nothing and is
+     * what lets a caller act on "press R to restart" printed in the game.
+     *
+     * The key name is passed through untouched. Playwright already speaks the
+     * W3C key names, and translating here would mean this adapter deciding
+     * what a name means, which is the caller's business and not its own.
+     */
+    async setKeyDown(key: string): Promise<void> {
+      await holdKey(key);
+    },
+
+    async setKeyUp(key: string): Promise<void> {
+      await releaseKey(key);
+    },
+
     async setAxis(name: string, value: number): Promise<void> {
       const positive = actionKeys[`${name}+`];
       const negative = actionKeys[`${name}-`];

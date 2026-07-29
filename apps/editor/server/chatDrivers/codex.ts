@@ -760,9 +760,14 @@ export class CodexDriver implements ChatDriver {
   stop(): void {
     this.stopped = true;
     // Answer anything still blocking codex so the child can unwind cleanly
-    // rather than sitting on a paused turn while we kill it.
-    for (const [, pending] of this.approvals) {
+    // rather than sitting on a paused turn while we kill it. The SAME answer
+    // goes onto the event stream, before the close: a prompt on screen is only
+    // ever taken down by its `approval-resolved`, so answering codex and not the
+    // windows left Allow / Deny live in every one of them, and in the
+    // transcript, for a request that was already declined.
+    for (const [approvalId, pending] of this.approvals) {
       this.conn?.respond(pending.id, codexApprovalReply(pending.method, 'deny'));
+      this.queue.push({ type: 'approval-resolved', approvalId, decision: 'deny' });
     }
     this.approvals.clear();
     this.conn?.kill();

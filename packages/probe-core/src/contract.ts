@@ -149,6 +149,30 @@ export interface GameUnderTest {
   setActionUp(name: string): Promise<void>;
   setAxis(name: string, value: number): Promise<void>;
   sendPointer(x: number, y: number, kind: PointerKind): Promise<void>;
+  /**
+   * Hold a raw key down, and release it. `key` is a keyboard key name
+   * (`R`, `Space`, `ArrowLeft`, `F2`), not one of the declared action names.
+   *
+   * These two exist because a declared input vocabulary is what Hearth could
+   * INFER about a game, and a game states its own controls on screen. A game
+   * that prints "press R to restart" and declares only `left`, `right` and
+   * `jump` is not misconfigured, it is normal, and a harness that can only
+   * send the three names it was told about cannot restart that game. Deciding
+   * that the tester may only press what Hearth already knew about is Hearth
+   * putting a game in a mold, which it must never do.
+   *
+   * Optional, and their PRESENCE is the whole declaration: there is no
+   * capability flag, because an implementation either has a keyboard to drive
+   * or it does not, and a boolean that could disagree with the method is one
+   * more thing to get wrong. An implementation without a keyboard (a headless
+   * engine connector, a pad-only console target) simply leaves them off, and
+   * every caller must cope with their absence and say so out loud rather than
+   * dropping the input.
+   *
+   * They arrive together or not at all.
+   */
+  setKeyDown?(key: string): Promise<void>;
+  setKeyUp?(key: string): Promise<void>;
   /** capabilities.senses.entities */
   listEntities?(): Promise<ProbeEntity[]>;
   /** capabilities.senses.entities — resolve by id, then exact name, then tag. */

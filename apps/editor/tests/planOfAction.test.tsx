@@ -20,6 +20,8 @@ vi.mock('../src/api', async (importOriginal) => ({
   apiTesterPlay: vi.fn(),
   apiTesterStop: vi.fn(),
   apiTesterHistory: vi.fn(async () => null),
+  apiTesterHistoryAll: vi.fn(async () => null),
+  apiRecentWorkspaces: vi.fn(async () => []),
 }));
 
 import { TesterHistory } from '../src/components/tester/TesterHistory';
@@ -63,14 +65,26 @@ function note(over: Partial<TesterNote> = {}): TesterNote {
   };
 }
 
+/**
+ * The Tester screen is global now: it lists runs across every game, so a
+ * session reaches it as a run tagged with the project it came from, not as the
+ * open folder's history. The folder is still set, because approving starts a
+ * conversation and that needs one.
+ */
 function seed(sessions: TesterNote[]): void {
   useApp.setState({
-    projectPath: '/work/game',
+    projectPath: PROJECT,
     projectName: 'game',
     game: { present: true, entry: 'index.html', mtime: 1 },
     tester: { ...IDLE, sessions },
+    testerRuns: {
+      runs: sessions.map((note) => ({ note, project: { path: PROJECT, name: 'game' } })),
+      dropped: 0,
+    },
   });
 }
+
+const PROJECT = '/work/game';
 
 beforeEach(() => {
   const proto = HTMLDialogElement.prototype as unknown as Record<string, unknown>;
@@ -88,9 +102,12 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-/** Open the first session's report and hand back the dialog it opened. */
+/**
+ * Open the first run's report and hand back the dialog it opened. The whole
+ * row is the button: reading a report is the only thing this list is for.
+ */
 function open(): HTMLElement {
-  const trigger = screen.getAllByRole('button', { name: /read the whole session/i })[0];
+  const trigger = document.querySelectorAll('.tester-run')[0] as HTMLElement;
   act(() => {
     trigger.click();
   });
@@ -249,22 +266,26 @@ describe('the plan of action', () => {
  * with no boundary above it takes the whole window to a white screen.
  */
 describe('a session whose note cannot be read', () => {
-  it('renders as a session that says so, and takes nothing else down with it', () => {
+  it('renders as a row that says so, and takes nothing else down with it', () => {
     const broken = { session: 2 } as unknown as TesterNote;
     seed([note({ session: 1 }), broken]);
     expect(() => render(<TesterHistory />)).not.toThrow();
     expect(screen.getAllByText(/could not read this session/i).length).toBeGreaterThan(0);
-    // The good session is still on screen, which is the whole point of the
+    // The good session is still on the list, which is the whole point of the
     // note being dropped rather than thrown.
-    expect(screen.getByText(/rewrote the intake rules/)).toBeTruthy();
+    expect(document.querySelectorAll('.tester-run')).toHaveLength(2);
+    expect(screen.getByText(/your last change helped/i)).toBeTruthy();
   });
 
   it('claims no verdict it cannot support', () => {
     seed([{ session: 2 } as unknown as TesterNote]);
     render(<TesterHistory />);
+    // Not one of the four real answers, on the row or in the report it opens.
     expect(screen.queryByText(/your last change helped/i)).toBeNull();
     expect(screen.queryByText(/made no real difference/i)).toBeNull();
-    expect(screen.getByText(/not in a shape this version of Hearth/i)).toBeTruthy();
+    expect(screen.getByText(/could not read this session/i)).toBeTruthy();
+    const report = open();
+    expect(within(report).getByText(/could not be read out of its note/i)).toBeTruthy();
   });
 
   it('opens its report without throwing either', () => {

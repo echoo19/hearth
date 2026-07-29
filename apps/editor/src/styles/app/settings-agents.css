@@ -618,6 +618,20 @@
   border-radius: var(--radius-sm);
 }
 
+/* Only one of these disables, and it is the recheck: a second read fired over
+   a live one is how a probe that timed out ends up being the answer of record.
+   It keeps its underline, because the label changes to say what it is doing
+   and a control that reads "Checking…" should still look like the control. */
+.set-agent-more:disabled {
+  color: var(--ink-mute);
+  opacity: 0.55;
+  cursor: default;
+}
+
+.set-agent-more:disabled:hover {
+  color: var(--ink-mute);
+}
+
 /* An external link, in an app with no address bar.
 
    Underlined and marked, because leaving for a browser is a bigger thing than

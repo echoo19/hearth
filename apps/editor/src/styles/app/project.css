@@ -143,6 +143,70 @@
   white-space: nowrap;
 }
 
+/* --- Playtests ------------------------------------------------------------
+   Sessions belong to the project, not to the conversation list, so they get
+   their own section under it and are built to read as records rather than as
+   things somebody said. */
+
+.proj-list-title {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+}
+
+/* A way out of the section, kept quiet: the newest few sessions are the
+   answer most of the time and the full history is a second question. */
+.proj-list-more {
+  margin-left: auto;
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  font-size: var(--text-xs);
+  color: var(--ink-faint);
+  cursor: pointer;
+}
+
+.proj-list-more:hover {
+  color: var(--accent);
+}
+
+.proj-session {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  width: 100%;
+  padding: 12px 10px;
+  border: 0;
+  border-bottom: 1px solid var(--border);
+  border-radius: 0;
+  background: transparent;
+  font: inherit;
+  font-size: var(--text-md);
+  color: var(--ink);
+  text-align: left;
+  cursor: pointer;
+}
+
+.proj-session:hover {
+  background: var(--bg-2);
+}
+
+.proj-session-title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.proj-session-when {
+  flex: none;
+  font-size: var(--text-xs);
+  color: var(--ink-faint);
+  white-space: nowrap;
+}
+
 .proj-empty {
   margin: 20px 0 0;
   font-size: var(--text-sm);

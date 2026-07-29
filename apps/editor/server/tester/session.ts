@@ -71,6 +71,9 @@ export interface TesterGame {
   setActionUp(name: string): Promise<void>;
   setAxis(name: string, value: number): Promise<void>;
   sendPointer(x: number, y: number, kind: string): Promise<void>;
+  /** The raw keyboard, when the adapter has one. See the contract for why. */
+  setKeyDown?(key: string): Promise<void>;
+  setKeyUp?(key: string): Promise<void>;
   screenshot?(): Promise<Uint8Array>;
   listStates?(): Promise<ProbeState[]>;
   enterState?(id: string): Promise<void>;
@@ -109,6 +112,12 @@ function describeVerdict(verdict: ChangeVerdict): string {
       return `worse, because ${verdict.why}`;
     case 'no-difference':
       return `no real difference, because ${verdict.why}`;
+    case 'unclear':
+      // Put back to the tester as the non-answer it was. Reporting it as one of
+      // the three would anchor the next session on a verdict nobody gave.
+      return 'not one of the three answers, so no verdict was recorded for that session';
+    case 'unreadable':
+      return 'something Hearth could not read back out of that session, so treat it as no verdict at all';
     default:
       return 'nothing, it was your first look at the game';
   }
@@ -159,6 +168,91 @@ function makeAsk(
   };
 }
 
+/**
+ * Keys that have a written name of their own, lower-cased for lookup.
+ *
+ * Every entry is a key's OWN name, and the aliases are spellings of that same
+ * name rather than meanings: `esc` for Escape, `uparrow` for ArrowUp. There is
+ * deliberately no entry mapping an idea to a key, so nothing here can turn
+ * `jump` into Space or `fire` into Control.
+ */
+const NAMED_KEYS = new Map<string, string>(
+  (
+    [
+      ['enter', 'Enter'],
+      ['return', 'Enter'],
+      ['space', 'Space'],
+      ['spacebar', 'Space'],
+      ['escape', 'Escape'],
+      ['esc', 'Escape'],
+      ['tab', 'Tab'],
+      ['backspace', 'Backspace'],
+      ['delete', 'Delete'],
+      ['del', 'Delete'],
+      ['insert', 'Insert'],
+      ['ins', 'Insert'],
+      ['home', 'Home'],
+      ['end', 'End'],
+      ['pageup', 'PageUp'],
+      ['pgup', 'PageUp'],
+      ['pagedown', 'PageDown'],
+      ['pgdn', 'PageDown'],
+      ['arrowup', 'ArrowUp'],
+      ['uparrow', 'ArrowUp'],
+      ['arrowdown', 'ArrowDown'],
+      ['downarrow', 'ArrowDown'],
+      ['arrowleft', 'ArrowLeft'],
+      ['leftarrow', 'ArrowLeft'],
+      ['arrowright', 'ArrowRight'],
+      ['rightarrow', 'ArrowRight'],
+      ['shift', 'Shift'],
+      ['control', 'Control'],
+      ['ctrl', 'Control'],
+      ['alt', 'Alt'],
+      ['meta', 'Meta'],
+      ['capslock', 'CapsLock'],
+    ] as [string, string][]
+  ).concat(Array.from({ length: 12 }, (_, i) => [`f${i + 1}`, `F${i + 1}`] as [string, string])),
+);
+
+/**
+ * The key a name asks for, or null when the name is not a key at all.
+ *
+ * The rule, and it is the whole rule: a name becomes a key only when it is
+ * ALREADY a key's name. One printable character is that character's key, upper
+ * cased because `r` and `R` are one physical key. A longer name has to match a
+ * key that has a written name, spelling variants allowed. Everything else is a
+ * word for an idea and gets nothing.
+ *
+ * That is why `R`, `1`, `/`, `Space` and `ArrowLeft` all arrive at the game and
+ * `jump`, `shoot`, `restart` and `pause` do not. Sending `jump` would mean
+ * picking a key for it, and there is no key for jump: it is Space in a platform
+ * game, Z in another, A on a pad, and nothing at all in a game with no jumping.
+ * The moment this function held a table like that, Hearth would be telling the
+ * person what kind of game they are allowed to have written. So it declines,
+ * and the caller says out loud that it declined.
+ */
+export function keyForInputName(name: string): string | null {
+  const raw = name.trim();
+  if (raw === '') return null;
+  const characters = [...raw];
+  if (characters.length === 1) {
+    const only = characters[0];
+    // A control character is not something anyone can be shown on screen.
+    if (only.codePointAt(0)! < 0x20) return null;
+    return only.toUpperCase();
+  }
+  // Spaces, hyphens and underscores are how the same key name gets written
+  // differently, not different keys: "page up", "page-up" and "PageUp" are one.
+  return NAMED_KEYS.get(raw.toLowerCase().replace(/[\s_-]+/g, '')) ?? null;
+}
+
+/** Why the game never saw something, in the second person, for the tester. */
+function why(err: unknown): string {
+  const message = (err as Error)?.message;
+  return message && message.trim() !== '' ? message.trim() : 'the game gave no reason';
+}
+
 /** What one turn's decision did, for the loop and the transcript. */
 interface Applied {
   /** False when the tester said it had seen enough. */
@@ -167,6 +261,17 @@ interface Applied {
   entered?: ProbeState;
   /** What the game said when it was asked and could not. */
   enterFailed?: string;
+  /**
+   * Everything the tester asked for that the game never received, one sentence
+   * each, addressed to the tester and shown to it on its next turn.
+   *
+   * This list is the difference between "I pressed it and the game did nothing"
+   * and "my press was thrown away before it got there". A tester that cannot
+   * tell those apart writes the first one down as a finding about someone's
+   * game, which is exactly what happened: it asked for R, R went nowhere, and
+   * it reported the game as stuck.
+   */
+  undelivered: string[];
 }
 
 /** Play one turn's decision into the game. */
@@ -174,45 +279,111 @@ async function applyDecision(
   game: TesterGame,
   reply: string,
   held: Set<string>,
+  heldKeys: Set<string>,
   states: readonly ProbeState[],
 ): Promise<Applied> {
   const decision = decideFromReply(reply);
+  const undelivered: string[] = [];
   // Whatever was held last turn is released first: a tester that says "right"
   // then "left" means it changed its mind, not that it is holding both.
   for (const name of held) await game.setActionUp(name).catch(() => {});
   held.clear();
+  for (const key of heldKeys) await game.setKeyUp?.(key).catch(() => {});
+  heldKeys.clear();
 
-  if (decision.kind === 'done') return { keepPlaying: false };
+  if (decision.kind === 'done') return { keepPlaying: false, undelivered };
   if (decision.kind === 'enter') {
-    // Only a state the game itself named. An id nobody declared is ignored
-    // rather than sent on, the same way an undeclared input is.
     const wanted = states.find((state) => state.id === decision.id);
-    if (!wanted || !game.enterState) return { keepPlaying: true };
+    if (!wanted) {
+      return {
+        keepPlaying: true,
+        undelivered: [
+          `You asked to be put into "${decision.id}", and this game never named anywhere by that id, so nothing moved. You are where you were.`,
+        ],
+      };
+    }
+    if (!game.enterState) {
+      return {
+        keepPlaying: true,
+        undelivered: ['You asked to be put somewhere, and this game cannot be put anywhere, so nothing moved.'],
+      };
+    }
     try {
       await game.enterState(wanted.id);
-      return { keepPlaying: true, entered: wanted };
+      return { keepPlaying: true, entered: wanted, undelivered };
     } catch (err) {
       // The game refused. That is worth writing down and is not worth ending a
       // session over: the tester is still where it was and can carry on.
-      return { keepPlaying: true, enterFailed: (err as Error).message };
+      return { keepPlaying: true, enterFailed: (err as Error).message, undelivered };
     }
   }
   if (decision.kind === 'actions') {
     for (const name of decision.actions) {
-      const known = game.capabilities.input.actions.includes(name);
-      const axis = game.capabilities.input.axes.includes(name);
-      if (axis) {
-        await game.setAxis(name, 1).catch(() => {});
-      } else if (known) {
-        await game.setActionDown(name).catch(() => {});
-        held.add(name);
+      if (game.capabilities.input.axes.includes(name)) {
+        try {
+          await game.setAxis(name, 1);
+        } catch (err) {
+          undelivered.push(`"${name}" is an axis this game declared, and driving it failed: ${why(err)}.`);
+        }
+        continue;
       }
-      // An input the game never declared is ignored rather than guessed at.
+      if (game.capabilities.input.actions.includes(name)) {
+        try {
+          await game.setActionDown(name);
+          held.add(name);
+        } catch (err) {
+          undelivered.push(`"${name}" is an input this game declared, and holding it failed: ${why(err)}.`);
+        }
+        continue;
+      }
+
+      // The line that used to be here read "An input the game never declared is
+      // ignored rather than guessed at", and it looked principled while doing
+      // real damage. The declared list is what Hearth could INFER about a game.
+      // Games say their own controls on screen, so a game printing "R to
+      // restart" and declaring only left, right and jump is normal, not broken.
+      // The tester read that screen, asked for R, and R was dropped on the
+      // floor in silence. It then concluded the game was stuck and wrote that
+      // down about somebody's game.
+      //
+      // Two things had to change and both are here. A name that is already a
+      // key goes to the real keyboard, because refusing to press a key a game
+      // asked for is Hearth deciding which inputs a game is allowed to have. A
+      // name that is not a key, or a key nobody can send, is SAID rather than
+      // swallowed, because the only thing worse than dropping an input is
+      // dropping it quietly.
+      const key = keyForInputName(name);
+      if (key === null) {
+        undelivered.push(
+          `"${name}" never reached the game: it is not an input this game declared and it is not the name of a key, so there was nothing to press. If the game tells you what to press, name that key exactly, like R or Space or ArrowLeft.`,
+        );
+        continue;
+      }
+      if (!game.setKeyDown) {
+        undelivered.push(
+          `"${name}" never reached the game: this game did not declare it, and no keys can be sent to this game beyond the ones it declared.`,
+        );
+        continue;
+      }
+      try {
+        await game.setKeyDown(key);
+        heldKeys.add(key);
+      } catch (err) {
+        undelivered.push(`The ${key} key could not be pressed: ${why(err)}.`);
+      }
     }
-  } else if (decision.kind === 'pointer' && game.capabilities.input.pointer) {
-    await game.sendPointer(decision.x, decision.y, decision.click ? 'click' : 'move').catch(() => {});
+  } else if (decision.kind === 'pointer') {
+    if (!game.capabilities.input.pointer) {
+      undelivered.push('Your pointer line never reached the game: this game declared no pointer at all.');
+    } else {
+      try {
+        await game.sendPointer(decision.x, decision.y, decision.click ? 'click' : 'move');
+      } catch (err) {
+        undelivered.push(`Your pointer line could not be sent: ${why(err)}.`);
+      }
+    }
   }
-  return { keepPlaying: true };
+  return { keepPlaying: true, undelivered };
 }
 
 /** The session's frames, written as it plays, so its claims have something behind them. */
@@ -283,8 +454,13 @@ export async function runTesterSession(opts: RunTesterSessionOptions): Promise<T
       actions: game.capabilities.input.actions,
       axes: game.capabilities.input.axes,
       pointer: game.capabilities.input.pointer,
+      // Whether the tester may name a key the game never declared. Read off the
+      // adapter rather than assumed, so the offer is never made to a tester
+      // whose keypress would have nowhere to go.
+      keys: typeof game.setKeyDown === 'function',
     };
     const held = new Set<string>();
+    const heldKeys = new Set<string>();
 
     // What the game says it can put itself into, in its own words. A game that
     // offers nothing is not asked again and is never told about the idea.
@@ -299,17 +475,32 @@ export async function runTesterSession(opts: RunTesterSessionOptions): Promise<T
     }
 
     onPhase?.('playing');
+    /** What the last turn asked for and never got, carried into this turn's prompt. */
+    let undelivered: string[] = [];
     for (let turn = 1; turn <= maxSteps; turn += 1) {
       if (signal?.aborted) {
         stopped = 'user';
         break;
       }
       let attachments: ChatAttachment[] | undefined;
+      /**
+       * The picture the tester is looking at this turn, or null when there is
+       * none. Null and a number are different situations and the prompt says
+       * which: a turn with no picture is a turn the tester must not write
+       * observations about.
+       */
+      let picture: number | null = null;
       if (game.screenshot) {
         try {
           const bytes = await game.screenshot();
-          frameCount += 1;
-          await saveFrame(frames, frameCount, bytes);
+          // Written to disk BEFORE the counter moves. The other order left
+          // `frames` counting a picture that a failed write had never put in
+          // the folder, and every reader treats that count as the number of
+          // files that exist.
+          const next = frameCount + 1;
+          await saveFrame(frames, next, bytes);
+          frameCount = next;
+          picture = next;
           attachments = [
             attachmentFor(root, path.join(frames, `${String(frameCount).padStart(4, '0')}.png`), bytes.byteLength),
           ];
@@ -318,11 +509,21 @@ export async function runTesterSession(opts: RunTesterSessionOptions): Promise<T
           // anyway, rather than the session ending over one missed frame.
         }
       }
-      const prompt = playPrompt(turn, maxSteps, controls, states);
+      // Numbered by PICTURE, never by turn. The prompt used to say "Picture 5"
+      // on turn five while attaching 0004.png, because a failed screenshot
+      // costs a turn its picture and the frame counter had not moved. The
+      // tester then cited picture 5, and the citation was checked against the
+      // frame count and dropped as a picture nobody took. Both ends of that
+      // are the same number now.
+      const prompt = playPrompt(turn, maxSteps, controls, states, undelivered, picture);
       const reply = await ask(turn === 1 ? `${briefing}\n\n${prompt}` : prompt, attachments);
       transcript.push(`## Picture ${frameCount}`, '', reply.trim(), '');
       steps = turn;
-      const applied = await applyDecision(game, reply, held, states);
+      const applied = await applyDecision(game, reply, held, heldKeys, states);
+      undelivered = applied.undelivered;
+      // In the transcript as well as in the next prompt. A reader working out
+      // why the tester said a game was stuck needs to see what never arrived.
+      for (const line of undelivered) transcript.push(line, '');
       if (applied.entered) {
         // The next picture is the first one taken of somewhere the tester was
         // put rather than got to. Everything from there is marked placed, and
@@ -342,6 +543,7 @@ export async function runTesterSession(opts: RunTesterSessionOptions): Promise<T
       }
     }
     for (const name of held) await game.setActionUp(name).catch(() => {});
+    for (const key of heldKeys) await game.setKeyUp?.(key).catch(() => {});
   } catch (err) {
     crash = err as Error;
     stopped = 'error';
@@ -421,6 +623,12 @@ export async function runTesterSession(opts: RunTesterSessionOptions): Promise<T
     // Written every session, including the sessions where the answer is that
     // the game named nowhere. A game that cooperates with nothing is a
     // first-class outcome, and the report is where it gets said out loud.
+    // Where the placement line fell, written down rather than left to be
+    // recovered from the observations later. The recovery could only see
+    // pictures the tester wrote a SAW line about, so a session that was placed
+    // at picture four and wrote about pictures one to three recovered nothing,
+    // and every later picture was then reported as reached by playing.
+    ...(placedFromFrame === null ? {} : { placedFrom: placedFromFrame }),
     placement: { offered: states.length, ...(enteredLabel === null ? {} : { entered: enteredLabel }) },
     proposals,
     openQuestions,

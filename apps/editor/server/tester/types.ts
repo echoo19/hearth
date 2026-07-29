@@ -75,11 +75,19 @@ export interface TesterPlacement {
  * it exists so that case has somewhere to go other than one of the four real
  * answers. A session folder that has to be shown as "better" in order to be
  * shown at all is a session folder that can lie about someone's game.
+ *
+ * 'unclear' is the note the tester DID write, whose verdict line said something
+ * that is not one of the three. "Mixed", "I cannot tell", "not better, if
+ * anything worse". Its own value because the alternative was recording one of
+ * the three anyway: "not better" was recorded as better and rendered as "that
+ * helped", which is the exact opposite of what the tester said, in the one
+ * sentence this whole feature exists to deliver. Everything else on such a note
+ * is real and is still shown; only the verdict is missing.
  */
 export interface ChangeVerdict {
   /** What it understood you changed, in its own words. */
   seen: string;
-  verdict: 'better' | 'worse' | 'no-difference' | 'first-session' | 'unreadable';
+  verdict: 'better' | 'worse' | 'no-difference' | 'first-session' | 'unreadable' | 'unclear';
   why: string;
 }
 
@@ -96,6 +104,20 @@ export interface TesterNote {
    */
   regression: string;
   observations: TesterObservation[];
+  /**
+   * The first picture taken after the game put the tester somewhere, or absent
+   * when that never happened during the session.
+   *
+   * Written down rather than derived, and that is the whole point of the field.
+   * `report.ts` used to recover the placement line from the observations, so a
+   * session whose SAW lines all happened to describe pictures taken BEFORE the
+   * placement recovered nothing, and every uncited picture after the placement
+   * was then reported as reached by playing. That is the stronger claim, it was
+   * made about content the game had dropped the tester into, and it went out to
+   * an agent as evidence that a player can get there. Only the session knows
+   * where this line fell, so only the session may say.
+   */
+  placedFrom?: number;
   /**
    * What the game offered by way of somewhere to be put. Absent on notes
    * written before a game could name anywhere, and never inferred: a capability

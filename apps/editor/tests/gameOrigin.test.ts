@@ -85,6 +85,30 @@ beforeAll(async () => {
   await fsp.writeFile(path.join(openFolder, 'index.html'), '<html><body><canvas></canvas></body></html>');
   await fsp.writeFile(path.join(secretFolder, 'secret.txt'), 'not yours');
 
+  // The project's own hidden folder, with a stand-in for the two things that
+  // actually live there. Written by this test, so nothing real is ever read.
+  await fsp.mkdir(path.join(openFolder, '.hearth', 'chats'), { recursive: true });
+  await fsp.writeFile(
+    path.join(openFolder, '.hearth', 'app.json'),
+    JSON.stringify({ apiKey: 'sk-ant-KEY-THIS-TEST-INVENTED', openaiApiKey: 'sk-OPENAI-INVENTED' }),
+  );
+  await fsp.writeFile(
+    path.join(openFolder, '.hearth', 'chats', 'index.json'),
+    JSON.stringify([{ id: 'c1', title: 'CHAT TITLE THIS TEST INVENTED' }]),
+  );
+  await fsp.mkdir(path.join(openFolder, '.git'), { recursive: true });
+  await fsp.writeFile(path.join(openFolder, '.git', 'config'), 'PUSH TOKEN THIS TEST INVENTED');
+
+  // A game that keeps art outside its entry's directory, which is the flow the
+  // hidden-name rule must not have cost.
+  await fsp.mkdir(path.join(openFolder, 'shared'), { recursive: true });
+  await fsp.writeFile(path.join(openFolder, 'shared', 'atlas.png'), 'ATLAS BYTES');
+  await fsp.mkdir(path.join(openFolder, 'dist'), { recursive: true });
+  await fsp.writeFile(
+    path.join(openFolder, 'dist', 'index.html'),
+    '<html><body><canvas></canvas><img src="../shared/atlas.png"></body></html>',
+  );
+
   ctx = createProjectServerContext({ recentsFile: path.join(tmp, 'recents.json'), repoRoot: tmp });
   await ctx.openWorkspace(openFolder);
 
@@ -214,6 +238,104 @@ describe('layer 2: the socket cannot name a folder nobody opened', () => {
       { Origin: apiOrigin },
     );
     expect(result.ok).toBe(true);
+  });
+});
+
+describe('layer 3: the game’s own origin does not serve the project’s secrets', () => {
+  // The origin split's thesis is that the boundary is the ORIGIN, not the
+  // capability. `/game/<key>/<rel>` resolves rel against the project ROOT, so
+  // for as long as it excluded nothing, that thesis handed the game the user's
+  // saved API keys and every conversation, from the same origin, with the key
+  // already sitting in the game's own location.pathname.
+  const key = () => encodeRootKey(openFolder);
+
+  it('THE ATTACK: the game cannot fetch .hearth/app.json off its own mount', async () => {
+    const res = await fetch(`${game.origin}/game/${key()}/.hearth/app.json`, {
+      headers: { Origin: game.origin },
+    });
+    expect(res.status).toBe(403);
+    expect(await res.text()).not.toContain('KEY-THIS-TEST-INVENTED');
+  });
+
+  it('THE ATTACK: nor the chat history beside it', async () => {
+    const res = await fetch(`${game.origin}/game/${key()}/.hearth/chats/index.json`);
+    expect(res.status).toBe(403);
+    expect(await res.text()).not.toContain('CHAT TITLE');
+  });
+
+  it('nor .git/config, which is where a push token would be', async () => {
+    const res = await fetch(`${game.origin}/game/${key()}/.git/config`);
+    expect(res.status).toBe(403);
+    expect(await res.text()).not.toContain('PUSH TOKEN');
+  });
+
+  it('and the dot cannot be spelled around', async () => {
+    // Percent-encoded, and reached through a detour that only normalizes into
+    // a hidden segment. The check runs on the RESOLVED path for this reason.
+    const encoded = await fetch(`${game.origin}/game/${key()}/%2Ehearth/app.json`);
+    expect(encoded.status).toBe(403);
+    const detour = await fetch(`${game.origin}/game/${key()}/shared/..%2F.hearth%2Fapp.json`);
+    expect(detour.status).toBe(403);
+  });
+
+  it('LEGITIMATE: a game still loads an asset from elsewhere in its project', async () => {
+    // dist/index.html points at ../shared/atlas.png. Re-basing the mount on the
+    // entry's own directory would have broken exactly this, which is why the
+    // rule is on the name and not on the shape.
+    const entry = await fetch(`${game.origin}/game/${key()}/dist/index.html`);
+    expect(entry.status).toBe(200);
+    const asset = await fetch(`${game.origin}/game/${key()}/shared/atlas.png`);
+    expect(asset.status).toBe(200);
+    expect(await asset.text()).toBe('ATLAS BYTES');
+  });
+
+  it('LEGITIMATE: the evidence mount still serves out of .hearth, because its base IS there', async () => {
+    const shot = path.join(openFolder, '.hearth', 'evidence', 'sweeps', '1', 'shots');
+    await fsp.mkdir(shot, { recursive: true });
+    await fsp.writeFile(path.join(shot, 'f0.png'), 'FRAME BYTES');
+    const res = await fetch(`${game.origin}/evidence/${key()}/sweeps/1/shots/f0.png`);
+    expect(res.status).toBe(200);
+    expect(await res.text()).toBe('FRAME BYTES');
+  });
+});
+
+describe('layer 4: closing a folder takes it back out of the jail', () => {
+  it('THE ATTACK: an open folder stayed open forever, so project A could read project B', async () => {
+    const other = path.join(tmp, 'other-game');
+    await fsp.mkdir(other, { recursive: true });
+    await fsp.writeFile(path.join(other, 'notes.txt'), 'B’S OWN BYTES');
+    await ctx.openWorkspace(other);
+
+    // While open, it is served. That is the point of the mount.
+    const open = await fetch(`${game.origin}/game/${encodeRootKey(other)}/notes.txt`);
+    expect(open.status).toBe(200);
+
+    // Closing it used to be a client-side state change and nothing more.
+    await ctx.closeWorkspace(other);
+    const closed = await fetch(`${game.origin}/game/${encodeRootKey(other)}/notes.txt`);
+    expect(closed.status).toBe(403);
+    expect(await closed.text()).not.toContain('B’S OWN BYTES');
+  });
+
+  it('and the socket cannot name it either once it is closed', async () => {
+    const other = path.join(tmp, 'other-socket');
+    await fsp.mkdir(other, { recursive: true });
+    await ctx.openWorkspace(other);
+    expect(
+      (await tryConnect(`ws://${apiHost}/api/ws?project=${encodeURIComponent(other)}`, { Origin: apiOrigin })).ok,
+    ).toBe(true);
+    await ctx.closeWorkspace(other);
+    expect(
+      (await tryConnect(`ws://${apiHost}/api/ws?project=${encodeURIComponent(other)}`, { Origin: apiOrigin })).ok,
+    ).toBe(false);
+  });
+
+  it('LEGITIMATE: reopening it works, and the folder the user is in is untouched', async () => {
+    const other = path.join(tmp, 'other-game');
+    expect(((await ctx.openWorkspace(other)).body as { ok: boolean }).ok).toBe(true);
+    expect((await fetch(`${game.origin}/game/${encodeRootKey(other)}/notes.txt`)).status).toBe(200);
+    // Closing one folder must not close the one beside it.
+    expect((await fetch(`${game.origin}/game/${encodeRootKey(openFolder)}/index.html`)).status).toBe(200);
   });
 });
 

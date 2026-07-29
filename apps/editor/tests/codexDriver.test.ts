@@ -359,15 +359,22 @@ describe('CodexDriver approvals', () => {
   it('denies anything still pending on stop, so the child never sits on a paused turn', async () => {
     const { driver, server } = makeDriver();
     await driver.start('chat-1', '/w/game');
-    const request = reader(driver.events).next(1);
+    const events = reader(driver.events);
+    const request = events.next(1);
     server.emit({
       id: 11,
       method: 'item/commandExecution/requestApproval',
       params: { threadId: 'thread-1', turnId: 't', itemId: 'i3', startedAtMs: 0 },
     });
-    await request;
+    const approvalId = ((await request)[0] as { approvalId: string }).approvalId;
+    // The windows are told the same thing codex is, before the stream ends.
+    // Answering only codex left Allow / Deny live on screen and unanswered in
+    // the transcript, for a request that had already been declined, and the
+    // session it pointed at was gone.
+    const resolved = events.next(1);
     driver.stop();
     expect(server.replyFor(11)).toEqual({ decision: 'decline' });
+    expect(await resolved).toEqual([{ type: 'approval-resolved', approvalId, decision: 'deny' }]);
   });
 
   it('answers an unknown server request rather than leaving it hanging', async () => {

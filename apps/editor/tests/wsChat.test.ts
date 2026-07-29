@@ -34,7 +34,19 @@ class ScriptedDriver implements ChatDriver {
   stopped = false;
   /** When set, `start` throws it: a backend that refuses to bind. */
   startError: string | null = null;
+  /**
+   * When set, a send is recorded and answered with nothing: a turn that went to
+   * work. The default script answers instantly, which no real backend does.
+   */
+  silent = false;
+  /** When set, the driver's last words reach its stream a tick after `stop()`. */
+  slowTeardown = false;
   private finished = false;
+  /** Set by `blockBind`: `start` waits on it, so a bind can be held open. */
+  private gate: Promise<void> | null = null;
+  private openGate: (() => void) | null = null;
+  /** Approvals raised and not yet answered, exactly as the real drivers hold them. */
+  private pending = new Set<string>();
 
   get events(): AsyncIterable<ChatEvent> {
     return this.queue;
@@ -47,14 +59,39 @@ class ScriptedDriver implements ChatDriver {
   async start(_sessionId: string, projectRoot: string): Promise<void> {
     this.startedIn = projectRoot;
     if (this.startError) throw new Error(this.startError);
+    if (this.gate) await this.gate;
+  }
+
+  /** Hold the bind open, the way a real backend takes a moment to come up. */
+  blockBind(): void {
+    this.gate = new Promise<void>((resolve) => {
+      this.openGate = resolve;
+    });
+  }
+
+  releaseBind(): void {
+    this.openGate?.();
+    this.openGate = null;
   }
 
   send(text: string, agent?: AgentTurnOptions): void {
     if (this.finished) return; // a dead backend answers nothing, silently
     this.sent.push(text);
     this.sentAgents.push(agent);
+    if (this.silent) return;
     this.queue.push({ type: 'text-delta', text: `echo:${text}` });
     this.queue.push({ type: 'done' });
+  }
+
+  /** Ask the windows for permission. The turn is blocked until it is answered. */
+  ask(approvalId: string, title: string): void {
+    this.pending.add(approvalId);
+    this.queue.push({ type: 'approval-request', approvalId, kind: 'command', title, detail: 'rm -rf /tmp/x' });
+  }
+
+  approve(approvalId: string, decision: 'allow' | 'deny'): void {
+    if (!this.pending.delete(approvalId)) return;
+    this.queue.push({ type: 'approval-resolved', approvalId, decision });
   }
 
   /**
@@ -82,7 +119,23 @@ class ScriptedDriver implements ChatDriver {
   stop(): void {
     this.stopped = true;
     this.finished = true;
-    this.queue.close();
+    const finish = (): void => {
+      // What both real backends do on the way out: whatever was still blocking
+      // the agent is answered `deny`, and the windows are told so, before the
+      // stream ends. See AgentSdkDriver.stop and CodexDriver.stop.
+      for (const approvalId of this.pending) {
+        this.queue.push({ type: 'approval-resolved', approvalId, decision: 'deny' });
+      }
+      this.pending.clear();
+      this.openGate?.(); // a bind held open must not outlive the driver
+      this.queue.close();
+    };
+    // A backend does not always have its last words ready the instant it is
+    // asked to stop: the Agent SDK answers a blocked permission callback
+    // through a promise chain, so the resolution reaches the stream a tick
+    // after `stop()` has returned.
+    if (this.slowTeardown) setTimeout(finish, 20);
+    else finish();
   }
 }
 
@@ -95,6 +148,17 @@ let drivers: ScriptedDriver[] = [];
 let previousHome: string | undefined;
 /** Applied to the NEXT driver the server binds, then cleared. */
 let nextBindFails: string | null = null;
+/** Run against the NEXT driver the server binds, before it is started. */
+let nextDriverSetup: ((driver: ScriptedDriver) => void) | null = null;
+
+/** Poll until `ready` is true, so a test waits on a fact rather than a delay. */
+async function until(ready: () => boolean, timeoutMs = 4000): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  while (!ready()) {
+    if (Date.now() > deadline) throw new Error('timed out waiting');
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+}
 
 function connect(): Promise<WebSocket> {
   const socket = new WebSocket(`ws://127.0.0.1:${port}/api/ws?project=${encodeURIComponent(root)}`);
@@ -149,6 +213,8 @@ beforeAll(async () => {
       driver.boundPermissionMode = options?.permissionMode;
       driver.startError = nextBindFails;
       nextBindFails = null;
+      nextDriverSetup?.(driver);
+      nextDriverSetup = null;
       drivers.push(driver);
       return driver;
     },
@@ -653,6 +719,125 @@ describe('chat-interrupt with two windows on one conversation', () => {
     expect(drivers).toHaveLength(2);
     a.close();
     b.close();
+  });
+});
+
+/**
+ * Two windows sending into one conversation while its backend is still coming up.
+ *
+ * A conversation binds ONE driver, lazily, on the first send, and a backend
+ * takes as long as it takes to start. The second window's send used to arrive
+ * inside that window, find the half-built session, and hand its message to a
+ * `driver` that was still null: the optional chain swallowed it, the transcript
+ * recorded it anyway, and the agent never saw a word of it. Silent loss is bad;
+ * silent loss that leaves evidence it worked is worse, because nothing on
+ * screen or on disk gives the person any reason to say it again.
+ */
+describe('two windows sending while the backend binds', () => {
+  it('holds the second message for the bind and delivers it, in the order it was typed', async () => {
+    drivers = [];
+    const a = await connect();
+    a.send(JSON.stringify({ type: 'chat-new' }));
+    const opened = await nextFrame(a, (frame) => frame.type === 'chat-opened');
+    if (opened.type !== 'chat-opened') throw new Error('wrong frame');
+    const b = await connect();
+    b.send(JSON.stringify({ type: 'chat-open', chatId: opened.chat.id }));
+    await nextFrame(b, (frame) => frame.type === 'chat-opened');
+
+    // A sends first and its bind hangs, the way a backend that has to start a
+    // child process does. It also carries a picture, so landing it means
+    // writing a file first: a send is not one atomic act, and the amount of
+    // work between "typed" and "written down" is not the same for every one.
+    nextDriverSetup = (driver) => driver.blockBind();
+    const picture = {
+      name: 'shot.png',
+      mimeType: 'image/png',
+      data: Buffer.from('pretend this is a screenshot').toString('base64'),
+    };
+    a.send(JSON.stringify({ type: 'chat-send', text: 'FROM-A', attachments: [picture] }));
+    await until(() => drivers.length === 1);
+    // B types into the same chat while that is still in flight.
+    b.send(JSON.stringify({ type: 'chat-send', text: 'FROM-B' }));
+    await new Promise((resolve) => setTimeout(resolve, 150));
+    expect(drivers[0].sent).toEqual([]); // nothing has bound yet, so nothing was sent
+
+    drivers[0].releaseBind();
+    await until(() => drivers[0].sent.length === 2);
+
+    // One conversation, one agent, both messages.
+    expect(drivers).toHaveLength(1);
+    expect(drivers[0].sent).toEqual(['FROM-A', 'FROM-B']);
+
+    // And the transcript agrees with the agent about what was said, and when.
+    // Both messages are on disk before either is handed over, so there is
+    // nothing to wait for here.
+    const records = await readTranscript(root, opened.chat.id);
+    const said = records.flatMap((record) => (record.role === 'user' ? [record.text] : []));
+    expect(said).toEqual(['FROM-A', 'FROM-B']);
+    a.close();
+    b.close();
+  });
+});
+
+/**
+ * Stopping a conversation that is blocked on an approval.
+ *
+ * A driver's teardown is not silent: stopping it answers whatever was blocking
+ * the agent, so its own turn can unwind, and that answer is an event. The drain
+ * loop used to stop reading the moment the session left the live map, which is
+ * the FIRST thing a teardown does, so every one of those events was dropped:
+ * never written, never broadcast. The prompt stayed on screen with Allow and
+ * Deny live, in every window and on every reload after, wired to a session that
+ * no longer existed. It has to be answered, and answered BEFORE the turn is
+ * reported over, because a client stops applying events to a turn that ended.
+ */
+describe('stopping a conversation with an approval on screen', () => {
+  it('answers the prompt on the way out, in the window and in the transcript', async () => {
+    drivers = [];
+    nextDriverSetup = (driver) => {
+      driver.silent = true; // the turn goes to work rather than answering at once
+      driver.slowTeardown = true; // and its last words take a tick, as a real one's do
+    };
+    const socket = await connect();
+    socket.send(JSON.stringify({ type: 'chat-new' }));
+    const opened = await nextFrame(socket, (frame) => frame.type === 'chat-opened');
+    if (opened.type !== 'chat-opened') throw new Error('wrong frame');
+    socket.send(JSON.stringify({ type: 'chat-send', text: 'run the build' }));
+    await nextFrame(socket, (frame) => frame.type === 'chat-ready');
+
+    const asked = nextFrame(socket, (frame) => frame.type === 'chat-event' && frame.event.type === 'approval-request');
+    await until(() => drivers.length === 1 && drivers[0].sent.length === 1);
+    drivers[0].ask('a1', 'Runs a script');
+    await asked;
+
+    // Everything the window is told from here, in order.
+    const seen: ChatEvent[] = [];
+    socket.on('message', (raw) => {
+      const frame = JSON.parse(raw.toString()) as WsFrame;
+      if (frame.type === 'chat-event') seen.push(frame.event);
+    });
+    const ended = nextFrame(socket, (frame) => frame.type === 'chat-event' && frame.event.type === 'turn-complete');
+    socket.send(JSON.stringify({ type: 'chat-interrupt' })); // the Stop button
+    await ended;
+
+    expect(drivers[0].stopped).toBe(true);
+    // The answer arrives, and arrives first: after a turn-complete the client
+    // applies nothing more to that turn, so the other order leaves the prompt
+    // exactly as stuck as dropping it did.
+    expect(seen.map((event) => event.type)).toEqual(['approval-resolved', 'turn-complete']);
+    expect(seen[0]).toEqual({ type: 'approval-resolved', approvalId: 'a1', decision: 'deny' });
+
+    // And what the window saw live is what it finds on reload: no request in
+    // the transcript is left without its answer. Each of those frames is sent
+    // after its own append, so the file is already whole.
+    const records = await readTranscript(root, opened.chat.id);
+    const events = records.flatMap((record) => (record.role === 'agent' ? [record.event] : []));
+    const requested = events.filter((event) => event.type === 'approval-request');
+    const answered = events.filter((event) => event.type === 'approval-resolved');
+    expect(requested).toHaveLength(1);
+    expect(answered).toEqual([{ type: 'approval-resolved', approvalId: 'a1', decision: 'deny' }]);
+    expect(events[events.length - 1]).toEqual({ type: 'turn-complete' });
+    socket.close();
   });
 });
 

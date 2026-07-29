@@ -337,57 +337,217 @@ async function readIndexUnlocked(root: string): Promise<ChatIndexRow[]> {
   } catch {
     return []; // absent: a project that has never been talked to
   }
+  let parsed: unknown;
   try {
-    return parseChatRows(JSON.parse(raw));
+    parsed = JSON.parse(raw);
   } catch {
     return recoverIndexUnlocked(root, raw);
   }
+  const rows = Array.isArray(parsed) ? parseChatRows(parsed) : null;
+  // Parsing is not the same as being this file. Something that is not a list at
+  // all, or a list with not one usable row in it, describes no conversation and
+  // would be written over by the next save, which is the same loss a torn file
+  // used to cause. An EMPTY list is different and legitimate: it is a project
+  // whose conversations were all deleted.
+  if (rows && (rows.length > 0 || (parsed as unknown[]).length === 0)) return rows;
+  return recoverIndexUnlocked(root, raw);
 }
 
-/** Where an index.json that could not be parsed is kept. */
-export function corruptIndexPath(root: string): string {
-  return `${chatIndexPath(root)}.corrupt`;
+/** The extension every kept copy of an unreadable index ends in. */
+export const CORRUPT_INDEX_SUFFIX = '.corrupt';
+
+/**
+ * Where an index.json that could not be parsed is kept.
+ *
+ * Stamped with the moment it was found, because the copy worth having is the
+ * FIRST one. Under one fixed name the second failure overwrote the first, and
+ * by then the file being saved was a copy of an index this module had already
+ * rebuilt: the evidence of what actually went missing was gone, replaced by
+ * evidence of the recovery. These are small and nobody writes them on a good
+ * day, so keeping all of them costs nothing worth counting.
+ */
+function corruptIndexPath(root: string, at: Date = new Date(), attempt = 0): string {
+  const stamp = at.toISOString().replace(/[:.]/g, '-');
+  return `${chatIndexPath(root)}.${stamp}${attempt > 0 ? `-${attempt}` : ''}${CORRUPT_INDEX_SUFFIX}`;
 }
 
 /**
- * Rebuild the index from the transcripts sitting next to it.
+ * Keep the unreadable file, without ever writing over a copy already there.
+ * `wx` is what makes that a property of the filesystem rather than of a check
+ * that could race with another window on the same project.
+ */
+async function archiveCorruptIndex(root: string, raw: string): Promise<void> {
+  const found = new Date();
+  for (let attempt = 0; attempt < 8; attempt += 1) {
+    try {
+      await fsp.writeFile(corruptIndexPath(root, found, attempt), raw, { encoding: 'utf8', flag: 'wx' });
+      return;
+    } catch (err) {
+      // Anything but a name that is taken is a disk we cannot write to, and the
+      // recovery below matters more than the keepsake.
+      if ((err as NodeJS.ErrnoException).code !== 'EEXIST') return;
+    }
+  }
+}
+
+/**
+ * Every whole `{...}` object in a torn index, in the order it was written.
  *
- * Everything a conversation IS lives in its `.jsonl`: who said what, in what
- * order, and when. The index is a listing of those files, so an unreadable one
- * is recoverable rather than fatal, and the rebuild is what makes a torn write
- * cost an ordering and a couple of names instead of a person's whole history.
+ * A row is the ONLY place some things live: which kind of conversation it is,
+ * the codex thread it resumes, the name someone typed for it. None of that is
+ * in a transcript, so a rebuild that reads transcripts alone quietly demotes
+ * every terminal session in the folder to a chat and then drops it for having
+ * no lines. An index killed mid-write is not garbage though: it is the front of
+ * a good file, so the whole objects in it are read back and only the torn one
+ * at the end is lost.
  *
- * Two things do not come back, and both are deliberate. A transcript with
- * nothing in it is skipped: it is a chat that was opened and never spoken into
- * (which the index hides anyway), and recovering those would fill the sidebar
- * with "New chat" rows for windows nobody remembers opening. And a codex
- * thread binding is not in the transcript, so a recovered conversation starts a
- * fresh thread with its history replayed rather than resuming the old one.
+ * Brace counting rather than a JSON parser, because there is no valid document
+ * here to parse; strings are tracked so a `{` inside a title is not mistaken
+ * for a row.
+ */
+function salvageIndexRows(raw: string): ChatIndexRow[] {
+  const found: unknown[] = [];
+  let depth = 0;
+  let start = -1;
+  let inString = false;
+  let escaped = false;
+  for (let i = 0; i < raw.length; i += 1) {
+    const ch = raw[i];
+    if (inString) {
+      if (escaped) escaped = false;
+      else if (ch === '\\') escaped = true;
+      else if (ch === '"') inString = false;
+      continue;
+    }
+    if (ch === '"') inString = true;
+    else if (ch === '{') {
+      if (depth === 0) start = i;
+      depth += 1;
+    } else if (ch === '}' && depth > 0) {
+      depth -= 1;
+      if (depth === 0 && start >= 0) {
+        try {
+          found.push(JSON.parse(raw.slice(start, i + 1)));
+        } catch {
+          // Not a row after all: nothing to take from it.
+        }
+        start = -1;
+      }
+    }
+  }
+  return parseChatRows(found);
+}
+
+/**
+ * What a conversation was, according to the torn index, plus what its
+ * transcript says has happened in it since.
  *
- * The unreadable file is kept, not deleted: this function can only read what it
- * understands, and a person (or a later build) may get more out of it.
+ * The row wins on identity (kind, name, codex thread) and the transcript wins
+ * on activity: a row written when the chat was created says `pending` and calls
+ * it "New chat", and the file next to it may hold a conversation that happened
+ * after that row was last written.
+ */
+function mergeRecoveredRow(row: ChatIndexRow, records: readonly ChatRecord[]): ChatIndexRow {
+  if (records.length === 0) return row;
+  const first = records.find((record) => record.role === 'user');
+  const last = records[records.length - 1];
+  const merged: ChatIndexRow = {
+    ...row,
+    // A chat still carrying the name it was born with is named by what was
+    // first asked of it, exactly as `appendChatRecord` would have. One somebody
+    // titled keeps that title.
+    title:
+      row.title === defaultChatTitle(row.kind) && first?.role === 'user' ? userRecordTitle(first) : row.title,
+    createdAt: row.createdAt < records[0].ts ? row.createdAt : records[0].ts,
+    updatedAt: row.updatedAt > last.ts ? row.updatedAt : last.ts,
+  };
+  // Spoken into, so not pending, whatever the row was written thinking.
+  delete merged.pending;
+  return merged;
+}
+
+/**
+ * Rebuild the index from the folder it lives in.
+ *
+ * Two sources, and each is authoritative for a different thing. The FOLDER says
+ * which conversations exist: every one of them has a `.jsonl`, written the
+ * moment it was created, and a row for a file that is not there describes
+ * something that was deleted. The TORN INDEX says what each of them is, which
+ * is the half no transcript can answer: a terminal session keeps no transcript
+ * at all (its output belonged to a pty that died with the process), and kind,
+ * codex thread and chosen title are index-only for chats too. Reading only the
+ * transcripts is what turned one torn write into "every named terminal in this
+ * project is gone, permanently, and every codex thread with them".
+ *
+ * One thing still does not come back: a chat that was opened, never spoken
+ * into, and whose row did not survive. It has an empty file and nothing else,
+ * it is indistinguishable from every other empty chat, and the index hides
+ * those anyway. Everything with a byte in it is kept, even when not one line
+ * of it parses, because a file with bytes in it is somebody's conversation.
+ *
+ * The unreadable index is kept, not deleted: this function can only read what
+ * it understands, and a person (or a later build) may get more out of it.
  */
 async function recoverIndexUnlocked(root: string, raw: string): Promise<ChatIndexRow[]> {
-  await fsp.writeFile(corruptIndexPath(root), raw, 'utf8').catch(() => undefined);
+  await archiveCorruptIndex(root, raw);
   const dir = chatsDir(root);
+  const salvaged = new Map<string, ChatIndexRow>();
+  for (const row of salvageIndexRows(raw)) salvaged.set(row.id, row);
+
+  let names: string[];
+  try {
+    names = await fsp.readdir(dir);
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code !== 'ENOENT') {
+      // The folder could not be READ (a descriptor limit under load, a
+      // permission, a volume that went away). "No conversations here" would be
+      // a conclusion drawn from a failure, and this function's answer is
+      // written back to disk, so it would delete the listing for real. Answer
+      // what was salvaged and leave the file exactly as it is: the next read
+      // tries again against a filesystem that may be well.
+      return sortChats([...salvaged.values()]);
+    }
+    names = []; // absent: nothing was ever written here
+  }
+
   const rows: ChatIndexRow[] = [];
-  for (const name of await fsp.readdir(dir).catch((): string[] => [])) {
+  for (const name of names) {
     if (!name.endsWith('.jsonl')) continue;
     const id = safeChatId(name.slice(0, -'.jsonl'.length));
     if (!id) continue;
-    const records = parseTranscript(await fsp.readFile(path.join(dir, name), 'utf8').catch(() => ''));
-    if (records.length === 0) continue;
-    const first = records.find((record) => record.role === 'user');
-    rows.push({
-      id,
-      title: first?.role === 'user' ? userRecordTitle(first) : UNTITLED,
-      // A terminal session keeps no transcript (its output belongs to a pty
-      // that died with the process), so anything with one was a chat.
-      kind: 'chat',
-      createdAt: records[0].ts,
-      updatedAt: records[records.length - 1].ts,
-    });
+    const file = path.join(dir, name);
+    const body = await fsp.readFile(file, 'utf8').catch(() => null);
+    const records = parseTranscript(body ?? '');
+    const known = salvaged.get(id);
+    if (known) {
+      rows.push(mergeRecoveredRow(known, records));
+      continue;
+    }
+    if (records.length > 0) {
+      const first = records.find((record) => record.role === 'user');
+      rows.push({
+        id,
+        title: first?.role === 'user' ? userRecordTitle(first) : UNTITLED,
+        // Nothing left says otherwise, and a chat is the thing a transcript
+        // belongs to.
+        kind: 'chat',
+        createdAt: records[0].ts,
+        updatedAt: records[records.length - 1].ts,
+      });
+      continue;
+    }
+    // Nothing readable in it and no row to say what it was. An empty file is a
+    // chat nobody ever spoke into; a file that has bytes this build cannot
+    // parse (or could not read at all) is not, and dropping it would delete a
+    // conversation for being damaged.
+    if (body !== null && body.trim() === '') continue;
+    const at = await fsp
+      .stat(file)
+      .then((stats) => stats.mtime.toISOString())
+      .catch(() => new Date().toISOString());
+    rows.push({ id, title: UNTITLED, kind: 'chat', createdAt: at, updatedAt: at });
   }
+
   const recovered = sortChats(rows);
   // Written back here rather than left to the next write: `listChats` does not
   // write at all, so a recovery that only returned rows would rebuild them on

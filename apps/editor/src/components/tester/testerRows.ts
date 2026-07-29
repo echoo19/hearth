@@ -26,7 +26,7 @@ import {
 export const TESTER_NEVER_PLAYED = 'Your tester has not played this game yet.';
 
 /** How a verdict reads, for the one place colour is allowed to carry meaning. */
-export type VerdictTone = 'better' | 'worse' | 'same' | 'first' | 'unreadable';
+export type VerdictTone = 'better' | 'worse' | 'same' | 'first' | 'unreadable' | 'unclear';
 
 export interface TesterRowObservation {
   frame: number;
@@ -70,6 +70,10 @@ function headlineFor(verdict: TesterNote['onTheChange']['verdict']): string {
       return 'It says your last change made no real difference.';
     case 'unreadable':
       return UNREADABLE_SEEN;
+    case 'unclear':
+      // Not one of the three, and not dressed up as one. The tester answered
+      // the question with something else, and that is what the row says.
+      return 'It did not give a verdict on your last change.';
     default:
       return 'Its first look at your game, with nothing yet to compare it against.';
   }
@@ -85,6 +89,8 @@ function toneFor(verdict: TesterNote['onTheChange']['verdict']): VerdictTone {
       return 'same';
     case 'unreadable':
       return 'unreadable';
+    case 'unclear':
+      return 'unclear';
     default:
       return 'first';
   }

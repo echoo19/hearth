@@ -12,7 +12,7 @@
  * have read. The split is the point: the left column changes every session,
  * the right column is the thing that makes the left column good.
  */
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { conversationKind, useApp } from '../../store';
 import { Composer } from '../chat/Composer';
 import { ProjectMark } from '../../projects/ProjectMark';
@@ -24,6 +24,10 @@ import { IconButton } from '../ui/Button';
 import { MenuButton } from '../ui/Menu';
 import { ProjectInstructions } from './ProjectInstructions';
 import { ProjectContext } from './ProjectContext';
+import { ReportView } from '../tester/ReportView';
+import { playedWhen } from '../tester/TesterHistory';
+import { readableNote, testerRows } from '../tester/testerRows';
+import type { TesterNote } from '../../../server/tester/types';
 import type { ChatSummary, RecentWorkspace } from '../../types';
 
 /**
@@ -65,6 +69,71 @@ function ChatLine({ chat, onOpen }: { chat: ChatSummary; onOpen: () => void }) {
   );
 }
 
+/**
+ * One playtest, and the way into what it decided.
+ *
+ * The verdict is the row, because that is the question a person arrives with.
+ * Everything else about the session is one click behind it, in the same dialog
+ * the Tester screen opens, so there is one report in the app rather than two
+ * that can disagree.
+ */
+function SessionLine({ note, headline }: { note: TesterNote; headline: string }) {
+  const [reading, setReading] = useState(false);
+  const trigger = useRef<HTMLButtonElement>(null);
+  return (
+    <>
+      <button ref={trigger} type="button" className="proj-session" onClick={() => setReading(true)}>
+        <span className="proj-session-title">{headline}</span>
+        <span className="proj-session-when">
+          Session {note.session}, {playedWhen(note.finishedAt)}
+        </span>
+      </button>
+      <ReportView note={note} open={reading} onClose={() => setReading(false)} returnFocusTo={trigger} />
+    </>
+  );
+}
+
+/**
+ * Every playtest this project has had.
+ *
+ * Here rather than in the conversation list, and that distinction is the whole
+ * reason this section exists. Playtesting is a property of the project: the
+ * sessions live in the project's own folder under `.hearth/tester/`, they carry
+ * one memory between them, and each one is a record rather than something
+ * anybody said. What DOES belong in the conversation list is the work a person
+ * approved out of a session, because that is the agent being asked to do
+ * something, and it opens its own chat exactly as before.
+ *
+ * Newest first, unlike the conversation list above it, because the newest
+ * verdict is the answer to "did my last change help".
+ */
+function ProjectSessions({ sessions }: { sessions: readonly TesterNote[] }) {
+  const openScreen = useApp((s) => s.openScreen);
+  // The same normalisation the Tester screen applies. A note off disk can be
+  // missing anything, and the report dialog reads it directly.
+  const notes = useMemo(() => sessions.map(readableNote), [sessions]);
+  const headlines = useMemo(
+    () => new Map(testerRows(notes).map((row) => [row.session, row.headline])),
+    [notes],
+  );
+  if (notes.length === 0) return null;
+
+  const newestFirst = [...notes].reverse();
+  return (
+    <section className="proj-list proj-sessions" aria-label="Playtests">
+      <h2 className="proj-list-title">
+        Playtests
+        <button type="button" className="proj-list-more" onClick={() => openScreen('tester')}>
+          Every session
+        </button>
+      </h2>
+      {newestFirst.map((note) => (
+        <SessionLine key={note.session} note={note} headline={headlines.get(note.session) ?? ''} />
+      ))}
+    </section>
+  );
+}
+
 export function ProjectHome() {
   const projectPath = useApp((s) => s.projectPath);
   const projectName = useApp((s) => s.projectName);
@@ -72,6 +141,8 @@ export function ProjectHome() {
   const openChat = useApp((s) => s.openChat);
   const closeWorkspace = useApp((s) => s.closeWorkspace);
   const setComposeTarget = useApp((s) => s.setComposeTarget);
+  const sessions = useApp((s) => s.tester.sessions);
+  const refreshTesterHistory = useApp((s) => s.refreshTesterHistory);
   const [recents, setRecents] = useState<RecentWorkspace[]>([]);
 
   // The mark and the description come from the projects list rather than being
@@ -85,6 +156,13 @@ export function ProjectHome() {
   useEffect(() => {
     if (projectPath) setComposeTarget(projectPath);
   }, [projectPath, setComposeTarget]);
+
+  // What the folder already knows about its playtests. Read here as well as on
+  // the Tester surface, because this screen is where a person who has not
+  // opened the tester today will meet them.
+  useEffect(() => {
+    if (projectPath) void refreshTesterHistory();
+  }, [projectPath, refreshTesterHistory]);
 
   const project = recents.find((row) => row.path === projectPath) ?? null;
   const groups = useMemo(() => groupChats(chats), [chats]);
@@ -149,6 +227,11 @@ export function ProjectHome() {
                 </>
               )}
             </section>
+
+            {/* Below the conversations rather than among them. A session is
+                this project's record of being played, not something anybody
+                said to the agent. */}
+            <ProjectSessions sessions={sessions} />
           </div>
 
           <aside className="proj-side" aria-label="What the agent brings">

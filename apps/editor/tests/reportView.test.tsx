@@ -17,6 +17,8 @@ vi.mock('../src/api', async (importOriginal) => ({
   apiTesterPlay: vi.fn(),
   apiTesterStop: vi.fn(),
   apiTesterHistory: vi.fn(async () => null),
+  apiTesterHistoryAll: vi.fn(async () => null),
+  apiRecentWorkspaces: vi.fn(async () => []),
 }));
 
 import { TesterHistory } from '../src/components/tester/TesterHistory';
@@ -56,13 +58,29 @@ function note(over: Partial<TesterNote> = {}): TesterNote {
   };
 }
 
+const PROJECT = '/work/game';
+
+/**
+ * The Tester screen is global: it lists runs across every game, so a session
+ * reaches it tagged with the project it came from rather than as the open
+ * folder's history.
+ */
 function seed(sessions: TesterNote[]): void {
   useApp.setState({
-    projectPath: '/work/game',
+    projectPath: PROJECT,
     projectName: 'game',
     game: { present: true, entry: 'index.html', mtime: 1 },
     tester: { ...IDLE, sessions },
+    testerRuns: {
+      runs: sessions.map((note) => ({ note, project: { path: PROJECT, name: 'game' } })),
+      dropped: 0,
+    },
   });
+}
+
+/** Every run on the list. The row itself is the trigger. */
+function runRows(): HTMLElement[] {
+  return Array.from(document.querySelectorAll('.tester-run')) as HTMLElement[];
 }
 
 beforeEach(() => {
@@ -81,9 +99,12 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-/** Open the first session's report and hand back the dialog it opened. */
+/**
+ * Open the first run's report and hand back the dialog it opened. The whole
+ * row is the button: reading a report is the only thing this list is for.
+ */
 function open(): HTMLElement {
-  const trigger = screen.getAllByRole('button', { name: /read the whole session/i })[0];
+  const trigger = runRows()[0];
   act(() => {
     trigger.click();
   });
@@ -94,7 +115,7 @@ describe('the report view', () => {
   it('offers a way into every session it lists', () => {
     seed([note({ session: 1 }), note({ session: 2 })]);
     render(<TesterHistory />);
-    expect(screen.getAllByRole('button', { name: /read the whole session/i })).toHaveLength(2);
+    expect(runRows()).toHaveLength(2);
   });
 
   it('opens the session in full', () => {
@@ -133,7 +154,7 @@ describe('the report view', () => {
   it('closes on Escape and hands focus back to what opened it', () => {
     seed([note()]);
     render(<TesterHistory />);
-    const trigger = screen.getAllByRole('button', { name: /read the whole session/i })[0];
+    const trigger = runRows()[0];
     act(() => {
       trigger.focus();
       trigger.click();

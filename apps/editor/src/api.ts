@@ -18,6 +18,7 @@ import type {
   ProbeStatus,
   ProjectFile,
   RecentWorkspace,
+  TesterRunHistory,
   Sense,
   ServerMeta,
   WorkspaceInfo,
@@ -254,6 +255,20 @@ export async function apiTesterHistory(project: string): Promise<TesterHistory |
     memory: typeof body.memory === 'string' ? body.memory : '',
     running: body.running === true,
     maxSteps: typeof body.maxSteps === 'number' ? body.maxSteps : 0,
+  };
+}
+
+/**
+ * Every recent playtest across every game. Takes no project: a playtest belongs
+ * to a game, but the history of playtests belongs to the person, so this reads
+ * the server's own recents list the way skills and usage do.
+ */
+export async function apiTesterHistoryAll(): Promise<TesterRunHistory | null> {
+  const body = await getJson<TesterRunHistory>('/api/tester/history/all', 'apiTesterHistoryAll');
+  if (!body) return null;
+  return {
+    runs: Array.isArray(body.runs) ? body.runs.filter((run) => run?.note && run?.project?.path) : [],
+    dropped: typeof body.dropped === 'number' && body.dropped > 0 ? body.dropped : 0,
   };
 }
 

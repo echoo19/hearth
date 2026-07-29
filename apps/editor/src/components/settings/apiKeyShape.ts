@@ -23,18 +23,41 @@
 import type { ChatProvider } from '../../types';
 
 /**
- * The shortest thing that could be a real key. Both vendors issue keys around
- * a hundred characters long, so this sits nowhere near the real floor on
- * purpose: it is here to catch a paste that lost its tail, not to police a
+ * The shortest thing that could be a real key.
+ *
+ * Both vendors issue keys around a hundred characters and up: an Anthropic key
+ * runs to about 108, a legacy OpenAI one to 51, and an `sk-proj-` one well past
+ * 150. So this still sits far below every real floor and is not policing a
  * length that is not ours to police.
+ *
+ * It was 24, which is the number that made this whole module vacuous for its
+ * own stated purpose. `sk-ant-api03-AAAAAAAAAAAA` is 25 characters, has the
+ * right prefix, and is a paste that lost 83 of its 95 body characters — and it
+ * went through and earned a green Connected badge. A floor set below the
+ * shortest plausible truncation catches nothing.
  */
-export const MIN_KEY_LENGTH = 24;
+export const MIN_KEY_LENGTH = 40;
 
 /** The prefix each vendor has been issuing. Checked, never required. */
 export const KEY_PREFIX: Record<ChatProvider, string> = {
   anthropic: 'sk-ant-',
   openai: 'sk-',
 };
+
+/**
+ * Prefixes specific enough to name the vendor that issued them.
+ *
+ * The point is the direction the plain prefix check cannot see. OpenAI's
+ * prefix is `sk-`, so every Anthropic key ever issued starts with it, and an
+ * `sk-ant-…` pasted into the OpenAI box passed silently — on a pane that shows
+ * both fields, with near-identical placeholders, which makes it the single most
+ * likely mistake there is to make here. `sk-` is deliberately absent: it is not
+ * distinctive, and claiming an unrecognised `sk-` string came from OpenAI would
+ * be inventing a fact.
+ */
+const ISSUED_BY: readonly { prefix: string; provider: ChatProvider }[] = [
+  { prefix: 'sk-ant-', provider: 'anthropic' },
+];
 
 /** The vendor's own name for itself, for a sentence about its keys. */
 const VENDOR: Record<ChatProvider, string> = {
@@ -46,16 +69,23 @@ const VENDOR: Record<ChatProvider, string> = {
  * What looks wrong with this key, or null when nothing does.
  *
  * Ordered by how likely each one is to be what actually happened: a paste that
- * dragged a newline in with it, then a string that was never a key at all,
- * then one that lost its end. Each sentence names the mistake rather than the
- * rule, because "must match ^sk-ant-" tells you what the checker wants and not
- * what you did.
+ * dragged a newline in with it, then the other vendor's key in this vendor's
+ * box, then a string that was never a key at all, then one that lost its end.
+ * Each sentence names the mistake rather than the rule, because "must match
+ * ^sk-ant-" tells you what the checker wants and not what you did.
  */
 export function keyShapeProblem(provider: ChatProvider, raw: string): string | null {
   const value = raw.trim();
   if (value === '') return 'Paste a key first.';
   if (/\s/.test(value)) {
     return 'There is a space or a line break inside that, so something else came along with the paste.';
+  }
+  // Ahead of the plain prefix check, and it has to be: `sk-ant-…` satisfies
+  // OpenAI's `sk-` prefix, so this is the only thing standing between the two
+  // fields on this pane and each other.
+  const elsewhere = ISSUED_BY.find((issuer) => issuer.provider !== provider && value.startsWith(issuer.prefix));
+  if (elsewhere) {
+    return `That begins with ${elsewhere.prefix}, which is how ${VENDOR[elsewhere.provider]} keys start. This box wants the ${VENDOR[provider]} one.`;
   }
   const prefix = KEY_PREFIX[provider];
   if (!value.startsWith(prefix)) {

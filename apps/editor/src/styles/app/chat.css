@@ -400,12 +400,20 @@
    these on their dimmest frame. Working still has to be legible, so the
    motion is replaced rather than merely stopped. */
 @media (prefers-reduced-motion: reduce) {
+  /* `animation: none` FIRST, and it is the load-bearing line. These loops are
+     `infinite alternate`, and a running animation's keyframe values outrank a
+     normal author declaration, so the settle values below never applied while
+     the animation was still going: only the global 0.01ms duration clamp in
+     base.css was stopping the strobe, which is a backstop, not a rule. The
+     flame below does this correctly; these two did not. */
   .working-pulse {
+    animation: none;
     transform: none;
     opacity: 1;
   }
 
   .working-label {
+    animation: none;
     opacity: 1;
   }
 }

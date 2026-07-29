@@ -124,6 +124,41 @@ export function decodeRootKey(key: string): string | null {
 }
 
 /**
+ * Does this mount-relative path go through a hidden (dot-prefixed) name?
+ *
+ * WHY THE MOUNTS REFUSE THESE, AND WHY THE MOUNT BASE IS STILL THE PROJECT ROOT
+ *
+ * `/game/<key>/<rel>` resolves `rel` against the project ROOT and hands the
+ * bytes to the GAME's origin, where the code reading them is whatever the agent
+ * wrote. The root is the right base and must stay the right base: a game that
+ * builds to `dist/index.html` and points back at `../assets/atlas.png`, or that
+ * keeps shared art one folder up from its entry, is an ordinary game, and
+ * re-basing the mount on the entry's own directory would break it. (For the
+ * common `index.html` entry that re-basing also fixes nothing, since the entry's
+ * directory IS the root.) So the reach stays and the rule goes on the NAME.
+ *
+ * What must never be in that reach is `.hearth/`: `app.json` holds the user's
+ * saved Anthropic and OpenAI keys, `chats/` holds every conversation. The mount
+ * key is sitting in the game's own `location.pathname`, so
+ * `fetch(location.pathname.split('/').slice(0,3).join('/') + '/.hearth/app.json')`
+ * was a two-line credential read with nothing to guess.
+ *
+ * Generalized to every dot-prefixed segment rather than to `.hearth` alone,
+ * because the same reach covers `.git/config` (push credentials), `.env`,
+ * `.npmrc`, `.mcp.json`, and whatever the next hidden thing to land in a project
+ * folder turns out to be. This costs no legitimate game anything: no web game
+ * loads a dot-prefixed asset, and every static file server already hides them.
+ * Do not narrow this back to `.hearth`, and do not "simplify" the mount base.
+ *
+ * Takes an ALREADY-RESOLVED relative path (`path.relative(base, abs)`), so `..`
+ * and `./` are gone before they get here and a caller cannot spell a hidden
+ * segment around the check.
+ */
+export function hasHiddenSegment(relFromBase: string): boolean {
+  return relFromBase.split(path.sep).some((segment) => segment.startsWith('.'));
+}
+
+/**
  * Paths this server owns. Both transports (the Vite dev-server middleware and
  * the Electron main process's http server) ask this before falling through to
  * their own static UI handling, so the API can never be shadowed by an
@@ -137,6 +172,100 @@ export function decodeRootKey(key: string): string | null {
  */
 export function isHearthServerPath(pathname: string): boolean {
   return pathname.startsWith('/api/');
+}
+
+/**
+ * Vite's own escape hatch: `/@fs/<absolute path>` serves anything under
+ * `server.fs.allow`, which vite.config.ts sets to the whole hearth-engine repo
+ * because the editor's aliases import `packages/*` straight from source. Dev
+ * only; the packaged Electron server has no such route.
+ */
+export function isViteFsPath(pathname: string): boolean {
+  return pathname.startsWith('/@fs/');
+}
+
+/**
+ * Fetch destinations that produce a DOCUMENT: something with an origin, a
+ * script context, and therefore the ability to open `/api/ws`.
+ */
+const DOCUMENT_DESTINATIONS = new Set(['document', 'iframe', 'frame', 'embed', 'object']);
+
+/**
+ * What a request wants to become, as the browser itself declares it.
+ * `'unknown'` is anything that sent no `Sec-Fetch-*` at all, which in practice
+ * means it is not a browser (curl, the CLI, a test).
+ */
+export function fetchIntent(headers: {
+  'sec-fetch-dest'?: string | string[];
+  'sec-fetch-mode'?: string | string[];
+}): 'document' | 'subresource' | 'unknown' {
+  const first = (value: string | string[] | undefined): string | null =>
+    Array.isArray(value) ? (value[0] ?? null) : (value ?? null);
+  const dest = first(headers['sec-fetch-dest']);
+  const mode = first(headers['sec-fetch-mode']);
+  if (dest === null && mode === null) return 'unknown';
+  if (dest !== null && DOCUMENT_DESTINATIONS.has(dest)) return 'document';
+  if (mode === 'navigate') return 'document';
+  return 'subresource';
+}
+
+/**
+ * May this `/@fs/` request go through to Vite, and with what headers?
+ *
+ * THE HOLE THIS CLOSES (dev only)
+ *
+ * `GET /api/file` was made inert as a document (`Content-Security-Policy:
+ * sandbox`) because the game frame carries `allow-popups` WITHOUT
+ * `allow-popups-to-escape-sandbox`, so a popup inherits `allow-same-origin`:
+ * `window.open` on a control-plane URL that answers `text/html` runs
+ * agent-written script AS the editor, which satisfies originGuard.ts, which
+ * reaches `/api/ws?project=<an open root>`, which reaches `pty-start`.
+ * `/@fs/` re-opened exactly that: it answers `text/html` for any `.html` under
+ * the repo, with no CSP and no nosniff, and a user's project inside
+ * `packages/examples/` is the ordinary case, not a contrived one.
+ *
+ * A document is the only thing that can do this, and the editor NEVER navigates
+ * to `/@fs/`: it fetches modules from there, nothing more. So a
+ * document-destination request is refused outright, and every module, style,
+ * image, wasm and worker fetch is untouched. That is the difference between a
+ * fix the caller cannot get around and one that costs the developer a feature.
+ *
+ * A client that sends no `Sec-Fetch-*` is not a browser and is not the threat,
+ * so it still gets its bytes, just with the same inert-as-a-document headers
+ * `/api/file` uses, in case something exotic ever renders them.
+ *
+ * The other half of this lives in vite.config.ts: Vite's dev CORS echoes any
+ * loopback Origin, so the game could also just `fetch()` these bytes and READ
+ * the reply. See the `cors` and `fs.deny` settings there.
+ */
+export function viteFsVerdict(headers: {
+  'sec-fetch-dest'?: string | string[];
+  'sec-fetch-mode'?: string | string[];
+}): 'pass' | 'deny' | 'inert' {
+  const intent = fetchIntent(headers);
+  if (intent === 'document') return 'deny';
+  if (intent === 'unknown') return 'inert';
+  return 'pass';
+}
+
+/**
+ * Applies `viteFsVerdict` to a live request. True when the request was answered
+ * here and must not reach Vite. Exported so a test can drive the real thing
+ * rather than a paraphrase of it.
+ */
+export function guardViteFs(req: IncomingMessage, res: ServerResponse): boolean {
+  const pathname = new URL(req.url ?? '/', 'http://localhost').pathname;
+  if (!isViteFsPath(pathname)) return false;
+  const verdict = viteFsVerdict(req.headers);
+  if (verdict === 'deny') {
+    sendJson(res, 403, { ok: false, error: 'Forbidden: /@fs/ does not serve documents.' });
+    return true;
+  }
+  if (verdict === 'inert') {
+    res.setHeader('Content-Security-Policy', 'sandbox');
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+  }
+  return false;
 }
 
 /**
@@ -292,6 +421,18 @@ export interface RecentChatEntry {
 
 /** How many conversations the global recents list returns. */
 export const RECENT_CHATS_LIMIT = 40;
+
+/**
+ * What the global playtest history is allowed to cost.
+ *
+ * It walks `.hearth/tester/sessions/` for every recent project each time the
+ * screen opens, so both ends are bounded: how many project folders are visited
+ * at all, and how many runs come back. Twelve projects is more than the rail
+ * itself shows; sixty runs is weeks of playing on a screen that is scanned,
+ * not read to the bottom.
+ */
+export const MAX_HISTORY_PROJECTS = 12;
+export const MAX_HISTORY_RUNS = 60;
 
 const CONTENT_TYPES: Record<string, string> = {
   // The static mounts serve whatever web game the agent built, so the full
@@ -1033,6 +1174,38 @@ export function createProjectServerContext(options: ProjectServerOptions = {}) {
     openWorkspace: openWorkspaceImpl,
 
     /**
+     * Take a folder back OUT of the jail.
+     *
+     * `openedRoots` only ever grew. Closing a project in the window was a
+     * client-side state change and nothing else, so every folder touched during
+     * a server run stayed readable through /api/file, /api/fs, the /api/ws
+     * upgrade and both static mounts until the process exited. That is how a
+     * game in project A ended up able to read project B's files: B had been
+     * opened an hour ago and never let go.
+     *
+     * "Open" should mean open. This is the only direction that needs no
+     * attestation gate: it takes reach away and can hand nothing back, so the
+     * worst a caller can do with it is make the user reopen a folder. Both the
+     * cached session and its journal-seq bookmark go with it, so reopening
+     * later builds a fresh session against whatever is on disk by then.
+     *
+     * The recents list is deliberately untouched: recents are folders the user
+     * NAMED, which is a different fact from folders that are open, and the rail
+     * still has to render the row you just closed.
+     */
+    async closeWorkspace(rawPath: unknown): Promise<JsonResult> {
+      if (typeof rawPath !== 'string' || rawPath.trim() === '') {
+        return { status: 400, body: { ok: false, error: 'Missing "path" (absolute folder).' } };
+      }
+      const root = path.resolve(rawPath.trim());
+      const wasOpen = isOpenRoot(root);
+      openedRoots.delete(root);
+      sessions.delete(root);
+      seenSeq.delete(root);
+      return { status: 200, body: { ok: true, path: root, wasOpen } };
+    },
+
+    /**
      * Make the folder a chat is about to fill. Home has no picker — the first
      * message IS the project — so the prompt names a folder under the projects
      * home (`~/Hearth` unless overridden), and from there this behaves exactly
@@ -1381,6 +1554,61 @@ export function createProjectServerContext(options: ProjectServerOptions = {}) {
     },
 
     /**
+     * Every recent playtest across every game, newest first.
+     *
+     * A playtest belongs to a game, but the HISTORY of playtests belongs to
+     * the person, the way skills and usage do. So this takes no `project` and
+     * reads the same recents list every other global route reads. That is also
+     * what makes it safe without `isOpenRoot`: the caller supplies no path at
+     * all, so there is nothing here to point somewhere it should not go.
+     *
+     * The caps are the point of the caps. This walks
+     * `.hearth/tester/sessions/` for every recent project on every open of the
+     * screen, and each session is a directory read plus a JSON parse. Bounded
+     * so a machine with forty projects and a thousand sessions still opens the
+     * screen in one frame, and `dropped` says out loud when the bound bit,
+     * rather than letting a truncated list read as a complete one.
+     *
+     * A project whose folder has gone is skipped, not fatal: a deleted game
+     * must not take the whole history down with it.
+     */
+    async testerHistoryAll(): Promise<JsonResult> {
+      const entries = (await readRecents()).slice(0, MAX_HISTORY_PROJECTS);
+      const perProject = await Promise.all(
+        entries.map(async (entry) => {
+          if (!(await isDirectory(entry.path))) return [];
+          try {
+            const sessions = await listSessions(entry.path);
+            const identity = await readProjectIdentity(entry.path);
+            return sessions.map((note) => ({
+              note,
+              project: { path: entry.path, name: entry.name, identity },
+            }));
+          } catch {
+            // One unreadable project folder is one missing game, not a broken
+            // screen for the other nine.
+            return [];
+          }
+        }),
+      );
+      const all = perProject.flat().sort((a, b) => {
+        const at = Date.parse(a.note.finishedAt ?? '');
+        const bt = Date.parse(b.note.finishedAt ?? '');
+        // A note with no readable time sorts last rather than randomly: it is
+        // the one case where "newest first" has no answer.
+        return (Number.isFinite(bt) ? bt : -Infinity) - (Number.isFinite(at) ? at : -Infinity);
+      });
+      return {
+        status: 200,
+        body: {
+          ok: true,
+          runs: all.slice(0, MAX_HISTORY_RUNS),
+          dropped: Math.max(0, all.length - MAX_HISTORY_RUNS),
+        },
+      };
+    },
+
+    /**
      * The message that starts work on part of a session's plan of action.
      *
      * Built here rather than in the window because the note is a file on disk
@@ -1650,7 +1878,7 @@ export function createProjectServerContext(options: ProjectServerOptions = {}) {
     /**
      * Serve a file from one of the static mounts. `key` is the base64url
      * project root; `rel` is resolved inside it (or inside its evidence dir),
-     * and anything escaping is refused.
+     * and anything escaping, or hidden, is refused.
      */
     async serveMounted(mount: 'game' | 'evidence', key: string, rel: string): Promise<FileResult> {
       const root = decodeRootKey(key);
@@ -1661,6 +1889,9 @@ export function createProjectServerContext(options: ProjectServerOptions = {}) {
       const abs = path.resolve(base, rel === '' ? '.' : rel);
       if (abs !== base && !abs.startsWith(base + path.sep)) {
         return { status: 403, body: { ok: false, error: 'Path escapes the mount.' } };
+      }
+      if (hasHiddenSegment(path.relative(base, abs))) {
+        return { status: 403, body: { ok: false, error: 'Hidden paths are not served.' } };
       }
       try {
         const stat = await fsp.stat(abs);
@@ -2169,14 +2400,32 @@ export function createProjectServerContext(options: ProjectServerOptions = {}) {
       }
     },
 
-    /** Serve a raw project file. Refuses anything outside the project root. */
+    /**
+     * Serve a raw project file. Refuses anything outside the project root, and
+     * anything in a folder that is not open.
+     *
+     * WHY THE `hearth.json` FALLBACK IS GONE
+     *
+     * This route and `fsOperation` below used to accept `isOpenRoot(root) ||
+     * exists(root + '/hearth.json')`, which made EVERY folder on the disk that
+     * happens to contain a hearth.json readable, open or not. A manifest is not
+     * an authorization: it is a file, and the untrusted side of this app (the
+     * agent, and anything the agent's game can drive) writes files. `createProject`
+     * will happily write one wherever the caller points it. Every sibling route
+     * here already says isOpenRoot; these two were the odd ones out, and being
+     * the two broadest read surfaces in the server made that expensive.
+     *
+     * Nothing legitimate is lost: opening a folder, creating a project, and
+     * reopening a recent one all put the root in the jail before the client
+     * reads a byte out of it.
+     */
     async readProjectFile(project: unknown, relPath: unknown): Promise<FileResult> {
       if (typeof project !== 'string' || typeof relPath !== 'string' || relPath === '') {
         return { status: 400, body: { ok: false, error: 'Requires "project" and "path" query params.' } };
       }
       const root = path.resolve(project);
-      if (!isOpenRoot(root) && !(await pathExists(path.join(root, 'hearth.json')))) {
-        return { status: 403, body: { ok: false, error: `Not an open Hearth folder: ${root}` } };
+      if (!isOpenRoot(root)) {
+        return { status: 403, body: { ok: false, error: `Folder is not open: ${root}` } };
       }
       const abs = resolveInside(root, relPath);
       if (!abs) {
@@ -2194,14 +2443,19 @@ export function createProjectServerContext(options: ProjectServerOptions = {}) {
       }
     },
 
-    /** Minimal FS ops for the browser-side ProjectStore (read-only). */
+    /**
+     * Minimal FS ops for the browser-side ProjectStore (read-only). Same jail
+     * as readProjectFile above, and the same reason the manifest fallback is
+     * gone: `readdir` on any folder with a hearth.json was a listing of
+     * somebody's disk for the asking.
+     */
     async fsOperation(project: unknown, op: unknown, relPath: unknown): Promise<JsonResult> {
       if (typeof project !== 'string' || typeof op !== 'string' || typeof relPath !== 'string') {
         return { status: 400, body: { ok: false, error: 'Requires "project", "op", and "path".' } };
       }
       const root = path.resolve(project);
-      if (!isOpenRoot(root) && !(await pathExists(path.join(root, 'hearth.json')))) {
-        return { status: 403, body: { ok: false, error: `Not an open Hearth folder: ${root}` } };
+      if (!isOpenRoot(root)) {
+        return { status: 403, body: { ok: false, error: `Folder is not open: ${root}` } };
       }
       const abs = resolveInside(root, relPath === '' ? '.' : relPath);
       if (!abs) {
@@ -2456,6 +2710,14 @@ async function route(ctx: ProjectServerContext, req: IncomingMessage, res: Serve
       const result = await ctx.createWorkspace(body.prompt, body.name);
       return sendJson(res, result.status, result.body);
     }
+    case 'POST /api/workspace/close': {
+      // No `denyUnattestedRoot`: this only narrows what the server will serve,
+      // so there is nothing here for an unattested caller to gain. See
+      // ctx.closeWorkspace.
+      const body = await readJsonBody(req);
+      const result = await ctx.closeWorkspace(body.path);
+      return sendJson(res, result.status, result.body);
+    }
     case 'GET /api/workspace/recent': {
       const result = await ctx.recentWorkspaces();
       return sendJson(res, result.status, result.body);
@@ -2498,6 +2760,10 @@ async function route(ctx: ProjectServerContext, req: IncomingMessage, res: Serve
     case 'POST /api/tester/stop': {
       const body = await readJsonBody(req);
       const result = await ctx.stopTesterSession(body.project);
+      return sendJson(res, result.status, result.body);
+    }
+    case 'GET /api/tester/history/all': {
+      const result = await ctx.testerHistoryAll();
       return sendJson(res, result.status, result.body);
     }
     case 'GET /api/tester/history': {
@@ -2698,10 +2964,18 @@ export function hearthProjectServer(options: ProjectServerOptions = {}): Plugin 
         // /api/* only; everything else is Vite's (the editor UI itself). The
         // game and evidence mounts are on `game` above, on their own origin.
         const pathname = new URL(req.url ?? '/', 'http://localhost').pathname;
-        if (!isHearthServerPath(pathname)) return next();
-        route(ctx, req, res).catch((err: unknown) => {
-          sendJson(res, 500, { ok: false, error: (err as Error).message ?? 'Internal error' });
-        });
+        if (isHearthServerPath(pathname)) {
+          route(ctx, req, res).catch((err: unknown) => {
+            sendJson(res, 500, { ok: false, error: (err as Error).message ?? 'Internal error' });
+          });
+          return;
+        }
+        // Everything else is Vite's, with one thing taken off it first: no
+        // DOCUMENT may be made out of /@fs/. See viteFsVerdict for the popup
+        // chain that ends at pty-start. The editor's module graph is
+        // `Sec-Fetch-Dest: script`, so it never meets this.
+        if (guardViteFs(req, res)) return;
+        return next();
       });
       // Absent in middleware mode (Vite embedded in another server); the /api
       // routes above still work there, just without the WS channel. Vite's

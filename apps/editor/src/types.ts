@@ -541,3 +541,24 @@ export interface ConsoleEntry {
   /** Present when the entry names a file; clicking opens it in the code peek. */
   link?: { path: string; line: number | null };
 }
+
+/**
+ * One playtest, and which game it was a playtest OF.
+ *
+ * A run only makes sense next to its game, so the pairing travels together
+ * rather than being reassembled by the screen from a path. The identity rides
+ * along for the same reason the rail's projects carry theirs: the list paints
+ * a mark per row on first render, and fetching them separately would be one
+ * flash of the wrong colour per game.
+ */
+export interface TesterRun {
+  note: import('../server/tester/types').TesterNote;
+  project: { path: string; name: string; identity?: ProjectIdentity };
+}
+
+/** Every recent playtest across every game, newest first, and what was cut. */
+export interface TesterRunHistory {
+  runs: TesterRun[];
+  /** How many runs the cap left out. Zero means the list is everything. */
+  dropped: number;
+}

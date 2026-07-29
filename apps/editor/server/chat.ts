@@ -424,7 +424,7 @@ export const STUB_REPLY = [
   'Three ways to connect one:',
   '  1. Set an Anthropic API key in Settings (or export ANTHROPIC_API_KEY before launching).',
   '  2. Sign in with ChatGPT in Settings, if you have the codex CLI installed.',
-  '  3. Open the Terminal tab and run your own agent CLI there — it already has the project folder as its working directory.',
+  '  3. Pick a CLI under Terminal in the model menu, beside the composer. It starts in this project folder.',
 ].join('\n');
 
 /**

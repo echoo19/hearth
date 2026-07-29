@@ -135,10 +135,16 @@
 
 /* Between sessions: how the last one ended, centred in the space the picture
    was in, so the surface does not go blank the moment it finishes. */
+/* A column rather than a centred single cell: the ending sentence is now
+   followed by the way into that session's report, and two stretched auto rows
+   would have put one in the middle of each half of the pane. */
 .tester-view-rest {
   height: 100%;
-  display: grid;
-  place-items: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
   padding: 24px;
   background: radial-gradient(120% 90% at 50% 38%, oklch(0.19 0.012 285) 0%, var(--canvas-bg) 62%);
 }
@@ -271,6 +277,115 @@
   display: flex;
   flex-direction: column;
   gap: 12px;
+}
+
+/* --- The global run list -------------------------------------------------- */
+
+/* Rows, not articles. The history screen spans every game now, so what it has
+   to support is scanning: find the game, find the session, open the report.
+   The long form still exists, in the report the row opens. */
+.tester-runs {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+/* The WHOLE row is the button. "Read that one" is the only thing anyone comes
+   to this list to do, so making it a target inside a row would be putting a
+   small door in the middle of a large one. */
+.tester-run {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  padding: 12px 10px;
+  border: 0;
+  border-radius: var(--radius);
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: background var(--t-fast) var(--ease-out);
+}
+
+.tester-run:hover {
+  background: var(--bg-2);
+}
+
+.tester-run-mark {
+  flex: none;
+}
+
+.tester-run-body {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+/* Same rule as the long form: only the two answers that are a judgement carry
+   colour. A first look and "no difference" are findings, and colouring them
+   would turn a list of sessions into a list of scores. */
+.tester-run-verdict {
+  font-size: var(--text-sm);
+  font-weight: 600;
+  color: var(--ink);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tester-run-verdict.tone-better {
+  color: var(--ok);
+}
+
+.tester-run-verdict.tone-worse {
+  color: var(--err);
+}
+
+.tester-run-verdict.tone-unreadable {
+  color: var(--warn);
+}
+
+/* Which game, then which session. The game leads because on a list spanning
+   every game it is the first thing you need to know about a row. */
+.tester-run-meta {
+  font-size: var(--text-xs);
+  color: var(--ink-faint);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* An affordance, not a second control. aria-hidden on the element: the row is
+   already a button and already named by its own text, so announcing this would
+   read the row's purpose out twice. */
+.tester-run-open {
+  flex: none;
+  font-size: var(--text-xs);
+  color: var(--ink-faint);
+  opacity: 0;
+  transition: opacity var(--t-fast) var(--ease-out);
+}
+
+.tester-run:hover .tester-run-open,
+.tester-run:focus-visible .tester-run-open {
+  opacity: 1;
+}
+
+/* What the cap left out, said rather than silently truncated. A capped list
+   that looks complete is a list that lies about your history. */
+.tester-runs-capped {
+  margin: 18px 0 0;
+  padding-top: 14px;
+  border-top: 1px solid var(--border);
+  font-size: var(--text-xs);
+  color: var(--ink-faint);
+  text-wrap: pretty;
 }
 
 .tester-session {
@@ -473,6 +588,13 @@
   text-underline-offset: 2px;
   text-decoration-color: var(--border-strong);
   cursor: pointer;
+}
+
+/* The one on the resting pane carries more weight than the one buried in a
+   history row: it is the whole reason a person stayed to watch the session. */
+.tester-rest-read {
+  color: var(--ink);
+  text-decoration-color: var(--accent);
 }
 
 .tester-read:hover {

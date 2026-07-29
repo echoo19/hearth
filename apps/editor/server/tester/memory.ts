@@ -118,7 +118,7 @@ export async function writeTranscript(root: string, id: number, text: string): P
   await fsp.writeFile(path.join(dir, 'transcript.md'), text, 'utf8');
 }
 
-const VERDICTS = new Set(['better', 'worse', 'no-difference', 'first-session', 'unreadable']);
+const VERDICTS = new Set(['better', 'worse', 'no-difference', 'first-session', 'unreadable', 'unclear']);
 const ENDINGS = new Set(['done', 'budget', 'user', 'error', 'unreadable']);
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -152,9 +152,41 @@ function isWholeNote(value: Record<string, unknown>): boolean {
   if (typeof value.startedAt !== 'string' || typeof value.finishedAt !== 'string') return false;
   if (typeof value.steps !== 'number') return false;
   if (typeof value.stopped !== 'string' || !ENDINGS.has(value.stopped)) return false;
-  if (!Array.isArray(value.observations) || !Array.isArray(value.openQuestions)) return false;
-  if (value.proposals !== undefined && !Array.isArray(value.proposals)) return false;
+  // Element by element, not just Array.isArray. The array check was the whole
+  // guard and it does not hold for the shape a hand-edit actually produces:
+  // `observations: [{ frame: 3 }]` has no `text`, and the report renders
+  // `observation.text` straight into a node; `openQuestions: [42]` is rendered
+  // as a key and a child. Both throw during render, and a throw during render
+  // is the white screen this guard exists to prevent.
+  if (!Array.isArray(value.observations) || !value.observations.every(isWholeObservation)) return false;
+  if (!Array.isArray(value.openQuestions) || !value.openQuestions.every((q) => typeof q === 'string')) {
+    return false;
+  }
+  if (value.proposals !== undefined) {
+    if (!Array.isArray(value.proposals) || !value.proposals.every(isWholeProposal)) return false;
+  }
+  if (value.placedFrom !== undefined && typeof value.placedFrom !== 'number') return false;
+  if (value.frames !== undefined && typeof value.frames !== 'number') return false;
   return true;
+}
+
+/** One observation the report can render without reaching for a field it lacks. */
+function isWholeObservation(value: unknown): boolean {
+  if (!isRecord(value)) return false;
+  if (typeof value.frame !== 'number' || typeof value.text !== 'string') return false;
+  // Absent is the answer on notes written before the tester could be placed
+  // anywhere, and `observationReach` reads absence as 'played'. A value that is
+  // neither is a value nothing here knows how to read.
+  return value.reached === undefined || value.reached === 'played' || value.reached === 'placed';
+}
+
+/** One proposal the plan of action can read without throwing on the way. */
+function isWholeProposal(value: unknown): boolean {
+  if (!isRecord(value)) return false;
+  if (value.kind !== 'bug' && value.kind !== 'suggestion') return false;
+  if (typeof value.text !== 'string') return false;
+  if (value.evidence === undefined) return true;
+  return Array.isArray(value.evidence) && value.evidence.every((frame) => typeof frame === 'number');
 }
 
 /**

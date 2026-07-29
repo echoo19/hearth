@@ -36,6 +36,17 @@ export const MISSING_REGRESSION = 'The tester did not say whether anything got w
 /** What the note says when it gave no readable verdict at all. */
 export const MISSING_VERDICT_WHY = 'The tester did not give a clear answer.';
 
+/**
+ * What the note says when the tester answered the verdict question with
+ * something that is not one of the three answers.
+ *
+ * Its own sentence, and it names the tester rather than the file: this note is
+ * perfectly readable and everything else on it stands. Only the verdict is
+ * absent, and it is absent because the tester declined to give one.
+ */
+export const UNCLEAR_VERDICT =
+  'It answered the verdict question with something that is not better, worse or no difference, so no verdict is recorded for this session rather than a guess at which one it meant.';
+
 const ENTER_LINE = /^[^\S\n]*ENTER[^\S\n]*:(.*)$/im;
 const ACTION_LINE = /^[^\S\n]*ACTION[^\S\n]*:(.*)$/im;
 const CLICK_LINE = /^[^\S\n]*(CLICK|MOVE)[^\S\n]*:(.*)$/im;
@@ -88,6 +99,14 @@ export interface TesterControls {
   actions: string[];
   axes: string[];
   pointer: boolean;
+  /**
+   * Whether a key the game never declared can actually be sent to it.
+   *
+   * The offer below is only made when this is true, because a tester told it
+   * may press what the screen tells it to, whose presses then go nowhere, is
+   * worse off than one that was never told.
+   */
+  keys?: boolean;
 }
 
 export interface TesterPromptContext {
@@ -236,25 +255,81 @@ function statesOffer(step: number, states: readonly ProbeState[]): string {
   ].join('\n');
 }
 
+/**
+ * The standing invitation to read the game's own screen.
+ *
+ * The listed inputs are what Hearth could work out about a game from the
+ * outside. What a game tells its player is a different and usually better list,
+ * and the tester was never told to look at it: it read "R to restart" on the
+ * screen, asked for R, and had the press dropped because R was not on Hearth's
+ * list. It then decided the game was stuck. So the picture is named as a source
+ * of controls, and it is only named when a key really can be sent.
+ */
+const READ_THE_SCREEN = [
+  'Games usually tell you their own controls on screen, and that list is theirs rather than',
+  'mine. If the picture names a key, you can put that key on an ACTION line whether or not it',
+  'is listed above: single keys like R or 5, and named keys like Space, Enter, Escape or',
+  'ArrowLeft, all reach the game. A word for an idea, like jump or restart, only reaches the',
+  'game when it is one of the inputs listed above.',
+].join('\n');
+
+/**
+ * What did not arrive, put to the tester before it looks at the next picture.
+ *
+ * The last sentence is the load-bearing one. Without it the tester reads its
+ * own dropped input as the game failing to respond, which is how a session that
+ * pressed nothing ends in a report saying the game was stuck.
+ */
+function undeliveredNotice(undelivered: readonly string[]): string {
+  if (undelivered.length === 0) return '';
+  return [
+    '',
+    undelivered.length === 1
+      ? 'Before this picture, one thing you asked for never reached the game:'
+      : 'Before this picture, some of what you asked for never reached the game:',
+    ...undelivered.map((line) => `  ${line}`),
+    'That is not the game failing to respond. It never got the input, so do not write it down',
+    'as the game ignoring you.',
+  ].join('\n');
+}
+
 /** What the tester is shown with each frame. Short: the picture is the message. */
 export function playPrompt(
   step: number,
   maxSteps: number,
   controls: TesterControls,
   states: readonly ProbeState[] = [],
+  undelivered: readonly string[] = [],
+  /**
+   * Which picture the tester is looking at, or null when this turn has none.
+   *
+   * Not the same number as the turn, and conflating the two was a real fault:
+   * the picture count only moves when a screenshot succeeds, so one failure
+   * made every later turn announce a picture number one ahead of the file
+   * attached to it, and the tester's citations were then checked against the
+   * real count and thrown away as pictures nobody took. Defaults to the turn
+   * only so a caller that takes a picture every turn reads naturally.
+   */
+  picture: number | null = step,
 ): string {
   const left = maxSteps - step + 1;
   const inputs = controls.actions.length > 0 ? controls.actions.join(', ') : 'none detected';
   const axes = controls.axes.length > 0 ? `\nAxes you can drive: ${controls.axes.join(', ')}.` : '';
   const pointer = controls.pointer ? '\nYou can also click anywhere in the picture.' : '';
+  const keys = controls.keys ? `\n${READ_THE_SCREEN}` : '';
   const offer = statesOffer(step, states);
   const closing =
     states.length > 0
       ? 'One sentence, then one ACTION, CLICK, MOVE, ENTER or DONE line.'
       : 'One sentence, then one ACTION, CLICK, MOVE or DONE line.';
+  const turns = `You have ${left} ${left === 1 ? 'turn' : 'turns'} left.`;
+  const heading =
+    picture === null
+      ? `There is no picture this turn: the game could not be photographed. ${turns} Do not write down anything about what you could not see.`
+      : `Picture ${picture}. ${turns}`;
   return [
-    `Picture ${step}. You have ${left} ${left === 1 ? 'turn' : 'turns'} left.`,
-    `Inputs you can hold: ${inputs}.${axes}${pointer}${offer}`,
+    heading,
+    `Inputs you can hold: ${inputs}.${axes}${pointer}${keys}${offer}${undeliveredNotice(undelivered)}`,
     closing,
   ].join('\n');
 }
@@ -330,7 +405,58 @@ export function parseObservations(
  * become a proposal, and `report.ts` is where that is enforced, because the
  * count of what it dropped is something the reader is owed.
  */
-const PROPOSAL_LINE = /^[^\S\n]*(?:[-*+•>]|#{1,6}|\d+[.)])?[^\S\n]*[*_`]{0,3}[^\S\n]*(BUG|IDEA)\b([^:\n]{0,60}):(.*)$/i;
+/**
+ * Whatever a model puts in front of a marker: quote marks, bullets, ordinals,
+ * task boxes, emphasis, in any order and any number. `> - BUG 7:` and
+ * `- [ ] BUG 7:` and `**- BUG 7:**` are all things models write and the
+ * single-slot version missed every one of them.
+ *
+ * One flat character class rather than a nested run of alternatives,
+ * deliberately: alternatives that can all start on `*` backtrack badly on a
+ * line of nothing but asterisks, and this runs over text a model wrote.
+ *
+ * The separator is a colon or a dash, because a model writes a dash instead
+ * often enough to matter and `BUG 7 <dash> it crashes` used to vanish
+ * entirely. `(?![A-Za-z])` rather than `\b` after the marker, so `BUG7:` is
+ * read and `BUGGY:` is not.
+ */
+const PROPOSAL_LINE =
+  /^[ \t]*[-*+•>#\d.)(\][xX_`\t ]*(BUG|IDEA)(?![A-Za-z])([^\n]{0,120}?)[:\u2014\u2013](.*)$/i;
+
+/**
+ * A span between the marker and the colon that is genuinely a picture citation,
+ * and nothing else.
+ *
+ * This exists because relaxing the span to "anything short" and then harvesting
+ * every digit out of it INVENTED evidence. `BUG in level 2: the floor is
+ * missing` became a finding anchored to picture 2, `BUG (x=140, y=60): the
+ * button is unclickable` claimed pictures 140 and 60, and `BUG 10/10 times: it
+ * crashes` claimed picture 10. The report then rendered "Picture 2:" against a
+ * claim the tester never made about picture 2, and handed `0002.png` to an
+ * agent as the picture behind it. Dropping a proposal was the old fault and it
+ * was bad; minting an evidence anchor is worse, because the whole value of this
+ * feature is that a claim without a picture behind it does not survive.
+ *
+ * So the span has to be made only of numbers and the words people write around
+ * numbers. Anything else and the line is still read as a proposal, with no
+ * evidence at all, which sends it to the dropped list where it is counted and
+ * said out loud.
+ */
+const CITATION_SPAN = /^[\s*_`)\]]*[([]?(?:pictures?|pics?|frames?|shots?|no\.|from|and|on|at|in|[\d\s,&+#])*[\s*_`)\]]*$/i;
+
+/**
+ * The pictures a proposal line pointed at. Empty when it pointed at none, and
+ * empty is a real answer that the report is required to say out loud.
+ */
+export function citedFrames(span: string): number[] {
+  if (!CITATION_SPAN.test(span)) return [];
+  const frames: number[] = [];
+  for (const digits of span.match(/\d+/g) ?? []) {
+    const frame = Number.parseInt(digits, 10);
+    if (frame >= 1 && !frames.includes(frame)) frames.push(frame);
+  }
+  return frames;
+}
 
 /** Markdown emphasis around a claim is decoration, and it is not part of the claim. */
 function unemphasised(text: string): string {
@@ -351,12 +477,11 @@ export function parseProposals(text: string): TesterProposal[] {
     if (!match) continue;
     const body = unemphasised(match[3]);
     if (body === '') continue;
-    const evidence: number[] = [];
-    for (const digits of match[2].match(/\d+/g) ?? []) {
-      const frame = Number.parseInt(digits, 10);
-      if (frame >= 1 && !evidence.includes(frame)) evidence.push(frame);
-    }
-    out.push({ kind: match[1].toUpperCase() === 'BUG' ? 'bug' : 'suggestion', text: body, evidence });
+    out.push({
+      kind: match[1].toUpperCase() === 'BUG' ? 'bug' : 'suggestion',
+      text: body,
+      evidence: citedFrames(match[2]),
+    });
   }
   return out;
 }
@@ -372,12 +497,50 @@ export function parseQuestions(text: string): string[] {
   return out;
 }
 
+/** Words that turn the verdict word after them into its opposite, or into nothing. */
+const NEGATED = /\b(?:not|never|hardly|barely|neither|nor|isn't|wasn't|aren't|doesn't|didn't)\b/;
+
+/** "no difference" and its neighbours, checked before negation eats the "no". */
+const NO_DIFFERENCE = /\bno\b[^.]{0,20}\bdifference\b|\bunchanged\b|\bthe same\b|\bno change\b|\bnothing changed\b/;
+
+/**
+ * What one clause of the verdict line said, or null when it said none of the
+ * three.
+ *
+ * Order matters twice over. "No difference" is tested first because it contains
+ * a negator and would otherwise be read as a negated something-else. Negation
+ * is tested next and answers null rather than flipping: "not better" is not a
+ * claim that things got worse, it is a refusal to say better, and inventing the
+ * opposite would be the same fault in the other direction.
+ */
+function verdictInClause(clause: string): ChangeVerdict['verdict'] | null {
+  if (NO_DIFFERENCE.test(clause)) return 'no-difference';
+  if (NEGATED.test(clause)) return null;
+  if (/\bworse\b|\bregress/.test(clause)) return 'worse';
+  if (/\bbetter\b|\bimprov/.test(clause)) return 'better';
+  return null;
+}
+
+/**
+ * The verdict the tester actually gave, or null when it gave none of the three.
+ *
+ * This used to be four ordered `test` calls against the whole line, with
+ * `better` first, and that is a sentence-inverter. `VERDICT: not better, if
+ * anything worse` contains the substring "better", so it was recorded as
+ * better and rendered to the person as "That helped." The tester had said the
+ * opposite. `mixed` and `I cannot tell` were both quietly recorded as
+ * no-difference, which is a verdict nobody gave.
+ *
+ * So the line is cut into clauses and read in order, and the first clause that
+ * makes one of the three claims wins. A line where no clause makes one answers
+ * null, and the caller records that rather than picking a favourite.
+ */
 function readVerdictWord(raw: string | null): ChangeVerdict['verdict'] | null {
   if (!raw) return null;
-  const word = raw.toLowerCase();
-  if (/\bbetter\b|\bimprov/.test(word)) return 'better';
-  if (/\bworse\b/.test(word)) return 'worse';
-  if (/no.?difference|\bsame\b|unchanged/.test(word)) return 'no-difference';
+  for (const clause of raw.toLowerCase().split(/[,;.()]|\bbut\b|\bthough\b|\bif\b|\bwhile\b|\bhowever\b/)) {
+    const verdict = verdictInClause(clause);
+    if (verdict) return verdict;
+  }
   return null;
 }
 
@@ -387,6 +550,10 @@ function readVerdictWord(raw: string | null): ChangeVerdict['verdict'] | null {
  * An unanswered WORSE line becomes MISSING_REGRESSION rather than "nothing".
  * That difference is the whole point of the field: a note that fills in silence
  * with reassurance is a note that can only ever say the change was fine.
+ *
+ * A verdict line that says none of the three becomes 'unclear' rather than
+ * no-difference. Falling back to one of the real answers is how "I cannot tell"
+ * and "mixed" ended up on screen as a verdict the tester never gave.
  */
 export function parseVerdict(text: string): { onTheChange: ChangeVerdict; regression: string } {
   const verdict = readVerdictWord(labelled(text, 'VERDICT'));
@@ -394,7 +561,9 @@ export function parseVerdict(text: string): { onTheChange: ChangeVerdict; regres
   const why = labelled(text, 'WHY') ?? MISSING_VERDICT_WHY;
   const worse = labelled(text, 'WORSE');
   return {
-    onTheChange: { seen, verdict: verdict ?? 'no-difference', why: verdict ? why : MISSING_VERDICT_WHY },
+    onTheChange: verdict
+      ? { seen, verdict, why }
+      : { seen, verdict: 'unclear', why: UNCLEAR_VERDICT },
     regression: worse ?? MISSING_REGRESSION,
   };
 }

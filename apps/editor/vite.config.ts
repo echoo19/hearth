@@ -38,6 +38,26 @@ export default defineConfig({
     exclude: ['@hearth/runtime', '@hearth/playtest'],
   },
   server: {
-    fs: { allow: [repoRoot] },
+    // `allow` has to stay the repo: the aliases above import packages/* from
+    // source, and Vite reaches them through /@fs/. What that costs is that every
+    // file in the repo is reachable on the control-plane origin, and a user's
+    // project frequently IS in the repo (packages/examples/*). The two settings
+    // beside it are what pays that back, and the third piece is the /@fs/
+    // document refusal in server/projectServer.ts.
+    fs: {
+      allow: [repoRoot],
+      // Vite's default deny list (.env, keys, .git) plus Hearth's own secret
+      // store: .hearth/app.json holds the saved Anthropic and OpenAI keys and
+      // .hearth/chats holds every conversation. Nothing in the editor's module
+      // graph imports out of a project's .hearth, so this costs dev nothing.
+      deny: ['.env', '.env.*', '*.{crt,pem}', '**/.git/**', '**/.hearth/**'],
+    },
+    // Vite's dev CORS defaults to echoing ANY loopback Origin, which includes
+    // the game's own port. That let agent-written game code `fetch()` any repo
+    // file off this origin and READ the reply, no popup and no navigation
+    // needed. The editor page is same-origin with this server and needs no CORS
+    // at all; the game is served its files by server/gameServer.ts, which is
+    // the only mount that is supposed to hand a game anything.
+    cors: false,
   },
 });

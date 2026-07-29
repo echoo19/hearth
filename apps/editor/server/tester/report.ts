@@ -90,6 +90,10 @@ export function verdictSentence(note: TesterNote): string {
   // Not a verdict, and never rendered as one. The note could not be read, so
   // the only true thing to say is that, and why.
   if (verdict === 'unreadable') return `${trimDot(seen)} ${trimDot(why)}`;
+  // The note is fine and everything else on it stands. Only the verdict is
+  // missing, and it is missing because the tester did not give one, so the
+  // sentence says that instead of picking the nearest of the three.
+  if (verdict === 'unclear') return `It understood that ${clause(seen)}. ${trimDot(why)}`;
   if (verdict === 'first-session') {
     const first = 'This was its first look at your game, so there is nothing to compare it with yet.';
     // On a session that fell over, `why` holds what went wrong, and that is
@@ -125,6 +129,11 @@ export function placementSentence(note: TesterNote): string | null {
 
 /** True when anything in this session happened somewhere the game put the tester. */
 export function anythingPlaced(note: TesterNote): boolean {
+  // The session's own record first. A session that was placed and then wrote
+  // its SAW lines about earlier pictures is still a session that was placed,
+  // and the caveat above the list is what stops the rest of it being read as
+  // proof a player can get there.
+  if (typeof note.placedFrom === 'number' && note.placedFrom >= 1) return true;
   return (note.observations ?? []).some((observation) => observationReach(observation) === 'placed');
 }
 
@@ -163,14 +172,20 @@ export interface Plan {
 /**
  * The highest picture number this session could possibly have taken.
  *
- * `frames` is the real count and is the answer whenever a note carries one.
- * Older notes do not, so the turn count stands in: a picture is taken at most
- * once per turn, so it is an upper bound and never a smaller one. Observations
- * widen it as a last resort, because a note that cites picture nine has by its
- * own account taken nine.
+ * `frames` is the real count and is the answer whenever a note carries one,
+ * INCLUDING when that count is zero. A known zero used to be treated as no
+ * answer at all and fell through to the turn count, so a game with no
+ * screenshot method reported three turns, took no pictures, wrote no files, and
+ * still rendered "Picture 3:" against a claim, with a path to a png that does
+ * not exist handed to an agent as the evidence behind it.
+ *
+ * Older notes carry no count, so the turn count stands in: a picture is taken
+ * at most once per turn, so it is an upper bound and never a smaller one.
+ * Observations widen it as a last resort, because a note that cites picture
+ * nine has by its own account taken nine.
  */
 function frameBound(note: TesterNote): number {
-  if (typeof note.frames === 'number' && note.frames > 0) return note.frames;
+  if (typeof note.frames === 'number' && note.frames >= 0) return note.frames;
   let bound = typeof note.steps === 'number' && note.steps > 0 ? note.steps : 0;
   for (const observation of note.observations ?? []) {
     if (typeof observation.frame === 'number' && observation.frame > bound) bound = observation.frame;
@@ -218,7 +233,15 @@ function reachOf(frame: number, seen: Map<number, ObservationReach>, placedFrom:
  */
 export function planFrom(note: TesterNote): Plan {
   const seen = new Map<number, ObservationReach>();
-  let placedFrom: number | null = null;
+  // What the session itself recorded, which is the only account that can be
+  // complete. Deriving this from the observations alone was a real hole: a
+  // session placed at picture four whose SAW lines all described pictures one
+  // to three recovered nothing, so picture five was reported as reached by
+  // playing, with no reachability caveat, and went out to an agent as evidence
+  // that a player can get there. Notes written before the field existed still
+  // fall back to the derivation, which is better than nothing and never worse
+  // than what they had.
+  let placedFrom = typeof note.placedFrom === 'number' && note.placedFrom >= 1 ? note.placedFrom : null;
   for (const observation of note.observations ?? []) {
     if (typeof observation.frame !== 'number') continue;
     const reach = observationReach(observation);
@@ -399,9 +422,16 @@ export function approvalSeed(
 
   const files = listed(frames.map(frameFile));
   const lines = [
-    `Your tester played session ${note.session} of this game. Out of what it wrote down I picked ${
+    // Opens on the WORK, and that is not a stylistic choice. A conversation is
+    // titled from the first line of the message that started it, so the old
+    // opening ("Your tester played session 3 of this game...") put a row in the
+    // chat rail that read as the session's own record. The rail filled up with
+    // what looked like one entry per playtest, and a session's record belongs
+    // to the project rather than among somebody's own conversations. This
+    // conversation is the agent doing work that was approved, so it says so.
+    `Work on ${
       picked.length === 1 ? 'one thing' : `${counted(picked.length)} things`
-    } to work on.`,
+    } I ticked from my tester's session ${note.session}.`,
     '',
     ...planLines(picked),
     '',
