@@ -65,7 +65,21 @@ export class ScreenBoundary extends React.Component<Props, State> {
           back in the same place, whatever this surface reads is what to look at.
         </span>
         {this.props.onLeave && (
-          <button type="button" className="btn" onClick={this.props.onLeave}>
+          <button
+            type="button"
+            className="btn"
+            // Leaving AND forgetting, in that order. A boundary holds its error
+            // until something clears it, so a button that only called `onLeave`
+            // left the same panel on screen however many times it was pressed:
+            // the surface underneath had changed and the reader could not tell,
+            // which is the dead end this panel exists to avoid. Clearing draws
+            // the children again; if the new surface throws too, this comes
+            // straight back with the new message, which is the honest answer.
+            onClick={() => {
+              this.props.onLeave?.();
+              this.setState({ message: null });
+            }}
+          >
             Go back
           </button>
         )}

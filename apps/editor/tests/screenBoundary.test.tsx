@@ -79,6 +79,52 @@ describe('ScreenBoundary', () => {
     expect(onLeave).toHaveBeenCalled();
   });
 
+  it('actually leaves — the panel goes with the press, not just the callback', () => {
+    // A boundary holds its error until something clears it. This button only
+    // called `onLeave`, so the panel stayed up however many times it was
+    // pressed: the surface underneath had changed and the reader could not
+    // tell. That is a dead end inside the screen that exists to prevent one.
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    function Surface({ broken }: { broken: boolean }): React.ReactElement {
+      if (broken) throw new Error('boom');
+      return <p>the way out worked</p>;
+    }
+    function Harness(): React.ReactElement {
+      const [broken, setBroken] = React.useState(true);
+      return (
+        <ScreenBoundary surface="Tester" onLeave={() => setBroken(false)}>
+          <Surface broken={broken} />
+        </ScreenBoundary>
+      );
+    }
+    render(<Harness />);
+    expect(screen.getByRole('alert')).toBeTruthy();
+
+    act(() => {
+      screen.getByRole('button', { name: /go back/i }).click();
+    });
+
+    expect(screen.queryByRole('alert')).toBeNull();
+    expect(screen.getByText('the way out worked')).toBeTruthy();
+  });
+
+  it('comes straight back when the surface it returned to is broken too', () => {
+    // Clearing is not pretending. If the children throw again the panel
+    // returns with the new message, which is the honest answer.
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    const onLeave = vi.fn();
+    render(
+      <ScreenBoundary surface="Tester" onLeave={onLeave}>
+        <Throws message="still broken" />
+      </ScreenBoundary>,
+    );
+    act(() => {
+      screen.getByRole('button', { name: /go back/i }).click();
+    });
+    expect(onLeave).toHaveBeenCalled();
+    expect(screen.getByText(/still broken/)).toBeTruthy();
+  });
+
   it('offers no way out when there is nowhere to go, rather than a dead button', () => {
     vi.spyOn(console, 'error').mockImplementation(() => {});
     render(

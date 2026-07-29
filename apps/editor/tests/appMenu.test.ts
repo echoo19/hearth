@@ -22,6 +22,11 @@ function mockStore(over: Partial<AppState> = {}): AppState {
     conversationMode: 'chat',
     paneTab: 'game',
     paneOpen: true,
+    // Where the app is standing — View's items are about the working area, and
+    // a global screen takes that area over. Null/false is "inside a project",
+    // which is what every case below assumes unless it says otherwise.
+    screen: null,
+    composing: false,
     codePeek: { open: false, path: null },
     closeWorkspace: vi.fn(),
     setConversationMode: vi.fn(),
@@ -81,12 +86,49 @@ describe('buildAppMenu', () => {
     expect(item(sections, 'pane:console').checked).toBe(true);
   });
 
-  it('offers the two surfaces the pane stack actually has — the shell is not one of them', () => {
+  it('offers the surfaces the pane stack actually has — the shell is not one of them', () => {
     const sections = buildAppMenu(mockStore(), baseCtx());
     const ids = items(sections, 'view').map((entry) => entry.id);
+    // All three tabs the column really has, or the menu is the app's one
+    // account of that column that disagrees with the column.
     expect(ids).toContain('pane:game');
+    expect(ids).toContain('pane:tester');
     expect(ids).toContain('pane:console');
     expect(ids).not.toContain('pane:terminal');
+  });
+
+  /**
+   * A global screen (Skills, Tester) and the blank new-chat surface take the
+   * whole working area. Neither the conversation column nor the playtest
+   * column is on screen there, so every View item that moves one of them would
+   * move something nobody can see: the app appeared to do nothing at all.
+   */
+  describe('View while the working area is covered', () => {
+    for (const [what, over] of [
+      ['the Skills screen', { screen: 'skills' as const }],
+      ['the Tester screen', { screen: 'tester' as const }],
+      ['the blank new-chat surface', { composing: true }],
+    ] as const) {
+      it(`greys the column items on ${what}, folder open or not`, () => {
+        const sections = buildAppMenu(mockStore(over), baseCtx());
+        expect(item(sections, 'mode:chat').enabled).toBe(false);
+        expect(item(sections, 'mode:terminal').enabled).toBe(false);
+        expect(item(sections, 'pane').enabled).toBe(false);
+        expect(item(sections, 'pane:game').enabled).toBe(false);
+        expect(item(sections, 'pane:tester').enabled).toBe(false);
+        expect(item(sections, 'pane:console').enabled).toBe(false);
+      });
+    }
+
+    it('keeps Files reachable, because it opens over whatever is showing', () => {
+      const sections = buildAppMenu(mockStore({ screen: 'skills' }), baseCtx());
+      expect(item(sections, 'files').enabled).toBe(true);
+    });
+
+    it('keeps Close project reachable — not current is not the same as not open', () => {
+      const sections = buildAppMenu(mockStore({ screen: 'skills' }), baseCtx());
+      expect(item(sections, 'close-folder').enabled).toBe(true);
+    });
   });
 
   it('checks the current conversation mode — the terminal is reachable from View', () => {

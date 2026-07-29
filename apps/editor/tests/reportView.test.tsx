@@ -74,6 +74,7 @@ function seed(sessions: TesterNote[]): void {
     testerRuns: {
       runs: sessions.map((note) => ({ note, project: { path: PROJECT, name: 'game' } })),
       dropped: 0,
+      skippedProjects: 0,
     },
   });
 }

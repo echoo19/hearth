@@ -34,7 +34,7 @@
  */
 import React, { useMemo, useRef, useState } from 'react';
 import { ConfirmDialog, Icon } from '../ui';
-import { ScreenHeader } from '../ui/ScreenHeader';
+import { ScreenHeader, screenBackLabel } from '../ui/ScreenHeader';
 import { MenuButton, type MenuItem } from '../ui/Menu';
 import {
   groupSkills,
@@ -55,10 +55,12 @@ import { BLANK_SKILL, SkillEditor } from './SkillEditor';
  * Where the way out goes. Skills belong to the person, not to a project, so
  * this screen can be reached from either side of the app — the label has to
  * name whatever is actually waiting underneath.
+ *
+ * The rule itself lives with ScreenHeader now, because the Tester screen is
+ * the same screen in this respect and was saying "Back". This name stays as
+ * the one this screen calls it.
  */
-export function skillsBackLabel(projectName: string | null, projectPath: string | null): string {
-  return projectPath !== null && projectName !== null && projectName !== '' ? projectName : 'Chats';
-}
+export const skillsBackLabel = screenBackLabel;
 
 /**
  * The letter on a skill's tile. Real data rather than decoration: the list
@@ -336,10 +338,18 @@ export function SkillsScreen() {
 
           {shown === 0 ? (
             <div className="skills-blank">
+              {/* "Not read yet" is not "you have none". The list arrives over a
+                  round trip, and this screen used to open on "No skills yet."
+                  plus a paragraph explaining what a skill is — to someone with
+                  twelve of them, for as long as the read took. */}
               <p className="skills-blank-lead">
-                {api.skills.length === 0 ? 'No skills yet.' : 'Nothing here matches that.'}
+                {!api.loaded
+                  ? 'Looking for your skills…'
+                  : api.skills.length === 0
+                    ? 'No skills yet.'
+                    : 'Nothing here matches that.'}
               </p>
-              {api.skills.length === 0 && (
+              {api.loaded && api.skills.length === 0 && (
                 <p className="skills-blank-hint">
                   A skill is a folder with a SKILL.md in it. That is the same format Claude Code and Codex read, so
                   one skill works with whichever agent answers.

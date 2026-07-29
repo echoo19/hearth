@@ -135,6 +135,23 @@ export function matchesQuery(text: string, query: string): boolean {
 }
 
 /**
+ * The folder a project path ends in, for both separators, because this runs in
+ * a browser that has no `path` and the app runs on Windows too.
+ *
+ * A project's name and its folder are two different strings now: a name is
+ * whatever someone typed, in any script, and the folder is the plain ASCII
+ * slug of it. So "Café Adventure" sits in `cafe-adventure`, and searching for
+ * the folder someone can see in Finder has to find the row.
+ *
+ * The folder, not the whole path: every project on the machine is under the
+ * same home directory, so matching on that would filter nothing.
+ */
+export function projectFolderName(projectPath: string): string {
+  const parts = projectPath.split(/[\\/]/).filter((part) => part !== '');
+  return parts[parts.length - 1] ?? projectPath;
+}
+
+/**
  * What Recents actually shows: the server's global list, with the open
  * folder's own conversations folded in.
  *
@@ -643,7 +660,9 @@ export function Sidebar() {
    * does not push everything else around.
    */
   const projects = useMemo(() => {
-    const matching = ordered.filter((project) => matchesQuery(project.name, query));
+    const matching = ordered.filter(
+      (project) => matchesQuery(project.name, query) || matchesQuery(projectFolderName(project.path), query),
+    );
     const capped = matching.slice(0, MAX_PROJECTS);
     if (projectPath === null || capped.some((project) => project.path === projectPath)) return capped;
     const open = matching.find((project) => project.path === projectPath);

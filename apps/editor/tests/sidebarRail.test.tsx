@@ -221,6 +221,30 @@ describe('search', () => {
     expect(screen.getByText('Platformer')).toBeTruthy();
   });
 
+  it('finds a project by the folder it is in, not only by the name it shows', async () => {
+    // The two stopped being the same string once a name could be written in
+    // any script: "Café Adventure" lives in `cafe-adventure`, and someone
+    // typing the folder they can see in Finder, or just the unaccented
+    // spelling, was told no such project existed.
+    vi.mocked(apiRecentWorkspaces).mockResolvedValue([
+      { path: '/Users/someone/Hearth/cafe-adventure', name: 'Café Adventure', exists: true },
+    ]);
+    reset();
+    render(<Sidebar />);
+    await screen.findByText('Café Adventure');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Search' }));
+    const box = screen.getByLabelText('Search projects and chats');
+
+    fireEvent.change(box, { target: { value: 'cafe-adv' } });
+    expect(screen.getByText('Café Adventure')).toBeTruthy();
+
+    // The folder, not the whole path: "Users" is on every row on the machine
+    // and matching it would filter nothing.
+    fireEvent.change(box, { target: { value: 'Users' } });
+    expect(screen.queryByText('Café Adventure')).toBeNull();
+  });
+
   it('says nothing matches rather than looking empty', async () => {
     reset({ recentChats: [chat('a', 'Asteroids')] });
     render(<Sidebar />);

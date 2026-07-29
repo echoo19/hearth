@@ -151,15 +151,28 @@ describe('closeWorkspace', () => {
     });
   }
 
-  it('takes the screen down with the folder it was a screen of', () => {
+  it('takes the project’s own view down with the folder it was a view of', () => {
     openOnTheTesterScreen();
 
     useApp.getState().closeWorkspace();
 
-    // The Tester screen used to stay up over an empty app, reading "your tester
-    // has not played this game yet" with no game open and a live Play button.
-    expect(useApp.getState().screen).toBeNull();
     expect(useApp.getState().projectView).toBe(false);
+    expect(useApp.getState().composing).toBe(false);
+  });
+
+  it('leaves a global screen standing, because it is not a view of the folder', () => {
+    // This used to clear `screen` too, from when the Tester screen showed only
+    // the open project and survived a close reading "your tester has not played
+    // this game yet" with no game open. That screen is gone: Tester is a
+    // history across every game and Skills is the person's library, so closing
+    // one project is not a reason to throw the reader off either of them. See
+    // `globalPlace`.
+    openOnTheTesterScreen();
+
+    useApp.getState().closeWorkspace();
+
+    expect(useApp.getState().screen).toBe('tester');
+    expect(useApp.getState().projectPath).toBeNull();
   });
 
   it('takes the folder’s tester, console and composer target with it', () => {

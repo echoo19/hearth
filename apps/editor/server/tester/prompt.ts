@@ -424,37 +424,66 @@ const PROPOSAL_LINE =
   /^[ \t]*[-*+•>#\d.)(\][xX_`\t ]*(BUG|IDEA)(?![A-Za-z])([^\n]{0,120}?)[:\u2014\u2013](.*)$/i;
 
 /**
- * A span between the marker and the colon that is genuinely a picture citation,
- * and nothing else.
+ * A span between the marker and the colon that is nothing but a list of
+ * numbers: `7`, `7, 21`, `7 and 21`, `#7`.
  *
- * This exists because relaxing the span to "anything short" and then harvesting
- * every digit out of it INVENTED evidence. `BUG in level 2: the floor is
- * missing` became a finding anchored to picture 2, `BUG (x=140, y=60): the
- * button is unclickable` claimed pictures 140 and 60, and `BUG 10/10 times: it
- * crashes` claimed picture 10. The report then rendered "Picture 2:" against a
- * claim the tester never made about picture 2, and handed `0002.png` to an
- * agent as the picture behind it. Dropping a proposal was the old fault and it
- * was bad; minting an evidence anchor is worse, because the whole value of this
- * feature is that a claim without a picture behind it does not survive.
- *
- * So the span has to be made only of numbers and the words people write around
- * numbers. Anything else and the line is still read as a proposal, with no
- * evidence at all, which sends it to the dropped list where it is counted and
- * said out loud.
+ * Numbers and the punctuation people join numbers with, and NOTHING else. The
+ * moment a word gets in, the span stops being a list and becomes a sentence,
+ * and the numbers in a sentence are as likely to be counts, coordinates,
+ * levels or odds as they are to be pictures.
  */
-const CITATION_SPAN = /^[\s*_`)\]]*[([]?(?:pictures?|pics?|frames?|shots?|no\.|from|and|on|at|in|[\d\s,&+#])*[\s*_`)\]]*$/i;
+const NUMBER_LIST = /^[\s*_`([]*#?\s*\d+(?:\s*(?:,|&|\+|and)\s*#?\s*\d+)*[\s*_`)\]]*$/i;
+
+/**
+ * A word that says the number after it is a picture, with the number it names.
+ *
+ * The marker has to come BEFORE the number, because that is the difference
+ * between which one and how many: "frame 2" names a picture and "2 frames" is a
+ * count. `BUG in 2 frames:` was read as a citation of picture 2 purely because
+ * the word "frames" appeared somewhere in the span.
+ */
+const MARKED_CITATION =
+  /(?:pictures?|pics?|frames?|shots?|screenshots?|no\.)\s*#?\s*(\d+(?:\s*(?:,|&|\+|and)\s*#?\s*\d+)*)/gi;
 
 /**
  * The pictures a proposal line pointed at. Empty when it pointed at none, and
  * empty is a real answer that the report is required to say out loud.
+ *
+ * A number is evidence only when the span is unambiguously a reference to a
+ * picture: either the span is nothing but a list of numbers, or a number
+ * follows a word that says it is a picture. Everything else cites nothing.
+ *
+ * That is deliberately strict, and it will drop some citations a person would
+ * have recognised. It is the correct trade. Harvesting every digit out of a
+ * relaxed span INVENTED evidence: `BUG in level 2: the floor is missing` became
+ * a finding anchored to picture 2, `BUG (x=140, y=60):` claimed pictures 140
+ * and 60, `BUG 1 in 10:` claimed pictures 1 and 10, and `BUG at 12:30` claimed
+ * picture 12. The report then rendered "Picture 2:" against a claim the tester
+ * never made about picture 2, and `approvalSeed` told an agent "the picture
+ * behind that is 0002.png, look at it before you change anything". A dropped
+ * proposal is counted and said out loud by `report.ts`; an invented anchor is
+ * a claim nobody made, and nothing downstream can tell it from a real one.
+ *
+ * Enumerating the bad shapes is not the answer here and was tried: every new
+ * shape a model writes is a new way through. Requiring the citation to say what
+ * it is pointing at fails closed instead.
  */
 export function citedFrames(span: string): number[] {
-  if (!CITATION_SPAN.test(span)) return [];
+  // Emphasis is decoration a model wraps around anything, and it must not be
+  // what decides whether a span is a list of numbers.
+  const cleaned = span.replace(/[*_`]/g, ' ');
   const frames: number[] = [];
-  for (const digits of span.match(/\d+/g) ?? []) {
-    const frame = Number.parseInt(digits, 10);
-    if (frame >= 1 && !frames.includes(frame)) frames.push(frame);
+  const keep = (digits: string): void => {
+    for (const number of digits.match(/\d+/g) ?? []) {
+      const frame = Number.parseInt(number, 10);
+      if (frame >= 1 && !frames.includes(frame)) frames.push(frame);
+    }
+  };
+  if (NUMBER_LIST.test(cleaned)) {
+    keep(cleaned);
+    return frames;
   }
+  for (const match of cleaned.matchAll(MARKED_CITATION)) keep(match[1]);
   return frames;
 }
 
@@ -497,25 +526,46 @@ export function parseQuestions(text: string): string[] {
   return out;
 }
 
+/**
+ * The three answers the verdict question actually has.
+ *
+ * Narrower than `ChangeVerdict['verdict']` on purpose, and this is the type the
+ * reader below answers in. The other three are not things a tester can say:
+ * 'first-session' is forced by the loop when there is nothing to compare
+ * against, 'unreadable' is a property of a file on disk, and 'unclear' is what
+ * the CALLER records when this answers null. Keeping them out means a surface
+ * mapping each answer to a sentence has to handle exactly these, and a missing
+ * case is a type error rather than a silent fallback.
+ */
+export type StatedVerdict = 'better' | 'worse' | 'no-difference';
+
 /** Words that turn the verdict word after them into its opposite, or into nothing. */
 const NEGATED = /\b(?:not|never|hardly|barely|neither|nor|isn't|wasn't|aren't|doesn't|didn't)\b/;
 
-/** "no difference" and its neighbours, checked before negation eats the "no". */
+/** "no difference" and its neighbours. */
 const NO_DIFFERENCE = /\bno\b[^.]{0,20}\bdifference\b|\bunchanged\b|\bthe same\b|\bno change\b|\bnothing changed\b/;
 
 /**
  * What one clause of the verdict line said, or null when it said none of the
  * three.
  *
- * Order matters twice over. "No difference" is tested first because it contains
- * a negator and would otherwise be read as a negated something-else. Negation
- * is tested next and answers null rather than flipping: "not better" is not a
- * claim that things got worse, it is a refusal to say better, and inventing the
- * opposite would be the same fault in the other direction.
+ * Negation is tested FIRST and answers null rather than flipping: "not better"
+ * is not a claim that things got worse, it is a refusal to say better, and
+ * inventing the opposite would be the same fault in the other direction.
+ *
+ * Sameness used to be tested ahead of it, on the reasoning that "no difference"
+ * carries a negator of its own that the negation check would eat. It does not:
+ * none of `no difference`, `no change`, `nothing changed`, `unchanged` or `the
+ * same` contains not, never, hardly, barely, neither or nor as a word, so the
+ * negation check has never had anything to eat here. What the ordering did
+ * instead was make `VERDICT: not the same, it is better` come out as "no real
+ * difference" — the tester saying the change worked, recorded as the change
+ * doing nothing. Same defect class as the "not better" inversion, one branch
+ * over.
  */
-function verdictInClause(clause: string): ChangeVerdict['verdict'] | null {
-  if (NO_DIFFERENCE.test(clause)) return 'no-difference';
+function verdictInClause(clause: string): StatedVerdict | null {
   if (NEGATED.test(clause)) return null;
+  if (NO_DIFFERENCE.test(clause)) return 'no-difference';
   if (/\bworse\b|\bregress/.test(clause)) return 'worse';
   if (/\bbetter\b|\bimprov/.test(clause)) return 'better';
   return null;
@@ -534,8 +584,14 @@ function verdictInClause(clause: string): ChangeVerdict['verdict'] | null {
  * So the line is cut into clauses and read in order, and the first clause that
  * makes one of the three claims wins. A line where no clause makes one answers
  * null, and the caller records that rather than picking a favourite.
+ *
+ * Exported because the live pane the person WATCHES has to say the same thing
+ * this note will. It had its own copy of the ordered-substring version this
+ * replaced, so it printed "the change helped" for `not better, if anything
+ * worse` seconds before the note recorded "worse". Two readings of one reply is
+ * one reading too many: there is one rule, and it is here.
  */
-function readVerdictWord(raw: string | null): ChangeVerdict['verdict'] | null {
+export function readVerdictWord(raw: string | null): StatedVerdict | null {
   if (!raw) return null;
   for (const clause of raw.toLowerCase().split(/[,;.()]|\bbut\b|\bthough\b|\bif\b|\bwhile\b|\bhowever\b/)) {
     const verdict = verdictInClause(clause);

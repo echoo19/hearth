@@ -8,6 +8,11 @@
  * app grow into consuming it later, which is why an entry carries an honest
  * `status` rather than pretending everything listed is live.
  *
+ * Today only the BUILT-IN rows are wired. A connector a user adds is stored and
+ * listed and nothing more: it does not reach the agent, the chat surface or the
+ * probe. This is not the place a user brings their own agent — see the note at
+ * the top of server/harnessRegistry.ts for where that actually lives.
+ *
  * This module is the shared vocabulary: types, the merge rule, and the two
  * pure string/storage helpers the sidebar needs. Deliberately dependency-free
  * (no zod, no React, no fs) so the server (server/harnessRegistry.ts), the

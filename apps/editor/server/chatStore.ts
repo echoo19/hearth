@@ -316,6 +316,38 @@ function serialize<T>(root: string, task: () => Promise<T>): Promise<T> {
 }
 
 /**
+ * What a read of the index saw, and whether it saw all of it.
+ *
+ * `whole` is false only when a recovery could not finish: the folder that says
+ * which conversations exist could not be listed, or a transcript in it could not
+ * be read. The rows are still the best answer to "what is there", which is what
+ * a LISTING wants. No WRITE may be built on them. See `readIndexForWrite`.
+ */
+interface IndexRead {
+  rows: ChatIndexRow[];
+  whole: boolean;
+}
+
+/**
+ * What every write path says when the listing could not be read in full.
+ *
+ * Stated rather than swallowed, because the alternative is worse than an error:
+ * every write here is read-mutate-write, so a partial read that reaches one is
+ * persisted as the whole truth, and the result is valid JSON, so the folder
+ * rebuild that would have put the missing conversations back never runs again.
+ */
+export const INDEX_UNREADABLE_MESSAGE =
+  'The conversation list could not be read in full, so nothing was changed. Try again in a moment.';
+
+/** Thrown by every write path on a read that could not see the whole picture. */
+export class ChatIndexUnreadableError extends Error {
+  constructor() {
+    super(INDEX_UNREADABLE_MESSAGE);
+    this.name = 'ChatIndexUnreadableError';
+  }
+}
+
+/**
  * The whole index, pending rows included. Every write path reads through here
  * rather than through `parseChatIndex`: an index rewritten from the filtered
  * view would delete the conversation the window that asked for the write is
@@ -330,12 +362,12 @@ function serialize<T>(root: string, task: () => Promise<T>): Promise<T> {
  * unreachable. The transcripts are the record, so that case rebuilds from them
  * (see `recoverIndexUnlocked`).
  */
-async function readIndexUnlocked(root: string): Promise<ChatIndexRow[]> {
+async function readIndexUnlocked(root: string): Promise<IndexRead> {
   let raw: string;
   try {
     raw = await fsp.readFile(chatIndexPath(root), 'utf8');
   } catch {
-    return []; // absent: a project that has never been talked to
+    return { rows: [], whole: true }; // absent: a project that has never been talked to
   }
   let parsed: unknown;
   try {
@@ -349,8 +381,23 @@ async function readIndexUnlocked(root: string): Promise<ChatIndexRow[]> {
   // would be written over by the next save, which is the same loss a torn file
   // used to cause. An EMPTY list is different and legitimate: it is a project
   // whose conversations were all deleted.
-  if (rows && (rows.length > 0 || (parsed as unknown[]).length === 0)) return rows;
+  if (rows && (rows.length > 0 || (parsed as unknown[]).length === 0)) return { rows, whole: true };
   return recoverIndexUnlocked(root, raw);
+}
+
+/**
+ * The index, for a caller that is about to write it back.
+ *
+ * THE RULE: a read that could not see the whole picture never becomes the basis
+ * of a write. A salvage is what this module could still make out of a damaged
+ * file while the folder beside it was unreadable; saving it turns "could not
+ * see" into "does not exist", permanently, for every conversation the salvage
+ * happened to miss.
+ */
+async function readIndexForWrite(root: string): Promise<ChatIndexRow[]> {
+  const read = await readIndexUnlocked(root);
+  if (!read.whole) throw new ChatIndexUnreadableError();
+  return read.rows;
 }
 
 /** The extension every kept copy of an unreadable index ends in. */
@@ -404,14 +451,43 @@ async function archiveCorruptIndex(root: string, raw: string): Promise<void> {
  * Brace counting rather than a JSON parser, because there is no valid document
  * here to parse; strings are tracked so a `{` inside a title is not mistaken
  * for a row.
+ *
+ * Each candidate is measured ON ITS OWN, from its own `{`, and that is the
+ * load-bearing part. One pass that carried string state across the whole
+ * document read every quote after a single unbalanced one inverted, so a `"`
+ * anywhere near the front meant no object was found in a file full of them, and
+ * the empty salvage went on to delete every terminal session in the folder (a
+ * terminal keeps no transcript, so its row is the only evidence it exists).
+ * Damage now costs the row it is inside and nothing else.
  */
 function salvageIndexRows(raw: string): ChatIndexRow[] {
   const found: unknown[] = [];
+  for (let i = 0; i < raw.length; i += 1) {
+    if (raw[i] !== '{') continue;
+    const end = objectEnd(raw, i);
+    if (end === -1) continue; // nothing whole starts here; the next `{` might
+    try {
+      found.push(JSON.parse(raw.slice(i, end + 1)));
+      i = end; // taken whole, so nothing inside it is a candidate of its own
+    } catch {
+      // Not a row, or a damaged one. Left to the scan to step into: a `{` this
+      // one swallowed may still be a whole object.
+    }
+  }
+  return parseChatRows(found);
+}
+
+/**
+ * Where the `{...}` that starts at `from` closes, or -1 when no whole one does.
+ *
+ * Starts with a FRESH idea of where strings are, which is what keeps one
+ * object's damage out of the next one's reading.
+ */
+function objectEnd(raw: string, from: number): number {
   let depth = 0;
-  let start = -1;
   let inString = false;
   let escaped = false;
-  for (let i = 0; i < raw.length; i += 1) {
+  for (let i = from; i < raw.length; i += 1) {
     const ch = raw[i];
     if (inString) {
       if (escaped) escaped = false;
@@ -420,22 +496,13 @@ function salvageIndexRows(raw: string): ChatIndexRow[] {
       continue;
     }
     if (ch === '"') inString = true;
-    else if (ch === '{') {
-      if (depth === 0) start = i;
-      depth += 1;
-    } else if (ch === '}' && depth > 0) {
+    else if (ch === '{') depth += 1;
+    else if (ch === '}') {
       depth -= 1;
-      if (depth === 0 && start >= 0) {
-        try {
-          found.push(JSON.parse(raw.slice(start, i + 1)));
-        } catch {
-          // Not a row after all: nothing to take from it.
-        }
-        start = -1;
-      }
+      if (depth === 0) return i;
     }
   }
-  return parseChatRows(found);
+  return -1;
 }
 
 /**
@@ -488,7 +555,7 @@ function mergeRecoveredRow(row: ChatIndexRow, records: readonly ChatRecord[]): C
  * The unreadable index is kept, not deleted: this function can only read what
  * it understands, and a person (or a later build) may get more out of it.
  */
-async function recoverIndexUnlocked(root: string, raw: string): Promise<ChatIndexRow[]> {
+async function recoverIndexUnlocked(root: string, raw: string): Promise<IndexRead> {
   await archiveCorruptIndex(root, raw);
   const dir = chatsDir(root);
   const salvaged = new Map<string, ChatIndexRow>();
@@ -501,22 +568,34 @@ async function recoverIndexUnlocked(root: string, raw: string): Promise<ChatInde
     if ((err as NodeJS.ErrnoException).code !== 'ENOENT') {
       // The folder could not be READ (a descriptor limit under load, a
       // permission, a volume that went away). "No conversations here" would be
-      // a conclusion drawn from a failure, and this function's answer is
-      // written back to disk, so it would delete the listing for real. Answer
-      // what was salvaged and leave the file exactly as it is: the next read
-      // tries again against a filesystem that may be well.
-      return sortChats([...salvaged.values()]);
+      // a conclusion drawn from a failure, so answer with the salvage and say
+      // it is PARTIAL: a listing may show it, and no write may be built on it.
+      // Returning it as if it were the whole file is how one unreadable moment
+      // became permanent loss, because the next write persisted the salvage and
+      // the valid JSON it left behind stopped the folder rebuild ever running
+      // again. The file is left exactly as it is: the next read tries again
+      // against a filesystem that may be well.
+      return { rows: sortChats([...salvaged.values()]), whole: false };
     }
     names = []; // absent: nothing was ever written here
   }
 
+  // Set by any transcript this pass could not read. Same rule as the folder: a
+  // rebuild missing a file it could not open must not be saved over one that
+  // still describes it.
+  let partial = false;
   const rows: ChatIndexRow[] = [];
   for (const name of names) {
     if (!name.endsWith('.jsonl')) continue;
     const id = safeChatId(name.slice(0, -'.jsonl'.length));
     if (!id) continue;
     const file = path.join(dir, name);
-    const body = await fsp.readFile(file, 'utf8').catch(() => null);
+    const body = await fsp.readFile(file, 'utf8').catch((err: NodeJS.ErrnoException) => {
+      // Gone between the listing and the read is a conversation that was
+      // deleted. Anything else is this process failing to look.
+      if (err.code !== 'ENOENT') partial = true;
+      return null;
+    });
     const records = parseTranscript(body ?? '');
     const known = salvaged.get(id);
     if (known) {
@@ -551,9 +630,12 @@ async function recoverIndexUnlocked(root: string, raw: string): Promise<ChatInde
   const recovered = sortChats(rows);
   // Written back here rather than left to the next write: `listChats` does not
   // write at all, so a recovery that only returned rows would rebuild them on
-  // every read and leave the folder with no index at all.
-  await writeIndexUnlocked(root, recovered);
-  return recovered;
+  // every read and leave the folder with no index at all. Skipped when a file
+  // could not be read, for the same reason the write paths refuse a partial
+  // read: rebuilding again next time costs a directory listing, and saving an
+  // incomplete rebuild costs a conversation.
+  if (!partial) await writeIndexUnlocked(root, recovered);
+  return { rows: recovered, whole: !partial };
 }
 
 /**
@@ -592,7 +674,10 @@ async function writeIndexUnlocked(root: string, chats: ChatIndexRow[]): Promise<
  * started it keep working while no list mentions it.
  */
 export function listChats(root: string): Promise<ChatSummary[]> {
-  return serialize(root, async () => visibleChats(await readIndexUnlocked(root)));
+  // Deliberately the plain read, partial or not: showing what could be seen is
+  // the right answer for a listing, and this path writes nothing, so a partial
+  // answer cannot become the file.
+  return serialize(root, async () => visibleChats((await readIndexUnlocked(root)).rows));
 }
 
 /**
@@ -607,7 +692,7 @@ export function getChat(root: string, chatId: string): Promise<ChatSummary | nul
   const id = safeChatId(chatId);
   if (!id) return Promise.resolve(null);
   return serialize(root, async () => {
-    const row = (await readIndexUnlocked(root)).find((chat) => chat.id === id);
+    const row = (await readIndexUnlocked(root)).rows.find((chat) => chat.id === id);
     return row ? withoutPending(row) : null;
   });
 }
@@ -640,7 +725,7 @@ export function createChat(
     // with a title was named on purpose. An unnamed chat has nothing in it and
     // nothing to call it, so it waits to be spoken into.
     if (kind === 'chat' && named === '') row.pending = true;
-    await writeIndexUnlocked(root, [row, ...(await readIndexUnlocked(root))]);
+    await writeIndexUnlocked(root, [row, ...(await readIndexForWrite(root))]);
     // Touch the transcript so an opened-but-silent chat reads back as empty
     // rather than missing.
     await fsp.writeFile(chatFilePath(root, row.id), '', { flag: 'a' });
@@ -681,7 +766,13 @@ export function prunePendingChats(
   const ttlMs = options.ttlMs ?? PENDING_TTL_MS;
   const now = options.now ?? Date.now();
   return serialize(root, async () => {
-    const rows = await readIndexUnlocked(root);
+    const read = await readIndexUnlocked(root);
+    // A sweep is the one write with nothing to report and nobody waiting on it,
+    // so a read that could not see the whole folder simply means nothing is
+    // swept this time. There is no way to tell a row nobody used from a row
+    // this pass did not see.
+    if (!read.whole) return [];
+    const rows = read.rows;
     const stale = new Set(
       rows
         .filter((row) => {
@@ -742,14 +833,25 @@ function indexMoved(stored: ChatIndexRow, record: ChatRecord): boolean {
  * index row, in which case nothing was written at all. Callers must check it:
  * a null means the conversation was deleted (in another window, this run) and
  * every message and event from here on would go nowhere, silently.
+ *
+ * The one append that is not a rewrite: the transcript line always lands, even
+ * on a read that could not see the whole listing, because appending cannot
+ * destroy anything and the transcript is the record. Only the index rewrite is
+ * held back. A row that is simply MISSING from a partial read is the one case
+ * with no honest answer, since "deleted" and "not seen" look the same, so that
+ * one is refused rather than guessed.
  */
 export function appendChatRecord(root: string, chatId: string, record: ChatRecord): Promise<ChatSummary | null> {
   const id = safeChatId(chatId);
   if (!id) return Promise.resolve(null);
   return serialize(root, async () => {
-    const chats = await readIndexUnlocked(root);
+    const read = await readIndexUnlocked(root);
+    const chats = read.rows;
     const index = chats.findIndex((chat) => chat.id === id);
-    if (index === -1) return null;
+    if (index === -1) {
+      if (!read.whole) throw new ChatIndexUnreadableError();
+      return null;
+    }
     const file = chatFilePath(root, id);
     await fsp.mkdir(path.dirname(file), { recursive: true });
     await fsp.appendFile(file, `${JSON.stringify(record)}\n`, 'utf8');
@@ -767,7 +869,7 @@ export function appendChatRecord(root: string, chatId: string, record: ChatRecor
       if (next.kind === 'chat' && next.title === UNTITLED) next.title = userRecordTitle(record);
     }
     // The line is on disk either way; only the listing is skipped.
-    if (!indexMoved(chats[index], record)) return withoutPending(chats[index]);
+    if (!read.whole || !indexMoved(chats[index], record)) return withoutPending(chats[index]);
     chats[index] = next;
     await writeIndexUnlocked(root, chats);
     return withoutPending(next);
@@ -793,7 +895,7 @@ export function renameChat(root: string, chatId: string, title: string): Promise
   const name = title.replace(/\s+/g, ' ').trim().slice(0, TITLE_MAX * 2);
   if (!id || name === '') return Promise.resolve(null);
   return serialize(root, async () => {
-    const chats = await readIndexUnlocked(root);
+    const chats = await readIndexForWrite(root);
     const index = chats.findIndex((chat) => chat.id === id);
     if (index === -1) return null;
     chats[index] = { ...chats[index], title: name };
@@ -812,7 +914,7 @@ export function setChatThreadId(root: string, chatId: string, threadId: string):
   const id = safeChatId(chatId);
   if (!id || threadId === '') return Promise.resolve(null);
   return serialize(root, async () => {
-    const chats = await readIndexUnlocked(root);
+    const chats = await readIndexForWrite(root);
     const index = chats.findIndex((chat) => chat.id === id);
     if (index === -1 || chats[index].codexThreadId === threadId) return null;
     chats[index] = { ...chats[index], codexThreadId: threadId };
@@ -826,7 +928,7 @@ export function deleteChat(root: string, chatId: string): Promise<boolean> {
   const id = safeChatId(chatId);
   if (!id) return Promise.resolve(false);
   return serialize(root, async () => {
-    const chats = await readIndexUnlocked(root);
+    const chats = await readIndexForWrite(root);
     const next = chats.filter((chat) => chat.id !== id);
     if (next.length === chats.length) return false;
     await writeIndexUnlocked(root, next);

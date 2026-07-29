@@ -45,6 +45,13 @@ class ScriptedDriver implements ChatDriver {
   /** Set by `blockBind`: `start` waits on it, so a bind can be held open. */
   private gate: Promise<void> | null = null;
   private openGate: (() => void) | null = null;
+  /**
+   * Set by `holdTeardown`: `stop()` returns at once but its last words wait
+   * here. Same shape as `slowTeardown` with the timer replaced by the test, so
+   * an ordering assertion is about the order and not about who won a race.
+   */
+  private teardownGate: Promise<void> | null = null;
+  private openTeardown: (() => void) | null = null;
   /** Approvals raised and not yet answered, exactly as the real drivers hold them. */
   private pending = new Set<string>();
 
@@ -72,6 +79,18 @@ class ScriptedDriver implements ChatDriver {
   releaseBind(): void {
     this.openGate?.();
     this.openGate = null;
+  }
+
+  /** Hold this driver's last words back until the test asks for them. */
+  holdTeardown(): void {
+    this.teardownGate = new Promise<void>((resolve) => {
+      this.openTeardown = resolve;
+    });
+  }
+
+  releaseTeardown(): void {
+    this.openTeardown?.();
+    this.openTeardown = null;
   }
 
   send(text: string, agent?: AgentTurnOptions): void {
@@ -134,7 +153,8 @@ class ScriptedDriver implements ChatDriver {
     // asked to stop: the Agent SDK answers a blocked permission callback
     // through a promise chain, so the resolution reaches the stream a tick
     // after `stop()` has returned.
-    if (this.slowTeardown) setTimeout(finish, 20);
+    if (this.teardownGate) void this.teardownGate.then(finish);
+    else if (this.slowTeardown) setTimeout(finish, 20);
     else finish();
   }
 }
@@ -400,6 +420,64 @@ describe('a permission mode change', () => {
     await nextFrame(socket, (frame) => frame.type === 'chat-event' && frame.event.type === 'done');
     expect(drivers).toHaveLength(1);
     expect(drivers[0].sent).toEqual(['one', 'two']);
+    socket.close();
+  });
+});
+
+/**
+ * Picking a different agent mid-conversation, which is the same argument as the
+ * mode above and bites harder.
+ *
+ * Which program answers is fixed when a driver is built, and the composer's
+ * pill NAMES the agent it believes is answering. A pick that only took effect
+ * on the next conversation would leave the app showing one agent's name while
+ * another one did the work, which is the exact failure the whole
+ * bring-your-own-agent path is written to prevent.
+ */
+describe('a change of agent', () => {
+  it('rebinds when the turn names a different agent, and hands it the id', async () => {
+    drivers = [];
+    const socket = await connect();
+    socket.send(JSON.stringify({ type: 'chat-send', text: 'one', agent: { agentId: 'my-agent' } }));
+    await nextFrame(socket, (frame) => frame.type === 'chat-event' && frame.event.type === 'done');
+    expect(drivers[0].boundAgent).toEqual({ agentId: 'my-agent' });
+
+    socket.send(JSON.stringify({ type: 'chat-send', text: 'two', agent: { agentId: 'other-agent' } }));
+    await nextFrame(socket, (frame) => frame.type === 'chat-event' && frame.event.type === 'done');
+    expect(drivers).toHaveLength(2);
+    expect(drivers[0].stopped).toBe(true);
+    expect(drivers[1].boundAgent).toEqual({ agentId: 'other-agent' });
+    expect(drivers[1].sent).toEqual(['two']);
+    socket.close();
+  });
+
+  it('rebinds when the turn goes back to a vendor model', async () => {
+    drivers = [];
+    const socket = await connect();
+    socket.send(JSON.stringify({ type: 'chat-send', text: 'one', agent: { agentId: 'my-agent' } }));
+    await nextFrame(socket, (frame) => frame.type === 'chat-event' && frame.event.type === 'done');
+    socket.send(
+      JSON.stringify({ type: 'chat-send', text: 'two', agent: { provider: 'anthropic', model: 'claude-opus-5' } }),
+    );
+    await nextFrame(socket, (frame) => frame.type === 'chat-event' && frame.event.type === 'done');
+    expect(drivers).toHaveLength(2);
+    expect(drivers[1].boundAgent).toEqual({ provider: 'anthropic', model: 'claude-opus-5' });
+    socket.close();
+  });
+
+  it('keeps the driver for the same agent, and for a turn that chooses nothing', async () => {
+    // A rebind per turn would restart the agent and lose everything it held in
+    // context, and a client that predates the selector sends no `agent` at all.
+    drivers = [];
+    const socket = await connect();
+    socket.send(JSON.stringify({ type: 'chat-send', text: 'one', agent: { agentId: 'my-agent' } }));
+    await nextFrame(socket, (frame) => frame.type === 'chat-event' && frame.event.type === 'done');
+    socket.send(JSON.stringify({ type: 'chat-send', text: 'two', agent: { agentId: 'my-agent' } }));
+    await nextFrame(socket, (frame) => frame.type === 'chat-event' && frame.event.type === 'done');
+    socket.send(JSON.stringify({ type: 'chat-send', text: 'three' }));
+    await nextFrame(socket, (frame) => frame.type === 'chat-event' && frame.event.type === 'done');
+    expect(drivers).toHaveLength(1);
+    expect(drivers[0].sent).toEqual(['one', 'two', 'three']);
     socket.close();
   });
 });
@@ -869,5 +947,179 @@ describe('a conversation deleted in another window', () => {
     // And the turn was never started: nothing pretends to be answering.
     expect(drivers[0].sent).toEqual(['one']);
     socket.close();
+  });
+});
+
+/**
+ * Where the DEFERRED end of a turn lands.
+ *
+ * Reporting a turn over waits for the driver's last words (up to
+ * TEARDOWN_FLUSH_MS), and that wait used to run detached, outside the
+ * conversation's chain, while the retired session was already out of the live
+ * map. So the next message bound a fresh backend straight through it and the old
+ * turn's `turn-complete` arrived INSIDE the new turn: chat-ready, then the
+ * ending. The client clears `chatBusy` on it and, by its own rule, stops
+ * applying events to that turn, so the rest of the live answer never reaches the
+ * screen. The transcript keeps the wrong order for good.
+ *
+ * Everything except Codex is affected, because CodexDriver is the only one that
+ * implements `interrupt()`; every other backend falls back to this teardown.
+ */
+describe('interrupting and typing again straight away', () => {
+  it('reports the old turn over before the new one starts', async () => {
+    drivers = [];
+    nextDriverSetup = (driver) => {
+      driver.silent = true; // the turn went to work, as a real one does
+      driver.holdTeardown(); // and its last words are not instant
+    };
+    const socket = await connect();
+    socket.send(JSON.stringify({ type: 'chat-new' }));
+    const opened = await nextFrame(socket, (frame) => frame.type === 'chat-opened');
+    if (opened.type !== 'chat-opened') throw new Error('wrong frame');
+    socket.send(JSON.stringify({ type: 'chat-send', text: 'one' }));
+    await nextFrame(socket, (frame) => frame.type === 'chat-ready');
+    await until(() => drivers.length === 1 && drivers[0].sent.length === 1);
+
+    // The two frames whose order is the whole point.
+    const order: string[] = [];
+    socket.on('message', (raw) => {
+      const frame = JSON.parse(raw.toString()) as WsFrame;
+      if (frame.type === 'chat-ready') order.push('chat-ready');
+      if (frame.type === 'chat-event' && frame.event.type === 'turn-complete') order.push('turn-complete');
+    });
+
+    socket.send(JSON.stringify({ type: 'chat-interrupt' }));
+    socket.send(JSON.stringify({ type: 'chat-send', text: 'two' }));
+    // The old backend takes its time letting go, which is exactly the window
+    // the ending used to fall through.
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    drivers[0].releaseTeardown();
+
+    await until(() => order.includes('chat-ready') && order.includes('turn-complete'));
+    expect(order).toEqual(['turn-complete', 'chat-ready']);
+    // And the file agrees with what the window was shown.
+    const records = await readTranscript(root, opened.chat.id);
+    const said = records.map((record) => (record.role === 'user' ? record.text : record.event.type));
+    expect(said.indexOf('turn-complete')).toBeLessThan(said.lastIndexOf('two'));
+    socket.close();
+  });
+});
+
+/**
+ * A retired session still holding the sockets that have moved on.
+ *
+ * `retireChatSession` takes the session out of the live map and nothing clears
+ * its socket set, and `leaveChat` only walks the sessions that are still IN that
+ * map, so a window that interrupts and then opens another conversation is still
+ * a broadcast target of the one it left. A `chat-event` carries no chat id, so
+ * the client has no way to tell: the old conversation's last words were rendered
+ * into the new one and cleared its busy state.
+ */
+describe('interrupting one conversation and opening another', () => {
+  it('does not deliver the old conversation’s last words into the new one', async () => {
+    drivers = [];
+    nextDriverSetup = (driver) => {
+      driver.silent = true;
+      driver.holdTeardown();
+    };
+    const socket = await connect();
+    socket.send(JSON.stringify({ type: 'chat-new' }));
+    const first = await nextFrame(socket, (frame) => frame.type === 'chat-opened');
+    if (first.type !== 'chat-opened') throw new Error('wrong frame');
+    socket.send(JSON.stringify({ type: 'chat-send', text: 'one' }));
+    await nextFrame(socket, (frame) => frame.type === 'chat-ready');
+    await until(() => drivers.length === 1 && drivers[0].sent.length === 1);
+    drivers[0].ask('a1', 'Runs a script');
+    await nextFrame(socket, (frame) => frame.type === 'chat-event' && frame.event.type === 'approval-request');
+
+    // Everything the window is told from here, in the order it is told.
+    const trail: string[] = [];
+    socket.on('message', (raw) => {
+      const frame = JSON.parse(raw.toString()) as WsFrame;
+      if (frame.type === 'chat-opened') trail.push(`opened:${frame.chat.id}`);
+      else if (frame.type === 'chat-event') trail.push(`event:${frame.event.type}`);
+    });
+
+    // Stop, and move to a different conversation while the old backend is still
+    // letting go of the last one.
+    socket.send(JSON.stringify({ type: 'chat-interrupt' }));
+    socket.send(JSON.stringify({ type: 'chat-new' }));
+    const second = await nextFrame(socket, (frame) => frame.type === 'chat-opened' && frame.chat.id !== first.chat.id);
+    if (second.type !== 'chat-opened') throw new Error('wrong frame');
+
+    drivers[0].releaseTeardown();
+    await new Promise((resolve) => setTimeout(resolve, 300));
+
+    const movedOn = trail.indexOf(`opened:${second.chat.id}`);
+    expect(movedOn).toBeGreaterThanOrEqual(0);
+    // Nothing from the conversation this window is no longer in.
+    expect(trail.slice(movedOn + 1)).toEqual([]);
+    socket.close();
+  });
+
+  it('names the conversation every chat-event belongs to', async () => {
+    drivers = [];
+    const socket = await connect();
+    socket.send(JSON.stringify({ type: 'chat-new' }));
+    const opened = await nextFrame(socket, (frame) => frame.type === 'chat-opened');
+    if (opened.type !== 'chat-opened') throw new Error('wrong frame');
+    socket.send(JSON.stringify({ type: 'chat-send', text: 'hello' }));
+    const event = await nextFrame(socket, (frame) => frame.type === 'chat-event' && frame.event.type === 'done');
+    if (event.type !== 'chat-event') throw new Error('wrong frame');
+    // Without this a client cannot tell a stray event from a live one, whatever
+    // the server does about delivery. It is the structural half of the fix.
+    expect(event.chatId).toBe(opened.chat.id);
+    socket.close();
+  });
+});
+
+/**
+ * The conversation lane and the OTHER window's chat-open.
+ *
+ * Sends are serialized per conversation, which is right: two windows in one chat
+ * drive the same driver and write the same file. But the whole of a send sat on
+ * the sending socket's own chain too, so a second window's send waiting on the
+ * first window's bind held up everything that window asked for afterwards,
+ * including switching to a different conversation. With codex that is a 60s
+ * start timeout of a dead-looking app. `ensureChat` used to return null at once
+ * while a bind was in flight, which is how this stayed hidden.
+ */
+describe('one window binding while the other wants to switch conversations', () => {
+  it('opens the other conversation without waiting for the bind', async () => {
+    drivers = [];
+    const a = await connect();
+    a.send(JSON.stringify({ type: 'chat-new' }));
+    const one = await nextFrame(a, (frame) => frame.type === 'chat-opened');
+    if (one.type !== 'chat-opened') throw new Error('wrong frame');
+    a.send(JSON.stringify({ type: 'chat-new' }));
+    const two = await nextFrame(a, (frame) => frame.type === 'chat-opened' && frame.chat.id !== one.chat.id);
+    if (two.type !== 'chat-opened') throw new Error('wrong frame');
+    a.send(JSON.stringify({ type: 'chat-open', chatId: one.chat.id }));
+    await nextFrame(a, (frame) => frame.type === 'chat-opened' && frame.chat.id === one.chat.id);
+
+    const b = await connect();
+    b.send(JSON.stringify({ type: 'chat-open', chatId: one.chat.id }));
+    await nextFrame(b, (frame) => frame.type === 'chat-opened' && frame.chat.id === one.chat.id);
+
+    // A's backend hangs coming up, the way `codex app-server` can.
+    nextDriverSetup = (driver) => driver.blockBind();
+    a.send(JSON.stringify({ type: 'chat-send', text: 'FROM-A' }));
+    await until(() => drivers.length === 1);
+
+    // B types into the same conversation, which correctly queues behind the
+    // bind, and then wants to look at the other conversation. That is not a
+    // send and has no business waiting on one.
+    b.send(JSON.stringify({ type: 'chat-send', text: 'FROM-B' }));
+    const switched = nextFrame(b, (frame) => frame.type === 'chat-opened' && frame.chat.id === two.chat.id, 1500);
+    b.send(JSON.stringify({ type: 'chat-open', chatId: two.chat.id }));
+    await switched;
+
+    // And the message B typed is still delivered to the conversation it was
+    // typed into, once that backend finally comes up.
+    drivers[0].releaseBind();
+    await until(() => drivers[0].sent.length === 2);
+    expect(drivers[0].sent).toEqual(['FROM-A', 'FROM-B']);
+    a.close();
+    b.close();
   });
 });

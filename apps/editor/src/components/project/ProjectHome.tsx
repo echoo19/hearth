@@ -26,7 +26,7 @@ import { ProjectInstructions } from './ProjectInstructions';
 import { ProjectContext } from './ProjectContext';
 import { ReportView } from '../tester/ReportView';
 import { playedWhen } from '../tester/TesterHistory';
-import { readableNote, testerRows } from '../tester/testerRows';
+import { rowsWithNotes, TESTER_NEVER_PLAYED, type TesterRow } from '../tester/testerRows';
 import type { TesterNote } from '../../../server/tester/types';
 import type { ChatSummary, RecentWorkspace } from '../../types';
 
@@ -77,15 +77,19 @@ function ChatLine({ chat, onOpen }: { chat: ChatSummary; onOpen: () => void }) {
  * the Tester screen opens, so there is one report in the app rather than two
  * that can disagree.
  */
-function SessionLine({ note, headline }: { note: TesterNote; headline: string }) {
+function SessionLine({ note, row }: { note: TesterNote; row: TesterRow }) {
   const [reading, setReading] = useState(false);
   const trigger = useRef<HTMLButtonElement>(null);
   return (
     <>
       <button ref={trigger} type="button" className="proj-session" onClick={() => setReading(true)}>
-        <span className="proj-session-title">{headline}</span>
+        {/* Straight off the row this note built, never looked up by session
+            number. A map keyed by that number both collapsed two sessions
+            claiming the same one AND could miss, and the miss rendered as an
+            empty headline: a session line with no sentence on it at all. */}
+        <span className="proj-session-title">{row.headline}</span>
         <span className="proj-session-when">
-          Session {note.session}, {playedWhen(note.finishedAt)}
+          Session {row.session}, {playedWhen(row.finishedAt)}
         </span>
       </button>
       <ReportView note={note} open={reading} onClose={() => setReading(false)} returnFocusTo={trigger} />
@@ -106,30 +110,58 @@ function SessionLine({ note, headline }: { note: TesterNote; headline: string })
  *
  * Newest first, unlike the conversation list above it, because the newest
  * verdict is the answer to "did my last change help".
+ *
+ * The section is always here, which is the part that had to change. It used to
+ * render nothing at all until a session existed, so a game that had never been
+ * played said nothing about playtesting on the one screen that is ABOUT that
+ * game — and the only routes to playing it were the rail's global Tester (aim
+ * it at the right game first) or the top bar's column toggle, then a tab. The
+ * heading with a way in is what makes playtesting per-project on the surface
+ * as well as on disk.
+ *
+ * `loaded` is the difference between "never played" and "not read yet". The
+ * folder's history arrives over a round trip, and a screen that says the first
+ * while the second is true has to take it back a moment later.
  */
-function ProjectSessions({ sessions }: { sessions: readonly TesterNote[] }) {
-  const openScreen = useApp((s) => s.openScreen);
-  // The same normalisation the Tester screen applies. A note off disk can be
-  // missing anything, and the report dialog reads it directly.
-  const notes = useMemo(() => sessions.map(readableNote), [sessions]);
-  const headlines = useMemo(
-    () => new Map(testerRows(notes).map((row) => [row.session, row.headline])),
-    [notes],
-  );
-  if (notes.length === 0) return null;
+function ProjectSessions({
+  sessions,
+  projectPath,
+  loaded,
+}: {
+  sessions: readonly TesterNote[];
+  projectPath: string;
+  loaded: boolean;
+}) {
+  const openTesterFor = useApp((s) => s.openTesterFor);
+  // Each note beside its own row, newest first, normalised on the way. The
+  // pairing is done there rather than here so this screen and the global one
+  // cannot disagree about which note a row belongs to.
+  const rows = useMemo(() => rowsWithNotes(sessions), [sessions]);
 
-  const newestFirst = [...notes].reverse();
   return (
     <section className="proj-list proj-sessions" aria-label="Playtests">
       <h2 className="proj-list-title">
         Playtests
-        <button type="button" className="proj-list-more" onClick={() => openScreen('tester')}>
-          Every session
+        {/* Aimed at this game. The screen it opens is global — it lists every
+            game's runs — but its Play defaults to whichever game played most
+            recently ANYWHERE, and a link pressed from lighthouse's own screen
+            must not put a Play for harbour under the pointer. */}
+        <button type="button" className="proj-list-more" onClick={() => openTesterFor(projectPath)}>
+          {rows.length === 0 ? 'Playtest this game' : 'Every session'}
         </button>
       </h2>
-      {newestFirst.map((note) => (
-        <SessionLine key={note.session} note={note} headline={headlines.get(note.session) ?? ''} />
-      ))}
+      {rows.length === 0 ? (
+        <p className="proj-empty">
+          {loaded
+            ? `${TESTER_NEVER_PLAYED} It plays the game itself and tells you whether your last change helped.`
+            : 'Looking for past sessions…'}
+        </p>
+      ) : (
+        // Keyed by where the note sat in the list, not by the number it claims
+        // to be: two notes can claim the same session and React would then see
+        // one key twice.
+        rows.map(({ note, row }) => <SessionLine key={row.source} note={note} row={row} />)
+      )}
     </section>
   );
 }
@@ -138,10 +170,14 @@ export function ProjectHome() {
   const projectPath = useApp((s) => s.projectPath);
   const projectName = useApp((s) => s.projectName);
   const chats = useApp((s) => s.chats);
+  // Whether that list has been read for this folder yet. See below.
+  const chatsLoaded = useApp((s) => s.chatsLoaded);
   const openChat = useApp((s) => s.openChat);
   const closeWorkspace = useApp((s) => s.closeWorkspace);
   const setComposeTarget = useApp((s) => s.setComposeTarget);
   const sessions = useApp((s) => s.tester.sessions);
+  // "Never played" and "not asked yet" are different sentences. See below.
+  const historyLoaded = useApp((s) => s.tester.historyLoaded);
   const refreshTesterHistory = useApp((s) => s.refreshTesterHistory);
   const [recents, setRecents] = useState<RecentWorkspace[]>([]);
 
@@ -184,7 +220,19 @@ export function ProjectHome() {
                 menu on the right of this header. */}
             <header className="proj-head">
               <ProjectMark path={projectPath} identity={project?.identity} size={22} className="proj-mark" />
-              <h1 className="proj-title">{projectName}</h1>
+              <div className="proj-headings">
+                <h1 className="proj-title">{projectName}</h1>
+                {/* The name and the folder are two facts now, and only one of
+                    them is on the title. A folder is a slug, so a game called
+                    "Café Adventure" lives in `cafe-adventure` and a game named
+                    in Korean lives somewhere with no letters of its name in it
+                    at all. This is the one screen that is ABOUT this project,
+                    so it is where "and where is it on disk" gets its answer.
+                    The full path stays reachable when the line is clipped. */}
+                <p className="proj-path" title={projectPath}>
+                  {projectPath}
+                </p>
+              </div>
               <span className="proj-head-actions">
                 <MenuButton
                   label={projectName ? `Project options for ${projectName}` : 'Project options'}
@@ -200,8 +248,15 @@ export function ProjectHome() {
 
             <section className="proj-list" aria-label="Conversations">
               {chats.length === 0 ? (
+                /* "Not read yet" is not "none". This screen is shown the
+                   moment a project is clicked, before its index has come
+                   back, so the invitation used to appear for the length of a
+                   round trip in front of a project with twelve conversations
+                   in it — and then be replaced by them. */
                 <p className="proj-empty">
-                  No conversations yet. Say what you want to make and the first one starts here.
+                  {chatsLoaded
+                    ? 'No conversations yet. Say what you want to make and the first one starts here.'
+                    : 'Looking for this project’s conversations…'}
                 </p>
               ) : (
                 <>
@@ -231,7 +286,7 @@ export function ProjectHome() {
             {/* Below the conversations rather than among them. A session is
                 this project's record of being played, not something anybody
                 said to the agent. */}
-            <ProjectSessions sessions={sessions} />
+            <ProjectSessions sessions={sessions} projectPath={projectPath} loaded={historyLoaded} />
           </div>
 
           <aside className="proj-side" aria-label="What the agent brings">

@@ -566,12 +566,19 @@ export async function runTesterSession(opts: RunTesterSessionOptions): Promise<T
   let observations: TesterObservation[] = [];
   let proposals: TesterProposal[] = [];
   let openQuestions: string[] = [];
+  // 'unclear' rather than 'no-difference', which is a verdict. A session that
+  // crashed before it played gave none, and the default put "It says your last
+  // change made no real difference" on the history for a game it never opened.
   let onTheChange: ChangeVerdict = {
     seen: 'It did not get far enough to say.',
-    verdict: 'no-difference',
-    why: crash ? crash.message : 'The session ended before it could say.',
+    verdict: 'unclear',
+    why: crash
+      ? `The session ended early and it never gave a verdict: ${crash.message}`
+      : 'The session ended before it could say.',
   };
   let regression = crash ? `The session ended early: ${crash.message}` : MISSING_REGRESSION;
+  /** Whether the tester got as far as answering the verdict question at all. */
+  let verdictGiven = false;
 
   // A crashed session is written down, not asked about. There is nothing it
   // could honestly say about a game it never got to play.
@@ -597,6 +604,7 @@ export async function runTesterSession(opts: RunTesterSessionOptions): Promise<T
       transcript.push('## Its verdict', '', verdictReply.trim(), '');
       onTheChange = parsed.onTheChange;
       regression = parsed.regression;
+      verdictGiven = true;
 
       const planReply = await ask(planPrompt);
       transcript.push('## What it would change', '', planReply.trim(), '');
@@ -610,7 +618,18 @@ export async function runTesterSession(opts: RunTesterSessionOptions): Promise<T
       // what went wrong in it.
       crash = err as Error;
       stopped = 'error';
-      onTheChange = { seen: onTheChange.seen, verdict: onTheChange.verdict, why: crash.message };
+      // Only when the tester never got to answer. This used to overwrite the
+      // reason unconditionally while leaving the verdict standing, which is how
+      // "It says your last change helped, because ENOENT: ..." was reachable:
+      // a crash in the step AFTER the verdict rewrote the tester's own words
+      // with an error message and left the claim attached to it.
+      if (!verdictGiven) {
+        onTheChange = {
+          seen: onTheChange.seen,
+          verdict: onTheChange.verdict,
+          why: `The session ended early and it never gave a verdict: ${crash.message}`,
+        };
+      }
     }
   }
 

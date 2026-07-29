@@ -146,7 +146,15 @@ export type WsFrame =
   // wrong thing to do to someone who just wants the agent to stop talking.
   | { type: 'chat-interrupt' } // client -> server
   | { type: 'chat-ready'; driver: ChatDriverKind }
-  | { type: 'chat-event'; event: ChatEvent }
+  // `chatId` names the conversation this event belongs to. It used to carry
+  // none, so a window had no way to tell an event of the chat it is showing
+  // from one belonging to a conversation it left: a retired session's last
+  // words were rendered into whatever the window had moved on to, and cleared
+  // that conversation's busy state with them. The server no longer sends those
+  // (see `broadcastChatEvent`), and a client should still ignore an event whose
+  // `chatId` is not the one it is showing. Optional so a client that predates
+  // it is unaffected.
+  | { type: 'chat-event'; chatId?: string; event: ChatEvent }
   | { type: 'chat-opened'; chat: ChatSummary; records: ChatRecord[] }
   | { type: 'chat-list'; chats: ChatSummary[] }
   // Provider auth moved (a key was saved, a ChatGPT sign-in completed in a
@@ -194,6 +202,15 @@ interface ChatSession {
    * disk and rebinds when they differ.
    */
   permissionMode: PermissionMode;
+  /**
+   * The user's own agent this driver was BUILT for, or null for a vendor
+   * backend. Compared per turn for the same reason the mode above is: which
+   * program answers is fixed when the driver is built, so a person who picks
+   * their own agent mid-conversation and is answered by Claude has been told
+   * one thing by the composer and given another. A turn that expresses no
+   * choice at all leaves whatever is bound exactly where it is.
+   */
+  agentId: string | null;
   sockets: Set<WebSocket>;
   /**
    * Settles when the bind attempt this session was created for is over, driver
@@ -645,7 +662,7 @@ export function attachWebSocket(
   // --- Conversation ---------------------------------------------------------
 
   function chatKey(root: string, chatId: string): string {
-    return `${root} ${chatId}`;
+    return `${root}\u0000${chatId}`;
   }
 
   /** Fan the chat index out to every window on this folder, so lists agree. */
@@ -653,6 +670,34 @@ export function attachWebSocket(
     const channel = channels.get(root);
     if (!channel) return;
     broadcast(channel.sockets, { type: 'chat-list', chats: await listChats(root) });
+  }
+
+  /**
+   * Send one conversation event to the windows that are actually IN that
+   * conversation.
+   *
+   * `session.sockets` is who joined, and it goes stale: a window that
+   * interrupted and opened something else is still in the set, because
+   * `leaveChat` only walks the sessions still in `chatSessions` and a retired
+   * one is out of that map by then. So the old conversation's last words (an
+   * approval coming back resolved, the turn ending) were delivered into
+   * whatever the window had moved on to, and cleared ITS busy state. Checked at
+   * delivery rather than at teardown, because the last words arrive after the
+   * teardown by design, and the set is pruned here so it cannot grow stale
+   * either.
+   *
+   * The frame names its conversation as well, which is what lets a client hold
+   * the same rule from its own side.
+   */
+  function broadcastChatEvent(session: ChatSession, event: ChatEvent): void {
+    const frame = JSON.stringify({ type: 'chat-event', chatId: session.chatId, event } satisfies WsFrame);
+    for (const socket of [...session.sockets]) {
+      if (socket.readyState !== WebSocket.OPEN || socketChat.get(socket) !== session.chatId) {
+        session.sockets.delete(socket);
+        continue;
+      }
+      socket.send(frame);
+    }
   }
 
   /** Every open socket on this folder currently looking at `chatId`. */
@@ -694,7 +739,20 @@ export function attachWebSocket(
     if (chatSessions.get(session.key) === session) chatSessions.delete(session.key);
     session.driver?.stop();
     if (!endWith) return;
-    detach(endChatTurn(session, endWith), `chat ${session.chatId}: could not record the end of the turn`);
+    // ON THE CONVERSATION'S LANE, not detached beside it. Ending a turn waits
+    // for the driver's last words, which takes as long as a backend takes to
+    // let go (up to TEARDOWN_FLUSH_MS), and the session is already out of
+    // `chatSessions` by this line, so the next message bound a fresh backend
+    // straight through that wait. The old turn's ending then landed INSIDE the
+    // new turn: the client clears `chatBusy` on it and stops applying events to
+    // that turn, so the rest of the live answer never reached the screen, and
+    // the transcript kept the wrong order for good. Queued here, the next send
+    // waits for the ending it comes after. Never awaited, so a teardown raised
+    // from inside a lane task cannot deadlock on its own lane.
+    detach(
+      enqueueChatLane(session.key, () => endChatTurn(session, endWith)),
+      `chat ${session.chatId}: could not record the end of the turn`,
+    );
   }
 
   /**
@@ -728,7 +786,7 @@ export function attachWebSocket(
       ts: new Date().toISOString(),
       event: endWith,
     });
-    broadcast(session.sockets, { type: 'chat-event', event: endWith });
+    broadcastChatEvent(session, endWith);
   }
 
   /**
@@ -816,11 +874,26 @@ export function attachWebSocket(
     // Checked here rather than trusted to the cleanup, because a message lost
     // to that gap is lost for good.
     const dead = existing?.driver?.dead === true;
-    if (existing?.driver && !dead && existing.permissionMode === permissionMode) {
+    // Which agent this turn asked for, or what is already bound when it asked
+    // for nothing: an older client, or a person who has never opened the model
+    // menu, must not tear a working backend down.
+    const wantedAgentId = agent ? (agent.agentId ?? null) : (existing?.agentId ?? null);
+    if (
+      existing?.driver &&
+      !dead &&
+      existing.permissionMode === permissionMode &&
+      existing.agentId === wantedAgentId
+    ) {
       existing.sockets.add(socket);
       return existing;
     }
-    // Past here the conversation is BOUND, or REBOUND for one of three reasons.
+    // Past here the conversation is BOUND, or REBOUND for one of four reasons.
+    //
+    // The person picked a different agent. Which program answers is fixed when
+    // a driver is built, so the pick has to rebind or it is a menu that changes
+    // nothing until the conversation happens to end. Same argument as the mode
+    // below it, and it bites harder: the composer's pill NAMES the agent it
+    // thinks is answering.
     //
     // The mode moved under a live conversation. Neither backend can be told
     // about it (codex fixed the policy at `thread/start`, the SDK at `query()`),
@@ -846,6 +919,11 @@ export function attachWebSocket(
       chatId,
       driver: null,
       permissionMode,
+      // What the driver below is actually BUILT with, which is the turn's own
+      // choice and nothing inherited: a rebind for some other reason, driven by
+      // a turn that expressed no choice, binds a vendor backend, and recording
+      // the old agent here would leave the session lying about itself.
+      agentId: agent?.agentId ?? null,
       // Every window that was watching comes along, so a rebind does not leave
       // the other one staring at an agent nothing is feeding any more. Taken
       // from `socketChat` as well as from the old session, because a session
@@ -911,7 +989,7 @@ export function attachWebSocket(
       // 60s timeout that does not stop the driver orphans that child forever,
       // one per attempt. Same shape the tester path uses (projectServer.ts).
       built?.stop();
-      send(socket, { type: 'chat-event', event: { type: 'error', message: (err as Error).message } });
+      send(socket, { type: 'chat-event', chatId, event: { type: 'error', message: (err as Error).message } });
       // Deliberately no `retireChatSession`: this session never had a stream,
       // the error above is the whole report, and the caller still writes the
       // user's message down.
@@ -962,14 +1040,14 @@ export function attachWebSocket(
             retireChatSession(session, { type: 'error', message: DELETED_CHAT_MESSAGE });
             break;
           }
-          broadcast(session.sockets, { type: 'chat-event', event });
+          broadcastChatEvent(session, event);
           settled = endsTurn(event);
           if (settled) detach(announceChats(root), `${root}: could not broadcast the chat list`);
         }
       } catch (err) {
         settled = true;
         if (chatSessions.get(key) === session) {
-          broadcast(session.sockets, { type: 'chat-event', event: { type: 'error', message: (err as Error).message } });
+          broadcastChatEvent(session, { type: 'error', message: (err as Error).message });
         }
       } finally {
         // The stream is over, so this backend is over: it is either stopped
@@ -1162,6 +1240,10 @@ export function attachWebSocket(
               if (text.trim() === '' && files.length === 0) break;
               const agent = parseAgentOptions(frame.agent);
               enqueueChatOp(ws, async () => {
+                // WHICH conversation this lands in is decided on the socket's
+                // own chain, so a `chat-new` typed into immediately still names
+                // the chat that was just made. Everything after it is the
+                // conversation's business, not this socket's.
                 const target = await chatIdForSend(root, ws);
                 // On the CONVERSATION's chain, not just this socket's. The
                 // whole of a send is one indivisible thing (bind a backend,
@@ -1170,35 +1252,53 @@ export function attachWebSocket(
                 // driver and the same file. Serialized here, the second window's
                 // message waits for the first to land instead of interleaving
                 // with it.
-                await enqueueChatLane(chatKey(root, target), async () => {
-                  const session = await ensureChat(root, ws, target, agent);
-                  // Written down even when NOTHING BOUND. A bind that failed has
-                  // already put its reason on this socket, and dropping what the
-                  // person typed on top of that means retyping it from memory,
-                  // for a failure they had no part in.
-                  //
-                  // Written down BEFORE the turn starts: the agent is handed
-                  // paths, so the files have to exist by the time it reads them.
-                  const attachments = await saveAttachments(root, target, files);
-                  const stored = await appendChatRecord(root, target, {
-                    role: 'user',
-                    ts: new Date().toISOString(),
-                    text,
-                    ...(attachments.length > 0 ? { attachments: attachments.map(storedAttachment) } : {}),
-                  });
-                  if (!stored) {
-                    // No index row, so the append wrote nothing at all: this
-                    // conversation was deleted while this window still had it
-                    // open. Everything typed from here would go nowhere, quietly,
-                    // until the window reloaded and found it gone, so say so and
-                    // end the session instead of talking into a deleted chat.
-                    send(ws, { type: 'chat-event', event: { type: 'error', message: DELETED_CHAT_MESSAGE } });
-                    if (session) retireChatSession(session, null);
-                    return;
-                  }
-                  await announceChats(root); // the first turn names the chat
-                  session?.driver?.send(text, agent ?? undefined, attachments);
-                });
+                //
+                // JOINED, NOT AWAITED, on the way out of this socket's chain.
+                // Awaiting it put the whole wait for another window's bind in
+                // front of everything this window asked for next, `chat-open`
+                // included: with codex that is up to its 60s start timeout of an
+                // app that looks dead. Two sends still cannot interleave, from
+                // either window, because the lane is joined in the order the
+                // frames arrived. An open is not a send and must not queue
+                // behind one.
+                detach(
+                  enqueueChatLane(chatKey(root, target), async () => {
+                    const session = await ensureChat(root, ws, target, agent);
+                    // Written down even when NOTHING BOUND. A bind that failed
+                    // has already put its reason on this socket, and dropping
+                    // what the person typed on top of that means retyping it
+                    // from memory, for a failure they had no part in.
+                    //
+                    // Written down BEFORE the turn starts: the agent is handed
+                    // paths, so the files have to exist by the time it reads
+                    // them.
+                    const attachments = await saveAttachments(root, target, files);
+                    const stored = await appendChatRecord(root, target, {
+                      role: 'user',
+                      ts: new Date().toISOString(),
+                      text,
+                      ...(attachments.length > 0 ? { attachments: attachments.map(storedAttachment) } : {}),
+                    });
+                    if (!stored) {
+                      // No index row, so the append wrote nothing at all: this
+                      // conversation was deleted while this window still had it
+                      // open. Everything typed from here would go nowhere,
+                      // quietly, until the window reloaded and found it gone, so
+                      // say so and end the session instead of talking into a
+                      // deleted chat.
+                      send(ws, {
+                        type: 'chat-event',
+                        chatId: target,
+                        event: { type: 'error', message: DELETED_CHAT_MESSAGE },
+                      });
+                      if (session) retireChatSession(session, null);
+                      return;
+                    }
+                    await announceChats(root); // the first turn names the chat
+                    session?.driver?.send(text, agent ?? undefined, attachments);
+                  }),
+                  `chat ${target}: could not deliver the message`,
+                );
               });
             }
             break;

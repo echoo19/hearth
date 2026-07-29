@@ -198,23 +198,50 @@ function isWholeProposal(value: unknown): boolean {
  * append-only record, where a session quietly disappearing is its own lie. Only
  * a file with no session number at all is dropped, because without one there is
  * nothing to call it.
+ *
+ * `folderSession` is the number the note's own directory carries, and when it
+ * is given it WINS. The folder is what the frames sit in and what `sessionDir`
+ * addresses, so a note claiming a different number is the note being wrong, not
+ * the folder. Trusting the note let two sessions in one project both call
+ * themselves 3, and every surface that paired a row back to its note by that
+ * number then dropped one of them and rendered the other twice.
  */
-export function readNote(parsed: unknown): TesterNote | null {
+export function readNote(parsed: unknown, folderSession?: number): TesterNote | null {
   if (!isRecord(parsed)) return null;
-  const session = parsed.session;
-  if (typeof session !== 'number' || !Number.isFinite(session)) return null;
-  if (isWholeNote(parsed)) return parsed as unknown as TesterNote;
-  return unreadableNote(
-    session,
-    typeof parsed.startedAt === 'string' ? parsed.startedAt : '',
-    typeof parsed.finishedAt === 'string' ? parsed.finishedAt : '',
-  );
+  const claimed = parsed.session;
+  // Still dropped when the file names no session at all, folder or no folder.
+  // The folder could supply one, but a file that never claimed to be a session
+  // note is a different thing from a session note that is wrong about which
+  // session it is, and only the second is what this correction is for.
+  if (typeof claimed !== 'number' || !Number.isFinite(claimed)) return null;
+  const session = folderSession ?? claimed;
+  const startedAt = typeof parsed.startedAt === 'string' ? parsed.startedAt : '';
+  const finishedAt = typeof parsed.finishedAt === 'string' ? parsed.finishedAt : '';
+  if (!isWholeNote(parsed)) return unreadableNote(session, startedAt, finishedAt);
+  return (claimed === session ? parsed : { ...parsed, session }) as unknown as TesterNote;
+}
+
+/**
+ * The session a directory name stands for, or null when it names none.
+ *
+ * `String(id).padStart(4, '0')` is what wrote it, so the leading zeroes are
+ * padding rather than meaning. A directory whose name is not a number belongs
+ * to nothing this can address and is left alone.
+ */
+function sessionOfDir(entry: string): number | null {
+  if (!/^\d+$/.test(entry)) return null;
+  const id = Number.parseInt(entry, 10);
+  return Number.isFinite(id) && id >= 1 ? id : null;
 }
 
 /**
  * Every session this project has, oldest first, so the history reads as a
  * history. A note that will not parse is dropped rather than thrown: these files
  * are hand-editable, so one broken file must not take the whole record with it.
+ *
+ * One note per session folder, numbered by the folder. Two folders cannot share
+ * a name, so no two sessions here can claim the same number however the notes
+ * inside them have been edited.
  */
 export async function listSessions(root: string): Promise<TesterNote[]> {
   const dir = path.join(testerDir(root), 'sessions');
@@ -228,7 +255,7 @@ export async function listSessions(root: string): Promise<TesterNote[]> {
   for (const entry of entries.sort()) {
     try {
       const raw = await fsp.readFile(path.join(dir, entry, 'note.json'), 'utf8');
-      const note = readNote(JSON.parse(raw));
+      const note = readNote(JSON.parse(raw), sessionOfDir(entry) ?? undefined);
       if (note) notes.push(note);
     } catch {
       /* unreadable or absent: this session simply has no note to show */

@@ -22,8 +22,18 @@ import {
   type TesterNote,
 } from '../../../server/tester/types';
 
-/** What the history says to a folder whose tester has never played. */
+/** What a PROJECT's own screen says when its tester has never played. */
 export const TESTER_NEVER_PLAYED = 'Your tester has not played this game yet.';
+
+/**
+ * What the GLOBAL history says when it has found no sessions anywhere.
+ *
+ * Its own sentence rather than the one above, which was what that screen used
+ * to render: "this game" on a list that spans every game names nothing the
+ * reader can point at, and on a screen reached from outside any project there
+ * is no "this game" for it to mean.
+ */
+export const TESTER_NEVER_PLAYED_ANYWHERE = 'Your tester has not played any of your games yet.';
 
 /** How a verdict reads, for the one place colour is allowed to carry meaning. */
 export type VerdictTone = 'better' | 'worse' | 'same' | 'first' | 'unreadable' | 'unclear';
@@ -37,6 +47,17 @@ export interface TesterRowObservation {
 
 export interface TesterRow {
   session: number;
+  /**
+   * Where this row's note sat in the list handed to `testerRows`.
+   *
+   * The only unambiguous way back to it. `session` comes off disk from a folder
+   * people are told they may edit, so two notes in one game can claim the same
+   * number, and every surface that paired rows to notes by that number dropped
+   * one of them and rendered the other twice: two sessions numbered 3, one
+   * "worse" and one "better", both said "made things worse". A position in the
+   * list cannot collide.
+   */
+  source: number;
   tone: VerdictTone;
   /** The verdict as a sentence. Never the stored token. */
   headline: string;
@@ -147,16 +168,20 @@ function isReversal(current: VerdictTone, previous: VerdictTone): boolean {
  * reader wants.
  */
 export function testerRows(notes: readonly TesterNote[]): TesterRow[] {
-  const ordered = [...notes]
-    .map(readableNote)
-    .sort((a, b) => a.session - b.session);
-  const rows: TesterRow[] = ordered.map((note, index) => {
-    const previous = index > 0 ? ordered[index - 1] : null;
+  // Sorted as pairs rather than as notes, so each row can carry the position of
+  // the note it was built from. Sorting is stable, so two notes claiming the
+  // same session stay in the order they arrived and stay two rows.
+  const ordered = notes
+    .map((note, source) => ({ note: readableNote(note), source }))
+    .sort((a, b) => a.note.session - b.note.session);
+  const rows: TesterRow[] = ordered.map(({ note, source }, index) => {
+    const previous = index > 0 ? ordered[index - 1].note : null;
     const tone = toneFor(note.onTheChange.verdict);
     const previousTone = previous ? toneFor(previous.onTheChange.verdict) : null;
     const regression = regressionSentence(note.regression);
     return {
       session: note.session,
+      source,
       tone,
       headline: headlineFor(note.onTheChange.verdict),
       seen: note.onTheChange.seen,
@@ -195,4 +220,19 @@ export function testerRows(notes: readonly TesterNote[]): TesterRow[] {
     };
   });
   return rows.reverse();
+}
+
+/**
+ * Each note beside the row built from it, newest first.
+ *
+ * Here rather than in each surface, because pairing is where the identity bug
+ * lived. Both surfaces used to look a row up by session number: the history
+ * keyed a map by project plus session, and the project screen keyed one by
+ * session alone and rendered `?? ''` when it missed, which put an EMPTY
+ * headline on screen. A row carries the index of its own note, so the pairing
+ * is total by construction and there is no miss to render.
+ */
+export function rowsWithNotes(notes: readonly TesterNote[]): { note: TesterNote; row: TesterRow }[] {
+  const readable = notes.map(readableNote);
+  return testerRows(readable).map((row) => ({ note: readable[row.source], row }));
 }

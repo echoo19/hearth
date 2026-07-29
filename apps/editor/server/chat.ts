@@ -15,6 +15,12 @@
  *  - `CodexDriver`  — OpenAI's `codex app-server` over stdio JSON-RPC (see
  *                     chatDrivers/codex.ts). Authenticated by a ChatGPT sign-in
  *                     or an API key, both held by the codex binary itself.
+ *  - `CustomDriver` — ANY program the user registered (agentRegistry.ts),
+ *                     driven over newline-delimited JSON on stdio. See
+ *                     chatDrivers/customWire.ts for the protocol: three
+ *                     required events, everything else opt-in, so a thirty-line
+ *                     wrapper around somebody's own harness is a real backend
+ *                     with a real transcript.
  *
  * Events are a plain async iterable of `ChatEvent`, which ws.ts forwards over
  * the socket's `chat` channel one frame per event. A driver is per-socket and
@@ -182,7 +188,12 @@ export function endsTurn(event: ChatEvent): boolean {
   return type === 'turn-complete' || type === 'error';
 }
 
-export type ChatDriverKind = 'stub' | 'agent-sdk' | 'codex';
+/**
+ * Which backend answered. `custom` is any agent the USER registered
+ * (agentRegistry.ts, chatDrivers/custom.ts): one kind for all of them, because
+ * the driver is one driver and the id of the agent travels with the turn.
+ */
+export type ChatDriverKind = 'stub' | 'agent-sdk' | 'codex' | 'custom';
 
 /** Which vendor answers. Auth for each is configured independently. */
 export type ChatProvider = 'anthropic' | 'openai';
@@ -216,6 +227,16 @@ export interface AgentTurnOptions {
   /** Wire model id, e.g. `claude-opus-5`. Null/absent = the provider default. */
   model?: string | null;
   effort?: ReasoningEffort | null;
+  /**
+   * An agent the user registered themselves (server/agentRegistry.ts), by id.
+   *
+   * It OUTRANKS `provider`, because it is not a preference between vendors, it
+   * is the person saying which program answers. When it names an agent that
+   * cannot run, the turn fails and says why rather than quietly falling through
+   * to a vendor backend: a composer showing "My agent" while Claude answers is
+   * the app lying about who is doing the work.
+   */
+  agentId?: string | null;
 }
 
 /**
@@ -225,6 +246,14 @@ export interface AgentTurnOptions {
  * not to second-guess the catalogue the picker read out of the binary.
  */
 const EFFORT_TOKEN = /^[a-z][a-z0-9-]{0,23}$/;
+
+/**
+ * The same shape `agentRegistry.ts` mints ids in. Checked here rather than
+ * imported so this module keeps no dependency on the registry: a frame naming
+ * an id that cannot exist is dropped, and an id that could exist is looked up
+ * once, by the seam that owns the file.
+ */
+const AGENT_ID_TOKEN = /^[a-z0-9][a-z0-9-]{0,47}$/;
 
 /**
  * Read the `agent` field off a wire frame. Tolerant on purpose: an unknown
@@ -239,6 +268,9 @@ export function parseAgentOptions(raw: unknown): AgentTurnOptions | null {
   if (record.provider === 'anthropic' || record.provider === 'openai') out.provider = record.provider;
   if (typeof record.model === 'string' && record.model.trim() !== '') out.model = record.model.trim();
   if (typeof record.effort === 'string' && EFFORT_TOKEN.test(record.effort.trim())) out.effort = record.effort.trim();
+  if (typeof record.agentId === 'string' && AGENT_ID_TOKEN.test(record.agentId.trim())) {
+    out.agentId = record.agentId.trim();
+  }
   return Object.keys(out).length > 0 ? out : null;
 }
 
@@ -1097,10 +1129,16 @@ export class AgentSdkDriver implements ChatDriver {
 /**
  * Pick the driver for a project.
  *
- * An explicit `provider` wins when that provider is actually usable;
- * otherwise whichever one is configured answers, and with neither the stub
- * explains how to connect one. Never throws — a broken agent backend degrades
- * to guidance rather than an unusable conversation column.
+ * A turn that names one of the USER's OWN agents (`agent.agentId`) is answered
+ * by that agent or by an error saying why it could not be: it is the one branch
+ * here that is allowed to throw, and the one that must. Every other route ends
+ * in a working driver, so falling through would replace the program somebody
+ * chose with a vendor's, under a composer still showing their name for it.
+ *
+ * With no `agentId`, an explicit `provider` wins when that provider is actually
+ * usable; otherwise whichever one is configured answers, and with neither the
+ * stub explains how to connect one. That path never throws: a broken vendor
+ * backend degrades to guidance rather than an unusable conversation column.
  *
  * The turn's own `agent.provider` outranks the stored preference: the composer
  * shows the user which model they picked, so that pick has to be what binds.
@@ -1141,6 +1179,18 @@ export async function createChatDriver(
         permissionMode?: PermissionMode | null;
       },
     ) => Promise<ChatDriver | null>;
+    /**
+     * The user's own agents (chatDrivers/custom.ts). Tried FIRST, and only when
+     * the turn names one; it answers null for a turn that does not.
+     */
+    createCustomDriver?: (
+      projectRoot: string,
+      opts?: {
+        agent?: AgentTurnOptions | null;
+        tools?: AgentToolAccess | null;
+        permissionMode?: PermissionMode | null;
+      },
+    ) => Promise<ChatDriver | null>;
   },
 ): Promise<ChatDriver> {
   const settings = await readAppSettings(projectRoot);
@@ -1161,6 +1211,19 @@ export async function createChatDriver(
       // resolving the module (and so this file stays free of node:child_process).
       const mod = await import('./chatDrivers/codex.js');
       return mod.createCodexDriver(root, opts);
+    });
+
+  const makeCustom =
+    options?.createCustomDriver ??
+    (async (
+      root: string,
+      opts?: { agent?: AgentTurnOptions | null; tools?: AgentToolAccess | null; permissionMode?: PermissionMode | null },
+    ) => {
+      // Imported lazily for the same reason codex is: a project that never
+      // registered an agent never pays for resolving the module, and this file
+      // stays free of node:child_process.
+      const mod = await import('./chatDrivers/custom.js');
+      return mod.createCustomDriver(root, opts);
     });
 
   const agent = options?.agent ?? null;
@@ -1190,6 +1253,16 @@ export async function createChatDriver(
       return null;
     }
   };
+
+  // The user's own agent, tried before anything Hearth ships with. NOT wrapped
+  // in a catch: see the head note. A turn that named an agent gets that agent
+  // or an explanation, never a substitute.
+  const own = await makeCustom(projectRoot, {
+    agent,
+    tools: options?.tools ?? null,
+    permissionMode,
+  });
+  if (own) return own;
 
   const preferred = agent?.provider ?? settings.provider;
   const order: (() => Promise<ChatDriver | null>)[] =

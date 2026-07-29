@@ -25,6 +25,7 @@ vi.mock('../src/api', async (importOriginal) => ({
 }));
 
 import { apiRecentWorkspaces } from '../src/api';
+import { ProjectHome } from '../src/components/project/ProjectHome';
 import { Sidebar, stableOrder } from '../src/components/shell/Sidebar';
 import { PROJECT_COLORS, PROJECT_ICONS, resolveIdentity } from '../src/projects/identity';
 import { useApp } from '../src/store';
@@ -208,6 +209,44 @@ describe('the Projects list', () => {
   it('teaches what a project is when there are none', () => {
     render(<Sidebar />);
     expect(screen.getByText('Every game you make is a project. Describe one to begin.')).toBeTruthy();
+  });
+});
+
+/**
+ * The name and the folder are two different facts, and the screen that is
+ * ABOUT one project is where both belong: the name it was given, at the size
+ * of a title, and the folder it actually landed in, quietly, for anyone who
+ * has to find it on disk. Before the name was stored these were the same
+ * string, so there was nothing to tell.
+ */
+describe('the project screen', () => {
+  const PLACE = '/Users/someone/Hearth/cafe-adventure';
+
+  // The screen reads its instructions, its context and its playtests on
+  // mount. None of that is what these two tests are about, and an unanswered
+  // fetch is a page of noise per render.
+  beforeEach(() => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => ({ ok: true, status: 200, json: async () => ({ ok: true }) }) as Response),
+    );
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('shows the name that was typed as the title', async () => {
+    resetStore({ projectPath: PLACE, projectName: 'Café Adventure', chatsLoaded: true });
+    render(<ProjectHome />);
+    expect(await screen.findByRole('heading', { name: 'Café Adventure', level: 1 })).toBeTruthy();
+  });
+
+  it('says which folder that name landed in, so the game is findable on disk', async () => {
+    resetStore({ projectPath: PLACE, projectName: 'Café Adventure', chatsLoaded: true });
+    render(<ProjectHome />);
+    const where = await screen.findByText(PLACE);
+    expect(where.classList.contains('proj-path')).toBe(true);
   });
 });
 

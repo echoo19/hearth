@@ -65,6 +65,11 @@ export function useNativeMenu(): void {
   const conversationMode = useApp((s) => s.conversationMode);
   const paneTab = useApp((s) => s.paneTab);
   const codePeekOpen = useApp((s) => s.codePeek.open);
+  // Where the app is standing. View's items are about the working area, which
+  // a global screen takes over, so the model has to be rebuilt when that
+  // changes or the menu keeps yesterday's enabled states.
+  const screen = useApp((s) => s.screen);
+  const composing = useApp((s) => s.composing);
 
   const sections = useMemo(
     () =>
@@ -80,7 +85,7 @@ export function useNativeMenu(): void {
         checkForUpdates: native?.checkForUpdates ? () => void native.checkForUpdates?.() : null,
       }),
     // The store fields the model reads; getState() inside supplies the rest.
-    [native, projectPath, conversationMode, paneTab, codePeekOpen],
+    [native, projectPath, conversationMode, paneTab, codePeekOpen, screen, composing],
   );
 
   useNativeAppMenu(sections);

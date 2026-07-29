@@ -547,6 +547,63 @@ async function isOurCopy(dir: string): Promise<boolean> {
 export const CLAUDE_SKILLS_DIR = path.join('.claude', 'skills');
 
 /**
+ * The first line of the `.gitignore` Hearth maintains inside a project's
+ * `.claude/skills/`, and the only thing that identifies the file as ours.
+ *
+ * Matched before the file is ever rewritten or removed, so a `.gitignore` a
+ * person wrote there by hand is left exactly alone — the same rule `.hearth-copy`
+ * enforces for the mirrors themselves.
+ */
+export const MIRROR_IGNORE_MARKER = '# Written by Hearth: mirrored skills, not this project’s own.';
+
+/**
+ * Keep a project's git repo free of the skills Hearth mirrored into it.
+ *
+ * A skill belongs to the PERSON — that is the whole promise of the feature, and
+ * `~/.hearth/skills` is where it is kept. `syncSkillsIntoProject` then has to
+ * materialise a copy of that personal library inside the game folder, because
+ * the Agent SDK discovers skills from the filesystem around its cwd and offers
+ * no way to point it elsewhere. A game folder is an ordinary git repo the person
+ * will push, so without this the mirror is committed: on macOS and Linux as
+ * symlinks into `/Users/<name>/.hearth/skills/...`, which leak the user's home
+ * layout and resolve to nothing for whoever clones the game; on Windows without
+ * developer mode as full COPIES, which publish the text of every private skill.
+ *
+ * Named entry by entry rather than as a blanket `.claude/skills/` rule, because
+ * this folder holds two different things. The `hearth-*` skills a template
+ * scaffolds are the PROJECT's, they are meant to be committed, and they travel
+ * with the repo. Only what Hearth mirrored here goes in the list, so the two
+ * cannot be confused and switching a skill off takes its line out with it.
+ *
+ * An empty list deletes the file rather than leaving an empty one: a project
+ * with no mirrors in it should look untouched.
+ */
+async function writeMirrorIgnore(target: string, mirrored: readonly string[]): Promise<void> {
+  const file = path.join(target, '.gitignore');
+  const existing = await fsp.readFile(file, 'utf8').catch(() => null);
+  // Somebody else's file. Hearth does not get to edit it, and it does not get
+  // to delete it either.
+  if (existing !== null && !existing.startsWith(MIRROR_IGNORE_MARKER)) return;
+  if (mirrored.length === 0) {
+    if (existing !== null) await fsp.rm(file, { force: true }).catch(() => undefined);
+    return;
+  }
+  const body = [
+    MIRROR_IGNORE_MARKER,
+    '# These are links to your own skill library, put here so the agent can find',
+    '# them. They are yours, not this game’s, so they stay out of its history.',
+    '# Anything else in this folder is the project’s own and is committed as usual.',
+    // Sorted so a reorder in the mirror list is not a diff, and leading-slashed
+    // so each name is anchored to THIS folder rather than matching anywhere
+    // deeper in the tree.
+    ...[...mirrored].sort().map((id) => `/${id}`),
+    '',
+  ].join('\n');
+  if (existing === body) return;
+  await fsp.writeFile(file, body, 'utf8').catch(() => undefined);
+}
+
+/**
  * Mirror the enabled skills into a project so the Agent SDK can discover them.
  *
  * Links rather than copies, so editing a skill in one place changes it
@@ -631,5 +688,9 @@ export async function syncSkillsIntoProject(projectRoot: string): Promise<string
       await fsp.rm(link, { recursive: true, force: true });
     }
   }
+  // Last, so the list it writes is exactly what survived the loops above: a
+  // skill that could not be mirrored is not in `linked` and must not be ignored,
+  // or the person's own folder of the same name would go quiet.
+  await writeMirrorIgnore(target, linked);
   return linked;
 }

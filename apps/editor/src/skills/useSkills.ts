@@ -139,6 +139,16 @@ export interface SkillsApi {
   skills: SkillRecord[];
   root: string;
   loading: boolean;
+  /**
+   * Whether the list has been read at all yet — false only before the first
+   * answer, whatever that answer was.
+   *
+   * `loading` cannot carry this: it is false before the effect that reads has
+   * run, so an empty list plus `loading: false` is BOTH "you have no skills"
+   * and "nobody has looked", and the screen was drawing the first of those
+   * over the second on every open.
+   */
+  loaded: boolean;
   error: string | null;
   refresh(): Promise<void>;
   create(draft: SkillDraft): Promise<boolean>;
@@ -154,6 +164,7 @@ export function useSkills(open: boolean): SkillsApi {
   const [skills, setSkills] = useState<SkillRecord[]>([]);
   const [root, setRoot] = useState('');
   const [loading, setLoading] = useState(false);
+  const [loaded, setLoaded] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const adopt = useCallback((answer: SkillsAnswer): boolean => {
@@ -173,6 +184,10 @@ export function useSkills(open: boolean): SkillsApi {
       setError(requestFailedMessage(err));
     } finally {
       setLoading(false);
+      // Read, even if what came back was a failure. "We looked and could not"
+      // is still an answer, and the screen says so with the error rather than
+      // sitting on a spinner forever.
+      setLoaded(true);
     }
   }, [adopt]);
 
@@ -186,6 +201,7 @@ export function useSkills(open: boolean): SkillsApi {
     skills,
     root,
     loading,
+    loaded,
     error,
     refresh,
     create: async (draft) => adopt(await post({ action: 'create', draft })),

@@ -66,15 +66,39 @@
   flex: none;
 }
 
-.proj-title {
+/* The name and the folder, stacked, so the mark sits beside the pair rather
+   than beside the title with the folder hanging off the bottom of it. */
+.proj-headings {
   flex: 1;
   min-width: 0;
+}
+
+.proj-title {
   margin: 0;
   font-size: var(--text-2xl);
   font-weight: 600;
   letter-spacing: -0.02em;
   color: var(--ink);
   overflow-wrap: anywhere;
+}
+
+/* Where the game actually is.
+
+   The title is the name someone typed; the folder under it is a slug, because
+   a path has to survive every filesystem there is. The two stopped being the
+   same string the moment a name could be written in any script, so this line
+   is the answer to "which folder is this", asked by anyone opening a terminal,
+   a file manager or a git client. Faint and small: it is a fact to be looked
+   up, never the thing being read. One line, clipped, with the whole path in
+   the native hint for when it does not fit. */
+.proj-path {
+  margin: 2px 0 0;
+  font-size: var(--text-xs);
+  line-height: 1.4;
+  color: var(--ink-faint);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .proj-head-actions {

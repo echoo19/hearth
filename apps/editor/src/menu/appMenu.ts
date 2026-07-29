@@ -9,6 +9,7 @@
  * Window menus are supplied by Electron itself, so this model only carries
  * what is genuinely Hearth's.
  */
+import { globalPlace } from '../store';
 import type { AppState, ConversationMode, PaneTab } from '../store';
 
 export interface AppMenuItemModel {
@@ -56,14 +57,37 @@ const CONVERSATION_MODES: { id: ConversationMode; label: string }[] = [
   { id: 'terminal', label: 'Terminal' },
 ];
 
-/** The two surfaces the right-hand stack can show, in View-menu order. */
+/**
+ * The surfaces the right-hand stack can show, in View-menu order — the same
+ * three the column's own tab strip offers (components/game/PaneStack.tsx), in
+ * the same order.
+ *
+ * Tester was missing, which made this menu the app's only account of the
+ * playtest column that disagreed with the column: two tabs here, three there.
+ * A menu that lists some of the tabs is worse than one that lists none, since
+ * the reader has no way to tell an omission from a surface that does not exist.
+ */
 const PANE_TABS: { id: PaneTab; label: string }[] = [
   { id: 'game', label: 'Game' },
+  { id: 'tester', label: 'Tester' },
   { id: 'console', label: 'Console' },
 ];
 
 export function buildAppMenu(store: AppState, ctx: AppMenuContext): AppMenuSection[] {
   const hasFolder = store.projectPath != null;
+  /**
+   * Everything under View is a view OF the working area, and a global screen
+   * takes that area over. See `globalPlace`.
+   *
+   * An open folder was not enough on its own: from Skills, or from the blank
+   * new-chat surface, the conversation column and the playtest column are not
+   * on screen, so View > Console ticked a tab in a column nobody could see and
+   * the app appeared to do nothing at all. The menu now says so the way a menu
+   * says things — the item is there, and it is grey until you are somewhere it
+   * means something. (Files is deliberately not gated: it opens over whatever
+   * is showing, screens included.)
+   */
+  const inProject = hasFolder && globalPlace(store) === null;
 
   const file: AppMenuSection = {
     id: 'file',
@@ -91,7 +115,7 @@ export function buildAppMenu(store: AppState, ctx: AppMenuContext): AppMenuSecti
         (entry): AppMenuItemModel => ({
           id: `mode:${entry.id}`,
           label: entry.label,
-          enabled: hasFolder,
+          enabled: inProject,
           checked: store.conversationMode === entry.id,
           onSelect: () => store.setConversationMode(entry.id),
         }),
@@ -100,7 +124,7 @@ export function buildAppMenu(store: AppState, ctx: AppMenuContext): AppMenuSecti
       {
         id: 'pane',
         label: 'Playtest column',
-        enabled: hasFolder,
+        enabled: inProject,
         checked: store.paneOpen,
         onSelect: () => store.setPaneOpen(!store.paneOpen),
       },
@@ -110,7 +134,7 @@ export function buildAppMenu(store: AppState, ctx: AppMenuContext): AppMenuSecti
           label: tab.label,
           // Picking a surface is a way of asking for the column, so it opens
           // one that is closed rather than checking a tab nobody can see.
-          enabled: hasFolder,
+          enabled: inProject,
           checked: store.paneOpen && store.paneTab === tab.id,
           onSelect: () => {
             store.setPaneTab(tab.id);

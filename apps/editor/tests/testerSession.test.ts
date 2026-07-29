@@ -20,7 +20,8 @@ import {
   MISSING_REGRESSION,
 } from '../server/tester/prompt';
 import { runTesterSession } from '../server/tester/session';
-import { listSessions } from '../server/tester/memory';
+import { listSessions, writeNote } from '../server/tester/memory';
+import type { TesterNote } from '../server/tester/types';
 import type { ChatDriver, ChatEvent } from '../server/chat';
 import { EventQueue } from '../server/chat';
 
@@ -148,6 +149,47 @@ async function withRoot<T>(fn: (root: string) => Promise<T>): Promise<T> {
   }
 }
 
+/** A session already on disk, so the run under test is not a first session. */
+async function withPriorSession(root: string): Promise<void> {
+  const prior: TesterNote = {
+    session: 1,
+    startedAt: '2026-01-01T00:00:00.000Z',
+    finishedAt: '2026-01-01T00:05:00.000Z',
+    onTheChange: { seen: 'you raised the jump', verdict: 'better', why: 'I cleared the gap' },
+    regression: 'nothing',
+    observations: [],
+    openQuestions: [],
+    steps: 4,
+    stopped: 'done',
+  };
+  await writeNote(root, prior);
+}
+
+/** A driver that answers from a script and then fails, the way a backend drops. */
+class FailingDriver implements ChatDriver {
+  readonly kind = 'stub' as const;
+  readonly queue = new EventQueue<ChatEvent>();
+  private sent = 0;
+  constructor(private readonly replies: string[], private readonly failAfter: number) {}
+  get events(): AsyncIterable<ChatEvent> {
+    return this.queue;
+  }
+  async start(): Promise<void> {}
+  send(): void {
+    this.sent += 1;
+    if (this.sent > this.failAfter) {
+      this.queue.push({ type: 'error', message: 'ENOENT: the agent went away' });
+      this.queue.push({ type: 'turn-complete' });
+      return;
+    }
+    this.queue.push({ type: 'message-delta', text: this.replies.shift() ?? 'DONE' });
+    this.queue.push({ type: 'turn-complete' });
+  }
+  stop(): void {
+    this.queue.close();
+  }
+}
+
 const REFLECTION = [
   'SAW 1: the player fell straight through the floor',
   'CHANGE: you raised the jump\nVERDICT: better\nWHY: I cleared the gap\nWORSE: nothing',
@@ -220,6 +262,42 @@ describe('runTesterSession', () => {
       expect(note.stopped).toBe('error');
       expect(note.onTheChange.why).toMatch(/no browser/);
       expect((await listSessions(root)).map((n) => n.session)).toEqual([1]);
+    });
+  });
+
+  it('gives no verdict at all for a session that never played', async () => {
+    // 'no-difference' is a verdict, and it was the default. A session that
+    // crashed before it opened the game reached the history saying "It says
+    // your last change made no real difference" about a game it never saw.
+    await withRoot(async (root) => {
+      await withPriorSession(root);
+      const driver = new FakeDriver([]);
+      const note = await runTesterSession({
+        root, dir: root, driver, maxSteps: 4,
+        openGame: async () => { throw new Error('no browser on this machine'); },
+      });
+      expect(note.session).toBe(2);
+      expect(note.stopped).toBe('error');
+      expect(note.onTheChange.verdict).toBe('unclear');
+      expect(note.onTheChange.why).toMatch(/no browser/);
+    });
+  });
+
+  it('keeps the reason the tester gave when only the write-up fell over', async () => {
+    // "That helped, because ENOENT" was reachable: the crash handler replaced
+    // a real WHY with the error message while leaving the verdict standing.
+    await withRoot(async (root) => {
+      await withPriorSession(root);
+      const { game } = fakeGame();
+      // Plays, sees, gives a verdict, and the ask after that one fails.
+      const driver = new FailingDriver(['DONE', ...REFLECTION], 3);
+      const note = await runTesterSession({
+        root, dir: root, driver, maxSteps: 4, openGame: async () => game as never,
+      });
+      expect(note.stopped).toBe('error');
+      expect(note.onTheChange.verdict).toBe('better');
+      expect(note.onTheChange.why).toBe('I cleared the gap');
+      expect(note.onTheChange.why).not.toMatch(/ENOENT/);
     });
   });
 

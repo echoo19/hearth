@@ -24,14 +24,21 @@
  * so the pane says that in one line at the foot rather than growing a section
  * that would imply otherwise.
  *
- * WHAT IS LISTED, and why nothing else is. A harness appears here only if
+ * WHAT IS LISTED, and why nothing else is. A harness row appears here only if
  * Hearth has a driver that can actually answer a turn with it — today the
  * Claude Agent SDK (server/chat.ts) and the Codex CLI
- * (server/chatDrivers/codex.ts). Listing Hermes, opencode or anything else
- * would put a Connect button on screen that saves a credential nothing reads,
- * which is worse than the honest short list plus a line saying more are
- * coming. The registry is `AGENT_BACKENDS` in chat/modelChoice; adding an
- * entry there is what adding a harness looks like from this file.
+ * (server/chatDrivers/codex.ts). Listing a third vendor Hearth cannot drive
+ * would put a Connect button on screen that saves a credential nothing reads.
+ * The registry is `AGENT_BACKENDS` in chat/modelChoice; adding an entry there
+ * is what adding a harness looks like from this file.
+ *
+ * AND THEN THERE IS THE THIRD CARD, which is why that shortlist is honest
+ * rather than limiting: `CustomAgentsSection` below, where the user registers
+ * their OWN agent as a command line (server/agentRegistry.ts). Those rows are
+ * shaped differently on purpose. A harness row describes a vendor, a catalogue
+ * and a connection method, because Hearth knows all three; a registered agent
+ * gets a name and the exact command, because that is everything Hearth knows
+ * and it prints all of it.
  *
  * The two harnesses that exist are genuinely different animals, and the rows
  * say so rather than pretending otherwise:
@@ -89,21 +96,32 @@
  * two of them in flight at once.
  */
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { apiOpenAiLogin, apiSaveProviderSettings, type ProviderSettingsPatch } from '../../api';
+import {
+  apiConfirmAgent,
+  apiDeleteAgent,
+  apiOpenAiLogin,
+  apiSaveAgent,
+  apiSaveProviderSettings,
+  type ProviderSettingsPatch,
+} from '../../api';
 import { showToast } from '../../toast';
 import {
   AGENT_BACKENDS,
   type AgentBackend,
   canSetModelEnabled,
   enabledModels,
+  getCustomAgentsFile,
   getModelChoice,
   getModelPrefsFile,
   isModelEnabled,
+  setCustomAgents,
   setModelChoice,
   setModelEnabled,
+  useCustomAgents,
   useDisabledModels,
   useModelChoice,
 } from '../../chat/modelChoice';
+import { HEARTH_AGENT_ENV_VARS } from '../../../server/chatDrivers/customWire';
 import { NOTHING_DISABLED, choiceForModel, modelGroups } from '../chat/ModelSelector';
 import { useApp } from '../../store';
 import type {
@@ -111,6 +129,7 @@ import type {
   AppSettingsInfo,
   ChatProvider,
   ChatProviderStatus,
+  CustomAgentInfo,
   ProviderModelInfo,
 } from '../../types';
 import {
@@ -715,6 +734,381 @@ export function modelCountLabel(offered: number, total: number): string {
   if (total === 0) return 'Nothing reported yet';
   if (offered === total) return total === 1 ? '1 model offered' : `All ${total} offered`;
   return `${offered} of ${total} offered`;
+}
+
+// ---------------------------------------------------------------------------
+// Your own agents
+//
+// The third card, and the one that makes the two above a shortlist rather than
+// the whole world. A registered agent is a LABEL and a COMMAND LINE, and this
+// section is built around that being all Hearth knows: there is no vendor, no
+// catalogue of models, no connection method and no capability list, because
+// inventing any of them would be Hearth describing somebody else's program.
+//
+// Three rules this section is written to:
+//
+//  1. **The command is always visible.** Every row prints it, the confirm
+//     prints it, and there is no state in which a friendly name stands in for
+//     the thing that gets spawned.
+//  2. **Typed fields, never a JSON box.** Name, command and one field per
+//     argument. A single command-line box would mean Hearth implementing
+//     quoting rules, and a wrong split runs a different command than the one on
+//     screen.
+//  3. **Confirm once per command string.** A saved agent cannot answer a turn
+//     until the person at this machine has read the exact line and accepted it,
+//     and editing that line asks again. The server enforces the same rule, so a
+//     client that skipped this gets a refusal rather than a spawn.
+// ---------------------------------------------------------------------------
+
+/** What is being typed. `id` null is a new agent rather than an edit. */
+export interface AgentDraft {
+  id: string | null;
+  label: string;
+  command: string;
+  args: string[];
+}
+
+export const EMPTY_AGENT_DRAFT: AgentDraft = { id: null, label: '', command: '', args: [] };
+
+/**
+ * What is wrong with a draft, said in the words of the field it is about, or
+ * null when it can be saved.
+ *
+ * The space rule is the interesting one. A command with a space in it is nearly
+ * always a whole command line pasted into the wrong box, and splitting it here
+ * would mean guessing at quoting; a path with a space in it is a real thing on
+ * macOS and is allowed, told apart by carrying a separator. Refusing with the
+ * reason beats accepting and spawning something nobody typed.
+ */
+export function agentDraftProblem(draft: AgentDraft): string | null {
+  if (draft.label.trim() === '') return 'Give this agent a name.';
+  const command = draft.command.trim();
+  if (command === '') return 'Name the program to run.';
+  if (/\s/.test(command) && !command.includes('/') && !command.includes('\\')) {
+    return 'Put only the program here. Everything after it goes in an argument field of its own.';
+  }
+  return null;
+}
+
+/** The draft as the server takes it, with blank argument fields dropped. */
+export function agentSavePatch(draft: AgentDraft): { id?: string; label: string; command: string; args: string[] } {
+  return {
+    ...(draft.id !== null ? { id: draft.id } : {}),
+    label: draft.label.trim(),
+    command: draft.command.trim(),
+    args: draft.args.map((arg) => arg.trim()).filter((arg) => arg !== ''),
+  };
+}
+
+/**
+ * What the confirm says before an agent is allowed to answer.
+ *
+ * It names the command and what running it means, and it does not pretend
+ * Hearth will contain it. Hearth cannot sandbox an arbitrary binary, and copy
+ * implying otherwise would be worse than saying nothing: the honest sentence is
+ * that this is the same power the terminal in the next tab already has.
+ */
+export function agentConfirmBody(agent: CustomAgentInfo): string {
+  return `Hearth will run "${agent.commandLine}" in your open project, with your login shell's PATH. It can do anything you could do in the terminal. Hearth shows what it did and cannot stop it.`;
+}
+
+function CustomAgentsSection() {
+  const agents = useCustomAgents();
+  const [draft, setDraft] = useState<AgentDraft | null>(null);
+  const [problem, setProblem] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [confirming, setConfirming] = useState<CustomAgentInfo | null>(null);
+  const [removing, setRemoving] = useState<CustomAgentInfo | null>(null);
+  const file = getCustomAgentsFile();
+
+  const save = useCallback(async (): Promise<void> => {
+    if (!draft) return;
+    const found = agentDraftProblem(draft);
+    if (found !== null) {
+      setProblem(found);
+      return;
+    }
+    setBusy(true);
+    const result = await apiSaveAgent(agentSavePatch(draft));
+    setBusy(false);
+    if ('error' in result) {
+      setProblem(result.error);
+      return;
+    }
+    setCustomAgents(result.agents, result.file);
+    setProblem(null);
+    setDraft(null);
+  }, [draft]);
+
+  const remove = useCallback(async (id: string): Promise<void> => {
+    setBusy(true);
+    const read = await apiDeleteAgent(id);
+    setBusy(false);
+    if (read) setCustomAgents(read.agents, read.file);
+  }, []);
+
+  const confirm = useCallback(async (id: string): Promise<void> => {
+    setBusy(true);
+    const read = await apiConfirmAgent(id);
+    setBusy(false);
+    if (read) setCustomAgents(read.agents, read.file);
+  }, []);
+
+  return (
+    <section className="set-agent-section">
+      <div className="set-agent-section-head">
+        <h3 className="set-agent-section-title">Your agents</h3>
+        <span className="set-agent-count">
+          {agents.length === 1 ? '1 registered' : `${agents.length} registered`}
+        </span>
+      </div>
+      <p className="set-agent-hint">
+        Any program that speaks the Hearth agent protocol can answer here. Hearth spawns it in the open project, writes
+        your message to its stdin as one line of JSON, and renders the events it writes back. A thirty line wrapper
+        around your own harness is enough. See docs/custom-agents.md.
+      </p>
+
+      <div className="set-agents" role="list">
+        {agents.map((agent) => {
+          const editing = draft?.id === agent.id;
+          return (
+            <section
+              key={agent.id}
+              role="listitem"
+              className="set-agent"
+              data-state={agent.confirmed ? 'connected' : 'idle'}
+              data-open={editing ? 'true' : 'false'}
+            >
+              <div className="set-agent-head">
+                <span className="set-agent-id">
+                  <span className="set-agent-name">{agent.label}</span>
+                  {/* The command line, in the slot the vendor rows use for
+                      what they drive. It is the one fact about this agent
+                      Hearth actually has, so it is the one on the row. */}
+                  <span className="set-agent-sub">
+                    <span className="mono set-agent-modelid">{agent.commandLine}</span>
+                  </span>
+                </span>
+                <div className="set-agent-meta">
+                  {agent.confirmed ? (
+                    <span className="set-agent-badge" data-state="connected">
+                      <span className="set-agent-dot" aria-hidden="true" />
+                      Confirmed
+                    </span>
+                  ) : (
+                    <Button variant="primary" size="sm" disabled={busy} onClick={() => setConfirming(agent)}>
+                      Confirm command
+                    </Button>
+                  )}
+                  <Button
+                    size="sm"
+                    disabled={busy}
+                    onClick={() =>
+                      setDraft(
+                        editing
+                          ? null
+                          : { id: agent.id, label: agent.label, command: agent.command, args: [...agent.args] },
+                      )
+                    }
+                  >
+                    {editing ? 'Close' : 'Edit'}
+                  </Button>
+                  <Button size="sm" variant="danger" disabled={busy} onClick={() => setRemoving(agent)}>
+                    Remove
+                  </Button>
+                </div>
+              </div>
+              {editing && draft && (
+                <div className="set-agent-body">
+                  <AgentFields draft={draft} onChange={setDraft} />
+                  {problem !== null && (
+                    <p className="set-agent-problem" role="alert">
+                      {problem}
+                    </p>
+                  )}
+                  <p className="set-agent-hint">
+                    Changing what runs asks you to confirm the new command before this agent can answer again.
+                  </p>
+                  <div className="set-agent-manage">
+                    <Button variant="primary" size="sm" disabled={busy} onClick={() => void save()}>
+                      {busy ? 'Saving…' : 'Save'}
+                    </Button>
+                    <Button
+                      size="sm"
+                      disabled={busy}
+                      onClick={() => {
+                        setDraft(null);
+                        setProblem(null);
+                      }}
+                    >
+                      Cancel
+                    </Button>
+                  </div>
+                </div>
+              )}
+            </section>
+          );
+        })}
+      </div>
+
+      {draft !== null && draft.id === null ? (
+        <div className="set-agent-connect">
+          <AgentFields draft={draft} onChange={setDraft} />
+          {problem !== null && (
+            <p className="set-agent-problem" role="alert">
+              {problem}
+            </p>
+          )}
+          <div className="set-agent-manage">
+            <Button variant="primary" size="sm" disabled={busy} onClick={() => void save()}>
+              {busy ? 'Saving…' : 'Add agent'}
+            </Button>
+            <Button
+              size="sm"
+              disabled={busy}
+              onClick={() => {
+                setDraft(null);
+                setProblem(null);
+              }}
+            >
+              Cancel
+            </Button>
+          </div>
+        </div>
+      ) : (
+        <div className="set-agent-manage">
+          <Button
+            size="sm"
+            disabled={busy}
+            onClick={() => {
+              setProblem(null);
+              setDraft({ ...EMPTY_AGENT_DRAFT, args: [] });
+            }}
+          >
+            Add an agent…
+          </Button>
+        </div>
+      )}
+
+      <p className="set-agent-hint">
+        Hearth adds {HEARTH_AGENT_ENV_VARS.map((name) => name).join(', ')} to the environment and passes on everything
+        your login shell already has, which is the same environment the terminal here runs with. It adds no keys of its
+        own.
+      </p>
+      <p className="set-agent-hint">
+        Registered agents are kept{' '}
+        {file === '' ? (
+          'in your home folder, for this machine rather than for one project'
+        ) : (
+          <>
+            in <span className="mono">{file}</span>, for this machine rather than for one project
+          </>
+        )}
+        . They are deliberately never written into a project: a folder that carried a command line would run it on
+        whoever opened the folder next.
+      </p>
+
+      <ConfirmDialog
+        open={confirming !== null}
+        title="Let this agent run?"
+        body={confirming ? agentConfirmBody(confirming) : ''}
+        confirmLabel="Confirm command"
+        onConfirm={() => {
+          const target = confirming;
+          setConfirming(null);
+          if (target) void confirm(target.id);
+        }}
+        onCancel={() => setConfirming(null)}
+      />
+      <ConfirmDialog
+        open={removing !== null}
+        title="Remove this agent?"
+        body={
+          removing
+            ? `${removing.label} is removed from this machine's list. Nothing on disk is deleted and the program itself is untouched.`
+            : ''
+        }
+        confirmLabel="Remove"
+        danger
+        onConfirm={() => {
+          const target = removing;
+          setRemoving(null);
+          if (target) void remove(target.id);
+        }}
+        onCancel={() => setRemoving(null)}
+      />
+    </section>
+  );
+}
+
+/**
+ * The three fields, typed, with one input per argument.
+ *
+ * One input per argument rather than a single line to split, because splitting
+ * means quoting rules and a wrong split spawns a command nobody typed. It also
+ * means the fields say what they are: a path with a space in it is one
+ * argument, and here that is obvious rather than a thing to escape.
+ */
+function AgentFields({ draft, onChange }: { draft: AgentDraft; onChange: (next: AgentDraft) => void }) {
+  const idFor = (part: string): string => `set-custom-agent-${draft.id ?? 'new'}-${part}`;
+  return (
+    <>
+      <div className="set-agent-connect">
+        <label className="set-agent-field-label" htmlFor={idFor('label')}>
+          Name
+        </label>
+        <input
+          id={idFor('label')}
+          className="input set-agent-input"
+          type="text"
+          autoComplete="off"
+          spellCheck={false}
+          placeholder="My agent"
+          value={draft.label}
+          onChange={(e) => onChange({ ...draft, label: e.target.value })}
+        />
+        <label className="set-agent-field-label" htmlFor={idFor('command')}>
+          Command
+        </label>
+        <input
+          id={idFor('command')}
+          className="input mono set-agent-input"
+          type="text"
+          autoComplete="off"
+          spellCheck={false}
+          placeholder="my-agent"
+          value={draft.command}
+          onChange={(e) => onChange({ ...draft, command: e.target.value })}
+        />
+        <p className="set-agent-hint">Found on your login shell&rsquo;s PATH, or given as a full path.</p>
+
+        <span className="set-agent-field-label">Arguments</span>
+        {draft.args.map((arg, index) => (
+          <div className="set-agent-field-row" key={index}>
+            <input
+              className="input mono set-agent-input"
+              type="text"
+              autoComplete="off"
+              spellCheck={false}
+              aria-label={`Argument ${index + 1}`}
+              value={arg}
+              onChange={(e) => {
+                const args = [...draft.args];
+                args[index] = e.target.value;
+                onChange({ ...draft, args });
+              }}
+            />
+            <Button size="sm" onClick={() => onChange({ ...draft, args: draft.args.filter((_, i) => i !== index) })}>
+              Remove
+            </Button>
+          </div>
+        ))}
+        <button type="button" className="set-agent-more" onClick={() => onChange({ ...draft, args: [...draft.args, ''] })}>
+          Add an argument
+        </button>
+      </div>
+    </>
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -1548,13 +1942,18 @@ export function AgentsPane() {
         })}
       </div>
 
+      {/* The third card. The two above are harnesses Hearth ships a driver for
+          and can therefore describe; this one is whatever the user brought, so
+          it describes nothing and prints the command instead. */}
+      <CustomAgentsSection />
+
       <p className="set-agent-foot">
-        More harnesses are coming. Hearth lists one only once it has a driver that can genuinely answer a turn with
-        it, so a row appearing here means it works rather than that it is planned.
+        The two harnesses above are the ones Hearth ships a driver for, so a row appearing there means it works rather
+        than that it is planned. Anything else you use is your own agent, registered above.
       </p>
       <p className="set-agent-foot">
-        The terminal is yours and needs nothing set up here. It runs whatever agent CLI you already have, and you
-        start one from the model menu in the composer.
+        The terminal is yours and needs nothing set up here. It runs whatever agent CLI you already have. The model
+        menu can start the few Hearth knows by name; any other one you type in yourself, and it works the same.
       </p>
       <p className="set-agent-foot">
         Keys are written to <span className="mono">.hearth/app.json</span> in the open project and are never read back

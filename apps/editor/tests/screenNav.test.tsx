@@ -31,6 +31,7 @@ vi.mock('../src/components/agent/Terminal', () => ({
 
 import { ConversationHead } from '../src/components/chat/ConversationHead';
 import { ProjectHome } from '../src/components/project/ProjectHome';
+import { screenBackLabel } from '../src/components/ui/ScreenHeader';
 import { useApp } from '../src/store';
 
 type State = ReturnType<typeof useApp.getState>;
@@ -79,6 +80,25 @@ afterEach(() => {
 });
 
 const backButton = () => screen.queryByRole('button', { name: /^Back to / });
+
+/**
+ * The rule both global screens share. Skills named the project; the Tester
+ * screen said "Back", which is the gesture rather than the destination and the
+ * one thing a way out of a place must not say.
+ */
+describe('screenBackLabel', () => {
+  it('names the project waiting underneath', () => {
+    expect(screenBackLabel('Ember', PROJECT)).toBe('Ember');
+  });
+
+  it('names the blank surface when there is no project — never a screen the app lacks', () => {
+    // "Chats" was the old answer. The rail has a Chats list; the app has no
+    // Chats screen, and leaving lands on the blank surface, which is New chat.
+    expect(screenBackLabel(null, null)).toBe('New chat');
+    expect(screenBackLabel('Ember', null)).toBe('New chat');
+    expect(screenBackLabel('', PROJECT)).toBe('New chat');
+  });
+});
 
 describe('a conversation’s way back', () => {
   it('names the project rather than the gesture', () => {
@@ -151,5 +171,82 @@ describe('the project screen’s crumbs', () => {
     patchStore({ projectPath: null, projectName: null });
     const { container } = render(<ProjectHome />);
     expect(container.textContent).toBe('');
+  });
+});
+
+/**
+ * A list that has not been read yet is not an empty list. The project screen
+ * is shown the moment a project is clicked, ahead of its own round trip.
+ */
+describe('the project screen’s conversation list', () => {
+  async function mount(over: Partial<State>): Promise<void> {
+    patchStore(over);
+    render(<ProjectHome />);
+    await waitFor(() => expect(fetch).toHaveBeenCalled());
+  }
+
+  it('offers no first-conversation invitation before the index has been read', async () => {
+    // "No conversations yet" in front of a project with twelve of them is a
+    // claim the screen has to take back a moment later.
+    await mount({ chats: [], chatsLoaded: false } as Partial<State>);
+    expect(screen.queryByText(/No conversations yet/i)).toBeNull();
+    expect(screen.getByText(/Looking for this project/i)).toBeTruthy();
+  });
+
+  it('says it once the read has landed and the project really is empty', async () => {
+    await mount({ chats: [], chatsLoaded: true } as Partial<State>);
+    expect(screen.getByText(/No conversations yet/i)).toBeTruthy();
+  });
+});
+
+/**
+ * Playtesting is per-project, so the project's own screen is where it has to
+ * be addressable.
+ *
+ * The section used to render nothing until a session existed: a game that had
+ * never been played said nothing about playtesting on the one screen that is
+ * about that game, and the only ways in were the rail's global Tester (aim it
+ * at the right game first) or the top bar's column toggle and then a tab.
+ */
+describe('the project screen’s playtests', () => {
+  const openTesterFor = vi.fn();
+
+  async function mountWith(over: Partial<State>): Promise<void> {
+    patchStore({ openTesterFor, ...over } as Partial<State>);
+    render(<ProjectHome />);
+    await waitFor(() => expect(fetch).toHaveBeenCalled());
+  }
+
+  beforeEach(() => openTesterFor.mockClear());
+
+  it('is there before anything has ever played', async () => {
+    await mountWith({ tester: { ...useApp.getState().tester, sessions: [], historyLoaded: true } } as Partial<State>);
+    expect(screen.getByRole('region', { name: 'Playtests' })).toBeTruthy();
+    expect(screen.getByText(/has not played this game yet/i)).toBeTruthy();
+  });
+
+  it('does not claim "never played" before the folder has been read', async () => {
+    // The folder's history arrives over a round trip. Hold that one open — the
+    // rest of the screen still mounts — so what is on screen is what a person
+    // sees while the read is in flight.
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL) => {
+        if (String(input).includes('/api/tester/history')) return new Promise<Response>(() => {});
+        return { ok: true, status: 200, json: async () => ({ ok: true, projects: [] }) } as Response;
+      }),
+    );
+    await mountWith({ tester: { ...useApp.getState().tester, sessions: [], historyLoaded: false } } as Partial<State>);
+    expect(screen.queryByText(/has not played this game yet/i)).toBeNull();
+    expect(screen.getByText(/Looking for past sessions/i)).toBeTruthy();
+  });
+
+  it('aims its way in at THIS game, not at whatever played last', async () => {
+    // The Tester screen is global and its Play defaults to the most recently
+    // played game anywhere. A link pressed from Ember's own screen must not
+    // put a Play for another game under the pointer.
+    await mountWith({ tester: { ...useApp.getState().tester, sessions: [], historyLoaded: true } } as Partial<State>);
+    fireEvent.click(screen.getByRole('button', { name: 'Playtest this game' }));
+    expect(openTesterFor).toHaveBeenCalledWith(PROJECT);
   });
 });

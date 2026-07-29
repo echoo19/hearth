@@ -28,10 +28,19 @@ vi.mock('../src/api', async (importOriginal) => ({
   apiTesterHistoryAll: vi.fn(async () => null),
   apiRecentWorkspaces: vi.fn(async () => []),
   apiTesterPlay: vi.fn(async () => ({ ok: true })),
+  apiGameStatus: vi.fn(async () => null),
 }));
 
-import { TesterHistory, runRows } from '../src/components/tester/TesterHistory';
+import {
+  TesterHistory,
+  historyEmptyLead,
+  runRows,
+  skippedProjectsLine,
+} from '../src/components/tester/TesterHistory';
+import { selectorLabel } from '../src/projects/ProjectSelector';
 import { useApp } from '../src/store';
+import { apiGameStatus } from '../src/api';
+import { currentToast, resetToasts } from '../src/toast';
 import type { TesterNote } from '../server/tester/types';
 import type { TesterRun } from '../src/types';
 
@@ -119,6 +128,7 @@ describe('the Tester screen', () => {
           run(LIGHTHOUSE, 'lighthouse', note(9, 'worse', '2026-07-28T01:00:00.000Z')),
         ],
         dropped: 0,
+        skippedProjects: 0,
       },
     });
     render(<TesterHistory />);
@@ -133,7 +143,7 @@ describe('the Tester screen', () => {
     useApp.setState({
       projectPath: LIGHTHOUSE,
       projectName: 'lighthouse',
-      testerRuns: { runs: [run(HARBOUR, 'harbour', note(1, 'better', '2026-07-28T05:00:00.000Z'))], dropped: 0 },
+      testerRuns: { runs: [run(HARBOUR, 'harbour', note(1, 'better', '2026-07-28T05:00:00.000Z'))], dropped: 0, skippedProjects: 0 },
     });
     render(<TesterHistory />);
     await act(async () => {});
@@ -158,6 +168,7 @@ describe('the Tester screen', () => {
           run(LIGHTHOUSE, 'lighthouse', note(9, 'worse', '2026-07-28T01:00:00.000Z')),
         ],
         dropped: 0,
+        skippedProjects: 0,
       },
     });
     render(<TesterHistory />);
@@ -176,18 +187,207 @@ describe('the Tester screen', () => {
     expect(screen.queryByText(/has not played/i)).toBeNull();
 
     await act(async () => {
-      useApp.setState({ testerRuns: { runs: [], dropped: 0 } });
+      useApp.setState({ testerRuns: { runs: [], dropped: 0, skippedProjects: 0 } });
     });
     expect(screen.getByText(/has not played/i)).toBeTruthy();
+    // And it names what it looked at. "this game" points at nothing on a
+    // screen that spans every game and is reached from outside any project.
+    expect(screen.queryByText(/has not played this game/i)).toBeNull();
+    expect(screen.getByText(/has not played any of your games/i)).toBeTruthy();
+  });
+
+  /**
+   * A place is left, not dismissed, and the way out has to say where it comes
+   * out. This screen's said "Back" — the one thing it must not say — while
+   * Skills, which is the same kind of screen, named the project. One rule now,
+   * in ScreenHeader, for both.
+   */
+  describe('the way out', () => {
+    it('names the project waiting underneath', async () => {
+      useApp.setState({ projectPath: LIGHTHOUSE, projectName: 'lighthouse' });
+      render(<TesterHistory />);
+      await act(async () => {});
+      expect(screen.getByRole('button', { name: 'lighthouse' })).toBeTruthy();
+      expect(screen.queryByRole('button', { name: 'Back' })).toBeNull();
+    });
+
+    it('names the blank surface when there is no project open', async () => {
+      render(<TesterHistory />);
+      await act(async () => {});
+      // Never "Chats": that is a list in the rail, not a screen anyone can be
+      // sent to. Leaving with no folder open lands on the blank surface, which
+      // this app calls New chat.
+      expect(screen.getByRole('button', { name: 'New chat' })).toBeTruthy();
+    });
+
+    it('leaves the screen and nothing else', async () => {
+      useApp.setState({ projectPath: LIGHTHOUSE, projectName: 'lighthouse', projectView: true });
+      render(<TesterHistory />);
+      await act(async () => {});
+      await act(async () => {
+        screen.getByRole('button', { name: 'lighthouse' }).click();
+      });
+      expect(useApp.getState().screen).toBeNull();
+      expect(useApp.getState().projectView).toBe(true);
+    });
+  });
+
+  /**
+   * Arriving from a game is the one case where the app knows which game is
+   * meant. The screen's Play otherwise defaults to whichever game played most
+   * recently ANYWHERE — and pressing it closes the open project and plays that
+   * one, so "Every session" on lighthouse's own screen could put a Play for
+   * harbour under the pointer.
+   */
+  describe('openTesterFor', () => {
+    it('opens the screen with the aim already set', () => {
+      useApp.getState().openTesterFor(LIGHTHOUSE);
+      expect(useApp.getState().screen).toBe('tester');
+      expect(useApp.getState().testerTarget).toBe(LIGHTHOUSE);
+    });
+
+    it('shows that game in the picker rather than the newest run’s', async () => {
+      useApp.setState({
+        testerRuns: { runs: [run(HARBOUR, 'harbour', note(1, 'better', '2026-07-28T05:00:00.000Z'))], dropped: 0, skippedProjects: 0 },
+      });
+      useApp.getState().openTesterFor(LIGHTHOUSE);
+      render(<TesterHistory />);
+      await act(async () => {});
+      expect(useApp.getState().testerTarget).toBe(LIGHTHOUSE);
+    });
   });
 
   it('says out loud what the cap left out', async () => {
     useApp.setState({
-      testerRuns: { runs: [run(HARBOUR, 'harbour', note(1, 'better', '2026-07-28T05:00:00.000Z'))], dropped: 14 },
+      testerRuns: { runs: [run(HARBOUR, 'harbour', note(1, 'better', '2026-07-28T05:00:00.000Z'))], dropped: 14, skippedProjects: 0 },
     });
     render(<TesterHistory />);
     await act(async () => {});
     // A capped list that looks complete is a list that lies about your history.
     expect(screen.getByText(/14 older sessions are not shown/i)).toBeTruthy();
+  });
+
+  it('says out loud which games it never looked in, beside a list of runs', async () => {
+    useApp.setState({
+      testerRuns: {
+        runs: [run(HARBOUR, 'harbour', note(1, 'better', '2026-07-28T05:00:00.000Z'))],
+        dropped: 0,
+        skippedProjects: 3,
+      },
+    });
+    render(<TesterHistory />);
+    await act(async () => {});
+    expect(screen.getByText(/3 more games were not looked in/i)).toBeTruthy();
+  });
+
+  it('says the same thing when the list came back empty', async () => {
+    // The admission cannot live inside the "there are runs" branch. An empty
+    // list plus games nobody opened is precisely when a screen claiming to
+    // span every game is most wrong, and least able to be corrected later.
+    useApp.setState({ testerRuns: { runs: [], dropped: 0, skippedProjects: 2 } });
+    render(<TesterHistory />);
+    await act(async () => {});
+    expect(screen.getByText(/2 more games were not looked in/i)).toBeTruthy();
+    expect(screen.queryByText(/has not played any of your games yet/i)).toBeNull();
+  });
+
+  it('names the game it is aimed at even when the picker cannot find it', async () => {
+    // `apiRecentWorkspaces` answers [] here, which is also what it answers when
+    // the request fails. Play is armed and aimed at harbour, so the control
+    // beside it must not read "Pick a game".
+    useApp.setState({
+      testerRuns: { runs: [run(HARBOUR, 'harbour', note(1, 'better', '2026-07-28T05:00:00.000Z'))], dropped: 0, skippedProjects: 0 },
+    });
+    render(<TesterHistory />);
+    await act(async () => {});
+    expect(screen.getByRole('button', { name: 'Project: harbour' })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Project: Pick a game' })).toBeNull();
+  });
+
+  it('keeps two sessions claiming the same number apart on the list', async () => {
+    // The session number comes off a folder people are told they may edit. Two
+    // notes numbered 3 used to collapse onto one row, so a session it called
+    // worse and one it called better both said "made things worse", under
+    // duplicate React keys.
+    useApp.setState({
+      testerRuns: {
+        runs: [
+          run(HARBOUR, 'harbour', note(3, 'worse', '2026-07-28T05:00:00.000Z')),
+          run(HARBOUR, 'harbour', note(3, 'better', '2026-07-28T01:00:00.000Z')),
+        ],
+        dropped: 0,
+        skippedProjects: 0,
+      },
+    });
+    render(<TesterHistory />);
+    await act(async () => {});
+    expect(document.querySelectorAll('.tester-run')).toHaveLength(2);
+    const said = [...document.querySelectorAll('.tester-run-verdict')].map((n) => n.textContent);
+    expect(said.some((text) => /made things worse/.test(text ?? ''))).toBe(true);
+    expect(said.some((text) => /helped/.test(text ?? ''))).toBe(true);
+  });
+});
+
+describe('what the global list is allowed to claim about itself', () => {
+  it('does not say your tester never played when it did not look everywhere', () => {
+    expect(historyEmptyLead(0)).toMatch(/has not played any of your games yet/i);
+    // "this game" names nothing on a list that spans every game.
+    expect(historyEmptyLead(0)).not.toMatch(/this game/i);
+    expect(historyEmptyLead(2)).not.toMatch(/has not played/i);
+    expect(historyEmptyLead(2)).toMatch(/could not open/i);
+  });
+
+  it('keeps "did not fit" and "did not look" as two different sentences', () => {
+    expect(skippedProjectsLine(0)).toBeNull();
+    expect(skippedProjectsLine(1)).toMatch(/one more game was not looked in/i);
+    expect(skippedProjectsLine(4)).toMatch(/4 more games were not looked in/i);
+    // Not about sessions that did not fit. That is the other admission.
+    expect(skippedProjectsLine(4)).not.toMatch(/older session/i);
+  });
+});
+
+describe('selectorLabel', () => {
+  it('never says nothing is picked while something is', () => {
+    // The picker names the current project from its own fetch of recents,
+    // which answers an empty list when it fails and is capped besides. The
+    // caller picks the target from somewhere else, so the two can disagree,
+    // and the disagreement armed a Play button beside a control reading
+    // "Pick a game".
+    expect(selectorLabel('/work/harbour', null, 'harbour', 'Pick a game')).toBe('harbour');
+    // Nothing knows its name: the folder's own name is still true.
+    expect(selectorLabel('/work/harbour', null, null, 'Pick a game')).toBe('harbour');
+    expect(selectorLabel('/work/harbour', null, null, 'Pick a game')).not.toBe('Pick a game');
+  });
+
+  it('prefers the name the control itself knows', () => {
+    expect(selectorLabel('/work/harbour', 'Harbour Lights', 'harbour', 'Pick a game')).toBe('Harbour Lights');
+  });
+
+  it('still says nothing is picked when nothing is', () => {
+    expect(selectorLabel(null, null, null, 'Pick a game')).toBe('Pick a game');
+    expect(selectorLabel(undefined, null, null, 'New project')).toBe('New project');
+  });
+});
+
+describe('playTesterIn', () => {
+  afterEach(() => resetToasts());
+
+  it('does not report a failed status read as a folder with no game', async () => {
+    // `game.present` is false both when there is no game and when the last
+    // status read failed, and refreshGame returns early on a null answer. So a
+    // dropped request became "there is no game in that project": a definite
+    // claim about someone's disk, from a question that was never answered.
+    useApp.setState({ projectPath: HARBOUR, projectName: 'harbour' });
+    vi.mocked(apiGameStatus).mockResolvedValueOnce(null);
+    await useApp.getState().playTesterIn(HARBOUR);
+    expect(currentToast()?.message).toMatch(/could not check/i);
+    expect(currentToast()?.message).not.toMatch(/there is no game/i);
+  });
+
+  it('still says plainly when the folder really has no game', async () => {
+    useApp.setState({ projectPath: HARBOUR, projectName: 'harbour' });
+    vi.mocked(apiGameStatus).mockResolvedValueOnce({ present: false, entry: null, mtime: 0 });
+    await useApp.getState().playTesterIn(HARBOUR);
+    expect(currentToast()?.message).toMatch(/there is no game/i);
   });
 });

@@ -1,8 +1,18 @@
 /**
  * The harness registry, on disk and over HTTP.
  *
- * A folder's registry is the honest answer to "what can this Hearth reach, and
- * what does it know how to do?" — connectors and skills. It has two halves:
+ * WHAT THIS IS NOT, first, because the name invites the wrong reading: this is
+ * NOT how a user brings their own agent. Nothing in the conversation path reads
+ * this file. `readUserRegistry` has exactly one caller and it is the GET below,
+ * which draws the sidebar. An agent that can answer a turn is a `ChatDriver`
+ * (server/chat.ts), and the two that exist are compiled in; an agent CLI a user
+ * runs themselves goes in the embedded terminal and does not touch this file
+ * either. A user connector here is a NOTE THE USER WROTE DOWN, and the server
+ * forces its status to `available` (registered, nothing runs it) for that
+ * reason.
+ *
+ * With that said: a folder's registry is what this Hearth was TOLD about —
+ * connectors and skills. It has two halves:
  *
  *   built-ins  — defined right here, never written to disk. They are facts
  *                about the app itself (the web-game probe exists; Godot does

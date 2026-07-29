@@ -20,12 +20,21 @@
  *             is still a question with a visible answer. The models listed are
  *             the ones the user left switched on in Settings: the catalogues
  *             only grow, and a menu opened mid-sentence should be a shortlist.
- *   Terminal  agent CLIs installed on this machine. Picking one flips the
- *             conversation to terminal mode AND starts that CLI, so you land
- *             in a running session instead of a bare shell to type into.
- *             Only what is really there is offered: the list is measured
- *             against PATH by the server (server/agentClis.ts), and a CLI that
- *             is missing is shown greyed with what would make it work.
+ *             Under those, "Your agents": programs the person registered
+ *             themselves (Settings, and server/agentRegistry.ts). Their own
+ *             group rather than a fourth vendor, because Hearth knows a label
+ *             and a command line about each and nothing else, and the command
+ *             line is what the row prints. One that has not been confirmed is
+ *             shown and not offered, with what would make it work.
+ *   Terminal  the agent CLIs Hearth knows BY NAME, as found on this machine.
+ *             Picking one flips the conversation to terminal mode AND starts
+ *             that CLI, so you land in a running session instead of a bare
+ *             shell to type into. Only what is really there is offered: the
+ *             list is measured against PATH by the server (server/agentClis.ts),
+ *             and a CLI that is missing is shown greyed with what would make it
+ *             work. The list is a FIXED registry (AGENT_CLIS), not everything
+ *             you have: a CLI Hearth does not know by name is still perfectly
+ *             usable, you type it into the terminal yourself.
  *   Effort    exactly the efforts the selected chat model declared, and
  *             nothing when it declares none. Codex's catalogue answers this
  *             per model — one offers `low medium high xhigh max ultra`,
@@ -48,6 +57,7 @@ import React, { useEffect, useState } from 'react';
 import {
   AGENT_BACKENDS,
   backendFor,
+  choiceForCustomAgent,
   effectiveModel,
   effortDisplayName,
   agentForTurn,
@@ -55,16 +65,25 @@ import {
   effortOptions,
   enabledModels,
   getDisabledModels,
+  isCustomChosen,
   modelChoiceLabel,
   getModelChoice,
   providerModels,
   setModelChoice,
+  useCustomAgents,
   useDisabledModels,
   useModelChoice,
 } from '../../chat/modelChoice';
 import { apiAgentClis } from '../../api';
 import { useApp } from '../../store';
-import type { AgentCliInfo, AgentChoice, ChatProvider, ChatProviderStatus, ProviderModelInfo } from '../../types';
+import type {
+  AgentCliInfo,
+  AgentChoice,
+  ChatProvider,
+  ChatProviderStatus,
+  CustomAgentInfo,
+  ProviderModelInfo,
+} from '../../types';
 import { planTerminalLaunch, useAgentSocket } from '../agent/useAgentSocket';
 import { Icon } from '../ui';
 import { MenuButton, type MenuItem } from '../ui/Menu';
@@ -180,9 +199,16 @@ export function modelIdFor(info: ProviderModelInfo): string | null {
   return info.id === '' ? null : info.id;
 }
 
-/** True when the stored choice is exactly this provider + model. */
+/**
+ * True when the stored choice is exactly this provider + model.
+ *
+ * A choice that names one of the user's own agents ticks nothing here, even
+ * though it still carries the model it was carrying: that model is what the
+ * menu goes back to, not what would answer, and two ticks in one menu is the
+ * menu telling you two different things.
+ */
 export function isChosen(choice: AgentChoice | null, provider: ChatProvider, model: string | null): boolean {
-  return choice !== null && choice.provider === provider && choice.model === model;
+  return choice !== null && !choice.agentId && choice.provider === provider && choice.model === model;
 }
 
 /**
@@ -220,6 +246,24 @@ export function choiceForModel(
 
 function openSettings(): void {
   window.dispatchEvent(new CustomEvent('hearth:open-settings'));
+}
+
+/**
+ * The trailing note on one of the user's own agent rows: the exact command
+ * line, or the one thing standing between it and answering.
+ *
+ * The command is shown rather than a friendly summary, everywhere, and this is
+ * one of the places that rule is load-bearing: the row is a button that spawns
+ * a program, and the only honest label for that is what gets spawned.
+ */
+export function customAgentNote(agent: CustomAgentInfo): string {
+  return agent.confirmed ? agent.commandLine : 'Not confirmed yet';
+}
+
+/** Why a row cannot be picked, or undefined when it can. */
+export function customAgentBlocked(agent: CustomAgentInfo): string | undefined {
+  if (agent.confirmed) return undefined;
+  return `Hearth will run "${agent.commandLine}". Open Settings and confirm it before it can answer.`;
 }
 
 // ---------------------------------------------------------------------------
@@ -306,6 +350,7 @@ export function ModelSelector() {
   const effort = effortLabel(choice);
   const efforts = effortOptions(choice, providers);
   const clis = useAgentClis();
+  const agents = useCustomAgents();
   const { session } = useAgentSocket();
   const connected = useApp((s) => s.wsStatus === 'connected');
   const hasProject = useApp((s) => s.projectPath !== null);
@@ -353,6 +398,34 @@ export function ModelSelector() {
       }
     }
 
+    // The user's own agents, as their own group. Not folded in with the vendor
+    // groups above: those are a backend paired with a catalogue of models, and
+    // one of these is a program with a command line. The row's note IS that
+    // command line, because a row that spawns a program and shows only a
+    // friendly name is hiding the only fact that matters about it.
+    items.push({ separator: true });
+    items.push({ header: 'Your agents', note: 'Programs you registered' });
+    if (agents.length === 0) {
+      items.push({
+        label: 'Nothing registered',
+        disabled: true,
+        disabledReason: 'Add one under Agents in Settings. Any program that speaks the Hearth agent protocol works.',
+        onSelect: () => {},
+      });
+    }
+    for (const agent of agents) {
+      const blocked = customAgentBlocked(agent);
+      items.push({
+        label: agent.label,
+        shortcut: customAgentNote(agent),
+        checked: isCustomChosen(choice, agent.id),
+        disabled: blocked !== undefined,
+        disabledReason: blocked,
+        onSelect: () => setModelChoice(choiceForCustomAgent(getModelChoice(), agent.id)),
+      });
+    }
+    items.push({ label: 'Manage agents…', onSelect: openSettings });
+
     // The ticks show what a turn sent right now WOULD carry, not what storage
     // happens to hold: a stored effort the current model has stopped accepting
     // is dropped on send, so it must not read as selected here either.
@@ -362,7 +435,10 @@ export function ModelSelector() {
     // no dial — an effort a model rejects is a turn that fails on send. It stays
     // on this side of the switch: on the terminal side the CLI owns its own
     // settings and this dial would be a control over nothing.
-    if (efforts.length > 0 && sending) {
+    // ...and nothing at all while one of the user's own agents is chosen: the
+    // efforts came out of codex's catalogue, and offering them under a program
+    // Hearth knows nothing about would be a dial wired to no setting.
+    if (efforts.length > 0 && sending && !sending.agentId) {
       items.push({ separator: true });
       items.push({ header: 'Effort', note: effectiveModel(sending, providers)?.label ?? '' });
       // Named with what it resolves to, because "Automatic" on its own is the
@@ -448,7 +524,7 @@ export function ModelSelector() {
       }
       trigger={
         <>
-          <span className="model-pill-name">{modelChoiceLabel(choice, providers)}</span>
+          <span className="model-pill-name">{modelChoiceLabel(choice, providers, agents)}</span>
           {effort && <span className="model-pill-effort">{effort}</span>}
           <Icon name="chevron" size={9} />
         </>

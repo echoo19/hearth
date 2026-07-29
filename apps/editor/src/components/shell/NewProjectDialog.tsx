@@ -135,9 +135,14 @@ export function NewProjectDialog({
               }}
             />
           </div>
+          {/* What it used to say was "A folder with this name is made under
+              ~/Hearth", and that was not true: the folder is a plain ASCII
+              slug of the name, so a name written in Korean produced a folder
+              called `new-game` and a promise the app had just broken. It says
+              what happens now. */}
           <p className="new-project-note">
-            A folder with this name is made under ~/Hearth and opened here. Everything the game is made of lives in
-            it.
+            Hearth calls the project this, exactly as you type it. The folder it makes under ~/Hearth uses a plainer
+            version of the name, and everything the game is made of lives in there.
           </p>
           {/* The server's own words, where the name that caused them still is.
               role="alert" because nothing else on screen moved: the dialog is

@@ -74,6 +74,27 @@ describe('readableThought', () => {
     expect(readableThought('VERDICT: better')).toMatch(/helped/i);
   });
 
+  it('never turns a negated verdict into the verdict it denies', () => {
+    // This is the surface the person is WATCHING, and it used to print "the
+    // change helped" for a reply that said the opposite, seconds before the
+    // note recorded "worse". One rule, read from one place, or the pane and
+    // the note drift apart again.
+    expect(readableThought('VERDICT: not better, if anything worse')).toBe(
+      'Its verdict: the change made things worse.',
+    );
+    expect(readableThought('VERDICT: not the same, it is better')).toBe(
+      'Its verdict: the change helped.',
+    );
+  });
+
+  it('says the tester gave no verdict rather than choosing one for it', () => {
+    // "mixed" and "I cannot tell" are not "no real difference". The note calls
+    // this unclear, and so must the pane.
+    for (const answer of ['mixed', 'I cannot tell', 'hard to say']) {
+      expect(readableThought(`VERDICT: ${answer}`), answer).toBe('Its verdict: it did not give one.');
+    }
+  });
+
   it('says which picture a claim is about, in words', () => {
     expect(readableThought('SAW 3: The player fell in the pit')).toBe(
       'On picture 3, the player fell in the pit',

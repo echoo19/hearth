@@ -131,6 +131,39 @@ describe('a new conversation', () => {
   });
 });
 
+/**
+ * Below the breakpoint the conversation and the playtest column are two tabs
+ * of one region (App.tsx, `chatActive`), so `narrowTab` decides which of them
+ * the window is actually showing. Anything that says "here is a conversation"
+ * has to move it, or the app answers a click by carrying on showing the game:
+ * the row was clicked, the conversation was opened, and nothing changed.
+ */
+describe('the narrow layout’s tab', () => {
+  it('comes back to the conversation when one is opened', () => {
+    resetStore({ paneOpen: true, narrowTab: 'pane', activeChatId: 'c1' });
+    act(() => useApp.getState().openChat('c1'));
+    expect(useApp.getState().narrowTab).toBe('chat');
+  });
+
+  it('comes back for a conversation that is already the open one', () => {
+    // Clicking the row you are already on is still "show me this", and the
+    // early return for the same id must not skip the part that shows it.
+    resetStore({ paneOpen: true, narrowTab: 'pane', activeChatId: 'c1' });
+    act(() => useApp.getState().openChat('c1'));
+    expect(useApp.getState().narrowTab).toBe('chat');
+    expect(useApp.getState().activeChatId).toBe('c1');
+  });
+
+  it('comes back on New chat, rather than being left stale', () => {
+    // New chat closes the column directly rather than through setPaneOpen, so
+    // it used to leave the tab on 'pane'. The next game to appear reopens the
+    // column, and the window would have landed on the game.
+    resetStore({ paneOpen: true, paneChoice: true, narrowTab: 'pane' });
+    act(() => useApp.getState().newChat());
+    expect(useApp.getState().narrowTab).toBe('chat');
+  });
+});
+
 describe('the close button', () => {
   it('is there, and closes the column', () => {
     resetStore({ paneOpen: true });

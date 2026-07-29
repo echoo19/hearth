@@ -44,6 +44,13 @@ describe('parseProposals and invented evidence', () => {
     ['BUG (x=140, y=60): the button is unclickable', 'the button is unclickable'],
     ['BUG 10/10 times: it crashes', 'it crashes'],
     ['IDEA for the 2nd half: more checkpoints', 'more checkpoints'],
+    // The same lie as "10/10 times", surviving purely by spelling: "in" was an
+    // allowed word and "/" was not, so this one claimed pictures 1 and 10.
+    ['BUG 1 in 10: the save file is wiped', 'the save file is wiped'],
+    // A COUNT read as an index. The word "frames" is here, but the number is
+    // in front of it, which is how you write how many rather than which one.
+    ['BUG in 2 frames: the music cuts out', 'the music cuts out'],
+    ['IDEA within 3 pictures: show the timer sooner', 'show the timer sooner'],
   ];
 
   it.each(invented)('reads %s as a proposal that cites nothing', (line, text) => {
@@ -76,6 +83,25 @@ describe('parseProposals and invented evidence', () => {
     }
   });
 
+  it('does not read a clock as a picture number', () => {
+    // The colon inside "12:30" is where the line gets cut, so the span in
+    // front of it is "at 12". Nothing about that says picture twelve.
+    const [proposal] = parseProposals('BUG at 12:30 the music stops');
+    expect(proposal.evidence).toEqual([]);
+  });
+
+  it('still reads a citation that names what it is pointing at', () => {
+    const named: [string, number[]][] = [
+      ['BUG picture 4: the floor is missing', [4]],
+      ['BUG (frames 4 and 9): the floor is missing', [4, 9]],
+      ['BUG #4: the floor is missing', [4]],
+      ['BUG in pictures 4, 9: the floor is missing', [4, 9]],
+    ];
+    for (const [line, evidence] of named) {
+      expect(parseProposals(line)[0].evidence, line).toEqual(evidence);
+    }
+  });
+
   it('reads a long preamble rather than dropping the line in silence', () => {
     // A line the parser misses produces nothing at all, and the report then
     // says "It found nothing here worth changing", which is a sentence about
@@ -104,6 +130,17 @@ describe('parseVerdict', () => {
       'CHANGE: the jump\nVERDICT: not better, if anything worse\nWHY: I still fell\nWORSE: the jump',
     );
     expect(onTheChange.verdict).toBe('worse');
+  });
+
+  it('never records a negated sameness as sameness', () => {
+    // The same defect class as "not better", in the branch that fix did not
+    // reach: sameness was tested before negation and had no idea it had been
+    // denied, so a reply saying the change worked was filed as "no difference".
+    expect(parseVerdict('VERDICT: not the same, it is better').onTheChange.verdict).toBe('better');
+    expect(parseVerdict('VERDICT: not unchanged, the gap is worse now').onTheChange.verdict).toBe('worse');
+    // Denied and nothing offered in its place. Reading that as any of the
+    // three would be the same invention in a quieter form.
+    expect(parseVerdict('VERDICT: not the same').onTheChange.verdict).toBe('unclear');
   });
 
   it('records an answer that is none of the three as unclear', () => {
@@ -206,6 +243,29 @@ describe('listSessions and a hand-edited note', () => {
   it('still reads a whole note', async () => {
     const sessions = await withNote(note({ observations: [{ frame: 1, text: 'I fell' }] }));
     expect(sessions[0].onTheChange.verdict).toBe('better');
+  });
+
+  it('takes the session number from the folder, not from the note', async () => {
+    // The folder is documented as hand-editable, and a note claiming a number
+    // that is not its own folder's collapsed two sessions onto one row: both
+    // rendered whichever verdict was written last, and the report opened from
+    // either one showed the same session twice.
+    const root = await fsp.mkdtemp(path.join(os.tmpdir(), 'notes-'));
+    try {
+      for (const [dirId, claimed] of [[1, 1], [2, 1], [3, 9]] as const) {
+        const dir = sessionDir(root, dirId);
+        await fsp.mkdir(dir, { recursive: true });
+        await fsp.writeFile(
+          path.join(dir, 'note.json'),
+          JSON.stringify(note({ session: claimed })),
+          'utf8',
+        );
+      }
+      const sessions = await listSessions(root);
+      expect(sessions.map((s) => s.session)).toEqual([1, 2, 3]);
+    } finally {
+      await fsp.rm(root, { recursive: true, force: true });
+    }
   });
 });
 

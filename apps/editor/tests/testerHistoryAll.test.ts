@@ -117,6 +117,49 @@ describe('the global playtest history', () => {
     expect(result.body).toMatchObject({ ok: true, runs: [], dropped: 0 });
   });
 
+  it('refuses rather than reporting an unreadable recents file as an empty history', async () => {
+    // `readRecents` swallows its own failure and answers an empty list, so
+    // this used to be a cheerful 200 with no runs, and the screen said "your
+    // tester has not played yet" over a disk holding weeks of history. The
+    // client keeps whatever it had on a failed read; it cannot do that if the
+    // failure arrives dressed as an answer.
+    await fsp.writeFile(recentsFile, '{ this is not json');
+
+    const result = await ctx.testerHistoryAll();
+
+    expect(result.status).toBe(500);
+    expect(result.body).toMatchObject({ ok: false });
+  });
+
+  it('survives one malformed line in the recents file', async () => {
+    // `isDirectory(entry.path)` sat outside the per-entry try, so a null entry
+    // or a numeric path threw straight out and the screen sat on "Looking for
+    // past sessions" with nothing that would ever end it.
+    const lighthouse = await makeProject('lighthouse', [{ session: 1, finishedAt: '2026-07-28T02:00:00.000Z' }]);
+    await fsp.writeFile(
+      recentsFile,
+      JSON.stringify([null, { path: 123 }, { path: lighthouse, name: 'lighthouse' }]),
+    );
+
+    const result = await ctx.testerHistoryAll();
+
+    expect(result.status).toBe(200);
+    expect((result.body as { runs: unknown[] }).runs).toHaveLength(1);
+  });
+
+  it('counts the games it did not open, not just the runs it cut', async () => {
+    // Two different admissions. `dropped` says there is more of this game's
+    // history than fits; `skippedProjects` says there are games here it did
+    // not look in at all. A screen headed "across every game you have made"
+    // has to be able to take that back.
+    const played = await makeProject('played', [{ session: 1, finishedAt: '2026-07-28T02:00:00.000Z' }]);
+    await remember(played, path.join(tmp, 'deleted-last-week'));
+
+    const result = await ctx.testerHistoryAll();
+
+    expect(result.body).toMatchObject({ runs: [{ project: { name: 'played' } }], skippedProjects: 1 });
+  });
+
   it('says how many it left out, so a capped list cannot read as a complete one', async () => {
     const many = Array.from({ length: MAX_HISTORY_RUNS + 5 }, (_unused, index) => ({
       session: index + 1,

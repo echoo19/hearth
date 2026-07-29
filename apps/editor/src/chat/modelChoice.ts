@@ -23,8 +23,15 @@
  * None of this constrains the terminal, which runs whatever CLI is installed.
  */
 import { useEffect, useState, useSyncExternalStore } from 'react';
-import { apiModelPrefs, apiSetModelEnabled } from '../api';
-import type { AgentChoice, ChatProvider, ChatProviderStatus, EffortOption, ProviderModelInfo } from '../types';
+import { apiAgents, apiModelPrefs, apiSetModelEnabled } from '../api';
+import type {
+  AgentChoice,
+  ChatProvider,
+  ChatProviderStatus,
+  CustomAgentInfo,
+  EffortOption,
+  ProviderModelInfo,
+} from '../types';
 
 const STORAGE_KEY = 'hearth:modelChoice';
 
@@ -139,10 +146,17 @@ export function parseStoredChoice(raw: string | null): AgentChoice | null {
     const record = parsed as Partial<AgentChoice>;
     if (record.provider !== 'anthropic' && record.provider !== 'openai') return null;
     const effort = typeof record.effort === 'string' ? record.effort.trim() : '';
+    // The same shape the server mints agent ids in. Checked rather than
+    // trusted, and its absence is the normal case: a choice saved before
+    // anybody could register an agent has no field here at all.
+    const agentId = typeof record.agentId === 'string' ? record.agentId.trim() : '';
     return {
       provider: record.provider,
       model: typeof record.model === 'string' && record.model !== '' ? record.model : null,
       effort: /^[a-z][a-z0-9-]{0,23}$/.test(effort) ? effort : null,
+      // Present only when there IS one, so a choice that names no agent is
+      // byte-identical to what every build before this one wrote and sent.
+      ...(/^[a-z0-9][a-z0-9-]{0,47}$/.test(agentId) ? { agentId } : {}),
     };
   } catch {
     return null;
@@ -181,6 +195,144 @@ function subscribe(listener: () => void): () => void {
 /** React binding for the selector; re-renders on every setModelChoice. */
 export function useModelChoice(): AgentChoice | null {
   return useSyncExternalStore(subscribe, getModelChoice, getModelChoice);
+}
+
+// ---------------------------------------------------------------------------
+// The user's OWN agents
+//
+// Deliberately a SEPARATE list from AGENT_BACKENDS above, and not an extension
+// of it. `AgentBackend` is vendor-shaped: it carries a catalogue of models, a
+// connection method, a vendor name, and every one of those is a claim Hearth
+// has no business making about somebody else's program. A registered agent is a
+// label and a command line. Folding the two lists together would mean either
+// inventing a vendor for a user's agent or hollowing the vendor rows out.
+//
+// Read from the server (server/agentRegistry.ts), mirrored here because the
+// composer's picker reads it on every render and cannot wait for a fetch, and
+// because this module is already where the picker and Settings agree about what
+// a turn would carry.
+// ---------------------------------------------------------------------------
+
+let customAgents: CustomAgentInfo[] = [];
+let customAgentsFile = '';
+let customRequest: Promise<void> | null = null;
+const customListeners = new Set<() => void>();
+
+export function getCustomAgents(): CustomAgentInfo[] {
+  return customAgents;
+}
+
+/** Where the registry is written, as the SERVER spelled it, or '' before the
+ * read lands. Asked for rather than composed: see `CustomAgentsRead.file`. */
+export function getCustomAgentsFile(): string {
+  return customAgentsFile;
+}
+
+/**
+ * Replace the mirror. Called after a read and after every successful write.
+ *
+ * The standing choice is reconciled in the same step, because an agent that was
+ * just removed, or whose command was just edited, must not still be the thing
+ * the next turn names.
+ */
+export function setCustomAgents(agents: CustomAgentInfo[], file?: string): void {
+  customAgents = agents;
+  if (file !== undefined && file !== '') customAgentsFile = file;
+  for (const listener of customListeners) listener();
+  const next = reconcileAgentChoice(getModelChoice(), agents);
+  if (next !== getModelChoice()) setModelChoice(next);
+}
+
+/**
+ * Read the list once per window, then share it. A failed read leaves the list
+ * empty and is not cached as an answer, so the next surface to mount asks
+ * again. Empty is the safe direction to fail in here: an agent that is not
+ * offered is a menu one row short, where a phantom row is a turn that fails.
+ */
+function loadCustomAgents(): Promise<void> {
+  customRequest ??= apiAgents().then((read) => {
+    if (read) setCustomAgents(read.agents, read.file);
+    else customRequest = null;
+  });
+  return customRequest;
+}
+
+/** Ask the server again, whatever has been read before. */
+export async function refreshCustomAgents(): Promise<void> {
+  customRequest = null;
+  await loadCustomAgents();
+}
+
+/** React binding. Mounting anything that reads the list also asks for it. */
+export function useCustomAgents(): CustomAgentInfo[] {
+  const [agents, setAgents] = useState(customAgents);
+  useEffect(() => {
+    let alive = true;
+    const settle = (): void => {
+      if (alive) setAgents(customAgents);
+    };
+    customListeners.add(settle);
+    void loadCustomAgents().then(settle);
+    return () => {
+      alive = false;
+      customListeners.delete(settle);
+    };
+  }, []);
+  return agents;
+}
+
+/** The registered agent a choice names, or null. */
+export function chosenCustomAgent(
+  choice: AgentChoice | null,
+  agents: readonly CustomAgentInfo[] = customAgents,
+): CustomAgentInfo | null {
+  if (!choice?.agentId) return null;
+  return agents.find((agent) => agent.id === choice.agentId) ?? null;
+}
+
+/** True when the stored choice is exactly this agent. */
+export function isCustomChosen(choice: AgentChoice | null, agentId: string): boolean {
+  return choice?.agentId === agentId;
+}
+
+/**
+ * The choice a click on one of the agent rows produces.
+ *
+ * The provider, model and effort are left exactly as they were. They stop being
+ * read the moment an agent is named, and keeping them is what lets someone try
+ * their own agent for one message and come back to the model they had picked.
+ */
+export function choiceForCustomAgent(current: AgentChoice | null, agentId: string): AgentChoice {
+  return {
+    provider: current?.provider ?? 'anthropic',
+    model: current?.model ?? null,
+    effort: current?.effort ?? null,
+    agentId,
+  };
+}
+
+/** The choice with the agent dropped, back to whichever model it still names. */
+export function choiceWithoutCustomAgent(current: AgentChoice | null): AgentChoice | null {
+  if (!current?.agentId) return current;
+  return { ...current, agentId: null };
+}
+
+/**
+ * The standing choice, after the agent it names was removed or edited.
+ *
+ * An agent that is gone, or whose command has changed and is waiting to be
+ * confirmed again, cannot answer, so the choice falls back to the model half it
+ * was already carrying. Silently sending to a vendor backend under the agent's
+ * name is the one thing this must not do, which is why the server also refuses
+ * the turn rather than trusting this to have run.
+ */
+export function reconcileAgentChoice(
+  choice: AgentChoice | null,
+  agents: readonly CustomAgentInfo[] = customAgents,
+): AgentChoice | null {
+  if (!choice?.agentId) return choice;
+  const found = agents.find((agent) => agent.id === choice.agentId);
+  return found && found.confirmed ? choice : { ...choice, agentId: null };
 }
 
 /** The provider's human name, as the selector groups say it. */
@@ -240,8 +392,16 @@ export function effortDisplayName(id: string): string {
  * read-out when available, falls back to known labels, then to the raw id,
  * then to the provider's name; a null choice reads as "Auto".
  */
-export function modelChoiceLabel(choice: AgentChoice | null, providers: ChatProviderStatus | null): string {
+export function modelChoiceLabel(
+  choice: AgentChoice | null,
+  providers: ChatProviderStatus | null,
+  agents: readonly CustomAgentInfo[] = customAgents,
+): string {
   if (!choice) return 'Auto';
+  // A named agent outranks the model half, because it is what would answer.
+  // Falls back to the id rather than to a model name: the pill saying "Opus 5"
+  // while a registered program answers is the lie this whole path avoids.
+  if (choice.agentId) return chosenCustomAgent(choice, agents)?.label ?? choice.agentId;
   if (choice.model === null) return providerDisplayName(choice.provider);
   const described = providerModels(choice.provider, providers).find((m) => m.id === choice.model);
   return described?.label ?? KNOWN_MODEL_LABELS[choice.model] ?? choice.model;
@@ -249,7 +409,10 @@ export function modelChoiceLabel(choice: AgentChoice | null, providers: ChatProv
 
 /** The effort word shown beside the model, or null when it doesn't apply. */
 export function effortLabel(choice: AgentChoice | null): string | null {
-  if (!choice || choice.effort === null || choice.provider !== 'openai') return null;
+  // Nothing while one of the user's own agents is chosen: the effort dial is
+  // codex's vocabulary, and pinning it beside somebody else's agent would claim
+  // a setting Hearth has no idea whether that agent honours.
+  if (!choice || choice.agentId || choice.effort === null || choice.provider !== 'openai') return null;
   return effortDisplayName(choice.effort);
 }
 
@@ -267,7 +430,12 @@ export function agentForTurn(
   choice: AgentChoice | null,
   providers: ChatProviderStatus | null,
 ): AgentChoice | null {
-  if (!choice || choice.effort === null) return choice;
+  // A named agent is sent exactly as it stands. The catalogue this function
+  // reconciles against is the vendors', and dropping a field on the strength of
+  // what codex reports would be Hearth editing a turn bound for a program it
+  // knows nothing about.
+  if (!choice || choice.agentId) return choice;
+  if (choice.effort === null) return choice;
   const efforts = effortOptions(choice, providers);
   if (efforts.length === 0 || efforts.some((e) => e.id === choice.effort)) return choice;
   return { ...choice, effort: null };

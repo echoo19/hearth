@@ -10,6 +10,7 @@ import type {
   ChatProviderStatus,
   ChatSummary,
   ContextFile,
+  CustomAgentInfo,
   ModelPrefsInfo,
   PermissionMode,
   PermissionModeInfo,
@@ -266,9 +267,16 @@ export async function apiTesterHistory(project: string): Promise<TesterHistory |
 export async function apiTesterHistoryAll(): Promise<TesterRunHistory | null> {
   const body = await getJson<TesterRunHistory>('/api/tester/history/all', 'apiTesterHistoryAll');
   if (!body) return null;
+  const runs = Array.isArray(body.runs) ? body.runs : [];
+  const kept = runs.filter((run) => run?.note && run?.project?.path);
   return {
-    runs: Array.isArray(body.runs) ? body.runs.filter((run) => run?.note && run?.project?.path) : [],
+    runs: kept,
     dropped: typeof body.dropped === 'number' && body.dropped > 0 ? body.dropped : 0,
+    // The server's own count, plus anything this filter just threw away. A run
+    // dropped here is still a run the screen is not showing.
+    skippedProjects:
+      (typeof body.skippedProjects === 'number' && body.skippedProjects > 0 ? body.skippedProjects : 0) +
+      (runs.length - kept.length > 0 ? 1 : 0),
   };
 }
 
@@ -436,6 +444,105 @@ function readPersonalizationBody(body: Partial<PersonalizationInfo> | null): Per
 export async function apiAgentClis(): Promise<AgentCliInfo[] | null> {
   const body = await getJson<{ clis: AgentCliInfo[] }>('/api/agent-clis', 'apiAgentClis');
   return Array.isArray(body?.clis) ? body.clis : null;
+}
+
+// ---------------------------------------------------------------------------
+// Agents the user registered themselves (server/agentRegistry.ts).
+//
+// Unscoped, like skills and model preferences: what may run on this machine is
+// a fact about the machine, decided by the person at it, and it is deliberately
+// NOT written into any project. Every write answers with the whole list, so
+// nothing here merges: the server owns the ids and the confirmation state.
+// ---------------------------------------------------------------------------
+
+/** The list, and where the server keeps it so a pane can say. */
+export interface CustomAgentsRead {
+  agents: CustomAgentInfo[];
+  /**
+   * The registry file, as the SERVER spelled it. Asked for rather than
+   * composed: it is `~/.hearth/agents.json` on one machine and
+   * `C:\Users\…\.hearth\agents.json` on another, and writing one of them in the
+   * renderer would send half the people reading it somewhere that does not
+   * exist. Same rule the model preferences path follows.
+   */
+  file: string;
+}
+
+/** Anything the server did not spell correctly is dropped rather than shown. */
+function readAgentsBody(body: { agents?: unknown; file?: unknown } | null): CustomAgentsRead | null {
+  if (!body || !Array.isArray(body.agents)) return null;
+  const out: CustomAgentInfo[] = [];
+  for (const raw of body.agents) {
+    if (!raw || typeof raw !== 'object') continue;
+    const agent = raw as Partial<CustomAgentInfo>;
+    if (typeof agent.id !== 'string' || typeof agent.commandLine !== 'string') continue;
+    out.push({
+      id: agent.id,
+      label: typeof agent.label === 'string' && agent.label !== '' ? agent.label : agent.commandLine,
+      command: typeof agent.command === 'string' ? agent.command : '',
+      args: Array.isArray(agent.args) ? agent.args.filter((a): a is string => typeof a === 'string') : [],
+      commandLine: agent.commandLine,
+      confirmed: agent.confirmed === true,
+    });
+  }
+  return { agents: out, file: typeof body.file === 'string' ? body.file : '' };
+}
+
+/** Every registered agent. Null when the read did not land. */
+export async function apiAgents(): Promise<CustomAgentsRead | null> {
+  return readAgentsBody(await getJson<{ agents: unknown; file: unknown }>('/api/agents', 'apiAgents'));
+}
+
+export interface AgentSavePatch {
+  /** Absent creates a new agent; present edits that one. */
+  id?: string;
+  label: string;
+  command: string;
+  args: string[];
+}
+
+/**
+ * Create or edit one agent. Returns the whole list, or an error to show: a
+ * refusal here is something the person typed (an empty name, a command that
+ * cannot be run), so it belongs beside the field rather than in a log.
+ */
+export async function apiSaveAgent(patch: AgentSavePatch): Promise<CustomAgentsRead | { error: string }> {
+  try {
+    const body = await postJson<{ ok: boolean; agents?: unknown; file?: unknown; error?: string }>('/api/agents', {
+      action: 'save',
+      ...patch,
+    });
+    const read = body.ok ? readAgentsBody(body) : null;
+    if (!read) return { error: body.error ?? 'Hearth could not save that agent.' };
+    return read;
+  } catch (err) {
+    console.error('apiSaveAgent: request failed', err);
+    return { error: 'Hearth could not save that agent.' };
+  }
+}
+
+async function agentAction(action: 'delete' | 'confirm', id: string): Promise<CustomAgentsRead | null> {
+  try {
+    const body = await postJson<{ ok: boolean; agents?: unknown; file?: unknown }>('/api/agents', { action, id });
+    return body.ok ? readAgentsBody(body) : null;
+  } catch (err) {
+    console.error(`apiAgent(${action}): request failed`, err);
+    return null;
+  }
+}
+
+/** Forget one agent. */
+export async function apiDeleteAgent(id: string): Promise<CustomAgentsRead | null> {
+  return agentAction('delete', id);
+}
+
+/**
+ * Record that the exact command line has been read and accepted on this
+ * machine. Confirming is per command string, not per agent: editing what runs
+ * asks again.
+ */
+export async function apiConfirmAgent(id: string): Promise<CustomAgentsRead | null> {
+  return agentAction('confirm', id);
 }
 
 export async function apiPersonalization(): Promise<PersonalizationInfo | null> {

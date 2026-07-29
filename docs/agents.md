@@ -47,6 +47,17 @@ replayed rather than killing your agent mid-task.
 For agents working outside the app entirely, the probe has its own MCP server
 and CLI — see [mcp.md](./mcp.md) and [cli.md](./cli.md).
 
+## 4. Your own agent, in the conversation
+
+The terminal above runs anything, but it runs it in a shell: no transcript, no
+tool rows, no playtester. If you want your own agent answering in the
+conversation itself, register it in Settings under Agents and Hearth drives it
+over newline-delimited JSON on stdio. Three events are required, a wrapper is
+about thirty lines, and everything else is opt-in.
+
+The protocol, the fields and a complete working example are in
+[custom-agents.md](./custom-agents.md).
+
 ## Attaching images and files
 
 Drop a file onto the composer, paste one, or pick it from **+ → Add photos &

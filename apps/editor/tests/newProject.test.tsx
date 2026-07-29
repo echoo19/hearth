@@ -175,7 +175,14 @@ describe('the dialog', () => {
 
   it('says what the create will actually do to their computer', () => {
     render(<NewProjectDialog open onCancel={() => {}} onCreated={() => {}} />);
-    expect(screen.getByText(/A folder with this name is made under ~\/Hearth/)).toBeTruthy();
+    const note = document.querySelector('.new-project-note')?.textContent ?? '';
+    expect(note).toMatch(/~\/Hearth/);
+    // The folder is a plain ASCII slug of the name, never the name itself.
+    // The copy used to promise otherwise, which was untrue for every name a
+    // path cannot spell and told someone writing in Korean that Hearth had
+    // renamed their game to `new-game`.
+    expect(note).not.toMatch(/folder with this name/i);
+    expect(note).toMatch(/plainer version/i);
   });
 
   it('forgets a name typed into a dialog that was closed', () => {

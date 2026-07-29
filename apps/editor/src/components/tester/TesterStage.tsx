@@ -15,6 +15,7 @@
 import React, { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { useApp, type TesterState } from '../../store';
 import type { TesterNote } from '../../../server/tester/types';
+import { readVerdictWord, type StatedVerdict } from '../../../server/tester/prompt';
 import {
   closeProbeStream,
   openProbeStream,
@@ -41,6 +42,21 @@ export function whyNoPlay(gamePresent: boolean, running: boolean, starting: bool
 }
 
 /**
+ * Each verdict as the sentence this pane says for it.
+ *
+ * Keyed by the value `readVerdictWord` answers, so a verdict the parser can
+ * produce and this pane has no sentence for is a type error rather than a
+ * silent fallback. Falling back is exactly how "I cannot tell" used to reach
+ * the screen as "no real difference".
+ */
+const VERDICT_SENTENCE: Record<StatedVerdict | 'unclear', string> = {
+  better: 'Its verdict: the change helped.',
+  worse: 'Its verdict: the change made things worse.',
+  'no-difference': 'Its verdict: no real difference.',
+  unclear: 'Its verdict: it did not give one.',
+};
+
+/**
  * The tester's answer, with its protocol taken back out of it.
  *
  * It answers in prose plus marker lines, because that is the only way a model
@@ -49,6 +65,13 @@ export function whyNoPlay(gamePresent: boolean, running: boolean, starting: bool
  * instruction, and `VERDICT: no-difference` is a bare enum value. Neither is
  * something a person should have to learn to read their own tester, so the
  * instructions are dropped and the labels are turned back into words.
+ *
+ * The verdict line is read by `readVerdictWord`, the SAME function that decides
+ * what goes in the note. This used to be its own ordered-substring copy of that
+ * rule, so `VERDICT: not better, if anything worse` printed here as "the change
+ * helped" while the note correctly recorded "worse", and the person watching
+ * was told the opposite of what they were about to read. Import it, never
+ * reimplement it.
  */
 export function readableThought(text: string): string {
   const lines: string[] = [];
@@ -66,14 +89,7 @@ export function readableThought(text: string): string {
     }
     const verdict = /^VERDICT\s*:\s*(.*)$/i.exec(line);
     if (verdict) {
-      const word = verdict[1].toLowerCase();
-      lines.push(
-        /better|improv/.test(word)
-          ? 'Its verdict: the change helped.'
-          : /worse/.test(word)
-            ? 'Its verdict: the change made things worse.'
-            : 'Its verdict: no real difference.',
-      );
+      lines.push(VERDICT_SENTENCE[readVerdictWord(verdict[1]) ?? 'unclear']);
       continue;
     }
     lines.push(
@@ -244,7 +260,7 @@ export function TesterStage() {
   const playTester = useApp((s) => s.playTester);
   const stopTester = useApp((s) => s.stopTester);
   const refreshTesterHistory = useApp((s) => s.refreshTesterHistory);
-  const openScreen = useApp((s) => s.openScreen);
+  const openTesterFor = useApp((s) => s.openTesterFor);
   const thoughtsRef = useRef<HTMLOListElement>(null);
 
   const streamStatus = useSyncExternalStore(subscribeProbeStatus, probeStreamStatus);
@@ -316,9 +332,13 @@ export function TesterStage() {
         {turnLine && <span className="tester-budget">{turnLine}</span>}
         <span className="tester-bar-gap" />
         {/* The pane shows this session; the history is what the tester is
-            actually for. Quiet, because it is a way out rather than the act. */}
-        {tester.sessions.length > 0 && (
-          <Button variant="ghost" onClick={() => openScreen('tester')}>
+            actually for. Quiet, because it is a way out rather than the act.
+            Aimed at THIS game: the screen lists every game's runs, but its
+            Play defaults to whichever game played most recently anywhere, and
+            arriving from a game's own pane is not an invitation to play a
+            different one. */}
+        {tester.sessions.length > 0 && projectPath !== null && (
+          <Button variant="ghost" onClick={() => openTesterFor(projectPath)}>
             Every session
           </Button>
         )}

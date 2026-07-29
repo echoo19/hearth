@@ -80,6 +80,7 @@ function seed(sessions: TesterNote[]): void {
     testerRuns: {
       runs: sessions.map((note) => ({ note, project: { path: PROJECT, name: 'game' } })),
       dropped: 0,
+      skippedProjects: 0,
     },
   });
 }
@@ -236,7 +237,7 @@ describe('the plan of action', () => {
     render(<TesterHistory />);
     const report = open();
     expect(ticks(report)).toHaveLength(1);
-    expect(within(report).getByText(/It proposed one thing more/)).toBeTruthy();
+    expect(within(report).getByText(/It proposed one more thing/)).toBeTruthy();
   });
 
   it('says on the surface when approving failed, rather than only in a toast', async () => {

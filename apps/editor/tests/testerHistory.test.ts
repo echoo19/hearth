@@ -9,7 +9,7 @@
  * when the tester never gave one.
  */
 import { describe, it, expect } from 'vitest';
-import { testerRows, TESTER_NEVER_PLAYED } from '../src/components/tester/testerRows';
+import { rowsWithNotes, testerRows, TESTER_NEVER_PLAYED } from '../src/components/tester/testerRows';
 import { MISSING_REGRESSION } from '../server/tester/prompt';
 import type { TesterNote } from '../server/tester/types';
 
@@ -105,5 +105,37 @@ describe('testerRows', () => {
 
     const [crashed] = testerRows([note({ session: 1, stopped: 'error' })]);
     expect(crashed.ending).toMatch(/trouble/i);
+  });
+
+  it('names which note each row came from, rather than only its session number', () => {
+    // A session number arrives off disk from a folder people are told they may
+    // edit. Two notes can claim the same one, and a surface pairing rows back
+    // to notes by that number silently drops one and renders the other twice.
+    const rows = testerRows([note({ session: 1 }), note({ session: 2 })]);
+    expect(rows.map((r) => r.source)).toEqual([1, 0]);
+  });
+});
+
+describe('rowsWithNotes', () => {
+  const worse = note({ session: 3, onTheChange: { seen: 'x', verdict: 'worse', why: 'y' } });
+  const better = note({ session: 3, onTheChange: { seen: 'x', verdict: 'better', why: 'y' } });
+
+  it('keeps two notes claiming the same session apart', () => {
+    const pairs = rowsWithNotes([worse, better]);
+    expect(pairs).toHaveLength(2);
+    // Each row says what ITS OWN note said. Both used to render whichever
+    // verdict was written into the map last.
+    const said = pairs.map((pair) => pair.row.headline);
+    expect(said.some((h) => /made things worse/.test(h))).toBe(true);
+    expect(said.some((h) => /helped/.test(h))).toBe(true);
+    for (const pair of pairs) {
+      expect(pair.note.onTheChange.verdict).toBe(pair.row.tone === 'worse' ? 'worse' : 'better');
+    }
+  });
+
+  it('gives every note a headline, so no surface can render a blank one', () => {
+    for (const pair of rowsWithNotes([worse, better, note({ session: 4 })])) {
+      expect(pair.row.headline.trim()).not.toBe('');
+    }
   });
 });

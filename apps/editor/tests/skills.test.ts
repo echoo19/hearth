@@ -20,6 +20,7 @@ import {
   hearthHome,
   importSkill,
   listSkills,
+  MIRROR_IGNORE_MARKER,
   parseSkillFile,
   readSkill,
   readSkillSource,
@@ -371,6 +372,93 @@ describe('reaching the Agent SDK', () => {
     await setSkillEnabled('impeccable', false);
     await syncSkillsIntoProject(project);
     expect(await fsp.readFile(path.join(theirs, 'SKILL.md'), 'utf8')).toContain('their instructions');
+  });
+
+  /**
+   * The mirror is the one place a personal thing is written into a game folder,
+   * and a game folder is a git repo somebody pushes. What gets committed if
+   * nothing stops it: on macOS and Linux a symlink into the user's home, which
+   * both leaks where they live on disk and resolves to nothing for whoever
+   * clones the game; on Windows without developer mode a full copy, which
+   * publishes the text of every private skill they own.
+   */
+  describe('keeping the mirror out of the project’s git history', () => {
+    const ignoreFile = (): string => path.join(project, CLAUDE_SKILLS_DIR, '.gitignore');
+
+    it('names every skill it mirrored', async () => {
+      await writeSkill({ name: 'Pixel art', description: 'a', body: 'b' });
+      await putSkill(homes.claude, 'impeccable');
+      await syncSkillsIntoProject(project);
+      const text = await fsp.readFile(ignoreFile(), 'utf8');
+      expect(text.startsWith(MIRROR_IGNORE_MARKER)).toBe(true);
+      const rules = text.split('\n').filter((line) => line !== '' && !line.startsWith('#'));
+      // Leading slash: anchored to this folder, so a skill called `art` cannot
+      // also silence `something/art` deeper in the project.
+      expect(rules.sort()).toEqual(['/impeccable', '/pixel-art']);
+    });
+
+    it('never names a skill the project ships itself', async () => {
+      // The whole reason this is a list of names and not a blanket
+      // `.claude/skills/` rule. A template scaffolds `hearth-*` skills into this
+      // same folder; those belong to the GAME, they are meant to be committed,
+      // and a clone that arrives without them is a broken copy.
+      const shipped = path.join(project, CLAUDE_SKILLS_DIR, 'hearth-art');
+      await fsp.mkdir(shipped, { recursive: true });
+      await fsp.writeFile(path.join(shipped, 'SKILL.md'), 'the project’s own');
+      await writeSkill({ name: 'Pixel art', description: 'a', body: 'b' });
+      await syncSkillsIntoProject(project);
+      const text = await fsp.readFile(ignoreFile(), 'utf8');
+      expect(text).toContain('/pixel-art');
+      expect(text).not.toContain('hearth-art');
+      // And it is still there to be committed.
+      expect(await fsp.readFile(path.join(shipped, 'SKILL.md'), 'utf8')).toBe('the project’s own');
+    });
+
+    it('drops the line when the skill is switched off', async () => {
+      await writeSkill({ name: 'Pixel art', description: 'a', body: 'b' });
+      await writeSkill({ name: 'Impeccable', description: 'a', body: 'b' });
+      await syncSkillsIntoProject(project);
+      await setSkillEnabled('pixel-art', false);
+      await syncSkillsIntoProject(project);
+      const text = await fsp.readFile(ignoreFile(), 'utf8');
+      expect(text).toContain('/impeccable');
+      expect(text).not.toContain('/pixel-art');
+    });
+
+    it('removes the file entirely once nothing is mirrored', async () => {
+      // A project with no mirrors in it should look untouched. An empty
+      // .gitignore left behind is a file the person has to wonder about.
+      await writeSkill({ name: 'Pixel art', description: 'a', body: 'b' });
+      await syncSkillsIntoProject(project);
+      await setSkillEnabled('pixel-art', false);
+      await syncSkillsIntoProject(project);
+      await expect(fsp.stat(ignoreFile())).rejects.toThrow();
+    });
+
+    it('will not touch a .gitignore somebody wrote by hand', async () => {
+      // Same rule as `.hearth-copy` enforces for the mirrors: Hearth only ever
+      // edits what Hearth wrote. Silently rewriting a file the person put here
+      // would be the app deciding what their repo ignores.
+      const mine = '# mine\n/secret\n';
+      await fsp.mkdir(path.join(project, CLAUDE_SKILLS_DIR), { recursive: true });
+      await fsp.writeFile(ignoreFile(), mine);
+      await writeSkill({ name: 'Pixel art', description: 'a', body: 'b' });
+      await syncSkillsIntoProject(project);
+      expect(await fsp.readFile(ignoreFile(), 'utf8')).toBe(mine);
+      // Even when there is nothing left to ignore, it is not ours to delete.
+      await setSkillEnabled('pixel-art', false);
+      await syncSkillsIntoProject(project);
+      expect(await fsp.readFile(ignoreFile(), 'utf8')).toBe(mine);
+    });
+
+    it('leaves the mirrors themselves working', async () => {
+      // The guard must not have cost the feature: the SDK still has to be able
+      // to read the skill out of the folder it looks in.
+      await writeSkill({ name: 'Pixel art', description: 'a', body: 'b' });
+      await syncSkillsIntoProject(project);
+      const linked = path.join(project, CLAUDE_SKILLS_DIR, 'pixel-art', 'SKILL.md');
+      expect(await fsp.readFile(linked, 'utf8')).toContain('name: Pixel art');
+    });
   });
 });
 

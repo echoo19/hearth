@@ -85,8 +85,10 @@ export function agentReadiness(state: {
  *
  * With nothing configured there are exactly three ways forward and all three
  * are offered as real controls: sign in to one built-in agent, give the other
- * a key, or bring your own CLI agent (one click away, in this same column).
- * None of them is the fallback.
+ * a key, or run your own CLI agent in the terminal in this same column. None
+ * of them is the fallback. The third is a shell, not a registered backend: the
+ * CLI answers in the terminal, it does not drive this transcript, so tool rows
+ * and approvals are its own rather than Hearth's.
  */
 function ChatEmptyState({ agent }: { agent: AgentReadiness }) {
   // Read the clock once per mount: a line that re-rolls under the reader is

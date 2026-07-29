@@ -157,3 +157,105 @@ describe('tester routes', () => {
     expect(frames.some((f) => (f as { type: string }).type === 'probe-end')).toBe(true);
   });
 });
+
+/**
+ * A playtest belongs to the GAME, and to nothing smaller.
+ *
+ * The rule the app is built on is that a project is a game is a folder: chats
+ * live inside one, and a playtest is a fact ABOUT one — "this is what the game
+ * was like on Tuesday" — not a fact about a conversation somebody was having at
+ * the time. That distinction is easy to lose, because the tester reaches the
+ * model through the very same `ChatDriver` a conversation does, and the obvious
+ * way to give it somewhere to talk is to mint it a chat.
+ *
+ * If it ever did, three things break at once and none of them announce
+ * themselves: the sidebar fills with conversations nobody started, deleting a
+ * chat becomes a way to delete a playtest, and the history stops being a
+ * property of the game. So the identity of a session is (project, session
+ * number), it is claimed from the folder's own session directories, and there is
+ * no chat id anywhere in it.
+ */
+describe('a playtest is scoped to the project, never to a chat', () => {
+  it('creates no conversation, however many sessions run', async () => {
+    // Before: a fresh folder has none, which is what makes the after meaningful.
+    expect((await ctx.listProjectChats(root)).body).toMatchObject({ ok: true, chats: [] });
+
+    await ctx.startTesterSession(root, 2);
+    await ctx.testerJob(root);
+    await ctx.startTesterSession(root, 2);
+    await ctx.testerJob(root);
+
+    const listed = (await ctx.listProjectChats(root)).body as { chats: unknown[] };
+    expect(listed.chats).toEqual([]);
+    // The listing hides chats nobody has spoken into, so it alone could not tell
+    // "no conversation was made" from "one was made and is pending". The folder
+    // can: `createChat` writes the transcript file the moment it mints a row.
+    await expect(fsp.readdir(path.join(root, '.hearth', 'chats'))).rejects.toThrow();
+  });
+
+  it('identifies a session by its number in this folder, and stores it there', async () => {
+    await ctx.startTesterSession(root, 2);
+    await ctx.testerJob(root);
+    const note = JSON.parse(
+      await fsp.readFile(path.join(root, '.hearth', 'tester', 'sessions', '0001', 'note.json'), 'utf8'),
+    ) as Record<string, unknown>;
+    expect(note.session).toBe(1);
+    // No field ties the note to a conversation. Named rather than checked as a
+    // shape, because the failure this guards against is a field being ADDED.
+    for (const key of ['chatId', 'chat', 'conversationId', 'threadId']) {
+      expect(note).not.toHaveProperty(key);
+    }
+  });
+
+  it('counts sessions per folder, so two games both start at one', async () => {
+    const other = path.join(tmp, 'other-game');
+    await fsp.mkdir(other, { recursive: true });
+    await fsp.writeFile(path.join(other, 'index.html'), '<canvas></canvas>');
+    await ctx.openWorkspace(other);
+
+    await ctx.startTesterSession(root, 2);
+    await ctx.testerJob(root);
+    await ctx.startTesterSession(other, 2);
+    await ctx.testerJob(other);
+
+    // Session 1 in each. A counter that lived anywhere but the folder would
+    // have made this one and two, and the second game's history would open
+    // claiming a session it never played.
+    for (const folder of [root, other]) {
+      const body = (await ctx.testerHistory(folder)).body as { sessions: { session: number }[] };
+      expect(body.sessions.map((s) => s.session)).toEqual([1]);
+    }
+  });
+
+  it('keeps the memory in the folder it is about', async () => {
+    // The tester's memory is what it knows about THIS game. Held per machine it
+    // would carry one game's conclusions into the next one, which is the worst
+    // possible failure for a thing whose whole value is that it remembers.
+    const other = path.join(tmp, 'second-game');
+    await fsp.mkdir(other, { recursive: true });
+    await fsp.writeFile(path.join(other, 'index.html'), '<canvas></canvas>');
+    await ctx.openWorkspace(other);
+
+    await ctx.startTesterSession(root, 2);
+    await ctx.testerJob(root);
+
+    const played = (await ctx.testerHistory(root)).body as { memory: string; sessions: unknown[] };
+    const untouched = (await ctx.testerHistory(other)).body as { memory: string; sessions: unknown[] };
+    expect(played.sessions).toHaveLength(1);
+    expect(untouched.sessions).toEqual([]);
+    expect(untouched.memory).toBe('');
+  });
+
+  it('turns approval into words for the caller, and still opens nothing itself', async () => {
+    // Approving a plan DOES belong in a conversation — that is work starting,
+    // and work is a conversation. But the route only says what to send; the
+    // window decides where. The server minting one here would put approved work
+    // into a chat nobody chose, in whichever folder happened to be open.
+    await ctx.startTesterSession(root, 2);
+    await ctx.testerJob(root);
+    const before = (await ctx.listProjectChats(root)).body as { chats: unknown[] };
+    await ctx.approveTesterProposals(root, 1, ['s1-p0']);
+    const after = (await ctx.listProjectChats(root)).body as { chats: unknown[] };
+    expect(after.chats).toEqual(before.chats);
+  });
+});

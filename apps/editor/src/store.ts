@@ -1484,6 +1484,18 @@ export const useApp = create<AppState>((set, get) => {
         drainQueue();
         return;
       case 'chat-event': {
+        // An event belongs to the conversation it came from, and only recently
+        // did the frame say which. A session being torn down goes on emitting
+        // (its last approval-resolved and turn-complete arrive after the
+        // teardown, by design), so with no id those tail events landed in
+        // whatever conversation had been opened since and cleared ITS busy
+        // state, in the middle of a live turn.
+        //
+        // `activeChatId !== null` is load-bearing: the server can mint a chat
+        // for a send before the window has one, and comparing unconditionally
+        // would drop exactly those events.
+        const active = get().activeChatId;
+        if (frame.chatId !== undefined && active !== null && frame.chatId !== active) return;
         // Normalize here as well as inside the fold, so the turn-ending rules
         // below are written once in the canonical vocabulary rather than once
         // per dialect.
@@ -2519,7 +2531,12 @@ export const useApp = create<AppState>((set, get) => {
       // default standing, so a dropped request became "there is no game in that
       // project", a definite claim about someone's disk made from a question
       // that was never answered. Not knowing is its own sentence.
-      if (!get().game.present) {
+      const status = await apiGameStatus(path);
+      if (!status) {
+        showToast('Could not check whether that project has a game, so it was not played.', 'error');
+        return;
+      }
+      if (!status.present) {
         showToast('There is no game in that project yet, so there is nothing for it to play.', 'error');
         return;
       }

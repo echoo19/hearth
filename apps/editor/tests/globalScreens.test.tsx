@@ -27,6 +27,7 @@ vi.mock('../src/api', async (importOriginal) => ({
 
 import { apiRecentWorkspaces } from '../src/api';
 import { Sidebar } from '../src/components/shell/Sidebar';
+import { TopBar } from '../src/components/shell/TopBar';
 import { globalPlace, useApp } from '../src/store';
 import type { RecentChatEntry, RecentWorkspace } from '../src/types';
 
@@ -82,19 +83,41 @@ afterEach(() => {
 
 describe('globalPlace', () => {
   it('is null inside a project, however the project is being viewed', () => {
-    expect(globalPlace({ screen: null, composing: false })).toBeNull();
+    expect(globalPlace({ screen: null, composing: false, projectPath: PROJECT })).toBeNull();
   });
 
   it('names the screen you are standing on', () => {
-    expect(globalPlace({ screen: 'skills', composing: false })).toBe('skills');
-    expect(globalPlace({ screen: 'tester', composing: false })).toBe('tester');
-    expect(globalPlace({ screen: null, composing: true })).toBe('new-chat');
+    expect(globalPlace({ screen: 'skills', composing: false, projectPath: PROJECT })).toBe('skills');
+    expect(globalPlace({ screen: 'tester', composing: false, projectPath: PROJECT })).toBe('tester');
+    expect(globalPlace({ screen: null, composing: true, projectPath: PROJECT })).toBe('new-chat');
   });
 
   it('lets a screen win over the blank composer it was opened from', () => {
     // Skills opened from New chat is Skills. Leaving it returns to the blank
     // composer, which is why `composing` is left standing rather than cleared.
-    expect(globalPlace({ screen: 'skills', composing: true })).toBe('skills');
+    expect(globalPlace({ screen: 'skills', composing: true, projectPath: PROJECT })).toBe('skills');
+  });
+
+  it('is New chat with no folder open, which is where the app starts', () => {
+    // The state this got wrong. At first launch and after every Close project,
+    // `projectPath` is null and `composing` is false, and the window shows the
+    // blank composer. Reading only `composing` answered "you are in a project"
+    // and the rail marked nothing at all, which is the exact failure this
+    // function exists to prevent.
+    expect(globalPlace({ screen: null, composing: false, projectPath: null })).toBe('new-chat');
+    // A screen still wins, with or without a folder underneath it.
+    expect(globalPlace({ screen: 'skills', composing: false, projectPath: null })).toBe('skills');
+  });
+});
+
+describe('the rail with no project open', () => {
+  it('marks New chat, because that is what the window is showing', async () => {
+    resetStore({ projectPath: null, projectName: null, activeChatId: null, recentChats: [] });
+    render(<Sidebar />);
+    await act(async () => {});
+
+    expect(screen.getByRole('button', { name: 'New chat' }).getAttribute('aria-current')).toBe('page');
+    expect(screen.getByRole('button', { name: 'lighthouse' }).getAttribute('aria-current')).toBeNull();
   });
 });
 
@@ -148,6 +171,86 @@ describe('the rail on a global screen', () => {
     });
     expect(useApp.getState().projectView).toBe(true);
     expect(globalPlace(useApp.getState())).toBeNull();
+  });
+});
+
+/**
+ * The strip above the working area has to give the same answer as the rail.
+ *
+ * It did not. While Skills filled the window it went on naming the
+ * conversation underneath — the header saying one thing and the body showing
+ * another — and it kept offering the playtest column's toggle, which moved a
+ * column that was not on screen: pressing it did nothing anybody could see.
+ */
+describe('the top bar on a global screen', () => {
+  const title = () => document.querySelector('.topbar-name');
+  const playToggle = () => screen.queryByRole('button', { name: /playtest/i });
+
+  it('names the conversation while you are actually in it', () => {
+    resetStore({ chats: [{ id: 'c1', title: 'Raising the jump', updatedAt: '' }] as never });
+    render(<TopBar narrow={false} paneOpen={false} />);
+    expect(title()?.textContent).toBe('Raising the jump');
+    expect(playToggle()).not.toBeNull();
+  });
+
+  for (const place of ['skills', 'tester'] as const) {
+    it(`names nothing and offers nothing on ${place}`, async () => {
+      resetStore({ chats: [{ id: 'c1', title: 'Raising the jump', updatedAt: '' }] as never });
+      render(<TopBar narrow={false} paneOpen={false} />);
+      await act(async () => {
+        useApp.getState().openScreen(place);
+      });
+      expect(title()).toBeNull();
+      expect(playToggle()).toBeNull();
+    });
+  }
+
+  it('offers no column toggle on the blank new-chat surface either', async () => {
+    // There is no playtest column beside a blank composer — the surface takes
+    // the whole working area — so the toggle was a control that set a flag and
+    // changed nothing on screen.
+    render(<TopBar narrow={false} paneOpen={false} />);
+    await act(async () => {
+      useApp.getState().newChat();
+    });
+    expect(title()?.textContent).toBe('New chat');
+    expect(playToggle()).toBeNull();
+  });
+
+  it('hides the narrow layout’s Conversation/Game switch on a screen', async () => {
+    resetStore({ narrowTab: 'chat' } as never);
+    render(<TopBar narrow paneOpen />);
+    expect(screen.queryByRole('tablist', { name: 'Conversation or game' })).not.toBeNull();
+    await act(async () => {
+      useApp.getState().openScreen('skills');
+    });
+    expect(screen.queryByRole('tablist', { name: 'Conversation or game' })).toBeNull();
+  });
+});
+
+/**
+ * Closing a project is an act about a project. A global screen is not one, so
+ * it must survive: Skills is the person's library and the Tester screen is a
+ * history across every game, and neither reads the open folder.
+ */
+describe('closing a project from a global screen', () => {
+  for (const place of ['skills', 'tester'] as const) {
+    it(`leaves you standing on ${place}`, () => {
+      useApp.setState({ screen: place });
+      useApp.getState().closeWorkspace();
+      expect(useApp.getState().projectPath).toBeNull();
+      expect(globalPlace(useApp.getState())).toBe(place);
+    });
+  }
+
+  it('still takes the project’s own view down with it', () => {
+    useApp.setState({ screen: null, projectView: true });
+    useApp.getState().closeWorkspace();
+    expect(useApp.getState().projectView).toBe(false);
+    // And lands on New chat, because that is what the window now shows. With
+    // no folder open `Shell` renders `Home`, so "nowhere" is not an answer the
+    // rail is allowed to give.
+    expect(globalPlace(useApp.getState())).toBe('new-chat');
   });
 });
 

@@ -69,6 +69,22 @@ export const PROJECT_GITIGNORE = [
   // not source. memory.md (agent decisions/todos/gotchas) is authored intent and
   // is intentionally NOT ignored: it should be committed and travel with the repo.
   '.hearth/digest.md',
+  // What the DESKTOP APP writes into the folder while someone works in it.
+  // None of it is a source file and all of it is the person's own record, so a
+  // project pushed to a public remote must not carry it.
+  //
+  //  chats/     every word typed at the agent and every word back
+  //  tester/    the private tester's memory, its notes, and PNGs of the game
+  //  evidence/  playtest captures, journals and results
+  //  sweeps/    the same, from the older sweep runner
+  //  app.json   the saved Anthropic/OpenAI API keys. The app also drops a
+  //             `.hearth/.gitignore` beside them on first save, and this line
+  //             is what covers the window before that save happens.
+  '.hearth/chats/',
+  '.hearth/tester/',
+  '.hearth/evidence/',
+  '.hearth/sweeps/',
+  '.hearth/app.json',
   '.hearth-tmp/',
   'screenshot.png',
   // The editor auto-provisions .mcp.json with machine-absolute paths (rewritten

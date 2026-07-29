@@ -16,6 +16,7 @@
  * to be.
  */
 import React from 'react';
+import { chosenCustomAgent, useCustomAgents, useModelChoice } from '../../chat/modelChoice';
 import { useApp, type ConversationMode } from '../../store';
 import type { ChatDriverKind, ChatProviderStatus } from '../../types';
 import { useAgentSocket } from '../agent/useAgentSocket';
@@ -28,8 +29,19 @@ import { terminalStatusLabel } from './TerminalPane';
  * Who is answering, in the name a user would use for it — not the driver's.
  * The server's `active` provider is the truth when it has been read; a bound
  * driver is the fallback, since it is proof by demonstration.
+ *
+ * One of the user's OWN agents is checked FIRST and beats both, which is the
+ * whole point of the parameter: `providers.active` is a fact about which vendor
+ * is set up, and it would happily read "Claude" over the top of a registered
+ * program that is the thing actually answering. `custom` is one driver kind for
+ * every registered agent, so the name comes from the standing choice.
  */
-export function providerLabel(providers: ChatProviderStatus | null, driver: ChatDriverKind | null): string {
+export function providerLabel(
+  providers: ChatProviderStatus | null,
+  driver: ChatDriverKind | null,
+  customLabel?: string | null,
+): string {
+  if (driver === 'custom' || customLabel) return customLabel ?? 'Your agent';
   const active = providers?.active ?? null;
   if (active === 'anthropic') return 'Claude';
   if (active === 'openai') return 'ChatGPT';
@@ -137,6 +149,13 @@ export function ConversationHead() {
   const mode = useApp((s) => s.conversationMode);
   const providers = useApp((s) => s.providers);
   const driver = useApp((s) => s.chatDriver);
+  // Named from the standing choice rather than from the driver, because the
+  // driver kind is `custom` for every registered agent. The label is the user's
+  // own word for it; the command line lives one hover away, in the tooltip,
+  // because this strip has room for a fact and not for a command.
+  const choice = useModelChoice();
+  const agents = useCustomAgents();
+  const own = chosenCustomAgent(choice, agents);
 
   return (
     <div className="conversation-head">
@@ -147,7 +166,14 @@ export function ConversationHead() {
           a way out. */}
       <span className="conversation-provider conversation-kind">{conversationKindLabel(mode)}</span>
       {/* Chat mode's other read-out: which agent would answer. */}
-      {mode === 'chat' && <span className="conversation-provider">{providerLabel(providers, driver)}</span>}
+      {mode === 'chat' &&
+        (own ? (
+          <Tooltip content={own.commandLine}>
+            <span className="conversation-provider">{providerLabel(providers, driver, own.label)}</span>
+          </Tooltip>
+        ) : (
+          <span className="conversation-provider">{providerLabel(providers, driver)}</span>
+        ))}
       {mode === 'terminal' && <TerminalContext />}
     </div>
   );

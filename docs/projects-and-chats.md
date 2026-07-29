@@ -24,6 +24,17 @@ to 40 characters at a word boundary:
 A folder is a project is a game — one of each, never a folder holding several.
 On disk it is a folder; in the app it is only ever a project.
 
+**The folder name is not the project's name.** When Hearth asks what to call
+the game, what you type is kept exactly as you typed it, in any script, with
+any punctuation, and that is what the rail, the title bar and every list show.
+The folder is a plainer version of it, because a folder name has to survive
+every filesystem, shell and git remote: `Café Adventure` lives in
+`~/Hearth/cafe-adventure`, and a name written in a script with no ASCII in it
+gets a folder derived from the name (`~/Hearth/project-1f0ac33e`) rather than a
+generic one. The name is stored in `.hearth/project.json` and travels with the
+folder. A project that has no stored name is shown as its folder, which is what
+every project made before this behaved like, so nothing needed migrating.
+
 **New chat** and the Home screen are the same surface: a greeting, a composer,
 and a chip saying which project the message lands in. It starts on whatever you
 worked on last, so carrying on with the same game takes no interaction at all;
@@ -55,7 +66,7 @@ The one folder Hearth writes for itself:
   chats/<chatId>.jsonl      one conversation, one JSON record per line
   chats/attachments/<chatId>/  files you sent with a message
   app.json                  this project's agent settings (see below)
-  project.json              its mark and colour — plain, safe to commit
+  project.json              its name, mark and colour — plain, safe to commit
   tester/memory.md          what your tester remembers about this game
   tester/sessions/<n>/      note.json plus the pictures it cited
   evidence/journal.jsonl    the bot sweep event stream

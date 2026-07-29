@@ -108,7 +108,12 @@ export interface AppSettingsInfo {
 // Conversation
 // ---------------------------------------------------------------------------
 
-export type ChatDriverKind = 'stub' | 'agent-sdk' | 'codex';
+/**
+ * Which backend answered. `custom` is any agent the user registered
+ * themselves; there is one kind for all of them because there is one driver,
+ * and which agent it is travels with the turn (see `AgentChoice.agentId`).
+ */
+export type ChatDriverKind = 'stub' | 'agent-sdk' | 'codex' | 'custom';
 
 /** Which vendor's agent answers a turn. */
 export type ChatProvider = 'anthropic' | 'openai';
@@ -468,6 +473,34 @@ export interface AgentChoice {
   provider: ChatProvider;
   model: string | null;
   effort: string | null;
+  /**
+   * One of the user's OWN agents (server/agentRegistry.ts), by id, or null for
+   * the vendor backends Hearth ships with.
+   *
+   * It outranks `provider` on the server, and the two are kept side by side
+   * rather than folded into one union so that switching to your own agent and
+   * back does not lose which model you had picked. `provider` is left where it
+   * was and simply stops being read while an agent is named.
+   */
+  agentId?: string | null;
+}
+
+/**
+ * One agent the user registered (GET /api/agents).
+ *
+ * `commandLine` is computed by the server so both halves of the app print the
+ * identical string, and it is printed EVERYWHERE the agent is named: a label on
+ * its own would hide what is actually being run. `confirmed` is the answer to
+ * "has the person at this machine read that command line and accepted it", and
+ * it goes false again the moment the command changes.
+ */
+export interface CustomAgentInfo {
+  id: string;
+  label: string;
+  command: string;
+  args: string[];
+  commandLine: string;
+  confirmed: boolean;
 }
 
 /**
@@ -561,4 +594,14 @@ export interface TesterRunHistory {
   runs: TesterRun[];
   /** How many runs the cap left out. Zero means the list is everything. */
   dropped: number;
+  /**
+   * How many GAMES were not looked in at all: past the project cap, or a
+   * folder that is no longer there.
+   *
+   * Separate from `dropped` because they are different admissions. `dropped`
+   * says "there is more of this game's history than fits"; this says "there
+   * are games here I did not open". A screen that says "every time your tester
+   * has played, across every game" has to be able to take that back.
+   */
+  skippedProjects: number;
 }

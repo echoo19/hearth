@@ -1141,7 +1141,11 @@ export function createProjectServerContext(options: ProjectServerOptions = {}) {
       return { status: 400, body: { ok: false, error: `Not a folder: ${root}` } };
     }
     openedRoots.add(root);
-    const name = path.basename(root) || root;
+    // The name the project stores for itself, or the folder basename when it
+    // has none. A folder is a slug because it is a path; the name is what
+    // somebody typed, and the two have not been the same string since
+    // `우주 게임` came back as `new-game`. See server/projectIdentity.ts.
+    const name = (await readProjectIdentity(root)).name ?? (path.basename(root) || root);
     const isHearthProject = await pathExists(path.join(root, 'hearth.json'));
     await addRecent(root, name);
     return { status: 200, body: { ok: true, path: root, name, isHearthProject } };
@@ -1223,6 +1227,11 @@ export function createProjectServerContext(options: ProjectServerOptions = {}) {
         const folder = await uniqueFolderName(home, typed ? slugFromName(typed) : slugFromPrompt(source));
         const target = path.join(home, folder);
         await fsp.mkdir(target, { recursive: true });
+        // The folder is a slug and always will be. The NAME is what was typed,
+        // and it goes in the project's own file so it travels with the folder
+        // and outlives this process. Without it the slug was the name, which
+        // is how `우주 게임` became a game called `new-game`.
+        if (typed) await writeProjectIdentity(target, { name: typed });
         return await openWorkspaceImpl(target);
       } catch (err) {
         return { status: 500, body: { ok: false, error: `Could not create a project folder: ${(err as Error).message}` } };
@@ -1243,13 +1252,18 @@ export function createProjectServerContext(options: ProjectServerOptions = {}) {
         entries.map(async (entry): Promise<RecentChatEntry[]> => {
           try {
             if (!(await isDirectory(entry.path))) return [];
+            // The project's own name wins over the one cached in recents, and
+            // both win over the basename: a row that says `cafe-adventure`
+            // when the game is called Café Adventure is naming a folder, and
+            // nobody asked which folder their chat was in.
+            const stored = (await readProjectIdentity(entry.path)).name;
             return (await listChats(entry.path)).map((chat) => ({
               id: chat.id,
               title: chat.title,
               kind: chat.kind,
               createdAt: chat.createdAt,
               updatedAt: chat.updatedAt,
-              project: { path: entry.path, name: entry.name || path.basename(entry.path) },
+              project: { path: entry.path, name: stored ?? (entry.name || path.basename(entry.path)) },
             }));
           } catch {
             return [];
@@ -1270,15 +1284,22 @@ export function createProjectServerContext(options: ProjectServerOptions = {}) {
     async recentWorkspaces(): Promise<JsonResult> {
       const entries = await readRecents();
       const projects = await Promise.all(
-        entries.map(async (e) => ({
-          path: e.path,
-          name: e.name,
-          exists: await isDirectory(e.path),
+        entries.map(async (e) => {
           // Carried in the list rather than fetched per row: the rail paints
           // every project's mark on first render, and six round trips to draw
           // six glyphs would be six chances to flash the wrong colour.
-          identity: await readProjectIdentity(e.path),
-        })),
+          const identity = await readProjectIdentity(e.path);
+          return {
+            path: e.path,
+            // The stored name, then the one recents cached at open time, then
+            // the basename. A project made before names were stored has none
+            // and keeps reading as its folder, which is why there is nothing
+            // to migrate.
+            name: identity.name ?? e.name,
+            exists: await isDirectory(e.path),
+            identity,
+          };
+        }),
       );
       return { status: 200, body: { ok: true, projects } };
     },
@@ -1573,25 +1594,51 @@ export function createProjectServerContext(options: ProjectServerOptions = {}) {
      * must not take the whole history down with it.
      */
     async testerHistoryAll(): Promise<JsonResult> {
-      const entries = (await readRecents()).slice(0, MAX_HISTORY_PROJECTS);
+      // `readRecents` swallows its own failure and answers an empty list, so a
+      // corrupt or unreadable recents file used to come back as a cheerful 200
+      // with no runs, and the screen said "your tester has not played yet"
+      // over a disk holding fifteen games of history. `readable` is the whole
+      // reason `readRecentsState` exists; a read that did not land is a 500,
+      // and the screen keeps whatever it already had.
+      const state = await readRecentsState();
+      if (!state.readable) {
+        return { status: 500, body: { ok: false, error: 'Could not read the list of projects.' } };
+      }
+      const looked = state.entries.slice(0, MAX_HISTORY_PROJECTS);
+      // Counted, because the screen may not silently present a slice of your
+      // history as the whole of it. Two ways a game goes missing: the cap, and
+      // a folder that is no longer there.
+      let skippedProjects = Math.max(0, state.entries.length - looked.length);
       const perProject = await Promise.all(
-        entries.map(async (entry) => {
-          if (!(await isDirectory(entry.path))) return [];
+        looked.map(async (entry) => {
+          // Inside the try, not outside it. A malformed entry (a null, or a
+          // `path` that is not a string) made `isDirectory` throw straight out
+          // of the Promise.all, so ONE bad line in the recents file answered
+          // 500 and left the screen reading "Looking for past sessions" with
+          // nothing that would ever end it.
           try {
+            if (!(await isDirectory(entry.path))) return { runs: [], gone: true };
             const sessions = await listSessions(entry.path);
             const identity = await readProjectIdentity(entry.path);
-            return sessions.map((note) => ({
-              note,
-              project: { path: entry.path, name: entry.name, identity },
-            }));
+            return {
+              runs: sessions.map((note) => ({
+                note,
+                // Same rule as the rail: the game's own name, then the one
+                // recents cached. A history of playtests that names folders
+                // is a history of folders.
+                project: { path: entry.path, name: identity.name ?? entry.name, identity },
+              })),
+              gone: false,
+            };
           } catch {
             // One unreadable project folder is one missing game, not a broken
             // screen for the other nine.
-            return [];
+            return { runs: [], gone: true };
           }
         }),
       );
-      const all = perProject.flat().sort((a, b) => {
+      skippedProjects += perProject.filter((project) => project.gone).length;
+      const all = perProject.flatMap((project) => project.runs).sort((a, b) => {
         const at = Date.parse(a.note.finishedAt ?? '');
         const bt = Date.parse(b.note.finishedAt ?? '');
         // A note with no readable time sorts last rather than randomly: it is
@@ -1604,6 +1651,7 @@ export function createProjectServerContext(options: ProjectServerOptions = {}) {
           ok: true,
           runs: all.slice(0, MAX_HISTORY_RUNS),
           dropped: Math.max(0, all.length - MAX_HISTORY_RUNS),
+          skippedProjects,
         },
       };
     },
@@ -1879,6 +1927,23 @@ export function createProjectServerContext(options: ProjectServerOptions = {}) {
      * Serve a file from one of the static mounts. `key` is the base64url
      * project root; `rel` is resolved inside it (or inside its evidence dir),
      * and anything escaping, or hidden, is refused.
+     *
+     * Both checks run TWICE: once on the spelling, and once on where the
+     * filesystem actually goes. `path.resolve` and `path.relative` only read the
+     * text of a path, and `readFile` follows symlinks, so a link inside the
+     * project folder was a complete bypass of both rules:
+     *
+     *   ln -s .hearth assets         -> assets/app.json served the saved API keys
+     *   ln -s .hearth/app.json a.png -> the same, through one file
+     *   ln -s ../secrets.txt b.png   -> anything at all, from anywhere at all
+     *
+     * That folder is where an agent writes game code, so creating the link is
+     * the most ordinary thing in the threat model rather than an exotic one.
+     * `realpath` is the only thing that answers "what will actually be opened",
+     * and it has to be asked BEFORE the escape check and BEFORE the hidden
+     * check, not after. It resolves the base too: a mount root under a symlinked
+     * temp dir (which is every macOS temp dir) would otherwise fail its own
+     * containment test.
      */
     async serveMounted(mount: 'game' | 'evidence', key: string, rel: string): Promise<FileResult> {
       const root = decodeRootKey(key);
@@ -1887,16 +1952,42 @@ export function createProjectServerContext(options: ProjectServerOptions = {}) {
       if (!isOpenRoot(resolvedRoot)) return { status: 403, body: { ok: false, error: 'Folder is not open.' } };
       const base = mount === 'evidence' ? path.join(resolvedRoot, EVIDENCE_DIR) : resolvedRoot;
       const abs = path.resolve(base, rel === '' ? '.' : rel);
-      if (abs !== base && !abs.startsWith(base + path.sep)) {
+      const escapes = (from: string, to: string): boolean => to !== from && !to.startsWith(from + path.sep);
+      // The lexical pass first, because it needs no disk and refuses the
+      // spelled-out `../` walk without ever touching the path it names.
+      if (escapes(base, abs)) {
         return { status: 403, body: { ok: false, error: 'Path escapes the mount.' } };
       }
       if (hasHiddenSegment(path.relative(base, abs))) {
         return { status: 403, body: { ok: false, error: 'Hidden paths are not served.' } };
       }
+      let realBase: string;
+      let realAbs: string;
       try {
-        const stat = await fsp.stat(abs);
+        realBase = await fsp.realpath(base);
+        realAbs = await fsp.realpath(abs);
+      } catch {
+        // Nothing there, or a link pointing at nothing. Answered like any other
+        // missing file rather than thrown: a dangling link in a project folder
+        // is untidy, not exceptional.
+        return { status: 404, body: { ok: false, error: `Not found: ${rel}` } };
+      }
+      // The same two rules again, now against where the bytes really live. The
+      // evidence mount's base is itself inside `.hearth`, which is exactly why
+      // the hidden check is rebased onto it rather than onto the project root.
+      if (escapes(realBase, realAbs)) {
+        return { status: 403, body: { ok: false, error: 'Path escapes the mount.' } };
+      }
+      if (hasHiddenSegment(path.relative(realBase, realAbs))) {
+        return { status: 403, body: { ok: false, error: 'Hidden paths are not served.' } };
+      }
+      try {
+        // The resolved path from here on, so what was checked is what is read.
+        const stat = await fsp.stat(realAbs);
         if (stat.isDirectory()) return { status: 404, body: { ok: false, error: 'Not a file.' } };
-        return { status: 200, contentType: contentTypeFor(abs), data: new Uint8Array(await fsp.readFile(abs)) };
+        // Named by the URL, not by the link target: a `.png` that resolves to a
+        // file with another extension is still what the game asked for.
+        return { status: 200, contentType: contentTypeFor(abs), data: new Uint8Array(await fsp.readFile(realAbs)) };
       } catch {
         return { status: 404, body: { ok: false, error: `Not found: ${rel}` } };
       }
@@ -2673,6 +2764,14 @@ async function route(ctx: ProjectServerContext, req: IncomingMessage, res: Serve
   // reads, and only from PATH.
   if (url.pathname === '/api/agent-clis') {
     return (await import('./agentClis.js')).routeAgentClis(req, res);
+  }
+
+  // Agents the user registered themselves, and the command that runs each one.
+  // Machine-scoped and never inside a project, for the reason written at the
+  // top of agentRegistry.ts: an entry here is a command line Hearth will spawn,
+  // so a repo shipping one would be shipping remote code execution.
+  if (url.pathname === '/api/agents') {
+    return (await import('./agentRegistry.js')).routeAgents(req, res);
   }
 
   // Personalization is the other one: a name and standing instructions belong

@@ -240,8 +240,10 @@ describe('the model pill', () => {
 
     const headers = [...document.querySelectorAll('.menu-header-name')].map((el) => el.textContent);
     // Chat is the side it opens on. Effort is absent until a model that
-    // declares efforts is picked.
-    expect(headers).toEqual(['Claude', 'ChatGPT']);
+    // declares efforts is picked. "Your agents" is last and is always there,
+    // empty or not: a group that appeared only once you had registered
+    // something would answer "can I use my own agent here?" with silence.
+    expect(headers).toEqual(['Claude', 'ChatGPT', 'Your agents']);
     expect(screen.getByRole('menuitemcheckbox', { name: 'Opus 5' })).toBeTruthy();
   });
 

@@ -15,22 +15,32 @@ apps/editor/dist-electron/
 apps/editor/release-app/
 apps/editor/release/
 
-# Playtest output written into whichever project is open — sweeps and their
-# evidence (journals, captures, results) are runtime artifacts, never sources,
-# and must not leak in from an example project someone playtested locally.
-.hearth/evidence/
-.hearth/sweeps/
-# Conversations and tester sessions are the user's own record of working in a
-# folder. They are written into whichever project is open, which includes the
-# example games in this repo the moment anyone opens one, and a transcript of
-# someone's afternoon is not a source file.
+# Everything Hearth writes into whichever project is open. That set of folders
+# includes the example games in this repo the moment anyone opens one, so each
+# rule here has to match INSIDE packages/examples/* as well as at the root.
 #
-# `**/` is load-bearing. A pattern with an interior slash is anchored to this
-# file's own directory, so the `.hearth/evidence/` and `.hearth/sweeps/` rules
-# above match only at the repo root, not inside an example project, which is
-# the one place their comment says they are for.
+# `**/` is load-bearing, and is the whole reason this block is worth a comment.
+# A pattern with an interior slash is anchored to its own .gitignore's
+# directory, so a bare `.hearth/evidence/` matches only `<repo>/.hearth/`, which
+# nothing ever writes — it silently protected nothing while reading as though it
+# protected the example projects. Every rule below is per-project, so every rule
+# below carries the prefix. See tests/gitignoreCoverage.test.ts, which fails if
+# one loses it.
+#
+# Playtest output — sweeps and their evidence (journals, captures, results) are
+# runtime artifacts, never sources.
+**/.hearth/evidence/
+**/.hearth/sweeps/
+# Conversations and tester sessions are the user's own record of working in a
+# folder, and a transcript of someone's afternoon is not a source file.
 **/.hearth/chats/
 **/.hearth/tester/
+# The agent's command journal: runtime, and regenerated.
+**/.hearth/log/
+# API keys. The app drops a `.hearth/.gitignore` beside this file the first time
+# settings are saved, but that guard is written on save and this repo has to
+# hold whether or not anyone has saved yet.
+**/.hearth/app.json
 
 # agent/automation scratch (never commit to the public repo)
 .scratch-audit/

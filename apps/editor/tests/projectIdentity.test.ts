@@ -100,3 +100,53 @@ describe('writing', () => {
     expect(IDENTITY_FILE.startsWith('.hearth')).toBe(true);
   });
 });
+
+/**
+ * The name is the third thing a project says about itself, and the only one a
+ * person typed. The folder it lives in is a slug, because a path has to
+ * survive every filesystem, shell and git remote; the name has to survive
+ * nothing at all, so it keeps every character it was given.
+ */
+describe('the name a person typed', () => {
+  it('round-trips a name in any script, unchanged', async () => {
+    for (const name of ['우주 게임', 'ゲーム', 'Café Adventure', 'The Legend of Zelda Ocarina']) {
+      await writeProjectIdentity(root, { name });
+      expect((await readProjectIdentity(root)).name).toBe(name);
+    }
+  });
+
+  it('keeps punctuation a folder name could never hold', async () => {
+    await writeProjectIdentity(root, { name: "Don't Starve: Clone! (v2)" });
+    expect((await readProjectIdentity(root)).name).toBe("Don't Starve: Clone! (v2)");
+  });
+
+  it('does not disturb the mark or the colour', async () => {
+    await writeProjectIdentity(root, { icon: 'grid', color: 'teal' });
+    await writeProjectIdentity(root, { name: 'Neon Drifter' });
+    expect(await readProjectIdentity(root)).toEqual({ icon: 'grid', color: 'teal', name: 'Neon Drifter' });
+  });
+
+  it('clears back to the folder basename when given an empty string', async () => {
+    await writeProjectIdentity(root, { name: 'Neon Drifter' });
+    await writeProjectIdentity(root, { name: '   ' });
+    expect((await readProjectIdentity(root)).name).toBeUndefined();
+  });
+
+  it('collapses the whitespace and control characters a paste can carry', async () => {
+    await writeProjectIdentity(root, { name: '  Neon\tDrifter\n' });
+    expect((await readProjectIdentity(root)).name).toBe('Neon Drifter');
+  });
+
+  it('bounds the length rather than storing a novel', async () => {
+    await writeProjectIdentity(root, { name: 'a'.repeat(500) });
+    const stored = (await readProjectIdentity(root)).name ?? '';
+    expect(stored.length).toBeGreaterThan(0);
+    expect(stored.length).toBeLessThanOrEqual(120);
+  });
+
+  it('reads as nothing stored when the file holds the wrong shape for a name', async () => {
+    await fsp.mkdir(path.dirname(identityFile()), { recursive: true });
+    await fsp.writeFile(identityFile(), JSON.stringify({ icon: 'flame', name: { nope: true } }));
+    expect(await readProjectIdentity(root)).toEqual({ icon: 'flame' });
+  });
+});

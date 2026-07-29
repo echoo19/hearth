@@ -60,6 +60,19 @@ describe('parseAgentOptions', () => {
     expect(parseAgentOptions('opus')).toBeNull();
     expect(parseAgentOptions(['opus'])).toBeNull();
   });
+
+  it('reads the id of one of the user own agents, and only a plausible one', () => {
+    expect(parseAgentOptions({ agentId: 'my-agent' })).toEqual({ agentId: 'my-agent' });
+    expect(parseAgentOptions({ provider: 'anthropic', agentId: 'my-agent' })).toEqual({
+      provider: 'anthropic',
+      agentId: 'my-agent',
+    });
+    // A shape the registry could never have minted is dropped, so nothing
+    // downstream has to defend against a path or an injection in an id.
+    expect(parseAgentOptions({ agentId: '../../etc/passwd' })).toBeNull();
+    expect(parseAgentOptions({ agentId: 'Shouty Agent' })).toBeNull();
+    expect(parseAgentOptions({ agentId: 7 })).toBeNull();
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -80,12 +93,29 @@ class FakeCodexDriver implements ChatDriver {
   }
 }
 
+/** One of the user's own agents, from chatDrivers/custom.ts's point of view. */
+class FakeCustomDriver implements ChatDriver {
+  readonly kind = 'custom' as const;
+  queue = new EventQueue<ChatEvent>();
+  get events(): AsyncIterable<ChatEvent> {
+    return this.queue;
+  }
+  async start(): Promise<void> {}
+  send(): void {}
+  stop(): void {
+    this.queue.close();
+  }
+}
+
 const fakeSdk = { query: () => new EventQueue<unknown>() };
 
 let tmp: string;
 let root: string;
 let codexAvailable: boolean;
 let lastCodexOpts: { agent?: AgentTurnOptions | null } | undefined;
+let lastCustomOpts: { agent?: AgentTurnOptions | null; permissionMode?: unknown } | undefined;
+/** What the custom seam does: a driver, nothing, or a refusal. */
+let customBehaviour: 'driver' | 'none' | 'refuse';
 
 function deps(): Parameters<typeof createChatDriver>[1] {
   return {
@@ -93,6 +123,12 @@ function deps(): Parameters<typeof createChatDriver>[1] {
     createCodexDriver: async (_root, opts) => {
       lastCodexOpts = opts;
       return codexAvailable ? new FakeCodexDriver() : null;
+    },
+    createCustomDriver: async (_root, opts) => {
+      lastCustomOpts = opts;
+      if (!opts?.agent?.agentId) return null;
+      if (customBehaviour === 'refuse') throw new Error('That agent is not registered on this machine.');
+      return customBehaviour === 'driver' ? new FakeCustomDriver() : null;
     },
   };
 }
@@ -104,6 +140,8 @@ beforeEach(async () => {
   await writeAppSettings(root, { apiKey: 'sk-test' });
   codexAvailable = true;
   lastCodexOpts = undefined;
+  lastCustomOpts = undefined;
+  customBehaviour = 'driver';
 });
 
 afterEach(async () => {
@@ -138,6 +176,31 @@ describe('createChatDriver with a turn choice', () => {
     const agent: AgentTurnOptions = { provider: 'openai', model: 'gpt-5.6-sol', effort: 'high' };
     await createChatDriver(root, { ...deps(), agent });
     expect(lastCodexOpts?.agent).toEqual(agent);
+  });
+
+  it('never asks the custom seam for a turn that named no agent', async () => {
+    const driver = await createChatDriver(root, { ...deps(), agent: { provider: 'anthropic' } });
+    expect(driver.kind).toBe('agent-sdk');
+    expect(lastCustomOpts?.agent).toEqual({ provider: 'anthropic' });
+  });
+
+  it("binds one of the user's own agents AHEAD of both vendors", async () => {
+    const driver = await createChatDriver(root, { ...deps(), agent: { provider: 'anthropic', agentId: 'my-agent' } });
+    expect(driver.kind).toBe('custom');
+  });
+
+  it('hands the permission mode to it, the same one every other backend gets', async () => {
+    await createChatDriver(root, { ...deps(), agent: { agentId: 'my-agent' }, permissionMode: 'skip' });
+    expect(lastCustomOpts?.permissionMode).toBe('skip');
+  });
+
+  it('REPORTS a refusal rather than quietly answering as somebody else', async () => {
+    // The rule this whole path exists for: a composer showing "My agent" while
+    // Claude answers is the app lying about who is doing the work.
+    customBehaviour = 'refuse';
+    await expect(createChatDriver(root, { ...deps(), agent: { agentId: 'my-agent' } })).rejects.toThrow(
+      /not registered/,
+    );
   });
 
   it('gives the SDK driver the model, and never a model meant for the other vendor', async () => {
