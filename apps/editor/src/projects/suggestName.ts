@@ -98,13 +98,17 @@ const MAX_CHARS = 32;
  * field rather than inventing something.
  */
 export function suggestProjectName(prompt: string): string {
-  let text = prompt
-    .toLowerCase()
-    // Punctuation carries no name, but it does end one: a full stop is a
-    // better boundary than four words when the first sentence is short.
-    .replace(/[\r\n]+/g, ' ')
-    .split(/[.!?]/)[0]
-    .replace(/[^a-z0-9\s'-]+/g, ' ')
+  // The first sentence with something in it. Taking `[0]` unconditionally
+  // meant any prompt that opened with punctuation lost everything: "?! make a
+  // platformer" suggested nothing at all.
+  const sentences = prompt.toLowerCase().replace(/[\r\n]+/g, ' ').split(/[.!?]/);
+  let text = (sentences.find((part) => /[\p{L}\p{N}]/u.test(part)) ?? '')
+    // Letters and numbers of ANY script. This was `[^a-z0-9\s'-]`, which is a
+    // claim that games are named in English: it emptied the field for Korean,
+    // Japanese and Chinese entirely, and shredded accented Latin, turning
+    // "naïve résumé simulator" into "Na ve r sum". Hearth supports any game
+    // anyone wants to make, and that has to include what they call it.
+    .replace(/[^\p{L}\p{N}\s'-]+/gu, ' ')
     .replace(/\s+/g, ' ')
     .trim();
 
@@ -125,6 +129,9 @@ export function suggestProjectName(prompt: string): string {
     }
   }
 
+  // A run of punctuation is not a name. "-----" survived as a literal five
+  // hyphens, which then enabled Create.
+  if (!/[\p{L}\p{N}]/u.test(text)) return '';
   const words = text.split(' ').filter((word) => word !== '');
   while (words.length > 1 && TRAILING_FILLER.has(words[words.length - 1])) words.pop();
   const kept: string[] = [];
@@ -136,7 +143,13 @@ export function suggestProjectName(prompt: string): string {
   if (kept.length === 0) return '';
 
   // Sentence case, not title case. A project is a thing you named, not a
-  // product with a wordmark, and Capitalising Every Word reads like one.
-  const name = kept.join(' ').slice(0, MAX_CHARS).trim();
+  // product with a wordmark, and Capitalising Every Word reads like one. For a
+  // script with no case this is a no-op, which is the right answer.
+  //
+  // No slice here. Cutting the joined string mid-word showed a 32-character
+  // draft that then created a four-letter folder, so the cap is spent by the
+  // loop above and a single word longer than the cap is kept whole: a name you
+  // can see the end of beats a name that was quietly truncated.
+  const name = kept.join(' ').trim();
   return name.charAt(0).toUpperCase() + name.slice(1);
 }

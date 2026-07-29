@@ -366,6 +366,22 @@ describe('style gates', () => {
     }
   });
 
+  it('Gate F keeps source files text, so git and grep can still read them', () => {
+    // A literal NUL byte makes git call a file binary. The whole global Tester
+    // screen landed as `Bin 8365 -> 9250` with no reviewable diff, and `grep -r`
+    // skipped the file silently while reporting nothing found. Both failures
+    // are quiet, which is what makes them worth a gate: `\u0000` in a string
+    // literal is byte-identical at runtime and keeps the file text.
+    const offenders: string[] = [];
+    for (const dir of [SRC_DIR, SERVER_DIR, ELECTRON_DIR, path.resolve(__dirname)]) {
+      if (!fs.existsSync(dir)) continue;
+      for (const file of collectFiles(dir, ['.ts', '.tsx', '.css'])) {
+        if (fs.readFileSync(file).includes(0)) offenders.push(rel(file, path.resolve(__dirname, '..')));
+      }
+    }
+    expect(offenders).toEqual([]);
+  });
+
   it('Gate E keeps em and en dashes out of everything that ships as words', () => {
     const offenders: string[] = [];
     for (const dir of [SRC_DIR, SERVER_DIR, ELECTRON_DIR]) {

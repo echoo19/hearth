@@ -321,7 +321,7 @@ describe('what happens to a proposal that is dropped', () => {
       }),
     );
     expect(text).toContain('the audit total goes negative');
-    expect(text).toMatch(/It proposed one thing more/);
+    expect(text).toMatch(/It proposed one more thing/);
   });
 });
 

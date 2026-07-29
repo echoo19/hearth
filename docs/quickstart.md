@@ -27,10 +27,12 @@ Type one sentence into the box on the Home screen and send it:
 
 > a small top-down game about sweeping leaves off a courtyard
 
-A folder appears under `~/Hearth`, named from your words —
-`~/Hearth/small-top-down-sweeping` — and the conversation moves into it. That
-folder is empty until the agent writes something. There is no project file, no
-manifest, no template.
+Hearth asks what to call it, with a name already drafted from what you typed.
+Press Enter to accept it or type your own. A folder appears under `~/Hearth`
+and the conversation moves into it.
+
+That folder is empty until the agent writes something. There is no project
+file, no manifest, no template.
 
 ## 4. Watch it build
 
@@ -49,35 +51,36 @@ seconds." Each message is a turn; the pane reloads when the files land. Drop a
 screenshot or a reference image onto the composer when a picture says it faster
 — an image on its own is a message ([agents.md](./agents.md)).
 
-## 5. Ask for a playtest
+## 5. Have it played
 
-Say "playtest it" and your agent sends bots in. They press real keys, move a
-real mouse, take screenshots and collect errors — with no cooperation from the
-game at all, because the probe treats it as a page rather than a project.
+Press Play on the Tester tab beside your game. A model opens it and plays it
+the way a person would: it looks at a picture, decides what to try, and does
+that, for as many turns as it takes.
 
-It runs `hearth-probe sweep .`, which is on its PATH, and reads the verdicts
-back to you when the episodes finish:
+When it stops, it writes up what it made of the game. From the second session
+on it also answers the only question you really wanted asked: is this better
+than last time, and did anything get worse.
 
-```
-6 runs: error 1, ran-clean 5 — 1 failing
-  [blocker] crash: game threw: Cannot read properties of null (leaf.js:31)
-```
+It says what it actually saw and nothing more. Every claim points at a picture
+it took, and a claim it cannot point at is dropped and counted rather than
+smoothed over. When it could not work something out, it says so instead of
+guessing. A tester that overclaims is worse than no tester, because you act on
+what it tells you. [tester.md](./tester.md) is the whole story.
 
-You can run the same command yourself in the folder and get the same files.
+## 6. Read the report and pick what to fix
 
-## 6. Read the evidence
+The report opens where you are. Under it is a plan of action: everything the
+tester proposed, nothing ticked. Tick what you agree with and start work, and
+those items go to your agent in a conversation of their own.
 
-Every run leaves files under `.hearth/evidence/` in the folder: a report per
-sweep, one file per episode, and the screenshots the findings point at. Open
-them yourself, or hand the report back to the agent — "the playtest found a
-crash in leaf.js, fix it and run it again" — and the loop closes.
+Its notes live in `.hearth/tester/` in your folder, including `memory.md`,
+which is what it remembers about your game. That file is yours to correct. A
+memory you cannot argue with is one you stop listening to.
 
-Read the `not checked` list next to the findings. A sweep of a game that says
-nothing about itself can only check for crashes and blank screens; that isn't a
-failure, it's the honest floor. When you want more,
-[probe-shim.md](./probe-shim.md) is the twenty lines a game adds to let the
-bots see where things are. [playtesting.md](./playtesting.md) is the whole
-story.
+There is a second kind of playtest your agent can run on its own: seeded bots
+driven headlessly at the game, good for finding crashes rather than for telling
+you whether the game is any good. You do not press anything for it and it has
+no screen. [playtesting.md](./playtesting.md) covers it.
 
 ## Running from source instead
 
@@ -96,5 +99,6 @@ everything above works there too.
 - [projects-and-chats.md](./projects-and-chats.md) — your folders, your files
 - [agents.md](./agents.md) — providers, attachments, skills, the model
   selector, approvals
-- [playtesting.md](./playtesting.md) — policies, verdicts, evidence
+- [tester.md](./tester.md) — what your tester will and will not claim
+- [playtesting.md](./playtesting.md) — bot sweeps: policies, verdicts, evidence
 - [cli.md](./cli.md) / [mcp.md](./mcp.md) — the probe for agents outside the app

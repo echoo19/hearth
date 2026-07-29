@@ -62,6 +62,35 @@ describe('suggestProjectName', () => {
     expect(suggestProjectName('')).toBe('');
     expect(suggestProjectName('   ')).toBe('');
     expect(suggestProjectName('!!! ???')).toBe('');
+    // A run of punctuation is not a name. These used to survive verbatim and
+    // then enable Create.
+    expect(suggestProjectName('-----')).toBe('');
+    expect(suggestProjectName("'''''")).toBe('');
+  });
+
+  it('does not lose the idea to punctuation in front of it', () => {
+    // `.split(/[.!?]/)[0]` took the first segment whether or not it held
+    // anything, so a prompt that opened with punctuation suggested nothing.
+    expect(suggestProjectName('?!?! make a platformer')).toBe('Platformer');
+    expect(suggestProjectName('... a game about tides')).toBe('Tides');
+  });
+
+  it('names a game in any script, because people make games in any language', () => {
+    // The character class was `[^a-z0-9\s'-]`, which is a claim that games are
+    // named in English. It emptied the field entirely for anyone not writing
+    // in Latin script, and shredded accented Latin on the way.
+    expect(suggestProjectName('우주 게임')).toBe('우주 게임');
+    expect(suggestProjectName('ゲーム')).toBe('ゲーム');
+    expect(suggestProjectName('naïve résumé simulator')).toBe('Naïve résumé simulator');
+    expect(suggestProjectName('Café Adventure')).toBe('Café adventure');
+  });
+
+  it('never shows a draft longer than the name it would make', () => {
+    // The cap used to slice the joined string, so a hyphenated run showed a
+    // 32-character draft and then created a four-letter folder.
+    const long = suggestProjectName('an-extremely-long-hyphenated-single-token-name');
+    expect(long.split(' ')).toHaveLength(1);
+    expect(long.endsWith('-')).toBe(false);
   });
 
   it('has no idea what kind of game any of these are', () => {

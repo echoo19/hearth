@@ -138,10 +138,94 @@ Hearth uses whichever is configured, preferring an Anthropic key over a Codex
 sign-in. With neither, the conversation replies with a short note telling you
 about these three doors.
 
+## Permission modes
+
+Beside the model pill in the composer is a second pill saying how much your
+agent may do without stopping to ask. Three answers, in the order they loosen:
+
+- **Ask before writing or running.** Every file change and every command waits
+  for you, wherever it points. Reading is not interrupted, and the menu row
+  says so rather than burying it: an approval in Hearth is a command or a file
+  change, and a read or a search has no kind it could be raised as. The pill
+  reads "Ask first".
+- **Work in this folder.** The default, and what Hearth has always done. Work
+  inside the open project goes ahead, and anything reaching outside it asks.
+  This is the behaviour the section below describes. The pill reads "Ask
+  outside".
+- **Skip all checks.** Nothing asks, anywhere. The pill reads "No checks".
+
+The third one is worth stating exactly. It does not mean fewer prompts, and it
+does not mean prompts only for the dangerous things. It means the agent runs
+commands and writes files anywhere your account can reach, without telling you
+first, until you set it back. Choosing it puts a confirmation in front of you
+the first time, with Cancel focused rather than the confirm, and the project
+remembers you accepted so it will not ask there again.
+
+### Where the choice is stored
+
+Per project, in `~/.hearth/permissions.json`: one entry per folder, on this
+machine, beside your skills and model preferences.
+
+It is deliberately not in `.hearth/project.json`, the file inside the project
+that is meant to be committed. A repo shipping `skip` would hand everyone who
+clones it an agent running with no sandbox on their own computer. A permission
+decision is a person deciding about their own machine, so a pushed repo carries
+no permission decision at all and a folder you clone opens on the default.
+
+That is also why there is no single machine-wide switch. `skip` in a scratch
+folder you made this morning is a different statement from `skip` in a checkout
+of somebody else's repository, and one global answer would carry the loosest
+one you ever gave into every folder you open next.
+
+Everything that can go wrong reading that file reads as the default: no entry,
+no file, an unreadable one, a malformed one. There is no state in which failing
+to read it leaves an agent more permissive than it is out of the box.
+
+### What each backend is told
+
+One vocabulary for you, two different sets of parameters underneath. Both
+backends fix the policy when the conversation binds, so moving the pill during
+a conversation tears the agent down and rebinds it before your next message
+goes out. The transcript is on disk and survives that; the agent's memory of
+the session does not. The alternative is a control that silently does nothing
+until the next conversation, which for this particular control is the
+difference between a preference and a lie.
+
+- **Claude, through the Agent SDK.** `ask` runs the SDK in `default`. `auto`
+  runs `acceptEdits`, with Hearth's own check on top raising anything that
+  reaches outside the folder. `skip` runs `bypassPermissions`, and Hearth's
+  approval seam allows everything, so the two levers cannot disagree.
+- **ChatGPT through the open-source Codex CLI.** An approval policy and a
+  sandbox ride on every thread start and every resume: `ask` is `untrusted`
+  with a `workspace-write` sandbox, `auto` is `on-request` with
+  `workspace-write`, and `skip` is `never` with `danger-full-access`. Under
+  `skip`, anything Codex raises anyway (a permissions request, an MCP
+  elicitation) is answered allow rather than shown to you, because an Allow /
+  Deny prompt under a pill reading "No checks" is the app contradicting itself.
+
+The Codex sandbox stays `workspace-write` under `ask` for the same reason it
+does under `auto`. The point of asking is that you see each step, not that a
+step you approved then fails.
+
+### What it does not reach
+
+The menu says this itself, because neither half is obvious: the setting is for
+chats in this project, and the tester and the terminal keep their own limits.
+
+The tester binds its agent on the default whatever you have chosen here, and
+denies any approval it is asked for. Nobody is watching a tester session, so
+under `ask` every step would raise an approval into an empty room and the
+session would wedge, and under `skip` an unattended agent would be running with
+no sandbox at all ([tester.md](./tester.md)).
+
+A CLI you start in the Terminal tab owns its permissions from the moment it
+starts. `claude` and `codex` have their own flags and their own settings files,
+and Hearth neither hands them this setting nor overrides what they decide.
+
 ## Approvals
 
-Agents work inside the folder without asking. Hearth interrupts you in two
-cases:
+On the default setting, agents work inside the folder without asking. Hearth
+interrupts you in two cases:
 
 - **A file change outside the project folder.** Edits inside are automatic;
   anything above it asks first, and shows you the path.
@@ -152,10 +236,11 @@ cases:
   someone's home directory.
 
 An approval genuinely blocks the turn until you answer, and either window open
-on that conversation can answer it. Enter allows, Escape denies. Nothing is
-remembered as a standing policy — there is no "always allow" — but the question
-and your answer are both written into the transcript, so the record of what you
-let an agent do is permanent.
+on that conversation can answer it. Enter allows, Escape denies. Answering one
+never becomes a standing policy: there is no "always allow" on an approval, and
+the only standing decision is the permission mode above. The question and your
+answer are both written into the transcript, so the record of what you let an
+agent do is permanent.
 
 ## While a turn is running
 

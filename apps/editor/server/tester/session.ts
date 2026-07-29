@@ -280,6 +280,7 @@ async function applyDecision(
   reply: string,
   held: Set<string>,
   heldKeys: Set<string>,
+  heldAxes: Set<string>,
   states: readonly ProbeState[],
 ): Promise<Applied> {
   const decision = decideFromReply(reply);
@@ -290,6 +291,14 @@ async function applyDecision(
   held.clear();
   for (const key of heldKeys) await game.setKeyUp?.(key).catch(() => {});
   heldKeys.clear();
+  // Axes were the one input that was never let go. There is no setAxisUp, so
+  // an axis driven to 1 stayed at 1 forever: the tester asked to go right once,
+  // and the game went on going right through every turn after it, including
+  // the turns where the tester asked for nothing at all. Every observation
+  // after that first one was of a game being driven by a request the tester
+  // had already stopped making, and it had no way to know.
+  for (const name of heldAxes) await game.setAxis(name, 0).catch(() => {});
+  heldAxes.clear();
 
   if (decision.kind === 'done') return { keepPlaying: false, undelivered };
   if (decision.kind === 'enter') {
@@ -322,6 +331,7 @@ async function applyDecision(
       if (game.capabilities.input.axes.includes(name)) {
         try {
           await game.setAxis(name, 1);
+          heldAxes.add(name);
         } catch (err) {
           undelivered.push(`"${name}" is an axis this game declared, and driving it failed: ${why(err)}.`);
         }
@@ -461,6 +471,7 @@ export async function runTesterSession(opts: RunTesterSessionOptions): Promise<T
     };
     const held = new Set<string>();
     const heldKeys = new Set<string>();
+    const heldAxes = new Set<string>();
 
     // What the game says it can put itself into, in its own words. A game that
     // offers nothing is not asked again and is never told about the idea.
@@ -519,7 +530,7 @@ export async function runTesterSession(opts: RunTesterSessionOptions): Promise<T
       const reply = await ask(turn === 1 ? `${briefing}\n\n${prompt}` : prompt, attachments);
       transcript.push(`## Picture ${frameCount}`, '', reply.trim(), '');
       steps = turn;
-      const applied = await applyDecision(game, reply, held, heldKeys, states);
+      const applied = await applyDecision(game, reply, held, heldKeys, heldAxes, states);
       undelivered = applied.undelivered;
       // In the transcript as well as in the next prompt. A reader working out
       // why the tester said a game was stuck needs to see what never arrived.
@@ -544,6 +555,7 @@ export async function runTesterSession(opts: RunTesterSessionOptions): Promise<T
     }
     for (const name of held) await game.setActionUp(name).catch(() => {});
     for (const key of heldKeys) await game.setKeyUp?.(key).catch(() => {});
+    for (const name of heldAxes) await game.setAxis(name, 0).catch(() => {});
   } catch (err) {
     crash = err as Error;
     stopped = 'error';

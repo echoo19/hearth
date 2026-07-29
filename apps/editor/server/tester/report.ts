@@ -311,9 +311,15 @@ export function droppedSentence(dropped: readonly DroppedProposal[], planEmpty: 
       : one
         ? 'it did not point at a picture from this session'
         : 'none of them pointed at a picture from this session';
+  // "It proposed one thing more" was what the second branch used to read:
+  // `count` already carries the noun, so `${count} more` glued "more" onto the
+  // end of a complete phrase. The word belongs in front of the number, where a
+  // person would put it.
   return planEmpty
     ? `It proposed ${count}, and ${clause}, so there is nothing here to tick.`
-    : `It proposed ${count} more, and ${clause}, so ${one ? 'it is' : 'they are'} not on this list.`;
+    : `It proposed ${one ? 'one more thing' : `${counted(dropped.length)} more things`}, and ${clause}, so ${
+        one ? 'it is' : 'they are'
+      } not on this list.`;
 }
 
 /**

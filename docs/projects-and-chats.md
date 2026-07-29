@@ -56,11 +56,18 @@ The one folder Hearth writes for itself:
   chats/attachments/<chatId>/  files you sent with a message
   app.json                  this project's agent settings (see below)
   project.json              its mark and colour — plain, safe to commit
-  evidence/journal.jsonl    the playtest event stream
+  tester/memory.md          what your tester remembers about this game
+  tester/sessions/<n>/      note.json plus the pictures it cited
+  evidence/journal.jsonl    the bot sweep event stream
   evidence/sweeps/<id>/     report.json, runs/, shots/
   evidence/capabilities.json  what the last sweep found the game could sense
+  log/commands.jsonl        what ran here, so a session can say what changed
   harness.json              connectors you registered
 ```
+
+Playtests live here, under the project, because a playtest is a fact about one
+game. Chats are the same. The only thing Hearth keeps about you rather than
+about a game is skills, which is why those are the one thing in `~/.hearth/`.
 
 Chat records are appended to disk *before* they are broadcast, so a transcript
 survives a crash, a quit, or an agent that dies mid-turn. Each line is either
@@ -127,6 +134,10 @@ Two things worth knowing before you commit one:
 - `.hearth/chats/` is your transcript history, and `chats/attachments/` holds a
   copy of every file you sent with a message. Keep them if you want the record;
   delete them if you'd rather not publish your conversations.
-- `.hearth/evidence/` grows with every playtest, mostly PNGs. It is safe to
+- `.hearth/tester/` grows with every session your tester plays, mostly PNGs.
+  `memory.md` is the one file in there worth committing if you commit any of
+  it: it is prose, you can edit it, and it is what the tester knows about your
+  game.
+- `.hearth/evidence/` grows with every bot sweep, mostly PNGs. It is safe to
   delete at any time — the next sweep starts a new numbered directory and the
   app simply shows an empty rail until then.

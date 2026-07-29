@@ -144,6 +144,43 @@ describe('playPrompt', () => {
   });
 });
 
+describe('what the tester is still holding down', () => {
+  it('lets an axis go, the way it lets an action and a key go', async () => {
+    // The bug: there is no setAxisUp, so an axis driven to 1 stayed at 1
+    // forever. The tester asked to go right once and the game went on going
+    // right through every turn after it, including the turns where the tester
+    // asked for nothing at all. Every observation from there on was of a game
+    // being driven by a request the tester had already stopped making, and it
+    // had no way to know that.
+    await withRoot(async (root) => {
+      const axis: { name: string; value: number }[] = [];
+      const { game } = fakeGame({ keyboard: true });
+      (game as Record<string, unknown>).capabilities = {
+        input: { actions: ['jump'], axes: ['right'], pointer: true },
+      };
+      (game as Record<string, unknown>).setAxis = async (name: string, value: number) => {
+        axis.push({ name, value });
+      };
+
+      const driver = new FakeDriver(['ACTION: right', 'ACTION: jump', 'DONE', ...REFLECTION]);
+      await runTesterSession({
+        root,
+        dir: root,
+        driver,
+        maxSteps: 4,
+        openGame: async () => game as never,
+      });
+
+      // Driven on the turn it was asked for, and zeroed on the next one, when
+      // the tester asked for something else entirely.
+      expect(axis[0]).toEqual({ name: 'right', value: 1 });
+      expect(axis.some((call) => call.name === 'right' && call.value === 0)).toBe(true);
+      // And nothing is left driven when the session ends.
+      expect(axis[axis.length - 1]).toEqual({ name: 'right', value: 0 });
+    });
+  });
+});
+
 describe('runTesterSession and the picture count', () => {
   it('numbers the prompt by the picture, and does not count a turn that took none', async () => {
     // A screenshot that fails costs the turn its picture. The prompt used to
