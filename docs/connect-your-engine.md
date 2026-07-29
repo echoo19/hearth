@@ -1,15 +1,15 @@
 # Connecting an engine
 
 Hearth playtests **web games** today. If the folder holds something a browser
-can open, the probe can play it — no engine, no format, no cooperation
+can open, the probe can play it, with no engine, no format, and no cooperation
 required. That is the only connector that is wired up right now, and this page
 is the honest account of what it would take to add another.
 
 ## What a connector is
 
 The probe is deliberately engine-blind. It drives one interface,
-`GameUnderTest`, and everything downstream — policies, detectors, verdicts,
-evidence — is written against that and nothing else. A connector is an
+`GameUnderTest`, and everything downstream (policies, detectors, verdicts,
+evidence) is written against that and nothing else. A connector is an
 implementation of it for something that isn't a web page.
 
 The contract, in full:
@@ -63,14 +63,14 @@ per entry:
 
 | Connector | Status |
 | --- | --- |
-| Web games | **active** — playtested by the built-in probe today |
-| Godot | **coming soon** — named, not built |
+| Web games | **active**: playtested by the built-in probe today |
+| Godot | **coming soon**: named, not built |
 
 "Coming soon" here means exactly that: it is a named intention with no
 implementation, no branch, and no date. When it is real, it will be a
 `GameUnderTest` implementation like the web adapter, and everything on
-[playtesting.md](./playtesting.md) will apply to it unchanged — the same
-policies, the same verdicts, the same evidence files.
+[playtesting.md](./playtesting.md) will apply to it unchanged: the same
+policies, verdicts and evidence files.
 
 If you want to connect something yourself, the contract above is the whole
 requirement. There is nothing else to register and no plugin API to learn.

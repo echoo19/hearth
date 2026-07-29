@@ -18,7 +18,7 @@ and no opinions. The tester gives you one opinion with the pictures behind it.
 The part that matters: this works **no matter what the agent built**. The
 probe opens the game like a browser would, presses real keys, moves a real
 mouse, captures frames, and collects errors. That tier needs nothing from the
-game — no engine, no format, no cooperation. When the game chooses to say more
+game: no engine, no format, no cooperation. When the game chooses to say more
 about itself ([probe-shim.md](./probe-shim.md)), the same sweep sees more and
 checks more.
 
@@ -27,7 +27,7 @@ checks more.
 A sweep runs `policies × seeds` episodes against one live game, sequentially,
 and folds them into a single report. The bot's RNG is seeded, so one
 `(policy, seed)` pair is a re-runnable experiment. **The game is not assumed
-to be deterministic** — the same policy and seed can trace differently twice —
+to be deterministic**; the same policy and seed can trace differently twice,
 so read the tally as a distribution. One clean run proves nothing.
 
 ### Policies
@@ -58,19 +58,18 @@ already cleared.
 
 ## What is watched
 
-Five per-step detectors plus one probe that runs once, before the first
-episode:
+Per-step detectors, plus one probe that runs once, before the first episode:
 
 | Check | Fires when | Needs |
 | --- | --- | --- |
 | `crash` | the game throws or logs an uncaught error | error stream |
-| `stuck` | nothing new happens for 180 steps (a novelty drought) | any one of entities, screenshots, scenes, events — and a policy that presses something (`idle` is exempt) |
+| `stuck` | nothing new happens for 180 steps (a novelty drought) | any one of entities, screenshots, scenes, events, and a policy that presses something (`idle` is exempt) |
 | `black-screen` | the frame stays dark and flat for 60 steps | screenshots |
 | `wall-bump` | the avatar pushes in one direction and goes nowhere | entities |
 | `sealed-region` | a fifth or more of the walkable area is cut off from spawn | nav grid **and** entities |
 | `unresponsive-input` | holding a control does nothing a no-input window doesn't already do | at least one declared action or axis, plus entities or screenshots to measure with |
 
-Findings carry a severity — `blocker`, `issue`, or `note` — a frame, and often
+Findings carry a severity (`blocker`, `issue`, or `note`), a frame, and often
 a screenshot path.
 
 ## Verdicts
@@ -82,7 +81,7 @@ precedence when several apply:
 
 `ran-clean` is the best a sweep with no declared objectives can report: the cap
 was reached, nothing threw, nothing stalled. A sweep **passes** only when no
-run failed *and* nothing was flagged as a blocker — a blocker finding on
+run failed *and* nothing was flagged as a blocker. A blocker finding on
 otherwise clean runs still means don't ship.
 
 ## Skipped is not passed
@@ -120,7 +119,7 @@ finishes; the same files are there afterwards.
 
 The report is deliberately small: findings are deduped and capped at 8 total
 and 3 per kind, failures at 5, worst-first. Per-episode depth lives in
-`runs/*.json` — reach for it for diagnosis, not by default.
+`runs/*.json`. Reach for it for diagnosis, not by default.
 
 ## Reading a report back
 
@@ -129,14 +128,14 @@ The CLI and the MCP server print the same folded summary from the same files
 way you would:
 
 ```
-✗ sweep 0003 — ~/Hearth/tiny-roguelike
-  6 runs: error 1, ran-clean 5 — 1 failing
+✗ sweep 0003: ~/Hearth/tiny-roguelike
+  6 runs: error 1, ran-clean 5 (1 failing)
   policies: mash · seeds: 1-6
   findings (1):
     - [blocker] crash: game threw: Cannot read properties of null (reading 'x') (player.js:31)
         frame 218 · shot sweeps/0003/shots/mash-4-00210.png
   failures (1):
-    - mash/4 error at frame 218 — Cannot read properties of null
+    - mash/4 error at frame 218: Cannot read properties of null
         repro: hearth-probe sweep ~/Hearth/tiny-roguelike --policies mash --seeds 1 --seed-start 4
   evidence: ~/Hearth/tiny-roguelike/.hearth/evidence/sweeps/0003
   full detail: ~/Hearth/tiny-roguelike/.hearth/evidence/sweeps/0003/report.json

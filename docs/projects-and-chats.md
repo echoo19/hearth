@@ -21,7 +21,7 @@ to 40 characters at a word boundary:
 "make me a new game"                       →  ~/Hearth/new-game
 ```
 
-A folder is a project is a game — one of each, never a folder holding several.
+A folder is a project is a game: one of each, never a folder holding several.
 On disk it is a folder; in the app it is only ever a project.
 
 **The folder name is not the project's name.** When Hearth asks what to call
@@ -41,19 +41,18 @@ worked on last, so carrying on with the same game takes no interaction at all;
 the chip's menu switches project, and its last item is **New project**, which
 arms the composer so your first sentence names and creates the folder.
 
-Every project carries a mark — one glyph in one colour, taken from its path so
+Every project carries a mark: one glyph in one colour, taken from its path so
 it exists before anyone chooses anything and never changes on its own. Change
 it from the project's row menu under **Appearance**; the choice is written to
-`.hearth/project.json`, which is plain, safe to commit, and travels with the
-folder. Each chat wears its project's mark too, because the chat list spans
+`.hearth/project.json`, plain JSON that travels with the folder. Each chat wears its project's mark too, because the chat list spans
 every project on the machine.
 
 If that name is taken, it gets a numeric suffix (`lighthouse-2`). Set
 `HEARTH_PROJECTS_DIR` to put the whole workspace somewhere other than
 `~/Hearth`.
 
-The folder starts **empty**. Nothing is scaffolded, no template, no manifest —
-whatever the agent builds is the only thing in it. That is why Hearth doesn't
+The folder starts **empty**. Nothing is scaffolded, no template, no manifest.
+Whatever the agent builds is the only thing in it. That is why Hearth doesn't
 care what your agent chose to write.
 
 ## What `.hearth/` holds
@@ -66,7 +65,8 @@ The one folder Hearth writes for itself:
   chats/<chatId>.jsonl      one conversation, one JSON record per line
   chats/attachments/<chatId>/  files you sent with a message
   app.json                  this project's agent settings (see below)
-  project.json              its name, mark and colour — plain, safe to commit
+  .gitignore                written when the project opens; ignores this whole folder
+  project.json              its name, mark and colour, as plain JSON
   tester/memory.md          what your tester remembers about this game
   tester/sessions/<n>/      note.json plus the pictures it cited
   evidence/journal.jsonl    the bot sweep event stream
@@ -82,15 +82,20 @@ about a game is skills, which is why those are the one thing in `~/.hearth/`.
 
 Chat records are appended to disk *before* they are broadcast, so a transcript
 survives a crash, a quit, or an agent that dies mid-turn. Each line is either
-`{role: "user", ts, text}` or `{role: "agent", ts, event}` — the same event
+`{role: "user", ts, text}` or `{role: "agent", ts, event}`, the same event
 vocabulary the live stream uses, which is why reopening a chat renders exactly
 what you saw the first time. Titles come from the first message, trimmed to 60
 characters; a first message that was only a file is titled from the filename.
 
+The index also remembers each chat's continuation handle with its backend (the
+Codex thread, the Claude session), which is what lets a reopened chat resume
+the agent's own working memory rather than just replaying the transcript
+([agents.md](./agents.md)).
+
 A user record carrying files also has an `attachments` array of
 `{name, mimeType, relPath}`, pointing at the copies under
 `chats/attachments/<chatId>/`. The files are written down before the turn
-starts — that is what lets the agent be handed a path instead of a blob, and
+starts. That is what lets the agent be handed a path instead of a blob, and
 what lets the transcript show the picture again after a restart. Names are
 flattened to one safe segment and prefixed, so two files called
 `screenshot.png` in one conversation stay apart
@@ -109,22 +114,25 @@ that folder yourself is left alone.
 
 ## Where keys live
 
-`.hearth/app.json` holds this folder's provider choice and, if you typed one, an
-API key — **per folder, not global**. Hearth never sends a key to the UI; the
-settings dialog only ever learns whether one exists and whether it came from the
-file or the environment. A ChatGPT sign-in isn't stored by Hearth at all: that
-credential belongs to the Codex CLI, in its own `~/.codex/auth.json`, which
-Hearth reads a status from and nothing more. See [agents.md](./agents.md).
+`.hearth/app.json` holds this folder's provider choice and, if you typed one,
+an API key, **per folder, not global**. Hearth never sends a key to the UI; the
+settings dialog only ever learns whether one exists and whether it came from
+the file or the environment. A key is optional for Claude in the first place:
+the ordinary route is the Claude Code CLI's own sign-in, which Hearth reads a
+status from and never stores. A ChatGPT sign-in isn't stored by Hearth either:
+that credential belongs to the Codex CLI, in its own `~/.codex/auth.json`. See
+[agents.md](./agents.md).
 
-`.hearth/app.json` is not gitignored, so if you plan to commit the folder,
-prefer the environment variable to the key field.
+The key never reaches git in any case: opening a project writes
+`.hearth/.gitignore` with `*` in it, so the whole folder (key, chats, evidence)
+stays out of a repo you push. A `.gitignore` you wrote there yourself is left
+exactly alone.
 
 ## Opening a project you already have
 
-**File → Open a project…** (⌘O) takes any directory. There is no
-requirement — no manifest, no marker file, not even any contents. A folder with
-no `.hearth/` simply has no chats yet; the directory is created the first time
-one is saved.
+**File → Open a project…** (⌘O) takes any directory. There is no requirement.
+No manifest, no marker file, not even any contents. A folder with no `.hearth/`
+simply has no chats yet; the directory is created the first time one is saved.
 
 That works both ways: a game an agent built somewhere else opens in Hearth and
 gets a game pane and playtests, and a folder Hearth created is an ordinary
@@ -140,15 +148,14 @@ recents list, which is cosmetic. Copies carry their conversations and their
 evidence with them, because those are files inside the folder like everything
 else.
 
-Two things worth knowing before you commit one:
+Worth knowing before you commit one: Hearth keeps the whole `.hearth/` folder
+out of git (a `.gitignore` it writes there when the project opens), so your
+chats, tester notes and evidence stay off GitHub by default. If you want some
+of it in the record, `tester/memory.md` is the file worth having: it is prose,
+you can edit it, and it is what the tester knows about your game. Remove the
+`.gitignore` Hearth wrote (or replace it with your own) and git sees the
+folder again; a `.gitignore` you manage yourself there is never touched.
 
-- `.hearth/chats/` is your transcript history, and `chats/attachments/` holds a
-  copy of every file you sent with a message. Keep them if you want the record;
-  delete them if you'd rather not publish your conversations.
-- `.hearth/tester/` grows with every session your tester plays, mostly PNGs.
-  `memory.md` is the one file in there worth committing if you commit any of
-  it: it is prose, you can edit it, and it is what the tester knows about your
-  game.
-- `.hearth/evidence/` grows with every bot sweep, mostly PNGs. It is safe to
-  delete at any time — the next sweep starts a new numbered directory and the
-  app simply shows an empty rail until then.
+`.hearth/tester/` and `.hearth/evidence/` grow with every session, mostly
+PNGs. Both are safe to delete at any time. The next sweep starts a new
+numbered directory and the app simply shows an empty rail until then.

@@ -7,19 +7,23 @@ you don't have to learn a format.
 ## 1. Get the app
 
 Download it from
-[hearthengine.com/download](https://hearthengine.com/download) — macOS,
-Windows, or Linux — and open it. On Windows, SmartScreen will ask; **More info
+[hearthengine.com/download](https://hearthengine.com/download) for macOS,
+Windows, or Linux, and open it. On Windows, SmartScreen will ask; **More info
 → Run anyway** ([desktop-app.md](./desktop-app.md)).
 
 ## 2. Connect an agent
 
-Hearth doesn't ship an agent, so you bring one. In Settings: paste an Anthropic
-API key, or sign in with ChatGPT through the open-source Codex CLI. Or skip
-both and run your own CLI in the Terminal tab, which already sits in the
-project folder. Send a message with none of them connected and the conversation
-answers with those same three options rather than pretending to build anything.
+Hearth doesn't ship an agent, so you bring one, usually the one you already
+pay for. If you are signed into the Claude Code CLI on this machine, you are
+already connected: Hearth runs the Claude you are signed into, and an API key
+is optional. For ChatGPT, sign in once through the open-source Codex CLI, from
+Settings. Or run any other agent CLI yourself in a terminal conversation,
+which already sits in the project folder. A message sent with nothing
+connected comes back naming what is missing rather than pretending to build
+anything.
 
-Keys are stored per folder, not globally ([agents.md](./agents.md)).
+An API key, if you use one, is stored per folder, not globally
+([agents.md](./agents.md)).
 
 ## 3. Say what you want to play
 
@@ -48,8 +52,8 @@ conversation; the play button in the top bar brings it back.
 
 Keep talking to it. "The leaves fall too fast." "Add a wind gust every ten
 seconds." Each message is a turn; the pane reloads when the files land. Drop a
-screenshot or a reference image onto the composer when a picture says it faster
-— an image on its own is a message ([agents.md](./agents.md)).
+screenshot or a reference image onto the composer when a picture says it
+faster. An image on its own is a message ([agents.md](./agents.md)).
 
 ## 5. Have it played
 
@@ -96,9 +100,9 @@ everything above works there too.
 
 ## Where next
 
-- [projects-and-chats.md](./projects-and-chats.md) — your folders, your files
-- [agents.md](./agents.md) — providers, attachments, skills, the model
+- [projects-and-chats.md](./projects-and-chats.md): your folders, your files
+- [agents.md](./agents.md): providers, attachments, skills, the model
   selector, approvals
-- [tester.md](./tester.md) — what your tester will and will not claim
-- [playtesting.md](./playtesting.md) — bot sweeps: policies, verdicts, evidence
-- [cli.md](./cli.md) / [mcp.md](./mcp.md) — the probe for agents outside the app
+- [tester.md](./tester.md): what your tester will and will not claim
+- [playtesting.md](./playtesting.md): bot sweeps, verdicts, evidence
+- [cli.md](./cli.md) / [mcp.md](./mcp.md): the probe for agents outside the app

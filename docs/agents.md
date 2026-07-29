@@ -1,43 +1,67 @@
 # Bring your own agent
 
 Hearth does not ship an agent and does not resell one. It gives a coding agent
-a place to work — a folder, a running game, and playtests — and lets you pick
+a place to work (a folder, a running game, and playtests) and lets you pick
 which agent that is. There are three doors, and they can all be open at once in
-the same folder.
+the same folder. The conversation pane drives the two CLIs Hearth integrates;
+everything else runs in a terminal.
 
-## 1. An Anthropic API key
+If you already pay for Claude or ChatGPT, you are most of the way there:
 
-Settings → paste an API key. Hearth runs Claude through the Anthropic Agent
-SDK, rooted at the folder, with the transcript streaming into the conversation
-pane.
+- **Claude.** Hearth runs the Claude Code CLI. If you are signed into it on
+  this machine, there is nothing to set up; your first message answers on that
+  account. An API key is optional.
+- **ChatGPT.** Sign in once through the open-source Codex CLI, from Settings.
+  The credential stays with Codex.
+- **Anything else.** Open a terminal conversation and run your own CLI. It is
+  a real shell in the project folder.
 
-The key is stored **per folder**, in `.hearth/app.json`. Hearth never sends it
-back to the UI — the settings dialog only knows whether a key exists and
-whether it came from that file or from `ANTHROPIC_API_KEY` in your environment.
-Clear the field and save to remove it.
+## 1. Claude, through the Claude Code CLI
+
+Hearth runs Claude through the Anthropic Agent SDK, which runs the Claude Code
+CLI with the project folder as its working directory. The CLI authenticates
+with whatever you already signed into, so a Claude subscription that works in
+your terminal works in Hearth with no key at all. Settings shows the signed-in
+account and plan, read from `claude auth status` and nothing deeper: the
+credential is the CLI's, and Hearth never reads the token, never proxies it,
+and never sends it anywhere.
+
+Not signed in yet? The row in Settings runs `claude auth login` in a terminal
+and the browser flow finishes there, between you and Anthropic.
+
+An API key is the other way in, for turns you want billed to a key rather than
+answered on a subscription, or for a machine without the sign-in. Paste one in
+Settings. It is stored **per folder**, in `.hearth/app.json`, and never sent
+back to the UI; the settings dialog only knows whether a key exists and whether
+it came from that file or from `ANTHROPIC_API_KEY` in your environment. Clear
+the field and save to remove it. The key never reaches git either way: Hearth
+writes `.hearth/.gitignore` when a project opens, and it ignores the whole
+folder, key included.
 
 ## 2. ChatGPT through the open-source Codex CLI
 
 Hearth talks to [Codex](https://github.com/openai/codex), OpenAI's open-source
 CLI, by spawning it as a child process (`codex app-server`) and driving it over
 stdio. Sign in once with your ChatGPT account through Codex's own browser flow,
-started from Hearth's settings.
+started from Hearth's settings. If the binary is not on the machine, the same
+row offers to install it (`npm i -g @openai/codex`).
 
 Say that precisely, because it matters: **this is Codex doing the work, and
 Codex holds the credential.** The sign-in token lives in `~/.codex/auth.json`,
-which belongs to the Codex CLI. Hearth reads a status from it and nothing else —
-it never reads the token, never proxies it, never forwards it anywhere. There is
-no partnership here and no official integration; it is one open-source tool
+which belongs to the Codex CLI. Hearth reads a status from it and nothing else.
+It never reads the token, never proxies it, never forwards it anywhere. There
+is no partnership here and no official integration; it is one open-source tool
 launching another. An OpenAI API key works too, in the same place as the
 Anthropic one.
 
-## 3. Any CLI, in the terminal
+## 3. Any CLI, in a terminal
 
-The Terminal tab is a real shell at the folder root. Type `claude`, `codex`,
-`opencode`, `hermes`, or whatever you use. Hearth detects nothing and installs
-nothing; if the command works in your terminal it works here, because the shell
-starts with your login shell's `PATH` merged in (a GUI-launched app otherwise
-only inherits a minimal system `PATH`).
+**New terminal**, in the sidebar or on a project's own screen, opens a real
+shell at the folder root. Type `claude`, `codex`, `opencode`, `hermes`, or
+whatever you use. Hearth detects nothing and installs nothing; if the command
+works in your terminal it works here, because the shell starts with your login
+shell's `PATH` merged in (a GUI-launched app otherwise only inherits a minimal
+system `PATH`).
 
 Terminals are independent of the conversation: a chat failure never takes the
 terminal down, and vice versa. A terminal you leave stays alive for an hour, so
@@ -45,28 +69,25 @@ reloading the window reattaches to the same session with its scrollback
 replayed rather than killing your agent mid-task.
 
 For agents working outside the app entirely, the probe has its own MCP server
-and CLI — see [mcp.md](./mcp.md) and [cli.md](./cli.md).
+and CLI. See [mcp.md](./mcp.md) and [cli.md](./cli.md).
 
-## 4. Your own agent, in the conversation
-
-The terminal above runs anything, but it runs it in a shell: no transcript, no
-tool rows, no playtester. If you want your own agent answering in the
-conversation itself, register it in Settings under Agents and Hearth drives it
-over newline-delimited JSON on stdio. Three events are required, a wrapper is
-about thirty lines, and everything else is opt-in.
-
-The protocol, the fields and a complete working example are in
-[custom-agents.md](./custom-agents.md).
+The terminal is where every other agent goes. The conversation pane drives the
+two CLIs above and only those two, because a transcript with tool rows and
+approval prompts means Hearth knowing what each event of that agent's stream
+means, and it only knows that for the harnesses it integrates. Running your
+agent in the terminal gives it the same folder, the same shell and the same
+game reloading beside it; what you give up is the transcript, not the work.
 
 ## Attaching images and files
 
 Drop a file onto the composer, paste one, or pick it from **+ → Add photos &
 files…**. All three do the same thing. Up to eight files per message, 12 MB
-each and 24 MB in total — one message travels down one socket frame, so the
-budget is shared; PNG, JPEG and WebP images longer than 1568 px on their longest edge are
-scaled down first, because both APIs would downscale them anyway (an animated
-GIF is sent untouched, so it doesn't become one frame). A message that is only
-a picture is a message — you don't have to type anything with it.
+each and 24 MB in total. One message travels down one socket frame, so the
+budget is shared. PNG, JPEG and WebP images longer than 1568 px on their
+longest edge are scaled down first, because both APIs would downscale them
+anyway (an animated GIF is sent untouched, so it doesn't become one frame). A
+message that is only a picture is a message; you don't have to type anything
+with it.
 
 Attachments are written into the project before the turn starts, under
 `.hearth/chats/attachments/<chatId>/`, and the agent is handed the path.
@@ -77,7 +98,7 @@ What the agent receives depends on the file, and only in one way:
 - **Images** (PNG, JPEG, GIF, WebP) reach the model as pixels. Codex gets a
   `localImage` input item naming the path, so the bytes never travel through
   its JSON-RPC pipe; Claude gets the bytes as a base64 image block.
-- **Everything else** travels as a path — a `mention` item for Codex, a line
+- **Everything else** travels as a path: a `mention` item for Codex, a line
   reading `Attached file: <path>` for Claude. The agent is already sitting in
   the folder with its own file tools, so pointing at a PDF or a zip is both
   cheaper and more useful than pushing it through the context window.
@@ -86,7 +107,7 @@ What the agent receives depends on the file, and only in one way:
 
 A skill is a folder with a `SKILL.md` in it: frontmatter giving it a `name` and
 a one-sentence `description` of when to use it, then the instructions. That
-format is not Hearth's invention — it is the one Claude Code and Codex both
+format is not Hearth's invention. It is the one Claude Code and Codex both
 already read, which is why one skill works with whichever agent answers.
 
 Skills live in `~/.hearth/skills/<slug>/`, and they are **global to the
@@ -121,44 +142,62 @@ the next message rather than after a restart:
   the skills; nothing else about the conversation changes.
 - **Claude** discovers skills from the filesystem around its working directory
   and offers no way to point it elsewhere, so enabled skills are symlinked into
-  `<project>/.claude/skills/` — copied where the platform refuses a symlink,
+  `<project>/.claude/skills/`, copied where the platform refuses a symlink,
   such as Windows without developer mode. Links Hearth made and no longer wants
   are removed; a real directory you put there yourself is left alone.
 
 ## The model selector
 
-The composer carries a model choice with every message, so it can change
-between two messages in the same conversation. What happens next depends
-honestly on the backend:
+The pill beside the composer names one agent at a time, and its menu lists that
+agent's models and nothing else. Changing agent is a row of its own, under
+**Switch agent**, so picking a model can never silently move the conversation
+to a different vendor. A backend that cannot answer still lists its models
+(hiding them answers "why isn't Opus in here?" with silence), but picking one
+opens Settings instead of pretending the choice took.
 
-- **ChatGPT / Codex: per message.** The model and the reasoning effort
-  (low / medium / high) are sent with the turn and apply from that turn on.
-- **Claude: per conversation.** The Agent SDK runs one long-lived query for the
-  whole session, and its options — model included — are fixed when that stream
-  opens. Picking a different Claude model applies to the next new chat, not the
-  one you're in. Hearth doesn't fake it, because faking it would mean silently
-  restarting your agent mid-conversation.
+Both lists are read from the backends rather than written by hand. The Claude
+catalogue comes from the CLI you are signed into, so it is your account's list;
+a short curated list stands in until that read lands or when nobody is signed
+in. The ChatGPT list comes from your installed Codex binary. There is no
+"Automatic" model row: the pill says which model would answer, or "Choose a
+model" until you pick one.
 
-The Claude list is curated (Opus 5, Sonnet 5, Haiku 4.5). The ChatGPT list comes
-live from your installed Codex binary, with a "Default" row that lets Codex use
-whatever it is configured for. Reasoning effort only appears for Codex, because
-only Codex exposes it.
+**Switching model or agent mid-chat takes effect on your next message.** Both
+backends fix their model when a session opens, so a switch rebinds the agent
+before the next turn goes out. Each backend resumes its own session across the
+rebind (Codex its thread, Claude its session), so the switch costs a restart,
+not the agent's memory of the conversation.
 
-The provider that answers is the one your choice names; if you haven't chosen,
-Hearth uses whichever is configured, preferring an Anthropic key over a Codex
-sign-in. With neither, the conversation replies with a short note telling you
-about these three doors.
+### The effort dial
+
+Next to the model pill is an **Effort** control, shown only when the active
+model declares effort levels; a model without a dial gets no control rather
+than an invented one. The choice travels with each message.
+
+- **Claude** models declare their levels through the CLI's own catalogue
+  (`low`, `medium`, `high`, `xhigh`, `max`, per model and per account). The
+  effort is applied to the live session just before your turn goes out, so
+  turning the dial changes the very next message, and **Automatic** hands the
+  choice back to the model's default.
+- **Codex** takes the effort with the turn itself, with whatever vocabulary
+  your binary reports.
+
+If you have chosen nothing at all, Hearth uses whichever agent is connected,
+preferring Claude when both are. With neither, the conversation replies with a
+short note about the three doors instead of pretending to build anything.
 
 ## Permission modes
 
 Beside the model pill in the composer is a second pill saying how much your
 agent may do without stopping to ask. Three answers, in the order they loosen:
 
-- **Ask before writing or running.** Every file change and every command waits
-  for you, wherever it points. Reading is not interrupted, and the menu row
-  says so rather than burying it: an approval in Hearth is a command or a file
-  change, and a read or a search has no kind it could be raised as. The pill
-  reads "Ask first".
+- **Ask before writing or running.** Every file change, every command, and
+  every MCP tool call waits for you, wherever it points. Reading is not
+  interrupted, and the menu row says so rather than burying it: an approval in
+  Hearth is a command or a file change, and a read or a search has no kind it
+  could be raised as. An MCP tool call is raised as a command, because it is
+  somebody else's code reaching whatever the server behind it reaches. The
+  pill reads "Ask first".
 - **Work in this folder.** The default, and what Hearth has always done. Work
   inside the open project goes ahead, and anything reaching outside it asks.
   This is the behaviour the section below describes. The pill reads "Ask
@@ -175,10 +214,10 @@ remembers you accepted so it will not ask there again.
 ### Where the choice is stored
 
 Per project, in `~/.hearth/permissions.json`: one entry per folder, on this
-machine, beside your skills and model preferences.
+machine, beside your skills.
 
 It is deliberately not in `.hearth/project.json`, the file inside the project
-that is meant to be committed. A repo shipping `skip` would hand everyone who
+that travels with the folder. A repo shipping `skip` would hand everyone who
 clones it an agent running with no sandbox on their own computer. A permission
 decision is a person deciding about their own machine, so a pushed repo carries
 no permission decision at all and a folder you clone opens on the default.
@@ -196,11 +235,12 @@ to read it leaves an agent more permissive than it is out of the box.
 
 One vocabulary for you, two different sets of parameters underneath. Both
 backends fix the policy when the conversation binds, so moving the pill during
-a conversation tears the agent down and rebinds it before your next message
-goes out. The transcript is on disk and survives that; the agent's memory of
-the session does not. The alternative is a control that silently does nothing
-until the next conversation, which for this particular control is the
-difference between a preference and a lie.
+a conversation rebinds the agent before your next message goes out. Each
+backend resumes its own session across that rebind, the same way a model
+switch does, so the control is honest without costing the conversation. The
+alternative is a switch that silently does nothing until the next session,
+which for this particular control is the difference between a preference and a
+lie.
 
 - **Claude, through the Agent SDK.** `ask` runs the SDK in `default`. `auto`
   runs `acceptEdits`, with Hearth's own check on top raising anything that
@@ -229,9 +269,9 @@ under `ask` every step would raise an approval into an empty room and the
 session would wedge, and under `skip` an unattended agent would be running with
 no sandbox at all ([tester.md](./tester.md)).
 
-A CLI you start in the Terminal tab owns its permissions from the moment it
-starts. `claude` and `codex` have their own flags and their own settings files,
-and Hearth neither hands them this setting nor overrides what they decide.
+A CLI you start in a terminal owns its permissions from the moment it starts.
+`claude` and `codex` have their own flags and their own settings files, and
+Hearth neither hands them this setting nor overrides what they decide.
 
 ## Approvals
 
@@ -253,10 +293,18 @@ the only standing decision is the permission mode above. The question and your
 answer are both written into the transcript, so the record of what you let an
 agent do is permanent.
 
+A question can also become moot: you press Stop, the session ends, or the
+backend dies while an approval is still open. The record then says
+**Withdrawn**, with a line saying the session ended before you answered,
+rather than a Deny you never pressed. The agent underneath is still refused
+(nothing may run on a question nobody answered); only the record tells the two
+apart, and the difference matters when you are reading back why an agent
+skipped a step.
+
 ## While a turn is running
 
-The foot of the turn carries a live line — a mark, a word, and a clock past a
-few seconds — so you never have to guess whether the agent is thinking or
+The foot of the turn carries a live line (a mark, a word, and a clock past a
+few seconds) so you never have to guess whether the agent is thinking or
 stuck. It says **Running** while a shell command is out, **Thinking** while the
 model is reasoning, **Waiting for you** while an approval is unanswered, and
 **Working** the rest of the time. A finished thought collapses into
@@ -267,11 +315,26 @@ You can keep typing. A message sent while the agent is still answering is
 will occupy, and goes out on its own the moment the turn ends. Queued messages
 leave one at a time, oldest first, and each can be taken back before it is sent.
 
-Pressing **Stop** ends the turn and releases the next queued message, which
-makes "stop — do it this way instead" a single motion. A turn that ends in an
-*error* does not release anything: one bad turn should not become three. The
-queue is emptied when you switch conversations, since it belonged to the one
-you left.
+Pressing **Stop** ends the turn and leaves the agent bound, so the next message
+picks up with everything it already knows. It also releases the next queued
+message, which makes "stop, do it this way instead" a single motion. A turn
+that ends in an *error* does not release anything: one bad turn should not
+become three. The queue is emptied when you switch conversations, since it
+belonged to the one you left.
+
+## Conversations survive restarts
+
+A conversation is more than its transcript: the agent holds working memory of
+the session, and Hearth keeps hold of it. Each chat remembers its backend's own
+continuation handle (the Codex thread, the Claude session), and reopening the
+chat, after a window reload, an app restart, or days away, resumes that session
+rather than handing a fresh agent a transcript to read.
+
+When a remembered Claude session cannot be resumed (its file pruned, a chat
+copied to another machine), the conversation falls back to a fresh session and
+says so with a notice, because a transcript that reads as continuous over an
+agent that silently lost its context would be a transcript lying about the
+conversation it was in.
 
 ## What the transcript shows
 
@@ -283,9 +346,9 @@ it, so the conversation carries more than prose and tool rows:
   done, doing and to do. A revision replaces the card in place rather than
   stacking another copy of the list.
 - **Images.** An image the agent generated, or one it opened to look at, is
-  rendered inline when it sits inside the open folder — a generated sprite you
-  cannot see is not a result. An image outside the folder is named instead of
-  shown, because the app only serves files from folders you opened.
+  rendered inline when it sits inside the open folder, because a generated
+  sprite you cannot see is not a result. An image outside the folder is named
+  instead of shown; the app only serves files from folders you opened.
 - **Notices.** One quiet line when earlier turns were summarised to make room,
   when the agent waited, or when it entered or left review mode. These explain
   later behaviour that would otherwise look like a bug.
@@ -296,22 +359,23 @@ it, so the conversation carries more than prose and tool rows:
   a much better outcome than an action that vanishes.
 
 One gap, named rather than hidden: an agent can ask you a **structured
-question** — Codex's `requestUserInput`, or an MCP elicitation. The question and
-its options are written into the transcript, so you can see what was asked. But
-Hearth has no picker for *answering* one: the request is answered with an empty
-reply so the turn doesn't wedge, and the agent carries on with whatever it
-decides that means. Answering in your next message reaches the same
-conversation, which is the workaround until there is a real answer surface.
+question** through Codex's `requestUserInput` or an MCP elicitation. The
+question and its options are written into the transcript, so you can see what
+was asked. But Hearth has no picker for *answering* one: the request is
+answered with an empty reply so the turn doesn't wedge, and the agent carries
+on with whatever it decides that means. Answering in your next message reaches
+the same conversation, which is the workaround until there is a real answer
+surface.
 
 ## Where the work lands
 
 Your agent writes ordinary files into the folder; the pane reloads when they
-change. Nothing about that requires the agent's cooperation — but an agent
-Hearth binds is told the room it is in: a short block of environment facts
-rides in its system prompt saying where the pane looks for a game (`index.html`, then `game/`, `dist/`, `public/`), where
-playtest evidence lands (`.hearth/evidence/`), and that `.hearth/context/`
-holds the files you added for it. Facts only — what game to make, and how,
-still comes entirely from you.
+change. Nothing about that requires the agent's cooperation. An agent Hearth
+binds is told the room it is in: a short block of environment facts rides in
+its system prompt saying where the pane looks for a game (`index.html`, then
+`game/`, `dist/`, `public/`), where playtest evidence lands
+(`.hearth/evidence/`), and that `.hearth/context/` holds the files you added
+for it. Facts only. What game to make, and how, still comes entirely from you.
 
 The same goes for tools: `hearth` and `hearth-probe` are on the PATH of the
 embedded terminal *and* of every agent Hearth binds, so an agent can run its

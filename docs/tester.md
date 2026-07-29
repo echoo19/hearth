@@ -11,10 +11,11 @@ file you can read and edit. And it plays only when you press **Play**, because
 every turn is a model call on your own quota.
 
 Two of the three doors reach it. Hearth calls the model itself here, through
-the same backend the conversation uses, so it needs either an Anthropic key or
-a ChatGPT sign-in through the open-source Codex CLI. A CLI you run yourself in
-the Terminal tab is not something Hearth can drive, and a project with neither
-backend configured answers Play by saying it could not reach your agent.
+the same backend the conversation uses, so it needs Claude (the Claude Code
+sign-in or an API key) or a ChatGPT sign-in through the open-source Codex CLI.
+A CLI you run yourself in a terminal is not something Hearth can drive, and a
+project with neither backend connected answers Play by saying it could not
+reach your agent.
 
 The other thing that plays your game is the bot sweep, which is a different
 tool for a different question ([playtesting.md](./playtesting.md)). Bots produce
@@ -36,10 +37,10 @@ drive, and takes turns.
 A turn is a picture and a decision. Hearth screenshots the game, sends the
 picture with a short prompt saying which inputs this game has and how many
 turns are left, and the tester answers with a sentence about what it sees and
-one instruction line: hold these inputs, click here, move the pointer there,
-put me somewhere, or **DONE**. The instruction is played into the game, the
-game advances, and the next picture is taken. You watch all of it: the frame on
-the left, its thinking beside it.
+one instruction line: tap these inputs, hold these, click here, move the
+pointer there, put me somewhere, or **DONE**. The instruction is played into
+the game, the game advances, and the next picture is taken. You watch all of
+it: the frame on the left, its thinking beside it.
 
 Twenty-four turns is the budget. The session ends when the tester says it has
 seen enough, when the budget runs out, when you press Stop, or when something
@@ -176,15 +177,28 @@ half that parsed.
 
 ## How it presses keys
 
+Every input can be tapped or held, and the tester chooses which on every turn.
+A tap is pressed and let go within the same moment of play, so the next
+picture shows what one press did. A hold stays down through the next moment
+and is released at the top of the following turn, so "hold right" and then
+"hold left" means it changed its mind rather than that it is holding both.
+
+The distinction exists because holding is not what pressing a key means. A
+player taps, lets go, looks, taps again; a tester that could only hold would
+watch a menu skip three rows or a car spin out and write that down as the
+game's fault. So the briefing says most games are played in short presses,
+that holding is a deliberate choice with consequences, and that it must try a
+control both ways before calling it broken. Before it says what is worth
+changing, it is shown its own record: any input it held all session and never
+once tapped is named back to it, so a complaint about a control has to survive
+knowing how the control was used.
+
 Two vocabularies reach the game, and the difference matters.
 
 The first is what Hearth could work out about your game from the outside: the
 actions, axes and pointer the adapter declares. For a web game with no shim
 that is a small default set of names mapped to keys; a game that ships a shim
-declares its own list ([probe-shim.md](./probe-shim.md)). An action it names is
-held down for the next moment of play and released at the top of the following
-turn, so "right" and then "left" means it changed its mind rather than that it
-is holding both.
+declares its own list ([probe-shim.md](./probe-shim.md)).
 
 The second is the raw keyboard, and it exists because games state their own
 controls on screen far more often than they declare them to a shim. A game

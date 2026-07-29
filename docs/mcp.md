@@ -1,8 +1,8 @@
 # The `hearth-probe` MCP server
 
 `hearth-probe-mcp` is the probe for an agent that speaks MCP and is working
-*outside* the Hearth app — Claude Code in a terminal, or any other MCP client.
-It exposes the same five operations the CLI does, over stdio, and writes the
+*outside* the Hearth app: Claude Code in a terminal, or any other MCP client.
+It exposes the same operations the CLI does, over stdio, and writes the
 same evidence files: a sweep run from Claude Code and a sweep run from the
 `hearth-probe` CLI are byte-for-byte the same record, because both go through
 the same evidence store.
@@ -10,7 +10,7 @@ the same evidence store.
 ## Register it
 
 The server ships with each release as a single-file `hearth-probe-mcp.mjs`
-bundle (or build `@hearth/probe-tools` from a source checkout — see
+bundle (or build `@hearth/probe-tools` from a source checkout, see
 [cli.md](./cli.md#getting-it)), then point your client at it. One server
 serves one project root, given at launch:
 
@@ -50,7 +50,7 @@ or Edge, `CHROMIUM_PATH`, or a `npx playwright install chromium` browser.
 | `probe_screenshot` | Open the game, let it run, return one frame as an image plus its path on disk. |
 
 Every tool answers with the same JSON envelope `hearth-probe --json` prints,
-stringified into a text block — one vocabulary, whichever door an agent came
+stringified into a text block: one vocabulary, whichever door an agent came
 through. `probe_screenshot` additionally returns the PNG inline.
 
 The tool descriptions teach the loop rather than merely naming parameters, so

@@ -17,35 +17,35 @@ It is one server per app process, not one per folder: a project root is named
 per request (`?project=<abs path>`, a body field, or an encoded path segment),
 and folders you have deliberately opened this run form the jail every file
 route checks against. Requests are refused unless the `Origin` and `Host` are
-loopback — a request with no `Origin` at all is allowed, because that is what a
+loopback. A request with no `Origin` at all is allowed, because that is what a
 CLI or an MCP server looks like.
 
 The two mounts:
 
-- `/game/<key>/<rel>` — the folder itself, which is what the game pane's iframe
+- `/game/<key>/<rel>`: the folder itself, which is what the game pane's iframe
   loads. The root is encoded into the *path* rather than a query parameter so a
   game's own relative URLs (`./main.js`, `assets/sprite.png`) resolve correctly
   from inside the iframe.
-- `/evidence/<key>/<rel>` — the folder's `.hearth/evidence`, so screenshots the
+- `/evidence/<key>/<rel>`: the folder's `.hearth/evidence`, so screenshots the
   probe captured can be shown without copying them anywhere.
 
 ## One multiplexed socket
 
 Everything live rides a single WebSocket at `/api/ws`, subscribed to one
-project via `?project=`. Sockets sharing a root share one channel — one journal
-watcher, one evidence watcher — which is disposed when the last of them leaves.
+project via `?project=`. Sockets sharing a root share one channel (one journal
+watcher, one evidence watcher), which is disposed when the last of them leaves.
 
 Frames, by family:
 
-- **chat** — `chat-send`, `chat-open`, `chat-new`, `chat-cancel`,
+- **chat**: `chat-send`, `chat-open`, `chat-new`, `chat-cancel`,
   `chat-interrupt`, `chat-approval` up; `chat-ready`, `chat-event`,
   `chat-opened`, `chat-list`, `chat-providers` down.
-- **evidence / journal** — batched watcher output, broadcast to every socket on
+- **evidence / journal**: batched watcher output, broadcast to every socket on
   the root.
-- **pty** — `pty-start/input/resize/stop` up, `pty-data/exit/attach/error` down.
+- **pty**: `pty-start/input/resize/stop` up, `pty-data/exit/attach/error` down.
   These are per-socket, never broadcast, and a detached terminal lingers for an
   hour so a reload reattaches to the same shell instead of killing it.
-- **export** — progress, done, error.
+- **export**: progress, done, error.
 
 Approvals ride this socket rather than an HTTP round trip because the agent's
 turn is genuinely blocked until one arrives.
@@ -54,11 +54,22 @@ turn is genuinely blocked until one arrives.
 
 One `ChatDriver` interface, three implementations, selected per turn:
 
-- `agent-sdk` — the Anthropic Agent SDK, one long-lived streaming query per
-  conversation, rooted at the folder.
-- `codex` — the open-source Codex CLI spawned as `codex app-server`, driven
+- `agent-sdk`: the Anthropic Agent SDK, one long-lived streaming query per
+  conversation, rooted at the folder. The SDK runs the Claude Code CLI, which
+  answers on the account it is signed into; an API key is an option, not a
+  requirement.
+- `codex`: the open-source Codex CLI spawned as `codex app-server`, driven
   over stdio JSON-RPC.
-- `stub` — no provider configured; it explains the three ways to connect one.
+- `stub`: nothing usable is installed; it explains how to connect an agent.
+
+A turn that names a different provider, model, or permission mode than the
+bound session rebinds the driver before the message goes out. Each chat keeps
+its backend's continuation handle (the Codex thread id, the Claude session id)
+in the chat index, and every bind passes both, so a rebind, a reload, or an
+app restart resumes the agent's own session rather than starting a stranger on
+the transcript. Stop calls the driver's `interrupt()`, which ends the running
+turn and keeps the session; teardown is reserved for drivers that cannot
+interrupt.
 
 Every provider's output is folded into one provider-agnostic event vocabulary
 (`message-delta`, `reasoning-delta`, `tool-begin`, `tool-output-delta`,
@@ -68,13 +79,14 @@ Every provider's output is folded into one provider-agnostic event vocabulary
 third backend means writing a mapping, not a renderer. The union only ever
 grows: the older event names are still parsed and upgraded at read time, so a
 conversation recorded before the vocabulary was extended replays exactly as it
-did.
+did. An approval can resolve as `allow`, `deny`, or `withdrawn`, the last
+meaning the session ended under the question rather than anyone answering it.
 
 Two mapping rules keep the transcript honest about actions neither backend had
 when the vocabulary was written. A Codex item type the adapter doesn't
 recognise becomes an ordinary tool row titled with the item's own type rather
-than nothing at all; and things that are not tool calls — a plan, a generated
-or viewed image, a compaction notice, a subagent — are mapped to their own
+than nothing at all; and things that are not tool calls (a plan, a generated
+or viewed image, a compaction notice, a subagent) are mapped to their own
 event, from both backends, so the app never shows less than the terminal it
 replaced.
 
@@ -85,13 +97,13 @@ line for the Agent SDK.
 
 Drivers are keyed by `(root, chatId)`, so two windows on one conversation share
 its agent and the driver only dies when the last of them leaves. Every turn and
-tool event is appended to `.hearth/chats/<id>.jsonl` as it streams — history
+tool event is appended to `.hearth/chats/<id>.jsonl` as it streams; history
 survives anything the live driver doesn't. See [agents.md](./agents.md).
 
 ## Skills
 
-Skills are folders under `~/.hearth/skills/`, each with a `SKILL.md` — the
-format Claude Code and Codex both read — with `~/.hearth/skills.json` holding
+Skills are folders under `~/.hearth/skills/`, each with a `SKILL.md` (the
+format Claude Code and Codex both read), with `~/.hearth/skills.json` holding
 the disabled list. They are global to the machine, and `/api/skills` is
 therefore the one route in this server that is *not* scoped to a project. That
 costs it the project jail every other file route relies on, so the validation
@@ -101,14 +113,14 @@ touches the disk.
 
 Reaching the two backends takes two different mechanisms, both re-applied on
 every bind: Codex is given the folder with `skills/extraRoots/set` on the
-app-server protocol, and the Agent SDK — which discovers skills from the
-filesystem around its cwd — gets the enabled ones symlinked into
+app-server protocol, and the Agent SDK, which discovers skills from the
+filesystem around its cwd, gets the enabled ones symlinked into
 `<project>/.claude/skills/`, copied where the platform refuses a symlink.
 
 ## The probe contract
 
 The probe knows nothing about engines, formats, or 2D pixels. It drives one
-interface — `GameUnderTest` — whose implementations declare what they can do:
+interface, `GameUnderTest`, whose implementations declare what they can do:
 
 ```ts
 interface GameUnderTest {
@@ -137,7 +149,7 @@ distribution.
   ids, an event stream, a nav grid, a cheap in-page reset
   ([probe-shim.md](./probe-shim.md)).
 
-A connector for anything else — an engine, a device — is the same contract
+A connector for anything else (an engine, a device) is the same contract
 implemented differently ([connect-your-engine.md](./connect-your-engine.md)).
 
 ## The evidence bus
@@ -147,7 +159,7 @@ whatever reads it. A sweep started from the CLI or by an agent over MCP writes
 the same files: an append-only `journal.jsonl`, a folded `report.json` per
 sweep, per-episode JSON, and screenshots.
 
-There is no second progress channel — **the journal is the progress**, so two
+There is no second progress channel. **The journal is the progress**, so two
 readers of one sweep can never disagree about it. It is appended as the sweep
 runs, keyed on a sequence number rather than a byte offset, so anything
 following along can re-read it at any point and a half-written trailing line is
@@ -170,10 +182,10 @@ to subscribe to, and "something changed" is all the pane needs to know.
 
 ## The harness registry
 
-A folder's registry is the honest answer to "what can this Hearth reach?" —
-the connectors it can talk to. Built-ins are facts about the binary and are
-never written to disk; anything you register lands in `.hearth/harness.json`.
-Every entry carries a status the app assigns: `active` (wired up and used now),
+A folder's registry is the honest answer to "what can this Hearth reach?": the
+connectors it can talk to. Built-ins are facts about the binary and are never
+written to disk; anything you register lands in `.hearth/harness.json`. Every
+entry carries a status the app assigns: `active` (wired up and used now),
 `available` (registered, nothing consumes it yet), or `coming-soon` (named, not
 built).
 

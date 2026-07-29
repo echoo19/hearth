@@ -2,11 +2,11 @@
 
 Hearth can play **any** page with a game in it: it opens the page in headless
 Chromium, presses real keys, moves a real mouse, takes screenshots and collects
-uncaught errors. That tier needs nothing from you and is the floor — it works
+uncaught errors. That tier needs nothing from you and is the floor. It works
 whatever your agent built, however it built it.
 
-Everything above that floor — *where the player is*, *what level this is*, *did
-the coin get collected*, *is this region walkable*, *start the level over* — is
+Everything above that floor (*where the player is*, *what level this is*, *did
+the coin get collected*, *is this region walkable*, *start the level over*) is
 knowledge only the game has. The shim is the smallest possible way to hand it
 over: one global object, no build step, no imports, no runtime.
 
@@ -27,7 +27,8 @@ Then load it before your game code:
 <script src="game.js"></script>
 ```
 
-It is *your* file now — no dependency, no version pin, no update treadmill. You
+It is *your* file now, with no dependency, no version pin, and no update
+treadmill. You
 can also skip the file entirely and assign `window.__hearthProbe` yourself; the
 adapter only cares about the shape below. The reference shim is worth copying
 because it normalizes and error-isolates every hook for you.
@@ -60,7 +61,7 @@ window.__hearthProbe = {
 ```
 
 `version` **must** be `1`. Anything else and the adapter treats the page as
-having no shim at all — that's the forward-compatibility escape hatch.
+having no shim at all; that's the forward-compatibility escape hatch.
 
 With the reference shim you don't write that object by hand; you call
 `configure()`:
@@ -111,7 +112,7 @@ not get there, not that a player cannot.
 | `drainEvents()` + `emit()` | `events` | event objectives, progress signals |
 | `scene()` | `scenes` | scene-change novelty, per-level attribution |
 | `navGrid()` | `nav` | `wander`, pathfinding `seek`, sealed-region checks |
-| `reset()` | fast `reset` | cheap episode restarts (without it, reset is a full page reload — still valid, just slow) |
+| `reset()` | fast `reset` | cheap episode restarts (without it, reset is a full page reload: still valid, just slow) |
 | *(nothing)* | `errors`, `screenshot`, slow `reset` | crash detection, black-screen and pixel-novelty checks, evidence shots |
 
 ### `emit(name)`
@@ -128,12 +129,12 @@ Emitting is safe when no probe is watching.
 
 ### `entities()`
 
-Called once per query, so keep it cheap — build the array from live objects,
+Called once per query, so keep it cheap: build the array from live objects,
 don't allocate a world snapshot. Coordinates are **world units** in whatever
 space your game thinks in; nothing downstream assumes pixels, an origin corner,
 or a Y direction. Include what a player cares about (the avatar, objectives,
 hazards, enemies), not every particle. `alive: false` means "destroyed or
-disabled, but still worth reporting". `id` must be stable across calls — it is
+disabled, but still worth reporting". `id` must be stable across calls; it is
 how movement is tracked between steps. `tags` feed the `findEntity(ref)` lookup,
 which resolves **id first, then exact name, then tag**.
 
@@ -145,7 +146,7 @@ change is treated as progress.
 ### `navGrid()`
 
 Row-major `solid[]` of length `cols * rows`, `true` meaning unwalkable. Return
-`null` when the current scene has no meaningful grid — the adapter probes once
+`null` when the current scene has no meaningful grid. The adapter probes once
 at startup and declares `nav` false if it gets `null`, so a game that only
 sometimes has a grid stays honest.
 
@@ -160,7 +161,7 @@ for routing and coverage, not physics. Without it `wander` cannot run at all and
 
 Put the game back to the start of the episode *in the page*, without a reload:
 respawn the player, reset the score, reload the level. The shim clears the event
-buffer around your reset. Without it the probe reloads the whole page instead —
+buffer around your reset. Without it the probe reloads the whole page instead:
 correct, just an order of magnitude slower per episode.
 
 ### `actions` / `axes`
@@ -168,7 +169,7 @@ correct, just an order of magnitude slower per episode.
 The names your game actually responds to. The adapter maps action names to
 keyboard codes (default: `left`/`right`/`up`/`down` → arrows, `jump` → Space,
 `action` → `KeyZ`). When you declare `actions`, the adapter narrows its input
-vocabulary to the intersection of your list and the names it has keys for — so
+vocabulary to the intersection of your list and the names it has keys for, so
 a bot never presses something your game ignores, and never advertises an action
 nobody can send.
 

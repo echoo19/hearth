@@ -15,7 +15,7 @@ build → hearth-probe sweep → read the findings → fix → sweep again
 If you use the Hearth app, you already have it: `hearth-probe` is on the PATH
 of the embedded terminal and of every agent the app binds, next to `hearth`.
 
-Standalone, it ships with each release as a single-file bundle — download
+Standalone, it ships with each release as a single-file bundle: download
 `hearth-probe.mjs` (and `probe-shim.js`, which `hearth-probe shim` copies into
 a game) from the [latest release](https://github.com/echoo19/hearth/releases/latest)
 and run it with any Node ≥ 20:
@@ -38,7 +38,7 @@ an installed Chrome or Edge, honours `CHROMIUM_PATH`, or uses a browser from
 fails with a message saying exactly that.
 
 Each command takes either a directory (served on an ephemeral loopback port) or
-`--url` for something already being served, and prints human lines by default —
+`--url` for something already being served. It prints human lines by default,
 or the JSON envelope with `--json`, byte-identical to what the MCP tools return
 ([mcp.md](./mcp.md)).
 
@@ -54,7 +54,7 @@ policies do, what gets checked, and what the verdicts mean:
 
 | Flag | Default | Notes |
 | --- | --- | --- |
-| `--url <url>` | — | Sweep an already-served URL instead of a directory. |
+| `--url <url>` | (none) | Sweep an already-served URL instead of a directory. |
 | `--policies <names>` | `mash` | Comma-separated: `idle`, `mash`, `seek`, `wander`. |
 | `--seeds <n>` | `6` | Episodes per policy. |
 | `--seed-start <n>` | `1` | First seed. Repros pin this. |
@@ -83,8 +83,8 @@ Every failure prints a command that re-runs exactly that one seeded episode:
 repro: hearth-probe sweep ~/Hearth/tiny-roguelike --policies mash --seeds 1 --seed-start 4
 ```
 
-Same grammar as the sweep that produced it — one dial narrowed, not a different
-mode.
+Same grammar as the sweep that produced it, with one dial narrowed rather than
+a different mode.
 
 ## `report`
 
@@ -94,7 +94,7 @@ hearth-probe report [dir] [--out <root>]
 
 Prints the most recent sweep's summary straight from `.hearth/evidence`. No
 browser, no cost. Use it to re-check findings mid-fix, or to read a sweep
-someone else ran — the app, a teammate, the MCP server.
+someone else ran (the app, a teammate, the MCP server).
 
 ## `capabilities`
 
@@ -114,8 +114,8 @@ hearth-probe shim [dir]
 ```
 
 Copies the reference `probe-shim.js` into the game and prints the two-line
-integration snippet. It becomes your file — no dependency, no version pin. The
-contract it implements is [probe-shim.md](./probe-shim.md).
+integration snippet. It becomes your file, with no dependency and no version
+pin. The contract it implements is [probe-shim.md](./probe-shim.md).
 
 ## `screenshot`
 
@@ -123,12 +123,12 @@ contract it implements is [probe-shim.md](./probe-shim.md).
 hearth-probe screenshot [dir] [--out shot.png] [--after-steps 30] [--headed]
 ```
 
-Opens the game, lets it run, saves one PNG. This is one frame, not evidence —
-findings come from `sweep`.
+Opens the game, lets it run, saves one PNG. This is one frame rather than
+evidence; findings come from `sweep`.
 
 ## Exit codes
 
 `0` when the command worked and, for `sweep`/`report`, the sweep passed; `1`
-otherwise. A sweep that *ran* fine but found real failures — or flagged a
-blocker — also exits `1`, so `hearth-probe sweep && deploy` means what it looks
+otherwise. A sweep that *ran* fine but found real failures, or flagged a
+blocker, also exits `1`, so `hearth-probe sweep && deploy` means what it looks
 like it means.
