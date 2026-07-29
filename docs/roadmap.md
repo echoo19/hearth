@@ -1,8 +1,8 @@
 # Roadmap
 
-**v1.5.0 is the current release** — the agent-first Hearth app: a conversation
-with a coding agent, an always-on game pane, and bot playtesting that leaves
-evidence behind. That app began at v1.3.0.
+**v1.6.0 is the current release** — the agent-first Hearth app: a conversation
+with a coding agent, an always-on game pane, and a private tester that plays
+your game and tells you what it made of it. That app began at v1.3.0.
 
 Hearth used to be a 2D game engine. That engine is preserved — the
 [`engine-v1`](https://github.com/echoo19/hearth/tree/engine-v1) branch, final
@@ -20,14 +20,27 @@ Shipped and in use:
 - Chats become folders under `~/Hearth`; everything is plain files
   ([projects-and-chats.md](./projects-and-chats.md)).
 - The game runs beside the conversation and reloads when the agent writes.
-- Playtesting at the zero-cooperation tier: seeded bots, crash / stuck /
+- The private tester: a model opens your game and plays it the way a person
+  would, keeps notes across sessions, and reports only what it actually saw,
+  with every claim anchored to a picture it took ([tester.md](./tester.md)).
+  Its plan of action arrives with nothing ticked, and approving sends the work
+  to your agent in a conversation of its own.
+- Bot sweeps at the zero-cooperation tier: seeded bots, crash / stuck /
   black-screen / wall-bump / sealed-region checks, verdicts, screenshots, and
-  evidence on disk ([playtesting.md](./playtesting.md)).
+  evidence on disk. The agent's tool, not the person's, and good at finding
+  crashes rather than at telling you whether the game is any good
+  ([playtesting.md](./playtesting.md)).
 - The optional `window.__hearthProbe` shim, for games that choose to say more
   about themselves ([probe-shim.md](./probe-shim.md)).
-- Three ways to bring an agent: an Anthropic key, ChatGPT through the
-  open-source Codex CLI, or any CLI in the terminal
-  ([agents.md](./agents.md)).
+- Four ways to bring an agent: an Anthropic key, ChatGPT through the
+  open-source Codex CLI, any CLI in the terminal, or an agent of your own
+  registered against a small stdio protocol, which answers in the conversation
+  like anything else ([agents.md](./agents.md),
+  [custom-agents.md](./custom-agents.md)).
+- Permission modes, per project: ask before every write, work freely inside the
+  folder and ask outside it, or skip the checks. Honoured by every harness
+  Hearth drives, and stored on your machine rather than in the project, so a
+  repository you push never carries it ([agents.md](./agents.md)).
 - Images and files attached to a message, by drop, paste or picker, and handed
   to either backend as a path ([agents.md](./agents.md)).
 - Skills: `SKILL.md` folders in `~/.hearth/skills/`, in the format Claude Code

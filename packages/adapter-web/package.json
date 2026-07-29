@@ -1,6 +1,6 @@
 {
   "name": "@hearth/adapter-web",
-  "version": "1.5.0",
+  "version": "1.6.0",
   "description": "Hearth probe adapter for local web games: GameUnderTest over Chrome DevTools Protocol, with an optional in-game shim for deeper senses",
   "license": "MIT",
   "type": "module",

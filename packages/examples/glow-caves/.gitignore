@@ -3,6 +3,11 @@ build/
 .hearth/history/
 .hearth/log/
 .hearth/digest.md
+.hearth/chats/
+.hearth/tester/
+.hearth/evidence/
+.hearth/sweeps/
+.hearth/app.json
 .hearth-tmp/
 screenshot.png
 .mcp.json
