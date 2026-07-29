@@ -41,16 +41,22 @@ doc described the surfaces as "ember-tinted"; the tokens below are what
 
 ## Metrics & Motion
 
-- Control heights: `--ctl-h` 26px, `--ctl-h-sm` 22px — one height per
-  control size, everywhere. `.btn`/`.select`/`.input`/`.textarea` sit at
-  `--ctl-h`; `.btn-sm` at `--ctl-h-sm`. `.select-sm` (compact `<select>`
-  variant, `--ctl-h-sm`/`--radius-sm`/12px font) exists for selects that sit
-  next to `btn-sm` controls (e.g. the toolbar) — apply `className="select
-  select-sm"` the same way `.btn-sm` layers onto `.btn`.
-- Radii: `--radius` 6px (controls), `--radius-sm` 4px (compact
-  controls/icon buttons), `--radius-lg` 10px (larger surfaces: modals, the
-  shortcut cheat sheet, launcher cards). Round icon buttons (e.g.
-  `.audio-preview-btn`) are `50%` by design and exempt from the scale.
+- Control heights: three tiers and no more. `--ctl-h` 36px is the default
+  control and the icon-button square; `--ctl-h-sm` 30px is the compact
+  variant for dense secondary rows; `--ctl-h-xs` 24px is the quiet square
+  that sits inside a list row, such as the overflow dots on a conversation.
+  24px is a floor, not a suggestion: it is the smallest target WCAG 2.2
+  accepts, and under it a control becomes something you aim at twice.
+  Hardcoding a pixel height rather than naming a tier is drift, and it is how
+  the same control ended up three different sizes on three surfaces.
+- Radii: `--radius-sm` 8px (compact controls, icon buttons), `--radius` 10px
+  (controls), `--radius-lg` 14px (larger surfaces: modals, cards),
+  `--radius-xl` 18px. Round buttons (Send) are `50%` by design and exempt.
+- Colour is checked, not eyeballed. `--ink-faint` is the quietest text the
+  app has, and it has to clear 4.5:1 on every surface it lands on, including
+  hover and a selected row, which is where it failed. `tests/inkContrast.ts`
+  computes the real ratios from the tokens, so retuning a surface is safe and
+  a regression is loud.
 - Motion: `--t-fast` 100ms, `--t` 150ms, `--ease-out`
   cubic-bezier(0.25, 1, 0.4, 1); state-conveying only, no decorative
   animation; respect prefers-reduced-motion.

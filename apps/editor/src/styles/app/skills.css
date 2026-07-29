@@ -70,6 +70,10 @@
   gap: 8px;
   height: var(--ctl-h);
   padding: 0 14px;
+  /* The pill is the hit target, so it has to look like one all the way to its
+     own edges. The input inside is 19px tall; without this the outer 9px top
+     and bottom showed a text cursor over dead space. */
+  cursor: text;
   border-radius: 999px;
   background: var(--bg-2);
   color: var(--ink-faint);
@@ -88,6 +92,9 @@
 .skills-find-input {
   width: 170px;
   min-width: 0;
+  /* Fill the pill's height so the caret lands wherever inside it you click,
+     rather than only in the 19px band the text happens to occupy. */
+  align-self: stretch;
   border: 0;
   padding: 0;
   background: transparent;

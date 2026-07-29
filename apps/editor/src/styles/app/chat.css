@@ -1850,7 +1850,7 @@
   justify-content: center;
   flex: none;
   width: 30px;
-  height: 30px;
+  height: var(--ctl-h-sm);
   padding: 0;
   border: 1px solid var(--border);
   border-radius: 50%;
@@ -1874,7 +1874,7 @@
   align-items: center;
   gap: 6px;
   flex: none;
-  height: 30px;
+  height: var(--ctl-h-sm);
   max-width: 15rem;
   padding: 0 10px;
   border: 0;

@@ -282,7 +282,12 @@ export function SkillsScreen() {
               <p className="skills-lede">Things you teach your agent once, so it still knows them in the next game.</p>
             </div>
             <div className="skills-tools">
-              <div className="skills-find">
+              {/* A label, not a div. The pill is 36px tall and the input
+                  inside it is 19px, so as a div the top and bottom nine pixels
+                  of what looks like a field did nothing at all: you clicked
+                  the thing, and no caret appeared. A label hands the click to
+                  its input, which is the whole of what a label is for. */}
+              <label className="skills-find">
                 <Icon name="search" size={13} />
                 <input
                   className="skills-find-input"
@@ -291,7 +296,7 @@ export function SkillsScreen() {
                   aria-label="Search skills"
                   onChange={(e) => setQuery(e.target.value)}
                 />
-              </div>
+              </label>
               <MenuButton
                 label="Add a skill"
                 align="right"

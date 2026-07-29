@@ -89,14 +89,17 @@
   --shadow-2: 0 8px 28px oklch(0 0 0 / 0.36);
 
   /* Control metrics: comfortable hit targets. --ctl-h is the default control
-     and the icon-button square; --ctl-h-sm is the one compact variant, for
-     dense secondary rows only. */
+     and the icon-button square; --ctl-h-sm is the compact variant for dense
+     secondary rows; --ctl-h-xs is the quiet square that sits INSIDE a list
+     row (the overflow dots on a conversation, the add on a section heading).
+     24px is the floor on purpose: it is the smallest target WCAG 2.2 accepts,
+     and going under it is how a control becomes a thing you aim at twice.
+     There is no fourth tier, and anything hardcoding a pixel height rather
+     than naming one of these is drift. */
   --ctl-h: 36px;
   --ctl-h-sm: 30px;
-  /* Chat-scale controls — composer buttons, the model selector pill, primary
-     buttons on Home. Named separately from --ctl-h so the dense panels can
-     shrink theirs later without dragging the conversation down with them. */
-  --ctl-h-lg: 36px;
+  --ctl-h-xs: 24px;
+
   /* A navigation row in the rail: New chat, a project, a conversation. Shorter
      than a control because a list of them is scanned, not operated. */
   --row-h: 32px;
