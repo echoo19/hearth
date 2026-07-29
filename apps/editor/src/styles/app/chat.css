@@ -1792,8 +1792,20 @@
   outline: none;
 }
 
+/* The row of things a turn carries: attach, which project, which agent, and
+   send. It WRAPS, and that is not a nicety.
+
+   Narrow window plus an expanded rail leaves this row about 190px to hold
+   about 275px of controls, and with nowrap and nothing scrolling, the send
+   button sat 60px past the right edge of the window with no way to reach it.
+   Not clipped, not scrollable: gone. You could type a message and had no way
+   to send it, which is the worst thing this surface can do.
+
+   Send is ordered last and pushed right by .composer-row-gap, so when the row
+   does wrap it takes its own line rather than stranding a pill beside it. */
 .composer-row {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 6px;
   padding: 6px 8px 8px 10px;
@@ -1801,6 +1813,13 @@
 
 .composer-row-gap {
   flex: 1;
+  min-width: 0;
+}
+
+/* Every control in the row can give up width before the row is forced to
+   wrap, so the common case stays one line. `min-width: 0` is what lets a flex
+   item shrink below its content at all. */
+.composer-row > * {
   min-width: 0;
 }
 
