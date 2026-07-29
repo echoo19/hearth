@@ -1,6 +1,6 @@
 {
   "name": "@hearth/editor",
-  "version": "1.6.0",
+  "version": "1.6.1",
   "description": "Hearth desktop app (Electron + React): talk to an agent, watch the game it builds.",
   "license": "MIT",
   "type": "module",

@@ -34,7 +34,7 @@ And the agent is whichever one you already pay for.
 [Download the app](https://hearthengine.com/download) for macOS (`.dmg`),
 Windows (`.exe`), or Linux (`.AppImage` / `.deb`), or take it from the
 [latest release](https://github.com/echoo19/hearth/releases/latest). The
-current release is v1.6.0. macOS
+current release is v1.6.1. macOS
 builds are Developer ID signed and notarized; Windows builds aren't code-signed
 yet, so SmartScreen wants **More info → Run anyway** the first time. After that
 the app updates itself. Details in [docs/desktop-app.md](docs/desktop-app.md).
