@@ -50,7 +50,7 @@ beforeAll(async () => {
 
 afterAll(async () => {
   await new Promise<void>((resolve) => server.close(() => resolve()));
-  await fsp.rm(tmp, { recursive: true, force: true });
+  await fsp.rm(tmp, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 });
 });
 
 /** Connect, and settle to either the first frame or the close that came first. */

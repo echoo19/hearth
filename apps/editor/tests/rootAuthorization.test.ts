@@ -69,7 +69,7 @@ beforeAll(async () => {
 
 afterAll(async () => {
   await new Promise<void>((resolve) => server.close(() => resolve()));
-  await fsp.rm(tmp, { recursive: true, force: true });
+  await fsp.rm(tmp, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 });
 });
 
 /** POST as a page would: an Origin header the same-origin rule accepts. */

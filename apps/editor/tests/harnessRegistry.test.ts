@@ -59,7 +59,7 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
-  await fsp.rm(tmp, { recursive: true, force: true });
+  await fsp.rm(tmp, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 });
 });
 
 beforeEach(async () => {

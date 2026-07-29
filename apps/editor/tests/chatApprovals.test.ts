@@ -133,7 +133,7 @@ beforeAll(async () => {
 
 afterAll(async () => {
   server.close();
-  await fsp.rm(tmp, { recursive: true, force: true });
+  await fsp.rm(tmp, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 });
 });
 
 describe('approval round trip', () => {

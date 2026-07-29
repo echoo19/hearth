@@ -148,7 +148,7 @@ afterAll(async () => {
   else process.env.SHELL = savedShell;
   resetLoginShellPathCacheForTests();
   await new Promise<void>((resolve) => server.close(() => resolve()));
-  await fsp.rm(tmpDir, { recursive: true, force: true });
+  await fsp.rm(tmpDir, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 });
 });
 
 function connect(): Promise<WebSocket> {

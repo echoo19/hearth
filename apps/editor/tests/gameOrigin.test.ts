@@ -139,7 +139,7 @@ beforeAll(async () => {
 afterAll(async () => {
   game.close();
   await new Promise<void>((resolve) => api.close(() => resolve()));
-  await fsp.rm(tmp, { recursive: true, force: true });
+  await fsp.rm(tmp, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 });
 });
 
 describe('layer 1: the game is not on the control plane’s origin', () => {

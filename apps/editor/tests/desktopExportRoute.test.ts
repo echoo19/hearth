@@ -74,7 +74,7 @@ beforeAll(async () => {
 afterAll(async () => {
   if (savedToolsDir === undefined) delete process.env.HEARTH_TOOLS_DIR;
   else process.env.HEARTH_TOOLS_DIR = savedToolsDir;
-  await fsp.rm(tmpDir, { recursive: true, force: true });
+  await fsp.rm(tmpDir, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 });
 });
 
 beforeEach(() => {
@@ -237,7 +237,7 @@ describe('a per-platform packageDesktop failure attributes the platform in the e
   });
 
   afterAll(async () => {
-    await fsp.rm(failTmpDir, { recursive: true, force: true });
+    await fsp.rm(failTmpDir, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 });
   });
 
   it('emits export-error with platform populated', async () => {

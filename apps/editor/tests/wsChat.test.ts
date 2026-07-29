@@ -244,10 +244,19 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
-  server.close();
+  // Awaited, not fired. Chat writes are deliberately detached (see
+  // `enqueueChatLane` and `endChatTurn` in server/ws.ts): a turn's last
+  // records are still being appended after the socket is done with them, by
+  // design. So the folder has to stop being written to before it is removed.
+  await new Promise<void>((resolve) => server.close(() => resolve()));
   if (previousHome === undefined) delete process.env.HEARTH_HOME;
   else process.env.HEARTH_HOME = previousHome;
-  await fsp.rm(tmp, { recursive: true, force: true });
+  // `maxRetries` is Node's answer to the Windows rule that a directory with an
+  // open handle cannot be removed. On POSIX an in-flight append is invisible
+  // here, because unlinking an open file is allowed; on Windows the same race
+  // is `ENOTEMPTY: rmdir ...\.hearth\chats`, which failed the release build
+  // with all 4493 tests passing and nothing wrong with any of them.
+  await fsp.rm(tmp, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 });
 });
 
 describe('chat channel', () => {
