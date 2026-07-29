@@ -10,12 +10,13 @@
  * The game is the default and stays the default. Tabs, not a panel system: two
  * surfaces, one visible, no arranging.
  */
-import React from 'react';
+import React, { useRef } from 'react';
 import { useApp, type PaneTab } from '../../store';
 import { GamePane } from './GamePane';
 import { ConsolePanel } from '../ConsolePanel';
 import { TesterStage } from '../tester/TesterStage';
 import { IconButton } from '../ui/Button';
+import { nextTabIndex, tabIds } from '../ui/tabKeys';
 
 const TABS: { id: PaneTab; label: string }[] = [
   { id: 'game', label: 'Game' },
@@ -29,6 +30,7 @@ export function PaneStack() {
   const setPaneOpen = useApp((s) => s.setPaneOpen);
   const consoleUnread = useApp((s) => s.consoleUnread);
   const testerRunning = useApp((s) => s.tester.running || s.tester.starting);
+  const tabRefs = useRef<(HTMLButtonElement | null)[]>([]);
 
   return (
     <section className="pane-stack" aria-label="Game">
@@ -43,26 +45,59 @@ export function PaneStack() {
           `hidden` rather than a class, because it is the one way of hiding
           that the accessibility tree honours as well as the paint: a tab you
           are not on should not be readable by a screen reader either. */}
+      {/* Real tabpanels, each naming the tab that opens it. The strip claimed
+          `role="tablist"` while these were plain divs, so a screen reader was
+          told about tabs that controlled nothing. `tabIndex={0}` because a
+          panel with no focusable content of its own (the game is an iframe,
+          the console is a log) is otherwise unreachable by keyboard: there
+          would be nothing to press Page Down against. */}
       <div className="pane-surface">
-        <div className="pane-view" hidden={paneTab !== 'game'}>
-          <GamePane />
-        </div>
-        <div className="pane-view" hidden={paneTab !== 'tester'}>
-          <TesterStage />
-        </div>
-        <div className="pane-view" hidden={paneTab !== 'console'}>
-          <ConsolePanel />
-        </div>
+        {TABS.map((tab) => {
+          const ids = tabIds('pane', tab.id);
+          return (
+            <div
+              key={tab.id}
+              id={ids.panel}
+              className="pane-view"
+              role="tabpanel"
+              aria-labelledby={ids.tab}
+              tabIndex={0}
+              hidden={paneTab !== tab.id}
+            >
+              {tab.id === 'game' ? <GamePane /> : tab.id === 'tester' ? <TesterStage /> : <ConsolePanel />}
+            </div>
+          );
+        })}
       </div>
 
       <div className="pane-tabs" role="tablist" aria-label="Playtest column">
-        {TABS.map((tab) => (
+        {TABS.map((tab, index) => (
           <button
             key={tab.id}
             type="button"
             role="tab"
+            id={tabIds('pane', tab.id).tab}
+            aria-controls={tabIds('pane', tab.id).panel}
+            ref={(node) => {
+              tabRefs.current[index] = node;
+            }}
             className="pane-tab"
             aria-selected={paneTab === tab.id}
+            // Roving tabindex: the strip is ONE stop in the tab order and the
+            // arrows move within it. Three separate stops was the old
+            // behaviour, and it made getting past the column cost three
+            // presses while the arrows did nothing at all.
+            tabIndex={paneTab === tab.id ? 0 : -1}
+            onKeyDown={(e) => {
+              const next = nextTabIndex(e.key, index, TABS.length);
+              if (next === null) return;
+              e.preventDefault();
+              // Selection follows focus, the tablist default. Every tab is a
+              // view of the same column, and all three stay mounted, so
+              // arrowing through them costs nothing.
+              setPaneTab(TABS[next].id);
+              tabRefs.current[next]?.focus();
+            }}
             onClick={() => setPaneTab(tab.id)}
           >
             {tab.label}

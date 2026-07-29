@@ -14,6 +14,7 @@
  * way a tablist is expected to, wrapping at both ends.
  */
 import React, { useRef, type ReactNode } from 'react';
+import { nextTabIndex } from './tabKeys';
 
 export interface SwitchOption<T extends string> {
   id: T;
@@ -35,10 +36,12 @@ export function Switch<T extends string>({ label, options, value, onChange, clas
   const refs = useRef<(HTMLButtonElement | null)[]>([]);
 
   function onKeyDown(e: React.KeyboardEvent, index: number): void {
-    if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
+    // Shared with the playtest column's strip (ui/tabKeys.ts). Both claim
+    // `role="tablist"`, which is a promise about behaviour, and writing that
+    // promise out twice is how one of them ended up not keeping it.
+    const next = nextTabIndex(e.key, index, options.length);
+    if (next === null) return;
     e.preventDefault();
-    const step = e.key === 'ArrowRight' ? 1 : -1;
-    const next = (index + step + options.length) % options.length;
     // Selection follows focus, which is the tablist default and the right one
     // here: every option is a view of the same thing, so arrowing through them
     // costs nothing and stopping to press Enter would only be ceremony.
