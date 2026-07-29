@@ -313,9 +313,14 @@ export async function shimCommand(input: { dir?: string | undefined; cwd?: strin
  * or `dist/` alike). The `require.resolve` fallback covers a bundled or
  * relocated build where that relative walk lands somewhere that no longer
  * exists — the package publishes `./shim` as an export for exactly this.
+ *
+ * `PROBE_SHIM_PATH` is null in a build where the adapter could not work out
+ * where its own file lives, which is what a CommonJS bundle does to it. That
+ * is one fewer place to look rather than a failure: the two fallbacks below
+ * are exactly the ones written for a bundle.
  */
 export async function resolveShimSource(): Promise<string> {
-  const candidates: string[] = [PROBE_SHIM_PATH];
+  const candidates: string[] = PROBE_SHIM_PATH === null ? [] : [PROBE_SHIM_PATH];
   try {
     candidates.push(createRequire(import.meta.url).resolve('@hearth/adapter-web/shim'));
   } catch {

@@ -38,14 +38,60 @@ import { normalizeStates } from '@hearth/probe-core';
 import { launchChromium, startScreencast, type PwBrowser, type PwPage } from './chromium.js';
 import { openStatic, type StaticServer } from './server.js';
 
-const HERE = path.dirname(fileURLToPath(import.meta.url));
+/**
+ * This module's own URL: a string whenever it is genuinely running as ESM, and
+ * something else entirely when it is not.
+ *
+ * It is typed as possibly-undefined because it really can be. A bundler asked
+ * for CommonJS output has no `import.meta` to hand this module and esbuild, the
+ * one the Hearth desktop app uses, substitutes an empty object — so
+ * `import.meta.url` reads `undefined` inside the app's single-file Electron
+ * bundle, which inlines this package along with everything else.
+ */
+const MODULE_URL: string | undefined = import.meta.url;
 
 /**
- * Absolute path of the reference shim. It ships as a file for agents to copy
- * into their own game (owned code, not a dependency) — nothing imports it.
- * Resolves the same from `src/` and from the built `dist/`.
+ * The directory this module's file sits in, or null when nothing can say.
+ *
+ * This used to be one eager expression at module scope,
+ * `path.dirname(fileURLToPath(import.meta.url))`, and that made a module that
+ * cannot locate itself a module that cannot be LOADED: inside the desktop
+ * app's CommonJS bundle the call got `undefined` and threw
+ * ERR_INVALID_ARG_TYPE while the module was still evaluating. The private
+ * tester reaches this package through a dynamic import to open the game, so
+ * the throw surfaced in the session note as the tester's reason for never
+ * giving a verdict, reading `The "path" argument must be of type string or an
+ * instance of URL. Received undefined` to somebody whose only act was pressing
+ * Play on a game that worked.
+ *
+ * Not knowing where this file lives is a real state and it is now a supported
+ * one. Nothing this adapter does to drive a browser needs its own path; only
+ * the reference shim below is addressed relative to it, and its callers
+ * already cope with not finding a copy of it.
  */
-export const PROBE_SHIM_PATH = path.resolve(HERE, '../shim/probe-shim.js');
+function moduleDir(): string | null {
+  if (typeof MODULE_URL !== 'string' || MODULE_URL === '') return null;
+  try {
+    return path.dirname(fileURLToPath(MODULE_URL));
+  } catch {
+    // A module URL that is not a file URL (a bundle served over http, say)
+    // names no directory on this disk, which is the same answer as no URL.
+    return null;
+  }
+}
+
+const HERE = moduleDir();
+
+/**
+ * Absolute path of the reference shim, or null when this build cannot say
+ * where its own files are.
+ *
+ * It ships as a file for agents to copy into their own game (owned code, not a
+ * dependency) — nothing imports it. Resolves the same from `src/` and from the
+ * built `dist/`, and resolves to nothing in a bundle that left the shim
+ * behind, which is why every reader of this has to look elsewhere as well.
+ */
+export const PROBE_SHIM_PATH: string | null = HERE === null ? null : path.resolve(HERE, '../shim/probe-shim.js');
 
 /** action name → `KeyboardEvent.code`. */
 export const DEFAULT_ACTION_KEYS: Readonly<Record<string, string>> = Object.freeze({

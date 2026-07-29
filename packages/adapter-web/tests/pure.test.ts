@@ -132,15 +132,30 @@ describe('nav grid normalization', () => {
   });
 });
 
+/**
+ * The shim path, insisted upon.
+ *
+ * `PROBE_SHIM_PATH` is nullable because a bundle can leave this package unable
+ * to locate its own files, and these tests are the case where that must never
+ * happen: vitest loads the package as real ESM straight out of `src/`, so a
+ * null here is the export having broken rather than a build being austere.
+ */
+function shimPath(): string {
+  if (PROBE_SHIM_PATH === null) {
+    throw new Error('PROBE_SHIM_PATH is null while running this package as ESM from source, which cannot be right');
+  }
+  return PROBE_SHIM_PATH;
+}
+
 describe('reference shim', () => {
   it('is what the runner fixture ships, byte for byte', async () => {
-    const reference = await readFile(PROBE_SHIM_PATH);
+    const reference = await readFile(shimPath());
     const fixtureCopy = await readFile(path.join(RUNNER_DIR, 'probe-shim.js'));
     expect(fixtureCopy.equals(reference)).toBe(true);
   });
 
   it('installs a v1 probe whose senses appear only once configured', async () => {
-    const source = await readFile(PROBE_SHIM_PATH, 'utf8');
+    const source = await readFile(shimPath(), 'utf8');
     const global: Record<string, unknown> = {};
     new Function('window', 'globalThis', `${source}`).call(global, global, global);
 

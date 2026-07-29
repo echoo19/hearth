@@ -10,6 +10,7 @@ import { build } from 'esbuild';
 import { mkdir, copyFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { CJS_IMPORT_META } from './cjsImportMeta.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const appRoot = path.join(here, '..');
@@ -57,6 +58,11 @@ await build({
   external: ['electron', 'playwright-core', '@lydell/node-pty'],
   sourcemap: false,
   logLevel: 'info',
+  // Everything inlined here was written as ESM and half of it locates the
+  // files that ship beside it through `import.meta.url`, which CommonJS output
+  // erases. See cjsImportMeta.mjs for what that cost and why the answer is the
+  // bundle's own __filename.
+  ...CJS_IMPORT_META,
   ...toolInline,
   // The server dynamically imports @hearth/playtest for runtime hooks; make
   // sure esbuild follows workspace symlinks and inlines it too.
