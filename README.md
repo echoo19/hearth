@@ -11,6 +11,8 @@
 
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 
+The current release is v1.7.0, for macOS, Windows, and Linux.
+
 <img src="docs/media/hearth-window@2x.png" alt="The Hearth window: a sidebar of project folders on the left, a conversation with a coding agent in the middle, and the game running in a pane on the right" width="900">
 
 </div>
@@ -27,23 +29,6 @@ anything that runs in a browser runs in the pane. Your game never has to know
 Hearth exists.
 
 And the agent is whichever one you already pay for.
-
-## Get it
-
-[Download the app](https://hearthengine.com/download) for macOS (`.dmg`),
-Windows (`.exe`), or Linux (`.AppImage` / `.deb`), or take it from the
-[latest release](https://github.com/echoo19/hearth/releases/latest). The
-current release is v1.7.0. macOS
-builds are Developer ID signed and notarized; Windows builds aren't code-signed
-yet, so SmartScreen wants **More info → Run anyway** the first time. After that
-the app updates itself. Details in [docs/desktop-app.md](docs/desktop-app.md).
-
-From source, with Node 20 or newer (`npm run app` for the desktop shell):
-
-```bash
-git clone https://github.com/echoo19/hearth.git && cd hearth
-npm install && npm run dev     # the app at http://localhost:5173
-```
 
 ## A playtester who remembers
 
