@@ -368,6 +368,180 @@
   color: var(--ink);
 }
 
+/* --------------------------------------------------------------------------
+   Agent prose, once it is read as markdown
+   --------------------------------------------------------------------------
+   The restraint here is the whole design. This is a conversation, not a
+   document: a heading in a chat message is a label on a paragraph, not a
+   chapter opening, so the type scale barely moves and the weight does the
+   work. Nothing gains a rule, a background or a colour it does not need.
+
+   A paragraph keeps `.msg-text` exactly as it was, pre-wrap included, so an
+   agent's line breaks stay where the agent put them. */
+.md {
+  display: flow-root;
+}
+
+/* One blank line between blocks, which is what the gap was when the whole
+   message was a single pre-wrap paragraph: 1.68em is one line box at this
+   line-height, so prose that used to be one element and is now several does
+   not move on the screen. */
+.md-block + .md-block {
+  margin-top: 1.68em;
+}
+
+.md-heading {
+  margin: 0;
+  color: var(--ink);
+  font-weight: 600;
+  line-height: 1.4;
+}
+
+/* Two ranks, not six. Past the second level a heading in a chat message is
+   saying "this bit" and the size stops carrying meaning. */
+.md-h1,
+.md-h2 {
+  font-size: var(--text-lg);
+}
+
+.md-h3,
+.md-h4,
+.md-h5,
+.md-h6 {
+  font-size: var(--text-md);
+}
+
+.md-list {
+  margin: 0;
+  padding-left: 1.4em;
+  font-size: var(--text-md);
+  line-height: 1.68;
+  color: var(--ink);
+}
+
+/* A nested list is closer to its parent than to the next item, and adding a
+   blank line above it would read as a break in the thought. */
+.md-list .md-list {
+  margin-top: 0.2em;
+  padding-left: 1.2em;
+}
+
+.md-item {
+  overflow-wrap: anywhere;
+}
+
+.md-item + .md-item {
+  margin-top: 0.25em;
+}
+
+.md-item::marker {
+  color: var(--ink-faint);
+}
+
+/* Inline code sits inside a sentence, so it takes a tint rather than a box:
+   a border on every backticked word turns a paragraph into a fence. */
+.md-code-span {
+  padding: 0.1em 0.34em;
+  border-radius: var(--radius-sm);
+  background: var(--bg-2);
+  color: var(--ink);
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  overflow-wrap: anywhere;
+}
+
+/* A fenced block joins the machinery family: the same --radius block on --bg-2
+   as a command row and a file report, because it is the same kind of object,
+   something the agent produced that you read rather than something it said. */
+.md-code {
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-2);
+}
+
+.md-code-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 5px 6px 5px 12px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-1);
+}
+
+.md-code-lang {
+  color: var(--ink-faint);
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
+  letter-spacing: 0.04em;
+}
+
+.md-code-copy {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--ink-faint);
+  cursor: pointer;
+  transition: color var(--t-fast) var(--ease-out), background var(--t-fast) var(--ease-out);
+}
+
+.md-code-copy:hover {
+  background: var(--bg-3);
+  color: var(--ink);
+}
+
+.md-code-body {
+  margin: 0;
+  max-height: 420px;
+  overflow: auto;
+  padding: 10px 12px;
+  color: var(--ink);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  line-height: 1.6;
+  /* Code is the one place a long line should scroll rather than wrap: a
+     wrapped line changes what the code looks like, and indentation is how you
+     read it. */
+  white-space: pre;
+}
+
+/* A link and a path are the same affordance and read the same. The path is a
+   button because pressing it opens a file in this app rather than navigating
+   anywhere, but that is a fact about the handler, not about the word. */
+.md-link,
+.md-path {
+  border: 0;
+  background: none;
+  padding: 0;
+  color: var(--accent);
+  font: inherit;
+  text-align: left;
+  text-decoration: underline;
+  text-decoration-color: color-mix(in oklch, var(--accent) 40%, transparent);
+  text-underline-offset: 2px;
+  overflow-wrap: anywhere;
+  cursor: pointer;
+}
+
+.md-link:hover,
+.md-path:hover {
+  color: var(--accent-hover);
+  text-decoration-color: currentcolor;
+}
+
+/* A path is a filename, and a filename is easier to scan set in the face the
+   rest of the app sets filenames in. */
+.md-path {
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+}
+
 /* Working: an honest "something is happening" bar, only shown before the
    first token of a turn arrives, and gone the moment text starts. */
 /* The turn is still being written. One heartbeat, not two: the mark and the

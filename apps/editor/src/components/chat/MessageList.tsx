@@ -16,6 +16,7 @@ import { SentAttachments } from './AttachmentTray';
 import { ImageCard, NoticeRow, PlanCard } from './PlanCard';
 import { CommandRow } from './CommandRow';
 import { FileChangeCard } from './FileChangeCard';
+import { Markdown } from './Markdown';
 import { ReasoningRow } from './ReasoningRow';
 import { SkillRow } from './SkillRow';
 import { SubagentCard } from './SubagentCard';
@@ -125,11 +126,19 @@ function ChatEmptyState({ agent }: { agent: AgentReadiness }) {
  * Prose is the only thing with no container at all — the reader should read
  * the agent the way they read a page. Commands, skills and reasoning are
  * lines; only a file change, a delegated agent, and an ask earn a box.
+ *
+ * The agent's prose is read as markdown, because that is what agents write and
+ * the transcript was showing the brackets. Yours is not: you can see what you
+ * typed, and quietly restyling it afterwards is the app editing your words.
  */
-function Part({ part, live }: { part: ChatPart; live: boolean }) {
+function Part({ part, live, role }: { part: ChatPart; live: boolean; role: ChatMessage['role'] }) {
   switch (part.kind) {
     case 'text':
-      return <p className="msg-text">{part.text}</p>;
+      return role === 'agent' ? (
+        <Markdown text={part.text} live={live} />
+      ) : (
+        <p className="msg-text">{part.text}</p>
+      );
     case 'reasoning':
       return <ReasoningRow part={part} live={live} />;
     case 'command':
@@ -234,7 +243,12 @@ function Turn({ message }: { message: ChatMessage }) {
           // Only the trailing part of a streaming turn is still being written;
           // everything above it is finished, whatever the turn as a whole is
           // doing.
-          <Part key={item.key} part={item.part} live={message.streaming && item.index === last} />
+          <Part
+            key={item.key}
+            part={item.part}
+            live={message.streaming && item.index === last}
+            role={message.role}
+          />
         ),
       )}
       {/* Shown for the whole turn, not just its empty opening: the reader
