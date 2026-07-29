@@ -129,19 +129,41 @@ export function testerStatusLine(tester: TesterState): string {
 }
 
 /**
- * Which turn of the budget is being spent. The thinking arrives one answer per
- * turn, so counting the answers is what the person is watching anyway. Capped at
- * the budget because the last few answers are the write-up, not more play.
+ * Which turn of the budget is being spent, read off the turn the server put on
+ * the thought rather than counted here.
+ *
+ * Counting the thoughts this window happens to hold was a claim it had no right
+ * to make. The session outlives the window: reload mid-session and the thoughts
+ * are gone while the session plays on, so the pane read "Turn 1 of 24" beside a
+ * session on its thirteenth, with the real number sitting unread on every frame
+ * arriving. The list is also trimmed at the top once it gets long, which moved
+ * the same count in the same direction.
+ *
+ * Null until a thought has actually arrived: a window that has heard nothing
+ * knows nothing about which turn this is, and "Turn 1" would be a number nobody
+ * sent it. Capped at the budget because the last few answers are the write-up
+ * rather than more play.
  */
 export function testerTurnLine(tester: TesterState): string | null {
   if (!tester.running || tester.phase !== 'playing' || tester.maxSteps <= 0) return null;
-  return `Turn ${Math.min(Math.max(tester.thoughts.length, 1), tester.maxSteps)} of ${tester.maxSteps}`;
+  const turn = tester.thoughts[tester.thoughts.length - 1]?.turn;
+  if (turn === undefined) return null;
+  return `Turn ${Math.min(Math.max(turn, 1), tester.maxSteps)} of ${tester.maxSteps}`;
 }
 
-/** How the session ended, said the way a person would say it. */
+/**
+ * How the session ended, said the way a person would say it.
+ *
+ * Null while a failure is on screen. `lastNote` is whatever this window last
+ * held, and a refreshed history fills it from the newest session on disk, so a
+ * run that died put the ending sentence of the run BEFORE it directly under a
+ * red failure. Read in place, that is the failed run saying it played the game
+ * through and had seen enough. The report offer beside it is already withheld
+ * for exactly this reason.
+ */
 export function testerEndingLine(tester: TesterState): string | null {
   const note = tester.lastNote;
-  if (!note || tester.running) return null;
+  if (!note || tester.running || tester.error) return null;
   switch (note.stopped) {
     case 'budget':
       return `It played its full ${note.steps} turns.`;

@@ -171,6 +171,54 @@ describe('the report view', () => {
 });
 
 /**
+ * The report of a session that fell over.
+ *
+ * Three sections of this dialog are drawn from an empty list, and on a crashed
+ * session all three read as a game with nothing wrong with it. That is the
+ * opposite of the truth on the one surface this product calls its flagship, and
+ * it lands where a person decides whether to act.
+ */
+describe('a session that ended early', () => {
+  const crashed = () =>
+    note({
+      stopped: 'error',
+      observations: [],
+      openQuestions: [],
+      proposals: [],
+      regression: 'The session ended early, so nothing was recorded about whether anything got worse.',
+      onTheChange: {
+        seen: 'It did not get far enough to say.',
+        verdict: 'unclear',
+        why: 'The session ended early and it never gave a verdict: no browser on this machine',
+      },
+    });
+
+  it('never reads as a game with nothing worth changing', () => {
+    seed([crashed()]);
+    render(<TesterHistory />);
+    const report = open();
+    expect(within(report).queryByText(/found nothing here worth changing/i)).toBeNull();
+    expect(within(report).queryByText(/nothing it wanted to raise/i)).toBeNull();
+    expect(within(report).queryByText(/did not write down anything it saw/i)).toBeNull();
+  });
+
+  it('says the session was cut short where each of those answers would have gone', () => {
+    seed([crashed()]);
+    render(<TesterHistory />);
+    const report = open();
+    expect(within(report).getAllByText(/nothing was written down here/i)).toHaveLength(3);
+  });
+
+  it('still lets a finished session say it found nothing', () => {
+    seed([note({ observations: [], openQuestions: [], proposals: [] })]);
+    render(<TesterHistory />);
+    const report = open();
+    expect(within(report).getByText(/found nothing here worth changing/i)).toBeTruthy();
+    expect(within(report).getByText(/nothing it wanted to raise/i)).toBeTruthy();
+  });
+});
+
+/**
  * A report you cannot scroll from a keyboard.
  *
  * `.report` is the scrolling box, and it had no tabindex. On a session with no

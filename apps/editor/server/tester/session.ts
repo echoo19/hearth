@@ -44,7 +44,13 @@ import {
   REGRESSION_REMINDER,
   type TesterControls,
 } from './prompt.js';
-import type { ChangeVerdict, TesterNote, TesterObservation, TesterProposal } from './types.js';
+import {
+  CRASHED_REGRESSION,
+  type ChangeVerdict,
+  type TesterNote,
+  type TesterObservation,
+  type TesterProposal,
+} from './types.js';
 
 /** The default step ceiling. Every turn is a model call on the user's own quota. */
 export const DEFAULT_MAX_STEPS = 24;
@@ -576,7 +582,13 @@ export async function runTesterSession(opts: RunTesterSessionOptions): Promise<T
       ? `The session ended early and it never gave a verdict: ${crash.message}`
       : 'The session ended before it could say.',
   };
-  let regression = crash ? `The session ended early: ${crash.message}` : MISSING_REGRESSION;
+  // The crash message used to go in here, and it read as an answer: it is
+  // neither empty nor a sentinel, so `regressionSentence` said the tester had
+  // looked and every surface then showed a stack trace as its answer about
+  // whether anything got worse. The reason is on the verdict above, which is
+  // where a reader looks for what went wrong; this field says only that nothing
+  // was recorded, which is the true thing to say.
+  let regression = crash ? CRASHED_REGRESSION : MISSING_REGRESSION;
   /** Whether the tester got as far as answering the verdict question at all. */
   let verdictGiven = false;
 
@@ -629,6 +641,10 @@ export async function runTesterSession(opts: RunTesterSessionOptions): Promise<T
           verdict: onTheChange.verdict,
           why: `The session ended early and it never gave a verdict: ${crash.message}`,
         };
+        // The regression answer is only ever assigned beside the verdict, so
+        // reaching here means none was recorded. It says the session ended
+        // early rather than blaming the tester for not answering.
+        regression = CRASHED_REGRESSION;
       }
     }
   }

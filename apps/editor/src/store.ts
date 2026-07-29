@@ -1553,8 +1553,18 @@ export const useApp = create<AppState>((set, get) => {
             phase: 'finished',
             lastNote: frame.note,
             // The note is on disk now, so the history this window holds is one
-            // session out of date.
-            sessions: [...state.tester.sessions.filter((s) => s.session !== frame.note.session), frame.note],
+            // session out of date. Replaced by session AND start time, because
+            // the number is not an identity: the folder it comes out of is
+            // hand-editable, so two notes in one game can claim the same one,
+            // which is why a row carries the position of its note rather than
+            // its number. De-duping on the number alone deleted the other
+            // session from this window's record of an append-only history.
+            sessions: [
+              ...state.tester.sessions.filter(
+                (s) => s.session !== frame.note.session || s.startedAt !== frame.note.startedAt,
+              ),
+              frame.note,
+            ],
           },
         }));
         return;

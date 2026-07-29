@@ -21,6 +21,7 @@
 import React, { useMemo, useState } from 'react';
 import {
   droppedSentence,
+  nothingToChangeSentence,
   picturesFor,
   planFrom,
   PLACED_CLAIM,
@@ -104,11 +105,12 @@ export function PlanOfAction({ note, onStarted }: { note: TesterNote; onStarted:
       <section className="report-part">
         <h3 className="report-part-title">Worth changing</h3>
         {/* "It found nothing" is a statement about the game and it is only ever
-            true when the tester proposed nothing. When it proposed something
-            that did not survive the anchor rule, that is what is said instead:
-            a parse miss reported as a clean bill of health is the one thing
-            this surface must never do. */}
-        <p className="report-line">{drops ?? 'It found nothing here worth changing.'}</p>
+            true when the tester proposed nothing AND was asked. When it
+            proposed something that did not survive the anchor rule, that is
+            what is said instead, and when the session fell over the sentence
+            says that: a parse miss or a crash reported as a clean bill of
+            health is the one thing this surface must never do. */}
+        <p className="report-line">{drops ?? nothingToChangeSentence(note)}</p>
       </section>
     );
   }

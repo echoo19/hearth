@@ -21,10 +21,17 @@ vi.mock('../src/api', async (importOriginal) => ({
 }));
 
 import { apiTesterStop } from '../src/api';
-import { TesterStage, readableThought, whyNoPlay } from '../src/components/tester/TesterStage';
+import {
+  TesterStage,
+  readableThought,
+  testerEndingLine,
+  testerTurnLine,
+  whyNoPlay,
+} from '../src/components/tester/TesterStage';
 import { useApp } from '../src/store';
 import { resetProbeStream } from '../src/probeStream';
 import type { TesterState } from '../src/store';
+import type { TesterNote } from '../server/tester/types';
 
 const PROJECT = '/work/game';
 
@@ -41,6 +48,23 @@ const IDLE: TesterState = {
   memory: '',
   historyLoaded: true,
 };
+
+function note(over: Partial<TesterNote> = {}): TesterNote {
+  return {
+    session: 3,
+    startedAt: '2026-07-27T10:00:00.000Z',
+    finishedAt: '2026-07-27T10:12:00.000Z',
+    onTheChange: { seen: 'you raised the jump', verdict: 'better', why: 'I cleared the gap' },
+    regression: 'nothing',
+    observations: [],
+    openQuestions: [],
+    proposals: [],
+    steps: 12,
+    frames: 12,
+    stopped: 'done',
+    ...over,
+  };
+}
 
 function seed(tester: Partial<TesterState>): void {
   useApp.setState({
@@ -235,6 +259,92 @@ describe('Play, when it cannot be pressed', () => {
       screen.getByRole('button', { name: /^play$/i }).click();
     });
     expect(playTester).toHaveBeenCalled();
+  });
+});
+
+/**
+ * The turn counter is a claim about how far into its budget the session is, and
+ * the window that is watching does not own that number: the server does, and it
+ * puts it on every thought. Counting the thoughts THIS window happened to
+ * receive means a window that reloaded mid-session reads "Turn 1 of 24" beside
+ * a session on its thirteenth.
+ */
+describe('testerTurnLine', () => {
+  const playing = (over: Partial<TesterState>): TesterState => ({
+    ...IDLE,
+    running: true,
+    phase: 'playing',
+    session: 4,
+    maxSteps: 24,
+    ...over,
+  });
+
+  it('says the turn the session is really on, not how many thoughts this window saw', () => {
+    expect(testerTurnLine(playing({ thoughts: [{ turn: 13, text: 'I held right.' }] }))).toBe(
+      'Turn 13 of 24',
+    );
+  });
+
+  it('says nothing about the turn before this window has heard one', () => {
+    // A window that reloaded mid-session has watched nothing yet. "Turn 1" is
+    // a number nobody sent it.
+    expect(testerTurnLine(playing({ thoughts: [] }))).toBeNull();
+  });
+
+  it('stays inside the budget it is quoting', () => {
+    expect(testerTurnLine(playing({ maxSteps: 6, thoughts: [{ turn: 9, text: 'x' }] }))).toBe(
+      'Turn 6 of 6',
+    );
+  });
+});
+
+/**
+ * A run that died is the run being reported on. The sentence that ends the run
+ * BEFORE it, sitting under a red failure, reads as the failed session's own
+ * ending and says the game was played through to the end.
+ */
+describe('testerEndingLine under a failure', () => {
+  it('does not narrate the run before beneath the failure of the run that just died', () => {
+    expect(testerEndingLine({ ...IDLE, error: 'the browser went away', lastNote: note() })).toBeNull();
+  });
+
+  it('still says how a session ended when nothing failed', () => {
+    expect(testerEndingLine({ ...IDLE, lastNote: note() })).toMatch(/played 12 turns/i);
+  });
+
+  it('keeps the previous run off the screen under the red line', () => {
+    seed({ error: 'the browser went away', lastNote: note(), sessions: [note()] });
+    render(<TesterStage />);
+    expect(screen.getByText(/the browser went away/)).toBeTruthy();
+    expect(screen.queryByText(/played 12 turns/i)).toBeNull();
+  });
+});
+
+/**
+ * A session number is not an identity. The folder it comes out of is documented
+ * as hand-editable, so two notes in one game can claim the same number, and the
+ * rows are paired to their notes by position for exactly that reason. The
+ * window's own record of finished sessions has to agree.
+ */
+describe('the window record of finished sessions', () => {
+  const done = (note: TesterNote): void => {
+    act(() => {
+      useApp.getState().receiveFrame({ type: 'tester-done', note } as never);
+    });
+  };
+
+  it('keeps a session it already had when a different one claims the same number', () => {
+    const older = note({ session: 3, startedAt: '2026-01-01T00:00:00.000Z' });
+    seed({ sessions: [older] });
+    done(note({ session: 3, startedAt: '2026-07-27T10:00:00.000Z' }));
+    expect(useApp.getState().tester.sessions).toHaveLength(2);
+  });
+
+  it('still replaces the one session it is about when its note arrives twice', () => {
+    const same = note({ session: 3 });
+    seed({ sessions: [same] });
+    done(same);
+    expect(useApp.getState().tester.sessions).toHaveLength(1);
   });
 });
 

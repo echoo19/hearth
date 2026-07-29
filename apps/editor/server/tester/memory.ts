@@ -239,9 +239,16 @@ function sessionOfDir(entry: string): number | null {
  * history. A note that will not parse is dropped rather than thrown: these files
  * are hand-editable, so one broken file must not take the whole record with it.
  *
- * One note per session folder, numbered by the folder. Two folders cannot share
- * a name, so no two sessions here can claim the same number however the notes
- * inside them have been edited.
+ * One note per session folder, numbered by the folder wherever the folder names
+ * a number. That is where the claim used to stop, and it overstated what it
+ * bought: a folder whose name is not a number (a copy, a backup, a rename) has
+ * no number to lend, so its note keeps the one it claims, and that one can be a
+ * number another folder already has. Both sessions are listed, because a
+ * session disappearing out of an append-only history is its own kind of lie.
+ *
+ * So the number is NOT an identity, and nothing downstream may treat it as one.
+ * A row carries the position of the note it was built from, and the window's
+ * record of finished sessions replaces by session and start time together.
  */
 export async function listSessions(root: string): Promise<TesterNote[]> {
   const dir = path.join(testerDir(root), 'sessions');

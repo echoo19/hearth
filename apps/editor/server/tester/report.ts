@@ -19,6 +19,7 @@
 import { MISSING_REGRESSION } from './prompt.js';
 import {
   observationReach,
+  CRASHED_REGRESSION,
   UNREADABLE_REGRESSION,
   type ObservationReach,
   type TesterNote,
@@ -58,6 +59,11 @@ export function regressionSentence(raw: string): { text: string; answered: boole
   // way this can go unanswered and it gets its own words, because blaming the
   // tester for a file Hearth could not parse would be the wrong accusation.
   if (value === UNREADABLE_REGRESSION) return { text: UNREADABLE_REGRESSION, answered: false };
+  // The fourth, and the one that used to answer "yes it looked": a session
+  // that fell over put its crash message in this field, and a crash message is
+  // neither empty nor a sentinel, so a stack trace was read as the tester
+  // having checked whether anything got worse.
+  if (value === CRASHED_REGRESSION) return { text: CRASHED_REGRESSION, answered: false };
   if (value === '' || value === MISSING_REGRESSION) {
     return { text: 'It did not say whether anything got worse.', answered: false };
   }
@@ -125,6 +131,53 @@ export function placementSentence(note: TesterNote): string | null {
   return placement.entered
     ? `The game named ${count} it could be put, and it asked for ${trimDot(placement.entered)}`
     : `The game named ${count} it could be put. It played from the start anyway.`;
+}
+
+/**
+ * The three sections of a report that are drawn from an empty list, worded so
+ * that an empty list is only ever read as an answer when it is one.
+ *
+ * "It found nothing here worth changing" is a sentence about somebody's game.
+ * It was rendered from `length === 0` alone, so a session that crashed on the
+ * way in, and a note this Hearth cannot read, both produced three confident
+ * absences about a run that was never asked anything: nothing seen, nothing to
+ * raise, nothing worth changing. That is a clean bill of health issued by a
+ * session that never played, on the feature this product leads with.
+ *
+ * A session that was stopped by the person, or that ran out of budget, still
+ * gets asked every question, so those endings keep the plain sentence: an empty
+ * answer there really is the tester's own. Only 'error' and 'unreadable' lose
+ * it, and what they get instead claims nothing in either direction. It does not
+ * say the tester was never asked either, because a crash after the answer is
+ * just as possible as one before it and the note does not say which.
+ */
+const CUT_SHORT = 'It ran into trouble part way through, and nothing was written down here.';
+
+/** What "What it saw" says when there is nothing under it. */
+export function nothingSeenSentence(note: TesterNote): string {
+  if (note.stopped === 'unreadable') return 'What it saw could not be read out of this note.';
+  if (note.stopped === 'error') return `${CUT_SHORT} That is not the same as it having seen nothing.`;
+  return 'It did not write down anything it saw this session.';
+}
+
+/** What "Still could not work out" says when there is nothing under it. */
+export function nothingRaisedSentence(note: TesterNote): string {
+  if (note.stopped === 'unreadable') {
+    return 'What it could not work out could not be read out of this note.';
+  }
+  if (note.stopped === 'error') return `${CUT_SHORT} That is not the same as it having nothing to raise.`;
+  return 'Nothing it wanted to raise.';
+}
+
+/** What "Worth changing" says when the plan is empty and nothing was dropped. */
+export function nothingToChangeSentence(note: TesterNote): string {
+  if (note.stopped === 'unreadable') {
+    return 'What it thought was worth changing could not be read out of this note.';
+  }
+  if (note.stopped === 'error') {
+    return `${CUT_SHORT} That is not the same as it finding nothing worth changing.`;
+  }
+  return 'It found nothing here worth changing.';
 }
 
 /** True when anything in this session happened somewhere the game put the tester. */
@@ -474,7 +527,7 @@ export function renderReport(note: TesterNote): string {
 
   lines.push('What it saw');
   if (observations.length === 0) {
-    lines.push('It did not write down anything it saw this session.');
+    lines.push(nothingSeenSentence(note));
   } else {
     for (const observation of observations) {
       const where = observationReach(observation) === 'placed' ? ', placed' : '';
@@ -486,7 +539,7 @@ export function renderReport(note: TesterNote): string {
 
   lines.push('Still could not work out');
   if (questions.length === 0) {
-    lines.push('Nothing it wanted to raise.');
+    lines.push(nothingRaisedSentence(note));
   } else {
     for (const question of questions) lines.push(sentence(question));
   }
@@ -496,9 +549,10 @@ export function renderReport(note: TesterNote): string {
   const drops = droppedSentence(dropped, plan.length === 0);
   if (plan.length === 0) {
     // "It found nothing" is a sentence about the game, so it is only ever said
-    // when the tester actually proposed nothing. Anything that fell out of the
-    // plan on the way is said instead, and counted.
-    lines.push(drops ?? 'It found nothing here worth changing.');
+    // when the tester actually proposed nothing AND the session got far enough
+    // for that to be its answer. Anything that fell out of the plan on the way
+    // is said instead, and counted.
+    lines.push(drops ?? nothingToChangeSentence(note));
   } else {
     lines.push(...planLines(plan));
     if (drops) lines.push('', drops);

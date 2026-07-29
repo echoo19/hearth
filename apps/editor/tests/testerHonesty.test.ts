@@ -12,9 +12,15 @@ import { promises as fsp } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { parseProposals, parseVerdict, playPrompt, UNCLEAR_VERDICT } from '../server/tester/prompt';
-import { anythingPlaced, planFrom, verdictSentence } from '../server/tester/report';
+import {
+  anythingPlaced,
+  planFrom,
+  regressionSentence,
+  renderReport,
+  verdictSentence,
+} from '../server/tester/report';
 import { listSessions, sessionDir } from '../server/tester/memory';
-import type { TesterNote } from '../server/tester/types';
+import { CRASHED_REGRESSION, unreadableNote, type TesterNote } from '../server/tester/types';
 
 function note(over: Partial<TesterNote> = {}): TesterNote {
   return {
@@ -51,6 +57,13 @@ describe('parseProposals and invented evidence', () => {
     // in front of it, which is how you write how many rather than which one.
     ['BUG in 2 frames: the music cuts out', 'the music cuts out'],
     ['IDEA within 3 pictures: show the timer sooner', 'show the timer sooner'],
+    // The marker is in front of the number this time, and the number STILL is
+    // not a picture: it belongs to the word after it. "frames 3 seconds apart"
+    // is a claim about timing, and reading it as a citation of picture three
+    // sends an agent to look at a picture the tester never pointed at.
+    ['BUG frames 3 seconds apart: the animation stutters', 'the animation stutters'],
+    ['IDEA pictures 2 minutes in: show the timer sooner', 'show the timer sooner'],
+    ['BUG picture 4 times out of five: the save is wiped', 'the save is wiped'],
   ];
 
   it.each(invented)('reads %s as a proposal that cites nothing', (line, text) => {
@@ -141,6 +154,27 @@ describe('parseVerdict', () => {
     // Denied and nothing offered in its place. Reading that as any of the
     // three would be the same invention in a quieter form.
     expect(parseVerdict('VERDICT: not the same').onTheChange.verdict).toBe('unclear');
+  });
+
+  it('reads a verdict whose sentence negates something other than the verdict', () => {
+    // Negation used to be tested against the whole clause, so any "never",
+    // "no longer" or "barely" anywhere in the sentence threw the verdict away.
+    // Those are ordinary words in a sentence about a bug that got fixed, so a
+    // fixed bug was reported to the person as "It did not give a verdict".
+    expect(parseVerdict('VERDICT: much better now that it never crashes').onTheChange.verdict).toBe(
+      'better',
+    );
+    expect(parseVerdict('VERDICT: worse now that it never gets past the menu').onTheChange.verdict).toBe(
+      'worse',
+    );
+    expect(parseVerdict('VERDICT: better now that it barely stutters').onTheChange.verdict).toBe('better');
+  });
+
+  it('still refuses the verdict word its own sentence denies', () => {
+    // The other half of the same rule, and the fault the clause-wide test was
+    // put there to stop. A negator in front of the verdict word still denies it.
+    expect(parseVerdict('VERDICT: the crash is not better').onTheChange.verdict).toBe('unclear');
+    expect(parseVerdict('VERDICT: it is not any worse').onTheChange.verdict).toBe('unclear');
   });
 
   it('records an answer that is none of the three as unclear', () => {
@@ -266,6 +300,93 @@ describe('listSessions and a hand-edited note', () => {
     } finally {
       await fsp.rm(root, { recursive: true, force: true });
     }
+  });
+
+  it('lists both sessions when a folder with no number of its own claims one', async () => {
+    // The folder only lends a number when its name is one. A copy, a backup or
+    // a rename has none to lend, so its note keeps the number it claims and two
+    // sessions here really can carry the same one. Both are listed, because a
+    // session vanishing out of an append-only history is its own kind of lie,
+    // and nothing downstream may read that number as an identity.
+    const root = await fsp.mkdtemp(path.join(os.tmpdir(), 'notes-'));
+    try {
+      const sessions = path.join(root, '.hearth', 'tester', 'sessions');
+      for (const entry of ['0003', 'copy-of-0003']) {
+        await fsp.mkdir(path.join(sessions, entry), { recursive: true });
+        await fsp.writeFile(
+          path.join(sessions, entry, 'note.json'),
+          JSON.stringify(note({ session: 3 })),
+          'utf8',
+        );
+      }
+      expect((await listSessions(root)).map((s) => s.session)).toEqual([3, 3]);
+    } finally {
+      await fsp.rm(root, { recursive: true, force: true });
+    }
+  });
+});
+
+/**
+ * A session that never got asked cannot answer, and an empty answer it never
+ * gave must never be rendered as the tester having looked and found nothing.
+ * Three sections of the report are drawn from `length === 0`, and on a crashed
+ * session all three used to read as a clean bill of health for a game the
+ * tester barely opened.
+ */
+describe('a report on a session that ended early', () => {
+  const crashed = note({
+    stopped: 'error',
+    observations: [],
+    openQuestions: [],
+    proposals: [],
+    regression: CRASHED_REGRESSION,
+    onTheChange: {
+      seen: 'It did not get far enough to say.',
+      verdict: 'unclear',
+      why: 'The session ended early and it never gave a verdict: no browser on this machine',
+    },
+  });
+
+  it('claims none of the three absences it was never in a position to check', () => {
+    const text = renderReport(crashed);
+    expect(text).not.toContain('It found nothing here worth changing');
+    expect(text).not.toContain('Nothing it wanted to raise');
+    expect(text).not.toContain('It did not write down anything it saw this session');
+  });
+
+  it('says the session was cut short in every section that came out empty', () => {
+    const text = renderReport(crashed);
+    expect(text.match(/nothing was written down here/g)).toHaveLength(3);
+  });
+
+  it('claims nothing at all out of a note that could not be read', () => {
+    const text = renderReport(unreadableNote(4));
+    expect(text).not.toContain('It found nothing here worth changing');
+    expect(text).not.toContain('Nothing it wanted to raise');
+    expect(text).not.toContain('It did not write down anything it saw this session');
+    expect(text).toContain('Session 4');
+  });
+
+  it('still lets a finished session say plainly that it found nothing', () => {
+    // The other half of the rule. A tester that was asked and answered nothing
+    // is a real and frequently correct result, and it must keep its sentence.
+    const text = renderReport(note({ observations: [], openQuestions: [], proposals: [] }));
+    expect(text).toContain('It found nothing here worth changing');
+    expect(text).toContain('Nothing it wanted to raise');
+    expect(text).toContain('It did not write down anything it saw this session');
+  });
+});
+
+describe('regressionSentence and a session that crashed', () => {
+  it('does not count the crash as the tester having checked', () => {
+    // Neither empty nor either sentinel, so a stack trace answered "yes, it
+    // looked", and every surface then rendered the crash as the answer.
+    expect(regressionSentence(CRASHED_REGRESSION).answered).toBe(false);
+  });
+
+  it('still counts a real answer, including the answer "nothing"', () => {
+    expect(regressionSentence('nothing').answered).toBe(true);
+    expect(regressionSentence('the pause menu stopped closing').answered).toBe(true);
   });
 });
 

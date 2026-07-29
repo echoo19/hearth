@@ -441,9 +441,33 @@ const NUMBER_LIST = /^[\s*_`([]*#?\s*\d+(?:\s*(?:,|&|\+|and)\s*#?\s*\d+)*[\s*_`)
  * between which one and how many: "frame 2" names a picture and "2 frames" is a
  * count. `BUG in 2 frames:` was read as a citation of picture 2 purely because
  * the word "frames" appeared somewhere in the span.
+ *
+ * A marker in front is still not enough on its own, which is the second half of
+ * the same defect and one grammar step over: see `ownsItsNumbers` below.
  */
 const MARKED_CITATION =
   /(?:pictures?|pics?|frames?|shots?|screenshots?|no\.)\s*#?\s*(\d+(?:\s*(?:,|&|\+|and)\s*#?\s*\d+)*)/gi;
+
+/**
+ * Whether the marker really owns the numbers that followed it, judged by what
+ * comes after them.
+ *
+ * `BUG frames 3 seconds apart:` puts the marker in front of the number and the
+ * number still is not a picture: it belongs to the word AFTER it, and it counts
+ * seconds. A citation ends where a citation ends, which is a bracket, a comma,
+ * a full stop or the end of the span. A word or another number running straight
+ * on from the last one means the number was that word's.
+ *
+ * This drops citations a person would have recognised: `frames 4 and 9 show the
+ * bug` is a real reference and fails this. That is the correct trade and the
+ * same one the rest of this function makes. A dropped proposal is counted and
+ * said out loud by `report.ts`; a minted anchor sends an agent to look at a
+ * picture the tester never pointed at, and nothing downstream can tell it from
+ * a real one.
+ */
+function ownsItsNumbers(after: string): boolean {
+  return !/^\s*[\p{L}\p{N}]/u.test(after);
+}
 
 /**
  * The pictures a proposal line pointed at. Empty when it pointed at none, and
@@ -483,7 +507,9 @@ export function citedFrames(span: string): number[] {
     keep(cleaned);
     return frames;
   }
-  for (const match of cleaned.matchAll(MARKED_CITATION)) keep(match[1]);
+  for (const match of cleaned.matchAll(MARKED_CITATION)) {
+    if (ownsItsNumbers(cleaned.slice((match.index ?? 0) + match[0].length))) keep(match[1]);
+  }
   return frames;
 }
 
@@ -540,34 +566,72 @@ export function parseQuestions(text: string): string[] {
 export type StatedVerdict = 'better' | 'worse' | 'no-difference';
 
 /** Words that turn the verdict word after them into its opposite, or into nothing. */
-const NEGATED = /\b(?:not|never|hardly|barely|neither|nor|isn't|wasn't|aren't|doesn't|didn't)\b/;
+const NEGATED = /\b(?:not|never|no longer|hardly|barely|neither|nor|isn't|wasn't|aren't|doesn't|didn't)\b/;
+
+/**
+ * How far in front of the verdict word a negator still reaches, in words.
+ *
+ * "not better", "was not any better", "did not seem much better". Four covers
+ * the way people actually write a denial and stops short of the width that put
+ * this fault here in the first place, which was the whole clause.
+ */
+const NEGATION_REACH = 4;
 
 /** "no difference" and its neighbours. */
-const NO_DIFFERENCE = /\bno\b[^.]{0,20}\bdifference\b|\bunchanged\b|\bthe same\b|\bno change\b|\bnothing changed\b/;
+const NO_DIFFERENCE = /\bno\b[^.]{0,20}\bdifference\b|\bunchanged\b|\bthe same\b|\bno change\b|\bnothing changed\b/g;
+
+/** The words for getting worse, and for getting better. */
+const WORSE = /\bworse\b|\bregress/g;
+const BETTER = /\bbetter\b|\bimprov/g;
+
+/**
+ * Whether the verdict word starting at `index` is one a negator in front of it
+ * denies.
+ *
+ * Scoped to the word, not to the clause, and that is the whole fix. Testing the
+ * clause meant any negator anywhere in the sentence threw the verdict away, and
+ * "never", "no longer" and "barely" are ordinary words in a sentence about a
+ * bug that got FIXED: `VERDICT: much better now that it never crashes` was
+ * recorded as no verdict at all, and the person was told "It did not give a
+ * verdict on your last change" about a session that gave a clear one. That is
+ * common rather than exotic, since a fixed bug is the usual reason to say
+ * better.
+ */
+function deniedAt(clause: string, index: number): boolean {
+  const before = clause.slice(0, index).trim();
+  if (before === '') return false;
+  return NEGATED.test(before.split(/\s+/).slice(-NEGATION_REACH).join(' '));
+}
+
+/** Whether this clause makes the claim `pattern` names, undenied. */
+function claims(clause: string, pattern: RegExp): boolean {
+  for (const match of clause.matchAll(pattern)) {
+    if (!deniedAt(clause, match.index ?? 0)) return true;
+  }
+  return false;
+}
 
 /**
  * What one clause of the verdict line said, or null when it said none of the
  * three.
  *
- * Negation is tested FIRST and answers null rather than flipping: "not better"
- * is not a claim that things got worse, it is a refusal to say better, and
- * inventing the opposite would be the same fault in the other direction.
+ * A denied verdict word answers null rather than flipping: "not better" is not
+ * a claim that things got worse, it is a refusal to say better, and inventing
+ * the opposite would be the same fault in the other direction. What is denied
+ * is the WORD, though, and never the whole clause: see `deniedAt`.
  *
- * Sameness used to be tested ahead of it, on the reasoning that "no difference"
- * carries a negator of its own that the negation check would eat. It does not:
- * none of `no difference`, `no change`, `nothing changed`, `unchanged` or `the
- * same` contains not, never, hardly, barely, neither or nor as a word, so the
- * negation check has never had anything to eat here. What the ordering did
- * instead was make `VERDICT: not the same, it is better` come out as "no real
- * difference" — the tester saying the change worked, recorded as the change
- * doing nothing. Same defect class as the "not better" inversion, one branch
- * over.
+ * Sameness used to be tested after the negation check, on the reasoning that
+ * "no difference" carries a negator of its own. It does not: none of `no
+ * difference`, `no change`, `nothing changed`, `unchanged` or `the same`
+ * contains not, never, hardly, barely, neither or nor as a word. What the old
+ * ordering did instead was make `VERDICT: not the same, it is better` come out
+ * as "no real difference", the tester saying the change worked recorded as the
+ * change doing nothing. Both of those readings are pinned as tests.
  */
 function verdictInClause(clause: string): StatedVerdict | null {
-  if (NEGATED.test(clause)) return null;
-  if (NO_DIFFERENCE.test(clause)) return 'no-difference';
-  if (/\bworse\b|\bregress/.test(clause)) return 'worse';
-  if (/\bbetter\b|\bimprov/.test(clause)) return 'better';
+  if (claims(clause, NO_DIFFERENCE)) return 'no-difference';
+  if (claims(clause, WORSE)) return 'worse';
+  if (claims(clause, BETTER)) return 'better';
   return null;
 }
 

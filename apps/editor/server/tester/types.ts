@@ -158,6 +158,20 @@ export const UNREADABLE_WHY =
 export const UNREADABLE_REGRESSION = 'Whether anything got worse could not be read out of this note.';
 
 /**
+ * The regression answer on a session that fell over. Hearth's word about the
+ * session, never the tester's about the game.
+ *
+ * Its own sentence because the alternative shipped: the crash message went into
+ * this field, and a crash message is neither empty nor either sentinel, so
+ * every reader counted a stack trace as the tester having looked and answered.
+ * The one field this whole feature exists to keep honest cannot be answered by
+ * the session dying. The reason itself is not lost: it is on the verdict, which
+ * is where a reader looks for what went wrong.
+ */
+export const CRASHED_REGRESSION =
+  'The session ended early, so nothing was recorded about whether anything got worse.';
+
+/**
  * A session that exists on disk and cannot be read, as a note.
  *
  * Every field that carries a claim about the game is emptied rather than

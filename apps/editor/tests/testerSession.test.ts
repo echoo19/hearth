@@ -20,6 +20,7 @@ import {
   MISSING_REGRESSION,
 } from '../server/tester/prompt';
 import { runTesterSession } from '../server/tester/session';
+import { regressionSentence } from '../server/tester/report';
 import { listSessions, writeNote } from '../server/tester/memory';
 import type { TesterNote } from '../server/tester/types';
 import type { ChatDriver, ChatEvent } from '../server/chat';
@@ -280,6 +281,23 @@ describe('runTesterSession', () => {
       expect(note.stopped).toBe('error');
       expect(note.onTheChange.verdict).toBe('unclear');
       expect(note.onTheChange.why).toMatch(/no browser/);
+    });
+  });
+
+  it('never lets a crash stand in for the tester having checked for regressions', async () => {
+    // The crash message is neither empty nor either sentinel, so every reader
+    // of the note counted a stack trace as "the tester looked and answered".
+    // The one field this feature exists to keep honest cannot be answered by
+    // the session falling over.
+    await withRoot(async (root) => {
+      await withPriorSession(root);
+      const driver = new FakeDriver([]);
+      const note = await runTesterSession({
+        root, dir: root, driver, maxSteps: 4,
+        openGame: async () => { throw new Error('no browser on this machine'); },
+      });
+      expect(regressionSentence(note.regression).answered).toBe(false);
+      expect(note.regression).not.toMatch(/no browser/);
     });
   });
 

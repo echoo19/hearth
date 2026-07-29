@@ -15,6 +15,8 @@ import React, { useEffect, useRef } from 'react';
 import {
   anythingPlaced,
   endingSentence,
+  nothingRaisedSentence,
+  nothingSeenSentence,
   placementSentence,
   regressionSentence,
   verdictSentence,
@@ -85,7 +87,10 @@ export function ReportView({
         <section className="report-part">
           <h3 className="report-part-title">What it saw</h3>
           {observations.length === 0 ? (
-            <p className="report-line">It did not write down anything it saw this session.</p>
+            // Only the tester's own answer when the session got far enough to
+            // give one. A crashed session says so here instead of reporting an
+            // empty list as a look that found nothing.
+            <p className="report-line">{nothingSeenSentence(note)}</p>
           ) : (
             <>
               {/* Above the list, in full-strength ink. A reader who meets this
@@ -111,7 +116,7 @@ export function ReportView({
         <section className="report-part">
           <h3 className="report-part-title">Still could not work out</h3>
           {questions.length === 0 ? (
-            <p className="report-line">Nothing it wanted to raise.</p>
+            <p className="report-line">{nothingRaisedSentence(note)}</p>
           ) : (
             <ul className="tester-saw">
               {questions.map((question) => (
