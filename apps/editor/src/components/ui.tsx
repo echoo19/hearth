@@ -365,6 +365,22 @@ const ICON_PATHS: Record<string, ReactNode> = {
   // Folder: a script-tree directory (Code panel's nested scripts/ listing).
   folder: <path d="M1.5 9V3.5a1 1 0 0 1 1-1h2.3l1 1.2h3.7a1 1 0 0 1 1 1V9a1 1 0 0 1-1 1h-7a1 1 0 0 1-1-1z" />,
   play: <path d="M3.5 2.5l6 3.5-6 3.5z" fill="currentColor" />,
+  /**
+   * Toggle the right-hand column. A window with its right third marked off,
+   * which is literally what the control does.
+   *
+   * Added because `play` was carrying three unrelated jobs: open your game in
+   * a browser, have the tester play a session, and show or hide a panel. The
+   * first two are the same idea; the third is a layout toggle wearing a verb's
+   * glyph, and a person who learned it in one place learned the wrong thing
+   * about the other two.
+   */
+  column: (
+    <>
+      <rect x="1.5" y="2" width="9" height="8" rx="1.2" />
+      <path d="M7.5 2v8" />
+    </>
+  ),
   // A small robot head: antenna, square face, two eyes. This is what makes
   // Playtest legible as "something else plays it" rather than "you play it",
   // which is the whole distinction between it and `play`.

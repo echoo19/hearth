@@ -224,6 +224,17 @@ export interface AppState {
   permissionSkipAcknowledged: boolean;
   /** Every conversation this folder holds, newest activity first. */
   chats: ChatSummary[];
+  /**
+   * Whether that list has been read for the open folder yet.
+   *
+   * An empty array is both "this project has no conversations" and "nobody has
+   * asked yet", and the project screen was drawing the first over the second:
+   * clicking a project put "No conversations yet. Say what you want to make
+   * and the first one starts here." on screen for the length of the round
+   * trip, in front of a project with twelve of them. Same rule the tester
+   * history holds itself to.
+   */
+  chatsLoaded: boolean;
   /** Which one the window is looking at. */
   activeChatId: string | null;
   /**
@@ -233,6 +244,17 @@ export interface AppState {
    * reopen a project to remember.
    */
   recentChats: RecentChatEntry[];
+  /**
+   * The global list has been read at least once.
+   *
+   * `recentChats: []` is two different facts, and the rail was telling them
+   * apart by guessing: it said "Nothing yet. Say something and it lands here."
+   * for the length of the round trip, in front of a machine with a hundred
+   * conversations on it. Never say there is nothing when the truth is that
+   * nobody has looked. Never cleared: the list belongs to the person, not to
+   * any folder, so a project switch does not un-read it.
+   */
+  recentChatsLoaded: boolean;
 
   // --- Game pane ------------------------------------------------------------
   game: GameStatus;
@@ -520,6 +542,18 @@ export interface AppState {
   showProject(): void;
   /** Open a full screen over the work. */
   openScreen(screen: 'skills' | 'tester'): void;
+  /**
+   * Open the Tester screen aimed at one game — what "Every session" means when
+   * it is pressed from inside a project.
+   *
+   * The screen is still global and still lists every game's runs; what this
+   * fixes is its Play. The aim defaults to the most recently played game
+   * ANYWHERE, so arriving from lighthouse's own screen and pressing Play could
+   * close lighthouse and play harbour instead. Arriving from a project is the
+   * one case where the app knows which game is meant, so it says so, out loud
+   * in the picker, rather than leaving the reader to check.
+   */
+  openTesterFor(path: string): void;
   /** Leave it. The work underneath is exactly as it was left. */
   closeScreen(): void;
   setNarrowTab(tab: 'chat' | 'pane'): void;
@@ -621,9 +655,23 @@ export type GlobalPlace = 'new-chat' | 'skills' | 'tester';
  *
  * Pure, and exported, so the rule is checkable without a store or a viewport.
  */
-export function globalPlace(state: { screen: 'skills' | 'tester' | null; composing: boolean }): GlobalPlace | null {
+export function globalPlace(state: {
+  screen: 'skills' | 'tester' | null;
+  composing: boolean;
+  projectPath: string | null;
+}): GlobalPlace | null {
   if (state.screen !== null) return state.screen;
-  return state.composing ? 'new-chat' : null;
+  // Mirrors Shell's own routing rule (App.tsx) exactly, and has to: `Home` is
+  // rendered when there is no folder OR when `composing` is set, so those are
+  // precisely the states that ARE New chat.
+  //
+  // Reading only `composing` was wrong in the app's most common no-project
+  // state. At first launch, and after every Close project, `projectPath` is
+  // null and `composing` is false, so this answered "you are in a project"
+  // while the window showed the blank composer and the rail marked nothing at
+  // all. That is the exact failure this function exists to prevent, in the one
+  // case none of its tests covered.
+  return state.projectPath === null || state.composing ? 'new-chat' : null;
 }
 
 /**
@@ -1398,7 +1446,7 @@ export const useApp = create<AppState>((set, get) => {
         set({ providers: frame.status });
         return;
       case 'chat-list':
-        set({ chats: frame.chats });
+        set({ chats: frame.chats, chatsLoaded: true });
         // The index changed (a chat was created, renamed, retitled, deleted),
         // which is exactly what the global list is a view of.
         scheduleRecentChats();
@@ -1599,8 +1647,10 @@ export const useApp = create<AppState>((set, get) => {
     permissionMode: DEFAULT_PERMISSION_MODE,
     permissionSkipAcknowledged: false,
     chats: [],
+    chatsLoaded: false,
     activeChatId: null,
     recentChats: [],
+    recentChatsLoaded: false,
 
     game: EMPTY_GAME,
     senses: [],
@@ -1700,6 +1750,7 @@ export const useApp = create<AppState>((set, get) => {
         permissionMode: DEFAULT_PERMISSION_MODE,
         permissionSkipAcknowledged: false,
         chats: [],
+        chatsLoaded: false,
         activeChatId: null,
         queued: [],
         journalFeed: [],
@@ -1783,6 +1834,7 @@ export const useApp = create<AppState>((set, get) => {
         permissionMode: DEFAULT_PERMISSION_MODE,
         permissionSkipAcknowledged: false,
         chats: [],
+        chatsLoaded: false,
         activeChatId: null,
         queued: [],
         journalFeed: [],
@@ -1807,12 +1859,18 @@ export const useApp = create<AppState>((set, get) => {
         narrowTab: 'chat',
         codePeek: { open: false, path: null },
         pendingPrompt: null,
-        // WHERE the window is, not just what it is holding. This is the half
-        // that kept being forgotten: a screen or a project view is a view OF a
-        // folder, so a closed folder cannot leave one of them up. The Tester
-        // screen survived a close and sat there reading "your tester has not
-        // played this game yet" with no game open at all.
-        screen: null,
+        // WHERE the window is, not just what it is holding. A project view is
+        // a view OF a folder, so a closed folder cannot leave one up.
+        //
+        // A global screen is NOT, and that is the distinction `globalPlace`
+        // exists to hold. Skills is the person's library and Tester is a
+        // history across every game: neither reads the open folder, so closing
+        // one project while standing on either is not a reason to throw the
+        // reader back to the blank composer. (The old rule cleared it, from
+        // when Tester was per-project and survived a close reading "your tester
+        // has not played this game yet" with no game open. That screen is gone;
+        // TesterHistory reads the global run list and names the game it aims
+        // at.) `screen` is therefore deliberately absent from this set.
         projectView: false,
         composing: false,
         // The blank composer aimed at a folder that is no longer open would
@@ -2036,6 +2094,13 @@ export const useApp = create<AppState>((set, get) => {
         chatBusy: false,
         chatError: null,
         paneOpen: false,
+        // The column is closing, so the narrow layout's tab has to come back
+        // with it — `setPaneOpen(false)` does this for the same reason, and
+        // this path sets `paneOpen` directly rather than going through it.
+        // Left on 'pane' it is a stale answer waiting to be believed: the next
+        // game to appear reopens the column and the window would land on the
+        // game rather than on whatever was asked for.
+        narrowTab: 'chat',
         queued: [],
       });
       // A new chat is a chat. Leaving the column in the terminal would show a
@@ -2104,6 +2169,12 @@ export const useApp = create<AppState>((set, get) => {
       set({ screen });
     },
 
+    openTesterFor(path) {
+      // The aim is set BEFORE the screen appears, so the picker never draws
+      // one game's name and then swaps it for another under the reader.
+      set({ testerTarget: path, screen: 'tester' });
+    },
+
     closeScreen() {
       set({ screen: null });
     },
@@ -2111,7 +2182,13 @@ export const useApp = create<AppState>((set, get) => {
     openChat(chatId) {
       // Asking for a conversation is asking to leave the project screen, even
       // when that conversation is already the active one underneath it.
-      set({ projectView: false, screen: null });
+      //
+      // `narrowTab` goes with it. Below the breakpoint the conversation and the
+      // playtest column are two tabs of one region, so a window left on the
+      // game tab answered "open this conversation" by carrying on showing the
+      // game: the row was clicked, the conversation was opened, and nothing on
+      // screen changed. Asking for a conversation is asking to SEE it.
+      set({ projectView: false, screen: null, narrowTab: 'chat' });
       if (get().activeChatId === chatId) return;
       // Anything still queued was meant for the conversation being left.
       set({ chatBusy: false, chatError: null, queued: [] });
@@ -2150,13 +2227,16 @@ export const useApp = create<AppState>((set, get) => {
       const project = get().projectPath;
       if (!project) return;
       const chats = await apiListChats(project);
-      if (get().projectPath === project) set({ chats });
+      // Read, whatever came back. An empty list from a request that failed is
+      // still an answer the screen has to draw something for, and "looking…"
+      // forever would be the worse lie.
+      if (get().projectPath === project) set({ chats, chatsLoaded: true });
     },
 
     async refreshRecentChats() {
       // No project guard: this list spans folders and is the only thing the
       // rail has to show before one is open.
-      set({ recentChats: await apiRecentChats() });
+      set({ recentChats: await apiRecentChats(), recentChatsLoaded: true });
     },
 
     async openRecentChat(entry) {
@@ -2239,8 +2319,10 @@ export const useApp = create<AppState>((set, get) => {
         // The message is about to land in a conversation, so the window shows
         // that conversation. Neither the blank surface nor the project screen
         // nor a full screen over the top may still be covering it, or the
-        // words go somewhere the person who typed them cannot see.
-        set({ composing: false, projectView: false, screen: null });
+        // words go somewhere the person who typed them cannot see. In the
+        // narrow layout the game tab covers it just as completely as a screen
+        // does, so the region comes back to the conversation too.
+        set({ composing: false, projectView: false, screen: null, narrowTab: 'chat' });
         get().sendChat(trimmed, files);
         return { ok: true };
       } finally {
@@ -2430,6 +2512,13 @@ export const useApp = create<AppState>((set, get) => {
       // Asked for a game the folder does not have. Said out loud rather than by
       // a button that quietly does nothing, because from a screen listing other
       // games' playtests there is no way to tell which is which.
+      //
+      // Read here rather than taken from `game.present`, which is false both
+      // when the folder has no game and when the last status read failed:
+      // `refreshGame` returns early on a null answer and leaves the empty
+      // default standing, so a dropped request became "there is no game in that
+      // project", a definite claim about someone's disk made from a question
+      // that was never answered. Not knowing is its own sentence.
       if (!get().game.present) {
         showToast('There is no game in that project yet, so there is nothing for it to play.', 'error');
         return;
@@ -2535,8 +2624,19 @@ export const useApp = create<AppState>((set, get) => {
 
       const words = seed.text;
       // Leave the tester's screen. Approving starts work, and watching it start
-      // somewhere the person cannot see is the same as nothing happening.
-      set({ composing: false, projectView: false, screen: null, chatBusy: false, chatError: null, queued: [] });
+      // somewhere the person cannot see is the same as nothing happening. The
+      // narrow layout's tab is part of that: `playTester` moved it to the game
+      // to watch the session, and the conversation this is about to open is on
+      // the other one.
+      set({
+        composing: false,
+        projectView: false,
+        screen: null,
+        narrowTab: 'chat',
+        chatBusy: false,
+        chatError: null,
+        queued: [],
+      });
       applyConversationMode('chat');
 
       const before = get().activeChatId;

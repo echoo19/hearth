@@ -527,6 +527,7 @@ export function Sidebar() {
   const setCollapsed = useApp((s) => s.setSidebarCollapsed);
   const chats = useApp((s) => s.chats);
   const recentChats = useApp((s) => s.recentChats);
+  const recentChatsLoaded = useApp((s) => s.recentChatsLoaded);
   const activeChatId = useApp((s) => s.activeChatId);
   const newChat = useApp((s) => s.newChat);
   const openRecentChat = useApp((s) => s.openRecentChat);
@@ -836,7 +837,14 @@ export function Sidebar() {
           <h2 className="sidebar-section-title">Chats</h2>
           {shown.length === 0 ? (
             <p className="sidebar-empty">
-              {query.trim() === '' ? 'Nothing yet. Say something and it lands here.' : 'No chats match that.'}
+              {query.trim() !== ''
+                ? 'No chats match that.'
+                : recentChatsLoaded
+                  ? 'Nothing yet. Say something and it lands here.'
+                  : // Not read yet is not the same as nothing. This said
+                    // "Nothing yet" for the length of the round trip, in front
+                    // of a machine with a hundred conversations on it.
+                    'Looking…'}
             </p>
           ) : (
             <div className="chat-list">

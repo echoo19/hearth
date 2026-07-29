@@ -15,7 +15,7 @@
  * pixel this takes is one they don't get.
  */
 import React, { useEffect, useState } from 'react';
-import { anyChatProviderReady, useApp } from '../../store';
+import { anyChatProviderReady, globalPlace, useApp } from '../../store';
 import { hearthNative } from '../../native';
 import { IconButton } from '../ui/Button';
 import { Switch } from '../ui/Switch';
@@ -114,6 +114,10 @@ export function TopBar({ narrow, paneOpen = false }: { narrow: boolean; paneOpen
   const composing = useApp((s) => s.composing);
   const projectView = useApp((s) => s.projectView);
   const chats = useApp((s) => s.chats);
+  // Where the app is standing, the one answer the whole window shares. See
+  // `globalPlace`: New chat, Skills and Tester belong to the person, not to
+  // the folder that is still open underneath them.
+  const place = useApp((s) => globalPlace(s));
   const native = hearthNative();
 
   const slow = useSlowConnection(wsStatus);
@@ -132,7 +136,13 @@ export function TopBar({ narrow, paneOpen = false }: { narrow: boolean; paneOpen
   // Home has nothing for this strip to name and nothing for it to open: no
   // conversation, no socket, no files. It stays as the drag region and says
   // nothing — an empty capability pill would be chrome about nothing.
-  if (!hasFolder) {
+  //
+  // Skills and Tester are the same case for a different reason. They take the
+  // whole working area and carry their own header, so everything this strip
+  // has to offer is about a surface that is not on screen: it named the
+  // conversation underneath — the header saying one thing while the body
+  // showed another — and its controls moved a column nobody could see.
+  if (!hasFolder || place === 'skills' || place === 'tester') {
     return (
       <header className="topbar is-empty">
         <span className="topbar-spacer" />
@@ -159,7 +169,11 @@ export function TopBar({ narrow, paneOpen = false }: { narrow: boolean; paneOpen
         </span>
       )}
 
-      {narrow && paneOpen && (
+      {/* Both of these move the playtest column, and the blank new-chat
+          surface does not have one: it takes the whole working area the same
+          way a screen does. They used to be offered anyway, so pressing Show
+          playtest on New chat set a flag and changed nothing on screen. */}
+      {narrow && paneOpen && place === null && (
         <Switch
           label="Conversation or game"
           className="topbar-switch"
@@ -177,13 +191,19 @@ export function TopBar({ narrow, paneOpen = false }: { narrow: boolean; paneOpen
       {/* The one control for the playtest column. It reads as a toggle rather
           than as a link to a place, because that is what it is — the column is
           part of this window, not somewhere else. */}
-      <IconButton
-        icon="play"
-        label={paneOpen ? 'Hide playtest' : 'Show playtest'}
-        iconSize={13}
-        aria-pressed={paneOpen}
-        onClick={() => setPaneOpen(!paneOpen)}
-      />
+      {place === null && (
+        <IconButton
+          // Not `play`. This shows and hides a column; it does not start
+          // anything. `play` means "run my game" on the capability strip and
+          // "have the tester play a session" on the tester, and one glyph
+          // cannot mean a verb in two places and a layout toggle in a third.
+          icon="column"
+          label={paneOpen ? 'Hide playtest' : 'Show playtest'}
+          iconSize={13}
+          aria-pressed={paneOpen}
+          onClick={() => setPaneOpen(!paneOpen)}
+        />
+      )}
       {/* There is no Settings button here. Settings belong to the account, and
           the account row at the foot of the sidebar already opens them (along
           with ⌘,) — a second door to the same room only makes the reader
