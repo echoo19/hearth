@@ -35,9 +35,9 @@ vi.mock('../src/api', async (importOriginal) => ({
   apiPermissionMode: vi.fn(async () => null),
 }));
 
-import { apiChatProviders, apiOpenWorkspace } from '../src/api';
+import { apiChatProviders, apiListChats, apiOpenWorkspace } from '../src/api';
 import { useApp } from '../src/store';
-import type { ChatProviderStatus, ConsoleEntry } from '../src/types';
+import type { ChatProviderStatus, ChatSummary, ConsoleEntry } from '../src/types';
 import type { TesterNote } from '../server/tester/types';
 
 const HERE = '/work/lighthouse';
@@ -227,5 +227,52 @@ describe('openWorkspace', () => {
     // is to check.
     expect(useApp.getState().consoleEntries).toEqual([]);
     expect(useApp.getState().consoleUnread).toBe(0);
+  });
+
+  /**
+   * Where you land is decided by what you asked for, never by what happens to
+   * be in the folder.
+   *
+   * The tail of this action opened the newest conversation when there was one,
+   * and `openChat` leaves whatever global screen was up. With no conversation
+   * it asked the server for one and left the screen standing. So opening a
+   * project from Skills put you in the project or left you on Skills depending
+   * on whether that folder had ever been talked to, and every caller inherited
+   * the coin flip. Opening a folder is an act of intent: it lands in the
+   * folder, both ways round.
+   */
+  describe('lands in the project it opened, whatever is in it', () => {
+    beforeEach(() => {
+      vi.mocked(apiOpenWorkspace).mockResolvedValue({
+        ok: true,
+        info: { path: THERE, name: 'ember', isHearthProject: true },
+      });
+    });
+
+    it('leaves the screen it was opened from when the folder has conversations', async () => {
+      vi.mocked(apiListChats).mockResolvedValue([
+        {
+          id: 'c1',
+          title: 'About the jump',
+          kind: 'chat',
+          createdAt: '2026-07-28T11:00:00.000Z',
+          updatedAt: '2026-07-28T12:00:00.000Z',
+        } as ChatSummary,
+      ]);
+      useApp.setState({ projectPath: HERE, screen: 'skills' });
+
+      await useApp.getState().openWorkspace(THERE);
+
+      expect(useApp.getState().screen).toBeNull();
+    });
+
+    it('leaves it just the same when the folder has none', async () => {
+      vi.mocked(apiListChats).mockResolvedValue([]);
+      useApp.setState({ projectPath: HERE, screen: 'skills' });
+
+      await useApp.getState().openWorkspace(THERE);
+
+      expect(useApp.getState().screen).toBeNull();
+    });
   });
 });

@@ -16,8 +16,8 @@
  * users got no answer and blind users got a wrong one.
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import React from 'react';
-import { render, screen, cleanup, act } from '@testing-library/react';
+import React, { useState } from 'react';
+import { render, screen, cleanup, act, fireEvent } from '@testing-library/react';
 
 vi.mock('../src/api', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../src/api')>()),
@@ -26,6 +26,7 @@ vi.mock('../src/api', async (importOriginal) => ({
 }));
 
 import { apiRecentWorkspaces } from '../src/api';
+import { screenKey } from '../src/App';
 import { Sidebar } from '../src/components/shell/Sidebar';
 import { TopBar } from '../src/components/shell/TopBar';
 import { globalPlace, useApp } from '../src/store';
@@ -278,5 +279,56 @@ describe('the rail inside a project', () => {
       screen.getByRole('button', { name: 'Project options for lighthouse' }).click();
     });
     expect(screen.getByRole('menuitem', { name: 'Close project' })).toBeTruthy();
+  });
+});
+
+/**
+ * What the working area is keyed by, and what it is NOT keyed by.
+ *
+ * The shell remounts its working area on a project switch, which is what
+ * replays the entrance so a new folder arrives rather than blinks. That key
+ * used to be the folder alone, and the global screens are inside it: closing a
+ * project while standing on Skills (which deliberately leaves you on Skills)
+ * changed the key underneath the screen and tore it down, so a half-written
+ * skill vanished with no navigation to explain where it went. Nothing about a
+ * folder is a reason to reset a screen that is not a view of one.
+ */
+describe('screenKey', () => {
+  it('holds still while a global screen is up, whatever happens to the folder', () => {
+    expect(screenKey('skills', PROJECT)).toBe(screenKey('skills', OTHER));
+    expect(screenKey('skills', PROJECT)).toBe(screenKey('skills', null));
+    expect(screenKey('tester', PROJECT)).toBe(screenKey('tester', null));
+  });
+
+  it('still keys the project’s own surfaces by the project', () => {
+    expect(screenKey(null, PROJECT)).not.toBe(screenKey(null, OTHER));
+    expect(screenKey(null, PROJECT)).not.toBe(screenKey(null, null));
+  });
+
+  it('never lets a folder collide with a screen', () => {
+    // A folder can be called anything, including the name of a screen.
+    expect(screenKey(null, 'skills')).not.toBe(screenKey('skills', null));
+  });
+
+  it('keeps an unsaved draft standing when the folder goes out from under it', () => {
+    // The rule the key exists for, at the DOM level: state inside the keyed
+    // area survives a project change for exactly as long as a screen is up.
+    function Draft() {
+      const [text, setText] = useState('');
+      return <input aria-label="draft" value={text} onChange={(e) => setText(e.target.value)} />;
+    }
+    const Area = ({ screen, project }: { screen: 'skills' | 'tester' | null; project: string | null }) => (
+      <div key={screenKey(screen, project)}>
+        <Draft />
+      </div>
+    );
+
+    const view = render(<Area screen="skills" project={PROJECT} />);
+    const field = screen.getByLabelText('draft') as HTMLInputElement;
+    fireEvent.change(field, { target: { value: 'half a skill' } });
+
+    view.rerender(<Area screen="skills" project={null} />);
+
+    expect((screen.getByLabelText('draft') as HTMLInputElement).value).toBe('half a skill');
   });
 });

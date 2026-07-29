@@ -153,8 +153,20 @@ export function TopBar({ narrow, paneOpen = false }: { narrow: boolean; paneOpen
 
   return (
     <header className="topbar">
+      {/* The tooltip answers the question the hover asked, which it did not
+          used to. What this strip truncates is the TITLE: `.topbar-name` caps
+          at 34ch, and a generated title routinely runs past it (measured at a
+          500px window, "Fix the double jump so it feels less floaty at the
+          apex" wanted 300px and got 174, so 126px of it was behind the
+          ellipsis). The tooltip said the project PATH, so the one gesture for
+          reading the cut-off name answered with a filesystem location instead.
+
+          Both, title first, rather than swapping one missing answer for
+          another: the top bar is the only place in a conversation that states
+          the path at all, and the separator is the one the window title
+          already uses. */}
       {chatTitle !== '' && (
-        <Tooltip content={projectPath ?? ''}>
+        <Tooltip content={projectPath === null ? chatTitle : `${chatTitle} · ${projectPath}`}>
           <span className="topbar-name">{chatTitle}</span>
         </Tooltip>
       )}

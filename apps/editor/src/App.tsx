@@ -79,6 +79,25 @@ function NativeGate({ native, projectName }: { native: HearthNative; projectName
 }
 
 /**
+ * What the working area is keyed by, which decides what a project switch is
+ * allowed to tear down.
+ *
+ * The folder, so moving between projects replays the entrance and the working
+ * area arrives rather than blinks. But NOT while a global screen is up: Skills
+ * and the Tester screen are the person's, not the folder's, and closing a
+ * project deliberately leaves you standing on one of them. Keyed by the folder
+ * alone, that close remounted the screen underneath the reader and took an
+ * unsaved skill with it, with no navigation to explain where it went.
+ *
+ * Prefixed so a folder can be called anything, including "skills", without
+ * colliding with the screen of that name.
+ */
+export function screenKey(screen: 'skills' | 'tester' | null, projectPath: string | null): string {
+  if (screen !== null) return `screen:${screen}`;
+  return projectPath === null ? 'home' : `project:${projectPath}`;
+}
+
+/**
  * The window width below which the conversation and the game can't both hold a
  * column. The rail is part of that arithmetic: 900px of window with a 260px
  * rail leaves the same room as 640px without one, which is not two columns.
@@ -154,8 +173,9 @@ function Shell() {
             entrance below and the working area arrives rather than blinks.
             This is the ONLY thing the project still remounts: the rail, the
             top bar and the window keep going, which is the whole difference
-            between switching project and reloading the app. */}
-        <div className="app-screen" key={projectPath ?? 'home'}>
+            between switching project and reloading the app. A global screen
+            takes the key over while it is up — see screenKey. */}
+        <div className="app-screen" key={screenKey(screen, projectPath)}>
         {/* One bad row must not take the window with it. A malformed tester
             note used to throw out of render and blank the WHOLE app, leaving a
             reload as the only way back and blanking again on the next one.

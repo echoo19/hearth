@@ -5,8 +5,9 @@
  * model item's live `onSelect` — the half that only exists in the renderer.
  */
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, renderHook } from '@testing-library/react';
-import { useNativeAppMenu } from '../src/menu/nativeMenu';
+import { act, cleanup, renderHook } from '@testing-library/react';
+import { useNativeAppMenu, useNativeMenu } from '../src/menu/nativeMenu';
+import { useApp } from '../src/store';
 import type { AppMenuSection } from '../src/menu/appMenu';
 
 interface NativeStub {
@@ -94,5 +95,41 @@ describe('useNativeAppMenu', () => {
   it('does nothing in the browser, where there is no application menu', () => {
     installNative(null);
     expect(() => renderHook(() => useNativeAppMenu(sections(vi.fn())))).not.toThrow();
+  });
+});
+
+/**
+ * The ticks in the View menu are a claim about the app, so they have to be
+ * rebuilt out of the state they are a claim about.
+ *
+ * The hook subscribes to every field the model reads. `paneOpen` was not one
+ * of them, which is three items at once: the playtest column itself and both
+ * of the column's surfaces, whose ticks are `paneOpen && paneTab === …`. So
+ * opening or closing the column from anywhere else in the app left the menu
+ * ticking the opposite of what was on screen until something unrelated
+ * happened to move.
+ */
+describe('useNativeMenu', () => {
+  /** The View item for the playtest column, out of the last model pushed. */
+  const paneItem = (native: NativeStub): { checked?: boolean } => {
+    const calls = native.setAppMenu!.mock.calls;
+    const pushed = calls[calls.length - 1][0] as { label: string; items: { id?: string; checked?: boolean }[] }[];
+    const view = pushed.find((section) => section.label === 'View');
+    const item = view?.items.find((entry) => entry.id === 'pane');
+    if (!item) throw new Error('no playtest-column item in the View menu');
+    return item;
+  };
+
+  it('follows the playtest column, which is the tick it is about', () => {
+    const native = macNative();
+    useApp.setState({ projectPath: '/work/ember', projectName: 'ember', paneOpen: false, paneTab: 'game' });
+
+    renderHook(() => useNativeMenu());
+    expect(paneItem(native).checked).toBe(false);
+
+    act(() => {
+      useApp.setState({ paneOpen: true });
+    });
+    expect(paneItem(native).checked).toBe(true);
   });
 });

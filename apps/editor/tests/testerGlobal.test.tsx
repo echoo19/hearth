@@ -29,7 +29,36 @@ vi.mock('../src/api', async (importOriginal) => ({
   apiRecentWorkspaces: vi.fn(async () => []),
   apiTesterPlay: vi.fn(async () => ({ ok: true })),
   apiGameStatus: vi.fn(async () => null),
+  apiCloseWorkspace: vi.fn(async () => {}),
+  // Play aims at a project that is usually not the open one, so this screen is
+  // the one surface whose main act opens a folder. Everything that open reads
+  // is answered here rather than over a socket that does not exist.
+  apiOpenWorkspace: vi.fn(async (path: string) => ({
+    ok: true,
+    info: { path, name: path.split('/').pop() ?? path, isHearthProject: true },
+  })),
+  apiListChats: vi.fn(async () => []),
+  apiRecentChats: vi.fn(async () => []),
+  apiProbeStatus: vi.fn(async () => null),
+  apiAppSettings: vi.fn(async () => null),
+  apiChatProviders: vi.fn(async () => null),
+  apiPermissionMode: vi.fn(async () => null),
 }));
+
+/** A socket that goes nowhere: these tests are about state, not frames. */
+class DeadSocket {
+  static readonly OPEN = 1;
+  readyState = 0;
+  onopen: (() => void) | null = null;
+  onmessage: ((event: { data: string }) => void) | null = null;
+  onclose: (() => void) | null = null;
+  onerror: (() => void) | null = null;
+  constructor(readonly url: string) {}
+  send(): void {}
+  close(): void {
+    this.readyState = 3;
+  }
+}
 
 import {
   TesterHistory,
@@ -37,9 +66,16 @@ import {
   runRows,
   skippedProjectsLine,
 } from '../src/components/tester/TesterHistory';
-import { selectorLabel } from '../src/projects/ProjectSelector';
+import { ProjectSelector, selectorLabel } from '../src/projects/ProjectSelector';
+import { OPEN_FOLDER_EVENT } from '../src/components/shell/useOpenFolder';
 import { useApp } from '../src/store';
-import { apiGameStatus } from '../src/api';
+import {
+  apiCloseWorkspace,
+  apiGameStatus,
+  apiOpenWorkspace,
+  apiRecentWorkspaces,
+  apiTesterPlay,
+} from '../src/api';
 import { currentToast, resetToasts } from '../src/toast';
 import type { TesterNote } from '../server/tester/types';
 import type { TesterRun } from '../src/types';
@@ -73,11 +109,21 @@ beforeEach(() => {
     this.dispatchEvent(new Event('close'));
   };
   useApp.setState({ projectPath: null, projectName: null, testerRuns: null, testerTarget: null });
+  vi.stubGlobal('WebSocket', DeadSocket);
+  // Re-armed here rather than only in the mock factory: `restoreAllMocks`
+  // below strips the implementation off every one of these between tests.
+  vi.mocked(apiOpenWorkspace).mockImplementation(async (path: string) => ({
+    ok: true,
+    info: { path, name: path.split('/').pop() ?? path, isHearthProject: true },
+  }));
+  vi.mocked(apiTesterPlay).mockResolvedValue({ ok: true });
 });
 
 afterEach(() => {
   cleanup();
   vi.restoreAllMocks();
+  vi.unstubAllGlobals();
+  useApp.setState({ tester: { ...useApp.getState().tester, running: false, starting: false } });
 });
 
 describe('runRows', () => {
@@ -116,6 +162,43 @@ describe('runRows', () => {
       run(LIGHTHOUSE, 'lighthouse', note(9, 'worse', '2026-07-28T01:00:00.000Z')),
     ];
     expect(runRows(runs)).toHaveLength(runs.length);
+  });
+});
+
+describe('Play aimed at a game that is not there', () => {
+  it('hands the folder back to the server rather than leaving it served', async () => {
+    // Asking whether a project has a game means asking the server to serve
+    // that project first. A question answered "no" must not leave the server
+    // authorized to serve someone's folder for the rest of the session: that
+    // set is the jail every file route and socket upgrade is checked against,
+    // and it was growing on a press that did nothing.
+    vi.mocked(apiOpenWorkspace).mockResolvedValue({
+      ok: true,
+      info: { path: HARBOUR, name: 'harbour', isHearthProject: false },
+    });
+    vi.mocked(apiGameStatus).mockResolvedValue({ present: false, entry: null, mtime: 0 });
+    useApp.setState({ projectPath: LIGHTHOUSE, projectName: 'lighthouse' });
+
+    await act(async () => {
+      await useApp.getState().playTesterIn(HARBOUR);
+    });
+
+    expect(apiCloseWorkspace).toHaveBeenCalledWith(HARBOUR);
+    // And the project the person was actually in is untouched.
+    expect(useApp.getState().projectPath).toBe(LIGHTHOUSE);
+  });
+
+  it('does not hand back a folder it did not open', async () => {
+    // Already the open project: this call is not what served it, so closing it
+    // would take away a folder the person is standing in.
+    vi.mocked(apiGameStatus).mockResolvedValue({ present: false, entry: null, mtime: 0 });
+    useApp.setState({ projectPath: HARBOUR, projectName: 'harbour' });
+
+    await act(async () => {
+      await useApp.getState().playTesterIn(HARBOUR);
+    });
+
+    expect(apiCloseWorkspace).not.toHaveBeenCalled();
   });
 });
 
@@ -369,6 +452,55 @@ describe('selectorLabel', () => {
   });
 });
 
+/**
+ * A picker with nothing in it is a control that does nothing, with nothing
+ * saying why.
+ *
+ * On the Tester screen this control offers no "New project" (there is nothing
+ * to play in a folder that does not exist yet), so on a first run its menu was
+ * literally empty: you pressed "Pick a game", a blank panel opened, and that
+ * was the whole of the app's answer. A menu must always say what is going on
+ * and always have something to press.
+ */
+describe('the picker with nothing to offer', () => {
+  const openMenu = async (): Promise<void> => {
+    const trigger = await screen.findByRole('button', { name: /^Project:/ });
+    await act(async () => {
+      trigger.click();
+    });
+  };
+
+  it('says there are no projects yet, and offers the one act that makes that false', async () => {
+    vi.mocked(apiRecentWorkspaces).mockResolvedValue([]);
+    render(<ProjectSelector allowNew={false} emptyLabel="Pick a game" />);
+    await openMenu();
+
+    const menu = screen.getByRole('menu');
+    expect(menu.textContent).toMatch(/no projects yet/i);
+    const items = screen.getAllByRole('menuitem');
+    expect(items.length).toBeGreaterThan(0);
+
+    const asked = vi.fn();
+    window.addEventListener(OPEN_FOLDER_EVENT, asked);
+    await act(async () => {
+      items[0].click();
+    });
+    window.removeEventListener(OPEN_FOLDER_EVENT, asked);
+    expect(asked).toHaveBeenCalledTimes(1);
+  });
+
+  it('leaves a menu that has projects in it alone', async () => {
+    vi.mocked(apiRecentWorkspaces).mockResolvedValue([
+      { path: LIGHTHOUSE, name: 'lighthouse', exists: true },
+    ]);
+    render(<ProjectSelector allowNew={false} emptyLabel="Pick a game" />);
+    await openMenu();
+
+    expect(screen.getByRole('menu').textContent).not.toMatch(/no projects yet/i);
+    expect(screen.getAllByRole('menuitem').map((item) => item.textContent)).toEqual(['lighthouse']);
+  });
+});
+
 describe('playTesterIn', () => {
   afterEach(() => resetToasts());
 
@@ -389,5 +521,55 @@ describe('playTesterIn', () => {
     vi.mocked(apiGameStatus).mockResolvedValueOnce({ present: false, entry: null, mtime: 0 });
     await useApp.getState().playTesterIn(HARBOUR);
     expect(currentToast()?.message).toMatch(/there is no game/i);
+  });
+
+  /**
+   * Aiming Play at a game that is not there must not cost you the one you had
+   * open.
+   *
+   * This used to navigate first and ask afterwards: the window switched
+   * folders, the conversation, console and chat list of the project you were
+   * in were cleared, and only then did it read the status and tell you there
+   * was nothing to play. The screen is a global one, so the target is usually
+   * NOT the open project, which makes it the common case rather than the edge.
+   *
+   * The status read needs the server to be serving that folder (`gameStatus`
+   * answers 403 for a folder it does not have open), so asking first means
+   * asking the server to serve it first. That is a fact about the server, not
+   * a move by the window, and nothing the person is looking at changes until
+   * the answer is in.
+   */
+  it('keeps the project you had open when the target has no game', async () => {
+    useApp.setState({ projectPath: LIGHTHOUSE, projectName: 'lighthouse', screen: 'tester' });
+    vi.mocked(apiGameStatus).mockResolvedValue({ present: false, entry: null, mtime: 0 });
+
+    await useApp.getState().playTesterIn(HARBOUR);
+
+    expect(useApp.getState().projectPath).toBe(LIGHTHOUSE);
+    expect(useApp.getState().screen).toBe('tester');
+    expect(currentToast()?.message).toMatch(/there is no game/i);
+  });
+
+  it('keeps it just as firmly when the status read failed', async () => {
+    useApp.setState({ projectPath: LIGHTHOUSE, projectName: 'lighthouse', screen: 'tester' });
+    vi.mocked(apiGameStatus).mockResolvedValue(null);
+
+    await useApp.getState().playTesterIn(HARBOUR);
+
+    expect(useApp.getState().projectPath).toBe(LIGHTHOUSE);
+    expect(useApp.getState().screen).toBe('tester');
+    expect(currentToast()?.message).toMatch(/could not check/i);
+  });
+
+  it('still opens the folder and plays when there really is a game', async () => {
+    useApp.setState({ projectPath: LIGHTHOUSE, projectName: 'lighthouse', screen: 'tester' });
+    vi.mocked(apiGameStatus).mockResolvedValue({ present: true, entry: 'index.html', mtime: 7 });
+
+    await useApp.getState().playTesterIn(HARBOUR);
+
+    expect(useApp.getState().projectPath).toBe(HARBOUR);
+    // Watching is the point: Play from the history screen leaves the history.
+    expect(useApp.getState().screen).toBeNull();
+    expect(vi.mocked(apiTesterPlay)).toHaveBeenCalledWith(HARBOUR);
   });
 });

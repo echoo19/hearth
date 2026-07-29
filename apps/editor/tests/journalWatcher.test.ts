@@ -25,6 +25,21 @@ vi.mock('node:fs', async (importOriginal) => {
   return { ...actual, watch: vi.fn(actual.watch) };
 });
 
+/**
+ * Wait for something to become true, rather than for a length of time.
+ *
+ * These tests drive a real filesystem watcher, and a fixed sleep is a bet on
+ * how loaded the machine is. The racing-baseline test below bet 500ms and lost
+ * it under a full parallel suite run (that file took 8.3 seconds of wall clock
+ * while passing every time it ran alone), which is a flake: the assertion was
+ * right and the clock was wrong. Polling keeps the fast case fast and the
+ * loaded case correct, and a real failure still fails, one deadline later.
+ */
+async function until(predicate: () => boolean, deadlineMs = 5000): Promise<void> {
+  const started = Date.now();
+  while (!predicate() && Date.now() - started < deadlineMs) await wait(25);
+}
+
 function wait(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
@@ -97,7 +112,11 @@ describe('startJournalWatcher', () => {
     // than landing safely after it resolves.
     await writer.append({ ts: new Date().toISOString(), source: 'cli', command: 'createScene', summary: 'racer', ok: true });
 
-    await wait(500);
+    await until(() => batches.flat().some((e) => e.summary === 'racer'));
+    // A moment past arrival, so a wrongly re-delivered seed entry has had the
+    // same chance to show up as the racer did. Without it this would only be
+    // asserting that the racer came first.
+    await wait(100);
 
     const delivered = batches.flat();
     expect(delivered.some((e) => e.summary === 'racer')).toBe(true);

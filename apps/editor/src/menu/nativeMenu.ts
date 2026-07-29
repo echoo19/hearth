@@ -64,6 +64,11 @@ export function useNativeMenu(): void {
   const projectPath = useApp((s) => s.projectPath);
   const conversationMode = useApp((s) => s.conversationMode);
   const paneTab = useApp((s) => s.paneTab);
+  // Three of View's ticks are about the playtest column: the column itself,
+  // and each of its surfaces, which are checked as `paneOpen && paneTab === …`.
+  // Missing here, the model was never rebuilt when the column opened or closed,
+  // so the menu ticked the opposite of the window until something else moved.
+  const paneOpen = useApp((s) => s.paneOpen);
   const codePeekOpen = useApp((s) => s.codePeek.open);
   // Where the app is standing. View's items are about the working area, which
   // a global screen takes over, so the model has to be rebuilt when that
@@ -85,7 +90,7 @@ export function useNativeMenu(): void {
         checkForUpdates: native?.checkForUpdates ? () => void native.checkForUpdates?.() : null,
       }),
     // The store fields the model reads; getState() inside supplies the rest.
-    [native, projectPath, conversationMode, paneTab, codePeekOpen, screen, composing],
+    [native, projectPath, conversationMode, paneTab, paneOpen, codePeekOpen, screen, composing],
   );
 
   useNativeAppMenu(sections);

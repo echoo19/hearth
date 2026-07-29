@@ -40,7 +40,7 @@ import {
   type Personalization,
   type PersonalizationInfo,
 } from './api';
-import { attachmentPayload, type PendingAttachment } from './chat/attachments';
+import { attachmentPayload, releaseAttachments, type PendingAttachment } from './chat/attachments';
 import type {
   AgentCliInfo,
   AppSettingsInfo,
@@ -101,6 +101,34 @@ export interface TesterThought {
   turn: number;
   text: string;
 }
+
+/**
+ * A message that has been typed and not sent: the words, and the files waiting
+ * with them.
+ *
+ * The attachments carry live object URLs for their thumbnails, so a draft is
+ * something that has to be RELEASED rather than merely dropped — see
+ * `clearDrafts`.
+ */
+export interface ComposerDraft {
+  text: string;
+  attachments: readonly PendingAttachment[];
+}
+
+/** Nothing typed. Shared, so an empty draft is one object and not a thousand. */
+export const EMPTY_DRAFT: ComposerDraft = { text: '', attachments: [] };
+
+/**
+ * The drafts that belong to the open folder, by the key their composer uses.
+ *
+ * A message in a conversation, or on a project's own screen, is about that
+ * project and goes when it does. Home's is not: it is aimed at whichever
+ * project the person picked and it is the composer that OPENS a folder, so
+ * clearing it on an open would empty the box mid-send and revoke the pictures
+ * still on screen in it. Kept as a list rather than as "everything except
+ * home" so the exception is named where it is made.
+ */
+export const FOLDER_DRAFT_KEYS: readonly string[] = ['chat', 'project'];
 
 /** The tester, as this window currently understands it. */
 export interface TesterState {
@@ -258,6 +286,15 @@ export interface AppState {
 
   // --- Game pane ------------------------------------------------------------
   game: GameStatus;
+  /**
+   * Whether anybody has actually managed to look. `game.present` is false
+   * before the first status read lands and false again when one fails, and
+   * `refreshGame` leaves the empty default standing on a null answer, so the
+   * field alone cannot tell "this folder has no game" from "nobody could
+   * look". Surfaces that speak about the folder read this first: never say
+   * there is nothing when the truth is that nobody has looked.
+   */
+  gameKnown: boolean;
   senses: Sense[];
   /** The last probe read found a shim, so the deeper senses are real. */
   shimDetected: boolean;
@@ -369,6 +406,24 @@ export interface AppState {
   /** Prompt carried across a folder open, consumed by the composer on mount. */
   pendingPrompt: string | null;
   /**
+   * What has been typed and not sent yet, per composer.
+   *
+   * It lives here rather than inside the composer because the composer does
+   * not outlive the surface it sits on: opening Skills or the Tester screen
+   * takes the whole working area, which unmounts the conversation column, and
+   * the words went with it along with the tray's object URLs. Losing what
+   * somebody typed is the worst thing this app can do, and the composer's own
+   * home path already refuses to do it on a failed send.
+   *
+   * Keyed by which composer, because they are different acts: Home's first
+   * message makes a project, a conversation's continues one, and one must
+   * never turn up in the other's box.
+   *
+   * The tray's object URLs live exactly as long as the draft holding them, so
+   * every path that drops a draft releases them: see `clearDrafts`.
+   */
+  composerDrafts: Record<string, ComposerDraft>;
+  /**
    * A first message from Home is making a folder, opening it and sending —
    * three round trips behind one keystroke. Held so the home composer can
    * refuse a second submit rather than minting a second project.
@@ -459,6 +514,26 @@ export interface AppState {
   /** Quit and install the downloaded update (the rail's banner button). */
   relaunchToUpdate(): Promise<void>;
   consumePendingPrompt(): string | null;
+  /**
+   * Hold what a composer currently has in it. Called on every keystroke, which
+   * is what makes the draft survive its surface being taken away.
+   *
+   * Takes ownership of the attachments' object URLs: whatever this replaces is
+   * NOT released, because the caller is normally handing back the same files it
+   * was given. A caller that is really letting go of them releases them itself
+   * (the composer does, on send and on remove).
+   */
+  setDraft(key: string, draft: ComposerDraft): void;
+  /**
+   * Forget drafts and release the pictures they were holding.
+   *
+   * Named keys, or all of them when none are given. A project switch and a
+   * close pass `FOLDER_DRAFT_KEYS`, because a message typed into a folder is
+   * about that folder. Releasing is explicit rather than left to be collected:
+   * an object URL nobody revokes is a picture the page holds for its whole
+   * life, and one revoked too early is a broken thumbnail.
+   */
+  clearDrafts(keys?: readonly string[]): void;
   refreshGame(): Promise<void>;
   refreshSettings(): Promise<void>;
   /** Read `~/.hearth`'s name and standing instructions. Safe to call twice. */
@@ -1675,6 +1750,7 @@ export const useApp = create<AppState>((set, get) => {
     recentChatsLoaded: false,
 
     game: EMPTY_GAME,
+    gameKnown: false,
     senses: [],
     shimDetected: false,
     gameNonce: 0,
@@ -1700,6 +1776,7 @@ export const useApp = create<AppState>((set, get) => {
     narrowTab: 'chat',
     codePeek: { open: false, path: null },
     pendingPrompt: null,
+    composerDrafts: {},
     homeBusy: false,
     updateReady: null,
     personalization: null,
@@ -1745,6 +1822,12 @@ export const useApp = create<AppState>((set, get) => {
       // which is the first moment anyone knows whether a key exists.
       const storedMode = readConversationMode(info.path);
       const storedPane = readPaneOpen(info.path);
+      // An unsent message belongs to the folder it was written in, so it does
+      // not follow the window into the next one. Released rather than dropped,
+      // because the tray's thumbnails are object URLs this window is holding.
+      // Not Home's: that composer is the one that OPENS folders, and this runs
+      // in the middle of its send. See FOLDER_DRAFT_KEYS.
+      get().clearDrafts(FOLDER_DRAFT_KEYS);
       set({
         projectPath: info.path,
         projectName: info.name,
@@ -1777,6 +1860,10 @@ export const useApp = create<AppState>((set, get) => {
         queued: [],
         journalFeed: [],
         game: EMPTY_GAME,
+        // Nobody has looked in THIS folder yet. Carried over from the last one,
+        // it would let a new project inherit the old one's certainty for the
+        // length of a round trip.
+        gameKnown: false,
         senses: [],
         shimDetected: false,
         gameNonce: 0,
@@ -1818,6 +1905,17 @@ export const useApp = create<AppState>((set, get) => {
       // Either way the window opens on a conversation, never on nothing.
       const chats = get().chats;
       if (get().projectPath === info.path) {
+        // Opening a folder is an act of intent, so it lands in the folder, and
+        // it lands there the same way whatever is inside. This used to be
+        // decided by the branch below: `openChat` leaves a global screen, and
+        // the empty-folder branch does not, so opening a project from Skills
+        // put you in the project or left you on Skills depending on whether
+        // that folder had ever been talked to. Said here, once, for both.
+        //
+        // `projectView` and `composing` are still the caller's to say: which
+        // surface OF the folder you wanted is what the caller knows and this
+        // does not.
+        set({ screen: null });
         // `chat-new` directly, not `newChat()`: that action shows the blank
         // NEW-CHAT SURFACE, which is a different thing from asking the server
         // for an empty conversation. Opening a project has to land on a real
@@ -1843,6 +1941,9 @@ export const useApp = create<AppState>((set, get) => {
       const closing = get().projectPath;
       if (closing !== null) void apiCloseWorkspace(closing);
       disconnectWs();
+      // The unsent message goes with the folder it was written in, and its
+      // pictures are let go of rather than left behind. See openWorkspace.
+      get().clearDrafts(FOLDER_DRAFT_KEYS);
       set({
         projectPath: null,
         projectName: null,
@@ -1861,6 +1962,10 @@ export const useApp = create<AppState>((set, get) => {
         queued: [],
         journalFeed: [],
         game: EMPTY_GAME,
+        // Nobody has looked in THIS folder yet. Carried over from the last one,
+        // it would let a new project inherit the old one's certainty for the
+        // length of a round trip.
+        gameKnown: false,
         senses: [],
         shimDetected: false,
         gameNonce: 0,
@@ -2370,6 +2475,29 @@ export const useApp = create<AppState>((set, get) => {
       return pending;
     },
 
+    setDraft(key, draft) {
+      set((state) => ({
+        // An empty draft is dropped rather than stored, so `composerDrafts`
+        // holds only real ones and an untouched composer costs nothing.
+        composerDrafts:
+          draft.text === '' && draft.attachments.length === 0
+            ? Object.fromEntries(Object.entries(state.composerDrafts).filter(([held]) => held !== key))
+            : { ...state.composerDrafts, [key]: draft },
+      }));
+    },
+
+    clearDrafts(keys) {
+      const held = get().composerDrafts;
+      const going = Object.entries(held).filter(([key]) => keys === undefined || keys.includes(key));
+      if (going.length === 0) return;
+      for (const [, draft] of going) releaseAttachments(draft.attachments);
+      set({
+        composerDrafts: Object.fromEntries(
+          Object.entries(held).filter(([key]) => !going.some(([gone]) => gone === key)),
+        ),
+      });
+    },
+
     async refreshGame() {
       const project = get().projectPath;
       if (!project) return;
@@ -2381,8 +2509,15 @@ export const useApp = create<AppState>((set, get) => {
           shimDetected: probe.shimDetected,
         }));
       }
+      // A read that did not land teaches this folder nothing: `gameKnown` is
+      // left where it was, so a dropped request cannot unlearn an answer that
+      // did arrive, and it cannot mint one either.
       if (!status) return;
       const previous = get().game;
+      // Set before the early return below: a status that says exactly what the
+      // last one said is still somebody having looked, and that is the whole of
+      // what this field claims.
+      if (!get().gameKnown) set({ gameKnown: true });
       const changed = status.present !== previous.present || status.entry !== previous.entry || status.mtime !== previous.mtime;
       if (!changed) return;
       // A game arriving where there was none is the one moment the playtest
@@ -2519,15 +2654,23 @@ export const useApp = create<AppState>((set, get) => {
     },
 
     async playTesterIn(path) {
-      // The Tester screen is global, so its Play aims at a project that may not
-      // be the open one. Opening first is not a detour: a playtest needs the
-      // folder's game, its probe and its socket, all of which come from an
-      // open workspace, and the person watching needs to be in the game they
-      // asked to have played.
-      if (get().projectPath !== path) {
-        const opened = await get().openWorkspace(path);
-        if (!opened.ok) {
-          showToast(opened.error ?? 'Could not open that project.', 'error');
+      // The Tester screen is global, so its Play aims at a project that is
+      // usually NOT the open one. Nothing the person is looking at moves until
+      // this knows there is something to play: this used to switch folders
+      // first and ask afterwards, so aiming Play at a game that is not there
+      // closed the project you had open, cleared its conversation, its console
+      // and its chat list, and then told you there was nothing to play. The
+      // one thing it could not give back was the folder it had just closed.
+      const here = get().projectPath === path;
+      if (!here) {
+        // `gameStatus` answers 403 for a folder the server does not have open,
+        // so asking it anything means asking the server to serve that folder
+        // first. That is a fact about the SERVER and not a move by the window:
+        // no state is set here, and if the answer below is no, the window is
+        // exactly where it was.
+        const served = await apiOpenWorkspace(path);
+        if (!served.ok || !served.info) {
+          showToast(served.error ?? 'Could not open that project.', 'error');
           return;
         }
       }
@@ -2542,13 +2685,40 @@ export const useApp = create<AppState>((set, get) => {
       // project", a definite claim about someone's disk made from a question
       // that was never answered. Not knowing is its own sentence.
       const status = await apiGameStatus(path);
+      /**
+       * Hand the folder back if this is not going to play it.
+       *
+       * Asking the status question required asking the server to serve the
+       * folder, and a question that was answered "no" should not leave the
+       * server authorized to serve someone's project for the rest of the
+       * session. The set of open roots is the jail every file route and every
+       * socket upgrade is checked against, and today it grew on a press that
+       * did nothing. Only when this call is what opened it: a folder that was
+       * already open stays open, because it was not this that opened it.
+       */
+      const giveBack = async (): Promise<void> => {
+        if (!here && get().projectPath !== path) await apiCloseWorkspace(path);
+      };
       if (!status) {
+        await giveBack();
         showToast('Could not check whether that project has a game, so it was not played.', 'error');
         return;
       }
       if (!status.present) {
+        await giveBack();
         showToast('There is no game in that project yet, so there is nothing for it to play.', 'error');
         return;
+      }
+      // Now it is worth the move. A playtest needs the folder's game, its probe
+      // and its socket, all of which come from an open workspace, and the
+      // person watching needs to be in the game they asked to have played.
+      if (!here) {
+        const opened = await get().openWorkspace(path);
+        if (!opened.ok) {
+          await giveBack();
+          showToast(opened.error ?? 'Could not open that project.', 'error');
+          return;
+        }
       }
       await get().playTester();
     },

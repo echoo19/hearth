@@ -17,14 +17,28 @@
   font-family: var(--font-ui);
   font-size: var(--text-xs);
   line-height: 1.4;
-  white-space: nowrap;
+  /* It WRAPS, and `max-width` is why it has to. `nowrap` against a 260px cap
+     is a cap that cannot be honoured: the text simply ran out of the bubble
+     and over the page, unbordered and unbacked. Measured with a real path in
+     it, the label was 528px wide inside a 260px tooltip, and even the chat
+     title on its own wanted 272px. Nothing here is long by design, but the
+     strings are not all the app's to choose (a project path, a conversation's
+     generated title, a registered agent's command line), and two wrapped lines
+     are a hint while text lying across the interface is a rendering fault.
+     .tooltip-kbd keeps its own `nowrap`, so a shortcut chip never splits. */
+  white-space: normal;
   pointer-events: none;
   box-shadow: 0 4px 14px oklch(0 0 0 / 0.35);
   animation: tooltip-in var(--t-fast) var(--ease-out);
 }
 
+/* A filesystem path has no spaces to break at, so wrapping alone would not
+   save it: without a break-anywhere rule one unbroken run still measures wider
+   than the bubble and spills exactly as before. */
 .tooltip-label {
   color: var(--ink);
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 /* Shortcut chip — same visual grammar as the ShortcutSheet kbd, sized down for

@@ -23,6 +23,7 @@ import { apiRecentWorkspaces } from '../api';
 import type { RecentWorkspace } from '../types';
 import { Icon } from '../components/ui';
 import { MenuButton, type MenuItem } from '../components/ui/Menu';
+import { OPEN_FOLDER_EVENT } from '../components/shell/useOpenFolder';
 import { ProjectMark } from './ProjectMark';
 
 /** How many projects the menu offers before it stops. */
@@ -129,6 +130,22 @@ export function ProjectSelector({
         ]
       : []),
   ];
+
+  // Nothing to pick and no "New project" to offer: on the Tester screen, on a
+  // first run, this opened a blank panel. A control that does nothing, with
+  // nothing saying why. Say what is going on, and offer the one act that makes
+  // it stop being true — the rail owns the folder picker and answers this
+  // event for the whole window.
+  if (items.length === 0) {
+    items.push(
+      { header: 'No projects yet' },
+      {
+        label: 'Open a project…',
+        icon: 'folder',
+        onSelect: () => window.dispatchEvent(new CustomEvent(OPEN_FOLDER_EVENT)),
+      },
+    );
+  }
 
   const label = selectorLabel(target, current?.name ?? null, valueLabel, emptyLabel);
 

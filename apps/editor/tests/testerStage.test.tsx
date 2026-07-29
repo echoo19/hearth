@@ -71,6 +71,10 @@ function seed(tester: Partial<TesterState>): void {
     projectPath: PROJECT,
     projectName: 'game',
     game: { present: true, entry: 'index.html', mtime: 1 },
+    // Somebody looked, and this is what they found. Stated rather than
+    // implied: `game.present` alone cannot tell an empty folder from an
+    // unanswered question, which is what `gameKnown` exists to say.
+    gameKnown: true,
     tester: { ...IDLE, ...tester },
   });
 }
@@ -214,6 +218,7 @@ describe('Play, when it cannot be pressed', () => {
       projectPath: PROJECT,
       projectName: 'game',
       game: { present: false, entry: null, mtime: 0 },
+      gameKnown: true,
       tester: { ...IDLE },
     });
     render(<TesterStage />);
@@ -225,6 +230,7 @@ describe('Play, when it cannot be pressed', () => {
       projectPath: PROJECT,
       projectName: 'game',
       game: { present: false, entry: null, mtime: 0 },
+      gameKnown: true,
       tester: { ...IDLE },
     });
     render(<TesterStage />);
@@ -239,6 +245,7 @@ describe('Play, when it cannot be pressed', () => {
       projectPath: PROJECT,
       projectName: 'game',
       game: { present: false, entry: null, mtime: 0 },
+      gameKnown: true,
       tester: { ...IDLE },
     });
     const playTester = vi.fn();
@@ -361,5 +368,58 @@ describe('whyNoPlay', () => {
 
   it('is null when there is nothing in the way', () => {
     expect(whyNoPlay(true, false, false)).toBeNull();
+  });
+
+  /**
+   * `game.present` is false both when the folder has no game and when the
+   * status read never landed, and `refreshGame` leaves the empty default
+   * standing on a null answer. Taking a plain boolean here turned a request
+   * that FAILED into "There is no game in this project yet": a statement about
+   * somebody's disk, made from a question nobody got an answer to. The store
+   * path was fixed with exactly this distinction; this one still had it wrong.
+   *
+   * Null is the pre-read value, and it neither claims nor blocks: it is not a
+   * reason the tester cannot play, because nobody has looked. Pressing Play
+   * asks the server, which does know, and answers "No game to play yet" for
+   * itself.
+   */
+  it('never turns a question nobody answered into a claim about the folder', () => {
+    // Null, which is neither the claim nor a refusal: there is nothing known
+    // to be in the way, so Play stays pressable and the server answers.
+    expect(whyNoPlay(null, false, false)).toBeNull();
+  });
+
+  it('still holds back a second session while one is under way', () => {
+    expect(whyNoPlay(null, true, false)).toMatch(/playing right now/i);
+    expect(whyNoPlay(null, false, true)).toMatch(/waking up/i);
+  });
+});
+
+describe('the stage with the game status unread', () => {
+  it('does not tell the reader their folder is empty', () => {
+    // A window that has just opened, or whose status read was dropped: the
+    // invitation used to sit under a Play button explaining that there is no
+    // game here, having never found out either way.
+    useApp.setState({
+      projectPath: PROJECT,
+      projectName: 'game',
+      game: { present: false, entry: null, mtime: 0 },
+      gameKnown: false,
+      tester: { ...IDLE },
+    });
+    render(<TesterStage />);
+    expect(screen.queryByText(/no game in this project/i)).toBeNull();
+  });
+
+  it('still says it plainly once the read has landed', () => {
+    useApp.setState({
+      projectPath: PROJECT,
+      projectName: 'game',
+      game: { present: false, entry: null, mtime: 0 },
+      gameKnown: true,
+      tester: { ...IDLE },
+    });
+    render(<TesterStage />);
+    expect(screen.getByText(/no game in this project/i)).toBeTruthy();
   });
 });

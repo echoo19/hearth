@@ -33,9 +33,21 @@ import { readableNote } from './testerRows';
  *
  * Pure and shared by every Play control on this surface, so the three of them
  * cannot drift into three different accounts of the same folder.
+ *
+ * `gamePresent` is null when nobody has managed to look: `game.present` is
+ * false both for a folder with no game and for a status read that never
+ * landed, and `refreshGame` leaves the empty default standing on a null
+ * answer, so taking a plain boolean here turned a dropped request into "There
+ * is no game in this project yet" — a statement about somebody's disk made
+ * from a question nobody answered. The store's own Play path was given this
+ * distinction; this one had been left behind.
+ *
+ * Not knowing is not a reason to refuse, either. Null blocks nothing: pressing
+ * Play asks the server, which does know, and answers for itself. Blocking on
+ * an unread status would be the same false claim wearing a disabled button.
  */
-export function whyNoPlay(gamePresent: boolean, running: boolean, starting: boolean): string | null {
-  if (!gamePresent) return 'There is no game in this project yet, so there is nothing for it to play.';
+export function whyNoPlay(gamePresent: boolean | null, running: boolean, starting: boolean): string | null {
+  if (gamePresent === false) return 'There is no game in this project yet, so there is nothing for it to play.';
   if (starting) return 'It is waking up. Give it a moment.';
   if (running) return 'It is playing right now.';
   return null;
@@ -278,6 +290,9 @@ function TesterInvitation({ onPlay, blocked }: { onPlay: () => void; blocked: st
 export function TesterStage() {
   const projectPath = useApp((s) => s.projectPath);
   const gamePresent = useApp((s) => s.game.present);
+  // Whether anyone has actually looked. Until they have, this surface says
+  // nothing about what is in the folder — see whyNoPlay.
+  const gameKnown = useApp((s) => s.gameKnown);
   const tester = useApp((s) => s.tester);
   const playTester = useApp((s) => s.playTester);
   const stopTester = useApp((s) => s.stopTester);
@@ -331,7 +346,7 @@ export function TesterStage() {
       ? (tester.lastNote ?? tester.sessions[tester.sessions.length - 1] ?? null)
       : null;
 
-  const blocked = whyNoPlay(gamePresent, tester.running, tester.starting);
+  const blocked = whyNoPlay(gameKnown ? gamePresent : null, tester.running, tester.starting);
 
   if (neverPlayed && !tester.error) {
     return (

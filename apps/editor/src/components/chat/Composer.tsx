@@ -12,7 +12,7 @@
  * app in the world does. ⌘↵ keeps working for the people who learned it here.
  */
 import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
-import { useApp } from '../../store';
+import { EMPTY_DRAFT, useApp, type ComposerDraft } from '../../store';
 import { Tooltip } from '../ui/Tooltip';
 import { Icon } from '../ui';
 import { MenuButton } from '../ui/Menu';
@@ -107,15 +107,33 @@ export function Composer({ variant = 'chat' }: { variant?: ComposerVariant } = {
   const chatBusy = useApp((s) => s.chatBusy);
   const connected = useApp((s) => s.wsStatus === 'connected');
   const consumePendingPrompt = useApp((s) => s.consumePendingPrompt);
-  const [text, setText] = useState('');
+  // What has been typed, held OUTSIDE this component.
+  //
+  // A composer does not outlive its surface: opening Skills or the Tester
+  // screen unmounts the whole conversation column, and with the words in local
+  // state they went with it, thumbnails revoked on the way out. Keeping them in
+  // the store means there is nothing here to lose, so a trip to Skills and back
+  // returns the box exactly as it was left. The draft is keyed by which
+  // composer this is, because Home's first message and a conversation's next
+  // one are two different acts and must not turn up in each other's box.
+  const draft = useApp((s) => s.composerDrafts[variant] ?? EMPTY_DRAFT);
+  const text = draft.text;
+  const attachments = draft.attachments;
+  // Written through the store rather than through the subscription above:
+  // `getState()` is true the instant after a set, and several of these land in
+  // one turn (a batch of dropped files, each read on its own tick).
+  const write = useCallback(
+    (next: Partial<ComposerDraft>): void => {
+      const current = useApp.getState().composerDrafts[variant] ?? EMPTY_DRAFT;
+      useApp.getState().setDraft(variant, { ...current, ...next });
+    },
+    [variant],
+  );
+  const setText = useCallback((value: string): void => write({ text: value }), [write]);
   // Home's submit is a round trip (create the folder, open it, then send), and
   // it must not be startable twice from one impatient double-press.
   const [starting, setStarting] = useState(false);
-  const [attachments, setAttachments] = useState<PendingAttachment[]>([]);
   const [dropping, setDropping] = useState(false);
-  // The tray, readable synchronously — see addFiles.
-  const trayRef = useRef<readonly PendingAttachment[]>(attachments);
-  trayRef.current = attachments;
   const ref = useRef<HTMLTextAreaElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
   // Both blank surfaces start a conversation rather than continuing one, so
@@ -128,14 +146,15 @@ export function Composer({ variant = 'chat' }: { variant?: ComposerVariant } = {
   // against the same running count. Reading it through a functional setState
   // looked like it did that and did not: React only runs the updater eagerly
   // while no update is pending, so from the SECOND file on the check silently
-  // passed — both the count cap and the size cap. The tray is mirrored in a
-  // ref, which is true synchronously, and the whole batch is judged before any
-  // of it is read.
+  // passed — both the count cap and the size cap. The draft in the store is
+  // true synchronously, and the whole batch is judged before any of it is read.
   const addFiles = useCallback(
     async (files: readonly File[]): Promise<void> => {
+      const tray = (): readonly PendingAttachment[] =>
+        (useApp.getState().composerDrafts[variant] ?? EMPTY_DRAFT).attachments;
       const accepted: File[] = [];
-      let count = trayRef.current.length;
-      let bytes = trayRef.current.reduce((sum, attachment) => sum + attachment.bytes, 0);
+      let count = tray().length;
+      let bytes = tray().reduce((sum, attachment) => sum + attachment.bytes, 0);
       for (const file of files) {
         const rejection = attachmentRejection(file, count, bytes);
         if (rejection) {
@@ -149,26 +168,25 @@ export function Composer({ variant = 'chat' }: { variant?: ComposerVariant } = {
       for (const file of accepted) {
         try {
           const attachment = await readAttachment(file);
-          setAttachments((current) => [...current, attachment]);
+          write({ attachments: [...tray(), attachment] });
         } catch {
           useApp.getState().log('error', 'app', `Could not read ${file.name}.`);
         }
       }
     },
-    [],
+    [variant, write],
   );
 
-  const removeAttachment = useCallback((id: string): void => {
-    setAttachments((current) => {
-      releaseAttachments(current.filter((attachment) => attachment.id === id));
-      return current.filter((attachment) => attachment.id !== id);
-    });
-  }, []);
-
-  // The tray holds object URLs, and only the tray does — what goes into a sent
-  // message is a data URL (see sendChat), so these can be released the moment
-  // the tray lets go of them without ever breaking a picture on screen.
-  useEffect(() => () => releaseAttachments(trayRef.current), []);
+  // Taken out of the draft AND let go of: the picture is leaving the screen, so
+  // this is one of the two moments an object URL is really finished with.
+  const removeAttachment = useCallback(
+    (id: string): void => {
+      const tray = (useApp.getState().composerDrafts[variant] ?? EMPTY_DRAFT).attachments;
+      releaseAttachments(tray.filter((attachment) => attachment.id === id));
+      write({ attachments: tray.filter((attachment) => attachment.id !== id) });
+    },
+    [variant, write],
+  );
 
   // A prompt handed over by another surface lands here, focused and ready to
   // edit — never sent behind the user's back.
@@ -201,15 +219,25 @@ export function Composer({ variant = 'chat' }: { variant?: ComposerVariant } = {
   /** A turn is running, so the next Enter queues rather than sends. */
   const queueing = busy && !isHome;
 
+  /** The box is empty again, and the pictures it was holding are finished with. */
+  const clear = useCallback(
+    (files: readonly PendingAttachment[]): void => {
+      useApp.getState().setDraft(variant, { text: '', attachments: [] });
+      // Safe the moment the draft lets go of them: what goes into a sent
+      // message is a data URL (see sendChat), so nothing on screen is still
+      // pointing at these.
+      releaseAttachments(files);
+    },
+    [variant],
+  );
+
   function send(): void {
     if (!canSend) return;
     const value = text;
     const files = attachments;
     if (!isHome) {
-      setText('');
-      setAttachments([]);
       sendChat(value, files);
-      releaseAttachments(files);
+      clear(files);
       return;
     }
     setStarting(true);
@@ -217,11 +245,7 @@ export function Composer({ variant = 'chat' }: { variant?: ComposerVariant } = {
     // creating the folder fails, losing what was typed is the worst outcome.
     void Promise.resolve(useApp.getState().startFromHome(value, files))
       .then((result) => {
-        if (result?.ok) {
-          setText('');
-          setAttachments([]);
-          releaseAttachments(files);
-        }
+        if (result?.ok) clear(files);
       })
       .finally(() => setStarting(false));
   }

@@ -34,36 +34,44 @@
 import { describe, it, expect } from 'vitest';
 import fs from 'node:fs';
 import path from 'node:path';
+import { everyDeclaration, rulesUsingClass } from './support/cssRules';
 
 const SHELL_CSS = path.resolve(__dirname, '../src/styles/app/shell.css');
 const CHAT_CSS = path.resolve(__dirname, '../src/styles/app/chat.css');
-
-/** The body of one rule, by selector. Null when the rule is not there at all. */
-function ruleBody(css: string, selector: string): string | null {
-  const match = new RegExp(`^\\s*${selector.replace('.', '\\.')}\\s*\\{([^}]*)\\}`, 'm').exec(css);
-  return match ? match[1] : null;
-}
 
 /**
  * A single-column grid track that cannot be inflated by its content.
  * `1fr` alone is not enough: an `fr` track still floors at min-content unless
  * the minimum is stated as 0, which is the whole point of the `minmax` form.
  */
-const UNCONSTRAINED_COLUMN = /grid-template-columns:\s*minmax\(\s*0\s*,\s*1fr\s*\)/;
+const UNCONSTRAINED_COLUMN = /^minmax\(\s*0\s*,\s*1fr\s*\)$/;
+
+/**
+ * Every value the stylesheet gives one property on one class, wherever it is
+ * written. This used to be a `.exec` that took the first match and stopped,
+ * which meant a `@media` block could quietly restore the `auto` track this
+ * file exists to forbid; see the note at the top of
+ * tests/composerReach.test.ts.
+ */
+function stated(css: string, className: string, property: string) {
+  return everyDeclaration(rulesUsingClass(css, className), property);
+}
 
 describe('the working area', () => {
   const css = fs.readFileSync(SHELL_CSS, 'utf8');
 
   it('lets its column be as narrow as the window, so the top bar cannot outgrow it', () => {
-    const body = ruleBody(css, '.app-main');
-    expect(body).not.toBeNull();
-    expect(body).toMatch(UNCONSTRAINED_COLUMN);
+    const found = stated(css, 'app-main', 'grid-template-columns');
+    expect(found.length).toBeGreaterThan(0);
+    for (const { value, selector, where } of found) expect(value, `${selector} (${where})`).toMatch(UNCONSTRAINED_COLUMN);
   });
 
   it('still states its rows, which is what holds the top bar above the screen', () => {
     // The column rule is an addition, not a replacement; losing the rows would
     // trade a horizontal bug for a vertical one.
-    expect(ruleBody(css, '.app-main')).toMatch(/grid-template-rows:\s*auto\s+1fr/);
+    const found = stated(css, 'app-main', 'grid-template-rows');
+    expect(found.length).toBeGreaterThan(0);
+    for (const { value, selector, where } of found) expect(value, `${selector} (${where})`).toMatch(/^auto 1fr$/);
   });
 });
 
@@ -71,12 +79,41 @@ describe('the conversation column', () => {
   const css = fs.readFileSync(CHAT_CSS, 'utf8');
 
   it('lets its column be as narrow as the region, so the composer cannot hang over the edge', () => {
-    const body = ruleBody(css, '.chat-column');
-    expect(body).not.toBeNull();
-    expect(body).toMatch(UNCONSTRAINED_COLUMN);
+    const found = stated(css, 'chat-column', 'grid-template-columns');
+    expect(found.length).toBeGreaterThan(0);
+    for (const { value, selector, where } of found) expect(value, `${selector} (${where})`).toMatch(UNCONSTRAINED_COLUMN);
   });
 
   it('keeps the transcript-and-composer rows it already had', () => {
-    expect(ruleBody(css, '.chat-column')).toMatch(/grid-template-rows:\s*auto\s+minmax\(\s*0\s*,\s*1fr\s*\)/);
+    const found = stated(css, 'chat-column', 'grid-template-rows');
+    expect(found.length).toBeGreaterThan(0);
+    for (const { value, selector, where } of found) {
+      expect(value, `${selector} (${where})`).toMatch(/^auto minmax\(\s*0\s*,\s*1fr\s*\)$/);
+    }
+  });
+
+  /**
+   * The same mistake, two levels further in, and the reason the model pill
+   * could not be fixed from the pill's own rules. `.conversation-stack` and
+   * `.conversation-layer` are single-column grids that named only their rows,
+   * so their column track was `auto` and sized by its content's minimum.
+   * Measured at a 376px window with the rail expanded: both boxes 116px wide
+   * with a 316px track inside them, and `.composer` sitting in that track at
+   * 316px, which put the pill 43px past .app-region's clipped edge whatever
+   * the pill said about itself.
+   */
+  for (const layer of ['conversation-stack', 'conversation-layer'] as const) {
+    it(`lets ${layer} be as narrow as the column, so the composer cannot inflate it`, () => {
+      const found = stated(css, layer, 'grid-template-columns');
+      expect(found.length).toBeGreaterThan(0);
+      for (const { value, selector, where } of found) expect(value, `${selector} (${where})`).toMatch(UNCONSTRAINED_COLUMN);
+    });
+  }
+
+  it('keeps both mode layers stacked in one cell', () => {
+    // The column track is an addition. The layers share a grid area so the
+    // chat/terminal swap cannot move anything around it.
+    const found = stated(css, 'conversation-layer', 'grid-area');
+    expect(found.map((d) => d.value)).toContain('1 / 1');
   });
 });

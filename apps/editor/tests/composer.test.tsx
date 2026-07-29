@@ -14,7 +14,7 @@ import React from 'react';
 import { render, screen, fireEvent, cleanup, act, waitFor } from '@testing-library/react';
 import { Composer } from '../src/components/chat/Composer';
 import { setModelChoice } from '../src/chat/modelChoice';
-import { useApp } from '../src/store';
+import { FOLDER_DRAFT_KEYS, useApp } from '../src/store';
 import { MAX_ATTACHMENTS, MAX_ATTACHMENT_BYTES } from '../src/chat/attachments';
 
 type State = ReturnType<typeof useApp.getState>;
@@ -48,6 +48,9 @@ beforeEach(() => {
   // The model choice is a module-level store; clearing storage alone would
   // leave one test's pick standing in the next one.
   setModelChoice(null);
+  // So is the draft. It outlives the composer on purpose (that is the whole
+  // point of it living in the store), which means it outlives a test too.
+  useApp.getState().clearDrafts();
   sendChat.mockReset();
   startFromHome.mockReset();
   patchStore();
@@ -296,5 +299,117 @@ describe('the model pill', () => {
       effort: null,
     });
     expect(screen.getByRole('button', { name: 'Model' }).textContent).toContain('Sonnet 5');
+  });
+});
+
+/**
+ * What someone typed and has not sent yet is the one thing in this app that
+ * cannot be reproduced from anywhere else.
+ *
+ * Opening Skills or the Tester screen takes the whole working area, which
+ * unmounts the conversation column and the composer inside it. The words went
+ * with the component, and the tray's object URLs were revoked on the way out,
+ * so a trip to Skills to look something up cost a half-written message and
+ * every picture attached to it. `startFromHome` already keeps the words in the
+ * box when a send fails, for exactly this reason; leaving a screen is not a
+ * more forgiving event than a failed send.
+ *
+ * The draft lives in the store now, so the composer holds no copy of its own
+ * to lose. The object URLs live exactly as long as the draft does: they are
+ * released when it is sent, and released when the folder it was typed in goes
+ * away, which is the only thing that drops one.
+ */
+describe('a draft that outlives the surface it was typed on', () => {
+  const png = (name: string, size = 64): File => new File([new Uint8Array(size)], name, { type: 'image/png' });
+
+  function drop(files: File[]): void {
+    const items = files.map((file) => ({ kind: 'file', getAsFile: () => file }));
+    fireEvent.drop(document.querySelector('.composer-card')!, {
+      dataTransfer: { items, files, types: ['Files'] },
+    });
+  }
+
+  it('is still in the box when the composer comes back', () => {
+    patchStore({ projectPath: '/work/ember' });
+    const view = render(<Composer />);
+    type('half a sentence about the jump');
+
+    // What a trip to Skills does to this column: it is not there any more.
+    view.unmount();
+    render(<Composer />);
+
+    expect(box().value).toBe('half a sentence about the jump');
+  });
+
+  it('brings its attachments back with their pictures still loading', async () => {
+    const revoked: string[] = [];
+    vi.stubGlobal('URL', {
+      ...URL,
+      createObjectURL: (blob: Blob) => `blob:kept-${(blob as File).name ?? 'x'}`,
+      revokeObjectURL: (url: string) => revoked.push(url),
+    });
+    patchStore({ projectPath: '/work/ember' });
+    const view = render(<Composer />);
+    drop([png('shot.png')]);
+    await waitFor(() => expect(document.querySelectorAll('.attach-item').length).toBe(1));
+
+    view.unmount();
+    render(<Composer />);
+
+    expect(document.querySelectorAll('.attach-item').length).toBe(1);
+    // A revoked object URL is a broken image. The tray that comes back must
+    // not be a row of dead thumbnails.
+    expect(revoked).toEqual([]);
+    const image = document.querySelector('.attach-item img') as HTMLImageElement | null;
+    expect(image?.getAttribute('src')).toBe('blob:kept-shot.png');
+    vi.unstubAllGlobals();
+  });
+
+  it('does not carry Home’s first message into a conversation’s composer', () => {
+    // Two composers, two different acts: one starts a project, the other
+    // continues a conversation. A draft belongs to the surface it was typed on.
+    const view = render(<Composer variant="home" />);
+    type('a game about a lighthouse');
+    view.unmount();
+
+    patchStore({ projectPath: '/work/ember' });
+    render(<Composer />);
+    expect(box().value).toBe('');
+  });
+
+  it('does not empty Home’s box, or revoke its pictures, while it opens a folder', () => {
+    // Home's composer is the one that OPENS a project: the open happens in the
+    // middle of its own send, with the words and the tray still on screen
+    // behind it. Treating that draft as the folder's would blank the box and
+    // revoke the thumbnails the person is looking at, mid-send.
+    const revoked: string[] = [];
+    vi.stubGlobal('URL', {
+      ...URL,
+      createObjectURL: () => 'blob:home-shot',
+      revokeObjectURL: (url: string) => revoked.push(url),
+    });
+    render(<Composer variant="home" />);
+    type('a game about a lighthouse');
+
+    act(() => {
+      useApp.getState().clearDrafts(FOLDER_DRAFT_KEYS);
+    });
+
+    expect(box().value).toBe('a game about a lighthouse');
+    expect(revoked).toEqual([]);
+    vi.unstubAllGlobals();
+  });
+
+  it('is dropped, with its object URLs, when the folder it belongs to goes', () => {
+    patchStore({ projectPath: '/work/ember' });
+    const view = render(<Composer />);
+    type('meant for ember');
+    view.unmount();
+
+    act(() => {
+      useApp.getState().closeWorkspace();
+    });
+    render(<Composer />);
+    expect(box().value).toBe('');
   });
 });

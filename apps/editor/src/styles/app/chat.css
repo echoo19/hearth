@@ -108,8 +108,15 @@
    is made when a conversation starts and cannot be changed inside one, so the
    head reads "Chat" or "Terminal" in the same quiet weight as the provider
    beside it. Wears .conversation-provider; this hook exists so the two can be
-   told apart later without moving anything. */
-.conversation-kind {
+   told apart later without moving anything.
+
+   Doubled up on purpose. .conversation-provider now shrinks, because the name
+   it carries can be a user's, and this one cannot: "Chat" and "Terminal" are
+   the app's own two words, they are already the shortest thing in the strip,
+   and "Ter..." would be the head reporting a squeeze rather than a fact. Two
+   classes rather than source order, so the rule holds wherever it is moved
+   to. */
+.conversation-provider.conversation-kind {
   flex: none;
 }
 
@@ -178,9 +185,31 @@
 }
 
 /* Chat mode's answer to "who am I talking to?", in the same quiet register as
-   the terminal's session status. A label, not a control. */
+   the terminal's session status. A label, not a control.
+
+   BOUNDED, because the string is not this app's to choose. Everything else in
+   this strip is a word the app wrote; this one can be a name the user typed,
+   and a registered agent that lost its label is named by its own command
+   instead (see `cleanFile` in server/agentRegistry.ts, where a command runs to
+   MAX_COMMAND_LENGTH: 1024 characters). With no max-width and no overflow, a
+   143-character command line measured 811px inside a head whose content box
+   was 792px, pushing the head 107px past its own edge at a 1600px window and
+   straight through .app-region's `overflow: hidden` at a narrow one: cut off,
+   with nothing on screen saying so.
+
+   It shrinks as well as caps. .conversation-back's note says it is the one
+   item here allowed to give up width, and that was true while every other
+   label was a short word the app chose. It stopped being true the day a user
+   could register an agent, and a 240px name should yield before a 50px
+   project does. The full command line stays one hover away, which is the one
+   place with room for it. */
 .conversation-provider {
-  flex: none;
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 15rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   font-size: var(--text-xs);
   color: var(--ink-mute);
 }
@@ -189,9 +218,20 @@
 
 /* Both modes occupy the same cell so the swap can't move anything around it,
    and so the terminal keeps its measured size while hidden — a collapsed
-   container would make xterm refit twice per toggle. */
+   container would make xterm refit twice per toggle.
+
+   Both state their column, and it is the third and fourth instance of the
+   mistake tests/columnReach.test.ts was written about: a single-column grid
+   that names only its rows leaves the column track at `auto`, and an `auto`
+   track is sized by its content's minimum rather than by the box around it.
+   `min-width: 0` on the grid itself does not reach the track. Measured at a
+   376px window with the rail expanded, both boxes were 116px wide with a
+   316px track inside them, and .composer sat in it at 316px, which is what
+   put the model pill 43px past .app-region's clipped edge no matter what the
+   pill's own rules said. */
 .conversation-stack {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   min-height: 0;
   min-width: 0;
 }
@@ -199,6 +239,7 @@
 .conversation-layer {
   grid-area: 1 / 1;
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   min-height: 0;
   min-width: 0;
   /* Continuity, not decoration: the column becomes a different thing, and a
@@ -1824,9 +1865,22 @@
   min-width: 0;
 }
 
-/* Every control in the row can give up width before the row is forced to
-   wrap, so the common case stays one line. `min-width: 0` is what lets a flex
-   item shrink below its content at all. */
+/* Every control in the row can give up width, and this is the rule that lets
+   it. What sits here is not the pill: it is the `.menu-root` wrapper each
+   picker renders, `display: flex` and shrinkable, whose automatic minimum is
+   its content's min-content. That min-content is the pill's, and the pill's is
+   its whole name on one line clamped by `max-width: 15rem`, so the wrapper
+   floors at 240px and the pill inside it cannot shrink however willing its own
+   rules are.
+
+   This rule WAS inert, and measurably so: removed, every box in the row
+   measured byte-identical at every width, because .model-pill was `flex: none`
+   and could not shrink anyway. It is real now that the pill can. Measured at a
+   500px window with a registered agent's name in the pill: with the rule, the
+   pill is 160px and ends at x 459 inside an .app-region that ends at 496; take
+   it away and the pill is 240px, ends at 539, and the region's scrollWidth
+   goes to 279 against a clientWidth of 236, which is 43px of clipped control.
+   Do not delete it without deleting the pill's `min-width: 0` too. */
 .composer-row > * {
   min-width: 0;
 }
@@ -1868,12 +1922,32 @@
 }
 
 /* Who answers. A text pill: no border at rest, because a control inside a
-   control reads as clutter — it only draws a surface once pointed at. */
+   control reads as clutter — it only draws a surface once pointed at.
+
+   It SHRINKS. `flex: none` plus `max-width: 15rem` is a contradiction the row
+   cannot resolve: the cap stops the pill growing, but nothing lets it give
+   the width back, so 15rem becomes a 240px floor. Measured at a 500px window
+   with the rail expanded and a registered agent's name in it, the pill sat at
+   x 299..539 on its own wrapped line inside an .app-region that ends at 496.
+   The name did ellipsize, at 205px of a wanted 374, and then the ellipsis
+   itself was clipped by the region: 43px of the pill, its chevron and the
+   three dots that were the only sign anything had been cut, all off the edge
+   of a container that does not scroll. Truncation you cannot see is worse
+   than truncation, because it reads as a name that simply ends there.
+
+   `min-width: 0` is not decoration on top of `flex: 0 1 auto`; without it the
+   shrink cannot happen at all. .model-pill-name is `white-space: nowrap`, so
+   the pill's min-content is the WHOLE name on one line, and an automatic
+   minimum is that min-content clamped by max-width: 240px again, from the
+   other direction. Stated as zero, the pill gives up its name to the ellipsis
+   and keeps its padding, its chevron and its effort mark, which is the part
+   that still reads as a control. */
 .model-pill {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  flex: none;
+  flex: 0 1 auto;
+  min-width: 0;
   height: var(--ctl-h-sm);
   max-width: 15rem;
   padding: 0 10px;
