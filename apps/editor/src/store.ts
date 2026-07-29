@@ -453,7 +453,16 @@ export interface AppState {
   openWorkspace(path: string, prompt?: string): Promise<{ ok: boolean; error?: string }>;
   closeWorkspace(): void;
   /** Send a turn. `attachments` are files the composer's tray was holding. */
-  sendChat(text: string, attachments?: readonly PendingAttachment[]): void;
+  /**
+   * Send a message, or queue it behind the turn already running.
+   *
+   * False means it went nowhere: nothing to send, or the socket was not there
+   * to take it. Queued counts as taken, because a queued message is still
+   * going to be sent. Callers typing into the composer can ignore the answer —
+   * the box still holds what they wrote — but anything sending on someone's
+   * behalf has to know, or it reports work as started that never left.
+   */
+  sendChat(text: string, attachments?: readonly PendingAttachment[]): boolean;
   /** End the turn AND the session — the conversation's agent is torn down. */
   cancelChat(): void;
   /** Stop the running turn but keep the session, so the next message continues. */
@@ -592,8 +601,17 @@ export interface AppState {
   approveProposals(
     session: number,
     proposals: readonly string[],
-    /** How long to wait for the new conversation. Only a test passes this. */
-    waitMs?: number,
+    options?: {
+      /**
+       * The folder the report belongs to, when that is not the open one. The
+       * Tester screen lists every game's sessions, so a report read there is
+       * usually about a project this window is not standing in. Left out, the
+       * open project is meant.
+       */
+      project?: string;
+      /** How long to wait for the new conversation. Only a test passes this. */
+      waitMs?: number;
+    },
   ): Promise<{ ok: boolean; error?: string }>;
   /** Show or hide the playtest column. An explicit pick, remembered per folder. */
   setPaneOpen(open: boolean): void;
@@ -2014,7 +2032,7 @@ export const useApp = create<AppState>((set, get) => {
       const trimmed = text.trim();
       const files = attachments ?? [];
       // A picture on its own is a message; nothing at all is not.
-      if (trimmed === '' && files.length === 0) return;
+      if (trimmed === '' && files.length === 0) return false;
       // A turn already running is not a reason to lose what someone typed.
       // The thought arrives while the agent is mid-answer — that is WHEN
       // people think of things — so it waits its turn instead of being
@@ -2023,7 +2041,9 @@ export const useApp = create<AppState>((set, get) => {
         set((state) => ({
           queued: [...state.queued, { id: `q${++queuedId}`, text: trimmed, attachments: files }],
         }));
-        return;
+        // Taken, not sent: `drainQueue` sends it the moment the turn ends, so
+        // a caller waiting to hear that the message is on its way has heard it.
+        return true;
       }
       // Every turn carries who should answer it and how hard to think, rather
       // than the server remembering a setting: the selector can change between
@@ -2049,7 +2069,7 @@ export const useApp = create<AppState>((set, get) => {
         const note = 'Not connected. Wait a moment and send again.';
         get().log('error', 'app', note);
         showToast(note, 'error');
-        return;
+        return false;
       }
       // The bubble shows the bytes the browser already has. When this chat is
       // reopened the same turn comes back from disk instead, through
@@ -2067,6 +2087,7 @@ export const useApp = create<AppState>((set, get) => {
         chatBusy: true,
         chatError: null,
       }));
+      return true;
     },
 
     cancelChat() {
@@ -2800,8 +2821,15 @@ export const useApp = create<AppState>((set, get) => {
       }));
     },
 
-    async approveProposals(session, proposals, waitMs = CONNECT_WAIT_MS) {
-      const project = get().projectPath;
+    async approveProposals(session, proposals, options = {}) {
+      // The report's own folder, which is not always the open one: the Tester
+      // screen lists every game's sessions, and a project can be closed while
+      // standing on it. Read from the surface rather than assumed, because the
+      // session number means nothing without the folder it was played in —
+      // asking about session 3 of the folder that happens to be open is at
+      // best an error and at worst another game's session turned into work.
+      const project = options.project ?? get().projectPath;
+      const waitMs = options.waitMs ?? CONNECT_WAIT_MS;
       // Nothing ticked is not a failure worth a message. The control that got
       // here is disabled, so this is the belt on top of the braces.
       if (!project || proposals.length === 0) return { ok: false };
@@ -2811,6 +2839,15 @@ export const useApp = create<AppState>((set, get) => {
         showToast(error, 'error');
         return { ok: false, error };
       };
+
+      // Everything below needs that folder open: the note is read from it, the
+      // conversation is created in it, and the person has to end up watching
+      // the work in the game it is about. `playTesterIn` moves for the same
+      // reason when Play is aimed at another game from the same screen.
+      if (get().projectPath !== project) {
+        const opened = await get().openWorkspace(project);
+        if (!opened.ok) return fail(opened.error ?? 'Could not open the project that report belongs to.');
+      }
 
       // The words are written by the server from the note on disk. The window
       // sends ids and nothing else, so an unticked proposal has no route into
@@ -2848,16 +2885,42 @@ export const useApp = create<AppState>((set, get) => {
         set({ pendingPrompt: words });
         return fail('No new chat opened, so nothing was sent. Your message is waiting in the composer.');
       }
-      get().sendChat(words);
+      // The conversation opening is not the message arriving. The socket can go
+      // between the two frames, and `sendChat` then gives up with a toast — so
+      // this used to report success, close the report over it, and leave a
+      // brand-new empty conversation as the only trace of approved work.
+      if (!get().sendChat(words)) {
+        set({ pendingPrompt: words });
+        return fail('The message could not be sent, so no work has started. It is waiting in the composer.');
+      }
       return { ok: true };
     },
 
     setPaneOpen(open) {
       const project = get().projectPath;
       if (project) writePaneOpen(project, open);
-      // Closing the column in the narrow layout would otherwise leave the
-      // window on a tab that no longer exists.
-      set(open ? { paneOpen: true, paneChoice: true } : { paneOpen: false, paneChoice: false, narrowTab: 'chat' });
+      // Asking for the column is asking to see it, so this has to go where it
+      // is rendered. The project screen and the blank composer are rendered
+      // INSTEAD of the working area (App.tsx), so the flag alone changed
+      // nothing there: the top bar offers the toggle on the project screen —
+      // `globalPlace` answers null there — and pressing it did nothing at all.
+      // `playTester` already leaves the project screen for exactly this
+      // reason, and this is the same act by a different control.
+      //
+      // The narrow layout is the other half of the same point: below the
+      // breakpoint the conversation and the column are two tabs of one region,
+      // so opening the column without moving the tab answers "show playtest"
+      // by carrying on showing the conversation.
+      //
+      // Closing does the reverse for the tab, or the window is left on a tab
+      // that no longer exists. Closing is NOT a navigation: it leaves you in
+      // the conversation you were in rather than posting you back to a screen
+      // you did not ask for.
+      set(
+        open
+          ? { paneOpen: true, paneChoice: true, projectView: false, composing: false, narrowTab: 'pane' }
+          : { paneOpen: false, paneChoice: false, narrowTab: 'chat' },
+      );
     },
 
     setNarrowTab(tab) {

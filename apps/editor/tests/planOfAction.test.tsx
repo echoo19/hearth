@@ -183,7 +183,11 @@ describe('the plan of action', () => {
     await act(async () => {
       approveButton(report).click();
     });
-    expect(approveProposals).toHaveBeenCalledWith(3, ['s3-p1']);
+    // Named with the game the row belongs to: this screen lists every
+    // project's sessions, so the open folder is not the one the report is
+    // about, and approving used to ask the open folder about another game's
+    // session number.
+    expect(approveProposals).toHaveBeenCalledWith(3, ['s3-p1'], { project: PROJECT });
     // Into a conversation that does not exist yet, never into the open one.
     expect(sendChat).not.toHaveBeenCalled();
   });
@@ -202,7 +206,7 @@ describe('the plan of action', () => {
     await act(async () => {
       approveButton(report).click();
     });
-    expect(approveProposals).toHaveBeenCalledWith(3, ['s3-p1']);
+    expect(approveProposals).toHaveBeenCalledWith(3, ['s3-p1'], { project: PROJECT });
   });
 
   it('says what it dropped instead of reporting a parse miss as a clean game', () => {

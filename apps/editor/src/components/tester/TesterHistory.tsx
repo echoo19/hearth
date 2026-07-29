@@ -146,7 +146,16 @@ function RunRow({ run, row }: { run: TesterRun; row: TesterRow }) {
           Report
         </span>
       </button>
-      <ReportView note={note} open={reading} onClose={() => setReading(false)} returnFocusTo={trigger} />
+      {/* Named, because this screen is the one place a report is read away
+          from the game it belongs to: it lists every project's sessions, and a
+          project may not even be open. Approving is about THIS row's game. */}
+      <ReportView
+        note={note}
+        open={reading}
+        onClose={() => setReading(false)}
+        returnFocusTo={trigger}
+        project={run.project.path}
+      />
     </>
   );
 }

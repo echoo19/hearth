@@ -62,7 +62,16 @@ function Row({
   );
 }
 
-export function PlanOfAction({ note, onStarted }: { note: TesterNote; onStarted: () => void }) {
+export function PlanOfAction({
+  note,
+  onStarted,
+  project,
+}: {
+  note: TesterNote;
+  onStarted: () => void;
+  /** The folder this session belongs to, when it is not the open one. */
+  project?: string;
+}) {
   const approveProposals = useApp((s) => s.approveProposals);
   const [ticked, setTicked] = useState<ReadonlySet<string>>(new Set());
   const [starting, setStarting] = useState(false);
@@ -92,7 +101,7 @@ export function PlanOfAction({ note, onStarted }: { note: TesterNote; onStarted:
     if (picked.length === 0 || starting) return;
     setStarting(true);
     setFailed(null);
-    const result = await approveProposals(note.session, picked);
+    const result = await approveProposals(note.session, picked, project === undefined ? undefined : { project });
     setStarting(false);
     if (result.ok) onStarted();
     // The ticks are left exactly as they were, so trying again is one click

@@ -528,8 +528,14 @@ function mergeRecoveredRow(row: ChatIndexRow, records: readonly ChatRecord[]): C
     createdAt: row.createdAt < records[0].ts ? row.createdAt : records[0].ts,
     updatedAt: row.updatedAt > last.ts ? row.updatedAt : last.ts,
   };
-  // Spoken into, so not pending, whatever the row was written thinking.
-  delete merged.pending;
+  // Spoken into, so not pending, whatever the row was written thinking. A USER
+  // record is what counts, the same rule `appendChatRecord` clears the flag by:
+  // a driver can write its own line before the person's has landed, and a
+  // transcript holding only that is still a conversation nobody has had. This
+  // used to clear the flag for any transcript with a line in it, so an index
+  // torn at that moment brought the chat back listed, named "New chat", with
+  // nothing anybody typed in it.
+  if (first !== undefined) delete merged.pending;
   return merged;
 }
 
@@ -677,7 +683,38 @@ export function listChats(root: string): Promise<ChatSummary[]> {
   // Deliberately the plain read, partial or not: showing what could be seen is
   // the right answer for a listing, and this path writes nothing, so a partial
   // answer cannot become the file.
-  return serialize(root, async () => visibleChats((await readIndexUnlocked(root)).rows));
+  return serialize(root, async () => {
+    const rows = visibleChats((await readIndexUnlocked(root)).rows);
+    const ghosts = await Promise.all(rows.map((row) => neverSpokenInto(root, row)));
+    return rows.filter((_row, at) => !ghosts[at]);
+  });
+}
+
+/**
+ * Whether a row is a conversation that never happened, judged by the file
+ * rather than by the flag.
+ *
+ * The flag alone cannot answer this. `pending` was added after people had
+ * already been using the app, and a row written before it exists carries no
+ * field at all — which every listing reads as "not pending" and shows. What
+ * they look like is exactly what the flag was invented to hide: created when a
+ * window needed somewhere to send, never sent into, still called "New chat".
+ * They are the rows a person sees stacked up in the rail having never started
+ * those conversations.
+ *
+ * Two cheap conditions before anything is opened, so a listing does not pay a
+ * stat per conversation: the row still carries the name it was born with (the
+ * first message renames a chat, so anything spoken into has another name), and
+ * it is a chat rather than a terminal, which IS a conversation from the moment
+ * it exists. Then the file decides, and only a file that is definitely empty
+ * counts. A transcript that could not be read at all is left alone: not
+ * knowing is not the same as knowing there is nothing, and the wrong answer
+ * here hides somebody's work.
+ */
+async function neverSpokenInto(root: string, row: { id: string; title: string; kind: ChatKind }): Promise<boolean> {
+  if (row.kind !== 'chat' || row.title !== defaultChatTitle(row.kind)) return false;
+  const stat = await fsp.stat(chatFilePath(root, row.id)).catch(() => null);
+  return stat !== null && stat.size === 0;
 }
 
 /**

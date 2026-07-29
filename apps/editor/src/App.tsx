@@ -15,7 +15,7 @@ import { SettingsDialog } from './components/shell/SettingsDialog';
 import { ProjectNamer } from './components/shell/NewProjectDialog';
 import { ShortcutLayer } from './components/shell/ShortcutLayer';
 import { useNativeMenu } from './menu/nativeMenu';
-import { NARROW_BREAKPOINT_PX } from './store';
+import { globalPlace, NARROW_BREAKPOINT_PX } from './store';
 
 export default function App() {
   const projectPath = useApp((s) => s.projectPath);
@@ -98,6 +98,31 @@ export function screenKey(screen: 'skills' | 'tester' | null, projectPath: strin
 }
 
 /**
+ * Whether the playtest column is actually on the screen.
+ *
+ * `paneOpen` is a folder's remembered preference, not a fact about what is
+ * drawn: the column renders in the working view alone, and the project screen,
+ * the blank composer and the global screens are drawn INSTEAD of it (see the
+ * routing below). So a folder that likes the column open arrived on its own
+ * project screen with the top bar offering to "Hide playtest" over nothing,
+ * and pressing that closed a column nobody could see — the same dead button
+ * from the other side. The narrow layout's tab switcher had the same problem:
+ * two tabs for two regions, neither of which was rendered.
+ *
+ * `globalPlace` is reused rather than restated so the top bar and the layout
+ * cannot drift apart about where the window is.
+ */
+export function paneOnScreen(state: {
+  paneOpen: boolean;
+  screen: 'skills' | 'tester' | null;
+  composing: boolean;
+  projectView: boolean;
+  projectPath: string | null;
+}): boolean {
+  return state.paneOpen && !state.projectView && globalPlace(state) === null;
+}
+
+/**
  * The window width below which the conversation and the game can't both hold a
  * column. The rail is part of that arithmetic: 900px of window with a 260px
  * rail leaves the same room as 640px without one, which is not two columns.
@@ -168,7 +193,10 @@ function Shell() {
     <div className={`app-shell${narrow ? ' is-narrow' : ''}`}>
       <Sidebar />
       <div className="app-main">
-        <TopBar narrow={narrow} paneOpen={paneOpen} />
+        {/* What is on the screen, not what the folder remembers: the toggle
+            must describe the column the person can see, and the narrow tabs
+            must not offer a region that is not being drawn. See paneOnScreen. */}
+        <TopBar narrow={narrow} paneOpen={paneOnScreen({ paneOpen, screen, composing, projectView, projectPath })} />
         {/* Keyed by the folder, so moving between projects replays the
             entrance below and the working area arrives rather than blinks.
             This is the ONLY thing the project still remounts: the rail, the

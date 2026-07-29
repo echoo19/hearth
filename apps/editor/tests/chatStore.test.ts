@@ -19,6 +19,7 @@ import {
   chatIndexPath,
   chatTitleFrom,
   createChat,
+  defaultChatTitle,
   deleteChat,
   getChat,
   listChats,
@@ -325,6 +326,58 @@ describe('a chat nobody has spoken into', () => {
     const chat = await createChat(root);
     await appendChatRecord(root, chat.id, { role: 'agent', ts: 't1', event: { type: 'text-delta', text: 'hi' } });
     expect(await listChats(root)).toEqual([]);
+  });
+
+  it('stays out of the list when the flag was lost with the index it was written in', async () => {
+    // The recovery path used to clear `pending` for any transcript with a line
+    // in it, so a chat the driver had spoken into first came back listed with
+    // nothing anybody typed in it. The rule is the same one appendChatRecord
+    // follows: a USER record is what makes a conversation.
+    const chat = await createChat(root);
+    await appendChatRecord(root, chat.id, { role: 'agent', ts: 't1', event: { type: 'text-delta', text: 'hi' } });
+    const whole = await fsp.readFile(chatIndexPath(root), 'utf8');
+    await fsp.writeFile(chatIndexPath(root), whole.slice(0, whole.lastIndexOf(']')), 'utf8');
+    expect(await listChats(root)).toEqual([]);
+  });
+
+  it('is left out even when the row predates the flag entirely', async () => {
+    // What is actually on disk in projects made before pending existed: a row
+    // with no flag at all, its default name, and a transcript of nothing. The
+    // filter reads a missing flag as "not pending", so these are the rows the
+    // rail shows as "New chat" for good. Nobody ever sent anything, so nobody
+    // should ever see them.
+    await fsp.mkdir(path.dirname(chatIndexPath(root)), { recursive: true });
+    const ghost = {
+      id: 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee',
+      title: defaultChatTitle('chat'),
+      createdAt: '2026-01-01T00:00:00.000Z',
+      updatedAt: '2026-01-01T00:00:00.000Z',
+    };
+    await fsp.writeFile(chatIndexPath(root), JSON.stringify([ghost]), 'utf8');
+    await fsp.writeFile(chatFilePath(root, ghost.id), '', 'utf8');
+    expect(await listChats(root)).toEqual([]);
+    // Still openable by id, exactly like a pending row: a window sitting in it
+    // has to keep working.
+    expect((await getChat(root, ghost.id))?.id).toBe(ghost.id);
+  });
+
+  it('does not hide an old row that was spoken into', async () => {
+    // The other half of the rule above. A conversation with a message in it is
+    // listed whatever its index says about flags, including nothing at all.
+    await fsp.mkdir(path.dirname(chatIndexPath(root)), { recursive: true });
+    const old = {
+      id: 'ffffffff-bbbb-cccc-dddd-eeeeeeeeeeee',
+      title: defaultChatTitle('chat'),
+      createdAt: '2026-01-01T00:00:00.000Z',
+      updatedAt: '2026-01-01T00:00:00.000Z',
+    };
+    await fsp.writeFile(chatIndexPath(root), JSON.stringify([old]), 'utf8');
+    await fsp.writeFile(
+      chatFilePath(root, old.id),
+      `${JSON.stringify({ role: 'user', ts: '2026-01-01T00:00:00.000Z', text: 'hello' })}\n`,
+      'utf8',
+    );
+    expect((await listChats(root)).map((row) => row.id)).toEqual([old.id]);
   });
 
   it('is the opposite of a terminal session, which IS a conversation the moment it exists', async () => {

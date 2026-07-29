@@ -24,6 +24,7 @@ vi.mock('../src/api', async (importOriginal) => ({
 
 import { apiGameStatus, apiProbeStatus } from '../src/api';
 import { PaneStack } from '../src/components/game/PaneStack';
+import { paneOnScreen } from '../src/App';
 import { paneOpenStorageKey, readPaneOpen, useApp } from '../src/store';
 
 const PROJECT = '/work/game';
@@ -106,6 +107,77 @@ describe('the choice', () => {
     resetStore({ paneOpen: true, narrowTab: 'pane' });
     act(() => useApp.getState().setPaneOpen(false));
     expect(useApp.getState().narrowTab).toBe('chat');
+  });
+});
+
+/**
+ * What the top bar is describing when it says "Hide playtest".
+ *
+ * The flag is remembered per folder, so a folder that likes the column open
+ * arrives on its project screen with `paneOpen` already true — and the project
+ * screen renders instead of the working area, so there is no column there to
+ * hide. The toggle said "Hide playtest" over nothing, and pressing it closed a
+ * column nobody could see: the second half of the same dead button.
+ */
+describe('whether the column is on screen at all', () => {
+  const state = (over: Partial<ReturnType<typeof useApp.getState>> = {}) => {
+    resetStore({ paneOpen: true, projectPath: PROJECT, projectView: false, composing: false, screen: null, ...over });
+    return useApp.getState();
+  };
+
+  it('is not, on the project screen', () => {
+    expect(paneOnScreen(state({ projectView: true }))).toBe(false);
+  });
+
+  it('is not, on the blank composer or a global screen', () => {
+    expect(paneOnScreen(state({ composing: true }))).toBe(false);
+    expect(paneOnScreen(state({ screen: 'skills' }))).toBe(false);
+    expect(paneOnScreen(state({ projectPath: null }))).toBe(false);
+  });
+
+  it('is, in the folder’s working view, which is the only place it renders', () => {
+    expect(paneOnScreen(state({ projectView: false }))).toBe(true);
+    expect(paneOnScreen(state({ projectView: false, paneOpen: false }))).toBe(false);
+  });
+});
+
+/**
+ * The project screen renders ProjectHome INSTEAD of the working area (App.tsx),
+ * so the column has nowhere to appear while `projectView` is set. The top bar
+ * still offers the toggle there — `globalPlace` answers null on the project
+ * screen — so asking for the column has to be a way of leaving that screen,
+ * exactly as `playTester` already treats it. Otherwise the press flips a flag
+ * nothing is rendering and the button reads as broken.
+ */
+describe('asking for the column from the project screen', () => {
+  it('leaves the project screen, so the column has somewhere to be', () => {
+    resetStore({ projectView: true, composing: false, screen: null });
+    act(() => useApp.getState().setPaneOpen(true));
+    expect(paneOpen()).toBe(true);
+    expect(useApp.getState().projectView).toBe(false);
+  });
+
+  it('shows the column rather than the conversation in the narrow layout', () => {
+    // Below the breakpoint the two regions are tabs, so opening the column
+    // without moving the tab answers the press with the conversation.
+    resetStore({ projectView: true, narrowTab: 'chat' });
+    act(() => useApp.getState().setPaneOpen(true));
+    expect(useApp.getState().narrowTab).toBe('pane');
+  });
+
+  it('does not drag a blank composer along with it', () => {
+    // New chat is a place too; the column belongs to a folder's work, not to
+    // the blank page, so opening it lands in the folder's conversation.
+    resetStore({ composing: true });
+    act(() => useApp.getState().setPaneOpen(true));
+    expect(useApp.getState().composing).toBe(false);
+  });
+
+  it('closes without sending anybody back to the project screen', () => {
+    resetStore({ paneOpen: true, projectView: false });
+    act(() => useApp.getState().setPaneOpen(false));
+    expect(paneOpen()).toBe(false);
+    expect(useApp.getState().projectView).toBe(false);
   });
 });
 

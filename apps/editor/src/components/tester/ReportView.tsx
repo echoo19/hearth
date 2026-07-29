@@ -31,12 +31,20 @@ export function ReportView({
   open,
   onClose,
   returnFocusTo,
+  project,
 }: {
   note: TesterNote;
   open: boolean;
   onClose: () => void;
   /** Where focus goes when this closes. The control that opened it. */
   returnFocusTo?: React.RefObject<HTMLElement | null>;
+  /**
+   * The folder this session was played in, for the surfaces where that is not
+   * the open project. The Tester screen lists every game's sessions, so the
+   * report on screen there usually belongs to another folder, and approving
+   * has to work on the game it is about. Left out, the open project is meant.
+   */
+  project?: string;
 }) {
   const wasOpen = useRef(false);
   useEffect(() => {
@@ -128,7 +136,7 @@ export function ReportView({
 
         {/* Last, because it is what the reader does about everything above it.
             Putting a decision before its evidence is asking for a guess. */}
-        <PlanOfAction note={note} onStarted={onClose} />
+        <PlanOfAction note={note} project={project} onStarted={onClose} />
       </div>
     </Modal>
   );
