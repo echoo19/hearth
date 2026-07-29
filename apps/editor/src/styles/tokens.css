@@ -23,7 +23,15 @@
   /* Ink */
   --ink: oklch(0.95 0.006 85);
   --ink-mute: oklch(0.74 0.012 85);
-  --ink-faint: oklch(0.58 0.01 85);
+  /* L 0.635, not 0.58. At 0.58 the faintest ink only cleared 4.5:1 on the two
+     darkest surfaces: it measured 4.33 on --bg-2 (cards, inputs, tabs), 3.79
+     on --bg-3 (hover) and 4.16 on a row tinted with --accent-soft, so a
+     timestamp that passed at rest failed the moment you pointed at it, and the
+     selected conversation — the one row you look at most — was the least
+     readable in the rail. 0.635 is the lowest value that clears 4.5:1 against
+     every surface in this file (worst case --bg-3, 4.71) while staying a clear
+     third rank below --ink-mute. */
+  --ink-faint: oklch(0.635 0.01 85);
 
   /* Ember command accent — the only place ember hue appears. Surfaces stay
      neutral (hue 285); accent carries all "ember" meaning. */

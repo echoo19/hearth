@@ -18,6 +18,15 @@
    part of the window, this is the page. */
 .app-main {
   display: grid;
+  /* The column is stated as minmax(0, 1fr) for the same reason the rows below
+     are: an implicit `auto` track is sized by its content's minimum, so the
+     top bar's own minimum width (about 509px, most of it the project name)
+     became the floor for the whole working area. Under that floor the track
+     stayed 509px wide inside a narrower window and everything in it — the
+     Chat/Game switch, the playtest toggle — sat past the right edge of a
+     window that does not scroll. minmax(0, 1fr) lets the track be as narrow
+     as the window is. */
+  grid-template-columns: minmax(0, 1fr);
   grid-template-rows: auto 1fr;
   flex: 1;
   min-width: 0;

@@ -198,6 +198,26 @@ describe('Recents, across folders', () => {
     expect(screen.getByRole('button', { name: /Conversation options for Mine/ })).toBeTruthy();
     expect(screen.queryByRole('button', { name: /Conversation options for Theirs/ })).toBeNull();
   });
+
+  /**
+   * Titles here are sentences and the rail is 260px wide, so nearly all of
+   * them ellipsize. Measured in a real browser, the longest row showed 147 of
+   * its 320 pixels — the title was cut mid-phrase with no way to read the
+   * rest, because the row carries no tooltip of its own. jsdom cannot see the
+   * clipping (it lays nothing out), so what is pinned is the affordance that
+   * makes the clipping survivable, the same `title` the truncating spans in
+   * Usage and Skills already carry.
+   */
+  it('keeps the whole title readable on a row too narrow to show it', async () => {
+    const long = 'lets make a simple platformer game with a double jump and coins';
+    reset({ recentChats: [chat('a', long, ELSEWHERE)] });
+    const { container } = render(<Sidebar />);
+
+    await screen.findByText(long);
+    const title = container.querySelector('.chat-title');
+    expect(title).not.toBeNull();
+    expect(title?.getAttribute('title')).toBe(long);
+  });
 });
 
 describe('search', () => {

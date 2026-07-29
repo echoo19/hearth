@@ -63,7 +63,9 @@ function ChatLine({ chat, onOpen }: { chat: ChatSummary; onOpen: () => void }) {
       <span className="proj-chat-glyph" role="img" aria-label={CONVERSATION_KIND_LABEL[kind]}>
         <Icon name={CONVERSATION_KIND_ICON[kind]} size={13} />
       </span>
-      <span className="proj-chat-title">{chat.title}</span>
+      <span className="proj-chat-title" title={chat.title}>
+        {chat.title}
+      </span>
       <span className="proj-chat-when">{relativeTime(chat.updatedAt)}</span>
     </button>
   );

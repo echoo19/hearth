@@ -12,6 +12,14 @@
 
 .chat-column {
   display: grid;
+  /* Same reason as the rows beside it, on the other axis. An implicit `auto`
+     column is sized by the conversation's own minimum width, so the column
+     stopped shrinking at about 346px and the composer — Send included — hung
+     out over the edge of a narrower window, clipped by the region's
+     `overflow: hidden` with nothing left to scroll to it. The composer row
+     wrapping (see tests/composerReach.test.ts) cannot help while the column
+     it wraps inside refuses to narrow, so the floor is removed here. */
+  grid-template-columns: minmax(0, 1fr);
   grid-template-rows: auto minmax(0, 1fr);
   min-height: 0;
   /* Sits on the main area's surface, one step lighter than the sidebar rail.

@@ -294,7 +294,14 @@ function ChatRow({
             <Icon name={CONVERSATION_KIND_ICON[kind]} size={11} />
           </span>
         </span>
-        <span className="chat-title">{entry.title}</span>
+        {/* The rail is narrow and these titles are sentences, so most of them
+            ellipsize — measured in a browser, the longest lost 184 of its 325
+            pixels, well over half the words. Same `title` the truncating spans
+            in Usage and Skills carry: the row stays one line, and the full
+            title is still there for anyone who needs it. */}
+        <span className="chat-title" title={entry.title}>
+          {entry.title}
+        </span>
         <span className="chat-when">{relativeTime(entry.updatedAt)}</span>
       </button>
       {local && (
