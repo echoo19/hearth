@@ -235,6 +235,10 @@ function providers(): ChatProviderStatus {
     anthropic: {
       hasKey: true,
       source: 'project',
+      cli: false,
+      loggedIn: false,
+      email: null,
+      planType: null,
       models: [
         { id: 'claude-opus-5', label: 'Opus 5' },
         { id: 'claude-sonnet-5', label: 'Sonnet 5' },

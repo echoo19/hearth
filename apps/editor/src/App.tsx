@@ -27,6 +27,10 @@ export default function App() {
     // The global conversation list is what the rail shows before any folder
     // is open, so it is read at boot rather than on the first open.
     void useApp.getState().refreshRecentChats();
+    // The account row is also on screen before any folder is open, and who
+    // the person is signed in as is a machine fact: read it at boot too, or
+    // the row sits on "haven't looked yet" until a first project opens.
+    void useApp.getState().refreshProviders();
     return useApp.getState().watchUpdates();
   }, []);
 

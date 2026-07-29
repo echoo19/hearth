@@ -14,13 +14,12 @@
  */
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { conversationKind, useApp } from '../../store';
-import { Composer } from '../chat/Composer';
 import { ProjectMark } from '../../projects/ProjectMark';
 // The rail lists conversations too, and the two lists must mark a chat and a
 // terminal session the same way or the mark teaches nothing.
 import { CONVERSATION_KIND_ICON, CONVERSATION_KIND_LABEL, relativeTime } from '../shell/Sidebar';
 import { Icon } from '../ui';
-import { IconButton } from '../ui/Button';
+import { Button, IconButton } from '../ui/Button';
 import { MenuButton } from '../ui/Menu';
 import { ProjectInstructions } from './ProjectInstructions';
 import { ProjectContext } from './ProjectContext';
@@ -176,6 +175,8 @@ export function ProjectHome() {
   const chatsLoaded = useApp((s) => s.chatsLoaded);
   const openChat = useApp((s) => s.openChat);
   const closeWorkspace = useApp((s) => s.closeWorkspace);
+  const openTerminal = useApp((s) => s.openTerminal);
+  const newChat = useApp((s) => s.newChat);
   const setComposeTarget = useApp((s) => s.setComposeTarget);
   const sessions = useApp((s) => s.tester.sessions);
   // "Never played" and "not asked yet" are different sentences. See below.
@@ -246,7 +247,28 @@ export function ProjectHome() {
               </span>
             </header>
 
-            <Composer variant="project" />
+            {/* The two ways to start something here, as one row of equals.
+
+                This used to be a composer with a lone New terminal button
+                floating under it, which read as one real control and one
+                afterthought. They are not that: they are the same decision,
+                asked once. A conversation is a chat or a terminal session from
+                the moment it exists, so this is the moment to choose, and
+                neither should look like the other's footnote.
+
+                New chat deliberately does NOT open a composer here. It hands
+                off to the blank surface with this project already aimed at,
+                which is the same screen the rail's New chat reaches and the
+                same one Home shows. Two composers that start the same thing
+                was the duplication this removes. */}
+            <div className="proj-start">
+              <Button className="proj-start-act" icon="compose" onClick={newChat}>
+                New chat
+              </Button>
+              <Button className="proj-start-act" icon="script" onClick={openTerminal}>
+                New terminal
+              </Button>
+            </div>
 
             <section className="proj-list" aria-label="Conversations">
               {chats.length === 0 ? (

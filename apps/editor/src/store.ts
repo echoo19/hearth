@@ -36,18 +36,19 @@ import {
   apiRecentChats,
   apiRenameChat,
   apiSavePersonalization,
+  apiSaveProviderSettings,
   projectFileUrl,
   type Personalization,
   type PersonalizationInfo,
 } from './api';
 import { attachmentPayload, releaseAttachments, type PendingAttachment } from './chat/attachments';
 import type {
-  AgentCliInfo,
   AppSettingsInfo,
   ApprovalDecision,
   ChatAttachmentView,
   ChatDriverKind,
   ChatEvent,
+  ChatProvider,
   ChatKind,
   ChatMessage,
   ChatPart,
@@ -72,7 +73,7 @@ import type {
 import type { WsFrame } from '../server/ws';
 import type { TesterPhase } from '../server/tester/session';
 import type { TesterNote } from '../server/tester/types';
-import { agentForTurn, getModelChoice } from './chat/modelChoice';
+import { agentForTurn, getModelChoice, rememberedChoiceFor, setModelChoice } from './chat/modelChoice';
 import { hearthNative } from './native';
 import { suggestProjectName } from './projects/suggestName';
 import { showToast } from './toast';
@@ -81,10 +82,8 @@ import {
   getAgentSessionSummary,
   ingestPtyAttach,
   ingestPtyFrame,
-  markAgentCli,
   markAgentDisconnected,
   markAgentStarted,
-  planTerminalLaunch,
   resetAgentSocket,
   type AgentStatus,
 } from './components/agent/useAgentSocket';
@@ -328,6 +327,8 @@ export interface AppState {
    * conversation, full width, the way every other chat app looks.
    */
   paneOpen: boolean;
+  /** The game is silenced. See GAME_MUTED_KEY for why this is not per folder. */
+  gameMuted: boolean;
   /**
    * The open folder's own answer to that, or null while it has never given
    * one. Distinct from `paneOpen` because the two disagree on purpose: a new
@@ -479,6 +480,25 @@ export interface AppState {
   /** Answer a blocking ask, and show the answer without waiting for the round trip. */
   approveChat(approvalId: string, decision: ApprovalDecision): void;
   refreshProviders(): Promise<void>;
+  /**
+   * Choose which agent answers, from the composer.
+   *
+   * Writes BOTH halves: the standing choice this window sends on every turn,
+   * and `provider` in the folder's own settings. They were allowed to disagree
+   * before, and the server resolved the disagreement by quietly preferring
+   * whatever the turn carried (`agent?.provider ?? settings.provider` in
+   * server/chat.ts). So Settings could say Claude, the composer could send
+   * ChatGPT, and both screens were honestly reporting a different fact. One
+   * act, both writes, no resolution rule to remember.
+   *
+   * The local write lands FIRST and is not rolled back if the save fails. The
+   * choice is this window's to make and it is what the next turn will carry;
+   * the settings write is how the rest of the app finds out. A failed save is
+   * logged and leaves the two out of step until the next one, which is the
+   * lesser of the two wrongs: refusing the switch because a file could not be
+   * written would leave the person unable to change agent at all.
+   */
+  setChatProvider(provider: ChatProvider): Promise<void>;
   /** Re-read the open folder's permission mode. Safe to over-call. */
   refreshPermissionMode(): Promise<void>;
   /**
@@ -564,24 +584,16 @@ export interface AppState {
    */
   setConversationMode(mode: ConversationMode): void;
   /**
-   * Have the conversation in the terminal, with this CLI running in it: switch
-   * modes, make sure there is a shell, and type the command into it. Refusals
-   * (nothing installed, no folder, an agent already in there) go to the
-   * Console and change nothing — see planTerminalLaunch for which is which.
-   */
-  startTerminalCli(cli: AgentCliInfo): void;
-  /**
-   * A shell, with nothing typed into it.
+   * A shell in the project folder, with nothing typed into it.
    *
-   * The row that makes the CLI list above it a convenience rather than a
-   * boundary. Every other way into the terminal starts a named program, so a
-   * menu of named programs read as the set of agents Hearth can run — and the
-   * terminal has always run whatever you type. This is that, offered.
+   * THE ONLY WAY INTO THE TERMINAL, and it deliberately runs nothing. Hearth
+   * used to offer a list of agent CLIs it would type for you, which read as
+   * the set of agents that work here. They all work here: it is your shell.
+   * So the door is unnamed, it opens empty, and what runs in it is something
+   * the person typed.
    *
-   * Deliberately does NOT call `markAgentCli`: Hearth typed nothing, so it
-   * knows nothing about what ends up running here, and claiming otherwise
-   * would block the next launch with a refusal naming a program the user never
-   * started.
+   * Hearth records nothing about what ends up running here, because it typed
+   * nothing and genuinely does not know.
    */
   openTerminal(): void;
   setPaneTab(tab: PaneTab): void;
@@ -629,6 +641,7 @@ export interface AppState {
   ): Promise<{ ok: boolean; error?: string }>;
   /** Show or hide the playtest column. An explicit pick, remembered per folder. */
   setPaneOpen(open: boolean): void;
+  setGameMuted(muted: boolean): void;
   /** Aim the new-chat composer at a project, or at one that doesn't exist yet. */
   setComposeTarget(path: string | null): void;
   /** Aim the tester screen's Play at a project. Null means the most recent one. */
@@ -810,7 +823,13 @@ export function defaultConversationMode(canChat: boolean): ConversationMode {
 export function anyChatProviderReady(settings: AppSettingsInfo | null, providers: ChatProviderStatus | null): boolean {
   if (settings?.hasKey) return true;
   if (!providers) return false;
-  return providers.anthropic.hasKey || providers.openai.loggedIn || providers.openai.hasKey;
+  // `cli` counts: a machine with Claude Code on it can answer with no key.
+  return (
+    providers.anthropic.hasKey ||
+    providers.anthropic.cli ||
+    providers.openai.loggedIn ||
+    providers.openai.hasKey
+  );
 }
 
 /** The folder's stored preference, or null when it has never picked one. */
@@ -858,6 +877,34 @@ export function readPaneOpen(projectPath: string): boolean | null {
 function writePaneOpen(projectPath: string, open: boolean): void {
   try {
     localStorage.setItem(paneOpenStorageKey(projectPath), open ? '1' : '0');
+  } catch {
+    /* private mode: the preference just doesn't persist */
+  }
+}
+
+/**
+ * Whether the game is silenced.
+ *
+ * One key for the whole app rather than one per folder, because this is a fact
+ * about the room the person is sitting in and not about a game: someone who
+ * muted a game at midnight wants the next one muted too, and having to mute
+ * each new game separately is the setting failing at its only job.
+ */
+export const GAME_MUTED_KEY = 'hearth.game.muted';
+
+export function readGameMuted(): boolean {
+  try {
+    return localStorage.getItem(GAME_MUTED_KEY) === '1';
+  } catch {
+    // Private mode: no preference on record, and unmuted is the state a game
+    // is in when nobody has said otherwise.
+    return false;
+  }
+}
+
+function writeGameMuted(muted: boolean): void {
+  try {
+    localStorage.setItem(GAME_MUTED_KEY, muted ? '1' : '0');
   } catch {
     /* private mode: the preference just doesn't persist */
   }
@@ -1797,6 +1844,7 @@ export const useApp = create<AppState>((set, get) => {
     conversationModePinned: false,
     paneTab: 'game',
     paneOpen: false,
+    gameMuted: readGameMuted(),
     paneChoice: null,
     composing: false,
     composeTarget: null,
@@ -2040,6 +2088,13 @@ export const useApp = create<AppState>((set, get) => {
       // the first thing a user looks at after closing one. So does
       // `personalization`, which lives in ~/.hearth and belongs to the person,
       // not to any one project.
+      //
+      // `providers` was just cleared with the folder's other state (it carried
+      // the folder's own key and provider choice), but the account row is
+      // still on screen and who the person is signed in as did not change with
+      // the close: read the machine-level answer back rather than leaving the
+      // row on "haven't looked yet".
+      void get().refreshProviders();
     },
 
     sendChat(text, attachments) {
@@ -2157,9 +2212,12 @@ export const useApp = create<AppState>((set, get) => {
     },
 
     async refreshProviders() {
+      // Home has an account row and a composer too: with no folder open the
+      // read still goes out, project-less, and answers with the machine-level
+      // facts (who the CLIs are signed in as). Leaving early here left the row
+      // on "haven't looked yet" forever until a first project was opened.
       const project = get().projectPath;
-      if (!project) return;
-      const providers = await apiChatProviders(project);
+      const providers = await apiChatProviders(project ?? null);
       if (get().projectPath !== project) return; // folder changed mid-flight
       // A read that did not land leaves the last answer standing, the same way
       // refreshPermissionMode does below. This route answers 403 for a root the
@@ -2174,6 +2232,24 @@ export const useApp = create<AppState>((set, get) => {
       if (!providers) return;
       set({ providers });
       maybeSettleConversationMode();
+    },
+
+    async setChatProvider(provider) {
+      // The window's own choice first. See the interface doc: this is what the
+      // next turn carries, and it must take effect whether or not a folder is
+      // open, because Home has a composer too.
+      // Where this agent was last left, not a blank slate. Nothing is carried
+      // ACROSS from the agent being left; see rememberedChoiceFor.
+      setModelChoice(rememberedChoiceFor(provider));
+      const project = get().projectPath;
+      if (!project) return;
+      const saved = await apiSaveProviderSettings(project, { provider });
+      if (get().projectPath !== project) return; // folder changed mid-flight
+      if (!saved) {
+        get().log('error', 'app', 'Hearth could not save which agent answers. It is set for this window only.');
+        return;
+      }
+      await get().refreshProviders();
     },
 
     async refreshPermissionMode() {
@@ -2360,22 +2436,40 @@ export const useApp = create<AppState>((set, get) => {
     async renameChat(chatId, title) {
       const project = get().projectPath;
       if (!project) return;
-      const chats = await apiRenameChat(project, chatId, title);
-      if (chats && get().projectPath === project) set({ chats });
+      const res = await apiRenameChat(project, chatId, title);
+      // A rename that did not land used to be silence: the old title just came
+      // back on the next paint, and whether the server refused or was never
+      // reached, the person who typed the new one was told nothing. The rail
+      // has no error surface of its own, so the reason goes where they already
+      // are — the toast — and the console keeps the record.
+      if (!res.ok) {
+        get().log('error', 'app', res.error);
+        showToast(res.error, 'error');
+        return;
+      }
+      if (get().projectPath === project) set({ chats: res.chats });
     },
 
     async deleteChat(chatId) {
       const project = get().projectPath;
       if (!project) return;
-      const chats = await apiDeleteChat(project, chatId);
-      if (!chats || get().projectPath !== project) return;
-      set({ chats });
+      const res = await apiDeleteChat(project, chatId);
+      // Same as renameChat: a delete that failed must say so where the click
+      // happened, because the row still being there reads as a bug, not as a
+      // request that never arrived.
+      if (!res.ok) {
+        get().log('error', 'app', res.error);
+        showToast(res.error, 'error');
+        return;
+      }
+      if (get().projectPath !== project) return;
+      set({ chats: res.chats });
       // Deleting the conversation you are reading leaves nowhere to be: land in
       // the next one, or start a fresh one.
       if (get().activeChatId !== chatId) return;
-      if (chats.length > 0) {
+      if (res.chats.length > 0) {
         set({ activeChatId: null });
-        get().openChat(chats[0].id);
+        get().openChat(res.chats[0].id);
       } else {
         // The project still exists and is still open; it just has no
         // conversations left, so it needs a real empty one rather than the
@@ -2627,62 +2721,6 @@ export const useApp = create<AppState>((set, get) => {
       startConversationOfKind(mode);
     },
 
-    /**
-     * Picking a terminal option in the composer, all the way through.
-     *
-     * The shell is spawned exactly as the Start button spawns it, and the
-     * command is TYPED into it rather than replacing it: when the agent exits
-     * the user is left at a working prompt instead of a dead session, and the
-     * reattach path (ws.ts keeps the pty alive across a dropped socket) needs
-     * to know nothing about any of this.
-     *
-     * The keystrokes go out immediately after pty-start. That is safe by the
-     * server's own contract: input arriving before the pty has spawned is
-     * queued on the session and flushed once it has (`pendingInput` in ws.ts).
-     * Nothing is re-sent afterwards, and the reconnect path in connectWs()
-     * sends pty-start alone — so a socket drop reattaches to the agent that is
-     * already there rather than starting a second one inside it.
-     */
-    startTerminalCli(cli) {
-      const state = get();
-      const session = getAgentSessionSummary();
-      const plan = planTerminalLaunch({
-        cli,
-        status: session.status,
-        launched: session.cli,
-        connected: state.wsStatus === 'connected',
-        hasProject: state.projectPath !== null,
-      });
-      if (plan.action === 'blocked') {
-        // The picker disables these rows and shows the same sentence, so this
-        // is the backstop for a click against a stale menu.
-        get().log('error', 'app', plan.reason);
-        return;
-      }
-      if (plan.action === 'show') {
-        enterTerminalConversation(cli.label);
-        return;
-      }
-      const down = 'Terminal: the connection is down. Wait a moment and try again.';
-      if (plan.action === 'start') {
-        if (!get().sendFrame({ type: 'pty-start', sessionId: ensureAgentPtySessionId() })) {
-          get().log('error', 'app', down);
-          return;
-        }
-        // Marked running before the mode flips, because TerminalPane starts a
-        // shell of its own when it mounts onto an idle session — and a second
-        // pty-start would supersede this one, taking the queued command with it.
-        markAgentStarted('shell');
-      }
-      if (!get().sendFrame({ type: 'pty-input', data: plan.input })) {
-        get().log('error', 'app', down);
-        return;
-      }
-      markAgentCli({ id: cli.id, label: cli.label });
-      // The session gets a conversation of its own, named after the CLI, so it
-      // is listed and reopenable like everything else the user has made.
-      enterTerminalConversation(cli.label);
-    },
 
     openTerminal() {
       const state = get();
@@ -2691,9 +2729,9 @@ export const useApp = create<AppState>((set, get) => {
         return;
       }
       const session = getAgentSessionSummary();
-      // Already live: this is a way back to it, not a second one. Same rule
-      // `planTerminalLaunch` applies, and the reason a running agent is not
-      // disturbed here — nothing is typed, so there is nothing to interrupt.
+      // Already live: this is a way back to it, not a second one. Nothing is
+      // typed here, so there is nothing to interrupt in a session already
+      // running something.
       if (session.status === 'running' || session.status === 'reconnecting') {
         enterTerminalConversation('Terminal');
         return;
@@ -2934,6 +2972,18 @@ export const useApp = create<AppState>((set, get) => {
         return fail('The message could not be sent, so no work has started. It is waiting in the composer.');
       }
       return { ok: true };
+    },
+
+    setGameMuted(muted) {
+      set({ gameMuted: muted });
+      writeGameMuted(muted);
+      // The window is what gets muted, not the frame: the game is served from
+      // a second loopback port so it is cross-origin on purpose, and a game
+      // making its noise through WebAudio has no media element to reach even
+      // when it is not. Chromium mutes a whole webContents whatever the sound
+      // is made of. Fire and forget: nothing downstream waits on it, and a
+      // build whose preload predates it simply has no mute to offer.
+      void hearthNative()?.setAudioMuted?.(muted);
     },
 
     setPaneOpen(open) {

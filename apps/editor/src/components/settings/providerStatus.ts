@@ -23,7 +23,10 @@ export function keySourceLabel(source: 'project' | 'environment' | null): string
     case 'environment':
       return 'Using ANTHROPIC_API_KEY from the environment.';
     default:
-      return 'No key yet. Without one, the conversation can only point you at the Terminal.';
+      // Not a problem to fix. The CLI answers on the sign-in it already has,
+      // and this line used to tell people with a working Claude that their
+      // conversation could only point them at the Terminal.
+      return 'No key. It answers on the Claude Code you are signed into.';
   }
 }
 
@@ -51,9 +54,18 @@ export function openAiStatusLabel(openai: ChatProviderStatus['openai'] | undefin
   return 'Installed. No sign-in confirmed.';
 }
 
-/** Can this provider answer a turn right now? */
+/**
+ * Can this provider answer a turn right now?
+ *
+ * Two ways in, and the sign-in is the ordinary one. The SDK runs the Claude
+ * Code CLI, which authenticates with whatever the person is signed into, so a
+ * key is an alternative rather than a requirement.
+ */
 export function anthropicUsable(status: ChatProviderStatus | null): boolean {
-  return status?.anthropic.hasKey === true;
+  // Signed in, not merely installed. `cli` is only the binary's presence, and
+  // treating that as usable made every claude-on-PATH machine claim it could
+  // answer whether or not anybody had ever signed into it.
+  return status?.anthropic.hasKey === true || status?.anthropic.loggedIn === true;
 }
 
 export function openAiUsable(status: ChatProviderStatus | null): boolean {

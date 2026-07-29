@@ -6,29 +6,34 @@
  * needs the other's file to exist. Persisted in localStorage because it is a
  * preference about the person, not about any one folder.
  *
- * Two things a reader has to hold at once, because the picker is shaped by
+ * Three things a reader has to hold at once, because the picker is shaped by
  * them:
  *
  *  1. **The agent backend decides the model family.** Claude models run
- *     through the Claude Agent SDK, whose `model` option is documented as a
- *     Claude alias or a Claude model id; ChatGPT models run through the Codex
- *     CLI, whose catalogue is whatever `model/list` on the installed binary
- *     returns. There is no cross-product — no Codex-run Claude, no SDK-run
- *     GPT — so `provider` names both halves and there is no second field
- *     pretending they can disagree. The backend is still shown and chosen
- *     explicitly (see AGENT_BACKENDS): "what is running the loop" is a real
- *     question, it just has a two-item answer.
- *  2. **Effort is the model's vocabulary, not ours.** See `AgentChoice`.
+ *     through the Claude Code CLI, whose `model` option is a Claude alias or a
+ *     Claude model id; ChatGPT models run through the Codex CLI, whose
+ *     catalogue is whatever `model/list` on the installed binary returns.
+ *     There is no cross-product, no Codex-run Claude and no Claude-run GPT, so
+ *     `provider` names both halves and there is no second field pretending
+ *     they can disagree.
+ *  2. **One agent is active at a time, and the composer shows only its
+ *     models.** See `activeProvider`. A menu that listed every vendor's
+ *     catalogue at once made picking a model a silent way to change who
+ *     answers: the pill read "Opus 5" while the account row underneath still
+ *     described a ChatGPT sign-in, and neither surface was wrong on its own.
+ *     Switching agent is now its own row and its own act.
+ *  3. **Effort is the model's vocabulary, not ours.** See `AgentChoice`. It is
+ *     offered only where the active model declared it, which is why it can be
+ *     a control that disappears rather than one that greys out.
  *
- * None of this constrains the terminal, which runs whatever CLI is installed.
+ * None of this constrains the terminal, which runs whatever the user types.
  */
 import { useEffect, useState, useSyncExternalStore } from 'react';
-import { apiAgents, apiModelPrefs, apiSetModelEnabled } from '../api';
+import { apiModelPrefs, apiSetModelEnabled } from '../api';
 import type {
   AgentChoice,
   ChatProvider,
   ChatProviderStatus,
-  CustomAgentInfo,
   EffortOption,
   ProviderModelInfo,
 } from '../types';
@@ -99,10 +104,17 @@ export const AGENT_BACKENDS: AgentBackend[] = [
   {
     id: 'claude-agent-sdk',
     provider: 'anthropic',
-    name: 'Claude Agent SDK',
+    // Named for the program that actually runs, not for the library Hearth
+    // imports to run it. The Agent SDK spawns the Claude Code CLI and that CLI
+    // answers on whatever the person signed into, so calling this "Agent SDK"
+    // described Hearth's dependency graph to someone who wanted to know which
+    // of their agents was about to reply. The id stays: it is stored in
+    // settings and on the wire, and renaming it would strand every saved
+    // choice.
+    name: 'Claude Code CLI',
     vendor: 'Claude',
-    blurb: 'Runs inside Hearth, on your Anthropic API key.',
-    connection: 'api-key',
+    blurb: 'Runs the Claude Code you are signed into. A key is optional.',
+    connection: 'sign-in',
     catalogue: 'Claude models',
   },
   {
@@ -110,7 +122,7 @@ export const AGENT_BACKENDS: AgentBackend[] = [
     provider: 'openai',
     name: 'Codex CLI',
     vendor: 'ChatGPT',
-    blurb: 'Runs the open-source codex binary you installed, under your own sign-in.',
+    blurb: 'Runs the open-source codex tool you installed, under your own sign-in.',
     connection: 'sign-in',
     catalogue: 'OpenAI models',
   },
@@ -146,17 +158,15 @@ export function parseStoredChoice(raw: string | null): AgentChoice | null {
     const record = parsed as Partial<AgentChoice>;
     if (record.provider !== 'anthropic' && record.provider !== 'openai') return null;
     const effort = typeof record.effort === 'string' ? record.effort.trim() : '';
-    // The same shape the server mints agent ids in. Checked rather than
-    // trusted, and its absence is the normal case: a choice saved before
-    // anybody could register an agent has no field here at all.
-    const agentId = typeof record.agentId === 'string' ? record.agentId.trim() : '';
+    // A choice written by a build that could register your own agent may still
+    // carry an `agentId`. It is read and dropped rather than rejected: the
+    // model half of that choice is still exactly what the person picked, and
+    // throwing the whole thing away would reset their model to punish them for
+    // a feature that was removed underneath them.
     return {
       provider: record.provider,
       model: typeof record.model === 'string' && record.model !== '' ? record.model : null,
       effort: /^[a-z][a-z0-9-]{0,23}$/.test(effort) ? effort : null,
-      // Present only when there IS one, so a choice that names no agent is
-      // byte-identical to what every build before this one wrote and sent.
-      ...(/^[a-z0-9][a-z0-9-]{0,47}$/.test(agentId) ? { agentId } : {}),
     };
   } catch {
     return null;
@@ -178,6 +188,9 @@ export function getModelChoice(): AgentChoice | null {
 
 export function setModelChoice(choice: AgentChoice | null): void {
   current = choice;
+  // Recorded before the write, so the agent being left is remembered even if
+  // the write below fails.
+  rememberChoice(choice);
   try {
     if (choice === null) localStorage.removeItem(STORAGE_KEY);
     else localStorage.setItem(STORAGE_KEY, JSON.stringify(choice));
@@ -197,147 +210,98 @@ export function useModelChoice(): AgentChoice | null {
   return useSyncExternalStore(subscribe, getModelChoice, getModelChoice);
 }
 
-// ---------------------------------------------------------------------------
-// The user's OWN agents
-//
-// Deliberately a SEPARATE list from AGENT_BACKENDS above, and not an extension
-// of it. `AgentBackend` is vendor-shaped: it carries a catalogue of models, a
-// connection method, a vendor name, and every one of those is a claim Hearth
-// has no business making about somebody else's program. A registered agent is a
-// label and a command line. Folding the two lists together would mean either
-// inventing a vendor for a user's agent or hollowing the vendor rows out.
-//
-// Read from the server (server/agentRegistry.ts), mirrored here because the
-// composer's picker reads it on every render and cannot wait for a fetch, and
-// because this module is already where the picker and Settings agree about what
-// a turn would carry.
-// ---------------------------------------------------------------------------
-
-let customAgents: CustomAgentInfo[] = [];
-let customAgentsFile = '';
-let customRequest: Promise<void> | null = null;
-const customListeners = new Set<() => void>();
-
-export function getCustomAgents(): CustomAgentInfo[] {
-  return customAgents;
-}
-
-/** Where the registry is written, as the SERVER spelled it, or '' before the
- * read lands. Asked for rather than composed: see `CustomAgentsRead.file`. */
-export function getCustomAgentsFile(): string {
-  return customAgentsFile;
-}
-
-/**
- * Replace the mirror. Called after a read and after every successful write.
- *
- * The standing choice is reconciled in the same step, because an agent that was
- * just removed, or whose command was just edited, must not still be the thing
- * the next turn names.
- */
-export function setCustomAgents(agents: CustomAgentInfo[], file?: string): void {
-  customAgents = agents;
-  if (file !== undefined && file !== '') customAgentsFile = file;
-  for (const listener of customListeners) listener();
-  const next = reconcileAgentChoice(getModelChoice(), agents);
-  if (next !== getModelChoice()) setModelChoice(next);
-}
-
-/**
- * Read the list once per window, then share it. A failed read leaves the list
- * empty and is not cached as an answer, so the next surface to mount asks
- * again. Empty is the safe direction to fail in here: an agent that is not
- * offered is a menu one row short, where a phantom row is a turn that fails.
- */
-function loadCustomAgents(): Promise<void> {
-  customRequest ??= apiAgents().then((read) => {
-    if (read) setCustomAgents(read.agents, read.file);
-    else customRequest = null;
-  });
-  return customRequest;
-}
-
-/** Ask the server again, whatever has been read before. */
-export async function refreshCustomAgents(): Promise<void> {
-  customRequest = null;
-  await loadCustomAgents();
-}
-
-/** React binding. Mounting anything that reads the list also asks for it. */
-export function useCustomAgents(): CustomAgentInfo[] {
-  const [agents, setAgents] = useState(customAgents);
-  useEffect(() => {
-    let alive = true;
-    const settle = (): void => {
-      if (alive) setAgents(customAgents);
-    };
-    customListeners.add(settle);
-    void loadCustomAgents().then(settle);
-    return () => {
-      alive = false;
-      customListeners.delete(settle);
-    };
-  }, []);
-  return agents;
-}
-
-/** The registered agent a choice names, or null. */
-export function chosenCustomAgent(
-  choice: AgentChoice | null,
-  agents: readonly CustomAgentInfo[] = customAgents,
-): CustomAgentInfo | null {
-  if (!choice?.agentId) return null;
-  return agents.find((agent) => agent.id === choice.agentId) ?? null;
-}
-
-/** True when the stored choice is exactly this agent. */
-export function isCustomChosen(choice: AgentChoice | null, agentId: string): boolean {
-  return choice?.agentId === agentId;
-}
-
-/**
- * The choice a click on one of the agent rows produces.
- *
- * The provider, model and effort are left exactly as they were. They stop being
- * read the moment an agent is named, and keeping them is what lets someone try
- * their own agent for one message and come back to the model they had picked.
- */
-export function choiceForCustomAgent(current: AgentChoice | null, agentId: string): AgentChoice {
-  return {
-    provider: current?.provider ?? 'anthropic',
-    model: current?.model ?? null,
-    effort: current?.effort ?? null,
-    agentId,
-  };
-}
-
-/** The choice with the agent dropped, back to whichever model it still names. */
-export function choiceWithoutCustomAgent(current: AgentChoice | null): AgentChoice | null {
-  if (!current?.agentId) return current;
-  return { ...current, agentId: null };
-}
-
-/**
- * The standing choice, after the agent it names was removed or edited.
- *
- * An agent that is gone, or whose command has changed and is waiting to be
- * confirmed again, cannot answer, so the choice falls back to the model half it
- * was already carrying. Silently sending to a vendor backend under the agent's
- * name is the one thing this must not do, which is why the server also refuses
- * the turn rather than trusting this to have run.
- */
-export function reconcileAgentChoice(
-  choice: AgentChoice | null,
-  agents: readonly CustomAgentInfo[] = customAgents,
-): AgentChoice | null {
-  if (!choice?.agentId) return choice;
-  const found = agents.find((agent) => agent.id === choice.agentId);
-  return found && found.confirmed ? choice : { ...choice, agentId: null };
-}
-
 /** The provider's human name, as the selector groups say it. */
 export function providerDisplayName(provider: ChatProvider): string {
   return provider === 'anthropic' ? 'Claude' : 'ChatGPT';
+}
+
+/**
+ * Who answers right now. The one question every surface in the composer has to
+ * agree on, so it is answered in one place.
+ *
+ * The standing choice wins, then whatever the server said would answer, then
+ * Claude. That order is the whole point: `providers.active` is the server's
+ * read of `.hearth/app.json`, so a window that has never touched the picker
+ * still shows the agent Settings chose, and a window that HAS touched it is
+ * not overruled by a file the person edited weeks ago.
+ *
+ * Falling back to a provider rather than to null is deliberate. The composer
+ * needs a catalogue to draw before any read-out has landed (Home has no folder
+ * open, so there is no read-out at all), and a menu with no models in it while
+ * the fetch settles reads as a broken menu rather than a loading one.
+ */
+export function activeProvider(
+  choice: AgentChoice | null,
+  providers: ChatProviderStatus | null,
+): ChatProvider {
+  return choice?.provider ?? providers?.active ?? 'anthropic';
+}
+
+/**
+ * The last model and effort each agent was left on.
+ *
+ * Switching agent has to drop the model — a Claude id in a codex turn names a
+ * model codex has never heard of — but DROPPING is not the same as forgetting.
+ * Without this, going Claude to codex and back cost the Claude model every
+ * time, so comparing two agents on the same question meant re-picking a model
+ * on every hop. The choice is per agent because that is what it is about.
+ *
+ * Written on every `setModelChoice`, so it records what the person actually
+ * settled on rather than needing a separate act to save it.
+ */
+const RECENT_KEY = 'hearth:modelChoice:recent';
+
+type RecentByProvider = Partial<Record<ChatProvider, { model: string | null; effort: string | null }>>;
+
+function readRecent(): RecentByProvider {
+  try {
+    const parsed: unknown = JSON.parse(localStorage.getItem(RECENT_KEY) ?? 'null');
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return {};
+    return parsed as RecentByProvider;
+  } catch {
+    return {};
+  }
+}
+
+function rememberChoice(choice: AgentChoice | null): void {
+  if (!choice) return;
+  try {
+    const recent = readRecent();
+    recent[choice.provider] = { model: choice.model, effort: choice.effort };
+    localStorage.setItem(RECENT_KEY, JSON.stringify(recent));
+  } catch {
+    // Storage unavailable. The active choice still stands; only the memory of
+    // the OTHER agent is lost, which costs one re-pick rather than a broken
+    // turn.
+  }
+}
+
+/**
+ * What switching to this agent should land on: where it was left, or nothing
+ * chosen yet. Never carries anything across from the agent being left.
+ */
+export function rememberedChoiceFor(provider: ChatProvider): AgentChoice {
+  const seen = readRecent()[provider];
+  if (!seen) return choiceForProvider(provider);
+  return {
+    provider,
+    model: typeof seen.model === 'string' && seen.model !== '' ? seen.model : null,
+    effort: typeof seen.effort === 'string' && seen.effort !== '' ? seen.effort : null,
+  };
+}
+
+/**
+ * The choice a click on "use this agent instead" produces.
+ *
+ * The model and effort are dropped rather than carried, and that is not
+ * tidiness: they belong to the catalogue of the agent being left. Carrying
+ * `claude-opus-5` into a codex choice would build a turn that names a model
+ * codex has never heard of, and carrying an effort would name one the next
+ * model may not accept. The pill falls back to "Choose a model", which is the
+ * true statement about a backend nobody has picked a model from yet.
+ */
+export function choiceForProvider(provider: ChatProvider): AgentChoice {
+  return { provider, model: null, effort: null };
 }
 
 /** The models a provider reported, or none before the read-out has landed. */
@@ -357,6 +321,26 @@ export function providerModels(
  * rather than going blank the moment someone leaves the model on Automatic.
  * Null when the read-out has not landed, or when the backend never said.
  */
+/**
+ * Does this catalogue row cover that stored model id?
+ *
+ * Not `===`, because Claude's catalogue is ALIASES. Its rows are `sonnet`,
+ * `opus[1m]`, `default`, while a choice saved by an older build (or by the
+ * curated list Hearth used to ship) says `claude-sonnet-5`. Matching on id
+ * alone found nothing: the menu ticked no row, the pill fell back to a label
+ * table, and the effort dial never appeared, because the efforts live on the
+ * row that was never found. The SDK ships `resolvedModel` for exactly this
+ * and says so in its own docs.
+ *
+ * One direction only. A row covers a stored id; it does not make the two ids
+ * interchangeable, and what gets SENT is still the row's own `id`, so the
+ * conversation keeps naming the alias the person picked rather than a
+ * snapshot of what that alias meant today.
+ */
+export function modelRowCovers(info: ProviderModelInfo, model: string): boolean {
+  return info.id === model || info.resolvedModel === model;
+}
+
 export function effectiveModel(
   choice: AgentChoice | null,
   providers: ChatProviderStatus | null,
@@ -364,7 +348,7 @@ export function effectiveModel(
   if (!choice) return null;
   const models = providerModels(choice.provider, providers);
   if (choice.model === null) return models.find((m) => m.isDefault === true) ?? null;
-  return models.find((m) => m.id === choice.model) ?? null;
+  return models.find((m) => modelRowCovers(m, choice.model as string)) ?? null;
 }
 
 /**
@@ -403,26 +387,42 @@ export const NO_MODEL_CHOSEN_LABEL = 'Choose a model';
 export function modelChoiceLabel(
   choice: AgentChoice | null,
   providers: ChatProviderStatus | null,
-  agents: readonly CustomAgentInfo[] = customAgents,
 ): string {
   if (!choice) return NO_MODEL_CHOSEN_LABEL;
-  // A named agent outranks the model half, because it is what would answer.
-  // Falls back to the id rather than to a model name: the pill saying "Opus 5"
-  // while a registered program answers is the lie this whole path avoids.
-  if (choice.agentId) return chosenCustomAgent(choice, agents)?.label ?? choice.agentId;
   if (choice.model === null) return NO_MODEL_CHOSEN_LABEL;
-  const described = providerModels(choice.provider, providers).find((m) => m.id === choice.model);
+  const described = providerModels(choice.provider, providers).find((m) => modelRowCovers(m, choice.model as string));
   return described?.label ?? KNOWN_MODEL_LABELS[choice.model] ?? choice.model;
 }
 
-/** The effort word shown beside the model, or null when it doesn't apply. */
-export function effortLabel(choice: AgentChoice | null): string | null {
-  // Nothing while one of the user's own agents is chosen: the effort dial is
-  // codex's vocabulary, and pinning it beside somebody else's agent would claim
-  // a setting Hearth has no idea whether that agent honours.
-  if (!choice || choice.agentId || choice.effort === null || choice.provider !== 'openai') return null;
-  return effortDisplayName(choice.effort);
+/**
+ * What the effort control says at rest.
+ *
+ * Answered from the resolved model rather than from the provider, because the
+ * catalogue is the only thing that knows. It used to check `provider ===
+ * 'openai'`, which was true of every model that declared efforts on the day it
+ * was written and is not a rule: the moment a Claude model ships one, that
+ * check would hide a dial that works.
+ *
+ * Null means there is nothing to show, and the control is not rendered at all.
+ * An effort the active model does not declare reads as null here too, matching
+ * what `agentForTurn` would actually send.
+ */
+export function effortLabel(
+  choice: AgentChoice | null,
+  providers: ChatProviderStatus | null,
+): string | null {
+  const options = effortOptions(choice, providers);
+  if (options.length === 0) return null;
+  if (!choice || choice.effort === null) return EFFORT_AUTOMATIC_LABEL;
+  return options.some((e) => e.id === choice.effort) ? effortDisplayName(choice.effort) : EFFORT_AUTOMATIC_LABEL;
 }
+
+/**
+ * The effort row that hands the choice back to the model. Named rather than
+ * inlined because the control's resting label and its ticked row have to be
+ * the same word, and they are computed in different files.
+ */
+export const EFFORT_AUTOMATIC_LABEL = 'Automatic';
 
 /**
  * The choice to actually send with a turn.
@@ -438,11 +438,7 @@ export function agentForTurn(
   choice: AgentChoice | null,
   providers: ChatProviderStatus | null,
 ): AgentChoice | null {
-  // A named agent is sent exactly as it stands. The catalogue this function
-  // reconciles against is the vendors', and dropping a field on the strength of
-  // what codex reports would be Hearth editing a turn bound for a program it
-  // knows nothing about.
-  if (!choice || choice.agentId) return choice;
+  if (!choice) return choice;
   if (choice.effort === null) return choice;
   const efforts = effortOptions(choice, providers);
   if (efforts.length === 0 || efforts.some((e) => e.id === choice.effort)) return choice;

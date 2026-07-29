@@ -420,6 +420,15 @@ const ICON_PATHS: Record<string, ReactNode> = {
   ),
   trash: <path d="M2.5 3.5h7M4 3.5V2.5h4v1M4.5 3.5l.4 6h2.2l.4-6" />,
   audio: <path d="M2.5 5v2h2L7 9.5v-7L4.5 5h-2zM8.5 4.5a2.5 2.5 0 0 1 0 3" />,
+  // The same speaker with the arc struck through, so the muted and unmuted
+  // states are one glyph changing rather than two glyphs swapping: the cone is
+  // in the same place either way, and only the sound leaving it differs.
+  muted: (
+    <>
+      <path d="M2.5 5v2h2L7 9.5v-7L4.5 5h-2z" />
+      <path d="M9 4.5l2.5 3M11.5 4.5l-2.5 3" />
+    </>
+  ),
   upload: <path d="M6 8V2.5M3.5 4.5L6 2l2.5 2.5M2.5 9.5h7" />,
   physics: <circle cx="6" cy="6" r="3.8" />,
   collider: <rect x="2.5" y="2.5" width="7" height="7" rx="2" strokeDasharray="2 1.6" />,
@@ -450,6 +459,15 @@ const ICON_PATHS: Record<string, ReactNode> = {
     </>
   ),
   check: <path d="M2.5 6.2L5 8.7l4.5-5" />,
+  // A prohibition sign: the circle with the bar through it. Used where the
+  // answer is "nothing is checked", which is a different claim from `warning`'s
+  // "be careful" and needs to look different at a glance.
+  hazard: (
+    <>
+      <circle cx="6" cy="6" r="4" />
+      <path d="M3.2 3.2l5.6 5.6" />
+    </>
+  ),
   star: (
     <path
       d="M6 2l1.24 2.52 2.78.4-2.01 1.96.47 2.77L6 8.34 3.52 9.65l.47-2.77L1.98 4.92l2.78-.4z"

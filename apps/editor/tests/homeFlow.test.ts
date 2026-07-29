@@ -31,8 +31,9 @@ vi.mock('../src/api', () => ({
   apiTesterHistory: vi.fn(async () => null),
   apiMeta: vi.fn(async () => null),
   apiOpenAiLogin: vi.fn(async () => ({ ok: false })),
-  apiRenameChat: vi.fn(async () => null),
-  apiDeleteChat: vi.fn(async () => null),
+  // The real ones never answer null: failure is `ok: false` with words.
+  apiRenameChat: vi.fn(async () => ({ ok: false, error: 'Could not rename that conversation.' })),
+  apiDeleteChat: vi.fn(async () => ({ ok: false, error: 'Could not delete that conversation.' })),
   // Every refresher `openWorkspace` fires has to be listed here. This mock
   // replaces the module wholesale rather than spreading the real one, so an
   // api function added later is undefined at the call site and the flow throws
@@ -44,9 +45,10 @@ vi.mock('../src/api', () => ({
   apiCloseWorkspace: vi.fn(async () => {}),
 }));
 
-import { apiCreateWorkspace, apiOpenWorkspace } from '../src/api';
+import { apiCreateWorkspace, apiDeleteChat, apiOpenWorkspace, apiRenameChat } from '../src/api';
 import { setModelChoice } from '../src/chat/modelChoice';
 import { useApp } from '../src/store';
+import { currentToast, resetToasts } from '../src/toast';
 
 /**
  * A socket that connects on the next tick and answers `chat-new` with a
@@ -112,6 +114,7 @@ const PROJECT = '/home/me/Hearth/space-shooter';
 beforeEach(() => {
   localStorage.clear();
   setModelChoice(null);
+  resetToasts();
   FakeSocket.instances = [];
   FakeSocket.autoOpen = true;
   FakeSocket.nextChatId = 1;
@@ -294,6 +297,27 @@ describe('startFromHome', () => {
     expect(useApp.getState().composing).toBe(false);
   });
 
+  it('puts an open that never reached the server in the error banner, and releases', async () => {
+    // The transport half is pinned in api.test.ts: apiOpenWorkspace answers a
+    // dead server as `ok: false` with the reason in words, never as a throw.
+    // This pins the other half — that startFromHome routes that answer through
+    // `fail()` into chatError, the banner Home renders, exactly the way a
+    // clean refusal goes. It used to reject instead, and the rejection flew
+    // past the banner: the composer unlocked and nothing anywhere said why
+    // nothing had happened.
+    standInForTheDialog();
+    const reason = 'Could not reach the Hearth server. Try again in a moment.';
+    vi.mocked(apiOpenWorkspace).mockResolvedValue({ ok: false, error: reason });
+
+    const result = await useApp.getState().startFromHome('make a platformer');
+
+    expect(result).toEqual({ ok: false, error: reason });
+    expect(useApp.getState().chatError).toBe(reason);
+    // Released, not stuck: the composer can try again.
+    expect(useApp.getState().homeBusy).toBe(false);
+    expect(frames().some((frame) => frame.type === 'chat-send')).toBe(false);
+  });
+
   it('keeps the words in the composer when the socket never comes up', async () => {
     FakeSocket.autoOpen = false;
     vi.useFakeTimers();
@@ -309,5 +333,57 @@ describe('startFromHome', () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+});
+
+describe('renaming and deleting a conversation from the rail', () => {
+  // What the rail acts on. `kind` matters only in that every summary has one.
+  const CHAT = {
+    id: 'chat-1',
+    title: 'Old title',
+    kind: 'chat' as const,
+    createdAt: '2026-07-29T00:00:00.000Z',
+    updatedAt: '2026-07-29T00:00:00.000Z',
+  };
+  const REASON = 'Could not reach the Hearth server. Try again in a moment.';
+
+  it('says a rename did not land, where the person is, and keeps the truth on screen', async () => {
+    // The bug this pins: a rename over a dead server used to reject inside the
+    // store, nothing caught it, and the only trace was a console the rail
+    // never shows. The old title reappearing read as "Hearth ignored me".
+    useApp.setState({ projectPath: PROJECT, chats: [CHAT] });
+    vi.mocked(apiRenameChat).mockResolvedValue({ ok: false, error: REASON });
+
+    await useApp.getState().renameChat('chat-1', 'New title');
+
+    expect(currentToast()?.tone).toBe('error');
+    expect(currentToast()?.message).toBe(REASON);
+    // The list is untouched: the old title IS the truth until the server
+    // confirms otherwise, and nothing may pretend the rename happened.
+    expect(useApp.getState().chats).toEqual([CHAT]);
+  });
+
+  it('says a delete did not land, and the row it failed to delete stays', async () => {
+    useApp.setState({ projectPath: PROJECT, chats: [CHAT], activeChatId: 'chat-1' });
+    vi.mocked(apiDeleteChat).mockResolvedValue({ ok: false, error: REASON });
+
+    await useApp.getState().deleteChat('chat-1');
+
+    expect(currentToast()?.tone).toBe('error');
+    expect(currentToast()?.message).toBe(REASON);
+    expect(useApp.getState().chats).toEqual([CHAT]);
+    // And it did not go looking for somewhere else to land: the conversation
+    // it failed to delete is still the place to be.
+    expect(frames().some((frame) => frame.type === 'chat-new')).toBe(false);
+  });
+
+  it('stays quiet and applies the refreshed list when the rename lands', async () => {
+    useApp.setState({ projectPath: PROJECT, chats: [CHAT] });
+    vi.mocked(apiRenameChat).mockResolvedValue({ ok: true, chats: [{ ...CHAT, title: 'New title' }] });
+
+    await useApp.getState().renameChat('chat-1', 'New title');
+
+    expect(currentToast()).toBeNull();
+    expect(useApp.getState().chats[0].title).toBe('New title');
   });
 });

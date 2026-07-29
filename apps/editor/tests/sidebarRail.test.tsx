@@ -121,7 +121,7 @@ describe('mergeRecentChats', () => {
 });
 
 describe('accountIdentity', () => {
-  it('says who is signed in, and on what', () => {
+  it('says who is signed in, and on what, for the agent that would answer', () => {
     const providers = {
       anthropic: { hasKey: false, source: null },
       openai: {
@@ -135,20 +135,94 @@ describe('accountIdentity', () => {
       },
       active: 'openai',
     } as ChatProviderStatus;
-    expect(accountIdentity(providers)).toEqual({ initials: 'A', name: 'ada', status: 'Plus' });
+    expect(accountIdentity(providers, 'openai')).toEqual({
+      initials: 'A',
+      name: 'ada',
+      status: 'Plus',
+      pending: false,
+    });
   });
 
-  it('falls back to the key when nobody is signed in', () => {
+  it('never reports one vendor’s plan while the other is answering', () => {
+    // The bug this pins. Only the ChatGPT sign-in ships an email and a plan
+    // word, so the row read them unconditionally: someone working entirely in
+    // Claude saw their ChatGPT handle and "plus" underneath it, describing a
+    // subscription that had nothing to do with anything on screen.
     const providers = {
-      anthropic: { hasKey: true, source: 'project' },
+      // Signed in through the CLI itself, not a key: this is the case the bug
+      // was about, so `loggedIn` has to be true for the fixture to still mean
+      // "Claude is the one actually answering" now that `cli` alone (the
+      // binary merely being on PATH) no longer implies a sign-in.
+      anthropic: { hasKey: false, source: null, cli: true, loggedIn: true },
+      openai: {
+        installed: true,
+        version: '1.0.0',
+        loggedIn: true,
+        authMode: 'chatgpt',
+        email: 'ada@example.com',
+        planType: 'Plus',
+        hasKey: false,
+      },
+      active: 'anthropic',
+    } as ChatProviderStatus;
+    const identity = accountIdentity(providers, 'anthropic');
+    expect(identity.status).not.toBe('Plus');
+    expect(identity.name).not.toBe('ada');
+    // How it is reached, which is the whole of what that CLI reports. A tier
+    // is NOT invented from anything else to hand: it is the one fact a reader
+    // would most reasonably trust, so an unknown one stays unsaid.
+    expect(identity).toEqual({ initials: 'C', name: 'Claude', status: 'Claude Code sign in', pending: false });
+  });
+
+  it('falls back to the key when the Claude CLI is not there', () => {
+    const providers = {
+      anthropic: { hasKey: true, source: 'project', cli: false },
       openai: { installed: false, version: null, loggedIn: false, authMode: null, email: null, planType: null, hasKey: false },
       active: 'anthropic',
     } as ChatProviderStatus;
-    expect(accountIdentity(providers)).toEqual({ initials: 'H', name: 'Hearth', status: 'API key' });
+    expect(accountIdentity(providers, 'anthropic')).toEqual({
+      initials: 'C',
+      name: 'Claude',
+      status: 'API key',
+      pending: false,
+    });
   });
 
-  it('says so plainly when nothing is configured at all', () => {
-    expect(accountIdentity(null)).toEqual({ initials: 'H', name: 'Hearth', status: 'Not signed in' });
+  it('says so plainly when the server has looked and found nothing configured', () => {
+    // A real answer, not a missing one: the probe came back and there is no
+    // sign-in and no key. THIS is the state allowed to say "Not signed in".
+    const providers = {
+      anthropic: { hasKey: false, source: null, cli: false, loggedIn: false },
+      openai: { installed: false, version: null, loggedIn: false, authMode: null, email: null, planType: null, hasKey: false },
+      active: null,
+    } as unknown as ChatProviderStatus;
+    expect(accountIdentity(providers, 'anthropic')).toEqual({
+      initials: 'C',
+      name: 'Claude',
+      status: 'Not signed in',
+      pending: false,
+    });
+  });
+
+  it('claims nothing while the first providers read is still out', () => {
+    // Null providers is "not looked yet", not "not signed in". This function
+    // used to answer "Not signed in" for it, so every fresh window opened on
+    // a signed-in machine called its owner signed out for the length of the
+    // auth probe, then took it back. The pending answer keeps the one fact
+    // that is not about anyone's sign-in (which agent would answer) and
+    // refuses the status line entirely.
+    expect(accountIdentity(null, 'anthropic')).toEqual({
+      initials: 'C',
+      name: 'Claude',
+      status: null,
+      pending: true,
+    });
+    expect(accountIdentity(null, 'openai')).toEqual({
+      initials: 'C',
+      name: 'ChatGPT',
+      status: null,
+      pending: true,
+    });
   });
 });
 
@@ -340,6 +414,71 @@ describe('the collapsed rail', () => {
   });
 });
 
+describe('projects that share a name', () => {
+  it('tells two same-named rows apart by where they live, and leaves lone names plain', async () => {
+    // Two "proj"s in the rail were two identical strings with a button each:
+    // the mark is derived from the path, but a reader cannot resolve a colour
+    // back into a folder. The hint appears only on colliding names, so the
+    // common case stays a clean list.
+    vi.mocked(apiRecentWorkspaces).mockResolvedValue([
+      { path: '/work/games/proj', name: 'proj', exists: true },
+      { path: '/work/experiments/proj', name: 'proj', exists: true },
+      { path: '/work/lighthouse', name: 'lighthouse', exists: true },
+    ]);
+    reset();
+    const { container } = render(<Sidebar />);
+    await screen.findByText('lighthouse');
+
+    const hints = [...container.querySelectorAll('.project-where')].map((node) => node.textContent);
+    expect(hints).toEqual(['games/proj', 'experiments/proj']);
+    // The lone name explains nothing, because nothing about it needs explaining.
+    const lighthouse = [...container.querySelectorAll('.project-row')].find((row) =>
+      row.textContent?.includes('lighthouse'),
+    );
+    expect(lighthouse?.querySelector('.project-where')).toBeNull();
+  });
+});
+
+describe('the Tester row', () => {
+  it('carries the project you are standing in as the aim', () => {
+    // Entering the Tester screen from inside a game used to default its
+    // picker to the most recently played game ANYWHERE, so Play beside it
+    // would have closed the game you came from and playtested another one.
+    const openTesterFor = vi.fn();
+    const openScreen = vi.fn();
+    reset({ projectPath: HERE, projectName: 'game', screen: null, composing: false, openTesterFor, openScreen });
+    render(<Sidebar />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Tester' }));
+    expect(openTesterFor).toHaveBeenCalledWith(HERE);
+    expect(openScreen).not.toHaveBeenCalled();
+  });
+
+  it('leaves the default aim alone when there is no project to carry', () => {
+    const openTesterFor = vi.fn();
+    const openScreen = vi.fn();
+    reset({ projectPath: null, screen: null, composing: false, openTesterFor, openScreen });
+    render(<Sidebar />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Tester' }));
+    expect(openScreen).toHaveBeenCalledWith('tester');
+    expect(openTesterFor).not.toHaveBeenCalled();
+  });
+
+  it('does not re-aim at a folder that is merely open under a global screen', () => {
+    // Standing on Skills, the project is open underneath but it is not where
+    // you are (globalPlace), so pressing Tester is not "coming from" it.
+    const openTesterFor = vi.fn();
+    const openScreen = vi.fn();
+    reset({ projectPath: HERE, projectName: 'game', screen: 'skills', composing: false, openTesterFor, openScreen });
+    render(<Sidebar />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Tester' }));
+    expect(openScreen).toHaveBeenCalledWith('tester');
+    expect(openTesterFor).not.toHaveBeenCalled();
+  });
+});
+
 describe('the Chat / Terminal switch', () => {
   it('is not in the rail — it moved to the conversation it changes', () => {
     // The rail is Projects and Chats. A mode control belonged to neither list,
@@ -417,15 +556,43 @@ describe('the collapsed rail', () => {
 });
 
 describe('the account row', () => {
-  it('is there before anything is configured, saying exactly that', () => {
+  it('does not call anyone signed out while the auth probe is still out', () => {
+    // On every fresh load `providers` is null until the first read lands, and
+    // for those seconds this row said "Not signed in" as a fact, then flipped
+    // to the real account in front of the person it had just misdescribed.
+    // The truth of that moment is "we have not looked yet", so the row shows
+    // the agent that would answer, dimmed, and claims nothing.
+    const { container } = render(<Sidebar />);
+    expect(useApp.getState().providers).toBeNull();
+    expect(screen.getByText('Claude')).toBeTruthy();
+    expect(screen.queryByText('Not signed in')).toBeNull();
+    expect(container.querySelector('.account-status')).toBeNull();
+  });
+
+  it('says "Not signed in" only once the server has looked and found nothing', () => {
+    reset({
+      providers: {
+        anthropic: { hasKey: false, source: null, cli: false, loggedIn: false },
+        openai: {
+          installed: false,
+          version: null,
+          loggedIn: false,
+          authMode: null,
+          email: null,
+          planType: null,
+          hasKey: false,
+        },
+        active: null,
+      } as unknown as ChatProviderStatus,
+    });
     render(<Sidebar />);
-    expect(screen.getByText('Hearth')).toBeTruthy();
+    expect(screen.getByText('Claude')).toBeTruthy();
     expect(screen.getByText('Not signed in')).toBeTruthy();
   });
 
   it('opens a menu with Settings', async () => {
     render(<Sidebar />);
-    fireEvent.click(screen.getByRole('button', { name: /Account: Hearth/ }));
+    fireEvent.click(screen.getByRole('button', { name: /Account: Claude/ }));
     expect(await screen.findByRole('menuitem', { name: 'Settings…' })).toBeTruthy();
   });
 
@@ -436,7 +603,7 @@ describe('the account row', () => {
     // a refusal. Every pane but one is about the person, not the project.
     render(<Sidebar />);
     expect(useApp.getState().projectPath).toBeNull();
-    fireEvent.click(screen.getByRole('button', { name: /Account: Hearth/ }));
+    fireEvent.click(screen.getByRole('button', { name: /Account: Claude/ }));
     const item = await screen.findByRole('menuitem', { name: 'Settings…' });
     expect(item.getAttribute('aria-disabled')).toBeNull();
     expect((item as HTMLButtonElement).disabled).toBe(false);
@@ -452,7 +619,7 @@ describe('the account row', () => {
     // Two doors to the same act, one of them next to the number it reports on
     // and one of them not, only makes the reader wonder if they differ.
     render(<Sidebar />);
-    fireEvent.click(screen.getByRole('button', { name: /Account: Hearth/ }));
+    fireEvent.click(screen.getByRole('button', { name: /Account: Claude/ }));
     await screen.findByRole('menuitem', { name: 'Settings…' });
     expect(screen.queryByRole('menuitem', { name: /Check for updates/ })).toBeNull();
   });

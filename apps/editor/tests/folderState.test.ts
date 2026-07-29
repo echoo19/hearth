@@ -45,7 +45,7 @@ const THERE = '/work/ember';
 
 /** A signed-in ChatGPT, which is what the failing reads were talking over. */
 const SIGNED_IN: ChatProviderStatus = {
-  anthropic: { hasKey: false, source: null },
+  anthropic: { hasKey: false, source: null, cli: false, loggedIn: false, email: null, planType: null },
   openai: {
     installed: true,
     version: '0.9.0',

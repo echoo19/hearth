@@ -66,8 +66,9 @@ import {
   runRows,
   skippedProjectsLine,
 } from '../src/components/tester/TesterHistory';
-import { ProjectSelector, selectorLabel } from '../src/projects/ProjectSelector';
+import { ProjectSelector, selectorLabel, whereHints } from '../src/projects/ProjectSelector';
 import { OPEN_FOLDER_EVENT } from '../src/components/shell/useOpenFolder';
+import { FOCUS_SEARCH_EVENT } from '../src/components/shell/ShortcutLayer';
 import { useApp } from '../src/store';
 import {
   apiCloseWorkspace,
@@ -452,6 +453,43 @@ describe('selectorLabel', () => {
   });
 });
 
+describe('whereHints', () => {
+  it('hints only the rows whose names collide', () => {
+    const hints = whereHints([
+      { path: '/work/games/proj', name: 'proj' },
+      { path: '/work/experiments/proj', name: 'proj' },
+      { path: '/work/lighthouse', name: 'lighthouse' },
+    ]);
+    // The folder alone would restate the name, so both reach up a segment to
+    // say something the name has not already said.
+    expect(hints.get('/work/games/proj')).toBe('games/proj');
+    expect(hints.get('/work/experiments/proj')).toBe('experiments/proj');
+    // A lone name explains nothing, because nothing about it needs explaining.
+    expect(hints.has('/work/lighthouse')).toBe(false);
+  });
+
+  it('stops at the folder when the folder already tells them apart', () => {
+    // The dedupe-suffix case: same display name, sibling folders. The second
+    // folder is not the name, so it stands; the first would restate it and
+    // reaches up to where it lives instead.
+    const hints = whereHints([
+      { path: '/Users/a/Hearth/mini-platformer', name: 'mini-platformer' },
+      { path: '/Users/a/Hearth/mini-platformer-2', name: 'mini-platformer' },
+    ]);
+    expect(hints.get('/Users/a/Hearth/mini-platformer')).toBe('Hearth/mini-platformer');
+    expect(hints.get('/Users/a/Hearth/mini-platformer-2')).toBe('mini-platformer-2');
+  });
+
+  it('handles Windows separators the way the rest of the path code does', () => {
+    const hints = whereHints([
+      { path: 'C:\\games\\proj', name: 'proj' },
+      { path: 'C:\\other\\proj', name: 'proj' },
+    ]);
+    expect(hints.get('C:\\games\\proj')).toBe('games/proj');
+    expect(hints.get('C:\\other\\proj')).toBe('other/proj');
+  });
+});
+
 /**
  * A picker with nothing in it is a control that does nothing, with nothing
  * saying why.
@@ -498,6 +536,47 @@ describe('the picker with nothing to offer', () => {
 
     expect(screen.getByRole('menu').textContent).not.toMatch(/no projects yet/i);
     expect(screen.getAllByRole('menuitem').map((item) => item.textContent)).toEqual(['lighthouse']);
+  });
+
+  it('tells two same-named games apart by where they live', async () => {
+    // The composer's picker and the rail's Projects list are two views of one
+    // list: a reader who cannot tell two "proj"s apart here is aiming a
+    // message (or a playtest) at a coin flip.
+    vi.mocked(apiRecentWorkspaces).mockResolvedValue([
+      { path: '/work/games/proj', name: 'proj', exists: true },
+      { path: '/work/experiments/proj', name: 'proj', exists: true },
+    ]);
+    render(<ProjectSelector allowNew={false} emptyLabel="Pick a game" />);
+    await openMenu();
+
+    const rows = screen.getAllByRole('menuitem').map((item) => item.textContent);
+    expect(rows.some((text) => text?.includes('games/proj'))).toBe(true);
+    expect(rows.some((text) => text?.includes('experiments/proj'))).toBe(true);
+  });
+
+  it('ends in a way to reach the older projects, not a label with nothing to press', async () => {
+    // The menu is capped, and the cap used to end in a bare header: "9 older
+    // projects not listed" named the problem and offered no way to any of
+    // them. The row is now a real item that opens the rail's search, which is
+    // the one surface that reaches every project on the machine.
+    vi.mocked(apiRecentWorkspaces).mockResolvedValue(
+      Array.from({ length: 9 }, (_, i) => ({ path: `/work/game-${i}`, name: `game-${i}`, exists: true })),
+    );
+    render(<ProjectSelector allowNew={false} emptyLabel="Pick a game" />);
+    await openMenu();
+
+    const row = screen.getByRole('menuitem', { name: /Search 1 older project…/ });
+    expect(row).toBeTruthy();
+    // And nothing in the menu is a dead-end header about the cut any more.
+    expect(document.querySelector('.menu-header')).toBeNull();
+
+    const asked = vi.fn();
+    window.addEventListener(FOCUS_SEARCH_EVENT, asked);
+    await act(async () => {
+      row.click();
+    });
+    window.removeEventListener(FOCUS_SEARCH_EVENT, asked);
+    expect(asked).toHaveBeenCalledTimes(1);
   });
 });
 

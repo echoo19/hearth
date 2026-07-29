@@ -1,101 +1,76 @@
 /**
- * How you want to work, and with what.
+ * Who answers, and with which of their models.
  *
- * A text pill in the composer's bottom row — no border at rest, because the
+ * A text pill in the composer's bottom row, no border at rest, because the
  * composer already has one and a control inside a control reads as clutter.
  *
- * The menu's first cut is not by vendor, it is by HOW THE AGENT IS REACHED,
- * because that is the difference a person actually feels. It is a switch at
- * the head of the menu rather than two headers down one list: the two sides
- * are alternatives, not sections, and stacking them made a menu long enough
- * that the terminal half was below the fold and the effort dial below that.
+ * ONE AGENT AT A TIME, AND THE MENU SHOWS ONLY ITS MODELS. This is the whole
+ * shape of the control and it is a correction. The menu used to list every
+ * vendor's catalogue at once, so picking a model was also, silently, a way to
+ * change who answered: choosing a GPT model moved the conversation to codex
+ * with nothing announcing it, while the account row in the sidebar still
+ * described a different sign-in. Neither surface was lying on its own, and
+ * together they were incoherent. So the models under the header belong to the
+ * active agent and nothing else, and changing agent is a row of its own under
+ * "Switch agent" that says what it is doing.
  *
- *   Chat      backends Hearth drives itself, over a key or a sign-in. Picking
- *             one changes who answers the next turn and nothing else.
- *             Underneath it, one group per backend, then that backend's own
- *             models — the two lists are not a cross-product and the menu does
- *             not pretend otherwise: the Agent SDK takes Claude model ids,
- *             codex takes whatever its own `model/list` returned. The backend
- *             is named in each group's header, so "what is running the loop"
- *             is still a question with a visible answer. The models listed are
- *             the ones the user left switched on in Settings: the catalogues
- *             only grow, and a menu opened mid-sentence should be a shortlist.
- *             Under those, "Your agents": programs the person registered
- *             themselves (Settings, and server/agentRegistry.ts). Their own
- *             group rather than a fourth vendor, because Hearth knows a label
- *             and a command line about each and nothing else, and the command
- *             line is what the row prints. One that has not been confirmed is
- *             shown and not offered, with what would make it work.
- *   Terminal  a real shell in the project folder, and it opens with the row
- *             that says so: "Open a terminal", ahead of every name, running
- *             nothing. Everything under it is a shortcut — the agent CLIs
- *             Hearth knows BY NAME, as found on this machine — and picking one
- *             flips to terminal mode AND types that command, so you land in a
- *             running session instead of a prompt. Only what is really there is
- *             offered: the list is measured against PATH by the server
- *             (server/agentClis.ts), and a missing CLI is shown greyed with
- *             what would make it work.
+ * Which agent is active is `activeProvider` in chat/modelChoice: the standing
+ * choice first, then what the server says would answer. Picking a new one here
+ * writes BOTH, so the composer and Settings cannot drift apart. That write is
+ * the fix for the older bug where the pill and Settings each held their own
+ * opinion and the server quietly preferred the pill.
  *
- *             THE LIST IS NOT THE BOUNDARY, and every word on this side is
- *             written to keep that obvious. AGENT_CLIS is a fixed registry of
- *             names Hearth can type, not the set of agents that work here: a
- *             CLI nobody has heard of runs exactly as well, typed by hand. A
- *             menu of two vendors read as a supported-agents list, which is the
- *             assumption this app must never plant, so the registry names the
- *             field and the bare-shell row sits above all of it.
- *   Effort    exactly the efforts the selected chat model declared, and
- *             nothing when it declares none. Codex's catalogue answers this
- *             per model — one offers `low medium high xhigh max ultra`,
- *             another four of those — so a fixed list would offer failing
- *             turns. It has no meaning on the terminal side, where the CLI
- *             owns its own settings, so it stays with the chat half.
+ * What is NOT here any more, and where it went:
  *
- * The same vendor can appear on both sides, and that is not a duplicate: the
- * Claude under Chat is the Agent SDK answering here, and Claude Code under
- * Terminal is the CLI running in a shell. Nothing here implies a partnership
- * with anyone — ChatGPT works through the open-source codex the user installed
- * themselves, and the same goes for every CLI in the Terminal group.
+ *   Terminal   this menu used to carry a Chat/Terminal switch and a list of
+ *              CLIs it would type for you. A conversation is a chat or a
+ *              terminal session from the moment it exists, so that switch was
+ *              minting a second conversation underneath the reader while
+ *              looking like a view toggle. The choice moved to where the
+ *              conversation is created: New chat and New terminal, in the
+ *              sidebar and on a project's own screen. A terminal now opens
+ *              empty in the project folder and you type your own command,
+ *              which is also the honest answer to "which agents work here":
+ *              all of them, because it is your shell.
+ *   Effort     its own control beside this one (EffortSelector), shown only
+ *              when the active model declared efforts. It was a section at the
+ *              bottom of this menu, below the fold, on a menu opened
+ *              mid-sentence.
+ *   Your own   registering a program against a small stdio protocol is gone.
+ *   agents     The terminal is the door for any agent Hearth does not drive
+ *              itself, and it does not need a registry to open.
  *
- * Every chat backend states its own availability. One that can't answer still
- * lists its models — hiding them would answer "why isn't Opus in here?" with
- * silence — but picking one opens Settings instead of pretending the choice
+ * Every backend states its own availability. One that cannot answer still
+ * lists its models, because hiding them answers "why isn't Opus in here?" with
+ * silence, but picking one opens Settings rather than pretending the choice
  * took.
  */
-import React, { useEffect, useState } from 'react';
+import React from 'react';
 import {
   AGENT_BACKENDS,
+  activeProvider,
   backendFor,
-  choiceForCustomAgent,
-  effectiveModel,
+  choiceForProvider,
   effortDisplayName,
-  agentForTurn,
   effortLabel,
   effortOptions,
+  effectiveModel,
+  agentForTurn,
   enabledModels,
   getDisabledModels,
-  isCustomChosen,
   modelChoiceLabel,
+  modelRowCovers,
   getModelChoice,
   providerModels,
   setModelChoice,
-  useCustomAgents,
   useDisabledModels,
   useModelChoice,
+  EFFORT_AUTOMATIC_LABEL,
 } from '../../chat/modelChoice';
-import { apiAgentClis } from '../../api';
 import { useApp } from '../../store';
-import type {
-  AgentCliInfo,
-  AgentChoice,
-  ChatProvider,
-  ChatProviderStatus,
-  CustomAgentInfo,
-  ProviderModelInfo,
-} from '../../types';
-import { planTerminalLaunch, useAgentSocket } from '../agent/useAgentSocket';
+import type { AgentChoice, ChatProvider, ChatProviderStatus, ProviderModelInfo } from '../../types';
 import { Icon } from '../ui';
 import { MenuButton, type MenuItem } from '../ui/Menu';
-import { Switch } from '../ui/Switch';
 
 /**
  * THERE IS NO AUTOMATIC ROW, and this constant is gone rather than hidden.
@@ -149,7 +124,28 @@ export function providerAvailability(
 ): ProviderAvailability {
   if (provider === 'anthropic') {
     const hasKey = providers?.anthropic.hasKey === true;
-    return { available: hasKey, note: hasKey ? 'API key' : 'Not set up' };
+    // The sign-in comes FIRST, because it is the one most people already have
+    // and the one that costs nothing extra. The CLI answers on whatever the
+    // person signed into, so a key is an alternative rather than a
+    // prerequisite: reading only `hasKey` put "Not set up" beside a Claude
+    // that had been working all day, under a row offering to set up the thing
+    // that was already set up.
+    //
+    // SIGNED IN, not merely installed. `cli` alone was the previous answer
+    // here and it was the same mistake in the other direction: a machine with
+    // claude on PATH and nobody signed into it reported itself ready, listed
+    // its models, and failed the turn with no clue why.
+    const loggedIn = providers?.anthropic.loggedIn === true;
+    if (loggedIn) {
+      const plan = providers?.anthropic.planType;
+      return { available: true, note: hasKey ? 'API key' : plan ? `Claude ${plan}` : 'Claude Code sign in' };
+    }
+    if (hasKey) return { available: true, note: 'API key' };
+    // Installed but signed out is its own state, and it gets its own sentence:
+    // the fix is one command, and "Not set up" would send someone looking for
+    // an API key they do not need.
+    if (providers?.anthropic.cli === true) return { available: false, note: 'Not signed in' };
+    return { available: false, note: 'Not set up' };
   }
   const openai = providers?.openai;
   if (!openai) return { available: false, note: 'Not set up' };
@@ -216,15 +212,22 @@ export function modelIdFor(info: ProviderModelInfo): string | null {
 }
 
 /**
- * True when the stored choice is exactly this provider + model.
+ * True when the stored choice is this row.
  *
- * A choice that names one of the user's own agents ticks nothing here, even
- * though it still carries the model it was carrying: that model is what the
- * menu goes back to, not what would answer, and two ticks in one menu is the
- * menu telling you two different things.
+ * Takes the ROW rather than a bare id so an alias can cover a stored explicit
+ * id: Claude's catalogue is `sonnet` / `opus[1m]`, and a choice saved as
+ * `claude-sonnet-5` ticked nothing at all until this matched through
+ * `resolvedModel`. `info` is null for a row that is not a model.
  */
-export function isChosen(choice: AgentChoice | null, provider: ChatProvider, model: string | null): boolean {
-  return choice !== null && !choice.agentId && choice.provider === provider && choice.model === model;
+export function isChosen(
+  choice: AgentChoice | null,
+  provider: ChatProvider,
+  model: string | null,
+  info?: ProviderModelInfo,
+): boolean {
+  if (choice === null || choice.provider !== provider) return false;
+  if (choice.model === model) return true;
+  return info !== undefined && choice.model !== null && modelRowCovers(info, choice.model);
 }
 
 /**
@@ -264,137 +267,30 @@ function openSettings(): void {
   window.dispatchEvent(new CustomEvent('hearth:open-settings'));
 }
 
+
 /**
- * The trailing note on one of the user's own agent rows: the exact command
- * line, or the one thing standing between it and answering.
+ * The one group the composer draws: the active agent and its catalogue.
  *
- * The command is shown rather than a friendly summary, everywhere, and this is
- * one of the places that rule is load-bearing: the row is a button that spawns
- * a program, and the only honest label for that is what gets spawned.
+ * Separate from `modelGroups` below rather than a filter over it, because the
+ * two callers want genuinely different things. Settings shows every backend at
+ * once, switches and all, because that is the screen where you decide what the
+ * composer may offer. The composer shows exactly what would answer.
  */
-export function customAgentNote(agent: CustomAgentInfo): string {
-  return agent.confirmed ? agent.commandLine : 'Not confirmed yet';
-}
-
-/** Why a row cannot be picked, or undefined when it can. */
-export function customAgentBlocked(agent: CustomAgentInfo): string | undefined {
-  if (agent.confirmed) return undefined;
-  return `Hearth will run "${agent.commandLine}". Open Settings and confirm it before it can answer.`;
-}
-
-// ---------------------------------------------------------------------------
-// The terminal half: which CLIs this machine has.
-// ---------------------------------------------------------------------------
-
-/** Loading / ready / failed, kept apart because "none installed" and "not
- * asked yet" are different answers and only one of them is the machine's. */
-export type AgentCliRead =
-  | { state: 'loading' }
-  | { state: 'ready'; clis: AgentCliInfo[] }
-  | { state: 'failed' };
-
-/**
- * Read once per window, then shared: the answer is a property of the machine,
- * it costs a PATH walk, and every composer wants the same one. A CLI installed
- * while Hearth is open shows up on the next launch — the alternative is
- * re-walking PATH on every render of a menu that is usually closed.
- */
-let cliRead: AgentCliRead = { state: 'loading' };
-let cliRequest: Promise<void> | null = null;
-const cliListeners = new Set<() => void>();
-
-function loadAgentClis(): Promise<void> {
-  cliRequest ??= apiAgentClis().then((clis) => {
-    cliRead = clis ? { state: 'ready', clis } : { state: 'failed' };
-    // A failed read is not an answer, so it is not cached as one: the next
-    // composer to mount asks again.
-    if (!clis) cliRequest = null;
-    for (const listener of cliListeners) listener();
-  });
-  return cliRequest;
-}
-
-export function useAgentClis(): AgentCliRead {
-  const [read, setRead] = useState(cliRead);
-  useEffect(() => {
-    let alive = true;
-    const settle = (): void => {
-      if (alive) setRead(cliRead);
-    };
-    cliListeners.add(settle);
-    void loadAgentClis().then(settle);
-    return () => {
-      alive = false;
-      cliListeners.delete(settle);
-    };
-  }, []);
-  return read;
-}
-
-/**
- * The line under the switch on the terminal side: what this half is, or what
- * went wrong finding out. It doubles as the empty state's explanation, which
- * is why the failure reads as a sentence rather than as a status word.
- */
-export function agentCliNote(read: AgentCliRead): string {
-  if (read.state === 'loading') return 'Checking your PATH…';
-  if (read.state === 'failed') return 'Hearth could not read your PATH, so it cannot say what is installed.';
-  // The sentence that stops the list below from reading as a boundary. It is a
-  // real shell in the project folder: the names are there to save typing, and
-  // anything not on them works exactly as well.
-  return 'A real shell in your project. Run any CLI you like; these are the ones Hearth can type for you.';
-}
-
-/** Which half of the menu is showing. */
-export type AgentSide = 'chat' | 'terminal';
-
-/**
- * Whether this menu may still change the conversation's KIND, and what it is
- * locked to when it may not.
- *
- * A conversation is a chat or a terminal session from the moment it exists,
- * and that has always been true of the record — `startConversationOfKind` in
- * store.ts creates a new one rather than converting the open one. What the
- * menu did with that was quietly mint a second conversation underneath
- * someone: pick a CLI three messages into a chat and the chat you were reading
- * went away, replaced by a shell, with the switch at the top of the menu
- * looking exactly like a view toggle. It is not a view toggle. It decides what
- * you are about to start.
- *
- * So it only decides that while there is nothing started: a blank composer, or
- * a window that has not landed in a conversation at all. After the first
- * message the kind is settled, the other side is shown disabled with the
- * reason, and starting the other kind is New chat — which is the honest name
- * for what picking it was doing anyway.
- */
-export function lockedSide(state: {
-  composing: boolean;
-  activeChatId: string | null;
-  conversationMode: AgentSide;
-}): AgentSide | null {
-  // The blank surface: New chat, or Home. Nothing exists to contradict, so
-  // both kinds are on offer and picking one is what creates it.
-  if (state.composing || state.activeChatId === null) return null;
-  return state.conversationMode;
-}
-
-/** Why the other half cannot be reached from an established conversation. */
-export function sideLockReason(locked: AgentSide, side: AgentSide): string | undefined {
-  if (locked === side) return undefined;
-  return locked === 'terminal'
-    ? 'This is a terminal session. Start a new chat to talk to a model.'
-    : 'This is a chat. Start a new chat to open a terminal instead.';
-}
-
-/**
- * The side to open on. Whichever one the conversation is already using, so the
- * menu opens onto the answer to "what is running this" rather than onto the
- * side the reader has to switch away from. Terminal only counts as in use when
- * a CLI is genuinely running here: a preference has no meaning on that side,
- * because starting a CLI is the choice.
- */
-export function defaultSide(terminalRunning: boolean): AgentSide {
-  return terminalRunning ? 'terminal' : 'chat';
+export function activeModelGroup(
+  choice: AgentChoice | null,
+  providers: ChatProviderStatus | null,
+  disabled: ReadonlySet<string> = getDisabledModels(),
+): ModelGroup {
+  const provider = activeProvider(choice, providers);
+  const curated = providerModels(provider, providers);
+  const models = curated.length > 0 ? curated : FALLBACK_MODELS[provider];
+  return {
+    provider,
+    title: backendFor(provider).vendor,
+    backend: backendFor(provider).name,
+    availability: providerAvailability(provider, providers),
+    models: enabledModels(provider, models, disabled).filter((m) => m.id !== ''),
+  };
 }
 
 export function ModelSelector() {
@@ -403,190 +299,59 @@ export function ModelSelector() {
   // Subscribed rather than read once: switching a model off in Settings has to
   // be felt by an already-open composer, not only by the next one to mount.
   const disabled = useDisabledModels();
-  const groups = modelGroups(providers, disabled);
-  const effort = effortLabel(choice);
-  const efforts = effortOptions(choice, providers);
-  const clis = useAgentClis();
-  const agents = useCustomAgents();
-  const { session } = useAgentSocket();
-  const connected = useApp((s) => s.wsStatus === 'connected');
-  const hasProject = useApp((s) => s.projectPath !== null);
-  const startTerminalCli = useApp((s) => s.startTerminalCli);
-  const openTerminal = useApp((s) => s.openTerminal);
-  // What the open conversation already is, if it is anything. See `lockedSide`.
-  const composing = useApp((s) => s.composing);
-  const activeChatId = useApp((s) => s.activeChatId);
-  const conversationMode = useApp((s) => s.conversationMode);
-
-  // One plan per CLI, computed from the same function the store re-checks on
-  // click, so what is offered and what would happen cannot drift apart.
-  const cliPlans =
-    clis.state === 'ready'
-      ? clis.clis.map((cli) => ({
-          cli,
-          plan: planTerminalLaunch({ cli, status: session.status, launched: session.cli, connected, hasProject }),
-        }))
-      : [];
-  const terminalRunning = cliPlans.some((entry) => entry.plan.action === 'show');
-
-  // Which half is showing. Seeded from what is running, then the reader's, for
-  // as long as the composer lives: someone comparing the two sides should not
-  // have the menu jump back under them between openings.
-  const [chosenSide, setSide] = useState<AgentSide>(() => defaultSide(terminalRunning));
-  // ...unless the conversation has already settled what it is, in which case
-  // the menu shows that side and says so. The reader's preference is kept
-  // rather than overwritten, so it is still there on the next New chat.
-  const locked = lockedSide({ composing, activeChatId, conversationMode });
-  const side = locked ?? chosenSide;
+  const setChatProvider = useApp((s) => s.setChatProvider);
+  const group = activeModelGroup(choice, providers, disabled);
+  const backend = backendFor(group.provider);
 
   const items: MenuItem[] = [];
 
-  if (side === 'chat') {
-    for (const [index, group] of groups.entries()) {
-      if (index > 0) items.push({ separator: true });
-      // The note carries what a menu row's `shortcut` cannot: it is real text in
-      // the header, so "which backend, and is it set up" is readable rather than
-      // decorative.
-      items.push({ header: group.title, note: `${backendFor(group.provider).name} · ${group.availability.note}` });
-      // With the automatic row gone, a backend that has reported no catalogue
-      // leaves a header with nothing under it. Say so: an empty group reads as
-      // a rendering fault, and the reason here is a real one the user can act
-      // on for one of the two providers.
-      if (group.models.length === 0) {
-        items.push({
-          label: 'No models reported',
-          disabled: true,
-          disabledReason: group.availability.available
-            ? 'This backend has not sent its catalogue yet. It usually lands a moment after a project opens.'
-            : 'Set this backend up and the models it can drive are listed here.',
-          onSelect: () => {},
-        });
-      }
-      for (const info of group.models) {
-        const model = modelIdFor(info);
-        items.push({
-          label: info.label,
-          shortcut: modelRowNote(info),
-          checked: isChosen(choice, group.provider, model),
-          onSelect: () => {
-            if (!group.availability.available) openSettings();
-            else setModelChoice(choiceForModel(getModelChoice(), group.provider, model, providers));
-          },
-        });
-      }
-      if (!group.availability.available) {
-        items.push({ label: 'Set up in Settings…', onSelect: openSettings });
-      }
-    }
-
-    // The user's own agents, as their own group. Not folded in with the vendor
-    // groups above: those are a backend paired with a catalogue of models, and
-    // one of these is a program with a command line. The row's note IS that
-    // command line, because a row that spawns a program and shows only a
-    // friendly name is hiding the only fact that matters about it.
-    items.push({ separator: true });
-    items.push({ header: 'Your agents', note: 'Programs you registered' });
-    if (agents.length === 0) {
-      items.push({
-        label: 'Nothing registered',
-        disabled: true,
-        disabledReason: 'Add one under Agents in Settings. Any program that speaks the Hearth agent protocol works.',
-        onSelect: () => {},
-      });
-    }
-    for (const agent of agents) {
-      const blocked = customAgentBlocked(agent);
-      items.push({
-        label: agent.label,
-        shortcut: customAgentNote(agent),
-        checked: isCustomChosen(choice, agent.id),
-        disabled: blocked !== undefined,
-        disabledReason: blocked,
-        onSelect: () => setModelChoice(choiceForCustomAgent(getModelChoice(), agent.id)),
-      });
-    }
-    items.push({ label: 'Manage agents…', onSelect: openSettings });
-
-    // The ticks show what a turn sent right now WOULD carry, not what storage
-    // happens to hold: a stored effort the current model has stopped accepting
-    // is dropped on send, so it must not read as selected here either.
-    const sending = agentForTurn(choice, providers);
-
-    // Only when the chosen model said which efforts it takes. No catalogue means
-    // no dial — an effort a model rejects is a turn that fails on send. It stays
-    // on this side of the switch: on the terminal side the CLI owns its own
-    // settings and this dial would be a control over nothing.
-    // ...and nothing at all while one of the user's own agents is chosen: the
-    // efforts came out of codex's catalogue, and offering them under a program
-    // Hearth knows nothing about would be a dial wired to no setting.
-    if (efforts.length > 0 && sending && !sending.agentId) {
-      items.push({ separator: true });
-      items.push({ header: 'Effort', note: effectiveModel(sending, providers)?.label ?? '' });
-      // Named with what it resolves to, because "Automatic" on its own is the
-      // one row here that doesn't say what it does.
-      const modelDefault = effectiveModel(sending, providers)?.defaultEffort;
-      items.push({
-        label: 'Automatic',
-        shortcut: modelDefault ? effortDisplayName(modelDefault) : undefined,
-        checked: sending.effort === null,
-        onSelect: () => {
-          const current = getModelChoice();
-          if (current) setModelChoice({ ...current, effort: null });
-        },
-      });
-      for (const option of efforts) {
-        items.push({
-          label: effortDisplayName(option.id),
-          checked: sending.effort === option.id,
-          onSelect: () => {
-            const current = getModelChoice();
-            if (current) setModelChoice({ ...current, effort: option.id });
-          },
-        });
-      }
-    }
-  } else {
-    // No group header on this side. There is one list, the switch above has
-    // just named it, and a header would be the third thing in a row to say
-    // "terminal" before the reader reaches a single CLI.
-    // FIRST, ahead of every named CLI, and that order is the point. The list
-    // below is a set of names Hearth can type for you; this is the terminal
-    // itself, which runs whatever you type and always has. With only named
-    // rows the menu read as the set of agents Hearth supports, which is the
-    // one assumption this app must never plant — and the honest answer, "it is
-    // your shell", had no row at all.
+  items.push({ header: group.title, note: `${backend.name} · ${group.availability.note}` });
+  // With no automatic row, a backend that has reported no catalogue leaves a
+  // header with nothing under it. Say so: an empty group reads as a rendering
+  // fault, and the reason is something the user can act on.
+  if (group.models.length === 0) {
     items.push({
-      label: 'Open a terminal',
-      shortcut: 'Any CLI',
-      disabled: !hasProject,
-      disabledReason: hasProject ? undefined : 'Open a project first. The terminal runs in the project folder.',
-      onSelect: openTerminal,
+      label: 'No models reported',
+      disabled: true,
+      disabledReason: group.availability.available
+        ? 'This agent has not sent its catalogue yet. It usually lands a moment after a project opens.'
+        : 'Set this agent up and the models it can drive are listed here.',
+      onSelect: () => {},
     });
+  }
+  for (const info of group.models) {
+    const model = modelIdFor(info);
+    items.push({
+      label: info.label,
+      shortcut: modelRowNote(info),
+      checked: isChosen(choice, group.provider, model, info),
+      onSelect: () => {
+        if (!group.availability.available) openSettings();
+        else setModelChoice(choiceForModel(getModelChoice(), group.provider, model, providers));
+      },
+    });
+  }
+  if (!group.availability.available) {
+    items.push({ label: 'Set up in Settings…', onSelect: openSettings });
+  }
+
+  // Changing who answers is its own act, with its own heading, below the models
+  // rather than above them. Below because the common errand is picking a model
+  // for the agent you are already using, and a switch at the top of the menu is
+  // the one a pointer crosses on the way to everything else.
+  const others = AGENT_BACKENDS.filter((entry) => entry.provider !== group.provider);
+  if (others.length > 0) {
     items.push({ separator: true });
-    if (clis.state === 'ready' && cliPlans.length === 0) {
+    items.push({ header: 'Switch agent', note: 'Changes who answers' });
+    for (const entry of others) {
+      const availability = providerAvailability(entry.provider, providers);
       items.push({
-        label: 'None of these are installed',
-        disabled: true,
-        // Not "nothing installed": what Hearth checked is its own shortlist,
-        // and the terminal above still runs whatever the user has.
-        disabledReason:
-          'Hearth found none of the CLIs it knows by name on your PATH. Open a terminal and run yours by hand.',
-        onSelect: () => {},
-      });
-    }
-    for (const { cli, plan } of cliPlans) {
-      const blocked = plan.action === 'blocked';
-      items.push({
-        label: cli.label,
-        // The command, because that is what lands in the shell — except when
-        // it isn't there, where the missing binary is the more useful fact.
-        shortcut: cli.installed ? cli.command : 'Not installed',
-        // Ticked only for a session Hearth itself started this CLI in. It
-        // means "this is running here", not "this is your preference".
-        checked: plan.action === 'show',
-        disabled: blocked,
-        disabledReason: blocked ? plan.reason : undefined,
-        onSelect: () => startTerminalCli(cli),
+        label: entry.name,
+        shortcut: availability.note,
+        onSelect: () => {
+          if (!availability.available) openSettings();
+          else void setChatProvider(entry.provider);
+        },
       });
     }
   }
@@ -598,51 +363,79 @@ export function ModelSelector() {
       items={items}
       triggerClassName="model-pill"
       popoverClassName="model-menu"
-      heading={
-        <>
-          <Switch
-            label="How the agent is reached"
-            className="switch-stretch"
-            value={side}
-            onChange={setSide}
-            options={[
-              {
-                id: 'chat',
-                label: 'Chat',
-                disabled: locked === 'terminal',
-                disabledReason: locked ? sideLockReason(locked, 'chat') : undefined,
-              },
-              {
-                id: 'terminal',
-                label: 'Terminal',
-                disabled: locked === 'chat',
-                disabledReason: locked ? sideLockReason(locked, 'terminal') : undefined,
-              },
-            ]}
-          />
-          {/* The one line each side needs. It is the difference the switch is
-              actually asking about, and two words cannot carry it. On the
-              terminal side it also reports the PATH read, so a list that is
-              empty because the walk failed does not look like a machine with
-              nothing installed.
-
-              A locked switch replaces it with the reason, because that is now
-              the thing the reader most needs: the greyed half is the first
-              thing the eye goes to, and "why" beats a description of a side
-              they cannot reach. */}
-          <p className="model-menu-blurb">
-            {locked !== null
-              ? sideLockReason(locked, locked === 'chat' ? 'terminal' : 'chat')
-              : side === 'chat'
-                ? 'Hearth runs the agent and answers here.'
-                : agentCliNote(clis)}
-          </p>
-        </>
-      }
+      heading={<p className="model-menu-blurb">{backend.blurb}</p>}
       trigger={
         <>
-          <span className="model-pill-name">{modelChoiceLabel(choice, providers, agents)}</span>
-          {effort && <span className="model-pill-effort">{effort}</span>}
+          <span className="model-pill-name">{modelChoiceLabel(choice, providers)}</span>
+          <Icon name="chevron" size={9} />
+        </>
+      }
+    />
+  );
+}
+
+/**
+ * How hard the model thinks, as its own control.
+ *
+ * IT DISAPPEARS RATHER THAN GREYING OUT, and that is the point of splitting it
+ * off. Effort is the model's vocabulary, not ours: codex answers it per model
+ * from `model/list` (one build offers `low medium high xhigh max ultra`, the
+ * next offers four of those) and today's Claude models declare none at all. A
+ * permanent third pill would therefore be a dial wired to nothing for half the
+ * agents in the app, which is worse than no dial: a control that is present
+ * and inert is a promise the turn does not keep.
+ *
+ * So the rule is evidence, not vendor. `effortOptions` reads what the resolved
+ * model actually declared, and nothing renders when it declared nothing. The
+ * moment a Claude model ships efforts, this appears for Claude with no change
+ * here.
+ */
+export function EffortSelector() {
+  const choice = useModelChoice();
+  const providers = useApp((s) => s.providers);
+  // The ticks show what a turn sent RIGHT NOW would carry, not what storage
+  // happens to hold: a stored effort the current model has stopped accepting is
+  // dropped on send, so it must not read as selected here either.
+  const sending = agentForTurn(choice, providers);
+  const options = effortOptions(sending, providers);
+  const label = effortLabel(sending, providers);
+  if (options.length === 0 || label === null) return null;
+
+  const model = effectiveModel(sending, providers);
+  const items: MenuItem[] = [
+    { header: 'Effort', note: model?.label ?? '' },
+    {
+      // Named with what it resolves to, because "Automatic" on its own is the
+      // one row here that does not say what it does.
+      label: EFFORT_AUTOMATIC_LABEL,
+      shortcut: model?.defaultEffort ? effortDisplayName(model.defaultEffort) : undefined,
+      checked: sending?.effort == null,
+      onSelect: () => {
+        const current = getModelChoice();
+        if (current) setModelChoice({ ...current, effort: null });
+      },
+    },
+    ...options.map<MenuItem>((option) => ({
+      label: effortDisplayName(option.id),
+      shortcut: option.description,
+      checked: sending?.effort === option.id,
+      onSelect: () => {
+        const current = getModelChoice();
+        if (current) setModelChoice({ ...current, effort: option.id });
+      },
+    })),
+  ];
+
+  return (
+    <MenuButton
+      label="Effort"
+      align="right"
+      items={items}
+      triggerClassName="model-pill effort-pill"
+      popoverClassName="model-menu effort-menu"
+      trigger={
+        <>
+          <span className="model-pill-name">{label}</span>
           <Icon name="chevron" size={9} />
         </>
       }

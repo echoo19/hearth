@@ -24,9 +24,18 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { conversationKind, globalPlace, useApp } from '../../store';
 import { apiRecentWorkspaces, apiSetProjectIdentity } from '../../api';
-import type { ChatKind, ChatProviderStatus, ProjectIdentity, RecentChatEntry, RecentWorkspace } from '../../types';
+import type {
+  ChatKind,
+  ChatProvider,
+  ChatProviderStatus,
+  ProjectIdentity,
+  RecentChatEntry,
+  RecentWorkspace,
+} from '../../types';
+import { activeProvider, useModelChoice } from '../../chat/modelChoice';
 import { hearthNative } from '../../native';
 import { ProjectMark } from '../../projects/ProjectMark';
+import { whereHints } from '../../projects/ProjectSelector';
 import { IdentityPicker } from '../../projects/IdentityPicker';
 import { ConfirmDialog, Icon } from '../ui';
 import { IconButton } from '../ui/Button';
@@ -185,24 +194,78 @@ export function mergeRecentChats(
   return [...merged.values()].sort((a, b) => Date.parse(b.updatedAt) - Date.parse(a.updatedAt));
 }
 
-/** Who the account row says you are. Pure: three fields, no guessing. */
-export function accountIdentity(providers: ChatProviderStatus | null): {
+/**
+ * Who the account row says you are. Pure: four fields, no guessing.
+ *
+ * IT DESCRIBES THE AGENT THAT WOULD ANSWER, not whichever vendor happened to
+ * report the most detail. It used to read the ChatGPT sign-in unconditionally,
+ * because that is the only one of the two that ships an email and a plan word.
+ * So a person working entirely in Claude saw their ChatGPT handle and the word
+ * "plus" under it, and the row was describing a subscription that had nothing
+ * to do with anything on screen. Every fact here now comes from the same
+ * provider the composer is pointing at.
+ *
+ * NULL PROVIDERS MEANS "NOT LOOKED YET", NOT "NOT SIGNED IN". The store holds
+ * null until the first providers read lands (store.ts), and for the seconds
+ * that probe takes this row used to say "Not signed in" to someone who was:
+ * a guess wearing the costume of a fact, flipped to the real account moments
+ * later in front of the person it had just misdescribed. While the answer is
+ * still out, `pending` is true, `status` is null, and the row claims nothing.
+ * The name stays, because which agent WOULD answer is a fact about the
+ * composer's choice, not about anyone's sign-in.
+ *
+ * The Claude side is thinner ON PURPOSE. That CLI reports whether it is there
+ * and whether a key is stored, and it does not report a plan. So the row says
+ * how it is reached and stops. Inferring a tier from anything else available
+ * here would be inventing the one fact the reader would most reasonably trust.
+ */
+export function accountIdentity(
+  providers: ChatProviderStatus | null,
+  active: ChatProvider,
+): {
   initials: string;
   name: string;
-  status: string;
+  /** Null while the probe is still out: no claim is the only honest status. */
+  status: string | null;
+  /** The first providers read has not landed yet. Drawn dimmed, said as nothing. */
+  pending: boolean;
 } {
-  const openai = providers?.openai;
-  const email = openai?.loggedIn ? openai.email : null;
+  if (providers === null) {
+    const name = active === 'anthropic' ? 'Claude' : 'ChatGPT';
+    return { initials: name[0].toUpperCase(), name, status: null, pending: true };
+  }
+  if (active === 'anthropic') {
+    const anthropic = providers.anthropic;
+    // The CLI reports its own account, so this row can name it the same way
+    // the ChatGPT one does rather than falling back to the vendor's name. It
+    // was not always so: the plan word was read off the ChatGPT sign-in for
+    // everyone, which is how a Claude Max account came to be labelled "plus".
+    const local = anthropic.loggedIn ? (anthropic.email?.split('@')[0] ?? null) : null;
+    const status = anthropic.loggedIn
+      ? (anthropic.planType ?? 'Claude Code sign in')
+      : anthropic.hasKey
+        ? 'API key'
+        : 'Not signed in';
+    return {
+      initials: (local?.[0] ?? 'C').toUpperCase(),
+      name: local ?? 'Claude',
+      status,
+      pending: false,
+    };
+  }
+  const openai = providers.openai;
+  const email = openai.loggedIn ? openai.email : null;
   const local = email?.split('@')[0] ?? null;
-  const status = openai?.loggedIn
+  const status = openai.loggedIn
     ? (openai.planType ?? 'Signed in')
-    : providers?.anthropic.hasKey
+    : openai.hasKey
       ? 'API key'
       : 'Not signed in';
   return {
     initials: (local?.[0] ?? 'H').toUpperCase(),
-    name: local ?? 'Hearth',
+    name: local ?? 'ChatGPT',
     status,
+    pending: false,
   };
 }
 
@@ -342,6 +405,7 @@ function ChatRow({
  */
 function ProjectRow({
   project,
+  hint,
   open,
   hasOpen,
   native,
@@ -350,6 +414,13 @@ function ProjectRow({
   onIdentity,
 }: {
   project: RecentWorkspace;
+  /**
+   * Where this project lives, present ONLY when another visible row wears the
+   * same name (see whereHints). Two "mini-platformer"s are two identical
+   * strings with a button each, and the mark alone cannot carry the
+   * difference for a fresh project whose colour was never picked.
+   */
+  hint?: string;
   /** This project is where the app is standing. Drawn and announced. */
   open: boolean;
   /** This project's folder is the open one, wherever the app is standing. */
@@ -386,6 +457,11 @@ function ProjectRow({
         >
           <ProjectMark path={project.path} identity={project.identity} />
           <span className="project-name">{project.name}</span>
+          {/* Wears `.chat-when`, the rail's one muted trailing-note look,
+              rather than inventing a second one (its hover-hide is scoped to
+              `.chat-row`, so it does not fire here); `.project-where` is the
+              hook for anything that later needs to differ. */}
+          {hint !== undefined && <span className="chat-when project-where">{hint}</span>}
         </button>
       </Tooltip>
       <span className="project-actions">
@@ -494,7 +570,10 @@ function UpdateBanner() {
 function AccountRow({ collapsed }: { collapsed: boolean }) {
   const providers = useApp((s) => s.providers);
   const startOpenAiLogin = useApp((s) => s.startOpenAiLogin);
-  const identity = accountIdentity(providers);
+  // The same answer the composer's pill is built from, so the two cannot
+  // describe different agents on the same screen.
+  const choice = useModelChoice();
+  const identity = accountIdentity(providers, activeProvider(choice, providers));
 
   const items: MenuItem[] = [
     {
@@ -520,20 +599,30 @@ function AccountRow({ collapsed }: { collapsed: boolean }) {
 
   return (
     <MenuButton
-      label={`Account: ${identity.name}, ${identity.status}`}
+      // While the probe is out the name stands alone: appending a status here
+      // would be the same claim the visible row is refusing to make.
+      label={identity.status === null ? `Account: ${identity.name}` : `Account: ${identity.name}, ${identity.status}`}
       align="left"
       triggerClassName={`account-row${collapsed ? ' is-collapsed' : ''}`}
       items={items}
       trigger={
         <>
-          <span className="account-avatar" aria-hidden="true">
+          {/* Dimmed inline while pending rather than via a stylesheet class:
+              this is a state that exists for the length of one round trip,
+              and the dimming is the whole of what it looks like — a glyph at
+              half strength, holding the space, claiming nothing. */}
+          <span className="account-avatar" aria-hidden="true" style={identity.pending ? { opacity: 0.5 } : undefined}>
             {identity.initials}
           </span>
           {!collapsed && (
             <>
               <span className="account-text">
                 <span className="account-name">{identity.name}</span>
-                <span className="account-status">{identity.status}</span>
+                {/* No status line until there is a status. "Not signed in"
+                    here, before the first providers read landed, was the
+                    render this app's own product bar forbids: "there is
+                    nothing" said where the truth was "we have not looked". */}
+                {identity.status !== null && <span className="account-status">{identity.status}</span>}
               </span>
               <span className="account-chevron" aria-hidden="true">
                 <Icon name="chevron" size={11} />
@@ -554,6 +643,7 @@ export function Sidebar() {
   const recentChatsLoaded = useApp((s) => s.recentChatsLoaded);
   const activeChatId = useApp((s) => s.activeChatId);
   const newChat = useApp((s) => s.newChat);
+  const openTerminal = useApp((s) => s.openTerminal);
   const openRecentChat = useApp((s) => s.openRecentChat);
   const renameChat = useApp((s) => s.renameChat);
   const deleteChat = useApp((s) => s.deleteChat);
@@ -562,6 +652,7 @@ export function Sidebar() {
   const openWorkspace = useApp((s) => s.openWorkspace);
   const openProject = useApp((s) => s.openProject);
   const openScreen = useApp((s) => s.openScreen);
+  const openTesterFor = useApp((s) => s.openTesterFor);
   const closeWorkspace = useApp((s) => s.closeWorkspace);
   const askProjectName = useApp((s) => s.askProjectName);
   // Where the app is standing. New chat, Skills and Tester belong to the
@@ -676,6 +767,13 @@ export function Sidebar() {
     return open ? [...capped, open] : capped;
   }, [ordered, query, projectPath]);
 
+  /**
+   * The disambiguators, computed over what is actually on screen: a name is
+   * only ambiguous among the rows a reader can see at once, so a hidden
+   * duplicate must not make a lone visible row start explaining itself.
+   */
+  const projectWhere = useMemo(() => whereHints(projects), [projects]);
+
   /** What a project stored, by path — how a chat row finds its own mark. */
   const identityOf = useMemo(() => {
     const byPath = new Map(recents.map((recent) => [recent.path, recent.identity]));
@@ -776,6 +874,20 @@ export function Sidebar() {
           active={place === 'new-chat'}
           onClick={newChat}
         />
+        {/* The second door, beside the first rather than buried in a menu
+            inside a conversation. A conversation is a chat or a terminal
+            session from the moment it exists, so which one you want is a
+            question to answer HERE, before there is anything to convert. It
+            opens an empty shell in the project folder and types nothing: what
+            runs in it is whatever you run. Needs a folder, because a terminal
+            with no working directory is not a useful terminal. */}
+        <NavRow
+          icon="script"
+          label="New terminal"
+          collapsed={collapsed}
+          disabledReason={projectPath === null ? 'Open a project first. The terminal runs in the project folder.' : undefined}
+          onClick={openTerminal}
+        />
         <NavRow
           icon="sparkle"
           label="Skills"
@@ -788,13 +900,24 @@ export function Sidebar() {
             every game, it outlives any one session, and hiding the row until
             something was open meant the only way to reach yesterday's run was
             to first guess which project it came from. The screen names the
-            game it is aiming at, so nothing here has to be inferred. */}
+            game it is aiming at, so nothing here has to be inferred.
+
+            Standing IN a project when you press this is the one case where
+            the app knows which game you mean, so the aim is carried
+            (openTesterFor), the same as the project screen's own "Every
+            session". Without it the picker defaulted to the most recently
+            played game ANYWHERE, and Play beside it would have closed the
+            game you came from to playtest a different one. From a global
+            screen there is no such context, and the default stands. */}
         <NavRow
           icon="bot"
           label="Tester"
           collapsed={collapsed}
           active={place === 'tester'}
-          onClick={() => openScreen('tester')}
+          onClick={() => {
+            if (inProject && projectPath !== null) openTesterFor(projectPath);
+            else openScreen('tester');
+          }}
         />
       </div>
 
@@ -842,6 +965,7 @@ export function Sidebar() {
                 <ProjectRow
                   key={project.path}
                   project={project}
+                  hint={projectWhere.get(project.path)}
                   // Open AND current. On a global screen the folder is still
                   // open — the socket is up and the game is running — but you
                   // are not in it, so no row is marked. `open` is what draws

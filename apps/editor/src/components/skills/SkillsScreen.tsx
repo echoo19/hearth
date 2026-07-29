@@ -20,14 +20,16 @@
  *   with editor    you know exactly what to say.
  *   from a folder  you already have one.
  *
- * The rows carry two things the layout they follow does not, both because
- * Hearth's skills are real folders that real agents load:
+ * The rows carry one thing the layout they follow does not: a skill can be
+ * switched off, so off has to be settable and visible. It lives in the row's
+ * menu, and an off skill says so.
  *
- *   off      a skill can be switched off, so off has to be settable and
- *            visible. It lives in the row's menu, and an off skill says so.
- *   whose    some of these folders are Claude Code's and Codex's, found where
- *            those tools keep them and read strictly. "Installed" would be a
- *            mystery without a word saying who installed it, so the row says.
+ * They deliberately do NOT say whose folder a skill came from. That badge was
+ * accurate and still misread: "Claude Code" beside a skill looks like the set
+ * of agents it works with, and it is not. Every enabled skill, wherever it was
+ * found, is mirrored into the project and named in the house facts, so it is
+ * there for whatever is answering. Provenance still decides whether Hearth may
+ * EDIT the file, and that is said on the page you open, where a sentence fits.
  *
  * A skill Hearth did not write is a skill Hearth does not change: its row
  * offers no Edit and no Delete, and opening it opens a page you can read.
@@ -106,7 +108,6 @@ function SkillRow({
   // is the whole of what Hearth can do to it. Offering Edit or Delete anyway
   // would be a menu describing a different app.
   const editable = skillEditable(skill);
-  const source = skillSource(skill);
   const items: MenuItem[] = [
     { label: editable ? 'Edit' : 'Open', icon: editable ? 'pencil' : 'text', onSelect: onOpen },
     {
@@ -130,10 +131,15 @@ function SkillRow({
         <span className="skills-item-text">
           <span className="skills-item-name">
             <span className="skills-item-title">{skill.name}</span>
-            {/* Whose folder it is. Only worth saying when the answer is not
-                Hearth: everything under "Created by me" is Hearth's, and a
-                column of identical badges is a column of noise. */}
-            {source !== 'hearth' && <span className="skills-item-source">{skillSourceLabel(source)}</span>}
+            {/* No badge for whose folder it came from. It used to say "Claude
+                Code" or "Codex" on anything discovered, and while that was
+                true of the folder it read as a limit on the skill: people took
+                it to mean the skill only worked with that agent. It never did
+                for Claude, and now that every enabled skill is mirrored into
+                the project and named in the house facts, it does not for
+                anything else either. Where a skill LIVES still matters for
+                whether Hearth may edit it, and that is said on the row you
+                open, in a sentence, where there is room to say it properly. */}
             {!skill.enabled && <span className="skills-item-off">Off</span>}
           </span>
           {/* A native title on a non-interactive span is the right tool for

@@ -11,12 +11,65 @@
  * in response to it, and it competed for the eye with the one thing here that
  * is actually an action.
  */
-import React from 'react';
+import React, { useEffect } from 'react';
 import { useApp } from '../../store';
+import { hearthNative } from '../../native';
 import { gameUrl } from '../../api';
 import { Icon } from '../ui';
 import { Button } from '../ui/Button';
 import { Tooltip } from '../ui/Tooltip';
+
+/**
+ * Silence the game.
+ *
+ * A game that loops music is a game playing music at you while you read the
+ * agent's answer next to it, and the pane is on all the time. So the control
+ * belongs here rather than in a settings screen: the moment it is wanted is
+ * the moment the noise starts.
+ *
+ * It mutes the WINDOW, through Electron. That is not a shortcut, it is the
+ * only thing that reaches: the game is served from a second loopback port so
+ * it is deliberately cross-origin (see the sandbox note in GamePane), which
+ * puts its document out of reach, and a game making its noise through WebAudio
+ * has no media element to mute even in a frame you can touch. Chromium can
+ * silence a whole webContents whatever the sound is made of, and the game is
+ * the only thing in this window that makes one.
+ *
+ * Offered only where it works. Without the Electron preload there is no way to
+ * mute a cross-origin frame at all, so the browser dev server shows no button
+ * rather than one that lies.
+ */
+function MuteButton() {
+  const muted = useApp((s) => s.gameMuted);
+  const setGameMuted = useApp((s) => s.setGameMuted);
+  const canMute = hearthNative()?.setAudioMuted !== undefined;
+
+  // The stored preference is a fact about the person, but the mute itself is a
+  // fact about a window that started unmuted. Re-asserted on mount, which is
+  // also every time the pane is reopened, so a muted game cannot come back
+  // making noise.
+  useEffect(() => {
+    if (canMute && muted) void hearthNative()?.setAudioMuted?.(true);
+  }, [canMute, muted]);
+
+  if (!canMute) return null;
+
+  return (
+    <Tooltip side="top" content={muted ? 'Unmute the game' : 'Mute the game'}>
+      <button
+        type="button"
+        className="game-mute"
+        // The state, not the action: a control that says "Mute" while the game
+        // is already muted is a control you have to press to find out.
+        aria-pressed={muted}
+        aria-label={muted ? 'Game muted' : 'Game not muted'}
+        onClick={() => setGameMuted(!muted)}
+      >
+        <Icon name={muted ? 'muted' : 'audio'} size={13} />
+      </button>
+    </Tooltip>
+  );
+}
 
 export function CapabilityStrip() {
   const projectPath = useApp((s) => s.projectPath);
@@ -36,6 +89,7 @@ export function CapabilityStrip() {
 
   return (
     <div className="capability-strip">
+      <MuteButton />
       {/* Play means play — the game in a plain browser window, at the same
           localhost URL the pane is already serving. The pane's own iframe is
           sandboxed and letterboxed onto a stage, which is right for watching

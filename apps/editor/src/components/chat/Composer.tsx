@@ -16,7 +16,7 @@ import { EMPTY_DRAFT, useApp, type ComposerDraft } from '../../store';
 import { Tooltip } from '../ui/Tooltip';
 import { Icon } from '../ui';
 import { MenuButton } from '../ui/Menu';
-import { ModelSelector } from './ModelSelector';
+import { EffortSelector, ModelSelector } from './ModelSelector';
 import { PermissionSelector } from './PermissionSelector';
 import { AttachmentTray } from './AttachmentTray';
 import { ProjectSelector } from '../../projects/ProjectSelector';
@@ -361,6 +361,11 @@ export function Composer({ variant = 'chat' }: { variant?: ComposerVariant } = {
               under the reader's pointer. */}
           <PermissionSelector />
           <ModelSelector />
+          {/* Renders nothing at all unless the active model declared efforts,
+              which is why it can sit here unconditionally. See EffortSelector:
+              a dial that is present and inert would promise a setting the turn
+              does not carry. */}
+          <EffortSelector />
           {/* Stop belongs to the running turn and stays reachable while one is
               running. Send appears beside it the moment there is something to
               send — two circles only when both actually mean something. */}

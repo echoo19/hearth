@@ -349,6 +349,19 @@
   opacity: 0;
 }
 
+/* A duplicate-name hint yields its space before the name does: `.chat-when`'s
+   flex none suits a short timestamp, but a path hint can outgrow the row, and
+   a rail that reads "mi…  scratchpad/mini-platformer" has kept the wrong half.
+   The hint ellipsizes from the tail, which keeps the leading folder — the part
+   that actually tells two same-named projects apart. */
+.project-where {
+  flex: 0 4 auto;
+  min-width: 0;
+  max-width: 55%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 .chat-actions,
 .folder-actions {
   position: absolute;

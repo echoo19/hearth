@@ -14,6 +14,48 @@
   white-space: nowrap;
 }
 
+/* The sign at rest, before the menu is ever opened: the same restatement the
+   row wears inside the menu (`.menu-sign`, menu.css), on the same three
+   tokens, so the pill and the row it stands for never disagree about what
+   "caution" looks like. Colour is never the only channel here either — each
+   tone is already a different GLYPH (`current.icon`: check / warning /
+   hazard), so the ranking still reads for someone who cannot tell the tones
+   apart.
+
+   `.model-pill svg` (chat.css) rotates every icon in this row 90deg for the
+   chevron's benefit and pins its colour to `--ink-mute`; both would quietly
+   undo this sign, so they are overridden here rather than left to source
+   order. */
+.permission-pill .permission-sign {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+}
+
+/* `.model-pill svg` in chat.css sets BOTH a rotation and a colour, for the
+   chevron that used to be the only glyph in here. Both have to be undone, and
+   the colour is the one that hides: the wrapper below carries the tone, but a
+   `color` declared on the svg itself beats anything it would otherwise
+   inherit, so the sign rendered grey while every class on it said amber. A
+   test asserting the class name passes in that state. */
+.permission-pill .permission-sign svg {
+  transform: none;
+  color: inherit;
+}
+
+.permission-pill .permission-sign.is-safe {
+  color: var(--ok);
+}
+
+.permission-pill .permission-sign.is-caution {
+  color: var(--warn);
+}
+
+.permission-pill .permission-sign.is-danger {
+  color: var(--err);
+}
+
 /* `skip` is the one resting state that should be noticeable, and the trap is
    answering that with a permanent warning colour. A control someone chose on
    purpose that then argues with them every time they glance at the row is the

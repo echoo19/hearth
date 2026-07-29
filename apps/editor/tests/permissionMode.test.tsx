@@ -17,6 +17,8 @@
  *      today's behaviour rather than an empty or broken control.
  */
 import { describe, expect, it, beforeEach, afterEach, vi } from 'vitest';
+import fs from 'node:fs';
+import path from 'node:path';
 import React from 'react';
 import { render, screen, fireEvent, cleanup, act, waitFor } from '@testing-library/react';
 import type { PermissionModeInfo } from '../src/types';
@@ -116,6 +118,46 @@ describe('the permission pill at rest', () => {
       // Whatever else it is, it is still the same pill as the model one.
       expect(pill().classList.contains('model-pill')).toBe(true);
       cleanup();
+    }
+  });
+
+  // At rest, only the mode that switched something OFF wears a sign. The
+  // resting pill used to carry every menu row's glyph, which put an amber
+  // warning triangle on the DEFAULT in every composer: alarm iconography on
+  // the safe, recommended state, and a warning that is always on is a warning
+  // nobody reads. The dial of three signs still lives in the menu, where it
+  // is read top to bottom and the between-ness means something.
+  it('keeps the resting pill quiet on the modes that still ask', () => {
+    for (const choice of PERMISSION_CHOICES.filter((row) => row.mode !== 'skip')) {
+      patchStore({ permissionMode: choice.mode });
+      render(<Composer />);
+      expect(pill().querySelector('.permission-sign')).toBeNull();
+      cleanup();
+    }
+  });
+
+  it('reserves the resting sign for skip, the mode that never asks', () => {
+    // The hazard glyph's path fragment (ui.tsx's ICON_PATHS), so this also
+    // proves the sign is not the menu's amber warning slipping back in.
+    patchStore({ permissionMode: 'skip' });
+    render(<Composer />);
+
+    const sign = pill().querySelector('.permission-sign');
+    expect(sign).toBeTruthy();
+    expect(sign!.classList.contains('is-danger')).toBe(true);
+    expect(sign!.innerHTML).toContain('M3.2 3.2l5.6 5.6');
+    // Decorative only: the pill's accessible name stays "Permissions"
+    // (asserted by `pill()` itself resolving via that name), and the sign
+    // does not add words of its own into the accessible tree.
+    expect(sign!.getAttribute('aria-hidden')).toBe('true');
+  });
+
+  // The menu, unlike the pill, keeps all three signs: reading down the list
+  // is reading one dial being turned up, and each mode still declares one.
+  it('still gives every menu row its own sign and tone', () => {
+    for (const choice of PERMISSION_CHOICES) {
+      expect(choice.icon).toBeTruthy();
+      expect(choice.tone).toBeTruthy();
     }
   });
 
@@ -278,5 +320,35 @@ describe('reading the project’s mode', () => {
       await pending;
     });
     expect(useApp.getState().permissionMode).toBe(DEFAULT_PERMISSION_MODE);
+  });
+});
+
+/**
+ * The one property of this control a rendered test cannot reach.
+ *
+ * jsdom does not apply stylesheets, so every assertion above can pass while
+ * the sign renders in the wrong colour, and that is exactly what happened:
+ * `.model-pill svg` in chat.css sets `color: var(--ink-mute)` for the chevron
+ * that used to be the only glyph in the pill. A `color` declared on the svg
+ * itself beats anything the toned wrapper would pass down, so the caution sign
+ * came out grey while `permission-sign is-caution` was sitting right there on
+ * its parent, and a test asserting the class name went green.
+ *
+ * Reading the rule out of the file is the only place this can be pinned short
+ * of a real browser. It is narrow on purpose: it does not check the colour, it
+ * checks that the override which lets the colour through is still there.
+ */
+describe('the sign’s colour survives the pill’s own svg rule', () => {
+  it('lets the toned wrapper reach the glyph', () => {
+    const css = fs.readFileSync(
+      path.join(__dirname, '..', 'src', 'styles', 'app', 'permissions.css'),
+      'utf8',
+    );
+    const block = css.match(/\.permission-pill\s+\.permission-sign\s+svg\s*\{([^}]*)\}/);
+    expect(block).not.toBeNull();
+    // Both halves of what chat.css imposes have to be undone: the rotation
+    // meant for the chevron, and the colour that would otherwise win.
+    expect(block?.[1]).toMatch(/color:\s*inherit/);
+    expect(block?.[1]).toMatch(/transform:\s*none/);
   });
 });

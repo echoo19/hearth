@@ -15,12 +15,11 @@
  *  - `CodexDriver`  — OpenAI's `codex app-server` over stdio JSON-RPC (see
  *                     chatDrivers/codex.ts). Authenticated by a ChatGPT sign-in
  *                     or an API key, both held by the codex binary itself.
- *  - `CustomDriver` — ANY program the user registered (agentRegistry.ts),
- *                     driven over newline-delimited JSON on stdio. See
- *                     chatDrivers/customWire.ts for the protocol: three
- *                     required events, everything else opt-in, so a thirty-line
- *                     wrapper around somebody's own harness is a real backend
- *                     with a real transcript.
+ *
+ * Those are the backends the conversation offers, and deliberately all of them:
+ * any other agent is run by the person in the embedded terminal, where it has
+ * the same folder and the same shell without Hearth pretending to describe a
+ * program it does not know.
  *
  * Events are a plain async iterable of `ChatEvent`, which ws.ts forwards over
  * the socket's `chat` channel one frame per event. A driver is per-socket and
@@ -39,6 +38,7 @@ import { isInlineImage, type ChatAttachment } from './chatAttachments.js';
 import { hearthPtyEnv } from './hearthShim.js';
 import { DEFAULT_PERMISSION_MODE, type PermissionMode } from './permissionMode.js';
 import { readPersonalPrompt } from './personalization.js';
+import { loginShellPathEnv } from './shellEnv.js';
 import { syncSkillsIntoProject } from './skills.js';
 
 export type { ChatAttachment } from './chatAttachments.js';
@@ -70,6 +70,20 @@ export type ApprovalKind = 'command' | 'file-change';
 /** The user's answer to an approval request. Provider-neutral on purpose:
  * codex spells these accept/decline, the Agent SDK allow/deny. */
 export type ApprovalDecision = 'allow' | 'deny';
+
+/**
+ * How an approval can END UP, which is a wider question than how a person can
+ * answer one. `withdrawn` is written when the resolution came from a teardown —
+ * the session was stopped, the backend died, the turn was interrupted — and
+ * not from anyone pressing a button. Teardowns used to write `deny`, which
+ * forged a decision: a transcript reread later said "Denied" about a question
+ * that was simply never answered, and the difference matters to somebody
+ * working out why the agent skipped a step. The backend underneath still gets
+ * a deny either way (nothing may run on a question nobody answered); only the
+ * RECORD tells the two apart. Old transcripts hold only allow/deny and render
+ * exactly as they always did.
+ */
+export type ApprovalResolution = ApprovalDecision | 'withdrawn';
 
 export type FileChangeKind = 'edit' | 'create' | 'delete';
 
@@ -121,8 +135,10 @@ export type ChatEvent =
   | { type: 'file-change'; toolId?: string; files: FileChangeEntry[] }
   /** The turn is BLOCKED until the user answers. */
   | { type: 'approval-request'; approvalId: string; kind: ApprovalKind; title: string; detail: string }
-  /** …and the answer, echoed so every window watching the chat agrees. */
-  | { type: 'approval-resolved'; approvalId: string; decision: ApprovalDecision }
+  /** …and the answer, echoed so every window watching the chat agrees. A
+   * `withdrawn` resolution is a teardown speaking, not a person — see
+   * ApprovalResolution. */
+  | { type: 'approval-resolved'; approvalId: string; decision: ApprovalResolution }
   /** A nested agent was spawned. */
   | { type: 'subagent-start'; agentId: string; role?: string; title: string }
   | { type: 'subagent-delta'; agentId: string; chunk: string }
@@ -188,12 +204,8 @@ export function endsTurn(event: ChatEvent): boolean {
   return type === 'turn-complete' || type === 'error';
 }
 
-/**
- * Which backend answered. `custom` is any agent the USER registered
- * (agentRegistry.ts, chatDrivers/custom.ts): one kind for all of them, because
- * the driver is one driver and the id of the agent travels with the turn.
- */
-export type ChatDriverKind = 'stub' | 'agent-sdk' | 'codex' | 'custom';
+/** Which backend answered. */
+export type ChatDriverKind = 'stub' | 'agent-sdk' | 'codex';
 
 /** Which vendor answers. Auth for each is configured independently. */
 export type ChatProvider = 'anthropic' | 'openai';
@@ -214,6 +226,32 @@ export type ChatProvider = 'anthropic' | 'openai';
 export type ReasoningEffort = string;
 
 /**
+ * The efforts the Agent SDK accepts, which unlike codex's IS a closed set:
+ * `EffortLevel` in the installed sdk.d.ts is
+ * `'low' | 'medium' | 'high' | 'xhigh' | 'max'`, and `applyFlagSettings` is
+ * typed against exactly that.
+ *
+ * Held here rather than in claudeModels.ts because both ends of the feature
+ * need the same five words — the catalogue decides which of them a model is
+ * OFFERED, and the driver decides which of them may be SENT — and two copies
+ * of a vocabulary drift the first time one grows.
+ */
+export const CLAUDE_EFFORT_LEVELS = ['low', 'medium', 'high', 'xhigh', 'max'] as const;
+
+export type ClaudeEffortLevel = (typeof CLAUDE_EFFORT_LEVELS)[number];
+
+/**
+ * Is this a word the SDK would accept? Checked rather than forwarded, because
+ * the effort on a turn is whatever the composer had selected: a stored codex
+ * effort (`ultra` is a real one) surviving a switch to Claude would otherwise
+ * be handed to a backend that refuses it, and the turn would fail for a reason
+ * the user could not have predicted.
+ */
+export function isClaudeEffort(value: unknown): value is ClaudeEffortLevel {
+  return typeof value === 'string' && (CLAUDE_EFFORT_LEVELS as readonly string[]).includes(value);
+}
+
+/**
  * Who should answer THIS turn, and how. The composer sends it with every user
  * message, so the choice travels with the turn rather than living in settings.
  *
@@ -227,16 +265,6 @@ export interface AgentTurnOptions {
   /** Wire model id, e.g. `claude-opus-5`. Null/absent = the provider default. */
   model?: string | null;
   effort?: ReasoningEffort | null;
-  /**
-   * An agent the user registered themselves (server/agentRegistry.ts), by id.
-   *
-   * It OUTRANKS `provider`, because it is not a preference between vendors, it
-   * is the person saying which program answers. When it names an agent that
-   * cannot run, the turn fails and says why rather than quietly falling through
-   * to a vendor backend: a composer showing "My agent" while Claude answers is
-   * the app lying about who is doing the work.
-   */
-  agentId?: string | null;
 }
 
 /**
@@ -246,14 +274,6 @@ export interface AgentTurnOptions {
  * not to second-guess the catalogue the picker read out of the binary.
  */
 const EFFORT_TOKEN = /^[a-z][a-z0-9-]{0,23}$/;
-
-/**
- * The same shape `agentRegistry.ts` mints ids in. Checked here rather than
- * imported so this module keeps no dependency on the registry: a frame naming
- * an id that cannot exist is dropped, and an id that could exist is looked up
- * once, by the seam that owns the file.
- */
-const AGENT_ID_TOKEN = /^[a-z0-9][a-z0-9-]{0,47}$/;
 
 /**
  * Read the `agent` field off a wire frame. Tolerant on purpose: an unknown
@@ -268,10 +288,39 @@ export function parseAgentOptions(raw: unknown): AgentTurnOptions | null {
   if (record.provider === 'anthropic' || record.provider === 'openai') out.provider = record.provider;
   if (typeof record.model === 'string' && record.model.trim() !== '') out.model = record.model.trim();
   if (typeof record.effort === 'string' && EFFORT_TOKEN.test(record.effort.trim())) out.effort = record.effort.trim();
-  if (typeof record.agentId === 'string' && AGENT_ID_TOKEN.test(record.agentId.trim())) {
-    out.agentId = record.agentId.trim();
-  }
   return Object.keys(out).length > 0 ? out : null;
+}
+
+/**
+ * One slash command the ACTIVE agent actually offers.
+ *
+ * Read from the agent, never invented. The two agents have genuinely different
+ * vocabularies and Hearth does not paper over that: Claude Code answers
+ * `supportedCommands()` with its full list, and codex has no slash commands in
+ * its protocol at all (they are a feature of its TUI, which Hearth does not
+ * run), so its menu is assembled from `skills/list` plus the few acts its
+ * app-server really exposes. A command Hearth cannot honour is not offered.
+ *
+ * THE LIST IS NOT STATIC, which is the whole reason it is fetched rather than
+ * hardcoded. Plugins grant skills, and skills appear as slash commands, so the
+ * set changes while a session is open: Claude pushes a full replacement list
+ * (`commands_changed`) and codex pushes an invalidation (`SkillsChanged`) that
+ * means re-read. A menu built once at connect time would go stale the first
+ * time somebody installed a plugin.
+ */
+export interface SlashCommandInfo {
+  /** The word after the slash, e.g. `compact`. Never carries the slash. */
+  name: string;
+  description: string;
+  /** What the command expects after it, e.g. `<file>`. */
+  argumentHint?: string;
+  /** Other names that resolve to this one, e.g. /cost and /stats for /usage. */
+  aliases?: string[];
+  /**
+   * Where it came from. Skills are grouped apart from an agent's built-ins
+   * because they are the user's own material and the ones a plugin adds.
+   */
+  source: 'builtin' | 'skill';
 }
 
 export interface ChatDriver {
@@ -311,6 +360,15 @@ export interface ChatDriver {
    */
   readonly dead?: boolean;
   /**
+   * The slash commands this backend actually offers, right now.
+   *
+   * Optional, because "none" is a real answer and a driver with no command
+   * vocabulary should not have to pretend otherwise. Asked fresh rather than
+   * cached by the caller: plugins grant skills, skills appear as slash
+   * commands, and both backends can gain them while a session is open.
+   */
+  commands?(): Promise<SlashCommandInfo[]>;
+  /**
    * Answer an `approval-request`. Optional: a backend that never asks (the
    * stub) does not implement it.
    */
@@ -339,6 +397,24 @@ export class EventQueue<T> implements AsyncIterable<T> {
     const wake = this.waiting.shift();
     if (wake) wake({ value, done: false });
     else this.buffer.push(value);
+  }
+
+  /**
+   * Put a value back at the FRONT of the queue.
+   *
+   * This exists for exactly one consumer: a query attempt that was abandoned
+   * with a turn already in flight (see AgentSdkDriver.promptFeed). The turn
+   * was taken off the queue but never delivered, so it goes back ahead of
+   * anything typed since — the order people wrote things in is the order the
+   * agent must read them. It still wakes a waiting consumer, because the
+   * retry's own read may already be parked in `waiting` and a value dropped
+   * into the buffer would otherwise sit there with nothing left to wake it.
+   */
+  requeue(value: T): void {
+    if (this.closed) return;
+    const wake = this.waiting.shift();
+    if (wake) wake({ value, done: false });
+    else this.buffer.unshift(value);
   }
 
   close(): void {
@@ -454,9 +530,9 @@ export const STUB_REPLY = [
   'No agent is connected yet, so nothing is building.',
   '',
   'Three ways to connect one:',
-  '  1. Set an Anthropic API key in Settings (or export ANTHROPIC_API_KEY before launching).',
+  '  1. Sign in to Claude Code, and Hearth answers on that account. An Anthropic API key in Settings works too.',
   '  2. Sign in with ChatGPT in Settings, if you have the codex CLI installed.',
-  '  3. Pick a CLI under Terminal in the model menu, beside the composer. It starts in this project folder.',
+  '  3. Open a new terminal from the sidebar and run any agent there. It starts in this project folder.',
 ].join('\n');
 
 /**
@@ -787,11 +863,15 @@ export function sdkPermissionMode(mode: PermissionMode): 'default' | 'acceptEdit
  *    SDK is also in `bypassPermissions`, so in practice this callback is barely
  *    consulted; returning null anyway means the two levers cannot disagree.
  *
- * `ask` raises for the two kinds this function CLASSIFIES, which is what
- * `ApprovalKind` has room for (a command and a file change). A read or a web
- * search has no approval kind to be raised as, and inventing one would change
- * the vocabulary the transcript and the client are built on. Widening that is a
- * contract change for both halves of the app, not a policy tweak.
+ * `ask` raises for commands and file changes, and for MCP tool calls, which it
+ * raises AS commands: an `mcp__*` tool is somebody else's code doing
+ * who-knows-what to whatever the server behind it reaches, and a mode that
+ * promises "every command asks" cannot quietly wave those through — they used
+ * to return null here and auto-pass even in `ask`. They ride the `command`
+ * kind rather than a new one because `ApprovalKind` is the vocabulary the
+ * transcript and the client are built on, and widening it is a contract change
+ * for both halves of the app, not a policy tweak — which is also why a read or
+ * a web search still has no kind to be raised as.
  *
  * Pure, so the policy is unit-testable without an SDK. Returns null when the
  * call is auto-allowed, or the approval to raise.
@@ -828,6 +908,18 @@ export function sdkApprovalFor(
     return mode === 'ask' || !commandLooksContained(command, projectRoot)
       ? { kind: 'command', title: 'Run this command?', detail: command }
       : null;
+  }
+  if (kind === 'mcp') {
+    // Only `ask` raises these. `auto` keeps its long-standing behaviour (MCP
+    // servers are things the user wired up on purpose, and Hearth's own tools
+    // arrive this way), and `skip` was answered at the top. The title names
+    // the tool because "Run this command?" over an opaque payload is not a
+    // question anyone can answer — the mcp__server__tool name is the one
+    // thing the user can recognise.
+    if (mode === 'ask') {
+      return { kind: 'command', title: `Use ${toolName}?`, detail: describeToolInput(input) ?? toolName };
+    }
+    return null;
   }
   return null;
 }
@@ -918,6 +1010,81 @@ export interface AgentToolAccess {
 export const SDK_EXITED_MESSAGE =
   'The Anthropic agent stopped without finishing. Your next message starts a fresh one.';
 
+/**
+ * What the conversation is told when a remembered Claude session would not
+ * resume and the driver fell back to a fresh one. Said out loud because the
+ * transcript on screen still reads as one continuous conversation while the
+ * agent's own memory of it is gone — an agent that silently lost its context
+ * reads as one lying about the conversation it was in.
+ */
+export const CLAUDE_RESUME_FAILED_NOTICE =
+  'Claude could not pick up where it left off, so it is starting fresh. The transcript is still here, but the agent no longer remembers the earlier conversation.';
+
+/**
+ * The half of the SDK's query handle Hearth actually calls.
+ *
+ * Structural rather than imported: `loadAgentSdk` resolves the package at
+ * runtime and this file deliberately never takes a compile-time dependency on
+ * it (see AGENT_SDK_SPECIFIER). `supportedCommands` is optional because an
+ * older installed SDK will not have it, and a missing method must read as "no
+ * commands" rather than throwing inside a menu.
+ */
+interface SdkQueryHandle extends AsyncIterable<unknown> {
+  supportedCommands?(): Promise<unknown>;
+  /**
+   * Ends the RUNNING TURN without ending the session — the SDK's own Stop
+   * (sdk.d.ts: `Query.interrupt()`, a control request on the live query).
+   * Optional for the same reason `supportedCommands` is: an older installed
+   * SDK may predate it, and a missing method must fall back to the coarse
+   * teardown rather than throw into the Stop button.
+   */
+  interrupt?(): Promise<unknown>;
+  /**
+   * Merges into the SDK's flag settings layer mid-session, which is the only
+   * surface that changes the effort of a query that is already running. Null
+   * clears a key back to the user's own settings; `undefined` is dropped by
+   * JSON serialization and does nothing at all, which is why the driver is
+   * careful to send the null.
+   */
+  applyFlagSettings?(settings: { effortLevel: ClaudeEffortLevel | null }): Promise<unknown>;
+}
+
+/**
+ * One SDK command, in Hearth's words.
+ *
+ * Everything is checked rather than trusted. This crosses a process boundary
+ * from a binary the user installed and can upgrade underneath us, and a menu
+ * row built from a missing `name` would be a slash with nothing after it.
+ */
+export function sdkSlashCommands(raw: unknown): SlashCommandInfo[] {
+  if (!Array.isArray(raw)) return [];
+  const out: SlashCommandInfo[] = [];
+  for (const entry of raw) {
+    if (!entry || typeof entry !== 'object') continue;
+    const record = entry as Record<string, unknown>;
+    const name = typeof record.name === 'string' ? record.name.trim() : '';
+    if (name === '') continue;
+    const hint = typeof record.argumentHint === 'string' ? record.argumentHint.trim() : '';
+    const aliases = Array.isArray(record.aliases)
+      ? record.aliases.filter((a): a is string => typeof a === 'string' && a.trim() !== '')
+      : [];
+    out.push({
+      // The SDK's own field says "without the leading slash", but it costs
+      // nothing to be sure: two slashes in a menu row is the kind of thing
+      // nobody notices until it is in a screenshot.
+      name: name.replace(/^\/+/, ''),
+      description: typeof record.description === 'string' ? record.description : '',
+      ...(hint !== '' ? { argumentHint: hint } : {}),
+      ...(aliases.length > 0 ? { aliases } : {}),
+      // The SDK does not separate its built-ins from skills, and guessing from
+      // the name would be a rule that breaks the first time somebody writes a
+      // skill called `review`. Everything it reports is offered as a command.
+      source: 'builtin',
+    });
+  }
+  return out;
+}
+
 export class AgentSdkDriver implements ChatDriver {
   readonly kind = 'agent-sdk' as const;
   private queue = new EventQueue<ChatEvent>();
@@ -926,18 +1093,48 @@ export class AgentSdkDriver implements ChatDriver {
   /** Set once the pump has ended, whatever ended it. Backs `dead`. */
   private finished = false;
   private pump: Promise<void> | null = null;
+  /** The live query handle, for control requests like `supportedCommands`. */
+  private stream: SdkQueryHandle | null = null;
   private projectRoot = '';
   /** tool_use ids opened as a `Task`, so their result closes a subagent card. */
   private subagents = new Set<string>();
-  /** Approvals awaiting an answer from the UI, by approvalId. */
-  private pending = new Map<string, (decision: ApprovalDecision) => void>();
+  /**
+   * Approvals awaiting an answer from the UI, by approvalId. Each entry can
+   * settle two ways, and the transcript tells them apart: `answer` is a
+   * person deciding, `withdraw` is the session going away underneath the
+   * question. Both unblock the SDK (a withdrawal denies the call — nothing may
+   * run on a question nobody answered), but only `answer` records a decision
+   * anyone actually made. See ApprovalResolution.
+   */
+  private pending = new Map<string, { answer: (decision: ApprovalDecision) => void; withdraw: () => void }>();
   private nextApproval = 0;
+  /**
+   * The session id the SDK last named for this conversation. Seeded with the
+   * one this driver was asked to resume, so a resume that succeeds (the init
+   * message echoes the same id) is not re-persisted on every bind; a fresh or
+   * fallen-back session announces a different one, and `captureSessionId`
+   * hands that to the caller to remember.
+   */
+  private sessionId: string | null = null;
   /** Serializes sends that have to read attachments before they can queue. */
   private sends: Promise<void> = Promise.resolve();
+  /**
+   * The effort the session is currently running at, as far as this driver
+   * knows. Held so a turn that expresses none can CLEAR one an earlier turn
+   * set: `applyFlagSettings` is a merge into a layer that outlives the turn, so
+   * without this an effort chosen once would quietly apply to the rest of the
+   * conversation.
+   */
+  private effort: ClaudeEffortLevel | null = null;
 
   constructor(
     private readonly sdk: { query: (args: unknown) => AsyncIterable<unknown> },
-    private readonly apiKey: string,
+    /**
+     * An API key to answer with, or null to let the CLI underneath use
+     * whatever the person is already signed into. Null is the ordinary case
+     * on a machine with Claude Code on it.
+     */
+    private readonly apiKey: string | null,
     /**
      * Model id for this conversation, or null for the SDK's default. Fixed at
      * bind time: the SDK runs ONE long-lived query for the whole session, so
@@ -955,7 +1152,24 @@ export class AgentSdkDriver implements ChatDriver {
      * mid-conversation therefore means rebinding, which is what ws.ts does.
      */
     private readonly permissionMode: PermissionMode = DEFAULT_PERMISSION_MODE,
-  ) {}
+    /**
+     * The Claude session this conversation already IS, when the SDK has
+     * answered it before. The codex thread id's twin (see chatStore's
+     * `claudeSessionId` and CodexDriver's `resumeThreadId`): the CLI persists
+     * every session under ~/.claude and `query({options: {resume}})` reloads
+     * one, so reopening a chat continues the agent's own memory instead of
+     * handing a stranger the transcript. Null is a fresh conversation.
+     */
+    private readonly resumeSessionId: string | null = null,
+    /**
+     * Called with the session id the SDK binds (from its init message), so
+     * the caller can persist it against the chat — the `onThreadId` seam,
+     * mirrored for this backend.
+     */
+    private readonly onSessionId: (sessionId: string) => void = () => undefined,
+  ) {
+    this.sessionId = resumeSessionId;
+  }
 
   get events(): AsyncIterable<ChatEvent> {
     return this.queue;
@@ -971,41 +1185,62 @@ export class AgentSdkDriver implements ChatDriver {
     // no way to point it elsewhere, so Hearth's skills are mirrored into the
     // folder first. Done per BIND, not per message: this query is long-lived,
     // so a skill switched off mid-conversation is felt by the next one.
-    await syncSkillsIntoProject(projectRoot).catch(() => []);
+    const mirroredSkills = await syncSkillsIntoProject(projectRoot).catch(() => []);
     // The user's standing preferences, read fresh for the same reason the
     // skills are: they are files a person edits while Hearth is running.
     const personal = await readPersonalPrompt();
     // The house facts come first, then the person's own voice — see
     // agentFacts.ts for what is (and deliberately is not) said there.
     const append = composeAgentInstructions(
-      hearthFactsPrompt({ probeCli: this.tools?.probeCli === true }),
+      hearthFactsPrompt({ probeCli: this.tools?.probeCli === true, skills: mirroredSkills.length > 0 }),
       personal,
     );
+    // The base env is the login-shell-merged one, never raw process.env. The
+    // packaged app is launched from Finder, so this process inherits the
+    // minimal system PATH — and the Bash the agent runs inherits it in turn,
+    // which made `node`, `npm` and `git` installed via nvm or homebrew
+    // invisible to the agent even though they work in the embedded terminal.
+    // Same problem the pty path and the codex spawn already solve, solved the
+    // same way (see shellEnv.ts). Never throws; a shell that won't answer
+    // degrades to process.env.
+    const baseEnv = (await loginShellPathEnv()) ?? process.env;
     // The shim dir carries `hearth` and (when present) `hearth-probe`, so the
     // Bash the agent runs finds the same tools the embedded terminal does.
-    const env = this.tools?.shimDir
-      ? hearthPtyEnv(process.env, this.tools.shimDir)
-      : { ...process.env };
-    const stream = this.sdk.query({
-      prompt: this.turns,
-      options: {
-        cwd: projectRoot,
-        permissionMode: sdkPermissionMode(this.permissionMode),
-        includePartialMessages: true,
-        env: { ...env, ANTHROPIC_API_KEY: this.apiKey },
-        ...(this.model ? { model: this.model } : {}),
-        // APPEND to the preset, never replace it. `systemPrompt` also accepts
-        // a bare string, and passing one here would substitute a paragraph of
-        // house rules for the entire working prompt — the tool instructions
-        // included — which reads as "the agent stopped being able to edit
-        // files" rather than as a settings bug. The append always carries the
-        // house facts; personalization rides after them when set.
-        ...(append
-          ? { systemPrompt: { type: 'preset' as const, preset: 'claude_code' as const, append } }
-          : {}),
-        canUseTool: (toolName: string, input: unknown) => this.askPermission(toolName, input),
-      },
-    });
+    const env = this.tools?.shimDir ? hearthPtyEnv(baseEnv, this.tools.shimDir) : { ...baseEnv };
+    const open = (resume: string | null): SdkQueryHandle =>
+      this.sdk.query({
+        // A per-attempt view of the turn queue, never the queue itself: a
+        // query the SDK abandons must not close (or swallow from) the queue a
+        // resume-fallback retry still has to read. See promptFeed.
+        prompt: this.promptFeed(),
+        options: {
+          cwd: projectRoot,
+          permissionMode: sdkPermissionMode(this.permissionMode),
+          includePartialMessages: true,
+          // The key is ADDED when there is one and left out entirely when there
+          // is not. Passing an empty ANTHROPIC_API_KEY is not the same as
+          // passing none: it overrides the CLI's own credentials with a key that
+          // cannot authenticate, which turns "answer on my subscription" into an
+          // auth failure.
+          env: this.apiKey ? { ...env, ANTHROPIC_API_KEY: this.apiKey } : env,
+          ...(this.model ? { model: this.model } : {}),
+          // Continue the session the SDK already holds for this conversation.
+          // `resume` loads its persisted history (sdk.d.ts), so a reopened
+          // chat keeps the agent's own memory — the same promise codex's
+          // `thread/resume` makes next door.
+          ...(resume ? { resume } : {}),
+          // APPEND to the preset, never replace it. `systemPrompt` also accepts
+          // a bare string, and passing one here would substitute a paragraph of
+          // house rules for the entire working prompt — the tool instructions
+          // included — which reads as "the agent stopped being able to edit
+          // files" rather than as a settings bug. The append always carries the
+          // house facts; personalization rides after them when set.
+          ...(append
+            ? { systemPrompt: { type: 'preset' as const, preset: 'claude_code' as const, append } }
+            : {}),
+          canUseTool: (toolName: string, input: unknown) => this.askPermission(toolName, input),
+        },
+      });
     // One long-lived pump for the whole session: the SDK yields messages for
     // every queued turn on the same stream.
     //
@@ -1018,17 +1253,55 @@ export class AgentSdkDriver implements ChatDriver {
     // `this.turns` with nothing on the other end, and the window spun on a turn
     // that was never coming. A driver that cannot answer has to say so.
     this.pump = (async () => {
+      // The session tried first is the remembered one. A resume the CLI
+      // refuses (its session file pruned, a chat copied to another machine)
+      // must not strand the conversation, so ONE retry drops back to a fresh
+      // session — never a dead chat. The stale stored id heals itself: the
+      // fresh session's init message names its own id and captureSessionId
+      // persists that over the old one.
+      let resume = this.resumeSessionId;
       try {
-        for await (const message of stream) {
-          if (this.stopped) break;
-          for (const event of mapSdkMessage(message)) this.queue.push(this.retarget(event));
+        for (;;) {
+          const stream = open(resume);
+          // Held so `commands()` and `interrupt()` talk to the live session.
+          // The handle is the same object the pump iterates; both are control
+          // requests on it, not a second connection.
+          this.stream = stream;
+          let sawMessage = false;
+          let failure: Error | null = null;
+          try {
+            for await (const message of stream) {
+              if (this.stopped) break;
+              sawMessage = true;
+              this.captureSessionId(message);
+              for (const event of mapSdkMessage(message)) this.queue.push(this.retarget(event));
+            }
+          } catch (err) {
+            failure = err as Error;
+          }
+          if (this.stopped) return;
+          // The stream ended before saying ANYTHING, against a remembered
+          // session: that is what a failed resume looks like from out here
+          // (the CLI exits without ever sending its init). Retry fresh, and
+          // say so — the transcript on screen still reads as one continuous
+          // conversation, and an agent that silently lost its memory of it
+          // reads as one lying about the conversation it was in.
+          if (!sawMessage && resume) {
+            resume = null;
+            this.queue.push({ type: 'notice', text: CLAUDE_RESUME_FAILED_NOTICE });
+            continue;
+          }
+          if (failure) {
+            this.queue.push({ type: 'error', message: failure.message });
+          } else {
+            // Returned rather than threw, and nobody asked it to stop: the
+            // backend is gone. Reported as an error because that is what it is
+            // to the person waiting, and because an error is what ends the
+            // turn.
+            this.queue.push({ type: 'error', message: SDK_EXITED_MESSAGE });
+          }
+          return;
         }
-        // Returned rather than threw, and nobody asked it to stop: the backend
-        // is gone. Reported as an error because that is what it is to the
-        // person waiting, and because an error is what ends the turn.
-        if (!this.stopped) this.queue.push({ type: 'error', message: SDK_EXITED_MESSAGE });
-      } catch (err) {
-        if (!this.stopped) this.queue.push({ type: 'error', message: (err as Error).message });
       } finally {
         this.finished = true;
         // Nothing will read queued turns again, and nothing will emit again.
@@ -1036,6 +1309,60 @@ export class AgentSdkDriver implements ChatDriver {
         this.queue.close();
       }
     })();
+  }
+
+  /**
+   * Remember which Claude session this conversation IS, read off the init
+   * message the SDK opens every session with (sdk.d.ts: `system`/`init`
+   * carries `session_id`, resumable later via `query({options: {resume}})`).
+   * Only a CHANGED id is handed back: a successful resume echoes the id that
+   * was asked for, and re-persisting it on every bind would rewrite the chat
+   * index for nothing.
+   */
+  private captureSessionId(message: unknown): void {
+    const msg = asRecord(message);
+    if (msg?.type !== 'system' || msg.subtype !== 'init') return;
+    const sessionId = msg.session_id;
+    if (typeof sessionId !== 'string' || sessionId === '' || sessionId === this.sessionId) return;
+    this.sessionId = sessionId;
+    this.onSessionId(sessionId);
+  }
+
+  /**
+   * A view of the turn queue for ONE query attempt.
+   *
+   * The SDK iterates its prompt with `for await`, and a `for await` that exits
+   * abruptly (the subprocess died, a resume the CLI refused) calls `return()`
+   * on the iterator it was handed — which on EventQueue means `close()`. The
+   * queue has to outlive the attempt: a failed resume is retried against a
+   * fresh session, and the retry reads the SAME queue, or every turn typed
+   * during the first attempt is silently gone. So each attempt gets a view
+   * that (a) never propagates `return()` to the shared queue, and (b) puts a
+   * value back at the front if one was already in flight when the attempt was
+   * abandoned, so the retry delivers it instead of losing it.
+   */
+  private promptFeed(): AsyncIterable<unknown> {
+    const queue = this.turns;
+    return {
+      [Symbol.asyncIterator]: (): AsyncIterator<unknown> => {
+        const inner = queue[Symbol.asyncIterator]();
+        let abandoned = false;
+        return {
+          next: (): Promise<IteratorResult<unknown>> => {
+            if (abandoned) return Promise.resolve({ value: undefined as never, done: true });
+            return inner.next().then((result) => {
+              if (!abandoned || result.done) return result;
+              queue.requeue(result.value);
+              return { value: undefined as never, done: true };
+            });
+          },
+          return: (): Promise<IteratorResult<unknown>> => {
+            abandoned = true;
+            return Promise.resolve({ value: undefined as never, done: true });
+          },
+        };
+      },
+    };
   }
 
   /**
@@ -1068,25 +1395,131 @@ export class AgentSdkDriver implements ChatDriver {
     const approvalId = `a${++this.nextApproval}`;
     this.queue.push({ type: 'approval-request', approvalId, ...approval });
     return new Promise((resolve) => {
-      this.pending.set(approvalId, (decision) => {
-        this.queue.push({ type: 'approval-resolved', approvalId, decision });
-        resolve(
-          decision === 'allow'
-            ? { behavior: 'allow', updatedInput: input }
-            : { behavior: 'deny', message: 'The user declined this.' },
-        );
+      this.pending.set(approvalId, {
+        answer: (decision) => {
+          this.queue.push({ type: 'approval-resolved', approvalId, decision });
+          resolve(
+            decision === 'allow'
+              ? { behavior: 'allow', updatedInput: input }
+              : { behavior: 'deny', message: 'The user declined this.' },
+          );
+        },
+        // A withdrawal is NOT a decision. The SDK still gets a deny — nothing
+        // may run on a question nobody answered — but the transcript records
+        // that the session ended under the question, not that the user
+        // refused it. See ApprovalResolution.
+        withdraw: () => {
+          this.queue.push({ type: 'approval-resolved', approvalId, decision: 'withdrawn' });
+          resolve({ behavior: 'deny', message: 'The session ended before the user answered.' });
+        },
       });
     });
   }
 
-  approve(approvalId: string, decision: ApprovalDecision): void {
-    const resolve = this.pending.get(approvalId);
-    if (!resolve) return;
-    this.pending.delete(approvalId);
-    resolve(decision);
+
+  /**
+   * Ask the live session. Never throws into the menu: an older SDK without the
+   * method, a control request that times out, or a backend already gone all
+   * mean the same thing to a composer trying to draw a list, and that is an
+   * empty one.
+   */
+  async commands(): Promise<SlashCommandInfo[]> {
+    const handle = this.stream;
+    if (!handle?.supportedCommands) return [];
+    try {
+      return sdkSlashCommands(await handle.supportedCommands());
+    } catch {
+      return [];
+    }
   }
 
-  send(text: string, _agent?: AgentTurnOptions, attachments?: readonly ChatAttachment[]): void {
+  approve(approvalId: string, decision: ApprovalDecision): void {
+    const pending = this.pending.get(approvalId);
+    if (!pending) return;
+    this.pending.delete(approvalId);
+    pending.answer(decision);
+  }
+
+  /**
+   * Withdraw everything still blocking the agent: each callback resolves as a
+   * deny so the SDK's own turn unwinds instead of hanging on a promise nobody
+   * will settle, and every window is told the question is moot — as
+   * `withdrawn`, never as a Deny the user did not press.
+   */
+  private withdrawPending(): void {
+    for (const [, pending] of this.pending) pending.withdraw();
+    this.pending.clear();
+  }
+
+  /**
+   * End the RUNNING TURN, keep the session — what Stop should mean. The SDK's
+   * `interrupt()` is a control request on the live query: the stream stays
+   * open, and the next send continues the same conversation with its memory
+   * intact. This driver used to have no interrupt at all, so ws.ts fell back
+   * to tearing the whole backend down, and every Stop on a Claude chat cost
+   * the agent everything it had in context.
+   *
+   * Anything blocking on an approval is withdrawn first: the interrupt ends
+   * the turn the question belonged to, and the SDK's own abort is waiting on
+   * the same callback.
+   */
+  interrupt(): void {
+    if (this.stopped) return;
+    const handle = this.stream;
+    if (handle?.interrupt) {
+      this.withdrawPending();
+      void handle.interrupt().catch(() => {
+        /* the turn keeps running; Stop stays available, and so does teardown */
+      });
+      return;
+    }
+    // No live handle, or an installed SDK too old to have the method: the
+    // coarse teardown is the only honest stop left. The turn is reported over
+    // FIRST (withdrawals ahead of it — the client stops applying events to an
+    // ended turn), then the stream ends, which is what makes ws.ts retire the
+    // session so the next send binds afresh. The same shape ws.ts itself
+    // takes for a driver with no interrupt at all.
+    this.withdrawPending();
+    this.queue.push({ type: 'turn-complete' });
+    this.stop();
+  }
+
+  /**
+   * Put this turn's effort on the session before the turn goes out.
+   *
+   * The model is fixed when the stream opens (see the constructor), but the
+   * effort is not: `applyFlagSettings` merges into a settings layer on the
+   * LIVE query, which is the SDK's own answer to changing it mid-session.
+   *
+   * Three things this is careful about, each of them a way the naive version
+   * breaks a turn:
+   *
+   *  - **Only the five words the SDK names.** A codex effort (`ultra`) or junk
+   *    is dropped rather than forwarded — see isClaudeEffort.
+   *  - **No effort CLEARS a previous one**, with an explicit null. The layer
+   *    persists, so "the user turned the dial back to Automatic" has to be
+   *    said out loud or the last choice sticks for the session.
+   *  - **It never throws into the turn.** An older SDK without the method or a
+   *    control request that fails means the turn runs at whatever effort the
+   *    session already had, which is a far better outcome than a message that
+   *    was never sent.
+   */
+  private async applyEffort(requested: ReasoningEffort | null | undefined): Promise<void> {
+    const handle = this.stream;
+    if (!handle?.applyFlagSettings) return;
+    const wanted = isClaudeEffort(requested) ? requested : null;
+    if (wanted === this.effort) return;
+    try {
+      await handle.applyFlagSettings({ effortLevel: wanted });
+      // Recorded only once the backend took it, so a failed call is retried by
+      // the next turn rather than remembered as applied.
+      this.effort = wanted;
+    } catch {
+      /* the session keeps the effort it had */
+    }
+  }
+
+  send(text: string, agent?: AgentTurnOptions, attachments?: readonly ChatAttachment[]): void {
     if (this.stopped) return;
     // EVERY turn goes through the chain, including the ones with nothing
     // attached. Sending the plain ones straight to the queue was the obvious
@@ -1096,6 +1529,10 @@ export class AgentSdkDriver implements ChatDriver {
     // pictures attached to nothing.
     this.sends = this.sends
       .then(async () => {
+        // Inside the same chain as the queueing below, so the effort is on the
+        // session BEFORE the turn it belongs to is pushed. Applying it outside
+        // would race the turn it was chosen for.
+        await this.applyEffort(agent?.effort ?? null);
         const content =
           attachments && attachments.length > 0
             ? await sdkUserContent(text, attachments)
@@ -1112,10 +1549,10 @@ export class AgentSdkDriver implements ChatDriver {
   stop(): void {
     this.stopped = true;
     this.finished = true;
-    // Anything still blocking the agent is answered `deny`, so the SDK's own
-    // turn unwinds instead of hanging on a promise nobody will settle.
-    for (const [, resolve] of this.pending) resolve('deny');
-    this.pending.clear();
+    // Anything still blocking the agent is withdrawn: the SDK's own turn
+    // unwinds (each callback resolves as a deny) and the transcript records a
+    // teardown rather than a Deny nobody pressed.
+    this.withdrawPending();
     this.turns.close();
     this.queue.close();
     this.pump = null;
@@ -1129,16 +1566,10 @@ export class AgentSdkDriver implements ChatDriver {
 /**
  * Pick the driver for a project.
  *
- * A turn that names one of the USER's OWN agents (`agent.agentId`) is answered
- * by that agent or by an error saying why it could not be: it is the one branch
- * here that is allowed to throw, and the one that must. Every other route ends
- * in a working driver, so falling through would replace the program somebody
- * chose with a vendor's, under a composer still showing their name for it.
- *
- * With no `agentId`, an explicit `provider` wins when that provider is actually
- * usable; otherwise whichever one is configured answers, and with neither the
- * stub explains how to connect one. That path never throws: a broken vendor
- * backend degrades to guidance rather than an unusable conversation column.
+ * An explicit `provider` wins when that provider is actually usable; otherwise
+ * whichever one is configured answers, and with neither the stub explains how
+ * to connect one. This never throws: a broken vendor backend degrades to
+ * guidance rather than an unusable conversation column.
  *
  * The turn's own `agent.provider` outranks the stored preference: the composer
  * shows the user which model they picked, so that pick has to be what binds.
@@ -1156,6 +1587,14 @@ export async function createChatDriver(
     resumeThreadId?: string | null;
     /** Called with the thread codex bound, so it can be persisted. */
     onThreadId?: (threadId: string) => void;
+    /**
+     * The Claude session this conversation already had, for the Agent SDK's
+     * `resume`. The codex pair above, mirrored for the other backend — each
+     * driver reads only its own and ignores the other's.
+     */
+    resumeSessionId?: string | null;
+    /** Called with the session the Agent SDK bound, so it can be persisted. */
+    onSessionId?: (sessionId: string) => void;
     /** The turn that is binding this driver, when it expressed a choice. */
     agent?: AgentTurnOptions | null;
     /** Hearth tooling on this machine (shim dir + probe), from ws.ts. */
@@ -1174,18 +1613,6 @@ export async function createChatDriver(
       opts?: {
         resumeThreadId?: string | null;
         onThreadId?: (threadId: string) => void;
-        agent?: AgentTurnOptions | null;
-        tools?: AgentToolAccess | null;
-        permissionMode?: PermissionMode | null;
-      },
-    ) => Promise<ChatDriver | null>;
-    /**
-     * The user's own agents (chatDrivers/custom.ts). Tried FIRST, and only when
-     * the turn names one; it answers null for a turn that does not.
-     */
-    createCustomDriver?: (
-      projectRoot: string,
-      opts?: {
         agent?: AgentTurnOptions | null;
         tools?: AgentToolAccess | null;
         permissionMode?: PermissionMode | null;
@@ -1213,32 +1640,41 @@ export async function createChatDriver(
       return mod.createCodexDriver(root, opts);
     });
 
-  const makeCustom =
-    options?.createCustomDriver ??
-    (async (
-      root: string,
-      opts?: { agent?: AgentTurnOptions | null; tools?: AgentToolAccess | null; permissionMode?: PermissionMode | null },
-    ) => {
-      // Imported lazily for the same reason codex is: a project that never
-      // registered an agent never pays for resolving the module, and this file
-      // stays free of node:child_process.
-      const mod = await import('./chatDrivers/custom.js');
-      return mod.createCustomDriver(root, opts);
-    });
-
   const agent = options?.agent ?? null;
   // One mode for whichever backend answers: the user chose how much the AGENT
   // may do, not how much this vendor's agent may do, so the fall-through below
   // must not be able to change the answer.
   const permissionMode = options?.permissionMode ?? DEFAULT_PERMISSION_MODE;
   const anthropic = async (): Promise<ChatDriver | null> => {
+    // A key is an OPTION here, not a requirement, and treating it as one is
+    // why Claude read "Not set up" on machines that had been talking to Claude
+    // all day. The SDK runs the Claude Code CLI, and that CLI authenticates
+    // with whatever the person already signed into: given no key it reports
+    // `apiKeySource: "none"` and answers on their subscription, exactly as
+    // ChatGPT answers through codex's own sign-in. Refusing to bind without a
+    // key made Hearth demand a paid API key for an agent the person was
+    // already entitled to use, and the "Set up in Settings" row said so.
+    //
+    // Binding is still not a promise that it will answer. A machine with
+    // neither a key nor a login fails at the first turn with the CLI's own
+    // words, which names the real problem better than a backend that silently
+    // was not there.
     const key = await resolveApiKey(projectRoot);
-    if (!key) return null;
     const sdk = await loadSdk();
     // Only an anthropic-targeted choice names an anthropic model; a codex
     // model id must never reach the SDK.
     const model = agent && (agent.provider ?? 'anthropic') === 'anthropic' ? (agent.model ?? null) : null;
-    return sdk ? new AgentSdkDriver(sdk, key, model, options?.tools ?? null, permissionMode) : null;
+    return sdk
+      ? new AgentSdkDriver(
+          sdk,
+          key,
+          model,
+          options?.tools ?? null,
+          permissionMode,
+          options?.resumeSessionId ?? null,
+          options?.onSessionId,
+        )
+      : null;
   };
   const openai = async (): Promise<ChatDriver | null> => {
     try {
@@ -1253,16 +1689,6 @@ export async function createChatDriver(
       return null;
     }
   };
-
-  // The user's own agent, tried before anything Hearth ships with. NOT wrapped
-  // in a catch: see the head note. A turn that named an agent gets that agent
-  // or an explanation, never a substitute.
-  const own = await makeCustom(projectRoot, {
-    agent,
-    tools: options?.tools ?? null,
-    permissionMode,
-  });
-  if (own) return own;
 
   const preferred = agent?.provider ?? settings.provider;
   const order: (() => Promise<ChatDriver | null>)[] =

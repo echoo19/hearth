@@ -11,6 +11,15 @@ export interface HearthNative {
   pickDirectory(): Promise<string | null>;
   revealInFolder(path: string): Promise<void>;
   /**
+   * Silence the game, by muting the window it is framed in.
+   *
+   * Optional because it is the newest of these and a renderer can be running
+   * against an older preload: the control that calls it is only offered when
+   * this is actually here, so a build without it shows no mute rather than a
+   * mute that does nothing.
+   */
+  setAudioMuted?(muted: boolean): Promise<void>;
+  /**
    * Tell the main process which folder the window is on (it owns the title).
    * The window is always at working size now — the compact launcher window is
    * gone — so 'launcher' survives only as an alias of 'editor', kept in the

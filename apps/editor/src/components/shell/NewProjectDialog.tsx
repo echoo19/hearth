@@ -96,6 +96,10 @@ export function NewProjectDialog({
     const mine = generation.current;
     setBusy(true);
     setError(null);
+    // This await cannot reject: postJson answers a server it could not reach
+    // as `ok: false` with the reason in words (see api.ts). That is what keeps
+    // the lines below reachable — a throw here once left the button on
+    // "Creating…" forever, with no error and no way to retry.
     const result = await apiCreateWorkspace(undefined, name.trim());
     if (mine !== generation.current) return; // the dialog was closed meanwhile
     setBusy(false);
@@ -142,7 +146,7 @@ export function NewProjectDialog({
               what happens now. */}
           <p className="new-project-note">
             Hearth calls the project this, exactly as you type it. The folder it makes under ~/Hearth uses a plainer
-            version of the name, and everything the game is made of lives in there.
+            version of the name. Everything the game is made of lives in there.
           </p>
           {/* The server's own words, where the name that caused them still is.
               role="alert" because nothing else on screen moved: the dialog is

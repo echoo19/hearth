@@ -9,7 +9,8 @@ import path from 'node:path';
 import os from 'node:os';
 import { HearthSession, PERMISSION_MODES, ProjectStore } from '@hearth/core';
 import { NodeFileSystem } from '@hearth/core/node';
-import { createProjectServerContext, type ProjectServerContext } from '../server/projectServer';
+import { createProjectServerContext, HEARTH_DIR_IGNORE_MARKER, type ProjectServerContext } from '../server/projectServer';
+import { StubDriver } from '../server/chat';
 
 let tmpDir: string;
 let ctx: ProjectServerContext;
@@ -136,6 +137,96 @@ describe('project open/create', () => {
     expect(created.status).toBe(400);
     expect((created.body as { ok: boolean }).ok).toBe(false);
     expect((created.body as { error: string }).error).toContain('platformer');
+  });
+});
+
+describe('.hearth/.gitignore self-ignore guard', () => {
+  // Confirmed finding: opening/creating a project used to materialize
+  // .hearth/chats, .hearth/tester and .hearth/log with nothing keeping them
+  // out of the project's own git history — a `git add .` in the game's repo
+  // committed every private transcript. `*` inside `.hearth/.gitignore` is
+  // the standard self-ignoring-directory trick: it also matches the
+  // .gitignore file itself, so the whole folder drops off `git status`.
+
+  it('creating a project self-ignores its .hearth folder from the start', async () => {
+    const created = await ctx.createNewProject(path.join(tmpDir, 'projects'), 'Ignore Game');
+    const root = (created.body as { path: string }).path;
+    const gitignore = await fsp.readFile(path.join(root, '.hearth', '.gitignore'), 'utf8');
+    expect(gitignore).toContain(HEARTH_DIR_IGNORE_MARKER);
+    expect(gitignore.trim().split('\n').pop()).toBe('*');
+  });
+
+  it('opening a plain folder (no hearth.json) gets the same guard — a chat can start in any opened folder', async () => {
+    const plain = path.join(tmpDir, 'plain-folder');
+    await fsp.mkdir(plain, { recursive: true });
+    const opened = await ctx.openWorkspace(plain);
+    expect(opened.status).toBe(200);
+    const gitignore = await fsp.readFile(path.join(plain, '.hearth', '.gitignore'), 'utf8');
+    expect(gitignore).toContain(HEARTH_DIR_IGNORE_MARKER);
+    expect(gitignore.trim().split('\n').pop()).toBe('*');
+  });
+
+  it('heals a project that was opened before this guard existed', async () => {
+    const created = await ctx.createNewProject(path.join(tmpDir, 'projects'), 'Heal Ignore Game');
+    const root = (created.body as { path: string }).path;
+    // Simulate an install from before this guard shipped: the file never got written.
+    await fsp.rm(path.join(root, '.hearth', '.gitignore'), { force: true });
+    const reopened = await ctx.openProject(root);
+    expect(reopened.status).toBe(200);
+    const gitignore = await fsp.readFile(path.join(root, '.hearth', '.gitignore'), 'utf8');
+    expect(gitignore).toContain(HEARTH_DIR_IGNORE_MARKER);
+  });
+
+  it('never rewrites or deletes a .gitignore it did not write, marker-gated exactly like skills.ts', async () => {
+    const created = await ctx.createNewProject(path.join(tmpDir, 'projects'), 'Human Ignore Game');
+    const root = (created.body as { path: string }).path;
+    // A human's own rule (or an older build's un-marked file) — must survive re-opening untouched.
+    await fsp.writeFile(path.join(root, '.hearth', '.gitignore'), 'app.json\n');
+    const reopened = await ctx.openProject(root);
+    expect(reopened.status).toBe(200);
+    const gitignore = await fsp.readFile(path.join(root, '.hearth', '.gitignore'), 'utf8');
+    expect(gitignore).toBe('app.json\n');
+  });
+});
+
+describe('tester refuses a stub agent', () => {
+  // Confirmed finding: startTesterSession bound whatever createChatDriver
+  // returned, including the StubDriver fallback for "no agent configured" —
+  // so an unattended tester with no agent connected burned its whole step
+  // budget arguing with canned guidance and wrote a note that read like a
+  // real playtest. It must refuse the same way the catch above already does.
+  let tmp: string;
+  let root: string;
+  let stubCtx: ProjectServerContext;
+
+  beforeAll(async () => {
+    tmp = await fsp.mkdtemp(path.join(os.tmpdir(), 'hearth-tester-stub-'));
+    root = path.join(tmp, 'game');
+    await fsp.mkdir(root, { recursive: true });
+    await fsp.writeFile(path.join(root, 'index.html'), '<canvas></canvas>');
+    stubCtx = createProjectServerContext({
+      recentsFile: path.join(tmp, 'recent.json'),
+      repoRoot: tmp,
+      testerDeps: { createDriver: async () => new StubDriver() },
+    });
+    await stubCtx.openWorkspace(root);
+  });
+
+  afterAll(async () => {
+    await fsp.rm(tmp, { recursive: true, force: true });
+  });
+
+  it('returns the "could not reach your agent" 500 instead of playing against canned replies', async () => {
+    const result = await stubCtx.startTesterSession(root, 4);
+    expect(result.status).toBe(500);
+    const body = result.body as { ok: boolean; error: string };
+    expect(body.ok).toBe(false);
+    expect(body.error).toContain('Could not reach your agent');
+
+    // No job was started: nothing running, nothing to write a note.
+    expect(stubCtx.testerJob(root)).toBeUndefined();
+    const history = await stubCtx.testerHistory(root);
+    expect((history.body as { sessions: unknown[] }).sessions).toEqual([]);
   });
 });
 
@@ -410,5 +501,49 @@ describe('misc endpoints', () => {
     expect(body).not.toHaveProperty('repoRoot');
     expect(body).not.toHaveProperty('toolPaths');
     expect(JSON.stringify(body)).not.toContain(os.homedir());
+  });
+});
+
+describe('recentsFile default honors HEARTH_HOME', () => {
+  // Confirmed finding: the recentsFile default hardcoded
+  // path.join(os.homedir(), '.hearth', 'recent-projects.json'), so an
+  // isolated instance (a second profile, a sandboxed run) still read and
+  // rewrote the real machine's project list even though HEARTH_HOME is
+  // exactly the override server/skills.ts's hearthHome() already honors for
+  // everything else Hearth keeps in the user's home. This test deliberately
+  // does NOT pass `recentsFile` — every other test in this file does, which
+  // is exactly what let the hardcoded default go unnoticed.
+  let tmp: string;
+  let previousHearthHome: string | undefined;
+
+  beforeAll(async () => {
+    tmp = await fsp.mkdtemp(path.join(os.tmpdir(), 'hearth-home-recents-'));
+    previousHearthHome = process.env.HEARTH_HOME;
+    process.env.HEARTH_HOME = path.join(tmp, 'isolated-home');
+  });
+
+  afterAll(async () => {
+    if (previousHearthHome === undefined) delete process.env.HEARTH_HOME;
+    else process.env.HEARTH_HOME = previousHearthHome;
+    await fsp.rm(tmp, { recursive: true, force: true });
+  });
+
+  it('writes the default recents file under HEARTH_HOME, not the real ~/.hearth', async () => {
+    const isolatedCtx = createProjectServerContext({ repoRoot: tmp });
+    const folder = path.join(tmp, 'a-project');
+    await fsp.mkdir(folder, { recursive: true });
+    const opened = await isolatedCtx.openWorkspace(folder);
+    expect(opened.status).toBe(200);
+
+    const recentsPath = path.join(process.env.HEARTH_HOME!, 'recent-projects.json');
+    const raw = JSON.parse(await fsp.readFile(recentsPath, 'utf8')) as { path: string }[];
+    expect(raw.some((e) => path.resolve(e.path) === path.resolve(folder))).toBe(true);
+
+    // And the REAL home is untouched — this is the whole point of the fix.
+    const realRecents = path.join(os.homedir(), '.hearth', 'recent-projects.json');
+    const beforeRaw = await fsp.readFile(realRecents, 'utf8').catch(() => null);
+    // Whether or not a real recents file exists on this machine, this run
+    // must not be the thing that put `folder` into it.
+    expect(beforeRaw ?? '').not.toContain(folder);
   });
 });

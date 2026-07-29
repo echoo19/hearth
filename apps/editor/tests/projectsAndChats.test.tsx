@@ -16,7 +16,7 @@
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import React from 'react';
-import { render, screen, cleanup, act, within } from '@testing-library/react';
+import { render, screen, cleanup, act, fireEvent, within } from '@testing-library/react';
 
 vi.mock('../src/api', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../src/api')>()),
@@ -84,12 +84,18 @@ describe('the general acts', () => {
   it('keeps making a project out of the general acts and beside the list', () => {
     // Creating a project is not a general act — it belongs to the Projects
     // list, the way New chat belongs to the app. So the nav strip holds the
-    // three global screens and no more, and the create lives on the heading.
+    // two ways to start a conversation plus the two global screens, and the
+    // create lives on the heading.
     const { container } = render(<Sidebar />);
     const nav = container.querySelector('.sidebar-nav');
     expect(nav).toBeTruthy();
     expect(within(nav as HTMLElement).queryByRole('button', { name: /New project/ })).toBeNull();
-    expect(within(nav as HTMLElement).getAllByRole('button')).toHaveLength(3);
+    expect(within(nav as HTMLElement).getAllByRole('button')).toHaveLength(4);
+    // Both kinds of conversation are started HERE, side by side. A terminal
+    // used to be reached through the composer's model menu, which meant
+    // picking one silently replaced the chat you were reading with a shell.
+    expect(within(nav as HTMLElement).getByRole('button', { name: 'New chat' })).toBeTruthy();
+    expect(within(nav as HTMLElement).getByRole('button', { name: 'New terminal' })).toBeTruthy();
 
     const head = container.querySelector('.sidebar-section-head');
     expect(head).toBeTruthy();
@@ -141,6 +147,65 @@ describe('New chat', () => {
         .receiveFrame({ type: 'chat-opened', chat: { id: 'c9' }, records: [] } as never),
     );
     expect(useApp.getState().composing).toBe(false);
+  });
+});
+
+/**
+ * The rail's second door.
+ *
+ * A terminal used to be reached from the composer's model menu, which meant
+ * choosing one replaced the chat you were reading with a shell. It is created
+ * here now, beside New chat, because a conversation is a chat or a terminal
+ * session from the moment it exists and there is nothing to convert later.
+ */
+describe('New terminal', () => {
+  const row = () => screen.getByRole('button', { name: 'New terminal' });
+
+  it('opens one, rather than aiming the column at a kind it cannot change', () => {
+    const openTerminal = vi.fn();
+    resetStore({ projectPath: PROJECT, projectName: 'lighthouse', openTerminal });
+    render(<Sidebar />);
+    act(() => {
+      row().click();
+    });
+    expect(openTerminal).toHaveBeenCalledTimes(1);
+  });
+
+  it('says why it cannot, instead of going quiet, with no project open', () => {
+    // A shell with no working directory is not a useful shell. The refusal is
+    // `aria-disabled` rather than `disabled` for the reason NavRow documents: a
+    // natively disabled button takes no pointer or focus events, so the reason
+    // could never reach the person who needed it.
+    const openTerminal = vi.fn();
+    resetStore({ openTerminal });
+    render(<Sidebar />);
+    expect(row().getAttribute('aria-disabled')).toBe('true');
+    expect((row() as HTMLButtonElement).disabled).toBe(false);
+
+    act(() => {
+      row().click();
+    });
+    expect(openTerminal).not.toHaveBeenCalled();
+
+    // Focus shows the tooltip at once, which is where the reason lives.
+    act(() => {
+      row().focus();
+    });
+    expect(screen.getByRole('tooltip').textContent).toContain('Open a project first');
+  });
+
+  it('is offered on the project screen too, beside the composer that starts a chat', async () => {
+    // Two doors, side by side, on the one screen that is about a single
+    // project. Leaving it only in the rail would make the shell a thing you had
+    // to already know about to find.
+    const openTerminal = vi.fn();
+    resetStore({ projectPath: PROJECT, projectName: 'lighthouse', chatsLoaded: true, openTerminal });
+    render(<ProjectHome />);
+    const button = await screen.findByRole('button', { name: 'New terminal' });
+    act(() => {
+      button.click();
+    });
+    expect(openTerminal).toHaveBeenCalledTimes(1);
   });
 });
 
@@ -240,6 +305,37 @@ describe('the project screen', () => {
     resetStore({ projectPath: PLACE, projectName: 'Café Adventure', chatsLoaded: true });
     render(<ProjectHome />);
     expect(await screen.findByRole('heading', { name: 'Café Adventure', level: 1 })).toBeTruthy();
+  });
+
+  /**
+   * The two ways to start something, as one row of equals.
+   *
+   * This screen used to carry a composer with a lone New terminal button
+   * floating underneath it, which made one of the two kinds of conversation
+   * read as a footnote to the other. They are the same decision asked once, so
+   * they are two buttons of equal weight and neither is a composer.
+   */
+  it('offers both kinds of conversation, and no composer of its own', async () => {
+    resetStore({ projectPath: PLACE, projectName: 'Café Adventure', chatsLoaded: true });
+    const { container } = render(<ProjectHome />);
+    expect(await screen.findByRole('button', { name: 'New chat' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'New terminal' })).toBeTruthy();
+    // The composer belongs to the blank surface New chat hands off to. Two
+    // composers that start the same thing was the duplication this removed.
+    expect(container.querySelector('.composer-card')).toBeNull();
+  });
+
+  it('hands New chat to the blank surface with this project already aimed at', async () => {
+    // Not a composer here and not a conversation yet: `newChat` shows the same
+    // surface Home does, carrying `composeTarget` so the project pill arrives
+    // already reading this project rather than making someone pick it again.
+    resetStore({ projectPath: PLACE, projectName: 'Café Adventure', chatsLoaded: true });
+    render(<ProjectHome />);
+    fireEvent.click(await screen.findByRole('button', { name: 'New chat' }));
+    const state = useApp.getState();
+    expect(state.composing).toBe(true);
+    expect(state.projectView).toBe(false);
+    expect(state.composeTarget).toBe(PLACE);
   });
 
   it('says which folder that name landed in, so the game is findable on disk', async () => {

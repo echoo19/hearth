@@ -7,6 +7,7 @@ export type { CommandResult, JournalEntry };
 
 export type { ChatRecord, ChatSummary } from '../server/chatStore';
 export type { StoredAttachment } from '../server/chatAttachments';
+export type { SlashCommandInfo } from '../server/chat';
 // Imported as well as re-exported, for the same reason ProjectIdentity is.
 import type { ChatKind } from '../server/chatStore';
 export type { ChatKind };
@@ -109,11 +110,16 @@ export interface AppSettingsInfo {
 // ---------------------------------------------------------------------------
 
 /**
- * Which backend answered. `custom` is any agent the user registered
- * themselves; there is one kind for all of them because there is one driver,
- * and which agent it is travels with the turn (see `AgentChoice.agentId`).
+ * Which backend answered. `agent-sdk` is the Claude Code CLI, `codex` is the
+ * codex binary. Any other agent runs in the terminal, where it is the user's
+ * own process and Hearth is not the one answering.
+ *
+ * `custom` was a fourth kind, for agents registered against a small stdio
+ * protocol. Transcripts written by those builds still carry it, so a reader
+ * that pattern-matches on this union must tolerate an unknown value rather
+ * than assume these three are all that can appear on disk.
  */
-export type ChatDriverKind = 'stub' | 'agent-sdk' | 'codex' | 'custom';
+export type ChatDriverKind = 'stub' | 'agent-sdk' | 'codex';
 
 /** Which vendor's agent answers a turn. */
 export type ChatProvider = 'anthropic' | 'openai';
@@ -122,6 +128,15 @@ export type ToolKind = 'command' | 'file-change' | 'mcp' | 'web-search' | 'skill
 export type ToolStatus = 'ok' | 'error' | 'declined';
 export type ApprovalKind = 'command' | 'file-change';
 export type ApprovalDecision = 'allow' | 'deny';
+
+/**
+ * How an approval can END UP, which is wider than how a person can answer
+ * one: `withdrawn` means the session ended (a Stop, a teardown, the backend
+ * dying) before anyone answered — a teardown speaking, never a Deny the user
+ * pressed. Old transcripts hold only allow/deny and render exactly as they
+ * always did. Mirrors server/chat.ts's ApprovalResolution.
+ */
+export type ApprovalResolution = ApprovalDecision | 'withdrawn';
 
 /**
  * When the agent stops to ask before it acts, for one project.
@@ -181,7 +196,7 @@ export type ChatEvent =
   | { type: 'tool-end'; toolId: string; status: ToolStatus; exitCode?: number; summary?: string }
   | { type: 'file-change'; toolId?: string; files: FileChangeEntry[] }
   | { type: 'approval-request'; approvalId: string; kind: ApprovalKind; title: string; detail: string }
-  | { type: 'approval-resolved'; approvalId: string; decision: ApprovalDecision }
+  | { type: 'approval-resolved'; approvalId: string; decision: ApprovalResolution }
   | { type: 'subagent-start'; agentId: string; role?: string; title: string }
   | { type: 'subagent-delta'; agentId: string; chunk: string }
   | { type: 'subagent-end'; agentId: string; status: ToolStatus; summary?: string }
@@ -343,7 +358,8 @@ export interface ChatApprovalPart {
   approvalKind: ApprovalKind;
   title: string;
   detail: string;
-  decision: ApprovalDecision | null;
+  /** Null while the ask is live; `withdrawn` when the session ended under it. */
+  decision: ApprovalResolution | null;
 }
 
 /**
@@ -406,6 +422,23 @@ export interface ChatProviderStatus {
   anthropic: {
     hasKey: boolean;
     source: 'project' | 'environment' | null;
+    /**
+     * The Claude Code CLI is on this machine. On its own that is enough to
+     * answer a turn: the SDK runs that CLI and it authenticates with whatever
+     * the person signed into, so a key is one route in rather than the route.
+     */
+    cli: boolean;
+    /**
+     * The CLI has an account. THIS is the one that decides whether Claude can
+     * answer; `cli` above only says the binary exists, and a machine with
+     * claude installed and nobody signed into it used to report itself ready
+     * and then fail the turn.
+     */
+    loggedIn: boolean;
+    /** The signed-in account, when the CLI says. */
+    email: string | null;
+    /** The plan word, verbatim from the CLI (`max`, `pro`, ...). */
+    planType: string | null;
     /** Models this provider can answer with, curated by the server. */
     models?: ProviderModelInfo[];
   };
@@ -449,6 +482,13 @@ export interface EffortOption {
 export interface ProviderModelInfo {
   /** Wire id (e.g. `claude-opus-5`). Empty string means the provider default. */
   id: string;
+  /**
+   * The canonical model this row's `id` resolves to, when the backend says.
+   * Claude's catalogue is aliases (`sonnet`, `opus[1m]`), so this is how a
+   * choice stored as `claude-sonnet-5` finds the row that covers it. See
+   * `modelRowCovers`.
+   */
+  resolvedModel?: string;
   label: string;
   note?: string;
   description?: string;
@@ -473,34 +513,6 @@ export interface AgentChoice {
   provider: ChatProvider;
   model: string | null;
   effort: string | null;
-  /**
-   * One of the user's OWN agents (server/agentRegistry.ts), by id, or null for
-   * the vendor backends Hearth ships with.
-   *
-   * It outranks `provider` on the server, and the two are kept side by side
-   * rather than folded into one union so that switching to your own agent and
-   * back does not lose which model you had picked. `provider` is left where it
-   * was and simply stops being read while an agent is named.
-   */
-  agentId?: string | null;
-}
-
-/**
- * One agent the user registered (GET /api/agents).
- *
- * `commandLine` is computed by the server so both halves of the app print the
- * identical string, and it is printed EVERYWHERE the agent is named: a label on
- * its own would hide what is actually being run. `confirmed` is the answer to
- * "has the person at this machine read that command line and accepted it", and
- * it goes false again the moment the command changes.
- */
-export interface CustomAgentInfo {
-  id: string;
-  label: string;
-  command: string;
-  args: string[];
-  commandLine: string;
-  confirmed: boolean;
 }
 
 /**

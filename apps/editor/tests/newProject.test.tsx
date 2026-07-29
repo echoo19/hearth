@@ -173,6 +173,43 @@ describe('the dialog', () => {
     expect(onCreated).not.toHaveBeenCalled();
   });
 
+  it('recovers when the server cannot be reached at all: busy off, reason inline, retry live', async () => {
+    // The real apiCreateWorkspace over a dead fetch, because the bug this pins
+    // lived below the mock the other tests use: postJson used to THROW on
+    // transport failure, the await in create() rejected, and setBusy(false)
+    // was unreachable — the button said "Creating…" forever, with no error
+    // shown and no way to retry. The contract now (api.test.ts pins it too) is
+    // that a dead server comes back as ok:false with the reason in words, and
+    // this checks the dialog wears those words the same way it wears a refusal.
+    const real = await vi.importActual<typeof import('../src/api')>('../src/api');
+    vi.mocked(apiCreateWorkspace).mockImplementation(real.apiCreateWorkspace);
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => {
+        throw new TypeError('Failed to fetch');
+      }),
+    );
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    try {
+      const onCreated = vi.fn();
+      render(<NewProjectDialog open onCancel={() => {}} onCreated={onCreated} />);
+      fireEvent.change(nameField(), { target: { value: 'Lighthouse' } });
+      fireEvent.click(createButton());
+
+      const alert = await screen.findByRole('alert');
+      expect(alert.textContent).toMatch(/Could not reach/);
+      // Recovered: no longer Creating…, the name is still there, and the
+      // retry is one click away. Nothing pretended to have opened a project.
+      expect(createButton().textContent).toBe('Create project');
+      expect(createButton().disabled).toBe(false);
+      expect(nameField().value).toBe('Lighthouse');
+      expect(onCreated).not.toHaveBeenCalled();
+    } finally {
+      errorSpy.mockRestore();
+      vi.unstubAllGlobals();
+    }
+  });
+
   it('says what the create will actually do to their computer', () => {
     render(<NewProjectDialog open onCancel={() => {}} onCreated={() => {}} />);
     const note = document.querySelector('.new-project-note')?.textContent ?? '';

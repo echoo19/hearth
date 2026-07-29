@@ -16,7 +16,7 @@ import WebSocket from 'ws';
 import { createProjectServerContext, type ProjectServerContext } from '../server/projectServer';
 import { attachWebSocket, type WsFrame } from '../server/ws';
 import { EventQueue, type AgentTurnOptions, type ChatDriver, type ChatEvent } from '../server/chat';
-import { deleteChat, listChats, readTranscript } from '../server/chatStore';
+import { deleteChat, getChat, listChats, readTranscript } from '../server/chatStore';
 import { writePermissionMode, type PermissionMode } from '../server/permissionMode';
 
 /** A driver that answers every turn with a fixed script, and records its life. */
@@ -139,11 +139,12 @@ class ScriptedDriver implements ChatDriver {
     this.stopped = true;
     this.finished = true;
     const finish = (): void => {
-      // What both real backends do on the way out: whatever was still blocking
-      // the agent is answered `deny`, and the windows are told so, before the
-      // stream ends. See AgentSdkDriver.stop and CodexDriver.stop.
+      // What a real backend does on the way out: whatever was still blocking
+      // the agent is WITHDRAWN — resolved so the agent's turn can unwind, and
+      // recorded as `withdrawn` rather than as a Deny nobody pressed — and the
+      // windows are told so before the stream ends. See AgentSdkDriver.stop.
       for (const approvalId of this.pending) {
-        this.queue.push({ type: 'approval-resolved', approvalId, decision: 'deny' });
+        this.queue.push({ type: 'approval-resolved', approvalId, decision: 'withdrawn' });
       }
       this.pending.clear();
       this.openGate?.(); // a bind held open must not outlive the driver
@@ -170,6 +171,14 @@ let previousHome: string | undefined;
 let nextBindFails: string | null = null;
 /** Run against the NEXT driver the server binds, before it is started. */
 let nextDriverSetup: ((driver: ScriptedDriver) => void) | null = null;
+/** The options the LAST bind carried — the resume/persist seam under test. */
+let lastDriverOptions:
+  | {
+      resumeThreadId?: string | null;
+      resumeSessionId?: string | null;
+      onSessionId?: (sessionId: string) => void;
+    }
+  | undefined;
 
 /** Poll until `ready` is true, so a test waits on a fact rather than a delay. */
 async function until(ready: () => boolean, timeoutMs = 4000): Promise<void> {
@@ -229,6 +238,7 @@ beforeAll(async () => {
   attachWebSocket(server, ctx, undefined, undefined, {
     createChatDriver: async (_root, options) => {
       const driver = new ScriptedDriver();
+      lastDriverOptions = options;
       driver.boundAgent = options?.agent;
       driver.boundPermissionMode = options?.permissionMode;
       driver.startError = nextBindFails;
@@ -434,59 +444,128 @@ describe('a permission mode change', () => {
 });
 
 /**
- * Picking a different agent mid-conversation, which is the same argument as the
- * mode above and bites harder.
+ * Changing the model (or provider) mid-conversation.
  *
- * Which program answers is fixed when a driver is built, and the composer's
- * pill NAMES the agent it believes is answering. A pick that only took effect
- * on the next conversation would leave the app showing one agent's name while
- * another one did the work, which is the exact failure the whole
- * bring-your-own-agent path is written to prevent.
+ * Both backends fix the model when their session opens — the Agent SDK's is a
+ * `query()` option on its one long-lived stream — so the composer's pick can
+ * only take effect through a rebind, the same path a permission-mode change
+ * takes. These pin both halves: it rebinds when the choice moved, and it does
+ * NOT rebind for a repeat of the same choice, an effort-only change, or a turn
+ * expressing no choice at all (a rebind per turn would restart the agent and
+ * lose everything it had in context).
  */
-describe('a change of agent', () => {
-  it('rebinds when the turn names a different agent, and hands it the id', async () => {
+describe('a model or provider change mid-conversation', () => {
+  const done = (frame: WsFrame): boolean => frame.type === 'chat-event' && frame.event.type === 'done';
+
+  it('rebinds before the next turn and hands that turn to the new driver', async () => {
     drivers = [];
     const socket = await connect();
-    socket.send(JSON.stringify({ type: 'chat-send', text: 'one', agent: { agentId: 'my-agent' } }));
-    await nextFrame(socket, (frame) => frame.type === 'chat-event' && frame.event.type === 'done');
-    expect(drivers[0].boundAgent).toEqual({ agentId: 'my-agent' });
+    const first = { provider: 'anthropic', model: 'claude-a' };
+    socket.send(JSON.stringify({ type: 'chat-send', text: 'one', agent: first }));
+    await nextFrame(socket, done);
+    socket.send(JSON.stringify({ type: 'chat-send', text: 'two', agent: first }));
+    await nextFrame(socket, done);
+    expect(drivers).toHaveLength(1); // the same choice again is not a change
 
-    socket.send(JSON.stringify({ type: 'chat-send', text: 'two', agent: { agentId: 'other-agent' } }));
-    await nextFrame(socket, (frame) => frame.type === 'chat-event' && frame.event.type === 'done');
+    socket.send(
+      JSON.stringify({ type: 'chat-send', text: 'three', agent: { provider: 'anthropic', model: 'claude-b' } }),
+    );
+    await nextFrame(socket, done);
     expect(drivers).toHaveLength(2);
     expect(drivers[0].stopped).toBe(true);
-    expect(drivers[1].boundAgent).toEqual({ agentId: 'other-agent' });
+    // The turn that switched is answered by the NEW driver, bound with the
+    // new choice — not lost, and not delivered to the one already torn down.
+    expect(drivers[1].boundAgent).toEqual({ provider: 'anthropic', model: 'claude-b' });
+    expect(drivers[1].sent).toEqual(['three']);
+    expect(drivers[0].sent).toEqual(['one', 'two']);
+    socket.close();
+  });
+
+  it('keeps the driver when only the effort moved, and when no choice is expressed', async () => {
+    drivers = [];
+    const socket = await connect();
+    socket.send(
+      JSON.stringify({
+        type: 'chat-send',
+        text: 'one',
+        agent: { provider: 'anthropic', model: 'claude-a', effort: 'low' },
+      }),
+    );
+    await nextFrame(socket, done);
+    // Effort is applied to the live session per turn — restarting the agent
+    // for the dial would cost its whole context.
+    socket.send(
+      JSON.stringify({
+        type: 'chat-send',
+        text: 'two',
+        agent: { provider: 'anthropic', model: 'claude-a', effort: 'max' },
+      }),
+    );
+    await nextFrame(socket, done);
+    // And a frame with no agent at all is an old client, not a choice of
+    // "no model": whatever is bound stands.
+    socket.send(JSON.stringify({ type: 'chat-send', text: 'three' }));
+    await nextFrame(socket, done);
+    expect(drivers).toHaveLength(1);
+    expect(drivers[0].sent).toEqual(['one', 'two', 'three']);
+    socket.close();
+  });
+
+  it('rebinds when the provider moves, even with no model named', async () => {
+    drivers = [];
+    const socket = await connect();
+    socket.send(JSON.stringify({ type: 'chat-send', text: 'one', agent: { provider: 'anthropic', model: 'claude-a' } }));
+    await nextFrame(socket, done);
+    socket.send(JSON.stringify({ type: 'chat-send', text: 'two', agent: { provider: 'openai' } }));
+    await nextFrame(socket, done);
+    expect(drivers).toHaveLength(2);
     expect(drivers[1].sent).toEqual(['two']);
     socket.close();
   });
+});
 
-  it('rebinds when the turn goes back to a vendor model', async () => {
+/**
+ * The Claude session a conversation already is.
+ *
+ * The Agent SDK persists sessions and resumes one by id, exactly as codex does
+ * threads, so the same seam carries both: the stored id rides every bind, and
+ * the id a driver reports is written down for the next bind. Without this a
+ * reconnected Claude chat replayed its transcript but the agent had amnesia —
+ * a rebind handed it a fresh session with nothing in context.
+ */
+describe('the Claude session a conversation already is', () => {
+  const done = (frame: WsFrame): boolean => frame.type === 'chat-event' && frame.event.type === 'done';
+
+  it('hands the stored session to the binding, and persists the one the driver reports', async () => {
     drivers = [];
     const socket = await connect();
-    socket.send(JSON.stringify({ type: 'chat-send', text: 'one', agent: { agentId: 'my-agent' } }));
-    await nextFrame(socket, (frame) => frame.type === 'chat-event' && frame.event.type === 'done');
-    socket.send(
-      JSON.stringify({ type: 'chat-send', text: 'two', agent: { provider: 'anthropic', model: 'claude-opus-5' } }),
-    );
-    await nextFrame(socket, (frame) => frame.type === 'chat-event' && frame.event.type === 'done');
+    socket.send(JSON.stringify({ type: 'chat-new' }));
+    const opened = await nextFrame(socket, (frame) => frame.type === 'chat-opened');
+    if (opened.type !== 'chat-opened') throw new Error('wrong frame');
+    socket.send(JSON.stringify({ type: 'chat-send', text: 'one' }));
+    await nextFrame(socket, done);
+    // A fresh conversation has no session to resume.
+    expect(lastDriverOptions?.resumeSessionId).toBeNull();
+
+    // The driver names the session it bound (the SDK's init message, in
+    // production); the server writes it down against the chat.
+    lastDriverOptions?.onSessionId?.('claude-sess-1');
+    // The write is detached (binding a backend is not conversation activity),
+    // so poll the index rather than assuming a tick is enough.
+    const deadline = Date.now() + 4000;
+    for (;;) {
+      if ((await getChat(root, opened.chat.id))?.claudeSessionId === 'claude-sess-1') break;
+      if (Date.now() > deadline) throw new Error('the session id was never persisted');
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    }
+
+    // The next bind — here forced by the backend dying — resumes it.
+    drivers[0].die('the pipe closed');
+    await new Promise((resolve) => setTimeout(resolve, 150));
+    socket.send(JSON.stringify({ type: 'chat-send', text: 'two' }));
+    await nextFrame(socket, done);
     expect(drivers).toHaveLength(2);
-    expect(drivers[1].boundAgent).toEqual({ provider: 'anthropic', model: 'claude-opus-5' });
-    socket.close();
-  });
-
-  it('keeps the driver for the same agent, and for a turn that chooses nothing', async () => {
-    // A rebind per turn would restart the agent and lose everything it held in
-    // context, and a client that predates the selector sends no `agent` at all.
-    drivers = [];
-    const socket = await connect();
-    socket.send(JSON.stringify({ type: 'chat-send', text: 'one', agent: { agentId: 'my-agent' } }));
-    await nextFrame(socket, (frame) => frame.type === 'chat-event' && frame.event.type === 'done');
-    socket.send(JSON.stringify({ type: 'chat-send', text: 'two', agent: { agentId: 'my-agent' } }));
-    await nextFrame(socket, (frame) => frame.type === 'chat-event' && frame.event.type === 'done');
-    socket.send(JSON.stringify({ type: 'chat-send', text: 'three' }));
-    await nextFrame(socket, (frame) => frame.type === 'chat-event' && frame.event.type === 'done');
-    expect(drivers).toHaveLength(1);
-    expect(drivers[0].sent).toEqual(['one', 'two', 'three']);
+    expect(lastDriverOptions?.resumeSessionId).toBe('claude-sess-1');
     socket.close();
   });
 });
@@ -768,7 +847,8 @@ describe('a backend that refuses to bind', () => {
 /**
  * Interrupting a conversation two windows are watching.
  *
- * The Agent SDK has no interrupt, so the fallback is a coarse teardown. It used
+ * A backend without an interrupt (the scripted driver here) falls back to a
+ * coarse teardown. It used
  * to be `stopChat`, which with a second socket present only removes THIS window
  * from the session: the window that asked for silence got it by going deaf,
  * while the agent carried on talking to the other one. The teardown has to take
@@ -910,9 +990,10 @@ describe('stopping a conversation with an approval on screen', () => {
     expect(drivers[0].stopped).toBe(true);
     // The answer arrives, and arrives first: after a turn-complete the client
     // applies nothing more to that turn, so the other order leaves the prompt
-    // exactly as stuck as dropping it did.
+    // exactly as stuck as dropping it did. And it is a WITHDRAWAL: the person
+    // pressed Stop, not Deny, and the record must not claim otherwise.
     expect(seen.map((event) => event.type)).toEqual(['approval-resolved', 'turn-complete']);
-    expect(seen[0]).toEqual({ type: 'approval-resolved', approvalId: 'a1', decision: 'deny' });
+    expect(seen[0]).toEqual({ type: 'approval-resolved', approvalId: 'a1', decision: 'withdrawn' });
 
     // And what the window saw live is what it finds on reload: no request in
     // the transcript is left without its answer. Each of those frames is sent
@@ -922,7 +1003,7 @@ describe('stopping a conversation with an approval on screen', () => {
     const requested = events.filter((event) => event.type === 'approval-request');
     const answered = events.filter((event) => event.type === 'approval-resolved');
     expect(requested).toHaveLength(1);
-    expect(answered).toEqual([{ type: 'approval-resolved', approvalId: 'a1', decision: 'deny' }]);
+    expect(answered).toEqual([{ type: 'approval-resolved', approvalId: 'a1', decision: 'withdrawn' }]);
     expect(events[events.length - 1]).toEqual({ type: 'turn-complete' });
     socket.close();
   });
@@ -971,8 +1052,10 @@ describe('a conversation deleted in another window', () => {
  * applying events to that turn, so the rest of the live answer never reaches the
  * screen. The transcript keeps the wrong order for good.
  *
- * Everything except Codex is affected, because CodexDriver is the only one that
- * implements `interrupt()`; every other backend falls back to this teardown.
+ * Any backend without an `interrupt()` falls back to this teardown. Both real
+ * drivers now interrupt in place (codex via `turn/interrupt`, the Agent SDK via
+ * its query's own control request); the scripted driver here deliberately does
+ * not, which is what keeps the fallback path pinned.
  */
 describe('interrupting and typing again straight away', () => {
   it('reports the old turn over before the new one starts', async () => {

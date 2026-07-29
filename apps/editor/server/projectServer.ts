@@ -14,8 +14,8 @@
  */
 import type { Plugin } from 'vite';
 import type { IncomingMessage, ServerResponse } from 'node:http';
-import path from 'node:path';
 import os from 'node:os';
+import path from 'node:path';
 import { EventEmitter } from 'node:events';
 import { randomUUID } from 'node:crypto';
 import { promises as fsp, accessSync } from 'node:fs';
@@ -38,11 +38,13 @@ import { listTemplates, getTemplatePath, scaffoldFromTemplate } from '@hearth/te
 import { isRequestAllowed } from './originGuard.js';
 import { GAME_ENTRY_CANDIDATES } from './agentFacts.js';
 import { ensureHearthMcpConfig } from './mcpConfig.js';
+import { hearthHome } from './skills.js';
 import {
   createChatDriver,
   readAppSettings,
   writeAppSettings,
   resolveApiKey,
+  StubDriver,
   type AppSettings,
   type ChatDriver,
 } from './chat.js';
@@ -544,6 +546,57 @@ async function isDirectory(p: string): Promise<boolean> {
 }
 
 /**
+ * The marker line identifying `.hearth/.gitignore` as ours — the same trick
+ * `MIRROR_IGNORE_MARKER` plays in skills.ts, and for the same reason: matched
+ * BEFORE the file is ever rewritten or removed, so a `.gitignore` a human put
+ * there by hand, or one an older build of this app wrote in some other shape,
+ * is left exactly alone.
+ */
+export const HEARTH_DIR_IGNORE_MARKER = '# Written by Hearth: everything in this folder is private to this machine.';
+
+/**
+ * Keep `.hearth/` out of the user's git history.
+ *
+ * Opening or creating a project (openWorkspaceImpl, openProject,
+ * createNewProject below) is what materializes `.hearth/chats`,
+ * `.hearth/tester` and `.hearth/log` — real conversation transcripts,
+ * playtest recordings and the command journal — and, once Settings saves one,
+ * `.hearth/app.json` with the user's own Anthropic/OpenAI key. A project
+ * folder is an ordinary git repo the person may `git add .` at any time, and
+ * until this ran that command committed all of it: private, and reachable by
+ * anyone the repo is ever pushed to.
+ *
+ * `*` inside `.hearth/.gitignore` is the standard self-ignoring-directory
+ * trick — git matches the pattern against every entry in that directory,
+ * INCLUDING the `.gitignore` file itself, so the whole folder drops out of
+ * `git status` rather than merely its contents.
+ *
+ * Called on every open, not only the first, which is what "heal it on open if
+ * missing" means here: a project opened before this guard existed gets it the
+ * next time someone opens it, with no migration step and no version check.
+ * Marker-gated exactly like `writeMirrorIgnore`, so that healing can never
+ * turn into clobbering — a `.gitignore` that does not start with the marker
+ * is not this function's to touch, whoever wrote it and whenever.
+ */
+async function ensureHearthDirIgnored(root: string): Promise<void> {
+  const dir = path.join(root, '.hearth');
+  await fsp.mkdir(dir, { recursive: true }).catch(() => undefined);
+  const file = path.join(dir, '.gitignore');
+  const existing = await fsp.readFile(file, 'utf8').catch(() => null);
+  if (existing !== null && !existing.startsWith(HEARTH_DIR_IGNORE_MARKER)) return;
+  const body = [
+    HEARTH_DIR_IGNORE_MARKER,
+    '# Chats, playtest history, the command log and any saved API key belong to',
+    '# this machine, not this project. `*` ignores every file in this folder,',
+    '# including this .gitignore, so the folder never reaches `git status` at all.',
+    '*',
+    '',
+  ].join('\n');
+  if (existing === body) return; // already healthy: skip the write, not just the mkdir
+  await fsp.writeFile(file, body, 'utf8').catch(() => undefined);
+}
+
+/**
  * Newest mtime (ms) anywhere under `dir`, ignoring the skip list and stopping
  * after MTIME_FILE_BUDGET entries. This is the game pane's reload signal: the
  * agent rewriting any source file bumps it, and the pane reloads the iframe.
@@ -718,8 +771,12 @@ export function createProjectServerContext(options: ProjectServerOptions = {}) {
     });
     return run;
   }
-  const recentsFile =
-    options.recentsFile ?? path.join(os.homedir(), '.hearth', 'recent-projects.json');
+  // hearthHome() (server/skills.ts), not a bare os.homedir() join: it honors
+  // HEARTH_HOME, which is how an isolated instance (a second profile, a test)
+  // keeps its recents list to itself instead of reading and rewriting the
+  // real one. Same default path either way — HEARTH_HOME unset resolves to
+  // exactly `~/.hearth` — so this changes nothing for a normal install.
+  const recentsFile = options.recentsFile ?? path.join(hearthHome(), 'recent-projects.json');
   const repoRoot = options.repoRoot ?? findRepoRoot(process.cwd());
 
   // Desktop packager: the injected stub in tests, else a lazy import of the
@@ -1141,6 +1198,10 @@ export function createProjectServerContext(options: ProjectServerOptions = {}) {
       return { status: 400, body: { ok: false, error: `Not a folder: ${root}` } };
     }
     openedRoots.add(root);
+    // Any opened folder can end up with a `.hearth/` — a chat can start in a
+    // folder that has no hearth.json at all — so this runs here, not only on
+    // the Hearth-project path below. See ensureHearthDirIgnored's own comment.
+    await ensureHearthDirIgnored(root);
     // The name the project stores for itself, or the folder basename when it
     // has none. A folder is a slug because it is a path; the name is what
     // somebody typed, and the two have not been the same string since
@@ -1492,6 +1553,29 @@ export function createProjectServerContext(options: ProjectServerOptions = {}) {
         driver = await (options.testerDeps?.createDriver ?? ((r: string) => createChatDriver(r)))(root);
       } catch (err) {
         return { status: 500, body: { ok: false, error: `Could not reach your agent: ${(err as Error).message}` } };
+      }
+      // createChatDriver never throws on "no agent configured" — it falls
+      // through to `new StubDriver()`, which answers every turn with the same
+      // canned "connect an agent" guidance (see chat.ts's STUB_REPLY). That is
+      // the right call for the chat column, where a person reads the reply
+      // and knows exactly what it is. Nobody reads the tester's turns as they
+      // happen: it would burn its whole step budget arguing with itself
+      // against canned text and then write a note that reads like a real
+      // playtest, which is a worse lie than refusing outright.
+      //
+      // An `instanceof` check on the real class, not `driver.kind === 'stub'`:
+      // several test suites' fake drivers (testerRoutes.test.ts's
+      // ScriptedDriver, testerSession.test.ts's FakeDriver, and others) also
+      // set `kind = 'stub'` as a cheap way to satisfy the ChatDriver interface
+      // — that is a label for the UI, not a promise that the backend is
+      // absent, and treating it as one would refuse every one of those
+      // legitimately-connected test doubles. `StubDriver` itself is a
+      // concrete class those fakes never extend, so this catches only the
+      // real fallback. Same status/shape as the catch above: from the
+      // caller's side "no agent replied" and "no agent is reachable" are the
+      // same failure.
+      if (driver instanceof StubDriver) {
+        return { status: 500, body: { ok: false, error: 'Could not reach your agent: no agent is connected.' } };
       }
 
       const controller = new AbortController();
@@ -1899,7 +1983,18 @@ export function createProjectServerContext(options: ProjectServerOptions = {}) {
 
     /** Which agents this machine can talk to right now. */
     async chatProviders(project: unknown): Promise<JsonResult> {
-      if (typeof project !== 'string' || project.trim() === '') {
+      // No folder named means the HOME screen is asking. Who the person is
+      // signed in as is a fact about the machine, not about any folder — the
+      // CLI logins live in the user's home — so the read is answered against
+      // the home directory rather than refused. A refusal here is what made
+      // the account row sit on "haven't looked yet" forever before a first
+      // project was opened. Per-folder facts (a project API key, the folder's
+      // chosen provider) simply come back empty, which is the truth for a
+      // screen with no folder open.
+      if (project === null || project === undefined || (typeof project === 'string' && project.trim() === '')) {
+        return { status: 200, body: { ok: true, ...(await readChatProviders(os.homedir())) } };
+      }
+      if (typeof project !== 'string') {
         return { status: 400, body: { ok: false, error: 'Missing "project".' } };
       }
       const root = path.resolve(project);
@@ -2006,6 +2101,7 @@ export function createProjectServerContext(options: ProjectServerOptions = {}) {
         }
         const info = result.data as { name?: string };
         openedRoots.add(root);
+        await ensureHearthDirIgnored(root);
         await addRecent(root, info?.name ?? path.basename(root));
         await provisionAgentMcp(root);
         return { status: 200, body: { ok: true, path: root, info: result.data } };
@@ -2060,6 +2156,7 @@ export function createProjectServerContext(options: ProjectServerOptions = {}) {
         const result = await session.execute('inspectProject');
         const info = result.data as { name?: string };
         openedRoots.add(target);
+        await ensureHearthDirIgnored(target);
         await addRecent(target, info?.name ?? name.trim());
         await provisionAgentMcp(target);
         return { status: 200, body: { ok: true, path: target, info: result.data } };
@@ -2764,14 +2861,6 @@ async function route(ctx: ProjectServerContext, req: IncomingMessage, res: Serve
   // reads, and only from PATH.
   if (url.pathname === '/api/agent-clis') {
     return (await import('./agentClis.js')).routeAgentClis(req, res);
-  }
-
-  // Agents the user registered themselves, and the command that runs each one.
-  // Machine-scoped and never inside a project, for the reason written at the
-  // top of agentRegistry.ts: an entry here is a command line Hearth will spawn,
-  // so a repo shipping one would be shipping remote code execution.
-  if (url.pathname === '/api/agents') {
-    return (await import('./agentRegistry.js')).routeAgents(req, res);
   }
 
   // Personalization is the other one: a name and standing instructions belong

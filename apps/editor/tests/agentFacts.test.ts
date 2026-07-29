@@ -12,7 +12,7 @@ import { describe, it, expect } from 'vitest';
 import { composeAgentInstructions, GAME_ENTRY_CANDIDATES, hearthFactsPrompt } from '../server/agentFacts';
 
 describe('hearthFactsPrompt without the probe', () => {
-  const text = hearthFactsPrompt({ probeCli: false });
+  const text = hearthFactsPrompt({ probeCli: false, skills: false });
 
   it('describes the game pane serving the project folder', () => {
     expect(text).toContain('game pane');
@@ -47,7 +47,7 @@ describe('hearthFactsPrompt without the probe', () => {
 });
 
 describe('hearthFactsPrompt with the probe', () => {
-  const text = hearthFactsPrompt({ probeCli: true });
+  const text = hearthFactsPrompt({ probeCli: true, skills: false });
 
   it('adds the probe commands only spoken when they would actually run', () => {
     expect(text).toContain('hearth-probe sweep');
@@ -57,13 +57,13 @@ describe('hearthFactsPrompt with the probe', () => {
 
 describe('facts vs. direction', () => {
   it('never tells the agent what to build', () => {
-    const text = hearthFactsPrompt({ probeCli: true });
+    const text = hearthFactsPrompt({ probeCli: true, skills: false });
     expect(text).not.toContain('should build');
     expect(text).not.toContain('must build');
   });
 
   it('is deterministic: same options, same string', () => {
-    expect(hearthFactsPrompt({ probeCli: false })).toBe(hearthFactsPrompt({ probeCli: false }));
+    expect(hearthFactsPrompt({ probeCli: false, skills: false })).toBe(hearthFactsPrompt({ probeCli: false, skills: false }));
   });
 });
 

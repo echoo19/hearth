@@ -3,12 +3,13 @@
  * always-available stub, per-folder key resolution, and the defensive mapping
  * from the Agent SDK's untyped message stream onto ChatEvents.
  */
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { promises as fsp } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import {
   AgentSdkDriver,
+  CLAUDE_RESUME_FAILED_NOTICE,
   commandLooksContained,
   isInsideRoot,
   sdkApprovalFor,
@@ -27,6 +28,19 @@ import {
   type ChatEvent,
 } from '../server/chat';
 import type { PermissionMode } from '../server/permissionMode';
+
+/**
+ * chat.ts bases the SDK driver's env on the login-shell PATH (shellEnv.ts),
+ * the same seam the pty and codex paths use. Mocked so these tests never
+ * spawn a real login shell, and so the merged PATH is a fact to assert on
+ * rather than whatever the machine running the suite happens to have.
+ */
+vi.mock('../server/shellEnv', () => ({
+  loginShellPathEnv: async (): Promise<NodeJS.ProcessEnv> => ({
+    ...process.env,
+    PATH: `/login-shell-bin:${process.env.PATH ?? ''}`,
+  }),
+}));
 
 /**
  * A stand-in for the SDK's query stream that STAYS OPEN.
@@ -92,8 +106,9 @@ describe('StubDriver', () => {
       .filter((e): e is { type: 'message-delta'; text: string } => e.type === 'message-delta')
       .map((e) => e.text)
       .join('');
-    expect(text).toContain('ANTHROPIC_API_KEY');
-    expect(text).toContain('Terminal');
+    expect(text).toContain('Sign in to Claude Code');
+    expect(text).toContain('API key');
+    expect(text).toContain('terminal');
     driver.stop();
   });
 
@@ -472,6 +487,34 @@ describe('approval policy', () => {
     expect(sdkApprovalFor('Bash', { command: 'cat /etc/passwd' }, root)).toMatchObject({ kind: 'command' });
   });
 
+  /**
+   * MCP tools in `ask` mode. An `mcp__*` call is somebody else's code doing
+   * who-knows-what to whatever the server behind it reaches, and `ask`
+   * promises that every command asks — these used to return null and
+   * auto-pass. Raised AS commands because ApprovalKind is the contract the
+   * transcript and the client are built on; the title names the tool because
+   * the name is the one thing the user can recognise.
+   */
+  it('raises an MCP tool as a command approval in ask mode, and nowhere else', () => {
+    expect(sdkApprovalFor('mcp__hearth__scene_update', { query: 'player' }, root, 'ask')).toEqual({
+      kind: 'command',
+      title: 'Use mcp__hearth__scene_update?',
+      detail: 'player',
+    });
+    // Named even when the input has nothing readable to summarize.
+    expect(sdkApprovalFor('mcp__x__y', { blob: 1 }, root, 'ask')).toEqual({
+      kind: 'command',
+      title: 'Use mcp__x__y?',
+      detail: 'mcp__x__y',
+    });
+    // `auto` (the default) keeps its long-standing behaviour: MCP servers are
+    // things the user wired up on purpose, and Hearth's own tools arrive this
+    // way. `skip` stays silent, as it promises to.
+    expect(sdkApprovalFor('mcp__hearth__scene_update', {}, root, 'auto')).toBeNull();
+    expect(sdkApprovalFor('mcp__hearth__scene_update', {}, root)).toBeNull();
+    expect(sdkApprovalFor('mcp__hearth__scene_update', {}, root, 'skip')).toBeNull();
+  });
+
   it('classifies tools onto the provider-agnostic kinds', () => {
     expect(sdkToolKind('Bash')).toBe('command');
     expect(sdkToolKind('Edit')).toBe('file-change');
@@ -589,12 +632,24 @@ describe('AgentSdkDriver approvals', () => {
     driver.stop();
   });
 
-  it('unblocks anything still pending on stop, so the SDK never hangs', async () => {
+  it('withdraws anything still pending on stop — the SDK unblocks, and no Deny is forged', async () => {
     const { driver, ask } = driverWithPermission();
     await driver.start('s1', '/w/game');
+    const iterator = driver.events[Symbol.asyncIterator]();
     const decision = ask('Bash', { command: 'sudo reboot' });
+    const request = (await iterator.next()).value as { approvalId: string };
     driver.stop();
+    // The SDK-side promise still resolves as a deny: nothing may run on a
+    // question nobody answered.
     expect(await decision).toMatchObject({ behavior: 'deny' });
+    // But the transcript says what actually happened — the session ended
+    // under the question. A `deny` here would forge a decision: reread later
+    // it claims the user refused something they never answered.
+    expect((await iterator.next()).value).toEqual({
+      type: 'approval-resolved',
+      approvalId: request.approvalId,
+      decision: 'withdrawn',
+    });
   });
 
   it('closes a Task as a subagent rather than as a tool row', async () => {
@@ -613,6 +668,185 @@ describe('AgentSdkDriver approvals', () => {
     const events = await drain(driver.events, 2);
     expect(events[0]).toMatchObject({ type: 'subagent-start', agentId: 'a1', role: 'Explore' });
     expect(events[1]).toMatchObject({ type: 'subagent-end', agentId: 'a1', status: 'ok' });
+    driver.stop();
+  });
+});
+
+/**
+ * Stop on a Claude chat used to be a demolition: the driver had no interrupt,
+ * so ws.ts tore the whole backend down and the next send handed a fresh agent
+ * a transcript to read. The SDK's query has its own `interrupt()` control
+ * request (sdk.d.ts) — the turn ends, the stream stays open, and the session
+ * keeps its memory.
+ */
+describe('AgentSdkDriver interrupt', () => {
+  it('ends the turn through the SDK and keeps the session alive', async () => {
+    let interrupts = 0;
+    const sdk = {
+      query: () =>
+        Object.assign(liveStream(), {
+          interrupt: async () => {
+            interrupts += 1;
+          },
+        }),
+    };
+    const driver = new AgentSdkDriver(sdk, 'sk-test');
+    await driver.start('s1', '/w/game');
+    driver.interrupt();
+    expect(interrupts).toBe(1);
+    // Alive, deliberately: the next send continues THIS conversation.
+    expect(driver.dead).toBe(false);
+    driver.stop();
+  });
+
+  it('withdraws a blocking approval when the turn it belongs to is interrupted', async () => {
+    let canUseTool: ((tool: string, input: unknown) => Promise<unknown>) | null = null;
+    const sdk = {
+      query: (args: unknown) => {
+        canUseTool = (args as { options: Record<string, unknown> }).options.canUseTool as typeof canUseTool;
+        return Object.assign(liveStream(), { interrupt: async () => undefined });
+      },
+    };
+    const driver = new AgentSdkDriver(sdk, 'sk-test');
+    await driver.start('s1', '/w/game');
+    const iterator = driver.events[Symbol.asyncIterator]();
+    const decision = canUseTool!('Bash', { command: 'sudo reboot' });
+    const request = (await iterator.next()).value as { approvalId: string };
+    driver.interrupt();
+    // Unblocked (the SDK's own abort waits on this callback), and recorded as
+    // a withdrawal — the person pressed Stop, not Deny.
+    expect(await decision).toMatchObject({ behavior: 'deny' });
+    expect((await iterator.next()).value).toEqual({
+      type: 'approval-resolved',
+      approvalId: request.approvalId,
+      decision: 'withdrawn',
+    });
+    expect(driver.dead).toBe(false);
+    driver.stop();
+  });
+
+  it('falls back to the coarse teardown when the SDK has no interrupt', async () => {
+    const sdk = { query: () => liveStream() };
+    const driver = new AgentSdkDriver(sdk, 'sk-test');
+    await driver.start('s1', '/w/game');
+    const iterator = driver.events[Symbol.asyncIterator]();
+    driver.interrupt();
+    // The turn is reported over, THEN the stream ends — the same shape as
+    // ws.ts's own fallback, so a window never spins on a turn nobody will end.
+    expect((await iterator.next()).value).toEqual({ type: 'turn-complete' });
+    expect((await iterator.next()).done).toBe(true);
+    expect(driver.dead).toBe(true);
+  });
+});
+
+/**
+ * The Claude session a conversation resumes. The SDK's CLI persists every
+ * session and `query({options: {resume}})` reloads one (sdk.d.ts), which is
+ * what keeps a reopened chat's agent from having amnesia about a transcript
+ * the window still shows in full.
+ */
+describe('AgentSdkDriver session resume', () => {
+  it('passes the remembered session to the SDK, and no resume when there is none', async () => {
+    const captured: Record<string, unknown>[] = [];
+    const sdk = {
+      query: (args: unknown) => {
+        captured.push((args as { options: Record<string, unknown> }).options);
+        return liveStream();
+      },
+    };
+    const resumed = new AgentSdkDriver(sdk, 'sk-test', null, null, undefined, 'sess-1');
+    await resumed.start('s1', '/w/game');
+    expect(captured[0].resume).toBe('sess-1');
+    resumed.stop();
+
+    // A fresh conversation must carry NO resume key at all: an empty or null
+    // one is not the same as none to a CLI that validates its options.
+    const fresh = new AgentSdkDriver(sdk, 'sk-test');
+    await fresh.start('s2', '/w/game');
+    expect('resume' in captured[1]).toBe(false);
+    fresh.stop();
+  });
+
+  it('persists the session id the init message names — and only a changed one', async () => {
+    const init = { type: 'system', subtype: 'init', session_id: 'sess-2' };
+    const sdk = { query: () => liveStream(init) };
+
+    const seen: string[] = [];
+    const driver = new AgentSdkDriver(sdk, 'sk-test', null, null, undefined, null, (id) => seen.push(id));
+    await driver.start('s1', '/w/game');
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(seen).toEqual(['sess-2']);
+    driver.stop();
+
+    // A successful resume echoes the id it was asked for; re-persisting it on
+    // every bind would rewrite the chat index for nothing.
+    const echoed: string[] = [];
+    const resumed = new AgentSdkDriver(sdk, 'sk-test', null, null, undefined, 'sess-2', (id) => echoed.push(id));
+    await resumed.start('s1', '/w/game');
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(echoed).toEqual([]);
+    resumed.stop();
+  });
+
+  it('falls back to a fresh session when the resume fails, keeping the queued turn', async () => {
+    const attempts: (string | undefined)[] = [];
+    const delivered: unknown[] = [];
+    const sdk = {
+      query: (args: unknown) => {
+        const { prompt, options } = args as { prompt: AsyncIterable<unknown>; options: Record<string, unknown> };
+        attempts.push(options.resume as string | undefined);
+        if (attempts.length === 1) {
+          // What a refused resume looks like from out here: the subprocess
+          // exits before ever sending its init message.
+          return (async function* (): AsyncGenerator<unknown> {
+            throw new Error('No conversation found with session ID: stale');
+          })();
+        }
+        void (async () => {
+          for await (const turn of prompt) delivered.push(turn);
+        })();
+        return liveStream();
+      },
+    };
+    const driver = new AgentSdkDriver(sdk, 'sk-test', null, null, undefined, 'stale');
+    await driver.start('s1', '/w/game');
+    driver.send('hello again');
+    // Said out loud: the transcript still reads as one conversation, and an
+    // agent that silently lost its memory of it reads as one lying about it.
+    const [notice] = await drain(driver.events, 1);
+    expect(notice).toEqual({ type: 'notice', text: CLAUDE_RESUME_FAILED_NOTICE });
+    await new Promise((resolve) => setTimeout(resolve, 30));
+    // One retry, fresh — and the conversation is alive, not stranded.
+    expect(attempts).toEqual(['stale', undefined]);
+    expect(driver.dead).toBe(false);
+    // The message typed while the first attempt was dying reaches the second.
+    expect(delivered).toHaveLength(1);
+    driver.stop();
+  });
+});
+
+/**
+ * The env the agent's own Bash runs in. A Finder-launched packaged app
+ * inherits the minimal system PATH, so basing the driver env on raw
+ * process.env made node/npm/git installed via nvm or homebrew invisible to
+ * the agent — while the embedded terminal, which merges the login-shell PATH,
+ * found them fine. Same seam, same fix (shellEnv.ts, mocked above).
+ */
+describe('AgentSdkDriver environment', () => {
+  it('bases the agent env on the login-shell PATH, with the shim dir first', async () => {
+    let options: Record<string, unknown> = {};
+    const sdk = {
+      query: (args: unknown) => {
+        options = (args as { options: Record<string, unknown> }).options;
+        return liveStream();
+      },
+    };
+    const driver = new AgentSdkDriver(sdk, 'sk-test', null, { shimDir: '/shim', probeCli: false });
+    await driver.start('s1', '/w/game');
+    const env = options.env as NodeJS.ProcessEnv;
+    expect(env.PATH!.startsWith('/shim')).toBe(true); // hearth tools still win
+    expect(env.PATH).toContain('/login-shell-bin'); // the user's real PATH rides along
+    expect(env.ANTHROPIC_API_KEY).toBe('sk-test'); // the key rule is untouched
     driver.stop();
   });
 });

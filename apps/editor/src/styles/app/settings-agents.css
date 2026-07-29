@@ -505,13 +505,27 @@
   }
 }
 
-/* --- Install -------------------------------------------------------------- */
+/* --- Install, and the sign-in that is also a command ---------------------- */
 
-.set-agent-install {
+/* Two blocks, one shape, and that is deliberate: both put a command on screen,
+   say who is about to type it and where, and let it be copied instead. The
+   Claude sign-in earns the same treatment as the codex install because it is
+   the same promise — Hearth runs this in your own shell and nothing about your
+   account passes through the app. Sharing the rule rather than the class name
+   keeps them legible apart in the markup while they stay identical here. */
+.set-agent-install,
+.set-agent-signin {
   display: flex;
   flex-direction: column;
   gap: 10px;
   margin-top: 10px;
+}
+
+/* The block already opens with a paragraph of its own, so the strip of
+   controls under the command does not need the top margin `.set-agent-manage`
+   carries when it follows body copy directly. */
+.set-agent-signin .set-agent-manage {
+  margin-top: 0;
 }
 
 .set-agent-command {
@@ -706,66 +720,6 @@
 
 .set-agent-recheck .set-agent-hint {
   margin-top: 0;
-}
-
-/* --- Folded detail --------------------------------------------------------- */
-
-/* Two true things that were printed open and turned a two-field form into a
-   page of grey text. Folded, not deleted: they are load-bearing when you want
-   them and noise when you do not, and nobody needs either before they have
-   registered anything. */
-.set-agent-details {
-  margin-top: 10px;
-}
-
-.set-agent-details > summary {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  width: fit-content;
-  padding: 2px 0;
-  font-size: var(--text-xs);
-  color: var(--ink-mute);
-  cursor: pointer;
-  /* The default marker sits on the baseline and drags the row's height around
-     as it rotates. A caret of our own, in the same weight as the pane's other
-     disclosure, keeps the line still. */
-  list-style: none;
-}
-
-.set-agent-details > summary::-webkit-details-marker {
-  display: none;
-}
-
-.set-agent-details > summary::before {
-  content: '';
-  width: 0;
-  height: 0;
-  border-left: 4px solid currentColor;
-  border-top: 3.5px solid transparent;
-  border-bottom: 3.5px solid transparent;
-  transition: transform 120ms ease;
-}
-
-.set-agent-details[open] > summary::before {
-  transform: rotate(90deg);
-}
-
-.set-agent-details > summary:hover,
-.set-agent-details[open] > summary {
-  color: var(--ink);
-}
-
-.set-agent-details > summary:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 3px;
-  border-radius: var(--radius-sm);
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .set-agent-details > summary::before {
-    transition: none;
-  }
 }
 
 /* --- Footnotes ------------------------------------------------------------ */

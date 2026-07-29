@@ -23,7 +23,7 @@
  */
 import { describe, expect, it, beforeEach, afterEach, vi } from 'vitest';
 import React from 'react';
-import { render, screen, fireEvent, cleanup, waitFor } from '@testing-library/react';
+import { render, screen, fireEvent, cleanup, waitFor, within } from '@testing-library/react';
 import type { AgentChoice, AppSettingsInfo, ChatProviderStatus } from '../src/types';
 import { FALLBACK_MODELS } from '../src/components/chat/ModelSelector';
 import { setModelChoice } from '../src/chat/modelChoice';
@@ -60,15 +60,18 @@ vi.mock('../src/api', async (importOriginal) => {
 import {
   ANTHROPIC_KEYS_URL,
   AgentsPane,
+  CLAUDE_LOGIN_COMMAND,
   CODEX_INSTALL_COMMAND,
   activeProvider,
   agentCards,
   anthropicCard,
   cardState,
+  claudeSignedInStatus,
   modelOptions,
   openAiCard,
   selectedModelValue,
 } from '../src/components/settings/AgentsPane';
+import { resetAgentSocket } from '../src/components/agent/useAgentSocket';
 import { keyShapeProblem } from '../src/components/settings/apiKeyShape';
 import type { AgentEnvironment } from '../src/components/settings/agentEnvironment';
 import { openAiStatusLabel } from '../src/components/settings/providerStatus';
@@ -107,7 +110,18 @@ function status(over: {
   active?: ChatProviderStatus['active'];
 } = {}): ChatProviderStatus {
   return {
-    anthropic: { hasKey: false, source: null, ...over.anthropic },
+    // `cli` is only the binary on PATH; `loggedIn` is what decides whether
+    // Claude can answer. The defaults are the empty machine, so a case that
+    // cares about either one has to say so.
+    anthropic: {
+      hasKey: false,
+      source: null,
+      cli: false,
+      loggedIn: false,
+      email: null,
+      planType: null,
+      ...over.anthropic,
+    },
     openai: {
       installed: false,
       version: null,
@@ -136,7 +150,7 @@ describe('anthropicCard', () => {
   });
 
   it('is connected, and offers to remove it, when the key is saved for the project', () => {
-    const card = anthropicCard({ hasKey: true, source: 'project' }, status({ anthropic: { hasKey: true, source: 'project' } }));
+    const card = anthropicCard({ hasKey: true, source: 'project' }, status({ anthropic: { hasKey: true, source: 'project', cli: false } }));
     expect(card.connected).toBe(true);
     expect(card.action.kind).toBe('none');
     expect(card.disconnect?.label).toBe('Remove key');
@@ -145,7 +159,7 @@ describe('anthropicCard', () => {
   });
 
   it('does not ask for a key that is already in the environment, and will not pretend to unset one', () => {
-    const card = anthropicCard({ hasKey: true, source: 'environment' }, status({ anthropic: { hasKey: true, source: 'environment' } }));
+    const card = anthropicCard({ hasKey: true, source: 'environment' }, status({ anthropic: { hasKey: true, source: 'environment', cli: false } }));
     expect(card.connected).toBe(true);
     expect(card.status).toContain('ANTHROPIC_API_KEY');
     // No field up front...
@@ -157,8 +171,122 @@ describe('anthropicCard', () => {
   });
 
   it('reads the providers endpoint when the settings read-out has not landed yet', () => {
-    const card = anthropicCard(null, status({ anthropic: { hasKey: true, source: 'project' } }));
+    const card = anthropicCard(null, status({ anthropic: { hasKey: true, source: 'project', cli: false } }));
     expect(card.connected).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Claude — the sign-in, which is the route most people want and the one that
+// costs nothing extra
+//
+// The state that matters here is the middle one: the binary on PATH with no
+// sign-in on it. It used to fall through to "Not connected yet. Paste an API
+// key", which sent someone with a Claude subscription off to buy API credit to
+// fix something one command fixes for free.
+// ---------------------------------------------------------------------------
+
+describe('anthropicCard — the CLI sign-in', () => {
+  /** Signed in, with everything the CLI reports about it. */
+  const signedIn = status({
+    anthropic: { cli: true, loggedIn: true, email: 'ada@example.com', planType: 'max' },
+  });
+  /** The binary is there and nothing was confirmed on it. */
+  const signedOut = status({ anthropic: { cli: true } });
+
+  it('is connected on the sign-in alone, with no key anywhere', () => {
+    const card = anthropicCard({ hasKey: false, source: null }, signedIn, CHECKED);
+    expect(card.known).toBe(true);
+    expect(card.connected).toBe(true);
+    expect(cardState(card, false)).toBe('connected');
+  });
+
+  it('names the account, because "Connected" alone does not say whose', () => {
+    const card = anthropicCard({ hasKey: false, source: null }, signedIn, CHECKED);
+    expect(card.status).toContain('ada@example.com');
+    expect(card.status).toContain('max');
+  });
+
+  it('offers Sign in again, the same as the ChatGPT row does', () => {
+    const card = anthropicCard({ hasKey: false, source: null }, signedIn, CHECKED);
+    expect(card.action).toEqual({ kind: 'sign-in', label: 'Sign in again' });
+    // Hearth stored nothing, so it has nothing to delete. Signing out is the
+    // CLI's own act and a button here claiming to do it would be a lie.
+    expect(card.disconnect).toBeNull();
+    // A key is still an alternative, and never a step after the sign-in.
+    expect(card.altKey?.label).toBe('Use an API key instead');
+  });
+
+  it('reports the plan on its own when the CLI gives no address', () => {
+    expect(claudeSignedInStatus('ada@example.com', 'max')).toBe('Signed in as ada@example.com (max).');
+    expect(claudeSignedInStatus('ada@example.com', null)).toBe('Signed in as ada@example.com.');
+    expect(claudeSignedInStatus(null, 'pro')).toContain('pro');
+    // Neither, which an older build reports. Still a real sign-in.
+    expect(claudeSignedInStatus(null, null)).toMatch(/Signed in/);
+  });
+
+  it('offers the sign-in, not a key hunt, when the binary is there and nothing is signed in', () => {
+    const card = anthropicCard({ hasKey: false, source: null }, signedOut, CHECKED);
+    expect(card.connected).toBe(false);
+    expect(card.action).toEqual({ kind: 'sign-in', label: 'Sign in to Claude Code' });
+    // Its own sentence, and it is not the one next door: "Not connected yet.
+    // Paste an API key" is what this state used to say, and it is the sentence
+    // that cost people money.
+    expect(card.status).toMatch(/Claude Code CLI is here/);
+    expect(card.status).not.toMatch(/Not connected yet/);
+    expect(card.status).not.toMatch(/Not set up/);
+    // Not a state that reads as unavailable either: there is a button on it.
+    expect(cardState(card, false)).toBe('idle');
+    // The key is still reachable, as the alternative it is.
+    expect(card.altKey?.label).toBe('Use an API key instead');
+  });
+
+  it('does not call anyone signed out on a probe that may simply have failed', () => {
+    // `readClaudeAuth` reports this exact shape when `claude auth status`
+    // times out, exits non-zero, or prints something it cannot parse, so the
+    // row may offer the sign-in but may not announce a disconnection.
+    const card = anthropicCard({ hasKey: false, source: null }, signedOut, CHECKED);
+    expect(card.unconfirmed).toBe(true);
+    expect(card.status).not.toMatch(/signed out/i);
+    expect(card.status).not.toMatch(/nobody is signed in/i);
+  });
+
+  it('does not offer a sign-in that would type a command the machine does not have', () => {
+    const card = anthropicCard({ hasKey: false, source: null }, status(), CHECKED);
+    expect(card.action).toEqual({ kind: 'paste-key', label: 'Connect', placeholder: 'sk-ant-…' });
+    expect(card.status).toMatch(/not on this machine/);
+    // And it does not describe an absent binary as a fault to confirm.
+    expect(card.unconfirmed).toBe(false);
+  });
+
+  it('will not claim the CLI is absent before the providers read has landed', () => {
+    // Settings answered, providers has not. There is no `cli` field to have
+    // read, so saying it is not on this machine would be a claim off nothing.
+    const card = anthropicCard({ hasKey: false, source: null }, null, CHECKED);
+    expect(card.status).not.toMatch(/not on this machine/);
+    expect(card.action.kind).toBe('paste-key');
+  });
+
+  it('does not hand a Remove key button to someone who never saved one', () => {
+    // The trap in `anthropicUsable`: it now answers yes to a signed-in CLI, so
+    // reusing it as the has-a-key test offered to delete a file that is not
+    // there and promised Claude would stop answering when it did.
+    const card = anthropicCard({ hasKey: false, source: null }, signedIn, CHECKED);
+    expect(card.disconnect).toBeNull();
+  });
+
+  it('still describes the key when there is one, because the key is what runs', () => {
+    // `resolveApiKey` (server/chat.ts) prefers a stored key over the CLI's own
+    // sign-in, so a row that announced the account here would be naming
+    // something that is not going to answer the turn.
+    const card = anthropicCard(
+      { hasKey: true, source: 'project' },
+      status({ anthropic: { hasKey: true, source: 'project', cli: true, loggedIn: true, email: 'ada@example.com' } }),
+      CHECKED,
+    );
+    expect(card.connected).toBe(true);
+    expect(card.status).not.toContain('ada@example.com');
+    expect(card.disconnect?.label).toBe('Remove key');
   });
 });
 
@@ -174,7 +302,7 @@ describe('openAiCard', () => {
     expect(CODEX_INSTALL_COMMAND).toBe('npm i -g @openai/codex');
     // Not "Not installed." any more: an agent you do not have is something to
     // add, not a fault to report. See NOT_CONNECTED_STATUS in AgentsPane.
-    expect(card.status).toBe('Not added yet. Hearth can install the codex binary for you, then you sign in.');
+    expect(card.status).toBe('Not added yet. Hearth can install codex for you. Then you sign in.');
   });
 
   it('offers the one-click sign-in once the binary is there', () => {
@@ -355,7 +483,7 @@ describe('a project read that failed', () => {
     const card = openAiCard(null, env({ hasProject: true, codexInstalled: true, machineRead: 'ok', projectRead: 'failed' }));
     expect(card.known).toBe(false);
     expect(card.read).toBe('failed');
-    expect(card.status).toMatch(/codex binary is here/);
+    expect(card.status).toMatch(/Codex is installed/);
     expect(card.status).toMatch(/could not/i);
     expect(card.status).not.toMatch(/has not read it yet/);
   });
@@ -491,12 +619,24 @@ beforeEach(() => {
   openAiLogin.mockClear();
   localStorage.clear();
   setModelChoice(null);
+  // The terminal session lives in a module-level store, outside React and
+  // outside the store this suite patches, so a run left over from one test is
+  // still there in the next one and changes what the planner decides to do.
+  sentFrames.length = 0;
+  resetAgentSocket();
 });
 
 afterEach(() => {
   cleanup();
   localStorage.clear();
 });
+
+/**
+ * Every pty frame the pane sent. The Claude sign-in and the codex install both
+ * work by typing into the terminal, so this is the only place their behaviour
+ * is observable: there is no request to intercept, by design.
+ */
+const sentFrames: unknown[] = [];
 
 function patchStore(settings: AppSettingsInfo | null, providers: ChatProviderStatus | null): void {
   useApp.setState({
@@ -506,6 +646,15 @@ function patchStore(settings: AppSettingsInfo | null, providers: ChatProviderSta
     refreshSettings: vi.fn(async () => {}),
     refreshProviders: vi.fn(async () => {}),
     startOpenAiLogin: vi.fn(async () => {}),
+    // The terminal side. `planTerminalLaunch` refuses outright on a socket it
+    // thinks is down, so a test that does not say the connection is up is a
+    // test of the refusal rather than of the command.
+    wsStatus: 'connected',
+    sendFrame: vi.fn((frame: unknown) => {
+      sentFrames.push(frame);
+      return true;
+    }),
+    setConversationMode: vi.fn(),
   } as unknown as Partial<State>);
 }
 
@@ -516,13 +665,13 @@ function openRow(name: string): void {
 
 describe('removing a key asks first', () => {
   it('does not touch the server until the confirm is pressed', async () => {
-    patchStore({ hasKey: true, source: 'project' }, status({ anthropic: { hasKey: true, source: 'project' } }));
+    patchStore({ hasKey: true, source: 'project' }, status({ anthropic: { hasKey: true, source: 'project', cli: false } }));
     render(<AgentsPane />);
 
     // Connection controls live inside the harness row now, so the row has to
     // be opened before they exist. Collapsed, the dashboard is a short list of
     // harnesses and their states.
-    openRow('Claude Agent SDK');
+    openRow('Claude Code CLI');
     // Both providers now use the same trigger word, and it is the same word
     // the confirm uses, so once the dialog is up there are two of them: the
     // row's, and the one that actually does it.
@@ -540,10 +689,10 @@ describe('removing a key asks first', () => {
   });
 
   it('leaves the key alone when the confirm is cancelled', async () => {
-    patchStore({ hasKey: true, source: 'project' }, status({ anthropic: { hasKey: true, source: 'project' } }));
+    patchStore({ hasKey: true, source: 'project' }, status({ anthropic: { hasKey: true, source: 'project', cli: false } }));
     render(<AgentsPane />);
 
-    openRow('Claude Agent SDK');
+    openRow('Claude Code CLI');
     fireEvent.click(screen.getByRole('button', { name: 'Remove key' }));
     fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
     await waitFor(() => expect(screen.queryByText('Remove the Anthropic key?')).toBeNull());
@@ -589,7 +738,7 @@ describe('the pane as rendered', () => {
   it('commits a pasted key on Connect — no separate Save', async () => {
     patchStore({ hasKey: false, source: null }, status());
     render(<AgentsPane />);
-    openRow('Claude Agent SDK');
+    openRow('Claude Code CLI');
     fireEvent.change(screen.getByLabelText('Anthropic API key'), { target: { value: `  ${GOOD_KEY}  ` } });
     fireEvent.click(screen.getByRole('button', { name: 'Connect' }));
     await waitFor(() => expect(saveProviderSettings).toHaveBeenCalledWith('/tmp/game', { apiKey: GOOD_KEY }));
@@ -598,7 +747,7 @@ describe('the pane as rendered', () => {
   it('offers a route to a key, because this window has no address bar', () => {
     patchStore({ hasKey: false, source: null }, status());
     render(<AgentsPane />);
-    openRow('Claude Agent SDK');
+    openRow('Claude Code CLI');
     const link = screen.getByRole('link', { name: /Get a key from Anthropic/ });
     expect(link.getAttribute('href')).toBe(ANTHROPIC_KEYS_URL);
     // Through the handler electron/main.ts installs, which is what sends it to
@@ -640,7 +789,7 @@ describe('with a project open and both reads failed', () => {
     expect(screen.queryByText(/Hearth has not read it yet/)).toBeNull();
     // And what it says instead, on the row and in the body.
     expect(screen.getByText(/could not finish reading this project/)).toBeTruthy();
-    openRow('Claude Agent SDK');
+    openRow('Claude Code CLI');
     expect(screen.getByText(/did not come back/)).toBeTruthy();
   });
 
@@ -731,6 +880,111 @@ describe('the ChatGPT sign-in', () => {
 });
 
 // ---------------------------------------------------------------------------
+// The Claude sign-in, which is a command and not a request
+//
+// `claude auth login` is interactive: it opens a browser and finishes back in
+// a shell. There is no headless route to drive it the way codex's is driven,
+// so Hearth types it into the terminal it already owns and stays out of it.
+// That means these tests watch pty frames rather than a mocked endpoint, and
+// that nothing here can touch a credential — there is no field that takes one.
+// ---------------------------------------------------------------------------
+
+describe('the Claude sign-in', () => {
+  /** The binary is on PATH and no sign-in was confirmed on it. */
+  const CLI_ONLY = status({ anthropic: { cli: true } });
+
+  /**
+   * The harness rows, without the hero above them. Both offer the sign-in now,
+   * deliberately: the hero must not go on recommending a metered key when the
+   * CLI is sitting on PATH. These tests are about the row.
+   */
+  const harnessRows = (): HTMLElement => screen.getByRole('list');
+
+  it('offers the sign-in on the row itself, before anything is expanded', () => {
+    patchStore({ hasKey: false, source: null }, CLI_ONLY);
+    render(<AgentsPane />);
+    expect(within(harnessRows()).getByRole('button', { name: 'Sign in to Claude Code' })).toBeTruthy();
+    // And the sentence that used to be here instead, which sent someone with a
+    // subscription off to buy API credit.
+    expect(screen.queryByText(/Not connected yet\. Paste an API key/)).toBeNull();
+  });
+
+  it('types the command into the terminal, and nowhere else', () => {
+    patchStore({ hasKey: false, source: null }, CLI_ONLY);
+    render(<AgentsPane />);
+    fireEvent.click(within(harnessRows()).getByRole('button', { name: 'Sign in to Claude Code' }));
+
+    expect(sentFrames).toContainEqual({ type: 'pty-input', data: `${CLAUDE_LOGIN_COMMAND}\n` });
+    expect(CLAUDE_LOGIN_COMMAND).toBe('claude auth login');
+    // An idle session has to be started before anything can be typed into it.
+    expect(sentFrames.some((frame) => (frame as { type: string }).type === 'pty-start')).toBe(true);
+    // Nothing was saved, because there is nothing to save: the credential is
+    // the CLI's and the person hands it to Anthropic themselves.
+    expect(saveProviderSettings).not.toHaveBeenCalled();
+    expect(openAiLogin).not.toHaveBeenCalled();
+  });
+
+  it('shows the command it is about to run, so it can be copied and run elsewhere', () => {
+    patchStore({ hasKey: false, source: null }, CLI_ONLY);
+    render(<AgentsPane />);
+    openRow('Claude Code CLI');
+    expect(within(harnessRows()).getByText(CLAUDE_LOGIN_COMMAND)).toBeTruthy();
+    // The promise the pane makes about it: Hearth never holds the credential.
+    expect(screen.getByText(/never through this app/)).toBeTruthy();
+  });
+
+  it('keeps the API key route open beside it, as an alternative and not a step', () => {
+    patchStore({ hasKey: false, source: null }, CLI_ONLY);
+    render(<AgentsPane />);
+    openRow('Claude Code CLI');
+    // Not shown up front: the sign-in is the primary action here.
+    expect(screen.queryByLabelText('Anthropic API key')).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Use an API key instead' }));
+    expect(screen.getByLabelText('Anthropic API key')).toBeTruthy();
+  });
+
+  it('names the account once the CLI reports one, and still offers to sign in again', () => {
+    patchStore(
+      { hasKey: false, source: null },
+      status({ anthropic: { cli: true, loggedIn: true, email: 'ada@example.com', planType: 'max' } }),
+    );
+    render(<AgentsPane />);
+    expect(screen.getByText(/Signed in as ada@example\.com \(max\)\./)).toBeTruthy();
+    openRow('Claude Code CLI');
+    fireEvent.click(screen.getByRole('button', { name: 'Sign in again' }));
+    expect(sentFrames).toContainEqual({ type: 'pty-input', data: `${CLAUDE_LOGIN_COMMAND}\n` });
+  });
+
+  it('says the CLI is not here rather than offering a command that would fail', () => {
+    patchStore({ hasKey: false, source: null }, status());
+    render(<AgentsPane />);
+    expect(screen.queryByRole('button', { name: 'Sign in to Claude Code' })).toBeNull();
+    expect(within(harnessRows()).getByText(/not on this machine/)).toBeTruthy();
+    // The key route is still right there, which is the whole point of saying
+    // it in this pane rather than reporting a deficiency.
+    openRow('Claude Code CLI');
+    expect(screen.getByLabelText('Anthropic API key')).toBeTruthy();
+  });
+
+  it('disables the sign-in with a reason when there is no project to run it in', () => {
+    patchStore({ hasKey: false, source: null }, CLI_ONLY);
+    useApp.setState({ projectPath: null } as unknown as Partial<State>);
+    render(<AgentsPane />);
+
+    const button = screen.getByRole('button', { name: 'Sign in to Claude Code' }) as HTMLButtonElement;
+    expect(button.disabled).toBe(true);
+    // Greying it out is not enough. The pane says why, and offers the way out,
+    // the same as the codex install does.
+    openRow('Claude Code CLI');
+    expect(screen.getByText(/terminal runs inside a project/)).toBeTruthy();
+    expect(screen.getAllByRole('button', { name: 'Open a project…' }).length).toBeGreaterThan(0);
+    // Pressing it anyway must not type into a shell that does not exist.
+    fireEvent.click(screen.getByRole('button', { name: 'Run it in the terminal' }));
+    expect(sentFrames).toHaveLength(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // A key that looks wrong
 // ---------------------------------------------------------------------------
 
@@ -738,7 +992,7 @@ describe('a pasted key is looked at before it earns a green badge', () => {
   it('does not save a truncated paste on the first press, and says why', async () => {
     patchStore({ hasKey: false, source: null }, status());
     render(<AgentsPane />);
-    openRow('Claude Agent SDK');
+    openRow('Claude Code CLI');
     fireEvent.change(screen.getByLabelText('Anthropic API key'), { target: { value: 'sk-ant-abc' } });
     fireEvent.click(screen.getByRole('button', { name: 'Connect' }));
 
@@ -749,7 +1003,7 @@ describe('a pasted key is looked at before it earns a green badge', () => {
   it('saves it anyway on the second press, because this is not Hearth’s call', async () => {
     patchStore({ hasKey: false, source: null }, status());
     render(<AgentsPane />);
-    openRow('Claude Agent SDK');
+    openRow('Claude Code CLI');
     fireEvent.change(screen.getByLabelText('Anthropic API key'), { target: { value: 'sk-ant-abc' } });
     fireEvent.click(screen.getByRole('button', { name: 'Connect' }));
     // The button says what the second press will do rather than staying
@@ -761,7 +1015,7 @@ describe('a pasted key is looked at before it earns a green badge', () => {
   it('withdraws the warning when the field is edited, so the next paste gets a fresh look', () => {
     patchStore({ hasKey: false, source: null }, status());
     render(<AgentsPane />);
-    openRow('Claude Agent SDK');
+    openRow('Claude Code CLI');
     const field = screen.getByLabelText('Anthropic API key');
     fireEvent.change(field, { target: { value: 'nonsense' } });
     fireEvent.click(screen.getByRole('button', { name: 'Connect' }));
@@ -775,7 +1029,7 @@ describe('a pasted key is looked at before it earns a green badge', () => {
   it('lets a well-formed key straight through', async () => {
     patchStore({ hasKey: false, source: null }, status());
     render(<AgentsPane />);
-    openRow('Claude Agent SDK');
+    openRow('Claude Code CLI');
     fireEvent.change(screen.getByLabelText('Anthropic API key'), { target: { value: GOOD_KEY } });
     fireEvent.click(screen.getByRole('button', { name: 'Connect' }));
     await waitFor(() => expect(saveProviderSettings).toHaveBeenCalledTimes(1));

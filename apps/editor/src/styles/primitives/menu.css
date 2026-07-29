@@ -202,3 +202,26 @@
   font-family: var(--font-mono);
   font-size: var(--text-xs);
 }
+
+/* The sign on a row that carries a risk ranking, coloured by how alarming it
+   is. Only ever a restatement of what the row already says in words: the
+   colour is a second channel for people scanning, not the only one carrying
+   the meaning, and each tone uses a different GLYPH so the ranking survives a
+   reader who cannot tell green from red. */
+.menu-sign {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.menu-sign.is-safe {
+  color: var(--ok);
+}
+
+.menu-sign.is-caution {
+  color: var(--warn);
+}
+
+.menu-sign.is-danger {
+  color: var(--err);
+}

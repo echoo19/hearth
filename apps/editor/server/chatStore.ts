@@ -99,6 +99,16 @@ export interface ChatSummary {
    * driver falls back to a fresh thread).
    */
   codexThreadId?: string;
+  /**
+   * The Claude session this conversation is, when the Anthropic backend has
+   * answered it before — `codexThreadId`'s twin for the other agent. The
+   * Agent SDK's CLI persists sessions under ~/.claude and resumes one by id,
+   * so remembering it is what lets reopening a chat continue the agent's own
+   * memory instead of starting a stranger who has only read the transcript.
+   * Harmless when the session has since been pruned: the driver falls back to
+   * a fresh one, whose id then overwrites this.
+   */
+  claudeSessionId?: string;
 }
 
 /**
@@ -240,8 +250,11 @@ function parseChatRows(raw: unknown): ChatIndexRow[] {
       updatedAt: typeof row.updatedAt === 'string' ? row.updatedAt : createdAt,
     };
     // Carried through rather than defaulted: an index written by an older
-    // build simply has no thread to remember.
+    // build simply has no thread (or session) to remember.
     if (typeof row.codexThreadId === 'string' && row.codexThreadId !== '') summary.codexThreadId = row.codexThreadId;
+    if (typeof row.claudeSessionId === 'string' && row.claudeSessionId !== '') {
+      summary.claudeSessionId = row.claudeSessionId;
+    }
     // A literal `true` and nothing else: a row that says `pending: false`
     // describes a conversation that has happened, and carrying a field through
     // that reads as the opposite of what it means would put it on the wire.
@@ -1014,6 +1027,30 @@ export function setChatThreadId(root: string, chatId: string, threadId: string):
     const index = chats.findIndex((chat) => chat.id === id);
     if (index === -1 || chats[index].codexThreadId === threadId) return null;
     chats[index] = { ...chats[index], codexThreadId: threadId };
+    await writeIndexUnlocked(root, chats);
+    return withoutPending(chats[index]);
+  });
+}
+
+/**
+ * Remember which Claude session answers this conversation —
+ * `setChatThreadId`'s twin for the Anthropic backend, with the same deliberate
+ * refusal to touch `updatedAt`: binding a backend is not conversation
+ * activity, and bumping it would reorder the sidebar for something the user
+ * didn't do.
+ */
+export function setChatClaudeSessionId(
+  root: string,
+  chatId: string,
+  sessionId: string,
+): Promise<ChatSummary | null> {
+  const id = safeChatId(chatId);
+  if (!id || sessionId === '') return Promise.resolve(null);
+  return serialize(root, async () => {
+    const chats = await readIndexForWrite(root);
+    const index = chats.findIndex((chat) => chat.id === id);
+    if (index === -1 || chats[index].claudeSessionId === sessionId) return null;
+    chats[index] = { ...chats[index], claudeSessionId: sessionId };
     await writeIndexUnlocked(root, chats);
     return withoutPending(chats[index]);
   });

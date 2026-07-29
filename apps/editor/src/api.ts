@@ -10,7 +10,6 @@ import type {
   ChatProviderStatus,
   ChatSummary,
   ContextFile,
-  CustomAgentInfo,
   ModelPrefsInfo,
   PermissionMode,
   PermissionModeInfo,
@@ -26,13 +25,58 @@ import type {
 } from './types';
 import type { TesterNote } from '../server/tester/types';
 
-async function postJson<T>(url: string, body: unknown): Promise<T> {
-  const res = await fetch(url, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
-  });
-  return (await res.json()) as T;
+/**
+ * What a POST that never got an answer comes back as. Deliberately the same
+ * shape a server refusal takes, so a dead server and a server that said no
+ * arrive through the one door and every caller narrows on `ok` alone.
+ */
+interface PostFailure {
+  ok: false;
+  error: string;
+}
+
+/**
+ * The words for a request that never landed. Plain, and honest about what is
+ * known — the request failed, not why — because these are shown to the person
+ * who clicked, inline in dialogs and toasts.
+ */
+const POST_FAILED = 'Could not reach the Hearth server. Try again in a moment.';
+
+/**
+ * POST a JSON body and read the JSON reply.
+ *
+ * This used to be a bare fetch + res.json(), which split failure in two: a
+ * clean `ok: false` came back as a value, while a transport failure — server
+ * gone, connection refused, an error page where JSON should be — came back as
+ * a THROW. Callers handled the value and forgot the throw, so a create left
+ * its dialog on "Creating…" forever and a rename just silently didn't happen.
+ * Now failure IS the value: this never rejects, and the one case a caller has
+ * to handle is `ok: false` with the reason in words a person can be shown.
+ * `label` names the caller in the console record, exactly as getJson's does.
+ */
+async function postJson<T>(url: string, body: unknown, label: string): Promise<T | PostFailure> {
+  try {
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    const parsed = (await res.json()) as T & { ok?: unknown };
+    // A refusal status whose body carries the server's own envelope is the
+    // server saying no, and its words win. JSON on a refusal status that does
+    // NOT say `ok: false` came from something that is not our server — a
+    // proxy's error body, say — and adopting it as an answer would be a lie.
+    if (!res.ok && parsed?.ok !== false) {
+      console.error(`${label}: server answered ${res.status}`);
+      return { ok: false, error: `The server answered ${res.status} instead of a result.` };
+    }
+    return parsed;
+  } catch (err) {
+    // Same floor as getJson: the console keeps the raw cause, the caller gets
+    // the sentence.
+    console.error(`${label}: request failed`, err);
+    return { ok: false, error: POST_FAILED };
+  }
 }
 
 /** GET a JSON body, returning null on transport failure or `ok: false`. */
@@ -59,7 +103,7 @@ export interface OpenResult {
 
 /** Open any folder as the working folder — no hearth.json required. */
 export async function apiOpenWorkspace(path: string): Promise<{ ok: boolean; info?: WorkspaceInfo; error?: string }> {
-  const res = await postJson<OpenResult>('/api/workspace/open', { path });
+  const res = await postJson<OpenResult>('/api/workspace/open', { path }, 'apiOpenWorkspace');
   if (!res.ok || !res.path) return { ok: false, error: res.error ?? 'Could not open that folder.' };
   return {
     ok: true,
@@ -76,17 +120,14 @@ export async function apiOpenWorkspace(path: string): Promise<{ ok: boolean; inf
  * here can fail in a way the person closing a project needs to hear about, so
  * it answers void and the caller does not wait for it.
  *
- * Which is exactly why it swallows. Called and not awaited, any rejection is
- * an unhandled one, and the moment it is most likely to reject — the server
+ * Which is exactly why it must never reject — and, since postJson answers
+ * failure as a value now, it can't. Called and not awaited, a rejection would
+ * be an unhandled one, and the moment it is most likely to fail — the server
  * already gone, on the way out of the app — is the moment nobody is left to
  * care. A server that is not there is not serving the folder either.
  */
 export async function apiCloseWorkspace(path: string): Promise<void> {
-  try {
-    await postJson<{ ok?: boolean }>('/api/workspace/close', { path });
-  } catch (err) {
-    console.error('Could not tell the server the project was closed.', err);
-  }
+  await postJson<{ ok?: boolean }>('/api/workspace/close', { path }, 'apiCloseWorkspace');
 }
 
 /**
@@ -104,7 +145,7 @@ export async function apiCreateWorkspace(
   prompt?: string,
   name?: string,
 ): Promise<{ ok: boolean; info?: WorkspaceInfo; error?: string }> {
-  const res = await postJson<OpenResult>('/api/workspace/create', { prompt, name });
+  const res = await postJson<OpenResult>('/api/workspace/create', { prompt, name }, 'apiCreateWorkspace');
   if (!res.ok || !res.path) return { ok: false, error: res.error ?? 'Could not create a folder.' };
   return {
     ok: true,
@@ -131,8 +172,8 @@ export async function apiSetProjectIdentity(
   project: string,
   patch: { icon?: string; color?: string },
 ): Promise<boolean> {
-  const res = await postJson<{ ok: boolean }>('/api/workspace/identity', { project, ...patch });
-  return res?.ok === true;
+  const res = await postJson<{ ok: boolean }>('/api/workspace/identity', { project, ...patch }, 'apiSetProjectIdentity');
+  return res.ok === true;
 }
 
 // ---------------------------------------------------------------------------
@@ -151,8 +192,8 @@ export async function apiProjectDoc(project: string, name: string): Promise<stri
 }
 
 export async function apiWriteProjectDoc(project: string, name: string, text: string): Promise<boolean> {
-  const res = await postJson<{ ok: boolean }>('/api/project/doc', { project, name, text });
-  return res?.ok === true;
+  const res = await postJson<{ ok: boolean }>('/api/project/doc', { project, name, text }, 'apiWriteProjectDoc');
+  return res.ok === true;
 }
 
 export async function apiContextFiles(project: string): Promise<ContextFile[]> {
@@ -167,13 +208,15 @@ export async function apiSaveContextFiles(
   project: string,
   files: readonly { name: string; data: string }[],
 ): Promise<ContextFile[]> {
-  const res = await postJson<{ files: ContextFile[] }>('/api/context', { project, files });
-  return res?.files ?? [];
+  const res = await postJson<{ files: ContextFile[] }>('/api/context', { project, files }, 'apiSaveContextFiles');
+  // A failed write answers the empty list, which is what this wrapper has
+  // always answered for a refusal; the reason is on the console via postJson.
+  return 'files' in res && Array.isArray(res.files) ? res.files : [];
 }
 
 export async function apiDeleteContextFile(project: string, name: string): Promise<ContextFile[]> {
-  const res = await postJson<{ files: ContextFile[] }>('/api/context/delete', { project, name });
-  return res?.files ?? [];
+  const res = await postJson<{ files: ContextFile[] }>('/api/context/delete', { project, name }, 'apiDeleteContextFile');
+  return 'files' in res && Array.isArray(res.files) ? res.files : [];
 }
 
 export function apiMeta(): Promise<ServerMeta | null> {
@@ -216,11 +259,11 @@ export async function apiTesterPlay(
   project: string,
   maxSteps?: number,
 ): Promise<{ ok: boolean; session?: number; maxSteps?: number; error?: string }> {
-  return postJson('/api/tester/play', { project, maxSteps });
+  return postJson('/api/tester/play', { project, maxSteps }, 'apiTesterPlay');
 }
 
 export async function apiTesterStop(project: string): Promise<{ ok: boolean; error?: string }> {
-  return postJson('/api/tester/stop', { project });
+  return postJson('/api/tester/stop', { project }, 'apiTesterStop');
 }
 
 /** One picture behind an approved proposal, as the project stores it. */
@@ -242,7 +285,7 @@ export async function apiTesterApprove(
   session: number,
   proposals: readonly string[],
 ): Promise<{ ok: boolean; text?: string; frames?: ApprovedFrame[]; error?: string }> {
-  return postJson('/api/tester/approve', { project, session, proposals });
+  return postJson('/api/tester/approve', { project, session, proposals }, 'apiTesterApprove');
 }
 
 export async function apiTesterHistory(project: string): Promise<TesterHistory | null> {
@@ -289,14 +332,38 @@ export async function apiListChats(project: string): Promise<ChatSummary[]> {
   return body?.chats ?? [];
 }
 
-export async function apiRenameChat(project: string, chatId: string, title: string): Promise<ChatSummary[] | null> {
-  const body = await postJson<{ ok: boolean; chats?: ChatSummary[] }>('/api/chats/rename', { project, chatId, title });
-  return body.ok ? (body.chats ?? []) : null;
+/**
+ * Rename and delete answer either the refreshed list or the reason, never
+ * null. They used to answer null for both "the server said no" and "the
+ * request never arrived", and null was silence: the rail showed the old title
+ * back, or the row it was told to delete, with no word about why. The reason
+ * comes out so the store can put it in front of the person who clicked.
+ */
+export async function apiRenameChat(
+  project: string,
+  chatId: string,
+  title: string,
+): Promise<{ ok: true; chats: ChatSummary[] } | { ok: false; error: string }> {
+  const body = await postJson<{ ok: boolean; chats?: ChatSummary[]; error?: string }>(
+    '/api/chats/rename',
+    { project, chatId, title },
+    'apiRenameChat',
+  );
+  if (!body.ok) return { ok: false, error: body.error ?? 'Could not rename that conversation.' };
+  return { ok: true, chats: body.chats ?? [] };
 }
 
-export async function apiDeleteChat(project: string, chatId: string): Promise<ChatSummary[] | null> {
-  const body = await postJson<{ ok: boolean; chats?: ChatSummary[] }>('/api/chats/delete', { project, chatId });
-  return body.ok ? (body.chats ?? []) : null;
+export async function apiDeleteChat(
+  project: string,
+  chatId: string,
+): Promise<{ ok: true; chats: ChatSummary[] } | { ok: false; error: string }> {
+  const body = await postJson<{ ok: boolean; chats?: ChatSummary[]; error?: string }>(
+    '/api/chats/delete',
+    { project, chatId },
+    'apiDeleteChat',
+  );
+  if (!body.ok) return { ok: false, error: body.error ?? 'Could not delete that conversation.' };
+  return { ok: true, chats: body.chats ?? [] };
 }
 
 export async function apiListFiles(project: string): Promise<ProjectFile[]> {
@@ -336,7 +403,11 @@ export async function apiSaveProviderSettings(
   project: string,
   patch: ProviderSettingsPatch,
 ): Promise<AppSettingsInfo | null> {
-  const body = await postJson<AppSettingsInfo & { ok: boolean }>('/api/app/settings', { project, ...patch });
+  const body = await postJson<AppSettingsInfo & { ok: boolean }>(
+    '/api/app/settings',
+    { project, ...patch },
+    'apiSaveProviderSettings',
+  );
   return body.ok ? { hasKey: body.hasKey, source: body.source } : null;
 }
 
@@ -386,16 +457,12 @@ export async function apiSetPermissionMode(
   project: string,
   patch: Partial<PermissionModeInfo>,
 ): Promise<PermissionModeInfo | null> {
-  try {
-    const body = await postJson<Partial<PermissionModeInfo> & { ok: boolean }>('/api/permission-mode', {
-      project,
-      ...patch,
-    });
-    return body.ok ? readPermissionMode(body) : null;
-  } catch (err) {
-    console.error('apiSetPermissionMode: request failed', err);
-    return null;
-  }
+  const body = await postJson<Partial<PermissionModeInfo> & { ok: boolean }>(
+    '/api/permission-mode',
+    { project, ...patch },
+    'apiSetPermissionMode',
+  );
+  return body.ok ? readPermissionMode(body) : null;
 }
 
 // ---------------------------------------------------------------------------
@@ -446,105 +513,6 @@ export async function apiAgentClis(): Promise<AgentCliInfo[] | null> {
   return Array.isArray(body?.clis) ? body.clis : null;
 }
 
-// ---------------------------------------------------------------------------
-// Agents the user registered themselves (server/agentRegistry.ts).
-//
-// Unscoped, like skills and model preferences: what may run on this machine is
-// a fact about the machine, decided by the person at it, and it is deliberately
-// NOT written into any project. Every write answers with the whole list, so
-// nothing here merges: the server owns the ids and the confirmation state.
-// ---------------------------------------------------------------------------
-
-/** The list, and where the server keeps it so a pane can say. */
-export interface CustomAgentsRead {
-  agents: CustomAgentInfo[];
-  /**
-   * The registry file, as the SERVER spelled it. Asked for rather than
-   * composed: it is `~/.hearth/agents.json` on one machine and
-   * `C:\Users\…\.hearth\agents.json` on another, and writing one of them in the
-   * renderer would send half the people reading it somewhere that does not
-   * exist. Same rule the model preferences path follows.
-   */
-  file: string;
-}
-
-/** Anything the server did not spell correctly is dropped rather than shown. */
-function readAgentsBody(body: { agents?: unknown; file?: unknown } | null): CustomAgentsRead | null {
-  if (!body || !Array.isArray(body.agents)) return null;
-  const out: CustomAgentInfo[] = [];
-  for (const raw of body.agents) {
-    if (!raw || typeof raw !== 'object') continue;
-    const agent = raw as Partial<CustomAgentInfo>;
-    if (typeof agent.id !== 'string' || typeof agent.commandLine !== 'string') continue;
-    out.push({
-      id: agent.id,
-      label: typeof agent.label === 'string' && agent.label !== '' ? agent.label : agent.commandLine,
-      command: typeof agent.command === 'string' ? agent.command : '',
-      args: Array.isArray(agent.args) ? agent.args.filter((a): a is string => typeof a === 'string') : [],
-      commandLine: agent.commandLine,
-      confirmed: agent.confirmed === true,
-    });
-  }
-  return { agents: out, file: typeof body.file === 'string' ? body.file : '' };
-}
-
-/** Every registered agent. Null when the read did not land. */
-export async function apiAgents(): Promise<CustomAgentsRead | null> {
-  return readAgentsBody(await getJson<{ agents: unknown; file: unknown }>('/api/agents', 'apiAgents'));
-}
-
-export interface AgentSavePatch {
-  /** Absent creates a new agent; present edits that one. */
-  id?: string;
-  label: string;
-  command: string;
-  args: string[];
-}
-
-/**
- * Create or edit one agent. Returns the whole list, or an error to show: a
- * refusal here is something the person typed (an empty name, a command that
- * cannot be run), so it belongs beside the field rather than in a log.
- */
-export async function apiSaveAgent(patch: AgentSavePatch): Promise<CustomAgentsRead | { error: string }> {
-  try {
-    const body = await postJson<{ ok: boolean; agents?: unknown; file?: unknown; error?: string }>('/api/agents', {
-      action: 'save',
-      ...patch,
-    });
-    const read = body.ok ? readAgentsBody(body) : null;
-    if (!read) return { error: body.error ?? 'Hearth could not save that agent.' };
-    return read;
-  } catch (err) {
-    console.error('apiSaveAgent: request failed', err);
-    return { error: 'Hearth could not save that agent.' };
-  }
-}
-
-async function agentAction(action: 'delete' | 'confirm', id: string): Promise<CustomAgentsRead | null> {
-  try {
-    const body = await postJson<{ ok: boolean; agents?: unknown; file?: unknown }>('/api/agents', { action, id });
-    return body.ok ? readAgentsBody(body) : null;
-  } catch (err) {
-    console.error(`apiAgent(${action}): request failed`, err);
-    return null;
-  }
-}
-
-/** Forget one agent. */
-export async function apiDeleteAgent(id: string): Promise<CustomAgentsRead | null> {
-  return agentAction('delete', id);
-}
-
-/**
- * Record that the exact command line has been read and accepted on this
- * machine. Confirming is per command string, not per agent: editing what runs
- * asks again.
- */
-export async function apiConfirmAgent(id: string): Promise<CustomAgentsRead | null> {
-  return agentAction('confirm', id);
-}
-
 export async function apiPersonalization(): Promise<PersonalizationInfo | null> {
   return readPersonalizationBody(await getJson<PersonalizationInfo>('/api/personalization', 'apiPersonalization'));
 }
@@ -572,17 +540,16 @@ export async function apiModelPrefs(): Promise<ModelPrefsInfo | null> {
  * built from what it can see would quietly delete them.
  */
 export async function apiSetModelEnabled(model: string, enabled: boolean): Promise<ModelPrefsInfo | null> {
-  try {
-    const body = await postJson<Partial<ModelPrefsInfo> & { ok: boolean }>('/api/model-prefs', { model, enabled });
-    if (!body.ok || !Array.isArray(body.disabled)) return null;
-    return {
-      disabled: body.disabled.filter((id): id is string => typeof id === 'string'),
-      file: typeof body.file === 'string' ? body.file : '',
-    };
-  } catch (err) {
-    console.error('apiSetModelEnabled: request failed', err);
-    return null;
-  }
+  const body = await postJson<Partial<ModelPrefsInfo> & { ok: boolean }>(
+    '/api/model-prefs',
+    { model, enabled },
+    'apiSetModelEnabled',
+  );
+  if (!body.ok || !Array.isArray(body.disabled)) return null;
+  return {
+    disabled: body.disabled.filter((id): id is string => typeof id === 'string'),
+    file: typeof body.file === 'string' ? body.file : '',
+  };
 }
 
 /**
@@ -590,7 +557,11 @@ export async function apiSetModelEnabled(model: string, enabled: boolean): Promi
  * string clears it, which is a real instruction and not the same as omitting.
  */
 export async function apiSavePersonalization(patch: Partial<Personalization>): Promise<PersonalizationInfo | null> {
-  const body = await postJson<Partial<PersonalizationInfo> & { ok: boolean }>('/api/personalization', patch);
+  const body = await postJson<Partial<PersonalizationInfo> & { ok: boolean }>(
+    '/api/personalization',
+    patch,
+    'apiSavePersonalization',
+  );
   return body.ok ? readPersonalizationBody(body) : null;
 }
 
@@ -600,9 +571,15 @@ export async function apiSavePersonalization(patch: Partial<Personalization>): P
  * `codex`), so a partial or older answer must degrade to "not configured"
  * rather than take the dialog down.
  */
-export async function apiChatProviders(project: string): Promise<ChatProviderStatus | null> {
+export async function apiChatProviders(project: string | null): Promise<ChatProviderStatus | null> {
   try {
-    const res = await fetch(`/api/chat/providers?project=${encodeURIComponent(project)}`);
+    // No project means the Home screen is asking: who is signed in is a fact
+    // about the machine, and the server answers it without a folder.
+    const res = await fetch(
+      project === null
+        ? '/api/chat/providers'
+        : `/api/chat/providers?project=${encodeURIComponent(project)}`,
+    );
     const body = (await res.json()) as Partial<ChatProviderStatus> & { ok?: boolean };
     if (body.ok === false || !body.anthropic || !body.openai) return null;
     const { anthropic, openai } = body;
@@ -610,6 +587,14 @@ export async function apiChatProviders(project: string): Promise<ChatProviderSta
       anthropic: {
         hasKey: anthropic.hasKey === true,
         source: anthropic.source ?? null,
+        // Absent on an older server, which is the same as "no CLI seen".
+        cli: anthropic.cli === true,
+        // Also absent on an older server, and read as signed out. That is the
+        // safe direction: it offers a sign-in to someone who has one rather
+        // than claiming a sign-in for someone who does not.
+        loggedIn: anthropic.loggedIn === true,
+        email: typeof anthropic.email === 'string' ? anthropic.email : null,
+        planType: typeof anthropic.planType === 'string' ? anthropic.planType : null,
         models: Array.isArray(anthropic.models) ? anthropic.models : undefined,
       },
       openai: {
@@ -636,7 +621,11 @@ export async function apiChatProviders(project: string): Promise<ChatProviderSta
  * frame on the socket rather than as this call's return value.
  */
 export function apiOpenAiLogin(project: string): Promise<{ ok: boolean; authUrl?: string; error?: string }> {
-  return postJson<{ ok: boolean; authUrl?: string; error?: string }>('/api/chat/providers/openai/login', { project });
+  return postJson<{ ok: boolean; authUrl?: string; error?: string }>(
+    '/api/chat/providers/openai/login',
+    { project },
+    'apiOpenAiLogin',
+  );
 }
 
 // ---------------------------------------------------------------------------

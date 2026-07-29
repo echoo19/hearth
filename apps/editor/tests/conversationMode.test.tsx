@@ -39,6 +39,7 @@ import { apiAppSettings } from '../src/api';
 import type { ChatProviderStatus } from '../src/types';
 import { ChatColumn } from '../src/components/chat/ChatColumn';
 import { PaneStack } from '../src/components/game/PaneStack';
+import { providerLabel } from '../src/components/chat/ConversationHead';
 import { terminalStatusLabel } from '../src/components/chat/TerminalPane';
 import {
   conversationModeStorageKey,
@@ -119,7 +120,7 @@ describe('per-folder persistence', () => {
 /** A providers read-out with the given OpenAI facts and no Anthropic key. */
 function providersWith(openai: Partial<{ loggedIn: boolean; hasKey: boolean }>): ChatProviderStatus {
   return {
-    anthropic: { hasKey: false, source: null },
+    anthropic: { hasKey: false, source: null, cli: false, loggedIn: false, email: null, planType: null },
     openai: {
       installed: false,
       version: null,
@@ -219,6 +220,19 @@ describe('the conversation head', () => {
   it('reads out who would answer while in chat mode', () => {
     render(<ChatColumn />);
     expect(document.querySelector('.conversation-provider')).not.toBeNull();
+  });
+
+  it('names the known drivers, and does not call an unknown one nobody', () => {
+    expect(providerLabel(null, 'agent-sdk')).toBe('Claude');
+    expect(providerLabel(null, 'codex')).toBe('ChatGPT');
+    // Transcripts written by builds that still had registered agents carry
+    // `custom` (see ChatDriverKind's note in types.ts). Narrowing that to
+    // "No agent" told the reader of a real conversation that nobody had
+    // answered it; somebody did, through a door this app no longer has. The
+    // label says that and stops, in the past tense the fact deserves.
+    expect(providerLabel(null, 'custom')).toBe('Custom agent (retired)');
+    // And "No agent" stays reserved for when there genuinely was none.
+    expect(providerLabel(null, null)).toBe('No agent');
   });
 
   it('switches the column to the terminal, and back, off the store', () => {

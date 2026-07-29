@@ -133,7 +133,62 @@ async function startServer(uiRoot: string): Promise<{ port: number; close: () =>
   });
 }
 
-function registerDialogHandlers(getWindow: () => BrowserWindow | null): void {
+/**
+ * A BrowserWindow.webContents, but only the two calls this file needs from
+ * one — structural on purpose, the same reasoning electron/updater.ts's
+ * UpdaterLike follows, so GamePopupAudio is unit-testable (tests/
+ * gamePopupAudio.test.ts) without an Electron process.
+ */
+export interface MutableWebContents {
+  setAudioMuted(muted: boolean): void;
+  isDestroyed(): boolean;
+}
+
+/**
+ * Keeps every open game-popup window in sync with the mute switch.
+ *
+ * The mute control only ever had one webContents to reach: the main window's,
+ * because the game used to live only in the always-on iframe pane, and muting
+ * a webContents mutes everything inside its frames too. Play (CapabilityStrip)
+ * opens the SAME game in a second, real top-level BrowserWindow instead
+ * (window.open on a http://127.0.0.1|localhost URL — see the
+ * setWindowOpenHandler/did-create-window pair below), and that popup is its
+ * own webContents with its own audio, which muting the main window has never
+ * touched. A pane muted at midnight would still play the game out loud the
+ * moment someone hit Play.
+ *
+ * So the mute state has to live somewhere that outlives any one window
+ * (here, not the renderer) and has to be applied to a popup at the moment it
+ * opens — not just at the moment someone next flips the switch, since a popup
+ * opened while already muted must come up silent too.
+ */
+export class GamePopupAudio {
+  private muted = false;
+  private readonly popups = new Set<MutableWebContents>();
+
+  /** The mute IPC handler calls this on every toggle. */
+  setMuted(muted: boolean): void {
+    this.muted = muted;
+    for (const wc of this.popups) {
+      // A closed popup never unregisters itself (nothing here is told when a
+      // BrowserWindow closes), so a dead one is swept the next time anything
+      // asks this class to do work rather than left to leak forever.
+      if (wc.isDestroyed()) {
+        this.popups.delete(wc);
+        continue;
+      }
+      wc.setAudioMuted(muted);
+    }
+  }
+
+  /** did-create-window calls this once, right when a game popup is born. */
+  track(wc: MutableWebContents): void {
+    wc.setAudioMuted(this.muted);
+    this.popups.add(wc);
+  }
+}
+
+function registerDialogHandlers(getWindow: () => BrowserWindow | null, gamePopupAudio: GamePopupAudio): void {
   ipcMain.handle('hearth:pick-project-folder', async () => {
     const win = getWindow();
     const result = await dialog.showOpenDialog(win!, {
@@ -172,6 +227,26 @@ function registerDialogHandlers(getWindow: () => BrowserWindow | null): void {
   // working size and 'launcher' is just an alias of 'editor'. The IPC name and
   // both mode values stay so a renderer running against an older or newer
   // preload can't break on it.
+  /**
+   * Silence the game.
+   *
+   * The window is muted, not the frame, and that is the only thing that can
+   * work here. The game is served from a second loopback port so it is
+   * cross-origin to this document on purpose (see GamePane's sandbox note), so
+   * the renderer cannot reach into it to pause a sound; and a game that makes
+   * its noise through WebAudio has no media element to mute even when you can.
+   * Chromium can mute a whole webContents whatever the sound is made of, and
+   * the only thing in the main window that makes a sound is the embedded game
+   * pane — but Play opens that same game again in its own popup window (see
+   * GamePopupAudio above), which is a second webContents this handler has to
+   * reach too, or muting the pane and then hitting Play plays it anyway.
+   */
+  ipcMain.handle('hearth:set-audio-muted', (_event, muted: unknown) => {
+    const isMuted = muted === true;
+    getWindow()?.webContents.setAudioMuted(isMuted);
+    gamePopupAudio.setMuted(isMuted);
+  });
+
   ipcMain.handle('hearth:window-mode', (_event, _mode: string, title?: string) => {
     const win = getWindow();
     if (!win) return;
@@ -266,7 +341,11 @@ async function main(): Promise<void> {
 
   let win: BrowserWindow | null = null;
   let hasUnsavedScripts = false;
-  registerDialogHandlers(() => win);
+  // Outlives any one window on purpose: a game popup opened after a mute
+  // toggle still has to come up silent, and the state has to survive the
+  // popup (and the main window) closing and reopening.
+  const gamePopupAudio = new GamePopupAudio();
+  registerDialogHandlers(() => win, gamePopupAudio);
 
   /**
    * The last downloaded-update announcement, kept so a renderer that loads (or
@@ -367,12 +446,23 @@ async function main(): Promise<void> {
   if (process.platform === 'darwin') applyAppMenu(null, win);
 
   // External links open in the system browser, not in the editor window.
+  // Only the game's own loopback origin is ever allowed to open as a real
+  // popup — that origin serves nothing but the game mount (server/
+  // gameServer.ts), so 'allow' here always means "this is the Play window."
   win.webContents.setWindowOpenHandler(({ url: external }) => {
     if (external.startsWith('http://127.0.0.1') || external.startsWith('http://localhost')) {
       return { action: 'allow' };
     }
     void shell.openExternal(external);
     return { action: 'deny' };
+  });
+  // Fires once a popup allowed above has actually been created (Electron
+  // makes the BrowserWindow itself; this is just the notification). Because
+  // setWindowOpenHandler above only ever allows the game's own origin, every
+  // window that reaches here IS a Play popup — so applying the mute state
+  // unconditionally is scoping this to game popups, not being loose about it.
+  win.webContents.on('did-create-window', (childWindow) => {
+    gamePopupAudio.track(childWindow.webContents);
   });
 
   await win.loadURL(url);

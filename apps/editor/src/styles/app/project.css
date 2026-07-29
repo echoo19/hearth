@@ -109,6 +109,26 @@
 
 /* --- The project's conversations ------------------------------------------ */
 
+/*
+ * The two ways to start something, as one row of equals.
+ *
+ * Equal width and equal weight, on purpose. The earlier version put a composer
+ * here with a lone New terminal button under it, which made one of the two
+ * kinds of conversation look like a footnote to the other. They are the same
+ * decision. `flex: 1` rather than a fixed width so the pair keeps filling the
+ * row as the screen narrows, and wraps rather than crushes when it cannot.
+ */
+.proj-start {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.proj-start-act {
+  flex: 1 1 12rem;
+  justify-content: center;
+}
+
 .proj-list {
   display: flex;
   flex-direction: column;

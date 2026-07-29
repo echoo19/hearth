@@ -276,9 +276,10 @@
 .game-stage-wrap .capability-strip {
   position: static;
   flex: none;
-  /* Centred under the game rather than tucked into a corner. There is one
-     control here and it is the pane's primary action, so it sits on the
-     stage's own axis. */
+  /* Centred under the game rather than tucked into a corner: Play is the
+     pane's primary action, so it sits on the stage's own axis. Mute rides
+     beside it as a quiet glyph rather than claiming half the width, which is
+     what a second equal control would have done to that axis. */
   justify-content: center;
   /* The stage reserves exactly this above, as `--strip-h`. Changing it here
      without changing it there crops the game. */
@@ -286,6 +287,41 @@
   background: transparent;
   border-top: 0;
   backdrop-filter: none;
+}
+
+/* --- Mute ----------------------------------------------------------------- */
+
+/* Quieter than Play, and deliberately so: Play is what this strip is for, and
+   mute is housekeeping you reach for once and then forget. A borderless glyph
+   that only gains a surface under the pointer, so a strip at rest still reads
+   as one control rather than two. */
+.game-mute {
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: var(--ctl-h);
+  height: var(--ctl-h);
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--ink-faint);
+  cursor: pointer;
+  transition: color var(--t-fast) var(--ease-out), background var(--t-fast) var(--ease-out);
+}
+
+.game-mute:hover {
+  background: var(--bg-3);
+  color: var(--ink);
+}
+
+/* Muted is a state the eye should catch without reading the glyph, because it
+   is the answer to "why is this game silent" and that question is usually
+   asked in a hurry. Full-strength ink rather than the accent: this is a thing
+   switched off, not a thing switched on, and the accent means the latter
+   everywhere else in the app. */
+.game-mute[aria-pressed='true'] {
+  color: var(--ink);
 }
 
 /* --- Play ----------------------------------------------------------------- */

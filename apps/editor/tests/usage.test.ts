@@ -139,6 +139,28 @@ describe('an empty machine', () => {
   });
 });
 
+describe('recentsFile default honors HEARTH_HOME', () => {
+  // Confirmed finding: collectUsage's recentsFile default hardcoded
+  // path.join(home, '.hearth', 'recent-projects.json') where `home` falls
+  // back to os.homedir() — so an isolated instance still read the REAL
+  // machine's project list even with HEARTH_HOME pointed elsewhere. Every
+  // other test in this file passes `recentsFile` explicitly (see
+  // `beforeEach` above), which is exactly what let that hardcoding go
+  // unnoticed; this one deliberately does not.
+  it('reads the default recents file from HEARTH_HOME rather than the real ~/.hearth', async () => {
+    const isolatedHome = process.env.HEARTH_HOME!;
+    const isolatedRecents = path.join(isolatedHome, 'recent-projects.json');
+    await fsp.writeFile(
+      isolatedRecents,
+      JSON.stringify([{ path: '/only/in/isolated/home', name: 'x', openedAt: '2026-01-01T00:00:00.000Z' }]),
+      'utf8',
+    );
+    const report = await collectUsage({});
+    expect(report.totals.projects).toBe(1);
+    expect(report.projects[0].path).toBe('/only/in/isolated/home');
+  });
+});
+
 describe('counting one folder', () => {
   it('counts conversations off the index without opening a transcript', async () => {
     const root = await makeProject('shooter', {

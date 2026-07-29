@@ -16,11 +16,13 @@
  *    lose scrollback while the underlying pty (and the WS connection feeding
  *    it) is still alive. `useAgentSocket()` is the React seam onto that
  *    external store.
- *  - A second pure planner (`planTerminalLaunch`) for the composer's terminal
- *    options: what picking "Claude Code" should actually do given the session
- *    there is right now. See the note above it — the short version is that
- *    Hearth types the command into a shell it started, so the only agent it
- *    can honestly claim to know about is the one it typed.
+ *  - A second pure planner (`planTerminalLaunch`) for anything that wants to
+ *    type a command into the visible terminal — today that is the Agents
+ *    pane's install/sign-in rows; the composer's launcher rows that it was
+ *    written for are gone. What the pick should actually do depends on the
+ *    session that is there right now. See the note above it — the short
+ *    version is that Hearth types the command into a shell it started, so the
+ *    only agent it can honestly claim to know about is the one it typed.
  */
 import { useCallback, useSyncExternalStore } from 'react';
 import { useEditor } from '../../store';
@@ -272,6 +274,14 @@ export function planTerminalLaunch(request: TerminalLaunchRequest): TerminalLaun
   if (!connected || status === 'reconnecting') {
     return { action: 'blocked', reason: 'The terminal is not connected yet. Try again in a moment.' };
   }
+  // Currently dormant from the UI: since the launcher rows left the composer,
+  // the only caller (AgentsPane's runInTerminal) marks sessions with
+  // `markAgentStarted`, never `markAgentCli`, and markAgentCli's one remaining
+  // caller passes null — so `launched` is always null in the running app and
+  // this refusal (like the `show` answer above) cannot fire. It stays because
+  // the planner is pure, `TerminalLaunchRequest.launched` is still part of its
+  // contract, and any future caller that marks a launched agent again must get
+  // this refusal rather than a command typed into a running agent as a prompt.
   if (status === 'running' && launched !== null) {
     return {
       action: 'blocked',

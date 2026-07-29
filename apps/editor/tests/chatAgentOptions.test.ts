@@ -60,19 +60,6 @@ describe('parseAgentOptions', () => {
     expect(parseAgentOptions('opus')).toBeNull();
     expect(parseAgentOptions(['opus'])).toBeNull();
   });
-
-  it('reads the id of one of the user own agents, and only a plausible one', () => {
-    expect(parseAgentOptions({ agentId: 'my-agent' })).toEqual({ agentId: 'my-agent' });
-    expect(parseAgentOptions({ provider: 'anthropic', agentId: 'my-agent' })).toEqual({
-      provider: 'anthropic',
-      agentId: 'my-agent',
-    });
-    // A shape the registry could never have minted is dropped, so nothing
-    // downstream has to defend against a path or an injection in an id.
-    expect(parseAgentOptions({ agentId: '../../etc/passwd' })).toBeNull();
-    expect(parseAgentOptions({ agentId: 'Shouty Agent' })).toBeNull();
-    expect(parseAgentOptions({ agentId: 7 })).toBeNull();
-  });
 });
 
 // ---------------------------------------------------------------------------
@@ -93,29 +80,12 @@ class FakeCodexDriver implements ChatDriver {
   }
 }
 
-/** One of the user's own agents, from chatDrivers/custom.ts's point of view. */
-class FakeCustomDriver implements ChatDriver {
-  readonly kind = 'custom' as const;
-  queue = new EventQueue<ChatEvent>();
-  get events(): AsyncIterable<ChatEvent> {
-    return this.queue;
-  }
-  async start(): Promise<void> {}
-  send(): void {}
-  stop(): void {
-    this.queue.close();
-  }
-}
-
 const fakeSdk = { query: () => new EventQueue<unknown>() };
 
 let tmp: string;
 let root: string;
 let codexAvailable: boolean;
 let lastCodexOpts: { agent?: AgentTurnOptions | null } | undefined;
-let lastCustomOpts: { agent?: AgentTurnOptions | null; permissionMode?: unknown } | undefined;
-/** What the custom seam does: a driver, nothing, or a refusal. */
-let customBehaviour: 'driver' | 'none' | 'refuse';
 
 function deps(): Parameters<typeof createChatDriver>[1] {
   return {
@@ -123,12 +93,6 @@ function deps(): Parameters<typeof createChatDriver>[1] {
     createCodexDriver: async (_root, opts) => {
       lastCodexOpts = opts;
       return codexAvailable ? new FakeCodexDriver() : null;
-    },
-    createCustomDriver: async (_root, opts) => {
-      lastCustomOpts = opts;
-      if (!opts?.agent?.agentId) return null;
-      if (customBehaviour === 'refuse') throw new Error('That agent is not registered on this machine.');
-      return customBehaviour === 'driver' ? new FakeCustomDriver() : null;
     },
   };
 }
@@ -140,8 +104,6 @@ beforeEach(async () => {
   await writeAppSettings(root, { apiKey: 'sk-test' });
   codexAvailable = true;
   lastCodexOpts = undefined;
-  lastCustomOpts = undefined;
-  customBehaviour = 'driver';
 });
 
 afterEach(async () => {
@@ -178,31 +140,6 @@ describe('createChatDriver with a turn choice', () => {
     expect(lastCodexOpts?.agent).toEqual(agent);
   });
 
-  it('never asks the custom seam for a turn that named no agent', async () => {
-    const driver = await createChatDriver(root, { ...deps(), agent: { provider: 'anthropic' } });
-    expect(driver.kind).toBe('agent-sdk');
-    expect(lastCustomOpts?.agent).toEqual({ provider: 'anthropic' });
-  });
-
-  it("binds one of the user's own agents AHEAD of both vendors", async () => {
-    const driver = await createChatDriver(root, { ...deps(), agent: { provider: 'anthropic', agentId: 'my-agent' } });
-    expect(driver.kind).toBe('custom');
-  });
-
-  it('hands the permission mode to it, the same one every other backend gets', async () => {
-    await createChatDriver(root, { ...deps(), agent: { agentId: 'my-agent' }, permissionMode: 'skip' });
-    expect(lastCustomOpts?.permissionMode).toBe('skip');
-  });
-
-  it('REPORTS a refusal rather than quietly answering as somebody else', async () => {
-    // The rule this whole path exists for: a composer showing "My agent" while
-    // Claude answers is the app lying about who is doing the work.
-    customBehaviour = 'refuse';
-    await expect(createChatDriver(root, { ...deps(), agent: { agentId: 'my-agent' } })).rejects.toThrow(
-      /not registered/,
-    );
-  });
-
   it('gives the SDK driver the model, and never a model meant for the other vendor', async () => {
     const chosen = await createChatDriver(root, { ...deps(), agent: { provider: 'anthropic', model: 'claude-opus-5' } });
     expect((chosen as AgentSdkDriver as unknown as { model: string | null }).model).toBe('claude-opus-5');
@@ -210,6 +147,136 @@ describe('createChatDriver with a turn choice', () => {
     codexAvailable = false;
     const crossed = await createChatDriver(root, { ...deps(), agent: { provider: 'openai', model: 'gpt-5.6-sol' } });
     expect((crossed as AgentSdkDriver as unknown as { model: string | null }).model).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// The effort actually reaching the Agent SDK
+// ---------------------------------------------------------------------------
+
+/**
+ * A query handle that records the control requests made on it and never ends.
+ *
+ * The real stream is long-lived and carries every turn of the session, so the
+ * iterator here parks forever rather than returning — a handle that ends is a
+ * dead backend, and the driver would stop accepting turns.
+ */
+function flagRecordingSdk(applyFlagSettings?: (settings: { effortLevel: string | null }) => Promise<unknown>) {
+  const applied: { effortLevel: string | null }[] = [];
+  const turns: unknown[] = [];
+  const sdk = {
+    query: (args: unknown) => {
+      void (async () => {
+        for await (const turn of (args as { prompt: AsyncIterable<unknown> }).prompt) turns.push(turn);
+      })();
+      return {
+        ...(applyFlagSettings
+          ? { applyFlagSettings }
+          : {
+              applyFlagSettings: async (settings: { effortLevel: string | null }) => {
+                applied.push(settings);
+              },
+            }),
+        [Symbol.asyncIterator]: () => ({ next: () => new Promise<IteratorResult<unknown>>(() => {}) }),
+      };
+    },
+  };
+  return { sdk, applied, turns };
+}
+
+/** The sends chain is async; let it settle before reading what it did. */
+const settle = () => new Promise((resolve) => setTimeout(resolve, 20));
+
+describe('AgentSdkDriver effort', () => {
+  it('puts the chosen effort on the session before the turn goes out', async () => {
+    // The model is fixed when the stream opens, but the effort is not:
+    // `applyFlagSettings` merges into a settings layer on the live query, which
+    // is the SDK's own answer to changing it mid-session. Before this, an
+    // effort the composer sent was parsed and then dropped on the floor.
+    const { sdk, applied, turns } = flagRecordingSdk();
+    const driver = new AgentSdkDriver(sdk, 'sk-test');
+    await driver.start('s1', '/w/game');
+    driver.send('think hard', { effort: 'xhigh' });
+    await settle();
+    expect(applied).toEqual([{ effortLevel: 'xhigh' }]);
+    expect(turns).toHaveLength(1);
+    driver.stop();
+  });
+
+  it('drops an effort the SDK would refuse rather than failing the turn', async () => {
+    // `ultra` is codex's, and a choice made there can survive a switch to
+    // Claude. Sending it would fail the turn on a word the user never saw as
+    // invalid; the turn still runs, at whatever effort the session already had.
+    const { sdk, applied, turns } = flagRecordingSdk();
+    const driver = new AgentSdkDriver(sdk, 'sk-test');
+    await driver.start('s1', '/w/game');
+    driver.send('go', { effort: 'ultra' });
+    driver.send('go again', { effort: 'DEFCON-1' });
+    await settle();
+    expect(applied).toEqual([]);
+    expect(turns).toHaveLength(2);
+    driver.stop();
+  });
+
+  it('clears the effort when a later turn expresses none', async () => {
+    // The flag layer outlives the turn. Without the explicit null, an effort
+    // chosen once quietly applied to the rest of the conversation — and
+    // `undefined` would not do it, since JSON serialization drops it.
+    const { sdk, applied } = flagRecordingSdk();
+    const driver = new AgentSdkDriver(sdk, 'sk-test');
+    await driver.start('s1', '/w/game');
+    driver.send('deep one', { effort: 'high' });
+    await settle();
+    driver.send('ordinary one');
+    await settle();
+    expect(applied).toEqual([{ effortLevel: 'high' }, { effortLevel: null }]);
+    driver.stop();
+  });
+
+  it('says nothing when nothing changed', async () => {
+    // A control request per turn for a dial nobody moved is a round trip the
+    // turn waits on for no reason.
+    const { sdk, applied } = flagRecordingSdk();
+    const driver = new AgentSdkDriver(sdk, 'sk-test');
+    await driver.start('s1', '/w/game');
+    driver.send('one', { effort: 'low' });
+    driver.send('two', { effort: 'low' });
+    driver.send('three');
+    driver.send('four');
+    await settle();
+    expect(applied).toEqual([{ effortLevel: 'low' }, { effortLevel: null }]);
+    driver.stop();
+  });
+
+  it('still sends the message when the control request fails', async () => {
+    // An older SDK has no `applyFlagSettings` at all, and a live one can refuse
+    // the request. Either way the message must go: a turn lost to a dial is a
+    // far worse outcome than a turn that runs at the default effort.
+    const failing = flagRecordingSdk(async () => {
+      throw new Error('control request failed');
+    });
+    const driver = new AgentSdkDriver(failing.sdk, 'sk-test');
+    await driver.start('s1', '/w/game');
+    driver.send('hello', { effort: 'max' });
+    await settle();
+    expect(failing.turns).toHaveLength(1);
+
+    const olderTurns: unknown[] = [];
+    const older = {
+      query: (args: unknown) => {
+        void (async () => {
+          for await (const turn of (args as { prompt: AsyncIterable<unknown> }).prompt) olderTurns.push(turn);
+        })();
+        return { [Symbol.asyncIterator]: () => ({ next: () => new Promise<IteratorResult<unknown>>(() => {}) }) };
+      },
+    };
+    const legacy = new AgentSdkDriver(older, 'sk-test');
+    await legacy.start('s1', '/w/game');
+    legacy.send('hello', { effort: 'max' });
+    await settle();
+    expect(olderTurns).toHaveLength(1);
+    driver.stop();
+    legacy.stop();
   });
 });
 

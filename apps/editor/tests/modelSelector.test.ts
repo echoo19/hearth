@@ -20,6 +20,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   FALLBACK_MODELS,
+  activeModelGroup,
   choiceForModel,
   isChosen,
   modelGroups,
@@ -40,7 +41,7 @@ import type { AgentChoice, ChatProviderStatus, ProviderModelInfo } from '../src/
 
 function providers(over: Partial<ChatProviderStatus> = {}): ChatProviderStatus {
   return {
-    anthropic: { hasKey: false, source: null },
+    anthropic: { hasKey: false, source: null, cli: false, loggedIn: false, email: null, planType: null },
     openai: {
       installed: false,
       version: null,
@@ -84,6 +85,10 @@ function bothReady(): ChatProviderStatus {
     anthropic: {
       hasKey: true,
       source: 'project',
+      cli: false,
+      loggedIn: false,
+      email: null,
+      planType: null,
       models: [
         { id: 'claude-opus-5', label: 'Opus 5', note: 'Most capable' },
         { id: 'claude-sonnet-5', label: 'Sonnet 5', note: 'Balanced' },
@@ -98,14 +103,21 @@ describe('agent backends', () => {
   it('names what runs the loop, one per provider, in a fixed order', () => {
     expect(AGENT_BACKENDS.map((b) => b.id)).toEqual(['claude-agent-sdk', 'codex-cli']);
     expect(AGENT_BACKENDS.map((b) => b.provider)).toEqual(['anthropic', 'openai']);
-    expect(backendFor('anthropic').name).toBe('Claude Agent SDK');
+    expect(backendFor('anthropic').name).toBe('Claude Code CLI');
     expect(backendFor('openai').name).toBe('Codex CLI');
   });
 });
 
 describe('providerAvailability', () => {
   it('reads Anthropic as the key it is', () => {
-    expect(providerAvailability('anthropic', providers({ anthropic: { hasKey: true, source: 'project' } }))).toEqual({
+    expect(
+      providerAvailability(
+        'anthropic',
+        providers({
+          anthropic: { hasKey: true, source: 'project', cli: false, loggedIn: false, email: null, planType: null },
+        }),
+      ),
+    ).toEqual({
       available: true,
       note: 'API key',
     });
@@ -133,7 +145,7 @@ describe('modelGroups', () => {
     const groups = modelGroups(null);
     expect(groups.map((g) => g.provider)).toEqual(['anthropic', 'openai']);
     expect(groups.map((g) => g.title)).toEqual(['Claude', 'ChatGPT']);
-    expect(groups.map((g) => g.backend)).toEqual(['Claude Agent SDK', 'Codex CLI']);
+    expect(groups.map((g) => g.backend)).toEqual(['Claude Code CLI', 'Codex CLI']);
   });
 
   it('offers no automatic row, so every row names the model that would answer', () => {
@@ -161,14 +173,26 @@ describe('modelGroups', () => {
   it('prefers what the server curated over the fallback', () => {
     const groups = modelGroups(
       providers({
-        anthropic: { hasKey: true, source: 'project', models: [{ id: 'claude-x', label: 'X' }] },
+        anthropic: {
+          hasKey: true,
+          source: 'project',
+          cli: false,
+          loggedIn: false,
+          email: null,
+          planType: null,
+          models: [{ id: 'claude-x', label: 'X' }],
+        },
       }),
     );
     expect(groups[0].models).toEqual([{ id: 'claude-x', label: 'X' }]);
   });
 
   it('ignores an empty curated list rather than showing an empty group', () => {
-    const groups = modelGroups(providers({ anthropic: { hasKey: true, source: 'project', models: [] } }));
+    const groups = modelGroups(
+      providers({
+        anthropic: { hasKey: true, source: 'project', cli: false, loggedIn: false, email: null, planType: null, models: [] },
+      }),
+    );
     expect(groups[0].models).toEqual(FALLBACK_MODELS.anthropic);
   });
 
@@ -195,9 +219,59 @@ describe('modelGroups', () => {
   });
 
   it('carries the availability of each group so the header can state it', () => {
-    const groups = modelGroups(providers({ anthropic: { hasKey: true, source: 'environment' } }));
+    const groups = modelGroups(
+      providers({
+        anthropic: { hasKey: true, source: 'environment', cli: false, loggedIn: false, email: null, planType: null },
+      }),
+    );
     expect(groups[0].availability).toEqual({ available: true, note: 'API key' });
     expect(groups[1].availability.available).toBe(false);
+  });
+});
+
+/**
+ * The composer draws ONE group: the agent that would answer, and its models.
+ * Separate from `modelGroups` above rather than a filter over it, because
+ * Settings genuinely wants every backend at once and the composer genuinely
+ * wants only what would answer.
+ */
+describe('activeModelGroup', () => {
+  it('is the agent the standing choice named, with only that agent’s models', () => {
+    const group = activeModelGroup({ provider: 'openai', model: null, effort: null }, bothReady());
+    expect(group.provider).toBe('openai');
+    expect(group.title).toBe('ChatGPT');
+    expect(group.backend).toBe('Codex CLI');
+    expect(group.models.map((m) => m.id)).toEqual(['gpt-5.6-sol', 'gpt-5.4-mini']);
+  });
+
+  it('follows the project’s own answer until someone picks in this window', () => {
+    // The read-out is what Settings wrote. A window that has never touched the
+    // pill must not quietly show a different agent's catalogue than the project.
+    const group = activeModelGroup(null, providers({ ...bothReady(), active: 'openai' }));
+    expect(group.provider).toBe('openai');
+    expect(group.models.map((m) => m.id)).toEqual(['gpt-5.6-sol', 'gpt-5.4-mini']);
+  });
+
+  it('draws a catalogue before any read-out has landed, rather than an empty menu', () => {
+    // Home has no folder, so there is nothing to read. A menu with no rows in
+    // it while the fetch settles reads as broken rather than as loading.
+    const group = activeModelGroup(null, null);
+    expect(group.provider).toBe('anthropic');
+    expect(group.models).toEqual(FALLBACK_MODELS.anthropic);
+  });
+
+  it('leaves out a model switched off in Settings, which is where that setting becomes real', () => {
+    const off = new Set(['anthropic:claude-opus-5']);
+    const group = activeModelGroup(null, bothReady(), off);
+    expect(group.models.map((m) => m.id)).toEqual(['claude-sonnet-5']);
+  });
+
+  it('states its own availability, so the header can say how this agent is set up', () => {
+    expect(activeModelGroup(null, bothReady()).availability).toEqual({ available: true, note: 'API key' });
+    expect(activeModelGroup(null, providers({ active: 'openai' })).availability).toEqual({
+      available: false,
+      note: 'Not installed',
+    });
   });
 });
 

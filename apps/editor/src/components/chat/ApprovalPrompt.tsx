@@ -11,11 +11,16 @@
  */
 import React, { useEffect, useRef } from 'react';
 import { pendingApprovalId, useApp } from '../../store';
-import type { ApprovalDecision, ChatApprovalPart } from '../../types';
+import type { ApprovalResolution, ChatApprovalPart } from '../../types';
 import { Button } from '../ui/Button';
 
-/** How an answered ask reads afterwards. Past tense — it is history now. */
-export function approvalRecordVerb(decision: ApprovalDecision): string {
+/**
+ * How an answered ask reads afterwards. Past tense — it is history now.
+ * `withdrawn` is deliberately neutral: the session ended under the question,
+ * so neither "Allowed" nor "Denied" would be true — nobody decided anything.
+ */
+export function approvalRecordVerb(decision: ApprovalResolution): string {
+  if (decision === 'withdrawn') return 'Withdrawn';
   return decision === 'allow' ? 'Allowed' : 'Denied';
 }
 
@@ -63,6 +68,9 @@ export function ApprovalPrompt({ part }: { part: ChatApprovalPart }) {
     return (
       <p className="approval-record" data-decision={decision}>
         {approvalRecordVerb(decision)} <span className="mono">{part.title}</span>
+        {/* A withdrawal explains itself: "Withdrawn" alone reads like a verdict
+            somebody reached, and the truth is nobody reached one. */}
+        {decision === 'withdrawn' && ': the session ended before you answered'}
       </p>
     );
   }

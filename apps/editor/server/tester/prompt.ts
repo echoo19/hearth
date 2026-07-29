@@ -56,7 +56,7 @@ export const MISSING_VERDICT_WHY = 'The tester did not give a clear answer.';
  * absent, and it is absent because the tester declined to give one.
  */
 export const UNCLEAR_VERDICT =
-  'It answered the verdict question with something that is not better, worse or no difference, so no verdict is recorded for this session rather than a guess at which one it meant.';
+  'It answered the verdict question with something that is not better, worse or no difference. Rather than guess which one it meant, no verdict is recorded for this session.';
 
 const ENTER_LINE = /^[^\S\n]*ENTER[^\S\n]*:(.*)$/im;
 const ACTION_LINE = /^[^\S\n]*(?:ACTION|HOLD)[^\S\n]*:(.*)$/im;

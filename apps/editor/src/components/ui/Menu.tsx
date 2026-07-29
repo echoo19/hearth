@@ -27,6 +27,14 @@ export interface MenuItemAction {
   label: string;
   icon?: string;
   shortcut?: string;
+  /**
+   * How alarmed the icon should look. Only ever a restatement of what the row
+   * already says in words: a list where the reader has to read three sentences
+   * to work out which one is the careful option is a list doing its job
+   * slowly. `danger` styles the whole row; this styles only the sign, so a
+   * dangerous-looking mark can sit on an ordinary row.
+   */
+  tone?: 'safe' | 'caution' | 'danger';
   danger?: boolean;
   disabled?: boolean;
   /**
@@ -263,7 +271,11 @@ export function MenuItems({
             <span className="menu-check" aria-hidden="true">
               {item.checked ? '✓' : ''}
             </span>
-            {item.icon && <Icon name={item.icon} />}
+            {item.icon && (
+              <span className={item.tone ? `menu-sign is-${item.tone}` : undefined}>
+                <Icon name={item.icon} />
+              </span>
+            )}
             {item.label}
             {item.shortcut && (
               <span className="menu-shortcut" aria-hidden="true">

@@ -63,6 +63,7 @@ import {
   prunePendingChats,
   readTranscript,
   safeChatId,
+  setChatClaudeSessionId,
   setChatThreadId,
   type ChatKind,
   type ChatRecord,
@@ -204,14 +205,17 @@ interface ChatSession {
    */
   permissionMode: PermissionMode;
   /**
-   * The user's own agent this driver was BUILT for, or null for a vendor
-   * backend. Compared per turn for the same reason the mode above is: which
-   * program answers is fixed when the driver is built, so a person who picks
-   * their own agent mid-conversation and is answered by Claude has been told
-   * one thing by the composer and given another. A turn that expresses no
-   * choice at all leaves whatever is bound exactly where it is.
+   * The provider+model this driver was BOUND with, as `agentBindKey` spells
+   * it, or null when the binding turn expressed no choice. The same rule as
+   * `permissionMode` above, for the same reason: both backends fix the model
+   * when the session opens (codex could take one per turn, but the Agent SDK's
+   * is a `query()` option), so a turn that names a different provider or model
+   * has to rebind or the pick in the composer is a lie. `ensureChat` compares
+   * this to the incoming turn's choice — a turn expressing NO choice matches
+   * anything, which is what keeps an old client (and an effort-only change)
+   * from restarting the agent every message.
    */
-  agentId: string | null;
+  agentKey: string | null;
   sockets: Set<WebSocket>;
   /**
    * Settles when the bind attempt this session was created for is over, driver
@@ -322,6 +326,8 @@ export function attachWebSocket(
       options?: {
         resumeThreadId?: string | null;
         onThreadId?: (threadId: string) => void;
+        resumeSessionId?: string | null;
+        onSessionId?: (sessionId: string) => void;
         agent?: AgentTurnOptions | null;
         permissionMode?: PermissionMode | null;
       },
@@ -666,6 +672,23 @@ export function attachWebSocket(
     return `${root}\u0000${chatId}`;
   }
 
+  /**
+   * The part of a turn's agent choice that decides WHICH backend answers, as
+   * one comparable key: provider and model, and nothing else. Effort is
+   * deliberately left out — both drivers apply it per turn on the live
+   * session (codex on `turn/start`, the Agent SDK through
+   * `applyFlagSettings`), so moving the effort dial must not restart the
+   * agent. Null means the turn named no backend at all (no agent field, or an
+   * effort-only one), which every caller reads as "whatever is bound stands".
+   */
+  function agentBindKey(agent: AgentTurnOptions | null | undefined): string | null {
+    if (!agent) return null;
+    const provider = agent.provider ?? '';
+    const model = agent.model ?? '';
+    if (provider === '' && model === '') return null;
+    return `${provider}:${model}`;
+  }
+
   /** Fan the chat index out to every window on this folder, so lists agree. */
   async function announceChats(root: string): Promise<void> {
     const channel = channels.get(root);
@@ -875,26 +898,19 @@ export function attachWebSocket(
     // Checked here rather than trusted to the cleanup, because a message lost
     // to that gap is lost for good.
     const dead = existing?.driver?.dead === true;
-    // Which agent this turn asked for, or what is already bound when it asked
-    // for nothing: an older client, or a person who has never opened the model
-    // menu, must not tear a working backend down.
-    const wantedAgentId = agent ? (agent.agentId ?? null) : (existing?.agentId ?? null);
+    // The choice THIS turn expressed, or null for "no choice": only a turn
+    // that names a provider or model can disagree with what is bound.
+    const wantedAgentKey = agentBindKey(agent);
     if (
       existing?.driver &&
       !dead &&
       existing.permissionMode === permissionMode &&
-      existing.agentId === wantedAgentId
+      (wantedAgentKey === null || wantedAgentKey === existing.agentKey)
     ) {
       existing.sockets.add(socket);
       return existing;
     }
     // Past here the conversation is BOUND, or REBOUND for one of four reasons.
-    //
-    // The person picked a different agent. Which program answers is fixed when
-    // a driver is built, so the pick has to rebind or it is a menu that changes
-    // nothing until the conversation happens to end. Same argument as the mode
-    // below it, and it bites harder: the composer's pill NAMES the agent it
-    // thinks is answering.
     //
     // The mode moved under a live conversation. Neither backend can be told
     // about it (codex fixed the policy at `thread/start`, the SDK at `query()`),
@@ -903,6 +919,14 @@ export function attachWebSocket(
     // nothing until the next session, which for a permission control is the
     // difference between a preference and a lie. Same coarse teardown as
     // chat-cancel; the transcript is on disk and survives it.
+    //
+    // Or the turn named a different provider or model than the one the session
+    // was bound with (`agentKey` above). The composer shows the user which
+    // model they picked, and the SDK fixes the model when its one long-lived
+    // query opens, so a mid-chat switch that did not rebind would keep
+    // answering with the old model while the header names the new one. Both
+    // backends resume their own context across the rebind (codex its thread,
+    // the SDK its session), so the switch costs a restart, not the memory.
     //
     // Or the driver died and this got here first. Or the bind waited on above
     // is the one that failed, which leaves the conversation with no backend and
@@ -920,11 +944,7 @@ export function attachWebSocket(
       chatId,
       driver: null,
       permissionMode,
-      // What the driver below is actually BUILT with, which is the turn's own
-      // choice and nothing inherited: a rebind for some other reason, driven by
-      // a turn that expressed no choice, binds a vendor backend, and recording
-      // the old agent here would leave the session lying about itself.
-      agentId: agent?.agentId ?? null,
+      agentKey: wantedAgentKey,
       // Every window that was watching comes along, so a rebind does not leave
       // the other one staring at an agent nothing is feeding any more. Taken
       // from `socketChat` as well as from the old session, because a session
@@ -965,9 +985,11 @@ export function attachWebSocket(
     // moment it is bound, so the catch below can stop one that failed to start.
     let built: ChatDriver | null = null;
     try {
-      // A conversation the OpenAI backend has answered before carries its
-      // codex thread, so reopening it resumes that thread rather than handing
-      // a fresh agent a transcript to read.
+      // A conversation a backend has answered before carries that backend's
+      // own continuation handle — the codex thread, the Claude session — so
+      // reopening it resumes the agent's context rather than handing a fresh
+      // agent a transcript to read. Both are passed on every bind; each
+      // driver reads only its own and ignores the other's.
       const summary = await getChat(root, session.chatId);
       driver = built = await makeChatDriver(root, {
         resumeThreadId: summary?.codexThreadId ?? null,
@@ -975,6 +997,12 @@ export function attachWebSocket(
           detach(
             setChatThreadId(root, session.chatId, threadId),
             `chat ${session.chatId}: could not remember the codex thread`,
+          ),
+        resumeSessionId: summary?.claudeSessionId ?? null,
+        onSessionId: (sessionId) =>
+          detach(
+            setChatClaudeSessionId(root, session.chatId, sessionId),
+            `chat ${session.chatId}: could not remember the Claude session`,
           ),
         // The binding turn's choice decides WHICH backend answers, so it has
         // to be known before the driver is built, not just when it is sent.

@@ -15,23 +15,20 @@
  * the rail expanded unless stated otherwise:
  *
  *  1. `.conversation-provider` had no max-width, no overflow and no
- *     text-overflow. It names who is answering, and for a registered agent
- *     with no label of its own that name is the agent's own COMMAND, which
- *     server/agentRegistry.ts allows to run to 1024 characters. A 143
- *     character command line measured 811px inside a head whose content box
- *     was 792px: at 1600px the head ran 107px past its own edge, at 500px the
- *     label ran straight through .app-region's `overflow: hidden`, and nothing
- *     on screen said anything had been cut. Registering an agent shipped the
- *     same day this was found, so the string became a user's to choose.
+ *     text-overflow. It names who is answering, and that name is not always a
+ *     short word: a 143 character label measured 811px inside a head whose
+ *     content box was 792px, so at 1600px the head ran 107px past its own
+ *     edge, at 500px the label ran straight through .app-region's
+ *     `overflow: hidden`, and nothing on screen said anything had been cut.
  *
  *  2. `.model-pill` was `flex: none` with `max-width: 15rem`, which is a cap
- *     that doubles as a floor: nothing could give the width back. With a
- *     registered agent's name in it the pill sat at x 299..539 on its own
- *     wrapped line inside an .app-region ending at 496. The name did
- *     ellipsize, at 205px of a wanted 374, and then the ellipsis itself was
- *     clipped: the only sign of truncation was the part that went off the
- *     edge. Truncation you cannot see is worse than truncation, because it
- *     reads as a name that simply ends there.
+ *     that doubles as a floor: nothing could give the width back. With a long
+ *     name in it the pill sat at x 299..539 on its own wrapped line inside an
+ *     .app-region ending at 496. The name did ellipsize, at 205px of a wanted
+ *     374, and then the ellipsis itself was clipped: the only sign of
+ *     truncation was the part that went off the edge. Truncation you cannot
+ *     see is worse than truncation, because it reads as a name that simply
+ *     ends there.
  *
  *  3. The tooltip bubble itself could not hold what it was handed. `.tooltip`
  *     paired `max-width: 260px` with `white-space: nowrap`, so the label just

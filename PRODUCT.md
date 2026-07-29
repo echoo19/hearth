@@ -18,11 +18,12 @@ not developed. Hearth is not a game engine and must never be called one.
   and an agent writes it, as plain files in a folder under `~/Hearth`. Hearth
   makes no assumption about what kind of game: no genre, no dimension, no
   engine, no input model. Anything that runs in a browser runs in the pane.
-- **Coding agents** — first-class users. Four ways in: an Anthropic key,
-  ChatGPT through the open-source Codex CLI, any CLI in the built-in terminal,
-  or an agent registered over the stdio protocol in `docs/custom-agents.md`.
-  Hearth supplies context and tools; it never molds the agent, and it injects
-  no instructions of its own into an agent you brought.
+- **Coding agents** — first-class users. Three ways in: an Anthropic key,
+  ChatGPT through the open-source Codex CLI, or any CLI in the built-in
+  terminal. The conversation drives the two CLIs Hearth integrates; every other
+  agent runs in the terminal, in the same folder. Hearth supplies context and
+  tools; it never molds the agent, and it injects no instructions of its own
+  into an agent you brought.
 - Primary task on any screen: say what you want, watch it happen, and see the
   game reload beside the conversation.
 

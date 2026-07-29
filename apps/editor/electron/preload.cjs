@@ -22,6 +22,12 @@ contextBridge.exposeInMainWorld('hearthNative', {
   pickDirectory: () => ipcRenderer.invoke('hearth:pick-directory'),
   /** Reveal a file/folder in Finder / Explorer. */
   revealInFolder: (path) => ipcRenderer.invoke('hearth:reveal-in-folder', path),
+  /**
+   * Silence the game. Mutes the whole window, which is the only thing that
+   * reaches a cross-origin frame's WebAudio; the game is the only thing in
+   * here that makes a sound.
+   */
+  setAudioMuted: (muted) => ipcRenderer.invoke('hearth:set-audio-muted', !!muted),
   /** Ensure the working window size and set its title. Both modes are the same. */
   setWindowMode: (mode, title) => ipcRenderer.invoke('hearth:window-mode', mode, title),
   /** Push the serialized app-menu model (or null to restore the baseline). */

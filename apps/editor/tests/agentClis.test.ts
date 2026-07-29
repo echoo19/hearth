@@ -23,7 +23,7 @@ import { promises as fsp } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { AGENT_CLIS, detectAgentClis, findOnPath, getAgentClis, toWire } from '../server/agentClis';
-import { agentCliNote } from '../src/components/chat/ModelSelector';
+import { agentCliNote } from '../src/chat/agentClis';
 import { planTerminalLaunch, terminalLaunchInput } from '../src/components/agent/useAgentSocket';
 import type { AgentCliInfo } from '../src/types';
 
@@ -185,19 +185,20 @@ describe('detectAgentClis', () => {
   });
 });
 
-describe('the Terminal group’s read-out', () => {
+describe('what Settings says it found on PATH', () => {
   it('keeps "not asked yet" and "asked and got nothing" apart', () => {
     // A list that failed to load must not read as a machine with nothing on
     // it: one is Hearth's problem, the other is the user's.
     expect(agentCliNote({ state: 'loading' })).toBe('Checking your PATH…');
     expect(agentCliNote({ state: 'failed' })).toMatch(/could not read your PATH/);
     // The ready sentence has one job beyond not being a status word: it has to
-    // say the list under it is not the boundary. A machine with none of
-    // Hearth's shortlist installed can still run anything, and this is the only
-    // line on that side of the menu that gets to say so.
+    // say the list under it is NOT the boundary. Hearth detects a shortlist of
+    // CLIs by name, and a machine with none of them installed can still run
+    // anything it likes in the terminal. This line is what stops a detection
+    // read-out from being read as a list of supported agents.
     const ready = agentCliNote({ state: 'ready', clis: [] });
     expect(ready).toMatch(/any CLI/i);
-    expect(ready).not.toMatch(/PATH/);
+    expect(ready).toMatch(/terminal/i);
   });
 });
 

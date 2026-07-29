@@ -3,11 +3,26 @@
  * and the tool chip's labelling. All DOM-free.
  */
 import { describe, expect, it } from 'vitest';
+import { approvalRecordVerb } from '../src/components/chat/ApprovalPrompt';
 import { composerBlockReason, composerKeyAction } from '../src/components/chat/Composer';
 import { detailIsFile, relativeTo, shortenPath, toolVerb } from '../src/components/chat/ToolChip';
 import { capabilityLabel, connectionLabel } from '../src/components/shell/TopBar';
 import { isNearBottom } from '../src/components/chat/MessageList';
 import { anyChatProviderReady } from '../src/store';
+
+describe('approvalRecordVerb — how an answered ask reads afterwards', () => {
+  it('keeps the words every old transcript was written with', () => {
+    expect(approvalRecordVerb('allow')).toBe('Allowed');
+    expect(approvalRecordVerb('deny')).toBe('Denied');
+  });
+
+  it('reads a withdrawal neutrally — nobody decided anything', () => {
+    // A teardown resolves the ask, and the record must not claim a person
+    // did: "Denied" over a question the session ended under is a forged
+    // decision. See ApprovalResolution in types.ts.
+    expect(approvalRecordVerb('withdrawn')).toBe('Withdrawn');
+  });
+});
 
 describe('composerBlockReason', () => {
   it('names the reason when the socket is down', () => {

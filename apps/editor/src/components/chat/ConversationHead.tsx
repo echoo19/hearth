@@ -10,15 +10,15 @@
  * conversation is one or the other for its whole life (server/chatStore.ts
  * writes `kind` once, at creation), so flipping the column moved you to a
  * different surface without moving you to a different conversation. The choice
- * is made where it belongs now — when a conversation is STARTED, from the
- * composer's model picker, whose Terminal group starts a terminal session with
- * that CLI in it. What is left here is the read-out that switch was pretending
- * to be.
+ * is made where it belongs now — when a conversation is STARTED: New chat and
+ * New terminal, in the sidebar and on a project's own screen. A terminal opens
+ * empty in the project folder and types nothing; what runs in it is whatever
+ * you run. What is left here is the read-out that switch was pretending to be.
  */
 import React from 'react';
-import { chosenCustomAgent, useCustomAgents, useModelChoice } from '../../chat/modelChoice';
+import { activeProvider, useModelChoice } from '../../chat/modelChoice';
 import { useApp, type ConversationMode } from '../../store';
-import type { ChatDriverKind, ChatProviderStatus } from '../../types';
+import type { AgentChoice, ChatDriverKind, ChatProviderStatus } from '../../types';
 import { useAgentSocket } from '../agent/useAgentSocket';
 import { Icon } from '../ui';
 import { Button } from '../ui/Button';
@@ -26,27 +26,47 @@ import { Tooltip } from '../ui/Tooltip';
 import { terminalStatusLabel } from './TerminalPane';
 
 /**
- * Who is answering, in the name a user would use for it — not the driver's.
- * The server's `active` provider is the truth when it has been read; a bound
- * driver is the fallback, since it is proof by demonstration.
+ * Who is answering, in the name a user would use for it, not the driver's.
  *
- * One of the user's OWN agents is checked FIRST and beats both, which is the
- * whole point of the parameter: `providers.active` is a fact about which vendor
- * is set up, and it would happily read "Claude" over the top of a registered
- * program that is the thing actually answering. `custom` is one driver kind for
- * every registered agent, so the name comes from the standing choice.
+ * Resolved through `activeProvider`, the SAME function the composer's pill and
+ * the sidebar's account row use, because these three sit on one screen and
+ * used to disagree on it. This strip read `providers.active` on its own, which
+ * is the server's copy of the folder's settings, while the pill read the
+ * standing choice. Pick a GPT model and the pill said GPT-5.4 while the strip
+ * two inches above it still said Claude, and both were reporting something
+ * true. One answer, read once.
+ *
+ * `providers.active` is still consulted for the one thing only it knows:
+ * whether ANY agent can answer. Null there means nothing is set up, and naming
+ * the merely-selected agent in that state would promise a reply that is not
+ * coming. A bound driver outranks it, since it is proof by demonstration.
+ *
+ * `driver` is wider than ChatDriverKind ON PURPOSE. Transcripts written by
+ * builds that still had registered agents carry `custom` (see the note on
+ * ChatDriverKind in types.ts), and narrowing those to "No agent" told the
+ * reader of a real conversation that nobody had answered it. Somebody did:
+ * an agent of their own, under a door this app no longer has. The label says
+ * that much and no more — the registry is gone, so the name is not here to
+ * repeat, and inventing one would be worse than the vagueness.
  */
 export function providerLabel(
   providers: ChatProviderStatus | null,
-  driver: ChatDriverKind | null,
-  customLabel?: string | null,
+  driver: ChatDriverKind | (string & {}) | null,
+  choice: AgentChoice | null = null,
 ): string {
-  if (driver === 'custom' || customLabel) return customLabel ?? 'Your agent';
-  const active = providers?.active ?? null;
+  const active = providers
+    ? providers.active === null
+      ? null
+      : activeProvider(choice, providers)
+    : (choice?.provider ?? null);
   if (active === 'anthropic') return 'Claude';
   if (active === 'openai') return 'ChatGPT';
   if (driver === 'agent-sdk') return 'Claude';
   if (driver === 'codex') return 'ChatGPT';
+  // Any bound driver this build does not recognise was a user's own agent,
+  // recorded by a build that still let one register. Historical fact, honest
+  // tense: it answered then, and it cannot be started again now.
+  if (driver !== null && driver !== 'stub') return 'Custom agent (retired)';
   return 'No agent';
 }
 
@@ -149,14 +169,7 @@ export function ConversationHead() {
   const mode = useApp((s) => s.conversationMode);
   const providers = useApp((s) => s.providers);
   const driver = useApp((s) => s.chatDriver);
-  // Named from the standing choice rather than from the driver, because the
-  // driver kind is `custom` for every registered agent. The label is the user's
-  // own word for it; the command line lives one hover away, in the tooltip,
-  // because this strip has room for a fact and not for a command.
   const choice = useModelChoice();
-  const agents = useCustomAgents();
-  const own = chosenCustomAgent(choice, agents);
-
   return (
     <div className="conversation-head">
       {/* Leaving first, on the left, the way it reads on every screen. */}
@@ -166,14 +179,7 @@ export function ConversationHead() {
           a way out. */}
       <span className="conversation-provider conversation-kind">{conversationKindLabel(mode)}</span>
       {/* Chat mode's other read-out: which agent would answer. */}
-      {mode === 'chat' &&
-        (own ? (
-          <Tooltip content={own.commandLine}>
-            <span className="conversation-provider">{providerLabel(providers, driver, own.label)}</span>
-          </Tooltip>
-        ) : (
-          <span className="conversation-provider">{providerLabel(providers, driver)}</span>
-        ))}
+      {mode === 'chat' && <span className="conversation-provider">{providerLabel(providers, driver, choice)}</span>}
       {mode === 'terminal' && <TerminalContext />}
     </div>
   );

@@ -83,6 +83,9 @@ describe('workingLabel — what the turn says it is doing', () => {
     };
     expect(workingLabel({ parts: [ask] })).toBe('Waiting for you');
     expect(workingLabel({ parts: [{ ...ask, decision: 'allow' }] })).toBe('Working');
+    // A withdrawn ask is resolved — the session ended under it — so it must
+    // not read "Waiting for you" about a question nothing will ever answer.
+    expect(workingLabel({ parts: [{ ...ask, decision: 'withdrawn' }] })).toBe('Working');
   });
 });
 

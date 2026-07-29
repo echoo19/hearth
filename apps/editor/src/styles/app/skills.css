@@ -241,19 +241,6 @@
   white-space: nowrap;
 }
 
-/* Whose folder this one is. Quiet on purpose: it is an answer to a question
-   the "Installed" heading raises, not a badge competing with the name. Only
-   drawn for skills Hearth found somewhere else. */
-.skills-item-source {
-  flex: none;
-  padding: 1px 6px;
-  border-radius: 999px;
-  border: 1px solid var(--border);
-  color: var(--ink-faint);
-  font-size: var(--text-2xs);
-  white-space: nowrap;
-}
-
 /* Off is a state an agent can feel, so the list has to show it rather than
    only offer it in a menu. A word, not a shade: dimming alone reads as
    "unimportant", which is not the same claim. */

@@ -356,7 +356,7 @@ describe('CodexDriver approvals', () => {
     driver.stop();
   });
 
-  it('denies anything still pending on stop, so the child never sits on a paused turn', async () => {
+  it('withdraws anything still pending on stop — codex unwinds, and no Deny is forged', async () => {
     const { driver, server } = makeDriver();
     await driver.start('chat-1', '/w/game');
     const events = reader(driver.events);
@@ -367,14 +367,14 @@ describe('CodexDriver approvals', () => {
       params: { threadId: 'thread-1', turnId: 't', itemId: 'i3', startedAtMs: 0 },
     });
     const approvalId = ((await request)[0] as { approvalId: string }).approvalId;
-    // The windows are told the same thing codex is, before the stream ends.
-    // Answering only codex left Allow / Deny live on screen and unanswered in
-    // the transcript, for a request that had already been declined, and the
-    // session it pointed at was gone.
+    // Codex hears `decline` so the child never sits on a paused turn, but the
+    // event stream — and through it the transcript — records `withdrawn`: the
+    // session ended before the person decided, and writing `deny` there would
+    // put a decision in their mouth they never made.
     const resolved = events.next(1);
     driver.stop();
     expect(server.replyFor(11)).toEqual({ decision: 'decline' });
-    expect(await resolved).toEqual([{ type: 'approval-resolved', approvalId, decision: 'deny' }]);
+    expect(await resolved).toEqual([{ type: 'approval-resolved', approvalId, decision: 'withdrawn' }]);
   });
 
   it('answers an unknown server request rather than leaving it hanging', async () => {

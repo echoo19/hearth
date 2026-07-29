@@ -194,7 +194,7 @@ describe('the Anthropic backend', () => {
   it('sends exactly the house facts, and nothing personal, when there is no personalization', async () => {
     const options = await sdkOptions(dirs.project);
     const append = (options.systemPrompt as { append?: string }).append ?? '';
-    expect(append).toBe(hearthFactsPrompt({ probeCli: false }));
+    expect(append).toBe(hearthFactsPrompt({ probeCli: false, skills: false }));
     expect(append).not.toContain('Standing preferences');
   });
 
@@ -305,7 +305,7 @@ describe('the codex backend', () => {
     const server = await bindCodex(dirs.project);
     const start = server.paramsFor('thread/start')[0];
     expect(start.cwd).toBe(dirs.project);
-    expect(start.developerInstructions).toBe(hearthFactsPrompt({ probeCli: false }));
+    expect(start.developerInstructions).toBe(hearthFactsPrompt({ probeCli: false, skills: false }));
     expect(String(start.developerInstructions)).not.toContain('Standing preferences');
   });
 

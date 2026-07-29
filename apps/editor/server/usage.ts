@@ -32,7 +32,7 @@ import path from 'node:path';
 import { JOURNAL_FILE } from '@hearth/core';
 import { chatIndexPath, parseChatIndex } from './chatStore.js';
 import { EVIDENCE_DIR } from './evidenceWatcher.js';
-import { listSkills } from './skills.js';
+import { hearthHome, listSkills } from './skills.js';
 
 /**
  * Where a project's playtest sweeps land — one numbered directory per sweep,
@@ -360,7 +360,13 @@ export async function collectUsage(options: UsageOptions = {}): Promise<UsageRep
   const gatheredAt = (options.now?.() ?? new Date()).toISOString();
   try {
     const home = options.home ?? os.homedir();
-    const recentsFile = options.recentsFile ?? path.join(home, '.hearth', 'recent-projects.json');
+    // hearthHome() (server/skills.ts), not `home` above: `home` is only ever
+    // used to shorten a real disk path to `~` for display, which stays tied
+    // to the actual os.homedir() regardless of HEARTH_HOME. The recents file
+    // itself is the one honoring HEARTH_HOME — see projectServer.ts's own
+    // recentsFile default for the matching change and why it leaks nothing
+    // new: unset, HEARTH_HOME resolves to exactly `~/.hearth`.
+    const recentsFile = options.recentsFile ?? path.join(hearthHome(), 'recent-projects.json');
     const rows = await readRecentRows(recentsFile);
     const [projects, skills] = await Promise.all([
       Promise.all(rows.map((row) => readProject(row, home))),

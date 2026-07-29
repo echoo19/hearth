@@ -37,27 +37,28 @@
  * is what adding a harness looks like from this file.
  *
  * That shortlist is a fact about Hearth's DRIVERS and must never be allowed to
- * read as the set of agents that work here, which is what the two sections
- * below it exist to prevent: your own agent, registered, answering in the
- * conversation; and the terminal, running anything at all.
- *
- * AND THEN THERE IS THE THIRD CARD, which is why that shortlist is honest
- * rather than limiting: `CustomAgentsSection` below, where the user registers
- * their OWN agent as a command line (server/agentRegistry.ts). Those rows are
- * shaped differently on purpose. A harness row describes a vendor, a catalogue
- * and a connection method, because Hearth knows all three; a registered agent
- * gets a name and the exact command, because that is everything Hearth knows
- * and it prints all of it.
+ * read as the set of agents that work here, which is what `TerminalSection`
+ * exists to prevent: any other agent runs in the terminal, in the same folder,
+ * with nothing to set up.
  *
  * The two harnesses that exist are genuinely different animals, and the rows
  * say so rather than pretending otherwise:
  *
- *   Claude Agent SDK   an API key. There is no OAuth to hand off to, so the
- *                      honest equivalent of one click is paste-and-go.
+ *   Claude Code CLI    a binary that is already signed into an account, or an
+ *                      API key. The sign-in is the ordinary route and costs
+ *                      nothing extra, but it is the CLI's own interactive
+ *                      flow, so the row runs `claude auth login` in the
+ *                      visible terminal rather than pretending to drive it.
+ *                      A key stays as the alternative, not as a step after.
  *   Codex CLI          an open-source binary you install and sign into in a
  *                      browser. Before the binary exists there is nothing a
  *                      Sign in button could do, so the row offers the install
  *                      instead — and runs it in the visible terminal.
+ *
+ * NEITHER SIGN-IN PASSES THROUGH HEARTH. Codex's hands a URL to the user's own
+ * browser; Claude's types one command into the user's own shell. In both cases
+ * the person talks to the vendor directly, and there is no field on this pane
+ * that takes a token, a password or a session key.
  *
  * Both are also bound to one catalogue: the SDK's `model` option takes Claude
  * ids and codex answers from its own `model/list`. Other harnesses are
@@ -105,40 +106,29 @@
  * two of them in flight at once.
  */
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import {
-  apiConfirmAgent,
-  apiDeleteAgent,
-  apiOpenAiLogin,
-  apiSaveAgent,
-  apiSaveProviderSettings,
-  type ProviderSettingsPatch,
-} from '../../api';
+import { apiOpenAiLogin, apiSaveProviderSettings, type ProviderSettingsPatch } from '../../api';
 import { showToast } from '../../toast';
 import {
   AGENT_BACKENDS,
   type AgentBackend,
   canSetModelEnabled,
   enabledModels,
-  getCustomAgentsFile,
   getModelChoice,
   getModelPrefsFile,
   isModelEnabled,
-  setCustomAgents,
   setModelChoice,
   setModelEnabled,
-  useCustomAgents,
   useDisabledModels,
   useModelChoice,
 } from '../../chat/modelChoice';
-import { HEARTH_AGENT_ENV_VARS } from '../../../server/chatDrivers/customWire';
-import { NOTHING_DISABLED, choiceForModel, modelGroups, useAgentClis } from '../chat/ModelSelector';
+import { NOTHING_DISABLED, choiceForModel, modelGroups } from '../chat/ModelSelector';
+import { useAgentClis } from '../../chat/agentClis';
 import { useApp } from '../../store';
 import type {
   AgentChoice,
   AppSettingsInfo,
   ChatProvider,
   ChatProviderStatus,
-  CustomAgentInfo,
   ProviderModelInfo,
 } from '../../types';
 import {
@@ -166,6 +156,20 @@ import { anthropicUsable, keySourceLabel, openAiStatusLabel, openAiUsable } from
 
 /** What the user has to run before the Codex harness can do anything. */
 export const CODEX_INSTALL_COMMAND = 'npm i -g @openai/codex';
+
+/**
+ * What signs the Claude Code CLI into an account.
+ *
+ * It is a command rather than a call, and that is the whole shape of this
+ * feature. `claude auth login` opens a browser and finishes in a terminal the
+ * person is looking at; there is no headless or device-code equivalent to hand
+ * off to the way `apiOpenAiLogin` hands off codex's. So Hearth types it into
+ * the terminal it already owns, in the project folder, and gets out of the
+ * way. It never sees what comes back: the credential is the CLI's, it lands
+ * wherever the CLI keeps it, and this pane only ever reads `claude auth status`
+ * afterwards to find out how it went.
+ */
+export const CLAUDE_LOGIN_COMMAND = 'claude auth login';
 
 /** How long "Copied" stays on the copy button before it goes back to "Copy". */
 const COPIED_MS = 1400;
@@ -213,17 +217,6 @@ const CLOSE_SETTINGS_EVENT = 'hearth:close-settings';
  */
 export const ANTHROPIC_KEYS_URL = 'https://console.anthropic.com/settings/keys';
 export const OPENAI_KEYS_URL = 'https://platform.openai.com/api-keys';
-
-/**
- * The protocol, written up.
- *
- * A link rather than the four paragraphs that used to be printed here. This
- * pane's job is to get an agent registered; explaining stdin framing on the
- * way past made the screen a wall of prose with a button buried in it, and
- * "See docs/custom-agents.md" asked someone in a windowed app with no address
- * bar to go and find a file in a repository they may not have cloned.
- */
-export const CUSTOM_AGENTS_DOCS_URL = 'https://hearthengine.com/docs/custom-agents';
 
 export const KEY_SOURCE_URL: Record<ChatProvider, string> = {
   anthropic: ANTHROPIC_KEYS_URL,
@@ -292,8 +285,53 @@ function ExternalLink({ href, children }: { href: string; children: React.ReactN
  */
 const NOT_CONNECTED_STATUS: Record<ChatProvider, string> = {
   anthropic: 'Not connected yet. Paste an API key and Claude can answer straight away.',
-  openai: 'Not added yet. Hearth can install the codex binary for you, then you sign in.',
+  openai: 'Not added yet. Hearth can install codex for you. Then you sign in.',
 };
+
+/**
+ * The Claude row's two other unconnected sentences, because "not connected" is
+ * three different situations there and one line cannot carry all three.
+ *
+ * The one that matters is the first. With the binary sitting on PATH and no
+ * sign-in on it, the row used to fall through to NOT_CONNECTED_STATUS and send
+ * someone off to the Anthropic console for a key they do not need and would be
+ * billed for, when the thing that fixes it is one command and their existing
+ * account. That is a worse failure than an unhelpful sentence: it costs money.
+ *
+ * It stops short of "you are signed out", for the same reason the codex row
+ * does. `readClaudeAuth` reports `loggedIn: false` when the status command
+ * times out, exits non-zero, or prints something this version cannot parse, so
+ * a busy machine and a signed-out one are the same bytes on the wire. The row
+ * says what it confirmed and offers the command; `unconfirmed` carries the
+ * rest, so the hero above cannot make the claim the row is declining to.
+ */
+const CLAUDE_SIGNED_OUT_STATUS =
+  'The Claude Code CLI is here, and no sign-in was confirmed. Signing in takes one command and no key.';
+
+/**
+ * ...and without the binary there is nothing a sign-in button could do, so the
+ * line names the key route instead. Not "not installed" as a verdict on the
+ * machine: it is one of two ways in, and the other one is on the row already.
+ */
+const CLAUDE_NO_CLI_STATUS =
+  'The Claude Code CLI is not on this machine. Paste an API key and Claude can answer straight away.';
+
+/**
+ * Who the CLI says you are, in one line.
+ *
+ * Lives here rather than in providerStatus for the reason given above
+ * NOT_CONNECTED_STATUS: this is the screen that can act on it. The plan word
+ * is passed through verbatim (see server/claudeAuth.ts) because it is
+ * Anthropic's vocabulary and it will grow, and either half may be missing —
+ * some builds report a plan and no address, and an older one reports neither.
+ */
+export function claudeSignedInStatus(email: string | null, planType: string | null): string {
+  if (email !== null) return planType !== null ? `Signed in as ${email} (${planType}).` : `Signed in as ${email}.`;
+  if (planType !== null) return `Signed in to the Claude Code CLI on a ${planType} plan.`;
+  // Neither, which is what an older build reports. Still a real sign-in, so
+  // the line says the useful half: nothing else has to be set up.
+  return 'Signed in to the Claude Code CLI. No key needed.';
+}
 
 /**
  * The row's primary control. A row offers exactly one of these, and which one
@@ -303,7 +341,16 @@ const NOT_CONNECTED_STATUS: Record<ChatProvider, string> = {
 export type AgentAction =
   /** A field and a Connect beside it: the whole of connecting, in one press. */
   | { kind: 'paste-key'; label: string; placeholder: string }
-  /** One click, straight into the browser flow. */
+  /**
+   * The vendor's own sign-in, started from here and finished elsewhere.
+   *
+   * Two shapes behind one kind, because a row offers one primary action and
+   * the person pressing it wants the same thing either way. Codex hands back a
+   * URL and Hearth opens it (`beginSignIn`); Claude has no such handoff, so
+   * Hearth types `claude auth login` into the visible terminal and the CLI
+   * takes it from there (`signInToClaude`). Which one runs is decided by
+   * `card.provider` at the press, and neither ever touches the credential.
+   */
   | { kind: 'sign-in'; label: string }
   /** The binary has to exist first. Hearth can run the install for you. */
   | { kind: 'install'; command: string }
@@ -371,13 +418,30 @@ export interface AgentCard {
 }
 
 /**
- * The Claude Agent SDK's row. The source of truth is the app settings
- * read-out, with the providers read-out as a fallback: they are gathered by
- * different routes and either one may land first.
+ * The Claude row. The source of truth is the app settings read-out, with the
+ * providers read-out as a fallback: they are gathered by different routes and
+ * either one may land first.
  *
  * An environment key is connected but not ours to remove — unsetting a shell
  * variable is not something a settings pane gets to do, and offering a
  * Disconnect that silently did nothing would be a lie.
+ *
+ * THERE ARE TWO WAYS IN AND THEY ARE ALTERNATIVES, which is the thing the
+ * branches below are ordered to say. A signed-in CLI answers on the account
+ * the person already pays for; a key is billed per token. So a sign-in that
+ * has been confirmed is reported first and a key is never presented as the
+ * step after it. What each state offers:
+ *
+ *   loggedIn                signed in, named, with Sign in again
+ *   cli, no sign-in         the one command that fixes it, NOT a key hunt
+ *   a key, either source    connected on the key, and the key is what the
+ *                           row manages, because that is what this pane wrote
+ *   no cli, no key          the key route, since a sign-in cannot run here
+ *
+ * The middle one is the reason this exists. It used to render as "Not
+ * connected yet. Paste an API key", to someone with the binary on PATH and a
+ * Claude subscription already, which sent them to buy API credit to solve a
+ * problem one command solves for nothing.
  */
 export function anthropicCard(
   settings: AppSettingsInfo | null,
@@ -406,7 +470,7 @@ export function anthropicCard(
       connected: false,
       unconfirmed: false,
       status: !environment.hasProject
-        ? 'Not checked yet. A key can live in a project or in ANTHROPIC_API_KEY, and Hearth reads both once a project is open.'
+        ? 'Not checked yet. A key can live in a project or in ANTHROPIC_API_KEY. Hearth reads both once a project is open.'
         : failed
           ? 'Hearth could not finish reading this project, so it cannot say whether a key is here.'
           : 'Looking for a key in this project.',
@@ -415,8 +479,21 @@ export function anthropicCard(
       altKey: null,
     };
   }
-  const source = settings?.source ?? providers?.anthropic.source ?? null;
-  const hasKey = settings?.hasKey === true || anthropicUsable(providers);
+  const anthropic = providers?.anthropic ?? null;
+  const source = settings?.source ?? anthropic?.source ?? null;
+  // A KEY, not "anything that could answer". It used to read
+  // `anthropicUsable(providers)`, which is the right question for the composer
+  // and the wrong one here: that helper now says yes to a signed-in CLI with
+  // no key at all, and this value decides whether the row offers to REMOVE a
+  // key. A signed-in user with nothing saved would have been handed a Remove
+  // key button for a file that does not exist.
+  const hasKey = settings?.hasKey === true || anthropic?.hasKey === true;
+  // `cli` is only the binary on PATH; `loggedIn` is the one that decides
+  // whether it can answer. Both default to false only once `providers` has
+  // actually landed — the branch above owns the case where it has not, so
+  // there is no state here where a false is being invented.
+  const loggedIn = anthropic?.loggedIn === true;
+  const cliHere = anthropic?.cli === true;
   const status = keySourceLabel(source);
   // Any credential that is not the one this pane wrote into the open project:
   // an environment variable today, and whatever else `source` grows to mean.
@@ -467,6 +544,62 @@ export function anthropicCard(
       altKey: { label: 'Replace the key', hint: 'The old one is overwritten.', placeholder: 'sk-ant-…' },
     };
   }
+  // No key anywhere. The CLI's own account is the other way in, and from here
+  // down the row is about that rather than about a key.
+  if (loggedIn) {
+    return {
+      provider: 'anthropic',
+      name: 'Claude',
+      known: true,
+      read: 'ok',
+      connected: true,
+      unconfirmed: false,
+      status: claudeSignedInStatus(anthropic?.email ?? null, anthropic?.planType ?? null),
+      // The same offer the ChatGPT row makes when it is connected, because it
+      // answers the same question: this is the row you come to when you want
+      // to be a different account, and there is nothing else here that does
+      // it. Nothing is signed out first — the CLI replaces its own session.
+      action: { kind: 'sign-in', label: 'Sign in again' },
+      // Nothing was stored by this pane, so there is nothing for it to delete.
+      // Signing out is the CLI's to do, and a button here that claimed to do
+      // it would be claiming to touch a credential Hearth never holds.
+      disconnect: null,
+      altKey: {
+        label: 'Use an API key instead',
+        hint: 'An alternative to the sign-in, and used ahead of it. Saved in this project.',
+        placeholder: 'sk-ant-…',
+      },
+    };
+  }
+  if (cliHere) {
+    return {
+      provider: 'anthropic',
+      name: 'Claude',
+      // The read landed, so this row is not "unchecked" and the pane may still
+      // open with "set up your first agent".
+      known: true,
+      read: 'ok',
+      connected: false,
+      // ...but the sign-in specifically is not settled, for the same reason
+      // the codex row's is not: `readClaudeAuth` reports this exact shape when
+      // its status command times out or prints something it cannot parse. The
+      // row offers the sign-in, as it must, and the hero reads this field
+      // rather than announcing a disconnection over the top of it.
+      unconfirmed: true,
+      status: CLAUDE_SIGNED_OUT_STATUS,
+      // The primary action, and it is the sign-in rather than the key. The
+      // binary is right there and the person almost certainly has an account
+      // for it; sending them to buy API credit instead is the expensive
+      // mistake this whole branch exists to stop.
+      action: { kind: 'sign-in', label: 'Sign in to Claude Code' },
+      disconnect: null,
+      altKey: {
+        label: 'Use an API key instead',
+        hint: 'An alternative to signing in, and used ahead of it. Saved in this project.',
+        placeholder: 'sk-ant-…',
+      },
+    };
+  }
   return {
     provider: 'anthropic',
     name: 'Claude',
@@ -479,7 +612,13 @@ export function anthropicCard(
     // Terminal"). On this pane the row already carries the button that fixes
     // it, so the line says what to do instead of what is wrong. A dashboard
     // that tells you what you lack reads worse than one that offers.
-    status: NOT_CONNECTED_STATUS.anthropic,
+    //
+    // Which of the two sentences depends on whether the providers read has
+    // landed at all. Without it there is no `cli` field to have read, and
+    // saying the CLI is not on this machine would be a claim off no evidence.
+    status: anthropic === null ? NOT_CONNECTED_STATUS.anthropic : CLAUDE_NO_CLI_STATUS,
+    // No binary, so no sign-in button: it would type a command that answers
+    // "command not found". The key route is the one that works from here.
     action: { kind: 'paste-key', label: 'Connect', placeholder: 'sk-ant-…' },
     disconnect: null,
     altKey: null,
@@ -530,8 +669,8 @@ export function openAiCard(
         connected: false,
         unconfirmed: false,
         status: failed
-          ? 'Hearth could not check this machine for the codex binary.'
-          : 'Checking this machine for the codex binary.',
+          ? 'Hearth could not check this machine for codex.'
+          : 'Checking this machine for codex.',
         action: { kind: 'none' },
         disconnect: null,
         altKey: null,
@@ -563,8 +702,8 @@ export function openAiCard(
       connected: false,
       unconfirmed: false,
       status: failed
-        ? 'The codex binary is here. Hearth could not finish reading this project, so it cannot say whether you are signed in.'
-        : 'The codex binary is here. Whether you are signed in is kept in ~/.codex, and Hearth has not read it yet.',
+        ? 'Codex is installed. Hearth could not finish reading this project, so it cannot say whether you are signed in.'
+        : 'Codex is installed. Your sign-in is kept in ~/.codex, and Hearth has not read it yet.',
       action: { kind: 'none' },
       disconnect: null,
       altKey: null,
@@ -756,309 +895,6 @@ export function modelCountLabel(offered: number, total: number): string {
   return `${offered} of ${total} offered`;
 }
 
-// ---------------------------------------------------------------------------
-// Your own agents
-//
-// The third card, and the one that makes the two above a shortlist rather than
-// the whole world. A registered agent is a LABEL and a COMMAND LINE, and this
-// section is built around that being all Hearth knows: there is no vendor, no
-// catalogue of models, no connection method and no capability list, because
-// inventing any of them would be Hearth describing somebody else's program.
-//
-// Three rules this section is written to:
-//
-//  1. **The command is always visible.** Every row prints it, the confirm
-//     prints it, and there is no state in which a friendly name stands in for
-//     the thing that gets spawned.
-//  2. **Typed fields, never a JSON box.** Name, command and one field per
-//     argument. A single command-line box would mean Hearth implementing
-//     quoting rules, and a wrong split runs a different command than the one on
-//     screen.
-//  3. **Confirm once per command string.** A saved agent cannot answer a turn
-//     until the person at this machine has read the exact line and accepted it,
-//     and editing that line asks again. The server enforces the same rule, so a
-//     client that skipped this gets a refusal rather than a spawn.
-// ---------------------------------------------------------------------------
-
-/** What is being typed. `id` null is a new agent rather than an edit. */
-export interface AgentDraft {
-  id: string | null;
-  label: string;
-  command: string;
-  args: string[];
-}
-
-export const EMPTY_AGENT_DRAFT: AgentDraft = { id: null, label: '', command: '', args: [] };
-
-/**
- * What is wrong with a draft, said in the words of the field it is about, or
- * null when it can be saved.
- *
- * The space rule is the interesting one. A command with a space in it is nearly
- * always a whole command line pasted into the wrong box, and splitting it here
- * would mean guessing at quoting; a path with a space in it is a real thing on
- * macOS and is allowed, told apart by carrying a separator. Refusing with the
- * reason beats accepting and spawning something nobody typed.
- */
-export function agentDraftProblem(draft: AgentDraft): string | null {
-  if (draft.label.trim() === '') return 'Give this agent a name.';
-  const command = draft.command.trim();
-  if (command === '') return 'Name the program to run.';
-  if (/\s/.test(command) && !command.includes('/') && !command.includes('\\')) {
-    return 'Put only the program here. Everything after it goes in an argument field of its own.';
-  }
-  return null;
-}
-
-/** The draft as the server takes it, with blank argument fields dropped. */
-export function agentSavePatch(draft: AgentDraft): { id?: string; label: string; command: string; args: string[] } {
-  return {
-    ...(draft.id !== null ? { id: draft.id } : {}),
-    label: draft.label.trim(),
-    command: draft.command.trim(),
-    args: draft.args.map((arg) => arg.trim()).filter((arg) => arg !== ''),
-  };
-}
-
-/**
- * What the confirm says before an agent is allowed to answer.
- *
- * It names the command and what running it means, and it does not pretend
- * Hearth will contain it. Hearth cannot sandbox an arbitrary binary, and copy
- * implying otherwise would be worse than saying nothing: the honest sentence is
- * that this is the same power the terminal in the next tab already has.
- */
-export function agentConfirmBody(agent: CustomAgentInfo): string {
-  return `Hearth will run "${agent.commandLine}" in your open project, with your login shell's PATH. It can do anything you could do in the terminal. Hearth shows what it did and cannot stop it.`;
-}
-
-function CustomAgentsSection() {
-  const agents = useCustomAgents();
-  const [draft, setDraft] = useState<AgentDraft | null>(null);
-  const [problem, setProblem] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
-  const [confirming, setConfirming] = useState<CustomAgentInfo | null>(null);
-  const [removing, setRemoving] = useState<CustomAgentInfo | null>(null);
-  const file = getCustomAgentsFile();
-
-  const save = useCallback(async (): Promise<void> => {
-    if (!draft) return;
-    const found = agentDraftProblem(draft);
-    if (found !== null) {
-      setProblem(found);
-      return;
-    }
-    setBusy(true);
-    const result = await apiSaveAgent(agentSavePatch(draft));
-    setBusy(false);
-    if ('error' in result) {
-      setProblem(result.error);
-      return;
-    }
-    setCustomAgents(result.agents, result.file);
-    setProblem(null);
-    setDraft(null);
-  }, [draft]);
-
-  const remove = useCallback(async (id: string): Promise<void> => {
-    setBusy(true);
-    const read = await apiDeleteAgent(id);
-    setBusy(false);
-    if (read) setCustomAgents(read.agents, read.file);
-  }, []);
-
-  const confirm = useCallback(async (id: string): Promise<void> => {
-    setBusy(true);
-    const read = await apiConfirmAgent(id);
-    setBusy(false);
-    if (read) setCustomAgents(read.agents, read.file);
-  }, []);
-
-  return (
-    <section className="set-agent-section">
-      <div className="set-agent-section-head">
-        <h3 className="set-agent-section-title">Your agents</h3>
-        <span className="set-agent-count">
-          {agents.length === 1 ? '1 registered' : `${agents.length} registered`}
-        </span>
-      </div>
-      <p className="set-agent-hint">
-        Any program that speaks the Hearth agent protocol answers in the conversation, like the two above.{' '}
-        <ExternalLink href={CUSTOM_AGENTS_DOCS_URL}>How to write one</ExternalLink>
-      </p>
-
-      <div className="set-agents" role="list">
-        {agents.map((agent) => {
-          const editing = draft?.id === agent.id;
-          return (
-            <section
-              key={agent.id}
-              role="listitem"
-              className="set-agent"
-              data-state={agent.confirmed ? 'connected' : 'idle'}
-              data-open={editing ? 'true' : 'false'}
-            >
-              <div className="set-agent-head">
-                <span className="set-agent-id">
-                  <span className="set-agent-name">{agent.label}</span>
-                  {/* The command line, in the slot the vendor rows use for
-                      what they drive. It is the one fact about this agent
-                      Hearth actually has, so it is the one on the row. */}
-                  <span className="set-agent-sub">
-                    <span className="mono set-agent-modelid">{agent.commandLine}</span>
-                  </span>
-                </span>
-                <div className="set-agent-meta">
-                  {agent.confirmed ? (
-                    <span className="set-agent-badge" data-state="connected">
-                      <span className="set-agent-dot" aria-hidden="true" />
-                      Confirmed
-                    </span>
-                  ) : (
-                    <Button variant="primary" size="sm" disabled={busy} onClick={() => setConfirming(agent)}>
-                      Confirm command
-                    </Button>
-                  )}
-                  <Button
-                    size="sm"
-                    disabled={busy}
-                    onClick={() =>
-                      setDraft(
-                        editing
-                          ? null
-                          : { id: agent.id, label: agent.label, command: agent.command, args: [...agent.args] },
-                      )
-                    }
-                  >
-                    {editing ? 'Close' : 'Edit'}
-                  </Button>
-                  <Button size="sm" variant="danger" disabled={busy} onClick={() => setRemoving(agent)}>
-                    Remove
-                  </Button>
-                </div>
-              </div>
-              {editing && draft && (
-                <div className="set-agent-body">
-                  <AgentFields draft={draft} onChange={setDraft} />
-                  {problem !== null && (
-                    <p className="set-agent-problem" role="alert">
-                      {problem}
-                    </p>
-                  )}
-                  <p className="set-agent-hint">
-                    Changing what runs asks you to confirm the new command before this agent can answer again.
-                  </p>
-                  <div className="set-agent-manage">
-                    <Button variant="primary" size="sm" disabled={busy} onClick={() => void save()}>
-                      {busy ? 'Saving…' : 'Save'}
-                    </Button>
-                    <Button
-                      size="sm"
-                      disabled={busy}
-                      onClick={() => {
-                        setDraft(null);
-                        setProblem(null);
-                      }}
-                    >
-                      Cancel
-                    </Button>
-                  </div>
-                </div>
-              )}
-            </section>
-          );
-        })}
-      </div>
-
-      {draft !== null && draft.id === null ? (
-        <div className="set-agent-connect">
-          <AgentFields draft={draft} onChange={setDraft} />
-          {problem !== null && (
-            <p className="set-agent-problem" role="alert">
-              {problem}
-            </p>
-          )}
-          <div className="set-agent-manage">
-            <Button variant="primary" size="sm" disabled={busy} onClick={() => void save()}>
-              {busy ? 'Saving…' : 'Add agent'}
-            </Button>
-            <Button
-              size="sm"
-              disabled={busy}
-              onClick={() => {
-                setDraft(null);
-                setProblem(null);
-              }}
-            >
-              Cancel
-            </Button>
-          </div>
-        </div>
-      ) : (
-        <div className="set-agent-manage">
-          <Button
-            size="sm"
-            disabled={busy}
-            onClick={() => {
-              setProblem(null);
-              setDraft({ ...EMPTY_AGENT_DRAFT, args: [] });
-            }}
-          >
-            Add an agent…
-          </Button>
-        </div>
-      )}
-
-      {/* The two facts worth keeping, folded away. Both are real and both were
-          load-bearing prose on this screen; neither is something you need
-          before you have registered anything, and printing them open turned a
-          two-field form into a page of small grey text. */}
-      <details className="set-agent-details">
-        <summary>Where these are kept, and what they run with</summary>
-        <p className="set-agent-hint">
-          Kept {file === '' ? 'in your home folder' : <span className="mono">{file}</span>}, for this machine rather
-          than for one project. Never written into a project: a folder carrying a command line would run it on whoever
-          opened the folder next.
-        </p>
-        <p className="set-agent-hint">
-          Hearth adds {HEARTH_AGENT_ENV_VARS.join(', ')} and passes on everything your login shell has. It adds no keys
-          of its own.
-        </p>
-      </details>
-
-      <ConfirmDialog
-        open={confirming !== null}
-        title="Let this agent run?"
-        body={confirming ? agentConfirmBody(confirming) : ''}
-        confirmLabel="Confirm command"
-        onConfirm={() => {
-          const target = confirming;
-          setConfirming(null);
-          if (target) void confirm(target.id);
-        }}
-        onCancel={() => setConfirming(null)}
-      />
-      <ConfirmDialog
-        open={removing !== null}
-        title="Remove this agent?"
-        body={
-          removing
-            ? `${removing.label} is removed from this machine's list. Nothing on disk is deleted and the program itself is untouched.`
-            : ''
-        }
-        confirmLabel="Remove"
-        danger
-        onConfirm={() => {
-          const target = removing;
-          setRemoving(null);
-          if (target) void remove(target.id);
-        }}
-        onCancel={() => setRemoving(null)}
-      />
-    </section>
-  );
-}
-
 /**
  * The terminal, said plainly and at full size.
  *
@@ -1099,76 +935,6 @@ function TerminalSection() {
   );
 }
 
-/**
- * The three fields, typed, with one input per argument.
- *
- * One input per argument rather than a single line to split, because splitting
- * means quoting rules and a wrong split spawns a command nobody typed. It also
- * means the fields say what they are: a path with a space in it is one
- * argument, and here that is obvious rather than a thing to escape.
- */
-function AgentFields({ draft, onChange }: { draft: AgentDraft; onChange: (next: AgentDraft) => void }) {
-  const idFor = (part: string): string => `set-custom-agent-${draft.id ?? 'new'}-${part}`;
-  return (
-    <>
-      <div className="set-agent-connect">
-        <label className="set-agent-field-label" htmlFor={idFor('label')}>
-          Name
-        </label>
-        <input
-          id={idFor('label')}
-          className="input set-agent-input"
-          type="text"
-          autoComplete="off"
-          spellCheck={false}
-          placeholder="My agent"
-          value={draft.label}
-          onChange={(e) => onChange({ ...draft, label: e.target.value })}
-        />
-        <label className="set-agent-field-label" htmlFor={idFor('command')}>
-          Command
-        </label>
-        <input
-          id={idFor('command')}
-          className="input mono set-agent-input"
-          type="text"
-          autoComplete="off"
-          spellCheck={false}
-          placeholder="my-agent"
-          value={draft.command}
-          onChange={(e) => onChange({ ...draft, command: e.target.value })}
-        />
-        <p className="set-agent-hint">Found on your login shell&rsquo;s PATH, or given as a full path.</p>
-
-        <span className="set-agent-field-label">Arguments</span>
-        {draft.args.map((arg, index) => (
-          <div className="set-agent-field-row" key={index}>
-            <input
-              className="input mono set-agent-input"
-              type="text"
-              autoComplete="off"
-              spellCheck={false}
-              aria-label={`Argument ${index + 1}`}
-              value={arg}
-              onChange={(e) => {
-                const args = [...draft.args];
-                args[index] = e.target.value;
-                onChange({ ...draft, args });
-              }}
-            />
-            <Button size="sm" onClick={() => onChange({ ...draft, args: draft.args.filter((_, i) => i !== index) })}>
-              Remove
-            </Button>
-          </div>
-        ))}
-        <button type="button" className="set-agent-more" onClick={() => onChange({ ...draft, args: [...draft.args, ''] })}>
-          Add an argument
-        </button>
-      </div>
-    </>
-  );
-}
-
 // ---------------------------------------------------------------------------
 
 export function AgentsPane() {
@@ -1200,7 +966,10 @@ export function AgentsPane() {
   const [confirming, setConfirming] = useState<AgentCard | null>(null);
   const [confirmInstall, setConfirmInstall] = useState(false);
   const [signingIn, setSigningIn] = useState(false);
-  const [copied, setCopied] = useState(false);
+  // WHICH command was copied, not merely that one was. There are two of them
+  // on this pane now (the codex install and the Claude sign-in), and a shared
+  // boolean would have flipped both buttons to "Copied" on either press.
+  const [copied, setCopied] = useState<string | null>(null);
   const [saving, setSaving] = useState<string | null>(null);
   const copiedTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const signInTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -1228,6 +997,16 @@ export function AgentsPane() {
   // largest sentence on the screen to say nothing is connected. See
   // `AgentCard.unconfirmed`.
   const someUnconfirmed = rows.some((row) => row.card.unconfirmed);
+  // Can Claude be signed in from here right now?
+  //
+  // The hero has to know, because its standing recommendation is "paste an
+  // Anthropic API key" and that is the wrong advice the moment the CLI is on
+  // the machine: the sign-in uses the subscription the person already has and
+  // a key is metered. Recommending the paid route over the free one, in the
+  // largest copy on the screen, is the same mistake the row itself was making.
+  const claudeSignIn = rows.some(
+    (row) => row.card.provider === 'anthropic' && row.card.action.kind === 'sign-in' && !row.card.connected,
+  );
   const prefsFile = getModelPrefsFile();
 
   // The browser flow finishes somewhere else entirely and arrives as a
@@ -1387,15 +1166,15 @@ export function AgentsPane() {
     [log],
   );
 
-  const copyInstall = useCallback((): void => {
-    void navigator.clipboard?.writeText(CODEX_INSTALL_COMMAND);
-    setCopied(true);
+  const copyCommand = useCallback((command: string): void => {
+    void navigator.clipboard?.writeText(command);
+    setCopied(command);
     if (copiedTimer.current !== null) clearTimeout(copiedTimer.current);
-    copiedTimer.current = setTimeout(() => setCopied(false), COPIED_MS);
+    copiedTimer.current = setTimeout(() => setCopied(null), COPIED_MS);
   }, []);
 
   /**
-   * Run the install in the terminal the user can see.
+   * Type a command into the terminal the user can see, and take them to it.
    *
    * Never a silent shell-out. It goes through the same planner and the same
    * pty frames the composer's terminal rows use, so the command lands in a
@@ -1404,46 +1183,76 @@ export function AgentsPane() {
    * Hearth started an agent in, where a command is not a command but a
    * sentence the agent would read as a prompt.
    *
-   * `markAgentCli` is deliberately NOT called. An install is not an agent
-   * session, and claiming it was one would block the very next thing the user
-   * wants to do, which is start codex in that same terminal.
+   * `markAgentCli` is deliberately NOT called. Neither of the two things this
+   * runs is an agent session, and claiming either was one would block the very
+   * next thing the user wants to do in that same terminal.
+   *
+   * One helper for both, because they are one act: the codex install and the
+   * Claude sign-in differ in the string and in nothing else, and a second copy
+   * of this would be a second place for the pty frames to drift.
    */
-  const runInstall = useCallback((): void => {
-    const plan = planTerminalLaunch({
-      cli: { id: 'codex-install', command: CODEX_INSTALL_COMMAND, label: 'Codex install', installed: true, installHint: null },
-      status: session.status,
-      launched: session.cli,
-      connected: wsConnected,
-      hasProject: project !== null,
-    });
-    if (plan.action === 'blocked') {
-      log('error', 'app', plan.reason);
-      return;
-    }
-    const down = 'Terminal: the connection is down. Wait a moment and try again.';
-    if (plan.action === 'start') {
-      if (!sendFrame({ type: 'pty-start', sessionId: ensureAgentPtySessionId() })) {
+  const runInTerminal = useCallback(
+    (id: string, command: string, label: string): void => {
+      const plan = planTerminalLaunch({
+        cli: { id, command, label, installed: true, installHint: null },
+        status: session.status,
+        launched: session.cli,
+        connected: wsConnected,
+        hasProject: project !== null,
+      });
+      if (plan.action === 'blocked') {
+        log('error', 'app', plan.reason);
+        return;
+      }
+      const down = 'Terminal: the connection is down. Wait a moment and try again.';
+      if (plan.action === 'start') {
+        if (!sendFrame({ type: 'pty-start', sessionId: ensureAgentPtySessionId() })) {
+          log('error', 'app', down);
+          return;
+        }
+        // Marked running before the mode flips, because TerminalPane starts a
+        // shell of its own when it mounts onto an idle session.
+        markAgentStarted('shell');
+      }
+      if (plan.action !== 'show' && !sendFrame({ type: 'pty-input', data: `${command}\n` })) {
         log('error', 'app', down);
         return;
       }
-      // Marked running before the mode flips, because TerminalPane starts a
-      // shell of its own when it mounts onto an idle session.
-      markAgentStarted('shell');
-    }
-    if (plan.action !== 'show' && !sendFrame({ type: 'pty-input', data: `${CODEX_INSTALL_COMMAND}\n` })) {
-      log('error', 'app', down);
-      return;
-    }
-    setConversationMode('terminal');
-    window.dispatchEvent(new CustomEvent(CLOSE_SETTINGS_EVENT));
-  }, [log, project, sendFrame, session.cli, session.status, setConversationMode, wsConnected]);
+      setConversationMode('terminal');
+      window.dispatchEvent(new CustomEvent(CLOSE_SETTINGS_EVENT));
+    },
+    [log, project, sendFrame, session.cli, session.status, setConversationMode, wsConnected],
+  );
+
+  const runInstall = useCallback((): void => {
+    runInTerminal('codex-install', CODEX_INSTALL_COMMAND, 'Codex install');
+  }, [runInTerminal]);
+
+  /**
+   * Sign the Claude Code CLI in, which Hearth does by getting out of the way.
+   *
+   * `claude auth login` is interactive: it opens a browser and then waits in
+   * the terminal for the person to come back. There is no headless or
+   * device-code route to drive it the way `apiOpenAiLogin` drives codex's, and
+   * inventing one would mean Hearth handling a credential that is not its
+   * business. So this types the command and switches to the terminal, and the
+   * conversation from there is between the person and Anthropic.
+   *
+   * Nothing waits on it here. Unlike the ChatGPT flow there is no browser
+   * callback landing on our socket, so there is no "Connecting" to latch on
+   * and nothing to time out — the sign-in shows up on the next providers read,
+   * and the row's Check again is how you ask for one early.
+   */
+  const signInToClaude = useCallback((): void => {
+    runInTerminal('claude-login', CLAUDE_LOGIN_COMMAND, 'Claude sign-in');
+  }, [runInTerminal]);
 
   return (
     <>
       <h2 className="set-pane-title">Agents</h2>
       <p className="set-pane-lead">
-        A chat agent is a harness paired with a model. The harness runs the loop and holds the connection, the model
-        is the one it drives. Connect a harness, then choose which of its models you want offered.
+        A chat agent is a harness paired with a model. The harness holds the connection. The model does the thinking.
+        Connect a harness, then choose which of its models you want offered.
       </p>
 
       {/* NO PROJECT OPEN, and this block is the whole of the fix for what used
@@ -1462,9 +1271,9 @@ export function AgentsPane() {
         <section className="set-agent-start">
           <h3 className="set-agent-start-title">Not checked yet</h3>
           <p className="set-agent-start-body">
-            Keys and sign-ins are read out of the project you have open, and there is not one yet, so Hearth has not
-            looked. This is not the same as nothing being connected: a key already in your environment, or a ChatGPT
-            sign-in you did through codex, is found the moment a project is open.
+            Keys and sign-ins are read out of the project you have open. There is no project yet, so Hearth has not
+            looked. That is not the same as nothing being connected: a key already on this machine, or a ChatGPT
+            sign-in you did through codex, is found the moment a project opens.
           </p>
           <div className="set-agent-start-actions">
             <Button variant="primary" onClick={() => window.dispatchEvent(new CustomEvent(OPEN_FOLDER_EVENT))}>
@@ -1481,10 +1290,15 @@ export function AgentsPane() {
       ) : (
         /* Nothing connected. This is the first thing most people ever see here,
            so it gets an answer rather than a list to work out: one harness, the
-           shortest honest route to a working chat, and one button. Claude is
-           that route because it is a key you paste. Codex is the better fit for
-           some people and is named in the same breath, one line below, but it
-           needs a binary installed first and so is not the thing to open with.
+           shortest honest route to a working chat, and one button.
+
+           WHICH route depends on what is on the machine, and getting that
+           backwards costs real money. With the Claude Code CLI sitting on PATH
+           the shortest route is signing it in: it runs on the subscription the
+           person already has, and it is one command. Only without it is a
+           pasted key the quickest way in. This block recommended the key
+           unconditionally, which meant telling someone with a Max plan and the
+           binary already installed to go and buy metered API credit.
 
            The first sentence is the one that has to be earned. "Nothing is
            connected" is a claim about both rows, and it may not be louder than
@@ -1498,20 +1312,43 @@ export function AgentsPane() {
           <section className="set-agent-start">
             <h3 className="set-agent-start-title">Set up your first agent</h3>
             <p className="set-agent-start-body">
-              {someUnconfirmed
-                ? 'Hearth has not confirmed a connection here yet. If you are already signed into ChatGPT, the check below may simply have timed out, and asking again is the quickest way to find out. The surest route to a working chat is an Anthropic API key: paste one and Claude can answer straight away, with nothing to install.'
-                : 'Nothing is connected yet, so Hearth cannot answer a message. The quickest way in is an Anthropic API key: paste one and Claude can answer straight away, with nothing to install.'}
+              {claudeSignIn
+                ? 'The Claude Code CLI is on this machine, and no sign-in was confirmed on it. Signing in is the quickest way in and costs nothing extra: one command in the terminal, on the account you already have. If you already signed in, the check may simply have timed out. Asking again settles it.'
+                : someUnconfirmed
+                  ? 'Hearth has not confirmed a connection here yet. If you are already signed into ChatGPT, the check below may simply have timed out. Asking again is the quickest way to find out. The surest route to a working chat is an Anthropic API key: paste one and Claude can answer straight away, with nothing to install.'
+                  : 'Nothing is connected yet, so Hearth cannot answer a message. The quickest way in is an Anthropic API key: paste one and Claude can answer straight away, with nothing to install.'}
             </p>
             <div className="set-agent-start-actions">
-              <Button
-                variant="primary"
-                onClick={() => {
-                  setOpen('anthropic');
-                  setShowField((s) => ({ ...s, anthropic: true }));
-                }}
-              >
-                Connect Claude with a key
-              </Button>
+              {claudeSignIn ? (
+                <Button variant="primary" disabled={!project} onClick={signInToClaude}>
+                  Sign in to Claude Code
+                </Button>
+              ) : (
+                <Button
+                  variant="primary"
+                  onClick={() => {
+                    setOpen('anthropic');
+                    setShowField((s) => ({ ...s, anthropic: true }));
+                  }}
+                >
+                  Connect Claude with a key
+                </Button>
+              )}
+              {/* The other route, named in the same breath rather than left to
+                  be discovered. Which one this is depends on which one the
+                  button beside it took. */}
+              {claudeSignIn && (
+                <button
+                  type="button"
+                  className="set-agent-more"
+                  onClick={() => {
+                    setOpen('anthropic');
+                    setShowField((s) => ({ ...s, anthropic: true }));
+                  }}
+                >
+                  I would rather paste an API key
+                </button>
+              )}
               <button
                 type="button"
                 className="set-agent-more"
@@ -1524,10 +1361,21 @@ export function AgentsPane() {
             </div>
             {/* The gap that made the paragraph above unfollowable: this window
                 has no address bar, so someone without an Anthropic account was
-                being told to paste a thing with no route to obtaining it. */}
+                being told to paste a thing with no route to obtaining it. The
+                sign-in needs no such route, so when that is what is being
+                offered the line says where it goes instead. */}
             <p className="set-agent-start-note">
-              No key yet? <ExternalLink href={ANTHROPIC_KEYS_URL}>Get one from the Anthropic console</ExternalLink>. It
-              opens in your browser.
+              {claudeSignIn ? (
+                <>
+                  Signing in runs <span className="mono">{CLAUDE_LOGIN_COMMAND}</span> in the terminal, in this
+                  project. It opens your browser and finishes back in the terminal. Hearth never sees the credential.
+                </>
+              ) : (
+                <>
+                  No key yet? <ExternalLink href={ANTHROPIC_KEYS_URL}>Get one from the Anthropic console</ExternalLink>.
+                  It opens in your browser.
+                </>
+              )}
             </p>
           </section>
         )
@@ -1619,12 +1467,19 @@ export function AgentsPane() {
                       {card.action.label}
                     </Button>
                   )}
+                  {/* Both harnesses' sign-ins hang here, on one branch,
+                      because a row offers one primary action and the press
+                      means the same thing on either. What differs is where it
+                      goes: codex to a browser Hearth opens, Claude to the
+                      terminal Hearth types into. `connecting` is only ever
+                      true on the codex row, since the Claude flow has nothing
+                      to wait for. */}
                   {card.action.kind === 'sign-in' && !card.connected && (
                     <Button
                       variant="primary"
                       size="sm"
                       disabled={!project || connecting}
-                      onClick={beginSignIn}
+                      onClick={card.provider === 'anthropic' ? signInToClaude : beginSignIn}
                     >
                       {connecting ? 'Opening browser…' : card.action.label}
                     </Button>
@@ -1673,8 +1528,12 @@ export function AgentsPane() {
                         <div className="set-agent-command">
                           <code className="mono">{CODEX_INSTALL_COMMAND}</code>
                           <div className="set-agent-command-actions">
-                            <Button size="sm" onClick={copyInstall} aria-label="Copy the install command">
-                              {copied ? 'Copied' : 'Copy'}
+                            <Button
+                              size="sm"
+                              onClick={() => copyCommand(CODEX_INSTALL_COMMAND)}
+                              aria-label="Copy the install command"
+                            >
+                              {copied === CODEX_INSTALL_COMMAND ? 'Copied' : 'Copy'}
                             </Button>
                             {!confirmInstall && (
                               <Button
@@ -1735,6 +1594,75 @@ export function AgentsPane() {
                       </div>
                     )}
 
+                    {/* The Claude sign-in, shown as the command it is.
+                        Deliberately not a button on its own: the flow is
+                        interactive and finishes in a shell, so the honest
+                        thing is to put the command on screen, say who is about
+                        to type it and where, and let it be copied and run
+                        somewhere else instead. Only while the row is not
+                        connected — once it is, the manage strip at the foot
+                        carries Sign in again, and two sign-in buttons on one
+                        open row would be one too many. */}
+                    {card.provider === 'anthropic' && card.action.kind === 'sign-in' && !card.connected && (
+                      <div className="set-agent-signin">
+                        <p className="set-agent-hint">
+                          The Claude Code CLI signs in through its own flow. It opens your browser, you approve it
+                          there, and it finishes back in the terminal. Hearth types the command and then stays out of
+                          it. Your account details go to Anthropic, never through this app. There is nothing here to
+                          paste.
+                        </p>
+                        <div className="set-agent-command">
+                          <code className="mono">{CLAUDE_LOGIN_COMMAND}</code>
+                          <div className="set-agent-command-actions">
+                            <Button
+                              size="sm"
+                              onClick={() => copyCommand(CLAUDE_LOGIN_COMMAND)}
+                              aria-label="Copy the sign-in command"
+                            >
+                              {copied === CLAUDE_LOGIN_COMMAND ? 'Copied' : 'Copy'}
+                            </Button>
+                            <Button variant="primary" size="sm" disabled={!project} onClick={signInToClaude}>
+                              Run it in the terminal
+                            </Button>
+                          </div>
+                        </div>
+                        {/* Project-gated, and said rather than merely greyed
+                            out. The same shape as the codex install above,
+                            because it is the same limit: the terminal runs in
+                            the project folder and there is no folder. */}
+                        {!project && (
+                          <>
+                            <p className="set-agent-hint">
+                              The terminal runs inside a project, so there is nowhere to run this yet. Copying the
+                              command works either way.
+                            </p>
+                            <div className="set-agent-manage">
+                              <Button
+                                size="sm"
+                                onClick={() => window.dispatchEvent(new CustomEvent(OPEN_FOLDER_EVENT))}
+                              >
+                                Open a project…
+                              </Button>
+                            </div>
+                          </>
+                        )}
+                        {/* `readClaudeAuth` reports a signed-out account when
+                            its status command times out or prints something it
+                            cannot parse, exactly as codex's probe does, so a
+                            sign-in that already happened can land here too.
+                            Asking again is the cheap way to find out, and it
+                            is also how a sign-in finished in the terminal a
+                            moment ago gets noticed. */}
+                        {project !== null && (
+                          <div className="set-agent-manage">
+                            <Button size="sm" disabled={working || checking} onClick={recheck}>
+                              {checking ? 'Checking…' : 'Check again'}
+                            </Button>
+                          </div>
+                        )}
+                      </div>
+                    )}
+
                     {/* Codex's state lives outside this app, in a binary on
                         PATH and a session under ~/.codex, and this is the row
                         that has to say so honestly.
@@ -1784,11 +1712,11 @@ export function AgentsPane() {
                           ) : project === null && card.provider === 'openai' ? (
                             <>
                               Signing in writes to <span className="mono">~/.codex</span>, which belongs to your
-                              machine rather than to any one project. Hearth still asks codex about it through a
-                              project directory, so it has nothing to report until a project is open.
+                              machine rather than to any one project. Hearth still asks codex about it from inside a
+                              project folder, so it has nothing to report until a project is open.
                             </>
                           ) : project === null ? (
-                            'A key is read out of the project you have open, and there is not one yet, so there is nothing for Hearth to report.'
+                            'A key is read out of the project you have open. There is no project yet, so there is nothing for Hearth to report.'
                           ) : (
                             'Hearth is reading this project now. Whatever it finds lands on this row.'
                           )}
@@ -1895,15 +1823,25 @@ export function AgentsPane() {
 
                     {(card.action.kind === 'sign-in' && card.connected) || card.disconnect !== null ? (
                       <div className="set-agent-manage">
-                        {card.action.kind === 'sign-in' && card.connected && (
+                        {/* Sign in again, on a row that is already connected.
+                            Claude's runs the command in the terminal and has
+                            nothing to wait for, so it never wears the waiting
+                            label and never disables itself for one. */}
+                        {card.action.kind === 'sign-in' && card.connected && card.provider === 'anthropic' && (
+                          <Button size="sm" disabled={!project || working} onClick={signInToClaude}>
+                            {card.action.label}
+                          </Button>
+                        )}
+                        {card.action.kind === 'sign-in' && card.connected && card.provider === 'openai' && (
                           <Button size="sm" disabled={!project || working || signingIn} onClick={beginSignIn}>
                             {signingIn ? 'Opening browser…' : card.action.label}
                           </Button>
                         )}
                         {/* Signing in again from an already-connected row can
                             be abandoned in the browser just the same, so the
-                            way out is here too. */}
-                        {card.action.kind === 'sign-in' && card.connected && signingIn && (
+                            way out is here too. Codex only: nothing waits on
+                            the Claude side. */}
+                        {card.action.kind === 'sign-in' && card.connected && card.provider === 'openai' && signingIn && (
                           <Button size="sm" onClick={stopWaiting}>
                             Stop waiting
                           </Button>
@@ -1999,11 +1937,6 @@ export function AgentsPane() {
           );
         })}
       </div>
-
-      {/* The third card. The two above are harnesses Hearth ships a driver for
-          and can therefore describe; this one is whatever the user brought, so
-          it describes nothing and prints the command instead. */}
-      <CustomAgentsSection />
 
       {/* THE TERMINAL, given a card of its own.
           It used to be one grey line at the very foot of this pane, under two

@@ -42,7 +42,7 @@ import { hearthPtyEnv } from '../hearthShim.js';
 import { DEFAULT_PERMISSION_MODE, type PermissionMode } from '../permissionMode.js';
 import { readPersonalPrompt } from '../personalization.js';
 import { loginShellPathEnv } from '../shellEnv.js';
-import { CLAUDE_SKILLS_DIR, skillSources, skillsRoot } from '../skills.js';
+import { CLAUDE_SKILLS_DIR, skillSources, syncSkillsIntoProject } from '../skills.js';
 import {
   CODEX_CLIENT_INFO,
   CODEX_TESTED_VERSION,
@@ -574,15 +574,30 @@ export class CodexDriver implements ChatDriver {
     conn.attach(this.connect(this.bin, projectRoot, this.env));
     await conn.initialize();
 
-    // Point codex at Hearth's skills folder. `skills/extraRoots/set` is a real
-    // method on this protocol (verified against CODEX_TESTED_VERSION by
-    // probing the binary's own generated schema).
+    // Point codex at the SAME mirror the Agent SDK reads, so both backends see
+    // one library rather than two.
+    //
+    // This used to be `[skillsRoot()]`, Hearth's own folder and nothing else,
+    // and that made the Skills list a half-truth. The list also shows the
+    // skills it discovered in `~/.claude/skills` and `~/.codex/skills`, and
+    // those reached Claude (the mirror carries every enabled skill whatever
+    // its source) while codex never saw a single one of them. It also meant a
+    // skill switched OFF stayed live here, because a whole directory was
+    // handed over and the switch is not a property of the directory.
+    //
+    // The mirror answers both. It holds exactly the enabled skills, from every
+    // source, and switching one off removes it. Its path is `.claude/skills`
+    // only because the Agent SDK cannot be pointed anywhere else and something
+    // had to give the folder a name; codex can be pointed anywhere, so it is
+    // pointed here rather than given a second copy to disagree with.
     //
     // Sent, not awaited: the app-server handles stdin requests in order, so
     // this is applied before the `thread/start` below it either way, and
     // waiting for a reply would hang the whole bind against a build that never
     // sends one.
-    void conn.request('skills/extraRoots/set', { extraRoots: [skillsRoot()] }).catch(() => {
+    const skillRoot = path.join(projectRoot, CLAUDE_SKILLS_DIR);
+    const mirroredSkills = await syncSkillsIntoProject(projectRoot).catch(() => []);
+    void conn.request('skills/extraRoots/set', { extraRoots: [skillRoot] }).catch(() => {
       /* an older codex simply has no extra roots */
     });
 
@@ -591,7 +606,7 @@ export class CodexDriver implements ChatDriver {
     // `codexThreadInstructions` for why this rides on `thread/start` alone
     // and not on the resume beside it.
     const instructions = composeAgentInstructions(
-      hearthFactsPrompt({ probeCli: this.tools?.probeCli === true }),
+      hearthFactsPrompt({ probeCli: this.tools?.probeCli === true, skills: mirroredSkills.length > 0 }),
       await readPersonalPrompt(),
     );
 
@@ -760,14 +775,16 @@ export class CodexDriver implements ChatDriver {
   stop(): void {
     this.stopped = true;
     // Answer anything still blocking codex so the child can unwind cleanly
-    // rather than sitting on a paused turn while we kill it. The SAME answer
-    // goes onto the event stream, before the close: a prompt on screen is only
-    // ever taken down by its `approval-resolved`, so answering codex and not the
-    // windows left Allow / Deny live in every one of them, and in the
-    // transcript, for a request that was already declined.
+    // rather than sitting on a paused turn while we kill it. Codex itself is
+    // told `deny` (its protocol has no third word for an ask nobody answered),
+    // but the event stream — and through it the transcript — records
+    // `withdrawn`: the session ended before the person decided, and writing
+    // `deny` there would forge a decision they never made. A prompt on screen
+    // is only ever taken down by its `approval-resolved`, so the resolution
+    // still goes onto the queue before the close.
     for (const [approvalId, pending] of this.approvals) {
       this.conn?.respond(pending.id, codexApprovalReply(pending.method, 'deny'));
-      this.queue.push({ type: 'approval-resolved', approvalId, decision: 'deny' });
+      this.queue.push({ type: 'approval-resolved', approvalId, decision: 'withdrawn' });
     }
     this.approvals.clear();
     this.conn?.kill();

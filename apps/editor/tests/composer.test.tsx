@@ -225,7 +225,7 @@ describe('the + menu', () => {
 });
 
 describe('the model pill', () => {
-  it('asks for a model until one is chosen, and groups the menu by vendor', () => {
+  it('offers only the active agent’s models, and a deliberate way to switch', () => {
     render(<Composer />);
     const pill = screen.getByRole('button', { name: 'Model' });
     // Not "Auto". There is no automatic row to be on, so nothing chosen is an
@@ -233,34 +233,92 @@ describe('the model pill', () => {
     expect(pill.textContent).toContain('Choose a model');
 
     fireEvent.click(pill);
-    // The picker answers "how do you want to work", not just "which model":
-    // Chat is what Hearth drives itself over an API or an OAuth session, and
-    // Terminal is a CLI on this machine, started in a real shell. Those two are
-    // alternatives, so they are a switch at the head of the menu rather than
-    // two sections of one list. Only the chosen side's groups are below it, and
-    // each names its own backend, so the separate Agent section that briefly
-    // led this menu was the same question asked twice.
-    const sides = [...document.querySelectorAll('.menu-heading [role="tab"]')].map((el) => el.textContent);
-    expect(sides).toEqual(['Chat', 'Terminal']);
-
+    // ONE agent's catalogue, not every vendor's at once. The menu used to list
+    // both, which made picking a model a silent way to change who answered:
+    // choosing a GPT model moved the conversation to codex with nothing saying
+    // so, while the account row still described a different sign-in.
     const headers = [...document.querySelectorAll('.menu-header-name')].map((el) => el.textContent);
-    // Chat is the side it opens on. Effort is absent until a model that
-    // declares efforts is picked. "Your agents" is last and is always there,
-    // empty or not: a group that appeared only once you had registered
-    // something would answer "can I use my own agent here?" with silence.
-    expect(headers).toEqual(['Claude', 'ChatGPT', 'Your agents']);
+    expect(headers).toEqual(['Claude', 'Switch agent']);
     expect(screen.getByRole('menuitemcheckbox', { name: 'Opus 5' })).toBeTruthy();
+    // The other vendor's models are absent. Its NAME is present, once, as the
+    // row that changes agent — which is the act, said out loud.
+    expect(screen.queryByRole('menuitemcheckbox', { name: /GPT/ })).toBeNull();
+    expect(screen.getByRole('menuitem', { name: /Codex CLI/ })).toBeTruthy();
   });
 
-  it('shows the machine’s CLIs, and only those, once the switch is on Terminal', () => {
+  it('follows the project to the other agent, catalogue and switch row both', () => {
+    // The mirror image of the case above, and the one that proves the menu is
+    // built from who is ACTIVE rather than from a favoured vendor. Nothing has
+    // been picked in this window, so the active agent is the one the project
+    // recorded: the models are ChatGPT's, and the row that changes agent names
+    // Claude's backend. Hardcoding either side would pass the test above and
+    // still show a Claude menu to someone whose project answers with codex.
+    patchStore({
+      providers: {
+        anthropic: { hasKey: true, source: 'project', cli: false, loggedIn: false, email: null, planType: null },
+        openai: {
+          installed: true,
+          version: '0.144.5',
+          loggedIn: true,
+          authMode: 'chatgpt',
+          email: null,
+          planType: null,
+          hasKey: false,
+          models: [
+            { id: 'gpt-5.6-sol', label: 'GPT-5.6-Sol', isDefault: true },
+            { id: 'gpt-5.4-mini', label: 'GPT-5.4-Mini' },
+          ],
+        },
+        active: 'openai',
+      },
+    });
     render(<Composer />);
     fireEvent.click(screen.getByRole('button', { name: 'Model' }));
-    fireEvent.click(screen.getByRole('tab', { name: 'Terminal' }));
 
-    // The models are gone rather than merely scrolled past: the point of the
-    // switch is that one side at a time is what you are choosing from.
+    const headers = [...document.querySelectorAll('.menu-header-name')].map((el) => el.textContent);
+    expect(headers).toEqual(['ChatGPT', 'Switch agent']);
+    expect(screen.getByRole('menuitemcheckbox', { name: /GPT-5.6-Sol/ })).toBeTruthy();
+    expect(screen.getByRole('menuitemcheckbox', { name: /GPT-5.4-Mini/ })).toBeTruthy();
+    // Claude's models are absent; its backend is present once, as the switch.
     expect(screen.queryByRole('menuitemcheckbox', { name: 'Opus 5' })).toBeNull();
-    expect(document.querySelector('.menu-heading .model-menu-blurb')?.textContent).toBeTruthy();
+    expect(screen.getByRole('menuitem', { name: /Claude Code CLI/ })).toBeTruthy();
+  });
+
+  it('changes who answers through the store, so the project hears about it too', () => {
+    // The switch row is not a local pill. It writes the standing choice AND
+    // records the agent in the project, which is the fix for the older bug
+    // where the composer and Settings each held their own opinion.
+    const setChatProvider = vi.fn();
+    patchStore({
+      setChatProvider,
+      providers: {
+        anthropic: { hasKey: true, source: 'project', cli: false, loggedIn: false, email: null, planType: null },
+        openai: {
+          installed: true,
+          version: '0.144.5',
+          loggedIn: true,
+          authMode: 'chatgpt',
+          email: null,
+          planType: null,
+          hasKey: false,
+        },
+        active: 'anthropic',
+      },
+    });
+    render(<Composer />);
+    fireEvent.click(screen.getByRole('button', { name: 'Model' }));
+    fireEvent.click(screen.getByRole('menuitem', { name: /Codex CLI/ }));
+    expect(setChatProvider).toHaveBeenCalledWith('openai');
+  });
+
+  it('has no Chat/Terminal switch, because a conversation’s kind is fixed when it starts', () => {
+    // That switch minted a second conversation underneath the reader while
+    // looking like a view toggle. Choosing between the two now happens where
+    // conversations are created: New chat and New terminal.
+    render(<Composer />);
+    fireEvent.click(screen.getByRole('button', { name: 'Model' }));
+    expect(document.querySelectorAll('.menu-heading [role="tab"]')).toHaveLength(0);
+    expect(screen.queryByRole('tab', { name: 'Terminal' })).toBeNull();
   });
 
   it('routes an unavailable provider to Settings instead of storing a dead choice', () => {
@@ -278,7 +336,7 @@ describe('the model pill', () => {
   it('stores the pick, and shows it, once the provider can actually answer', () => {
     patchStore({
       providers: {
-        anthropic: { hasKey: true, source: 'project' },
+        anthropic: { hasKey: true, source: 'project', cli: false, loggedIn: false, email: null, planType: null },
         openai: {
           installed: false,
           version: null,

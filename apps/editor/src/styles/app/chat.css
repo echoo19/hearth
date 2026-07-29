@@ -187,22 +187,18 @@
 /* Chat mode's answer to "who am I talking to?", in the same quiet register as
    the terminal's session status. A label, not a control.
 
-   BOUNDED, because the string is not this app's to choose. Everything else in
-   this strip is a word the app wrote; this one can be a name the user typed,
-   and a registered agent that lost its label is named by its own command
-   instead (see `cleanFile` in server/agentRegistry.ts, where a command runs to
-   MAX_COMMAND_LENGTH: 1024 characters). With no max-width and no overflow, a
-   143-character command line measured 811px inside a head whose content box
-   was 792px, pushing the head 107px past its own edge at a 1600px window and
+   BOUNDED, because the string is not always short. Everything else in this
+   strip is a word the app chose at a length it knows; a model id read out of a
+   binary's own catalogue is neither. With no max-width and no overflow, a
+   143-character label measured 811px inside a head whose content box was
+   792px, pushing the head 107px past its own edge at a 1600px window and
    straight through .app-region's `overflow: hidden` at a narrow one: cut off,
    with nothing on screen saying so.
 
    It shrinks as well as caps. .conversation-back's note says it is the one
-   item here allowed to give up width, and that was true while every other
-   label was a short word the app chose. It stopped being true the day a user
-   could register an agent, and a 240px name should yield before a 50px
-   project does. The full command line stays one hover away, which is the one
-   place with room for it. */
+   item here allowed to give up width, and that holds here: a 240px name should
+   yield before a 50px project does. The full string stays one hover away,
+   which is the one place with room for it. */
 .conversation-provider {
   flex: 0 1 auto;
   min-width: 0;
@@ -2147,9 +2143,37 @@
   white-space: nowrap;
 }
 
-.model-pill-effort {
-  flex: none;
-  color: var(--ink-mute);
+/*
+ * The effort control, beside the model rather than inside it.
+ *
+ * It shares `.model-pill` because it IS the same control class: same height,
+ * same hover, same resting quiet. What it adds is a left hairline, so two
+ * adjacent text pills read as two controls instead of one long label. The
+ * separator is on the effort pill rather than between them because the effort
+ * pill is the one that comes and goes, and a divider that outlived its
+ * neighbour would be a line to nowhere.
+ */
+.effort-pill {
+  position: relative;
+  padding-left: 12px;
+}
+
+.effort-pill::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 50%;
+  height: 14px;
+  width: 1px;
+  transform: translateY(-50%);
+  background: var(--border);
+}
+
+/* The divider belongs between two resting labels. Once either pill is being
+   used it is noise on top of a real surface. */
+.effort-pill:hover::before,
+.effort-pill[aria-expanded='true']::before {
+  opacity: 0;
 }
 
 .model-pill svg {

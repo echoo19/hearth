@@ -51,6 +51,30 @@ export interface PermissionChoice {
   label: string;
   /** The row's trailing note: what that rule costs or allows. */
   note: string;
+  /**
+   * The sign on the row, and how alarmed it looks.
+   *
+   * The three rows are one dial being turned up, and until now the only thing
+   * saying so was their ORDER, which is the weakest signal a list has: it works
+   * if you read all three, and this menu is opened mid-sentence by someone who
+   * wants to change one thing and get back to work. A green tick, an amber
+   * warning and a red prohibition sign say the same thing at a glance, and each
+   * is a different SHAPE as well as a different colour, so the ranking survives
+   * a reader who cannot tell the colours apart.
+   */
+  icon: string;
+  tone: 'safe' | 'caution' | 'danger';
+  /**
+   * The glyph the RESTING pill wears, or null for none. Separate from `icon`
+   * on purpose: the menu's three signs are a dial being read top to bottom,
+   * where amber-between-green-and-red is information. Alone on the pill it is
+   * not — the default mode sat in every composer behind a warning triangle,
+   * which is alarm iconography on the safe, recommended state, and a warning
+   * that is always on is a warning nobody reads. So at rest only the mode
+   * that has switched something OFF wears a sign, and the others let their
+   * words carry it.
+   */
+  pillSign: string | null;
 }
 
 /**
@@ -59,9 +83,33 @@ export interface PermissionChoice {
  * where you are on it is legible from position alone.
  */
 export const PERMISSION_CHOICES: readonly PermissionChoice[] = [
-  { mode: 'ask', pill: 'Ask first', label: 'Ask before writing or running', note: 'Reading is not interrupted' },
-  { mode: 'auto', pill: 'Ask outside', label: 'Work in this folder', note: 'Asks about anything outside' },
-  { mode: 'skip', pill: 'No checks', label: 'Skip all checks', note: 'Anywhere on this machine' },
+  {
+    mode: 'ask',
+    pill: 'Ask first',
+    label: 'Ask before writing or running',
+    note: 'Reading is not interrupted',
+    icon: 'check',
+    tone: 'safe',
+    pillSign: null,
+  },
+  {
+    mode: 'auto',
+    pill: 'Ask outside',
+    label: 'Work in this folder',
+    note: 'Asks about anything outside',
+    icon: 'warning',
+    tone: 'caution',
+    pillSign: null,
+  },
+  {
+    mode: 'skip',
+    pill: 'No checks',
+    label: 'Skip all checks',
+    note: 'Anywhere on this machine',
+    icon: 'hazard',
+    tone: 'danger',
+    pillSign: 'hazard',
+  },
 ];
 
 /** The row for a mode. Never undefined for a mode the window knows. */
@@ -94,6 +142,8 @@ export function PermissionSelector() {
     ...PERMISSION_CHOICES.map<MenuItem>((choice) => ({
       label: choice.label,
       shortcut: choice.note,
+      icon: choice.icon,
+      tone: choice.tone,
       checked: choice.mode === mode,
       onSelect: () => {
         if (needsSkipConfirm(choice.mode, acknowledged)) setConfirming(true);
@@ -126,6 +176,20 @@ export function PermissionSelector() {
         }
         trigger={
           <>
+            {/* Only the mode that switched something off wears a sign at rest
+                (see PermissionChoice.pillSign): a warning triangle on the
+                default was crying wolf in every composer. Decorative when it
+                does appear — the accessible name comes from `label="Permissions"`
+                above, so the icon needs nothing of its own, and `Icon` itself
+                already renders `aria-hidden`. The wrapper is hidden too, belt
+                and suspenders, since it is the wrapper (not the svg) that
+                carries the tone class (permissions.css reuses menu.css's
+                `.is-safe` / `.is-caution` / `.is-danger` tokens). */}
+            {current.pillSign !== null && (
+              <span className={`permission-sign is-${current.tone}`} aria-hidden="true">
+                <Icon name={current.pillSign} size={11} />
+              </span>
+            )}
             <span className="permission-pill-name">{current.pill}</span>
             <Icon name="chevron" size={9} />
           </>
@@ -136,7 +200,7 @@ export function PermissionSelector() {
         title="Skip all checks?"
         body={
           'The agent will run commands and change files anywhere on this machine without asking you first. ' +
-          'This project stays this way until you change it back, and Hearth will not ask again here.'
+          'This project stays this way until you change it back. Hearth will not ask again here.'
         }
         confirmLabel="Skip all checks"
         // Cancel takes the focus (see ConfirmDialog): the reflex Enter on a

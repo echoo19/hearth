@@ -27,6 +27,7 @@ import {
 } from '../server/chat';
 import { readTranscript } from '../server/chatStore';
 import { activeProvider, readChatProviders } from '../server/chatProviders';
+import { SIGNED_OUT } from '../server/claudeAuth';
 
 /**
  * A driver that asks for permission on every turn and blocks until answered —
@@ -224,20 +225,78 @@ describe('interrupt', () => {
 describe('provider status', () => {
   it('reports the Anthropic key without ever echoing it back', async () => {
     await writeAppSettings(root, { apiKey: 'sk-secret-value' });
-    const status = await readChatProviders(root);
-    expect(status.anthropic).toMatchObject({ hasKey: true, source: 'project' });
+    const status = await readChatProviders(root, { claudeCli: async () => SIGNED_OUT });
+    expect(status.anthropic).toMatchObject({ hasKey: true, source: 'project', cli: false });
     // The curated model list rides along, so the selector has something to
-    // show without a second request.
+    // show without a second request. Signed out, it is the ONLY list there is:
+    // the live catalogue belongs to an account, so there is nothing to ask.
     expect(status.anthropic.models?.map((m) => m.id)).toContain('claude-opus-5');
     expect(JSON.stringify(status)).not.toContain('sk-secret-value');
     await writeAppSettings(root, { apiKey: '' });
+  });
+
+  it('counts a Claude Code sign in as Claude being set up, with no key anywhere', async () => {
+    // The whole point. The SDK runs the Claude Code CLI and that CLI answers on
+    // whatever the person signed into, so refusing to bind without an API key
+    // told people with a working Claude that it was not set up, and offered to
+    // set up the thing already set up. A key is one route in, not the route.
+    await writeAppSettings(root, { apiKey: '' });
+    // A working sign-in: the point of this test is that a signed-in CLI alone
+    // is enough for Claude to be the active provider, with no key anywhere.
+    const status = await readChatProviders(root, {
+      claudeCli: async () => ({ installed: true, loggedIn: true, email: null, planType: null }),
+      // Injected for the same reason the sign-in is: the real one opens the SDK
+      // and talks to the CLI, so leaving it out would make this test answer
+      // differently on a machine that has claude than on one that does not.
+      claudeModels: async () => [],
+    });
+    expect(status.anthropic.hasKey).toBe(false);
+    expect(status.anthropic.cli).toBe(true);
+    expect(status.active).toBe('anthropic');
+  });
+
+  it('offers what the account can really use, with the efforts each model declared', async () => {
+    // The whole point of reading the catalogue: the curated three rows carried
+    // no efforts, so the composer's effort control — which renders only when
+    // the ACTIVE MODEL declares some — never appeared for Claude at all.
+    const status = await readChatProviders(root, {
+      claudeCli: async () => ({ installed: true, loggedIn: true, email: null, planType: null }),
+      claudeModels: async () => [{ id: 'sonnet', label: 'Sonnet', efforts: [{ id: 'high' }] }],
+    });
+    expect(status.anthropic.models).toEqual([{ id: 'sonnet', label: 'Sonnet', efforts: [{ id: 'high' }] }]);
+  });
+
+  it('keeps the curated list when the catalogue cannot be had', async () => {
+    // A picker with nothing in it while a spawn settles (or on a CLI too old to
+    // answer) is worse than three good answers.
+    const status = await readChatProviders(root, {
+      claudeCli: async () => ({ installed: true, loggedIn: true, email: null, planType: null }),
+      claudeModels: async () => [],
+    });
+    expect(status.anthropic.models?.map((m) => m.id)).toContain('claude-opus-5');
+
+    const threw = await readChatProviders(root, {
+      claudeCli: async () => ({ installed: true, loggedIn: true, email: null, planType: null }),
+      claudeModels: async () => {
+        throw new Error('the CLI would not handshake');
+      },
+    });
+    expect(threw.anthropic.models?.map((m) => m.id)).toContain('claude-opus-5');
+  });
+
+  it('is honest that nothing can answer when there is neither a key nor the CLI', async () => {
+    await writeAppSettings(root, { apiKey: '', codexPath: path.join(tmp, 'no-such-codex') });
+    const status = await readChatProviders(root, { claudeCli: async () => SIGNED_OUT });
+    expect(status.anthropic.cli).toBe(false);
+    expect(status.active).toBeNull();
+    await writeAppSettings(root, { codexPath: '' });
   });
 
   it('describes a machine with no codex installed as a fixable state', async () => {
     // An override pointing at nothing is the deterministic stand-in for "not
     // installed" — the real PATH lookup depends on whose machine this runs on.
     await writeAppSettings(root, { codexPath: path.join(tmp, 'no-such-codex') });
-    const status = await readChatProviders(root);
+    const status = await readChatProviders(root, { claudeCli: async () => SIGNED_OUT });
     expect(status.openai.installed).toBe(false);
     expect(status.openai.loggedIn).toBe(false);
     expect(status.active).toBeNull();
@@ -247,8 +306,21 @@ describe('provider status', () => {
   it('serves the status over HTTP for an open folder only', async () => {
     const closed = await ctx.chatProviders(path.join(tmp, 'not-open'));
     expect(closed.status).toBe(403);
-    const missing = await ctx.chatProviders(undefined);
-    expect(missing.status).toBe(400);
+    const wrongShape = await ctx.chatProviders(42);
+    expect(wrongShape.status).toBe(400);
+  });
+
+  it('answers a project-less read with the machine-level facts, for the Home screen', async () => {
+    // Who the person is signed in as is a fact about the machine, so Home may
+    // ask without a folder. Only the shape is pinned — the values depend on
+    // whose machine the suite runs on, and asserting them would encode this
+    // one (see the standing lesson about tests encoding their machine).
+    const home = await ctx.chatProviders(undefined);
+    expect(home.status).toBe(200);
+    const body = home.body as { ok: boolean; anthropic?: unknown; openai?: unknown };
+    expect(body.ok).toBe(true);
+    expect(body.anthropic).toBeDefined();
+    expect(body.openai).toBeDefined();
   });
 });
 
@@ -265,22 +337,52 @@ describe('activeProvider', () => {
   const signedIn = { ...signedOut, installed: true, loggedIn: true, authMode: 'chatgpt' as const };
 
   it('is null when nothing is configured', () => {
-    expect(activeProvider({ hasKey: false, source: null }, signedOut, undefined)).toBeNull();
+    expect(
+      activeProvider(
+        { hasKey: false, source: null, cli: false, loggedIn: false, email: null, planType: null },
+        signedOut,
+        undefined,
+      ),
+    ).toBeNull();
   });
 
   it('names the only usable provider, whichever it is', () => {
-    expect(activeProvider({ hasKey: true, source: 'project' }, signedOut, undefined)).toBe('anthropic');
-    expect(activeProvider({ hasKey: false, source: null }, signedIn, undefined)).toBe('openai');
+    expect(
+      activeProvider(
+        { hasKey: true, source: 'project', cli: false, loggedIn: false, email: null, planType: null },
+        signedOut,
+        undefined,
+      ),
+    ).toBe('anthropic');
+    expect(
+      activeProvider(
+        { hasKey: false, source: null, cli: false, loggedIn: false, email: null, planType: null },
+        signedIn,
+        undefined,
+      ),
+    ).toBe('openai');
   });
 
   it('honours a stored preference when that provider is usable', () => {
-    expect(activeProvider({ hasKey: true, source: 'project' }, signedIn, 'openai')).toBe('openai');
+    expect(
+      activeProvider(
+        { hasKey: true, source: 'project', cli: false, loggedIn: false, email: null, planType: null },
+        signedIn,
+        'openai',
+      ),
+    ).toBe('openai');
   });
 
   it('ignores a preference for a provider that is not usable, rather than lying', () => {
     // Signed out of ChatGPT since choosing it: the label must say who will
     // actually answer, which is the Anthropic key.
-    expect(activeProvider({ hasKey: true, source: 'project' }, signedOut, 'openai')).toBe('anthropic');
+    expect(
+      activeProvider(
+        { hasKey: true, source: 'project', cli: false, loggedIn: false, email: null, planType: null },
+        signedOut,
+        'openai',
+      ),
+    ).toBe('anthropic');
   });
 });
 

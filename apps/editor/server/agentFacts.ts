@@ -36,6 +36,17 @@
  */
 export const GAME_ENTRY_CANDIDATES = ['index.html', 'game/index.html', 'dist/index.html', 'public/index.html'];
 
+/**
+ * Where the skills mirror lands, as the prompt says it.
+ *
+ * Written with forward slashes on every platform, because this is prose an
+ * agent reads rather than a path the server joins, and `.claude\skills` in a
+ * sentence reads as an escape. The value matches `CLAUDE_SKILLS_DIR` in
+ * skills.ts, which is the one that actually creates the folder; a literal here
+ * keeps this module a leaf, and a test pins the two together.
+ */
+export const SKILLS_PROMPT_DIR = '.claude/skills/';
+
 /** What the environment can actually offer this conversation. */
 export interface AgentFactsOptions {
   /**
@@ -46,6 +57,23 @@ export interface AgentFactsOptions {
    * of this block less.
    */
   probeCli: boolean;
+  /**
+   * True when at least one enabled skill was mirrored into this project.
+   *
+   * Skills reach the two backends Hearth drives natively: the Agent SDK
+   * discovers them from the folder it works in, and codex is handed the same
+   * folder through `skills/extraRoots/set`. Neither of those helps anything
+   * else, and "anything else" is most of what people run here — a registered
+   * CLI, a shell agent, whatever is next. Those agents can read a file like
+   * any other, so the folder is NAMED here and they can go and look. That is
+   * the difference between a skill library that belongs to two vendors and one
+   * that belongs to the person.
+   *
+   * Silent when the folder is empty, on the same rule as the probe paragraph
+   * below: telling an agent to consult a library that does not exist spends
+   * tokens to produce a wasted directory listing.
+   */
+  skills: boolean;
 }
 
 /**
@@ -89,6 +117,15 @@ export function hearthFactsPrompt(options: AgentFactsOptions): string {
         'writes that evidence, `hearth-probe screenshot .` captures a frame of the running game, ' +
         '`hearth-probe shim .` installs the reference shim (its header documents every hook), and ' +
         '`hearth-probe --help` lists the rest.',
+    );
+  }
+  if (options.skills) {
+    parts.push(
+      `Skills the person keeps are mirrored into ${SKILLS_PROMPT_DIR}, one folder each, with a SKILL.md ` +
+        'holding a name, a description of when it applies, and the instructions. They are the person’s ' +
+        'library rather than this game’s, and they are there for whatever is answering, which is you: ' +
+        'read the descriptions, and read a skill in full when the work is the work it describes. The folder ' +
+        'is named for the first agent that read it and means nothing about who it is for.',
     );
   }
   parts.push(
