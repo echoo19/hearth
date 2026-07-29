@@ -9,6 +9,7 @@
  * touches the monorepo's workspace-symlinked node_modules.
  */
 import { rm, mkdir, cp, writeFile, readFile } from 'node:fs/promises';
+import { existsSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import os from 'node:os';
 import path from 'node:path';
@@ -80,13 +81,39 @@ await writeFile(
   ) + '\n',
 );
 
-// Install the one real dependency. `npm install` (not `ci`) because this
-// directory intentionally has no lockfile; `--no-package-lock` keeps it that
-// way so re-running assembly stays idempotent. npm resolves and installs the
-// `@lydell/node-pty-<platform>-<arch>` optionalDependencies subpackage that
-// matches whatever OS/arch this script runs on — exactly what each release CI
-// runner (and a local packaging run) needs.
-const npmInstallArgs = ['install', '--omit=dev', '--no-audit', '--no-fund', '--no-package-lock'];
+/**
+ * Which platform the app being assembled is FOR, which is not always the one
+ * this script is running on.
+ *
+ * @lydell/node-pty ships no source, only prebuilt binaries, one per platform,
+ * as optionalDependencies. npm installs the subpackage matching the host, so
+ * the release CI matrix (one runner per OS) has always been correct. A local
+ * cross-build is not: `electron-builder --win` on a Mac produced a Windows app
+ * carrying the darwin-arm64 pty binary and nothing else, so the terminal was
+ * dead on arrival and no step said a word about it.
+ *
+ * npm's --os/--cpu answer exactly this question, so the target is passed down
+ * rather than inferred, and the result is checked below rather than trusted.
+ */
+const targetPlatform = process.env.HEARTH_TARGET_PLATFORM ?? process.platform;
+const targetArch = process.env.HEARTH_TARGET_ARCH ?? process.arch;
+const crossBuilding = targetPlatform !== process.platform || targetArch !== process.arch;
+if (crossBuilding) {
+  console.log(`release-app/: assembling for ${targetPlatform}-${targetArch} from ${process.platform}-${process.arch}`);
+}
+
+// `npm install` (not `ci`) because this directory intentionally has no
+// lockfile; `--no-package-lock` keeps it that way so re-running assembly stays
+// idempotent.
+const npmInstallArgs = [
+  'install',
+  '--omit=dev',
+  '--no-audit',
+  '--no-fund',
+  '--no-package-lock',
+  `--os=${targetPlatform}`,
+  `--cpu=${targetArch}`,
+];
 console.log(`release-app/: npm install @lydell/node-pty@${nodePtyVersion} playwright-core@${playwrightVersion}`);
 // Node's CVE-2024-27980 hardening refuses to spawn a .cmd/.bat file directly
 // on win32 (throws EINVAL) unless `shell: true` is set. `npmCmd()` resolves to
@@ -107,4 +134,32 @@ function npmCmd() {
   return process.platform === 'win32' ? 'npm.cmd' : 'npm';
 }
 
-console.log('release-app/ assembled');
+/**
+ * The pty binary for the target really is here.
+ *
+ * Checked rather than assumed, because the failure it catches is silent: the
+ * install succeeds, the package is packed, the app launches, and the terminal
+ * is simply dead the first time someone opens it. On a machine that is not the
+ * one that built it, nobody finds out until a user does.
+ */
+const ptyPrebuild = path.join(
+  out,
+  'node_modules',
+  '@lydell',
+  `node-pty-${targetPlatform}-${targetArch}`,
+  'prebuilds',
+  `${targetPlatform}-${targetArch}`,
+);
+if (!existsSync(ptyPrebuild)) {
+  console.error(
+    `\nrelease-app/: no pty binary for ${targetPlatform}-${targetArch}.\n` +
+      `Looked in ${ptyPrebuild}.\n` +
+      'The app would package and launch with a terminal that cannot start.\n' +
+      (crossBuilding
+        ? 'Cross-builds need npm to resolve the target platform, which needs npm 10 or newer for --os and --cpu.\n'
+        : ''),
+  );
+  process.exit(1);
+}
+
+console.log(`release-app/ assembled (pty: ${targetPlatform}-${targetArch})`);

@@ -314,10 +314,42 @@
   white-space: pre-wrap;
   overflow-wrap: anywhere;
   cursor: text;
+  /* AGENTS.md is a file people grow. Rendered whole this card ran past eight
+     thousand pixels tall and pushed every other card on the screen off the
+     bottom, so one long paragraph became the entire project screen. About
+     twelve lines: enough to recognise what is in there, not enough to bury
+     what is under it. */
+  max-height: 19.2em;
+  overflow: hidden;
+  /* Faded rather than cut, so it looks held back rather than broken off. The
+     button below says so in words, for anyone this does not reach. */
+  mask-image: linear-gradient(to bottom, #000 calc(100% - 2.4em), transparent);
+}
+
+.proj-instructions-read.is-open {
+  max-height: none;
+  overflow: visible;
+  mask-image: none;
 }
 
 .proj-instructions-read:hover {
   color: var(--ink);
+}
+
+.proj-instructions-more {
+  align-self: flex-start;
+  margin-top: 6px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--accent);
+  font: inherit;
+  font-size: var(--text-xs);
+  cursor: pointer;
+}
+
+.proj-instructions-more:hover {
+  text-decoration: underline;
 }
 
 .proj-instructions-edit {

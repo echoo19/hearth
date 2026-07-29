@@ -59,15 +59,23 @@ export function hearthFactsPrompt(options: AgentFactsOptions): string {
     'You are working inside Hearth, a desktop app where a person and an agent make a game together. ' +
       'The working folder is the project. Beside this conversation the app keeps a game pane that serves ' +
       `the folder over HTTP and reloads as files change; it looks for, in order: ${entries}. ` +
-      'Any web game that runs from static files works — there is no required engine, framework, or format, ' +
+      'Any web game that runs from static files works. There is no required engine, framework, or format, ' +
       'and how the game is built is entirely up to you. If you use a build step, put the output at one of ' +
       'those entries so the pane (and playtests) can find it.',
 
-    'A playtest sends seeded bots at the game headlessly — real keys, real pointer, screenshots, ' +
-      'console errors — and writes everything under .hearth/evidence/. journal.jsonl is appended as it ' +
-      'runs; sweeps/<n>/report.json holds the verdicts and findings; sweeps/<n>/shots/ the frames ' +
-      'findings point at. When a playtest comes up, read those files. Playtesting has no surface in the ' +
-      'app: it is run from a shell, never by the person pressing something.',
+    'There are two different playtests and they are not interchangeable. The TESTER is the one the person ' +
+      'uses: a model opens the game and plays it the way a person would, keeps notes across sessions, and ' +
+      'writes each session under .hearth/tester/sessions/<n>/, with note.json holding what it saw and what ' +
+      'it proposes, and .hearth/tester/memory.md holding what it remembers about this game. The person ' +
+      'starts it from the app and can send you work from its report. Read those files when a session comes ' +
+      'up. It reports only what it actually saw, so treat anything it says it could not work out as ' +
+      'genuinely unknown rather than as a hint.',
+
+    'The BOT SWEEP is yours, not the person\u2019s: seeded bots driven headlessly at the game, real keys, ' +
+      'real pointer, screenshots, console errors, written under .hearth/evidence/. journal.jsonl is ' +
+      'appended as it runs; sweeps/<n>/report.json holds the verdicts and findings; sweeps/<n>/shots/ the ' +
+      'frames findings point at. It has no surface in the app: it is run from a shell, never by the person ' +
+      'pressing something. It finds crashes, not fun.',
 
     'Which bots can play is decided by what the game tells them. With no cooperation, only random-input ' +
       'bots run: they find crashes, not progress. A game that installs the probe shim (window.__hearthProbe, ' +
@@ -84,9 +92,9 @@ export function hearthFactsPrompt(options: AgentFactsOptions): string {
     );
   }
   parts.push(
-    '.hearth/context/ holds reference files the person added for you — read them before making big ' +
-      'decisions. The rest of .hearth/ (chats/, evidence/) is the app’s own record of this project; ' +
-      'read it freely, but do not edit it.',
+    '.hearth/context/ holds reference files the person added for you. Read them before making big ' +
+      'decisions. The rest of .hearth/ (chats/, evidence/, tester/) is the app’s own record of this ' +
+      'project; read it freely, but do not edit it.',
   );
   return parts.join('\n\n');
 }

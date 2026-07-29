@@ -26,6 +26,14 @@ import path from 'node:path';
  *   moments — modal/dialog titles and panel empty-state headings. It may be
  *   defined in fonts.css/tokens.css but referenced nowhere else.
  *
+ * Gate E — no em or en dashes in anything a person or an agent will READ.
+ *   The house voice writes with commas, colons and full stops; a dash slipped
+ *   into shipped copy is the single most reliable tell that a string was
+ *   generated rather than written, and it has had to be corrected by hand
+ *   several times now. Comments are exempt and deliberately so: the prose in
+ *   this codebase's comments is written for people reading the source, and
+ *   holding it to the product's copy rules would be the wrong trade.
+ *
  * Gate C — same token discipline, but for inline `fontSize` in TS/TSX under
  *   `apps/editor/src/**`: every `fontSize:` (object literal) or JSX
  *   `fontSize={...}` assignment must resolve to a `var(--text-*)` string,
@@ -40,6 +48,14 @@ const STYLES_DIR = path.resolve(__dirname, '../src/styles');
 const MANIFEST_CSS = path.resolve(__dirname, '../src/styles.css');
 const SRC_DIR = path.resolve(__dirname, '../src');
 const COMPONENTS_DIR = path.resolve(__dirname, '../src/components');
+const SERVER_DIR = path.resolve(__dirname, '../server');
+const ELECTRON_DIR = path.resolve(__dirname, '../electron');
+
+/**
+ * The two dashes the house voice does not use. Not the hyphen, which is a real
+ * word-joiner, and not the minus sign.
+ */
+const DASHES = /[\u2014\u2013]/;
 
 /**
  * Gate D's element-aware scope: raw interactive HTML elements, plus the
@@ -160,6 +176,19 @@ function lineAt(content: string, index: number): number {
 /** Strip `/* ... *\/` comments, replacing with spaces to keep indices stable. */
 function stripComments(content: string): string {
   return content.replace(/\/\*[\s\S]*?\*\//g, (m) => m.replace(/[^\n]/g, ' '));
+}
+
+/**
+ * Strip BOTH comment forms, for Gate E, which cares what a line says rather
+ * than where it sits. Separate from `stripComments` on purpose: the other
+ * gates report positions and need indices to stay stable, and this one throws
+ * the offset away.
+ *
+ * The `[^:]` guard is what keeps `https://` from being read as the start of a
+ * comment and eating the rest of a URL string.
+ */
+function stripAllComments(content: string): string {
+  return stripComments(content).replace(/(^|[^:])\/\/[^\n]*/gm, (_match, before: string) => before);
 }
 
 function rel(absPath: string, base: string): string {
@@ -334,6 +363,43 @@ describe('style gates', () => {
           `A native title is hover-only and invisible to keyboard users. Non-interactive ` +
           `truncated-text elements (spans/divs/labels/options) may keep a native title.`,
       );
+    }
+  });
+
+  it('Gate E keeps em and en dashes out of everything that ships as words', () => {
+    const offenders: string[] = [];
+    for (const dir of [SRC_DIR, SERVER_DIR, ELECTRON_DIR]) {
+      if (!fs.existsSync(dir)) continue;
+      for (const file of collectFiles(dir, ['.ts', '.tsx'])) {
+        // Comments are exempt: they are written for whoever is reading the
+        // source, not for whoever is using the app.
+        const code = stripAllComments(fs.readFileSync(file, 'utf8'));
+        code.split('\n').forEach((line, index) => {
+          if (!DASHES.test(line)) return;
+          offenders.push(`${rel(file, path.resolve(__dirname, '..'))}:${index + 1}: ${line.trim()}`);
+        });
+      }
+    }
+    expect(offenders).toEqual([]);
+  });
+
+  it('Gate E ignores comments and catches strings, so it can be lived with', () => {
+    const fixtureDir = fs.mkdtempSync(path.join(os.tmpdir(), 'dash-gate-fixture-'));
+    try {
+      const file = path.join(fixtureDir, 'Fixture.tsx');
+      fs.writeFileSync(
+        file,
+        `/** A comment with an em dash \u2014 which is fine and stays fine. */\n` +
+          `// So is a line comment \u2014 like this one.\n` +
+          `export const COPY = 'Nothing is connected \u2014 open Settings.';\n` +
+          `export const FINE = 'Nothing is connected. Open Settings.';\n`,
+      );
+      const lines = stripAllComments(fs.readFileSync(file, 'utf8')).split('\n');
+      const hits = lines.filter((line) => DASHES.test(line));
+      expect(hits).toHaveLength(1);
+      expect(hits[0]).toContain('COPY');
+    } finally {
+      fs.rmSync(fixtureDir, { recursive: true, force: true });
     }
   });
 
