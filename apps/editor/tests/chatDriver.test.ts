@@ -15,6 +15,7 @@ import {
   sdkFileChange,
   sdkToolKind,
   EventQueue,
+  SDK_EXITED_MESSAGE,
   STUB_REPLY,
   StubDriver,
   createChatDriver,
@@ -26,6 +27,21 @@ import {
   type ChatEvent,
 } from '../server/chat';
 import type { PermissionMode } from '../server/permissionMode';
+
+/**
+ * A stand-in for the SDK's query stream that STAYS OPEN.
+ *
+ * The real one is long-lived: it is opened once and carries every turn of the
+ * session. So a generator that yields its script and returns does not mean "no
+ * more events", it means the backend exited, and the driver now ends the
+ * conversation on it (see the pump in AgentSdkDriver). Anything exercising a
+ * driver that is still in use has to keep the stream open, or it is testing a
+ * dead agent.
+ */
+async function* liveStream(...events: unknown[]): AsyncGenerator<unknown> {
+  yield* events;
+  await new Promise<never>(() => {});
+}
 
 async function drain(source: AsyncIterable<ChatEvent>, until: number): Promise<ChatEvent[]> {
   const out: ChatEvent[] = [];
@@ -295,9 +311,7 @@ describe('AgentSdkDriver', () => {
         void (async () => {
           for await (const turn of stream) prompts.push(turn);
         })();
-        return (async function* () {
-          /* no events needed: this is about input order */
-        })();
+        return liveStream(); // no events needed: this is about input order
       },
     };
     const driver = new AgentSdkDriver(sdk, 'sk-test');
@@ -343,6 +357,53 @@ describe('AgentSdkDriver', () => {
     expect(options.cwd).toBe('/w/game');
     expect(options.permissionMode).toBe('acceptEdits');
     driver.stop();
+  });
+
+  /**
+   * The SDK's generator RETURNS as readily as it throws: its subprocess exiting
+   * (which is what an auth failure the SDK handles internally looks like from
+   * out here) ends the stream with no error at all.
+   *
+   * That used to push nothing and close nothing, so ws.ts's drain sat on
+   * `queue.next()` forever: the session was never cleaned up, the window span
+   * on a turn that was not coming, and every message typed afterwards went into
+   * `this.turns` with nothing on the other end. The driver has to say it is
+   * finished, and it has to END, which is the only signal ws.ts gets.
+   */
+  it('ends the conversation when the SDK stream returns without an error', async () => {
+    const sdk = { query: () => (async function* () {})() };
+    const driver = new AgentSdkDriver(sdk, 'sk-test');
+    await driver.start('s1', '/w/game');
+
+    const seen: ChatEvent[] = [];
+    for await (const event of driver.events) seen.push(event);
+    expect(seen).toEqual([{ type: 'error', message: SDK_EXITED_MESSAGE }]);
+    // Ended, not just quiet: ws.ts refuses to hand a turn to a driver that
+    // reads dead, so a later message binds a fresh backend instead of
+    // disappearing into this one.
+    expect(driver.dead).toBe(true);
+  });
+
+  it('reads dead after a thrown backend failure too, and stops accepting turns', async () => {
+    const turns: unknown[] = [];
+    const sdk = {
+      query: (args: unknown) => {
+        void (async () => {
+          for await (const turn of (args as { prompt: AsyncIterable<unknown> }).prompt) turns.push(turn);
+        })();
+        return (async function* (): AsyncGenerator<unknown> {
+          throw new Error('backend exploded');
+        })();
+      },
+    };
+    const driver = new AgentSdkDriver(sdk, 'sk-test');
+    await driver.start('s1', '/w/game');
+    await drain(driver.events, 1);
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    expect(driver.dead).toBe(true);
+    driver.send('anyone there?');
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    expect(turns).toEqual([]);
   });
 
   it('reports a thrown backend failure as an error event, not a crash', async () => {
@@ -444,7 +505,7 @@ describe('AgentSdkDriver approvals', () => {
         const options = (args as { options: Record<string, unknown> }).options;
         captured = options;
         canUseTool = options.canUseTool as typeof canUseTool;
-        return (async function* () {})();
+        return liveStream();
       },
     };
     const driver = new AgentSdkDriver(sdk, 'sk-test', null, null, mode);

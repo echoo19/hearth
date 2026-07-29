@@ -16,10 +16,10 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { useApp } from '../../store';
 import type { TesterNote } from '../../../server/tester/types';
-import { Button } from '../ui/Button';
 import { ScreenHeader } from '../ui/ScreenHeader';
+import { PlayButton, whyNoPlay } from './TesterStage';
 import { ReportView } from './ReportView';
-import { testerRows, TESTER_NEVER_PLAYED, type TesterRow } from './testerRows';
+import { readableNote, testerRows, TESTER_NEVER_PLAYED, type TesterRow } from './testerRows';
 
 /** When it played, in the terms a person thinks in rather than a timestamp. */
 export function playedWhen(iso: string, now: number = Date.now()): string {
@@ -46,21 +46,31 @@ function Session({ row, note, lead }: { row: TesterRow; note: TesterNote; lead: 
         </span>
       </div>
 
-      <p className="tester-said">
-        <span className="tester-said-label">What it thought you changed</span>
-        {row.seen}
-      </p>
-      <p className="tester-said">
-        <span className="tester-said-label">Why it says that</span>
-        {row.why}
-      </p>
+      {/* A note Hearth could not read has no answers to lay out, and putting
+          "could not be read" under three labels that promise the tester's own
+          words would be attributing a fault in the file to the tester. One
+          sentence about the file instead. */}
+      {row.tone === 'unreadable' ? (
+        <p className="tester-said is-unanswered">{row.why}</p>
+      ) : (
+        <>
+          <p className="tester-said">
+            <span className="tester-said-label">What it thought you changed</span>
+            {row.seen}
+          </p>
+          <p className="tester-said">
+            <span className="tester-said-label">Why it says that</span>
+            {row.why}
+          </p>
 
-      {/* Always here, in every state. A regression line that only appeared when
-          something was wrong would make its absence mean nothing at all. */}
-      <p className={`tester-said${row.regressionAnswered ? '' : ' is-unanswered'}`}>
-        <span className="tester-said-label">Anything worse</span>
-        {row.regression}
-      </p>
+          {/* Always here, in every state. A regression line that only appeared
+              when something was wrong would make its absence mean nothing. */}
+          <p className={`tester-said${row.regressionAnswered ? '' : ' is-unanswered'}`}>
+            <span className="tester-said-label">Anything worse</span>
+            {row.regression}
+          </p>
+        </>
+      )}
 
       {row.observations.length > 0 && (
         <div className="tester-said">
@@ -122,7 +132,12 @@ export function TesterHistory() {
   }, [refreshTesterHistory]);
 
   const rows = testerRows(tester.sessions);
-  const notes = new Map(tester.sessions.map((session) => [session.session, session]));
+  // The same notes the rows were built from, not the raw ones. The report reads
+  // the note directly, so handing it the unchecked version put the one throw
+  // this whole normalisation exists to prevent back into the dialog.
+  const notes = new Map(
+    tester.sessions.map(readableNote).map((session) => [session.session, session]),
+  );
 
   return (
     <div className="screen tester-history">
@@ -130,14 +145,12 @@ export function TesterHistory() {
         back={{ label: projectName ?? 'Chats', onBack: closeScreen }}
         title="Tester"
         actions={
-          <Button
-            variant="primary"
-            icon="play"
-            onClick={() => void playTester()}
-            disabled={!gamePresent || tester.running || tester.starting}
-          >
-            {tester.running ? 'Playing' : 'Play'}
-          </Button>
+          <PlayButton
+            blocked={whyNoPlay(gamePresent, tester.running, tester.starting)}
+            label={tester.running ? 'Playing' : 'Play'}
+            hint="It opens your game and plays another session now."
+            onPlay={() => void playTester()}
+          />
         }
       />
 

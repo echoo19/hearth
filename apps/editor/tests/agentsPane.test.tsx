@@ -31,18 +31,23 @@ import { setModelChoice } from '../src/chat/modelChoice';
 // Hoisted, because `vi.mock` is: the factory below runs while this file's own
 // imports are still being evaluated, and a plain `const` up here would not
 // exist yet when it does.
-const { saveProviderSettings } = vi.hoisted(() => ({
+const { saveProviderSettings, agentClis } = vi.hoisted(() => ({
   saveProviderSettings: vi.fn(async () => ({ hasKey: true, source: 'project' as const })),
+  // What the machine has, asked without a project. Null is "the read did not
+  // land", which is what jsdom would produce anyway; naming it here keeps the
+  // suite from depending on whether this environment has a fetch.
+  agentClis: vi.fn(async (): Promise<{ id: string; installed: boolean }[] | null> => null),
 }));
 
 // The pane is the only thing under test; the rest of api.ts still has to be
 // itself, because store.ts imports half of it.
 vi.mock('../src/api', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../src/api')>();
-  return { ...actual, apiSaveProviderSettings: saveProviderSettings };
+  return { ...actual, apiSaveProviderSettings: saveProviderSettings, apiAgentClis: agentClis };
 });
 
 import {
+  ANTHROPIC_KEYS_URL,
   AgentsPane,
   CODEX_INSTALL_COMMAND,
   activeProvider,
@@ -53,7 +58,22 @@ import {
   openAiCard,
   selectedModelValue,
 } from '../src/components/settings/AgentsPane';
+import { keyShapeProblem } from '../src/components/settings/apiKeyShape';
+import { openAiStatusLabel } from '../src/components/settings/providerStatus';
+import { OPEN_FOLDER_EVENT } from '../src/components/shell/useOpenFolder';
 import { useApp } from '../src/store';
+
+/**
+ * A key of a plausible length and prefix. Not a real one and not valid: the
+ * shape check is a shape check, and proving that is half of what these tests
+ * are for.
+ */
+const GOOD_KEY = `sk-ant-api03-${'x'.repeat(64)}`;
+
+/** With a folder open and both reads landed. */
+const CHECKED = { hasProject: true, codexInstalled: true };
+/** On Home, with the machine read still out. */
+const NOTHING_ASKED = { hasProject: false, codexInstalled: null };
 
 type State = ReturnType<typeof useApp.getState>;
 
@@ -186,6 +206,104 @@ describe('agentCards', () => {
     const cards = agentCards(null, null);
     expect(cards.map((c) => c.provider)).toEqual(['anthropic', 'openai']);
     expect(cards.map((c) => c.name)).toEqual(['Claude', 'ChatGPT']);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Uncertainty must not resolve into a confident "not connected"
+//
+// The pane's reads are all project-scoped and its state starts null, so on
+// Home it had nothing and said "not connected" anyway. These pin down the one
+// direction this pane is not allowed to be wrong in.
+// ---------------------------------------------------------------------------
+
+describe('with nothing read yet', () => {
+  it('does not report Claude as disconnected, because it has not looked', () => {
+    const card = anthropicCard(null, null, NOTHING_ASKED);
+    expect(card.known).toBe(false);
+    expect(card.status).not.toMatch(/Not connected/);
+    // No button either: everything it could offer needs a folder to write to.
+    expect(card.action.kind).toBe('none');
+    expect(cardState(card, false)).toBe('unchecked');
+  });
+
+  it('names the two places a key could already be, rather than denying both', () => {
+    // The user this used to lie to: ANTHROPIC_API_KEY already exported.
+    expect(anthropicCard(null, null, NOTHING_ASKED).status).toMatch(/ANTHROPIC_API_KEY/);
+  });
+
+  it('does not offer to install codex to someone who already has it', () => {
+    // The machine read is the honest half of the question, and it says yes.
+    const card = openAiCard(null, { hasProject: false, codexInstalled: true });
+    expect(card.action.kind).not.toBe('install');
+    expect(card.status).not.toMatch(/Not added yet/);
+    expect(card.known).toBe(false);
+  });
+
+  it('waits for the machine read rather than guessing at it', () => {
+    const card = openAiCard(null, NOTHING_ASKED);
+    expect(card.known).toBe(false);
+    expect(card.action.kind).toBe('none');
+  });
+
+  it('does offer the install once the machine has genuinely answered no', () => {
+    // `/api/agent-clis` takes no project, so this is a real answer even on
+    // Home, and a real answer earns a real button.
+    const card = openAiCard(null, { hasProject: false, codexInstalled: false });
+    expect(card.known).toBe(true);
+    expect(card.action).toEqual({ kind: 'install', command: CODEX_INSTALL_COMMAND });
+  });
+
+  it('still opens with "set up your first agent" for a genuinely empty machine', () => {
+    // The opposite failure: over-correcting into "not checked" for a new user
+    // whose reads DID land and really do say nothing is connected.
+    const cards = agentCards({ hasKey: false, source: null }, status({ openai: { installed: true } }), CHECKED);
+    expect(cards.every((card) => card.known)).toBe(true);
+    expect(cards.every((card) => !card.connected)).toBe(true);
+  });
+});
+
+describe('a codex probe that did not answer', () => {
+  it('does not tell a signed-in user they are signed out', () => {
+    // `readCodexStatus` falls back to loggedIn:false whenever its probe fails,
+    // so this exact shape is both "never signed in" and "machine was busy".
+    // The line may claim only the first half of that.
+    const line = openAiStatusLabel({
+      installed: true,
+      version: '0.9.0',
+      loggedIn: false,
+      authMode: null,
+      email: null,
+      planType: null,
+      hasKey: false,
+    });
+    expect(line).not.toMatch(/not signed in/i);
+    expect(line).toMatch(/No sign-in confirmed/);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// The shape check
+// ---------------------------------------------------------------------------
+
+describe('keyShapeProblem', () => {
+  it('passes a key of a plausible prefix and length', () => {
+    expect(keyShapeProblem('anthropic', GOOD_KEY)).toBeNull();
+    expect(keyShapeProblem('openai', `sk-proj-${'y'.repeat(64)}`)).toBeNull();
+  });
+
+  it('catches the paste that lost its tail, which is the one that used to go green', () => {
+    expect(keyShapeProblem('anthropic', 'sk-ant-abc')).toMatch(/shorter/);
+  });
+
+  it('catches a string that was never a key', () => {
+    expect(keyShapeProblem('anthropic', 'my anthropic key')).toMatch(/space or a line break/);
+    expect(keyShapeProblem('anthropic', `ghp_${'z'.repeat(40)}`)).toMatch(/begin with sk-ant-/);
+  });
+
+  it('does not mistake an OpenAI key for an Anthropic one', () => {
+    expect(keyShapeProblem('anthropic', `sk-${'q'.repeat(48)}`)).toMatch(/begin with sk-ant-/);
+    expect(keyShapeProblem('openai', `sk-${'q'.repeat(48)}`)).toBeNull();
   });
 });
 
@@ -327,22 +445,105 @@ describe('the pane as rendered', () => {
     expect(screen.queryByRole('button', { name: 'Sign in with ChatGPT' })).toBeNull();
   });
 
-  it('says where keys go when no folder is open, rather than failing quietly', () => {
-    patchStore({ hasKey: false, source: null }, status());
+  it('claims nothing about either harness when no folder is open', () => {
+    // The real Home state: closeWorkspace clears both read-outs, and the
+    // initial state starts that way, so on Home the pane has read nothing.
+    patchStore(null, null);
     useApp.setState({ projectPath: null } as unknown as Partial<State>);
     render(<AgentsPane />);
-    openRow('Claude Agent SDK');
-    expect(screen.getByText(/Open a folder first/)).toBeTruthy();
-    // The one control that would silently do nothing is off.
-    expect((screen.getByLabelText('Anthropic API key') as HTMLInputElement).disabled).toBe(true);
+
+    // The sentence that used to be here, said to users who were fully set up.
+    expect(screen.queryByText(/Nothing is connected yet/)).toBeNull();
+    expect(screen.queryByText(/Not connected yet/)).toBeNull();
+    expect(screen.getByRole('heading', { level: 3, name: 'Not checked yet' })).toBeTruthy();
+    // And the way out, which this pane did not have at all.
+    expect(screen.getByRole('button', { name: 'Open a folder…' })).toBeTruthy();
+  });
+
+  it('asks the window for a folder rather than leaving the user to guess', () => {
+    patchStore(null, null);
+    useApp.setState({ projectPath: null } as unknown as Partial<State>);
+    const asked = vi.fn();
+    window.addEventListener(OPEN_FOLDER_EVENT, asked);
+    render(<AgentsPane />);
+    fireEvent.click(screen.getByRole('button', { name: 'Open a folder…' }));
+    expect(asked).toHaveBeenCalledTimes(1);
+    window.removeEventListener(OPEN_FOLDER_EVENT, asked);
   });
 
   it('commits a pasted key on Connect — no separate Save', async () => {
     patchStore({ hasKey: false, source: null }, status());
     render(<AgentsPane />);
     openRow('Claude Agent SDK');
-    fireEvent.change(screen.getByLabelText('Anthropic API key'), { target: { value: '  sk-ant-abc  ' } });
+    fireEvent.change(screen.getByLabelText('Anthropic API key'), { target: { value: `  ${GOOD_KEY}  ` } });
     fireEvent.click(screen.getByRole('button', { name: 'Connect' }));
+    await waitFor(() => expect(saveProviderSettings).toHaveBeenCalledWith('/tmp/game', { apiKey: GOOD_KEY }));
+  });
+
+  it('offers a route to a key, because this window has no address bar', () => {
+    patchStore({ hasKey: false, source: null }, status());
+    render(<AgentsPane />);
+    openRow('Claude Agent SDK');
+    const link = screen.getByRole('link', { name: /Get a key from Anthropic/ });
+    expect(link.getAttribute('href')).toBe(ANTHROPIC_KEYS_URL);
+    // Through the handler electron/main.ts installs, which is what sends it to
+    // the user's own browser instead of a chrome-less editor window.
+    const open = vi.spyOn(window, 'open').mockReturnValue(null);
+    fireEvent.click(link);
+    expect(open).toHaveBeenCalledWith(ANTHROPIC_KEYS_URL, '_blank', 'noopener,noreferrer');
+    open.mockRestore();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// A key that looks wrong
+// ---------------------------------------------------------------------------
+
+describe('a pasted key is looked at before it earns a green badge', () => {
+  it('does not save a truncated paste on the first press, and says why', async () => {
+    patchStore({ hasKey: false, source: null }, status());
+    render(<AgentsPane />);
+    openRow('Claude Agent SDK');
+    fireEvent.change(screen.getByLabelText('Anthropic API key'), { target: { value: 'sk-ant-abc' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Connect' }));
+
+    expect(saveProviderSettings).not.toHaveBeenCalled();
+    expect(screen.getByRole('alert').textContent).toMatch(/shorter than a key/);
+  });
+
+  it('saves it anyway on the second press, because this is not Hearth’s call', async () => {
+    patchStore({ hasKey: false, source: null }, status());
+    render(<AgentsPane />);
+    openRow('Claude Agent SDK');
+    fireEvent.change(screen.getByLabelText('Anthropic API key'), { target: { value: 'sk-ant-abc' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Connect' }));
+    // The button says what the second press will do rather than staying
+    // "Connect" and quietly meaning something else.
+    fireEvent.click(screen.getByRole('button', { name: 'Save it anyway' }));
     await waitFor(() => expect(saveProviderSettings).toHaveBeenCalledWith('/tmp/game', { apiKey: 'sk-ant-abc' }));
+  });
+
+  it('withdraws the warning when the field is edited, so the next paste gets a fresh look', () => {
+    patchStore({ hasKey: false, source: null }, status());
+    render(<AgentsPane />);
+    openRow('Claude Agent SDK');
+    const field = screen.getByLabelText('Anthropic API key');
+    fireEvent.change(field, { target: { value: 'nonsense' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Connect' }));
+    expect(screen.getByRole('alert')).toBeTruthy();
+
+    fireEvent.change(field, { target: { value: 'still nonsense' } });
+    expect(screen.queryByRole('alert')).toBeNull();
+    expect(screen.getByRole('button', { name: 'Connect' })).toBeTruthy();
+  });
+
+  it('lets a well-formed key straight through', async () => {
+    patchStore({ hasKey: false, source: null }, status());
+    render(<AgentsPane />);
+    openRow('Claude Agent SDK');
+    fireEvent.change(screen.getByLabelText('Anthropic API key'), { target: { value: GOOD_KEY } });
+    fireEvent.click(screen.getByRole('button', { name: 'Connect' }));
+    await waitFor(() => expect(saveProviderSettings).toHaveBeenCalledTimes(1));
+    expect(screen.queryByRole('alert')).toBeNull();
   });
 });

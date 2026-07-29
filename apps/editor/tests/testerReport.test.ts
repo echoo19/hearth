@@ -7,7 +7,9 @@
 import { describe, it, expect } from 'vitest';
 import { parseProposals, testerPrompts } from '../server/tester/prompt';
 import {
+  droppedSentence,
   placementSentence,
+  planFrom,
   proposalsFrom,
   renderReport,
   REACHABILITY_CAVEAT,
@@ -182,6 +184,144 @@ describe('parseProposals', () => {
   it('reads a session with nothing to change as having nothing to change', () => {
     expect(parseProposals('NOTHING')).toEqual([]);
     expect(parseProposals('I would not change anything I saw.')).toEqual([]);
+  });
+
+  /**
+   * The shapes a model actually writes.
+   *
+   * This table is the regression test for the reason the plan of action had
+   * never once worked against a live model: the old pattern demanded the marker
+   * at the very start of the line and digits and commas between it and the
+   * colon. Everything a model reaches for in markdown was dropped in silence,
+   * and a dropped proposal used to be indistinguishable from a session that had
+   * found nothing wrong.
+   */
+  const SHAPES: [string, string, { kind: string; text: string; evidence: number[] }][] = [
+    ['bare, as the prompt draws it', 'BUG 7: the audit total goes negative', { kind: 'bug', text: 'the audit total goes negative', evidence: [7] }],
+    ['a bullet in front of it', '- BUG 7: the audit total goes negative', { kind: 'bug', text: 'the audit total goes negative', evidence: [7] }],
+    ['bold, the way a model formats a list', '**BUG 7:** the audit total goes negative', { kind: 'bug', text: 'the audit total goes negative', evidence: [7] }],
+    ['numbered', '1. BUG 7: the audit total goes negative', { kind: 'bug', text: 'the audit total goes negative', evidence: [7] }],
+    ['the picture reference written out in words', 'BUG (pictures 7, 21): the audit total goes negative', { kind: 'bug', text: 'the audit total goes negative', evidence: [7, 21] }],
+    ['a bullet AND bold', '- **BUG 7:** the audit total goes negative', { kind: 'bug', text: 'the audit total goes negative', evidence: [7] }],
+    ['bold around the reference instead of the marker', '**BUG 7**: the audit total goes negative', { kind: 'bug', text: 'the audit total goes negative', evidence: [7] }],
+    ['a star bullet', '* IDEA 3: give the intake longer', { kind: 'suggestion', text: 'give the intake longer', evidence: [3] }],
+    ['a heading', '### BUG 4: the queue never clears', { kind: 'bug', text: 'the queue never clears', evidence: [4] }],
+    ['"and" between the pictures', 'BUG 7 and 21: the audit total goes negative', { kind: 'bug', text: 'the audit total goes negative', evidence: [7, 21] }],
+    ['a hash before the number', 'IDEA #5: the button could be bigger', { kind: 'suggestion', text: 'the button could be bigger', evidence: [5] }],
+    ['indented under a bullet', '    - BUG 9: it fell through the floor', { kind: 'bug', text: 'it fell through the floor', evidence: [9] }],
+  ];
+
+  for (const [name, line, expected] of SHAPES) {
+    it(`reads a proposal written ${name}`, () => {
+      expect(parseProposals(line)).toEqual([expected]);
+    });
+  }
+
+  it('does not read a marker out of the middle of a sentence', () => {
+    // Widening what may sit in FRONT of the marker must not turn every mention
+    // of the word into a proposal, or the plan fills up with the tester's prose.
+    expect(parseProposals('The worst BUG 7: I saw was the total.')).toEqual([]);
+    expect(parseProposals('DEBUG: the frame counter is on')).toEqual([]);
+    expect(parseProposals('IDEAS: I have a few')).toEqual([]);
+  });
+
+  it('reads a line that names no picture, and leaves the anchoring to the report', () => {
+    // Parsed rather than discarded here, so `report.ts` can count what it drops
+    // and the reader can be told a proposal existed at all.
+    expect(parseProposals('BUG: the jump feels floaty')).toEqual([
+      { kind: 'bug', text: 'the jump feels floaty', evidence: [] },
+    ]);
+  });
+});
+
+describe('a proposal about a picture the tester wrote no SAW line about', () => {
+  it('survives, because that was never the rule the prompt asked for', () => {
+    // The bug this pins. `seen` used to be built from the observations, so a
+    // proposal about picture 7 of an eight picture session died whenever the
+    // tester had written its SAW lines about two other pictures, which is what
+    // testers actually do. Nothing in the prompt asked for that, and nothing in
+    // the report admitted to it.
+    const plan = proposalsFrom(
+      note({ proposals: [{ kind: 'bug', text: 'the total is wrong here too', evidence: [7] }] }),
+    );
+    expect(plan.map((item) => item.text)).toEqual(['the total is wrong here too']);
+  });
+
+  it('still carries the placed caveat, worked out from where the placement began', () => {
+    // Picture 6 is the earliest placed one in this session, so picture 7 is
+    // placed as well. Guessing 'played' here would quietly promote a claim
+    // about content the game handed the tester into evidence that a player can
+    // reach it.
+    const plan = proposalsFrom(
+      note({ proposals: [{ kind: 'bug', text: 'the total is wrong here too', evidence: [7] }] }),
+    );
+    expect(plan[0].reached).toBe('placed');
+  });
+
+  it('is played when it sits before the placement began', () => {
+    const plan = proposalsFrom(
+      note({ proposals: [{ kind: 'bug', text: 'the intake list is empty', evidence: [3] }] }),
+    );
+    expect(plan[0].reached).toBe('played');
+  });
+
+  it('is still bounded by the pictures the session actually took', () => {
+    const plan = proposalsFrom(
+      note({ frames: 4, proposals: [{ kind: 'bug', text: 'on picture seven', evidence: [7] }] }),
+    );
+    expect(plan).toEqual([]);
+  });
+
+  it('says so in the prompt, in as many words', () => {
+    const prompt = testerPrompts({ memory: '', changes: '', lastVerdict: null })[3];
+    expect(prompt).toMatch(/name at least one picture number/i);
+    expect(prompt).toMatch(/did not write a SAW line about/i);
+  });
+});
+
+describe('what happens to a proposal that is dropped', () => {
+  it('is counted rather than absorbed into "it found nothing"', () => {
+    const dropped = note({
+      proposals: [
+        { kind: 'bug', text: 'the jump feels floaty', evidence: [] },
+        { kind: 'suggestion', text: 'consider checkpoints', evidence: [] },
+        { kind: 'bug', text: 'something is off', evidence: [] },
+      ],
+    });
+    const { plan, dropped: lost } = planFrom(dropped);
+    expect(plan).toEqual([]);
+    expect(lost).toHaveLength(3);
+
+    const text = renderReport(dropped);
+    expect(text).toMatch(/It proposed three things/);
+    expect(text).toMatch(/none of them named a picture from this session/);
+    // The sentence that must never be used to report a parse miss.
+    expect(text).not.toMatch(/found nothing here worth changing/);
+  });
+
+  it('keeps "it found nothing" for the session that really did find nothing', () => {
+    expect(renderReport(note({ proposals: [] }))).toMatch(/found nothing here worth changing/);
+    expect(droppedSentence([], true)).toBeNull();
+  });
+
+  it('tells a picture nobody took apart from no picture at all', () => {
+    const text = renderReport(
+      note({ frames: 8, proposals: [{ kind: 'bug', text: 'on picture forty', evidence: [40] }] }),
+    );
+    expect(text).toMatch(/pointed at a picture this session did not take/);
+  });
+
+  it('is a footnote rather than a headline when something did survive', () => {
+    const text = renderReport(
+      note({
+        proposals: [
+          { kind: 'bug', text: 'the audit total goes negative', evidence: [6] },
+          { kind: 'bug', text: 'the jump feels floaty', evidence: [] },
+        ],
+      }),
+    );
+    expect(text).toContain('the audit total goes negative');
+    expect(text).toMatch(/It proposed one thing more/);
   });
 });
 

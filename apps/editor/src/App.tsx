@@ -8,6 +8,7 @@ import { SkillsScreen } from './components/skills/SkillsScreen';
 import { TesterHistory } from './components/tester/TesterHistory';
 import { ProjectHome } from './components/project/ProjectHome';
 import { ChatColumn } from './components/chat/ChatColumn';
+import { ScreenBoundary } from './components/ScreenBoundary';
 import { PaneStack } from './components/game/PaneStack';
 import { CodePeek } from './components/code/CodePeek';
 import { SettingsDialog } from './components/shell/SettingsDialog';
@@ -139,6 +140,9 @@ function Shell() {
   // takes the whole working area and owns its own way back; what it covered is
   // untouched underneath and returns exactly as it was left.
   const screen = useApp((s) => s.screen);
+  // The boundary's way out: leaving a screen that could not draw returns you to
+  // the conversation, which is the one surface that is always there.
+  const closeScreen = useApp((s) => s.closeScreen);
 
   return (
     <div className={`app-shell${narrow ? ' is-narrow' : ''}`}>
@@ -151,6 +155,13 @@ function Shell() {
             top bar and the window keep going, which is the whole difference
             between switching project and reloading the app. */}
         <div className="app-screen" key={projectPath ?? 'home'}>
+        {/* One bad row must not take the window with it. A malformed tester
+            note used to throw out of render and blank the WHOLE app, leaving a
+            reload as the only way back and blanking again on the next one.
+            Wrapped here rather than around the shell so the rail, the top bar
+            and the window survive whatever the screen did, and the `key` above
+            resets the boundary on a project switch for free. */}
+        <ScreenBoundary surface="This screen" onLeave={closeScreen}>
         {screen === 'skills' ? (
           <SkillsScreen />
         ) : screen === 'tester' ? (
@@ -171,6 +182,7 @@ function Shell() {
         ) : (
           <Home />
         )}
+        </ScreenBoundary>
         </div>
       </div>
       <CodePeek />

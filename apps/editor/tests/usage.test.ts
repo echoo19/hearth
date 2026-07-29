@@ -280,6 +280,21 @@ describe('the whole machine', () => {
     expect((await readChatCounts(root)).chats).toBe(1);
   });
 
+  it('does not count a chat nobody has spoken into', async () => {
+    // `pending` rows exist so a first message has somewhere to land, and every
+    // other surface hides them. Counting them here would put a figure in
+    // Settings larger than the number of conversations on screen, which reads
+    // as a broken count rather than as a different question. The Usage pane's
+    // wording ("Every chat started in those folders") is what overstates it.
+    const root = await makeProject('half-started', {
+      rawIndex: JSON.stringify([
+        { id: 'spoken', title: 's', createdAt: '2026-01-01T00:00:00.000Z', updatedAt: '2026-01-01T00:00:00.000Z' },
+        { id: 'silent', title: 'x', createdAt: '2026-01-02T00:00:00.000Z', updatedAt: '2026-01-02T00:00:00.000Z', pending: true },
+      ]),
+    });
+    expect((await readChatCounts(root)).chats).toBe(1);
+  });
+
   it('counts skills the way the Skills screen does, including another agent’s', async () => {
     await putSkill('HEARTH_HOME', 'pixel-art');
     await putSkill('HEARTH_CLAUDE_HOME', 'impeccable');

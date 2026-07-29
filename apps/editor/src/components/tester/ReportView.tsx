@@ -52,7 +52,14 @@ export function ReportView({
 
   return (
     <Modal open={open} title={`Session ${note.session}`} className="is-wide report-modal" onClose={onClose}>
-      <div className="report">
+      {/* A tab stop, because this element is the scroller and a scroller nobody
+          can focus cannot be scrolled from a keyboard. Both of the real
+          sessions in a new project have no plan of action, which leaves the
+          close button as the only focusable thing in the dialog, and it sits
+          outside this box: PageDown did nothing and scrollTop stayed at 0 for
+          the entire report. `role` and the label are what stop a bare tab stop
+          arriving as an unnamed group in a screen reader. */}
+      <div className="report" tabIndex={0} role="region" aria-label={`Session ${note.session} report`}>
         <p className="report-ending">{endingSentence(note)}</p>
 
         <section className="report-part">

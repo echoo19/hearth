@@ -22,6 +22,20 @@ import {
 } from '../../probeStream';
 import { ProbeFrames, ProbeNote, stageNoteStatus } from '../game/ProbeStage';
 import { Button } from '../ui/Button';
+import { Tooltip } from '../ui/Tooltip';
+
+/**
+ * Why the tester cannot be asked to play, or null when it can.
+ *
+ * Pure and shared by every Play control on this surface, so the three of them
+ * cannot drift into three different accounts of the same folder.
+ */
+export function whyNoPlay(gamePresent: boolean, running: boolean, starting: boolean): string | null {
+  if (!gamePresent) return 'There is no game in this project yet, so there is nothing for it to play.';
+  if (starting) return 'It is waking up. Give it a moment.';
+  if (running) return 'It is playing right now.';
+  return null;
+}
 
 /**
  * The tester's answer, with its protocol taken back out of it.
@@ -121,8 +135,44 @@ export function testerEndingLine(tester: TesterState): string | null {
   }
 }
 
+/**
+ * Play, with the reason it cannot be pressed attached to it.
+ *
+ * `aria-disabled` rather than `disabled`, for the reason CapabilityStrip gives:
+ * a natively disabled button dispatches no pointer events, so the tooltip
+ * saying WHY it is unavailable never opens and the control is a dead end. The
+ * click is guarded here instead, which is what makes that safe.
+ */
+export function PlayButton({
+  blocked,
+  label,
+  hint,
+  onPlay,
+}: {
+  blocked: string | null;
+  label: string;
+  /** What pressing it does, for when there is nothing stopping it. */
+  hint: string;
+  onPlay: () => void;
+}) {
+  return (
+    <Tooltip content={blocked ?? hint}>
+      <Button
+        variant="primary"
+        icon="play"
+        aria-disabled={blocked !== null}
+        onClick={() => {
+          if (blocked === null) onPlay();
+        }}
+      >
+        {label}
+      </Button>
+    </Tooltip>
+  );
+}
+
 /** Nothing has ever played here. An invitation, not an empty log. */
-function TesterInvitation({ onPlay, busy }: { onPlay: () => void; busy: boolean }) {
+function TesterInvitation({ onPlay, blocked }: { onPlay: () => void; blocked: string | null }) {
   return (
     <div className="tester-empty">
       <div className="tester-empty-frame" aria-hidden="true" />
@@ -131,9 +181,15 @@ function TesterInvitation({ onPlay, busy }: { onPlay: () => void; busy: boolean 
         It plays the game itself, remembers every session, and tells you whether your last change
         helped. The first time it plays is the only naive look at your game it will ever have.
       </p>
-      <Button variant="primary" icon="play" onClick={onPlay} disabled={busy}>
-        Play
-      </Button>
+      <PlayButton
+        blocked={blocked}
+        label="Play"
+        hint="It opens your game and plays a session now."
+        onPlay={onPlay}
+      />
+      {/* Said on the surface as well as in the tooltip. A hint that only exists
+          on hover is a hint a keyboard and a phone never get. */}
+      {blocked && <p className="tester-empty-blocked">{blocked}</p>}
     </div>
   );
 }
@@ -187,10 +243,12 @@ export function TesterStage() {
   const turnLine = testerTurnLine(tester);
   const endingLine = testerEndingLine(tester);
 
+  const blocked = whyNoPlay(gamePresent, tester.running, tester.starting);
+
   if (neverPlayed && !tester.error) {
     return (
       <div className="tester-pane">
-        <TesterInvitation onPlay={() => void playTester()} busy={!gamePresent} />
+        <TesterInvitation onPlay={() => void playTester()} blocked={blocked} />
       </div>
     );
   }
@@ -219,9 +277,12 @@ export function TesterStage() {
             Stop
           </Button>
         ) : (
-          <Button variant="primary" icon="play" onClick={() => void playTester()} disabled={!gamePresent}>
-            Play again
-          </Button>
+          <PlayButton
+            blocked={blocked}
+            label="Play again"
+            hint="It opens your game and plays another session now."
+            onPlay={() => void playTester()}
+          />
         )}
       </header>
 

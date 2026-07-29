@@ -147,3 +147,59 @@ describe('the report view', () => {
     expect(document.activeElement).toBe(trigger);
   });
 });
+
+/**
+ * A report you cannot scroll from a keyboard.
+ *
+ * `.report` is the scrolling box, and it had no tabindex. On a session with no
+ * plan of action, which is what a first session and any clean session is, the
+ * only focusable thing in the dialog is the close button, and that sits outside
+ * the box. PageDown did nothing and scrollTop stayed at 0 for the whole report.
+ */
+describe('reading a long report from a keyboard', () => {
+  it('makes the scrolling box a tab stop, since nothing inside it is one', () => {
+    seed([note({ proposals: [] })]);
+    render(<TesterHistory />);
+    const report = open();
+    const scroller = report.querySelector('.report') as HTMLElement;
+    expect(scroller.getAttribute('tabindex')).toBe('0');
+  });
+
+  it('names the box, so a tab stop does not arrive as an unlabelled group', () => {
+    seed([note({ session: 4, proposals: [] })]);
+    render(<TesterHistory />);
+    const report = open();
+    const scroller = report.querySelector('.report') as HTMLElement;
+    expect(scroller.getAttribute('role')).toBe('region');
+    expect(scroller.getAttribute('aria-label')).toMatch(/session 4/i);
+  });
+
+  it('can take focus, which is the whole of what PageDown needed', () => {
+    seed([note({ proposals: [] })]);
+    render(<TesterHistory />);
+    const report = open();
+    const scroller = report.querySelector('.report') as HTMLElement;
+    act(() => {
+      scroller.focus();
+    });
+    expect(document.activeElement).toBe(scroller);
+  });
+});
+
+/**
+ * The observations and the open questions used to render at full ink inside the
+ * report, because they sit straight in a `.report-part` rather than inside the
+ * muted wrapper the history uses. The open questions ended up the loudest text
+ * on the page. The rule that fixes it is scoped to `.report`, so it must not be
+ * possible to satisfy it by muting the lists everywhere.
+ */
+describe('the report keeps its lists at the weight of the prose around them', () => {
+  it('puts the tester lists inside .report, where the scoped rule can reach them', () => {
+    seed([note({ openQuestions: ['what the second button does'] })]);
+    render(<TesterHistory />);
+    const report = open();
+    for (const list of Array.from(report.querySelectorAll('.tester-saw'))) {
+      expect(list.closest('.report')).not.toBeNull();
+    }
+  });
+});

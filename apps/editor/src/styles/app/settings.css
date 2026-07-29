@@ -261,6 +261,18 @@ dialog.modal.is-settings .modal-title {
   resize: vertical;
 }
 
+/* How much of the instructions limit is gone.
+
+   On its own line under the hint, and only once the limit is close (see
+   COUNTER_FROM). A counter that is always on reads as a word budget, and this
+   is a field that wants as much as the user cares to give it. */
+.set-personal-count {
+  display: block;
+  margin-top: 4px;
+  color: var(--warn);
+  font-variant-numeric: tabular-nums;
+}
+
 /* Something went wrong with a save. Below the group, not inside a row: it is
    about the pane's last action, not about one setting. */
 .set-status {

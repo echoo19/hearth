@@ -30,10 +30,28 @@
 import React, { useEffect, useState } from 'react';
 import { apiUsage, type UsageProject, type UsageReport } from '../../api';
 import { relativeTime } from '../shell/Sidebar';
+import { Button } from '../ui/Button';
 import { SettingsGroup, SettingsRow } from './SettingsRow';
 
 /** What the pane is doing while it has no numbers to show. */
 type Phase = 'reading' | 'ready' | 'failed';
+
+/**
+ * How long the pane waits before it stops saying "counting" and offers a way
+ * out.
+ *
+ * This walks every remembered folder, reading an index, a directory and the
+ * tail of a journal in each, so a cold disk or a folder on a sleeping network
+ * mount is slow rather than broken and the ceiling is set to suit the slow
+ * case. Before it there was no ceiling at all: a read that never came back
+ * left "Counting what is on disk…" on screen for the life of the dialog, with
+ * nothing to press.
+ *
+ * A deadline on the WAIT, not on the request. `apiUsage` takes no abort
+ * signal, so the fetch underneath carries on; if it lands later it is still
+ * used, and the pane recovers on its own without the user pressing anything.
+ */
+export const USAGE_TIMEOUT_MS = 12_000;
 
 /** A count, with its digits aligned to the counts above and below it. */
 function Figure({ value }: { value: number }) {
@@ -89,19 +107,32 @@ function FolderRow({ project }: { project: UsageProject }) {
 export function UsagePane() {
   const [phase, setPhase] = useState<Phase>('reading');
   const [report, setReport] = useState<UsageReport | null>(null);
+  // Bumped by Try again. The read is not retried on its own: a settings dialog
+  // that keeps re-reading the disk behind you is worse than a slightly old
+  // count, and a read that failed once for a reason of its own would just fail
+  // again on a timer nobody asked for.
+  const [attempt, setAttempt] = useState(0);
 
   useEffect(() => {
     let live = true;
+    setPhase('reading');
+    const timer = setTimeout(() => {
+      if (live) setPhase('failed');
+    }, USAGE_TIMEOUT_MS);
     void (async () => {
       const next = await apiUsage();
       if (!live) return;
+      clearTimeout(timer);
+      // Written even when the deadline has already passed, so a slow read that
+      // eventually arrives replaces the failure it caused.
       setReport(next);
       setPhase(next === null ? 'failed' : 'ready');
     })();
     return () => {
       live = false;
+      clearTimeout(timer);
     };
-  }, []);
+  }, [attempt]);
 
   const totals = report?.totals;
   const skills = report?.skills;
@@ -115,7 +146,16 @@ export function UsagePane() {
 
       {phase === 'reading' && <p className="set-usage-note">Counting what is on disk…</p>}
       {phase === 'failed' && (
-        <p className="set-usage-note">Hearth could not read the counts on this machine.</p>
+        <div className="set-usage-note">
+          <p className="set-usage-note-line">
+            {report === null
+              ? 'Hearth could not read the counts on this machine.'
+              : 'The counts below are the last ones Hearth managed to read.'}
+          </p>
+          <Button size="sm" onClick={() => setAttempt((n) => n + 1)}>
+            Try again
+          </Button>
+        </div>
       )}
 
       {report !== null && totals !== undefined && skills !== undefined && (
@@ -146,7 +186,14 @@ export function UsagePane() {
                 />
                 <SettingsRow
                   label="Conversations"
-                  hint="Every chat started in those folders. They live with the folder, not with the app."
+                  // NOT "every chat started in those folders", which is what
+                  // this said and what it no longer counts. `readChatCounts`
+                  // reads the index through `parseChatIndex`, which drops rows
+                  // still marked pending, and a chat is pending until someone
+                  // speaks into it. New Chat opened and abandoned is therefore
+                  // invisible here. That is the better number to show, so the
+                  // label is what changed rather than the count.
+                  hint="Conversations you actually said something in. One opened and left empty is not counted. They live with the folder, not with the app."
                   control={<Figure value={totals.chats} />}
                 />
                 <SettingsRow

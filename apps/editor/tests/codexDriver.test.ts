@@ -459,3 +459,73 @@ describe('CodexDriver model and effort', () => {
     driver.stop();
   });
 });
+
+/**
+ * What happens when the child goes away.
+ *
+ * A transport loss is not a hiccup, it is the end of the conversation's
+ * backend, and the whole app depends on the driver saying so. It used to push
+ * an error and close its queue and nothing else: `stopped` stayed false, so the
+ * driver still LOOKED alive to ws.ts, which kept the session in its map and
+ * handed the next message straight to the corpse. That message was appended to
+ * the transcript, pushed into a closed queue, and dropped without a word, and
+ * every message after it evaporated before it ever reached disk.
+ */
+describe('CodexDriver when the app-server dies', () => {
+  it('reports the loss, ends its stream, and reads dead', async () => {
+    const { driver, server } = makeDriver();
+    await driver.start('chat-1', '/w/game');
+    expect(driver.dead).toBe(false);
+
+    const seen: ChatEvent[] = [];
+    const drained = (async () => {
+      for await (const event of driver.events) seen.push(event);
+    })();
+
+    server.close('codex app-server exited');
+    await drained; // the stream ENDS; before the fix it stayed open forever
+
+    expect(seen).toEqual([{ type: 'error', message: 'codex app-server exited' }]);
+    expect(driver.dead).toBe(true);
+    expect(server.killed).toBe(true); // and the child is not left behind
+  });
+
+  it('does not accept a turn afterwards, so nothing is sent into the void', async () => {
+    const { driver, server } = makeDriver();
+    await driver.start('chat-1', '/w/game');
+    server.close('pipe closed');
+    const before = server.requestsFor('turn/start').length;
+    driver.send('are you still there?');
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    expect(server.requestsFor('turn/start')).toHaveLength(before);
+  });
+});
+
+/**
+ * A thread id is the one thing a turn cannot be sent without.
+ *
+ * `start` used to become ready whether or not it had found one, and `startTurn`
+ * opened with a bare `if (!conn || !this.threadId) return;`, so against a codex
+ * build whose reply shape had drifted, every message was written to the
+ * transcript, drawn in the window, and thrown away in silence. Failing the bind
+ * is what turns that into something a person can see and act on.
+ */
+describe('CodexDriver without a thread id', () => {
+  it('fails the bind rather than accepting turns it will never send', async () => {
+    const { driver, server } = makeDriver();
+    server.autoReply['thread/start'] = { somethingElse: true };
+    await expect(driver.start('chat-1', '/w/game')).rejects.toThrow(/did not say which one/);
+    driver.stop();
+  });
+
+  it('keeps a resumed conversation on the thread it asked to resume', async () => {
+    const { driver, server } = makeDriver({ resume: 'thread-earlier' });
+    // A reply this build cannot read the id out of. The resume SUCCEEDED, so
+    // the thread is the one we named, and the conversation carries on.
+    server.autoReply['thread/resume'] = { ok: true };
+    await driver.start('chat-1', '/w/game');
+    driver.send('carry on');
+    expect(server.requestsFor('turn/start')[0]).toMatchObject({ threadId: 'thread-earlier' });
+    driver.stop();
+  });
+});

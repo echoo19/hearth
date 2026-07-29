@@ -20,8 +20,9 @@
  */
 import React, { useMemo, useState } from 'react';
 import {
+  droppedSentence,
   picturesFor,
-  proposalsFrom,
+  planFrom,
   PLACED_CLAIM,
   PLAN_BUGS,
   PLAN_PREFERENCES,
@@ -64,8 +65,13 @@ export function PlanOfAction({ note, onStarted }: { note: TesterNote; onStarted:
   const approveProposals = useApp((s) => s.approveProposals);
   const [ticked, setTicked] = useState<ReadonlySet<string>>(new Set());
   const [starting, setStarting] = useState(false);
+  // Shown here rather than only raised as a toast. The failure happens on this
+  // surface, so this is where the person is looking when it happens, and a
+  // toast host that is not mounted is a message nobody ever sees.
+  const [failed, setFailed] = useState<string | null>(null);
 
-  const plan = useMemo(() => proposalsFrom(note), [note]);
+  const { plan, dropped } = useMemo(() => planFrom(note), [note]);
+  const drops = droppedSentence(dropped, plan.length === 0);
   const bugs = plan.filter((proposal) => proposal.kind === 'bug');
   const preferences = plan.filter((proposal) => proposal.kind !== 'bug');
   // Read off the plan rather than off the clicks, so what gets sent is in the
@@ -84,16 +90,25 @@ export function PlanOfAction({ note, onStarted }: { note: TesterNote; onStarted:
   async function start(): Promise<void> {
     if (picked.length === 0 || starting) return;
     setStarting(true);
+    setFailed(null);
     const result = await approveProposals(note.session, picked);
     setStarting(false);
     if (result.ok) onStarted();
+    // The ticks are left exactly as they were, so trying again is one click
+    // rather than reading the whole plan a second time.
+    else setFailed(result.error ?? 'That could not be handed to an agent. Nothing was sent.');
   }
 
   if (plan.length === 0) {
     return (
       <section className="report-part">
         <h3 className="report-part-title">Worth changing</h3>
-        <p className="report-line">It found nothing here worth changing.</p>
+        {/* "It found nothing" is a statement about the game and it is only ever
+            true when the tester proposed nothing. When it proposed something
+            that did not survive the anchor rule, that is what is said instead:
+            a parse miss reported as a clean bill of health is the one thing
+            this surface must never do. */}
+        <p className="report-line">{drops ?? 'It found nothing here worth changing.'}</p>
       </section>
     );
   }
@@ -136,6 +151,17 @@ export function PlanOfAction({ note, onStarted }: { note: TesterNote; onStarted:
             ))}
           </ul>
         </div>
+      )}
+
+      {/* Under the list rather than above it: what survived is the thing to
+          read first, and what did not is the footnote that keeps the count
+          honest. */}
+      {drops && <p className="plan-dropped">{drops}</p>}
+
+      {failed && (
+        <p className="plan-error" role="alert">
+          {failed}
+        </p>
       )}
 
       <div className="plan-foot">

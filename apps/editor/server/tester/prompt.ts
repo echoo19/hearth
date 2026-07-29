@@ -181,11 +181,15 @@ export function testerPrompts(ctx: TesterPromptContext): string[] {
   const plan = [
     'Last question about this session, and nothing is a common answer to it.',
     '',
-    'Is anything you saw worth changing? Only from the pictures, and only pointing at the',
-    'ones you saw it in. One line each:',
+    'Is anything you saw worth changing? Only from the pictures. One line each:',
     '',
     '  BUG <picture numbers>: <what went wrong>',
     '  IDEA <picture numbers>: <what you would rather it did>',
+    '',
+    'Every line has to name at least one picture number from this session. Any picture will',
+    'do, including ones you did not write a SAW line about. A line that names no picture is',
+    'not carried into the plan at all, because a claim with no picture behind it is advice',
+    'anyone could have written without playing this game.',
     '',
     'BUG is for something you watched go wrong. IDEA is for a preference, and a preference is',
     'all it can be: you cannot tell whether a game is fun, so do not write as though you can.',
@@ -300,6 +304,40 @@ export function parseObservations(
 }
 
 /**
+ * One BUG or IDEA line, as models actually write them rather than as the prompt
+ * draws them.
+ *
+ * The old pattern was `^\s*(BUG|IDEA)\s*([\d,\s]*):` and it is the reason the
+ * plan of action had never once worked against a live model. It demanded the
+ * marker at the very start of the line with nothing but spaces before it, and
+ * it demanded that the space between the marker and the colon hold digits and
+ * commas and nothing else. Models write prose in markdown. Every one of these
+ * was silently dropped, and a dropped proposal is indistinguishable from a
+ * session that found nothing:
+ *
+ *     - BUG 7: the audit total goes negative
+ *     **BUG 7:** the audit total goes negative
+ *     1. BUG 7: the audit total goes negative
+ *     BUG (pictures 7, 21): the audit total goes negative
+ *
+ * So three things are allowed in front of the marker, and each is a shape a
+ * model reaches for on its own: one list bullet or ordinal, one markdown
+ * heading, and a run of emphasis characters. Between the marker and the colon
+ * anything short is allowed and only the digits in it are read, which is what
+ * lets "(pictures 7, 21)" and "7 and 21" and "#7" all mean the same thing.
+ *
+ * What is NOT relaxed is the anchor. A line still has to name a picture to
+ * become a proposal, and `report.ts` is where that is enforced, because the
+ * count of what it dropped is something the reader is owed.
+ */
+const PROPOSAL_LINE = /^[^\S\n]*(?:[-*+•>]|#{1,6}|\d+[.)])?[^\S\n]*[*_`]{0,3}[^\S\n]*(BUG|IDEA)\b([^:\n]{0,60}):(.*)$/i;
+
+/** Markdown emphasis around a claim is decoration, and it is not part of the claim. */
+function unemphasised(text: string): string {
+  return text.replace(/^[\s*_`]+/, '').replace(/[\s*_`]+$/, '');
+}
+
+/**
  * What the tester says is worth changing, read out of its reply.
  *
  * Nothing is added here. A reply with no BUG or IDEA line produces no
@@ -309,9 +347,9 @@ export function parseObservations(
 export function parseProposals(text: string): TesterProposal[] {
   const out: TesterProposal[] = [];
   for (const line of text.split('\n')) {
-    const match = /^[^\S\n]*(BUG|IDEA)[^\S\n]*([\d,\s]*):(.*)$/i.exec(line);
+    const match = PROPOSAL_LINE.exec(line);
     if (!match) continue;
-    const body = match[3].trim();
+    const body = unemphasised(match[3]);
     if (body === '') continue;
     const evidence: number[] = [];
     for (const digits of match[2].match(/\d+/g) ?? []) {

@@ -259,10 +259,25 @@ export interface ChatDriver {
    * a message.
    */
   send(text: string, agent?: AgentTurnOptions, attachments?: readonly ChatAttachment[]): void;
-  /** Everything the driver emits, in order, until `stop()`. */
+  /**
+   * Everything the driver emits, in order, until `stop()` or until the backend
+   * goes away. It ENDS either way: a driver that can no longer answer must end
+   * its stream, because that is the only signal ws.ts has that the conversation
+   * needs a fresh backend. See `dead`.
+   */
   readonly events: AsyncIterable<ChatEvent>;
   /** Tear down: ends `events` and abandons any in-flight turn. */
   stop(): void;
+  /**
+   * True once this driver can no longer answer, so `send()` would be a no-op.
+   *
+   * Optional, and absent reads as alive: a driver with nothing to lose (the
+   * stub) has no way to die. ws.ts checks it before handing a turn to a session
+   * it already holds. The drain loop retires a dead session on its own, but
+   * that runs a tick after the backend went away and a person can type inside
+   * that tick, and a message lost to it is lost for good.
+   */
+  readonly dead?: boolean;
   /**
    * Answer an `approval-request`. Optional: a backend that never asks (the
    * stub) does not implement it.
@@ -863,11 +878,21 @@ export interface AgentToolAccess {
   probeCli: boolean;
 }
 
+/**
+ * What the conversation is told when the SDK's stream ends on its own. The
+ * cause is not knowable from here (the subprocess exiting is all we see), so
+ * this says what happened and what to do rather than guessing why.
+ */
+export const SDK_EXITED_MESSAGE =
+  'The Anthropic agent stopped without finishing. Your next message starts a fresh one.';
+
 export class AgentSdkDriver implements ChatDriver {
   readonly kind = 'agent-sdk' as const;
   private queue = new EventQueue<ChatEvent>();
   private turns = new EventQueue<unknown>();
   private stopped = false;
+  /** Set once the pump has ended, whatever ended it. Backs `dead`. */
+  private finished = false;
   private pump: Promise<void> | null = null;
   private projectRoot = '';
   /** tool_use ids opened as a `Task`, so their result closes a subagent card. */
@@ -902,6 +927,10 @@ export class AgentSdkDriver implements ChatDriver {
 
   get events(): AsyncIterable<ChatEvent> {
     return this.queue;
+  }
+
+  get dead(): boolean {
+    return this.finished;
   }
 
   async start(_sessionId: string, projectRoot: string): Promise<void> {
@@ -947,14 +976,32 @@ export class AgentSdkDriver implements ChatDriver {
     });
     // One long-lived pump for the whole session: the SDK yields messages for
     // every queued turn on the same stream.
+    //
+    // Ending it ALWAYS ends the event stream, and it says why first. The pump
+    // used to do neither, and the SDK's generator RETURNS as readily as it
+    // throws: its subprocess exiting cleanly (which is what an auth failure the
+    // SDK handles internally looks like from here) pushed no error and closed
+    // nothing, so ws.ts's drain sat on `queue.next()` forever. The session
+    // therefore never reached a cleanup path, `send()` kept pushing turns into
+    // `this.turns` with nothing on the other end, and the window spun on a turn
+    // that was never coming. A driver that cannot answer has to say so.
     this.pump = (async () => {
       try {
         for await (const message of stream) {
           if (this.stopped) break;
           for (const event of mapSdkMessage(message)) this.queue.push(this.retarget(event));
         }
+        // Returned rather than threw, and nobody asked it to stop: the backend
+        // is gone. Reported as an error because that is what it is to the
+        // person waiting, and because an error is what ends the turn.
+        if (!this.stopped) this.queue.push({ type: 'error', message: SDK_EXITED_MESSAGE });
       } catch (err) {
         if (!this.stopped) this.queue.push({ type: 'error', message: (err as Error).message });
+      } finally {
+        this.finished = true;
+        // Nothing will read queued turns again, and nothing will emit again.
+        this.turns.close();
+        this.queue.close();
       }
     })();
   }
@@ -1032,6 +1079,7 @@ export class AgentSdkDriver implements ChatDriver {
 
   stop(): void {
     this.stopped = true;
+    this.finished = true;
     // Anything still blocking the agent is answered `deny`, so the SDK's own
     // turn unwinds instead of hanging on a promise nobody will settle.
     for (const [, resolve] of this.pending) resolve('deny');

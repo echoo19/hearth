@@ -41,7 +41,7 @@
 import { promises as fsp } from 'node:fs';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
-import type { ChatEvent } from './chat.js';
+import { endsTurn, type ChatEvent } from './chat.js';
 import { parseStoredAttachments, type StoredAttachment } from './chatAttachments.js';
 
 /** Relative location of the chat directory within a project. */
@@ -320,19 +320,104 @@ function serialize<T>(root: string, task: () => Promise<T>): Promise<T> {
  * rather than through `parseChatIndex`: an index rewritten from the filtered
  * view would delete the conversation the window that asked for the write is
  * sitting in.
+ *
+ * An ABSENT file is the normal state of a project nobody has talked to, and
+ * reads as no conversations. A file that is THERE and does not parse is not
+ * that, and treating the two the same is what turned one torn write into "every
+ * conversation you ever had is gone": the empty answer went straight back out
+ * to a `createChat` that wrote a single row over the wreck, while the
+ * transcripts holding the actual conversations sat beside it, unlisted and
+ * unreachable. The transcripts are the record, so that case rebuilds from them
+ * (see `recoverIndexUnlocked`).
  */
 async function readIndexUnlocked(root: string): Promise<ChatIndexRow[]> {
+  let raw: string;
   try {
-    return parseChatRows(JSON.parse(await fsp.readFile(chatIndexPath(root), 'utf8')));
+    raw = await fsp.readFile(chatIndexPath(root), 'utf8');
   } catch {
-    return []; // absent (a project that has never been talked to) or unreadable
+    return []; // absent: a project that has never been talked to
+  }
+  try {
+    return parseChatRows(JSON.parse(raw));
+  } catch {
+    return recoverIndexUnlocked(root, raw);
   }
 }
 
+/** Where an index.json that could not be parsed is kept. */
+export function corruptIndexPath(root: string): string {
+  return `${chatIndexPath(root)}.corrupt`;
+}
+
+/**
+ * Rebuild the index from the transcripts sitting next to it.
+ *
+ * Everything a conversation IS lives in its `.jsonl`: who said what, in what
+ * order, and when. The index is a listing of those files, so an unreadable one
+ * is recoverable rather than fatal, and the rebuild is what makes a torn write
+ * cost an ordering and a couple of names instead of a person's whole history.
+ *
+ * Two things do not come back, and both are deliberate. A transcript with
+ * nothing in it is skipped: it is a chat that was opened and never spoken into
+ * (which the index hides anyway), and recovering those would fill the sidebar
+ * with "New chat" rows for windows nobody remembers opening. And a codex
+ * thread binding is not in the transcript, so a recovered conversation starts a
+ * fresh thread with its history replayed rather than resuming the old one.
+ *
+ * The unreadable file is kept, not deleted: this function can only read what it
+ * understands, and a person (or a later build) may get more out of it.
+ */
+async function recoverIndexUnlocked(root: string, raw: string): Promise<ChatIndexRow[]> {
+  await fsp.writeFile(corruptIndexPath(root), raw, 'utf8').catch(() => undefined);
+  const dir = chatsDir(root);
+  const rows: ChatIndexRow[] = [];
+  for (const name of await fsp.readdir(dir).catch((): string[] => [])) {
+    if (!name.endsWith('.jsonl')) continue;
+    const id = safeChatId(name.slice(0, -'.jsonl'.length));
+    if (!id) continue;
+    const records = parseTranscript(await fsp.readFile(path.join(dir, name), 'utf8').catch(() => ''));
+    if (records.length === 0) continue;
+    const first = records.find((record) => record.role === 'user');
+    rows.push({
+      id,
+      title: first?.role === 'user' ? userRecordTitle(first) : UNTITLED,
+      // A terminal session keeps no transcript (its output belongs to a pty
+      // that died with the process), so anything with one was a chat.
+      kind: 'chat',
+      createdAt: records[0].ts,
+      updatedAt: records[records.length - 1].ts,
+    });
+  }
+  const recovered = sortChats(rows);
+  // Written back here rather than left to the next write: `listChats` does not
+  // write at all, so a recovery that only returned rows would rebuild them on
+  // every read and leave the folder with no index at all.
+  await writeIndexUnlocked(root, recovered);
+  return recovered;
+}
+
+/**
+ * Write the index so a reader sees all of the new file or all of the old, never
+ * the middle of a save.
+ *
+ * Same temp-and-rename as personalization, modelPrefs and permissionMode, and
+ * for a sharper reason than any of them: this is the one file that says which
+ * conversations exist. A bare truncating write that is killed halfway (a quit,
+ * a crash, a machine losing power) leaves invalid JSON where the whole history
+ * of a project used to be. The temp file sits in the same directory because a
+ * rename is only atomic within one filesystem.
+ */
 async function writeIndexUnlocked(root: string, chats: ChatIndexRow[]): Promise<void> {
   const file = chatIndexPath(root);
   await fsp.mkdir(path.dirname(file), { recursive: true });
-  await fsp.writeFile(file, `${JSON.stringify(sortChats(chats), null, 2)}\n`, 'utf8');
+  const temp = `${file}.${process.pid}.tmp`;
+  try {
+    await fsp.writeFile(temp, `${JSON.stringify(sortChats(chats), null, 2)}\n`, 'utf8');
+    await fsp.rename(temp, file);
+  } catch (err) {
+    await fsp.rm(temp, { force: true }).catch(() => undefined);
+    throw err;
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -459,9 +544,44 @@ export function prunePendingChats(
 }
 
 /**
+ * How stale a streaming conversation's `updatedAt` may get. See `indexMoved`.
+ */
+export const INDEX_TOUCH_MS = 5_000;
+
+/**
+ * Is this append worth rewriting index.json for?
+ *
+ * It used to be rewritten for EVERY streamed agent event: a whole-file,
+ * pretty-printed rewrite several times a second, of the one file that says
+ * which conversations exist. Every one of those is a window in which losing
+ * the process loses the index, and almost none of them changes anything a
+ * person can see, because nobody reads the sidebar's ordering mid-turn.
+ *
+ * So the rewrite happens when the row genuinely moves: a user message (which
+ * lists and names the chat), the end of a turn (which is when ws.ts pushes a
+ * fresh list out to every window), or a turn that has been streaming long
+ * enough for the stored timestamp to be visibly stale. The transcript itself is
+ * still appended for every single event, which is the part that is the record.
+ */
+function indexMoved(stored: ChatIndexRow, record: ChatRecord): boolean {
+  if (record.role === 'user') return true;
+  if (endsTurn(record.event)) return true;
+  const was = Date.parse(stored.updatedAt);
+  const now = Date.parse(record.ts);
+  // An unreadable timestamp on either side: write, rather than leave a row
+  // pinned to a value nothing will ever correct.
+  if (!Number.isFinite(was) || !Number.isFinite(now)) return true;
+  return now - was >= INDEX_TOUCH_MS;
+}
+
+/**
  * Append one record and bump the chat's `updatedAt`. The first user message
  * also names an as-yet-unnamed chat — which is the whole titling rule.
- * Returns the chat's summary after the write, or null when it is unknown.
+ *
+ * Returns the chat's summary after the write, or NULL when the chat has no
+ * index row, in which case nothing was written at all. Callers must check it:
+ * a null means the conversation was deleted (in another window, this run) and
+ * every message and event from here on would go nowhere, silently.
  */
 export function appendChatRecord(root: string, chatId: string, record: ChatRecord): Promise<ChatSummary | null> {
   const id = safeChatId(chatId);
@@ -486,6 +606,8 @@ export function appendChatRecord(root: string, chatId: string, record: ChatRecor
       delete next.pending;
       if (next.kind === 'chat' && next.title === UNTITLED) next.title = userRecordTitle(record);
     }
+    // The line is on disk either way; only the listing is skipped.
+    if (!indexMoved(chats[index], record)) return withoutPending(chats[index]);
     chats[index] = next;
     await writeIndexUnlocked(root, chats);
     return withoutPending(next);

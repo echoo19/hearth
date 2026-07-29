@@ -182,6 +182,82 @@ describe('the panel', () => {
   });
 });
 
+/**
+ * The rail promises arrow navigation in its own heading, and did not deliver
+ * it from the one place people arrive from. `onRailKeyDown` looked the focused
+ * element up among `.set-rail-item`; the search input is not one, so the index
+ * came back -1 and the handler returned. ArrowDown from the box you have just
+ * typed a filter into did nothing at all.
+ */
+describe('moving through the rail with the keyboard', () => {
+  /** What has focus, by its visible text. */
+  function focused(): string | undefined {
+    return document.activeElement?.textContent ?? undefined;
+  }
+
+  it('enters the list from the search field, which is where you already are', () => {
+    render(<SettingsShell />);
+    const search = screen.getByLabelText('Search settings');
+    search.focus();
+    fireEvent.keyDown(search, { key: 'ArrowDown' });
+    expect(focused()).toBe('General');
+  });
+
+  it('enters at the bottom when you arrow up out of the field', () => {
+    render(<SettingsShell />);
+    const search = screen.getByLabelText('Search settings');
+    search.focus();
+    fireEvent.keyDown(search, { key: 'ArrowUp' });
+    expect(focused()).toBe('Skills');
+  });
+
+  it('enters whatever the search left standing, not the unfiltered list', () => {
+    render(<SettingsShell />);
+    const search = screen.getByLabelText('Search settings');
+    fireEvent.change(search, { target: { value: 'tokens' } });
+    search.focus();
+    fireEvent.keyDown(search, { key: 'ArrowDown' });
+    expect(focused()).toBe('Usage');
+  });
+
+  it('walks down and back up the list', () => {
+    render(<SettingsShell />);
+    const first = screen.getByRole('button', { name: 'General' });
+    first.focus();
+    fireEvent.keyDown(first, { key: 'ArrowDown' });
+    expect(focused()).toBe('Personalization');
+    fireEvent.keyDown(document.activeElement!, { key: 'ArrowDown' });
+    expect(focused()).toBe('Agents');
+    fireEvent.keyDown(document.activeElement!, { key: 'ArrowUp' });
+    expect(focused()).toBe('Personalization');
+  });
+
+  it('goes back to the search field off the top, because that is the only thing above it', () => {
+    render(<SettingsShell />);
+    const first = screen.getByRole('button', { name: 'General' });
+    first.focus();
+    fireEvent.keyDown(first, { key: 'ArrowUp' });
+    expect(document.activeElement).toBe(screen.getByLabelText('Search settings'));
+  });
+
+  it('stops at the bottom rather than wrapping', () => {
+    render(<SettingsShell />);
+    const last = screen.getByRole('button', { name: 'Skills' });
+    last.focus();
+    fireEvent.keyDown(last, { key: 'ArrowDown' });
+    expect(focused()).toBe('Skills');
+  });
+
+  it('does nothing when the search matched nothing', () => {
+    render(<SettingsShell />);
+    const search = screen.getByLabelText('Search settings');
+    fireEvent.change(search, { target: { value: 'kerning' } });
+    search.focus();
+    fireEvent.keyDown(search, { key: 'ArrowDown' });
+    expect(document.activeElement).toBe(search);
+  });
+});
+
 describe('the way out', () => {
   it('offers a close control, because Escape is invisible', () => {
     // The panel has no header of its own (each pane carries its heading) and

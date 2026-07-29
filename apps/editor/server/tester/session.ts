@@ -425,6 +425,10 @@ export async function runTesterSession(opts: RunTesterSessionOptions): Promise<T
     proposals,
     openQuestions,
     steps,
+    // Written down rather than inferred from the turn count later: a turn whose
+    // screenshot failed took no picture, and the plan of action uses this to
+    // tell a claim about a picture from a claim about a picture nobody took.
+    frames: frameCount,
     stopped,
   };
   await writeNote(root, note);

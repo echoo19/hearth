@@ -530,6 +530,15 @@ export class CodexDriver implements ChatDriver {
     return this.queue;
   }
 
+  /**
+   * True once the pipe to the child is gone or the driver was torn down. ws.ts
+   * refuses to hand a turn to a session whose driver reads dead: see the
+   * transport-loss handler in `start`.
+   */
+  get dead(): boolean {
+    return this.stopped;
+  }
+
   async start(_sessionId: string, projectRoot: string): Promise<void> {
     // Hearth's own folder plus the two agents' folders we discover from, and
     // the project mirror the Agent SDK reads: a skill can be reached through
@@ -544,8 +553,21 @@ export class CodexDriver implements ChatDriver {
       (id, method, params) => this.handleServerRequest(id, method, params),
       (reason) => {
         if (this.stopped) return;
+        // The pipe to the child is gone, so this conversation is over: say so,
+        // then tear the driver down properly.
+        //
+        // This used to close the queue and nothing else. `stopped` stayed
+        // false, so the driver still LOOKED alive to everyone holding it, and
+        // ws.ts kept the session in `chatSessions`. The next message was
+        // appended to the transcript, handed to `send()` on a corpse, pushed
+        // into a closed queue by the rejection handler, and dropped. Nothing
+        // ever reached the window, so the composer stayed busy and diverted
+        // every message after it into a queue that was never drained: one
+        // message orphaned unanswered, the rest gone without ever touching
+        // disk. Ending the stream is what lets ws.ts retire the session and
+        // bind a fresh backend for the next thing the user types.
         this.queue.push({ type: 'error', message: reason });
-        this.queue.close();
+        this.stop();
       },
     );
     this.conn = conn;
@@ -584,6 +606,7 @@ export class CodexDriver implements ChatDriver {
     // A resume against a thread codex has forgotten must not strand the
     // conversation, so it falls back to a fresh thread.
     let thread: unknown = null;
+    let resumed = false;
     if (this.resumeThreadId) {
       try {
         thread = await conn.request('thread/resume', {
@@ -591,6 +614,7 @@ export class CodexDriver implements ChatDriver {
           cwd: projectRoot,
           ...permissions,
         });
+        resumed = thread !== null && thread !== undefined;
       } catch {
         thread = null;
       }
@@ -602,11 +626,21 @@ export class CodexDriver implements ChatDriver {
         ...codexThreadInstructions(instructions),
       });
     }
-    const id = readThreadId(thread);
-    if (id) {
-      this.threadId = id;
-      if (id !== this.resumeThreadId) this.onThreadId(id);
+    // A successful resume IS the thread we asked to resume, whatever shape the
+    // reply arrived in.
+    const id = readThreadId(thread) ?? (resumed ? this.resumeThreadId : null);
+    if (!id) {
+      // FAIL the bind rather than come up half-connected. `ready` used to be
+      // set regardless, and `startTurn` opened with a bare `if (!conn ||
+      // !this.threadId) return;`, so against a codex build whose reply shape
+      // had drifted, every message was written to the transcript, rendered in
+      // the window, and thrown away in total silence. A bind that throws is
+      // reported on the conversation, which is the difference between a broken
+      // install and an app that appears to be ignoring you.
+      throw new Error('codex started a thread but did not say which one. Your codex build may be newer than this one.');
     }
+    this.threadId = id;
+    if (id !== this.resumeThreadId) this.onThreadId(id);
     this.ready = true;
     for (const queued of this.backlog.splice(0)) this.startTurn(queued.text, queued.agent, queued.attachments);
   }
@@ -690,7 +724,17 @@ export class CodexDriver implements ChatDriver {
 
   private startTurn(text: string, agent?: AgentTurnOptions, attachments?: readonly ChatAttachment[]): void {
     const conn = this.conn;
-    if (!conn || !this.threadId) return;
+    if (!conn || !this.threadId) {
+      // Belt and braces: `start` now refuses to become ready without a thread,
+      // so nothing should reach here with one missing. Saying it out loud is
+      // still the only acceptable behaviour, because the message has already
+      // been written to the transcript and drawn on screen by the time this
+      // runs, and a silent return is how it ends up looking answered-in-a-void.
+      if (!this.stopped) {
+        this.queue.push({ type: 'error', message: 'The codex backend is not connected. Send again to start a fresh one.' });
+      }
+      return;
+    }
     void conn
       .request('turn/start', {
         threadId: this.threadId,

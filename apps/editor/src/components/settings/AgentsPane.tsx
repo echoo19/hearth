@@ -56,6 +56,25 @@
  * never shows a state the disk does not agree with. Keys are written into the
  * OPEN folder's `.hearth/app.json` — with no folder open there is nowhere to
  * put one, and the pane says that rather than quietly dropping it.
+ *
+ * THE ONE RULE THIS PANE MUST NOT BREAK, and the reason for `AgentCard.known`,
+ * the `unchecked` card state and agentEnvironment.ts: uncertainty may never be
+ * resolved into a confident "not connected". Every read here is project
+ * scoped, so on Home there is nothing to read, and this pane used to render
+ * from nulls and announce that nothing was connected and Hearth could not
+ * answer a message. It said that to people with codex installed, signed into
+ * ChatGPT, with a key already in their environment. A pane that is honestly
+ * unsure costs its user a glance; a pane that is confidently wrong in the
+ * negative sends them off to fix something that was never broken, and this is
+ * the screen a new user lands on when nothing works yet.
+ *
+ * The same rule bites in three more places, so they are all written the same
+ * way: whether `codex` is installed is a machine fact and is read from
+ * `/api/agent-clis`, which takes no project; whether you are signed into
+ * ChatGPT cannot be told apart on the wire from a probe that timed out, so the
+ * row says only what it confirmed and offers to ask again; and a pasted key is
+ * shape checked before it can earn a green badge, without that check ever
+ * becoming a gate on what its user is allowed to paste.
  */
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { apiSaveProviderSettings, type ProviderSettingsPatch } from '../../api';
@@ -87,10 +106,13 @@ import {
   planTerminalLaunch,
   useAgentSocket,
 } from '../agent/useAgentSocket';
+import { OPEN_FOLDER_EVENT } from '../shell/useOpenFolder';
 import { ConfirmDialog, Icon } from '../ui';
 import { Button } from '../ui/Button';
 import { SettingsRow } from './SettingsRow';
 import { ClaudeLogo, OpenAiLogo } from './providerLogos';
+import { keyShapeProblem } from './apiKeyShape';
+import { UNKNOWN_ENVIRONMENT, useAgentEnvironment, type AgentEnvironment } from './agentEnvironment';
 // The app's one read of provider state. Imported, never re-derived here: the
 // composer's selector and this pane have to give the same answer about whether
 // a provider can answer a turn, and two copies of that rule would drift.
@@ -109,6 +131,75 @@ const COPIED_MS = 1400;
  * five places that open Settings dispatch their event the same way.
  */
 const CLOSE_SETTINGS_EVENT = 'hearth:close-settings';
+
+/**
+ * Where each vendor issues keys.
+ *
+ * Nominative use, the same as the logos on the rows: these are the pages you
+ * get a key from, named because there is nowhere else to find them from inside
+ * this app. Hearth has no relationship with either company, and linking to a
+ * sign-up page is not one.
+ *
+ * They exist because of a gap that made the rest of this pane unfollowable: an
+ * Electron window has no address bar, the placeholder read `sk-ant-…`, and
+ * there was not one external link anywhere under settings. Someone without an
+ * Anthropic account was being told to paste a thing with no route at all to
+ * obtaining it.
+ */
+export const ANTHROPIC_KEYS_URL = 'https://console.anthropic.com/settings/keys';
+export const OPENAI_KEYS_URL = 'https://platform.openai.com/api-keys';
+
+export const KEY_SOURCE_URL: Record<ChatProvider, string> = {
+  anthropic: ANTHROPIC_KEYS_URL,
+  openai: OPENAI_KEYS_URL,
+};
+
+/**
+ * A link out to the real web.
+ *
+ * The call is the app's one way of doing this (store.ts's sign-in, the game
+ * pane's play URL, the Help menu's docs): `setWindowOpenHandler` in
+ * electron/main.ts denies anything that is not localhost and hands it to
+ * `shell.openExternal`, so it lands in the user's own browser rather than in a
+ * chrome-less editor window with no way back. An anchor rather than a button
+ * because it is a link, and because hovering one should say where it goes.
+ */
+function ExternalLink({ href, children }: { href: string; children: React.ReactNode }) {
+  return (
+    <a
+      className="set-agent-link"
+      href={href}
+      target="_blank"
+      rel="noopener noreferrer"
+      onClick={(e) => {
+        e.preventDefault();
+        window.open(href, '_blank', 'noopener,noreferrer');
+      }}
+    >
+      {children}
+      {/* Drawn here rather than asked of `Icon`, which has no glyph for this
+          and answers an unknown name with a silently wrong one. Same viewBox
+          and stroke as that set, so it sits in the line at the same weight. */}
+      <svg
+        className="set-agent-link-mark"
+        width="10"
+        height="10"
+        viewBox="0 0 12 12"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.3"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        aria-hidden="true"
+      >
+        <path d="M4.6 2.5h4.9v4.9" />
+        <path d="M9.5 2.5 5.2 6.8" />
+        <path d="M8.2 7.9v1.6H2.5V3.8h1.6" />
+      </svg>
+    </a>
+  );
+}
+
 
 /**
  * What a harness you have not set up says about itself.
@@ -155,9 +246,20 @@ export interface AgentCard {
   provider: ChatProvider;
   /** The vendor's name for the thing, not the driver's. */
   name: string;
-  /** Could this harness answer a turn right now? */
+  /**
+   * Has Hearth actually found out, or is this the answer to a question nobody
+   * has asked yet?
+   *
+   * Separate from `connected` on purpose, and the most important field on this
+   * type. `connected: false` used to carry both meanings, which is how a pane
+   * with nothing read yet came to announce that nothing was connected to a
+   * user whose machine was fully set up. A card that is not `known` makes no
+   * claim in either direction and offers no button that presumes one.
+   */
+  known: boolean;
+  /** Could this harness answer a turn right now? Only meaningful when `known`. */
   connected: boolean;
-  /** One line: where the credential came from, or what is missing. */
+  /** One line: where the credential came from, or what has not been asked. */
   status: string;
   action: AgentAction;
   /** Null when there is nothing here to take back. */
@@ -178,7 +280,27 @@ export interface AgentCard {
 export function anthropicCard(
   settings: AppSettingsInfo | null,
   providers: ChatProviderStatus | null,
+  environment: AgentEnvironment = UNKNOWN_ENVIRONMENT,
 ): AgentCard {
+  // Both read-outs are project-scoped, so with no folder open neither has been
+  // asked and there is nothing here to report. An environment key is a fact
+  // about the machine and may well be sitting there. Saying "Not connected
+  // yet" over the top of it is the false negative this branch exists to
+  // refuse. See agentEnvironment.ts.
+  if (settings === null && providers === null) {
+    return {
+      provider: 'anthropic',
+      name: 'Claude',
+      known: false,
+      connected: false,
+      status: environment.hasProject
+        ? 'Looking for a key in this folder.'
+        : 'Not checked yet. A key can live in a folder or in ANTHROPIC_API_KEY, and Hearth reads both once a folder is open.',
+      action: { kind: 'none' },
+      disconnect: null,
+      altKey: null,
+    };
+  }
   const source = settings?.source ?? providers?.anthropic.source ?? null;
   const hasKey = settings?.hasKey === true || anthropicUsable(providers);
   const status = keySourceLabel(source);
@@ -192,6 +314,7 @@ export function anthropicCard(
     return {
       provider: 'anthropic',
       name: 'Claude',
+      known: true,
       connected: true,
       status,
       action: { kind: 'none' },
@@ -207,6 +330,7 @@ export function anthropicCard(
     return {
       provider: 'anthropic',
       name: 'Claude',
+      known: true,
       connected: true,
       status,
       action: { kind: 'none' },
@@ -223,6 +347,7 @@ export function anthropicCard(
   return {
     provider: 'anthropic',
     name: 'Claude',
+    known: true,
     connected: false,
     // `keySourceLabel` is written for surfaces that have to explain a
     // consequence ("without one, the conversation can only point you at the
@@ -241,7 +366,10 @@ export function anthropicCard(
  * different problem from no sign-in, and a Sign in button on a machine
  * without `codex` is a button that fails.
  */
-export function openAiCard(providers: ChatProviderStatus | null): AgentCard {
+export function openAiCard(
+  providers: ChatProviderStatus | null,
+  environment: AgentEnvironment = UNKNOWN_ENVIRONMENT,
+): AgentCard {
   const openai = providers?.openai;
   const status = openAiStatusLabel(openai);
   const name = 'ChatGPT';
@@ -258,10 +386,54 @@ export function openAiCard(providers: ChatProviderStatus | null): AgentCard {
     placeholder: 'sk-…',
   };
 
-  if (!openai || !openai.installed) {
+  // Nothing folder-scoped has been read. Unlike the Anthropic side, half of
+  // this question is still answerable: whether `codex` exists is a fact about
+  // the machine, and `/api/agent-clis` answers it without a folder. The other
+  // half, the sign-in, lives in ~/.codex and has no unscoped reader today.
+  if (!openai) {
+    if (environment.codexInstalled === null) {
+      return {
+        provider: 'openai',
+        name,
+        known: false,
+        connected: false,
+        status: 'Checking this machine for the codex binary.',
+        action: { kind: 'none' },
+        disconnect: null,
+        altKey: null,
+      };
+    }
+    if (!environment.codexInstalled) {
+      // A real answer from a real read, so the row may offer the install. The
+      // only thing PATH cannot see is a folder's own `codexPath` override, and
+      // with no folder open there is no folder to hold one.
+      return {
+        provider: 'openai',
+        name,
+        known: true,
+        connected: false,
+        status: NOT_CONNECTED_STATUS.openai,
+        action: { kind: 'install', command: CODEX_INSTALL_COMMAND },
+        disconnect: null,
+        altKey: null,
+      };
+    }
     return {
       provider: 'openai',
       name,
+      known: false,
+      connected: false,
+      status: 'The codex binary is here. Whether you are signed in is kept in ~/.codex, and Hearth has not read it yet.',
+      action: { kind: 'none' },
+      disconnect: null,
+      altKey: null,
+    };
+  }
+  if (!openai.installed) {
+    return {
+      provider: 'openai',
+      name,
+      known: true,
       connected: false,
       // Not "Not installed." This is the row you are meant to press, so it
       // says that. See NOT_CONNECTED_STATUS.
@@ -275,6 +447,7 @@ export function openAiCard(providers: ChatProviderStatus | null): AgentCard {
     return {
       provider: 'openai',
       name,
+      known: true,
       connected: true,
       status,
       action: { kind: 'sign-in', label: 'Sign in again' },
@@ -285,6 +458,16 @@ export function openAiCard(providers: ChatProviderStatus | null): AgentCard {
   return {
     provider: 'openai',
     name,
+    // Known: the read genuinely landed, and this is the state a brand new user
+    // is in, so the pane must still open with "set up your first agent" rather
+    // than with "not checked yet".
+    //
+    // What is NOT settled is the sign-in specifically. `loggedIn: false` is
+    // also what the driver reports when its probe failed to answer at all (see
+    // providerStatus), so the row offers a sign-in, as it must, while the
+    // status line stops short of calling anyone signed out and the body says a
+    // busy machine looks exactly like this.
+    known: true,
     connected: openAiUsable(providers),
     status,
     action: { kind: 'sign-in', label: 'Sign in with ChatGPT' },
@@ -293,8 +476,12 @@ export function openAiCard(providers: ChatProviderStatus | null): AgentCard {
   };
 }
 
-export function agentCards(settings: AppSettingsInfo | null, providers: ChatProviderStatus | null): AgentCard[] {
-  return [anthropicCard(settings, providers), openAiCard(providers)];
+export function agentCards(
+  settings: AppSettingsInfo | null,
+  providers: ChatProviderStatus | null,
+  environment: AgentEnvironment = UNKNOWN_ENVIRONMENT,
+): AgentCard[] {
+  return [anthropicCard(settings, providers, environment), openAiCard(providers, environment)];
 }
 
 /** A harness registry entry, paired with what this machine says about it. */
@@ -321,19 +508,24 @@ export interface AgentRow {
 export function agentRows(
   settings: AppSettingsInfo | null,
   providers: ChatProviderStatus | null,
+  environment: AgentEnvironment = UNKNOWN_ENVIRONMENT,
 ): AgentRow[] {
-  const cards = new Map(agentCards(settings, providers).map((card) => [card.provider, card]));
+  const cards = new Map(agentCards(settings, providers, environment).map((card) => [card.provider, card]));
   return AGENT_BACKENDS.flatMap((backend) => {
     const card = cards.get(backend.provider);
     return card ? [{ backend, card }] : [];
   });
 }
 
-/** The four looks a row can have, in the order they are legible at a glance. */
-export type AgentCardState = 'connecting' | 'connected' | 'unavailable' | 'idle';
+/** The five looks a row can have, in the order they are legible at a glance. */
+export type AgentCardState = 'connecting' | 'connected' | 'unchecked' | 'unavailable' | 'idle';
 
 export function cardState(card: AgentCard, connecting: boolean): AgentCardState {
   if (connecting) return 'connecting';
+  // Ahead of `connected`, because a card nobody has read is not entitled to
+  // either answer. It is only below `connecting` because a sign-in this pane
+  // started is something it watched happen.
+  if (!card.known) return 'unchecked';
   if (card.connected) return 'connected';
   if (card.action.kind === 'install') return 'unavailable';
   return 'idle';
@@ -352,6 +544,10 @@ export function cardState(card: AgentCard, connecting: boolean): AgentCardState 
 export const STATE_BADGE: Record<AgentCardState, string | null> = {
   connecting: 'Connecting',
   connected: 'Connected',
+  // A harness nobody has asked about gets no badge either, for the opposite
+  // reason: there is nothing good to report and nothing bad to report, and a
+  // badge is a claim. The row's own line says what has not been read.
+  unchecked: null,
   unavailable: null,
   idle: null,
 };
@@ -434,6 +630,10 @@ export function AgentsPane() {
   // back from the server, so an empty box is the truthful box.
   const [drafts, setDrafts] = useState<Record<ChatProvider, string>>({ anthropic: '', openai: '' });
   const [showField, setShowField] = useState<Record<ChatProvider, boolean>>({ anthropic: false, openai: false });
+  // What looks wrong with the key in the box, and whether the user has been
+  // told once already. The second press is what saves it anyway: Hearth does
+  // not get to decide that a string it does not recognise is not a key.
+  const [keyProblem, setKeyProblem] = useState<Record<ChatProvider, string | null>>({ anthropic: null, openai: null });
   const [busy, setBusy] = useState<ChatProvider | null>(null);
   const [confirming, setConfirming] = useState<AgentCard | null>(null);
   const [confirmInstall, setConfirmInstall] = useState(false);
@@ -442,13 +642,20 @@ export function AgentsPane() {
   const [saving, setSaving] = useState<string | null>(null);
   const copiedTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const rows = agentRows(settings, providers);
+  // What is true of the machine rather than of the folder. On Home this is the
+  // only thing the pane has, and it is the difference between an honest
+  // "not checked yet" and the confident lie that used to be here.
+  const { environment, recheck } = useAgentEnvironment(project !== null);
+
+  const rows = agentRows(settings, providers, environment);
   const active = activeProvider(choice, providers);
   const bothUsable = anthropicUsable(providers) && openAiUsable(providers);
   const signedIn = providers?.openai.loggedIn === true;
-  // The state this pane is really designed for: someone who just installed
-  // Hearth and has nothing set up. Everything else is a variation on it.
-  const noneConnected = rows.every((row) => !row.card.connected);
+  // Three different opening states, and conflating the first two is the bug
+  // this pane was shipped with. "Nothing is connected" is a claim, and it may
+  // only be made once every row has actually been read.
+  const allKnown = rows.every((row) => row.card.known);
+  const noneConnected = allKnown && rows.every((row) => !row.card.connected);
   const prefsFile = getModelPrefsFile();
 
   // Codex's state lives outside this app — a binary on PATH, a session on
@@ -483,17 +690,39 @@ export function AgentsPane() {
     [project, refreshProviders, refreshSettings],
   );
 
+  /**
+   * Save the pasted key, once it has been looked at.
+   *
+   * The check is a warning, not a gate, and the two presses are the whole
+   * design. Before it, `trim() !== ''` was the entire test: a truncated paste
+   * or an outright wrong string was written to disk, answered for with
+   * `hasKey: true`, and shown as a green Connected badge, and the user found
+   * out from a turn that failed much later, with nothing pointing back here.
+   * A first press on something that looks wrong says so and saves nothing; a
+   * second press saves it, because Hearth does not get to tell its user that a
+   * string it did not recognise is not their key.
+   *
+   * It is a SHAPE check and the copy says only that. Telling a real key from a
+   * well-formed fake needs a request to the vendor, which belongs on the
+   * server, not in this renderer.
+   */
   const connect = useCallback(
     async (provider: ChatProvider): Promise<void> => {
       const value = drafts[provider].trim();
       if (value === '') return;
+      const problem = keyShapeProblem(provider, value);
+      if (problem !== null && keyProblem[provider] === null) {
+        setKeyProblem((p) => ({ ...p, [provider]: problem }));
+        return;
+      }
+      setKeyProblem((p) => ({ ...p, [provider]: null }));
       // An empty string is a real instruction to the server (remove the key),
       // which is why nothing is sent for a provider that was left alone.
       await commit(provider, provider === 'anthropic' ? { apiKey: value } : { openaiApiKey: value });
       setDrafts((d) => ({ ...d, [provider]: '' }));
       setShowField((s) => ({ ...s, [provider]: false }));
     },
-    [commit, drafts],
+    [commit, drafts, keyProblem],
   );
 
   const disconnect = useCallback(
@@ -501,6 +730,7 @@ export function AgentsPane() {
       await commit(provider, provider === 'anthropic' ? { apiKey: '' } : { openaiApiKey: '' });
       setDrafts((d) => ({ ...d, [provider]: '' }));
       setShowField((s) => ({ ...s, [provider]: false }));
+      setKeyProblem((p) => ({ ...p, [provider]: null }));
     },
     [commit],
   );
@@ -596,48 +826,81 @@ export function AgentsPane() {
         is the one it drives. Connect a harness, then choose which of its models you want offered.
       </p>
 
-      {!project && (
-        <p className="set-agent-notice">
-          Keys are saved in the open folder, in <span className="mono">.hearth/app.json</span>. Open a folder first
-          and this pane can connect a harness to it.
-        </p>
-      )}
+      {/* NO FOLDER OPEN, and this block is the whole of the fix for what used
+          to be here. The pane read from nulls and announced that nothing was
+          connected and Hearth could not answer a message, to users with codex
+          installed, signed into ChatGPT, and ANTHROPIC_API_KEY already in their
+          shell. Every one of those is a fact about the machine; none of them is
+          a fact about a folder. A provider pane is allowed to be uncertain and
+          is allowed to be wrong, but a confident false negative is the one
+          failure that sends someone off to fix what is not broken.
 
-      {/* Nothing connected. This is the first thing most people ever see here,
-          so it gets an answer rather than a list to work out: one harness, the
-          shortest honest route to a working chat, and one button. Claude is
-          that route because it is a key you paste. Codex is the better fit for
-          some people and is named in the same breath, one line below, but it
-          needs a binary installed first and so is not the thing to open with. */}
-      {noneConnected && (
+          It also carries the way out. Every route to connecting was gated on
+          `!project` and Settings offered no way to open one, so the pane was a
+          dead end you had to guess your way out of. */}
+      {!project ? (
         <section className="set-agent-start">
-          <h3 className="set-agent-start-title">Set up your first agent</h3>
+          <h3 className="set-agent-start-title">Not checked yet</h3>
           <p className="set-agent-start-body">
-            Nothing is connected yet, so Hearth cannot answer a message. The quickest way in is an Anthropic API key:
-            paste one and Claude can answer straight away, with nothing to install.
+            Keys and sign-ins are read out of the folder you have open, and there is not one yet, so Hearth has not
+            looked. This is not the same as nothing being connected: a key already in your environment, or a ChatGPT
+            sign-in you did through codex, is found the moment a folder is open.
           </p>
           <div className="set-agent-start-actions">
-            <Button
-              variant="primary"
-              disabled={!project}
-              onClick={() => {
-                setOpen('anthropic');
-                setShowField((s) => ({ ...s, anthropic: true }));
-              }}
-            >
-              Connect Claude with a key
+            <Button variant="primary" onClick={() => window.dispatchEvent(new CustomEvent(OPEN_FOLDER_EVENT))}>
+              Open a folder…
             </Button>
-            <button
-              type="button"
-              className="set-agent-more"
-              onClick={() => {
-                setOpen('openai');
-              }}
-            >
-              I would rather sign in with ChatGPT
+            <button type="button" className="set-agent-more" onClick={recheck}>
+              Check this machine again
             </button>
           </div>
+          <p className="set-agent-start-note">
+            A key you paste is written to <span className="mono">.hearth/app.json</span> in that folder.
+          </p>
         </section>
+      ) : (
+        /* Nothing connected. This is the first thing most people ever see here,
+           so it gets an answer rather than a list to work out: one harness, the
+           shortest honest route to a working chat, and one button. Claude is
+           that route because it is a key you paste. Codex is the better fit for
+           some people and is named in the same breath, one line below, but it
+           needs a binary installed first and so is not the thing to open with. */
+        noneConnected && (
+          <section className="set-agent-start">
+            <h3 className="set-agent-start-title">Set up your first agent</h3>
+            <p className="set-agent-start-body">
+              Nothing is connected yet, so Hearth cannot answer a message. The quickest way in is an Anthropic API key:
+              paste one and Claude can answer straight away, with nothing to install.
+            </p>
+            <div className="set-agent-start-actions">
+              <Button
+                variant="primary"
+                onClick={() => {
+                  setOpen('anthropic');
+                  setShowField((s) => ({ ...s, anthropic: true }));
+                }}
+              >
+                Connect Claude with a key
+              </Button>
+              <button
+                type="button"
+                className="set-agent-more"
+                onClick={() => {
+                  setOpen('openai');
+                }}
+              >
+                I would rather sign in with ChatGPT
+              </button>
+            </div>
+            {/* The gap that made the paragraph above unfollowable: this window
+                has no address bar, so someone without an Anthropic account was
+                being told to paste a thing with no route to obtaining it. */}
+            <p className="set-agent-start-note">
+              No key yet? <ExternalLink href={ANTHROPIC_KEYS_URL}>Get one from the Anthropic console</ExternalLink>. It
+              opens in your browser.
+            </p>
+          </section>
+        )
       )}
 
       <div className="set-agents" role="list">
@@ -649,6 +912,7 @@ export function AgentsPane() {
           const expanded = open === card.provider;
           const bodyId = `set-agent-body-${card.provider}`;
           const fieldId = `set-agent-key-${card.provider}`;
+          const problemId = `set-agent-key-problem-${card.provider}`;
           const fieldOpen = card.action.kind === 'paste-key' || showField[card.provider];
           const working = busy === card.provider;
           const catalogue = switchableModels(card.provider, providers);
@@ -801,12 +1065,78 @@ export function AgentsPane() {
                           </div>
                         ) : (
                           !project && (
-                            <p className="set-agent-hint">
-                              Open a folder first. The terminal runs in the project folder, so there is nowhere to run
-                              this yet.
-                            </p>
+                            <>
+                              <p className="set-agent-hint">
+                                The terminal runs inside a project folder, so there is nowhere to run this yet. Copying
+                                the command works either way.
+                              </p>
+                              {/* The way out, offered rather than implied. This
+                                  pane used to disable the button and leave the
+                                  user to work out for themselves that they
+                                  should close Settings and go back to Home. */}
+                              <div className="set-agent-manage">
+                                <Button
+                                  size="sm"
+                                  onClick={() => window.dispatchEvent(new CustomEvent(OPEN_FOLDER_EVENT))}
+                                >
+                                  Open a folder…
+                                </Button>
+                              </div>
+                            </>
                           )
                         )}
+                      </div>
+                    )}
+
+                    {/* Codex's state lives outside this app, in a binary on
+                        PATH and a session under ~/.codex, and this is the row
+                        that has to say so honestly.
+
+                        `readCodexStatus` spawns a fresh `codex app-server` for
+                        every probe and falls back to reporting a signed-out
+                        account whenever that probe does not answer, so a
+                        machine that is merely busy is indistinguishable on the
+                        wire from one nobody has signed into, and it hits
+                        hardest exactly when the machine is loaded. The row
+                        cannot tell the difference either, so it says that
+                        plainly and hands over the one thing that helps, which
+                        is asking again. */}
+                    {card.provider === 'openai' && card.action.kind === 'sign-in' && !card.connected && (
+                      <div className="set-agent-recheck">
+                        <p className="set-agent-hint">
+                          If you have already signed in, a busy machine can look exactly like this: the check starts
+                          codex and gives up when it does not answer in time. Nothing here has signed you out.
+                        </p>
+                        <div className="set-agent-manage">
+                          <Button
+                            size="sm"
+                            disabled={working}
+                            onClick={() => {
+                              recheck();
+                              void refreshProviders();
+                            }}
+                          >
+                            Check again
+                          </Button>
+                        </div>
+                      </div>
+                    )}
+
+                    {card.provider === 'openai' && !card.known && !project && (
+                      <div className="set-agent-recheck">
+                        <p className="set-agent-hint">
+                          Signing in writes to <span className="mono">~/.codex</span>, which belongs to your machine
+                          rather than to any one folder. Hearth still asks codex about it through a project directory,
+                          so it has nothing to report until a folder is open.
+                        </p>
+                        <div className="set-agent-manage">
+                          <Button
+                            size="sm"
+                            onClick={() => window.dispatchEvent(new CustomEvent(OPEN_FOLDER_EVENT))}
+                          >
+                            Open a folder…
+                          </Button>
+                        </div>
                       </div>
                     )}
 
@@ -839,7 +1169,16 @@ export function AgentsPane() {
                                 : (card.altKey?.placeholder ?? '')
                             }
                             disabled={!project || working}
-                            onChange={(e) => setDrafts((d) => ({ ...d, [card.provider]: e.target.value }))}
+                            aria-invalid={keyProblem[card.provider] !== null}
+                            aria-describedby={keyProblem[card.provider] !== null ? problemId : undefined}
+                            onChange={(e) => {
+                              setDrafts((d) => ({ ...d, [card.provider]: e.target.value }));
+                              // Editing withdraws the warning, so the next
+                              // press gets a fresh look rather than saving a
+                              // second wrong paste on the strength of having
+                              // been told about the first.
+                              setKeyProblem((p) => (p[card.provider] === null ? p : { ...p, [card.provider]: null }));
+                            }}
                             onKeyDown={(e) => {
                               if (e.key === 'Enter') void connect(card.provider);
                             }}
@@ -849,7 +1188,7 @@ export function AgentsPane() {
                             disabled={!project || working || drafts[card.provider].trim() === ''}
                             onClick={() => void connect(card.provider)}
                           >
-                            {working ? 'Saving…' : 'Connect'}
+                            {working ? 'Saving…' : keyProblem[card.provider] !== null ? 'Save it anyway' : 'Connect'}
                           </Button>
                           {card.action.kind !== 'paste-key' && (
                             <Button
@@ -857,14 +1196,30 @@ export function AgentsPane() {
                               onClick={() => {
                                 setShowField((s) => ({ ...s, [card.provider]: false }));
                                 setDrafts((d) => ({ ...d, [card.provider]: '' }));
+                                setKeyProblem((p) => ({ ...p, [card.provider]: null }));
                               }}
                             >
                               Cancel
                             </Button>
                           )}
                         </div>
+                        {/* What looks wrong, said here and now rather than as a
+                            turn that fails half an hour later with nothing
+                            pointing back at this field. It does not block: the
+                            button beside it now reads "Save it anyway", because
+                            a shape Hearth does not recognise is not the same
+                            thing as a key its user does not have. */}
+                        {keyProblem[card.provider] !== null && (
+                          <p className="set-agent-problem" id={problemId} role="alert">
+                            {keyProblem[card.provider]}
+                          </p>
+                        )}
                         <p className="set-agent-hint">
-                          {card.altKey?.hint ?? 'Saved in this folder and never shown again. Paste it and press Connect.'}
+                          {card.altKey?.hint ??
+                            'Saved in this folder and never shown again. Paste it and press Connect.'}{' '}
+                          <ExternalLink href={KEY_SOURCE_URL[card.provider]}>
+                            {card.provider === 'anthropic' ? 'Get a key from Anthropic' : 'Get a key from OpenAI'}
+                          </ExternalLink>
                         </p>
                       </div>
                     )}

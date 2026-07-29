@@ -19,6 +19,21 @@
   color: var(--ink-mute);
 }
 
+/* The failed note carries a Try again beside it. A stalled read used to leave
+   "Counting what is on disk…" on screen for the life of the dialog with
+   nothing at all to press, so the retry sits on the same line as the sentence
+   explaining why it is there. */
+.set-usage-note:has(.btn) {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.set-usage-note-line {
+  margin: 0;
+}
+
 /* The whole answer arrives at once after a disk read, so it fades rather than
    appearing mid-sentence. Opacity only — nothing moves. */
 .set-usage-body {

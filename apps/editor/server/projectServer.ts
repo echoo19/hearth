@@ -476,6 +476,41 @@ export async function resolveToolPaths(
   };
 }
 
+/**
+ * Param names that carry a path into the HOST filesystem rather than a name
+ * inside the project.
+ *
+ * Matched by name and not by value, because the alternative (scan every string
+ * param for something that looks absolute) rejects a JavaScript file whose
+ * first line is `//` (`path.isAbsolute('//x')` is true on posix), and
+ * `editScript.source` is exactly that shape. Matched by suffix rather than
+ * listed per command, so a core command added later is covered on the day it
+ * lands instead of on the day someone remembers this table exists.
+ */
+const HOST_PATH_PARAM = /(^|[a-z])(path|paths|dir|dirs|file|files)$/i;
+
+/**
+ * Every absolute path named by `params` under a path-shaped key. Relative
+ * values are left alone: core resolves those against the project root and
+ * already refuses the ones that escape (`isSafeOut`, `isSafeRelativePath`,
+ * `resolveScriptsPath`), so re-judging them here would only add a second
+ * opinion that can drift from the first.
+ *
+ * Top level only. Nothing in core's command vocabulary nests a host path
+ * inside an object today; if something does, it needs adding here.
+ */
+export function absolutePathParams(params: unknown): string[] {
+  if (!params || typeof params !== 'object' || Array.isArray(params)) return [];
+  const found: string[] = [];
+  for (const [key, value] of Object.entries(params as Record<string, unknown>)) {
+    if (!HOST_PATH_PARAM.test(key)) continue;
+    for (const entry of Array.isArray(value) ? value : [value]) {
+      if (typeof entry === 'string' && path.isAbsolute(entry)) found.push(entry);
+    }
+  }
+  return found;
+}
+
 function errorEnvelope(command: string, code: string, message: string): CommandResult {
   return {
     success: false,
@@ -762,6 +797,25 @@ export function createProjectServerContext(options: ProjectServerOptions = {}) {
     return null;
   }
 
+  /**
+   * Does `target` land inside a folder the caller is allowed to name: one of
+   * the open roots, or `commandRoot`, the project the command is being run
+   * against (which is that command's own subject, and is added to the open set
+   * a moment later when its session opens).
+   *
+   * Deliberately "inside ANY open root" rather than "inside this project".
+   * Importing an asset out of one open folder into another is a legitimate
+   * thing to ask for, and narrowing to the single project would take that away
+   * to fix a problem it is not part of.
+   */
+  function isInsideAllowedRoot(target: string, commandRoot: string): boolean {
+    const abs = path.resolve(target);
+    for (const root of [commandRoot, ...openedRoots, ...sessions.keys()]) {
+      if (abs === root || abs.startsWith(root + path.sep)) return true;
+    }
+    return false;
+  }
+
   /** Execute a core command. Always 200; the envelope carries errors. */
   async function runCommandImpl(project: unknown, name: unknown, params: unknown): Promise<JsonResult> {
     const commandName = typeof name === 'string' ? name : '(unknown)';
@@ -775,6 +829,36 @@ export function createProjectServerContext(options: ProjectServerOptions = {}) {
       return { status: 200, body: errorEnvelope('(unknown)', 'NO_COMMAND', 'Missing command name.') };
     }
     const root = path.resolve(project);
+
+    // Absolute path params must land in a folder the caller may name.
+    //
+    // Several core commands take a path into the HOST filesystem rather than
+    // into the project: `importAsset`/`importAssets` (`sourcePath`,
+    // `sourcePaths`) COPY it in, and `inspectAssetPack` (`path`) walks it and
+    // reports what it found. Core is right not to jail them: the CLI and the
+    // MCP server import downloaded asset packs from wherever the user put
+    // them, and core has no idea what a "folder the user opened" is. This
+    // route does, and it is reachable from a browser, so the jail belongs
+    // here: one open project was otherwise enough to copy any file on the disk
+    // into it and then read it straight back out over /api/file or the /game/
+    // mount, and enough to list any directory through the pack inspector.
+    //
+    // The check is on the LOCATION, not the command: nothing is taken away
+    // from any command, it just has to name somewhere the caller is entitled
+    // to name. A path outside every open folder becomes one by opening that
+    // folder, which is a thing the user can do at any time.
+    const outside = absolutePathParams(params).filter((p) => !isInsideAllowedRoot(p, root));
+    if (outside.length > 0) {
+      return {
+        status: 200,
+        body: errorEnvelope(
+          commandName,
+          'PATH_NOT_OPEN',
+          `Outside every open folder: ${outside.join(', ')}. Open the folder that holds it first.`,
+        ),
+      };
+    }
+
     const dispatch = async (): Promise<JsonResult> => {
       let session: HearthSession;
       try {
@@ -833,6 +917,25 @@ export function createProjectServerContext(options: ProjectServerOptions = {}) {
   }
 
   /**
+   * Is `root` a folder the USER has named, whether or not it is open right now?
+   *
+   * Open, or on the recents list, which is the same list the rail renders. A
+   * resolved absolute path, like isOpenRoot.
+   *
+   * This exists because "open" is too tight for two real flows and "any
+   * directory" is far too loose for both. The rail lets you give a mark and a
+   * colour to any row in its list, and those rows are recents, not open
+   * folders: gating `POST /api/workspace/identity` on isOpenRoot would leave
+   * Appearance silently doing nothing on every row but one. Every path on that
+   * list got there because the user opened the folder, so it is still a folder
+   * they picked, just not the one they are in.
+   */
+  async function isKnownRoot(root: string): Promise<boolean> {
+    if (isOpenRoot(root)) return true;
+    return (await readRecents()).some((entry) => path.resolve(entry.path) === root);
+  }
+
+  /**
    * Where this folder's web game is, or null when it has none. One resolution
    * shared by the game pane's status poll and the playtest sweep, so what the
    * probe plays is exactly what the pane is showing.
@@ -868,6 +971,25 @@ export function createProjectServerContext(options: ProjectServerOptions = {}) {
    * A standalone function rather than only a ctx method, so `createWorkspace`
    * can run the EXACT same open path (recents registration included) after it
    * makes the folder, instead of a near-copy that drifts.
+   *
+   * WHAT AUTHORIZES A FOLDER, AND WHERE THAT CHECK LIVES
+   *
+   * This function takes any string and adds it to `openedRoots`, which is the
+   * jail every file route, both static mounts and the /api/ws upgrade resolve
+   * against. That is deliberate and it is NOT the hole: opening any folder
+   * anywhere is the whole premise of the app, and a rule here about which
+   * folders are allowed would be Hearth deciding where someone may build a
+   * game. There is no such rule and there must never be one.
+   *
+   * The authorization is about the CALLER, not the path, and it lives in
+   * `route()` (see `denyUnattestedRoot`) because it is a fact about the
+   * request's headers, which this function cannot see. Do not move it here and
+   * do not "simplify" it away: the reason this function is allowed to be as
+   * permissive as it is, is that the only caller who can reach it with a
+   * caller-named path has already been proven to be the editor's own document.
+   *
+   * In-process callers (createWorkspace, and tests) reach this directly and
+   * are trusted by construction: no request, no header, no attacker.
    */
   async function openWorkspaceImpl(rawPath: unknown): Promise<JsonResult> {
     if (typeof rawPath !== 'string' || rawPath.trim() === '') {
@@ -893,6 +1015,12 @@ export function createProjectServerContext(options: ProjectServerOptions = {}) {
      * could not.
      */
     isOpenRoot,
+    /**
+     * The wider "the user has named this folder at some point" test. Used by
+     * the route layer to decide whether an unattested caller may name a root,
+     * and by the identity route, whose rows are recents. See isKnownRoot.
+     */
+    isKnownRoot,
     /** Told by whoever started the game listener. See gameOrigin above. */
     setGameOrigin(origin: string | null): void {
       gameOrigin = origin;
@@ -1006,6 +1134,14 @@ export function createProjectServerContext(options: ProjectServerOptions = {}) {
      * project" is a much larger promise than the one screen using it needs.
      * A document that does not exist yet reads as empty rather than 404 —
      * "you have not written instructions" is not an error.
+     *
+     * The allowlist bounds the FILENAME; `isOpenRoot` bounds the FOLDER, and
+     * the pair is what makes this safe. With only the allowlist, `project` was
+     * any directory on the disk, so one request wrote `~/.hearth/AGENTS.md` or
+     * `~/.claude/AGENTS.md`, both of which go into the system prompt of every
+     * agent the user runs (see personalization.ts). That is persistent prompt
+     * injection into someone's own Claude Code, from a route whose entire job
+     * is one text box in one pane of one open project.
      */
     async projectDoc(project: unknown, name: unknown): Promise<JsonResult> {
       const doc = PROJECT_DOCS.find((entry) => entry === name);
@@ -1013,6 +1149,7 @@ export function createProjectServerContext(options: ProjectServerOptions = {}) {
         return { status: 400, body: { ok: false, error: 'Missing "project" or unknown document.' } };
       }
       const root = path.resolve(project);
+      if (!isOpenRoot(root)) return { status: 403, body: { ok: false, error: 'Folder is not open.' } };
       if (!(await isDirectory(root))) {
         return { status: 404, body: { ok: false, error: 'That project is not on disk any more.' } };
       }
@@ -1023,13 +1160,19 @@ export function createProjectServerContext(options: ProjectServerOptions = {}) {
       }
     },
 
-    /** Write one back. An empty body removes the file rather than leaving a blank one. */
+    /**
+     * Write one back. An empty body removes the file rather than leaving a
+     * blank one, which is also why the folder gate matters as much on the way
+     * in as on the way out: unchecked, `text: ""` deleted any AGENTS.md on the
+     * disk as readily as a full one overwrote it.
+     */
     async writeProjectDoc(project: unknown, name: unknown, text: unknown): Promise<JsonResult> {
       const doc = PROJECT_DOCS.find((entry) => entry === name);
       if (typeof project !== 'string' || project.trim() === '' || !doc || typeof text !== 'string') {
         return { status: 400, body: { ok: false, error: 'Missing "project", "text", or unknown document.' } };
       }
       const root = path.resolve(project);
+      if (!isOpenRoot(root)) return { status: 403, body: { ok: false, error: 'Folder is not open.' } };
       if (!(await isDirectory(root))) {
         return { status: 404, body: { ok: false, error: 'That project is not on disk any more.' } };
       }
@@ -1048,6 +1191,11 @@ export function createProjectServerContext(options: ProjectServerOptions = {}) {
         return { status: 400, body: { ok: false, error: 'Missing "project".' } };
       }
       const root = path.resolve(project);
+      // isKnownRoot, not isOpenRoot: the caller is a row in the recents rail,
+      // and only one of those rows is ever the open folder. See isKnownRoot.
+      if (!(await isKnownRoot(root))) {
+        return { status: 403, body: { ok: false, error: 'Not a folder you have opened.' } };
+      }
       if (!(await isDirectory(root))) {
         return { status: 404, body: { ok: false, error: 'That project is not on disk any more.' } };
       }
@@ -1319,6 +1467,13 @@ export function createProjectServerContext(options: ProjectServerOptions = {}) {
     // `.hearth/context/`, so it travels with the folder and can be committed.
     // All four routes answer with the same list the pane renders, which is why
     // the mutating ones re-read rather than trusting the caller to merge.
+    //
+    // All four are open-folder gated, like every other project route. They
+    // were the outliers that checked only `isDirectory`, which made the pair
+    // of them a write-and-read primitive over any directory on the disk: drop
+    // a file into `<anywhere>/.hearth/context/`, then read it back out. The
+    // containment INSIDE the folder (projectContext.ts) was never the problem;
+    // the folder was whatever the caller typed.
 
     /** What the project has been told about itself, newest first. */
     async listContext(project: unknown): Promise<JsonResult> {
@@ -1326,6 +1481,7 @@ export function createProjectServerContext(options: ProjectServerOptions = {}) {
         return { status: 400, body: { ok: false, error: 'Missing "project".' } };
       }
       const root = path.resolve(project);
+      if (!isOpenRoot(root)) return { status: 403, body: { ok: false, error: 'Folder is not open.' } };
       if (!(await isDirectory(root))) {
         return { status: 404, body: { ok: false, error: 'That project is not on disk any more.' } };
       }
@@ -1342,6 +1498,7 @@ export function createProjectServerContext(options: ProjectServerOptions = {}) {
         return { status: 400, body: { ok: false, error: 'Missing "project".' } };
       }
       const root = path.resolve(project);
+      if (!isOpenRoot(root)) return { status: 403, body: { ok: false, error: 'Folder is not open.' } };
       if (!(await isDirectory(root))) {
         return { status: 404, body: { ok: false, error: 'That project is not on disk any more.' } };
       }
@@ -1354,6 +1511,7 @@ export function createProjectServerContext(options: ProjectServerOptions = {}) {
         return { status: 400, body: { ok: false, error: 'Missing "project".' } };
       }
       const root = path.resolve(project);
+      if (!isOpenRoot(root)) return { status: 403, body: { ok: false, error: 'Folder is not open.' } };
       if (!(await isDirectory(root))) {
         return { status: 404, body: { ok: false, error: 'That project is not on disk any more.' } };
       }
@@ -1368,6 +1526,7 @@ export function createProjectServerContext(options: ProjectServerOptions = {}) {
         return { status: 400, body: { ok: false, error: 'Missing "project".' } };
       }
       const root = path.resolve(project);
+      if (!isOpenRoot(root)) return { status: 403, body: { ok: false, error: 'Folder is not open.' } };
       if (!(await isDirectory(root))) {
         return { status: 404, body: { ok: false, error: 'That project is not on disk any more.' } };
       }
@@ -1419,12 +1578,20 @@ export function createProjectServerContext(options: ProjectServerOptions = {}) {
     /**
      * Agent settings for this folder. The key itself never leaves the server —
      * the client only learns whether one is configured, and where it came from.
+     *
+     * Gated exactly like the POST below, which it was not. It reads
+     * `<root>/.hearth/app.json` for any root it is handed, and answers with a
+     * boolean: "does this directory have a Hearth app.json" is a probe of the
+     * user's disk, one directory per request, from a route that only ever
+     * needs to describe the folder that is open.
      */
     async getAppSettings(project: unknown): Promise<JsonResult> {
       if (typeof project !== 'string' || project.trim() === '') {
         return { status: 400, body: { ok: false, error: 'Missing "project".' } };
       }
-      return settingsSummary(path.resolve(project));
+      const root = path.resolve(project);
+      if (!isOpenRoot(root)) return { status: 403, body: { ok: false, error: 'Folder is not open.' } };
+      return settingsSummary(root);
     },
 
     /**
@@ -2131,6 +2298,82 @@ async function readJsonBody(
 }
 
 /**
+ * The gate on the three routes that put a CALLER-NAMED folder into
+ * `openedRoots`: workspace/open, project/open, project/create.
+ *
+ * WHY THIS EXISTS, AND WHY IT IS NOT AN ALLOWLIST OF FOLDERS
+ *
+ * `openedRoots` is the jail every file route, both static mounts and the
+ * /api/ws upgrade resolve against. These three routes are the only way into
+ * it, and they took any string that stat'd as a directory. So two requests
+ * were a whole-disk read primitive:
+ *
+ *     POST /api/workspace/open  {"path":"/Users/someone"}
+ *     GET  /api/file?project=/Users/someone&path=.ssh/id_rsa
+ *
+ * and the first of them also rewrote ~/.hearth/recent-projects.json, so it
+ * outlived the process.
+ *
+ * The fix cannot be a rule about WHICH folders may be opened. Opening any
+ * folder anywhere is the app's premise, and a denylist of "sensitive"
+ * directories would be Hearth deciding where somebody may build a game while
+ * doing nothing about the folder it failed to think of. The question is who is
+ * asking.
+ *
+ * WHAT COUNTS AS THE USER PICKING A FOLDER
+ *
+ * The legitimate callers are the editor's own document, and only ever with a
+ * path a person just chose: the native folder dialog in the desktop app
+ * (electron/main.ts's `hearth:pick-directory`), the typed prompt that stands
+ * in for it in a dev browser tab, or a row in the recents rail. There is no
+ * other one. `createWorkspace` makes its own folder and opens it in process,
+ * and nothing in the CLI or the MCP server speaks to this HTTP API at all.
+ *
+ * So the attestation is: THE REQUEST CARRIES AN ORIGIN HEADER. That is a
+ * narrower claim than it sounds, because `route()` has already run
+ * `isRequestAllowed`, which rejects every Origin that is not this exact server
+ * (loopback name AND matching port). An Origin that survives to here therefore
+ * names the editor's own UI. And a browser cannot decline to send one: Origin
+ * is attached to every request whose method is not GET or HEAD, same-origin
+ * included, and it is a forbidden header name, so no page can strip or forge
+ * it. A page that is not the editor cannot reach these routes at all. The
+ * game, on its own loopback port, fails on the port comparison like any other
+ * page on the machine.
+ *
+ * WHAT IS LEFT OVER, SAID PLAINLY
+ *
+ * `isRequestAllowed` deliberately admits requests with NO Origin, because
+ * curl, the CLI and the MCP server never send one and must keep working. That
+ * is the leftover: a local process can omit the header, and it can equally
+ * well forge one. Nothing checkable in a header defends against a process
+ * already running as the user, and it does not need to: that process has the
+ * disk. What this rules out is the case that actually escalates, a page in a
+ * browser reaching a server it was not meant to reach.
+ *
+ * Unattested callers are not refused outright, because that would be a rule
+ * about folders again. They may still name a root the user has already
+ * blessed (open now, or on the recents list). What they cannot do is
+ * introduce a NEW one, which is the whole of the primitive above.
+ */
+async function denyUnattestedRoot(
+  ctx: ProjectServerContext,
+  req: IncomingMessage,
+  rawPath: unknown,
+): Promise<JsonResult | null> {
+  if (req.headers.origin !== undefined) return null;
+  if (typeof rawPath === 'string' && rawPath.trim() !== '' && (await ctx.isKnownRoot(path.resolve(rawPath.trim())))) {
+    return null;
+  }
+  return {
+    status: 403,
+    body: {
+      ok: false,
+      error: 'Forbidden: only the editor window can open a folder it has not opened before.',
+    },
+  };
+}
+
+/**
  * Transport-agnostic API request handler: used by the Vite dev-server plugin
  * below and by the Electron main process (which serves the same routes from
  * a plain node:http server).
@@ -2203,6 +2446,8 @@ async function route(ctx: ProjectServerContext, req: IncomingMessage, res: Serve
   switch (key) {
     case 'POST /api/workspace/open': {
       const body = await readJsonBody(req);
+      const denied = await denyUnattestedRoot(ctx, req, body.path);
+      if (denied) return sendJson(res, denied.status, denied.body);
       const result = await ctx.openWorkspace(body.path);
       return sendJson(res, result.status, result.body);
     }
@@ -2328,11 +2573,18 @@ async function route(ctx: ProjectServerContext, req: IncomingMessage, res: Serve
     }
     case 'POST /api/project/open': {
       const body = await readJsonBody(req);
+      const denied = await denyUnattestedRoot(ctx, req, body.path);
+      if (denied) return sendJson(res, denied.status, denied.body);
       const result = await ctx.openProject(body.path);
       return sendJson(res, result.status, result.body);
     }
     case 'POST /api/project/create': {
       const body = await readJsonBody(req);
+      // `dir` is the PARENT the new project lands under, so it is the folder
+      // being named here, and this route both writes into it and opens what it
+      // wrote. Same gate as the two above.
+      const denied = await denyUnattestedRoot(ctx, req, body.dir);
+      if (denied) return sendJson(res, denied.status, denied.body);
       const result = await ctx.createNewProject(body.dir, body.name, body.description, body.template);
       return sendJson(res, result.status, result.body);
     }
@@ -2386,6 +2638,23 @@ async function route(ctx: ProjectServerContext, req: IncomingMessage, res: Serve
         res.statusCode = result.status;
         res.setHeader('Content-Type', result.contentType ?? 'application/octet-stream');
         res.setHeader('Cache-Control', 'no-cache');
+        // Everything this route returns is a file an AGENT wrote, served from
+        // the control plane's own origin. That is a way back in to the hole the
+        // game-origin split closed: a `.html` here comes back as `text/html`,
+        // the game frame carries `allow-popups` without
+        // `allow-popups-to-escape-sandbox` (so a popup inherits its
+        // `allow-same-origin`), and `window.open` on this URL would run
+        // agent-written script AS the editor.
+        //
+        // `sandbox` with no allow tokens is the surgical answer: any DOCUMENT
+        // made from this response lands in a unique opaque origin with scripts
+        // off, so navigating to it gains nothing. Images are not documents and
+        // are unaffected, which is what keeps the asset pipeline working: an
+        // SVG texture in an `<img>` still renders, and script inside an SVG
+        // never runs in that context anyway. `nosniff` stops a content type
+        // being guessed past this.
+        res.setHeader('Content-Security-Policy', 'sandbox');
+        res.setHeader('X-Content-Type-Options', 'nosniff');
         res.end(Buffer.from(result.data));
         return;
       }
@@ -2444,7 +2713,7 @@ export function hearthProjectServer(options: ProjectServerOptions = {}): Plugin 
         attachWebSocket(httpServer, ctx);
         // Its own upgrade listener on its own path, so a window that never
         // playtests never holds a socket for pictures of one.
-        attachProbeStream(httpServer, ctx.probeBus);
+        attachProbeStream(httpServer, ctx.probeBus, ctx.isOpenRoot);
         // A dev-server restart re-runs this hook, so the previous run's
         // listener has to go or its port leaks for the process's lifetime.
         httpServer.on('close', () => game?.close());

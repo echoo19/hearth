@@ -195,7 +195,25 @@ interface ChatSession {
    */
   permissionMode: PermissionMode;
   sockets: Set<WebSocket>;
+  /**
+   * Set by `retireChatSession`, which is the only thing that ends a session.
+   * Stopping a driver ends its event stream, which brings the drain loop round
+   * to the same retirement, so without this every teardown reports itself
+   * twice.
+   */
+  retired?: boolean;
 }
+
+/**
+ * What a window is told when its conversation's backend went away mid-turn.
+ * The client clears its "the agent is working" state on a turn-ending event and
+ * on nothing else, so this has to be one.
+ */
+const DRIVER_GONE_MESSAGE = 'The agent stopped answering. Your next message starts a fresh one.';
+
+/** What a window is told when the conversation it is in no longer exists. */
+const DELETED_CHAT_MESSAGE =
+  'This conversation was deleted, so nothing more can be saved to it. Start a new chat to keep going.';
 
 interface PtySession {
   key: string;
@@ -365,6 +383,23 @@ export function attachWebSocket(
     } finally {
       if (timer) clearTimeout(timer);
     }
+  }
+
+  /**
+   * Run work nobody is waiting on, and never let it reach the process.
+   *
+   * Node terminates on an unhandled rejection, and in the packaged app this
+   * server runs in Electron's MAIN process: a bare `void` on a promise that
+   * writes into the project folder is the WHOLE APP quitting mid-turn, with no
+   * message, because a disk filled up or a folder was unmounted. Nothing
+   * detached here is worth that, so every one of them lands on a log line
+   * instead. This is a floor, not an excuse: work that has something to say to
+   * the user still says it before it gets here.
+   */
+  function detach(work: Promise<unknown>, what: string): void {
+    void work.catch((err: unknown) => {
+      console.error(`[hearth] ${what}: ${(err as Error)?.message ?? String(err)}`);
+    });
   }
 
   function send(socket: WebSocket, frame: WsFrame): void {
@@ -570,6 +605,58 @@ export function attachWebSocket(
     broadcast(channel.sockets, { type: 'chat-list', chats: await listChats(root) });
   }
 
+  /** Every open socket on this folder currently looking at `chatId`. */
+  function watchersOf(root: string, chatId: string): WebSocket[] {
+    const channel = channels.get(root);
+    if (!channel) return [];
+    return [...channel.sockets].filter(
+      (peer) => peer.readyState === WebSocket.OPEN && socketChat.get(peer) === chatId,
+    );
+  }
+
+  /**
+   * The conversation's backend is finished: take the session out of the live
+   * map, stop the driver, and do not leave a window waiting on a turn nobody is
+   * going to end. `endWith` is the event to report, or null when the stream
+   * already ended the turn (or when this is a deliberate teardown that has
+   * nothing to announce).
+   *
+   * THIS IS THE SEAM for a driver dying, and it is here rather than in the
+   * drivers on purpose. Each half knows exactly one thing: a driver knows its
+   * backend went away, which it says by ending its event stream, and this
+   * module is the only thing that knows a session exists at all. Splitting it
+   * that way is what makes the rule hold for both backends and for the next
+   * one, without either driver learning about sockets.
+   *
+   * Before this, neither half did its part. A codex transport loss closed the
+   * driver's queue and left the session in `chatSessions`, so `ensureChat`
+   * handed the next message to a corpse and it vanished. The Agent SDK's pump
+   * could return without closing the queue at all, so this loop never even
+   * reached its end. Retiring the session is what makes the message after a
+   * failure bind a fresh driver instead of disappearing.
+   */
+  function retireChatSession(session: ChatSession, endWith: ChatEvent | null): void {
+    // Once. Stopping the driver ends its stream, which brings the drain loop
+    // here a second time, and a conversation must not be told twice that it
+    // ended.
+    if (session.retired) return;
+    session.retired = true;
+    if (chatSessions.get(session.key) === session) chatSessions.delete(session.key);
+    session.driver?.stop();
+    if (!endWith) return;
+    // Disk first, same as the drain loop: what a window sees on reload has to
+    // be what it saw live.
+    detach(
+      appendChatRecord(session.root, session.chatId, {
+        role: 'agent',
+        ts: new Date().toISOString(),
+        event: endWith,
+      }),
+      `chat ${session.chatId}: could not record the end of the turn`,
+    );
+    broadcast(session.sockets, { type: 'chat-event', event: endWith });
+  }
+
   /**
    * Point `socket` at `chatId` and replay that conversation from disk. Live
    * driver state is deliberately NOT part of the replay: what a restarted
@@ -609,7 +696,7 @@ export function attachWebSocket(
       // necessarily — words were sent to an agent, which is what a chat is.
       chatId = (await createChat(root)).id;
       socketChat.set(socket, chatId);
-      void announceChats(root);
+      detach(announceChats(root), `${root}: could not broadcast the chat list`);
     }
     const key = chatKey(root, chatId);
     // Read fresh on every send, like the skills and the personal prompt the
@@ -618,10 +705,19 @@ export function attachWebSocket(
     // they just moved away from.
     const permissionMode = await readPermissionMode(root);
     const existing = chatSessions.get(key);
-    if (existing && existing.permissionMode === permissionMode) {
+    // A session whose driver has died is not one to join. Its event stream is
+    // over, so `send()` on it returns quietly and the turn is never answered,
+    // and its own drain loop has not necessarily retired it yet: that runs a
+    // tick after the backend went away, and a person can type inside that tick.
+    // Checked here rather than trusted to the cleanup, because a message lost
+    // to that gap is lost for good.
+    const dead = existing?.driver?.dead === true;
+    if (existing && !dead && existing.permissionMode === permissionMode) {
       existing.sockets.add(socket);
       return existing.driver ? existing : null; // still binding
     }
+    // Past here the conversation is REBOUND, for one of two reasons.
+    //
     // The mode moved under a live conversation. Neither backend can be told
     // about it (codex fixed the policy at `thread/start`, the SDK at `query()`),
     // so the agent is torn down and rebound here, BEFORE the turn that is
@@ -629,10 +725,12 @@ export function attachWebSocket(
     // nothing until the next session, which for a permission control is the
     // difference between a preference and a lie. Same coarse teardown as
     // chat-cancel; the transcript is on disk and survives it.
-    if (existing) {
-      chatSessions.delete(key);
-      existing.driver?.stop();
-    }
+    //
+    // Or the driver died and this got here first. Either way it is retired with
+    // nothing to announce: the turn waiting on this call is about to be answered
+    // by the driver built below, so reporting the old one's end would put an
+    // error on a conversation that is fine.
+    if (existing) retireChatSession(existing, null);
     const session: ChatSession = {
       key,
       root,
@@ -640,20 +738,31 @@ export function attachWebSocket(
       driver: null,
       permissionMode,
       // Every window that was watching comes along, so a rebind does not leave
-      // the other one staring at an agent nothing is feeding any more.
-      sockets: new Set([socket, ...(existing?.sockets ?? [])]),
+      // the other one staring at an agent nothing is feeding any more. Taken
+      // from `socketChat` as well as from the old session, because a session
+      // that was already retired (its backend died, or somebody interrupted a
+      // driver that cannot interrupt) is not here to be carried, and the
+      // windows sitting in that conversation are still sitting in it.
+      sockets: new Set([socket, ...(existing?.sockets ?? []), ...watchersOf(root, chatId)]),
     };
     chatSessions.set(key, session);
 
     let driver: ChatDriver;
+    // The same driver, held from the moment it exists rather than from the
+    // moment it is bound, so the catch below can stop one that failed to start.
+    let built: ChatDriver | null = null;
     try {
       // A conversation the OpenAI backend has answered before carries its
       // codex thread, so reopening it resumes that thread rather than handing
       // a fresh agent a transcript to read.
       const summary = await getChat(root, session.chatId);
-      driver = await makeChatDriver(root, {
+      driver = built = await makeChatDriver(root, {
         resumeThreadId: summary?.codexThreadId ?? null,
-        onThreadId: (threadId) => void setChatThreadId(root, session.chatId, threadId),
+        onThreadId: (threadId) =>
+          detach(
+            setChatThreadId(root, session.chatId, threadId),
+            `chat ${session.chatId}: could not remember the codex thread`,
+          ),
         // The binding turn's choice decides WHICH backend answers, so it has
         // to be known before the driver is built, not just when it is sent.
         agent: agent ?? null,
@@ -663,7 +772,15 @@ export function attachWebSocket(
       await driver.start(session.chatId, root);
     } catch (err) {
       chatSessions.delete(key);
+      // The driver may hold a child process already: CodexDriver.start spawns
+      // `codex app-server` BEFORE the handshake, so a failed initialize or a
+      // 60s timeout that does not stop the driver orphans that child forever,
+      // one per attempt. Same shape the tester path uses (projectServer.ts).
+      built?.stop();
       send(socket, { type: 'chat-event', event: { type: 'error', message: (err as Error).message } });
+      // Deliberately no `retireChatSession`: this session never had a stream,
+      // the error above is the whole report, and the caller still writes the
+      // user's message down.
       return null;
     }
     // Everyone dropped while the backend was resolving: tear the driver down
@@ -678,19 +795,45 @@ export function attachWebSocket(
     session.driver = driver;
     broadcast(session.sockets, { type: 'chat-ready', driver: driver.kind });
     void (async () => {
+      // Whether the sockets have been told the turn is over. A stream that ends
+      // after a turn-ending event has said everything it needs to; one that
+      // ends in the middle of a turn has not, and a window is still spinning
+      // on it.
+      let settled = false;
       try {
         for await (const event of driver.events) {
           if (chatSessions.get(key) !== session) break;
           // Disk first: a window that closes mid-turn must still find the turn
           // in its transcript when it comes back.
-          await appendChatRecord(root, session.chatId, { role: 'agent', ts: new Date().toISOString(), event });
+          const stored = await appendChatRecord(root, session.chatId, {
+            role: 'agent',
+            ts: new Date().toISOString(),
+            event,
+          });
+          if (!stored) {
+            // No index row, so nothing was written and nothing more can be:
+            // the conversation was deleted, in another window, while this one
+            // was mid-turn. Ending it here is the only honest move. Carrying
+            // on streamed a whole turn into a file nobody would ever list, and
+            // the window found it gone on the next reload.
+            settled = true;
+            retireChatSession(session, { type: 'error', message: DELETED_CHAT_MESSAGE });
+            break;
+          }
           broadcast(session.sockets, { type: 'chat-event', event });
-          if (endsTurn(event)) void announceChats(root);
+          settled = endsTurn(event);
+          if (settled) detach(announceChats(root), `${root}: could not broadcast the chat list`);
         }
       } catch (err) {
+        settled = true;
         if (chatSessions.get(key) === session) {
           broadcast(session.sockets, { type: 'chat-event', event: { type: 'error', message: (err as Error).message } });
         }
+      } finally {
+        // The stream is over, so this backend is over: it is either stopped
+        // already or it just died. Either way the session must not stay in the
+        // map, or the next message goes to something that cannot answer it.
+        retireChatSession(session, settled ? null : { type: 'error', message: DRIVER_GONE_MESSAGE });
       }
     })();
     return session;
@@ -704,12 +847,10 @@ export function attachWebSocket(
   function leaveChat(socket: WebSocket, opts: { stopIfLast: boolean }): void {
     const chatId = socketChat.get(socket);
     if (chatId === undefined) return;
-    for (const session of chatSessions.values()) {
+    for (const session of [...chatSessions.values()]) {
       if (!session.sockets.delete(socket)) continue;
-      if (opts.stopIfLast && session.sockets.size === 0) {
-        chatSessions.delete(session.key);
-        session.driver?.stop();
-      }
+      // Nothing to report: there is no window left to report it to.
+      if (opts.stopIfLast && session.sockets.size === 0) retireChatSession(session, null);
     }
   }
 
@@ -809,7 +950,10 @@ export function attachWebSocket(
           case 'pty-start':
             // Supersede this connection's prior live or pending session.
             // Other sockets on the same project keep their independent ptys.
-            void startPty(root, ws, typeof frame.sessionId === 'string' ? frame.sessionId : undefined);
+            detach(
+              startPty(root, ws, typeof frame.sessionId === 'string' ? frame.sessionId : undefined),
+              `${root}: could not start a terminal`,
+            );
             break;
           case 'pty-input':
             {
@@ -881,18 +1025,33 @@ export function attachWebSocket(
                 // driver is queued-input based, so waiting for it is enough.
                 const chatId = socketChat.get(ws);
                 const bound = session ?? (chatId ? (chatSessions.get(chatKey(root, chatId)) ?? null) : null);
-                if (!bound) return;
+                // Written down even when NOTHING BOUND. A bind that failed has
+                // already put its reason on this socket, and dropping what the
+                // person typed on top of that means retyping it from memory,
+                // for a failure they had no part in.
+                const target = bound?.chatId ?? chatId;
+                if (!target) return;
                 // Written down BEFORE the turn starts: the agent is handed
                 // paths, so the files have to exist by the time it reads them.
-                const attachments = await saveAttachments(root, bound.chatId, files);
-                await appendChatRecord(root, bound.chatId, {
+                const attachments = await saveAttachments(root, target, files);
+                const stored = await appendChatRecord(root, target, {
                   role: 'user',
                   ts: new Date().toISOString(),
                   text,
                   ...(attachments.length > 0 ? { attachments: attachments.map(storedAttachment) } : {}),
                 });
+                if (!stored) {
+                  // No index row, so the append wrote nothing at all: this
+                  // conversation was deleted while this window still had it
+                  // open. Everything typed from here would go nowhere, quietly,
+                  // until the window reloaded and found it gone, so say so and
+                  // end the session instead of talking into a deleted chat.
+                  send(ws, { type: 'chat-event', event: { type: 'error', message: DELETED_CHAT_MESSAGE } });
+                  if (bound) retireChatSession(bound, null);
+                  return;
+                }
                 await announceChats(root); // the first turn names the chat
-                bound.driver?.send(text, agent ?? undefined, attachments);
+                bound?.driver?.send(text, agent ?? undefined, attachments);
               });
             }
             break;
@@ -917,7 +1076,16 @@ export function attachWebSocket(
               const chatId = socketChat.get(ws);
               const session = chatId ? chatSessions.get(chatKey(root, chatId)) : null;
               if (session?.driver?.interrupt) session.driver.interrupt();
-              else stopChat(ws);
+              else if (session) {
+                // The WHOLE session goes, and every window watching is told the
+                // turn ended. The fallback used to be `stopChat`, which with a
+                // second window present only removes THIS socket from the
+                // session: the window that asked for silence got it by going
+                // deaf, while the agent carried on talking to the other one.
+                // The next send rebinds, and `ensureChat` gathers both windows
+                // back onto the fresh driver.
+                retireChatSession(session, { type: 'turn-complete' });
+              } else stopChat(ws);
             }
             break;
           case 'chat-cancel':
@@ -950,7 +1118,7 @@ export function attachWebSocket(
     detachedPtys.clear();
     ptySessions.clear();
     ptyManager.killAll();
-    for (const session of chatSessions.values()) session.driver?.stop();
+    for (const session of [...chatSessions.values()]) retireChatSession(session, null);
     chatSessions.clear();
     socketChat.clear();
   });

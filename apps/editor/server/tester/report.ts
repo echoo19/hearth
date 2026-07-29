@@ -17,7 +17,12 @@
  * wall of fields costs it context while burying the two sentences that matter.
  */
 import { MISSING_REGRESSION } from './prompt.js';
-import { observationReach, type ObservationReach, type TesterNote } from './types.js';
+import {
+  observationReach,
+  UNREADABLE_REGRESSION,
+  type ObservationReach,
+  type TesterNote,
+} from './types.js';
 
 /** One thing to do, as it appears in the plan of action. */
 export interface Proposal {
@@ -49,6 +54,10 @@ const NOTHING = /^(nothing|none|no|nothing got worse|nothing did|n\/a)\.?$/i;
  */
 export function regressionSentence(raw: string): { text: string; answered: boolean } {
   const value = raw.trim();
+  // Unanswered, not answered with nothing. An unreadable note is the third
+  // way this can go unanswered and it gets its own words, because blaming the
+  // tester for a file Hearth could not parse would be the wrong accusation.
+  if (value === UNREADABLE_REGRESSION) return { text: UNREADABLE_REGRESSION, answered: false };
   if (value === '' || value === MISSING_REGRESSION) {
     return { text: 'It did not say whether anything got worse.', answered: false };
   }
@@ -66,6 +75,10 @@ export function endingSentence(note: TesterNote): string {
       return `You stopped it after ${turns}.`;
     case 'error':
       return 'It ran into trouble part way through and wrote down what it had.';
+    case 'unreadable':
+      // Says nothing about how it ended, because nothing about how it ended
+      // survived. The turn count on this note is a placeholder, not a count.
+      return 'How this session went could not be read out of its note.';
     default:
       return `It played ${turns} and said it had seen enough.`;
   }
@@ -74,6 +87,9 @@ export function endingSentence(note: TesterNote): string {
 /** The verdict on your last change, as a sentence. */
 export function verdictSentence(note: TesterNote): string {
   const { seen, verdict, why } = note.onTheChange;
+  // Not a verdict, and never rendered as one. The note could not be read, so
+  // the only true thing to say is that, and why.
+  if (verdict === 'unreadable') return `${trimDot(seen)} ${trimDot(why)}`;
   if (verdict === 'first-session') {
     const first = 'This was its first look at your game, so there is nothing to compare it with yet.';
     // On a session that fell over, `why` holds what went wrong, and that is
@@ -128,44 +144,153 @@ function sentence(text: string): string {
   return value.charAt(0).toUpperCase() + value.slice(1);
 }
 
-/**
- * The plan of action, drawn from what the tester wrote down.
- *
- * Everything here is a filter. Nothing is generated: a session where the tester
- * proposed nothing produces nothing, and that is a legitimate result rather
- * than an empty surface to apologise for. A tester whose plan is never empty
- * will start manufacturing work, since a list of changes is the most flattering
- * output it can produce.
- */
-export function proposalsFrom(note: TesterNote): Proposal[] {
-  const seen = new Map<number, ObservationReach>();
-  for (const observation of note.observations ?? []) {
-    if (typeof observation.frame === 'number') seen.set(observation.frame, observationReach(observation));
-  }
+/** Why a proposal the tester wrote is not in the plan the reader sees. */
+export type DropReason = 'no-picture' | 'unknown-picture';
 
-  const out: Proposal[] = [];
+/** One thing the tester proposed that did not survive, kept so it can be counted. */
+export interface DroppedProposal {
+  kind: 'bug' | 'suggestion';
+  text: string;
+  why: DropReason;
+}
+
+/** What survived, and what did not. The second half is what the reader is owed. */
+export interface Plan {
+  plan: Proposal[];
+  dropped: DroppedProposal[];
+}
+
+/**
+ * The highest picture number this session could possibly have taken.
+ *
+ * `frames` is the real count and is the answer whenever a note carries one.
+ * Older notes do not, so the turn count stands in: a picture is taken at most
+ * once per turn, so it is an upper bound and never a smaller one. Observations
+ * widen it as a last resort, because a note that cites picture nine has by its
+ * own account taken nine.
+ */
+function frameBound(note: TesterNote): number {
+  if (typeof note.frames === 'number' && note.frames > 0) return note.frames;
+  let bound = typeof note.steps === 'number' && note.steps > 0 ? note.steps : 0;
+  for (const observation of note.observations ?? []) {
+    if (typeof observation.frame === 'number' && observation.frame > bound) bound = observation.frame;
+  }
+  return bound;
+}
+
+/**
+ * Whether a picture was somewhere the game put the tester, for a picture the
+ * tester never wrote a SAW line about.
+ *
+ * A session is placed from one picture onward and never goes back (see
+ * `placedFromFrame` in session.ts), so the earliest observation marked placed
+ * is where the line falls, and everything at or after it inherits the caveat.
+ * Recorded reach still wins where there is one: a hand-edited note is allowed
+ * to disagree with the rule, and its own words are the more specific claim.
+ */
+function reachOf(frame: number, seen: Map<number, ObservationReach>, placedFrom: number | null): ObservationReach {
+  const recorded = seen.get(frame);
+  if (recorded) return recorded;
+  return placedFrom !== null && frame >= placedFrom ? 'placed' : 'played';
+}
+
+/**
+ * The plan of action, drawn from what the tester wrote down, and what fell out
+ * of it on the way.
+ *
+ * A proposal has to name a picture from this session. That rule is the whole
+ * value of the plan: without it the tester can hand back advice anyone could
+ * have written without playing the game, and a list of plausible changes is the
+ * most flattering output a playtester can produce.
+ *
+ * What is NOT the rule, and used to be by accident, is that the picture also
+ * has to be one the tester wrote a SAW line about. `seen` was built from the
+ * observations because that is where reach is recorded, so a proposal about
+ * picture 14 of a 21 picture session died silently whenever the tester had
+ * written its SAW lines about six other pictures, which is what testers
+ * actually do. Nothing in the prompt ever asked for that and nothing in the
+ * report ever admitted to it. The bound is the session's picture count now, the
+ * prompt says so in as many words, and reach for an unobserved picture is
+ * derived from where the placement line fell rather than assumed away.
+ *
+ * Nothing is generated here. A session where the tester proposed nothing
+ * produces nothing, and that is a legitimate and frequently correct result.
+ */
+export function planFrom(note: TesterNote): Plan {
+  const seen = new Map<number, ObservationReach>();
+  let placedFrom: number | null = null;
+  for (const observation of note.observations ?? []) {
+    if (typeof observation.frame !== 'number') continue;
+    const reach = observationReach(observation);
+    seen.set(observation.frame, reach);
+    if (reach === 'placed' && (placedFrom === null || observation.frame < placedFrom)) {
+      placedFrom = observation.frame;
+    }
+  }
+  const bound = frameBound(note);
+
+  const plan: Proposal[] = [];
+  const dropped: DroppedProposal[] = [];
   (note.proposals ?? []).forEach((raw, index) => {
     const text = typeof raw?.text === 'string' ? raw.text.trim() : '';
     if (text === '') return;
+    const kind = raw.kind === 'bug' ? 'bug' : 'suggestion';
+    const cited = raw.evidence ?? [];
     const evidence: number[] = [];
-    for (const frame of raw.evidence ?? []) {
-      // Only pictures this session actually took, and only ones the tester
-      // wrote something about. A proposal that anchors to nothing is advice
-      // that could have been written without playing the game.
-      if (seen.has(frame) && !evidence.includes(frame)) evidence.push(frame);
+    for (const frame of cited) {
+      // A picture past the end of the session is a claim, not evidence: a
+      // finding about picture forty of a ten picture session is about a
+      // picture nobody took.
+      if (frame >= 1 && frame <= bound && !evidence.includes(frame)) evidence.push(frame);
     }
-    if (evidence.length === 0) return;
-    out.push({
+    if (evidence.length === 0) {
+      dropped.push({ kind, text, why: cited.length === 0 ? 'no-picture' : 'unknown-picture' });
+      return;
+    }
+    plan.push({
       id: `s${note.session}-p${index}`,
-      kind: raw.kind === 'bug' ? 'bug' : 'suggestion',
+      kind,
       text,
       evidence,
       // One placed picture is enough. The proposal inherits the caveat rather
       // than averaging it away.
-      reached: evidence.some((frame) => seen.get(frame) === 'placed') ? 'placed' : 'played',
+      reached: evidence.some((frame) => reachOf(frame, seen, placedFrom) === 'placed') ? 'placed' : 'played',
     });
   });
-  return out;
+  return { plan, dropped };
+}
+
+/** The plan alone, for the readers that have nothing to say about the drops. */
+export function proposalsFrom(note: TesterNote): Proposal[] {
+  return planFrom(note).plan;
+}
+
+/**
+ * What was dropped, as a sentence, or null when nothing was.
+ *
+ * Said out loud because the alternative is what shipped: everything the parser
+ * or the anchor rule threw away came out as "It found nothing here worth
+ * changing", which is a sentence about the game. Silence here is how a parse
+ * miss gets read as a clean bill of health.
+ */
+export function droppedSentence(dropped: readonly DroppedProposal[], planEmpty: boolean): string | null {
+  if (dropped.length === 0) return null;
+  const one = dropped.length === 1;
+  const count = one ? 'one thing' : `${counted(dropped.length)} things`;
+  const clause = dropped.every((item) => item.why === 'no-picture')
+    ? one
+      ? 'it named no picture from this session'
+      : 'none of them named a picture from this session'
+    : dropped.every((item) => item.why === 'unknown-picture')
+      ? one
+        ? 'it pointed at a picture this session did not take'
+        : 'none of them pointed at a picture this session took'
+      : one
+        ? 'it did not point at a picture from this session'
+        : 'none of them pointed at a picture from this session';
+  return planEmpty
+    ? `It proposed ${count}, and ${clause}, so there is nothing here to tick.`
+    : `It proposed ${count} more, and ${clause}, so ${one ? 'it is' : 'they are'} not on this list.`;
 }
 
 /**
@@ -299,7 +424,7 @@ export function approvalSeed(
 export function renderReport(note: TesterNote): string {
   const observations = note.observations ?? [];
   const questions = note.openQuestions ?? [];
-  const plan = proposalsFrom(note);
+  const { plan, dropped } = planFrom(note);
   const lines: string[] = [];
 
   lines.push(`Session ${note.session}`, endingSentence(note), '');
@@ -332,12 +457,15 @@ export function renderReport(note: TesterNote): string {
   lines.push('');
 
   lines.push('Worth changing');
+  const drops = droppedSentence(dropped, plan.length === 0);
   if (plan.length === 0) {
-    // Not an empty state and not a failure. Most sessions of a game that is
-    // going well should end here.
-    lines.push('It found nothing here worth changing.');
+    // "It found nothing" is a sentence about the game, so it is only ever said
+    // when the tester actually proposed nothing. Anything that fell out of the
+    // plan on the way is said instead, and counted.
+    lines.push(drops ?? 'It found nothing here worth changing.');
   } else {
     lines.push(...planLines(plan));
+    if (drops) lines.push('', drops);
   }
 
   return `${lines.join('\n').trimEnd()}\n`;

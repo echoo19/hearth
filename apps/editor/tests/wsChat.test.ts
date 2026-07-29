@@ -16,7 +16,7 @@ import WebSocket from 'ws';
 import { createProjectServerContext, type ProjectServerContext } from '../server/projectServer';
 import { attachWebSocket, type WsFrame } from '../server/ws';
 import { EventQueue, type AgentTurnOptions, type ChatDriver, type ChatEvent } from '../server/chat';
-import { listChats, readTranscript } from '../server/chatStore';
+import { deleteChat, listChats, readTranscript } from '../server/chatStore';
 import { writePermissionMode, type PermissionMode } from '../server/permissionMode';
 
 /** A driver that answers every turn with a fixed script, and records its life. */
@@ -32,24 +32,56 @@ class ScriptedDriver implements ChatDriver {
   boundPermissionMode: PermissionMode | null | undefined;
   startedIn: string | null = null;
   stopped = false;
+  /** When set, `start` throws it: a backend that refuses to bind. */
+  startError: string | null = null;
+  private finished = false;
 
   get events(): AsyncIterable<ChatEvent> {
     return this.queue;
   }
 
+  get dead(): boolean {
+    return this.finished;
+  }
+
   async start(_sessionId: string, projectRoot: string): Promise<void> {
     this.startedIn = projectRoot;
+    if (this.startError) throw new Error(this.startError);
   }
 
   send(text: string, agent?: AgentTurnOptions): void {
+    if (this.finished) return; // a dead backend answers nothing, silently
     this.sent.push(text);
     this.sentAgents.push(agent);
     this.queue.push({ type: 'text-delta', text: `echo:${text}` });
     this.queue.push({ type: 'done' });
   }
 
+  /**
+   * The backend goes away underneath a live conversation: the pipe to the child
+   * drops, or the SDK's subprocess exits. Exactly what CodexDriver does on a
+   * transport loss, which is to say what every driver now has to do.
+   */
+  die(reason: string): void {
+    this.queue.push({ type: 'error', message: reason });
+    this.finished = true;
+    this.queue.close();
+  }
+
+  /**
+   * A turn that starts and then goes silent: the stream ends mid-turn with no
+   * error and no completion. This is the Agent SDK's generator returning, which
+   * says nothing at all on its way out.
+   */
+  vanish(): void {
+    this.queue.push({ type: 'text-delta', text: 'thinking' });
+    this.finished = true;
+    this.queue.close();
+  }
+
   stop(): void {
     this.stopped = true;
+    this.finished = true;
     this.queue.close();
   }
 }
@@ -61,6 +93,8 @@ let server: http.Server;
 let port: number;
 let drivers: ScriptedDriver[] = [];
 let previousHome: string | undefined;
+/** Applied to the NEXT driver the server binds, then cleared. */
+let nextBindFails: string | null = null;
 
 function connect(): Promise<WebSocket> {
   const socket = new WebSocket(`ws://127.0.0.1:${port}/api/ws?project=${encodeURIComponent(root)}`);
@@ -113,6 +147,8 @@ beforeAll(async () => {
       const driver = new ScriptedDriver();
       driver.boundAgent = options?.agent;
       driver.boundPermissionMode = options?.permissionMode;
+      driver.startError = nextBindFails;
+      nextBindFails = null;
       drivers.push(driver);
       return driver;
     },
@@ -426,6 +462,227 @@ describe('chat history', () => {
     expect(drivers).toHaveLength(2);
     expect((await readTranscript(root, a.chat.id))[0]).toMatchObject({ text: 'in a' });
     expect((await readTranscript(root, b.chat.id))[0]).toMatchObject({ text: 'in b' });
+    socket.close();
+  });
+});
+
+/**
+ * A backend that goes away must not eat everything typed after it.
+ *
+ * This is the failure the whole chat channel was quietly built on. A driver
+ * whose transport died closed its event stream and nothing else: the session
+ * stayed in the server's map, so the next message was handed to a driver that
+ * could no longer answer, appended to the transcript, and dropped. Nothing came
+ * back, so the composer stayed busy and diverted every message after that into
+ * a queue that was never drained. One message orphaned unanswered, the rest
+ * gone before they ever touched disk, and reconnecting rejoined the same corpse.
+ *
+ * Three things have to be true, and each of them is one of these tests: the
+ * session is gone, the window is told, and the next message binds a fresh
+ * backend and is answered by it.
+ */
+describe('a conversation whose backend dies', () => {
+  it('tells the window the turn is over instead of leaving it waiting', async () => {
+    drivers = [];
+    const socket = await connect();
+    socket.send(JSON.stringify({ type: 'chat-send', text: 'hello' }));
+    await nextFrame(socket, (frame) => frame.type === 'chat-event' && frame.event.type === 'done');
+
+    const failed = nextFrame(
+      socket,
+      (frame) => frame.type === 'chat-event' && frame.event.type === 'error',
+    );
+    drivers[0].die('codex app-server exited');
+    const frame = await failed;
+    if (frame.type !== 'chat-event' || frame.event.type !== 'error') throw new Error('wrong frame');
+    expect(frame.event.message).toBe('codex app-server exited');
+    socket.close();
+  });
+
+  it('binds a fresh backend for the next message, and answers it', async () => {
+    drivers = [];
+    const socket = await connect();
+    socket.send(JSON.stringify({ type: 'chat-new' }));
+    const opened = await nextFrame(socket, (frame) => frame.type === 'chat-opened');
+    if (opened.type !== 'chat-opened') throw new Error('wrong frame');
+    socket.send(JSON.stringify({ type: 'chat-send', text: 'one' }));
+    await nextFrame(socket, (frame) => frame.type === 'chat-event' && frame.event.type === 'done');
+
+    drivers[0].die('the pipe closed');
+    await new Promise((resolve) => setTimeout(resolve, 150));
+
+    socket.send(JSON.stringify({ type: 'chat-send', text: 'two' }));
+    await nextFrame(socket, (frame) => frame.type === 'chat-event' && frame.event.type === 'done');
+    await new Promise((resolve) => setTimeout(resolve, 150));
+
+    // A SECOND driver answered, and it got the message the first one could not.
+    expect(drivers).toHaveLength(2);
+    expect(drivers[0].sent).toEqual(['one']);
+    expect(drivers[1].sent).toEqual(['two']);
+    // And every word of it is on disk, in order, under the right chat.
+    const records = await readTranscript(root, opened.chat.id);
+    const said = records.filter((record) => record.role === 'user').map((record) =>
+      record.role === 'user' ? record.text : '',
+    );
+    expect(said).toEqual(['one', 'two']);
+    socket.close();
+  });
+
+  it('stops the dead driver and lets the transcript keep the failure', async () => {
+    drivers = [];
+    const socket = await connect();
+    socket.send(JSON.stringify({ type: 'chat-new' }));
+    const opened = await nextFrame(socket, (frame) => frame.type === 'chat-opened');
+    if (opened.type !== 'chat-opened') throw new Error('wrong frame');
+    socket.send(JSON.stringify({ type: 'chat-send', text: 'hello' }));
+    await nextFrame(socket, (frame) => frame.type === 'chat-event' && frame.event.type === 'done');
+
+    drivers[0].die('backend went away');
+    await new Promise((resolve) => setTimeout(resolve, 200));
+    expect(drivers[0].stopped).toBe(true);
+
+    // What the window saw live is what it finds when it comes back.
+    const records = await readTranscript(root, opened.chat.id);
+    expect(records[records.length - 1]).toMatchObject({
+      role: 'agent',
+      event: { type: 'error', message: 'backend went away' },
+    });
+    socket.close();
+  });
+
+  it('reports a stream that simply STOPS, so nothing spins forever', async () => {
+    drivers = [];
+    const socket = await connect();
+    socket.send(JSON.stringify({ type: 'chat-send', text: 'hello' }));
+    await nextFrame(socket, (frame) => frame.type === 'chat-event' && frame.event.type === 'done');
+
+    const ended = nextFrame(socket, (frame) => frame.type === 'chat-event' && frame.event.type === 'error');
+    // A turn starts and the stream ends under it: no error, no explanation.
+    // The server has to name it, or the window waits on a turn nobody will end.
+    drivers[0].vanish();
+    const frame = await ended;
+    if (frame.type !== 'chat-event' || frame.event.type !== 'error') throw new Error('wrong frame');
+    expect(frame.event.message).toMatch(/stopped answering/);
+    socket.close();
+  });
+});
+
+/**
+ * A bind that fails takes the backend down with it and keeps what was typed.
+ *
+ * CodexDriver spawns its child BEFORE the handshake, so a driver that is not
+ * stopped when `start()` throws leaves a `codex app-server` running forever,
+ * one per attempt. And the message that triggered the bind is a message the
+ * person wrote: the failure is not theirs, so it must not cost them their words.
+ */
+describe('a backend that refuses to bind', () => {
+  it('stops the driver rather than orphaning its child', async () => {
+    drivers = [];
+    nextBindFails = 'codex initialize timed out';
+    const socket = await connect();
+    const failed = nextFrame(socket, (frame) => frame.type === 'chat-event' && frame.event.type === 'error');
+    socket.send(JSON.stringify({ type: 'chat-send', text: 'make a shooter' }));
+    const frame = await failed;
+    if (frame.type !== 'chat-event' || frame.event.type !== 'error') throw new Error('wrong frame');
+    expect(frame.event.message).toBe('codex initialize timed out');
+    expect(drivers[0].stopped).toBe(true);
+    socket.close();
+  });
+
+  it('still writes down the message the user typed', async () => {
+    drivers = [];
+    const socket = await connect();
+    socket.send(JSON.stringify({ type: 'chat-new' }));
+    const opened = await nextFrame(socket, (frame) => frame.type === 'chat-opened');
+    if (opened.type !== 'chat-opened') throw new Error('wrong frame');
+
+    nextBindFails = 'no agent backend is reachable';
+    socket.send(JSON.stringify({ type: 'chat-send', text: 'a top-down space shooter' }));
+    await nextFrame(socket, (frame) => frame.type === 'chat-event' && frame.event.type === 'error');
+    await new Promise((resolve) => setTimeout(resolve, 200));
+
+    expect(await readTranscript(root, opened.chat.id)).toMatchObject([
+      { role: 'user', text: 'a top-down space shooter' },
+    ]);
+    // And it named the conversation, so the sidebar shows what was asked.
+    expect((await listChats(root)).find((chat) => chat.id === opened.chat.id)?.title).toBe(
+      'a top-down space shooter',
+    );
+    socket.close();
+  });
+});
+
+/**
+ * Interrupting a conversation two windows are watching.
+ *
+ * The Agent SDK has no interrupt, so the fallback is a coarse teardown. It used
+ * to be `stopChat`, which with a second socket present only removes THIS window
+ * from the session: the window that asked for silence got it by going deaf,
+ * while the agent carried on talking to the other one. The teardown has to take
+ * the whole session, and both windows have to come back onto the next driver.
+ */
+describe('chat-interrupt with two windows on one conversation', () => {
+  it('ends the turn for both of them and rebinds them together', async () => {
+    drivers = [];
+    const a = await connect();
+    a.send(JSON.stringify({ type: 'chat-new' }));
+    const opened = await nextFrame(a, (frame) => frame.type === 'chat-opened');
+    if (opened.type !== 'chat-opened') throw new Error('wrong frame');
+    a.send(JSON.stringify({ type: 'chat-send', text: 'one' }));
+    await nextFrame(a, (frame) => frame.type === 'chat-event' && frame.event.type === 'done');
+
+    const b = await connect();
+    b.send(JSON.stringify({ type: 'chat-open', chatId: opened.chat.id }));
+    await nextFrame(b, (frame) => frame.type === 'chat-opened');
+
+    const aEnded = nextFrame(a, (frame) => frame.type === 'chat-event' && frame.event.type === 'turn-complete');
+    const bEnded = nextFrame(b, (frame) => frame.type === 'chat-event' && frame.event.type === 'turn-complete');
+    a.send(JSON.stringify({ type: 'chat-interrupt' }));
+    await Promise.all([aEnded, bEnded]); // the OTHER window hears it too
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    expect(drivers[0].stopped).toBe(true);
+
+    // The next message binds a fresh backend, and B is still watching: it sees
+    // the answer without having to reopen anything.
+    const bSees = nextFrame(b, (frame) => frame.type === 'chat-event' && frame.event.type === 'text-delta');
+    a.send(JSON.stringify({ type: 'chat-send', text: 'two' }));
+    await nextFrame(a, (frame) => frame.type === 'chat-event' && frame.event.type === 'done');
+    const seen = await bSees;
+    if (seen.type !== 'chat-event' || seen.event.type !== 'text-delta') throw new Error('wrong frame');
+    expect(seen.event.text).toBe('echo:two');
+    expect(drivers).toHaveLength(2);
+    a.close();
+    b.close();
+  });
+});
+
+/**
+ * Talking into a conversation that was deleted underneath you.
+ *
+ * `appendChatRecord` writes NOTHING when the chat has no index row, and both
+ * call sites used to ignore that. Delete a chat in one window while another has
+ * it open and the second window kept talking: every message and every event
+ * went nowhere, silently, until it reloaded and found the whole thing gone.
+ */
+describe('a conversation deleted in another window', () => {
+  it('says so rather than writing the next message nowhere', async () => {
+    drivers = [];
+    const socket = await connect();
+    socket.send(JSON.stringify({ type: 'chat-new' }));
+    const opened = await nextFrame(socket, (frame) => frame.type === 'chat-opened');
+    if (opened.type !== 'chat-opened') throw new Error('wrong frame');
+    socket.send(JSON.stringify({ type: 'chat-send', text: 'one' }));
+    await nextFrame(socket, (frame) => frame.type === 'chat-event' && frame.event.type === 'done');
+
+    expect(await deleteChat(root, opened.chat.id)).toBe(true);
+
+    const refused = nextFrame(socket, (frame) => frame.type === 'chat-event' && frame.event.type === 'error');
+    socket.send(JSON.stringify({ type: 'chat-send', text: 'two' }));
+    const frame = await refused;
+    if (frame.type !== 'chat-event' || frame.event.type !== 'error') throw new Error('wrong frame');
+    expect(frame.event.message).toMatch(/deleted/);
+    // And the turn was never started: nothing pretends to be answering.
+    expect(drivers[0].sent).toEqual(['one']);
     socket.close();
   });
 });

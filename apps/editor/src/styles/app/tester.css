@@ -247,6 +247,18 @@
   text-wrap: pretty;
 }
 
+/* Why Play will not do anything, under Play. The tooltip says the same thing,
+   and a reason that lives only in a tooltip is a reason a keyboard and a touch
+   screen never get. */
+.tester-empty-blocked {
+  margin: 2px 0 0;
+  max-width: 46ch;
+  color: var(--ink-faint);
+  font-size: var(--text-xs);
+  line-height: 1.55;
+  text-wrap: pretty;
+}
+
 /* --- The history ---------------------------------------------------------- */
 
 /* A reading column, not a dashboard. Every row here is a paragraph about
@@ -305,6 +317,13 @@
 
 .tester-verdict.tone-worse {
   color: var(--err);
+}
+
+/* Not a verdict at all: Hearth could not read the file. Warn rather than err,
+   because nothing here is a judgement about the game, and it has to look
+   unlike the four real answers so it is never skimmed as one. */
+.tester-verdict.tone-unreadable {
+  color: var(--warn);
 }
 
 .tester-session-when {
@@ -485,6 +504,16 @@ dialog.modal.report-modal[open] {
   gap: 18px;
 }
 
+/* This box is the scroller and it carries a tabindex so a keyboard can reach
+   it (see ReportView). A tab stop with no visible focus is a keyboard user
+   losing their place, so it gets a ring like any other stop. Inset, because
+   the box is flush against the dialog's own edge. */
+.report:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+  border-radius: var(--radius-sm);
+}
+
 .report-ending {
   margin: 0;
   color: var(--ink-mute);
@@ -516,6 +545,25 @@ dialog.modal.report-modal[open] {
 /* It never answered the one question it is required to answer. */
 .report-line.is-unanswered {
   color: var(--warn);
+}
+
+/* The tester's own lines inside the report, at the weight of the prose around
+   them. In the history these lists sit inside `.tester-said` and inherit its
+   muted ink; in the report they sit straight in a `.report-part` and inherited
+   the page default instead, so the observations and the open questions came out
+   LOUDER than every sentence around them and the open questions ended up the
+   loudest text in the whole report. Ink is doing a job in here (the warn colour
+   on an unanswered line, the caveat at full strength) and it cannot do it while
+   the body text is shouting. */
+.report .tester-saw {
+  color: var(--ink-mute);
+  font-size: var(--text-sm);
+  line-height: 1.6;
+  text-wrap: pretty;
+}
+
+.report .tester-saw > li {
+  max-width: 62ch;
 }
 
 /* What the reader needs before they read the list, not after. Full-strength
@@ -655,6 +703,30 @@ dialog.modal.report-modal[open] {
 .plan-count {
   color: var(--ink-faint);
   font-size: var(--text-xs);
+}
+
+/* What the tester proposed that is not on the list, and why. Quiet, because it
+   is a footnote about the count rather than a fault, but present, because the
+   alternative was the plan silently understating what the tester said. */
+.plan-dropped {
+  margin: 4px 0 0;
+  max-width: 62ch;
+  color: var(--ink-faint);
+  font-size: var(--text-xs);
+  line-height: 1.6;
+  text-wrap: pretty;
+}
+
+/* Approving failed. Said here, next to the button that failed, because the
+   toast host is not mounted on every surface this can be reached from and a
+   message nobody sees is the same as no message. */
+.plan-error {
+  margin: 8px 0 0;
+  max-width: 62ch;
+  color: var(--err);
+  font-size: var(--text-sm);
+  line-height: 1.6;
+  text-wrap: pretty;
 }
 
 /* Narrow: the picture number moves above the claim it anchors, the way the

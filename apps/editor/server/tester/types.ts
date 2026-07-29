@@ -67,11 +67,19 @@ export interface TesterPlacement {
   entered?: string;
 }
 
-/** The tester's verdict on what you changed since it last played. */
+/**
+ * The tester's verdict on what you changed since it last played.
+ *
+ * 'unreadable' is not something a tester can ever say. It is what a note gets
+ * when the file on disk is not in a shape this version of Hearth can read, and
+ * it exists so that case has somewhere to go other than one of the four real
+ * answers. A session folder that has to be shown as "better" in order to be
+ * shown at all is a session folder that can lie about someone's game.
+ */
 export interface ChangeVerdict {
   /** What it understood you changed, in its own words. */
   seen: string;
-  verdict: 'better' | 'worse' | 'no-difference' | 'first-session';
+  verdict: 'better' | 'worse' | 'no-difference' | 'first-session' | 'unreadable';
   why: string;
 }
 
@@ -102,5 +110,52 @@ export interface TesterNote {
   /** What it still could not work out. Carried into the next session. */
   openQuestions: string[];
   steps: number;
-  stopped: 'done' | 'budget' | 'user' | 'error';
+  /**
+   * How many pictures the session actually took, which is not always how many
+   * turns it played: a screenshot that fails costs the turn its picture. Absent
+   * on notes written before it was recorded, and readers fall back to the turn
+   * count, which is an upper bound and never a smaller one.
+   */
+  frames?: number;
+  /** 'unreadable' is Hearth's word about the file, never the tester's about the game. */
+  stopped: 'done' | 'budget' | 'user' | 'error' | 'unreadable';
+}
+
+/** What a note says about a change it cannot be read as having judged. */
+export const UNREADABLE_SEEN = 'Hearth could not read this session out of its note.';
+
+/** Why, said without guessing at what the file was supposed to contain. */
+export const UNREADABLE_WHY =
+  'The file is in the folder, but not in a shape this version of Hearth knows how to read. Older and newer Hearths write notes differently, and a note can also be hand-edited.';
+
+/**
+ * The regression answer on an unreadable note. Its own sentence rather than
+ * MISSING_REGRESSION, because "it never said" and "we could not read what it
+ * said" are different facts and only one of them is about the tester.
+ */
+export const UNREADABLE_REGRESSION = 'Whether anything got worse could not be read out of this note.';
+
+/**
+ * A session that exists on disk and cannot be read, as a note.
+ *
+ * Every field that carries a claim about the game is emptied rather than
+ * half-recovered. A note that is partly readable is still a note whose missing
+ * half is unknown, and showing the half that parsed would put a selective
+ * account of someone's game on screen under a heading that promises the whole
+ * one. The session number survives because the history is append-only and a
+ * session vanishing from it is its own kind of lie.
+ */
+export function unreadableNote(session: number, startedAt = '', finishedAt = ''): TesterNote {
+  return {
+    session,
+    startedAt,
+    finishedAt,
+    onTheChange: { seen: UNREADABLE_SEEN, verdict: 'unreadable', why: UNREADABLE_WHY },
+    regression: UNREADABLE_REGRESSION,
+    observations: [],
+    proposals: [],
+    openQuestions: [],
+    steps: 0,
+    stopped: 'unreadable',
+  };
 }

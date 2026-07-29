@@ -13,7 +13,7 @@
  */
 import { promises as fsp } from 'node:fs';
 import path from 'node:path';
-import type { TesterNote } from './types.js';
+import { unreadableNote, type TesterNote } from './types.js';
 
 /** Relative location of the tester's folder within a project. */
 export const TESTER_DIR = path.join('.hearth', 'tester');
@@ -118,6 +118,67 @@ export async function writeTranscript(root: string, id: number, text: string): P
   await fsp.writeFile(path.join(dir, 'transcript.md'), text, 'utf8');
 }
 
+const VERDICTS = new Set(['better', 'worse', 'no-difference', 'first-session', 'unreadable']);
+const ENDINGS = new Set(['done', 'budget', 'user', 'error', 'unreadable']);
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+/**
+ * Does this note carry every field its readers dereference?
+ *
+ * Named field by field rather than cast, because a cast is what shipped and a
+ * cast is what blanked the window. `typeof session === 'number'` was the whole
+ * check, so a note from an older or newer Hearth, or one a person had edited by
+ * hand, arrived at the history missing `onTheChange` and `regression`. The
+ * history reads `note.onTheChange.verdict` and calls a regression helper on
+ * `note.regression`, both of which throw on undefined, and a throw during
+ * render with no boundary above it takes the ENTIRE app to a white screen that
+ * comes back white on reload until the file is deleted. The folder is
+ * documented as hand-editable and meant to be committed, so this is a file
+ * someone will absolutely produce.
+ *
+ * Anything optional is checked only if present: `placement`, `proposals` and
+ * `frames` are all absent on notes written by earlier Hearths and those notes
+ * are perfectly readable.
+ */
+function isWholeNote(value: Record<string, unknown>): boolean {
+  const change = value.onTheChange;
+  if (!isRecord(change)) return false;
+  if (typeof change.seen !== 'string' || typeof change.why !== 'string') return false;
+  if (typeof change.verdict !== 'string' || !VERDICTS.has(change.verdict)) return false;
+  if (typeof value.regression !== 'string') return false;
+  if (typeof value.startedAt !== 'string' || typeof value.finishedAt !== 'string') return false;
+  if (typeof value.steps !== 'number') return false;
+  if (typeof value.stopped !== 'string' || !ENDINGS.has(value.stopped)) return false;
+  if (!Array.isArray(value.observations) || !Array.isArray(value.openQuestions)) return false;
+  if (value.proposals !== undefined && !Array.isArray(value.proposals)) return false;
+  return true;
+}
+
+/**
+ * One note off disk, as something every reader can render.
+ *
+ * A note that parses as JSON and names a session but is not whole comes back as
+ * the unreadable note for that session: the session stays in the history and
+ * says plainly that it could not be read. That is the honest outcome for an
+ * append-only record, where a session quietly disappearing is its own lie. Only
+ * a file with no session number at all is dropped, because without one there is
+ * nothing to call it.
+ */
+export function readNote(parsed: unknown): TesterNote | null {
+  if (!isRecord(parsed)) return null;
+  const session = parsed.session;
+  if (typeof session !== 'number' || !Number.isFinite(session)) return null;
+  if (isWholeNote(parsed)) return parsed as unknown as TesterNote;
+  return unreadableNote(
+    session,
+    typeof parsed.startedAt === 'string' ? parsed.startedAt : '',
+    typeof parsed.finishedAt === 'string' ? parsed.finishedAt : '',
+  );
+}
+
 /**
  * Every session this project has, oldest first, so the history reads as a
  * history. A note that will not parse is dropped rather than thrown: these files
@@ -135,10 +196,8 @@ export async function listSessions(root: string): Promise<TesterNote[]> {
   for (const entry of entries.sort()) {
     try {
       const raw = await fsp.readFile(path.join(dir, entry, 'note.json'), 'utf8');
-      const parsed: unknown = JSON.parse(raw);
-      if (parsed && typeof parsed === 'object' && typeof (parsed as TesterNote).session === 'number') {
-        notes.push(parsed as TesterNote);
-      }
+      const note = readNote(JSON.parse(raw));
+      if (note) notes.push(note);
     } catch {
       /* unreadable or absent: this session simply has no note to show */
     }

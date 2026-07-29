@@ -39,7 +39,16 @@ export function openAiStatusLabel(openai: ChatProviderStatus['openai'] | undefin
     const who = openai.email ?? 'ChatGPT';
     return openai.planType ? `Signed in as ${who} (${openai.planType}).` : `Signed in as ${who}.`;
   }
-  return openai.hasKey ? 'Installed. Using the API key saved for this project.' : 'Installed, not signed in.';
+  if (openai.hasKey) return 'Installed. Using the API key saved for this project.';
+  // NOT "Installed, not signed in." The wire cannot tell those two apart.
+  // `readCodexStatus` (server/chatDrivers/codex.ts) spawns a fresh
+  // `codex app-server` for every probe and falls back to `loggedIn: hasKey` on
+  // any failure, so a machine that is merely busy answers exactly like a
+  // machine nobody has signed into, and this pane was then offering a sign-in
+  // to someone already signed in. Until the driver reports a third state, the
+  // honest sentence claims only what Hearth managed to find out. The row's
+  // body carries the rest.
+  return 'Installed. No sign-in confirmed.';
 }
 
 /** Can this provider answer a turn right now? */

@@ -41,15 +41,44 @@ export function SettingsShell({ initialPane, onClose }: { initialPane?: string; 
   // replace the thing you were reading mid-sentence.
   const active: SettingsPane = SETTINGS_PANES.find((pane) => pane.id === activeId) ?? SETTINGS_PANES[0];
 
-  /** Up/down through whatever the rail is currently showing. */
+  /**
+   * Up/down through whatever the rail is currently showing.
+   *
+   * The search field counts as part of the rail even though it is not one of
+   * its items, and that is the whole of the fix here. This used to look the
+   * active element up among `.set-rail-item`, find the search input at -1, and
+   * return: so the one key you would reach for after typing a filter did
+   * nothing at all, and the promise in this module's own heading was not kept.
+   * ArrowDown from the box now enters the list it just filtered, ArrowUp from
+   * the first item goes back to it, and the pair reads as one loop.
+   */
   function onRailKeyDown(event: React.KeyboardEvent<HTMLElement>): void {
     if (event.key !== 'ArrowDown' && event.key !== 'ArrowUp') return;
-    const items = [...(railRef.current?.querySelectorAll<HTMLButtonElement>('.set-rail-item') ?? [])];
-    const here = items.indexOf(document.activeElement as HTMLButtonElement);
-    if (here === -1) return;
+    const rail = railRef.current;
+    const items = [...(rail?.querySelectorAll<HTMLButtonElement>('.set-rail-item') ?? [])];
+    if (items.length === 0) return; // a search that matched nothing
+    const active = document.activeElement;
+    const here = items.indexOf(active as HTMLButtonElement);
+
+    if (here === -1) {
+      // Somewhere in the rail that is not an item, which today means the
+      // search box. Anything outside the rail is left alone: this handler sits
+      // on a container, and a stray arrow key elsewhere is not ours to eat.
+      if (!rail || active === null || !rail.contains(active)) return;
+      event.preventDefault();
+      (event.key === 'ArrowDown' ? items[0] : items[items.length - 1]).focus();
+      return;
+    }
+
     event.preventDefault();
-    const next = items[here + (event.key === 'ArrowDown' ? 1 : -1)];
-    next?.focus();
+    if (event.key === 'ArrowUp' && here === 0) {
+      // Back to the field, rather than nothing. Going up off the top of the
+      // list means "I want to change the filter", which is the only thing
+      // above it.
+      rail?.querySelector<HTMLInputElement>('.set-rail-search')?.focus();
+      return;
+    }
+    items[here + (event.key === 'ArrowDown' ? 1 : -1)]?.focus();
   }
 
   return (

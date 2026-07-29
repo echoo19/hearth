@@ -21,7 +21,7 @@ vi.mock('../src/api', async (importOriginal) => ({
 }));
 
 import { apiTesterStop } from '../src/api';
-import { TesterStage, readableThought } from '../src/components/tester/TesterStage';
+import { TesterStage, readableThought, whyNoPlay } from '../src/components/tester/TesterStage';
 import { useApp } from '../src/store';
 import { resetProbeStream } from '../src/probeStream';
 import type { TesterState } from '../src/store';
@@ -153,5 +153,82 @@ describe('the tester stage', () => {
     seed({ error: 'no browser on this machine' });
     render(<TesterStage />);
     expect(screen.getByText(/no browser on this machine/)).toBeTruthy();
+  });
+});
+
+/**
+ * Play used to be a natively disabled button with nothing beside it. A control
+ * that will not respond and will not say why is a dead end, and this surface
+ * had three of them. CapabilityStrip already solved this for the game pane's
+ * own Play, with `aria-disabled` plus a tooltip, because a natively disabled
+ * button dispatches no pointer events and so can never explain itself.
+ */
+describe('Play, when it cannot be pressed', () => {
+  it('says why there is nothing to play, on the surface and not only on hover', () => {
+    useApp.setState({
+      projectPath: PROJECT,
+      projectName: 'game',
+      game: { present: false, entry: null, mtime: 0 },
+      tester: { ...IDLE },
+    });
+    render(<TesterStage />);
+    expect(screen.getByText(/no game in this project yet/i)).toBeTruthy();
+  });
+
+  it('marks itself unavailable without going deaf, so the reason can reach a pointer', () => {
+    useApp.setState({
+      projectPath: PROJECT,
+      projectName: 'game',
+      game: { present: false, entry: null, mtime: 0 },
+      tester: { ...IDLE },
+    });
+    render(<TesterStage />);
+    const play = screen.getByRole('button', { name: /^play$/i });
+    expect(play.getAttribute('aria-disabled')).toBe('true');
+    // Natively disabled would be the bug: no pointer events, so no tooltip.
+    expect((play as HTMLButtonElement).disabled).toBe(false);
+  });
+
+  it('does nothing when pressed anyway, because aria-disabled does not stop a click', async () => {
+    useApp.setState({
+      projectPath: PROJECT,
+      projectName: 'game',
+      game: { present: false, entry: null, mtime: 0 },
+      tester: { ...IDLE },
+    });
+    const playTester = vi.fn();
+    useApp.setState({ playTester });
+    render(<TesterStage />);
+    await act(async () => {
+      screen.getByRole('button', { name: /^play$/i }).click();
+    });
+    expect(playTester).not.toHaveBeenCalled();
+  });
+
+  it('presses through normally when there is a game', async () => {
+    seed({});
+    const playTester = vi.fn();
+    useApp.setState({ playTester });
+    render(<TesterStage />);
+    await act(async () => {
+      screen.getByRole('button', { name: /^play$/i }).click();
+    });
+    expect(playTester).toHaveBeenCalled();
+  });
+});
+
+describe('whyNoPlay', () => {
+  it('names the folder problem before the session one, since it outranks it', () => {
+    expect(whyNoPlay(false, false, false)).toMatch(/no game in this project/i);
+    expect(whyNoPlay(false, true, false)).toMatch(/no game in this project/i);
+  });
+
+  it('says a session is already under way rather than going quiet', () => {
+    expect(whyNoPlay(true, true, false)).toMatch(/playing right now/i);
+    expect(whyNoPlay(true, false, true)).toMatch(/waking up/i);
+  });
+
+  it('is null when there is nothing in the way', () => {
+    expect(whyNoPlay(true, false, false)).toBeNull();
   });
 });

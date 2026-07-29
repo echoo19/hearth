@@ -1,6 +1,12 @@
 /**
- * Raw output, as a tab under the game pane. Everything the app itself, the
- * agent layer, or the running game had to say, with timestamps.
+ * Raw output, as a tab under the game pane. Everything the app itself and the
+ * agent layer had to say, with timestamps.
+ *
+ * NOT the running game. `ConsoleSource` has a 'game' member and nothing has
+ * ever written one: there is no error handler on this window and no bridge out
+ * of the game's frame. The empty state used to promise the game's errors
+ * anyway, which is the worst possible thing for this panel to do, because the
+ * reader's conclusion from an empty console is that their game is fine.
  */
 import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { useApp } from '../store';
@@ -196,8 +202,22 @@ export function ConsolePanel() {
               <Icon name="script" size={16} />
             </span>
             <span>Nothing to report</span>
+            {/* This used to promise "errors from the agent layer and from the
+                running game". Half of that was not true: nothing anywhere logs
+                with the 'game' source, there is no error handler on this window
+                and no bridge out of the game's frame, so a game throwing on
+                every frame produced exactly this empty panel. A person reading
+                "nothing to report" concluded their game was fine.
+
+                The game runs on its own loopback origin now, so a real bridge
+                is possible along the channel the pane already uses for canvas
+                sizing (server/gameServer.ts injects the sender, GamePane owns
+                the receiver). Until that exists this says what it can actually
+                deliver, and points at the place that does have the game's own
+                errors. */}
             <span className="hint">
-              Errors from the agent layer and from the running game land here, with timestamps.
+              What Hearth and the agent layer had to say, with timestamps. Your game&apos;s own errors do
+              not reach here yet: open the browser devtools on the game window to see those.
             </span>
           </div>
         ) : visible.length === 0 ? (

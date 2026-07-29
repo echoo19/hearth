@@ -60,3 +60,64 @@ describe('tester memory', () => {
     expect((await listSessions(root)).map((n) => n.session)).toEqual([1]);
   });
 });
+
+/**
+ * The blocker. A note that parses as JSON and names a session but is missing
+ * the fields every reader dereferences used to be handed straight through by
+ * `typeof session === 'number'`. The history then read `onTheChange.verdict` on
+ * it, threw during render, and with no boundary above it the ENTIRE window went
+ * white and came back white on reload until the file was deleted. This folder
+ * is documented as hand-editable and meant to be committed, so a note from an
+ * older or newer Hearth is a thing people will have.
+ */
+describe('a note this Hearth cannot read', () => {
+  async function putNote(session: number, body: unknown): Promise<void> {
+    const dir = path.join(root, '.hearth', 'tester', 'sessions', String(session).padStart(4, '0'));
+    await fsp.mkdir(dir, { recursive: true });
+    await fsp.writeFile(path.join(dir, 'note.json'), JSON.stringify(body));
+  }
+
+  it('comes back as a note that says it could not be read, rather than as a landmine', async () => {
+    await putNote(1, { session: 1, somethingElse: true });
+    const [only] = await listSessions(root);
+    expect(only.onTheChange.verdict).toBe('unreadable');
+    expect(only.stopped).toBe('unreadable');
+    expect(only.observations).toEqual([]);
+    expect(only.proposals).toEqual([]);
+  });
+
+  it('stays in the history, because a session vanishing is its own kind of lie', async () => {
+    await writeNote(root, note(1));
+    await putNote(2, { session: 2 });
+    await writeNote(root, note(3));
+    expect((await listSessions(root)).map((n) => n.session)).toEqual([1, 2, 3]);
+  });
+
+  it('keeps nothing it half understood', async () => {
+    // A note that is partly readable is still a note whose other half is
+    // unknown, and showing the readable half puts a selective account of
+    // someone's game under a heading promising the whole one.
+    await putNote(1, {
+      session: 1,
+      onTheChange: { seen: 'you raised the jump', verdict: 'better' },
+      observations: [{ frame: 2, text: 'I cleared the gap' }],
+    });
+    const [only] = await listSessions(root);
+    expect(only.onTheChange.seen).not.toMatch(/raised the jump/);
+    expect(only.observations).toEqual([]);
+  });
+
+  it('drops only a file with no session number, because there is nothing to call it', async () => {
+    await putNote(1, { notASession: true });
+    expect(await listSessions(root)).toEqual([]);
+  });
+
+  it('lets an older note through untouched when it is only missing what is optional', async () => {
+    // `placement`, `proposals` and `frames` are all absent on notes written by
+    // earlier Hearths, and those notes are perfectly readable.
+    await writeNote(root, note(1));
+    const [only] = await listSessions(root);
+    expect(only.onTheChange.verdict).toBe('better');
+    expect(only.observations).toHaveLength(1);
+  });
+});

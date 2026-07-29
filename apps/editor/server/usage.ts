@@ -65,7 +65,16 @@ export interface UsageProject {
   display: string;
   /** False when the folder is not on disk any more. Its counts are then zero. */
   exists: boolean;
-  /** Conversations in `.hearth/chats/index.json`. */
+  /**
+   * Conversations in `.hearth/chats/index.json` that somebody has spoken into.
+   *
+   * NOT every row of that file: `parseChatIndex` drops the ones still flagged
+   * `pending`, which are chats the app created so a first message would have
+   * somewhere to land and which nobody ever typed in. That is the same set the
+   * sidebar lists, and it has to be: a Settings figure larger than the number
+   * of conversations on screen reads as a bug in the count rather than as a
+   * different question being answered.
+   */
   chats: number;
   /** Playtest sweeps recorded under `.hearth/evidence/sweeps`. */
   playtests: number;
@@ -188,6 +197,12 @@ async function isDirectory(target: string): Promise<boolean> {
  * The conversations in one folder: how many, when the first one started and
  * when the last one was spoken to. Straight off the index — the transcripts
  * themselves are never opened, which is what keeps this cheap.
+ *
+ * `parseChatIndex`, not the raw rows, so an untouched chat the app created and
+ * nobody typed into is not counted. That is the honest number and the one
+ * every other surface shows; what needs saying is that the Usage pane's own
+ * wording ("Every chat started in those folders") describes the raw rows and
+ * so overstates it. The label is the thing that is wrong, not this.
  */
 export async function readChatCounts(
   root: string,

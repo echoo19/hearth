@@ -112,7 +112,7 @@ async function startServer(uiRoot: string): Promise<{ port: number; close: () =>
   });
   attachWebSocket(server, ctx);
   // The running-sweep picture rides its own upgrade path; see probeStream.ts.
-  attachProbeStream(server, ctx.probeBus);
+  attachProbeStream(server, ctx.probeBus, ctx.isOpenRoot);
   return new Promise((resolve, reject) => {
     server.on('error', reject);
     // Port 0 = pick any free port; loopback only.

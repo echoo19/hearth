@@ -186,4 +186,92 @@ describe('the plan of action', () => {
     });
     expect(approveProposals).toHaveBeenCalledWith(3, ['s3-p1']);
   });
+
+  it('says what it dropped instead of reporting a parse miss as a clean game', () => {
+    // "It found nothing here worth changing" is a sentence about the game, and
+    // it used to be what a reader got when three proposals had been thrown away
+    // on the way to the screen.
+    seed([
+      note({
+        proposals: [
+          { kind: 'bug', text: 'the jump feels floaty', evidence: [] },
+          { kind: 'suggestion', text: 'consider checkpoints', evidence: [] },
+          { kind: 'bug', text: 'something is off', evidence: [] },
+        ],
+      }),
+    ]);
+    render(<TesterHistory />);
+    const report = open();
+    expect(within(report).getByText(/It proposed three things/)).toBeTruthy();
+    expect(within(report).getByText(/none of them named a picture from this session/)).toBeTruthy();
+    expect(within(report).queryByText(/found nothing here worth changing/i)).toBeNull();
+  });
+
+  it('keeps the drop a footnote when something did survive', () => {
+    seed([
+      note({
+        proposals: [
+          { kind: 'bug', text: 'the audit total goes negative', evidence: [4] },
+          { kind: 'bug', text: 'the jump feels floaty', evidence: [] },
+        ],
+      }),
+    ]);
+    render(<TesterHistory />);
+    const report = open();
+    expect(ticks(report)).toHaveLength(1);
+    expect(within(report).getByText(/It proposed one thing more/)).toBeTruthy();
+  });
+
+  it('says on the surface when approving failed, rather than only in a toast', async () => {
+    // The toast host is not mounted on every surface this can be reached from,
+    // so a failure that only raises one is a failure nobody sees.
+    seed([note()]);
+    useApp.setState({
+      approveProposals: vi.fn(async () => ({ ok: false as const, error: 'The agent layer is not connected.' })),
+    });
+    render(<TesterHistory />);
+    const report = open();
+    act(() => {
+      ticks(report)[0].click();
+    });
+    await act(async () => {
+      approveButton(report).click();
+    });
+    expect(within(report).getByRole('alert').textContent).toMatch(/not connected/);
+    // The ticks survive, so trying again is one click rather than a re-read.
+    expect(ticks(report)[0].checked).toBe(true);
+  });
+});
+
+/**
+ * The blocker, from the surface that used to die of it. A note missing the
+ * fields the row dereferences threw during render, and a throw during render
+ * with no boundary above it takes the whole window to a white screen.
+ */
+describe('a session whose note cannot be read', () => {
+  it('renders as a session that says so, and takes nothing else down with it', () => {
+    const broken = { session: 2 } as unknown as TesterNote;
+    seed([note({ session: 1 }), broken]);
+    expect(() => render(<TesterHistory />)).not.toThrow();
+    expect(screen.getAllByText(/could not read this session/i).length).toBeGreaterThan(0);
+    // The good session is still on screen, which is the whole point of the
+    // note being dropped rather than thrown.
+    expect(screen.getByText(/rewrote the intake rules/)).toBeTruthy();
+  });
+
+  it('claims no verdict it cannot support', () => {
+    seed([{ session: 2 } as unknown as TesterNote]);
+    render(<TesterHistory />);
+    expect(screen.queryByText(/your last change helped/i)).toBeNull();
+    expect(screen.queryByText(/made no real difference/i)).toBeNull();
+    expect(screen.getByText(/not in a shape this version of Hearth/i)).toBeTruthy();
+  });
+
+  it('opens its report without throwing either', () => {
+    seed([{ session: 2 } as unknown as TesterNote]);
+    render(<TesterHistory />);
+    expect(() => open()).not.toThrow();
+    const report = document.querySelector('dialog') as HTMLElement;
+    expect(within(report).getByText(/could not be read out of its note/i)).toBeTruthy();
+  });
 });

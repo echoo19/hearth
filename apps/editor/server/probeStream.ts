@@ -48,8 +48,23 @@ export interface ProbeBusMessage {
  * Mount the viewer endpoint and pump `bus` into it. Nothing is retained: a
  * frame is only worth sending to someone already watching, and a viewer that
  * joins mid-sweep is a tenth of a second from the next one.
+ *
+ * `isOpenRoot` is the same open-folder jail every other route resolves
+ * against (see projectServer.ts). It is optional only so a caller that has no
+ * context to hand can still mount the endpoint; every caller in the app passes
+ * it, and a new one should too. Without it this endpoint took any `?project=`
+ * it was given and filed the socket under it. Nothing leaked, because a sweep
+ * can only be started for a folder that IS open and frames are keyed by the
+ * root they came from, so an invented root is a room nobody ever speaks in.
+ * But it was the last place that resolved a caller-supplied root without
+ * asking, and "harmless because of what happens somewhere else" is how the
+ * /api/ws upgrade was reasoned about right up until it handed out a shell.
  */
-export function attachProbeStream(httpServer: HttpServer, bus: EventEmitter): void {
+export function attachProbeStream(
+  httpServer: HttpServer,
+  bus: EventEmitter,
+  isOpenRoot?: (root: string) => boolean,
+): void {
   const wss = new WebSocketServer({ noServer: true });
   const viewers = new Map<string, Set<WebSocket>>(); // key: resolved project root
 
@@ -82,6 +97,10 @@ export function attachProbeStream(httpServer: HttpServer, bus: EventEmitter): vo
         return;
       }
       const root = path.resolve(project);
+      if (isOpenRoot && !isOpenRoot(root)) {
+        ws.close(1008, 'Folder is not open');
+        return;
+      }
       let sockets = viewers.get(root);
       if (!sockets) {
         sockets = new Set();
