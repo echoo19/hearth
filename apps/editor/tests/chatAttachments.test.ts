@@ -15,14 +15,17 @@ import { describe, expect, it, beforeEach, afterEach } from 'vitest';
 import { promises as fsp } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { Readable } from 'node:stream';
 import {
   ATTACHMENTS_DIR,
+  ChatAttachmentStager,
   MAX_ATTACHMENTS,
   MAX_ATTACHMENT_BYTES,
   MAX_MESSAGE_BYTES,
   base64Bytes,
   isInlineImage,
   parseAttachmentInputs,
+  parseStagedAttachmentInputs,
   parseStoredAttachments,
   safeAttachmentName,
   saveAttachments,
@@ -33,8 +36,7 @@ import { sdkUserContent } from '../server/chat';
 import { codexInputItems } from '../server/chatDrivers/codexWire';
 
 /** A one-pixel PNG, so the "is this really an image" path has real bytes. */
-const PNG_BASE64 =
-  'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==';
+const PNG_BASE64 = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==';
 
 describe('attachment names', () => {
   it('reduces anything a client sends to one harmless segment', () => {
@@ -119,9 +121,12 @@ describe('saving', () => {
   });
 
   it('writes the bytes and reports a posix path the project can read back', async () => {
-    const saved = await saveAttachments(root, 'chat-1', [
-      { name: 'shot.png', mimeType: 'image/png', data: PNG_BASE64 },
-    ], 1234);
+    const saved = await saveAttachments(
+      root,
+      'chat-1',
+      [{ name: 'shot.png', mimeType: 'image/png', data: PNG_BASE64 }],
+      1234,
+    );
     expect(saved).toHaveLength(1);
     expect(saved[0].relPath).toBe('.hearth/chats/attachments/chat-1/ya-0-shot.png');
     expect(saved[0].relPath.includes('\\')).toBe(false);
@@ -141,7 +146,11 @@ describe('saving', () => {
 
   it('cannot be talked into writing outside the chat folder', async () => {
     const saved = await saveAttachments(root, 'chat-1', [
-      { name: safeAttachmentName('../../escape.png'), mimeType: 'image/png', data: PNG_BASE64 },
+      {
+        name: safeAttachmentName('../../escape.png'),
+        mimeType: 'image/png',
+        data: PNG_BASE64,
+      },
     ]);
     const dir = path.join(root, ATTACHMENTS_DIR, 'chat-1');
     expect(saved[0].path.startsWith(dir + path.sep)).toBe(true);
@@ -152,13 +161,93 @@ describe('saving', () => {
   });
 });
 
+describe('streamed staging', () => {
+  let root: string;
+  let otherRoot: string;
+  let stager: ChatAttachmentStager;
+
+  beforeEach(async () => {
+    root = await fsp.mkdtemp(path.join(os.tmpdir(), 'hearth-stage-a-'));
+    otherRoot = await fsp.mkdtemp(path.join(os.tmpdir(), 'hearth-stage-b-'));
+    stager = new ChatAttachmentStager();
+  });
+
+  afterEach(async () => {
+    await fsp.rm(root, { recursive: true, force: true });
+    await fsp.rm(otherRoot, { recursive: true, force: true });
+  });
+
+  it('streams bytes once, then atomically consumes the opaque token into a chat', async () => {
+    const original = Buffer.from('the original bytes, unchanged');
+    const upload = await stager.stage(root, Readable.from(original), {
+      name: '../../capture.png',
+      mimeType: 'image/png',
+      contentLength: original.length,
+    });
+    expect(upload.uploadToken).toMatch(/^[A-Za-z0-9_-]{32}$/);
+    expect(upload).not.toHaveProperty('path');
+
+    const saved = await stager.consume(root, 'chat-1', [{ uploadToken: upload.uploadToken }], 1234);
+    expect(saved).toHaveLength(1);
+    expect(saved[0].name).toBe('capture.png');
+    expect(await fsp.readFile(saved[0].path)).toEqual(original);
+    expect(await stager.consume(root, 'chat-2', [{ uploadToken: upload.uploadToken }])).toEqual([]);
+  });
+
+  it('will not consume a token from another open project', async () => {
+    const upload = await stager.stage(root, Readable.from('secret'), {
+      name: 'notes.txt',
+      mimeType: 'text/plain',
+    });
+    expect(await stager.consume(otherRoot, 'chat-1', [{ uploadToken: upload.uploadToken }])).toEqual([]);
+    expect(await stager.consume(root, 'chat-1', [{ uploadToken: upload.uploadToken }])).toHaveLength(1);
+  });
+
+  it('rejects an oversized stream and leaves no staged file behind', async () => {
+    const chunks = [Buffer.alloc(MAX_ATTACHMENT_BYTES), Buffer.from('x')];
+    await expect(
+      stager.stage(root, Readable.from(chunks), {
+        name: 'huge.bin',
+        mimeType: 'application/octet-stream',
+      }),
+    ).rejects.toThrow('too large');
+    const uploadDir = path.join(root, '.hearth', 'chats', '.uploads');
+    expect(await fsp.readdir(uploadDir)).toEqual([]);
+  });
+
+  it('discards pending uploads when their project closes', async () => {
+    const upload = await stager.stage(root, Readable.from('temporary'), {
+      name: 'x.txt',
+      mimeType: 'text/plain',
+    });
+    await stager.discardProject(root);
+    expect(await stager.consume(root, 'chat-1', [{ uploadToken: upload.uploadToken }])).toEqual([]);
+  });
+
+  it('parses only opaque tokens and keeps legacy base64 out of the token path', () => {
+    expect(
+      parseStagedAttachmentInputs([
+        { uploadToken: 'a'.repeat(32) },
+        { uploadToken: '../outside' },
+        { data: PNG_BASE64 },
+      ]),
+    ).toEqual([{ uploadToken: 'a'.repeat(32) }]);
+  });
+});
+
 describe('the transcript', () => {
   it('carries attachments through a write and a read', () => {
     const line = JSON.stringify({
       role: 'user',
       ts: '2026-07-26T00:00:00.000Z',
       text: 'what is wrong with this',
-      attachments: [{ name: 'shot.png', mimeType: 'image/png', relPath: '.hearth/chats/attachments/c/shot.png' }],
+      attachments: [
+        {
+          name: 'shot.png',
+          mimeType: 'image/png',
+          relPath: '.hearth/chats/attachments/c/shot.png',
+        },
+      ],
     });
     const [record] = parseTranscript(line);
     expect(record.role).toBe('user');
@@ -176,21 +265,42 @@ describe('the transcript', () => {
 
   it('names a conversation after the file when there were no words', () => {
     expect(
-      userRecordTitle({ text: '   ', attachments: [{ name: 'level-3.png', mimeType: 'image/png', relPath: 'x' }] }),
+      userRecordTitle({
+        text: '   ',
+        attachments: [{ name: 'level-3.png', mimeType: 'image/png', relPath: 'x' }],
+      }),
     ).toBe('level-3.png');
     expect(userRecordTitle({ text: 'make it snow' })).toBe('make it snow');
   });
 
   it('stores only what showing it again needs', () => {
     expect(
-      storedAttachment({ name: 'a.png', mimeType: 'image/png', path: '/abs/a.png', relPath: 'r/a.png', bytes: 12 }),
+      storedAttachment({
+        name: 'a.png',
+        mimeType: 'image/png',
+        path: '/abs/a.png',
+        relPath: 'r/a.png',
+        bytes: 12,
+      }),
     ).toEqual({ name: 'a.png', mimeType: 'image/png', relPath: 'r/a.png' });
   });
 });
 
 describe('what codex is handed', () => {
-  const image = { name: 'shot.png', mimeType: 'image/png', path: '/p/shot.png', relPath: 'r', bytes: 1 };
-  const zip = { name: 'level.zip', mimeType: 'application/zip', path: '/p/level.zip', relPath: 'r', bytes: 1 };
+  const image = {
+    name: 'shot.png',
+    mimeType: 'image/png',
+    path: '/p/shot.png',
+    relPath: 'r',
+    bytes: 1,
+  };
+  const zip = {
+    name: 'level.zip',
+    mimeType: 'application/zip',
+    path: '/p/level.zip',
+    relPath: 'r',
+    bytes: 1,
+  };
 
   it('sends an image as a local path, not as bytes', () => {
     expect(codexInputItems('what is this', [image])).toEqual([
@@ -217,13 +327,32 @@ describe('what codex is handed', () => {
 });
 
 describe('what the Agent SDK is handed', () => {
-  const image = { name: 'shot.png', mimeType: 'image/png', path: '/p/shot.png', relPath: 'r', bytes: 1 };
-  const zip = { name: 'level.zip', mimeType: 'application/zip', path: '/p/level.zip', relPath: 'r', bytes: 1 };
+  const image = {
+    name: 'shot.png',
+    mimeType: 'image/png',
+    path: '/p/shot.png',
+    relPath: 'r',
+    bytes: 1,
+  };
+  const zip = {
+    name: 'level.zip',
+    mimeType: 'application/zip',
+    path: '/p/level.zip',
+    relPath: 'r',
+    bytes: 1,
+  };
   const read = async (): Promise<Buffer> => Buffer.from('pixels');
 
   it('inlines an image as a base64 block, so the model can see it', async () => {
     expect(await sdkUserContent('what is this', [image], read)).toEqual([
-      { type: 'image', source: { type: 'base64', media_type: 'image/png', data: Buffer.from('pixels').toString('base64') } },
+      {
+        type: 'image',
+        source: {
+          type: 'base64',
+          media_type: 'image/png',
+          data: Buffer.from('pixels').toString('base64'),
+        },
+      },
       { type: 'text', text: 'what is this' },
     ]);
   });

@@ -107,6 +107,8 @@ export function Composer({ variant = 'chat' }: { variant?: ComposerVariant } = {
   const chatBusy = useApp((s) => s.chatBusy);
   const connected = useApp((s) => s.wsStatus === 'connected');
   const consumePendingPrompt = useApp((s) => s.consumePendingPrompt);
+  const slashCommands = useApp((s) => s.slashCommands);
+  const refreshChatCommands = useApp((s) => s.refreshChatCommands);
   // What has been typed, held OUTSIDE this component.
   //
   // A composer does not outlive its surface: opening Skills or the Tester
@@ -141,6 +143,7 @@ export function Composer({ variant = 'chat' }: { variant?: ComposerVariant } = {
   // still a question: on a project's own screen it is already answered.
   const isHome = variant === 'home' || variant === 'project';
   const picksProject = variant === 'home';
+  const composeTarget = useApp((s) => s.composeTarget);
 
   // Six files dropped at once are six decisions, and they all have to be made
   // against the same running count. Reading it through a functional setState
@@ -218,6 +221,19 @@ export function Composer({ variant = 'chat' }: { variant?: ComposerVariant } = {
   const canSend = (isHome || connected) && !empty && (isHome ? !busy : true);
   /** A turn is running, so the next Enter queues rather than sends. */
   const queueing = busy && !isHome;
+  const slashQuery = !isHome && text.startsWith('/') && !text.includes('\n')
+    ? text.slice(1).split(/\s/, 1)[0].toLowerCase()
+    : null;
+  const commandMatches =
+    slashQuery === null
+      ? []
+      : slashCommands
+          .filter(
+            (command) =>
+              command.name.toLowerCase().includes(slashQuery) ||
+              command.aliases?.some((alias) => alias.toLowerCase().includes(slashQuery)),
+          )
+          .slice(0, 10);
 
   /** The box is empty again, and the pictures it was holding are finished with. */
   const clear = useCallback(
@@ -299,6 +315,9 @@ export function Composer({ variant = 'chat' }: { variant?: ComposerVariant } = {
           value={text}
           placeholder={PLACEHOLDER[variant]}
           aria-label="Message the agent"
+          onFocus={() => {
+            if (!isHome) refreshChatCommands();
+          }}
           onChange={(e) => setText(e.target.value)}
           onPaste={(e) => {
             const files = filesFromTransfer(e.clipboardData);
@@ -321,6 +340,27 @@ export function Composer({ variant = 'chat' }: { variant?: ComposerVariant } = {
             }
           }}
         />
+        {commandMatches.length > 0 && (
+          <div className="composer-command-menu" role="listbox" aria-label="Agent commands">
+            {commandMatches.map((command) => (
+              <button
+                key={`${command.source}:${command.name}`}
+                type="button"
+                className="composer-command"
+                role="option"
+                onMouseDown={(event) => event.preventDefault()}
+                onClick={() => {
+                  setText(`/${command.name}${command.argumentHint ? ' ' : ''}`);
+                  ref.current?.focus();
+                }}
+              >
+                <span className="composer-command-name">/{command.name}</span>
+                <span className="composer-command-description">{command.description}</span>
+                {command.source === 'skill' && <span className="composer-command-source">Skill</span>}
+              </button>
+            ))}
+          </div>
+        )}
         <div className="composer-row">
           <MenuButton
             label="Add context"
@@ -359,7 +399,7 @@ export function Composer({ variant = 'chat' }: { variant?: ComposerVariant } = {
               order, left to right: the model pill keeps the place beside Send
               it has always had, and the new one arrives beside it rather than
               under the reader's pointer. */}
-          <PermissionSelector />
+          <PermissionSelector project={picksProject ? composeTarget : undefined} />
           <ModelSelector />
           {/* Renders nothing at all unless the active model declared efforts,
               which is why it can sit here unconditionally. See EffortSelector:

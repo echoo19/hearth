@@ -14,8 +14,14 @@
 import { describe, expect, it } from 'vitest';
 import {
   CODEX_TESTED_VERSION,
+  classifyCodexServerRequest,
+  codexApprovalChoiceReply,
+  codexApprovalChoiceResolution,
   codexApprovalReply,
   codexChangeKind,
+  codexCurrentTimeReply,
+  codexElicitationReply,
+  codexUserInputReply,
   codexTurnOverrides,
   codexFileChanges,
   codexItemKind,
@@ -26,6 +32,8 @@ import {
   isApprovalRequest,
   mapCodexAccount,
   mapCodexApproval,
+  mapCodexApprovalRequest,
+  mapCodexQuestionRequest,
   mapCodexLoginStart,
   mapCodexModels,
   mapCodexNotification,
@@ -250,6 +258,293 @@ describe('approvals', () => {
 
   it('returns null for a method that is not an approval', () => {
     expect(mapCodexApproval('turn/completed', {})).toBeNull();
+  });
+
+  it('offers exactly the decisions the server supplied without exposing amendments as browser-authored values', () => {
+    const execpolicy = ['npm', 'test'];
+    const network = { host: 'registry.npmjs.org', action: 'allow' };
+    const mapped = mapCodexApprovalRequest('item/commandExecution/requestApproval', {
+      command: 'npm test',
+      availableDecisions: [
+        'accept',
+        'acceptForSession',
+        { acceptWithExecpolicyAmendment: { execpolicy_amendment: execpolicy } },
+        { applyNetworkPolicyAmendment: { network_policy_amendment: network } },
+        'decline',
+        'cancel',
+      ],
+    });
+    const approval = mapped?.approval;
+    const decisions = approval?.decisions ?? [];
+
+    expect(decisions).toEqual([
+      { id: 'decision-0', label: 'Allow once', tone: 'allow' },
+      { id: 'decision-1', label: 'Allow for session', tone: 'allow' },
+      { id: 'decision-2', label: 'Allow and remember this command', tone: 'allow' },
+      { id: 'decision-3', label: 'Allow and remember this network access', tone: 'allow' },
+      { id: 'decision-4', label: 'Deny', tone: 'deny' },
+      { id: 'decision-5', label: 'Cancel', tone: 'neutral' },
+    ]);
+    expect(codexApprovalChoiceReply(mapped!.decisionsById, 'decision-2')).toEqual({
+      decision: { acceptWithExecpolicyAmendment: { execpolicy_amendment: execpolicy } },
+    });
+    expect(codexApprovalChoiceReply(mapped!.decisionsById, 'decision-3')).toEqual({
+      decision: { applyNetworkPolicyAmendment: { network_policy_amendment: network } },
+    });
+    expect(codexApprovalChoiceResolution(mapped!.decisionsById, 'decision-4')).toBe('deny');
+    expect(codexApprovalChoiceResolution(mapped!.decisionsById, 'decision-5')).toBe('deny');
+    expect(JSON.parse(JSON.stringify(approval))).not.toHaveProperty('wireDecision');
+    expect(JSON.stringify(approval)).not.toContain('execpolicy_amendment');
+    expect(JSON.stringify(approval)).not.toContain('network_policy_amendment');
+  });
+
+  it('drops malformed server decisions instead of creating a choice Hearth cannot safely answer', () => {
+    const approval = mapCodexApproval('item/commandExecution/requestApproval', {
+      availableDecisions: [
+        'accept',
+        'approveForever',
+        { acceptWithExecpolicyAmendment: {} },
+        { acceptWithExecpolicyAmendment: { execpolicy_amendment: { command: ['wrong'] } } },
+        null,
+      ],
+    });
+    expect((approval?.decisions ?? []).map((entry) => entry.label)).toEqual(['Allow once']);
+  });
+});
+
+describe('interactive server requests', () => {
+  it('maps requestUserInput into provider-neutral fields and keeps secret status explicit', () => {
+    expect(
+      mapCodexQuestionRequest('item/tool/requestUserInput', 'input-1', {
+        threadId: 't',
+        turnId: 'u',
+        itemId: 'i',
+        autoResolutionMs: 60_000,
+        questions: [
+          {
+            id: 'style',
+            header: 'Art',
+            question: 'Pixel art or vector?',
+            isOther: true,
+            isSecret: false,
+            options: [
+              { label: 'Pixel', description: 'Crisp sprites' },
+              { label: 'Vector', description: 'Resolution independent' },
+            ],
+          },
+          {
+            id: 'token',
+            header: 'Token',
+            question: 'Paste the token',
+            isOther: false,
+            isSecret: true,
+            options: null,
+          },
+        ],
+      }),
+    ).toEqual({
+      inputId: 'input-1',
+      title: 'Art',
+      timeoutMs: 60_000,
+      questions: [
+        {
+          id: 'style',
+          label: 'Pixel art or vector?',
+          type: 'choice',
+          required: true,
+          secret: false,
+          allowOther: true,
+          options: [
+            { value: 'Pixel', label: 'Pixel', description: 'Crisp sprites' },
+            { value: 'Vector', label: 'Vector', description: 'Resolution independent' },
+          ],
+        },
+        {
+          id: 'token',
+          label: 'Paste the token',
+          type: 'text',
+          required: true,
+          secret: true,
+          allowOther: false,
+        },
+      ],
+      allowCancel: true,
+    });
+    expect(
+      mapCodexQuestionRequest('mcpServer/elicitation/request', 'input-unsafe', {
+        serverName: 'malicious',
+        mode: 'url',
+        message: 'Open this',
+        url: 'file:///etc/passwd',
+        elicitationId: 'e2',
+      }),
+    ).toBeNull();
+  });
+
+  it('builds the exact requestUserInput response shape from question ids', () => {
+    expect(codexUserInputReply({ style: ['Pixel'], notes: ['Use warm colours', 'Large tiles'] })).toEqual({
+      answers: {
+        style: { answers: ['Pixel'] },
+        notes: { answers: ['Use warm colours', 'Large tiles'] },
+      },
+    });
+  });
+
+  it('maps MCP form schemas into the same field vocabulary', () => {
+    expect(
+      mapCodexQuestionRequest('mcpServer/elicitation/request', 'input-2', {
+        threadId: 't',
+        turnId: 'u',
+        serverName: 'deploy',
+        mode: 'form',
+        message: 'Configure deployment',
+        _meta: null,
+        requestedSchema: {
+          type: 'object',
+          required: ['region'],
+          properties: {
+            region: {
+              type: 'string',
+              title: 'Region',
+              description: 'Where to deploy',
+              enum: ['us-west', 'eu-west'],
+              enumNames: ['US West', 'EU West'],
+            },
+            replicas: { type: 'integer', title: 'Replicas', minimum: 1, maximum: 5, default: 2 },
+            public: { type: 'boolean', title: 'Public', default: false },
+          },
+        },
+      }),
+    ).toEqual({
+      inputId: 'input-2',
+      title: 'deploy',
+      description: 'Configure deployment',
+      questions: [
+        {
+          id: 'region',
+          label: 'Region',
+          type: 'choice',
+          required: true,
+          secret: false,
+          options: [
+            { value: 'us-west', label: 'US West', description: 'Where to deploy' },
+            { value: 'eu-west', label: 'EU West', description: 'Where to deploy' },
+          ],
+        },
+        {
+          id: 'replicas',
+          label: 'Replicas',
+          type: 'number',
+          required: false,
+          secret: false,
+          min: 1,
+          max: 5,
+        },
+        {
+          id: 'public',
+          label: 'Public',
+          type: 'boolean',
+          required: false,
+          secret: false,
+        },
+      ],
+      allowCancel: true,
+    });
+  });
+
+  it('maps OpenAI extended forms and URL elicitations without making the server URL an editable answer', () => {
+    expect(
+      mapCodexQuestionRequest('mcpServer/elicitation/request', 'input-3', {
+        serverName: 'design',
+        mode: 'openai/form',
+        message: 'Choose a colour',
+        requestedSchema: {
+          type: 'object',
+          properties: { site: { type: 'string', format: 'uri', title: 'Website' } },
+        },
+        _meta: null,
+      }),
+    ).toEqual({
+      inputId: 'input-3',
+      title: 'design',
+      description: 'Choose a colour',
+      questions: [{ id: 'site', label: 'Website', type: 'url', required: false, secret: false }],
+      allowCancel: true,
+    });
+    expect(
+      mapCodexQuestionRequest('mcpServer/elicitation/request', 'input-4', {
+        serverName: 'github',
+        mode: 'url',
+        message: 'Authorize GitHub',
+        url: 'https://example.test/auth',
+        elicitationId: 'e1',
+        _meta: null,
+      }),
+    ).toEqual({
+      inputId: 'input-4',
+      title: 'github',
+      description: 'Authorize GitHub',
+      questions: [],
+      externalAction: {
+        type: 'open-url',
+        url: 'https://example.test/auth',
+        elicitationId: 'e1',
+      },
+      allowCancel: true,
+    });
+  });
+
+  it('rejects an entire MCP form when any property cannot be represented safely', () => {
+    expect(
+      mapCodexQuestionRequest('mcpServer/elicitation/request', 'input-5', {
+        serverName: 'design',
+        mode: 'openai/form',
+        message: 'Configure',
+        requestedSchema: {
+          type: 'object',
+          properties: {
+            supported: { type: 'string' },
+            unsupported: { type: 'color' },
+          },
+        },
+      }),
+    ).toBeNull();
+    expect(
+      mapCodexQuestionRequest('mcpServer/elicitation/request', 'input-6', {
+        serverName: 'design',
+        mode: 'form',
+        message: 'Configure',
+        requestedSchema: { type: 'object', properties: {} },
+      }),
+    ).toBeNull();
+  });
+
+  it('builds exact MCP accept, decline, and cancel response shapes', () => {
+    expect(codexElicitationReply('accept', { region: 'us-west' })).toEqual({
+      action: 'accept',
+      content: { region: 'us-west' },
+      _meta: null,
+    });
+    expect(codexElicitationReply('decline')).toEqual({ action: 'decline', content: null, _meta: null });
+    expect(codexElicitationReply('cancel')).toEqual({ action: 'cancel', content: null, _meta: null });
+  });
+
+  it('classifies every server request before the driver decides how to answer it', () => {
+    expect(classifyCodexServerRequest('item/commandExecution/requestApproval')).toBe('approval');
+    expect(classifyCodexServerRequest('item/tool/requestUserInput')).toBe('question');
+    expect(classifyCodexServerRequest('mcpServer/elicitation/request')).toBe('question');
+    expect(classifyCodexServerRequest('currentTime/read')).toBe('current-time');
+    expect(classifyCodexServerRequest('attestation/generate')).toBe('unsupported');
+  });
+
+  it('answers currentTime/read in whole Unix seconds', () => {
+    expect(codexCurrentTimeReply(1_753_987_654_321)).toEqual({ currentTimeAt: 1_753_987_654 });
+  });
+
+  it('returns null for malformed or unrelated interactive requests', () => {
+    expect(mapCodexQuestionRequest('turn/completed', 'i', {})).toBeNull();
+    expect(mapCodexQuestionRequest('item/tool/requestUserInput', 'i', { questions: [] })).toBeNull();
+    expect(mapCodexQuestionRequest('mcpServer/elicitation/request', 'i', { mode: 'form' })).toBeNull();
   });
 });
 

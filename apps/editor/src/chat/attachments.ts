@@ -45,8 +45,14 @@ export interface PendingAttachment {
   name: string;
   mimeType: string;
   bytes: number;
-  /** base64 payload, sent on the wire. */
+  /** Base64 preview derivative, retained for old clients and local bubbles. */
   data: string;
+  /**
+   * Original bytes for the streamed upload. `data` may be a smaller preview
+   * derivative; keeping this separately means Hearth never replaces the file
+   * the user chose with a recompressed copy.
+   */
+  original?: Blob;
   /** Object URL for the thumbnail, or null for a file with no picture. */
   previewUrl: string | null;
 }
@@ -59,7 +65,11 @@ export interface AttachmentPayload {
 }
 
 export function attachmentPayload(attachment: PendingAttachment): AttachmentPayload {
-  return { name: attachment.name, mimeType: attachment.mimeType, data: attachment.data };
+  return {
+    name: attachment.name,
+    mimeType: attachment.mimeType,
+    data: attachment.data,
+  };
 }
 
 /**
@@ -96,7 +106,10 @@ export function targetDimensions(
   const longest = Math.max(width, height);
   if (longest <= maxEdge || longest === 0) return null;
   const scale = maxEdge / longest;
-  return { width: Math.max(1, Math.round(width * scale)), height: Math.max(1, Math.round(height * scale)) };
+  return {
+    width: Math.max(1, Math.round(width * scale)),
+    height: Math.max(1, Math.round(height * scale)),
+  };
 }
 
 /** A short human size, for the tray's file chips. */
@@ -172,8 +185,9 @@ export async function readAttachment(file: File): Promise<PendingAttachment> {
     id: `f${++attachmentId}`,
     name: file.name !== '' ? file.name : 'pasted-image',
     mimeType,
-    bytes: blob.size,
+    bytes: file.size,
     data,
+    original: file,
     previewUrl: image && typeof URL !== 'undefined' && URL.createObjectURL ? URL.createObjectURL(blob) : null,
   };
 }

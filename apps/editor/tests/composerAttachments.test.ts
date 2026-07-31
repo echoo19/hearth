@@ -6,7 +6,7 @@
  * canvas or a real file — the browser plumbing around them (a picker, a paste,
  * a drop) is exercised in composer.test.tsx.
  */
-import { describe, expect, it, beforeEach, vi } from 'vitest';
+import { describe, expect, it, beforeEach, afterEach, vi } from 'vitest';
 import {
   MAX_ATTACHMENTS,
   MAX_ATTACHMENT_BYTES,
@@ -43,7 +43,10 @@ describe('downscaling', () => {
 
   it('scales the long edge and keeps the proportions', () => {
     const target = targetDimensions(3200, 1600);
-    expect(target).toEqual({ width: MAX_IMAGE_EDGE, height: MAX_IMAGE_EDGE / 2 });
+    expect(target).toEqual({
+      width: MAX_IMAGE_EDGE,
+      height: MAX_IMAGE_EDGE / 2,
+    });
   });
 
   it('never rounds a thin image away to nothing', () => {
@@ -73,7 +76,11 @@ describe('small helpers', () => {
       data: 'AAA',
       previewUrl: 'blob:x',
     };
-    expect(attachmentPayload(pending)).toEqual({ name: 'a.png', mimeType: 'image/png', data: 'AAA' });
+    expect(attachmentPayload(pending)).toEqual({
+      name: 'a.png',
+      mimeType: 'image/png',
+      data: 'AAA',
+    });
   });
 
   it('agrees with the server about which types go inline', () => {
@@ -85,12 +92,14 @@ describe('small helpers', () => {
 describe('a paste or a drop', () => {
   const fileItem = (file: File): DataTransferItem =>
     ({ kind: 'file', getAsFile: () => file }) as unknown as DataTransferItem;
-  const stringItem = (): DataTransferItem =>
-    ({ kind: 'string', getAsFile: () => null }) as unknown as DataTransferItem;
+  const stringItem = (): DataTransferItem => ({ kind: 'string', getAsFile: () => null }) as unknown as DataTransferItem;
 
   it('takes the files and ignores copied text riding along with them', () => {
     const file = new File(['x'], 'shot.png', { type: 'image/png' });
-    const data = { items: [stringItem(), fileItem(file)], files: [] } as unknown as DataTransfer;
+    const data = {
+      items: [stringItem(), fileItem(file)],
+      files: [],
+    } as unknown as DataTransfer;
     expect(filesFromTransfer(data).map((f) => f.name)).toEqual(['shot.png']);
   });
 
@@ -101,7 +110,12 @@ describe('a paste or a drop', () => {
   });
 
   it('treats a plain text paste as nothing to attach', () => {
-    expect(filesFromTransfer({ items: [stringItem()], files: [] } as unknown as DataTransfer)).toEqual([]);
+    expect(
+      filesFromTransfer({
+        items: [stringItem()],
+        files: [],
+      } as unknown as DataTransfer),
+    ).toEqual([]);
     expect(filesFromTransfer(null)).toEqual([]);
   });
 });
@@ -115,7 +129,13 @@ describe('the message that results', () => {
 
   it('reads a replayed attachment back out of the project', () => {
     const [view] = replayAttachments(
-      [{ name: 'a.png', mimeType: 'image/png', relPath: '.hearth/chats/attachments/c/a.png' }],
+      [
+        {
+          name: 'a.png',
+          mimeType: 'image/png',
+          relPath: '.hearth/chats/attachments/c/a.png',
+        },
+      ],
       '/Users/me/Hearth/game',
     );
     expect(view.url).toContain('/api/file?project=');
@@ -138,22 +158,47 @@ describe('sending', () => {
   };
 
   beforeEach(() => {
-    useApp.setState({ messages: [], chatBusy: false, chatError: null });
+    useApp.setState({
+      messages: [],
+      chatBusy: false,
+      chatError: null,
+      projectPath: '/project',
+    });
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => ({
+        ok: true,
+        json: async () => ({
+          ok: true,
+          uploadToken: 't'.repeat(32),
+          name: 'shot.png',
+          mimeType: 'image/png',
+          bytes: 3,
+        }),
+      })),
+    );
   });
 
-  it('puts the files on the frame beside the words', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    useApp.setState({ projectPath: null });
+  });
+
+  it('streams the file first and puts only its opaque token beside the words', async () => {
     const sendFrame = vi.fn((_frame: unknown) => true);
     useApp.setState({ sendFrame });
     useApp.getState().sendChat('look at this', [attachment]);
+    await vi.waitFor(() => expect(sendFrame).toHaveBeenCalledTimes(1));
     const frame = sendFrame.mock.calls[0][0] as { attachments?: unknown[] };
-    expect(frame.attachments).toEqual([{ name: 'shot.png', mimeType: 'image/png', data: 'AAA' }]);
+    expect(frame.attachments).toEqual([{ uploadToken: 't'.repeat(32) }]);
+    expect(JSON.stringify(frame)).not.toContain('AAA');
   });
 
-  it('sends a picture with no words at all', () => {
+  it('sends a picture with no words at all', async () => {
     const sendFrame = vi.fn((_frame: unknown) => true);
     useApp.setState({ sendFrame });
     useApp.getState().sendChat('', [attachment]);
-    expect(sendFrame).toHaveBeenCalledTimes(1);
+    await vi.waitFor(() => expect(sendFrame).toHaveBeenCalledTimes(1));
     expect(useApp.getState().messages[0].attachments).toHaveLength(1);
   });
 

@@ -33,13 +33,16 @@
  * the mode, so the warning is a conversation you have once rather than a toll
  * on every turn (see store.setPermissionMode).
  *
- * The whole control is absent with no folder open. The setting belongs to a
- * project, so with no project there is nothing for it to be about, and a pill
- * that stores nothing is worse than no pill.
+ * The whole control is absent with no project targeted. On New chat that
+ * target may differ from the folder currently open underneath, so the same
+ * control reads and writes the target directly instead of configuring the
+ * conversation being left.
  */
-import React, { useState } from 'react';
-import { useApp } from '../../store';
-import type { PermissionMode } from '../../types';
+import React, { useEffect, useRef, useState } from 'react';
+import { DEFAULT_PERMISSION_MODE, useApp } from '../../store';
+import { apiPermissionMode, apiSetPermissionMode } from '../../api';
+import type { PermissionMode, PermissionModeInfo } from '../../types';
+import { showToast } from '../../toast';
 import { ConfirmDialog, Icon } from '../ui';
 import { MenuButton, type MenuItem } from '../ui/Menu';
 
@@ -127,16 +130,63 @@ export function needsSkipConfirm(mode: PermissionMode, acknowledged: boolean): b
   return mode === 'skip' && !acknowledged;
 }
 
-export function PermissionSelector() {
-  const project = useApp((s) => s.projectPath);
-  const mode = useApp((s) => s.permissionMode);
-  const acknowledged = useApp((s) => s.permissionSkipAcknowledged);
+export function PermissionSelector({ project: target }: { project?: string | null } = {}) {
+  const openProject = useApp((s) => s.projectPath);
+  const project = target === undefined ? openProject : target;
+  const openMode = useApp((s) => s.permissionMode);
+  const openAcknowledged = useApp((s) => s.permissionSkipAcknowledged);
   const setPermissionMode = useApp((s) => s.setPermissionMode);
+  const [targetInfo, setTargetInfo] = useState<(PermissionModeInfo & { project: string }) | null>(null);
+  const targetRequest = useRef(0);
   const [confirming, setConfirming] = useState(false);
+
+  const isOpenProject = project !== null && project === openProject;
+  const mode =
+    isOpenProject
+      ? openMode
+      : targetInfo?.project === project
+        ? targetInfo.mode
+        : DEFAULT_PERMISSION_MODE;
+  const acknowledged =
+    isOpenProject
+      ? openAcknowledged
+      : targetInfo?.project === project
+        ? targetInfo.skipAcknowledged
+        : false;
+
+  useEffect(() => {
+    if (!project || isOpenProject) return;
+    const request = ++targetRequest.current;
+    let current = true;
+    void apiPermissionMode(project).then((info) => {
+      if (current && request === targetRequest.current && info) setTargetInfo({ project, ...info });
+    });
+    return () => {
+      current = false;
+    };
+  }, [isOpenProject, project]);
 
   if (!project) return null;
 
   const current = permissionChoice(mode);
+
+  const saveMode = async (next: PermissionMode, acknowledgeSkip = false): Promise<void> => {
+    if (isOpenProject) {
+      await setPermissionMode(next, acknowledgeSkip);
+      return;
+    }
+    const request = ++targetRequest.current;
+    const info = await apiSetPermissionMode(project, {
+      mode: next,
+      ...(acknowledgeSkip ? { skipAcknowledged: true } : {}),
+    });
+    if (request !== targetRequest.current) return;
+    if (!info) {
+      showToast('Could not save the permission setting.', 'error');
+      return;
+    }
+    setTargetInfo({ project, ...info });
+  };
 
   const items: MenuItem[] = [
     ...PERMISSION_CHOICES.map<MenuItem>((choice) => ({
@@ -147,7 +197,7 @@ export function PermissionSelector() {
       checked: choice.mode === mode,
       onSelect: () => {
         if (needsSkipConfirm(choice.mode, acknowledged)) setConfirming(true);
-        else void setPermissionMode(choice.mode);
+        else void saveMode(choice.mode);
       },
     })),
   ];
@@ -211,7 +261,7 @@ export function PermissionSelector() {
           // The mode and the acknowledgement in one write. A project on skip
           // that was never recorded as having been told would ask again on the
           // next window, which is the nagging this exists to prevent.
-          void setPermissionMode('skip', true);
+          void saveMode('skip', true);
         }}
         onCancel={() => setConfirming(false)}
       />

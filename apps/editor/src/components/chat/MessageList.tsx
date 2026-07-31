@@ -12,6 +12,7 @@ import type { ChatMessage, ChatPart } from '../../types';
 import { greetingFor } from '../home/Home';
 import { Button } from '../ui/Button';
 import { ApprovalPrompt } from './ApprovalPrompt';
+import { InputPrompt } from './InputPrompt';
 import { SentAttachments } from './AttachmentTray';
 import { ImageCard, NoticeRow, PlanCard } from './PlanCard';
 import { CommandRow } from './CommandRow';
@@ -151,6 +152,8 @@ function Part({ part, live, role }: { part: ChatPart; live: boolean; role: ChatM
       return <SubagentCard part={part} />;
     case 'approval':
       return <ApprovalPrompt part={part} />;
+    case 'input':
+      return <InputPrompt part={part} />;
     case 'plan':
       return <PlanCard part={part} />;
     case 'image':

@@ -41,7 +41,7 @@
 import { promises as fsp } from 'node:fs';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
-import { endsTurn, type ChatEvent } from './chat.js';
+import { endsTurn, type ChatEvent, type ChatProvider } from './chat.js';
 import { parseStoredAttachments, type StoredAttachment } from './chatAttachments.js';
 
 /** Relative location of the chat directory within a project. */
@@ -109,6 +109,8 @@ export interface ChatSummary {
    * a fresh one, whose id then overwrites this.
    */
   claudeSessionId?: string;
+  /** The backend that most recently received a user turn in this chat. */
+  lastProvider?: ChatProvider;
 }
 
 /**
@@ -254,6 +256,9 @@ function parseChatRows(raw: unknown): ChatIndexRow[] {
     if (typeof row.codexThreadId === 'string' && row.codexThreadId !== '') summary.codexThreadId = row.codexThreadId;
     if (typeof row.claudeSessionId === 'string' && row.claudeSessionId !== '') {
       summary.claudeSessionId = row.claudeSessionId;
+    }
+    if (row.lastProvider === 'anthropic' || row.lastProvider === 'openai') {
+      summary.lastProvider = row.lastProvider;
     }
     // A literal `true` and nothing else: a row that says `pending: false`
     // describes a conversation that has happened, and carrying a field through
@@ -1051,6 +1056,24 @@ export function setChatClaudeSessionId(
     const index = chats.findIndex((chat) => chat.id === id);
     if (index === -1 || chats[index].claudeSessionId === sessionId) return null;
     chats[index] = { ...chats[index], claudeSessionId: sessionId };
+    await writeIndexUnlocked(root, chats);
+    return withoutPending(chats[index]);
+  });
+}
+
+/** Remember the actual backend that received the latest turn. */
+export function setChatProvider(
+  root: string,
+  chatId: string,
+  provider: ChatProvider,
+): Promise<ChatSummary | null> {
+  const id = safeChatId(chatId);
+  if (!id) return Promise.resolve(null);
+  return serialize(root, async () => {
+    const chats = await readIndexForWrite(root);
+    const index = chats.findIndex((chat) => chat.id === id);
+    if (index === -1 || chats[index].lastProvider === provider) return null;
+    chats[index] = { ...chats[index], lastProvider: provider };
     await writeIndexUnlocked(root, chats);
     return withoutPending(chats[index]);
   });

@@ -30,6 +30,7 @@ import {
   readTranscript,
   renameChat,
   safeChatId,
+  setChatProvider,
   setChatThreadId,
   sortChats,
 } from '../server/chatStore';
@@ -518,6 +519,25 @@ describe('codex thread binding', () => {
   it('carries an index written without a thread through unchanged', () => {
     const parsed = parseChatIndex([{ id: 'a', title: 'x', createdAt: 't', updatedAt: 't' }]);
     expect(parsed[0].codexThreadId).toBeUndefined();
+  });
+});
+
+describe('last provider binding', () => {
+  it('remembers the provider without moving conversation activity', async () => {
+    const chat = await createChat(root);
+    expect(chat.lastProvider).toBeUndefined();
+    await setChatProvider(root, chat.id, 'anthropic');
+    expect(await getChat(root, chat.id)).toMatchObject({
+      lastProvider: 'anthropic',
+      updatedAt: chat.updatedAt,
+    });
+    await setChatProvider(root, chat.id, 'openai');
+    expect((await getChat(root, chat.id))?.lastProvider).toBe('openai');
+  });
+
+  it('ignores absent legacy metadata and refuses unsafe ids', async () => {
+    expect(parseChatIndex([{ id: 'a', title: 'x', createdAt: 't', updatedAt: 't' }])[0].lastProvider).toBeUndefined();
+    expect(await setChatProvider(root, '../escape', 'anthropic')).toBeNull();
   });
 });
 

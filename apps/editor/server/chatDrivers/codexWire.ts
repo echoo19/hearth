@@ -521,6 +521,218 @@ export function isQuestionRequest(method: string): boolean {
   return QUESTION_METHODS.has(method);
 }
 
+export type InputQuestionValue = string | number | boolean | string[];
+
+/** The provider-neutral input vocabulary sent to Hearth's renderer. */
+export interface InputQuestionDescriptor {
+  id: string;
+  label: string;
+  type: 'choice' | 'text' | 'number' | 'boolean' | 'url';
+  required?: boolean;
+  secret?: boolean;
+  placeholder?: string;
+  multiple?: boolean;
+  allowOther?: boolean;
+  options?: Array<{ value: string; label: string; description?: string }>;
+  min?: number;
+  max?: number;
+}
+
+export interface InputRequestDescriptor {
+  inputId: string;
+  title?: string;
+  description?: string;
+  questions: InputQuestionDescriptor[];
+  allowCancel?: boolean;
+  timeoutMs?: number;
+  externalAction?: { type: 'open-url'; url: string; elicitationId: string };
+}
+
+/**
+ * Turn either Codex input request into the shared renderer vocabulary.
+ *
+ * The descriptor contains presentation data only. In particular, it carries
+ * `secret: true` but never an answer; answers remain in the driver only long
+ * enough to build the JSON-RPC response.
+ */
+export function mapCodexQuestionRequest(
+  method: string,
+  inputId: string,
+  params: unknown,
+): InputRequestDescriptor | null {
+  if (!isQuestionRequest(method) || !inputId) return null;
+  const p = asRecord(params);
+  if (!p) return null;
+
+  if (method === 'item/tool/requestUserInput') {
+    const rawQuestions = Array.isArray(p.questions) ? p.questions : [];
+    const questions: InputQuestionDescriptor[] = [];
+    let title: string | undefined;
+    for (const raw of rawQuestions) {
+      const question = asRecord(raw);
+      const id = str(question?.id);
+      const label = str(question?.question);
+      if (!id || !label) continue;
+      title ??= str(question?.header);
+      const rawOptions = Array.isArray(question?.options) ? question.options : [];
+      const options = rawOptions.flatMap((rawOption) => {
+        const option = asRecord(rawOption);
+        const value = str(option?.label);
+        if (!value) return [];
+        const description = str(option?.description);
+        return [{ value, label: value, ...(description ? { description } : {}) }];
+      });
+      questions.push({
+        id,
+        label,
+        type: options.length > 0 ? 'choice' : 'text',
+        required: true,
+        secret: question?.isSecret === true,
+        allowOther: question?.isOther === true,
+        ...(options.length > 0 ? { options } : {}),
+      });
+    }
+    if (questions.length === 0) return null;
+    const timeout = typeof p.autoResolutionMs === 'number' && p.autoResolutionMs >= 0 ? p.autoResolutionMs : undefined;
+    return {
+      inputId,
+      ...(title ? { title } : {}),
+      ...(timeout === undefined ? {} : { timeoutMs: timeout }),
+      questions,
+      allowCancel: true,
+    };
+  }
+
+  const mode = str(p.mode);
+  const source = str(p.serverName);
+  const message = str(p.message);
+  if (!mode || !source || !message) return null;
+  if (mode === 'url') {
+    const url = str(p.url);
+    const elicitationId = str(p.elicitationId);
+    if (!url || !elicitationId) return null;
+    let externalUrl: string;
+    try {
+      const parsed = new URL(url);
+      if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') return null;
+      externalUrl = parsed.toString();
+    } catch {
+      return null;
+    }
+    return {
+      inputId,
+      title: source,
+      description: message,
+      questions: [],
+      externalAction: Object.freeze({ type: 'open-url', url: externalUrl, elicitationId }),
+      allowCancel: true,
+    };
+  }
+  if (mode !== 'form' && mode !== 'openai/form') return null;
+  const schema = asRecord(p.requestedSchema);
+  const properties = asRecord(schema?.properties);
+  if (!schema || !properties) return null;
+  const required = new Set(Array.isArray(schema.required) ? schema.required.filter((value): value is string => typeof value === 'string') : []);
+  const questions: InputQuestionDescriptor[] = [];
+  for (const [id, rawProperty] of Object.entries(properties)) {
+    const question = mapElicitationProperty(id, rawProperty, required.has(id));
+    if (!question) return null;
+    questions.push(question);
+  }
+  if (questions.length === 0) return null;
+  return { inputId, title: source, description: message, questions, allowCancel: true };
+}
+
+function mapElicitationProperty(id: string, raw: unknown, required: boolean): InputQuestionDescriptor | null {
+  const schema = asRecord(raw);
+  if (!schema) return null;
+  const label = str(schema.title) ?? id;
+  const secret = schema.writeOnly === true || schema.format === 'password';
+  const common = { id, label, required, secret };
+  const description = str(schema.description);
+
+  const plainEnum = Array.isArray(schema.enum) ? schema.enum.filter((value): value is string => typeof value === 'string') : [];
+  const enumNames = Array.isArray(schema.enumNames) ? schema.enumNames : [];
+  const oneOf = Array.isArray(schema.oneOf) ? schema.oneOf : [];
+  const enumOptions =
+    plainEnum.length > 0
+      ? plainEnum.map((value, index) => ({
+          value,
+          label: str(enumNames[index]) ?? value,
+          ...(description ? { description } : {}),
+        }))
+      : oneOf.flatMap((rawOption) => {
+          const option = asRecord(rawOption);
+          const value = str(option?.const);
+          if (!value) return [];
+          return [{ value, label: str(option?.title) ?? value, ...(description ? { description } : {}) }];
+        });
+  if (enumOptions.length > 0) return { ...common, type: 'choice', options: enumOptions };
+
+  if (schema.type === 'array') {
+    const items = asRecord(schema.items);
+    const values = Array.isArray(items?.enum) ? items.enum : [];
+    const titled = Array.isArray(items?.anyOf) ? items.anyOf : [];
+    const options =
+      values.length > 0
+        ? values.flatMap((value) =>
+            typeof value === 'string' ? [{ value, label: value, ...(description ? { description } : {}) }] : [],
+          )
+        : titled.flatMap((rawOption) => {
+            const option = asRecord(rawOption);
+            const value = str(option?.const);
+            if (!value) return [];
+            return [{ value, label: str(option?.title) ?? value, ...(description ? { description } : {}) }];
+          });
+    return options.length > 0 ? { ...common, type: 'choice', multiple: true, options } : null;
+  }
+  if (schema.type === 'number' || schema.type === 'integer') {
+    return {
+      ...common,
+      type: 'number',
+      ...(typeof schema.minimum === 'number' ? { min: schema.minimum } : {}),
+      ...(typeof schema.maximum === 'number' ? { max: schema.maximum } : {}),
+    };
+  }
+  if (schema.type === 'boolean') return { ...common, type: 'boolean' };
+  if (schema.type === 'string') return { ...common, type: schema.format === 'uri' ? 'url' : 'text' };
+  return null;
+}
+
+/** Exact `ToolRequestUserInputResponse` from codex 0.144.5. */
+export function codexUserInputReply(answers: Readonly<Record<string, InputQuestionValue>>): {
+  answers: Record<string, { answers: string[] }>;
+} {
+  return {
+    answers: Object.fromEntries(
+      Object.entries(answers).map(([id, value]) => [id, { answers: (Array.isArray(value) ? value : [value]).map(String) }]),
+    ),
+  };
+}
+
+/** Exact `McpServerElicitationRequestResponse` from codex 0.144.5. */
+export function codexElicitationReply(
+  action: 'accept' | 'decline' | 'cancel',
+  content?: Record<string, unknown>,
+): { action: 'accept' | 'decline' | 'cancel'; content: Record<string, unknown> | null; _meta: null } {
+  return { action, content: action === 'accept' ? (content ?? {}) : null, _meta: null };
+}
+
+export type CodexServerRequestKind = 'approval' | 'question' | 'current-time' | 'unsupported';
+
+/** Classify before replying: unknown requests must not be mistaken for success. */
+export function classifyCodexServerRequest(method: string): CodexServerRequestKind {
+  if (isApprovalRequest(method)) return 'approval';
+  if (isQuestionRequest(method)) return 'question';
+  if (method === 'currentTime/read') return 'current-time';
+  return 'unsupported';
+}
+
+/** Exact `CurrentTimeReadResponse`; Codex specifies whole Unix seconds. */
+export function codexCurrentTimeReply(nowMs = Date.now()): { currentTimeAt: number } {
+  return { currentTimeAt: Math.floor(nowMs / 1000) };
+}
+
 /**
  * Flatten a `requestUserInput` into one readable line for the transcript.
  *
@@ -556,6 +768,29 @@ export interface CodexApproval {
   kind: ApprovalKind;
   title: string;
   detail: string;
+  decisions?: CodexApprovalDecisionDisplay[];
+}
+
+export interface CodexApprovalDecisionDisplay {
+  id: string;
+  label: string;
+  tone: 'allow' | 'deny' | 'neutral';
+}
+
+/**
+ * `wireDecision` never leaves the server. The browser selects the opaque
+ * display id; the driver looks that id up and sends this exact server-authored
+ * value back, so it can never forge an exec/network amendment.
+ */
+export interface CodexApprovalDecision {
+  display: CodexApprovalDecisionDisplay;
+  wireDecision: unknown;
+}
+
+export interface CodexApprovalRequest {
+  approval: CodexApproval;
+  /** Server-only lookup. Never serialize or copy this into a ChatEvent. */
+  decisionsById: ReadonlyMap<string, unknown>;
 }
 
 /**
@@ -564,27 +799,85 @@ export interface CodexApproval {
  * request it can't describe with a `deny` rather than hanging the turn.
  */
 export function mapCodexApproval(method: string, params: unknown): CodexApproval | null {
+  return mapCodexApprovalRequest(method, params)?.approval ?? null;
+}
+
+export function mapCodexApprovalRequest(method: string, params: unknown): CodexApprovalRequest | null {
   if (!isApprovalRequest(method)) return null;
   const p = asRecord(params) ?? {};
   const reason = str(p.reason);
   const isCommand = method === 'item/commandExecution/requestApproval' || method === 'execCommandApproval';
+  const decisions = mapApprovalDecisions(p.availableDecisions);
+  let approval: CodexApproval;
   if (isCommand) {
     // v2 carries the command on the item; the legacy method carried it inline.
     const command = Array.isArray(p.command) ? p.command.join(' ') : str(p.command);
-    return {
+    approval = {
       kind: 'command',
       title: reason ?? 'Run this command?',
       detail: command ?? str(p.itemId) ?? 'a command',
+      ...(decisions.length > 0 ? { decisions: decisions.map((decision) => decision.display) } : {}),
+    };
+  } else {
+    const changes = asRecord(p.fileChanges);
+    const paths = changes ? Object.keys(changes) : [];
+    const grant = str(p.grantRoot);
+    approval = {
+      kind: 'file-change',
+      title: reason ?? 'Apply these changes?',
+      detail: paths.length > 0 ? paths.join('\n') : (grant ?? str(p.itemId) ?? 'file changes'),
+      ...(decisions.length > 0 ? { decisions: decisions.map((decision) => decision.display) } : {}),
     };
   }
-  const changes = asRecord(p.fileChanges);
-  const paths = changes ? Object.keys(changes) : [];
-  const grant = str(p.grantRoot);
-  return {
-    kind: 'file-change',
-    title: reason ?? 'Apply these changes?',
-    detail: paths.length > 0 ? paths.join('\n') : (grant ?? str(p.itemId) ?? 'file changes'),
-  };
+  return { approval, decisionsById: new Map(decisions.map((decision) => [decision.display.id, decision.wireDecision])) };
+}
+
+function mapApprovalDecisions(raw: unknown): CodexApprovalDecision[] {
+  if (!Array.isArray(raw)) return [];
+  const decisions: CodexApprovalDecision[] = [];
+  for (const [index, wireDecision] of raw.entries()) {
+    let label: string | undefined;
+    let tone: CodexApprovalDecisionDisplay['tone'] = 'allow';
+    if (wireDecision === 'accept') label = 'Allow once';
+    else if (wireDecision === 'acceptForSession') label = 'Allow for session';
+    else if (wireDecision === 'decline') {
+      label = 'Deny';
+      tone = 'deny';
+    } else if (wireDecision === 'cancel') {
+      label = 'Cancel';
+      tone = 'neutral';
+    } else {
+      const tagged = asRecord(wireDecision);
+      const exec = asRecord(tagged?.acceptWithExecpolicyAmendment);
+      const network = asRecord(tagged?.applyNetworkPolicyAmendment);
+      if (
+        exec &&
+        Array.isArray(exec.execpolicy_amendment) &&
+        exec.execpolicy_amendment.every((part) => typeof part === 'string')
+      ) label = 'Allow and remember this command';
+      else if (network && asRecord(network.network_policy_amendment)) label = 'Allow and remember this network access';
+    }
+    if (label) decisions.push({ display: { id: `decision-${index}`, label, tone }, wireDecision });
+  }
+  return decisions;
+}
+
+/** Reply with the exact decision value retained from the server request. */
+export function codexApprovalChoiceReply(
+  decisionsById: ReadonlyMap<string, unknown>,
+  choiceId: string,
+): { decision: unknown } | null {
+  return decisionsById.has(choiceId) ? { decision: decisionsById.get(choiceId) } : null;
+}
+
+/** Provider-neutral transcript result for an opaque server-authored choice. */
+export function codexApprovalChoiceResolution(
+  decisionsById: ReadonlyMap<string, unknown>,
+  choiceId: string,
+): ApprovalDecision | null {
+  if (!decisionsById.has(choiceId)) return null;
+  const wire = decisionsById.get(choiceId);
+  return wire === 'decline' || wire === 'cancel' ? 'deny' : 'allow';
 }
 
 /**

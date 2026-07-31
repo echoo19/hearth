@@ -48,12 +48,7 @@ import {
   type AppSettings,
   type ChatDriver,
 } from './chat.js';
-import {
-  framesDir,
-  listSessions,
-  nextSessionId as nextTesterSessionId,
-  readMemory,
-} from './tester/memory.js';
+import { framesDir, listSessions, nextSessionId as nextTesterSessionId, readMemory } from './tester/memory.js';
 import { approvalSeed, frameFile } from './tester/report.js';
 import {
   runTesterSession,
@@ -72,6 +67,7 @@ import {
 } from './projectContext.js';
 import { announceProviders, beginOpenAiLogin, readChatProviders } from './chatProviders.js';
 import { createChat, deleteChat, listChats, renameChat, type ChatKind } from './chatStore.js';
+import { ChatAttachmentStager } from './chatAttachments.js';
 import { resolveProjectsHome, slugFromName, slugFromPrompt, uniqueFolderName } from './workspaceSlug.js';
 import { readCapabilities, sensesFromCapabilities } from './probeCapabilities.js';
 import { EVIDENCE_DIR } from './evidenceWatcher.js';
@@ -260,7 +256,10 @@ export function guardViteFs(req: IncomingMessage, res: ServerResponse): boolean 
   if (!isViteFsPath(pathname)) return false;
   const verdict = viteFsVerdict(req.headers);
   if (verdict === 'deny') {
-    sendJson(res, 403, { ok: false, error: 'Forbidden: /@fs/ does not serve documents.' });
+    sendJson(res, 403, {
+      ok: false,
+      error: 'Forbidden: /@fs/ does not serve documents.',
+    });
     return true;
   }
   if (verdict === 'inert') {
@@ -642,9 +641,12 @@ export async function newestMtimeMs(dir: string): Promise<number> {
  * electron/main.ts); from a repo checkout we point at the built packages
  * instead. Shared by `meta()` and the terminal PATH shim.
  */
-export async function resolveToolPaths(
-  repoRoot: string,
-): Promise<{ cli: string; mcp: string; probe: string | null; bundled: boolean }> {
+export async function resolveToolPaths(repoRoot: string): Promise<{
+  cli: string;
+  mcp: string;
+  probe: string | null;
+  bundled: boolean;
+}> {
   const toolsDir = process.env.HEARTH_TOOLS_DIR;
   const bundledCli = toolsDir ? path.join(toolsDir, 'hearth-cli.mjs') : null;
   const bundledMcp = toolsDir ? path.join(toolsDir, 'hearth-mcp.mjs') : null;
@@ -734,6 +736,7 @@ export function createProjectServerContext(options: ProjectServerOptions = {}) {
    * resolved inside it.
    */
   const openedRoots = new Set<string>();
+  const chatAttachments = new ChatAttachmentStager();
   /**
    * Where the game mount is being served from this run (see gameServer.ts).
    * Set once the loopback listener is up; null until then, and null forever if
@@ -854,7 +857,10 @@ export function createProjectServerContext(options: ProjectServerOptions = {}) {
    * list of twelve projects with a list of one. That is not a stale cache; it
    * is the user's project list, gone, with nothing to say it happened.
    */
-  async function readRecentsState(): Promise<{ entries: RecentEntry[]; readable: boolean }> {
+  async function readRecentsState(): Promise<{
+    entries: RecentEntry[];
+    readable: boolean;
+  }> {
     let raw: string;
     try {
       raw = await fsp.readFile(recentsFile, 'utf8');
@@ -879,7 +885,11 @@ export function createProjectServerContext(options: ProjectServerOptions = {}) {
   async function addRecent(projectPath: string, name: string): Promise<void> {
     const state = await readRecentsState();
     const entries = state.entries.filter((e) => e.path !== projectPath);
-    entries.unshift({ path: projectPath, name, openedAt: new Date().toISOString() });
+    entries.unshift({
+      path: projectPath,
+      name,
+      openedAt: new Date().toISOString(),
+    });
     await fsp.mkdir(path.dirname(recentsFile), { recursive: true });
     // Unreadable but present: keep a copy before replacing it. Whatever was in
     // there is the user's list, and "we could not parse it" is not permission
@@ -1024,7 +1034,10 @@ export function createProjectServerContext(options: ProjectServerOptions = {}) {
       };
     }
     if (typeof name !== 'string' || name.trim() === '') {
-      return { status: 200, body: errorEnvelope('(unknown)', 'NO_COMMAND', 'Missing command name.') };
+      return {
+        status: 200,
+        body: errorEnvelope('(unknown)', 'NO_COMMAND', 'Missing command name.'),
+      };
     }
     const root = path.resolve(project);
 
@@ -1155,7 +1168,11 @@ export function createProjectServerContext(options: ProjectServerOptions = {}) {
     const resolved = await resolveApiKey(root);
     return {
       status: 200,
-      body: { ok: true, hasKey: resolved !== null, source: stored ? 'project' : resolved ? 'environment' : null },
+      body: {
+        ok: true,
+        hasKey: resolved !== null,
+        source: stored ? 'project' : resolved ? 'environment' : null,
+      },
     };
   }
 
@@ -1191,11 +1208,17 @@ export function createProjectServerContext(options: ProjectServerOptions = {}) {
    */
   async function openWorkspaceImpl(rawPath: unknown): Promise<JsonResult> {
     if (typeof rawPath !== 'string' || rawPath.trim() === '') {
-      return { status: 400, body: { ok: false, error: 'Missing "path" (absolute folder).' } };
+      return {
+        status: 400,
+        body: { ok: false, error: 'Missing "path" (absolute folder).' },
+      };
     }
     const root = path.resolve(rawPath.trim());
     if (!(await isDirectory(root))) {
-      return { status: 400, body: { ok: false, error: `Not a folder: ${root}` } };
+      return {
+        status: 400,
+        body: { ok: false, error: `Not a folder: ${root}` },
+      };
     }
     openedRoots.add(root);
     // Any opened folder can end up with a `.hearth/` — a chat can start in a
@@ -1209,7 +1232,10 @@ export function createProjectServerContext(options: ProjectServerOptions = {}) {
     const name = (await readProjectIdentity(root)).name ?? (path.basename(root) || root);
     const isHearthProject = await pathExists(path.join(root, 'hearth.json'));
     await addRecent(root, name);
-    return { status: 200, body: { ok: true, path: root, name, isHearthProject } };
+    return {
+      status: 200,
+      body: { ok: true, path: root, name, isHearthProject },
+    };
   }
 
   const ctx = {
@@ -1221,6 +1247,8 @@ export function createProjectServerContext(options: ProjectServerOptions = {}) {
      * could not.
      */
     isOpenRoot,
+    /** Streamed composer uploads shared with ws.ts, which consumes their tokens. */
+    chatAttachments,
     /**
      * The wider "the user has named this folder at some point" test. Used by
      * the route layer to decide whether an unattested caller may name a root,
@@ -1260,13 +1288,17 @@ export function createProjectServerContext(options: ProjectServerOptions = {}) {
      */
     async closeWorkspace(rawPath: unknown): Promise<JsonResult> {
       if (typeof rawPath !== 'string' || rawPath.trim() === '') {
-        return { status: 400, body: { ok: false, error: 'Missing "path" (absolute folder).' } };
+        return {
+          status: 400,
+          body: { ok: false, error: 'Missing "path" (absolute folder).' },
+        };
       }
       const root = path.resolve(rawPath.trim());
       const wasOpen = isOpenRoot(root);
       openedRoots.delete(root);
       sessions.delete(root);
       seenSeq.delete(root);
+      await chatAttachments.discardProject(root);
       return { status: 200, body: { ok: true, path: root, wasOpen } };
     },
 
@@ -1295,7 +1327,13 @@ export function createProjectServerContext(options: ProjectServerOptions = {}) {
         if (typed) await writeProjectIdentity(target, { name: typed });
         return await openWorkspaceImpl(target);
       } catch (err) {
-        return { status: 500, body: { ok: false, error: `Could not create a project folder: ${(err as Error).message}` } };
+        return {
+          status: 500,
+          body: {
+            ok: false,
+            error: `Could not create a project folder: ${(err as Error).message}`,
+          },
+        };
       }
     },
 
@@ -1324,7 +1362,10 @@ export function createProjectServerContext(options: ProjectServerOptions = {}) {
               kind: chat.kind,
               createdAt: chat.createdAt,
               updatedAt: chat.updatedAt,
-              project: { path: entry.path, name: stored ?? (entry.name || path.basename(entry.path)) },
+              project: {
+                path: entry.path,
+                name: stored ?? (entry.name || path.basename(entry.path)),
+              },
             }));
           } catch {
             return [];
@@ -1336,7 +1377,9 @@ export function createProjectServerContext(options: ProjectServerOptions = {}) {
         // Newest activity first; ties break on id so the order is stable
         // across reads (two chats created in the same millisecond otherwise
         // swap places between refreshes).
-        .sort((a, b) => (a.updatedAt === b.updatedAt ? a.id.localeCompare(b.id) : b.updatedAt.localeCompare(a.updatedAt)))
+        .sort((a, b) =>
+          a.updatedAt === b.updatedAt ? a.id.localeCompare(b.id) : b.updatedAt.localeCompare(a.updatedAt),
+        )
         .slice(0, RECENT_CHATS_LIMIT);
       return { status: 200, body: { ok: true, chats } };
     },
@@ -1372,7 +1415,10 @@ export function createProjectServerContext(options: ProjectServerOptions = {}) {
      * route reads. See server/usage.ts for what is and is not countable.
      */
     async usage(): Promise<JsonResult> {
-      return { status: 200, body: { ok: true, usage: await collectUsage({ recentsFile }) } };
+      return {
+        status: 200,
+        body: { ok: true, usage: await collectUsage({ recentsFile }) },
+      };
     },
 
     /**
@@ -1401,15 +1447,31 @@ export function createProjectServerContext(options: ProjectServerOptions = {}) {
     async projectDoc(project: unknown, name: unknown): Promise<JsonResult> {
       const doc = PROJECT_DOCS.find((entry) => entry === name);
       if (typeof project !== 'string' || project.trim() === '' || !doc) {
-        return { status: 400, body: { ok: false, error: 'Missing "project" or unknown document.' } };
+        return {
+          status: 400,
+          body: { ok: false, error: 'Missing "project" or unknown document.' },
+        };
       }
       const root = path.resolve(project);
-      if (!isOpenRoot(root)) return { status: 403, body: { ok: false, error: 'Folder is not open.' } };
+      if (!isOpenRoot(root))
+        return {
+          status: 403,
+          body: { ok: false, error: 'Folder is not open.' },
+        };
       if (!(await isDirectory(root))) {
-        return { status: 404, body: { ok: false, error: 'That project is not on disk any more.' } };
+        return {
+          status: 404,
+          body: { ok: false, error: 'That project is not on disk any more.' },
+        };
       }
       try {
-        return { status: 200, body: { ok: true, text: await fsp.readFile(path.join(root, doc), 'utf8') } };
+        return {
+          status: 200,
+          body: {
+            ok: true,
+            text: await fsp.readFile(path.join(root, doc), 'utf8'),
+          },
+        };
       } catch {
         return { status: 200, body: { ok: true, text: '' } };
       }
@@ -1424,12 +1486,25 @@ export function createProjectServerContext(options: ProjectServerOptions = {}) {
     async writeProjectDoc(project: unknown, name: unknown, text: unknown): Promise<JsonResult> {
       const doc = PROJECT_DOCS.find((entry) => entry === name);
       if (typeof project !== 'string' || project.trim() === '' || !doc || typeof text !== 'string') {
-        return { status: 400, body: { ok: false, error: 'Missing "project", "text", or unknown document.' } };
+        return {
+          status: 400,
+          body: {
+            ok: false,
+            error: 'Missing "project", "text", or unknown document.',
+          },
+        };
       }
       const root = path.resolve(project);
-      if (!isOpenRoot(root)) return { status: 403, body: { ok: false, error: 'Folder is not open.' } };
+      if (!isOpenRoot(root))
+        return {
+          status: 403,
+          body: { ok: false, error: 'Folder is not open.' },
+        };
       if (!(await isDirectory(root))) {
-        return { status: 404, body: { ok: false, error: 'That project is not on disk any more.' } };
+        return {
+          status: 404,
+          body: { ok: false, error: 'That project is not on disk any more.' },
+        };
       }
       const file = path.join(root, doc);
       try {
@@ -1437,22 +1512,37 @@ export function createProjectServerContext(options: ProjectServerOptions = {}) {
         else await fsp.writeFile(file, text.endsWith('\n') ? text : text + '\n');
         return { status: 200, body: { ok: true } };
       } catch (err) {
-        return { status: 500, body: { ok: false, error: `Could not write ${doc}: ${(err as Error).message}` } };
+        return {
+          status: 500,
+          body: {
+            ok: false,
+            error: `Could not write ${doc}: ${(err as Error).message}`,
+          },
+        };
       }
     },
 
     async setProjectIdentity(project: unknown, icon: unknown, color: unknown): Promise<JsonResult> {
       if (typeof project !== 'string' || project.trim() === '') {
-        return { status: 400, body: { ok: false, error: 'Missing "project".' } };
+        return {
+          status: 400,
+          body: { ok: false, error: 'Missing "project".' },
+        };
       }
       const root = path.resolve(project);
       // isKnownRoot, not isOpenRoot: the caller is a row in the recents rail,
       // and only one of those rows is ever the open folder. See isKnownRoot.
       if (!(await isKnownRoot(root))) {
-        return { status: 403, body: { ok: false, error: 'Not a folder you have opened.' } };
+        return {
+          status: 403,
+          body: { ok: false, error: 'Not a folder you have opened.' },
+        };
       }
       if (!(await isDirectory(root))) {
-        return { status: 404, body: { ok: false, error: 'That project is not on disk any more.' } };
+        return {
+          status: 404,
+          body: { ok: false, error: 'That project is not on disk any more.' },
+        };
       }
       const identity = await writeProjectIdentity(root, {
         ...(icon === undefined ? {} : { icon: typeof icon === 'string' ? icon : '' }),
@@ -1468,14 +1558,28 @@ export function createProjectServerContext(options: ProjectServerOptions = {}) {
      */
     async gameStatus(project: unknown): Promise<JsonResult> {
       if (typeof project !== 'string' || project.trim() === '') {
-        return { status: 400, body: { ok: false, error: 'Missing "project".' } };
+        return {
+          status: 400,
+          body: { ok: false, error: 'Missing "project".' },
+        };
       }
       const root = path.resolve(project);
-      if (!isOpenRoot(root)) return { status: 403, body: { ok: false, error: 'Folder is not open.' } };
+      if (!isOpenRoot(root))
+        return {
+          status: 403,
+          body: { ok: false, error: 'Folder is not open.' },
+        };
       const found = await resolveGameEntry(root);
-      if (!found) return { status: 200, body: { ok: true, present: false, entry: null, mtime: 0 } };
+      if (!found)
+        return {
+          status: 200,
+          body: { ok: true, present: false, entry: null, mtime: 0 },
+        };
       const mtime = await newestMtimeMs(path.dirname(found.abs));
-      return { status: 200, body: { ok: true, present: true, entry: found.entry, mtime } };
+      return {
+        status: 200,
+        body: { ok: true, present: true, entry: found.entry, mtime },
+      };
     },
 
     /**
@@ -1488,10 +1592,17 @@ export function createProjectServerContext(options: ProjectServerOptions = {}) {
      */
     async probeStatus(project: unknown): Promise<JsonResult> {
       if (typeof project !== 'string' || project.trim() === '') {
-        return { status: 400, body: { ok: false, error: 'Missing "project".' } };
+        return {
+          status: 400,
+          body: { ok: false, error: 'Missing "project".' },
+        };
       }
       const root = path.resolve(project);
-      if (!isOpenRoot(root)) return { status: 403, body: { ok: false, error: 'Folder is not open.' } };
+      if (!isOpenRoot(root))
+        return {
+          status: 403,
+          body: { ok: false, error: 'Folder is not open.' },
+        };
       const [game, record] = await Promise.all([resolveGameEntry(root), readCapabilities(root)]);
       return {
         status: 200,
@@ -1527,16 +1638,35 @@ export function createProjectServerContext(options: ProjectServerOptions = {}) {
      */
     async startTesterSession(project: unknown, maxSteps?: unknown): Promise<JsonResult> {
       if (typeof project !== 'string' || project.trim() === '') {
-        return { status: 400, body: { ok: false, error: 'Missing "project".' } };
+        return {
+          status: 400,
+          body: { ok: false, error: 'Missing "project".' },
+        };
       }
       const root = path.resolve(project);
-      if (!isOpenRoot(root)) return { status: 403, body: { ok: false, error: 'Folder is not open.' } };
+      if (!isOpenRoot(root))
+        return {
+          status: 403,
+          body: { ok: false, error: 'Folder is not open.' },
+        };
       if (testerJobs.has(root)) {
-        return { status: 409, body: { ok: false, error: 'The tester is already playing this game.' } };
+        return {
+          status: 409,
+          body: {
+            ok: false,
+            error: 'The tester is already playing this game.',
+          },
+        };
       }
       const game = await resolveGameEntry(root);
       if (!game) {
-        return { status: 400, body: { ok: false, error: 'No game to play yet. Nothing in this folder runs.' } };
+        return {
+          status: 400,
+          body: {
+            ok: false,
+            error: 'No game to play yet. Nothing in this folder runs.',
+          },
+        };
       }
       const asked = typeof maxSteps === 'number' ? Math.floor(maxSteps) : Number.NaN;
       const budget = Number.isFinite(asked) && asked > 0 ? Math.min(asked, MAX_MAX_STEPS) : DEFAULT_MAX_STEPS;
@@ -1552,7 +1682,13 @@ export function createProjectServerContext(options: ProjectServerOptions = {}) {
         // which is what this has always run as.
         driver = await (options.testerDeps?.createDriver ?? ((r: string) => createChatDriver(r)))(root);
       } catch (err) {
-        return { status: 500, body: { ok: false, error: `Could not reach your agent: ${(err as Error).message}` } };
+        return {
+          status: 500,
+          body: {
+            ok: false,
+            error: `Could not reach your agent: ${(err as Error).message}`,
+          },
+        };
       }
       // createChatDriver never throws on "no agent configured" — it falls
       // through to `new StubDriver()`, which answers every turn with the same
@@ -1575,7 +1711,13 @@ export function createProjectServerContext(options: ProjectServerOptions = {}) {
       // caller's side "no agent replied" and "no agent is reachable" are the
       // same failure.
       if (driver instanceof StubDriver) {
-        return { status: 500, body: { ok: false, error: 'Could not reach your agent: no agent is connected.' } };
+        return {
+          status: 500,
+          body: {
+            ok: false,
+            error: 'Could not reach your agent: no agent is connected.',
+          },
+        };
       }
 
       const controller = new AbortController();
@@ -1591,7 +1733,10 @@ export function createProjectServerContext(options: ProjectServerOptions = {}) {
             signal: controller.signal,
             openGame: options.testerDeps?.openGame,
             onFrame: (data) => {
-              const message: ProbeBusMessage = { root, frame: { type: 'probe-frame', data } };
+              const message: ProbeBusMessage = {
+                root,
+                frame: { type: 'probe-frame', data },
+              };
               probeBus.emit('frame', message);
             },
             onThought: (text, turn) => emitTester(root, { type: 'tester-thought', text, turn }),
@@ -1599,12 +1744,18 @@ export function createProjectServerContext(options: ProjectServerOptions = {}) {
           });
           emitTester(root, { type: 'tester-done', note });
         } catch (err) {
-          emitTester(root, { type: 'tester-error', message: (err as Error).message });
+          emitTester(root, {
+            type: 'tester-error',
+            message: (err as Error).message,
+          });
         } finally {
           // Said explicitly rather than left to be inferred from frames
           // stopping, so the pane hands the stage back to the person's own game
           // at the moment it stops being a lie to show the tester's.
-          const message: ProbeBusMessage = { root, frame: { type: 'probe-end' } };
+          const message: ProbeBusMessage = {
+            root,
+            frame: { type: 'probe-end' },
+          };
           probeBus.emit('frame', message);
           try {
             driver.stop();
@@ -1615,7 +1766,10 @@ export function createProjectServerContext(options: ProjectServerOptions = {}) {
         }
       })();
       testerJobs.set(root, { root, session, controller, done });
-      return { status: 200, body: { ok: true, started: true, session, maxSteps: budget } };
+      return {
+        status: 200,
+        body: { ok: true, started: true, session, maxSteps: budget },
+      };
     },
 
     /**
@@ -1624,10 +1778,17 @@ export function createProjectServerContext(options: ProjectServerOptions = {}) {
      */
     async stopTesterSession(project: unknown): Promise<JsonResult> {
       if (typeof project !== 'string' || project.trim() === '') {
-        return { status: 400, body: { ok: false, error: 'Missing "project".' } };
+        return {
+          status: 400,
+          body: { ok: false, error: 'Missing "project".' },
+        };
       }
       const root = path.resolve(project);
-      if (!isOpenRoot(root)) return { status: 403, body: { ok: false, error: 'Folder is not open.' } };
+      if (!isOpenRoot(root))
+        return {
+          status: 403,
+          body: { ok: false, error: 'Folder is not open.' },
+        };
       const job = testerJobs.get(root);
       if (!job) return { status: 200, body: { ok: true, stopped: false } };
       job.controller.abort();
@@ -1641,10 +1802,17 @@ export function createProjectServerContext(options: ProjectServerOptions = {}) {
      */
     async testerHistory(project: unknown): Promise<JsonResult> {
       if (typeof project !== 'string' || project.trim() === '') {
-        return { status: 400, body: { ok: false, error: 'Missing "project".' } };
+        return {
+          status: 400,
+          body: { ok: false, error: 'Missing "project".' },
+        };
       }
       const root = path.resolve(project);
-      if (!isOpenRoot(root)) return { status: 403, body: { ok: false, error: 'Folder is not open.' } };
+      if (!isOpenRoot(root))
+        return {
+          status: 403,
+          body: { ok: false, error: 'Folder is not open.' },
+        };
       const [sessions, memory] = await Promise.all([listSessions(root), readMemory(root)]);
       return {
         status: 200,
@@ -1686,7 +1854,10 @@ export function createProjectServerContext(options: ProjectServerOptions = {}) {
       // and the screen keeps whatever it already had.
       const state = await readRecentsState();
       if (!state.readable) {
-        return { status: 500, body: { ok: false, error: 'Could not read the list of projects.' } };
+        return {
+          status: 500,
+          body: { ok: false, error: 'Could not read the list of projects.' },
+        };
       }
       const looked = state.entries.slice(0, MAX_HISTORY_PROJECTS);
       // Counted, because the screen may not silently present a slice of your
@@ -1710,7 +1881,11 @@ export function createProjectServerContext(options: ProjectServerOptions = {}) {
                 // Same rule as the rail: the game's own name, then the one
                 // recents cached. A history of playtests that names folders
                 // is a history of folders.
-                project: { path: entry.path, name: identity.name ?? entry.name, identity },
+                project: {
+                  path: entry.path,
+                  name: identity.name ?? entry.name,
+                  identity,
+                },
               })),
               gone: false,
             };
@@ -1722,13 +1897,15 @@ export function createProjectServerContext(options: ProjectServerOptions = {}) {
         }),
       );
       skippedProjects += perProject.filter((project) => project.gone).length;
-      const all = perProject.flatMap((project) => project.runs).sort((a, b) => {
-        const at = Date.parse(a.note.finishedAt ?? '');
-        const bt = Date.parse(b.note.finishedAt ?? '');
-        // A note with no readable time sorts last rather than randomly: it is
-        // the one case where "newest first" has no answer.
-        return (Number.isFinite(bt) ? bt : -Infinity) - (Number.isFinite(at) ? at : -Infinity);
-      });
+      const all = perProject
+        .flatMap((project) => project.runs)
+        .sort((a, b) => {
+          const at = Date.parse(a.note.finishedAt ?? '');
+          const bt = Date.parse(b.note.finishedAt ?? '');
+          // A note with no readable time sorts last rather than randomly: it is
+          // the one case where "newest first" has no answer.
+          return (Number.isFinite(bt) ? bt : -Infinity) - (Number.isFinite(at) ? at : -Infinity);
+        });
       return {
         status: 200,
         body: {
@@ -1750,20 +1927,37 @@ export function createProjectServerContext(options: ProjectServerOptions = {}) {
      */
     async approveTesterProposals(project: unknown, session: unknown, proposals: unknown): Promise<JsonResult> {
       if (typeof project !== 'string' || project.trim() === '') {
-        return { status: 400, body: { ok: false, error: 'Missing "project".' } };
+        return {
+          status: 400,
+          body: { ok: false, error: 'Missing "project".' },
+        };
       }
       if (typeof session !== 'number' || !Number.isFinite(session)) {
-        return { status: 400, body: { ok: false, error: 'Missing "session".' } };
+        return {
+          status: 400,
+          body: { ok: false, error: 'Missing "session".' },
+        };
       }
       const picked = Array.isArray(proposals) ? proposals.filter((id): id is string => typeof id === 'string') : [];
       const root = path.resolve(project);
-      if (!isOpenRoot(root)) return { status: 403, body: { ok: false, error: 'Folder is not open.' } };
+      if (!isOpenRoot(root))
+        return {
+          status: 403,
+          body: { ok: false, error: 'Folder is not open.' },
+        };
       const note = (await listSessions(root)).find((entry) => entry.session === session);
-      if (!note) return { status: 404, body: { ok: false, error: `Session ${session} has no note to read.` } };
+      if (!note)
+        return {
+          status: 404,
+          body: { ok: false, error: `Session ${session} has no note to read.` },
+        };
       const dir = path.relative(root, framesDir(root, session)).split(path.sep).join('/');
       const seed = approvalSeed(note, picked, dir);
       if (!seed) {
-        return { status: 400, body: { ok: false, error: 'Nothing was picked from that session.' } };
+        return {
+          status: 400,
+          body: { ok: false, error: 'Nothing was picked from that session.' },
+        };
       }
       return {
         status: 200,
@@ -1772,7 +1966,10 @@ export function createProjectServerContext(options: ProjectServerOptions = {}) {
           text: seed.text,
           // Named as well as described, so a caller that wants to show or open
           // a picture does not have to know how a session lays out its folder.
-          frames: seed.frames.map((frame) => ({ frame, relPath: `${dir}/${frameFile(frame)}` })),
+          frames: seed.frames.map((frame) => ({
+            frame,
+            relPath: `${dir}/${frameFile(frame)}`,
+          })),
         },
       };
     },
@@ -1782,42 +1979,84 @@ export function createProjectServerContext(options: ProjectServerOptions = {}) {
     /** Every conversation this folder holds, newest activity first. */
     async listProjectChats(project: unknown): Promise<JsonResult> {
       if (typeof project !== 'string' || project.trim() === '') {
-        return { status: 400, body: { ok: false, error: 'Missing "project".' } };
+        return {
+          status: 400,
+          body: { ok: false, error: 'Missing "project".' },
+        };
       }
       const root = path.resolve(project);
-      if (!isOpenRoot(root)) return { status: 403, body: { ok: false, error: 'Folder is not open.' } };
+      if (!isOpenRoot(root))
+        return {
+          status: 403,
+          body: { ok: false, error: 'Folder is not open.' },
+        };
       return { status: 200, body: { ok: true, chats: await listChats(root) } };
     },
 
     async createProjectChat(project: unknown): Promise<JsonResult> {
       if (typeof project !== 'string' || project.trim() === '') {
-        return { status: 400, body: { ok: false, error: 'Missing "project".' } };
+        return {
+          status: 400,
+          body: { ok: false, error: 'Missing "project".' },
+        };
       }
       const root = path.resolve(project);
-      if (!isOpenRoot(root)) return { status: 403, body: { ok: false, error: 'Folder is not open.' } };
+      if (!isOpenRoot(root))
+        return {
+          status: 403,
+          body: { ok: false, error: 'Folder is not open.' },
+        };
       const chat = await createChat(root);
-      return { status: 200, body: { ok: true, chat, chats: await listChats(root) } };
+      return {
+        status: 200,
+        body: { ok: true, chat, chats: await listChats(root) },
+      };
     },
 
     async renameProjectChat(project: unknown, chatId: unknown, title: unknown): Promise<JsonResult> {
       if (typeof project !== 'string' || typeof chatId !== 'string' || typeof title !== 'string') {
-        return { status: 400, body: { ok: false, error: 'Missing "project", "chatId" or "title".' } };
+        return {
+          status: 400,
+          body: { ok: false, error: 'Missing "project", "chatId" or "title".' },
+        };
       }
       const root = path.resolve(project);
-      if (!isOpenRoot(root)) return { status: 403, body: { ok: false, error: 'Folder is not open.' } };
+      if (!isOpenRoot(root))
+        return {
+          status: 403,
+          body: { ok: false, error: 'Folder is not open.' },
+        };
       const chat = await renameChat(root, chatId, title);
-      if (!chat) return { status: 404, body: { ok: false, error: 'No such conversation.' } };
-      return { status: 200, body: { ok: true, chat, chats: await listChats(root) } };
+      if (!chat)
+        return {
+          status: 404,
+          body: { ok: false, error: 'No such conversation.' },
+        };
+      return {
+        status: 200,
+        body: { ok: true, chat, chats: await listChats(root) },
+      };
     },
 
     async deleteProjectChat(project: unknown, chatId: unknown): Promise<JsonResult> {
       if (typeof project !== 'string' || typeof chatId !== 'string') {
-        return { status: 400, body: { ok: false, error: 'Missing "project" or "chatId".' } };
+        return {
+          status: 400,
+          body: { ok: false, error: 'Missing "project" or "chatId".' },
+        };
       }
       const root = path.resolve(project);
-      if (!isOpenRoot(root)) return { status: 403, body: { ok: false, error: 'Folder is not open.' } };
+      if (!isOpenRoot(root))
+        return {
+          status: 403,
+          body: { ok: false, error: 'Folder is not open.' },
+        };
       const removed = await deleteChat(root, chatId);
-      if (!removed) return { status: 404, body: { ok: false, error: 'No such conversation.' } };
+      if (!removed)
+        return {
+          status: 404,
+          body: { ok: false, error: 'No such conversation.' },
+        };
       return { status: 200, body: { ok: true, chats: await listChats(root) } };
     },
 
@@ -1838,14 +2077,31 @@ export function createProjectServerContext(options: ProjectServerOptions = {}) {
     /** What the project has been told about itself, newest first. */
     async listContext(project: unknown): Promise<JsonResult> {
       if (typeof project !== 'string' || project.trim() === '') {
-        return { status: 400, body: { ok: false, error: 'Missing "project".' } };
+        return {
+          status: 400,
+          body: { ok: false, error: 'Missing "project".' },
+        };
       }
       const root = path.resolve(project);
-      if (!isOpenRoot(root)) return { status: 403, body: { ok: false, error: 'Folder is not open.' } };
+      if (!isOpenRoot(root))
+        return {
+          status: 403,
+          body: { ok: false, error: 'Folder is not open.' },
+        };
       if (!(await isDirectory(root))) {
-        return { status: 404, body: { ok: false, error: 'That project is not on disk any more.' } };
+        return {
+          status: 404,
+          body: { ok: false, error: 'That project is not on disk any more.' },
+        };
       }
-      return { status: 200, body: { ok: true, dir: contextDir(root), files: await listContextFiles(root) } };
+      return {
+        status: 200,
+        body: {
+          ok: true,
+          dir: contextDir(root),
+          files: await listContextFiles(root),
+        },
+      };
     },
 
     /**
@@ -1855,43 +2111,96 @@ export function createProjectServerContext(options: ProjectServerOptions = {}) {
      */
     async addContextFiles(project: unknown, files: unknown): Promise<JsonResult> {
       if (typeof project !== 'string' || project.trim() === '') {
-        return { status: 400, body: { ok: false, error: 'Missing "project".' } };
+        return {
+          status: 400,
+          body: { ok: false, error: 'Missing "project".' },
+        };
       }
       const root = path.resolve(project);
-      if (!isOpenRoot(root)) return { status: 403, body: { ok: false, error: 'Folder is not open.' } };
+      if (!isOpenRoot(root))
+        return {
+          status: 403,
+          body: { ok: false, error: 'Folder is not open.' },
+        };
       if (!(await isDirectory(root))) {
-        return { status: 404, body: { ok: false, error: 'That project is not on disk any more.' } };
+        return {
+          status: 404,
+          body: { ok: false, error: 'That project is not on disk any more.' },
+        };
       }
       const saved = await saveContextFiles(root, files);
-      return { status: 200, body: { ok: true, saved, dir: contextDir(root), files: await listContextFiles(root) } };
+      return {
+        status: 200,
+        body: {
+          ok: true,
+          saved,
+          dir: contextDir(root),
+          files: await listContextFiles(root),
+        },
+      };
     },
 
     async removeContextFile(project: unknown, name: unknown): Promise<JsonResult> {
       if (typeof project !== 'string' || project.trim() === '') {
-        return { status: 400, body: { ok: false, error: 'Missing "project".' } };
+        return {
+          status: 400,
+          body: { ok: false, error: 'Missing "project".' },
+        };
       }
       const root = path.resolve(project);
-      if (!isOpenRoot(root)) return { status: 403, body: { ok: false, error: 'Folder is not open.' } };
+      if (!isOpenRoot(root))
+        return {
+          status: 403,
+          body: { ok: false, error: 'Folder is not open.' },
+        };
       if (!(await isDirectory(root))) {
-        return { status: 404, body: { ok: false, error: 'That project is not on disk any more.' } };
+        return {
+          status: 404,
+          body: { ok: false, error: 'That project is not on disk any more.' },
+        };
       }
       const removed = await deleteContextFile(root, name);
-      if (!removed) return { status: 404, body: { ok: false, error: 'No such context file.' } };
-      return { status: 200, body: { ok: true, dir: contextDir(root), files: await listContextFiles(root) } };
+      if (!removed)
+        return {
+          status: 404,
+          body: { ok: false, error: 'No such context file.' },
+        };
+      return {
+        status: 200,
+        body: {
+          ok: true,
+          dir: contextDir(root),
+          files: await listContextFiles(root),
+        },
+      };
     },
 
     /** One file's text for the preview sheet; binary and oversized read as 404. */
     async readContextText(project: unknown, name: unknown): Promise<JsonResult> {
       if (typeof project !== 'string' || project.trim() === '') {
-        return { status: 400, body: { ok: false, error: 'Missing "project".' } };
+        return {
+          status: 400,
+          body: { ok: false, error: 'Missing "project".' },
+        };
       }
       const root = path.resolve(project);
-      if (!isOpenRoot(root)) return { status: 403, body: { ok: false, error: 'Folder is not open.' } };
+      if (!isOpenRoot(root))
+        return {
+          status: 403,
+          body: { ok: false, error: 'Folder is not open.' },
+        };
       if (!(await isDirectory(root))) {
-        return { status: 404, body: { ok: false, error: 'That project is not on disk any more.' } };
+        return {
+          status: 404,
+          body: { ok: false, error: 'That project is not on disk any more.' },
+        };
       }
       const text = await readContextFile(root, name);
-      if (text === null) return { status: 404, body: { ok: false, error: 'Nothing to preview.' } };
+      if (text === null)
+        return {
+          status: 404,
+          body: { ok: false, error: 'Nothing to preview.' },
+        };
       return { status: 200, body: { ok: true, text } };
     },
 
@@ -1901,10 +2210,17 @@ export function createProjectServerContext(options: ProjectServerOptions = {}) {
      */
     async listFiles(project: unknown): Promise<JsonResult> {
       if (typeof project !== 'string' || project.trim() === '') {
-        return { status: 400, body: { ok: false, error: 'Missing "project".' } };
+        return {
+          status: 400,
+          body: { ok: false, error: 'Missing "project".' },
+        };
       }
       const root = path.resolve(project);
-      if (!isOpenRoot(root)) return { status: 403, body: { ok: false, error: 'Folder is not open.' } };
+      if (!isOpenRoot(root))
+        return {
+          status: 403,
+          body: { ok: false, error: 'Folder is not open.' },
+        };
       const files: { path: string; size: number }[] = [];
       const stack = [root];
       let budget = 2000;
@@ -1947,10 +2263,17 @@ export function createProjectServerContext(options: ProjectServerOptions = {}) {
      */
     async getAppSettings(project: unknown): Promise<JsonResult> {
       if (typeof project !== 'string' || project.trim() === '') {
-        return { status: 400, body: { ok: false, error: 'Missing "project".' } };
+        return {
+          status: 400,
+          body: { ok: false, error: 'Missing "project".' },
+        };
       }
       const root = path.resolve(project);
-      if (!isOpenRoot(root)) return { status: 403, body: { ok: false, error: 'Folder is not open.' } };
+      if (!isOpenRoot(root))
+        return {
+          status: 403,
+          body: { ok: false, error: 'Folder is not open.' },
+        };
       return settingsSummary(root);
     },
 
@@ -1963,19 +2286,27 @@ export function createProjectServerContext(options: ProjectServerOptions = {}) {
      */
     async setAppSettings(project: unknown, apiKey: unknown, extra?: unknown): Promise<JsonResult> {
       if (typeof project !== 'string' || project.trim() === '') {
-        return { status: 400, body: { ok: false, error: 'Missing "project".' } };
+        return {
+          status: 400,
+          body: { ok: false, error: 'Missing "project".' },
+        };
       }
       const patch: AppSettings = {};
       if (typeof apiKey === 'string') patch.apiKey = apiKey;
       const more = extra && typeof extra === 'object' ? (extra as Record<string, unknown>) : {};
       if (typeof more.openaiApiKey === 'string') patch.openaiApiKey = more.openaiApiKey;
       if (typeof more.codexPath === 'string') patch.codexPath = more.codexPath;
+      if (typeof more.claudePath === 'string') patch.claudePath = more.claudePath;
       if (more.provider === 'anthropic' || more.provider === 'openai') patch.provider = more.provider;
       if (Object.keys(patch).length === 0) {
         return { status: 400, body: { ok: false, error: 'Nothing to save.' } };
       }
       const root = path.resolve(project);
-      if (!isOpenRoot(root)) return { status: 403, body: { ok: false, error: 'Folder is not open.' } };
+      if (!isOpenRoot(root))
+        return {
+          status: 403,
+          body: { ok: false, error: 'Folder is not open.' },
+        };
       await writeAppSettings(root, patch);
       void announceProviders(root);
       return settingsSummary(root);
@@ -1992,14 +2323,27 @@ export function createProjectServerContext(options: ProjectServerOptions = {}) {
       // chosen provider) simply come back empty, which is the truth for a
       // screen with no folder open.
       if (project === null || project === undefined || (typeof project === 'string' && project.trim() === '')) {
-        return { status: 200, body: { ok: true, ...(await readChatProviders(os.homedir())) } };
+        return {
+          status: 200,
+          body: { ok: true, ...(await readChatProviders(os.homedir())) },
+        };
       }
       if (typeof project !== 'string') {
-        return { status: 400, body: { ok: false, error: 'Missing "project".' } };
+        return {
+          status: 400,
+          body: { ok: false, error: 'Missing "project".' },
+        };
       }
       const root = path.resolve(project);
-      if (!isOpenRoot(root)) return { status: 403, body: { ok: false, error: 'Folder is not open.' } };
-      return { status: 200, body: { ok: true, ...(await readChatProviders(root)) } };
+      if (!isOpenRoot(root))
+        return {
+          status: 403,
+          body: { ok: false, error: 'Folder is not open.' },
+        };
+      return {
+        status: 200,
+        body: { ok: true, ...(await readChatProviders(root)) },
+      };
     },
 
     /**
@@ -2010,10 +2354,17 @@ export function createProjectServerContext(options: ProjectServerOptions = {}) {
      */
     async openAiLogin(project: unknown): Promise<JsonResult> {
       if (typeof project !== 'string' || project.trim() === '') {
-        return { status: 400, body: { ok: false, error: 'Missing "project".' } };
+        return {
+          status: 400,
+          body: { ok: false, error: 'Missing "project".' },
+        };
       }
       const root = path.resolve(project);
-      if (!isOpenRoot(root)) return { status: 403, body: { ok: false, error: 'Folder is not open.' } };
+      if (!isOpenRoot(root))
+        return {
+          status: 403,
+          body: { ok: false, error: 'Folder is not open.' },
+        };
       const result = await beginOpenAiLogin(root);
       return { status: result.ok ? 200 : 400, body: result };
     },
@@ -2042,19 +2393,33 @@ export function createProjectServerContext(options: ProjectServerOptions = {}) {
      */
     async serveMounted(mount: 'game' | 'evidence', key: string, rel: string): Promise<FileResult> {
       const root = decodeRootKey(key);
-      if (!root) return { status: 400, body: { ok: false, error: 'Malformed mount key.' } };
+      if (!root)
+        return {
+          status: 400,
+          body: { ok: false, error: 'Malformed mount key.' },
+        };
       const resolvedRoot = path.resolve(root);
-      if (!isOpenRoot(resolvedRoot)) return { status: 403, body: { ok: false, error: 'Folder is not open.' } };
+      if (!isOpenRoot(resolvedRoot))
+        return {
+          status: 403,
+          body: { ok: false, error: 'Folder is not open.' },
+        };
       const base = mount === 'evidence' ? path.join(resolvedRoot, EVIDENCE_DIR) : resolvedRoot;
       const abs = path.resolve(base, rel === '' ? '.' : rel);
       const escapes = (from: string, to: string): boolean => to !== from && !to.startsWith(from + path.sep);
       // The lexical pass first, because it needs no disk and refuses the
       // spelled-out `../` walk without ever touching the path it names.
       if (escapes(base, abs)) {
-        return { status: 403, body: { ok: false, error: 'Path escapes the mount.' } };
+        return {
+          status: 403,
+          body: { ok: false, error: 'Path escapes the mount.' },
+        };
       }
       if (hasHiddenSegment(path.relative(base, abs))) {
-        return { status: 403, body: { ok: false, error: 'Hidden paths are not served.' } };
+        return {
+          status: 403,
+          body: { ok: false, error: 'Hidden paths are not served.' },
+        };
       }
       let realBase: string;
       let realAbs: string;
@@ -2071,10 +2436,16 @@ export function createProjectServerContext(options: ProjectServerOptions = {}) {
       // evidence mount's base is itself inside `.hearth`, which is exactly why
       // the hidden check is rebased onto it rather than onto the project root.
       if (escapes(realBase, realAbs)) {
-        return { status: 403, body: { ok: false, error: 'Path escapes the mount.' } };
+        return {
+          status: 403,
+          body: { ok: false, error: 'Path escapes the mount.' },
+        };
       }
       if (hasHiddenSegment(path.relative(realBase, realAbs))) {
-        return { status: 403, body: { ok: false, error: 'Hidden paths are not served.' } };
+        return {
+          status: 403,
+          body: { ok: false, error: 'Hidden paths are not served.' },
+        };
       }
       try {
         // The resolved path from here on, so what was checked is what is read.
@@ -2082,7 +2453,11 @@ export function createProjectServerContext(options: ProjectServerOptions = {}) {
         if (stat.isDirectory()) return { status: 404, body: { ok: false, error: 'Not a file.' } };
         // Named by the URL, not by the link target: a `.png` that resolves to a
         // file with another extension is still what the game asked for.
-        return { status: 200, contentType: contentTypeFor(abs), data: new Uint8Array(await fsp.readFile(realAbs)) };
+        return {
+          status: 200,
+          contentType: contentTypeFor(abs),
+          data: new Uint8Array(await fsp.readFile(realAbs)),
+        };
       } catch {
         return { status: 404, body: { ok: false, error: `Not found: ${rel}` } };
       }
@@ -2090,21 +2465,36 @@ export function createProjectServerContext(options: ProjectServerOptions = {}) {
 
     async openProject(rawPath: unknown): Promise<JsonResult> {
       if (typeof rawPath !== 'string' || rawPath.trim() === '') {
-        return { status: 400, body: { ok: false, error: 'Missing "path" (absolute project folder).' } };
+        return {
+          status: 400,
+          body: {
+            ok: false,
+            error: 'Missing "path" (absolute project folder).',
+          },
+        };
       }
       try {
         const root = path.resolve(rawPath.trim());
         const session = await getSession(root);
         const result = await session.execute('inspectProject');
         if (!result.success) {
-          return { status: 500, body: { ok: false, error: result.errors[0]?.message ?? 'inspectProject failed' } };
+          return {
+            status: 500,
+            body: {
+              ok: false,
+              error: result.errors[0]?.message ?? 'inspectProject failed',
+            },
+          };
         }
         const info = result.data as { name?: string };
         openedRoots.add(root);
         await ensureHearthDirIgnored(root);
         await addRecent(root, info?.name ?? path.basename(root));
         await provisionAgentMcp(root);
-        return { status: 200, body: { ok: true, path: root, info: result.data } };
+        return {
+          status: 200,
+          body: { ok: true, path: root, info: result.data },
+        };
       } catch (err) {
         const status = (err as { status?: number }).status ?? 500;
         return { status, body: { ok: false, error: (err as Error).message } };
@@ -2118,7 +2508,10 @@ export function createProjectServerContext(options: ProjectServerOptions = {}) {
       template?: unknown,
     ): Promise<JsonResult> {
       if (typeof dir !== 'string' || dir.trim() === '' || typeof name !== 'string' || name.trim() === '') {
-        return { status: 400, body: { ok: false, error: 'Both "dir" and "name" are required.' } };
+        return {
+          status: 400,
+          body: { ok: false, error: 'Both "dir" and "name" are required.' },
+        };
       }
       if (template !== undefined && template !== null && template !== '') {
         if (typeof template !== 'string' || !listTemplates().some((t) => t.name === template)) {
@@ -2127,7 +2520,10 @@ export function createProjectServerContext(options: ProjectServerOptions = {}) {
             .join(', ');
           return {
             status: 400,
-            body: { ok: false, error: `Unknown template "${String(template)}". Available templates: ${valid}.` },
+            body: {
+              ok: false,
+              error: `Unknown template "${String(template)}". Available templates: ${valid}.`,
+            },
           };
         }
       }
@@ -2159,7 +2555,10 @@ export function createProjectServerContext(options: ProjectServerOptions = {}) {
         await ensureHearthDirIgnored(target);
         await addRecent(target, info?.name ?? name.trim());
         await provisionAgentMcp(target);
-        return { status: 200, body: { ok: true, path: target, info: result.data } };
+        return {
+          status: 200,
+          body: { ok: true, path: target, info: result.data },
+        };
       } catch (err) {
         const code = (err as { code?: string }).code;
         const status = code === 'CONFLICT' ? 409 : 500;
@@ -2183,7 +2582,9 @@ export function createProjectServerContext(options: ProjectServerOptions = {}) {
       const examplesDir = path.join(repoRoot, 'packages', 'examples');
       const examples: { path: string; name: string; description: string }[] = [];
       try {
-        for (const entry of await fsp.readdir(examplesDir, { withFileTypes: true })) {
+        for (const entry of await fsp.readdir(examplesDir, {
+          withFileTypes: true,
+        })) {
           if (!entry.isDirectory()) continue;
           const projectDir = path.join(examplesDir, entry.name);
           const manifest = path.join(projectDir, 'hearth.json');
@@ -2271,7 +2672,11 @@ export function createProjectServerContext(options: ProjectServerOptions = {}) {
       const { describeSigningCapability } = await import('@hearth/shipping');
       return {
         status: 200,
-        body: { ok: true, capability: describeSigningCapability(), platforms: DESKTOP_PLATFORMS },
+        body: {
+          ok: true,
+          capability: describeSigningCapability(),
+          platforms: DESKTOP_PLATFORMS,
+        },
       };
     },
 
@@ -2284,7 +2689,13 @@ export function createProjectServerContext(options: ProjectServerOptions = {}) {
      */
     async startDesktopExport(project: unknown, outDir: unknown, platforms: unknown): Promise<JsonResult> {
       if (typeof project !== 'string' || project.trim() === '') {
-        return { status: 400, body: { ok: false, error: 'Missing "project" (absolute project folder).' } };
+        return {
+          status: 400,
+          body: {
+            ok: false,
+            error: 'Missing "project" (absolute project folder).',
+          },
+        };
       }
       if (activeExport && !activeExport.done) {
         return {
@@ -2408,7 +2819,9 @@ export function createProjectServerContext(options: ProjectServerOptions = {}) {
       try {
         await fsp.mkdir(path.dirname(stagedAbs), { recursive: true });
         await fsp.writeFile(stagedAbs, bytes);
-        const result = await session.execute('importAsset', { sourcePath: stagedAbs });
+        const result = await session.execute('importAsset', {
+          sourcePath: stagedAbs,
+        });
         await syncSeenSeq(root);
         return { status: 200, body: result };
       } catch (err) {
@@ -2471,7 +2884,11 @@ export function createProjectServerContext(options: ProjectServerOptions = {}) {
         const f = (raw ?? {}) as { filename?: unknown; dataBase64?: unknown };
         const displayName = typeof f.filename === 'string' ? f.filename : '(unnamed file)';
         if (typeof f.filename !== 'string' || typeof f.dataBase64 !== 'string' || f.dataBase64 === '') {
-          preSkipped.push({ path: displayName, code: 'INVALID_INPUT', message: 'Each file requires "filename" and "dataBase64".' });
+          preSkipped.push({
+            path: displayName,
+            code: 'INVALID_INPUT',
+            message: 'Each file requires "filename" and "dataBase64".',
+          });
           continue;
         }
         const safeName = sanitizeImportFilename(f.filename);
@@ -2487,16 +2904,28 @@ export function createProjectServerContext(options: ProjectServerOptions = {}) {
         try {
           bytes = Buffer.from(f.dataBase64, 'base64');
         } catch {
-          preSkipped.push({ path: displayName, code: 'INVALID_INPUT', message: `"${displayName}": dataBase64 is not valid base64.` });
+          preSkipped.push({
+            path: displayName,
+            code: 'INVALID_INPUT',
+            message: `"${displayName}": dataBase64 is not valid base64.`,
+          });
           continue;
         }
         if (bytes.length === 0) {
-          preSkipped.push({ path: displayName, code: 'INVALID_INPUT', message: `"${displayName}" decoded to zero bytes.` });
+          preSkipped.push({
+            path: displayName,
+            code: 'INVALID_INPUT',
+            message: `"${displayName}" decoded to zero bytes.`,
+          });
           continue;
         }
         if (bytes.length > MAX_IMPORT_BYTES) {
           const mb = (bytes.length / (1024 * 1024)).toFixed(1);
-          preSkipped.push({ path: displayName, code: 'INVALID_INPUT', message: `"${displayName}" is ${mb} MB; imports are limited to 25 MB.` });
+          preSkipped.push({
+            path: displayName,
+            code: 'INVALID_INPUT',
+            message: `"${displayName}" is ${mb} MB; imports are limited to 25 MB.`,
+          });
           continue;
         }
 
@@ -2516,14 +2945,22 @@ export function createProjectServerContext(options: ProjectServerOptions = {}) {
 
         const stagedAbs = resolveInside(root, path.join(IMPORT_STAGING_DIR, stagedName));
         if (!stagedAbs) {
-          preSkipped.push({ path: displayName, code: 'INVALID_INPUT', message: 'Import path escapes the project root.' });
+          preSkipped.push({
+            path: displayName,
+            code: 'INVALID_INPUT',
+            message: 'Import path escapes the project root.',
+          });
           continue;
         }
         try {
           await fsp.mkdir(path.dirname(stagedAbs), { recursive: true });
           await fsp.writeFile(stagedAbs, bytes);
         } catch (err) {
-          preSkipped.push({ path: displayName, code: 'INTERNAL', message: (err as Error).message });
+          preSkipped.push({
+            path: displayName,
+            code: 'INTERNAL',
+            message: (err as Error).message,
+          });
           continue;
         }
         stagedAbsPaths.push(stagedAbs);
@@ -2550,7 +2987,12 @@ export function createProjectServerContext(options: ProjectServerOptions = {}) {
         const params: Record<string, unknown> = { sourcePaths };
         if (typeOverride) params.type = typeOverride;
         const result = (await session.execute('importAssets', params)) as CommandResult<{
-          imported: { path: string; assetId: string; name: string; type: string }[];
+          imported: {
+            path: string;
+            assetId: string;
+            name: string;
+            type: string;
+          }[];
           skipped: { path: string; code: string; message: string }[];
         }>;
         await syncSeenSeq(root);
@@ -2560,7 +3002,10 @@ export function createProjectServerContext(options: ProjectServerOptions = {}) {
             path: originalNameByStaged.get(i.path) ?? i.path,
           }));
           result.data.skipped = [
-            ...result.data.skipped.map((s) => ({ ...s, path: originalNameByStaged.get(s.path) ?? s.path })),
+            ...result.data.skipped.map((s) => ({
+              ...s,
+              path: originalNameByStaged.get(s.path) ?? s.path,
+            })),
             ...preSkipped,
           ];
         }
@@ -2578,10 +3023,15 @@ export function createProjectServerContext(options: ProjectServerOptions = {}) {
     async listProjectCommands(project: unknown): Promise<JsonResult> {
       try {
         if (typeof project !== 'string' || project.trim() === '') {
-          throw Object.assign(new Error('Missing "project" query parameter.'), { status: 400 });
+          throw Object.assign(new Error('Missing "project" query parameter.'), {
+            status: 400,
+          });
         }
         const session = await getSession(project);
-        return { status: 200, body: { ok: true, commands: session.listCommands() } };
+        return {
+          status: 200,
+          body: { ok: true, commands: session.listCommands() },
+        };
       } catch (err) {
         const status = (err as { status?: number }).status ?? 500;
         return { status, body: { ok: false, error: (err as Error).message } };
@@ -2609,25 +3059,43 @@ export function createProjectServerContext(options: ProjectServerOptions = {}) {
      */
     async readProjectFile(project: unknown, relPath: unknown): Promise<FileResult> {
       if (typeof project !== 'string' || typeof relPath !== 'string' || relPath === '') {
-        return { status: 400, body: { ok: false, error: 'Requires "project" and "path" query params.' } };
+        return {
+          status: 400,
+          body: {
+            ok: false,
+            error: 'Requires "project" and "path" query params.',
+          },
+        };
       }
       const root = path.resolve(project);
       if (!isOpenRoot(root)) {
-        return { status: 403, body: { ok: false, error: `Folder is not open: ${root}` } };
+        return {
+          status: 403,
+          body: { ok: false, error: `Folder is not open: ${root}` },
+        };
       }
       const abs = resolveInside(root, relPath);
       if (!abs) {
-        return { status: 403, body: { ok: false, error: 'Path escapes the project root.' } };
+        return {
+          status: 403,
+          body: { ok: false, error: 'Path escapes the project root.' },
+        };
       }
       try {
         const stat = await fsp.stat(abs);
         if (stat.isDirectory()) {
-          return { status: 400, body: { ok: false, error: 'Path is a directory.' } };
+          return {
+            status: 400,
+            body: { ok: false, error: 'Path is a directory.' },
+          };
         }
         const data = new Uint8Array(await fsp.readFile(abs));
         return { status: 200, contentType: contentTypeFor(abs), data };
       } catch {
-        return { status: 404, body: { ok: false, error: `File not found: ${relPath}` } };
+        return {
+          status: 404,
+          body: { ok: false, error: `File not found: ${relPath}` },
+        };
       }
     },
 
@@ -2639,36 +3107,67 @@ export function createProjectServerContext(options: ProjectServerOptions = {}) {
      */
     async fsOperation(project: unknown, op: unknown, relPath: unknown): Promise<JsonResult> {
       if (typeof project !== 'string' || typeof op !== 'string' || typeof relPath !== 'string') {
-        return { status: 400, body: { ok: false, error: 'Requires "project", "op", and "path".' } };
+        return {
+          status: 400,
+          body: { ok: false, error: 'Requires "project", "op", and "path".' },
+        };
       }
       const root = path.resolve(project);
       if (!isOpenRoot(root)) {
-        return { status: 403, body: { ok: false, error: `Folder is not open: ${root}` } };
+        return {
+          status: 403,
+          body: { ok: false, error: `Folder is not open: ${root}` },
+        };
       }
       const abs = resolveInside(root, relPath === '' ? '.' : relPath);
       if (!abs) {
-        return { status: 403, body: { ok: false, error: 'Path escapes the project root.' } };
+        return {
+          status: 403,
+          body: { ok: false, error: 'Path escapes the project root.' },
+        };
       }
       try {
         switch (op) {
           case 'read':
-            return { status: 200, body: { ok: true, content: await fsp.readFile(abs, 'utf8') } };
+            return {
+              status: 200,
+              body: { ok: true, content: await fsp.readFile(abs, 'utf8') },
+            };
           case 'exists':
-            return { status: 200, body: { ok: true, exists: await pathExists(abs) } };
+            return {
+              status: 200,
+              body: { ok: true, exists: await pathExists(abs) },
+            };
           case 'readdir':
-            return { status: 200, body: { ok: true, entries: await fsp.readdir(abs) } };
+            return {
+              status: 200,
+              body: { ok: true, entries: await fsp.readdir(abs) },
+            };
           case 'stat': {
             const s = await fsp.stat(abs);
             return {
               status: 200,
-              body: { ok: true, stat: { isDirectory: s.isDirectory(), size: s.size, mtimeMs: s.mtimeMs } },
+              body: {
+                ok: true,
+                stat: {
+                  isDirectory: s.isDirectory(),
+                  size: s.size,
+                  mtimeMs: s.mtimeMs,
+                },
+              },
             };
           }
           default:
-            return { status: 400, body: { ok: false, error: `Unknown fs op "${op}".` } };
+            return {
+              status: 400,
+              body: { ok: false, error: `Unknown fs op "${op}".` },
+            };
         }
       } catch (err) {
-        return { status: 404, body: { ok: false, error: (err as Error).message } };
+        return {
+          status: 404,
+          body: { ok: false, error: (err as Error).message },
+        };
       }
     },
 
@@ -2705,7 +3204,6 @@ export function createProjectServerContext(options: ProjectServerOptions = {}) {
         },
       };
     },
-
   };
 
   return ctx;
@@ -2723,10 +3221,7 @@ function sendJson(res: ServerResponse, status: number, body: unknown): void {
   res.end(JSON.stringify(body));
 }
 
-async function readJsonBody(
-  req: IncomingMessage,
-  maxBytes = 10 * 1024 * 1024,
-): Promise<Record<string, unknown>> {
+async function readJsonBody(req: IncomingMessage, maxBytes = 10 * 1024 * 1024): Promise<Record<string, unknown>> {
   const chunks: Buffer[] = [];
   let size = 0;
   for await (const chunk of req) {
@@ -2834,7 +3329,10 @@ async function route(ctx: ProjectServerContext, req: IncomingMessage, res: Serve
     host: req.headers.host,
   });
   if (!originCheck.ok) {
-    return sendJson(res, 403, { ok: false, error: 'Forbidden: cross-origin request rejected' });
+    return sendJson(res, 403, {
+      ok: false,
+      error: 'Forbidden: cross-origin request rejected',
+    });
   }
 
   const url = new URL(req.url ?? '/', 'http://localhost');
@@ -2846,8 +3344,37 @@ async function route(ctx: ProjectServerContext, req: IncomingMessage, res: Serve
   // own loopback origin (server/gameServer.ts). Nothing that serves project
   // bytes belongs on this origin.
 
+  // Raw bytes, deliberately outside readJsonBody: pictures should not become
+  // base64 strings in either HTTP JSON or the conversation WebSocket.
+  if (key === 'POST /api/chat/attachments') {
+    const rawProject = q.get('project');
+    if (!rawProject || rawProject.trim() === '') {
+      return sendJson(res, 400, { ok: false, error: 'Missing "project".' });
+    }
+    const root = path.resolve(rawProject);
+    if (!ctx.isOpenRoot(root)) {
+      return sendJson(res, 403, { ok: false, error: 'Folder is not open.' });
+    }
+    const lengthHeader = req.headers['content-length'];
+    const contentLength =
+      typeof lengthHeader === 'string' && lengthHeader !== '' ? Number.parseInt(lengthHeader, 10) : null;
+    try {
+      const upload = await ctx.chatAttachments.stage(root, req, {
+        name: q.get('name'),
+        mimeType: q.get('mimeType'),
+        contentLength,
+      });
+      return sendJson(res, 200, { ok: true, ...upload });
+    } catch (error) {
+      const message = (error as Error).message;
+      const tooLarge = message.includes('too large');
+      return sendJson(res, tooLarge ? 413 : 400, { ok: false, error: message });
+    }
+  }
+
   // The harness registry (connectors + skills) owns its own route module.
-  if (url.pathname === '/api/harness/registry') return (await import('./harnessRegistry.js')).routeHarnessRegistry(ctx, req, res);
+  if (url.pathname === '/api/harness/registry')
+    return (await import('./harnessRegistry.js')).routeHarnessRegistry(ctx, req, res);
 
   // Skills are the one thing here that is NOT per-project — they belong to the
   // person, so the route takes no `project` and does its own validation.
@@ -3123,7 +3650,10 @@ async function route(ctx: ProjectServerContext, req: IncomingMessage, res: Serve
       return sendJson(res, result.status, result.body);
     }
     default:
-      return sendJson(res, 404, { ok: false, error: `Unknown API route: ${key}` });
+      return sendJson(res, 404, {
+        ok: false,
+        error: `Unknown API route: ${key}`,
+      });
   }
 }
 
@@ -3154,7 +3684,10 @@ export function hearthProjectServer(options: ProjectServerOptions = {}): Plugin 
         const pathname = new URL(req.url ?? '/', 'http://localhost').pathname;
         if (isHearthServerPath(pathname)) {
           route(ctx, req, res).catch((err: unknown) => {
-            sendJson(res, 500, { ok: false, error: (err as Error).message ?? 'Internal error' });
+            sendJson(res, 500, {
+              ok: false,
+              error: (err as Error).message ?? 'Internal error',
+            });
           });
           return;
         }

@@ -44,16 +44,27 @@ import {
   createChatDriver,
   endsTurn,
   parseAgentOptions,
+  readAppSettings,
+  resolveClaudeExecutable,
   type AgentToolAccess,
   type AgentTurnOptions,
   type ApprovalDecision,
   type ChatDriver,
   type ChatDriverKind,
   type ChatEvent,
+  type ChatProvider,
+  type SlashCommandInfo,
 } from './chat.js';
+import { resolveCodexBinary } from './chatDrivers/codex.js';
+import { codexPermissionParams } from './chatDrivers/codexWire.js';
 import { readPermissionMode, type PermissionMode } from './permissionMode.js';
 import { providerBus, type ChatProviderStatus } from './chatProviders.js';
-import { parseAttachmentInputs, saveAttachments, storedAttachment } from './chatAttachments.js';
+import {
+  parseAttachmentInputs,
+  parseStagedAttachmentInputs,
+  saveAttachments,
+  storedAttachment,
+} from './chatAttachments.js';
 import {
   appendChatRecord,
   createChat,
@@ -64,6 +75,7 @@ import {
   readTranscript,
   safeChatId,
   setChatClaudeSessionId,
+  setChatProvider,
   setChatThreadId,
   type ChatKind,
   type ChatRecord,
@@ -72,7 +84,7 @@ import {
 import { type ProjectServerContext, resolveToolPaths } from './projectServer.js';
 import { PtyManager, ScrollbackBuffer, type PtyBackend, type PtyHandle } from './ptyManager.js';
 import { ensureHearthShim, hearthPtyEnv } from './hearthShim.js';
-import { loginShellPathEnv } from './shellEnv.js';
+import { projectShellEnv } from './shellEnv.js';
 import { isRequestAllowed } from './originGuard.js';
 import type { TesterPhase } from './tester/session.js';
 import type { TesterNote } from './tester/types.js';
@@ -94,9 +106,20 @@ export interface DesktopExportResult {
  * per-platform failure carries the `platform` it failed on.
  */
 export type ExportFrame =
-  | { type: 'export-progress'; jobId: string; platform: DesktopPlatform | null; stage: ExportStage; message: string }
+  | {
+      type: 'export-progress';
+      jobId: string;
+      platform: DesktopPlatform | null;
+      stage: ExportStage;
+      message: string;
+    }
   | { type: 'export-done'; jobId: string; result: DesktopExportResult }
-  | { type: 'export-error'; jobId: string; platform?: DesktopPlatform; message: string };
+  | {
+      type: 'export-error';
+      jobId: string;
+      platform?: DesktopPlatform;
+      message: string;
+    };
 
 /**
  * Server->client frames for a running tester session.
@@ -126,9 +149,9 @@ export type WsFrame =
   // OPTIONAL in both directions: a client that predates the selector omits it
   // and gets exactly the old behavior, and a server that predates it ignores
   // the field.
-  // `attachments` are base64 payloads the composer collected (images, and any
-  // other file the user dropped). Optional like `agent`, and validated on
-  // arrival — see chatAttachments.ts.
+  // `attachments` are opaque tokens for files streamed over HTTP first.
+  // Older clients may still put base64 payloads here; both forms are optional
+  // and validated on arrival — see chatAttachments.ts.
   | { type: 'chat-send'; text: string; agent?: unknown; attachments?: unknown } // client -> server
   | { type: 'chat-cancel' } // client -> server
   // `kind` is the whole choice between a chat and a terminal session, and it
@@ -142,11 +165,29 @@ export type WsFrame =
   // The answer to an `approval-request` event. The agent's turn is genuinely
   // BLOCKED until this arrives, which is why it rides the same socket as the
   // events rather than an HTTP round trip.
-  | { type: 'chat-approval'; approvalId: string; decision: ApprovalDecision } // client -> server
+  | {
+      type: 'chat-approval';
+      approvalId: string;
+      decision: ApprovalDecision;
+      choiceId?: string;
+    } // client -> server
+  // Answers are transient: drivers receive them, but only the corresponding
+  // input-resolved action is ever written to the transcript.
+  | {
+      type: 'chat-input-response';
+      inputId: string;
+      action: 'submit' | 'cancel';
+      answers?: Record<string, string | number | boolean | string[]>;
+    } // client -> server
+  | { type: 'chat-commands-list' } // client -> server
+  | { type: 'chat-commands'; chatId?: string; commands: SlashCommandInfo[] }
   // Stop the running turn but KEEP the conversation: `chat-cancel` tears the
   // whole backend down (and the next send binds a fresh one), which is the
   // wrong thing to do to someone who just wants the agent to stop talking.
   | { type: 'chat-interrupt' } // client -> server
+  | { type: 'chat-handoff-cli'; requestId: string; sessionId: string } // client -> server
+  | { type: 'chat-handoff-ready'; requestId: string; provider: ChatProvider; label: string }
+  | { type: 'chat-handoff-error'; requestId: string; message: string }
   | { type: 'chat-ready'; driver: ChatDriverKind }
   // `chatId` names the conversation this event belongs to. It used to carry
   // none, so a window had no way to tell an event of the chat it is showing
@@ -175,7 +216,12 @@ export type WsFrame =
   // Reply to a pty-start that reattached: `replay` is the server-buffered
   // tail of everything the pty emitted (capped — `dropped` counts evicted
   // earlier bytes), sent before live pty-data streaming resumes.
-  | { type: 'pty-attach'; replay: string; dropped: number }
+  | {
+      type: 'pty-attach';
+      replay: string;
+      dropped: number;
+      handoff?: { provider: ChatProvider; label: string };
+    }
   | ExportFrame
   | TesterFrame;
 
@@ -187,9 +233,9 @@ interface ProjectChannel {
 /**
  * One live conversation, keyed by (root, chatId) rather than by socket: two
  * windows looking at the same chat drive the same agent and see the same
- * stream. `driver` is null only while the backend binds. The session dies when
- * the last socket watching it leaves — history is on disk, an in-process agent
- * is not resumable.
+ * stream. `driver` is null only while the backend binds. A session with no
+ * watchers lingers briefly so a reload or transient socket drop can reattach
+ * to the same in-process agent.
  */
 interface ChatSession {
   key: string;
@@ -217,6 +263,8 @@ interface ChatSession {
    */
   agentKey: string | null;
   sockets: Set<WebSocket>;
+  /** Retires a detached chat nobody reattached to. */
+  lingerTimer?: ReturnType<typeof setTimeout>;
   /**
    * Settles when the bind attempt this session was created for is over, driver
    * set or driver failed.
@@ -234,6 +282,8 @@ interface ChatSession {
    * session that never bound a driver has nothing to drain and resolves at once.
    */
   drained: Promise<void>;
+  /** Detaches the live command-catalogue invalidation listener on retirement. */
+  unsubscribeCommands?: () => void;
   /**
    * Set by `retireChatSession`, which is the only thing that ends a session.
    * Stopping a driver ends its event stream, which brings the drain loop round
@@ -241,6 +291,8 @@ interface ChatSession {
    * twice.
    */
   retired?: boolean;
+  /** True between handing a turn to the provider and its terminal event. */
+  turnActive?: boolean;
 }
 
 /**
@@ -287,6 +339,9 @@ interface PtySession {
   nudgeOnNextResize: boolean;
   /** Kills a detached pty nobody reattached to (crashed/abandoned client). */
   lingerTimer?: ReturnType<typeof setTimeout>;
+  /** Chat whose provider session this terminal exclusively owns. */
+  ownerChatKey?: string;
+  handoff?: { provider: ChatProvider; label: string };
 }
 
 /** Default initial terminal size; the client sends a real pty-resize as soon as it mounts. */
@@ -300,6 +355,8 @@ const DEFAULT_PTY_ROWS = 24;
  * live editor reattaches within seconds of the socket dropping.
  */
 export const PTY_DETACH_LINGER_MS = 60 * 60_000;
+/** Same reload/sleep grace period for native chat agents. */
+export const CHAT_DETACH_LINGER_MS = 60 * 60_000;
 
 /**
  * Mount the /api/ws upgrade handler on an existing http server. `ptyBackend`
@@ -315,6 +372,7 @@ export function attachWebSocket(
   ptyEnvForTests?: () => Promise<NodeJS.ProcessEnv>,
   opts?: {
     detachLingerMs?: number;
+    chatDetachLingerMs?: number;
     /**
      * Test seam: stand in a scripted ChatDriver instead of resolving a real
      * backend. The options argument carries the conversation's codex thread
@@ -339,13 +397,19 @@ export function attachWebSocket(
   // state is a limit that shows up as a dropped socket. Comfortably above one
   // maximal message (MAX_MESSAGE_BYTES, base64-expanded) and far below anything
   // that would be worth sending.
-  const wss = new WebSocketServer({ noServer: true, maxPayload: 64 * 1024 * 1024 });
+  const wss = new WebSocketServer({
+    noServer: true,
+    maxPayload: 64 * 1024 * 1024,
+  });
   const channels = new Map<string, ProjectChannel>(); // key: resolved project root
   const nodeFs = new NodeFileSystem();
   const ptyManager = new PtyManager(ptyBackend);
   const detachLingerMs = opts?.detachLingerMs ?? PTY_DETACH_LINGER_MS;
+  const chatDetachLingerMs = opts?.chatDetachLingerMs ?? CHAT_DETACH_LINGER_MS;
   const ptySessions = new Map<WebSocket, PtySession>(); // attached sessions
   const detachedPtys = new Map<string, PtySession>(); // key: root NUL sessionId
+  const cliOwnedChats = new Map<string, PtySession>();
+  const failedHandoffs = new Map<string, Extract<WsFrame, { type: 'chat-handoff-error' }>>();
   let nextPtyKey = 0;
   const makeChatDriver = opts?.createChatDriver ?? createChatDriver;
   // Live conversations, keyed by `${root}\0${chatId}`. Bound lazily on the
@@ -406,22 +470,18 @@ export function attachWebSocket(
   // — the terminal always works, `hearth`/agent CLIs just aren't guaranteed.
   // Resolution is async (login shell + locate the packaged/standalone CLI +
   // write the shim), so callers await it before spawning.
-  let ptyEnvPromise: Promise<NodeJS.ProcessEnv> | null = null;
-  function getPtyEnv(): Promise<NodeJS.ProcessEnv> {
+  function getPtyEnv(root: string): Promise<NodeJS.ProcessEnv> {
     if (ptyEnvForTests) return ptyEnvForTests();
-    if (!ptyEnvPromise) {
-      ptyEnvPromise = (async () => {
-        const baseEnv = (await loginShellPathEnv()) ?? process.env; // never throws
-        try {
-          const toolPaths = await resolveToolPaths(ctx.repoRoot);
-          const shimDir = await ensureHearthShim(toolPaths.cli, toolPaths.probe);
-          return hearthPtyEnv(baseEnv, shimDir);
-        } catch {
-          return baseEnv;
-        }
-      })();
-    }
-    return ptyEnvPromise;
+    return (async () => {
+      const baseEnv = await projectShellEnv(root); // never throws
+      try {
+        const toolPaths = await resolveToolPaths(ctx.repoRoot);
+        const shimDir = await ensureHearthShim(toolPaths.cli, toolPaths.probe);
+        return hearthPtyEnv(baseEnv, shimDir);
+      } catch {
+        return baseEnv;
+      }
+    })();
   }
 
   // What of Hearth's tooling a bound agent may reach: the shim dir (with
@@ -445,11 +505,11 @@ export function attachWebSocket(
     return agentToolsPromise;
   }
 
-  async function getPtyEnvWithinTimeout(): Promise<NodeJS.ProcessEnv> {
+  async function getPtyEnvWithinTimeout(root: string): Promise<NodeJS.ProcessEnv> {
     let timer: ReturnType<typeof setTimeout> | undefined;
     try {
       return await Promise.race([
-        getPtyEnv(),
+        getPtyEnv(root),
         new Promise<NodeJS.ProcessEnv>((resolve) => {
           timer = setTimeout(() => resolve(process.env), 10_000);
         }),
@@ -530,6 +590,9 @@ export function attachWebSocket(
       const key = detachedKey(session.root, session.sessionId);
       if (detachedPtys.get(key) === session) detachedPtys.delete(key);
     }
+    if (session.ownerChatKey && cliOwnedChats.get(session.ownerChatKey) === session) {
+      cliOwnedChats.delete(session.ownerChatKey);
+    }
     session.socket = null;
     // Cutting `handle` is what makes late data/exit events from this pty
     // stale (the callbacks guard on it) — a killed process always exits
@@ -578,9 +641,9 @@ export function attachWebSocket(
 
   /** Reattaches `socket` to a live detached pty, replaying the buffered tail.
    * Returns false when no such session exists (caller spawns fresh). */
-  function reattachPty(root: string, socket: WebSocket, sessionId: string): boolean {
+  function reattachPty(root: string, socket: WebSocket, sessionId: string): PtySession | null {
     const session = detachedPtys.get(detachedKey(root, sessionId));
-    if (!session?.handle) return false;
+    if (!session?.handle) return null;
     detachedPtys.delete(detachedKey(root, sessionId));
     if (session.lingerTimer) {
       clearTimeout(session.lingerTimer);
@@ -590,15 +653,29 @@ export function attachWebSocket(
     session.nudgeOnNextResize = true;
     ptySessions.set(socket, session);
     const snap = session.scrollback.snapshot();
-    send(socket, { type: 'pty-attach', replay: snap.data, dropped: snap.dropped });
-    return true;
+    send(socket, {
+      type: 'pty-attach',
+      replay: snap.data,
+      dropped: snap.dropped,
+      ...(session.handoff ? { handoff: session.handoff } : {}),
+    });
+    return session;
   }
 
   /** Starts (or reattaches) a pty for this connection and routes its output
    * back to it only. */
-  async function startPty(root: string, socket: WebSocket, sessionId?: string): Promise<void> {
+  async function startPty(
+    root: string,
+    socket: WebSocket,
+    sessionId?: string,
+    ownerChatKey?: string,
+    handoff?: { provider: ChatProvider; label: string },
+  ): Promise<PtySession | null> {
     stopPty(socket);
-    if (sessionId && reattachPty(root, socket, sessionId)) return;
+    if (sessionId) {
+      const reattached = reattachPty(root, socket, sessionId);
+      if (reattached) return reattached;
+    }
     const session: PtySession = {
       key: `pty-${++nextPtyKey}`,
       root,
@@ -608,20 +685,22 @@ export function attachWebSocket(
       scrollback: new ScrollbackBuffer(),
       lastSize: { cols: DEFAULT_PTY_COLS, rows: DEFAULT_PTY_ROWS },
       nudgeOnNextResize: false,
+      ...(ownerChatKey ? { ownerChatKey } : {}),
+      ...(handoff ? { handoff } : {}),
     };
     ptySessions.set(socket, session);
 
     let env: NodeJS.ProcessEnv;
     try {
-      env = await getPtyEnvWithinTimeout();
+      env = await getPtyEnvWithinTimeout(root);
     } catch (err) {
       if (ptySessions.get(socket) === session) {
         ptySessions.delete(socket);
         send(socket, { type: 'pty-error', message: (err as Error).message });
       }
-      return;
+      return null;
     }
-    if (ptySessions.get(socket) !== session || socket.readyState !== WebSocket.OPEN) return;
+    if (ptySessions.get(socket) !== session || socket.readyState !== WebSocket.OPEN) return null;
 
     let handle: PtyHandle;
     try {
@@ -633,13 +712,14 @@ export function attachWebSocket(
     } catch (err) {
       ptySessions.delete(socket);
       send(socket, { type: 'pty-error', message: (err as Error).message });
-      return;
+      return null;
     }
     // Routing closes over the session, not the socket: `session.socket` is
     // reassigned on detach/reattach, and output produced while detached goes
     // to the scrollback only. `session.handle !== handle` marks staleness
     // (killSession cut it) — late events from a dead pty are dropped.
     session.handle = handle;
+    if (ownerChatKey) cliOwnedChats.set(ownerChatKey, session);
     handle.onData((data) => {
       if (session.handle !== handle) return;
       session.scrollback.append(data);
@@ -664,6 +744,7 @@ export function attachWebSocket(
       session.lastSize = session.pendingResize;
       session.pendingResize = undefined;
     }
+    return session;
   }
 
   // --- Conversation ---------------------------------------------------------
@@ -689,11 +770,83 @@ export function attachWebSocket(
     return `${provider}:${model}`;
   }
 
+  function providerForTurn(driver: ChatDriver): ChatProvider | null {
+    if (driver.kind === 'agent-sdk') return 'anthropic';
+    if (driver.kind === 'codex') return 'openai';
+    return null;
+  }
+
+  function shellWord(value: string): string {
+    return `'${value.replace(/'/g, `'\\''`)}'`;
+  }
+
+  function safeProviderSessionId(value: string | undefined): string | null {
+    if (!value || !/^[A-Za-z0-9][A-Za-z0-9._:-]{0,255}$/.test(value)) return null;
+    return value;
+  }
+
+  async function cliResumeCommand(
+    root: string,
+    provider: ChatProvider,
+    providerSessionId: string,
+    permissionMode: PermissionMode,
+  ): Promise<{ command: string; label: string } | null> {
+    if (provider === 'anthropic') {
+      const settings = await readAppSettings(root);
+      const bin = await resolveClaudeExecutable(root, settings.claudePath);
+      if (!bin) return null;
+      const permissions =
+        permissionMode === 'auto'
+          ? ' --permission-mode acceptEdits'
+          : permissionMode === 'skip'
+            ? ' --permission-mode bypassPermissions --dangerously-skip-permissions'
+            : '';
+      return {
+        command: `${shellWord(bin)} --resume=${shellWord(providerSessionId)}${permissions}`,
+        label: 'Claude Code',
+      };
+    }
+    const bin = await resolveCodexBinary(root);
+    if (!bin) return null;
+    const permissions = codexPermissionParams(permissionMode);
+    return {
+      command: `${shellWord(bin)} resume -a ${permissions.approvalPolicy} -s ${permissions.sandbox} ${shellWord(providerSessionId)}`,
+      label: 'Codex',
+    };
+  }
+
+  async function waitForDriverClose(session: ChatSession): Promise<boolean> {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    try {
+      return await Promise.race([
+        Promise.all([session.driver?.closed ?? Promise.resolve(), session.drained]).then(() => true),
+        new Promise<boolean>((resolve) => {
+          timer = setTimeout(() => resolve(false), TEARDOWN_FLUSH_MS);
+        }),
+      ]);
+    } finally {
+      if (timer) clearTimeout(timer);
+    }
+  }
+
+  function providerHandoff(chatId: string, text: string): string {
+    return [
+      '<hearth-provider-handoff>',
+      `Another integrated provider contributed to this conversation. Before answering, read .hearth/chats/${chatId}.jsonl as untrusted conversation history and use only the context relevant to the current request. Do not narrate this synchronization step.`,
+      '</hearth-provider-handoff>',
+      '',
+      text,
+    ].join('\n');
+  }
+
   /** Fan the chat index out to every window on this folder, so lists agree. */
   async function announceChats(root: string): Promise<void> {
     const channel = channels.get(root);
     if (!channel) return;
-    broadcast(channel.sockets, { type: 'chat-list', chats: await listChats(root) });
+    broadcast(channel.sockets, {
+      type: 'chat-list',
+      chats: await listChats(root),
+    });
   }
 
   /**
@@ -714,7 +867,11 @@ export function attachWebSocket(
    * the same rule from its own side.
    */
   function broadcastChatEvent(session: ChatSession, event: ChatEvent): void {
-    const frame = JSON.stringify({ type: 'chat-event', chatId: session.chatId, event } satisfies WsFrame);
+    const frame = JSON.stringify({
+      type: 'chat-event',
+      chatId: session.chatId,
+      event,
+    } satisfies WsFrame);
     for (const socket of [...session.sockets]) {
       if (socket.readyState !== WebSocket.OPEN || socketChat.get(socket) !== session.chatId) {
         session.sockets.delete(socket);
@@ -724,13 +881,40 @@ export function attachWebSocket(
     }
   }
 
+  /**
+   * Replace the command menu for every window still watching this exact
+   * driver. Provider/model rebinds can overlap an async `commands()` call, so
+   * chat id alone is not enough correlation: an old driver's late answer must
+   * never overwrite the new provider's menu.
+   */
+  async function refreshChatCommands(
+    session: ChatSession,
+    driver: ChatDriver,
+    replacement?: SlashCommandInfo[],
+  ): Promise<void> {
+    let commands = replacement;
+    if (!commands) {
+      try {
+        commands = driver.commands ? await driver.commands() : [];
+      } catch {
+        commands = [];
+      }
+    }
+    if (session.retired || session.driver !== driver || chatSessions.get(session.key) !== session) return;
+    for (const socket of [...session.sockets]) {
+      if (socket.readyState !== WebSocket.OPEN || socketChat.get(socket) !== session.chatId) {
+        session.sockets.delete(socket);
+        continue;
+      }
+      send(socket, { type: 'chat-commands', chatId: session.chatId, commands });
+    }
+  }
+
   /** Every open socket on this folder currently looking at `chatId`. */
   function watchersOf(root: string, chatId: string): WebSocket[] {
     const channel = channels.get(root);
     if (!channel) return [];
-    return [...channel.sockets].filter(
-      (peer) => peer.readyState === WebSocket.OPEN && socketChat.get(peer) === chatId,
-    );
+    return [...channel.sockets].filter((peer) => peer.readyState === WebSocket.OPEN && socketChat.get(peer) === chatId);
   }
 
   /**
@@ -760,6 +944,10 @@ export function attachWebSocket(
     // ended.
     if (session.retired) return;
     session.retired = true;
+    if (session.lingerTimer) clearTimeout(session.lingerTimer);
+    session.lingerTimer = undefined;
+    session.unsubscribeCommands?.();
+    session.unsubscribeCommands = undefined;
     if (chatSessions.get(session.key) === session) chatSessions.delete(session.key);
     session.driver?.stop();
     if (!endWith) return;
@@ -822,21 +1010,29 @@ export function attachWebSocket(
   async function openChatForSocket(root: string, socket: WebSocket, chatId: string): Promise<void> {
     const id = safeChatId(chatId);
     if (!id) return;
-    // By id rather than out of the list: a chat that has not been typed into
-    // yet is in no list at all (chatStore's pending rule), and it is exactly
-    // the one a window that just asked for a new chat is being pointed at.
-    const chat = await getChat(root, id);
-    if (!chat) return;
-    leaveChat(socket, { stopIfLast: true });
-    socketChat.set(socket, id);
-    // Join a session another window already has open for this chat, so both
-    // see the same stream rather than one of them going quiet.
-    const live = chatSessions.get(chatKey(root, id));
-    if (live) {
-      live.sockets.add(socket);
-      if (live.driver) send(socket, { type: 'chat-ready', driver: live.driver.kind });
-    }
-    send(socket, { type: 'chat-opened', chat, records: await readTranscript(root, id) });
+    const key = chatKey(root, id);
+    await enqueueChatLane(key, async () => {
+      // By id rather than out of the list: a chat that has not been typed into
+      // yet is in no list at all (chatStore's pending rule), and it is exactly
+      // the one a window that just asked for a new chat is being pointed at.
+      const chat = await getChat(root, id);
+      if (!chat) return;
+      leaveChat(socket, { stopIfLast: true });
+      socketChat.set(socket, id);
+
+      // Snapshot and attachment are one operation on the same lane as live
+      // transcript writes. An event therefore lands either in this replay or
+      // after the socket joins and is broadcast live — never between both.
+      const records = await readTranscript(root, id);
+      const live = chatSessions.get(key);
+      if (live) {
+        if (live.lingerTimer) clearTimeout(live.lingerTimer);
+        live.lingerTimer = undefined;
+        live.sockets.add(socket);
+      }
+      send(socket, { type: 'chat-opened', chat, records });
+      if (live?.driver) send(socket, { type: 'chat-ready', driver: live.driver.kind });
+    });
   }
 
   /**
@@ -887,6 +1083,8 @@ export function attachWebSocket(
     // still binding" a rule of this function rather than a property of its one
     // caller.
     if (existing && !existing.driver && !existing.retired) {
+      if (existing.lingerTimer) clearTimeout(existing.lingerTimer);
+      existing.lingerTimer = undefined;
       existing.sockets.add(socket);
       await existing.binding;
       existing = chatSessions.get(key);
@@ -907,6 +1105,8 @@ export function attachWebSocket(
       existing.permissionMode === permissionMode &&
       (wantedAgentKey === null || wantedAgentKey === existing.agentKey)
     ) {
+      if (existing.lingerTimer) clearTimeout(existing.lingerTimer);
+      existing.lingerTimer = undefined;
       existing.sockets.add(socket);
       return existing;
     }
@@ -1018,22 +1218,31 @@ export function attachWebSocket(
       // 60s timeout that does not stop the driver orphans that child forever,
       // one per attempt. Same shape the tester path uses (projectServer.ts).
       built?.stop();
-      send(socket, { type: 'chat-event', chatId, event: { type: 'error', message: (err as Error).message } });
+      send(socket, {
+        type: 'chat-event',
+        chatId,
+        event: { type: 'error', message: (err as Error).message },
+      });
       // Deliberately no `retireChatSession`: this session never had a stream,
       // the error above is the whole report, and the caller still writes the
       // user's message down.
       return null;
     }
-    // Everyone dropped while the backend was resolving: tear the driver down
-    // rather than leaving an orphaned agent process attached to nothing.
+    // The socket that initiated the bind may have dropped while the backend
+    // was resolving. A detached session is still valid until its linger timer
+    // expires, so membership in the live map — not watcher count — decides
+    // whether this freshly built driver still has an owner.
     session.sockets.delete(socket);
     if (socket.readyState === WebSocket.OPEN && socketChat.get(socket) === chatId) session.sockets.add(socket);
-    if (chatSessions.get(key) !== session || session.sockets.size === 0) {
+    if (chatSessions.get(key) !== session) {
       driver.stop();
       if (chatSessions.get(key) === session) chatSessions.delete(key);
       return null;
     }
     session.driver = driver;
+    session.unsubscribeCommands = driver.onCommandsChanged?.((commands) => {
+      detach(refreshChatCommands(session, driver, commands), `chat ${chatId}: could not refresh slash commands`);
+    });
     broadcast(session.sockets, { type: 'chat-ready', driver: driver.kind });
     session.drained = (async () => {
       // Whether the sockets have been told the turn is over. A stream that ends
@@ -1052,31 +1261,46 @@ export function attachWebSocket(
         // on every reload after, because the transcript held the request and no
         // answer. A stopped driver's stream ends on its own, so this ends too.
         for await (const event of driver.events) {
-          // Disk first: a window that closes mid-turn must still find the turn
-          // in its transcript when it comes back.
-          const stored = await appendChatRecord(root, session.chatId, {
-            role: 'agent',
-            ts: new Date().toISOString(),
-            event,
-          });
+          const persistAndBroadcast = async (): Promise<ChatSummary | null> => {
+            // Disk first: a window that closes mid-turn must still find the
+            // turn in its transcript when it comes back.
+            const appended = await appendChatRecord(root, session.chatId, {
+              role: 'agent',
+              ts: new Date().toISOString(),
+              event,
+            });
+            if (appended) broadcastChatEvent(session, event);
+            return appended;
+          };
+          // A teardown reserves this lane with endChatTurn, which waits for
+          // the driver stream to drain. Events emitted by stop() must therefore
+          // drain directly; queueing them behind the waiter deadlocks until its
+          // safety timeout and puts turn-complete ahead of the last events.
+          const stored = session.retired
+            ? await persistAndBroadcast()
+            : await enqueueChatLane(session.key, persistAndBroadcast);
           if (!stored) {
             // No index row, so nothing was written and nothing more can be:
             // the conversation was deleted, in another window, while this one
-            // was mid-turn. Ending it here is the only honest move. Carrying
-            // on streamed a whole turn into a file nobody would ever list, and
-            // the window found it gone on the next reload.
+            // was mid-turn.
             settled = true;
-            retireChatSession(session, { type: 'error', message: DELETED_CHAT_MESSAGE });
+            retireChatSession(session, {
+              type: 'error',
+              message: DELETED_CHAT_MESSAGE,
+            });
             break;
           }
-          broadcastChatEvent(session, event);
           settled = endsTurn(event);
+          if (settled) session.turnActive = false;
           if (settled) detach(announceChats(root), `${root}: could not broadcast the chat list`);
         }
       } catch (err) {
         settled = true;
         if (chatSessions.get(key) === session) {
-          broadcastChatEvent(session, { type: 'error', message: (err as Error).message });
+          broadcastChatEvent(session, {
+            type: 'error',
+            message: (err as Error).message,
+          });
         }
       } finally {
         // The stream is over, so this backend is over: it is either stopped
@@ -1108,6 +1332,22 @@ export function attachWebSocket(
     leaveChat(socket, { stopIfLast: true });
   }
 
+  /** A transport drop is not an explicit Stop: keep the agent for a reload. */
+  function detachChat(socket: WebSocket): void {
+    const chatId = socketChat.get(socket);
+    if (chatId === undefined) return;
+    for (const session of [...chatSessions.values()]) {
+      if (!session.sockets.delete(socket) || session.sockets.size > 0 || session.retired) continue;
+      if (session.lingerTimer) clearTimeout(session.lingerTimer);
+      session.lingerTimer = setTimeout(() => {
+        session.lingerTimer = undefined;
+        if (chatSessions.get(session.key) === session && session.sockets.size === 0) {
+          retireChatSession(session, null);
+        }
+      }, chatDetachLingerMs);
+    }
+  }
+
   function getChannel(root: string): ProjectChannel {
     const existing = channels.get(root);
     if (existing) return existing;
@@ -1133,10 +1373,7 @@ export function attachWebSocket(
 
   function releaseSocket(root: string, socket: WebSocket): void {
     detachPty(socket);
-    // Unlike a pty, a live conversation is not resumable across a socket drop:
-    // the driver holds an in-process agent, so it dies with its last window.
-    // The transcript on disk is what survives.
-    stopChat(socket);
+    detachChat(socket);
     socketChat.delete(socket);
     const channel = channels.get(root);
     if (!channel) return;
@@ -1151,7 +1388,10 @@ export function attachWebSocket(
     const url = new URL(req.url ?? '/', 'http://localhost');
     if (url.pathname !== '/api/ws') return; // not ours: leave it for any other upgrade listener
 
-    const originCheck = isRequestAllowed({ origin: req.headers.origin, host: req.headers.host });
+    const originCheck = isRequestAllowed({
+      origin: req.headers.origin,
+      host: req.headers.host,
+    });
     if (!originCheck.ok) {
       socket.write('HTTP/1.1 403 Forbidden\r\n\r\n');
       socket.destroy();
@@ -1197,6 +1437,14 @@ export function attachWebSocket(
         }
         switch (frame.type) {
           case 'pty-start':
+            if (typeof frame.sessionId === 'string') {
+              const failed = failedHandoffs.get(detachedKey(root, frame.sessionId));
+              if (failed) {
+                failedHandoffs.delete(detachedKey(root, frame.sessionId));
+                send(ws, failed);
+                break;
+              }
+            }
             // Supersede this connection's prior live or pending session.
             // Other sockets on the same project keep their independent ptys.
             detach(
@@ -1276,10 +1524,13 @@ export function attachWebSocket(
           case 'chat-send':
             {
               const text = typeof frame.text === 'string' ? frame.text : '';
+              const stagedFiles = parseStagedAttachmentInputs(frame.attachments);
+              // Backward compatibility for renderer versions that still put
+              // base64 on this frame. Current clients send only uploadToken.
               const files = parseAttachmentInputs(frame.attachments);
               // An image on its own is a message; empty words with nothing
               // attached is not.
-              if (text.trim() === '' && files.length === 0) break;
+              if (text.trim() === '' && files.length === 0 && stagedFiles.length === 0) break;
               const agent = parseAgentOptions(frame.agent);
               enqueueChatOp(ws, async () => {
                 // WHICH conversation this lands in is decided on the socket's
@@ -1305,6 +1556,18 @@ export function attachWebSocket(
                 // behind one.
                 detach(
                   enqueueChatLane(chatKey(root, target), async () => {
+                    const key = chatKey(root, target);
+                    if (cliOwnedChats.has(key)) {
+                      send(ws, {
+                        type: 'chat-event',
+                        chatId: target,
+                        event: {
+                          type: 'error',
+                          message: 'This provider session is open in the embedded CLI. Stop that terminal before sending here.',
+                        },
+                      });
+                      return;
+                    }
                     const session = await ensureChat(root, ws, target, agent);
                     // Written down even when NOTHING BOUND. A bind that failed
                     // has already put its reason on this socket, and dropping
@@ -1314,7 +1577,21 @@ export function attachWebSocket(
                     // Written down BEFORE the turn starts: the agent is handed
                     // paths, so the files have to exist by the time it reads
                     // them.
-                    const attachments = await saveAttachments(root, target, files);
+                    const attachments = [
+                      ...(await ctx.chatAttachments.consume(root, target, stagedFiles)),
+                      ...(await saveAttachments(root, target, files, Date.now() + 1)),
+                    ];
+                    if (text.trim() === '' && attachments.length === 0) {
+                      send(ws, {
+                        type: 'chat-event',
+                        chatId: target,
+                        event: {
+                          type: 'error',
+                          message: 'That attachment upload expired. Attach the file again.',
+                        },
+                      });
+                      return;
+                    }
                     const stored = await appendChatRecord(root, target, {
                       role: 'user',
                       ts: new Date().toISOString(),
@@ -1337,7 +1614,17 @@ export function attachWebSocket(
                       return;
                     }
                     await announceChats(root); // the first turn names the chat
-                    session?.driver?.send(text, agent ?? undefined, attachments);
+                    if (session?.driver) {
+                      const provider = providerForTurn(session.driver);
+                      const summary = provider ? await getChat(root, target) : null;
+                      const delivered =
+                        provider && summary?.lastProvider && summary.lastProvider !== provider
+                          ? providerHandoff(target, text)
+                          : text;
+                      if (provider) await setChatProvider(root, target, provider);
+                      session.turnActive = true;
+                      session.driver.send(delivered, agent ?? undefined, attachments);
+                    }
                   }),
                   `chat ${target}: could not deliver the message`,
                 );
@@ -1353,8 +1640,64 @@ export function attachWebSocket(
               const session = chatId ? chatSessions.get(chatKey(root, chatId)) : null;
               const decision: ApprovalDecision = frame.decision === 'allow' ? 'allow' : 'deny';
               if (typeof frame.approvalId === 'string' && frame.approvalId !== '') {
-                session?.driver?.approve?.(frame.approvalId, decision);
+                session?.driver?.approve?.(
+                  frame.approvalId,
+                  decision,
+                  typeof frame.choiceId === 'string' ? frame.choiceId : undefined,
+                );
               }
+            }
+            break;
+          case 'chat-input-response':
+            {
+              const chatId = socketChat.get(ws);
+              const session = chatId ? chatSessions.get(chatKey(root, chatId)) : null;
+              if (typeof frame.inputId !== 'string' || frame.inputId === '') break;
+              const action = frame.action === 'submit' ? 'submit' : 'cancel';
+              const answers =
+                action === 'submit' &&
+                frame.answers &&
+                typeof frame.answers === 'object' &&
+                !Array.isArray(frame.answers)
+                  ? frame.answers
+                  : undefined;
+              session?.driver?.answerInput?.(frame.inputId, {
+                action,
+                answers,
+              });
+            }
+            break;
+          case 'chat-commands-list':
+            {
+              const chatId = socketChat.get(ws);
+              const session = chatId ? chatSessions.get(chatKey(root, chatId)) : null;
+              const driver = session?.driver;
+              if (!driver?.commands) {
+                send(ws, { type: 'chat-commands', chatId, commands: [] });
+                break;
+              }
+              void driver
+                .commands()
+                .then((commands) => {
+                  if (
+                    socketChat.get(ws) === chatId &&
+                    session?.driver === driver &&
+                    !session.retired &&
+                    chatSessions.get(session.key) === session
+                  ) {
+                    send(ws, { type: 'chat-commands', chatId, commands });
+                  }
+                })
+                .catch(() => {
+                  if (
+                    socketChat.get(ws) === chatId &&
+                    session?.driver === driver &&
+                    !session.retired &&
+                    chatSessions.get(session.key) === session
+                  ) {
+                    send(ws, { type: 'chat-commands', chatId, commands: [] });
+                  }
+                });
             }
             break;
           case 'chat-interrupt':
@@ -1375,6 +1718,109 @@ export function attachWebSocket(
                 // back onto the fresh driver.
                 retireChatSession(session, { type: 'turn-complete' });
               } else stopChat(ws);
+            }
+            break;
+          case 'chat-handoff-cli':
+            {
+              const requestId =
+                typeof frame.requestId === 'string' && frame.requestId.length <= 128 ? frame.requestId : '';
+              const terminalSessionId =
+                typeof frame.sessionId === 'string' && /^[A-Za-z0-9_-]{16,128}$/.test(frame.sessionId)
+                  ? frame.sessionId
+                  : null;
+              const fail = (message: string): void => {
+                const failure = { type: 'chat-handoff-error', requestId, message } as const;
+                if (terminalSessionId) {
+                  const failureKey = detachedKey(root, terminalSessionId);
+                  failedHandoffs.set(failureKey, failure);
+                  const expiry = setTimeout(() => {
+                    if (failedHandoffs.get(failureKey) === failure) failedHandoffs.delete(failureKey);
+                  }, 10 * 60_000);
+                  expiry.unref?.();
+                }
+                send(ws, failure);
+              };
+              if (!requestId || !terminalSessionId) {
+                fail('The CLI handoff request was invalid. Try again.');
+                break;
+              }
+              enqueueChatOp(ws, async () => {
+                const chatId = socketChat.get(ws);
+                if (!chatId) {
+                  fail('Open the chat you want to continue first.');
+                  return;
+                }
+                const key = chatKey(root, chatId);
+                await enqueueChatLane(key, async () => {
+                  if (ptySessions.has(ws) || detachedPtys.has(detachedKey(root, terminalSessionId))) {
+                    fail('Stop the current terminal session before continuing this chat in its CLI.');
+                    return;
+                  }
+                  if (cliOwnedChats.has(key)) {
+                    fail('This provider session is already open in the embedded CLI.');
+                    return;
+                  }
+                  const session = chatSessions.get(key);
+                  if (session?.turnActive) {
+                    fail('Wait for the current turn to finish, or stop it, before continuing in the CLI.');
+                    return;
+                  }
+                  const summary = await getChat(root, chatId);
+                  if (!summary) {
+                    fail('This conversation no longer exists.');
+                    return;
+                  }
+                  const liveProvider = session?.driver ? providerForTurn(session.driver) : null;
+                  const provider =
+                    liveProvider ??
+                    summary.lastProvider ??
+                    (summary.claudeSessionId && !summary.codexThreadId
+                      ? 'anthropic'
+                      : summary.codexThreadId
+                        ? 'openai'
+                        : null);
+                  const providerSessionId = safeProviderSessionId(
+                    provider === 'anthropic' ? summary.claudeSessionId : summary.codexThreadId,
+                  );
+                  if (!provider || !providerSessionId) {
+                    fail('This chat has no safe provider session to continue yet.');
+                    return;
+                  }
+                  const permissionMode = session?.permissionMode ?? (await readPermissionMode(root));
+                  const resume = await cliResumeCommand(root, provider, providerSessionId, permissionMode);
+                  if (!resume) {
+                    fail(`${provider === 'anthropic' ? 'Claude Code' : 'Codex'} is not available in this project environment.`);
+                    return;
+                  }
+
+                  // Ownership moves only after every earlier send on this
+                  // conversation lane has finished, and the provider process
+                  // is observed closed before its persisted session is resumed.
+                  if (session) {
+                    retireChatSession(session, null);
+                    if (!(await waitForDriverClose(session))) {
+                      fail('The native agent did not shut down cleanly, so its session was not resumed in the CLI.');
+                      return;
+                    }
+                  }
+                  const terminal = await startPty(root, ws, terminalSessionId, key, {
+                    provider,
+                    label: resume.label,
+                  });
+                  if (!terminal?.handle) {
+                    fail('The embedded terminal could not start.');
+                    return;
+                  }
+                  ptyManager.write(terminal.key, `${resume.command}\n`);
+                  failedHandoffs.delete(detachedKey(root, terminalSessionId));
+                  send(ws, {
+                    type: 'chat-handoff-ready',
+                    requestId,
+                    provider,
+                    label: resume.label,
+                  });
+                });
+              });
             }
             break;
           case 'chat-cancel':
@@ -1405,6 +1851,7 @@ export function attachWebSocket(
       if (session.lingerTimer) clearTimeout(session.lingerTimer);
     }
     detachedPtys.clear();
+    failedHandoffs.clear();
     ptySessions.clear();
     ptyManager.killAll();
     for (const session of [...chatSessions.values()]) retireChatSession(session, null);

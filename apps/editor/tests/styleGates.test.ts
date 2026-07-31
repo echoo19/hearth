@@ -382,6 +382,19 @@ describe('style gates', () => {
     expect(offenders).toEqual([]);
   });
 
+  it('keeps transcript headings ranked, wrapped and grouped with their body', () => {
+    const css = fs.readFileSync(path.join(STYLES_DIR, 'app/chat.css'), 'utf8');
+
+    expect(css).toMatch(/\.md-heading\s*{[^}]*text-wrap:\s*balance;[^}]*overflow-wrap:\s*anywhere;/s);
+    expect(css).toMatch(/\.md-h1\s*{[^}]*font-size:\s*var\(--text-2xl\);/s);
+    expect(css).toMatch(/\.md-h2\s*{[^}]*font-size:\s*var\(--text-xl\);/s);
+    expect(css).toMatch(/\.md-h3\s*{[^}]*font-size:\s*var\(--text-lg\);/s);
+    expect(css).toMatch(/\.md-h4\s*{[^}]*font-size:\s*var\(--text-md\);/s);
+    expect(css).toMatch(/\.md-h5\s*{[^}]*font-size:\s*var\(--text-sm\);/s);
+    expect(css).toMatch(/\.md-h6\s*{[^}]*font-size:\s*var\(--text-xs\);/s);
+    expect(css).toMatch(/\.md-heading\s*\+\s*\.md-block\s*{[^}]*margin-top:\s*0\.6em;/s);
+  });
+
   it('Gate E keeps em and en dashes out of everything that ships as words', () => {
     const offenders: string[] = [];
     for (const dir of [SRC_DIR, SERVER_DIR, ELECTRON_DIR]) {

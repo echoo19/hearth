@@ -391,20 +391,39 @@
   color: var(--ink);
   font-weight: 600;
   line-height: 1.4;
+  text-wrap: balance;
+  overflow-wrap: anywhere;
 }
 
-/* Two ranks, not six. Past the second level a heading in a chat message is
-   saying "this bit" and the size stops carrying meaning. */
-.md-h1,
+/* The same visual hierarchy Markdown carries everywhere else. Agents commonly
+   use level three for named subsections, so it must still read as a heading;
+   the lower ranks step down quietly instead of collapsing into one body size. */
+.md-h1 {
+  font-size: var(--text-2xl);
+}
+
 .md-h2 {
+  font-size: var(--text-xl);
+}
+
+.md-h3 {
   font-size: var(--text-lg);
 }
 
-.md-h3,
-.md-h4,
-.md-h5,
-.md-h6 {
+.md-h4 {
   font-size: var(--text-md);
+}
+
+.md-h5 {
+  font-size: var(--text-sm);
+}
+
+.md-h6 {
+  font-size: var(--text-xs);
+}
+
+.md-heading + .md-block {
+  margin-top: 0.6em;
 }
 
 .md-list {
@@ -1764,6 +1783,205 @@
   color: var(--ink);
 }
 
+/* --- Provider input ------------------------------------------------------- */
+
+/* Same interruption language as an approval, with typed controls replacing
+   its verbatim command body. A one-question ask and a flat form are one
+   component so providers cannot drift into separate visual dialects. */
+.input-prompt {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 14px 16px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-lg);
+  background: var(--bg-2);
+  animation: approval-enter var(--t-slow) var(--ease-out) both;
+}
+
+.input-heading {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.input-title,
+.input-description {
+  margin: 0;
+  text-wrap: pretty;
+}
+
+.input-title {
+  color: var(--ink);
+  font-size: var(--text-md);
+  font-weight: 600;
+}
+
+.input-description {
+  max-width: 68ch;
+  color: var(--ink-mute);
+  font-size: var(--text-sm);
+  line-height: 1.5;
+}
+
+.input-fields {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.input-question {
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  color: var(--ink-mute);
+  font-size: var(--text-sm);
+}
+
+.input-question legend {
+  margin-bottom: 7px;
+  padding: 0;
+  color: var(--ink);
+  font-weight: 500;
+}
+
+.input-question-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  color: var(--ink);
+  font-weight: 500;
+}
+
+.input-control {
+  width: 100%;
+  min-height: var(--ctl-h);
+  padding: 0 11px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  outline: none;
+  background: var(--bg-0);
+  color: var(--ink);
+  font: inherit;
+  font-weight: 400;
+  transition: border-color var(--t-fast) var(--ease-out), background var(--t-fast) var(--ease-out);
+}
+
+.input-control::placeholder {
+  color: var(--ink-faint);
+}
+
+.input-control:hover {
+  border-color: var(--border-strong);
+}
+
+.input-control:focus-visible {
+  border-color: var(--accent);
+}
+
+.input-options {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.input-option,
+.input-boolean {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  min-height: var(--ctl-h-sm);
+  padding: 7px 9px;
+  border-radius: var(--radius);
+  color: var(--ink);
+  cursor: pointer;
+  transition: background var(--t-fast) var(--ease-out);
+}
+
+.input-option:hover,
+.input-boolean:hover {
+  background: var(--bg-3);
+}
+
+.input-option input[type='radio'],
+.input-option input[type='checkbox'],
+.input-boolean input {
+  flex: 0 0 auto;
+  margin: 2px 0 0;
+  accent-color: var(--accent);
+}
+
+.input-option-label,
+.input-option-description {
+  display: block;
+}
+
+.input-option-label {
+  line-height: 1.35;
+}
+
+.input-option-description {
+  margin-top: 2px;
+  color: var(--ink-mute);
+  font-size: var(--text-xs);
+  line-height: 1.4;
+}
+
+.input-error {
+  margin: 6px 0 0;
+  color: var(--err);
+  font-size: var(--text-xs);
+}
+
+.input-option-other {
+  align-items: center;
+}
+
+.input-option-other .input-control {
+  flex: 1;
+  min-width: 0;
+}
+
+.input-boolean {
+  align-items: center;
+  width: fit-content;
+}
+
+.input-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.input-external-action {
+  color: var(--accent);
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.input-external-action:hover {
+  text-decoration: underline;
+}
+
+.input-timeout {
+  color: var(--ink-mute);
+  font-size: var(--text-2xs);
+}
+
+.input-record {
+  margin: 0;
+  color: var(--ink-mute);
+  font-size: var(--text-sm);
+  overflow-wrap: anywhere;
+  animation: chat-fade-in var(--t) var(--ease-out) both;
+}
+
+.input-record > span {
+  color: var(--ink);
+}
+
 /* Reduced motion: nothing in the transcript travels. Everything still ARRIVES
    — an approval that appeared without any change at all would be missed — it
    just crossfades in place. (base.css collapses the durations globally; this
@@ -1775,6 +1993,7 @@
   .subagent-detail,
   .subagent-card,
   .approval,
+  .input-prompt,
   .msg {
     animation-name: chat-fade-in;
   }
@@ -1997,6 +2216,47 @@
   padding: 16px 18px 4px;
   max-height: 200px;
   overflow-y: auto;
+}
+
+.composer-command-menu {
+  display: grid;
+  max-height: 280px;
+  margin: 0 8px 4px;
+  padding: 4px;
+  overflow: auto;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  background: var(--bg-1);
+  box-shadow: var(--shadow-2);
+}
+
+.composer-command {
+  display: grid;
+  grid-template-columns: max-content 1fr max-content;
+  gap: 10px;
+  align-items: baseline;
+  padding: 8px 10px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--ink);
+  text-align: left;
+}
+
+.composer-command:hover,
+.composer-command:focus-visible {
+  background: var(--bg-3);
+}
+
+.composer-command-name {
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+}
+
+.composer-command-description,
+.composer-command-source {
+  color: var(--ink-mute);
+  font-size: var(--text-xs);
 }
 
 /* --ink-mute, not --ink-faint: a placeholder is read, and it is the only copy

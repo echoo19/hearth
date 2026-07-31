@@ -31,6 +31,8 @@ function patchStore(over: Partial<State> = {}): void {
     chatBusy: false,
     wsStatus: 'connected',
     providers: null,
+    chatDriver: null,
+    slashCommands: [],
     sendChat,
     startFromHome,
     ...over,
@@ -121,6 +123,22 @@ describe('the home variant — sending is what creates the project', () => {
 });
 
 describe('the in-chat variant', () => {
+  it('filters the live provider command catalogue and inserts a selection', () => {
+    patchStore({
+      chatDriver: 'codex',
+      slashCommands: [
+        { name: 'compact', description: 'Compact this thread', source: 'builtin' },
+        { name: 'ship', description: 'Ship the project', source: 'skill' },
+      ],
+    });
+    render(<Composer />);
+    type('/sh');
+
+    expect(screen.queryByText('/compact')).toBeNull();
+    fireEvent.click(screen.getByRole('option', { name: (name) => name.includes('/ship') }));
+    expect(box().value).toBe('/ship');
+  });
+
   it('sends the turn and clears the box', () => {
     render(<Composer />);
     type('add a second level');

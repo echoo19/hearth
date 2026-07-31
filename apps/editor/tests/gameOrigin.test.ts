@@ -32,6 +32,7 @@
  */
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import http from 'node:http';
+import vm from 'node:vm';
 import { promises as fsp } from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
@@ -350,5 +351,33 @@ describe('the measure shim', () => {
 
   it('appends when there is no body tag to sit inside', () => {
     expect(withMeasureShim('<canvas></canvas>')).toContain('hearthGameSize');
+  });
+
+  it('reports the canvas display size instead of its DPR-sized backing store', () => {
+    const html = withMeasureShim('<!doctype html><html><body><canvas></canvas></body></html>');
+    const script = html.match(/<script>([\s\S]*)<\/script>/)?.[1];
+    expect(script).toBeDefined();
+
+    let reported: unknown;
+    const frame = {
+      parent: { postMessage: (message: unknown) => { reported = message; } },
+      addEventListener: () => undefined,
+    };
+    vm.runInNewContext(script!, {
+      window: frame,
+      document: {
+        getElementsByTagName: () => [{
+          width: 1024,
+          height: 1024,
+          clientWidth: 512,
+          clientHeight: 512,
+          getBoundingClientRect: () => ({ width: 512, height: 512 }),
+        }],
+      },
+      setInterval: (callback: () => void) => { callback(); return 1; },
+      clearInterval: () => undefined,
+    });
+
+    expect(reported).toEqual({ hearthGameSize: { width: 512, height: 512 } });
   });
 });

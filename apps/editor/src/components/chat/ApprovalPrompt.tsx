@@ -32,6 +32,10 @@ export function ApprovalPrompt({ part }: { part: ChatApprovalPart }) {
   const allowRef = useRef<HTMLButtonElement>(null);
   const decision = part.decision;
   const pending = decision === null;
+  const choices = part.choices?.length ? part.choices : null;
+  const defaultAllow = choices?.find((choice) => choice.tone === 'allow');
+  const defaultDeny = choices?.find((choice) => choice.tone === 'deny');
+  const focusedChoiceId = defaultAllow?.id ?? choices?.[0]?.id;
 
   // A blocking ask that leaves focus in the composer is a blocking ask the
   // keyboard can't answer. Taking focus is the point.
@@ -50,19 +54,19 @@ export function ApprovalPrompt({ part }: { part: ChatApprovalPart }) {
       if (target?.closest('dialog[open]')) return;
       if (event.key === 'Escape') {
         event.preventDefault();
-        approveChat(part.id, 'deny');
+        approveChat(part.id, 'deny', defaultDeny?.id);
         return;
       }
       // A focused button already answers Enter by activating itself; handling
       // it here too would answer twice — and, on Deny, answer the wrong way.
       if (event.key === 'Enter' && tag !== 'BUTTON') {
         event.preventDefault();
-        approveChat(part.id, 'allow');
+        approveChat(part.id, 'allow', defaultAllow?.id);
       }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [active, pending, approveChat, part.id]);
+  }, [active, pending, approveChat, part.id, defaultAllow?.id, defaultDeny?.id]);
 
   if (decision !== null) {
     return (
@@ -82,10 +86,25 @@ export function ApprovalPrompt({ part }: { part: ChatApprovalPart }) {
       <div className="approval-actions">
         {/* Full-height controls, not the compact variant: this is a decision
             the user is being stopped for, not a row of secondary chrome. */}
-        <Button ref={allowRef} variant="primary" onClick={() => approveChat(part.id, 'allow')}>
-          Allow
-        </Button>
-        <Button onClick={() => approveChat(part.id, 'deny')}>Deny</Button>
+        {choices ? (
+          choices.map((choice) => (
+            <Button
+              key={choice.id}
+              ref={choice.id === focusedChoiceId ? allowRef : undefined}
+              variant={choice.tone === 'allow' ? 'primary' : undefined}
+              onClick={() => approveChat(part.id, choice.tone === 'allow' ? 'allow' : 'deny', choice.id)}
+            >
+              {choice.label}
+            </Button>
+          ))
+        ) : (
+          <>
+            <Button ref={allowRef} variant="primary" onClick={() => approveChat(part.id, 'allow')}>
+              Allow
+            </Button>
+            <Button onClick={() => approveChat(part.id, 'deny')}>Deny</Button>
+          </>
+        )}
         {active && <span className="approval-hint">↵ allow · esc deny</span>}
       </div>
     </div>

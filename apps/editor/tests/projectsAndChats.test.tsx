@@ -139,8 +139,16 @@ describe('New chat', () => {
     expect(useApp.getState().paneChoice).toBe(true);
   });
 
-  it('stops the moment a real conversation opens', () => {
-    resetStore({ projectPath: PROJECT, composing: true });
+  it('ignores the old conversation arriving after New chat, then accepts the fresh one', () => {
+    resetStore({ projectPath: PROJECT, activeChatId: 'c1' });
+    act(() => useApp.getState().newChat());
+    act(() =>
+      useApp
+        .getState()
+        .receiveFrame({ type: 'chat-opened', chat: { id: 'c1' }, records: [] } as never),
+    );
+    expect(useApp.getState().composing).toBe(true);
+
     act(() =>
       useApp
         .getState()

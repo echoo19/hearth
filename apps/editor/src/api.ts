@@ -24,6 +24,7 @@ import type {
   WorkspaceInfo,
 } from './types';
 import type { TesterNote } from '../server/tester/types';
+import type { PendingAttachment } from './chat/attachments';
 
 /**
  * What a POST that never got an answer comes back as. Deliberately the same
@@ -68,7 +69,10 @@ async function postJson<T>(url: string, body: unknown, label: string): Promise<T
     // proxy's error body, say — and adopting it as an answer would be a lie.
     if (!res.ok && parsed?.ok !== false) {
       console.error(`${label}: server answered ${res.status}`);
-      return { ok: false, error: `The server answered ${res.status} instead of a result.` };
+      return {
+        ok: false,
+        error: `The server answered ${res.status} instead of a result.`,
+      };
     }
     return parsed;
   } catch (err) {
@@ -107,7 +111,11 @@ export async function apiOpenWorkspace(path: string): Promise<{ ok: boolean; inf
   if (!res.ok || !res.path) return { ok: false, error: res.error ?? 'Could not open that folder.' };
   return {
     ok: true,
-    info: { path: res.path, name: res.name ?? res.path, isHearthProject: res.isHearthProject === true },
+    info: {
+      path: res.path,
+      name: res.name ?? res.path,
+      isHearthProject: res.isHearthProject === true,
+    },
   };
 }
 
@@ -149,7 +157,11 @@ export async function apiCreateWorkspace(
   if (!res.ok || !res.path) return { ok: false, error: res.error ?? 'Could not create a folder.' };
   return {
     ok: true,
-    info: { path: res.path, name: res.name ?? res.path, isHearthProject: res.isHearthProject === true },
+    info: {
+      path: res.path,
+      name: res.name ?? res.path,
+      isHearthProject: res.isHearthProject === true,
+    },
   };
 }
 
@@ -172,7 +184,11 @@ export async function apiSetProjectIdentity(
   project: string,
   patch: { icon?: string; color?: string },
 ): Promise<boolean> {
-  const res = await postJson<{ ok: boolean }>('/api/workspace/identity', { project, ...patch }, 'apiSetProjectIdentity');
+  const res = await postJson<{ ok: boolean }>(
+    '/api/workspace/identity',
+    { project, ...patch },
+    'apiSetProjectIdentity',
+  );
   return res.ok === true;
 }
 
@@ -215,7 +231,11 @@ export async function apiSaveContextFiles(
 }
 
 export async function apiDeleteContextFile(project: string, name: string): Promise<ContextFile[]> {
-  const res = await postJson<{ files: ContextFile[] }>('/api/context/delete', { project, name }, 'apiDeleteContextFile');
+  const res = await postJson<{ files: ContextFile[] }>(
+    '/api/context/delete',
+    { project, name },
+    'apiDeleteContextFile',
+  );
   return 'files' in res && Array.isArray(res.files) ? res.files : [];
 }
 
@@ -258,7 +278,12 @@ export interface TesterHistory {
 export async function apiTesterPlay(
   project: string,
   maxSteps?: number,
-): Promise<{ ok: boolean; session?: number; maxSteps?: number; error?: string }> {
+): Promise<{
+  ok: boolean;
+  session?: number;
+  maxSteps?: number;
+  error?: string;
+}> {
   return postJson('/api/tester/play', { project, maxSteps }, 'apiTesterPlay');
 }
 
@@ -284,7 +309,12 @@ export async function apiTesterApprove(
   project: string,
   session: number,
   proposals: readonly string[],
-): Promise<{ ok: boolean; text?: string; frames?: ApprovedFrame[]; error?: string }> {
+): Promise<{
+  ok: boolean;
+  text?: string;
+  frames?: ApprovedFrame[];
+  error?: string;
+}> {
   return postJson('/api/tester/approve', { project, session, proposals }, 'apiTesterApprove');
 }
 
@@ -328,7 +358,10 @@ export async function apiTesterHistoryAll(): Promise<TesterRunHistory | null> {
 // ---------------------------------------------------------------------------
 
 export async function apiListChats(project: string): Promise<ChatSummary[]> {
-  const body = await getJson<{ chats: ChatSummary[] }>(`/api/chats?project=${encodeURIComponent(project)}`, 'apiListChats');
+  const body = await getJson<{ chats: ChatSummary[] }>(
+    `/api/chats?project=${encodeURIComponent(project)}`,
+    'apiListChats',
+  );
   return body?.chats ?? [];
 }
 
@@ -344,12 +377,16 @@ export async function apiRenameChat(
   chatId: string,
   title: string,
 ): Promise<{ ok: true; chats: ChatSummary[] } | { ok: false; error: string }> {
-  const body = await postJson<{ ok: boolean; chats?: ChatSummary[]; error?: string }>(
-    '/api/chats/rename',
-    { project, chatId, title },
-    'apiRenameChat',
-  );
-  if (!body.ok) return { ok: false, error: body.error ?? 'Could not rename that conversation.' };
+  const body = await postJson<{
+    ok: boolean;
+    chats?: ChatSummary[];
+    error?: string;
+  }>('/api/chats/rename', { project, chatId, title }, 'apiRenameChat');
+  if (!body.ok)
+    return {
+      ok: false,
+      error: body.error ?? 'Could not rename that conversation.',
+    };
   return { ok: true, chats: body.chats ?? [] };
 }
 
@@ -357,17 +394,24 @@ export async function apiDeleteChat(
   project: string,
   chatId: string,
 ): Promise<{ ok: true; chats: ChatSummary[] } | { ok: false; error: string }> {
-  const body = await postJson<{ ok: boolean; chats?: ChatSummary[]; error?: string }>(
-    '/api/chats/delete',
-    { project, chatId },
-    'apiDeleteChat',
-  );
-  if (!body.ok) return { ok: false, error: body.error ?? 'Could not delete that conversation.' };
+  const body = await postJson<{
+    ok: boolean;
+    chats?: ChatSummary[];
+    error?: string;
+  }>('/api/chats/delete', { project, chatId }, 'apiDeleteChat');
+  if (!body.ok)
+    return {
+      ok: false,
+      error: body.error ?? 'Could not delete that conversation.',
+    };
   return { ok: true, chats: body.chats ?? [] };
 }
 
 export async function apiListFiles(project: string): Promise<ProjectFile[]> {
-  const body = await getJson<{ files: ProjectFile[] }>(`/api/files?project=${encodeURIComponent(project)}`, 'apiListFiles');
+  const body = await getJson<{ files: ProjectFile[] }>(
+    `/api/files?project=${encodeURIComponent(project)}`,
+    'apiListFiles',
+  );
   return body?.files ?? [];
 }
 
@@ -379,7 +423,10 @@ export async function apiReadFile(project: string, relPath: string): Promise<str
 }
 
 export async function apiAppSettings(project: string): Promise<AppSettingsInfo | null> {
-  const body = await getJson<AppSettingsInfo>(`/api/app/settings?project=${encodeURIComponent(project)}`, 'apiAppSettings');
+  const body = await getJson<AppSettingsInfo>(
+    `/api/app/settings?project=${encodeURIComponent(project)}`,
+    'apiAppSettings',
+  );
   return body ? { hasKey: body.hasKey, source: body.source } : null;
 }
 
@@ -397,6 +444,8 @@ export interface ProviderSettingsPatch {
   provider?: ChatProvider;
   /** Where the `codex` binary is, when it isn't on PATH. */
   codexPath?: string;
+  /** Where the Claude Code binary is, when it isn't on PATH. */
+  claudePath?: string;
 }
 
 export async function apiSaveProviderSettings(
@@ -494,7 +543,10 @@ function readPersonalizationBody(body: Partial<PersonalizationInfo> | null): Per
   const files = body?.files;
   if (!values || !files) return null;
   return {
-    personalization: { name: values.name ?? '', instructions: values.instructions ?? '' },
+    personalization: {
+      name: values.name ?? '',
+      instructions: values.instructions ?? '',
+    },
     files: { name: files.name ?? '', instructions: files.instructions ?? '' },
   };
 }
@@ -576,11 +628,11 @@ export async function apiChatProviders(project: string | null): Promise<ChatProv
     // No project means the Home screen is asking: who is signed in is a fact
     // about the machine, and the server answers it without a folder.
     const res = await fetch(
-      project === null
-        ? '/api/chat/providers'
-        : `/api/chat/providers?project=${encodeURIComponent(project)}`,
+      project === null ? '/api/chat/providers' : `/api/chat/providers?project=${encodeURIComponent(project)}`,
     );
-    const body = (await res.json()) as Partial<ChatProviderStatus> & { ok?: boolean };
+    const body = (await res.json()) as Partial<ChatProviderStatus> & {
+      ok?: boolean;
+    };
     if (body.ok === false || !body.anthropic || !body.openai) return null;
     const { anthropic, openai } = body;
     return {
@@ -626,6 +678,72 @@ export function apiOpenAiLogin(project: string): Promise<{ ok: boolean; authUrl?
     { project },
     'apiOpenAiLogin',
   );
+}
+
+export interface ChatAttachmentUpload {
+  uploadToken: string;
+  name: string;
+  mimeType: string;
+  bytes: number;
+}
+
+/**
+ * Stream an attachment before its chat frame. The reply is deliberately only
+ * an opaque token; neither a browser path nor a server path crosses the API.
+ */
+export async function apiUploadChatAttachment(
+  project: string,
+  attachment: PendingAttachment,
+): Promise<{ ok: true; upload: ChatAttachmentUpload } | PostFailure> {
+  try {
+    let body: Blob;
+    if (attachment.original) {
+      body = attachment.original;
+    } else {
+      const binary = atob(attachment.data);
+      const bytes = Uint8Array.from(binary, (char) => char.charCodeAt(0));
+      body = new Blob([bytes], { type: attachment.mimeType });
+    }
+    const query = new URLSearchParams({
+      project,
+      name: attachment.name,
+      mimeType: attachment.mimeType,
+    });
+    const response = await fetch(`/api/chat/attachments?${query}`, {
+      method: 'POST',
+      headers: { 'Content-Type': attachment.mimeType },
+      body,
+    });
+    const result = (await response.json()) as {
+      ok?: boolean;
+      error?: string;
+    } & Partial<ChatAttachmentUpload>;
+    if (
+      !response.ok ||
+      result.ok !== true ||
+      typeof result.uploadToken !== 'string' ||
+      typeof result.name !== 'string' ||
+      typeof result.mimeType !== 'string' ||
+      typeof result.bytes !== 'number'
+    ) {
+      return {
+        ok: false,
+        error: result.error ?? `The server answered ${response.status} instead of an upload.`,
+      };
+    }
+    return {
+      ok: true,
+      upload: {
+        uploadToken: result.uploadToken,
+        name: result.name,
+        mimeType: result.mimeType,
+        bytes: result.bytes,
+      },
+    };
+  } catch (error) {
+    console.error('apiUploadChatAttachment: request failed', error);
+    return { ok: false, error: POST_FAILED };
+  }
 }
 
 // ---------------------------------------------------------------------------

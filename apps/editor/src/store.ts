@@ -33,6 +33,7 @@ import {
   apiTesterHistoryAll,
   apiTesterPlay,
   apiTesterStop,
+  apiUploadChatAttachment,
   apiRecentChats,
   apiRenameChat,
   apiSavePersonalization,
@@ -41,7 +42,7 @@ import {
   type Personalization,
   type PersonalizationInfo,
 } from './api';
-import { attachmentPayload, releaseAttachments, type PendingAttachment } from './chat/attachments';
+import { releaseAttachments, type PendingAttachment } from './chat/attachments';
 import type {
   AppSettingsInfo,
   ApprovalDecision,
@@ -61,10 +62,13 @@ import type {
   FileChangeEntry,
   GameStatus,
   JournalEntry,
+  InputAction,
+  InputAnswer,
   PermissionMode,
   RecentChatEntry,
   Sense,
   ServerMeta,
+  SlashCommandInfo,
   StoredAttachment,
   TesterRunHistory,
   UpdateReadyInfo,
@@ -83,6 +87,7 @@ import {
   ingestPtyAttach,
   ingestPtyFrame,
   markAgentDisconnected,
+  markAgentCli,
   markAgentStarted,
   resetAgentSocket,
   type AgentStatus,
@@ -225,6 +230,8 @@ export interface AppState {
   queued: QueuedMessage[];
   /** Which backend answered, once the server has bound one. */
   chatDriver: ChatDriverKind | null;
+  /** Commands reported by that live backend, refreshed whenever the composer focuses. */
+  slashCommands: SlashCommandInfo[];
   chatError: string | null;
   settings: AppSettingsInfo | null;
   /**
@@ -451,7 +458,11 @@ export interface AppState {
 
   // --- Actions --------------------------------------------------------------
   loadMeta(): Promise<void>;
-  openWorkspace(path: string, prompt?: string): Promise<{ ok: boolean; error?: string }>;
+  openWorkspace(
+    path: string,
+    prompt?: string,
+    conversation?: 'latest' | 'new',
+  ): Promise<{ ok: boolean; error?: string }>;
   closeWorkspace(): void;
   /** Send a turn. `attachments` are files the composer's tray was holding. */
   /**
@@ -478,7 +489,13 @@ export interface AppState {
    */
   receiveFrame(frame: WsFrame): void;
   /** Answer a blocking ask, and show the answer without waiting for the round trip. */
-  approveChat(approvalId: string, decision: ApprovalDecision): void;
+  approveChat(approvalId: string, decision: ApprovalDecision, choiceId?: string): void;
+  /**
+   * Answer a provider question. Values cross the socket once and are never
+   * copied into transcript state; false leaves the live form untouched.
+   */
+  answerChatInput(inputId: string, action: InputAction, answers?: Record<string, InputAnswer>): boolean;
+  refreshChatCommands(): void;
   refreshProviders(): Promise<void>;
   /**
    * Choose which agent answers, from the composer.
@@ -596,6 +613,8 @@ export interface AppState {
    * nothing and genuinely does not know.
    */
   openTerminal(): void;
+  /** Hand the current native provider session to its full CLI inside Hearth. */
+  continueChatInCli(): boolean;
   setPaneTab(tab: PaneTab): void;
   /**
    * Ask the tester to play. Never called by anything but a person: the tester
@@ -728,7 +747,12 @@ function timestamp(): string {
   return new Date().toTimeString().slice(0, 8);
 }
 
-function makeEntry(level: ConsoleLevel, source: ConsoleSource, message: string, link?: ConsoleEntry['link']): ConsoleEntry {
+function makeEntry(
+  level: ConsoleLevel,
+  source: ConsoleSource,
+  message: string,
+  link?: ConsoleEntry['link'],
+): ConsoleEntry {
   return { id: ++entryId, time: timestamp(), level, source, message, link };
 }
 
@@ -824,12 +848,7 @@ export function anyChatProviderReady(settings: AppSettingsInfo | null, providers
   if (settings?.hasKey) return true;
   if (!providers) return false;
   // `cli` counts: a machine with Claude Code on it can answer with no key.
-  return (
-    providers.anthropic.hasKey ||
-    providers.anthropic.cli ||
-    providers.openai.loggedIn ||
-    providers.openai.hasKey
-  );
+  return providers.anthropic.hasKey || providers.anthropic.cli || providers.openai.loggedIn || providers.openai.hasKey;
 }
 
 /** The folder's stored preference, or null when it has never picked one. */
@@ -960,11 +979,22 @@ export function normalizeChatEvent(event: ChatEvent): ChatEvent {
     case 'tool-start':
       // v0 had no tool taxonomy: everything becomes a generic chip, which is
       // exactly how it rendered when it was written.
-      return { type: 'tool-begin', toolId: event.id, kind: 'other', title: event.name, detail: event.detail };
+      return {
+        type: 'tool-begin',
+        toolId: event.id,
+        kind: 'other',
+        title: event.name,
+        detail: event.detail,
+      };
     case 'tool-end':
       return 'toolId' in event
         ? event
-        : { type: 'tool-end', toolId: event.id, status: event.ok ? 'ok' : 'error', summary: event.detail };
+        : {
+            type: 'tool-end',
+            toolId: event.id,
+            status: event.ok ? 'ok' : 'error',
+            summary: event.detail,
+          };
     case 'done':
       return { type: 'turn-complete' };
     default:
@@ -1048,8 +1078,18 @@ export function lastUserText(messages: ChatMessage[]): string | undefined {
  * Same array identity when nothing was open, so React skips the work.
  */
 function settleOpenParts(parts: readonly ChatPart[]): ChatPart[] {
-  if (!parts.some((part) => 'state' in part && part.state === 'running')) return parts as ChatPart[];
-  return parts.map((part) => ('state' in part && part.state === 'running' ? { ...part, state: 'stopped' } : part));
+  if (
+    !parts.some(
+      (part) => ('state' in part && part.state === 'running') || (part.kind === 'input' && part.resolution === null),
+    )
+  ) {
+    return parts as ChatPart[];
+  }
+  return parts.map((part) => {
+    if ('state' in part && part.state === 'running') return { ...part, state: 'stopped' };
+    if (part.kind === 'input' && part.resolution === null) return { ...part, resolution: 'withdrawn' };
+    return part;
+  });
 }
 
 /**
@@ -1064,11 +1104,7 @@ export function settleMessage(message: ChatMessage): ChatMessage {
   return { ...message, parts, streaming: false };
 }
 
-export function applyChatEvent(
-  messages: ChatMessage[],
-  incoming: ChatEvent,
-  now: number = Date.now(),
-): ChatMessage[] {
+export function applyChatEvent(messages: ChatMessage[], incoming: ChatEvent, now: number = Date.now()): ChatMessage[] {
   const lastIndex = messages.length - 1;
   const last = lastIndex >= 0 ? messages[lastIndex] : null;
   if (!last || last.role !== 'agent' || !last.streaming) return messages;
@@ -1085,7 +1121,11 @@ export function applyChatEvent(
     case 'message-delta': {
       const parts = last.parts.slice();
       const tail = parts[parts.length - 1];
-      if (tail && tail.kind === 'text') parts[parts.length - 1] = { kind: 'text', text: tail.text + event.text };
+      if (tail && tail.kind === 'text')
+        parts[parts.length - 1] = {
+          kind: 'text',
+          text: tail.text + event.text,
+        };
       else parts.push({ kind: 'text', text: event.text });
       return replace(parts);
     }
@@ -1130,9 +1170,21 @@ export function applyChatEvent(
           startedAt: now,
         };
       } else if (event.kind === 'skill') {
-        opened = { kind: 'skill', id: event.toolId, name: event.title, detail: event.detail, state: 'running' };
+        opened = {
+          kind: 'skill',
+          id: event.toolId,
+          name: event.title,
+          detail: event.detail,
+          state: 'running',
+        };
       } else {
-        opened = { kind: 'tool', id: event.toolId, name: event.title, detail: event.detail, state: 'running' };
+        opened = {
+          kind: 'tool',
+          id: event.toolId,
+          name: event.title,
+          detail: event.detail,
+          state: 'running',
+        };
       }
       return replace([...last.parts, opened]);
     }
@@ -1161,7 +1213,11 @@ export function applyChatEvent(
             };
           }
           if (part.kind === 'tool' && part.id === event.toolId) {
-            return { ...part, state: settled, detail: event.summary ?? part.detail };
+            return {
+              ...part,
+              state: settled,
+              detail: event.summary ?? part.detail,
+            };
           }
           // The summary is deliberately dropped for a skill: what a Skill call
           // returns is the skill's own instructions, and pasting a whole
@@ -1191,7 +1247,11 @@ export function applyChatEvent(
       // unique within the turn and stable across a replay of it.
       return replace([
         ...last.parts,
-        { kind: 'file-change', id: toolId ?? `${last.id}:f${last.parts.length}`, files: event.files },
+        {
+          kind: 'file-change',
+          id: toolId ?? `${last.id}:f${last.parts.length}`,
+          files: event.files,
+        },
       ]);
     }
     case 'approval-request':
@@ -1203,6 +1263,7 @@ export function applyChatEvent(
           approvalKind: event.kind,
           title: event.title,
           detail: event.detail,
+          choices: event.choices,
           decision: null,
         },
       ]);
@@ -1214,10 +1275,38 @@ export function applyChatEvent(
           part.kind === 'approval' && part.id === event.approvalId ? { ...part, decision: event.decision } : part,
         ),
       );
+    case 'input-request':
+      return replace([
+        ...last.parts,
+        {
+          kind: 'input',
+          id: event.inputId,
+          title: event.title,
+          description: event.description,
+          questions: event.questions,
+          allowCancel: event.allowCancel ?? true,
+          timeoutMs: event.timeoutMs,
+          externalAction: event.externalAction,
+          resolution: null,
+        },
+      ]);
+    case 'input-resolved':
+      return replace(
+        last.parts.map((part) =>
+          part.kind === 'input' && part.id === event.inputId ? { ...part, resolution: event.action } : part,
+        ),
+      );
     case 'subagent-start':
       return replace([
         ...last.parts,
-        { kind: 'subagent', id: event.agentId, role: event.role, title: event.title, text: '', state: 'running' },
+        {
+          kind: 'subagent',
+          id: event.agentId,
+          role: event.role,
+          title: event.title,
+          text: '',
+          state: 'running',
+        },
       ]);
     case 'subagent-delta':
       return replace(
@@ -1231,7 +1320,11 @@ export function applyChatEvent(
       return replace(
         last.parts.map((part) =>
           part.kind === 'subagent' && part.id === event.agentId
-            ? { ...part, state: event.status === 'ok' ? 'ok' : 'error', summary: event.summary ?? part.summary }
+            ? {
+                ...part,
+                state: event.status === 'ok' ? 'ok' : 'error',
+                summary: event.summary ?? part.summary,
+              }
             : part,
         ),
       );
@@ -1240,7 +1333,11 @@ export function applyChatEvent(
       // transcript shows the plan as it stands rather than every draft of it.
       const parts = last.parts.slice();
       const at = parts.findIndex((part) => part.kind === 'plan' && part.id === event.planId);
-      const card: ChatPart = { kind: 'plan', id: event.planId, text: event.text };
+      const card: ChatPart = {
+        kind: 'plan',
+        id: event.planId,
+        text: event.text,
+      };
       if (at === -1) parts.push(card);
       else parts[at] = card;
       return replace(parts);
@@ -1252,7 +1349,12 @@ export function applyChatEvent(
         // the tool row for the call that made it, and two parts sharing a
         // React key means the second one does not reliably render — which
         // would be the picture the whole feature exists to show.
-        { kind: 'image', id: `img:${event.toolId}`, path: event.path, caption: event.caption },
+        {
+          kind: 'image',
+          id: `img:${event.toolId}`,
+          path: event.path,
+          caption: event.caption,
+        },
       ]);
     case 'notice':
       return replace([...last.parts, { kind: 'notice', text: event.text }]);
@@ -1276,7 +1378,12 @@ export function applyChatEvent(
           // turn's, not necessarily the command's, so the row says it never
           // finished rather than borrowing the error.
           ...settleOpenParts(last.parts),
-          { kind: 'notice', text: event.message, tone: 'error', retryText: lastUserText(messages) },
+          {
+            kind: 'notice',
+            text: event.message,
+            tone: 'error',
+            retryText: lastUserText(messages),
+          },
         ],
         false,
       );
@@ -1295,6 +1402,16 @@ export function pendingApprovalId(messages: readonly ChatMessage[]): string | nu
   for (const message of messages) {
     for (const part of message.parts) {
       if (part.kind === 'approval' && part.decision === null) return part.id;
+    }
+  }
+  return null;
+}
+
+/** The oldest provider question still blocking its turn. */
+export function pendingInputId(messages: readonly ChatMessage[]): string | null {
+  for (const message of messages) {
+    for (const part of message.parts) {
+      if (part.kind === 'input' && part.resolution === null) return part.id;
     }
   }
   return null;
@@ -1355,6 +1472,7 @@ export const useApp = create<AppState>((set, get) => {
   let wsBackoffMs = WS_BACKOFF_INITIAL_MS;
   let wsEpoch = 0;
   let wsAgentProject: string | null = null;
+  let pendingCliHandoff: { requestId: string; chatId: string } | null = null;
   let loadMetaPromise: Promise<void> | null = null;
   /**
    * Which conversation this window wants to be in, as a frame ready to resend.
@@ -1363,6 +1481,11 @@ export const useApp = create<AppState>((set, get) => {
    * window never ends up watching a conversation the server isn't sending.
    */
   let chatIntent: Extract<WsFrame, { type: 'chat-open' } | { type: 'chat-new' }> | null = null;
+  // The conversation New chat deliberately left behind. An already-sent
+  // chat-open can still answer after the blank surface appears; naming it lets
+  // that stale answer be ignored without ignoring the fresh chat-new that the
+  // first message sends.
+  let abandonedChatId: string | null = null;
 
   function requestChat(frame: Extract<WsFrame, { type: 'chat-open' } | { type: 'chat-new' }>): void {
     chatIntent = frame;
@@ -1493,9 +1616,20 @@ export const useApp = create<AppState>((set, get) => {
     if (get().projectPath === null) return;
     // Same clearing as openChat: whatever was queued was meant for the
     // conversation being left, and must not land in this one.
-    set({ composing: false, projectView: false, screen: null, chatBusy: false, chatError: null, queued: [] });
+    set({
+      composing: false,
+      projectView: false,
+      screen: null,
+      chatBusy: false,
+      chatError: null,
+      queued: [],
+    });
     applyConversationMode('terminal');
-    requestChat({ type: 'chat-new', kind: 'terminal', ...(title === undefined ? {} : { title }) });
+    requestChat({
+      type: 'chat-new',
+      kind: 'terminal',
+      ...(title === undefined ? {} : { title }),
+    });
   }
 
   /**
@@ -1589,10 +1723,33 @@ export const useApp = create<AppState>((set, get) => {
   function handleFrame(frame: WsFrame): void {
     switch (frame.type) {
       case 'journal':
-        set((state) => ({ journalFeed: [...state.journalFeed, ...frame.entries].slice(-MAX_JOURNAL_FEED) }));
+        set((state) => ({
+          journalFeed: [...state.journalFeed, ...frame.entries].slice(-MAX_JOURNAL_FEED),
+        }));
         return;
       case 'chat-ready':
         set({ chatDriver: frame.driver });
+        get().sendFrame({ type: 'chat-commands-list' });
+        return;
+      case 'chat-commands':
+        if (frame.chatId && frame.chatId !== get().activeChatId) return;
+        set({ slashCommands: frame.commands });
+        return;
+      case 'chat-handoff-ready':
+        if (!pendingCliHandoff || frame.requestId !== pendingCliHandoff.requestId) return;
+        pendingCliHandoff = null;
+        markAgentCli({
+          id: frame.provider === 'anthropic' ? 'claude' : 'codex',
+          label: frame.label,
+        });
+        enterTerminalConversation(`${frame.label} CLI`);
+        return;
+      case 'chat-handoff-error':
+        if (!pendingCliHandoff || frame.requestId !== pendingCliHandoff.requestId) return;
+        pendingCliHandoff = null;
+        resetAgentSocket();
+        get().log('error', 'app', frame.message);
+        showToast(frame.message, 'error');
         return;
       case 'chat-providers':
         // Pushed rather than polled: a ChatGPT login finishes in a browser
@@ -1606,6 +1763,11 @@ export const useApp = create<AppState>((set, get) => {
         scheduleRecentChats();
         return;
       case 'chat-opened':
+        // Navigation wins over a late socket answer. Without this, clicking
+        // New chat while open-latest was still in flight immediately restored
+        // that old transcript and made the app look one-chat-per-project.
+        if (get().composing && frame.chat.id === abandonedChatId) return;
+        abandonedChatId = null;
         // A `chat-new` that has landed becomes a plain "open this one" intent,
         // so a later reconnect resumes this chat instead of minting another.
         chatIntent = { type: 'chat-open', chatId: frame.chat.id };
@@ -1620,6 +1782,8 @@ export const useApp = create<AppState>((set, get) => {
           activeChatId: frame.chat.id,
           messages: replayTranscript(frame.records, get().projectPath ?? ''),
           chatBusy: false,
+          chatDriver: null,
+          slashCommands: [],
           chatError: null,
           // A conversation is open, so the blank composer has been answered.
           //
@@ -1695,7 +1859,12 @@ export const useApp = create<AppState>((set, get) => {
             last && last.turn === frame.turn
               ? [...thoughts.slice(0, -1), { turn: last.turn, text: last.text + frame.text }]
               : [...thoughts, { turn: frame.turn, text: frame.text }];
-          return { tester: { ...state.tester, thoughts: next.slice(-MAX_TESTER_THOUGHTS) } };
+          return {
+            tester: {
+              ...state.tester,
+              thoughts: next.slice(-MAX_TESTER_THOUGHTS),
+            },
+          };
         });
         return;
       case 'tester-done':
@@ -1724,7 +1893,13 @@ export const useApp = create<AppState>((set, get) => {
         return;
       case 'tester-error':
         set((state) => ({
-          tester: { ...state.tester, running: false, starting: false, phase: null, error: frame.message },
+          tester: {
+            ...state.tester,
+            running: false,
+            starting: false,
+            phase: null,
+            error: frame.message,
+          },
         }));
         get().log('error', 'app', `Tester: ${frame.message}`);
         return;
@@ -1735,6 +1910,15 @@ export const useApp = create<AppState>((set, get) => {
         return;
       case 'pty-attach':
         ingestPtyAttach(frame);
+        if (frame.handoff) {
+          const shouldNavigate = pendingCliHandoff !== null;
+          pendingCliHandoff = null;
+          markAgentCli({
+            id: frame.handoff.provider === 'anthropic' ? 'claude' : 'codex',
+            label: frame.handoff.label,
+          });
+          if (shouldNavigate) enterTerminalConversation(`${frame.handoff.label} CLI`);
+        }
         return;
       default:
         return; // client -> server frames, and anything this build doesn't know
@@ -1761,7 +1945,12 @@ export const useApp = create<AppState>((set, get) => {
       set({ wsStatus: 'connected' });
       if (chatIntent) socket.send(JSON.stringify(chatIntent));
       if (getAgentSessionSummary().status === 'reconnecting') {
-        socket.send(JSON.stringify({ type: 'pty-start', sessionId: ensureAgentPtySessionId() }));
+        socket.send(
+          JSON.stringify({
+            type: 'pty-start',
+            sessionId: ensureAgentPtySessionId(),
+          }),
+        );
         markAgentStarted('shell');
       }
     };
@@ -1796,6 +1985,7 @@ export const useApp = create<AppState>((set, get) => {
     wsEpoch++;
     wsBackoffMs = WS_BACKOFF_INITIAL_MS;
     chatIntent = null;
+    abandonedChatId = null;
     if (ws && ws.readyState === WebSocket.OPEN) {
       ws.send(JSON.stringify({ type: 'pty-stop' }));
       ws.send(JSON.stringify({ type: 'chat-cancel' }));
@@ -1817,6 +2007,7 @@ export const useApp = create<AppState>((set, get) => {
     chatBusy: false,
     queued: [],
     chatDriver: null,
+    slashCommands: [],
     chatError: null,
     settings: null,
     providers: null,
@@ -1887,11 +2078,12 @@ export const useApp = create<AppState>((set, get) => {
       }
     },
 
-    async openWorkspace(path, prompt) {
+    async openWorkspace(path, prompt, conversation = 'latest') {
       const res = await apiOpenWorkspace(path);
       if (!res.ok || !res.info) return { ok: false, error: res.error ?? 'Could not open that folder.' };
       const info: WorkspaceInfo = res.info;
       chatIntent = null;
+      abandonedChatId = null;
       try {
         localStorage.setItem(LAST_WORKSPACE_KEY, info.path);
       } catch {
@@ -1915,6 +2107,7 @@ export const useApp = create<AppState>((set, get) => {
         messages: [],
         chatBusy: false,
         chatDriver: null,
+        slashCommands: [],
         chatError: null,
         providers: null,
         // Which key answers for a folder is the folder's own answer: a project
@@ -2000,8 +2193,8 @@ export const useApp = create<AppState>((set, get) => {
         // NEW-CHAT SURFACE, which is a different thing from asking the server
         // for an empty conversation. Opening a project has to land on a real
         // one, or the socket has nothing to send into.
-        if (chats.length > 0) get().openChat(chats[0].id);
-        else requestChat({ type: 'chat-new' });
+        if (conversation === 'new' || chats.length === 0) requestChat({ type: 'chat-new' });
+        else get().openChat(chats[0].id);
       }
       return { ok: true };
     },
@@ -2031,6 +2224,7 @@ export const useApp = create<AppState>((set, get) => {
         messages: [],
         chatBusy: false,
         chatDriver: null,
+        slashCommands: [],
         chatError: null,
         settings: null,
         providers: null,
@@ -2124,14 +2318,17 @@ export const useApp = create<AppState>((set, get) => {
       // than failing the turn on a token picked for a different model. A choice
       // of null still sends no `agent` field at all.
       const agent = agentForTurn(getModelChoice(), get().providers);
-      if (
-        !get().sendFrame({
-          type: 'chat-send',
-          text: trimmed,
-          ...(agent ? { agent } : {}),
-          ...(files.length > 0 ? { attachments: files.map(attachmentPayload) } : {}),
-        })
-      ) {
+      const send = (uploadTokens?: { uploadToken: string }[]): boolean => {
+        if (
+          get().sendFrame({
+            type: 'chat-send',
+            text: trimmed,
+            ...(agent ? { agent } : {}),
+            ...(uploadTokens && uploadTokens.length > 0 ? { attachments: uploadTokens } : {}),
+          })
+        ) {
+          return true;
+        }
         // Said out loud, not only to the console. The console panel lives
         // behind a tab in the game pane, so someone who pressed send and saw
         // nothing happen had no reason to go looking for the explanation.
@@ -2139,6 +2336,34 @@ export const useApp = create<AppState>((set, get) => {
         get().log('error', 'app', note);
         showToast(note, 'error');
         return false;
+      };
+      if (files.length === 0) {
+        if (!send()) return false;
+      } else {
+        const project = get().projectPath;
+        if (!project) return false;
+        // Upload raw bytes over HTTP; the socket receives only opaque tokens.
+        // Uploading runs behind the optimistic bubble so a large screenshot
+        // never makes the composer feel like its Send click was ignored.
+        void Promise.all(files.map((file) => apiUploadChatAttachment(project, file))).then((results) => {
+          if (get().projectPath !== project || !get().chatBusy) return;
+          const failed = results.find((result) => !result.ok);
+          if (failed && !failed.ok) {
+            get().log('error', 'app', failed.error);
+            showToast(failed.error, 'error');
+            set((state) => ({
+              chatBusy: false,
+              messages: state.messages.map(settleMessage),
+            }));
+            return;
+          }
+          if (!send(results.flatMap((result) => (result.ok ? [{ uploadToken: result.upload.uploadToken }] : [])))) {
+            set((state) => ({
+              chatBusy: false,
+              messages: state.messages.map(settleMessage),
+            }));
+          }
+        });
       }
       // The bubble shows the bytes the browser already has. When this chat is
       // reopened the same turn comes back from disk instead, through
@@ -2186,15 +2411,22 @@ export const useApp = create<AppState>((set, get) => {
     },
 
     unqueueChat(id) {
-      set((state) => ({ queued: state.queued.filter((message) => message.id !== id) }));
+      set((state) => ({
+        queued: state.queued.filter((message) => message.id !== id),
+      }));
     },
 
     receiveFrame(frame) {
       handleFrame(frame);
     },
 
-    approveChat(approvalId, decision) {
-      get().sendFrame({ type: 'chat-approval', approvalId, decision });
+    approveChat(approvalId, decision, choiceId) {
+      get().sendFrame({
+        type: 'chat-approval',
+        approvalId,
+        decision,
+        ...(choiceId ? { choiceId } : {}),
+      });
       // Optimistic, and safe to be: the server echoes `approval-resolved` with
       // the same decision, which lands on an already-resolved part as a no-op.
       set((state) => ({
@@ -2209,6 +2441,37 @@ export const useApp = create<AppState>((set, get) => {
             : message,
         ),
       }));
+    },
+
+    answerChatInput(inputId, action, answers) {
+      const frame = {
+        type: 'chat-input-response',
+        inputId,
+        action,
+        ...(action === 'submit' && answers ? { answers } : {}),
+      };
+      if (!get().sendFrame(frame as WsFrame)) return false;
+
+      // Optimistic like approvals, but values are intentionally absent. The
+      // server echo writes only the action too, so a secret cannot return on
+      // replay through either path.
+      set((state) => ({
+        messages: state.messages.map((message) =>
+          message.parts.some((part) => part.kind === 'input' && part.id === inputId && part.resolution === null)
+            ? {
+                ...message,
+                parts: message.parts.map((part) =>
+                  part.kind === 'input' && part.id === inputId ? { ...part, resolution: action } : part,
+                ),
+              }
+            : message,
+        ),
+      }));
+      return true;
+    },
+
+    refreshChatCommands() {
+      if (get().chatDriver) get().sendFrame({ type: 'chat-commands-list' });
     },
 
     async refreshProviders() {
@@ -2262,7 +2525,10 @@ export const useApp = create<AppState>((set, get) => {
       // whose server has not learned the route yet looks like, and the pill
       // has to keep naming a real behaviour through it.
       if (!info) return;
-      set({ permissionMode: info.mode, permissionSkipAcknowledged: info.skipAcknowledged });
+      set({
+        permissionMode: info.mode,
+        permissionSkipAcknowledged: info.skipAcknowledged,
+      });
     },
 
     async setPermissionMode(mode, acknowledgeSkip = false) {
@@ -2283,7 +2549,10 @@ export const useApp = create<AppState>((set, get) => {
         showToast(note, 'error');
         return;
       }
-      set({ permissionMode: info.mode, permissionSkipAcknowledged: info.skipAcknowledged });
+      set({
+        permissionMode: info.mode,
+        permissionSkipAcknowledged: info.skipAcknowledged,
+      });
     },
 
     async startOpenAiLogin() {
@@ -2323,6 +2592,10 @@ export const useApp = create<AppState>((set, get) => {
       // read "a conversation is open" as "the surface is ready to be sent
       // into": see waitForChatSurface, which takes the conversation being
       // left as an argument for exactly this reason.
+      abandonedChatId = chatIntent?.type === 'chat-open' ? chatIntent.chatId : get().activeChatId;
+      // Reconnecting while the blank surface is up must not replay the chat
+      // it just left. The first send installs a chat-new intent of its own.
+      chatIntent = null;
       set({
         composing: true,
         projectView: false,
@@ -2545,7 +2818,7 @@ export const useApp = create<AppState>((set, get) => {
         // `activeChatId`, and the chat it lands in is the new folder's.
         let leaving: string | null = null;
         if (get().projectPath !== root) {
-          const opened = await get().openWorkspace(root);
+          const opened = await get().openWorkspace(root, undefined, 'new');
           if (!opened.ok) {
             return fail(opened.error ?? 'Could not open that project.');
           }
@@ -2578,7 +2851,12 @@ export const useApp = create<AppState>((set, get) => {
         // words go somewhere the person who typed them cannot see. In the
         // narrow layout the game tab covers it just as completely as a screen
         // does, so the region comes back to the conversation too.
-        set({ composing: false, projectView: false, screen: null, narrowTab: 'chat' });
+        set({
+          composing: false,
+          projectView: false,
+          screen: null,
+          narrowTab: 'chat',
+        });
         get().sendChat(trimmed, files);
         return { ok: true };
       } finally {
@@ -2647,7 +2925,8 @@ export const useApp = create<AppState>((set, get) => {
       // last one said is still somebody having looked, and that is the whole of
       // what this field claims.
       if (!get().gameKnown) set({ gameKnown: true });
-      const changed = status.present !== previous.present || status.entry !== previous.entry || status.mtime !== previous.mtime;
+      const changed =
+        status.present !== previous.present || status.entry !== previous.entry || status.mtime !== previous.mtime;
       if (!changed) return;
       // A game arriving where there was none is the one moment the playtest
       // column earns half the window, so that is when it lets itself in — once,
@@ -2721,7 +3000,6 @@ export const useApp = create<AppState>((set, get) => {
       startConversationOfKind(mode);
     },
 
-
     openTerminal() {
       const state = get();
       if (state.projectPath === null) {
@@ -2740,12 +3018,56 @@ export const useApp = create<AppState>((set, get) => {
         state.log('error', 'app', 'Terminal: the connection is down. Wait a moment and try again.');
         return;
       }
-      if (!state.sendFrame({ type: 'pty-start', sessionId: ensureAgentPtySessionId() })) {
+      if (
+        !state.sendFrame({
+          type: 'pty-start',
+          sessionId: ensureAgentPtySessionId(),
+        })
+      ) {
         state.log('error', 'app', 'Terminal: the connection is down. Wait a moment and try again.');
         return;
       }
       markAgentStarted('shell');
       enterTerminalConversation('Terminal');
+    },
+
+    continueChatInCli() {
+      const state = get();
+      const chat = activeConversation();
+      if (!chat || (!chat.claudeSessionId && !chat.codexThreadId)) {
+        state.log('error', 'app', 'This chat has no provider session to continue yet.');
+        return false;
+      }
+      if (state.chatBusy) {
+        state.log('error', 'app', 'Stop the current turn before continuing this chat in its CLI.');
+        return false;
+      }
+      if (state.projectPath === null || state.wsStatus !== 'connected') {
+        state.log('error', 'app', 'The terminal needs an open project and a live connection.');
+        return false;
+      }
+      const terminal = getAgentSessionSummary();
+      if (terminal.status === 'running' || terminal.status === 'reconnecting') {
+        state.log('error', 'app', 'Stop the current terminal session before continuing this chat in its CLI.');
+        return false;
+      }
+
+      const requestId = crypto.randomUUID();
+      pendingCliHandoff = { requestId, chatId: chat.id };
+      if (!state.sendFrame({
+        type: 'chat-handoff-cli',
+        requestId,
+        sessionId: ensureAgentPtySessionId(),
+      })) {
+        pendingCliHandoff = null;
+        return false;
+      }
+      // Mark the resumable terminal as starting so a socket drop during the
+      // transaction reattaches to the server-owned PTY. The conversation does
+      // not navigate until the server confirms the provider is stopped and the
+      // CLI has been launched.
+      markAgentStarted('shell');
+      return true;
     },
 
     setPaneTab(tab) {
@@ -2842,13 +3164,23 @@ export const useApp = create<AppState>((set, get) => {
         // Narrow layouts put the pane on a tab of its own, so opening the
         // column is not the same as being able to see it.
         narrowTab: 'pane',
-        tester: { ...state.tester, starting: true, error: null, thoughts: [], lastNote: null },
+        tester: {
+          ...state.tester,
+          starting: true,
+          error: null,
+          thoughts: [],
+          lastNote: null,
+        },
       }));
       const result = await apiTesterPlay(project);
       if (get().projectPath !== project) return;
       if (!result.ok) {
         set((state) => ({
-          tester: { ...state.tester, starting: false, error: result.error ?? 'The tester could not start.' },
+          tester: {
+            ...state.tester,
+            starting: false,
+            error: result.error ?? 'The tester could not start.',
+          },
         }));
         return;
       }
@@ -2856,7 +3188,11 @@ export const useApp = create<AppState>((set, get) => {
       // the session is really under way, and setting it here would leave a
       // window claiming a session that died on the way up.
       set((state) => ({
-        tester: { ...state.tester, session: result.session ?? null, maxSteps: result.maxSteps ?? state.tester.maxSteps },
+        tester: {
+          ...state.tester,
+          session: result.session ?? null,
+          maxSteps: result.maxSteps ?? state.tester.maxSteps,
+        },
       }));
     },
 
@@ -3008,7 +3344,13 @@ export const useApp = create<AppState>((set, get) => {
       // you did not ask for.
       set(
         open
-          ? { paneOpen: true, paneChoice: true, projectView: false, composing: false, narrowTab: 'pane' }
+          ? {
+              paneOpen: true,
+              paneChoice: true,
+              projectView: false,
+              composing: false,
+              narrowTab: 'pane',
+            }
           : { paneOpen: false, paneChoice: false, narrowTab: 'chat' },
       );
     },
@@ -3017,13 +3359,16 @@ export const useApp = create<AppState>((set, get) => {
       set({ narrowTab: tab });
     },
 
-
     openCodePeek(path) {
-      set((state) => ({ codePeek: { open: true, path: path ?? state.codePeek.path } }));
+      set((state) => ({
+        codePeek: { open: true, path: path ?? state.codePeek.path },
+      }));
     },
 
     closeCodePeek() {
-      set((state) => ({ codePeek: { open: false, path: state.codePeek.path } }));
+      set((state) => ({
+        codePeek: { open: false, path: state.codePeek.path },
+      }));
     },
 
     log(level, source, message, link) {

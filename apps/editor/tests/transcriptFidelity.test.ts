@@ -12,7 +12,7 @@
  * question this file can actually answer.
  */
 import { describe, expect, it } from 'vitest';
-import { mapCodexNotification, codexItemKind, describeQuestion, isQuestionRequest } from '../server/chatDrivers/codexWire';
+import { mapCodexNotification, codexItemKind, mapCodexQuestionRequest, isQuestionRequest } from '../server/chatDrivers/codexWire';
 import { mapSdkMessage, sdkTodoText, type ChatEvent } from '../server/chat';
 import { applyChatEvent, makeAgentMessage } from '../src/store';
 import { planLineState, imageSrcFor } from '../src/components/chat/PlanCard';
@@ -146,21 +146,49 @@ describe('codex: when the agent asks the user something', () => {
   });
 
   it('says what was asked, and what the choices were', () => {
-    const text = describeQuestion({
+    const request = mapCodexQuestionRequest('item/tool/requestUserInput', 'input-1', {
       questions: [
-        { header: 'Art', question: 'Pixel art or vector?', options: [{ label: 'Pixel' }, { label: 'Vector' }] },
+        {
+          id: 'art',
+          header: 'Art',
+          question: 'Pixel art or vector?',
+          isOther: false,
+          isSecret: false,
+          options: [
+            { label: 'Pixel', description: '' },
+            { label: 'Vector', description: '' },
+          ],
+        },
+      ],
+      autoResolutionMs: null,
+    });
+    expect(request).toMatchObject({
+      inputId: 'input-1',
+      questions: [
+        {
+          id: 'art',
+          label: 'Pixel art or vector?',
+          options: [{ label: 'Pixel' }, { label: 'Vector' }],
+        },
       ],
     });
-    expect(text).toBe('The agent asked: Pixel art or vector? (Pixel / Vector)');
   });
 
   it('falls back to an elicitation’s plain message', () => {
-    expect(describeQuestion({ message: 'Which port should I use?' })).toContain('Which port');
+    expect(
+      mapCodexQuestionRequest('mcpServer/elicitation/request', 'input-2', {
+        mode: 'url',
+        serverName: 'local',
+        message: 'Which port should I use?',
+        url: 'https://example.test',
+        elicitationId: 'e1',
+      }),
+    ).toMatchObject({ description: 'Which port should I use?' });
   });
 
   it('says nothing when there is nothing to say', () => {
-    expect(describeQuestion({ questions: [] })).toBeNull();
-    expect(describeQuestion(null)).toBeNull();
+    expect(mapCodexQuestionRequest('item/tool/requestUserInput', 'i', { questions: [] })).toBeNull();
+    expect(mapCodexQuestionRequest('item/tool/requestUserInput', 'i', null)).toBeNull();
   });
 });
 
