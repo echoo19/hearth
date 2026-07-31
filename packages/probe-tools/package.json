@@ -1,6 +1,6 @@
 {
   "name": "@hearth/probe-tools",
-  "version": "1.7.0",
+  "version": "1.8.0",
   "description": "Agent-facing surfaces for the Hearth probe: the hearth-probe CLI and its MCP server, so any coding agent can produce the evidence the Hearth app renders",
   "license": "MIT",
   "type": "module",

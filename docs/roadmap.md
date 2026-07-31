@@ -1,6 +1,6 @@
 # Roadmap
 
-**v1.7.0 is the current release**: the agent-first Hearth app, a conversation
+**v1.8.0 is the current release**: the agent-first Hearth app, a conversation
 with a coding agent, an always-on game pane, and a private tester that plays
 your game and tells you what it made of it. That app began at v1.3.0.
 
@@ -47,6 +47,11 @@ Shipped and in use:
   repository you push never carries it ([agents.md](./agents.md)).
 - Images and files attached to a message, by drop, paste or picker, and handed
   to either backend as a path ([agents.md](./agents.md)).
+- Structured questions, MCP forms, and each provider's real approval choices,
+  answered in the transcript without flattening them into a generic prompt
+  ([agents.md](./agents.md)).
+- Continue in CLI hands the exact Claude Code or Codex session to a terminal
+  and returns ownership to Hearth when that process exits ([agents.md](./agents.md)).
 - Skills: `SKILL.md` folders in `~/.hearth/skills/`, in the format Claude Code
   and Codex both read, switched on and off in the sidebar's Skills panel
   ([agents.md](./agents.md)).
@@ -65,12 +70,6 @@ unchanged; that is the point of keeping the contract narrow.
 better novelty signals from pixels alone, audio, and more of the reasoning that
 currently needs entity positions. The rule stays the same: a sense that isn't
 there is declared absent, never faked.
-
-**Answering the agent.** A structured question with options now appears in the
-transcript, but there is no picker for answering it: the request is answered
-empty so the turn doesn't wedge, and you reply in your next message instead
-([agents.md](./agents.md)). A real answer surface is a small feature that
-removes a real reason to go back to the terminal.
 
 **Per-project skills.** Skills are global to the machine today, which is right
 for "how I like sprites drawn" and wrong for "how this game's save format

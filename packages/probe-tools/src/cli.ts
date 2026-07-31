@@ -40,7 +40,7 @@ import { stringifyEnvelope, type Envelope } from './envelope.js';
 import { renderSweepHuman, type SweepView } from './format.js';
 
 export const CLI_NAME = 'hearth-probe';
-export const CLI_VERSION = '1.7.0';
+export const CLI_VERSION = '1.8.0';
 
 /** Where output goes. Injectable so tests can drive the real commands without a child process. */
 export interface CliIo {

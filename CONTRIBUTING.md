@@ -84,7 +84,7 @@ held to the same standard as any other contribution:
 
 ## Releases
 
-Hearth is at v1.7.0 — the agent-first app line that began at v1.3.0. The
+Hearth is at v1.8.0 — the agent-first app line that began at v1.3.0. The
 retired 1.x game engine ends at v1.2.1 and continues to share the same
 version line. Versioning is synchronized across packages, and releases are
 automated: pushing a `v*` tag builds the desktop app for macOS, Windows, and
