@@ -391,20 +391,39 @@
   color: var(--ink);
   font-weight: 600;
   line-height: 1.4;
+  text-wrap: balance;
+  overflow-wrap: anywhere;
 }
 
-/* Two ranks, not six. Past the second level a heading in a chat message is
-   saying "this bit" and the size stops carrying meaning. */
-.md-h1,
+/* The same visual hierarchy Markdown carries everywhere else. Agents commonly
+   use level three for named subsections, so it must still read as a heading;
+   the lower ranks step down quietly instead of collapsing into one body size. */
+.md-h1 {
+  font-size: var(--text-2xl);
+}
+
 .md-h2 {
+  font-size: var(--text-xl);
+}
+
+.md-h3 {
   font-size: var(--text-lg);
 }
 
-.md-h3,
-.md-h4,
-.md-h5,
-.md-h6 {
+.md-h4 {
   font-size: var(--text-md);
+}
+
+.md-h5 {
+  font-size: var(--text-sm);
+}
+
+.md-h6 {
+  font-size: var(--text-xs);
+}
+
+.md-heading + .md-block {
+  margin-top: 0.6em;
 }
 
 .md-list {

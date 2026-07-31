@@ -252,10 +252,8 @@ export function parseMarkdown(source: string, live = false): MdBlock[] {
 /**
  * One list, and any lists nested inside it.
  *
- * A blank line ends it. Markdown's loose lists would let a list survive one,
- * but in a transcript the cost of guessing wrong is a stretch of prose swept
- * into a list, and two lists with a gap between them look nearly the same as
- * one loose list anyway.
+ * A blank line stays inside the list when the next indented line or same-kind
+ * marker continues it. De-indented prose after the gap starts a new block.
  */
 function readList(lines: string[], from: number, baseIndent: number): [MdList, number] {
   const first = listMarker(lines[from]);
@@ -269,7 +267,21 @@ function readList(lines: string[], from: number, baseIndent: number): [MdList, n
 
   while (i < lines.length) {
     const line = lines[i];
-    if (line.trim() === '') break;
+    if (line.trim() === '') {
+      let next = i + 1;
+      while (next < lines.length && lines[next].trim() === '') next += 1;
+      if (next >= lines.length) break;
+
+      const nextMarker = listMarker(lines[next]);
+      const nextIndent = indentWidth(/^[ \t]*/.exec(lines[next])?.[0] ?? '');
+      const continues = nextMarker
+        ? nextMarker.indent >= baseIndent + 2 ||
+          (nextMarker.indent >= baseIndent && nextMarker.ordered === list.ordered)
+        : nextIndent >= baseIndent + 2;
+      if (!continues) break;
+      i = next;
+      continue;
+    }
 
     const marker = listMarker(line);
     if (marker && marker.indent >= baseIndent + 2 && list.items.length > 0) {
@@ -289,8 +301,12 @@ function readList(lines: string[], from: number, baseIndent: number): [MdList, n
 
     if (marker) break;
 
-    // An indented line under an item is the rest of that item's sentence.
-    if (list.items.length > 0 && indentWidth(/^[ \t]*/.exec(line)?.[0] ?? '') >= baseIndent + 2) {
+    // An indented or lazy continuation line is the rest of the current item.
+    const indent = indentWidth(/^[ \t]*/.exec(line)?.[0] ?? '');
+    if (
+      list.items.length > 0 &&
+      (indent >= baseIndent + 2 || (HEADING.exec(line) === null && fenceOpen(line) === null))
+    ) {
       const item = list.items[list.items.length - 1];
       item.spans = [...item.spans, { kind: 'text', text: ' ' }, ...parseInline(line.trim())];
       i += 1;

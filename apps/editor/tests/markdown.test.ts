@@ -153,6 +153,26 @@ describe('blocks', () => {
     expect(flatten(list.items[0].children!.items[0].spans)).toBe('inner');
   });
 
+  it.each([
+    ['ordered', '1. first\nMore about the first.\n\n2. second\nMore about the second.'],
+    ['unordered', '- first\nMore about the first.\n\n- second\nMore about the second.'],
+  ])('keeps prose and blank-separated items in one %s list', (_kind, source) => {
+    const blocks = parseMarkdown(source);
+    const list = blocks[0] as MdList;
+
+    expect(blocks).toHaveLength(1);
+    expect(list.items.map((item) => flatten(item.spans))).toEqual([
+      'first More about the first.',
+      'second More about the second.',
+    ]);
+  });
+
+  it('ends a list when a blank line is followed by prose', () => {
+    const blocks = parseMarkdown('- item\n\nA separate paragraph.');
+
+    expect(blocks.map((block) => block.kind)).toEqual(['list', 'paragraph']);
+  });
+
   it('carries the language label off the fence', () => {
     expect(parseMarkdown('```python\nx = 1\n```')[0]).toEqual({
       kind: 'fence',

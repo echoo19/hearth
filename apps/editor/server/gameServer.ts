@@ -83,7 +83,7 @@ var last='';
 function look(){
 var best=null,list=document.getElementsByTagName('canvas');
 for(var i=0;i<list.length;i++){
-var c=list[i],w=c.width||c.clientWidth,h=c.height||c.clientHeight;
+var c=list[i],r=c.getBoundingClientRect(),w=r.width||c.clientWidth||c.width,h=r.height||c.clientHeight||c.height;
 if(w>0&&h>0&&(!best||w*h>best.w*best.h))best={w:w,h:h};
 }
 var key=best?best.w+'x'+best.h:'';
